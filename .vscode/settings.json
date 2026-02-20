@@ -1,0 +1,24 @@
+{
+  "files.autoSave": "onFocusChange",
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/dist-electron/**": true,
+    "**/.git/**": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/dist-electron": true,
+    "**/.svelte-kit": true
+  },
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "svelte.enable-ts-plugin": true,
+  "editor.quickSuggestions": {
+    "strings": true
+  },
+  "editor.formatOnSave": true,
+  "[svelte]": {
+    "editor.defaultFormatter": "svelte.svelte-vscode"
+  }
+}
