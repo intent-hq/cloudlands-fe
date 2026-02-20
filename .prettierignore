@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+pnpm-lock.yaml
+package-lock.json
+
+# Build outputs
+dist/
+build/
+.svelte-kit/
+
+# Test outputs
+test-reports/
+logs/
+parallel-runner/logs/
+parallel-runner/report/
+
+# Generated files
+*.min.js
+*.min.css
+
+# Documentation archives
+docs-archive-*/
+
+# CDP MCP Server dist
+cdp-mcp-server/dist/
+
+# Parallel runner dependencies
+parallel-runner/node_modules/
+
+# Other
+*.log
+*.png
+*.svg
+*.ico
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.webp
