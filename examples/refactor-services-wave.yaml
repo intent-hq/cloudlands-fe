@@ -1,0 +1,148 @@
+name: "Service Architecture Refactor"
+description: "Refactor service layer to improve modularity, testability, and maintainability"
+max_parallel: 6
+
+# Sequential prompts for each package
+package_prompts:
+  - name: "work"
+    prompt: |
+      We're working on the experimental/amelia/workspaces app.
+      Don't make changes outside that folder.
+
+      Task: {title}
+
+      {description}
+
+      {context}
+
+  - name: "review"
+    prompt: |
+      Review the work completed for: {title}
+
+      Verify:
+      - Architecture improvements are sound
+      - Code quality is maintained
+      - Tests are comprehensive
+      - Documentation is clear
+      - No regressions introduced
+
+# Prompts that run between waves
+inter_wave_prompts:
+  - name: "consolidation"
+    prompt: |
+      Consolidation check for Service Architecture Refactor
+
+      Verify all packages completed successfully:
+      {package_list}
+
+      Run: npm run check
+      Generate: SERVICE_REFACTOR_CONSOLIDATION_REPORT.md
+
+      Document:
+      - Architecture improvements
+      - Code quality metrics
+      - Test coverage
+      - Recommendations for next phase
+
+packages:
+  - id: "refactor-agent-factory"
+    title: "Refactor Agent Factory Service"
+    description: |
+      Refactor the agent factory service for better modularity:
+
+      Current issues:
+      - Too many responsibilities
+      - Tight coupling with other services
+      - Difficult to test
+
+      Tasks:
+      - Extract agent creation logic into separate modules
+      - Create clear interfaces for dependencies
+      - Add comprehensive unit tests
+      - Document the factory pattern used
+      - Improve error handling and logging
+
+  - id: "refactor-persistence-service"
+    title: "Refactor Persistence Service"
+    description: |
+      Refactor persistence layer for better abstraction:
+
+      Current issues:
+      - Database logic mixed with business logic
+      - No clear repository pattern
+      - Difficult to swap implementations
+
+      Tasks:
+      - Implement repository pattern
+      - Separate database concerns
+      - Create data access abstractions
+      - Add transaction support
+      - Improve query performance
+
+  - id: "refactor-streaming-service"
+    title: "Refactor Streaming Service"
+    description: |
+      Refactor streaming service for better event handling:
+
+      Current issues:
+      - Event handling scattered across code
+      - No clear event bus pattern
+      - Memory leaks in event listeners
+
+      Tasks:
+      - Implement event bus pattern
+      - Centralize event handling
+      - Add proper cleanup and disposal
+      - Improve error handling
+      - Add event type safety
+
+  - id: "refactor-ipc-handlers"
+    title: "Refactor IPC Handlers"
+    description: |
+      Refactor IPC message handlers for consistency:
+
+      Current issues:
+      - Inconsistent handler signatures
+      - No clear request/response pattern
+      - Error handling varies
+
+      Tasks:
+      - Standardize handler signatures
+      - Implement request/response pattern
+      - Centralize error handling
+      - Add request validation
+      - Improve type safety
+
+  - id: "refactor-state-management"
+    title: "Refactor State Management"
+    description: |
+      Refactor state management for better predictability:
+
+      Current issues:
+      - State mutations scattered
+      - No clear state flow
+      - Difficult to debug
+
+      Tasks:
+      - Implement state machine pattern
+      - Centralize state updates
+      - Add state validation
+      - Improve logging and debugging
+      - Add state persistence
+
+  - id: "refactor-error-handling"
+    title: "Refactor Error Handling"
+    description: |
+      Refactor error handling for consistency:
+
+      Current issues:
+      - Inconsistent error types
+      - Poor error messages
+      - No error recovery
+
+      Tasks:
+      - Create error hierarchy
+      - Standardize error messages
+      - Implement error recovery strategies
+      - Add error logging
+      - Improve error documentation

@@ -1,0 +1,265 @@
+<script lang="ts">
+  /**
+   * UpdateToast - Toast component for showing update status
+   *
+   * Shows different states:
+   * - Checking: Spinner with "Checking for updates..."
+   * - Downloading: Progress bar with download percentage
+   * - Downloaded: Install button with version info
+   * - Up to date: Success message (brief)
+   */
+
+  import { autoUpdateStore } from '$features/auto-update/auto-update.store.svelte';
+  import {
+    faArrowsRotate,
+    faCakeCandles,
+    faDownload,
+    faRotateRight,
+    faTriangleExclamation,
+    faXmark,
+  } from '@fortawesome/free-solid-svg-icons';
+  import Fa from 'svelte-fa';
+
+  interface Props {
+    /** Callback when toast should be dismissed */
+    onDismiss?: () => void;
+  }
+
+  let { onDismiss }: Props = $props();
+
+  // Derived state from store
+  let status = $derived(autoUpdateStore.status);
+  let progress = $derived(autoUpdateStore.progress);
+  let updateInfo = $derived(autoUpdateStore.updateInfo);
+  let progressPercent = $derived(progress ? Math.round(progress.percent) : 0);
+
+  // Format bytes per second
+  function formatSpeed(bytesPerSecond: number): string {
+    if (bytesPerSecond >= 1024 * 1024) {
+      return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
+    }
+    if (bytesPerSecond >= 1024) {
+      return `${(bytesPerSecond / 1024).toFixed(0)} KB/s`;
+    }
+    return `${bytesPerSecond} B/s`;
+  }
+
+  function handleInstall() {
+    autoUpdateStore.installUpdate();
+  }
+
+  // Auto-dismiss when up-to-date or error after a delay
+  $effect(() => {
+    if ((status === 'not-available' || status === 'error') && onDismiss) {
+      const delay = status === 'error' ? 5000 : 3000; // Longer for errors so user can read
+      const timeout = setTimeout(() => {
+        onDismiss();
+      }, delay);
+      return () => clearTimeout(timeout);
+    }
+  });
+</script>
+
+<div class="update-toast">
+  {#if status === 'checking'}
+    <div class="flex items-center gap-3">
+      <div class="icon checking">
+        <Fa icon={faArrowsRotate} class="animate-spin" />
+      </div>
+      <div class="text">
+        <div class="title">Checking for updates...</div>
+      </div>
+    </div>
+  {:else if status === 'available'}
+    <div class="flex items-center gap-3">
+      <div class="icon downloading">
+        <Fa icon={faDownload} class="animate-pulse" />
+      </div>
+      <div class="text">
+        <div class="title">Update {updateInfo?.version || ''} available</div>
+        <div class="description">Preparing download...</div>
+      </div>
+    </div>
+  {:else if status === 'downloading'}
+    <div class="flex flex-col gap-2">
+      <div class="flex items-center gap-3">
+        <div class="icon downloading">
+          <Fa icon={faDownload} />
+        </div>
+        <div class="text flex-1">
+          <div class="title">Downloading update {updateInfo?.version || ''}</div>
+          <div class="description">
+            {progressPercent}%{progress ? ` · ${formatSpeed(progress.bytesPerSecond)}` : ''}
+          </div>
+        </div>
+        {#if onDismiss}
+          <button class="close-btn" onclick={onDismiss} aria-label="Close">
+            <Fa icon={faXmark} />
+          </button>
+        {/if}
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" style="width: {progressPercent}%"></div>
+      </div>
+    </div>
+  {:else if status === 'downloaded'}
+    <div class="flex items-center gap-3">
+      <div class="icon-celebrate">
+        <Fa icon={faCakeCandles} size="2x" />
+      </div>
+      <div class="text flex-1">
+        <div class="title">Update Ready</div>
+        <div class="description">
+          Version {updateInfo?.version} is ready to install
+        </div>
+      </div>
+      <button class="action-btn success" onclick={handleInstall}>
+        <Fa icon={faRotateRight} class="mr-1" />
+        Install
+      </button>
+    </div>
+  {:else if status === 'not-available'}
+    <div class="flex items-center gap-3">
+      <div class="icon-celebrate">
+        <Fa icon={faCakeCandles} size="2x" />
+      </div>
+      <div class="text">
+        <div class="title">You're up to date</div>
+        <div class="description">
+          Running version {autoUpdateStore.currentVersion}
+        </div>
+      </div>
+    </div>
+  {:else if status === 'error'}
+    <div class="flex items-center gap-3">
+      <div class="icon error">
+        <Fa icon={faTriangleExclamation} />
+      </div>
+      <div class="text flex-1">
+        <div class="title">Update check failed</div>
+        <div class="description">
+          {autoUpdateStore.error || 'An unknown error occurred'}
+        </div>
+      </div>
+      {#if onDismiss}
+        <button class="close-btn" onclick={onDismiss} aria-label="Close">
+          <Fa icon={faXmark} />
+        </button>
+      {/if}
+    </div>
+  {/if}
+</div>
+
+<style>
+  .update-toast {
+    min-width: 280px;
+  }
+
+  .icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0;
+    flex-shrink: 0;
+  }
+
+  .icon.checking {
+    background: hsl(var(--primary) / 0.1);
+    color: hsl(var(--primary));
+  }
+
+  .icon.downloading {
+    background: hsl(217 91% 60% / 0.1);
+    color: hsl(217 91% 60%);
+  }
+
+  .icon-celebrate {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    flex-shrink: 0;
+    color: hsl(var(--muted-foreground) / 0.3);
+  }
+
+  .icon.error {
+    background: hsl(0 84% 60% / 0.1);
+    color: hsl(0 84% 60%);
+  }
+
+  .text {
+    min-width: 0;
+  }
+
+  .title {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: hsl(var(--foreground));
+  }
+
+  .description {
+    font-size: 0.75rem;
+    color: hsl(var(--muted-foreground));
+    margin-top: 0.125rem;
+  }
+
+  .progress-bar {
+    height: 4px;
+    background: hsl(var(--muted));
+    border-radius: 0;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: hsl(217 91% 60%);
+    border-radius: 0;
+    transition: width 0.2s ease;
+  }
+
+  .action-btn {
+    padding: 0.375rem 0.75rem;
+    border-radius: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: none;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-shrink: 0;
+  }
+
+  .action-btn.success {
+    background: hsl(142 76% 36%);
+    color: white;
+  }
+
+  .action-btn.success:hover {
+    background: hsl(142 76% 30%);
+  }
+
+  .close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 0;
+    border: none;
+    background: transparent;
+    color: hsl(var(--muted-foreground));
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+  }
+
+  .close-btn:hover {
+    background: hsl(var(--muted));
+    color: hsl(var(--foreground));
+  }
+</style>

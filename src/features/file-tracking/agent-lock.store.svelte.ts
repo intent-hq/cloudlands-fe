@@ -1,0 +1,150 @@
+/**
+ * Agent Lock Store
+ *
+ * Provides reactive state for determining which agents and files are locked
+ * due to auto-commit being enabled and agents actively working.
+ *
+ * A file is locked when:
+ * 1. Auto-commit is enabled AND
+ * 2. The file belongs to an agent that is actively working
+ *    (streaming or task not in terminal status)
+ */
+
+import { unifiedStateStore } from '$features/agent/browser';
+import { agentService } from '$features/agent/agent.service';
+import { notesStateManager } from '$features/notes/notes.store.svelte';
+import { fileTrackingStore } from './file-tracking.store.svelte';
+import { createWorkspaceSettingsStore } from '$lib/stores/workspace-settings.store.svelte';
+import type { WorkspaceId } from '$shared/types/branded-ids';
+
+/**
+ * Check if an agent is actively working (streaming or task not complete).
+ */
+function isAgentActivelyWorking(agentId: string): boolean {
+  // Check if agent is currently streaming via unified state store
+  const currentWorkspace = unifiedStateStore.currentWorkspace;
+  if (currentWorkspace) {
+    const agentState = currentWorkspace.agents.get(agentId as any);
+    if (agentState?.streaming?.active) {
+      return true;
+    }
+  }
+
+  // Check if agent session exists and has a linked task
+  const session = agentService.getSession(agentId);
+  if (!session) return false;
+
+  // Check if session is streaming (fallback check)
+  if (session.isStreaming) {
+    return true;
+  }
+
+  // Check linked task status
+  const taskNoteId = session.metadata?.taskNoteId as string | undefined;
+  if (taskNoteId) {
+    const taskNote = notesStateManager.findById(taskNoteId as any);
+    const taskStatus = taskNote?.metadata?.task?.status;
+    // Active unless in terminal status (complete or cancelled)
+    if (taskStatus && taskStatus !== 'complete' && taskStatus !== 'cancelled') {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Create a reactive agent lock store for a specific workspace.
+ */
+export function createAgentLockStore(workspaceId: WorkspaceId | string | undefined) {
+  // Create workspace settings store for auto-commit setting
+  const workspaceSettings = $derived(
+    workspaceId ? createWorkspaceSettingsStore(workspaceId as WorkspaceId) : null,
+  );
+  const autoCommitEnabled = $derived(workspaceSettings?.autoCommitEnabled ?? true);
+
+  // Get working changes
+  const unstagedChanges = $derived(fileTrackingStore.workingChanges.unstaged);
+  const stagedChanges = $derived(fileTrackingStore.workingChanges.staged);
+
+  /**
+   * Compute the set of locked agent IDs.
+   */
+  const lockedAgentIds = $derived.by(() => {
+    const locked = new Set<string>();
+
+    // If auto-commit is disabled, no agents are locked
+    if (!autoCommitEnabled) return locked;
+
+    // Collect all unique agent IDs from both unstaged and staged changes
+    const agentIds = new Set<string>();
+    for (const change of unstagedChanges) {
+      const agentId = change.attribution?.agent?.agentId;
+      if (agentId) agentIds.add(agentId);
+    }
+    for (const change of stagedChanges) {
+      const agentId = change.attribution?.agent?.agentId;
+      if (agentId) agentIds.add(agentId);
+    }
+
+    // Check each agent
+    for (const agentId of agentIds) {
+      if (isAgentActivelyWorking(agentId)) {
+        locked.add(agentId);
+      }
+    }
+
+    return locked;
+  });
+
+  /**
+   * Compute the set of locked file paths.
+   */
+  const lockedFilePaths = $derived.by(() => {
+    const locked = new Set<string>();
+
+    // Add paths from unstaged changes belonging to locked agents
+    for (const change of unstagedChanges) {
+      const agentId = change.attribution?.agent?.agentId;
+      if (agentId && lockedAgentIds.has(agentId)) {
+        locked.add(change.relativePath);
+        if (change.file && change.file !== change.relativePath) {
+          locked.add(change.file);
+        }
+      }
+    }
+
+    // Add paths from staged changes belonging to locked agents
+    for (const change of stagedChanges) {
+      const agentId = change.attribution?.agent?.agentId;
+      if (agentId && lockedAgentIds.has(agentId)) {
+        locked.add(change.relativePath);
+        if (change.file && change.file !== change.relativePath) {
+          locked.add(change.file);
+        }
+      }
+    }
+
+    return locked;
+  });
+
+  return {
+    get lockedAgentIds() {
+      return lockedAgentIds;
+    },
+    get lockedFilePaths() {
+      return lockedFilePaths;
+    },
+    get autoCommitEnabled() {
+      return autoCommitEnabled;
+    },
+    isAgentLocked(agentId: string | null | undefined): boolean {
+      if (!agentId) return false;
+      return lockedAgentIds.has(agentId);
+    },
+    isFileLocked(filePath: string | null | undefined): boolean {
+      if (!filePath) return false;
+      return lockedFilePaths.has(filePath);
+    },
+  };
+}

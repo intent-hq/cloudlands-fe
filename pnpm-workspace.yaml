@@ -1,0 +1,3 @@
+# Empty workspace file to override parent workspace
+# This makes this directory a standalone project
+packages: []

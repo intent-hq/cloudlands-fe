@@ -1,0 +1,103 @@
+<script lang="ts">
+  /**
+   * Compact specialist dropdown for selecting/changing the agent specialist.
+   * Shows the current specialist as a pill that opens a dropdown when clicked.
+   */
+  import { cn } from '$lib/utils';
+  import Fa from 'svelte-fa';
+  import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
+  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
+  import { specialistsStore } from '$lib/stores/specialists.store.svelte';
+
+  interface Props {
+    /** Currently selected specialist ID - null means blank agent */
+    value?: string | null;
+    /** Callback when specialist changes */
+    onchange?: (specialistId: string | null) => void;
+    /** Additional class */
+    class?: string;
+  }
+
+  let { value = null, onchange, class: className }: Props = $props();
+
+  let dropdownOpen = $state(false);
+
+  // All available specialists (built-in + custom)
+  const allSpecialists = $derived(specialistsStore.specialists);
+
+  // Get current specialist info
+  const currentSpecialist = $derived(
+    value ? allSpecialists.find((s) => s.id === value) : null,
+  );
+
+  // Display label
+  const displayLabel = $derived(currentSpecialist?.name ?? 'General');
+
+  function handleSelect(id: string | null) {
+    if (id !== value) {
+      onchange?.(id);
+    }
+    dropdownOpen = false;
+  }
+</script>
+
+<DropdownMenu bind:open={dropdownOpen} align="start" side="bottom">
+  {#snippet trigger({ toggle }: { toggle: () => void })}
+    <button
+      type="button"
+      onclick={toggle}
+      class={cn(
+        'inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-full',
+        'border border-border bg-background hover:bg-muted transition-colors cursor-pointer',
+        className,
+      )}
+    >
+      <AuggieAvatar faceSeed="blank" colorSeed="blank" size={16} specialist={value} />
+      <span class="text-muted-foreground">{displayLabel}</span>
+      <Fa icon={faChevronDown} class="text-muted-foreground/50 h-2.5 w-2.5" />
+    </button>
+  {/snippet}
+
+  {#snippet content({ close }: { close: () => void })}
+    <div class="py-1 min-w-[180px]">
+      <!-- Blank agent option -->
+      <button
+        type="button"
+        class={cn(
+          'flex items-center gap-2 w-full px-3 py-2 text-left text-sm transition-colors',
+          'hover:bg-muted rounded-sm cursor-pointer',
+          value === null ? 'bg-muted/50' : '',
+        )}
+        onclick={() => handleSelect(null)}
+      >
+        <AuggieAvatar faceSeed="blank" colorSeed="blank" size={20} specialist={null} />
+        <div class="flex flex-col">
+          <span class="font-medium text-foreground">General</span>
+          <span class="text-xs text-muted-foreground">No specialized behavior</span>
+        </div>
+      </button>
+
+      <div class="h-px bg-border my-1"></div>
+
+      <!-- Specialists -->
+      {#each allSpecialists as specialist (specialist.id)}
+        <button
+          type="button"
+          class={cn(
+            'flex items-center gap-2 w-full px-3 py-2 text-left text-sm transition-colors',
+            'hover:bg-muted rounded-sm cursor-pointer',
+            value === specialist.id ? 'bg-muted/50' : '',
+          )}
+          onclick={() => handleSelect(specialist.id)}
+        >
+          <AuggieAvatar faceSeed="blank" colorSeed="blank" size={20} specialist={specialist.id} />
+          <div class="flex flex-col min-w-0">
+            <span class="font-medium text-foreground">{specialist.name}</span>
+            <span class="text-xs text-muted-foreground truncate">{specialist.description}</span>
+          </div>
+        </button>
+      {/each}
+    </div>
+  {/snippet}
+</DropdownMenu>

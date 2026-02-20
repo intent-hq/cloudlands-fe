@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diff Viewer Test</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #1e1e1e;
+      color: #fff;
+    }
+    #container {
+      width: 100%;
+      height: 600px;
+      border: 1px solid #444;
+    }
+    .controls {
+      margin-bottom: 20px;
+    }
+    button {
+      padding: 8px 16px;
+      margin-right: 10px;
+      background: #0e639c;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #1177bb;
+    }
+    #status {
+      margin-top: 20px;
+      padding: 10px;
+      background: #252526;
+      border-radius: 4px;
+      font-family: monospace;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <h1>Monaco Diff Viewer Test</h1>
+
+  <div class="controls">
+    <button onclick="testSmallDiff()">Test Small Diff</button>
+    <button onclick="testLargeDiff()">Test Large Diff</button>
+    <button onclick="inspectEditor()">Inspect Editor</button>
+  </div>
+
+  <div id="container"></div>
+  <div id="status">Ready...</div>
+
+  <script src="https://unpkg.com/monaco-editor@0.54.0/min/vs/loader.js"></script>
+  <script>
+    let editor = null;
+
+    require.config({ paths: { vs: 'https://unpkg.com/monaco-editor@0.54.0/min/vs' } });
+
+    require(['vs/editor/editor.main'], function() {
+      log('Monaco loaded successfully');
+      testSmallDiff();
+    });
+
+    function log(message) {
+      const status = document.getElementById('status');
+      status.textContent += '\n' + new Date().toLocaleTimeString() + ': ' + message;
+      console.log(message);
+    }
+
+    function createEditor(oldContent, newContent) {
+      if (editor) {
+        const model = editor.getModel();
+        if (model) {
+          model.original?.dispose();
+          model.modified?.dispose();
+        }
+        editor.dispose();
+      }
+
+      const container = document.getElementById('container');
+
+      log('Creating diff editor with hideUnchangedRegions enabled');
+
+      editor = monaco.editor.createDiffEditor(container, {
+        theme: 'vs-dark',
+        readOnly: true,
+        renderSideBySide: true,
+        automaticLayout: true,
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        enableSplitViewResizing: true,
+        renderOverviewRuler: true,
+        diffCodeLens: true,
+        ignoreTrimWhitespace: false,
+        hideUnchangedRegions: {
+          enabled: true,
+          revealLineCount: 40,
+          minimumLineCount: 3,
+          contextLineCount: 3,
+        },
+      });
+
+      const timestamp = Date.now();
+      const originalModel = monaco.editor.createModel(
+        oldContent,
+        'markdown',
+        monaco.Uri.parse(`inmemory://test/original?t=${timestamp}`)
+      );
+      const modifiedModel = monaco.editor.createModel(
+        newContent,
+        'markdown',
+        monaco.Uri.parse(`inmemory://test/modified?t=${timestamp}`)
+      );
+
+      editor.setModel({
+        original: originalModel,
+        modified: modifiedModel,
+      });
+
+      setTimeout(() => {
+        editor.layout();
+        log('Layout complete');
+        inspectEditor();
+      }, 100);
+    }
+
+    function testSmallDiff() {
+      log('\n=== Testing Small Diff ===');
+      const oldContent = `# Project Specification
+
+## Overview
+
+This is a comprehensive project specification document that contains many sections.
+The purpose of this document is to outline the requirements and design for our system.
+
+## Background
+
+The project was initiated in Q1 2024 to address several key business needs.
+We conducted extensive research and gathered requirements from stakeholders.
+
+## Requirements
+
+### Functional Requirements
+
+1. The system must support user authentication
+2. The system must provide real-time updates
+3. The system must handle concurrent users
+4. The system must maintain data integrity
+
+### Non-Functional Requirements
+
+1. Performance: Response time < 200ms
+2. Scalability: Support 10,000 concurrent users
+3. Availability: 99.9% uptime
+4. Security: Industry-standard encryption
+
+## Architecture
+
+### System Components
+
+The system consists of several key components:
+- Frontend application
+- Backend API server
+- Database cluster
+- Cache layer
+- Message queue
+
+### Data Flow
+
+Data flows through the system in the following manner:
+1. User makes a request
+2. Request is authenticated
+3. Request is processed by the API
+4. Data is retrieved from the database
+5. Response is returned to the user
+
+## Implementation
+
+### Phase 1
+
+Initial implementation will focus on core functionality.
+This includes user authentication and basic CRUD operations.
+
+### Phase 2
+
+Second phase will add advanced features like real-time updates.
+We will also implement caching and performance optimizations.
+
+### Phase 3
+
+Final phase will focus on scalability and reliability.
+This includes load balancing and failover mechanisms.
+
+## Testing
+
+### Unit Tests
+
+All components must have comprehensive unit test coverage.
+Target coverage is 80% or higher.
+
+### Integration Tests
+
+Integration tests will verify component interactions.
+These tests will run in a staging environment.
+
+### Performance Tests
+
+Load testing will be conducted to verify scalability.
+We will simulate up to 15,000 concurrent users.
+
+## Deployment
+
+### Staging Environment
+
+Changes will first be deployed to staging for validation.
+Staging environment mirrors production configuration.
+
+### Production Environment
+
+Production deployments will follow a blue-green strategy.
+This allows for zero-downtime deployments.
+
+## Monitoring
+
+### Metrics
+
+Key metrics to monitor:
+- Request latency
+- Error rates
+- CPU and memory usage
+- Database query performance
+
+### Alerts
+
+Alerts will be configured for:
+- High error rates
+- Slow response times
+- Resource exhaustion
+- Service unavailability
+
+## Conclusion
+
+This specification provides a comprehensive overview of the project.
+Implementation will proceed according to the outlined phases.`;
+
+      const newContent = `# Project Specification
+
+## Overview
+
+This is a comprehensive project specification document that contains many sections.
+The purpose of this document is to outline the requirements and design for our system.
+
+## Background
+
+The project was initiated in Q1 2024 to address several key business needs.
+We conducted extensive research and gathered requirements from stakeholders.
+
+## Requirements
+
+### Functional Requirements
+
+1. The system must support user authentication
+2. The system must provide real-time updates
+3. The system must handle concurrent users
+4. The system must maintain data integrity
+
+### Non-Functional Requirements
+
+1. Performance: Response time < 200ms
+2. Scalability: Support 10,000 concurrent users
+3. Availability: 99.9% uptime
+4. Security: Industry-standard encryption
+
+## Architecture
+
+### System Components
+
+The system consists of several key components:
+- Frontend application
+- Backend API server
+- Database cluster
+- Cache layer
+- Message queue
+
+### Data Flow
+
+Data flows through the system in the following manner:
+1. User makes a request
+2. Request is authenticated
+3. Request is processed by the API
+4. Data is retrieved from the database
+5. Response is returned to the user
+
+## Implementation
+
+### Phase 1
+
+Initial implementation will focus on core functionality.
+This includes user authentication and basic CRUD operations.
+
+### Phase 2
+
+Second phase will add REAL-TIME COLLABORATION features like live updates.
+We will also implement caching and performance optimizations.
+
+### Phase 3
+
+Final phase will focus on scalability and reliability.
+This includes load balancing and failover mechanisms.
+
+## Testing
+
+### Unit Tests
+
+All components must have comprehensive unit test coverage.
+Target coverage is 80% or higher.
+
+### Integration Tests
+
+Integration tests will verify component interactions.
+These tests will run in a staging environment.
+
+### Performance Tests
+
+Load testing will be conducted to verify scalability.
+We will simulate up to 15,000 concurrent users.
+
+## Deployment
+
+### Staging Environment
+
+Changes will first be deployed to staging for validation.
+Staging environment mirrors production configuration.
+
+### Production Environment
+
+Production deployments will follow a blue-green strategy.
+This allows for zero-downtime deployments.
+
+## Monitoring
+
+### Metrics
+
+Key metrics to monitor:
+- Request latency
+- Error rates
+- CPU and memory usage
+- Database query performance
+
+### Alerts
+
+Alerts will be configured for:
+- High error rates
+- Slow response times
+- Resource exhaustion
+- Service unavailability
+
+## Conclusion
+
+This specification provides a comprehensive overview of the project.
+Implementation will proceed according to the outlined phases.`;
+
+      createEditor(oldContent, newContent);
+    }
+
+    function testLargeDiff() {
+      log('\n=== Testing Large Diff ===');
+      const lines = [];
+      for (let i = 1; i <= 200; i++) {
+        lines.push(`Line ${i}: This is some content that represents a typical line in a document.`);
+      }
+      const oldContent = lines.join('\n');
+
+      // Change line 100
+      lines[99] = 'Line 100: THIS LINE WAS CHANGED - IT IS COMPLETELY DIFFERENT NOW';
+      const newContent = lines.join('\n');
+
+      createEditor(oldContent, newContent);
+    }
+
+    function inspectEditor() {
+      if (!editor) {
+        log('No editor created yet');
+        return;
+      }
+
+      const model = editor.getModel();
+      const container = document.getElementById('container');
+
+      // Check DOM elements
+      const diffEditor = container?.querySelector('.monaco-diff-editor');
+      const sideBySide = container?.querySelector('.side-by-side');
+      const insertDecorations = container?.querySelectorAll('.line-insert');
+      const deleteDecorations = container?.querySelectorAll('.line-delete');
+      const unchangedRegions = container?.querySelectorAll('.monaco-diff-hidden-lines');
+
+      // Get editor options
+      const hideUnchangedOption = editor.getOptions?.()?.get?.(monaco.editor.EditorOption.hideUnchangedRegions);
+
+      log('\n=== Editor Inspection ===');
+      log('Editor exists: ' + !!editor);
+      log('Model exists: ' + !!model);
+      log('Original model: ' + !!model?.original);
+      log('Modified model: ' + !!model?.modified);
+      log('\n=== DOM Elements ===');
+      log('Diff editor element: ' + !!diffEditor);
+      log('Side-by-side element: ' + !!sideBySide);
+      log('Insert decorations: ' + (insertDecorations?.length || 0));
+      log('Delete decorations: ' + (deleteDecorations?.length || 0));
+      log('Unchanged regions: ' + (unchangedRegions?.length || 0));
+      log('\n=== Editor Options ===');
+      log('hideUnchangedRegions: ' + JSON.stringify(hideUnchangedOption, null, 2));
+
+      // Make this available globally for CDP testing
+      window.editorInfo = {
+        hasEditor: !!editor,
+        hasModel: !!model,
+        hasOriginal: !!model?.original,
+        hasModified: !!model?.modified,
+        hasDiffEditor: !!diffEditor,
+        hasSideBySide: !!sideBySide,
+        insertCount: insertDecorations?.length || 0,
+        deleteCount: deleteDecorations?.length || 0,
+        unchangedRegionCount: unchangedRegions?.length || 0,
+        hideUnchangedOption: hideUnchangedOption,
+      };
+    }
+  </script>
+</body>
+</html>

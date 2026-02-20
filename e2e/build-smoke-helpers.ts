@@ -1,0 +1,1096 @@
+/**
+ * Build Smoke Test Helpers
+ *
+ * Utilities for running smoke tests against the packaged Electron app.
+ * Independent from the main e2e test-helpers — these target the packaged binary.
+ */
+
+import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import { execSync } from 'child_process';
+
+import {
+  existsSync,
+  readFileSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  createWriteStream,
+  appendFileSync,
+} from 'fs';
+import { homedir, tmpdir } from 'os';
+import { basename, join } from 'path';
+import { CODEX_MODELS } from '../src/shared/config/open-ai-codex-models';
+
+// ---------------------------------------------------------------------------
+// findPackagedApp
+// ---------------------------------------------------------------------------
+
+/**
+ * Locate the packaged Electron app binary in dist-electron/.
+ *
+ * Resolution order:
+ *  1. PACKAGED_APP_PATH env var (explicit override)
+ *  2. dist-electron/mac-arm64/Intent by Augment.app/Contents/MacOS/Intent by Augment
+ *  3. dist-electron/mac/Intent by Augment.app/Contents/MacOS/Intent by Augment
+ *
+ * Throws if no binary is found.
+ */
+export function findPackagedApp(): string {
+  const envPath = process.env.PACKAGED_APP_PATH;
+  if (envPath) {
+    if (!existsSync(envPath)) {
+      throw new Error(`PACKAGED_APP_PATH points to a missing file: ${envPath}`);
+    }
+    return envPath;
+  }
+
+  const root = process.cwd();
+  const candidates =
+    process.platform === 'win32'
+      ? [join(root, 'dist-electron', 'win-unpacked', 'Intent by Augment.exe')]
+      : [
+          join(
+            root,
+            'dist-electron',
+            'mac-arm64',
+            'Intent by Augment.app',
+            'Contents',
+            'MacOS',
+            'Intent by Augment',
+          ),
+          join(
+            root,
+            'dist-electron',
+            'mac',
+            'Intent by Augment.app',
+            'Contents',
+            'MacOS',
+            'Intent by Augment',
+          ),
+        ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    `Could not find packaged app. Looked in:\n${candidates.map((c) => `  - ${c}`).join('\n')}\n` +
+      'Set PACKAGED_APP_PATH to override.',
+  );
+}
+
+// ---------------------------------------------------------------------------
+// killExistingPackagedApp
+// ---------------------------------------------------------------------------
+
+/**
+ * Kill any running "Intent by Augment" processes to release the single instance lock.
+ * The packaged app uses app.requestSingleInstanceLock() which prevents a second
+ * instance from launching.
+ */
+async function killExistingPackagedApp(): Promise<void> {
+  console.log('⚠️  Killing existing "Intent by Augment" processes for clean test launch...');
+  if (process.platform === 'win32') {
+    try {
+      execSync('taskkill /F /IM "Intent by Augment.exe"', { stdio: 'ignore', windowsHide: true });
+    } catch {
+      // No matching processes — that's fine
+    }
+  } else {
+    try {
+      // Kill the main process
+      execSync('pkill -f "Intent by Augment"', { stdio: 'ignore' });
+    } catch {
+      // No matching processes — that's fine
+    }
+    // Also try killing by app bundle name (macOS)
+    try {
+      execSync('pkill -f "Intent by Augment.app"', { stdio: 'ignore' });
+    } catch {
+      // No matching processes
+    }
+  }
+  // Wait for processes to fully terminate and release the lock file
+  await new Promise((r) => setTimeout(r, 2000));
+}
+
+// ---------------------------------------------------------------------------
+// launchPackagedApp
+// ---------------------------------------------------------------------------
+
+export interface LaunchOptions {
+  /** Directory to use as the workspace root */
+  workspaceDir?: string;
+  /** Extra environment variables passed to the app */
+  extraEnv?: Record<string, string>;
+}
+
+/**
+ * Launch the packaged Electron app and wait for it to be ready.
+ *
+ * Returns the ElectronApplication handle, the first window Page, and paths
+ * to log files capturing the Electron main-process stdout/stderr and
+ * renderer console output.
+ */
+export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
+  app: ElectronApplication;
+  page: Page;
+  logPaths: { mainProcess: string; renderer: string };
+}> {
+  await killExistingPackagedApp();
+
+  const executablePath = findPackagedApp();
+
+  const app = await electron.launch({
+    executablePath,
+    args: [...(process.env.CI ? ['--disable-gpu', '--disable-software-rasterizer'] : [])],
+    env: {
+      ...process.env,
+      TESTING: 'true',
+      ...(options.workspaceDir ? { TEST_WORKSPACE_DIR: options.workspaceDir } : {}),
+      ...(options.extraEnv || {}),
+    },
+  });
+
+  // --- Capture Electron main-process stdout/stderr ---
+  const logDir = join(process.cwd(), 'e2e-reports', 'build-smoke');
+  mkdirSync(logDir, { recursive: true });
+
+  const mainProcessLogPath = join(logDir, 'electron-main-process.log');
+  const rendererLogPath = join(logDir, 'electron-renderer.log');
+
+  const proc = app.process();
+  const logStream = createWriteStream(mainProcessLogPath, { flags: 'w' });
+  if (proc.stdout) {
+    proc.stdout.pipe(logStream);
+  }
+  if (proc.stderr) {
+    proc.stderr.pipe(logStream);
+  }
+
+  const page = await app.firstWindow();
+
+  // --- Capture renderer console output ---
+  page.on('console', (msg) => {
+    const line = `[${msg.type()}] ${msg.text()}\n`;
+    try {
+      appendFileSync(rendererLogPath, line);
+    } catch {
+      // best-effort — don't let logging failures break the test
+    }
+  });
+  // The app has no data-testid="app-ready" attribute.
+  // Instead, wait for the splash screen to be removed (signals Svelte layout mounted)
+  // and then for the home page content to render.
+  await page.waitForFunction(() => document.getElementById('splash') === null, {
+    timeout: 30_000,
+  });
+  // Give the home page components time to initialize
+  await page.waitForTimeout(2_000);
+
+  // --- Handle first-run onboarding screen ("Choose your agent") ---
+  // On a fresh install with empty localStorage the app shows a ProviderStatusPanel
+  // instead of the normal home page.  Detect it and click through.
+  const onboardingHeading = page.locator('h1', { hasText: 'Choose your agent' });
+  const isOnboarding = await onboardingHeading.isVisible().catch(() => false);
+
+  if (isOnboarding) {
+    console.log('🆕 Onboarding screen detected — dismissing by clicking "Start using"');
+    const startBtn = page.locator('button', { hasText: 'Start using' }).first();
+    await startBtn.waitFor({ state: 'visible', timeout: 10_000 });
+    await startBtn.click();
+    // Wait for the onboarding panel to disappear and the normal home page to load
+    await onboardingHeading.waitFor({ state: 'hidden', timeout: 10_000 });
+    console.log('✅ Onboarding dismissed');
+  }
+
+  // --- Dismiss "Update check failed" toast if visible ---
+  // The auto-updater may show an error toast that can interfere with UI interactions.
+  try {
+    const toastClose = page.locator('[data-sonner-toast] button[data-close-button]').first();
+    const toastVisible = await toastClose.isVisible().catch(() => false);
+    if (toastVisible) {
+      console.log('🔕 Dismissing update-check toast');
+      await toastClose.click();
+      await page.waitForTimeout(500);
+    }
+  } catch {
+    // No toast or already gone — fine
+  }
+
+  return { app, page, logPaths: { mainProcess: mainProcessLogPath, renderer: rendererLogPath } };
+}
+
+// ---------------------------------------------------------------------------
+// createTempRepo
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a temporary git repository with an initial commit.
+ *
+ * Uses a **stable** path (`/tmp/build-smoke-repo`) so that stale localStorage
+ * references from a previous test run still point to a valid directory.
+ * The directory is deleted and recreated fresh each time.
+ *
+ * Returns the absolute path to the repo. The caller should call the returned
+ * `cleanup` function when done.
+ */
+export function createTempRepo(): { repoPath: string; cleanup: () => void } {
+  const repoPath = join(tmpdir(), 'build-smoke-repo');
+
+  // Delete any leftover directory from a previous run and recreate fresh
+  rmSync(repoPath, { recursive: true, force: true });
+  mkdirSync(repoPath, { recursive: true });
+
+  console.log(`📂 Created temp repo at stable path: ${repoPath}`);
+
+  execSync('git init', { cwd: repoPath, stdio: 'ignore' });
+  execSync('git config user.email "smoke-test@test.local"', { cwd: repoPath, stdio: 'ignore' });
+  execSync('git config user.name "Smoke Test"', { cwd: repoPath, stdio: 'ignore' });
+
+  writeFileSync(join(repoPath, 'README.md'), '');
+  execSync('git add .', { cwd: repoPath, stdio: 'ignore' });
+  execSync('git commit -m "initial commit"', { cwd: repoPath, stdio: 'ignore' });
+
+  const cleanup = () => {
+    try {
+      rmSync(repoPath, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  };
+
+  return { repoPath, cleanup };
+}
+
+// ---------------------------------------------------------------------------
+// createWorkspaceWithPrompt
+// ---------------------------------------------------------------------------
+
+export interface CreateWorkspaceOptions {
+  /** Absolute path to the git repo to use */
+  repoPath: string;
+  /** Prompt text to type into the workspace initializer */
+  prompt: string;
+}
+
+/**
+ * Create a new workspace from the homepage using the CompactWorkspaceInitializer.
+ *
+ * Strategy:
+ *  1. Pre-seed localStorage with the repo path so CompactWorkspaceInitializer
+ *     restores it on mount (no dropdown interaction needed)
+ *  2. Mock electronAPI.invoke('dialog:open') as fallback (correct format)
+ *  3. Focus the prompt textarea and type the prompt
+ *  4. Click "Create space"
+ *  5. Wait for navigation to /workspace/ and return the workspace ID
+ */
+export async function createWorkspaceWithPrompt(
+  page: Page,
+  options: CreateWorkspaceOptions,
+): Promise<string> {
+  const { repoPath, prompt } = options;
+
+  // Ensure we're on the home page before looking for the form
+  const baseUrl = await page.evaluate(() => window.location.origin);
+  await page.goto(`${baseUrl}/`);
+  await page.waitForLoadState('domcontentloaded');
+
+  // Clear ALL form-related localStorage keys to prevent stale state from a
+  // previous run.  CompactWorkspaceInitializer reads from TWO keys:
+  //   1. 'compact-workspace-initializer-state' (module-level, runs first)
+  //   2. 'workspace-initializer-last-repo' (onMount fallback, only if repoPath is empty)
+  // If key #1 has an old path the onMount fallback for key #2 never fires,
+  // so we must clear both and then seed both with the correct repo path.
+  await page.evaluate((path) => {
+    // Clear stale state
+    localStorage.removeItem('compact-workspace-initializer-state');
+    localStorage.removeItem('workspace-initializer-last-repo');
+
+    // Seed key #1 — read at module scope by loadSavedFormState()
+    localStorage.setItem(
+      'compact-workspace-initializer-state',
+      JSON.stringify({
+        repoPath: path,
+        repoType: 'local',
+        isNewRepo: false,
+        isValidPath: true,
+      }),
+    );
+
+    // Seed key #2 — read by onMount fallback
+    localStorage.setItem(
+      'workspace-initializer-last-repo',
+      JSON.stringify({
+        path,
+        type: 'local',
+        isNewRepo: false,
+        isValidPath: true,
+      }),
+    );
+  }, repoPath);
+
+  console.log(`📍 Seeded localStorage with repo path: ${repoPath}`);
+
+  // Reload so the component picks up the seeded localStorage values
+  await page.goto(`${baseUrl}/`);
+  await page.waitForLoadState('domcontentloaded');
+
+  // Mock the native folder picker dialog as a fallback in case the user
+  // clicks the folder picker button. RepoSelector.svelte expects
+  // { success: true, data: { canceled, filePaths } }.
+  await page.evaluate((path) => {
+    const originalInvoke = (window as any).electronAPI?.invoke;
+    if (originalInvoke) {
+      (window as any).electronAPI.invoke = async (channel: string, ...args: any[]) => {
+        if (channel === 'dialog:open') {
+          return { success: true, data: { canceled: false, filePaths: [path] } };
+        }
+        return originalInvoke(channel, ...args);
+      };
+    }
+  }, repoPath);
+
+  // Focus the TipTap rich-text editor and type the prompt.
+  // RichTextarea uses TipTap (contenteditable div), not a native <textarea>.
+  // The wrapper has role="textbox"; inside it TipTap creates a [contenteditable] div.
+  const editable = page.locator('[role="textbox"] [contenteditable="true"]').first();
+  await editable.waitFor({ state: 'visible', timeout: 10_000 });
+  await editable.click();
+  // Small delay to let TipTap focus handler settle
+  await page.waitForTimeout(300);
+  await page.keyboard.type(prompt, { delay: 10 });
+
+  // Wait for "Create space" button to be enabled before clicking.
+  // If the repo selector still shows an invalid/stale path the button stays
+  // disabled.  Waiting here gives a clear error instead of a silent no-op click.
+  const createBtn = page.locator('button', { hasText: 'Create space' });
+  await createBtn.waitFor({ state: 'visible', timeout: 10_000 });
+
+  try {
+    await page.waitForFunction(
+      () => {
+        const btn = [...document.querySelectorAll('button')].find((b) =>
+          b.textContent?.includes('Create space'),
+        );
+        return btn && !btn.disabled;
+      },
+      { timeout: 10_000 },
+    );
+  } catch {
+    // Take a screenshot for debugging before throwing
+    const enabled = await createBtn.isEnabled();
+    console.error(
+      `❌ "Create space" button enabled=${enabled} — repo selector may show stale path`,
+    );
+    throw new Error(
+      `"Create space" button is still disabled after 10s. ` +
+        `The repo selector likely shows a stale/invalid path. Repo path: ${repoPath}`,
+    );
+  }
+
+  console.log('✅ "Create space" button is enabled — clicking');
+  await createBtn.click();
+
+  // Wait for navigation to a workspace page and extract the workspace ID
+  await page.waitForURL(/\/workspace\//, { timeout: 30_000 });
+  const url = page.url();
+  const workspaceId = url.match(/\/workspace\/([^/?#]+)/)?.[1];
+  if (!workspaceId) {
+    throw new Error(`Failed to extract workspace ID from URL: ${url}`);
+  }
+  return workspaceId;
+}
+
+// ---------------------------------------------------------------------------
+// resolveWorktreeReadmePath
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the path to README.md inside the worktree that the app creates.
+ *
+ * The app creates a git worktree at:
+ *   ~/intent/workspaces/{workspaceId}/{repo-slug}/
+ *
+ * where repo-slug is the slugified last segment of the repo path, falling
+ * back to 'repo' if the slug doesn't exist on disk.
+ */
+export function resolveWorktreeReadmePath(workspaceId: string, repoPath: string): string {
+  const repoName = basename(repoPath);
+  const slugCandidate = repoName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+  const wsBase = join(homedir(), 'intent', 'workspaces', workspaceId);
+
+  const candidatePath = join(wsBase, slugCandidate, 'README.md');
+  if (existsSync(join(wsBase, slugCandidate))) {
+    return candidatePath;
+  }
+
+  // Fallback to 'repo' folder name
+  return join(wsBase, 'repo', 'README.md');
+}
+
+// ---------------------------------------------------------------------------
+// waitForFileContent
+// ---------------------------------------------------------------------------
+
+/**
+ * Poll the filesystem until a file contains the given pattern.
+ *
+ * Useful for verifying that an agent wrote expected content (e.g. "hello world"
+ * in README.md). Default timeout: 2 minutes.
+ */
+export async function waitForFileContent(
+  filePath: string,
+  pattern: string | RegExp,
+  timeout: number = 2 * 60 * 1000,
+): Promise<void> {
+  const pollInterval = 2_000;
+  const deadline = Date.now() + timeout;
+
+  while (Date.now() < deadline) {
+    try {
+      if (existsSync(filePath)) {
+        const content = readFileSync(filePath, 'utf-8');
+        const matches =
+          typeof pattern === 'string' ? content.includes(pattern) : pattern.test(content);
+        if (matches) return;
+      }
+    } catch {
+      // file may not exist yet — keep polling
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollInterval));
+  }
+
+  throw new Error(
+    `Timed out after ${timeout}ms waiting for ${filePath} to contain ${String(pattern)}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// sendFollowUpMessage
+// ---------------------------------------------------------------------------
+
+/**
+ * Send a follow-up message in the active workspace chat.
+ *
+ * Locates the TipTap rich-text input, types the message, and presses
+ * Cmd+Enter to send.  Best-effort — swallows errors so it can be used
+ * as a non-critical "nudge" to unblock stuck agents.
+ */
+export async function sendFollowUpMessage(page: Page, message: string): Promise<void> {
+  // The chat input is a TipTap/ProseMirror editor with class .tiptap-editor
+  // and contenteditable="true".  The parent SimpleRichInput has role="region",
+  // NOT role="textbox" (that's only on the workspace-initializer RichTextarea).
+  const editable = page.locator('.tiptap-editor[contenteditable="true"]').first();
+  const visible = await editable.isVisible({ timeout: 2_000 }).catch(() => false);
+  if (!visible) {
+    console.log('⚠️  Chat input not visible — skipping nudge');
+    return;
+  }
+  await editable.click();
+  await page.waitForTimeout(200);
+  await page.keyboard.type(message, { delay: 5 });
+  // Cmd+Enter to send (macOS)
+  await page.keyboard.press('Meta+Enter');
+  console.log(`💬 Sent follow-up nudge: "${message}"`);
+}
+
+// ---------------------------------------------------------------------------
+// waitForFileContentWithNudge
+// ---------------------------------------------------------------------------
+
+/**
+ * Like `waitForFileContent` but periodically sends a follow-up "nudge"
+ * message if the file hasn't been written yet.
+ *
+ * Some providers (e.g. opencode) may pause waiting for user approval.
+ * The nudge tells the agent to proceed.
+ */
+export async function waitForFileContentWithNudge(
+  page: Page,
+  filePath: string,
+  pattern: string | RegExp,
+  timeout: number = 2 * 60 * 1000,
+  nudgeMessage: string = 'go ahead, proceed with the plan',
+): Promise<void> {
+  const pollInterval = 2_000;
+  const nudgeInterval = 30_000; // Send a nudge every 30s
+  const deadline = Date.now() + timeout;
+  let lastNudge = Date.now(); // Don't nudge immediately — give the agent a chance
+  let nudgeCount = 0;
+  const MAX_NUDGES = 3;
+  let pollCount = 0;
+
+  while (Date.now() < deadline) {
+    try {
+      if (existsSync(filePath)) {
+        const content = readFileSync(filePath, 'utf-8');
+        const matches =
+          typeof pattern === 'string' ? content.includes(pattern) : pattern.test(content);
+        if (matches) return;
+      }
+    } catch {
+      // file may not exist yet — keep polling
+    }
+
+    pollCount++;
+
+    // If enough time has passed without progress, send a nudge
+    if (nudgeCount < MAX_NUDGES && Date.now() - lastNudge >= nudgeInterval) {
+      try {
+        await sendFollowUpMessage(page, nudgeMessage);
+        nudgeCount++;
+        lastNudge = Date.now();
+      } catch {
+        // nudge is best-effort
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollInterval));
+  }
+
+  throw new Error(
+    `Timed out after ${timeout}ms waiting for ${filePath} to contain ${String(pattern)}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// waitForAgentCompletion
+// ---------------------------------------------------------------------------
+
+/**
+ * Poll agent sessions via IPC until ALL agents have finished streaming.
+ *
+ * Uses `page.evaluate()` to call `electronAPI.invoke('agent:list-sessions', workspaceId)`
+ * which queries the in-memory unified state store for accurate `isStreaming` state.
+ * (The on-disk JSON `status` field is never updated when agents complete, so disk
+ * polling does not work.)
+ *
+ * Falls back to UI-based detection if the IPC call consistently fails (e.g. when
+ * the agent backend service is unavailable in the packaged build).
+ *
+ * Polls every 2 seconds. Resolves when all agents are settled or timeout expires.
+ */
+export async function waitForAgentCompletion(
+  page: Page,
+  workspaceId: string,
+  timeout: number = 2 * 60 * 1000,
+): Promise<void> {
+  const pollInterval = 2_000;
+  const deadline = Date.now() + timeout;
+  let consecutiveIpcFailures = 0;
+  const IPC_FAILURE_THRESHOLD = 5; // Switch to UI fallback after 5 consecutive IPC failures
+
+  console.log(`⏳ Waiting for agents to complete (timeout: ${(timeout / 1000).toFixed(0)}s)...`);
+
+  if (process.env.CI) {
+    console.log('⏩ CI detected — skipping IPC polling, using UI-based agent completion detection');
+    await waitForAgentCompletionViaUI(page, deadline);
+    return;
+  }
+
+  while (Date.now() < deadline) {
+    // If IPC is consistently broken, fall back to UI-based detection
+    if (consecutiveIpcFailures >= IPC_FAILURE_THRESHOLD) {
+      console.log('⚠️  IPC agent polling failed repeatedly — switching to UI-based detection');
+      await waitForAgentCompletionViaUI(page, deadline);
+      return;
+    }
+
+    try {
+      const agentInfo = await page.evaluate(async (wsId) => {
+        const response = await (window as any).electronAPI.invoke('agent:list-sessions', wsId);
+        const data = response?.data;
+        // Handle both response shapes: data may be AgentSession[] or { agents: AgentSession[] }
+        const sessions: any[] = Array.isArray(data) ? data : data?.agents || [];
+        return {
+          total: sessions.length,
+          streaming: sessions.filter((s: any) => s.isStreaming).length,
+          agents: sessions.map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            isStreaming: !!s.isStreaming,
+          })),
+        };
+      }, workspaceId);
+
+      consecutiveIpcFailures = 0; // Reset on success
+
+      console.log(`🔄 Agents: ${agentInfo.total} total, ${agentInfo.streaming} still streaming`);
+
+      if (agentInfo.total > 0 && agentInfo.streaming === 0) {
+        console.log('✅ All agents have completed');
+        return;
+      }
+    } catch (err) {
+      consecutiveIpcFailures++;
+      console.log(
+        `🔄 Polling error (${consecutiveIpcFailures}/${IPC_FAILURE_THRESHOLD} before UI fallback): ${err}`,
+      );
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollInterval));
+  }
+
+  console.warn('⚠️  Timed out waiting for agents to complete — proceeding anyway');
+}
+
+/**
+ * UI-based fallback for detecting agent completion.
+ *
+ * Checks the page for visual indicators that agents have finished:
+ * - No spinning/loading indicators in the agent sidebar
+ * - Agent chat shows a final message (not streaming)
+ * - The "Send message" button is present (chat is idle)
+ *
+ * This is less precise than IPC polling but works when the agent backend
+ * service is unavailable.
+ */
+async function waitForAgentCompletionViaUI(page: Page, deadline: number): Promise<void> {
+  const pollInterval = 3_000;
+
+  while (Date.now() < deadline) {
+    try {
+      // Check if there are any streaming indicators visible.
+      // Agents that are actively streaming show a pulsing dot or spinner.
+      const hasStreamingIndicator = await page
+        .locator('[data-streaming="true"], .animate-pulse, [data-agent-status="streaming"]')
+        .first()
+        .isVisible({ timeout: 1_000 })
+        .catch(() => false);
+
+      if (!hasStreamingIndicator) {
+        // Double-check: the chat input should be enabled (not disabled) when agents are idle
+        const sendButtonDisabled = await page
+          .locator('button:has-text("Send message")[disabled]')
+          .isVisible({ timeout: 1_000 })
+          .catch(() => false);
+
+        // If send button is disabled, the agent might still be processing
+        // But if there's no streaming indicator AND the page looks settled, we're done
+        if (!sendButtonDisabled) {
+          console.log('✅ All agents appear complete (UI-based detection)');
+          return;
+        }
+
+        // Even with disabled send button, if no streaming indicators, give it one more check
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        const stillStreaming = await page
+          .locator('[data-streaming="true"], .animate-pulse, [data-agent-status="streaming"]')
+          .first()
+          .isVisible({ timeout: 1_000 })
+          .catch(() => false);
+
+        if (!stillStreaming) {
+          console.log('✅ All agents appear complete (UI-based detection, confirmed)');
+          return;
+        }
+      }
+    } catch (err) {
+      console.log(`🔄 UI polling error (will retry): ${err}`);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollInterval));
+  }
+
+  console.warn('⚠️  Timed out waiting for agents (UI-based) — proceeding anyway');
+}
+
+// ---------------------------------------------------------------------------
+// getAvailableProviders (IPC-based)
+// ---------------------------------------------------------------------------
+
+/**
+ * Detect which providers are available using the `providers:get-availability`
+ * IPC channel.
+ *
+ * Returns a Set of provider IDs (e.g. `new Set(['auggie', 'claude-code'])`).
+ */
+export async function getAvailableProviders(page: Page): Promise<Set<string>> {
+  // Clear stale workspace state from localStorage to prevent ErrorBoundary
+  // from blocking the page.
+  await page.evaluate(() => {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith('workspace:')) keysToRemove.push(key);
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+  });
+
+  const result = await page.evaluate(async () => {
+    const response = await (window as any).electronAPI.invoke('providers:get-availability');
+    return response?.data;
+  });
+
+  const available = new Set<string>();
+  const keyMap: Record<string, string> = {
+    auggie: 'auggie',
+    claudeCode: 'claude-code',
+    codex: 'codex',
+    opencode: 'opencode',
+  };
+
+  for (const [key, providerId] of Object.entries(keyMap)) {
+    if (result?.providers?.[key]?.available) {
+      available.add(providerId);
+    }
+  }
+
+  return available;
+}
+
+// ---------------------------------------------------------------------------
+// switchProviderViaLocalStorage
+// ---------------------------------------------------------------------------
+
+/**
+ * Switch the active provider by writing to localStorage and reloading.
+ *
+ * The active provider is stored under the `workspaces-active-provider` key
+ * (see `src/lib/stores/active-provider.store.svelte.ts`).
+ */
+export async function switchProviderViaLocalStorage(page: Page, providerId: string): Promise<void> {
+  await page.evaluate((id) => {
+    localStorage.setItem('workspaces-active-provider', id);
+  }, providerId);
+
+  await page.reload();
+  await page.waitForLoadState('domcontentloaded');
+
+  // Verify the switch actually took effect.  If localStorage was cleared by
+  // the reload (unlikely but observed), retry once.
+  const actual = await page.evaluate(() => localStorage.getItem('workspaces-active-provider'));
+  if (actual !== providerId) {
+    console.warn(
+      `⚠️  Provider switch verification failed: expected '${providerId}', got '${actual}' — retrying`,
+    );
+    await page.evaluate((id) => {
+      localStorage.setItem('workspaces-active-provider', id);
+    }, providerId);
+    await page.reload();
+    await page.waitForLoadState('domcontentloaded');
+
+    const retry = await page.evaluate(() => localStorage.getItem('workspaces-active-provider'));
+    if (retry !== providerId) {
+      throw new Error(
+        `Provider switch failed after retry: expected '${providerId}', got '${retry}'`,
+      );
+    }
+  }
+  console.log(`🔄 Switched provider to: ${providerId}`);
+}
+
+// ---------------------------------------------------------------------------
+// setSpecialistModelOverrides
+// ---------------------------------------------------------------------------
+
+/**
+ * Set specialist model overrides via electron-store IPC.
+ *
+ * Writes to the `specialists-overrides` electron-store key, which is read by
+ * `SpecialistsStore.loadOverrides()` on init and by `getUserModelOverride()`
+ * in the main process.  This is the correct way to override the model used
+ * by `InitialAgentPicker.resolveEffectiveModel()` — localStorage-based
+ * overrides are ignored.
+ *
+ * @param page      Playwright Page with access to `window.electronAPI`
+ * @param overrides Map of specialist ID → model ID (e.g. `{ 'spec-writer': 'codex:gpt-5.2-codex' }`)
+ */
+export async function setSpecialistModelOverrides(
+  page: Page,
+  overrides: Record<string, string>,
+): Promise<void> {
+  await page.evaluate(async (modelOverrides) => {
+    await (window as any).electronAPI.invoke('settings:set', {
+      key: 'specialists-overrides',
+      value: {
+        modelOverrides,
+        behaviorPromptOverrides: {},
+      },
+    });
+  }, overrides);
+
+  // Reload so SpecialistsStore.loadOverrides() picks up the new values
+  await page.reload();
+  await page.waitForLoadState('domcontentloaded');
+}
+
+// ---------------------------------------------------------------------------
+// setCodexModelViaSettingsUI
+// ---------------------------------------------------------------------------
+
+/**
+ * Set the codex model for default, Coordinator, and Implementor specialists
+ * by navigating through the Settings UI — the same way a real user would.
+ *
+ * The electron-store IPC approach does not work because the Svelte reactivity
+ * system and SpecialistsStore singleton initialization ignore programmatic
+ * writes. This function clicks through the actual Settings page instead.
+ *
+ * @param page  Playwright Page
+ * @param model Compound model ID (e.g. `codex:gpt-5.2-codex`)
+ */
+export async function setCodexModelViaSettingsUI(page: Page, model: string): Promise<void> {
+  // 1. Parse the model ID: strip the "codex:" prefix and look up the display label
+  const rawModelId = model.startsWith('codex:') ? model.slice('codex:'.length) : model;
+  const modelEntry = CODEX_MODELS[rawModelId];
+  if (!modelEntry) {
+    throw new Error(
+      `Unknown codex model ID "${rawModelId}". Known models: ${Object.keys(CODEX_MODELS).join(', ')}`,
+    );
+  }
+  const modelLabel = modelEntry.label;
+  console.log(`🔧 Setting codex model via Settings UI: ${rawModelId} → "${modelLabel}"`);
+
+  // Helper: select a model from a ModelPicker dropdown within a container
+  async function selectModelInDropdown(
+    container: ReturnType<Page['locator']>,
+    label: string,
+  ): Promise<void> {
+    const trigger = container.locator('button[aria-haspopup="listbox"]').first();
+    await trigger.waitFor({ state: 'visible', timeout: 5_000 });
+    await trigger.click();
+    // Wait for the dropdown options to appear and click the matching one
+    const option = page.getByText(label, { exact: true }).first();
+    await option.waitFor({ state: 'visible', timeout: 5_000 });
+    await option.click();
+    // Small delay for store persistence
+    await page.waitForTimeout(500);
+  }
+
+  // 2. Navigate to Settings
+  const baseUrl = await page.evaluate(() => window.location.origin);
+  await page.goto(`${baseUrl}/settings`);
+  await page.waitForLoadState('domcontentloaded');
+
+  // 3. Click the "Agents" tab
+  const agentsTab = page.locator('button', { hasText: 'Agents' }).first();
+  await agentsTab.waitFor({ state: 'visible', timeout: 5_000 });
+  await agentsTab.click();
+  await page.waitForTimeout(500);
+
+  // 4. Set the Default Model ("All agents" view is selected by default)
+  //    The editor panel has a section with id="default-model" containing the ModelPicker
+  const defaultModelSection = page.locator('#default-model');
+  await defaultModelSection.waitFor({ state: 'visible', timeout: 5_000 });
+  await selectModelInDropdown(defaultModelSection, modelLabel);
+  console.log(`  ✅ Default model set to "${modelLabel}"`);
+
+  // 5. Set Coordinator model
+  const coordinatorBtn = page.locator('button').filter({ hasText: 'Coordinator' }).first();
+  await coordinatorBtn.waitFor({ state: 'visible', timeout: 5_000 });
+  await coordinatorBtn.click();
+  await page.waitForTimeout(500);
+  // Wait for the specialist editor to show "Coordinator"
+  await page
+    .locator('h2', { hasText: 'Coordinator' })
+    .first()
+    .waitFor({ state: 'visible', timeout: 5_000 });
+  // The specialist editor panel is the .editor-container
+  const editorPanel = page.locator('.editor-container');
+  await selectModelInDropdown(editorPanel, modelLabel);
+  console.log(`  ✅ Coordinator model set to "${modelLabel}"`);
+
+  // 6. Set Implementor model
+  const implementorBtn = page.locator('button').filter({ hasText: 'Implementor' }).first();
+  await implementorBtn.waitFor({ state: 'visible', timeout: 5_000 });
+  await implementorBtn.click();
+  await page.waitForTimeout(500);
+  // Wait for the specialist editor to show "Implementor"
+  await page
+    .locator('h2', { hasText: 'Implementor' })
+    .first()
+    .waitFor({ state: 'visible', timeout: 5_000 });
+  await selectModelInDropdown(editorPanel, modelLabel);
+  console.log(`  ✅ Implementor model set to "${modelLabel}"`);
+
+  // 7. Navigate back to home
+  await page.goto(`${baseUrl}/`);
+  await page.waitForLoadState('domcontentloaded');
+  console.log(`  ✅ Navigated back to home`);
+}
+
+// ---------------------------------------------------------------------------
+// startPermissionAutoApprover
+// ---------------------------------------------------------------------------
+
+/**
+ * Start auto-approving permission requests via IPC polling.
+ *
+ * Polls `permission:get-pending` every 2 seconds and responds to each pending
+ * request by selecting the option whose `id` includes `'allow'` (falling back
+ * to the first option).
+ *
+ * Returns a cleanup function that stops the polling.
+ */
+export function startPermissionAutoApprover(page: Page): () => void {
+  const interval = setInterval(async () => {
+    try {
+      const approved = await page.evaluate(async () => {
+        const resp = await (window as any).electronAPI.invoke('permission:get-pending');
+        if (!resp?.success || !resp?.requests?.length) return 0;
+        let count = 0;
+        for (const req of resp.requests) {
+          const allowOpt = req.options.find((o: any) => o.id.includes('allow')) || req.options[0];
+          if (allowOpt) {
+            await (window as any).electronAPI.invoke('permission:respond', {
+              requestId: req.requestId,
+              outcome: { outcome: 'selected', optionId: allowOpt.id },
+            });
+            count++;
+          }
+        }
+        return count;
+      });
+      if (approved > 0) console.log(`🔓 Auto-approved ${approved} permission request(s)`);
+    } catch {
+      /* best-effort */
+    }
+  }, 2000);
+  return () => clearInterval(interval);
+}
+
+// ---------------------------------------------------------------------------
+// startChatNudgeMonitor
+// ---------------------------------------------------------------------------
+
+/**
+ * Reactively monitor the chat thread for the coordinator asking for approval.
+ *
+ * Unlike the fixed-timer nudge in `waitForFileContentWithNudge`, this runs as
+ * a background poller (every 5 s) that actually inspects the last assistant
+ * message.  When the agent has stopped streaming *and* the message text looks
+ * like it is asking for permission / approval / confirmation, a follow-up
+ * message is sent immediately.
+ *
+ * Keeps a set of already-nudged message IDs so it never double-taps.
+ *
+ * Returns a cleanup function that stops the monitoring.
+ */
+export function startChatNudgeMonitor(
+  page: Page,
+  nudgeMessage: string = 'Approved. I approve the plan. Proceed immediately without waiting for further approval.',
+): () => void {
+  const respondedTo = new Set<string>();
+
+  const PERMISSION_KEYWORDS = [
+    'approval',
+    'approve',
+    'permission',
+    'confirm',
+    'shall i',
+    'should i',
+    'do you want',
+    'would you like',
+    'waiting for',
+    'before i',
+    'let me know',
+    'ready to proceed',
+    'want me to',
+    'proceed with',
+    'review the plan',
+    'look good',
+    'go ahead',
+  ];
+
+  const interval = setInterval(async () => {
+    try {
+      // 1. Check if an agent is still actively streaming -- if so, leave it alone.
+      const streaming = await page
+        .locator('[data-streaming="true"], .animate-pulse, [data-agent-status="streaming"]')
+        .first()
+        .isVisible({ timeout: 1_000 })
+        .catch(() => false);
+      if (streaming) return;
+
+      // 2. Grab the last assistant message element.
+      const lastAssistant = page.locator('[data-message-role="assistant"]').last();
+      const visible = await lastAssistant.isVisible({ timeout: 1_000 }).catch(() => false);
+      if (!visible) return;
+
+      const messageId = await lastAssistant.getAttribute('data-message-id').catch(() => null);
+      if (!messageId || respondedTo.has(messageId)) return;
+
+      // 3. Read the text and check for approval-seeking language.
+      const text = await lastAssistant.innerText({ timeout: 2_000 }).catch(() => '');
+      if (!text) return;
+
+      const lower = text.toLowerCase();
+      const isAskingForApproval = PERMISSION_KEYWORDS.some((kw) => lower.includes(kw));
+      if (!isAskingForApproval) return;
+
+      // 4. Agent stopped streaming and is asking for approval -- nudge it.
+      respondedTo.add(messageId);
+      console.log(
+        `[nudge-monitor] Coordinator appears to be waiting for approval (msg ${messageId}), sending nudge...`,
+      );
+      await sendFollowUpMessage(page, nudgeMessage);
+    } catch {
+      /* best-effort */
+    }
+  }, 5_000);
+
+  return () => clearInterval(interval);
+}
+
+// ---------------------------------------------------------------------------
+// archiveAndGoHome
+// ---------------------------------------------------------------------------
+
+/**
+ * Archive the current workspace via IPC and navigate back to the homepage.
+ *
+ * This cleans up the workspace between provider tests so each provider
+ * starts fresh from the home screen.  We first attempt to stop all running
+ * agents so that the Electron `before-quit` handler won't detect active
+ * streams and show a blocking "Quit anyway?" dialog.
+ */
+export async function archiveAndGoHome(page: Page, workspaceId: string): Promise<void> {
+  console.log(`🗄️  Archiving workspace ${workspaceId}...`);
+
+  // Best-effort: stop any still-running agents before archive.
+  // The IPC may fail (agent backend is flaky in packaged builds) — that's OK.
+  try {
+    await page.evaluate(async (wsId) => {
+      // Try listing agents and stopping each one
+      try {
+        const resp = await (window as any).electronAPI.invoke('agent:list-sessions', wsId);
+        const data = resp?.data;
+        const sessions: any[] = Array.isArray(data) ? data : data?.agents || [];
+        for (const s of sessions) {
+          if (s.isStreaming && s.id) {
+            await (window as any).electronAPI
+              .invoke('agent:stop', { agentId: s.id })
+              .catch(() => {});
+          }
+        }
+      } catch {
+        // IPC may not work — proceed with archive anyway
+      }
+    }, workspaceId);
+  } catch {
+    // Page may be in a bad state — proceed
+  }
+
+  // Archive the workspace via IPC
+  await page.evaluate((id) => {
+    return (window as any).electronAPI.invoke('workspace:archive', { id });
+  }, workspaceId);
+
+  // Brief settle time for background processes to wind down
+  await new Promise((r) => setTimeout(r, 2_000));
+
+  // Navigate to homepage
+  const baseUrl = await page.evaluate(() => window.location.origin);
+  await page.goto(`${baseUrl}/`);
+  await page.waitForLoadState('domcontentloaded');
+
+  console.log('🏠 Navigated to homepage');
+}

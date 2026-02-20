@@ -1,0 +1,58 @@
+.custom-task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0;
+  position: relative;
+}
+
+.task-checkbox {
+  margin-top: 3px;
+  cursor: pointer;
+}
+
+.task-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-actions {
+  display: flex;
+  gap: 4px;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--background, white);
+  padding: 2px;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.task-action-btn {
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid var(--border, #e5e5e5);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.task-action-btn:hover {
+  background: var(--muted, #f5f5f5);
+  border-color: var(--primary, #3b82f6);
+}
+
+.task-agent-card {
+  margin-top: 8px;
+  margin-left: 24px;
+  padding: 8px;
+  background: var(--muted, #f5f5f5);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.agent-indicator {
+  color: var(--muted-foreground, #666);
+}

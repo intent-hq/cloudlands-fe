@@ -1,0 +1,23 @@
+# Test Configuration using echo instead of auggie
+# This allows testing the parallel runner without actually calling AI agents
+
+title: "Test Echo Wave"
+description: "Test the parallel runner using echo commands"
+
+packages:
+  - id: "echo1"
+    name: "Echo Task 1"
+    description: "First echo task"
+
+  - id: "echo2"
+    name: "Echo Task 2"
+    description: "Second echo task"
+
+  - id: "echo3"
+    name: "Echo Task 3"
+    description: "Third echo task depends on 1 and 2"
+    dependencies: ["echo1", "echo2"]
+
+config:
+  maxParallel: 2
+  timeoutMinutes: 1

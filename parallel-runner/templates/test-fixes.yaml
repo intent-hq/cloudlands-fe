@@ -1,0 +1,45 @@
+# Test Fixes Template
+# Reusable prompts for fixing test failures
+
+packageDefaults:
+  timeout: 20
+  retries: 3
+
+prompts:
+  - name: "setup"
+    template: |
+      You are fixing test failures in {package_name}.
+
+      Focus on making tests pass without breaking functionality.
+
+  - name: "analyze"
+    template: |
+      Analyze test failures:
+
+      1. Run the tests for this package
+      2. Identify why tests are failing
+      3. Determine if it's a test issue or code issue
+
+  - name: "fix"
+    template: |
+      Fix the test failures:
+
+      {package_description}
+
+      Approaches:
+      - Update test expectations if behavior changed
+      - Fix mock data if it's outdated
+      - Add missing test setup/teardown
+      - Fix actual bugs if found
+
+  - name: "verify"
+    template: |
+      Verify all tests pass:
+
+      1. Run the specific test suite
+      2. Ensure no new failures
+      3. Check test coverage if available
+
+config:
+  runTests: true
+  continueOnError: true

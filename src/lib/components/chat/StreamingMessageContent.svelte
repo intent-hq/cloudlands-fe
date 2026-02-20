@@ -1,0 +1,572 @@
+<script lang="ts">
+  import type { ContentBlock, ToolUseBlock, ToolResultBlock } from '$shared/types';
+  import type { DiagramPrimitive } from '$shared/types/notes-primitives';
+  import ToolCall from './ToolCall.svelte';
+  import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
+  import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
+  import AugmentCodeSnippet from '$lib/components/editor/AugmentCodeSnippet.svelte';
+  import DigestCard from './DigestCard.svelte';
+  import ChatDiffViewer from './ChatDiffViewer.svelte';
+  import { PatchBlockContent } from '$lib/components/ui/diff';
+  import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
+  import Fa from 'svelte-fa';
+  import { faCode, faTerminal, faRobot } from '@fortawesome/free-solid-svg-icons';
+  import SetupScriptCard from './SetupScriptCard.svelte';
+  import ThinkingBlock from './ThinkingBlock.svelte';
+  import { parseAgentMessage, parseSuggestedPrompts } from '$lib/utils/messageParser';
+  import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
+  import { createLogger } from '$lib/utils/client-logger';
+  import { onDestroy } from 'svelte';
+
+  // Dynamically import MermaidRenderer to reduce bundle size (used infrequently)
+  const MermaidRenderer = import('$lib/components/markdown/MermaidRenderer.svelte');
+
+  const logger = createLogger('StreamingMessageContent');
+
+  interface Props {
+    content: ContentBlock[];
+    isStreaming?: boolean;
+    hideToolCalls?: boolean;
+    hideSetupScripts?: boolean;
+    onSetupScriptGenerated?: (script: {
+      name: string;
+      description: string;
+      content: string;
+    }) => void;
+  }
+
+  let {
+    content,
+    isStreaming = false,
+    hideToolCalls = false,
+    hideSetupScripts = false,
+    onSetupScriptGenerated,
+  }: Props = $props();
+
+  // OPTIMIZATION: Use $derived instead of $effect to avoid triggering re-renders
+  let cleanupFunctions: Array<() => void> = [];
+
+  // Cleanup on component destroy
+  onDestroy(() => {
+    cleanupFunctions.forEach((cleanup) => cleanup());
+    cleanupFunctions = [];
+  });
+
+  // Use $derived.by for synchronous computation without side effects
+  let blocks = $derived.by(() => {
+    const rawBlocks = content || [];
+
+    // DEBUG: Log content block types for tool call visibility debugging
+    if (isStreaming) {
+      const blockTypes = rawBlocks.map((b) => b.type);
+      const hasToolUse = blockTypes.includes('tool_use');
+      if (hasToolUse) {
+        logger.debug('[StreamingMessageContent] blocks derived - has tool_use', {
+          blockCount: rawBlocks.length,
+          blockTypes,
+          hideToolCalls,
+        });
+      }
+    }
+
+    if (!isStreaming) {
+      // Not streaming - do full processing
+      // Filter out malformed tool_result blocks, empty text blocks, and optionally tool_use blocks
+      return rawBlocks.filter((block) => {
+        // Filter out tool_use blocks if hideToolCalls is true
+        if (hideToolCalls && block.type === 'tool_use') {
+          return false;
+        }
+
+        // Filter out empty text blocks (prevents blank spots in chat history)
+        // Also strip suggested prompts before checking - they're rendered separately in ChatPanel
+        if (block.type === 'text') {
+          const text = block.text || (block as any).content || '';
+          const { cleanedContent } = parseSuggestedPrompts(text);
+          if (!cleanedContent.trim()) {
+            return false;
+          }
+        }
+
+        if (block.type === 'tool_result') {
+          // Also hide tool_result blocks if hideToolCalls is true
+          if (hideToolCalls) {
+            return false;
+          }
+
+          const resultBlock = block as ToolResultBlock;
+          if (typeof resultBlock.content === 'string') {
+            const contentStr = resultBlock.content;
+            if (contentStr.includes('\u001b[') || contentStr.includes('🔧 Tool call:')) {
+              return false;
+            }
+          }
+        }
+        return true;
+      });
+    } else {
+      // Streaming with content blocks - filter empty text blocks and optionally tool calls
+      return rawBlocks.filter((block) => {
+        // Filter out tool calls if requested
+        if (hideToolCalls && (block.type === 'tool_use' || block.type === 'tool_result')) {
+          return false;
+        }
+        // Filter out empty text blocks during streaming (prevents spacing issues between tool calls)
+        // Also strip suggested prompts before checking - they're rendered separately in ChatPanel
+        if (block.type === 'text') {
+          const text = block.text || (block as any).content || '';
+          const { cleanedContent } = parseSuggestedPrompts(text);
+          if (!cleanedContent.trim()) {
+            return false;
+          }
+        }
+        return true;
+      });
+    }
+  });
+
+  // Track tool states
+  let toolStates = $state<Map<string, 'running' | 'completed' | 'error'>>(new Map());
+
+  // Update tool states based on content
+  $effect(() => {
+    // First pass: collect all tool results with valid tool_use_id
+    const resultsMap = new Map<string, ToolResultBlock>();
+    for (const block of blocks) {
+      if (block.type === 'tool_result') {
+        const resultBlock = block as ToolResultBlock;
+        if (resultBlock.tool_use_id) {
+          resultsMap.set(resultBlock.tool_use_id, resultBlock);
+        }
+      }
+    }
+
+    // Second pass: match error results with empty tool_use_id to preceding tool_use
+    // This handles the case where error results don't have proper IDs
+    // SAFEGUARD: Only match if there's no other tool_use between the error and its target
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i];
+      if (block.type === 'tool_result') {
+        const resultBlock = block as ToolResultBlock;
+        const isError = resultBlock.is_error || (resultBlock as any).isError;
+        // Only do position-based matching for error results with empty ID
+        if (isError && !resultBlock.tool_use_id) {
+          // Find the immediately preceding tool_use that doesn't have a result
+          // Stop if we encounter another tool_use (to avoid misattribution)
+          for (let j = i - 1; j >= 0; j--) {
+            const prevBlock = blocks[j];
+            if (prevBlock.type === 'tool_use') {
+              const toolBlock = prevBlock as ToolUseBlock;
+              if (!resultsMap.has(toolBlock.id)) {
+                // Match this error result to the preceding tool_use
+                resultsMap.set(toolBlock.id, resultBlock);
+              }
+              // Always break on first tool_use found - either we matched it or it
+              // already has a result, in which case we can't safely attribute this error
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    // Third pass: set tool states based on whether they have results
+    const newToolStates = new Map<string, 'running' | 'completed' | 'error'>();
+
+    for (const block of blocks) {
+      if (block.type === 'tool_use') {
+        const toolBlock = block as ToolUseBlock;
+        // If there's a result for this tool, mark as completed/error
+        // If streaming is done but no result, mark as completed (result may have been lost)
+        // Otherwise mark as running
+        const result = resultsMap.get(toolBlock.id);
+        if (result) {
+          // Check both snake_case and camelCase for error flag
+          const isError = result.is_error || (result as any).isError;
+          // Also detect errors from content text (e.g., "Error:" prefix or "Tool Error:")
+          // Note: We no longer check for ❌ emoji as it may be used as a visual indicator in content
+          const contentText = typeof result.content === 'string' ? result.content : '';
+          const hasErrorInContent =
+            contentText.startsWith('Error:') || contentText.includes('Tool Error:');
+          newToolStates.set(toolBlock.id, isError || hasErrorInContent ? 'error' : 'completed');
+        } else if (!isStreaming) {
+          // Streaming finished but no result - mark as completed anyway
+          newToolStates.set(toolBlock.id, 'completed');
+        } else {
+          newToolStates.set(toolBlock.id, 'running');
+        }
+      }
+    }
+
+    // Update state with new maps to trigger reactivity
+    toolStates = newToolStates;
+  });
+
+  // No need for manual markdown processing - MarkdownViewer handles it
+
+  // Handle file opening from AugmentCodeSnippet
+  function handleOpenFile(detail: {
+    path: string;
+    openInAdjacentPanel?: boolean;
+    sourcePanelId?: string;
+  }) {
+    logger.info('Opening file from code snippet', detail);
+    // Dispatch workspace:open-file event with openInAdjacentPanel and sourcePanelId for panel layout support
+    const event = new CustomEvent('workspace:open-file', {
+      detail: {
+        path: detail.path,
+        openInAdjacentPanel: detail.openInAdjacentPanel ?? false,
+        sourcePanelId: detail.sourcePanelId,
+      },
+    });
+    window.dispatchEvent(event);
+  }
+
+  // Handle diagram binding clicks (file, note, etc.)
+  function handleDiagramBindingClick(e: MouseEvent, binding: { type: string; target: string }) {
+    logger.info('Diagram binding clicked', binding);
+    const openInAdjacentPanel = e.metaKey || e.ctrlKey;
+    const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
+    const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
+    if (binding.type === 'file') {
+      handleOpenFile({ path: binding.target, openInAdjacentPanel, sourcePanelId });
+    } else if (binding.type === 'note') {
+      window.dispatchEvent(
+        new CustomEvent('workspace:open-note', {
+          detail: { noteId: binding.target, openInAdjacentPanel, sourcePanelId },
+        }),
+      );
+    }
+  }
+
+  // Parse text blocks to extract augment_code_snippet blocks, digests, and setup scripts
+  // PERFORMANCE: Memoize results to avoid re-parsing on every render
+  type ParsedTextResult = {
+    blocks: ReturnType<typeof parseAgentMessage>;
+    setupScript: { name: string; description: string; content: string } | null;
+  };
+
+  // Cache for parsed text blocks - keyed by text content
+  let parsedTextCache = new Map<string, ParsedTextResult>();
+  const MAX_CACHE_SIZE = 100;
+
+  function parseTextBlock(text: string): ParsedTextResult {
+    // Check cache first
+    const cached = parsedTextCache.get(text);
+    if (cached) {
+      return cached;
+    }
+
+    // Extract setup script if present
+    const setupScript = AuggieTextParser.extractSetupScript(text);
+    // Strip suggested prompts (they're rendered separately in ChatPanel)
+    const { cleanedContent: contentWithoutSuggestions } = parseSuggestedPrompts(text);
+    // Parse the content - this handles digests inline as 'digest' type blocks
+    const parsed = parseAgentMessage(contentWithoutSuggestions);
+    const result = { blocks: parsed, setupScript };
+
+    // Cache the result
+    parsedTextCache.set(text, result);
+
+    // Limit cache size (LRU-style: remove oldest entries)
+    if (parsedTextCache.size > MAX_CACHE_SIZE) {
+      const firstKey = parsedTextCache.keys().next().value;
+      if (firstKey !== undefined) {
+        parsedTextCache.delete(firstKey);
+      }
+    }
+
+    return result;
+  }
+
+  // Pre-compute parsed results for all text blocks to avoid parsing in template
+  // This runs once when blocks change, not on every render
+  let parsedTextBlocks = $derived.by(() => {
+    const results = new Map<number, ParsedTextResult>();
+    blocks.forEach((block, index) => {
+      if (block.type === 'text') {
+        const textContent = block.text || (block as any).content || '';
+        if (textContent) {
+          results.set(index, parseTextBlock(textContent));
+        }
+      }
+    });
+    return results;
+  });
+
+  // Clear cache when component is destroyed
+  onDestroy(() => {
+    parsedTextCache.clear();
+  });
+
+  /**
+   * Generate a stable unique key for a content block.
+   * Uses block.id if available, otherwise creates a composite key from:
+   * - Block type
+   * - Block index (stable within a single render)
+   * - Content hash for text blocks (to differentiate blocks with same type)
+   */
+  function getBlockKey(block: ContentBlock, index: number): string {
+    // If block has an explicit ID, use it (tool_use blocks typically have IDs)
+    if (block.id) {
+      return block.id;
+    }
+
+    // For text blocks, include a simple hash of the first 50 chars to differentiate
+    if (block.type === 'text') {
+      const text = block.text || (block as any).content || '';
+      // Simple hash: sum of char codes of first 50 chars
+      const hash = text
+        .slice(0, 50)
+        .split('')
+        .reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0);
+      return `text-${index}-${hash}`;
+    }
+
+    // For thinking blocks
+    if (block.type === 'thinking') {
+      const thinking = (block as any).thinking || '';
+      const hash = thinking
+        .slice(0, 50)
+        .split('')
+        .reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0);
+      return `thinking-${index}-${hash}`;
+    }
+
+    // For tool_result blocks, use the tool_use_id if available
+    if (block.type === 'tool_result' && block.tool_use_id) {
+      return `result-${block.tool_use_id}`;
+    }
+
+    // Fallback: type + index (should rarely be reached)
+    return `${block.type}-${index}`;
+  }
+
+  // Pre-compute block keys for stable iteration, ensuring uniqueness
+  let blockKeys = $derived.by(() => {
+    const keys = blocks.map((block, index) => getBlockKey(block, index));
+    // Ensure uniqueness by appending index if duplicates exist
+    const seen = new Map<string, number>();
+    return keys.map((key, index) => {
+      const count = seen.get(key) || 0;
+      seen.set(key, count + 1);
+      // If this key was seen before, make it unique by appending the index
+      return count > 0 ? `${key}-dup-${index}` : key;
+    });
+  });
+</script>
+
+<!-- Use animated component when streaming with animations enabled -->
+<!-- Temporarily disabled streaming animation due to issues -->
+<!-- {#if isStreaming && useAnimations}
+  <StreamingAnimatedContent {content} {isStreaming} {hideToolCalls} />
+{:else} -->
+{#if true}
+  <div
+    class="flex flex-col gap-1.5 relative"
+    class:streaming={isStreaming}
+    style="contain: layout style paint;"
+  >
+    {#each blocks as block, blockIndex (blockKeys[blockIndex])}
+      {#if ['text', 'tool_use', 'thinking'].includes(block.type)}
+        <div class="content-block content-block--{block.type}  my-1.25">
+          {#if block.type === 'text' && (block.text || (block as any).content)}
+            {@const textContent = block.text || (block as any).content || ''}
+            {@const parsedResult = parsedTextBlocks.get(blockIndex) || {
+              blocks: [],
+              setupScript: null,
+            }}
+            <div class="w-full">
+              <!-- Show setup script card if present (unless hidden) -->
+              {#if parsedResult.setupScript && !hideSetupScripts}
+                <SetupScriptCard
+                  name={parsedResult.setupScript.name}
+                  description={parsedResult.setupScript.description}
+                  content={parsedResult.setupScript.content}
+                  onUseScript={onSetupScriptGenerated}
+                />
+              {/if}
+              {#if parsedResult.blocks.length > 0}
+                {#each parsedResult.blocks as parsedBlock, parsedBlockIndex (`${blockIndex}-parsed-${parsedBlockIndex}`)}
+                  {#if parsedBlock.type === 'augment_code_snippet'}
+                    <AugmentCodeSnippet
+                      code={parsedBlock.content}
+                      language={parsedBlock.metadata?.language}
+                      path={parsedBlock.metadata?.path}
+                      mode={parsedBlock.metadata?.mode}
+                      onOpenFile={handleOpenFile}
+                    />
+                  {:else if parsedBlock.type === 'digest'}
+                    <!-- Digest card rendered inline where the agent placed it -->
+                    <DigestCard digest={parsedBlock.content || ''} />
+                  {:else if parsedBlock.type === 'diff'}
+                    <!-- Render diff viewer for diff blocks -->
+                    <ChatDiffViewer
+                      diff={parsedBlock.content}
+                      filePath={parsedBlock.metadata?.path}
+                    />
+                  {:else if parsedBlock.type === 'commit_message'}
+                    <!-- Render commit message in a nice format -->
+                    <div
+                      class="commit-message-block p-3 my-2 rounded-md bg-background border border-border"
+                    >
+                      <div class="text-xs font-medium text-muted-foreground mb-1.5">
+                        Generated Commit Message
+                      </div>
+                      <div class="font-mono text-sm whitespace-pre-wrap text-foreground">
+                        {parsedBlock.content}
+                      </div>
+                    </div>
+                  {:else if parsedBlock.type === 'diagram' && parsedBlock.metadata?.diagramData}
+                    <!-- Render diagram -->
+                    <div class="diagram-block my-2">
+                      <DiagramRenderer
+                        diagram={parsedBlock.metadata.diagramData as DiagramPrimitive}
+                        editable={false}
+                        onBindingClick={handleDiagramBindingClick}
+                      />
+                    </div>
+                  {:else if parsedBlock.type === 'mermaid'}
+                    <!-- Render mermaid diagrams -->
+                    <div class="mermaid-block my-8">
+                      {#await MermaidRenderer then module}
+                        <module.default code={parsedBlock.content || ''} />
+                      {/await}
+                    </div>
+                  {:else if parsedBlock.type === 'patch' && parsedBlock.metadata?.patchData}
+                    <!-- Render patch block using shared PatchBlockContent (same as notes) -->
+                    {@const patchData = parsedBlock.metadata.patchData}
+                    <PatchBlockContent
+                      patches={[{ filePath: patchData.filePath, diff: patchData.diff }]}
+                      label={patchData.description || patchData.filePath}
+                    />
+                  {:else if parsedBlock.type === 'reference' && parsedBlock.metadata?.referenceData}
+                    <!-- Render reference block (compact header like notes, without interactive features) -->
+                    {@const refData = parsedBlock.metadata.referenceData}
+                    {@const refFileName = refData.filePath?.split('/').pop() || refData.semanticId || 'Reference'}
+                    <div class="my-2 rounded-lg border border-border overflow-hidden bg-background">
+                      <div class="flex items-center gap-2 px-3 py-1.5">
+                        <Fa icon={faCode} size="xs" class="flex-none text-muted-foreground/50" />
+                        <span class="text-sm font-medium truncate">{refFileName}</span>
+                        {#if refData.filePath && refData.filePath !== refFileName}
+                          <span class="text-sm text-muted-foreground truncate flex-1 min-w-0">
+                            {refData.filePath}
+                          </span>
+                        {/if}
+                      </div>
+                      {#if refData.snapshot?.code}
+                        <div class="border-t border-border">
+                          <CodeBlock
+                            code={refData.snapshot.code}
+                            language={refData.snapshot.languageId || 'plaintext'}
+                            showLineNumbers={true}
+                            noBorder={true}
+                            noMargin={true}
+                          />
+                        </div>
+                      {/if}
+                    </div>
+                  {:else if parsedBlock.type === 'cli' && parsedBlock.metadata?.cliData}
+                    <!-- Render CLI block (terminal icon + command, without run functionality) -->
+                    {@const cliData = parsedBlock.metadata.cliData}
+                    <div class="my-1.5 flex items-center gap-2">
+                      <Fa icon={faTerminal} size="sm" class="text-muted-foreground flex-none" />
+                      <code class="font-mono text-sm text-muted-foreground flex-1 min-w-0 truncate">
+                        {cliData.command}
+                      </code>
+                    </div>
+                  {:else if parsedBlock.type === 'agent_action' && parsedBlock.metadata?.agentActionData}
+                    <!-- Render agent action block (robot icon + goal, without run functionality) -->
+                    {@const actionData = parsedBlock.metadata.agentActionData}
+                    <div class="my-1.5 flex items-center gap-2">
+                      <Fa icon={faRobot} size="sm" class="text-muted-foreground flex-none" />
+                      <span class="text-sm text-muted-foreground flex-1 min-w-0 truncate">
+                        {actionData.goal}
+                      </span>
+                    </div>
+                  {:else if parsedBlock.type === 'code'}
+                    <!-- Render standalone code blocks with proper syntax highlighting -->
+                    <CodeBlock
+                      code={parsedBlock.content || ''}
+                      language={parsedBlock.metadata?.language || 'plaintext'}
+                    />
+                  {:else if parsedBlock.type === 'text'}
+                    <!-- For regular text blocks, use MarkdownViewer -->
+                    <MarkdownViewer
+                      content={parsedBlock.content || ''}
+                      isStreaming={isStreaming && blockIndex === blocks.length - 1}
+                      onFileClick={(path) => handleOpenFile({ path })}
+                    />
+                  {:else}
+                    <!-- Handle other block types like file, etc. -->
+                    <MarkdownViewer
+                      content={parsedBlock.content || ''}
+                      isStreaming={isStreaming && blockIndex === blocks.length - 1}
+                      onFileClick={(path) => handleOpenFile({ path })}
+                    />
+                  {/if}
+                {/each}
+              {:else}
+                <!-- Fallback to regular MarkdownViewer if no parsed content -->
+                <MarkdownViewer
+                  content={textContent}
+                  isStreaming={isStreaming && blockIndex === blocks.length - 1}
+                  onFileClick={(path) => handleOpenFile({ path })}
+                />
+              {/if}
+            </div>
+          {:else if block.type === 'tool_use'}
+            {@const toolBlock = block as ToolUseBlock}
+            {@const toolResultBlock = blocks.find(
+              (b) => b.type === 'tool_result' && (b as any).tool_use_id === toolBlock.id,
+            )}
+            {@const resultContent = toolResultBlock
+              ? (toolResultBlock as ToolResultBlock).content
+              : null}
+            <div class="relative w-full min-w-0">
+              <ToolCall
+                toolUse={toolBlock}
+                toolState={toolStates.get(toolBlock.id) || 'running'}
+                result={resultContent}
+              />
+            </div>
+          {:else if block.type === 'tool_result'}
+            <!-- Tool results are handled by associating them with their tool_use blocks -->
+            <!-- We don't render them separately as they're shown within the ToolCall component -->
+          {:else if block.type === 'thinking'}
+            <ThinkingBlock
+              content={block.content || 'Processing...'}
+              isStreaming={isStreaming && blockIndex === blocks.length - 1}
+            />
+          {/if}
+        </div>
+      {/if}
+    {/each}
+
+    <!-- Show streaming cursor if streaming but no content yet -->
+    {#if isStreaming && blocks.length === 0}
+      <div class="w-full">
+        <MarkdownViewer content="" isStreaming={true} />
+      </div>
+    {/if}
+  </div>
+{/if}
+
+<!-- End of temporary disable of streaming animation -->
+
+<style>
+  /* Adjacent tool_use blocks should have reduced spacing */
+  .content-block--tool_use + .content-block--tool_use {
+    margin-top: -0.5rem;
+  }
+
+  /* PERF: Content blocks use containment for rendering isolation */
+  .content-block {
+    contain: layout style;
+  }
+
+  /* PERF: Tool use blocks are heavier - use stricter containment */
+  .content-block--tool_use {
+    contain: layout style paint;
+  }
+</style>

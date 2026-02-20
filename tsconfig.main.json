@@ -1,0 +1,60 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "moduleResolution": "bundler",
+    "sourceMap": true,
+    "declaration": true,
+    "declarationMap": true,
+    "typeRoots": ["./node_modules/@types"],
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "$lib/*": ["src/lib/*"],
+      "$shared/*": ["src/shared/*"],
+      "$features/*": ["src/features/*"]
+    },
+    "allowSyntheticDefaultImports": true
+  },
+  "include": [
+    "src/types/**/*.d.ts",
+    "src/main/**/*.ts",
+    "src/shared/**/*.ts",
+    "src/features/**/*.ipc.ts",
+    "src/features/**/*.service.ts",
+    "src/features/ipc/**/*.ts",
+    "src/features/mcp/**/*.ts",
+    "src/features/observability/event-storage.ts",
+    "src/features/observability/event-collector.ts",
+    "src/features/line-changes/line-changes.store.ts",
+    "src/features/agent/agent-context-registry.ts",
+    "src/features/agent/agent-providers/**/*.ts",
+    "src/features/agent/error-handler.ts",
+    "src/features/acp-official/**/*.ts",
+    "src/features/cortex/cortex-acp/**/*.ts",
+    "!src/features/**/browser/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/__tests__/**",
+    "**/*.test.ts",
+    "src/main/ipc.ts",
+    "src/main/services/**",
+    "src/features/agent/agent.service.ts",
+    "src/features/agent/services/unified-agent-creator.ts",
+    "src/features/agent/services/batch-operations.service.ts",
+    "src/features/**/*.client.ts",
+    "src/features/**/*.store.svelte.ts",
+    "src/features/**/browser/**",
+    "src/lib/**"
+  ]
+}

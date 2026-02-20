@@ -1,0 +1,119 @@
+appId: com.augment.intent
+productName: Intent by Augment
+directories:
+  output: dist-electron
+  buildResources: build
+
+# Code signing and notarization hook
+# Runs after the app is signed to submit for Apple notarization
+afterSign: scripts/notarize.js
+
+files:
+  - dist/**/*
+  - package.json
+  - node_modules/**/*
+  - resources/**/*
+
+# Unpack renderer files from asar to avoid MIME type issues
+# Also unpack MCP server files since Node.js can't execute scripts from within asar
+# Unpack Express and related modules for HTTP MCP Bridge
+asarUnpack:
+  - dist/renderer/**/*
+  - resources/**/*
+  - dist/main/mcp-stdio-server.cjs
+  - dist/main/mcp-stdio-server-standalone.js
+  - dist/features/mcp/servers/**/*
+  - node_modules/express/**/*
+  - node_modules/body-parser/**/*
+  - node_modules/mime/**/*
+  - node_modules/mime-types/**/*
+  - node_modules/mime-db/**/*
+
+# Skip native module rebuild to avoid hanging on cpu-features
+buildDependenciesFromSource: false
+npmRebuild: false
+
+protocols:
+  - name: intent
+    schemes:
+      - intent
+
+mac:
+  category: public.app-category.developer-tools
+  icon: src/assets/icons/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # Code signing - requires Apple Developer certificate
+  # Set APPLE_ID and APPLE_APP_SPECIFIC_PASSWORD env vars for notarization
+  # identity: "Developer ID Application: Your Name (TEAM_ID)"
+  requirements: build/app-requirements.txt
+  notarize: true
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+
+# Notarization configuration (requires Apple Developer account)
+# To enable notarization:
+# 1. Set notarize: true above
+# 2. Set these environment variables:
+#    - APPLE_ID: Your Apple ID email
+#    - APPLE_APP_SPECIFIC_PASSWORD: App-specific password from appleid.apple.com
+#    - APPLE_TEAM_ID: Your 10-character Team ID
+# Or use these in afterSign hook with @electron/notarize package
+
+dmg:
+  window:
+    width: 540
+    height: 360
+  iconSize: 120
+  iconTextSize: 14
+  contents:
+    - x: 150
+      y: 200
+    - x: 400
+      y: 200
+      type: link
+      path: /Applications
+
+win:
+  icon: src/assets/icons/icon.ico
+  publisherName: "Augment Code, Inc."
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+
+linux:
+  icon: src/assets/icons/icon.png
+  category: Development
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+    - target: snap
+      arch:
+        - x64
+
+publish:
+  provider: generic
+  url: https://dmdri9nt15ow8.cloudfront.net/stable/Intent-latest-arm64.dmg

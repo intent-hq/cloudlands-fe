@@ -1,0 +1,625 @@
+/**
+ * Performance Optimizer Service
+ *
+ * Ensures all operations complete within 100ms target.
+ * Implements performance monitoring and optimization strategies.
+ *
+ * Key strategies:
+ * - Request coalescing
+ * - Lazy loading
+ * - Memoization
+ * - Worker threads for CPU-intensive tasks
+ * - Request prioritization
+ */
+
+import { Logger } from '$shared/logger';
+
+// Use browser's performance API or Node's perf_hooks depending on environment
+const perf =
+  typeof window !== 'undefined' && window.performance
+    ? window.performance
+    : typeof global !== 'undefined' && global.performance
+      ? global.performance
+      : { now: () => Date.now() };
+
+// Worker threads are only available in Node.js
+let Worker: typeof import('worker_threads').Worker | undefined;
+let path: typeof import('path') | undefined;
+let fileURLToPath: typeof import('url').fileURLToPath | undefined;
+let cachedDirname: string | undefined;
+
+// Helper to get __dirname lazily (only in Node.js)
+function getDirname(): string | undefined {
+  if (typeof window !== 'undefined') return undefined;
+  if (cachedDirname) return cachedDirname;
+  if (fileURLToPath && path) {
+    try {
+      cachedDirname = path.dirname(fileURLToPath(import.meta.url));
+      return cachedDirname;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+// Use an async IIFE to avoid top-level await
+if (typeof window === 'undefined') {
+  (async () => {
+    try {
+      const workerThreads = await import('worker_threads');
+      Worker = workerThreads.Worker;
+      const pathModule = await import('path');
+      path = pathModule;
+      const urlModule = await import('url');
+      fileURLToPath = urlModule.fileURLToPath;
+    } catch (e) {
+      // Worker threads not available
+    }
+  })();
+}
+
+const logger = new Logger('PerformanceOptimizer');
+
+interface PerformanceMetric {
+  operation: string;
+  duration: number;
+  timestamp: number;
+  success: boolean;
+  metadata?: Record<string, any>;
+}
+
+interface OptimizationStrategy {
+  memoize?: boolean;
+  coalesce?: boolean;
+  priority?: 'high' | 'normal' | 'low';
+  timeout?: number;
+  maxRetries?: number;
+  cacheKey?: string;
+}
+
+interface WorkerTask {
+  id: string;
+  task: string;
+  data: any;
+  resolve: (value: any) => void;
+  reject: (error: Error) => void;
+  timestamp: number;
+}
+
+interface CacheEntry<T> {
+  value: T;
+  timestamp: number;
+  hits: number;
+  size?: number;
+}
+
+export class PerformanceOptimizer {
+  private static instance: PerformanceOptimizer;
+
+  // Performance tracking
+  private metrics: PerformanceMetric[] = [];
+  private readonly MAX_METRICS = 1000;
+  private readonly TARGET_RESPONSE_TIME = 100; // 100ms
+
+  // Advanced memoization cache with LRU eviction
+  private memoCache = new Map<string, CacheEntry<any>>();
+  private readonly MEMO_TTL = 60000; // 1 minute
+  private readonly MAX_CACHE_SIZE = 100; // Maximum cache entries
+  private cacheHits = 0;
+  private cacheMisses = 0;
+
+  // Request coalescing with priority queue
+  private pendingRequests = new Map<string, Promise<any>>();
+  private requestQueue: Array<{ key: string; priority: number; timestamp: number }> = [];
+
+  // Worker pool for CPU-intensive tasks
+  private workerPool: any[] = [];
+  private availableWorkers: any[] = [];
+  private workerTasks = new Map<any, WorkerTask>();
+  private taskQueue: WorkerTask[] = [];
+  private readonly WORKER_POOL_SIZE = 4;
+  private workerIdCounter = 0;
+
+  private constructor() {
+    this.initializeWorkerPool();
+    this.startCacheCleanup();
+    logger.info('PerformanceOptimizer initialized');
+  }
+
+  static getInstance(): PerformanceOptimizer {
+    if (!PerformanceOptimizer.instance) {
+      PerformanceOptimizer.instance = new PerformanceOptimizer();
+    }
+    return PerformanceOptimizer.instance;
+  }
+
+  /**
+   * Reset performance metrics and optimizations
+   */
+  reset(): void {
+    this.metrics = [];
+    this.memoCache.clear();
+    this.pendingRequests.clear();
+    this.requestQueue = [];
+    this.cacheHits = 0;
+    this.cacheMisses = 0;
+  }
+
+  /**
+   * Clear the memoization cache
+   */
+  clearCache(): void {
+    this.memoCache.clear();
+    this.cacheHits = 0;
+    this.cacheMisses = 0;
+  }
+
+  /**
+   * Process items in optimized batches
+   */
+  async processBatch<T, R>(
+    items: T[],
+    processor: (item: T) => Promise<R>,
+    options: { batchSize?: number; concurrency?: number } = {},
+  ): Promise<R[]> {
+    const { batchSize = 10, concurrency = 4 } = options;
+    const results: R[] = [];
+
+    // Process in batches with limited concurrency
+    for (let i = 0; i < items.length; i += batchSize) {
+      const batch = items.slice(i, i + batchSize);
+      const batchPromises = batch.map((item, index) => {
+        // Limit concurrency
+        const delay = Math.floor(index / concurrency) * 10;
+        return new Promise<R>((resolve) => {
+          setTimeout(async () => {
+            const result = await processor(item);
+            resolve(result);
+          }, delay);
+        });
+      });
+
+      const batchResults = await Promise.all(batchPromises);
+      results.push(...batchResults);
+    }
+
+    return results;
+  }
+
+  /**
+   * Initialize worker pool for CPU-intensive tasks
+   */
+  private initializeWorkerPool(): void {
+    // Worker pool is only available in Node.js environment
+    if (typeof window !== 'undefined' || !Worker || !path) {
+      logger.info('Worker pool not available in browser environment');
+      return;
+    }
+
+    try {
+      const dirname = getDirname();
+      if (!dirname) {
+        logger.info('Worker pool not available - dirname not resolved');
+        return;
+      }
+      const workerPath = path.join(dirname, 'performance-worker.js');
+
+      for (let i = 0; i < this.WORKER_POOL_SIZE; i++) {
+        const worker = new Worker(workerPath);
+        const workerId = this.workerIdCounter++;
+
+        worker.on('message', (result: any) => {
+          const task = this.workerTasks.get(worker);
+          if (task) {
+            if (result.success) {
+              task.resolve(result.data);
+            } else {
+              task.reject(new Error(result.error));
+            }
+            this.workerTasks.delete(worker);
+            this.availableWorkers.push(worker);
+            this.processTaskQueue();
+          }
+        });
+
+        worker.on('error', (error: any) => {
+          logger.error('Worker error', { workerId, error: error.message });
+          const task = this.workerTasks.get(worker);
+          if (task) {
+            task.reject(error);
+            this.workerTasks.delete(worker);
+          }
+          // Restart worker
+          this.restartWorker(worker, workerId);
+        });
+
+        this.workerPool.push(worker);
+        this.availableWorkers.push(worker);
+      }
+
+      logger.info('Worker pool initialized', { size: this.WORKER_POOL_SIZE });
+    } catch (error) {
+      logger.error('Failed to initialize worker pool', { error });
+      // Fallback to no workers
+      this.workerPool = [];
+      this.availableWorkers = [];
+    }
+  }
+
+  private cleanupInterval: NodeJS.Timeout | null = null;
+
+  /**
+   * Start periodic cache cleanup
+   */
+  private startCacheCleanup(): void {
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupCache();
+    }, 30000); // Every 30 seconds
+  }
+
+  /**
+   * Stop periodic cache cleanup
+   */
+  public stopCacheCleanup(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+  }
+
+  /**
+   * Clean up expired cache entries and enforce size limit
+   */
+  private cleanupCache(): void {
+    const now = Date.now();
+    const entriesToDelete: string[] = [];
+
+    // Remove expired entries
+    this.memoCache.forEach((entry, key) => {
+      if (now - entry.timestamp > this.MEMO_TTL) {
+        entriesToDelete.push(key);
+      }
+    });
+
+    entriesToDelete.forEach((key) => this.memoCache.delete(key));
+
+    // Enforce size limit (LRU eviction)
+    if (this.memoCache.size > this.MAX_CACHE_SIZE) {
+      const sortedEntries = Array.from(this.memoCache.entries()).sort(
+        (a, b) => a[1].hits - b[1].hits || a[1].timestamp - b[1].timestamp,
+      );
+
+      const toRemove = sortedEntries.slice(0, this.memoCache.size - this.MAX_CACHE_SIZE);
+      toRemove.forEach(([key]) => this.memoCache.delete(key));
+    }
+  }
+
+  /**
+   * Restart a failed worker
+   */
+  private restartWorker(oldWorker: any, workerId: number): void {
+    // Worker restart is only available in Node.js environment
+    if (typeof window !== 'undefined' || !Worker || !path) {
+      return;
+    }
+
+    try {
+      const index = this.workerPool.indexOf(oldWorker);
+      if (index !== -1) {
+        oldWorker.terminate();
+        const dirname = getDirname();
+        if (!dirname) {
+          logger.warn('Cannot restart worker - dirname not resolved');
+          return;
+        }
+        const workerPath = path.join(dirname, 'performance-worker.js');
+        const newWorker = new Worker(workerPath);
+
+        newWorker.on('message', (result: any) => {
+          const task = this.workerTasks.get(newWorker);
+          if (task) {
+            if (result.success) {
+              task.resolve(result.data);
+            } else {
+              task.reject(new Error(result.error));
+            }
+            this.workerTasks.delete(newWorker);
+            this.availableWorkers.push(newWorker);
+            this.processTaskQueue();
+          }
+        });
+
+        newWorker.on('error', (error: any) => {
+          logger.error('Worker error after restart', { workerId, error: error.message });
+        });
+
+        this.workerPool[index] = newWorker;
+        this.availableWorkers.push(newWorker);
+      }
+    } catch (error) {
+      logger.error('Failed to restart worker', { workerId, error });
+    }
+  }
+
+  /**
+   * Process queued worker tasks
+   */
+  private processTaskQueue(): void {
+    while (this.taskQueue.length > 0 && this.availableWorkers.length > 0) {
+      const task = this.taskQueue.shift();
+      const worker = this.availableWorkers.shift();
+
+      if (task && worker) {
+        this.workerTasks.set(worker, task);
+        worker.postMessage({ task: task.task, data: task.data });
+      }
+    }
+  }
+
+  /**
+   * Get an available worker from the pool
+   */
+  private getAvailableWorker(): Worker | null {
+    return this.availableWorkers.shift() || null;
+  }
+
+  /**
+   * Wrap an async operation with performance tracking
+   */
+  async track<T>(
+    operation: string,
+    fn: () => Promise<T>,
+    strategy: OptimizationStrategy = {},
+  ): Promise<T> {
+    const start = perf.now();
+
+    try {
+      // Check memoization with custom cache key
+      const cacheKey = strategy.cacheKey || operation;
+      if (strategy.memoize) {
+        const cached = this.getMemoized(cacheKey);
+        if (cached !== undefined) {
+          this.cacheHits++;
+          logger.debug('Memoized result used', { operation, cacheKey, hits: this.cacheHits });
+          return cached;
+        }
+        this.cacheMisses++;
+      }
+
+      // Check coalescing
+      if (strategy.coalesce) {
+        const pending = this.pendingRequests.get(operation);
+        if (pending) {
+          logger.debug('Request coalesced', { operation });
+          return pending;
+        }
+      }
+
+      // Create promise (with timeout if needed)
+      let promise: Promise<T>;
+      if (strategy.coalesce) {
+        // For coalescing, store promise immediately to prevent race conditions
+        promise = strategy.timeout ? this.withTimeout(fn(), strategy.timeout) : fn();
+        this.pendingRequests.set(operation, promise);
+      } else {
+        // For non-coalescing, just execute
+        promise = strategy.timeout ? this.withTimeout(fn(), strategy.timeout) : fn();
+      }
+
+      const result = await promise;
+
+      // Memoize result
+      if (strategy.memoize) {
+        this.memoize(cacheKey, result);
+      }
+
+      // Record metric
+      const duration = perf.now() - start;
+      this.recordMetric(operation, duration, true, {
+        strategy: strategy.priority || 'normal',
+        memoized: strategy.memoize || false,
+        coalesced: strategy.coalesce || false,
+      });
+
+      // Warn if over target
+      if (duration > this.TARGET_RESPONSE_TIME) {
+        logger.warn('Operation exceeded target time', {
+          operation,
+          duration: Math.round(duration),
+          target: this.TARGET_RESPONSE_TIME,
+        });
+      }
+
+      return result;
+    } catch (error) {
+      const duration = perf.now() - start;
+      this.recordMetric(operation, duration, false, {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      throw error;
+    } finally {
+      // Clean up coalescing
+      if (strategy.coalesce) {
+        this.pendingRequests.delete(operation);
+      }
+    }
+  }
+
+  /**
+   * Execute CPU-intensive task in worker thread
+   */
+  async executeInWorker<T>(task: string, data: any): Promise<T> {
+    const worker = this.getAvailableWorker();
+
+    if (!worker) {
+      throw new Error('No available workers in pool');
+    }
+
+    return new Promise((resolve, reject) => {
+      const taskId = `task_${Date.now()}_${Math.random()}`;
+      const timeoutId = setTimeout(() => {
+        reject(new Error('Worker task timeout'));
+      }, 30000); // 30 second timeout
+
+      const handler = (result: any) => {
+        if (result.taskId === taskId) {
+          clearTimeout(timeoutId);
+          if (result.error) {
+            reject(new Error(result.error));
+          } else {
+            resolve(result.data);
+          }
+          (worker as any).off('message', handler);
+          this.availableWorkers.push(worker);
+        }
+      };
+
+      (worker as any).on('message', handler);
+      worker.postMessage({ task, data, taskId });
+    });
+  }
+
+  /**
+   * Get performance statistics
+   */
+  getStats(): {
+    avgResponseTime: number;
+    p95ResponseTime: number;
+    p99ResponseTime: number;
+    successRate: number;
+    slowOperations: string[];
+    } {
+    if (this.metrics.length === 0) {
+      return {
+        avgResponseTime: 0,
+        p95ResponseTime: 0,
+        p99ResponseTime: 0,
+        successRate: 100,
+        slowOperations: [],
+      };
+    }
+
+    const sorted = [...this.metrics].sort((a, b) => a.duration - b.duration);
+    const successful = this.metrics.filter((m) => m.success);
+
+    const avgResponseTime = sorted.reduce((sum, m) => sum + m.duration, 0) / sorted.length;
+    const p95Index = Math.floor(sorted.length * 0.95);
+    const p99Index = Math.floor(sorted.length * 0.99);
+
+    const slowOps = new Set<string>();
+    this.metrics
+      .filter((m) => m.duration > this.TARGET_RESPONSE_TIME)
+      .forEach((m) => slowOps.add(m.operation));
+
+    return {
+      avgResponseTime: Math.round(avgResponseTime),
+      p95ResponseTime: Math.round(sorted[p95Index]?.duration || 0),
+      p99ResponseTime: Math.round(sorted[p99Index]?.duration || 0),
+      successRate: (successful.length / this.metrics.length) * 100,
+      slowOperations: Array.from(slowOps),
+    };
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getCacheStats(): {
+    size: number;
+    hitRate: number;
+    hits: number;
+    misses: number;
+    } {
+    const total = this.cacheHits + this.cacheMisses;
+    return {
+      size: this.memoCache.size,
+      hitRate: total > 0 ? (this.cacheHits / total) * 100 : 0,
+      hits: this.cacheHits,
+      misses: this.cacheMisses,
+    };
+  }
+
+  /**
+   * Get memoized result if available and not expired
+   */
+  private getMemoized(key: string): any {
+    const cached = this.memoCache.get(key);
+    if (!cached) return undefined;
+
+    if (Date.now() - cached.timestamp > this.MEMO_TTL) {
+      this.memoCache.delete(key);
+      return undefined;
+    }
+
+    // Update hit count
+    cached.hits++;
+    return cached.value;
+  }
+
+  /**
+   * Add result to memoization cache
+   */
+  private memoize(key: string, value: any): void {
+    // Estimate size (rough approximation)
+    const size = JSON.stringify(value).length;
+
+    this.memoCache.set(key, {
+      value,
+      timestamp: Date.now(),
+      hits: 0,
+      size,
+    });
+
+    // Trigger cleanup if needed
+    if (this.memoCache.size > this.MAX_CACHE_SIZE) {
+      this.cleanupCache();
+    }
+  }
+
+  /**
+   * Execute with timeout
+   */
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error(`Operation timed out after ${timeoutMs}ms`)), timeoutMs),
+      ),
+    ]);
+  }
+
+  /**
+   * Record a performance metric
+   */
+  private recordMetric(
+    operation: string,
+    duration: number,
+    success: boolean,
+    metadata?: Record<string, any>,
+  ): void {
+    this.metrics.push({
+      operation,
+      duration,
+      timestamp: Date.now(),
+      success,
+      metadata,
+    });
+
+    // Keep only the most recent metrics
+    if (this.metrics.length > this.MAX_METRICS) {
+      this.metrics.shift();
+    }
+
+    // Log slow operations
+    if (duration > this.TARGET_RESPONSE_TIME) {
+      logger.warn('Slow operation detected', {
+        operation,
+        duration: `${duration.toFixed(2)}ms`,
+        target: `${this.TARGET_RESPONSE_TIME}ms`,
+        metadata,
+      });
+    }
+  }
+}
+
+export const performanceOptimizer = PerformanceOptimizer.getInstance();

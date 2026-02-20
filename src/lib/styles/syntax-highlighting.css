@@ -1,0 +1,229 @@
+/* Syntax Highlighting Theme for Code Blocks */
+
+/* Base styles */
+.hljs {
+  /* background: transparent !important; */
+  /* padding: 0 !important; */
+}
+
+/* ===== DARK MODE COLORS (DEFAULT) ===== */
+.hljs-keyword {
+  color: #c084fc !important; /* purple-400 */
+  font-weight: 500;
+}
+
+.hljs-string {
+  color: #86efac !important; /* green-300 */
+}
+
+.hljs-number {
+  color: #fbbf24 !important; /* amber-400 */
+}
+
+.hljs-function {
+  color: #60a5fa !important; /* blue-400 */
+}
+
+.hljs-comment {
+  color: #6b7280 !important; /* gray-500 */
+  font-style: italic;
+}
+
+.hljs-variable {
+  color: #fca5a5 !important; /* red-300 */
+}
+
+.hljs-class,
+.hljs-title {
+  color: #fde047 !important; /* yellow-300 */
+}
+
+.hljs-attr,
+.hljs-attribute {
+  color: #c084fc !important; /* purple-400 */
+}
+
+.hljs-built_in {
+  color: #60a5fa !important; /* blue-400 */
+}
+
+.hljs-params {
+  color: #fca5a5 !important; /* red-300 */
+}
+
+.hljs-literal {
+  color: #fbbf24 !important; /* amber-400 */
+}
+
+/* ===== LIGHT MODE COLORS ===== */
+[data-theme='light'] .hljs-keyword {
+  color: #5b21b6 !important; /* purple-800 */
+  font-weight: 500;
+}
+
+[data-theme='light'] .hljs-string {
+  color: #047857 !important; /* green-700 */
+}
+
+[data-theme='light'] .hljs-number {
+  color: #92400e !important; /* amber-800 */
+}
+
+[data-theme='light'] .hljs-function {
+  color: #1e40af !important; /* blue-800 */
+}
+
+[data-theme='light'] .hljs-comment {
+  color: #4b5563 !important; /* gray-600 */
+  font-style: italic;
+}
+
+[data-theme='light'] .hljs-variable {
+  color: #b91c1c !important; /* red-700 */
+}
+
+[data-theme='light'] .hljs-class,
+[data-theme='light'] .hljs-title {
+  color: #92400e !important; /* amber-800 */
+}
+
+[data-theme='light'] .hljs-attr,
+[data-theme='light'] .hljs-attribute {
+  color: #5b21b6 !important; /* purple-800 */
+}
+
+[data-theme='light'] .hljs-built_in {
+  color: #1e40af !important; /* blue-800 */
+}
+
+[data-theme='light'] .hljs-params {
+  color: #b91c1c !important; /* red-700 */
+}
+
+[data-theme='light'] .hljs-literal {
+  color: #92400e !important; /* amber-800 */
+}
+
+/* Additional hljs token types */
+.hljs-type {
+  color: #60a5fa !important; /* blue-400 */
+}
+
+.hljs-name {
+  color: #fde047 !important; /* yellow-300 */
+}
+
+.hljs-tag {
+  color: #c084fc !important; /* purple-400 */
+}
+
+.hljs-attr-name {
+  color: #c084fc !important; /* purple-400 */
+}
+
+.hljs-attr-value {
+  color: #86efac !important; /* green-300 */
+}
+
+.hljs-meta {
+  color: #6b7280 !important; /* gray-500 */
+}
+
+.hljs-symbol {
+  color: #fbbf24 !important; /* amber-400 */
+}
+
+.hljs-bullet {
+  color: #fbbf24 !important; /* amber-400 */
+}
+
+.hljs-link {
+  color: #60a5fa !important; /* blue-400 */
+}
+
+.hljs-section {
+  color: #fde047 !important; /* yellow-300 */
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: bold;
+}
+
+/* Light mode additional tokens */
+[data-theme='light'] .hljs-type {
+  color: #1e40af !important; /* blue-800 */
+}
+
+[data-theme='light'] .hljs-name {
+  color: #92400e !important; /* amber-800 */
+}
+
+[data-theme='light'] .hljs-tag {
+  color: #5b21b6 !important; /* purple-800 */
+}
+
+[data-theme='light'] .hljs-attr-name {
+  color: #5b21b6 !important; /* purple-800 */
+}
+
+[data-theme='light'] .hljs-attr-value {
+  color: #047857 !important; /* green-700 */
+}
+
+[data-theme='light'] .hljs-meta {
+  color: #4b5563 !important; /* gray-600 */
+}
+
+[data-theme='light'] .hljs-symbol {
+  color: #92400e !important; /* amber-800 */
+}
+
+[data-theme='light'] .hljs-bullet {
+  color: #92400e !important; /* amber-800 */
+}
+
+[data-theme='light'] .hljs-link {
+  color: #1e40af !important; /* blue-800 */
+}
+
+[data-theme='light'] .hljs-section {
+  color: #92400e !important; /* amber-800 */
+}
+
+/* Line hover effect for code blocks with line numbers */
+.table-row:hover {
+  background: rgba(59, 130, 246, 0.08);
+  transition: background 0.15s ease;
+}
+
+[data-theme='light'] .table-row:hover {
+  background: rgba(29, 78, 216, 0.08);
+  transition: background 0.15s ease;
+}
+
+/* Smooth scrollbar for code blocks */
+.scrollbar-thin {
+  scrollbar-width: thin;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(107, 114, 128, 0.5);
+  border-radius: 4px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(107, 114, 128, 0.7);
+}

@@ -1,0 +1,92 @@
+/**
+ * Shared styles for diff viewers
+ *
+ * These styles are used by both DiffViewer and TrackedChangeDiffViewer
+ * to ensure consistent styling across the application.
+ *
+ * Note: CSS variables for diffs are set directly in each component's
+ * container element since they need to be scoped.
+ */
+
+/* Hunk separator wrapper */
+:global(.hunk-separator-wrapper) {
+  width: 100%;
+}
+
+/* Hunk separator default (used by DiffViewer) */
+:global(.hunk-separator-default) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 1rem 0.25rem 1.5rem;
+    margin: 0.25rem 0;
+    background: hsl(var(--background) / 0.5);
+    cursor: pointer;
+    position: sticky;
+    left: 0;
+    width: 100%;
+    /* width: fit-content; */
+}
+
+:global(.hunk-separator-default:hover) {
+  background: hsl(var(--muted) / 0.7);
+}
+
+/* Hunk separator actions (used by TrackedChangeDiffViewer) */
+:global(.hunk-separator-actions) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 1rem 0.25rem 1.5rem;
+  margin: 0.25rem 0;
+  background: hsl(var(--background) / 0.5);
+  cursor: pointer;
+  position: sticky;
+  left: 0;
+  width: 100%;
+}
+
+:global(.hunk-separator-actions:hover) {
+  background: hsl(var(--muted) / 0.3);
+}
+
+/* Shared chevron styles */
+:global(.hunk-separator-chevron) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: hsl(var(--muted-foreground));
+  opacity: 0.6;
+}
+
+/* Shared text styles */
+:global(.hunk-separator-text) {
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
+  opacity: 0.7;
+}
+
+/* Expansion row styling */
+:global([data-diffs-expansion-row]),
+:global(tr:has([data-diffs-expansion])) {
+  background: hsl(var(--background)) !important;
+}
+
+/* Hide gutter in expansion rows */
+:global(tr:has([data-diffs-expansion]) td:not([data-diffs-expansion])) {
+  padding: 0 !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  border: none !important;
+}
+
+/* Style the expansion cell */
+:global([data-diffs-expansion]) {
+  padding: 0 !important;
+  text-align: left !important;
+}
+
+/* Custom separator slot styling */
+:global([data-separator='custom']) {
+  margin-block: 16px;
+}

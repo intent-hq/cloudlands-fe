@@ -1,0 +1,47 @@
+/**
+ * Utilities for checking running agents and showing warnings
+ */
+
+import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
+import { unifiedStateStore } from '$features/agent/services/unified-state-store';
+import { WorkspaceId } from '$shared/types/branded-ids';
+
+/**
+ * Get the names of agents currently running in a workspace
+ * @param workspaceId - The workspace ID to check
+ * @returns Array of agent names that are currently streaming
+ */
+export function getRunningAgentNames(workspaceId: string): string[] {
+  const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId);
+
+  // Convert string to branded WorkspaceId for the store lookup
+  const brandedWorkspaceId = WorkspaceId(workspaceId);
+
+  // Get all agents for this workspace from the store
+  const agents = unifiedStateStore.getAgentsForWorkspace(brandedWorkspaceId);
+
+  // Look up agent names from the unified state store
+  const agentNames: string[] = [];
+  for (const agentId of streamingAgentIds) {
+    const agent = agents.find((a) => a.id === agentId);
+
+    // Use agent name if available, otherwise fall back to truncated ID
+    if (agent?.name) {
+      agentNames.push(agent.name);
+    } else {
+      agentNames.push(agentId.substring(0, 8));
+    }
+  }
+
+  return agentNames;
+}
+
+/**
+ * Check if a workspace has any running agents
+ * @param workspaceId - The workspace ID to check
+ * @returns true if the workspace has running agents, false otherwise
+ */
+export function hasRunningAgents(workspaceId: string): boolean {
+  const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId);
+  return streamingAgentIds.length > 0;
+}

@@ -1,0 +1,577 @@
+<script lang="ts">
+  import { logger } from '../../shared/logger';
+
+  import { page } from '$app/state';
+  import { autoUpdateStore } from '$features/auto-update/auto-update.store.svelte';
+  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import ProviderSelector from '$lib/components/settings/ProviderSelector.svelte';
+  import AIBehaviorEditor from '$lib/components/settings/AIBehaviorEditor.svelte';
+  import AIBehaviorSidebar, {
+    type AIBehaviorView,
+  } from '$lib/components/settings/AIBehaviorSidebar.svelte';
+  import ConnectionsSettings from '$lib/components/settings/ConnectionsSettings.svelte';
+  import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
+  import McpServersSettings from '$lib/components/settings/McpServersSettings.svelte';
+  import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
+  import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
+  import Button from '$lib/components/ui/button/button.svelte';
+  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
+  import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
+  import { notificationSettingsStore } from '$lib/stores/notification-settings.store.svelte';
+  import { noteFontSettings } from '$lib/stores/note-font-settings.store.svelte';
+  import { agentFontSettings } from '$lib/stores/agent-font-settings.store.svelte';
+
+  import { isMacPlatform } from '$lib/utils/shortcuts';
+  import type { Theme } from '$lib/utils/theme';
+  import { themeManager } from '$lib/utils/theme';
+  import { track } from '$lib/services/analytics';
+  import { flashCopied } from '$lib/components/ui/tooltip/link-tooltip-state.svelte';
+  import {
+    getSettingsPreviousPath,
+    navigateBackFromSettings,
+  } from '$lib/utils/workspace-navigation';
+  import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
+  import { onMount } from 'svelte';
+  import Fa from 'svelte-fa';
+  import { cn } from '$lib/utils';
+
+  // Tab types
+  type SettingsTab = 'agents' | 'connections' | 'interface-system';
+
+  // Valid tab IDs for validation
+  const validTabs: SettingsTab[] = ['agents', 'connections', 'interface-system'];
+
+  // Get initial tab from URL or default to Agents
+  function getInitialTab(): SettingsTab {
+    const tabParam = page.url.searchParams.get('tab');
+    if (tabParam && validTabs.includes(tabParam as SettingsTab)) {
+      return tabParam as SettingsTab;
+    }
+    return 'connections';
+  }
+
+  // Current active tab - initialized from URL or default to Agents
+  let activeTab = $state<SettingsTab>(getInitialTab());
+
+  // Update URL when tab changes
+  function setActiveTab(tab: SettingsTab) {
+    activeTab = tab;
+    // Update URL with the new tab, preserving other params
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', tab);
+      window.history.replaceState({}, '', url.toString());
+    }
+  }
+
+  // Tab definitions
+  const tabs: { id: SettingsTab; label: string }[] = [
+    { id: 'connections', label: 'Integrations' },
+    { id: 'agents', label: 'Agents' },
+    { id: 'interface-system', label: 'Interface & System' },
+  ];
+
+  // Get specialist ID from URL query parameter for auto-selecting
+  const initialSpecialistId = $derived(page.url.searchParams.get('specialist'));
+  // Get view parameter for direct navigation (e.g., ?view=create-specialist)
+  const initialView = $derived(page.url.searchParams.get('view'));
+
+  // Agents sidebar view state
+  let aiBehaviorView = $state<AIBehaviorView>({ type: 'system-prompt' });
+
+  // Initialize view from URL parameter if present (only on initial load)
+  let hasInitializedFromUrl = false;
+  $effect(() => {
+    if (hasInitializedFromUrl) return;
+    if (initialView === 'create-specialist') {
+      setActiveTab('agents');
+      aiBehaviorView = { type: 'create-specialist' };
+      hasInitializedFromUrl = true;
+    } else if (initialSpecialistId) {
+      setActiveTab('agents');
+      aiBehaviorView = { type: 'specialist', id: initialSpecialistId };
+      hasInitializedFromUrl = true;
+    }
+  });
+
+  // Check if we're in development mode
+  const isDevMode = import.meta.env.DEV;
+  const isMac = isMacPlatform();
+
+  // Get back label - show workspace title if coming from a workspace
+  const backLabel = $derived.by(() => {
+    const prevPath = getSettingsPreviousPath();
+    logger.debug('[Settings] prevPath for back button:', prevPath);
+    if (prevPath === '/' || prevPath === '') return 'Home';
+    if (prevPath.startsWith('/workspace/')) {
+      // Extract workspace ID from path like /workspace/{id} or /workspace/{id}/...
+      const pathParts = prevPath.split('/');
+      const workspaceId = pathParts[2]; // ['', 'workspace', '{id}', ...]
+      logger.debug('[Settings] Extracted workspaceId:', workspaceId);
+      if (workspaceId) {
+        const workspace = workspaceStore.findById(
+          workspaceId as import('$shared/types').WorkspaceId,
+        );
+        logger.debug('[Settings] Found workspace:', workspace?.title);
+        return workspace?.title || 'Space';
+      }
+    }
+    return 'Back';
+  });
+
+  // Interface & System state
+  let theme = $state<Theme>('system');
+  let sentryTestStatus = $state('');
+
+  // Component refs for reset functionality
+  let gitWorkspaceSettingsRef: GitWorkspaceSettings | undefined = $state();
+  let colorThemeSettingsRef: ColorThemeSettings | undefined = $state();
+
+  // Check if the active provider is Auggie (only Auggie supports integrations and MCP servers)
+  const isAuggieProvider = $derived(activeProviderStore.activeProviderId === 'auggie');
+
+  // Theme options
+  const themeOptions = [
+    { value: 'light', label: 'Light' },
+    { value: 'dark', label: 'Dark' },
+    { value: 'system', label: 'System' },
+  ];
+
+  // Font style options
+  const fontStyleOptions = [
+    { value: 'sans', label: 'Sans-serif' },
+    { value: 'monospace', label: 'Mono' },
+  ];
+
+  function handleNoteFontChange(value: string | boolean) {
+    noteFontSettings.fontStyle = value as 'sans' | 'monospace';
+  }
+
+  function handleAgentFontChange(value: string | boolean) {
+    agentFontSettings.fontStyle = value as 'sans' | 'monospace';
+  }
+
+  // App version from Electron
+  let appVersion = $state('');
+
+  // Map hash targets to their respective tabs
+  const hashToTab: Record<string, SettingsTab> = {
+    'default-model': 'agents',
+    specialists: 'agents',
+    providers: 'connections',
+    integrations: 'connections',
+    'mcp-servers': 'connections',
+  };
+
+  onMount(async () => {
+    // Load theme from ThemeManager
+    theme = themeManager.getTheme();
+
+    // Get app version from Electron
+    if (window.electronAPI) {
+      try {
+        const result = await window.electronAPI.invoke('app:version', undefined);
+        appVersion = result?.data || 'unknown';
+      } catch {
+        appVersion = 'unknown';
+      }
+    }
+
+    // Handle hash-based navigation on initial load
+    handleHashNavigation();
+  });
+
+  // Listen for hash changes while already on the settings page
+  $effect(() => {
+    window.addEventListener('hashchange', handleHashNavigation);
+    return () => {
+      window.removeEventListener('hashchange', handleHashNavigation);
+    };
+  });
+
+  /** Navigate to the correct tab and scroll to the hash target */
+  function handleHashNavigation() {
+    if (typeof window === 'undefined' || !window.location.hash) return;
+    const targetId = window.location.hash.slice(1);
+
+    // Switch to the correct tab if needed
+    const targetTab = hashToTab[targetId];
+    if (targetTab && targetTab !== activeTab) {
+      setActiveTab(targetTab);
+    }
+
+    // Scroll to hash target after tab switch
+    setTimeout(() => {
+      const targetEl = document.getElementById(targetId);
+      if (targetEl) {
+        const scrollContainer = targetEl.closest('.overflow-auto');
+        if (scrollContainer) {
+          const headerOffset = 20;
+          const elementPosition = targetEl.offsetTop;
+          scrollContainer.scrollTo({
+            top: elementPosition - headerOffset,
+            behavior: 'smooth',
+          });
+        } else {
+          targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+    }, 100);
+  }
+
+  function handleThemeChange(newTheme: string | boolean) {
+    const previousTheme = theme;
+    theme = newTheme as Theme;
+    themeManager.setTheme(theme);
+    track('Changed Theme', {
+      theme: theme,
+      previous_theme: previousTheme,
+      source: 'toggle',
+    });
+  }
+
+  async function handleTestSentryError() {
+    sentryTestStatus = 'Sending test error to Sentry...';
+    try {
+      const Sentry = await import('@sentry/electron/renderer');
+      const testError = new Error(
+        `[Test] Sentry test error from Settings page at ${new Date().toISOString()}`,
+      );
+      Sentry.captureException(testError);
+      sentryTestStatus = '✅ Test error sent to Sentry! Check your Sentry dashboard.';
+      logger.info('[Settings] Sentry test error sent');
+    } catch (error) {
+      sentryTestStatus = `❌ Failed to send test error: ${error}`;
+      logger.error('[Settings] Failed to send Sentry test error:', error);
+    }
+  }
+
+  function handleResetInterfaceSystem() {
+    // Reset theme
+    theme = 'system';
+    themeManager.setTheme('system');
+    // Clear custom color theme
+    colorThemeSettingsRef?.clearTheme();
+    // Reset font styles
+    noteFontSettings.fontStyle = 'sans';
+    agentFontSettings.fontStyle = 'sans';
+    // Reset notification settings
+    notificationSettingsStore.reset();
+    // Reset Git & Workspace settings
+    gitWorkspaceSettingsRef?.resetToDefaults();
+  }
+</script>
+
+<div class="h-full grid grid-rows-[min-content_1fr_min-content]">
+  <!-- Sticky header with back button and tabs -->
+  <div class="bg-sidebar px-6 pt-8 pb-0">
+    <div class="max-w-5xl mx-auto px-6">
+      <!-- Back button with keyboard shortcut -->
+      <button
+        onclick={navigateBackFromSettings}
+        class="group flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+      >
+        <Fa icon={faArrowLeft} class="text-xs opacity-50 mr-1" />
+        <span>{backLabel}</span>
+        <kbd
+          class="ml-2 px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground border border-border rounded opacity-60 group-hover:opacity-100 transition-opacity"
+        >
+          {isMac ? '⌘' : 'Ctrl'},
+        </kbd>
+      </button>
+
+      <h1 class="mt-3 mb-4 text-3xl font-semibold tracking-[-0.02em] text-foreground">Settings</h1>
+
+      <!-- Tab Bar -->
+      <div class="flex gap-1 border-b border-border -mx-6 px-6">
+        {#each tabs as tab (tab.id)}
+          <button
+            type="button"
+            onclick={() => setActiveTab(tab.id)}
+            class="px-4 py-2.5 text-sm font-medium transition-colors relative cursor-pointer
+              {activeTab === tab.id
+              ? 'text-foreground'
+              : 'text-muted-foreground hover:text-foreground'}"
+          >
+            {tab.label}
+            {#if activeTab === tab.id}
+              <span class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t-full"></span>
+            {/if}
+          </button>
+        {/each}
+      </div>
+    </div>
+  </div>
+
+  <div class="overflow-auto h-full">
+    <div class="min-h-[calc(100%-2rem)] flex flex-col max-w-5xl mx-auto mt-6 px-6 pb-8">
+      <!-- Agents Tab -->
+      {#if activeTab === 'agents'}
+        <div class="grid grid-cols-[min-content_1fr] gap-6 grow">
+          <AIBehaviorSidebar
+            activeView={aiBehaviorView}
+            onSelect={(view) => (aiBehaviorView = view)}
+          />
+          <AIBehaviorEditor
+            activeView={aiBehaviorView}
+            onSpecialistCreated={(id) => (aiBehaviorView = { type: 'specialist', id })}
+            onSpecialistDeleted={() => (aiBehaviorView = { type: 'system-prompt' })}
+            onDiscard={() => (aiBehaviorView = { type: 'system-prompt' })}
+          />
+        </div>
+      {/if}
+      <!-- Connections Tab -->
+      {#if activeTab === 'connections'}
+        <div class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            Providers
+          </h2>
+          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+            <section class="px-6 py-5">
+              <ProviderSelector />
+            </section>
+          </div>
+        </div>
+
+        <div class={cn({ 'opacity-50 pointer-events-none': !isAuggieProvider })}>
+          <!-- Auth Connections -->
+          <div id="integrations" class="mb-6 scroll-mt-20">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              Integrations
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <ConnectionsSettings />
+              </section>
+            </div>
+          </div>
+
+          <!-- MCP Servers -->
+          <div id="mcp-servers" class="mb-6">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              MCP Servers
+            </h2>
+            <McpServersSettings />
+          </div>
+        </div>
+      {/if}
+
+      <!-- Interface & System Tab -->
+      {#if activeTab === 'interface-system'}
+        <!-- Theme -->
+        <div class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            Appearance
+          </h2>
+          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+            <section class="px-6 py-5">
+              <div class="flex items-center justify-between">
+                <p class="text-sm font-medium text-foreground">Theme</p>
+                <Toggle
+                  variant="group"
+                  options={themeOptions}
+                  value={theme}
+                  onChange={handleThemeChange}
+                  size="sm"
+                />
+              </div>
+            </section>
+            <section class="px-6 py-5">
+              <ColorThemeSettings bind:this={colorThemeSettingsRef} />
+            </section>
+          </div>
+        </div>
+
+        <!-- Font Style -->
+        <div class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            Font Style
+          </h2>
+          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+            <section class="px-6 py-5">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-medium text-foreground">Notes</p>
+                  <p
+                    class="text-xs text-muted-foreground mt-0.5 transition-all duration-200"
+                    class:font-mono={noteFontSettings.fontStyle === 'monospace'}
+                  >
+                    The typeface used for your notes, specs, and documents. Monospace can feel more focused for technical writing.
+                  </p>
+                </div>
+                <Toggle
+                  variant="group"
+                  options={fontStyleOptions}
+                  value={noteFontSettings.fontStyle}
+                  onChange={handleNoteFontChange}
+                  size="sm"
+                />
+              </div>
+            </section>
+            <section class="px-6 py-5">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-medium text-foreground">Agent Chat</p>
+                  <p
+                    class="text-xs text-muted-foreground mt-0.5 transition-all duration-200"
+                    class:font-mono={agentFontSettings.fontStyle === 'monospace'}
+                  >
+                    The typeface used for agent conversation messages, including code references and explanations.
+                  </p>
+                </div>
+                <Toggle
+                  variant="group"
+                  options={fontStyleOptions}
+                  value={agentFontSettings.fontStyle}
+                  onChange={handleAgentFontChange}
+                  size="sm"
+                />
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <!-- Notifications -->
+        <div class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            Notifications
+          </h2>
+          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+            <section class="px-6 py-5">
+              <NotificationSettings />
+            </section>
+          </div>
+        </div>
+
+        <!-- Git & Workspace -->
+        <div class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            Git & Workspace
+          </h2>
+          <GitWorkspaceSettings bind:this={gitWorkspaceSettingsRef} />
+        </div>
+
+        <!-- Reset -->
+        <div class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            Reset
+          </h2>
+          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+            <section class="px-6 py-5">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-medium text-foreground">
+                    Reset Interface & System Settings
+                  </p>
+                  <p class="text-xs text-muted-foreground">
+                    Restore theme, notifications, git settings, and update preferences to defaults
+                  </p>
+                </div>
+                <Button variant="outline" size="sm" onclick={handleResetInterfaceSystem}>
+                  Reset to Defaults
+                </Button>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <!-- Developer Section (only in dev mode) -->
+        {#if isDevMode}
+          <div class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              Developer
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <div class="flex items-center gap-4">
+                  <Button variant="destructive" size="sm" onclick={handleTestSentryError}>
+                    Test Sentry Error
+                  </Button>
+                  {#if sentryTestStatus}
+                    <span class="text-sm text-muted-foreground">{sentryTestStatus}</span>
+                  {/if}
+                </div>
+              </section>
+              <section class="px-6 py-5">
+                <div class="flex flex-col gap-2">
+                  <span class="text-sm font-medium">Update Toast Simulation</span>
+                  <div class="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onclick={() => autoUpdateStore.simulateUpdateFlow()}
+                    >
+                      Simulate Update Flow
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onclick={() => autoUpdateStore.simulateNoUpdate()}
+                    >
+                      Simulate No Update
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onclick={() => autoUpdateStore.simulateReset()}
+                    >
+                      Reset
+                    </Button>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        {/if}
+      {/if}
+    </div>
+  </div>
+
+  <!-- Global Footer -->
+  <div class="px-6 py-4 border-t border-border bg-sidebar">
+    <div class="max-w-5xl mx-auto px-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <div class="text-sm text-muted-foreground">
+        <strong class="text-foreground">Intent by Augment</strong>
+        <span class="ml-2">
+          v{appVersion || '...'}
+          {#if autoUpdateStore.isReadyToInstall}
+            <span class="mx-2">·</span>
+            <button
+              class="font-medium underline text-primary hover:text-primary/80 cursor-pointer bg-transparent border-none p-0"
+              onclick={() => autoUpdateStore.installUpdate()}
+            >
+              Update available
+            </button>
+          {:else if autoUpdateStore.status === 'not-available' || autoUpdateStore.status === 'idle'}
+            <span class="mx-2">·</span>
+            <span class="text-muted-foreground/70">Up to date</span>
+          {/if}
+        </span>
+      </div>
+      <div class="flex flex-wrap items-center gap-x-1 gap-y-2">
+        <a
+          href="mailto:intentfeedback@augmentcode.com"
+          onclick={async (e) => {
+            e.preventDefault();
+            const anchor = e.currentTarget as HTMLAnchorElement;
+            const isCmdClick = isMacPlatform() ? e.metaKey : e.ctrlKey;
+            if (isCmdClick) {
+              await navigator.clipboard.writeText('intentfeedback@augmentcode.com');
+              flashCopied(anchor);
+            } else {
+              try {
+                await window.electronAPI?.invoke('shell:openExternal', { url: 'mailto:intentfeedback@augmentcode.com' });
+              } catch {
+                // Fallback: copy to clipboard if mailto fails
+                await navigator.clipboard.writeText('intentfeedback@augmentcode.com');
+                flashCopied(anchor);
+              }
+            }
+          }}
+          class="text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          >Feedback?</a
+        >
+      </div>
+    </div>
+  </div>
+</div>

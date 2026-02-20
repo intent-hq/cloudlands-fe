@@ -1,0 +1,290 @@
+/**
+ * HTML Sanitizer Utility
+ *
+ * Provides safe HTML sanitization to prevent XSS attacks
+ * while preserving necessary formatting and structure.
+ */
+
+import { Logger } from '$shared/logger';
+import DOMPurify from 'dompurify';
+
+const logger = new Logger('html-sanitizer');
+
+// Configure DOMPurify for our use cases
+const ALLOWED_TAGS = [
+  // Text content
+  'p',
+  'br',
+  'span',
+  'div',
+  // Formatting
+  'strong',
+  'b',
+  'em',
+  'i',
+  'u',
+  's',
+  'del',
+  'ins',
+  'mark',
+  // Lists
+  'ul',
+  'ol',
+  'li',
+  // Task list elements
+  'input',
+  'label',
+  // Code
+  'code',
+  'pre',
+  'kbd',
+  'samp',
+  'var',
+  // Headings
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  // Links (with restrictions)
+  'a',
+  // Tables
+  'table',
+  'thead',
+  'tbody',
+  'tfoot',
+  'tr',
+  'th',
+  'td',
+  // Quotes
+  'blockquote',
+  'q',
+  'cite',
+  // Other semantic elements
+  'abbr',
+  'address',
+  'article',
+  'aside',
+  'footer',
+  'header',
+  'main',
+  'nav',
+  'section',
+  // Data elements for our app
+  'data',
+];
+
+const ALLOWED_ATTRIBUTES = {
+  // Global attributes - include data attributes here so they work across all elements
+  '*': [
+    'class',
+    'id',
+    'title',
+    'dir',
+    'lang',
+    'data-anchor-id',
+    'data-anchor-type',
+    'data-comment-id',
+    'data-mention',
+    'data-mention-id',
+    'data-mention-type',
+    'style',
+  ],
+  // Link attributes (restricted)
+  a: ['href', 'target', 'rel'],
+  // Data attributes for our app functionality
+  span: [
+    'data-mention',
+    'data-mention-id',
+    'data-mention-type',
+    'data-comment-id',
+    'data-anchor-id',
+    'data-anchor-type',
+  ],
+  div: ['data-comment-anchor', 'data-comment-id', 'data-mermaid-code', 'data-type'],
+  // Task list attributes
+  li: ['data-type', 'data-checked'],
+  ul: ['data-type'],
+  input: ['type', 'checked', 'disabled'],
+  label: ['for'],
+  // Code attributes
+  code: ['class'],
+  pre: ['class'],
+  // Table attributes
+  td: ['colspan', 'rowspan'],
+  th: ['colspan', 'rowspan', 'scope'],
+};
+
+// Configure DOMPurify
+const purifyConfig = {
+  ALLOWED_TAGS,
+  ALLOWED_ATTR: Object.keys(ALLOWED_ATTRIBUTES).reduce((acc, tag) => {
+    const attrs = ALLOWED_ATTRIBUTES[tag as keyof typeof ALLOWED_ATTRIBUTES];
+    return [...acc, ...attrs];
+  }, [] as string[]),
+  // Add data attributes for task lists
+  ADD_ATTR: ['data-type', 'data-checked'],
+  ALLOW_DATA_ATTR: true,
+  KEEP_CONTENT: true,
+  RETURN_DOM: false,
+  RETURN_DOM_FRAGMENT: false,
+  SAFE_FOR_TEMPLATES: true,
+  SANITIZE_DOM: true,
+  // Prevent javascript: URLs, but allow intent:// protocol for internal navigation
+  ALLOWED_URI_REGEXP:
+    /^(?:(?:https?|mailto|tel|sms|intent):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+};
+
+/**
+ * Sanitize HTML content to prevent XSS attacks
+ */
+export function sanitizeHTML(html: string, options: Partial<typeof purifyConfig> = {}): string {
+  if (!html) return '';
+
+  try {
+    const config = { ...purifyConfig, ...options };
+    // When RETURN_DOM is false (which is our default), sanitize returns a string
+    const sanitized = DOMPurify.sanitize(html, config) as string;
+
+    // Ensure we always return a string (defensive check)
+    const sanitizedString = typeof sanitized === 'string' ? sanitized : String(sanitized);
+
+    // Log if content was modified during sanitization
+    if (sanitizedString !== html) {
+      logger.debug('HTML content was sanitized', {
+        originalLength: html.length,
+        sanitizedLength: sanitizedString.length,
+        modified: true,
+      });
+    }
+
+    return sanitizedString;
+  } catch (error) {
+    logger.error('Failed to sanitize HTML', error as Error);
+    // Return empty string on error to be safe
+    return '';
+  }
+}
+
+/**
+ * Sanitize HTML for display in comments
+ */
+export function sanitizeCommentHTML(html: string): string {
+  return sanitizeHTML(html, {
+    // More restrictive for comments
+    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'code', 'a', 'ul', 'ol', 'li'],
+    ALLOWED_ATTR: ['href', 'target', 'rel', 'class'],
+  });
+}
+
+/**
+ * Sanitize HTML for display in markdown preview
+ */
+export function sanitizeMarkdownHTML(html: string): string {
+  return sanitizeHTML(html, {
+    // Allow more tags for markdown
+    ALLOWED_TAGS: [...ALLOWED_TAGS, 'img', 'hr', 'details', 'summary'],
+    // Allow all attributes from ALLOWED_ATTRIBUTES plus img attributes
+    // DOMPurify expects attribute names in the array, not "tag:attr" format
+    ALLOWED_ATTR: [
+      'class',
+      'id',
+      'title',
+      'dir',
+      'lang', // Global attributes from "*"
+      'href',
+      'target',
+      'rel', // Link attributes from "a"
+      'data-mention',
+      'data-mention-id',
+      'data-mention-type',
+      'data-id',
+      'data-label',
+      'data-uri',
+      'data-meta', // TipTap mention attributes
+      'data-comment-id', // Span attributes
+      'data-anchor-id',
+      'data-anchor-type', // Comment anchor attributes
+      'data-comment-anchor', // Div attributes
+      'data-mermaid-code', // Mermaid diagram code
+      'data-type',
+      'data-checked',
+      'data-status',
+      'data-delegated-agent-id', // Task list attributes
+      'data-question',
+      'data-options',
+      'data-selected', // Choice block attributes (V1 and V2)
+      'type',
+      'checked',
+      'disabled', // Input attributes
+      'src',
+      'alt',
+      'width',
+      'height', // Image attributes
+      'data-primitive',
+      'data-primitive-type',
+      'data-primitive-id',
+      'data-primitive-base64', // ws-block primitive attributes
+      'data-item-type',
+      'data-provider',
+      'data-title',
+      'data-identifier',
+      'data-url',
+      'data-description',
+      'data-metadata', // Context mention attributes (Linear, GitHub, Sentry issues)
+      'open', // details element open state
+      'tabindex', // for focusable elements like mention chips
+    ],
+    // Allow workspace-asset:// protocol for embedded images in notes
+    ALLOWED_URI_REGEXP:
+      /^(?:(?:https?|mailto|tel|sms|intent|workspace-asset):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+  });
+}
+
+/**
+ * Extract text content from HTML safely
+ */
+export function extractTextFromHTML(html: string): string {
+  if (!html) return '';
+
+  try {
+    // First sanitize the HTML
+    const sanitized = sanitizeHTML(html);
+
+    // Then extract text content
+    if (typeof document !== 'undefined' && typeof DOMParser !== 'undefined') {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(sanitized, 'text/html');
+      return doc.body.textContent || '';
+    }
+
+    // Fallback for non-browser environments
+    return sanitized.replace(/<[^>]*>/g, '');
+  } catch (error) {
+    logger.error('Failed to extract text from HTML', error as Error);
+    return '';
+  }
+}
+
+/**
+ * Check if HTML contains potentially dangerous content
+ */
+export function isDangerousHTML(html: string): boolean {
+  if (!html) return false;
+
+  const dangerous = [
+    /<script/i,
+    /<iframe/i,
+    /<object/i,
+    /<embed/i,
+    /<applet/i,
+    /javascript:/i,
+    /on\w+\s*=/i, // Event handlers
+    /<meta/i,
+    /<link/i,
+    /<style/i,
+  ];
+
+  return dangerous.some((pattern) => pattern.test(html));
+}

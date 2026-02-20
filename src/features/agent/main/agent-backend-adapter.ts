@@ -1,0 +1,586 @@
+/**
+ * Agent Backend Adapter
+ *
+ * Adapts the existing AgentBackendHandler to the new IAgentBackendService interface.
+ * Enables gradual migration to unified handlers while maintaining backward compatibility.
+ *
+ * This adapter provides a complete implementation of all agent operations,
+ * bridging the old handler methods to the new unified interface.
+ */
+
+import type { IAgentBackendService } from './unified-agent-handlers';
+import type { AgentIpc } from '$shared/ipc/contracts';
+import { AgentBackendHandler } from './agent-backend-handler.service';
+import { Logger } from '$shared/logger';
+import * as BrandedIds from '$shared/types/branded-ids';
+import { WorkspaceConfig } from '$shared/main/config.js';
+
+const logger = new Logger('AgentBackendAdapter');
+
+/**
+ * Adapter that implements IAgentBackendService using existing AgentBackendHandler
+ */
+class AgentBackendAdapter implements IAgentBackendService {
+  private handler: AgentBackendHandler;
+
+  constructor() {
+    this.handler = AgentBackendHandler.getInstance();
+  }
+
+  async createAgent(request: AgentIpc.CreateRequest): Promise<AgentIpc.CreateResponse> {
+    logger.info('Adapter: createAgent', {
+      workspaceId: request.workspaceId,
+      agentId: request.agentId,
+      hasAgentId: !!request.agentId,
+      agentType: request.agentType,
+      hasBehaviorPrompt: !!request.behaviorPrompt,
+      behaviorPromptLength: request.behaviorPrompt?.length || 0,
+      hasSystemPrompt: !!request.systemPrompt,
+    });
+
+    // Validate workspace ID
+    if (!request.workspaceId || typeof request.workspaceId !== 'string') {
+      throw new Error('Invalid workspace ID');
+    }
+
+    // Call existing handler method
+    const result = await (this.handler as any).handleCreateAgent(null, {
+      workspaceId: request.workspaceId,
+      workspacePath: request.workspacePath,
+      name: request.name,
+      agentId: request.agentId, // Pass the frontend-generated agent ID if provided
+      model: request.model,
+      provider: request.provider, // Pass provider so backend uses the correct ACP provider
+      agentType: request.agentType, // Pass agentType so backend can build system prompt
+      behaviorPrompt: request.behaviorPrompt, // Pass custom behavior instructions from specialist
+      systemPrompt: request.systemPrompt,
+      initialMessage: request.initialMessage,
+      contextReferences: request.contextReferences,
+      metadata: request.metadata,
+    });
+
+    if (!result.success || !result.agent) {
+      throw new Error(result.error || 'Failed to create agent');
+    }
+
+    return {
+      agent: result.agent,
+      sessionId: (result.agent as any).backendSessionId,
+    };
+  }
+
+  async getAgent(request: AgentIpc.GetRequest): Promise<AgentIpc.GetResponse> {
+    logger.debug('Adapter: getAgent', { agentId: request.agentId });
+
+    // Call existing handler method
+    const result = await (this.handler as any).handleGetAgent(null, {
+      agentId: request.agentId,
+      workspaceId: request.workspaceId,
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to get agent');
+    }
+
+    return {
+      agent: result.agent || null,
+    };
+  }
+
+  async sendMessage(request: AgentIpc.SendMessageRequest): Promise<AgentIpc.SendMessageResponse> {
+    logger.debug('Adapter: sendMessage', { agentId: request.agentId });
+
+    // Generate IDs for the message
+    const messageId = this.generateMessageId();
+    const streamId = this.generateStreamId();
+
+    // Call existing handler method
+    const result = await (this.handler as any).handleSendMessage(null, {
+      agentId: request.agentId,
+      content: request.content,
+      contextReferences: request.contextReferences,
+      metadata: request.metadata,
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to send message');
+    }
+
+    return {
+      messageId: BrandedIds.MessageId(messageId),
+      streamId: BrandedIds.AgentId(streamId),
+    };
+  }
+
+  async listAgents(request: AgentIpc.ListRequest): Promise<AgentIpc.ListResponse> {
+    logger.debug('Adapter: listAgents', { workspaceId: request.workspaceId });
+
+    // Call existing handler method
+    const result = await (this.handler as any).handleListAgents(null, {
+      workspaceId: request.workspaceId,
+      includeDeleted: request.includeDeleted,
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to list agents');
+    }
+
+    return {
+      agents: result.agents || [],
+    };
+  }
+
+  async deleteAgent(request: AgentIpc.DeleteRequest): Promise<AgentIpc.DeleteResponse> {
+    logger.debug('Adapter: deleteAgent', { agentId: request.agentId });
+
+    const result = await (this.handler as any).handleDeleteAgent(null, {
+      agentId: request.agentId,
+      workspaceId: request.workspaceId,
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to delete agent');
+    }
+
+    return { success: true };
+  }
+
+  async stopSession(request: AgentIpc.StopRequest): Promise<AgentIpc.StopResponse> {
+    logger.debug('Adapter: stopSession', { agentId: request.agentId });
+
+    const result = await (this.handler as any).handleStopSession(null, {
+      agentId: request.agentId,
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to stop session');
+    }
+
+    return { success: true };
+  }
+
+  // Persistence operations
+  async saveAgent(request: AgentIpc.SaveRequest): Promise<AgentIpc.SaveResponse> {
+    logger.debug('Adapter: saveAgent', { agentId: request.agentId });
+
+    // The handler expects agent and workspacePath, but we receive agentId and workspaceId
+    // We need to load the agent first to save it
+    const getResult = await (this.handler as any).handleGetAgent(null, {
+      agentId: request.agentId,
+      workspaceId: request.workspaceId,
+    });
+
+    if (!getResult.success || !getResult.agent) {
+      throw new Error('Agent not found');
+    }
+
+    // Get workspace metadata path (NOT worktree path) using WorkspaceConfig
+    // Agents are stored in ~/intent/{workspaceId}/.workspace/agents/
+    // NOT in the worktree path like ~/intent/{workspaceId}/repo/.workspace/agents/
+    const workspacePath = WorkspaceConfig.paths.workspace(request.workspaceId);
+
+    const result = await (this.handler as any).handlePersistenceSave(null, {
+      agent: getResult.agent,
+      workspacePath,
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to save agent');
+    }
+
+    return { success: true };
+  }
+
+  async loadAgent(request: AgentIpc.LoadRequest): Promise<AgentIpc.LoadResponse> {
+    logger.debug('Adapter: loadAgent', { agentId: request.agentId });
+
+    // Get workspace metadata path (NOT worktree path) using WorkspaceConfig
+    // Agents are stored in ~/intent/{workspaceId}/.workspace/agents/
+    // NOT in the worktree path like ~/intent/{workspaceId}/repo/.workspace/agents/
+    const workspacePath = WorkspaceConfig.paths.workspace(request.workspaceId);
+
+    const result = await (this.handler as any).handlePersistenceLoad(null, {
+      agentId: request.agentId,
+      workspaceId: request.workspaceId,
+      workspacePath,
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to load agent');
+    }
+
+    return {
+      agent: result.data,
+      success: true,
+    };
+  }
+
+  async listSavedAgents(request: AgentIpc.ListSavedRequest): Promise<AgentIpc.ListSavedResponse> {
+    logger.debug('Adapter: listSavedAgents', { workspaceId: request.workspaceId });
+
+    const result = await (this.handler as any).handlePersistenceList(null, {
+      workspaceId: request.workspaceId,
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to list saved agents');
+    }
+
+    // handlePersistenceList returns { success: true, data: agents[] }
+    return {
+      agents: result.data || [],
+    };
+  }
+
+  // Lifecycle operations
+  async activateAgent(request: AgentIpc.ActivateRequest): Promise<AgentIpc.ActivateResponse> {
+    logger.debug('Adapter: activateAgent', {
+      agentId: request.agentId,
+      workspaceId: (request as any).workspaceId,
+    });
+
+    const result = await (this.handler as any).handleActivateAgent(null, {
+      agentId: request.agentId,
+      workspaceId: (request as any).workspaceId, // Pass through the workspaceId if provided
+      sessionId: (request as any).sessionId, // Pass through the sessionId if provided
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to activate agent');
+    }
+
+    return {
+      success: true,
+      backendSessionId: result.backendSessionId,
+      agent: result.agent, // Pass through the full agent session
+    };
+  }
+
+  private generateMessageId(): string {
+    return `msg_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  }
+
+  private generateStreamId(): string {
+    return `stream_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  }
+
+  // Stub implementations for missing interface methods
+  async updateSession(request: any): Promise<any> {
+    logger.warn('updateSession not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async exportSession(request: any): Promise<any> {
+    logger.warn('exportSession not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async importSession(request: any): Promise<any> {
+    logger.warn('importSession not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async getHistory(request: any): Promise<any> {
+    logger.warn('getHistory not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async updateMetadata(request: any): Promise<any> {
+    logger.warn('updateMetadata not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async forkSession(request: any): Promise<any> {
+    logger.warn('forkSession not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async mergeSession(request: any): Promise<any> {
+    logger.warn('mergeSession not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async getStats(request: any): Promise<any> {
+    logger.warn('getStats not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async validateSession(request: any): Promise<any> {
+    logger.warn('validateSession not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async repairSession(request: any): Promise<any> {
+    logger.warn('repairSession not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async clearSession(request: any): Promise<any> {
+    logger.warn('clearSession not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async pauseSession(request: any): Promise<any> {
+    logger.warn('pauseSession not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async getStatus(request: any): Promise<any> {
+    logger.warn('getStatus not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async deletePersistedAgent(request: any): Promise<any> {
+    logger.debug('Adapter: deletePersistedAgent', request);
+
+    const result = await (this.handler as any).handlePersistenceDelete(null, request);
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to delete persisted agent');
+    }
+
+    return { success: true };
+  }
+
+  async saveMessage(request: any): Promise<any> {
+    logger.debug('Adapter: saveMessage', request);
+
+    const result = await (this.handler as any).handlePersistenceSaveMessage(null, request);
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to save message');
+    }
+
+    return { success: true };
+  }
+
+  async batchPersistence(request: any): Promise<any> {
+    logger.debug('Adapter: batchPersistence', request);
+
+    const result = await (this.handler as any).handlePersistenceBatch(null, request);
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to execute batch persistence');
+    }
+
+    return { success: true, results: result.results };
+  }
+
+  async getPersistenceMetrics(request: any): Promise<any> {
+    logger.debug('Adapter: getPersistenceMetrics', request);
+
+    const result = await (this.handler as any).handlePersistenceMetrics(null, request);
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to get persistence metrics');
+    }
+
+    return { success: true, data: result.data };
+  }
+
+  async clearPersistence(request: any): Promise<any> {
+    logger.debug('Adapter: clearPersistence', request);
+
+    const result = await (this.handler as any).handlePersistenceClear(null, request);
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to clear persistence');
+    }
+
+    return { success: true };
+  }
+
+  async lifecycleStart(request: any): Promise<any> {
+    logger.debug('Adapter: lifecycleStart', request);
+
+    const result = await (this.handler as any).handleLifecycleStart(null, request);
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to start lifecycle');
+    }
+
+    return { success: true };
+  }
+
+  async lifecycleStop(request: any): Promise<any> {
+    logger.debug('Adapter: lifecycleStop', request);
+
+    const result = await (this.handler as any).handleLifecycleStop(null, request);
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to stop lifecycle');
+    }
+
+    return { success: true };
+  }
+
+  async messagingSend(request: any): Promise<any> {
+    logger.debug('Adapter: messagingSend', request);
+
+    const result = await (this.handler as any).handleMessagingSend(null, request);
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to send message');
+    }
+
+    return { success: true };
+  }
+
+  async messagingReceive(request: any): Promise<any> {
+    logger.debug('Adapter: messagingReceive', request);
+
+    const result = await (this.handler as any).handleMessagingReceive(null, request);
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to receive message');
+    }
+
+    return { success: true, data: result.data };
+  }
+
+  async setModel(request: {
+    agentId: string;
+    modelId: string;
+    workspaceId: string;
+  }): Promise<{ success: boolean; modelId?: string; error?: string }> {
+    logger.debug('Adapter: setModel', request);
+
+    const result = await this.handler.handleSetModel(null, request);
+    return result;
+  }
+
+  async getContext(request: any): Promise<any> {
+    logger.warn('getContext not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async updateContext(request: any): Promise<any> {
+    logger.warn('updateContext not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async getContextByWorkspace(request: any): Promise<any> {
+    logger.warn('getContextByWorkspace not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async getContextBySession(request: any): Promise<any> {
+    logger.warn('getContextBySession not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async getCapabilities(request: any): Promise<any> {
+    logger.warn('getCapabilities not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async setCapabilities(request: any): Promise<any> {
+    logger.warn('setCapabilities not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async getMetrics(request: any): Promise<any> {
+    logger.warn('getMetrics not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async resetMetrics(request: any): Promise<any> {
+    logger.warn('resetMetrics not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async getLogs(request: any): Promise<any> {
+    logger.warn('getLogs not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  async clearLogs(request: any): Promise<any> {
+    logger.warn('clearLogs not implemented');
+    return { success: false, error: 'Not implemented' };
+  }
+
+  // Backend channel methods (for streaming)
+  async streamMessage(request: any): Promise<any> {
+    logger.debug('Adapter: streamMessage', { agentId: request.agentId });
+
+    // Call the existing backend stream message handler
+    const result = await (this.handler as any).handleBackendStreamMessage(null, request);
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to stream message');
+    }
+
+    return result;
+  }
+
+  async backendStop(request: any): Promise<any> {
+    logger.debug('Adapter: backendStop', { agentId: request.agentId });
+
+    // Call the existing stop session handler
+    const result = await (this.handler as any).handleStopSession(null, request);
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to stop session');
+    }
+
+    return result;
+  }
+
+  // Message queue operations
+  async queueMessage(request: {
+    agentId: string;
+    content: string;
+    contextItems?: any[];
+    imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+  }): Promise<{ success: boolean; queuedMessage?: any; error?: string }> {
+    logger.debug('Adapter: queueMessage', {
+      agentId: request.agentId,
+      hasImages: !!request.imageBlocks?.length,
+    });
+    return await (this.handler as any).handleQueueMessage(null, request);
+  }
+
+  async editQueuedMessage(request: {
+    agentId: string;
+    messageId: string;
+    content: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    logger.debug('Adapter: editQueuedMessage', {
+      agentId: request.agentId,
+      messageId: request.messageId,
+    });
+    return await (this.handler as any).handleEditQueuedMessage(null, request);
+  }
+
+  async removeQueuedMessage(request: {
+    agentId: string;
+    messageId: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    logger.debug('Adapter: removeQueuedMessage', {
+      agentId: request.agentId,
+      messageId: request.messageId,
+    });
+    return await (this.handler as any).handleRemoveQueuedMessage(null, request);
+  }
+
+  async getQueue(request: {
+    agentId: string;
+  }): Promise<{ success: boolean; queue?: any[]; error?: string }> {
+    logger.debug('Adapter: getQueue', { agentId: request.agentId });
+    return await (this.handler as any).handleGetQueue(null, request);
+  }
+}
+
+/**
+ * Return the singleton adapter instance
+ */
+export function getAgentBackendAdapter(): IAgentBackendService {
+  return agentBackendAdapter;
+}
+
+// AgentBackendAdapter is already exported at the class declaration
+
+/**
+ * Export a singleton instance
+ */
+export const agentBackendAdapter = new AgentBackendAdapter();

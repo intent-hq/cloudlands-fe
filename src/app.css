@@ -1,0 +1,751 @@
+@import 'tailwindcss';
+@import '$lib/styles/tiptap-editor.css';
+@import '$lib/styles/chat-messages.css';
+@import '$lib/styles/comments.css';
+
+@theme {
+  /* Map CSS variables to Tailwind color utilities */
+  --color-background: hsl(var(--background));
+  --color-app-background: hsl(var(--app-background));
+  --color-foreground: hsl(var(--foreground));
+  --color-sidebar: hsl(var(--sidebar));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  /* Success and warning colors */
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+  --color-warning: hsl(var(--warning));
+  --color-warning-foreground: hsl(var(--warning-foreground));
+
+  /* Border radius */
+  --radius-lg: 0.5rem;
+  --radius-md: 0.375rem;
+  --radius-sm: 0.25rem;
+}
+
+/* Light theme (default) */
+:root {
+  /* Vercel-inspired colors */
+  --background: 0 0% 100%;
+  --app-background: 240 12% 89%;
+  --foreground: 0 0% 9%;
+  --sidebar: 230 10% 97%;
+  --sidebar-foreground: 0 0% 9%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 9%;
+  --primary: 158 100% 30%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 96%;
+  --secondary-foreground: 0 0% 9%;
+  --muted: 0 0% 91%;
+  --muted-foreground: 0 0% 35%;
+  --accent: 158 100% 30%;
+  --accent-foreground: 212 100% 48%;
+  --destructive: 0 84% 95%;
+  --destructive-foreground: 0 84% 40%;
+  --border: 0 0% 90%;
+  --input: 0 0% 90%;
+  --ring: 212 100% 48%;
+  --radius: 0.375rem;
+
+  /* Z-index values for layering */
+  --z-comments-portal: 20;
+  --z-comments-focused: 21;
+
+  /* Text color variables for compatibility */
+  --text-primary: hsl(0 0% 9%);
+  --text-secondary: hsl(0 0% 55%);
+  --text-tertiary: hsl(0 0% 64%);
+  --danger-color: hsl(0 84% 60%);
+
+  /* Additional variables for components */
+  --bg-primary: hsl(0 0% 100%);
+  --bg-secondary: hsl(0 0% 98%);
+  --bg-tertiary: hsl(0 0% 96%);
+  --primary-color: hsl(158 100% 30%);
+  --secondary-color: hsl(212 100% 60%);
+
+  /* Additional colors */
+  --success: hsl(142 76% 36%);
+  --success-foreground: hsl(0 0% 100%);
+  --warning: hsl(38 92% 50%);
+  --warning-foreground: hsl(0 0% 9%);
+
+  /* VSCode Panel Variables */
+  --vscode-panel-background: hsl(0 0% 96%);
+  --vscode-panelTitle-activeForeground: hsl(0 0% 9%);
+  --vscode-panelTitle-inactiveForeground: hsl(0 0% 45%);
+  --vscode-panel-border: hsl(0 0% 90%);
+  --vscode-list-hoverBackground: hsla(0, 0%, 0%, 0.04);
+  --vscode-list-activeSelectionBackground: hsla(212, 100%, 48%, 0.15);
+  --vscode-toolbar-hoverBackground: hsla(0, 0%, 0%, 0.08);
+  --vscode-focusBorder: hsl(212 100% 48%);
+  --vscode-scrollbarSlider-background: hsla(0, 0%, 0%, 0.2);
+  --vscode-scrollbarSlider-hoverBackground: hsla(0, 0%, 0%, 0.3);
+  --vscode-scrollbarSlider-activeBackground: hsla(0, 0%, 0%, 0.4);
+}
+
+.dark {
+  --background: 240 12% 12%;
+  --app-background: 239 13% 0%;
+  --foreground: 0 0% 97%;
+  --sidebar: 240 15% 5%;
+  --sidebar-foreground: 0 0% 97%;
+  --card: 250 11% 8%;
+  --card-foreground: 0 0% 97%;
+  --popover: 240 12% 11%;
+  --popover-foreground: 0 0% 97%;
+  --primary: 158 100% 30%;
+  --primary-foreground: 0 0% 9%;
+  --secondary: 0 0% 11%;
+  --secondary-foreground: 0 0% 97%;
+  --muted: 239 13% 0%;
+  --muted-foreground: 257 9% 65%;
+  --accent: 158 100% 30%;
+  --accent-foreground: 201 98% 80%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 0 0% 97%;
+  --border: 256 6% 25%;
+  --input: 239 13% 0%;
+  --ring: 212 100% 48%;
+
+  /* Text color variables for dark mode */
+  --text-primary: hsl(0 0% 98%);
+  --text-secondary: hsl(257 9% 52%);
+  --text-tertiary: hsl(0 0% 55%);
+  --danger-color: hsl(0 62.8% 30.6%);
+
+  /* Additional variables for dark mode */
+  --bg-primary: hsl(260 23% 11%);
+  --bg-secondary: hsl(0 0% 7%);
+  --bg-tertiary: hsl(0 0% 14.9%);
+  --primary-color: hsl(158 100% 30%);
+  --secondary-color: hsl(212 100% 60%);
+
+  /* VSCode Panel Variables (Dark) */
+  --vscode-panel-background: hsl(252 53% 6.6%);
+  --vscode-panelTitle-activeForeground: hsl(0 0% 90%);
+  --vscode-panelTitle-inactiveForeground: hsl(0 0% 60%);
+  --vscode-panel-border: hsl(250 35% 20%);
+  --vscode-list-hoverBackground: hsla(0, 0%, 100%, 0.04);
+  --vscode-list-activeSelectionBackground: hsla(245, 100%, 69%, 0.15);
+  --vscode-toolbar-hoverBackground: hsla(0, 0%, 100%, 0.08);
+  --vscode-focusBorder: hsl(158 100% 30%);
+  --vscode-scrollbarSlider-background: hsla(255, 255, 255, 0.2);
+  --vscode-scrollbarSlider-hoverBackground: hsla(255, 255, 255, 0.3);
+  --vscode-scrollbarSlider-activeBackground: hsla(255, 255, 255, 0.4);
+}
+
+/* Explicit light theme class */
+.light {
+  --background: 0 0% 100%;
+  --app-background: 240 12% 89%;
+  --foreground: 0 0% 9%;
+  --sidebar: 230 10% 97%;
+  --sidebar-foreground: 0 0% 9%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 9%;
+  --primary: 158 100% 30%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 96%;
+  --secondary-foreground: 0 0% 9%;
+  --muted: 0 0% 91%;
+  --muted-foreground: 0 0% 35%;
+  --accent: 158 100% 30%;
+  --accent-foreground: 212 100% 48%;
+  --destructive: 0 84% 95%;
+  --destructive-foreground: 0 84% 40%;
+  --border: 0 0% 90%;
+  --input: 0 0% 90%;
+  --ring: 212 100% 48%;
+
+  /* Text color variables for light mode */
+  --text-primary: hsl(0 0% 9%);
+  --text-secondary: hsl(0 0% 55%);
+  --text-tertiary: hsl(0 0% 64%);
+  --danger-color: hsl(0 84% 60%);
+
+  /* Additional variables for light mode */
+  --bg-primary: hsl(0 0% 100%);
+  --bg-secondary: hsl(0 0% 98%);
+  --bg-tertiary: hsl(0 0% 96%);
+  --primary-color: hsl(158 100% 30%);
+  --secondary-color: hsl(212 100% 60%);
+
+  /* VSCode Panel Variables (Light) */
+  --vscode-panel-background: hsl(0 0% 96%);
+  --vscode-panelTitle-activeForeground: hsl(0 0% 9%);
+  --vscode-panelTitle-inactiveForeground: hsl(0 0% 45%);
+  --vscode-panel-border: hsl(0 0% 90%);
+  --vscode-list-hoverBackground: hsla(0, 0%, 0%, 0.04);
+  --vscode-list-activeSelectionBackground: hsla(212, 100%, 48%, 0.15);
+  --vscode-toolbar-hoverBackground: hsla(0, 0%, 0%, 0.08);
+  --vscode-focusBorder: hsl(212 100% 48%);
+  --vscode-scrollbarSlider-background: hsla(0, 0%, 0%, 0.2);
+  --vscode-scrollbarSlider-hoverBackground: hsla(0, 0%, 0%, 0.3);
+  --vscode-scrollbarSlider-activeBackground: hsla(0, 0%, 0%, 0.4);
+}
+
+/* Apply dark theme based on OS preference */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not(.dark) {
+    --background: 240 12% 12%;
+    --app-background: 239 13% 0%;
+    --foreground: 0 0% 97%;
+    --sidebar: 240 15% 5%;
+    --sidebar-foreground: 0 0% 97%;
+    --card: 250 11% 8%;
+    --card-foreground: 0 0% 97%;
+    --popover: 240 12% 11%;
+    --popover-foreground: 0 0% 97%;
+    --primary: 158 100% 30%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 11%;
+    --secondary-foreground: 0 0% 97%;
+    --muted: 239 13% 0%;
+    --muted-foreground: 257 9% 65%;
+    --accent: 158 100% 30%;
+    --accent-foreground: 201 98% 80%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 97%;
+    --border: 256 6% 25%;
+    --input: 239 13% 0%;
+    --ring: 212 100% 48%;
+
+    /* Text color variables for compatibility */
+    --text-primary: hsl(0 0% 98%);
+    --text-secondary: hsl(257 9% 52%);
+    --text-tertiary: hsl(0 0% 55%);
+    --danger-color: hsl(0 62.8% 30.6%);
+
+    /* Additional variables for components */
+    --bg-primary: hsl(260 23% 11%);
+    --bg-secondary: hsl(0 0% 7%);
+    --bg-tertiary: hsl(0 0% 14.9%);
+    --primary-color: hsl(212 100% 48%);
+    --secondary-color: hsl(212 100% 60%);
+
+    /* Success and warning colors for dark mode */
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 97%;
+    --warning: 48 96% 53%;
+    --warning-foreground: 0 0% 9%;
+  }
+}
+
+html,
+body {
+  /* Solid background for better performance (vibrancy disabled) */
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family:
+    -apple-system, BlinkMacSystemFont, Inter, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell',
+    'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-size: 14.5px;
+
+  --header-height: 2.7rem;
+  --footer-height: 1.75rem;
+  --panel-header-height: 3rem;
+}
+
+/* Vercel-style typography */
+/* h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+h1 { font-size: 2.5rem; }
+h2 { font-size: 2rem; }
+h3 { font-size: 1.5rem; }
+h4 { font-size: 1.25rem; }
+h5 { font-size: 1.125rem; }
+h6 { font-size: 1rem; } */
+
+/* Placeholder color */
+input::placeholder,
+textarea::placeholder {
+  color: hsl(var(--muted-foreground));
+  opacity: 1;
+}
+
+/* Smooth transitions - removed to make hover effects snappier */
+/* Hover color changes should appear instantly for better UX */
+/* Layout transitions (panel resizing, accordion, etc.) are handled per-component */
+
+/* Focus styles */
+/* :focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+} */
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Loading skeleton animation */
+@keyframes skeleton-loading {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted) / 0.5),
+    hsl(var(--muted) / 0.3),
+    hsl(var(--muted) / 0.5)
+  );
+  background-size: 200% 100%;
+  animation: skeleton-loading 2s ease-in-out infinite;
+}
+
+/* Fade in animation */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+/* Streaming text animations */
+@keyframes stream-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-stream-in {
+  animation: stream-in 0.2s ease-out;
+}
+
+/* Smooth word appearance */
+@keyframes word-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-word {
+  animation: word-appear 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Tool call animations */
+@keyframes tool-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.8;
+    transform: scale(0.98);
+  }
+}
+
+.animate-tool-pulse {
+  animation: tool-pulse 1.5s infinite;
+}
+
+/* Pause animations when page is hidden (controlled via JS class on body) */
+.animations-paused .animate-tool-pulse,
+.animations-paused .streaming-cursor,
+.animations-paused .animate-shimmer {
+  animation-play-state: paused !important;
+}
+
+/* Message container animations */
+@keyframes message-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-message-in {
+  animation: message-slide-up 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Streaming cursor */
+@keyframes cursor-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: currentColor;
+  color: var(--text-muted-primary);
+  margin-left: 2px;
+  margin-top: -0.3em;
+  animation: cursor-blink 1s infinite;
+  vertical-align: text-top;
+}
+
+/* Shimmer effect for loading states */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* Gradient fade-out utilities */
+.fade-edge-b {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2rem;
+  pointer-events: none;
+  z-index: 10;
+  background: linear-gradient(
+    to top,
+    hsl(var(--background)),
+    hsl(var(--background) / 0.95) 20%,
+    hsl(var(--background) / 0.7) 60%,
+    transparent
+  );
+}
+
+.fade-edge-t {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2rem;
+  pointer-events: none;
+  z-index: 10;
+  background: linear-gradient(
+    to bottom,
+    hsl(var(--background)),
+    hsl(var(--background) / 0.95) 20%,
+    hsl(var(--background) / 0.7) 60%,
+    transparent
+  );
+}
+
+.fade-edge-b-subtle {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1.5rem;
+  pointer-events: none;
+  z-index: 10;
+  background: linear-gradient(
+    to top,
+    hsl(var(--background)),
+    hsl(var(--background) / 0.8) 40%,
+    transparent
+  );
+}
+
+.fade-edge-t-subtle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1.5rem;
+  pointer-events: none;
+  z-index: 10;
+  background: linear-gradient(
+    to bottom,
+    hsl(var(--background)),
+    hsl(var(--background) / 0.8) 40%,
+    transparent
+  );
+}
+
+/* Sidebar-specific gradients */
+.fade-edge-b-sidebar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 0.5rem;
+  pointer-events: none;
+  z-index: 10;
+  background: linear-gradient(
+    to top,
+    hsl(var(--sidebar)),
+    hsl(var(--sidebar) / 0.95) 20%,
+    hsl(var(--sidebar) / 0.7) 60%,
+    transparent
+  );
+}
+
+.fade-edge-t-sidebar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 0.5rem;
+  pointer-events: none;
+  z-index: 10;
+  background: linear-gradient(
+    to bottom,
+    hsl(var(--sidebar)),
+    hsl(var(--sidebar) / 0.95) 20%,
+    hsl(var(--sidebar) / 0.7) 60%,
+    transparent
+  );
+}
+
+/* Muted background gradients */
+.fade-edge-b-muted {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2rem;
+  pointer-events: none;
+  z-index: 10;
+  background: linear-gradient(
+    to top,
+    hsl(var(--muted)),
+    hsl(var(--muted) / 0.95) 20%,
+    hsl(var(--muted) / 0.7) 60%,
+    transparent
+  );
+}
+
+.fade-edge-t-muted {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2rem;
+  pointer-events: none;
+  z-index: 10;
+  background: linear-gradient(
+    to bottom,
+    hsl(var(--muted)),
+    hsl(var(--muted) / 0.95) 20%,
+    hsl(var(--muted) / 0.7) 60%,
+    transparent
+  );
+}
+
+/* Legacy class names for backward compatibility */
+.gradient-fade-bottom {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2rem;
+  pointer-events: none;
+  z-index: 10;
+  background: linear-gradient(
+    to top,
+    hsl(var(--background)),
+    hsl(var(--background) / 0.95) 20%,
+    hsl(var(--background) / 0.7) 60%,
+    transparent
+  );
+}
+
+.gradient-fade-bottom-subtle {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1.5rem;
+  pointer-events: none;
+  z-index: 10;
+  background: linear-gradient(
+    to top,
+    hsl(var(--background)),
+    hsl(var(--background) / 0.8) 40%,
+    transparent
+  );
+}
+
+.gradient-fade-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2rem;
+  pointer-events: none;
+  z-index: 10;
+  background: linear-gradient(
+    to bottom,
+    hsl(var(--background)),
+    hsl(var(--background) / 0.95) 20%,
+    hsl(var(--background) / 0.7) 60%,
+    transparent
+  );
+}
+
+/* Hide scrollbar utility */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Custom scrollbar styles */
+.overflow-y-auto {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+
+.overflow-y-auto::-webkit-scrollbar {
+  width: 6px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--border));
+  border-radius: 3px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground));
+}
+
+/* Panel resizing - disable pointer events on iframes during drag */
+/* This prevents iframes (like browser panels) from capturing mouse events */
+body.panel-resizing iframe,
+body.panel-resizing webview {
+  pointer-events: none !important;
+}
+
+/* Compact action button - used for Clone/Create buttons on workspace initialization */
+.btn-compact-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--background));
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  border-radius: 0;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.btn-compact-action:hover {
+  background: hsl(var(--background) / 0.8);
+}
+
+/* ===== Reduced motion support ===== */
+/* Respects user's motion preferences for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  /* Disable infinite animations */
+  .animate-tool-pulse,
+  .streaming-cursor,
+  .animate-shimmer {
+    animation: none !important;
+  }
+
+  /* Keep streaming cursor visible but static */
+  .streaming-cursor {
+    opacity: 1;
+  }
+
+  /* Disable transition animations */
+  .animate-message-in {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+  }
+}

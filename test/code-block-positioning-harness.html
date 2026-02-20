@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Code Block Positioning Test Harness</title>
+    <style>
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        padding: 20px;
+        max-width: 800px;
+        margin: 0 auto;
+      }
+
+      .tiptap {
+        border: 1px solid #ccc;
+        padding: 16px;
+        min-height: 200px;
+        outline: none;
+      }
+
+      /* TipTap code block styles */
+      .tiptap pre {
+        background: #0d0d0d;
+        color: #fff;
+        font-family: 'JetBrainsMono', monospace;
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        overflow-x: auto;
+      }
+
+      .tiptap code {
+        color: inherit;
+        padding: 0;
+        background: none;
+        font-size: 0.8rem;
+      }
+
+      /* Highlight.js theme (GitHub Dark) */
+      .hljs {
+        color: #c9d1d9;
+        background: #0d1117;
+      }
+
+      .hljs-keyword {
+        color: #ff7b72;
+      }
+
+      .hljs-string {
+        color: #a5d6ff;
+      }
+
+      .hljs-number {
+        color: #79c0ff;
+      }
+
+      .hljs-function {
+        color: #d2a8ff;
+      }
+
+      .hljs-comment {
+        color: #8b949e;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Code Block Positioning Test</h1>
+    <div id="editor"></div>
+
+    <script type="module">
+      import { Editor } from 'https://esm.sh/@tiptap/core@2.10.4';
+      import StarterKit from 'https://esm.sh/@tiptap/starter-kit@2.10.4';
+      import CodeBlockLowlight from 'https://esm.sh/@tiptap/extension-code-block-lowlight@2.10.4';
+      import { createLowlight, common } from 'https://esm.sh/lowlight@3.1.0';
+
+      const lowlight = createLowlight(common);
+
+      // Sample code with syntax highlighting
+      const sampleCode = `const greeting = "Hello, World!";
+function sayHello(name) {
+  console.log(\`Hello, \${name}!\`);
+}
+sayHello("TipTap");
+const numbers = [1, 2, 3, 4, 5];`;
+
+      // Sample code with a very long line that will wrap
+      const longLineCode = `const shortLine = "short";
+const veryLongLine = "This is an extremely long line that will definitely wrap when the viewport is narrow. It contains a lot of text to ensure wrapping happens. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.";
+const anotherShortLine = "short";`;
+
+      // SQL code with comments (real-world example with -- comments)
+      const sqlCode = `-- Get all meal plans for a date range
+SELECT * FROM entries
+WHERE type = 'meal_plan'
+  AND date BETWEEN '2025-11-08' AND '2025-11-15'
+ORDER BY date, json_extract(metadata, '$.meal_type');
+
+-- Get recent meals (past 7 days, eaten status)
+SELECT * FROM entries
+WHERE type = 'meal_plan'
+  AND date >= date('now', '-7 days')
+  AND status = 'eaten'
+ORDER BY date DESC;
+
+-- Search recipes by tag
+SELECT * FROM entries
+WHERE type = 'recipe'
+  AND tags LIKE '%chicken%'
+ORDER BY json_extract(metadata, '$.name');
+
+-- Get all timeless background entries (recipes, preferences, etc.)
+SELECT * FROM entries
+WHERE date IS NULL
+ORDER BY type, created_at;`;
+
+      // Code with no attribution (should handle gracefully)
+      const noAttributionCode = `function example() {
+  console.log("This code has no attribution");
+  return 42;
+}`;
+
+      // Code with SPARSE attribution (first line missing - reproduces the bug!)
+      const sparseAttributionCode = `function sparseExample() {
+  console.log("Line 2");
+  console.log("Line 3");
+  console.log("Line 4");
+  console.log("Line 5");
+  return 42;
+}`;
+
+      const editor = new Editor({
+        element: document.querySelector('#editor'),
+        extensions: [
+          StarterKit.configure({
+            codeBlock: false, // Disable default code block
+          }),
+          CodeBlockLowlight.configure({
+            lowlight,
+            HTMLAttributes: {
+              class: 'hljs',
+            },
+          }),
+        ],
+        content: `
+        <h2>Test Code Block</h2>
+        <p>Below is a syntax-highlighted code block:</p>
+        <pre><code class="language-javascript">${sampleCode}</code></pre>
+        <h2>Code Block with Long Line</h2>
+        <p>This code block has a very long line that will wrap:</p>
+        <pre><code class="language-javascript">${longLineCode}</code></pre>
+        <h2>SQL Code Block</h2>
+        <p>Real-world SQL example with -- comments:</p>
+        <pre><code class="language-sql">${sqlCode}</code></pre>
+        <h2>Code Block with No Attribution</h2>
+        <p>This code block has no attribution data:</p>
+        <pre><code class="language-javascript">${noAttributionCode}</code></pre>
+        <h2>Code Block with Sparse Attribution (BUG REPRODUCTION)</h2>
+        <p>This code block is missing attribution for the FIRST line (line 0):</p>
+        <pre><code class="language-javascript">${sparseAttributionCode}</code></pre>
+        <p>End of test content.</p>
+      `,
+      });
+
+      // Expose test function to window for Playwright
+      window.testCodeBlockPositioning = function (codeBlockIndex = 0) {
+        // Find the code block in the editor
+        const codeElements = document.querySelectorAll('pre code');
+        if (codeElements.length === 0) {
+          throw new Error('No code blocks found');
+        }
+        if (codeBlockIndex >= codeElements.length) {
+          throw new Error(
+            `Code block index ${codeBlockIndex} out of range (found ${codeElements.length} blocks)`
+          );
+        }
+        const codeElement = codeElements[codeBlockIndex];
+        if (!codeElement) {
+          throw new Error('Code block not found');
+        }
+
+        // Get all text nodes (helper function from block-position-resolver.ts)
+        function getAllTextNodes(element) {
+          const textNodes = [];
+          const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
+
+          let node;
+          while ((node = walker.nextNode())) {
+            textNodes.push(node);
+          }
+
+          return textNodes;
+        }
+
+        // Build offset map (helper function from block-position-resolver.ts)
+        function buildTextOffsetMap(textNodes) {
+          let currentOffset = 0;
+          return textNodes.map((node) => {
+            const length = node.textContent?.length || 0;
+            const entry = {
+              node,
+              start: currentOffset,
+              end: currentOffset + length,
+            };
+            currentOffset += length;
+            return entry;
+          });
+        }
+
+        // Find text node for offset (helper function from block-position-resolver.ts)
+        function findTextNodeForOffset(offsetMap, offset) {
+          for (const entry of offsetMap) {
+            if (offset >= entry.start && offset < entry.end) {
+              return {
+                node: entry.node,
+                localOffset: offset - entry.start,
+              };
+            }
+          }
+          return null;
+        }
+
+        // Get text and split into lines
+        const text = codeElement.textContent || '';
+        const lines = text.split('\n');
+
+        // Get all text nodes and build offset map
+        const textNodes = getAllTextNodes(codeElement);
+        const offsetMap = buildTextOffsetMap(textNodes);
+        const editorRect = document.querySelector('.tiptap').getBoundingClientRect();
+
+        const positions = [];
+        let currentOffset = 0;
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+
+          // Skip the last empty line if text ends with \n
+          if (i === lines.length - 1 && line === '') {
+            break;
+          }
+
+          const lineLength = line.length;
+          const lineStart = currentOffset;
+          const lineEnd = currentOffset + lineLength;
+
+          // Find text nodes for this line's start and end
+          const startNode = findTextNodeForOffset(offsetMap, lineStart);
+          const endNode = findTextNodeForOffset(
+            offsetMap,
+            lineEnd > lineStart ? lineEnd - 1 : lineStart
+          );
+
+          if (startNode && endNode) {
+            // Create a range spanning this line
+            const range = document.createRange();
+            range.setStart(startNode.node, startNode.localOffset);
+            range.setEnd(endNode.node, endNode.localOffset + 1);
+
+            // Get the bounding rect for this line
+            const rect = range.getBoundingClientRect();
+
+            positions.push({
+              lineIndex: i,
+              top: rect.top - editorRect.top,
+              height: rect.height,
+            });
+          }
+
+          // Move to next line (add 1 for the newline character)
+          currentOffset = lineEnd + 1;
+        }
+
+        return {
+          lineCount: positions.length,
+          positions: positions,
+          textNodeCount: textNodes.length,
+        };
+      };
+
+      // Test function that simulates sparse attribution (like the real bug)
+      window.testSparseAttribution = function (codeBlockIndex = 0, attributedLines = []) {
+        // Get positions for all lines
+        const allPositions = window.testCodeBlockPositioning(codeBlockIndex);
+
+        // Simulate what line-to-block-mapper does:
+        // 1. Filter to only lines with attribution
+        // 2. Map to lineIndex using sequential index (THIS IS THE BUG!)
+        const sparsePositions = attributedLines.map((lineNum, index) => {
+          const pos = allPositions.positions[lineNum];
+          return {
+            lineNum,
+            lineIndex: index, // BUG: Using sequential index instead of actual line number
+            top: pos.top,
+            height: pos.height,
+          };
+        });
+
+        return {
+          allPositions: allPositions.positions,
+          sparsePositions,
+          attributedLines,
+        };
+      };
+
+      console.log('✅ Test harness ready');
+    </script>
+  </body>
+</html>

@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TaskItemNodeView Test Harness</title>
+
+  <!-- Tailwind CSS for styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    /* Scoped styles from TaskItemNodeView.svelte */
+    input[type="checkbox"]:indeterminate {
+      background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 16 16'%3e%3cpath stroke='white' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M4 8h8'/%3e%3c/svg%3e");
+      background-color: currentColor;
+      border-color: transparent;
+      background-size: 100% 100%;
+      background-position: center;
+      background-repeat: no-repeat;
+    }
+
+    .task-checked .task-item-content {
+      opacity: 0.6;
+    }
+
+    .task-item-content {
+      outline: none;
+    }
+
+    .task-item-menu-button {
+      transition: opacity 0.2s ease-in-out;
+    }
+  </style>
+</head>
+<body class="p-8 bg-gray-50">
+  <h1 class="text-2xl font-bold mb-4">TaskItemNodeView Test Harness</h1>
+
+  <div class="space-y-4">
+    <!-- Test Case 1: Todo state -->
+    <div class="bg-white p-4 rounded shadow">
+      <li class="custom-task-item-container group" data-type="taskItem" data-task-id="todo">
+        <div class="flex items-start gap-2 py-1">
+          <label class="task-item-checkbox-wrapper flex-shrink-0 cursor-pointer">
+            <input
+              type="checkbox"
+              class="task-item-checkbox w-4 h-4 rounded border-2 border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+            />
+          </label>
+          <div class="task-item-content flex-1 min-w-0 px-2" data-node-view-content>Buy groceries</div>
+          <button
+            class="task-item-menu-button opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex-shrink-0 p-1 rounded hover:bg-gray-100 focus:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            style="anchor-name: --task-menu-anchor-todo"
+            popovertarget="task-menu-todo"
+            data-anchor-name="task-menu-anchor-todo"
+            data-popover-id="task-menu-todo"
+            data-task-position="0"
+            data-task-checked="false"
+            data-task-text="Buy groceries"
+            data-task-node='{"type":"taskItem","attrs":{"checked":false,"status":"todo"}}'
+            title="Task actions"
+            aria-label="Open task menu"
+          >
+            <svg class="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"/>
+            </svg>
+          </button>
+        </div>
+      </li>
+    </div>
+
+    <!-- Test Case 2: In-progress state -->
+    <div class="bg-white p-4 rounded shadow">
+      <li class="custom-task-item-container group" data-type="taskItem" data-task-id="in-progress">
+        <div class="flex items-start gap-2 py-1">
+          <label class="task-item-checkbox-wrapper flex-shrink-0 cursor-pointer">
+            <input
+              type="checkbox"
+              class="task-item-checkbox w-4 h-4 rounded border-2 border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+            />
+          </label>
+          <div class="task-item-content flex-1 min-w-0 px-2" data-node-view-content>Write documentation</div>
+          <button
+            class="task-item-menu-button opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex-shrink-0 p-1 rounded hover:bg-gray-100 focus:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            style="anchor-name: --task-menu-anchor-inprogress"
+            popovertarget="task-menu-inprogress"
+            data-anchor-name="task-menu-anchor-inprogress"
+            data-popover-id="task-menu-inprogress"
+            data-task-position="10"
+            data-task-checked="false"
+            data-task-text="Write documentation"
+            data-task-node='{"type":"taskItem","attrs":{"checked":false,"status":"in-progress"}}'
+            title="Task actions"
+            aria-label="Open task menu"
+          >
+            <svg class="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"/>
+            </svg>
+          </button>
+        </div>
+      </li>
+    </div>
+
+    <!-- Test Case 3: Done state -->
+    <div class="bg-white p-4 rounded shadow">
+      <li class="custom-task-item-container group task-checked" data-type="taskItem" data-checked="true" data-task-id="done">
+        <div class="flex items-start gap-2 py-1">
+          <label class="task-item-checkbox-wrapper flex-shrink-0 cursor-pointer">
+            <input
+              type="checkbox"
+              checked
+              class="task-item-checkbox w-4 h-4 rounded border-2 border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+            />
+          </label>
+          <div class="task-item-content flex-1 min-w-0 px-2" data-node-view-content>Complete Phase 1 tests</div>
+          <button
+            class="task-item-menu-button opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex-shrink-0 p-1 rounded hover:bg-gray-100 focus:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            style="anchor-name: --task-menu-anchor-done"
+            popovertarget="task-menu-done"
+            data-anchor-name="task-menu-anchor-done"
+            data-popover-id="task-menu-done"
+            data-task-position="20"
+            data-task-checked="true"
+            data-task-text="Complete Phase 1 tests"
+            data-task-node='{"type":"taskItem","attrs":{"checked":true,"status":"done"}}'
+            title="Task actions"
+            aria-label="Open task menu"
+          >
+            <svg class="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"/>
+            </svg>
+          </button>
+        </div>
+      </li>
+    </div>
+
+    <!-- Test Case 4: Dynamic updates -->
+    <div class="bg-white p-4 rounded shadow">
+      <li class="custom-task-item-container group" data-type="taskItem" data-task-id="dynamic" id="dynamic-task">
+        <div class="flex items-start gap-2 py-1">
+          <label class="task-item-checkbox-wrapper flex-shrink-0 cursor-pointer">
+            <input
+              type="checkbox"
+              id="dynamic-checkbox"
+              class="task-item-checkbox w-4 h-4 rounded border-2 border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+            />
+          </label>
+          <div class="task-item-content flex-1 min-w-0 px-2" data-node-view-content>Dynamic task</div>
+          <button
+            class="task-item-menu-button opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex-shrink-0 p-1 rounded hover:bg-gray-100 focus:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            style="anchor-name: --task-menu-anchor-dynamic"
+            popovertarget="task-menu-dynamic"
+            data-anchor-name="task-menu-anchor-dynamic"
+            data-popover-id="task-menu-dynamic"
+            data-task-position="30"
+            data-task-checked="false"
+            data-task-text="Dynamic task"
+            data-task-node='{"type":"taskItem","attrs":{"checked":false,"status":"todo"}}'
+            title="Task actions"
+            aria-label="Open task menu"
+          >
+            <svg class="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"/>
+            </svg>
+          </button>
+        </div>
+      </li>
+    </div>
+  </div>
+
+  <div class="mt-8 p-4 bg-blue-50 rounded">
+    <h2 class="font-bold mb-2">Test Controls</h2>
+    <button id="cycle-dynamic" class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">
+      Cycle Dynamic Task State
+    </button>
+  </div>
+
+  <script>
+    // Task state management
+    const taskStates = new Map();
+
+    // Initialize task states
+    taskStates.set('todo', { checked: false, status: 'todo' });
+    taskStates.set('in-progress', { checked: false, status: 'in-progress' });
+    taskStates.set('done', { checked: true, status: 'done' });
+    taskStates.set('dynamic', { checked: false, status: 'todo' });
+
+    // Cycle through task states: todo → in-progress → done → todo
+    function cycleTaskState(currentState) {
+      if (currentState.status === 'todo') {
+        return { checked: false, status: 'in-progress' };
+      } else if (currentState.status === 'in-progress') {
+        return { checked: true, status: 'done' };
+      } else {
+        return { checked: false, status: 'todo' };
+      }
+    }
+
+    // Update task UI based on state
+    function updateTaskUI(taskId, state) {
+      const task = document.querySelector(`[data-task-id="${taskId}"]`);
+      const checkbox = task.querySelector('input[type="checkbox"]');
+
+      // Update checkbox state
+      checkbox.checked = state.checked;
+      checkbox.indeterminate = state.status === 'in-progress';
+
+      // Update task classes and attributes
+      if (state.checked) {
+        task.classList.add('task-checked');
+        task.setAttribute('data-checked', 'true');
+      } else {
+        task.classList.remove('task-checked');
+        task.removeAttribute('data-checked');
+      }
+
+      // Update button data attributes
+      const button = task.querySelector('.task-item-menu-button');
+      if (button) {
+        button.setAttribute('data-task-checked', state.checked.toString());
+        const nodeData = JSON.parse(button.getAttribute('data-task-node'));
+        nodeData.attrs.checked = state.checked;
+        nodeData.attrs.status = state.status;
+        button.setAttribute('data-task-node', JSON.stringify(nodeData));
+      }
+    }
+
+    // Set up checkbox click handlers for all tasks
+    function setupCheckboxHandlers() {
+      document.querySelectorAll('[data-task-id]').forEach(task => {
+        const taskId = task.getAttribute('data-task-id');
+        const checkbox = task.querySelector('input[type="checkbox"]');
+
+        // For the dynamic task, use the cycling behavior
+        if (taskId === 'dynamic') {
+          checkbox.addEventListener('click', (e) => {
+            e.preventDefault(); // Prevent default checkbox behavior
+
+            // Get current state and cycle to next
+            const currentState = taskStates.get(taskId);
+            const newState = cycleTaskState(currentState);
+
+            // Update state and UI
+            taskStates.set(taskId, newState);
+            updateTaskUI(taskId, newState);
+          });
+        }
+        // For static tasks (todo, in-progress, done), allow normal checkbox behavior
+        // The tests expect standard HTML checkbox behavior for these
+      });
+    }
+
+    // Initialize all tasks
+    function initializeTasks() {
+      // Set initial states
+      taskStates.forEach((state, taskId) => {
+        updateTaskUI(taskId, state);
+      });
+
+      // Set up click handlers
+      setupCheckboxHandlers();
+    }
+
+    // Initialize on load
+    initializeTasks();
+
+    // Cycle button handler for dynamic task
+    document.getElementById('cycle-dynamic').addEventListener('click', () => {
+      const currentState = taskStates.get('dynamic');
+      const newState = cycleTaskState(currentState);
+      taskStates.set('dynamic', newState);
+      updateTaskUI('dynamic', newState);
+    });
+
+    // Expose for Playwright
+    window.testHarness = {
+      taskStates,
+      cycleTaskState,
+      updateTaskUI,
+    };
+  </script>
+</body>
+</html>

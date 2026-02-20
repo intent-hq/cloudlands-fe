@@ -1,0 +1,98 @@
+# TypeScript Error Fixes
+# Example configuration for fixing TypeScript errors in parallel
+
+title: "Fix TypeScript Compilation Errors"
+description: "Systematically fix all TypeScript errors in the codebase"
+
+# Use templates for common patterns
+templates:
+  - "typescript-fixes"
+
+# Define packages for different error categories
+packages:
+  - id: "type-definitions"
+    name: "Fix Type Definitions"
+    description: |
+      Fix all type definition errors including:
+      - Missing type declarations
+      - Incorrect type annotations
+      - Generic type issues
+
+  - id: "imports"
+    name: "Fix Import Errors"
+    description: |
+      Fix all import-related errors:
+      - Missing imports
+      - Circular dependencies
+      - Module resolution issues
+
+  - id: "property-access"
+    name: "Fix Property Access Errors"
+    description: |
+      Fix property access errors:
+      - Property does not exist on type
+      - Optional chaining issues
+      - Null/undefined access
+    dependencies: ["type-definitions"]
+
+  - id: "type-casting"
+    name: "Fix Type Casting Issues"
+    description: |
+      Fix type casting and conversion:
+      - Branded types
+      - Type assertions
+      - Type guards
+    dependencies: ["type-definitions"]
+
+  - id: "async-await"
+    name: "Fix Async/Await Issues"
+    description: |
+      Fix async/await related errors:
+      - Missing await keywords
+      - Promise type mismatches
+      - Async function signatures
+
+  - id: "tests"
+    name: "Fix Test Type Errors"
+    description: |
+      Fix TypeScript errors in test files:
+      - Mock type issues
+      - Test fixture types
+      - Assertion types
+    dependencies: ["type-definitions", "imports"]
+
+# Custom prompts for this wave
+prompts:
+  - name: "work"
+    template: |
+      Fix TypeScript errors in {package_name}.
+
+      {package_description}
+
+      Instructions:
+      1. Run `npm run check` to see current errors
+      2. Fix errors systematically
+      3. Ensure no new errors are introduced
+      4. Run `npm run check` again to verify
+
+      Focus only on files in experimental/amelia/workspaces.
+
+  - name: "verify"
+    template: |
+      Verify that all TypeScript errors have been fixed.
+
+      Run: npm run check
+
+      Report the number of remaining errors.
+
+# Configuration
+config:
+  maxParallel: 3
+  timeoutMinutes: 30
+  autoRetry: true
+  retryAttempts: 2
+  continueOnError: false
+  runTests: true
+
+# Enable consolidation to check overall status
+consolidation: true

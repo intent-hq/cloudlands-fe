@@ -1,0 +1,122 @@
+#!/usr/bin/env node
+
+/**
+ * Standalone Monitoring Dashboard
+ *
+ * Launch a monitoring dashboard for viewing parallel agent execution
+ */
+
+const { Monitor } = require('./lib/monitor/monitor');
+const fs = require('fs');
+const path = require('path');
+
+// Parse arguments
+const args = process.argv.slice(2);
+const flags = {};
+
+for (let i = 0; i < args.length; i++) {
+  if (args[i].startsWith('--')) {
+    const key = args[i].slice(2);
+    const value = args[i + 1] && !args[i + 1].startsWith('--') ? args[++i] : true;
+    flags[key] = value;
+  }
+}
+
+if (flags.help) {
+  console.log(`
+Parallel Agent Monitor
+
+Usage: ./monitor [options]
+
+Options:
+  --run <dir>        Monitor a specific run directory
+  --port <port>      Port to run the dashboard on (default: 3456)
+  --refresh <sec>    Refresh interval in seconds (default: 2)
+  --export <file>    Export metrics to JSON file
+  --help            Show this help message
+
+Examples:
+  ./monitor
+  ./monitor --run logs/run-20241118-123456
+  ./monitor --port 8080 --refresh 1
+`);
+  process.exit(0);
+}
+
+async function main() {
+  try {
+    // Find run directory
+    let runDir = flags.run;
+
+    if (!runDir) {
+      // Find most recent run
+      const logsDir = 'logs';
+      if (fs.existsSync(logsDir)) {
+        const dirs = fs.readdirSync(logsDir)
+          .filter(d => d.startsWith('run-'))
+          .map(d => path.join(logsDir, d))
+          .filter(d => fs.statSync(d).isDirectory())
+          .sort((a, b) => fs.statSync(b).mtime - fs.statSync(a).mtime);
+
+        if (dirs.length > 0) {
+          runDir = dirs[0];
+        }
+      }
+    }
+
+    if (!runDir) {
+      console.error('No run directory found. Use --run to specify one.');
+      process.exit(1);
+    }
+
+    console.log(`Monitoring run: ${runDir}`);
+
+    // Load config from run
+    const configFile = path.join(runDir, 'config.json');
+    let config = {};
+
+    if (fs.existsSync(configFile)) {
+      config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    } else {
+      // Try to reconstruct from logs
+      config = {
+        title: 'Unknown Run',
+        packages: []
+      };
+    }
+
+    // Create monitor
+    const monitor = new Monitor(config);
+
+    if (flags.port) {
+      monitor.port = parseInt(flags.port);
+    }
+
+    // Start monitor
+    await monitor.start();
+
+    console.log(`\n🚀 Monitoring dashboard running at: http://localhost:${monitor.port}\n`);
+    console.log('Press Ctrl+C to stop\n');
+
+    // Export metrics if requested
+    if (flags.export) {
+      setInterval(() => {
+        const metrics = monitor.getMetrics();
+        fs.writeFileSync(flags.export, JSON.stringify(metrics, null, 2));
+      }, (flags.refresh || 2) * 1000);
+    }
+
+    // Handle shutdown
+    process.on('SIGINT', async () => {
+      console.log('\nShutting down monitor...');
+      await monitor.stop();
+      process.exit(0);
+    });
+
+  } catch (error) {
+    console.error('Error:', error.message);
+    process.exit(1);
+  }
+}
+
+main().catch(console.error);

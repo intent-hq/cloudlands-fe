@@ -1,0 +1,133 @@
+#!/usr/bin/env node
+
+/**
+ * Report Generator
+ *
+ * Generate reports from completed parallel agent runs
+ */
+
+const { ReportGenerator } = require('./lib/utils/report-generator');
+const fs = require('fs');
+const path = require('path');
+
+// Parse arguments
+const args = process.argv.slice(2);
+const flags = {};
+const positional = [];
+
+for (let i = 0; i < args.length; i++) {
+  if (args[i].startsWith('--')) {
+    const key = args[i].slice(2);
+    const value = args[i + 1] && !args[i + 1].startsWith('--') ? args[++i] : true;
+    flags[key] = value;
+  } else {
+    positional.push(args[i]);
+  }
+}
+
+if (flags.help || (!positional[0] && !flags.latest)) {
+  console.log(`
+Report Generator
+
+Usage: ./report [run-dir] [options]
+
+Options:
+  --format <type>    Output format: markdown, html, json (default: markdown)
+  --output <file>    Output file (default: stdout)
+  --latest          Use the latest run
+  --compare <dirs>   Compare multiple runs (comma-separated)
+  --help            Show this help message
+
+Examples:
+  ./report --latest
+  ./report logs/run-20241118-123456
+  ./report --latest --format html --output report.html
+  ./report --compare logs/run-1,logs/run-2
+`);
+  process.exit(0);
+}
+
+async function main() {
+  try {
+    // Find run directory
+    let runDir = positional[0];
+
+    if (flags.latest || !runDir) {
+      // Find most recent run
+      const logsDir = 'logs';
+      if (fs.existsSync(logsDir)) {
+        const dirs = fs.readdirSync(logsDir)
+          .filter(d => d.startsWith('run-'))
+          .map(d => path.join(logsDir, d))
+          .filter(d => fs.statSync(d).isDirectory())
+          .sort((a, b) => fs.statSync(b).mtime - fs.statSync(a).mtime);
+
+        if (dirs.length > 0) {
+          runDir = dirs[0];
+        }
+      }
+    }
+
+    if (!runDir || !fs.existsSync(runDir)) {
+      console.error(`Run directory not found: ${runDir}`);
+      process.exit(1);
+    }
+
+    console.log(`Generating report for: ${runDir}\n`);
+
+    // Load state and config
+    const stateFile = path.join(runDir, 'state.json');
+    const configFile = path.join(runDir, 'config.json');
+
+    let state = {};
+    let config = {};
+
+    if (fs.existsSync(stateFile)) {
+      state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    }
+
+    if (fs.existsSync(configFile)) {
+      config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    }
+
+    // Generate report
+    const generator = new ReportGenerator(config);
+
+    let report;
+    const format = flags.format || 'markdown';
+
+    switch (format) {
+      case 'html':
+        report = await generator.generateHTML({ state, config, logDir: runDir });
+        break;
+      case 'json':
+        report = JSON.stringify({ state, config, logDir: runDir }, null, 2);
+        break;
+      case 'markdown':
+      default:
+        report = await generator.generate({ state, config, logDir: runDir });
+        break;
+    }
+
+    // Output report
+    if (flags.output) {
+      fs.writeFileSync(flags.output, report);
+      console.log(`Report saved to: ${flags.output}`);
+    } else {
+      console.log(report);
+    }
+
+  } catch (error) {
+    console.error('Error generating report:', error.message);
+    process.exit(1);
+  }
+}
+
+// Comparison mode
+if (flags.compare) {
+  const dirs = flags.compare.split(',').map(d => d.trim());
+  console.log('Comparison mode not yet implemented');
+  process.exit(0);
+}
+
+main().catch(console.error);
