@@ -1,21 +1,18 @@
-name: "Service Architecture Refactor"
-description: "Refactor service layer to improve modularity, testability, and maintainability"
+name: 'Service Architecture Refactor'
+description: 'Refactor service layer to improve modularity, testability, and maintainability'
 max_parallel: 6
 
 # Sequential prompts for each package
 package_prompts:
-  - name: "work"
+  - name: 'work'
     prompt: |
-      We're working on the experimental/amelia/workspaces app.
-      Don't make changes outside that folder.
-
       Task: {title}
 
       {description}
 
       {context}
 
-  - name: "review"
+  - name: 'review'
     prompt: |
       Review the work completed for: {title}
 
@@ -28,7 +25,7 @@ package_prompts:
 
 # Prompts that run between waves
 inter_wave_prompts:
-  - name: "consolidation"
+  - name: 'consolidation'
     prompt: |
       Consolidation check for Service Architecture Refactor
 
@@ -45,8 +42,8 @@ inter_wave_prompts:
       - Recommendations for next phase
 
 packages:
-  - id: "refactor-agent-factory"
-    title: "Refactor Agent Factory Service"
+  - id: 'refactor-agent-factory'
+    title: 'Refactor Agent Factory Service'
     description: |
       Refactor the agent factory service for better modularity:
 
@@ -62,8 +59,8 @@ packages:
       - Document the factory pattern used
       - Improve error handling and logging
 
-  - id: "refactor-persistence-service"
-    title: "Refactor Persistence Service"
+  - id: 'refactor-persistence-service'
+    title: 'Refactor Persistence Service'
     description: |
       Refactor persistence layer for better abstraction:
 
@@ -79,8 +76,8 @@ packages:
       - Add transaction support
       - Improve query performance
 
-  - id: "refactor-streaming-service"
-    title: "Refactor Streaming Service"
+  - id: 'refactor-streaming-service'
+    title: 'Refactor Streaming Service'
     description: |
       Refactor streaming service for better event handling:
 
@@ -96,8 +93,8 @@ packages:
       - Improve error handling
       - Add event type safety
 
-  - id: "refactor-ipc-handlers"
-    title: "Refactor IPC Handlers"
+  - id: 'refactor-ipc-handlers'
+    title: 'Refactor IPC Handlers'
     description: |
       Refactor IPC message handlers for consistency:
 
@@ -113,8 +110,8 @@ packages:
       - Add request validation
       - Improve type safety
 
-  - id: "refactor-state-management"
-    title: "Refactor State Management"
+  - id: 'refactor-state-management'
+    title: 'Refactor State Management'
     description: |
       Refactor state management for better predictability:
 
@@ -130,8 +127,8 @@ packages:
       - Improve logging and debugging
       - Add state persistence
 
-  - id: "refactor-error-handling"
-    title: "Refactor Error Handling"
+  - id: 'refactor-error-handling'
+    title: 'Refactor Error Handling'
     description: |
       Refactor error handling for consistency:
 

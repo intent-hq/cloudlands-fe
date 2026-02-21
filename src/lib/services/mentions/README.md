@@ -74,16 +74,16 @@ import { MentionSystem } from '$lib/services/mentions';
 // Create mention system instance
 const mentionSystem = new MentionSystem({
   debounceMs: 300,
-  maxResults: 10
+  maxResults: 10,
 });
 
 // Search for mentions
 const results = await mentionSystem.search('@README', {
-  workspaceId: 'workspace-123'
+  workspaceId: 'workspace-123',
 });
 
 // Results contain MentionCandidate objects
-results.forEach(candidate => {
+results.forEach((candidate) => {
   console.log(candidate.label, candidate.type, candidate.uri);
 });
 ```
@@ -101,15 +101,15 @@ const editor = new Editor({
         char: '@',
         items: async ({ query }) => {
           return await mentionSystem.search(query, {
-            workspaceId: workspace.id
+            workspaceId: workspace.id,
           });
         },
         render: () => ({
-          component: EnhancedMentionList
-        })
-      }
-    })
-  ]
+          component: EnhancedMentionList,
+        }),
+      },
+    }),
+  ],
 });
 ```
 
@@ -121,16 +121,16 @@ The fundamental data structure representing a mentionable entity:
 
 ```typescript
 interface MentionCandidate {
-  id: string;              // Unique identifier
-  type: MentionType;       // 'file', 'note', 'folder', etc.
-  label: string;           // Display name
-  subtitle?: string;       // Secondary text (e.g., file path)
-  description?: string;    // Detailed description
-  icon?: string;           // Icon identifier
-  uri: string;             // Unique resource identifier
-  group?: string;          // Group label for categorization
-  score?: number;          // Relevance score (0-1)
-  meta?: MentionMeta;      // Type-specific metadata
+  id: string; // Unique identifier
+  type: MentionType; // 'file', 'note', 'folder', etc.
+  label: string; // Display name
+  subtitle?: string; // Secondary text (e.g., file path)
+  description?: string; // Detailed description
+  icon?: string; // Icon identifier
+  uri: string; // Unique resource identifier
+  group?: string; // Group label for categorization
+  score?: number; // Relevance score (0-1)
+  meta?: MentionMeta; // Type-specific metadata
 }
 ```
 
@@ -140,12 +140,12 @@ Provides context for search operations:
 
 ```typescript
 interface SearchContext {
-  workspaceId: string;     // Required: workspace identifier
-  currentFile?: string;    // Current file being edited
-  currentNote?: string;    // Current note being edited
-  imports?: string[];      // Imported files (for relevance)
-  recentFiles?: string[];  // Recently accessed files
-  signal?: AbortSignal;    // For cancellation
+  workspaceId: string; // Required: workspace identifier
+  currentFile?: string; // Current file being edited
+  currentNote?: string; // Current note being edited
+  imports?: string[]; // Imported files (for relevance)
+  recentFiles?: string[]; // Recently accessed files
+  signal?: AbortSignal; // For cancellation
 }
 ```
 
@@ -175,18 +175,18 @@ A provider is a plugin that supplies mention candidates for a specific domain (f
 
 ```typescript
 interface Provider {
-  id: string;                    // Unique provider identifier
-  triggers?: string[];           // Trigger strings (e.g., '@file', '@note')
-  default?: boolean;             // Include in default searches
+  id: string; // Unique provider identifier
+  triggers?: string[]; // Trigger strings (e.g., '@file', '@note')
+  default?: boolean; // Include in default searches
 
   // Required: Search for candidates
   search(query: string, context: SearchContext): Promise<MentionCandidate[]>;
 
   // Optional: Enhanced capabilities
-  supportsRanges?: boolean;      // Supports line/range selection
+  supportsRanges?: boolean; // Supports line/range selection
   supportsLivePreview?: boolean; // Supports live preview
-  supportsQuickEdit?: boolean;   // Supports inline editing
-  supportsSemantic?: boolean;    // Supports semantic search
+  supportsQuickEdit?: boolean; // Supports inline editing
+  supportsSemantic?: boolean; // Supports semantic search
 
   // Optional: Custom scoring and grouping
   scoreRelevance?(item: MentionCandidate, context: SearchContext): number;
@@ -200,6 +200,7 @@ interface Provider {
 #### FileProvider
 
 Searches workspace files with smart scoring based on:
+
 - Recent file access
 - Same directory as current file
 - Import relationships
@@ -208,6 +209,7 @@ Searches workspace files with smart scoring based on:
 **Triggers**: `@file`, `@f`
 
 **Features**:
+
 - Range support (line numbers)
 - Live preview
 - Fallback to common files when search fails
@@ -220,6 +222,7 @@ Searches workspace notes with caching.
 **Triggers**: `@note`, `@n`
 
 **Features**:
+
 - Range support (line numbers)
 - Cached results for fast synchronous access
 - Automatic cache refresh every 5 seconds
@@ -231,6 +234,7 @@ Searches workspace folders.
 **Triggers**: `@folder`, `@dir`
 
 **Features**:
+
 - File count metadata
 - Smart folder icons based on name
 
@@ -263,7 +267,7 @@ export class CustomProvider implements Provider {
       const results = await this.fetchCustomData(query, context);
 
       // Map to MentionCandidate format
-      return results.map(item => ({
+      return results.map((item) => ({
         id: `custom-${item.id}`,
         type: 'custom' as any, // Add to MentionType if needed
         label: item.name,
@@ -273,8 +277,8 @@ export class CustomProvider implements Provider {
         uri: `custom://${item.id}`,
         score: this.calculateScore(item, query),
         meta: {
-          customField: item.data
-        }
+          customField: item.data,
+        },
       }));
     } catch (error) {
       // Handle abort errors
@@ -348,13 +352,14 @@ new MentionSystem(config?: MentionSystemConfig)
 ```
 
 **Config Options**:
+
 ```typescript
 interface MentionSystemConfig {
-  debounceMs?: number;          // Debounce delay (default: 300ms)
-  maxResults?: number;          // Max results to return (default: 50)
-  cacheMaxAge?: number;         // Cache TTL (default: 30000ms)
-  enableSemantic?: boolean;     // Enable semantic search (default: false)
-  enableLivePreview?: boolean;  // Enable live preview (default: true)
+  debounceMs?: number; // Debounce delay (default: 300ms)
+  maxResults?: number; // Max results to return (default: 50)
+  cacheMaxAge?: number; // Cache TTL (default: 30000ms)
+  enableSemantic?: boolean; // Enable semantic search (default: false)
+  enableLivePreview?: boolean; // Enable live preview (default: true)
   enableCollaboration?: boolean; // Enable collaboration features (default: false)
 }
 ```
@@ -368,7 +373,7 @@ Asynchronous search for mention candidates. Performs debounced search with cachi
 ```typescript
 const results = await mentionSystem.search('@README', {
   workspaceId: 'workspace-123',
-  currentFile: 'src/index.ts'
+  currentFile: 'src/index.ts',
 });
 ```
 
@@ -382,7 +387,7 @@ Synchronous search using cached data. Used for TipTap compatibility.
 
 ```typescript
 const results = mentionSystem.searchSync('@README', {
-  workspaceId: 'workspace-123'
+  workspaceId: 'workspace-123',
 });
 ```
 
@@ -433,6 +438,7 @@ Handles debounced search with caching and cancellation.
 Performs debounced search across multiple providers.
 
 **Features**:
+
 - Automatic debouncing
 - Request cancellation
 - Result caching
@@ -539,7 +545,7 @@ const token = toPromptToken({
   type: 'file',
   id: 'src/index.ts',
   label: 'index.ts',
-  meta: { fullPath: 'src/index.ts', range: { start: 10, end: 20 } }
+  meta: { fullPath: 'src/index.ts', range: { start: 10, end: 20 } },
 });
 // Returns: "@src/index.ts:L10-20"
 ```
@@ -564,7 +570,7 @@ import { mentionSystem } from '$lib/services/mentions';
 
 // Search for files
 const files = await mentionSystem.search('@index', {
-  workspaceId: 'workspace-123'
+  workspaceId: 'workspace-123',
 });
 
 // Insert first result
@@ -579,7 +585,7 @@ if (files.length > 0) {
 ```typescript
 // Search for file with range
 const results = await mentionSystem.search('@utils.ts', {
-  workspaceId: 'workspace-123'
+  workspaceId: 'workspace-123',
 });
 
 // Add range to mention
@@ -587,8 +593,8 @@ const mention = {
   ...results[0],
   meta: {
     ...results[0].meta,
-    range: { start: 10, end: 20 }
-  }
+    range: { start: 10, end: 20 },
+  },
 };
 
 // Convert to prompt token
@@ -640,8 +646,8 @@ richTextarea.insertMention({
   uri: 'file:src/utils.ts',
   meta: {
     path: 'src/utils.ts',
-    language: 'typescript'
-  }
+    language: 'typescript',
+  },
 });
 
 // Insert a note mention
@@ -651,8 +657,8 @@ richTextarea.insertMention({
   type: 'note',
   uri: 'note:spec',
   meta: {
-    noteId: 'spec'
-  }
+    noteId: 'spec',
+  },
 });
 ```
 
@@ -661,11 +667,11 @@ richTextarea.insertMention({
 ```typescript
 // Search only for notes
 const notes = await mentionSystem.search('@meeting', {
-  workspaceId: 'workspace-123'
+  workspaceId: 'workspace-123',
 });
 
 // Filter results by type
-const onlyNotes = notes.filter(item => item.type === 'note');
+const onlyNotes = notes.filter((item) => item.type === 'note');
 ```
 
 ### Example 6: Context-Aware Search
@@ -675,14 +681,8 @@ const onlyNotes = notes.filter(item => item.type === 'note');
 const results = await mentionSystem.search('@component', {
   workspaceId: 'workspace-123',
   currentFile: 'src/pages/Dashboard.svelte',
-  recentFiles: [
-    'src/components/Header.svelte',
-    'src/components/Sidebar.svelte'
-  ],
-  imports: [
-    'src/lib/utils.ts',
-    'src/lib/api.ts'
-  ]
+  recentFiles: ['src/components/Header.svelte', 'src/components/Sidebar.svelte'],
+  imports: ['src/lib/utils.ts', 'src/lib/api.ts'],
 });
 
 // Results will be scored higher for:
@@ -703,7 +703,7 @@ controller.push({
   id: 'files',
   label: 'Files',
   icon: '📁',
-  items: fileItems
+  items: fileItems,
 });
 
 // Navigate deeper
@@ -711,7 +711,7 @@ controller.push({
   id: 'src',
   label: 'src',
   icon: '📂',
-  items: srcItems
+  items: srcItems,
 });
 
 // Navigate back
@@ -734,6 +734,7 @@ The mention system includes a standalone test page for development and QA:
 **URL**: `http://localhost:5177/test-mentions`
 
 **Features**:
+
 - Mock data for all mention types
 - Interactive controls for testing states
 - Preview panel testing
@@ -743,7 +744,6 @@ The mention system includes a standalone test page for development and QA:
 **Usage**:
 
 ```bash
-cd experimental/amelia/workspaces
 pnpm dev:renderer
 # Navigate to http://localhost:5177/test-mentions
 ```
@@ -768,6 +768,7 @@ Test the compact workspace initializer mention behavior:
 **URL**: `http://localhost:5177/test-mentions/compact`
 
 **Features**:
+
 - Tests mention behavior without workspace context
 - Tests default suggestions
 - Tests mention extraction
@@ -785,7 +786,7 @@ describe('CustomProvider', () => {
   it('should return results for valid query', async () => {
     const provider = new CustomProvider();
     const results = await provider.search('test', {
-      workspaceId: 'workspace-123'
+      workspaceId: 'workspace-123',
     });
 
     expect(results).toBeInstanceOf(Array);
@@ -804,7 +805,7 @@ describe('CustomProvider', () => {
 
     const results = await provider.search('test', {
       workspaceId: 'workspace-123',
-      signal: controller.signal
+      signal: controller.signal,
     });
 
     expect(results).toEqual([]);
@@ -814,12 +815,10 @@ describe('CustomProvider', () => {
     const provider = new CustomProvider();
 
     // Mock error
-    vi.spyOn(provider as any, 'fetchCustomData').mockRejectedValue(
-      new Error('Network error')
-    );
+    vi.spyOn(provider as any, 'fetchCustomData').mockRejectedValue(new Error('Network error'));
 
     const results = await provider.search('test', {
-      workspaceId: 'workspace-123'
+      workspaceId: 'workspace-123',
     });
 
     expect(results).toEqual([]);
@@ -841,11 +840,11 @@ describe('MentionSystem Integration', () => {
     const system = new MentionSystem();
 
     const results = await system.search('@test', {
-      workspaceId: 'workspace-123'
+      workspaceId: 'workspace-123',
     });
 
     // Should include results from file, note, and other providers
-    const types = new Set(results.map(r => r.type));
+    const types = new Set(results.map((r) => r.type));
     expect(types.size).toBeGreaterThan(1);
   });
 
@@ -854,12 +853,12 @@ describe('MentionSystem Integration', () => {
 
     // First search
     const results1 = await system.search('@test', {
-      workspaceId: 'workspace-123'
+      workspaceId: 'workspace-123',
     });
 
     // Second search (should use cache)
     const results2 = system.searchSync('@test', {
-      workspaceId: 'workspace-123'
+      workspaceId: 'workspace-123',
     });
 
     expect(results2).toEqual(results1);
@@ -876,6 +875,7 @@ describe('MentionSystem Integration', () => {
 **Symptoms**: Typing `@` doesn't show the mention dropdown.
 
 **Possible Causes**:
+
 - TipTap editor not properly configured
 - Mention extension not registered
 - Workspace context missing
@@ -889,14 +889,14 @@ import { Mention } from '@tiptap/extension-mention';
 const editor = new Editor({
   extensions: [
     Mention.configure({
-      suggestion: mentionSuggestion // Must be configured
-    })
-  ]
+      suggestion: mentionSuggestion, // Must be configured
+    }),
+  ],
 });
 
 // Ensure workspace context is provided
 const context = {
-  workspaceId: workspace?.id // Check this is not undefined
+  workspaceId: workspace?.id, // Check this is not undefined
 };
 ```
 
@@ -905,6 +905,7 @@ const context = {
 **Symptoms**: Mention dropdown appears but shows no results.
 
 **Possible Causes**:
+
 - Invalid workspace ID
 - Provider search failing
 - Cache issues
@@ -918,7 +919,10 @@ console.log('Workspace ID:', context.workspaceId);
 
 // Check provider registration
 const providers = providerRegistry.getAll();
-console.log('Registered providers:', providers.map(p => p.id));
+console.log(
+  'Registered providers:',
+  providers.map((p) => p.id),
+);
 
 // Clear cache
 mentionSystem.searchService.clearCache();
@@ -932,6 +936,7 @@ mentionSystem.searchService.clearCache();
 **Symptoms**: Search results don't reflect recent file changes.
 
 **Possible Causes**:
+
 - Cache not invalidated
 - Provider cache not refreshed
 
@@ -952,6 +957,7 @@ mentionSystem.searchService.clearCache();
 **Symptoms**: Mention dropdown takes too long to appear.
 
 **Possible Causes**:
+
 - Debounce delay too high
 - Too many providers
 - Expensive provider operations
@@ -962,12 +968,12 @@ mentionSystem.searchService.clearCache();
 ```typescript
 // Reduce debounce delay
 const system = new MentionSystem({
-  debounceMs: 150 // Default is 300ms
+  debounceMs: 150, // Default is 300ms
 });
 
 // Limit max results
 const system = new MentionSystem({
-  maxResults: 20 // Default is 50
+  maxResults: 20, // Default is 50
 });
 
 // Implement caching in custom providers
@@ -992,6 +998,7 @@ class CustomProvider implements Provider {
 **Symptoms**: Memory usage grows over time.
 
 **Possible Causes**:
+
 - Cache not bounded
 - Event listeners not cleaned up
 - Abort controllers not released
@@ -1023,6 +1030,7 @@ class CustomProvider implements Provider {
 **Symptoms**: Console warnings about invalid candidates being filtered.
 
 **Possible Causes**:
+
 - Provider returning incomplete data
 - Missing required fields
 
@@ -1059,6 +1067,7 @@ async search(query: string, context: SearchContext) {
 **Symptoms**: Can't navigate into groups or back.
 
 **Possible Causes**:
+
 - BreadcrumbController not initialized
 - Groups not properly structured
 - Keyboard events not handled
@@ -1112,7 +1121,7 @@ logger.setLevel('debug');
 const context = {
   workspaceId: workspace?.id,
   currentFile: currentFile,
-  recentFiles: recentFiles
+  recentFiles: recentFiles,
 };
 console.log('Search context:', context);
 
@@ -1139,7 +1148,7 @@ mentionSystem.searchService.clearCache();
 // Test a specific provider
 const fileProvider = providerRegistry.get('file');
 const results = await fileProvider.search('test', {
-  workspaceId: 'workspace-123'
+  workspaceId: 'workspace-123',
 });
 console.log('File provider results:', results);
 ```
@@ -1196,6 +1205,7 @@ console.log('File provider results:', results);
 ### Type Definitions
 
 See `types.ts` for complete type definitions:
+
 - `MentionCandidate`
 - `MentionType`
 - `SearchContext`

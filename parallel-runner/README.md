@@ -49,18 +49,18 @@ parallel-runner/
 Create a YAML file defining your wave:
 
 ```yaml
-title: "Fix TypeScript Errors"
-description: "Fix all TypeScript compilation errors"
+title: 'Fix TypeScript Errors'
+description: 'Fix all TypeScript compilation errors'
 
 packages:
-  - id: "types"
-    name: "Fix Type Definitions"
-    description: "Fix all type definition errors"
+  - id: 'types'
+    name: 'Fix Type Definitions'
+    description: 'Fix all type definition errors'
 
-  - id: "imports"
-    name: "Fix Import Errors"
-    description: "Fix missing and incorrect imports"
-    dependencies: ["types"]  # Run after 'types' completes
+  - id: 'imports'
+    name: 'Fix Import Errors'
+    description: 'Fix missing and incorrect imports'
+    dependencies: ['types'] # Run after 'types' completes
 
 # Configuration
 config:
@@ -77,18 +77,18 @@ config:
 ```yaml
 # Use predefined templates
 templates:
-  - "typescript-fixes"
-  - "test-fixes"
+  - 'typescript-fixes'
+  - 'test-fixes'
 
 # Or define custom prompts
 prompts:
-  - name: "work"
+  - name: 'work'
     template: |
       Fix the following issues in {package_name}:
       {package_description}
 
       Rules:
-      - Only modify files in experimental/amelia/workspaces
+      - Only modify files in src/
       - Run tests after making changes
 ```
 

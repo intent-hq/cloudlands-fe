@@ -62,7 +62,7 @@ function getLogFilePath(): string {
       if (fs.existsSync(path.join(dir, 'package.json'))) {
         try {
           const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf-8'));
-          if (pkg.name === 'intent' || dir.includes('experimental/amelia/workspaces')) {
+          if (pkg.name === 'intent') {
             baseDir = dir;
             break;
           }
@@ -121,7 +121,7 @@ export function logMemoryEvent(
   // Append to file
   try {
     const filePath = getLogFilePath();
-    fs.appendFileSync(filePath, `${JSON.stringify(entry)  }\n`);
+    fs.appendFileSync(filePath, `${JSON.stringify(entry)}\n`);
   } catch (err) {
     // Silent fail - don't break the app for logging
     console.error('[MemoryEventLogger] Failed to write:', err);

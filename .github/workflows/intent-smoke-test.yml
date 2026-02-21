@@ -11,12 +11,9 @@ jobs:
   build:
     name: Build
     runs-on: macos-14
-    defaults:
-      run:
-        working-directory: experimental/amelia/workspaces
     env:
-      GIT_TERMINAL_PROMPT: "0"
-      NODE_OPTIONS: "--max-old-space-size=4096"
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
 
     steps:
       - name: Checkout
@@ -25,14 +22,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: '20'
 
       - name: Restore node_modules cache
         id: cache-deps
         uses: actions/cache/restore@v4
         with:
-          path: experimental/amelia/workspaces/node_modules
-          key: deps-${{ runner.os }}-${{ hashFiles('experimental/amelia/workspaces/package-lock.json') }}
+          path: node_modules
+          key: deps-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-deps.outputs.cache-hit != 'true'
@@ -42,19 +39,19 @@ jobs:
         if: always() && steps.cache-deps.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: experimental/amelia/workspaces/node_modules
-          key: deps-${{ runner.os }}-${{ hashFiles('experimental/amelia/workspaces/package-lock.json') }}
+          path: node_modules
+          key: deps-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Compute build cache key
         id: build-cache-key
         run: |
-          echo "hash=${{ hashFiles('experimental/amelia/workspaces/src/main/**', 'experimental/amelia/workspaces/src/preload/**', 'experimental/amelia/workspaces/src/lib/**', 'experimental/amelia/workspaces/src/features/**', 'experimental/amelia/workspaces/src/routes/**', 'experimental/amelia/workspaces/src/shared/**', 'experimental/amelia/workspaces/src/types/**', 'experimental/amelia/workspaces/src/utils/**', 'experimental/amelia/workspaces/src/assets/**', 'experimental/amelia/workspaces/src/app.*', 'experimental/amelia/workspaces/src/hooks.client.ts', 'experimental/amelia/workspaces/src/tailwind-references.css', 'experimental/amelia/workspaces/package.json', 'experimental/amelia/workspaces/package-lock.json', 'experimental/amelia/workspaces/electron-builder.yml', 'experimental/amelia/workspaces/vite.config.mjs', 'experimental/amelia/workspaces/postcss.config.mjs', 'experimental/amelia/workspaces/tsconfig*.json', 'experimental/amelia/workspaces/svelte.config.js', 'experimental/amelia/workspaces/tailwind.config.js', 'experimental/amelia/workspaces/build/**', 'experimental/amelia/workspaces/static/**', 'experimental/amelia/workspaces/resources/**') }}" >> $GITHUB_OUTPUT
+          echo "hash=${{ hashFiles('src/main/**', 'src/preload/**', 'src/lib/**', 'src/features/**', 'src/routes/**', 'src/shared/**', 'src/types/**', 'src/utils/**', 'src/assets/**', 'src/app.*', 'src/hooks.client.ts', 'src/tailwind-references.css', 'package.json', 'package-lock.json', 'electron-builder.yml', 'vite.config.mjs', 'postcss.config.mjs', 'tsconfig*.json', 'svelte.config.js', 'tailwind.config.js', 'build/**', 'static/**', 'resources/**') }}" >> $GITHUB_OUTPUT
 
       - name: Restore Electron build cache
         id: cache-build
         uses: actions/cache/restore@v4
         with:
-          path: experimental/amelia/workspaces/dist-electron/
+          path: dist-electron/
           key: electron-build-${{ runner.os }}-${{ steps.build-cache-key.outputs.hash }}
 
       - name: Build packaged app
@@ -65,14 +62,14 @@ jobs:
         if: always() && steps.cache-build.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: experimental/amelia/workspaces/dist-electron/
+          path: dist-electron/
           key: electron-build-${{ runner.os }}-${{ steps.build-cache-key.outputs.hash }}
 
       - name: Upload Electron build
         uses: actions/upload-artifact@v4
         with:
           name: electron-build
-          path: experimental/amelia/workspaces/dist-electron/
+          path: dist-electron/
           retention-days: 1
 
   test:
@@ -84,12 +81,9 @@ jobs:
       fail-fast: false
       matrix:
         provider: [auggie, claude-code, codex, opencode]
-    defaults:
-      run:
-        working-directory: experimental/amelia/workspaces
     env:
-      GIT_TERMINAL_PROMPT: "0"
-      NODE_OPTIONS: "--max-old-space-size=4096"
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
       AUGMENT_SESSION_AUTH: ${{ secrets.AUGMENT_SESSION_AUTH }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -101,19 +95,19 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: '20'
 
       - name: Restore node_modules cache
         uses: actions/cache/restore@v4
         with:
-          path: experimental/amelia/workspaces/node_modules
-          key: deps-${{ runner.os }}-${{ hashFiles('experimental/amelia/workspaces/package-lock.json') }}
+          path: node_modules
+          key: deps-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Download Electron build
         uses: actions/download-artifact@v4
         with:
           name: electron-build
-          path: experimental/amelia/workspaces/dist-electron/
+          path: dist-electron/
 
       - name: Fix executable permissions
         run: |
@@ -179,5 +173,5 @@ jobs:
         if: always()
         with:
           name: smoke-test-report-${{ matrix.provider }}
-          path: experimental/amelia/workspaces/e2e-reports/
+          path: e2e-reports/
           retention-days: 7

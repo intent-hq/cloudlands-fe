@@ -1,44 +1,44 @@
 # Wave 4: Actual Fixes for TypeScript Errors and Test Failures
 # Reality-based approach to fix 511 TypeScript errors and 102 test failures
 
-title: "Wave 4 - Actual TypeScript and Test Fixes"
-description: "Fix the real issues found in audit: 511 TypeScript errors and 102 test failures"
+title: 'Wave 4 - Actual TypeScript and Test Fixes'
+description: 'Fix the real issues found in audit: 511 TypeScript errors and 102 test failures'
 
 packages:
   # Group A: Type System Fixes (Parallel)
-  - id: "a1_type_casting"
-    name: "Type Casting & Imports"
-    description: "Fix branded type casting, missing imports, and enum usage"
+  - id: 'a1_type_casting'
+    name: 'Type Casting & Imports'
+    description: 'Fix branded type casting, missing imports, and enum usage'
 
-  - id: "a2_property_access"
-    name: "Property Access Fixes"
+  - id: 'a2_property_access'
+    name: 'Property Access Fixes'
     description: "Fix ~100 'Property X does not exist on type never' errors"
 
-  - id: "a3_type_mismatches"
-    name: "Type Mismatch Fixes"
-    description: "Fix Date vs string, missing properties, timestamp issues"
+  - id: 'a3_type_mismatches'
+    name: 'Type Mismatch Fixes'
+    description: 'Fix Date vs string, missing properties, timestamp issues'
 
   # Group B: Service Fixes (Parallel after A)
-  - id: "b1_managers"
-    name: "Manager Implementation"
-    description: "Fix managers/index.ts errors and implement missing managers"
+  - id: 'b1_managers'
+    name: 'Manager Implementation'
+    description: 'Fix managers/index.ts errors and implement missing managers'
 
-  - id: "b2_test_env"
-    name: "Test Environment Fixes"
-    description: "Fix ProseMirror document errors and test environment issues"
+  - id: 'b2_test_env'
+    name: 'Test Environment Fixes'
+    description: 'Fix ProseMirror document errors and test environment issues'
 
-  - id: "b3_integration"
-    name: "Integration Fixes"
-    description: "Complete recovery TODOs and fix service integration"
+  - id: 'b3_integration'
+    name: 'Integration Fixes'
+    description: 'Complete recovery TODOs and fix service integration'
 
   # Group C: Validation (Sequential after A & B)
-  - id: "c1_test_fixes"
-    name: "Test Suite Fixes"
-    description: "Fix remaining test failures after type fixes"
+  - id: 'c1_test_fixes'
+    name: 'Test Suite Fixes'
+    description: 'Fix remaining test failures after type fixes'
 
-  - id: "c2_validation"
-    name: "Final Validation"
-    description: "Verify all fixes and create honest status report"
+  - id: 'c2_validation'
+    name: 'Final Validation'
+    description: 'Verify all fixes and create honest status report'
 
 # Sequential prompts for each package
 package_prompts:
@@ -49,7 +49,6 @@ package_prompts:
       Description: {package_description}
 
       CRITICAL RULES:
-      1. Work ONLY in experimental/amelia/workspaces directory
       2. Report ACTUAL results, not intended results
       3. Run verification commands and include output
       4. If you can't fix something, document it
@@ -167,12 +166,12 @@ inter_wave_prompts: []
 # Configuration
 max_parallel: 3
 timeout_minutes: 45
-output_dir: "logs/wave-4-{timestamp}"
+output_dir: 'logs/wave-4-{timestamp}'
 
 # Dependencies
 dependencies:
-  b1_managers: ["a1_type_casting", "a2_property_access", "a3_type_mismatches"]
-  b2_test_env: ["a1_type_casting", "a2_property_access", "a3_type_mismatches"]
-  b3_integration: ["a1_type_casting", "a2_property_access", "a3_type_mismatches"]
-  c1_test_fixes: ["b1_managers", "b2_test_env", "b3_integration"]
-  c2_validation: ["c1_test_fixes"]
+  b1_managers: ['a1_type_casting', 'a2_property_access', 'a3_type_mismatches']
+  b2_test_env: ['a1_type_casting', 'a2_property_access', 'a3_type_mismatches']
+  b3_integration: ['a1_type_casting', 'a2_property_access', 'a3_type_mismatches']
+  c1_test_fixes: ['b1_managers', 'b2_test_env', 'b3_integration']
+  c2_validation: ['c1_test_fixes']

@@ -2,7 +2,7 @@ name: Intent PR Checks
 
 on:
   pull_request:
-    branches: ["main"]
+    branches: ['main']
 
 # Cancel in progress workflows on pull_requests.
 # https://docs.github.com/en/actions/using-jobs/using-concurrency#example-using-a-fallback-value
@@ -15,12 +15,9 @@ jobs:
     name: Type Check & Test
     runs-on: macos-14
     timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: experimental/amelia/workspaces
     env:
-      GIT_TERMINAL_PROMPT: "0"
-      NODE_OPTIONS: "--max-old-space-size=4096"
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
 
     steps:
       - name: Checkout
@@ -29,9 +26,9 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "24"
-          cache: "npm"
-          cache-dependency-path: experimental/amelia/workspaces/package-lock.json
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -43,4 +40,3 @@ jobs:
 
       - name: Unit tests
         run: npm run test:unit
-

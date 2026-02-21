@@ -4,20 +4,20 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version number (e.g., 1.2.3)"
+        description: 'Version number (e.g., 1.2.3)'
         required: true
         type: string
       channel:
-        description: "Release channel"
+        description: 'Release channel'
         required: true
-        default: "stable"
+        default: 'stable'
         type: choice
         options:
           - stable
           - beta
           - alpha
       skip_upload:
-        description: "Skip upload to CDN"
+        description: 'Skip upload to CDN'
         required: false
         default: false
         type: boolean
@@ -27,9 +27,6 @@ concurrency:
   group: intent-release-${{ github.ref }}
   cancel-in-progress: false
 
-env:
-  WORKING_DIR: experimental/amelia/workspaces
-
 jobs:
   # ==========================================================================
   # Build macOS (x64 + arm64 universal build with code signing & notarization)
@@ -37,9 +34,6 @@ jobs:
   build-macos:
     runs-on: macos-14 # Apple Silicon runner for faster builds
     timeout-minutes: 60
-    defaults:
-      run:
-        working-directory: experimental/amelia/workspaces
 
     steps:
       - name: Checkout code
@@ -48,9 +42,9 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: experimental/amelia/workspaces/package-lock.json
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -100,7 +94,7 @@ jobs:
         run: npm run dist:mac
         env:
           # Increase Node.js memory limit for large builds
-          NODE_OPTIONS: "--max-old-space-size=8192"
+          NODE_OPTIONS: '--max-old-space-size=8192'
           # Code signing
           CSC_LINK: ${{ secrets.INTENT_MACOS_CERTIFICATE }}
           CSC_KEY_PASSWORD: ${{ secrets.INTENT_MACOS_CERTIFICATE_PWD }}
@@ -120,10 +114,10 @@ jobs:
         with:
           name: dist-macos
           path: |
-            experimental/amelia/workspaces/dist-electron/*.dmg
-            experimental/amelia/workspaces/dist-electron/*.zip
-            experimental/amelia/workspaces/dist-electron/*.yml
-            experimental/amelia/workspaces/dist-electron/release-notes*.json
+            dist-electron/*.dmg
+            dist-electron/*.zip
+            dist-electron/*.yml
+            dist-electron/release-notes*.json
           retention-days: 30
 
   # ==========================================================================
@@ -134,9 +128,6 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ !inputs.skip_upload }}
     timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: experimental/amelia/workspaces
 
     steps:
       - name: Checkout code
@@ -145,13 +136,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: '20'
 
       - name: Download macOS artifacts
         uses: actions/download-artifact@v4
         with:
           name: dist-macos
-          path: experimental/amelia/workspaces/dist-electron
+          path: dist-electron
 
       - name: List artifacts
         run: ls -la dist-electron/
@@ -159,7 +150,7 @@ jobs:
       - name: Setup Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
-          version: "latest"
+          version: 'latest'
 
       - name: Authenticate with GCP
         id: auth

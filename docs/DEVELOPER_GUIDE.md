@@ -39,7 +39,7 @@ npx vitest        # Run tests in watch mode
 ## Project Structure
 
 ```
-experimental/amelia/workspaces/
+/
 ├── src/
 │   ├── features/         # Feature modules
 │   │   ├── agent/       # Agent management

@@ -8,15 +8,15 @@ The Parallel Agent Runner uses YAML configuration files to define execution work
 
 ```yaml
 # Required fields
-title: "Your Wave Title"
-description: "What this wave accomplishes"
+title: 'Your Wave Title'
+description: 'What this wave accomplishes'
 
 # Package definitions
 packages:
-  - id: "unique-id"
-    name: "Human-readable name"
-    description: "What this package does"
-    dependencies: ["other-package-id"]  # Optional
+  - id: 'unique-id'
+    name: 'Human-readable name'
+    description: 'What this package does'
+    dependencies: ['other-package-id'] # Optional
 
 # Optional configuration
 config:
@@ -28,13 +28,17 @@ config:
 ## Required Fields
 
 ### `title` (string, required)
+
 The title of your parallel execution wave.
 
 ### `description` (string, required)
+
 A description of what this wave accomplishes.
 
 ### `packages` (array, required)
+
 An array of package definitions. Each package must have:
+
 - `id`: Unique identifier for the package
 - `name`: Human-readable name
 - `description`: What the package does
@@ -42,52 +46,58 @@ An array of package definitions. Each package must have:
 ## Optional Fields
 
 ### `config` (object)
+
 Configuration options for execution:
 
 ```yaml
 config:
-  maxParallel: 4           # Max agents running simultaneously (default: 4)
-  timeoutMinutes: 30       # Timeout per agent in minutes (default: 30)
-  autoRetry: true         # Automatically retry failed agents (default: true)
-  retryAttempts: 3        # Number of retry attempts (default: 3)
-  continueOnError: false  # Continue if packages fail (default: false)
-  runTests: false         # Run tests during consolidation (default: false)
+  maxParallel: 4 # Max agents running simultaneously (default: 4)
+  timeoutMinutes: 30 # Timeout per agent in minutes (default: 30)
+  autoRetry: true # Automatically retry failed agents (default: true)
+  retryAttempts: 3 # Number of retry attempts (default: 3)
+  continueOnError: false # Continue if packages fail (default: false)
+  runTests: false # Run tests during consolidation (default: false)
 ```
 
 ### `model` (string)
+
 The AI model to use:
+
 ```yaml
-model: "claude-3-5-sonnet-20241022"  # Default
+model: 'claude-3-5-sonnet-20241022' # Default
 ```
 
 ### `dependencies` (array)
+
 Define execution order by specifying dependencies:
 
 ```yaml
 packages:
-  - id: "task1"
-    name: "First Task"
+  - id: 'task1'
+    name: 'First Task'
 
-  - id: "task2"
-    name: "Second Task"
-    dependencies: ["task1"]  # Runs after task1 completes
+  - id: 'task2'
+    name: 'Second Task'
+    dependencies: ['task1'] # Runs after task1 completes
 ```
 
 ### `templates` (array)
+
 Use predefined templates:
 
 ```yaml
 templates:
-  - "typescript-fixes"
-  - "test-fixes"
+  - 'typescript-fixes'
+  - 'test-fixes'
 ```
 
 ### `prompts` (array)
+
 Define custom prompts for packages:
 
 ```yaml
 prompts:
-  - name: "work"
+  - name: 'work'
     template: |
       Instructions for the agent:
       Package: {package_name}
@@ -97,28 +107,31 @@ prompts:
 ```
 
 ### `variables` (object)
+
 Define custom variables for substitution:
 
 ```yaml
 variables:
-  workspace: "experimental/amelia/workspaces"
-  model_version: "latest"
+  workspace: 'src/'
+  model_version: 'latest'
 
 packages:
-  - id: "task1"
-    description: "Work in {workspace} directory"
+  - id: 'task1'
+    description: 'Work in {workspace} directory'
 ```
 
 ### `consolidation` (boolean)
+
 Enable post-execution consolidation:
 
 ```yaml
-consolidation: true  # Run TypeScript check and tests after completion
+consolidation: true # Run TypeScript check and tests after completion
 ```
 
 ## Variable Substitution
 
 The following variables are available in prompts:
+
 - `{package_id}` - Package ID
 - `{package_name}` - Package name
 - `{package_description}` - Package description
@@ -134,12 +147,12 @@ Packages are automatically organized into waves based on dependencies:
 
 ```yaml
 packages:
-  - id: "a"  # Wave 1
-  - id: "b"  # Wave 1
-  - id: "c"
-    dependencies: ["a", "b"]  # Wave 2
-  - id: "d"
-    dependencies: ["c"]  # Wave 3
+  - id: 'a' # Wave 1
+  - id: 'b' # Wave 1
+  - id: 'c'
+    dependencies: ['a', 'b'] # Wave 2
+  - id: 'd'
+    dependencies: ['c'] # Wave 3
 ```
 
 ## Best Practices
@@ -154,51 +167,53 @@ packages:
 ## Example Configurations
 
 ### Simple Parallel Execution
+
 ```yaml
-title: "Simple Tasks"
-description: "Run three tasks in parallel"
+title: 'Simple Tasks'
+description: 'Run three tasks in parallel'
 
 packages:
-  - id: "task1"
-    name: "Task One"
-    description: "First task"
-  - id: "task2"
-    name: "Task Two"
-    description: "Second task"
-  - id: "task3"
-    name: "Task Three"
-    description: "Third task"
+  - id: 'task1'
+    name: 'Task One'
+    description: 'First task'
+  - id: 'task2'
+    name: 'Task Two'
+    description: 'Second task'
+  - id: 'task3'
+    name: 'Task Three'
+    description: 'Third task'
 ```
 
 ### Complex with Dependencies
+
 ```yaml
-title: "Complex Workflow"
-description: "Multi-stage workflow with dependencies"
+title: 'Complex Workflow'
+description: 'Multi-stage workflow with dependencies'
 
 packages:
-  - id: "setup"
-    name: "Setup"
-    description: "Initial setup"
+  - id: 'setup'
+    name: 'Setup'
+    description: 'Initial setup'
 
-  - id: "process-a"
-    name: "Process A"
-    description: "Process type A"
-    dependencies: ["setup"]
+  - id: 'process-a'
+    name: 'Process A'
+    description: 'Process type A'
+    dependencies: ['setup']
 
-  - id: "process-b"
-    name: "Process B"
-    description: "Process type B"
-    dependencies: ["setup"]
+  - id: 'process-b'
+    name: 'Process B'
+    description: 'Process type B'
+    dependencies: ['setup']
 
-  - id: "merge"
-    name: "Merge Results"
-    description: "Merge A and B"
-    dependencies: ["process-a", "process-b"]
+  - id: 'merge'
+    name: 'Merge Results'
+    description: 'Merge A and B'
+    dependencies: ['process-a', 'process-b']
 
-  - id: "validate"
-    name: "Validate"
-    description: "Final validation"
-    dependencies: ["merge"]
+  - id: 'validate'
+    name: 'Validate'
+    description: 'Final validation'
+    dependencies: ['merge']
 
 config:
   maxParallel: 2

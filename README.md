@@ -162,8 +162,7 @@ UI (Renderer) → IPC Handlers → Protocol Adapter → Services → Repositorie
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/augmentcode/augment.git
-cd augment/experimental/amelia/workspaces
+git clone https://github.com/augmentcode/intent.git
 ```
 
 ### 2. Install Dependencies

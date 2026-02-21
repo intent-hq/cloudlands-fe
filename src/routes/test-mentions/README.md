@@ -15,7 +15,9 @@ This page demonstrates all mention system states and interactions without requir
 ## Features
 
 ### Mock Data
+
 All mention types are represented with realistic mock data:
+
 - **Files**: 2 examples with paths and language metadata
 - **Folders**: 2 examples with file counts
 - **Notes**: 2 examples with preview content
@@ -24,6 +26,7 @@ All mention types are represented with realistic mock data:
 - **Rules**: 2 examples
 
 ### Interactive Controls
+
 - **Show/Hide Menu**: Toggle mention menu visibility
 - **Show/Hide Preview**: Toggle preview panel
 - **Search**: Filter mentions by text
@@ -31,6 +34,7 @@ All mention types are represented with realistic mock data:
 - **Test States**: Quick buttons for edge cases
 
 ### Testing Capabilities
+
 - Empty query state
 - Search results
 - All mention types
@@ -43,8 +47,8 @@ All mention types are represented with realistic mock data:
 ## Usage
 
 1. Start the dev server:
+
    ```bash
-   cd experimental/amelia/workspaces
    pnpm dev:renderer
    ```
 
@@ -57,6 +61,7 @@ All mention types are represented with realistic mock data:
 ## Implementation
 
 The page is completely standalone:
+
 - No IPC dependencies
 - No workspace or file system access
 - All data mocked in the component

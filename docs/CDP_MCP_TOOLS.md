@@ -23,28 +23,29 @@ pnpm run dev:cdp
 3. **Don't start the dev server yourself** — The user typically runs it in a separate terminal
 
 If `cdp_hello` fails with a connection error, ask the user:
-> "CDP tools require the dev server to be running with CDP enabled. Please run `pnpm dev:cdp` in the experimental/amelia/workspaces directory."
+
+> "CDP tools require the dev server to be running with CDP enabled. Please run `pnpm dev:cdp` in the Intent directory."
 
 ## Available Tools
 
 ### Inspection Tools
 
-| Tool | Description |
-|------|-------------|
-| `cdp_hello` | Test CDP connection, returns page title |
-| `cdp_get_accessibility_tree` | Get accessibility tree for finding UI elements |
-| `cdp_get_dom` | Get raw HTML structure |
-| `cdp_get_console_logs` | Get browser console logs (with filtering) |
-| `cdp_screenshot` | Take screenshots (viewport, full page, or element) |
-| `cdp_api_reference` | Get complete API documentation |
+| Tool                         | Description                                        |
+| ---------------------------- | -------------------------------------------------- |
+| `cdp_hello`                  | Test CDP connection, returns page title            |
+| `cdp_get_accessibility_tree` | Get accessibility tree for finding UI elements     |
+| `cdp_get_dom`                | Get raw HTML structure                             |
+| `cdp_get_console_logs`       | Get browser console logs (with filtering)          |
+| `cdp_screenshot`             | Take screenshots (viewport, full page, or element) |
+| `cdp_api_reference`          | Get complete API documentation                     |
 
 ### Interaction Tools
 
-| Tool | Description |
-|------|-------------|
+| Tool             | Description                                  |
+| ---------------- | -------------------------------------------- |
 | `cdp_run_script` | Execute JavaScript with Playwright-style API |
-| `cdp_reload` | Reload the page (with optional cache bypass) |
-| `cdp_wait` | Wait for time or element to appear |
+| `cdp_reload`     | Reload the page (with optional cache bypass) |
+| `cdp_wait`       | Wait for time or element to appear           |
 
 ## Workflow Patterns
 
@@ -119,24 +120,24 @@ Renderer Process (UI)
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `CDP_PORT` | CDP debugging port | 9223 |
-| `ENABLE_CDP_DEBUG` | Enable CDP tools | false |
-| `NODE_ENV` | Must be `development` | - |
+| Variable           | Description           | Default |
+| ------------------ | --------------------- | ------- |
+| `CDP_PORT`         | CDP debugging port    | 9223    |
+| `ENABLE_CDP_DEBUG` | Enable CDP tools      | false   |
+| `NODE_ENV`         | Must be `development` | -       |
 
 ## Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| Cannot connect | Ensure app is running with `pnpm run dev:cdp` |
+| Issue            | Solution                                      |
+| ---------------- | --------------------------------------------- |
+| Cannot connect   | Ensure app is running with `pnpm run dev:cdp` |
 | CDP disconnected | App was restarted; server will auto-reconnect |
-| Port conflict | Check `lsof -i :9223` for conflicts |
+| Port conflict    | Check `lsof -i :9223` for conflicts           |
 
 ## Related Files
 
-| File | Purpose |
-|------|---------|
-| `cdp-mcp-server/server.ts` | STDIO MCP server implementation |
-| `cdp-mcp-server/cdp-helpers.js` | Playwright-style API helpers |
+| File                                                    | Purpose                          |
+| ------------------------------------------------------- | -------------------------------- |
+| `cdp-mcp-server/server.ts`                              | STDIO MCP server implementation  |
+| `cdp-mcp-server/cdp-helpers.js`                         | Playwright-style API helpers     |
 | `src/features/agent/instructions/base-system-prompt.ts` | Agent instructions for CDP tools |

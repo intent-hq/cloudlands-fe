@@ -110,7 +110,7 @@ export class AgentErrorTracker {
       if (fs.existsSync(packagePath)) {
         try {
           const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf-8'));
-          if (pkg.name === 'intent' || currentDir.includes('experimental/amelia/workspaces')) {
+          if (pkg.name === 'intent') {
             return currentDir;
           }
         } catch (e) {
@@ -409,7 +409,7 @@ export class AgentErrorTracker {
     byComponent: Record<string, number>;
     recentErrors: TrackedError[];
     filePath: string;
-    } {
+  } {
     const bySource: Record<string, number> = {};
     const byLevel: Record<string, number> = {};
     const byComponent: Record<string, number> = {};

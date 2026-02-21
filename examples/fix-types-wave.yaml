@@ -1,12 +1,11 @@
-name: "TypeScript Error Fixes - Wave 4"
-description: "Fix 625+ TypeScript errors from Waves 2-3 across services, clients, and shared code"
+name: 'TypeScript Error Fixes - Wave 4'
+description: 'Fix 625+ TypeScript errors from Waves 2-3 across services, clients, and shared code'
 max_parallel: 8
 
 # Sequential prompts for each package
 package_prompts:
-  - name: "work"
+  - name: 'work'
     prompt: |
-      We're working on the experimental/amelia/workspaces app.
       Don't make changes outside that folder.
 
       Task: {title}
@@ -15,7 +14,7 @@ package_prompts:
 
       {context}
 
-  - name: "review"
+  - name: 'review'
     prompt: |
       Review the work completed for: {title}
 
@@ -28,7 +27,7 @@ package_prompts:
 
 # Prompts that run between waves
 inter_wave_prompts:
-  - name: "consolidation"
+  - name: 'consolidation'
     prompt: |
       Consolidation check for Wave 4 - TypeScript Error Fixes
 
@@ -45,8 +44,8 @@ inter_wave_prompts:
       - Recommendations for next wave
 
 packages:
-  - id: "fix-types-services-agent"
-    title: "Fix types in services/agent"
+  - id: 'fix-types-services-agent'
+    title: 'Fix types in services/agent'
     description: |
       Fix TypeScript errors in agent service files:
       - services/agent/agent-factory.ts
@@ -63,8 +62,8 @@ packages:
 
       Run: npm run check to verify fixes
 
-  - id: "fix-types-services-persistence"
-    title: "Fix types in services/persistence"
+  - id: 'fix-types-services-persistence'
+    title: 'Fix types in services/persistence'
     description: |
       Fix TypeScript errors in persistence service:
       - services/persistence/persistence-service.ts
@@ -77,8 +76,8 @@ packages:
       - Session state types
       - Message storage types
 
-  - id: "fix-types-services-streaming"
-    title: "Fix types in services/streaming"
+  - id: 'fix-types-services-streaming'
+    title: 'Fix types in services/streaming'
     description: |
       Fix TypeScript errors in streaming service:
       - services/streaming/stream-manager.ts
@@ -90,8 +89,8 @@ packages:
       - Event handler types
       - Callback function signatures
 
-  - id: "fix-types-clients-vscode"
-    title: "Fix types in clients/vscode"
+  - id: 'fix-types-clients-vscode'
+    title: 'Fix types in clients/vscode'
     description: |
       Fix TypeScript errors in VSCode extension:
       - clients/vscode/src/extension.ts
@@ -104,8 +103,8 @@ packages:
       - Command handler signatures
       - Provider interface implementations
 
-  - id: "fix-types-clients-webviews"
-    title: "Fix types in clients/common/webviews"
+  - id: 'fix-types-clients-webviews'
+    title: 'Fix types in clients/common/webviews'
     description: |
       Fix TypeScript errors in webview components:
       - clients/common/webviews/src/components/
@@ -117,8 +116,8 @@ packages:
       - Store types
       - Event handler types
 
-  - id: "fix-types-clients-sidecar"
-    title: "Fix types in clients/sidecar"
+  - id: 'fix-types-clients-sidecar'
+    title: 'Fix types in clients/sidecar'
     description: |
       Fix TypeScript errors in sidecar client:
       - clients/sidecar/src/
@@ -129,8 +128,8 @@ packages:
       - Handler function signatures
       - State management types
 
-  - id: "fix-types-shared"
-    title: "Fix types in shared utilities"
+  - id: 'fix-types-shared'
+    title: 'Fix types in shared utilities'
     description: |
       Fix TypeScript errors in shared code:
       - src/shared/
@@ -143,8 +142,8 @@ packages:
       - Type definitions
       - Helper function types
 
-  - id: "fix-types-tests"
-    title: "Fix types in test files"
+  - id: 'fix-types-tests'
+    title: 'Fix types in test files'
     description: |
       Fix TypeScript errors in all test files:
       - All __tests__ directories
