@@ -212,7 +212,7 @@
       </button>
 
       <button
-        class="p-2 bg-transparent border-none text-muted-foreground cursor-pointer rounded-md transition-all duration-200 hover:bg-muted hover:text-destructive"
+        class="p-2 bg-transparent border-none text-muted-foreground cursor-pointer rounded-md transition-all duration-200 hover:bg-muted hover:text-destructive-foreground"
         onclick={onDelete}
         title="Delete chat"
       >

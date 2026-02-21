@@ -6,7 +6,7 @@
  * Also manages per-workspace disabled MCP servers.
  */
 
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { Logger } from '../../../shared/logger';
@@ -84,16 +84,11 @@ function parseLenientJson<T>(content: string): T {
  *
  * @returns User-defined MCP servers or null if file doesn't exist/is invalid
  */
-export function readUserMcpServers(): Record<string, McpServerConfig> | null {
+export async function readUserMcpServers(): Promise<Record<string, McpServerConfig> | null> {
   const settingsPath = getAugmentSettingsPath();
 
   try {
-    if (!fs.existsSync(settingsPath)) {
-      logger.debug('Augment settings file not found', { path: settingsPath });
-      return null;
-    }
-
-    const content = fs.readFileSync(settingsPath, 'utf-8');
+    const content = await fs.readFile(settingsPath, 'utf-8');
     const settings = parseLenientJson<UserMcpSettings>(content);
 
     if (!settings.mcpServers || typeof settings.mcpServers !== 'object') {
@@ -108,10 +103,15 @@ export function readUserMcpServers(): Record<string, McpServerConfig> | null {
 
     return settings.mcpServers;
   } catch (error) {
-    logger.warn('Failed to read user MCP settings', {
-      error: error instanceof Error ? error.message : String(error),
-      path: settingsPath,
-    });
+    const errCode = (error as NodeJS.ErrnoException).code;
+    if (errCode === 'ENOENT') {
+      logger.debug('Augment settings file not found', { path: settingsPath });
+    } else {
+      logger.warn('Failed to read user MCP settings', {
+        error: error instanceof Error ? error.message : String(error),
+        path: settingsPath,
+      });
+    }
     return null;
   }
 }
@@ -123,26 +123,25 @@ export function readUserMcpServers(): Record<string, McpServerConfig> | null {
  * @param mcpServers - The MCP servers to write
  * @returns Success status and optional error message
  */
-export function writeUserMcpServers(mcpServers: Record<string, McpServerConfig>): {
+export async function writeUserMcpServers(mcpServers: Record<string, McpServerConfig>): Promise<{
   success: boolean;
   error?: string;
-} {
+}> {
   const settingsPath = getAugmentSettingsPath();
   const settingsDir = path.dirname(settingsPath);
 
   try {
     // Ensure directory exists
-    if (!fs.existsSync(settingsDir)) {
-      fs.mkdirSync(settingsDir, { recursive: true });
-    }
+    await fs.mkdir(settingsDir, { recursive: true });
 
     // Read existing settings to preserve other fields
     let existingSettings: Record<string, unknown> = {};
-    if (fs.existsSync(settingsPath)) {
-      try {
-        const content = fs.readFileSync(settingsPath, 'utf-8');
-        existingSettings = parseLenientJson<Record<string, unknown>>(content);
-      } catch {
+    try {
+      const content = await fs.readFile(settingsPath, 'utf-8');
+      existingSettings = parseLenientJson<Record<string, unknown>>(content);
+    } catch (readError) {
+      const errCode = (readError as NodeJS.ErrnoException).code;
+      if (errCode !== 'ENOENT') {
         // If existing file is invalid, start fresh
         logger.warn('Existing settings file is invalid, will overwrite');
       }
@@ -154,7 +153,7 @@ export function writeUserMcpServers(mcpServers: Record<string, McpServerConfig>)
       mcpServers,
     };
 
-    fs.writeFileSync(settingsPath, JSON.stringify(newSettings, null, 2), 'utf-8');
+    await fs.writeFile(settingsPath, JSON.stringify(newSettings, null, 2), 'utf-8');
 
     logger.info('Wrote user MCP servers to settings', {
       serverCount: Object.keys(mcpServers).length,
@@ -175,16 +174,17 @@ export function writeUserMcpServers(mcpServers: Record<string, McpServerConfig>)
 /**
  * Read the entire ~/.augment/settings.json file
  */
-export function readAugmentSettingsFile(): { content: string | null; error?: string } {
+export async function readAugmentSettingsFile(): Promise<{ content: string | null; error?: string }> {
   const settingsPath = getAugmentSettingsPath();
 
   try {
-    if (!fs.existsSync(settingsPath)) {
-      return { content: null };
-    }
-    const content = fs.readFileSync(settingsPath, 'utf-8');
+    const content = await fs.readFile(settingsPath, 'utf-8');
     return { content };
   } catch (error) {
+    const errCode = (error as NodeJS.ErrnoException).code;
+    if (errCode === 'ENOENT') {
+      return { content: null };
+    }
     return { content: null, error: error instanceof Error ? error.message : String(error) };
   }
 }
@@ -192,7 +192,7 @@ export function readAugmentSettingsFile(): { content: string | null; error?: str
 /**
  * Write the entire ~/.augment/settings.json file
  */
-export function writeAugmentSettingsFile(content: string): { success: boolean; error?: string } {
+export async function writeAugmentSettingsFile(content: string): Promise<{ success: boolean; error?: string }> {
   const settingsPath = getAugmentSettingsPath();
   const settingsDir = path.dirname(settingsPath);
 
@@ -201,11 +201,9 @@ export function writeAugmentSettingsFile(content: string): { success: boolean; e
     JSON.parse(content);
 
     // Ensure directory exists
-    if (!fs.existsSync(settingsDir)) {
-      fs.mkdirSync(settingsDir, { recursive: true });
-    }
+    await fs.mkdir(settingsDir, { recursive: true });
 
-    fs.writeFileSync(settingsPath, content, 'utf-8');
+    await fs.writeFile(settingsPath, content, 'utf-8');
     logger.info('Wrote Augment settings file', { path: settingsPath });
     return { success: true };
   } catch (error) {
@@ -384,11 +382,7 @@ export async function getWorkspaceDisabledMcpServers(workspaceId: string): Promi
   const filePath = await getWorkspaceDisabledMcpServersPath(workspaceId);
 
   try {
-    if (!fs.existsSync(filePath)) {
-      return [];
-    }
-
-    const content = fs.readFileSync(filePath, 'utf-8');
+    const content = await fs.readFile(filePath, 'utf-8');
     const data = JSON.parse(content);
 
     if (Array.isArray(data.disabledServers)) {
@@ -397,11 +391,14 @@ export async function getWorkspaceDisabledMcpServers(workspaceId: string): Promi
 
     return [];
   } catch (error) {
-    logger.warn('Failed to read workspace disabled MCP servers', {
-      error: error instanceof Error ? error.message : String(error),
-      workspaceId,
-      path: filePath,
-    });
+    const errCode = (error as NodeJS.ErrnoException).code;
+    if (errCode !== 'ENOENT') {
+      logger.warn('Failed to read workspace disabled MCP servers', {
+        error: error instanceof Error ? error.message : String(error),
+        workspaceId,
+        path: filePath,
+      });
+    }
     return [];
   }
 }
@@ -421,12 +418,10 @@ export async function setWorkspaceDisabledMcpServers(
 
   try {
     // Ensure metadata directory exists
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
-    }
+    await fs.mkdir(dirPath, { recursive: true });
 
     const data = { disabledServers };
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+    await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
 
     logger.info('Saved workspace disabled MCP servers', {
       workspaceId,
@@ -452,16 +447,11 @@ export async function setWorkspaceDisabledMcpServers(
  * @param serverName - The name of the server to patch
  * @param authType - The auth type to set ('oauth' | 'header' | 'none')
  */
-export function patchServerAuthType(serverName: string, authType: McpAuthType): void {
+export async function patchServerAuthType(serverName: string, authType: McpAuthType): Promise<void> {
   const settingsPath = getAugmentSettingsPath();
 
   try {
-    if (!fs.existsSync(settingsPath)) {
-      logger.warn('Cannot patch authType: settings file does not exist', { serverName });
-      return;
-    }
-
-    const content = fs.readFileSync(settingsPath, 'utf-8');
+    const content = await fs.readFile(settingsPath, 'utf-8');
     const settings = parseLenientJson<Record<string, unknown>>(content);
 
     const mcpServers = settings.mcpServers as Record<string, Record<string, unknown>> | undefined;
@@ -477,13 +467,18 @@ export function patchServerAuthType(serverName: string, authType: McpAuthType): 
       mcpServers[serverName].authType = authType;
     }
 
-    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+    await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
     logger.info('Patched authType on MCP server', { serverName, authType });
   } catch (error) {
-    logger.error('Failed to patch authType on MCP server', {
-      serverName,
-      authType,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    const errCode = (error as NodeJS.ErrnoException).code;
+    if (errCode === 'ENOENT') {
+      logger.warn('Cannot patch authType: settings file does not exist', { serverName });
+    } else {
+      logger.error('Failed to patch authType on MCP server', {
+        serverName,
+        authType,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }

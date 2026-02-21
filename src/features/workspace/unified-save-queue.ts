@@ -180,6 +180,34 @@ export class UnifiedSaveQueue {
   }
 
   /**
+   * Synchronously flush all pending saves to localStorage.
+   * Unlike flush(), this has no retry logic and no async operations,
+   * making it safe to use in beforeunload handlers where the page
+   * may unload before async operations complete.
+   */
+  flushSync(): void {
+    if (this.queue.size === 0) return;
+
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+
+    const batch = Array.from(this.queue.entries());
+    this.queue.clear();
+
+    for (const [key, data] of batch) {
+      try {
+        const serialized = JSON.stringify(data);
+        localStorage.setItem(key, serialized);
+      } catch (error) {
+        // Best-effort on unload — skip failures silently
+        logger.warn('flushSync: Failed to save item', { key, error });
+      }
+    }
+  }
+
+  /**
    * Dispose the queue
    */
   dispose(): void {
@@ -212,7 +240,9 @@ export const globalSaveQueue = new UnifiedSaveQueue({
 // Ensure cleanup on page unload
 if (typeof window !== 'undefined') {
   const handleBeforeUnload = () => {
-    globalSaveQueue.dispose();
+    // Use synchronous flush on unload — the async flush() has retry logic
+    // with setTimeout delays that would never complete during page unload.
+    globalSaveQueue.flushSync();
   };
   window.addEventListener('beforeunload', handleBeforeUnload);
 

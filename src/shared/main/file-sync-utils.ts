@@ -91,7 +91,7 @@ export async function writeJsonWithSync(
   data: any,
   options?: { spaces?: number },
 ): Promise<void> {
-  const tempPath = `${filePath}.tmp`;
+  const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2, 11)}`;
   const spaces = options?.spaces ?? 2;
 
   try {
@@ -123,7 +123,7 @@ export async function writeFileWithSync(
   content: string,
   encoding: BufferEncoding = 'utf-8',
 ): Promise<void> {
-  const tempPath = `${filePath}.tmp`;
+  const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2, 11)}`;
 
   try {
     await fs.writeFile(tempPath, content, encoding);

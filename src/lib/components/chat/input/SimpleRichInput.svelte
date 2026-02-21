@@ -926,7 +926,7 @@
             size="icon-sm"
             onclick={handleCancelEnhance}
             aria-label="Stop enhancing"
-            class="text-destructive"
+            class="text-destructive-foreground"
           >
             <Fa icon={faStop} size="sm" />
           </Button>

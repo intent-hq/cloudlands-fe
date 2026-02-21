@@ -791,7 +791,9 @@ function rpcWatchSubscribe(params) {
     if (porcelain == null) return;
     if (porcelain.trim() === '') return;
 
-    const statusLines = porcelain.trim().split('\n');
+    // IMPORTANT: Use trimEnd() not trim() — trim() strips leading whitespace which
+    // corrupts the first status line's index/workTree status characters (e.g. " M" → "M").
+    const statusLines = porcelain.trimEnd().split('\n');
     const fileEntries = [];
 
     for (const line of statusLines) {
@@ -2064,7 +2066,9 @@ function cmdWatch(workspaceId, opts) {
     if (porcelain.trim() === '') return; // no changes
 
     // Parse git status --porcelain
-    const statusLines = porcelain.trim().split('\n');
+    // IMPORTANT: Use trimEnd() not trim() — trim() strips leading whitespace which
+    // corrupts the first status line's index/workTree status characters (e.g. " M" → "M").
+    const statusLines = porcelain.trimEnd().split('\n');
     const fileEntries = [];
 
     for (const line of statusLines) {

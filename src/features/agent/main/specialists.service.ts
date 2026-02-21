@@ -20,6 +20,7 @@ import {
   getDefaultModelForProvider,
   getDefaultProviderId,
   getModelTierFromModel,
+  PROVIDER_MODEL_TIERS,
   type ModelTier,
 } from '$shared/config/provider-config';
 import {
@@ -319,7 +320,13 @@ export function getEffectiveSpecialist(
     if (hasExplicitTier || !hasExplicitModel) {
       if (tier) {
         const effectiveProviderId = providerId || getDefaultProviderId();
-        resolvedModel = getDefaultModelForProvider(effectiveProviderId, tier);
+        // Only resolve tiers for providers with known tier mappings.
+        // Providers with dynamic model lists (e.g. opencode) would produce
+        // invalid model IDs — leave resolvedModel empty so downstream
+        // consumers can resolve via the specialist's modelTier field.
+        if (effectiveProviderId in PROVIDER_MODEL_TIERS) {
+          resolvedModel = getDefaultModelForProvider(effectiveProviderId, tier);
+        }
       }
     }
 
@@ -375,7 +382,9 @@ export function getEffectiveSpecialist(
     let resolvedModel = hardcoded.defaultModel || '';
     if (hardcodedTier) {
       const effectiveProviderId = providerId || getDefaultProviderId();
-      resolvedModel = getDefaultModelForProvider(effectiveProviderId, hardcodedTier);
+      if (effectiveProviderId in PROVIDER_MODEL_TIERS) {
+        resolvedModel = getDefaultModelForProvider(effectiveProviderId, hardcodedTier);
+      }
     }
     return applyUserModelOverride({
       id: hardcoded.id,
@@ -423,7 +432,9 @@ export function getAllEffectiveSpecialists(providerId?: string): EffectiveSpecia
     if (hasExplicitTier || !hasExplicitModel) {
       if (tier) {
         const effectiveProviderId = providerId || getDefaultProviderId();
-        resolvedModel = getDefaultModelForProvider(effectiveProviderId, tier);
+        if (effectiveProviderId in PROVIDER_MODEL_TIERS) {
+          resolvedModel = getDefaultModelForProvider(effectiveProviderId, tier);
+        }
       }
     }
 
@@ -472,7 +483,9 @@ export function getAllEffectiveSpecialists(providerId?: string): EffectiveSpecia
     let resolvedModel = s.defaultModel || '';
     if (hardcodedTier) {
       const effectiveProviderId = providerId || getDefaultProviderId();
-      resolvedModel = getDefaultModelForProvider(effectiveProviderId, hardcodedTier);
+      if (effectiveProviderId in PROVIDER_MODEL_TIERS) {
+        resolvedModel = getDefaultModelForProvider(effectiveProviderId, hardcodedTier);
+      }
     }
     return applyUserModelOverride({
       id: s.id,

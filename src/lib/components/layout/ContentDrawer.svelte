@@ -1242,7 +1242,7 @@
                 {/if}
                 {#if (contentType === 'agent' || contentType === 'terminal') && onDelete && localContent?.id}
                   <button
-                    class="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded-sm hover:bg-muted hover:text-destructive transition-colors"
+                    class="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded-sm hover:bg-muted hover:text-destructive-foreground transition-colors"
                     onclick={() => {
                       logger.info('[ContentDrawer] Delete button clicked for:', {
                         contentType,

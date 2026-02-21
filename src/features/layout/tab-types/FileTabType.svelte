@@ -17,6 +17,7 @@
   import { getLanguageFromPath } from '$lib/utils/file-utils';
   import { parseHunksToLineChanges, type LineChange } from '$lib/utils/line-change-decorations';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
+  import MarkdownFileEditor from '$lib/components/editor/MarkdownFileEditor.svelte';
   import FileViewer from '$lib/components/editor/FileViewer.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { Button } from '$lib/components/ui/button';
@@ -25,7 +26,7 @@
   import { editorSettings } from '$lib/stores/editor-settings.store.svelte';
   import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
-  import { faPaintbrush, faTextWidth, faPencil, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import { faPaintbrush, faTextWidth, faPencil, faTrash, faEye, faCode } from '@fortawesome/free-solid-svg-icons';
   import { deleteWithUndo } from '$lib/utils/reversible-actions';
   import { track, getFileExtension } from '$lib/services/analytics';
 
@@ -183,6 +184,8 @@
       : null,
   );
   const fileLanguage = $derived(tab.filePath ? getLanguageFromPath(tab.filePath) : 'plaintext');
+  const isMarkdownFile = $derived(fileLanguage === 'markdown');
+  let markdownPreview = $state(true); // default to rich text for markdown files
   const isFileDirty = $derived(
     fileContent !== null && originalFileContent !== null && fileContent !== originalFileContent,
   );
@@ -465,6 +468,18 @@
   />
   {#if tab.filePath}
     <div class="w-px h-4 bg-border mx-1"></div>
+    {#if isMarkdownFile}
+      <Button
+        variant="ghost-light"
+        size="icon-xs"
+        onclick={() => (markdownPreview = !markdownPreview)}
+        tooltip={markdownPreview ? 'Switch to code editor' : 'Switch to rich text preview'}
+        tooltipSide="bottom"
+        class={markdownPreview ? 'text-foreground' : 'text-muted-foreground/50'}
+      >
+        <Fa icon={markdownPreview ? faCode : faEye} size="xs" />
+      </Button>
+    {/if}
     {#if fileHasChanges}
       <Button
         variant="ghost-light"
@@ -476,35 +491,37 @@
         <Fa icon={faPencil} size="xs" />
       </Button>
     {/if}
-    <Button
-      variant="ghost-light"
-      size="icon-xs"
-      onclick={() => editorSettings.toggleDiffIndicators()}
-      tooltip={editorSettings.diffIndicators ? 'Hide diff indicators' : 'Show diff indicators'}
-      tooltipSide="bottom"
-      class={editorSettings.diffIndicators ? 'text-foreground' : 'text-muted-foreground/50'}
-    >
-      <Fa icon={faPaintbrush} size="xs" />
-    </Button>
-    <Button
-      variant="ghost-light"
-      size="icon-xs"
-      onclick={() => editorSettings.toggleLineWrapping()}
-      tooltip={editorSettings.lineWrapping
-        ? 'Wrapping lines. Click to disable.'
-        : 'Click to wrap lines'}
-      tooltipSide="bottom"
-      class={editorSettings.lineWrapping ? 'text-foreground' : 'text-muted-foreground/50'}
-    >
-      <Fa icon={faTextWidth} size="xs" />
-    </Button>
+    {#if !isMarkdownFile || !markdownPreview}
+      <Button
+        variant="ghost-light"
+        size="icon-xs"
+        onclick={() => editorSettings.toggleDiffIndicators()}
+        tooltip={editorSettings.diffIndicators ? 'Hide diff indicators' : 'Show diff indicators'}
+        tooltipSide="bottom"
+        class={editorSettings.diffIndicators ? 'text-foreground' : 'text-muted-foreground/50'}
+      >
+        <Fa icon={faPaintbrush} size="xs" />
+      </Button>
+      <Button
+        variant="ghost-light"
+        size="icon-xs"
+        onclick={() => editorSettings.toggleLineWrapping()}
+        tooltip={editorSettings.lineWrapping
+          ? 'Wrapping lines. Click to disable.'
+          : 'Click to wrap lines'}
+        tooltipSide="bottom"
+        class={editorSettings.lineWrapping ? 'text-foreground' : 'text-muted-foreground/50'}
+      >
+        <Fa icon={faTextWidth} size="xs" />
+      </Button>
+    {/if}
     <Button
       variant="ghost-light"
       size="icon-xs"
       onclick={handleDeleteFile}
       tooltip="Delete file"
       tooltipSide="bottom"
-      class="text-muted-foreground/50 hover:text-destructive"
+      class="text-muted-foreground/50 hover:text-destructive-foreground"
     >
       <Fa icon={faTrash} size="xs" />
     </Button>
@@ -544,6 +561,8 @@
           language={fileLanguage}
           isBinary={isFileBinary}
         />
+      {:else if isMarkdownFile && markdownPreview}
+        <MarkdownFileEditor bind:value={fileContent} />
       {:else}
         <CodeEditor
           bind:this={codeEditorRef}

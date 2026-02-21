@@ -33,6 +33,7 @@ class WorkspaceStore {
   #isCreating = $state(false); // Track if we're in the middle of creating/duplicating
   #loadPromise: Promise<void> | null = null; // Track active load promise
   #pendingDeletions: Set<WorkspaceId> = new Set(); // Track workspaces pending deletion
+  #pendingDeletionTimeouts: Map<WorkspaceId, ReturnType<typeof setTimeout>> = new Map(); // Track undo timeout handles
   #pendingCreations: Map<WorkspaceId, Workspace> = new Map(); // Track workspaces pending creation (not yet in backend)
   #hasLoaded = $state(false); // Track if initial load has completed at least once
 
@@ -513,10 +514,80 @@ class WorkspaceStore {
 
   /**
    * Restore workspace to UI (undo deletion)
-   * Clears the pending deletion flag so load() can restore it
+   * Clears the pending deletion flag and cancels the pending deletion timeout
    */
   restoreToUI(id: WorkspaceId): void {
     this.#pendingDeletions.delete(id);
+    const timeout = this.#pendingDeletionTimeouts.get(id);
+    if (timeout) {
+      clearTimeout(timeout);
+      this.#pendingDeletionTimeouts.delete(id);
+    }
+  }
+
+  /**
+   * Delete workspace with 15-second undo window.
+   * Removes from UI immediately and schedules permanent deletion.
+   * The deletion is tracked so it can be flushed on page unload.
+   */
+  async deleteWithUndo(id: WorkspaceId, title?: string): Promise<void> {
+    // Remove from UI immediately for responsive feedback
+    this.removeFromUI(id);
+
+    let undoClicked = false;
+    const { toast } = await import('svelte-sonner');
+    const toastId = toast.warning(title ? `Deleted "${title}"` : 'Workspace deleted', {
+      duration: 15000,
+      action: {
+        label: 'Undo',
+        onClick: async () => {
+          undoClicked = true;
+          this.restoreToUI(id);
+          await this.load();
+          toast.dismiss(toastId);
+        },
+      },
+    });
+
+    // Schedule permanent deletion after undo window
+    const timeoutId = setTimeout(async () => {
+      this.#pendingDeletionTimeouts.delete(id);
+      if (!undoClicked) {
+        const result = await this.delete(id, true);
+        if (!result.ok) {
+          await this.load();
+          toast.error('Failed to delete space');
+        }
+      }
+    }, 15000);
+
+    this.#pendingDeletionTimeouts.set(id, timeoutId);
+  }
+
+  /**
+   * Flush all pending workspace deletions immediately.
+   * Called on page unload to prevent deleted workspaces from reappearing.
+   */
+  flushPendingDeletions(): void {
+    if (this.#pendingDeletionTimeouts.size === 0) return;
+
+    logger.info('Flushing pending workspace deletions', {
+      count: this.#pendingDeletionTimeouts.size,
+    });
+
+    const entries = [...this.#pendingDeletionTimeouts.entries()];
+    this.#pendingDeletionTimeouts.clear();
+
+    for (const [workspaceId, timeoutId] of entries) {
+      clearTimeout(timeoutId);
+      // Fire and forget - main process will handle the IPC even after renderer reloads
+      this.delete(workspaceId, true).catch((err) => {
+        logger.warn('Failed to flush pending workspace deletion on page unload', {
+          workspaceId,
+          error: (err as Error)?.message || err,
+        });
+      });
+    }
   }
 
   async delete(id: WorkspaceId, skipInitialRemoval = false): Promise<Result<void, string>> {
@@ -536,6 +607,7 @@ class WorkspaceStore {
         this.removeFromUI(id);
         // Clear pending deletion since it's now actually deleted
         this.#pendingDeletions.delete(id);
+        this.#pendingDeletionTimeouts.delete(id);
         // Also clear from pending creations if it was just created
         this.#pendingCreations.delete(id);
 
@@ -870,3 +942,12 @@ class WorkspaceStore {
 
 // Export singleton instance
 export const workspaceStore = new WorkspaceStore();
+
+// Flush pending workspace deletions on page unload to prevent deleted workspaces
+// from reappearing after refresh. Fire-and-forget: the main process stays alive
+// during renderer refresh and will process the IPC calls.
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    workspaceStore.flushPendingDeletions();
+  });
+}

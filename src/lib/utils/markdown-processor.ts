@@ -1642,6 +1642,19 @@ export function processHTMLToMarkdown(
       }
     }
 
+    // Handle generic DIVs that wrap block-level content (e.g., TipTap table wrappers)
+    // Instead of just getting textContent (which loses structure), recursively process children
+    if (el.tagName === 'DIV') {
+      const hasBlockChild = el.querySelector('table, ul, ol, blockquote, pre, h1, h2, h3, h4, h5, h6, details');
+      if (hasBlockChild) {
+        let result = '';
+        for (const child of Array.from(el.children)) {
+          result += convertElement(child as Element);
+        }
+        return result;
+      }
+    }
+
     // Fallback: For block-level elements, add newlines after content
     // This ensures proper separation between blocks
     const blockElements = [

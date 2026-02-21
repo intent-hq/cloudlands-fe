@@ -1321,10 +1321,19 @@ export class ChatService implements IDisposable {
       messages: messagesBeforeEdit,
     }));
 
-    // Sync the truncated messages to sessionStore so they persist
+    // Sync the truncated messages to sessionStore so they persist in memory
     const sessionId = currentState.session?.id;
     if (sessionId) {
       sessionStore.updateMessages(sessionId, messagesBeforeEdit);
+
+      // Persist truncated messages to disk immediately so they survive page refresh.
+      // Fire-and-forget: the subsequent sendMessage will also persist on stream complete.
+      agentService.saveSession(sessionId, workspace.id).catch((err) => {
+        logger.warn('Failed to persist truncated messages after edit', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
     }
 
     // Send the new message with resetHistory flag to clear ACP session history
@@ -1417,10 +1426,18 @@ export class ChatService implements IDisposable {
       messages: messagesBeforeRegenerate,
     }));
 
-    // Sync the truncated messages to sessionStore so they persist
+    // Sync the truncated messages to sessionStore so they persist in memory
     const sessionId = currentState.session?.id;
     if (sessionId) {
       sessionStore.updateMessages(sessionId, messagesBeforeRegenerate);
+
+      // Persist truncated messages to disk immediately so they survive page refresh.
+      agentService.saveSession(sessionId, workspace.id).catch((err) => {
+        logger.warn('Failed to persist truncated messages after regenerate', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
     }
 
     // Resend the user message with resetHistory flag to clear ACP session history
@@ -1539,10 +1556,18 @@ export class ChatService implements IDisposable {
       messages: messagesBeforeRegenerate,
     }));
 
-    // Sync the truncated messages to sessionStore so they persist
+    // Sync the truncated messages to sessionStore so they persist in memory
     const sessionId = currentState.session?.id;
     if (sessionId) {
       sessionStore.updateMessages(sessionId, messagesBeforeRegenerate);
+
+      // Persist truncated messages to disk immediately so they survive page refresh.
+      agentService.saveSession(sessionId, workspace.id).catch((err) => {
+        logger.warn('Failed to persist truncated messages after regenerate from message', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
     }
 
     // Resend the user message with resetHistory flag to clear ACP session history

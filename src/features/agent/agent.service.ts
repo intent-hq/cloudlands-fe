@@ -2374,6 +2374,28 @@ class RefactoredAgentService extends EventEmitter {
         }
       }
 
+      // Flush pending undo-able deletions so they don't come back after refresh.
+      // Fire-and-forget: the main process stays alive during renderer refresh and
+      // will process the IPC calls even after the renderer has reloaded.
+      if (this.pendingDeletions.size > 0) {
+        logger.info('Flushing pending agent deletions on page unload', {
+          count: this.pendingDeletions.size,
+        });
+        const entries = [...this.pendingDeletions.entries()];
+        this.pendingDeletions.clear();
+
+        for (const [agentId, { timeoutId, workspaceId }] of entries) {
+          clearTimeout(timeoutId);
+          // Fire and forget - main process will handle the IPC even after renderer reloads
+          this.deleteSession(agentId, workspaceId).catch((err) => {
+            logger.warn('Failed to flush pending deletion on page unload', {
+              agentId,
+              error: (err as Error)?.message || err,
+            });
+          });
+        }
+      }
+
       // NOTE: We intentionally do NOT call dispose() here.
       // The beforeunload event fires for HMR, cancelled navigations, and other
       // scenarios where the page doesn't actually unload. Calling dispose() would
@@ -4609,8 +4631,14 @@ class RefactoredAgentService extends EventEmitter {
     return session;
   }
 
-  // Track pending undo-able deletions so they can be flushed on cleanup
-  private pendingDeletions = new Map<string, ReturnType<typeof setTimeout>>();
+  // Track pending undo-able deletions so they can be flushed on cleanup.
+  // Stores the timeout handle AND the workspaceId so beforeunload can pass the
+  // workspace context to deleteSession (the session is already removed from
+  // sessionStore after soft delete, so we can't look it up there).
+  private pendingDeletions = new Map<
+    string,
+    { timeoutId: ReturnType<typeof setTimeout>; workspaceId?: string }
+  >();
 
   /**
    * Delete a session with undo support.
@@ -4671,7 +4699,7 @@ class RefactoredAgentService extends EventEmitter {
       }
     }, 15000);
 
-    this.pendingDeletions.set(agentId, timeoutId);
+    this.pendingDeletions.set(agentId, { timeoutId, workspaceId: effectiveWorkspaceId });
 
     return savedSession;
   }
@@ -4688,10 +4716,10 @@ class RefactoredAgentService extends EventEmitter {
     const entries = [...this.pendingDeletions.entries()];
     this.pendingDeletions.clear();
 
-    for (const [agentId, timeoutId] of entries) {
+    for (const [agentId, { timeoutId, workspaceId: storedWorkspaceId }] of entries) {
       clearTimeout(timeoutId);
       try {
-        await this.deleteSession(agentId, workspaceId);
+        await this.deleteSession(agentId, workspaceId || storedWorkspaceId);
         logger.info('Agent deleted during flush', { agentId });
       } catch (error) {
         logger.error('Failed to delete agent during flush', { agentId, error });

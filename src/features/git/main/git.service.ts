@@ -5,6 +5,7 @@
  */
 
 import fs from 'fs';
+import * as fsAsync from 'fs/promises';
 import { createRequire } from 'module';
 import os from 'os';
 import path from 'path';
@@ -560,7 +561,7 @@ export class GitService {
           patchPreview: hunkPatch.slice(0, 500),
           patchFile,
         });
-        fs.writeFileSync(patchFile, hunkPatch);
+        await fsAsync.writeFile(patchFile, hunkPatch);
 
         // Apply the patch to the index only (--cached)
         // Try multiple strategies for applying the patch
@@ -729,18 +730,16 @@ export class GitService {
         // New file - read from working directory
         const fullFilePath = path.join(worktreePath, relativePath);
         if (fs.existsSync(fullFilePath)) {
-          const workdirContent = fs.readFileSync(fullFilePath, 'utf-8');
+          const workdirContent = await fsAsync.readFile(fullFilePath, 'utf-8');
           // Stage the entire working directory content
           const tmpDir = path.join(os.tmpdir(), 'intent-git-patches');
-          if (!fs.existsSync(tmpDir)) {
-            fs.mkdirSync(tmpDir, { recursive: true });
-          }
+          await fsAsync.mkdir(tmpDir, { recursive: true });
           const tempContentFile = path.join(
             tmpDir,
             `content-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`,
           );
           try {
-            fs.writeFileSync(tempContentFile, workdirContent);
+            await fsAsync.writeFile(tempContentFile, workdirContent);
             const { stdout: blobSha } = await execAsync(`git hash-object -w "${tempContentFile}"`, {
               cwd: worktreePath,
             });
@@ -790,16 +789,14 @@ export class GitService {
 
       // Write to a temp file
       const tmpDir = path.join(os.tmpdir(), 'intent-git-patches');
-      if (!fs.existsSync(tmpDir)) {
-        fs.mkdirSync(tmpDir, { recursive: true });
-      }
+      await fsAsync.mkdir(tmpDir, { recursive: true });
       const tempContentFile = path.join(
         tmpDir,
         `content-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`,
       );
 
       try {
-        fs.writeFileSync(tempContentFile, newContent);
+        await fsAsync.writeFile(tempContentFile, newContent);
 
         // Create a blob from the new content
         const { stdout: blobSha } = await execAsync(`git hash-object -w "${tempContentFile}"`, {
@@ -883,7 +880,7 @@ export class GitService {
           patchPreview: hunkPatch.slice(0, 500),
           patchFile,
         });
-        fs.writeFileSync(patchFile, hunkPatch);
+        await fsAsync.writeFile(patchFile, hunkPatch);
 
         // Apply the patch in reverse to the index only (--cached --reverse)
         // Try multiple strategies for applying the patch
@@ -1099,16 +1096,14 @@ export class GitService {
 
       // Write to a temp file
       const tmpDir = path.join(os.tmpdir(), 'intent-git-patches');
-      if (!fs.existsSync(tmpDir)) {
-        fs.mkdirSync(tmpDir, { recursive: true });
-      }
+      await fsAsync.mkdir(tmpDir, { recursive: true });
       const tempContentFile = path.join(
         tmpDir,
         `content-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`,
       );
 
       try {
-        fs.writeFileSync(tempContentFile, newContent);
+        await fsAsync.writeFile(tempContentFile, newContent);
 
         // Create a blob from the new content
         const { stdout: blobSha } = await execAsync(`git hash-object -w "${tempContentFile}"`, {

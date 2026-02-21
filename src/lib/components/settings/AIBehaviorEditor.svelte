@@ -305,7 +305,7 @@
         <button
           type="button"
           onclick={deleteSpecialist}
-          class="text-sm text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1.5 cursor-pointer"
+          class="text-sm text-muted-foreground hover:text-destructive-foreground transition-colors flex items-center gap-1.5 cursor-pointer"
         >
           <Fa icon={faTrash} class="w-3.5 h-3.5" />
           Delete specialist

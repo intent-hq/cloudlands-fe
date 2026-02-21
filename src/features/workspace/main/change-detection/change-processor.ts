@@ -6,7 +6,7 @@
  */
 
 import { EventEmitter } from '$shared/utils/event-emitter';
-import { readFile } from 'fs/promises';
+import { readFile, stat } from 'fs/promises';
 import { join, relative, isAbsolute } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -23,6 +23,13 @@ import type { GitDiffResult } from './git-types';
 import type { FileChange } from '../../change-detector.types';
 export type { FileChange } from '../../change-detector.types';
 import { isGitRepository, storeBlob } from '../../../../shared/git/git-blob-storage';
+import { isBinaryExtension } from '../../../../shared/binary-file-extensions';
+
+/**
+ * Maximum file size (in bytes) for reading content into memory for tracking.
+ * Files larger than this will be tracked without inline content.
+ */
+const MAX_TRACKABLE_CONTENT_SIZE = 1 * 1024 * 1024; // 1 MB
 
 const logger = new Logger('ChangeProcessor');
 
@@ -151,20 +158,26 @@ export class ChangeProcessor extends EventEmitter {
       const deletions = diff?.deletions || 0;
       let content: string | undefined;
 
-      // Get file content if needed
-      if (action !== 'Delete') {
+      // Get file content if needed — skip binary and oversized files
+      if (action !== 'Delete' && !isBinaryExtension(filePath)) {
         try {
           const fullPath = join(this.workspacePath, filePath);
-          content = await readFile(fullPath, 'utf-8');
+          const fileStats = await stat(fullPath);
 
-          // For Create actions (new files) without diff, count lines as additions
-          // This ensures consistency with detectGitChanges() and getCurrentChanges()
-          if (action === 'Create' && !diff && content) {
-            additions = content.split('\n').length;
-            // Handle case where file doesn't end with newline
-            if (content.endsWith('\n')) {
-              additions = Math.max(0, additions - 1);
+          if (fileStats.size <= MAX_TRACKABLE_CONTENT_SIZE) {
+            content = await readFile(fullPath, 'utf-8');
+
+            // For Create actions (new files) without diff, count lines as additions
+            // This ensures consistency with detectGitChanges() and getCurrentChanges()
+            if (action === 'Create' && !diff && content) {
+              additions = content.split('\n').length;
+              // Handle case where file doesn't end with newline
+              if (content.endsWith('\n')) {
+                additions = Math.max(0, additions - 1);
+              }
             }
+          } else {
+            logger.debug(`Skipping content read for large file (${fileStats.size} bytes): ${filePath}`);
           }
         } catch (error) {
           logger.debug(`Could not read file content for ${filePath}:`, error);

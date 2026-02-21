@@ -139,6 +139,15 @@ export class AgentEventSubscriptionService {
   /** Guards against double-delivery of oneShot subscriptions */
   private firedOneShotSubscriptions: Set<string> = new Set();
 
+  /**
+   * SAFETY NET: Tracks recent delivery timestamps per agent to detect rapid-fire
+   * loops. If an agent receives more than MAX_DELIVERIES_IN_WINDOW deliveries
+   * within LOOP_DETECTION_WINDOW_MS, further deliveries are suppressed.
+   */
+  private recentDeliveries: Map<string, number[]> = new Map();
+  private static readonly LOOP_DETECTION_WINDOW_MS = 30_000; // 30 seconds
+  private static readonly MAX_DELIVERIES_IN_WINDOW = 15;
+
   // ROBUSTNESS: Health monitoring for event delivery
   private deliveryStats = {
     totalDeliveries: 0,
@@ -243,6 +252,99 @@ export class AgentEventSubscriptionService {
     return path.join(WorkspaceConfig.paths.metadata(this.workspaceId), 'subscriptions.json');
   }
 
+  /**
+   * Serialize the current state for persistence.
+   * Used by both persistSubscriptions() and the synchronous flush in dispose().
+   */
+  private serializeState(): {
+    version: number;
+    timestamp: string;
+    subscriptions: Array<{
+      id: string; agentId: string; agentName: string;
+      workspaceId: string; filter: AgentEventFilter; createdAt: string;
+    }>;
+    delegationGroups: Array<Record<string, unknown>>;
+    firedOneShotSubscriptions: string[];
+  } {
+    return {
+      version: 1,
+      timestamp: new Date().toISOString(),
+      subscriptions: Array.from(this.subscriptions.values()).map(sub => ({
+        id: sub.id,
+        agentId: sub.agentId,
+        agentName: sub.agentName,
+        workspaceId: sub.workspaceId,
+        filter: sub.filter,
+        createdAt: sub.createdAt,
+      })),
+      delegationGroups: Array.from(this.delegationGroups.values()).map(t => ({
+        groupId: t.groupId,
+        parentAgentId: t.parentAgentId,
+        parentAgentName: t.parentAgentName,
+        awaitMode: t.awaitMode,
+        expectedAgentIds: Array.from(t.expectedAgentIds),
+        completedAgentIds: Array.from(t.completedAgentIds),
+        events: t.events,
+        subscriptionId: t.subscriptionId,
+      })),
+      firedOneShotSubscriptions: Array.from(this.firedOneShotSubscriptions),
+    };
+  }
+
+  /**
+   * Restore state from parsed persistence data.
+   * Used by both restoreSubscriptions() and restoreSubscriptionsSync()
+   * to eliminate duplicate restoration logic.
+   */
+  private restoreFromParsedData(data: Record<string, unknown>): number {
+    if (data.version !== 1) {
+      logger.warn('Unknown subscription persistence version', { version: data.version });
+      return 0;
+    }
+
+    // Restore fired oneShot subscriptions first (to avoid re-delivering)
+    if (Array.isArray(data.firedOneShotSubscriptions)) {
+      for (const id of data.firedOneShotSubscriptions) {
+        this.firedOneShotSubscriptions.add(id);
+      }
+    }
+
+    // Restore delegation groups before subscriptions
+    // so that event handlers find the existing trackers
+    if (Array.isArray(data.delegationGroups)) {
+      for (const g of data.delegationGroups as Record<string, unknown>[]) {
+        this.delegationGroups.set(g.groupId as string, {
+          groupId: g.groupId as string,
+          parentAgentId: g.parentAgentId as string,
+          parentAgentName: g.parentAgentName as string,
+          awaitMode: g.awaitMode as 'any' | 'all',
+          expectedAgentIds: new Set(g.expectedAgentIds as string[]),
+          completedAgentIds: new Set(g.completedAgentIds as string[]),
+          events: Array.isArray(g.events) ? g.events : [],
+          subscriptionId: g.subscriptionId as string,
+        });
+      }
+    }
+
+    // Restore subscriptions
+    let restored = 0;
+    if (Array.isArray(data.subscriptions)) {
+      for (const subData of data.subscriptions as Record<string, unknown>[]) {
+        const filter = subData.filter as AgentEventFilter | undefined;
+        if (filter?.oneShot && this.firedOneShotSubscriptions.has(subData.id as string)) {
+          continue;
+        }
+        this.restoreSubscriptionInternal(subData as {
+          id: string; agentId: string; agentName: string;
+          workspaceId: string; filter: AgentEventFilter; createdAt: string;
+        });
+        restored++;
+      }
+    }
+
+    return restored;
+  }
+
   /** Schedule a debounced persistence write */
   private schedulePersist(): void {
     if (this.persistDebounceTimer) {
@@ -259,30 +361,7 @@ export class AgentEventSubscriptionService {
   /** Persist current subscriptions to disk */
   private async persistSubscriptions(): Promise<void> {
     try {
-      const data = {
-        version: 1,
-        timestamp: new Date().toISOString(),
-        subscriptions: Array.from(this.subscriptions.values()).map(sub => ({
-          id: sub.id,
-          agentId: sub.agentId,
-          agentName: sub.agentName,
-          workspaceId: sub.workspaceId,
-          filter: sub.filter,
-          createdAt: sub.createdAt,
-        })),
-        delegationGroups: Array.from(this.delegationGroups.values()).map(t => ({
-          groupId: t.groupId,
-          parentAgentId: t.parentAgentId,
-          parentAgentName: t.parentAgentName,
-          awaitMode: t.awaitMode,
-          expectedAgentIds: Array.from(t.expectedAgentIds),
-          completedAgentIds: Array.from(t.completedAgentIds),
-          events: t.events, // Persist accumulated events so context survives restart
-          subscriptionId: t.subscriptionId,
-        })),
-        firedOneShotSubscriptions: Array.from(this.firedOneShotSubscriptions),
-      };
-
+      const data = this.serializeState();
       const filePath = this.getSubscriptionsFilePath();
       await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
       await fsPromises.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
@@ -303,52 +382,12 @@ export class AgentEventSubscriptionService {
       const raw = await fsPromises.readFile(filePath, 'utf-8');
       const data = JSON.parse(raw);
 
-      if (data.version !== 1) {
-        logger.warn('Unknown subscription persistence version', { version: data.version });
-        return 0;
-      }
-
-      // Restore fired oneShot subscriptions first (to avoid re-delivering)
-      if (Array.isArray(data.firedOneShotSubscriptions)) {
-        for (const id of data.firedOneShotSubscriptions) {
-          this.firedOneShotSubscriptions.add(id);
-        }
-      }
-
-      // Restore delegation groups before subscriptions
-      // so that event handlers find the existing trackers
-      if (Array.isArray(data.delegationGroups)) {
-        for (const g of data.delegationGroups) {
-          this.delegationGroups.set(g.groupId, {
-            groupId: g.groupId,
-            parentAgentId: g.parentAgentId,
-            parentAgentName: g.parentAgentName,
-            awaitMode: g.awaitMode,
-            expectedAgentIds: new Set(g.expectedAgentIds),
-            completedAgentIds: new Set(g.completedAgentIds),
-            events: Array.isArray(g.events) ? g.events : [], // Restore persisted events
-            subscriptionId: g.subscriptionId,
-          });
-        }
-      }
-
-      // Restore subscriptions
-      let restored = 0;
-      if (Array.isArray(data.subscriptions)) {
-        for (const subData of data.subscriptions) {
-          // Skip oneShot subscriptions that already fired
-          if (subData.filter?.oneShot && this.firedOneShotSubscriptions.has(subData.id)) {
-            continue;
-          }
-          this.restoreSubscriptionInternal(subData);
-          restored++;
-        }
-      }
+      const restored = this.restoreFromParsedData(data);
 
       logger.info('Restored subscriptions from disk', {
         restored,
-        delegationGroups: data.delegationGroups?.length || 0,
-        firedOneShots: data.firedOneShotSubscriptions?.length || 0,
+        delegationGroups: (data.delegationGroups as unknown[])?.length || 0,
+        firedOneShots: (data.firedOneShotSubscriptions as unknown[])?.length || 0,
       });
 
       return restored;
@@ -381,50 +420,12 @@ export class AgentEventSubscriptionService {
       }
 
       const data = JSON.parse(raw);
-      if (data.version !== 1) {
-        logger.warn('Unknown subscription persistence version', { version: data.version });
-        return 0;
-      }
-
-      // Restore fired oneShot subscriptions first
-      if (Array.isArray(data.firedOneShotSubscriptions)) {
-        for (const id of data.firedOneShotSubscriptions) {
-          this.firedOneShotSubscriptions.add(id);
-        }
-      }
-
-      // Restore delegation groups before subscriptions
-      if (Array.isArray(data.delegationGroups)) {
-        for (const g of data.delegationGroups) {
-          this.delegationGroups.set(g.groupId, {
-            groupId: g.groupId,
-            parentAgentId: g.parentAgentId,
-            parentAgentName: g.parentAgentName,
-            awaitMode: g.awaitMode,
-            expectedAgentIds: new Set(g.expectedAgentIds),
-            completedAgentIds: new Set(g.completedAgentIds),
-            events: Array.isArray(g.events) ? g.events : [],
-            subscriptionId: g.subscriptionId,
-          });
-        }
-      }
-
-      // Restore subscriptions
-      let restored = 0;
-      if (Array.isArray(data.subscriptions)) {
-        for (const subData of data.subscriptions) {
-          if (subData.filter?.oneShot && this.firedOneShotSubscriptions.has(subData.id)) {
-            continue;
-          }
-          this.restoreSubscriptionInternal(subData);
-          restored++;
-        }
-      }
+      const restored = this.restoreFromParsedData(data);
 
       logger.info('Restored subscriptions from disk (sync)', {
         restored,
-        delegationGroups: data.delegationGroups?.length || 0,
-        firedOneShots: data.firedOneShotSubscriptions?.length || 0,
+        delegationGroups: (data.delegationGroups as unknown[])?.length || 0,
+        firedOneShots: (data.firedOneShotSubscriptions as unknown[])?.length || 0,
       });
 
       return restored;
@@ -816,6 +817,25 @@ export class AgentEventSubscriptionService {
   }
 
   /**
+   * Event types that are infrastructure/system events about an agent's own state.
+   * These should never be delivered back to the agent they describe, as doing so
+   * creates an infinite self-wake loop:
+   *   agent goes idle → emits events → subscription matches → delivery emits
+   *   agent:woken-by-subscription → matches wildcard subscription → queued →
+   *   agent goes idle → repeat forever.
+   *
+   * The actor for these events is often 'subscription-service' (system), not the
+   * agent itself, so excludeActorIds doesn't catch them.
+   */
+  private static readonly SELF_REFERENTIAL_EVENT_TYPES = new Set([
+    'agent:woken-by-subscription',
+    'agent:status-changed',
+    'agent:subscribed',
+    'agent:unsubscribed',
+    'agent:event-delivery-failed',
+  ]);
+
+  /**
    * Handle an incoming event for a subscription
    */
   private handleEvent(subscription: AgentSubscription, event: WorkspaceEvent): void {
@@ -837,6 +857,28 @@ export class AgentEventSubscriptionService {
     // Check exclusions
     if (filter.excludeActorIds?.includes(event.actor.id || '')) {
       return;
+    }
+
+    // CRITICAL: Prevent self-referential wake loops.
+    // Infrastructure events about the subscribing agent itself (e.g.
+    // agent:woken-by-subscription, agent:status-changed) must not be
+    // delivered back to that agent. These events are emitted with actor
+    // 'subscription-service' (system), so excludeActorIds won't catch them.
+    // Without this guard, broad subscriptions (e.g. 'agent:*') can create an infinite loop:
+    //   delivery → emits agent:woken-by-subscription → matches subscription →
+    //   queued → delivered on idle → emits agent:woken-by-subscription → ...
+    if (AgentEventSubscriptionService.SELF_REFERENTIAL_EVENT_TYPES.has(event.type)) {
+      const data = event.data as Record<string, unknown>;
+      // Check both `agentId` (most events) and `targetAgentId` (delivery-failed events)
+      const eventAgentId = data?.agentId ?? data?.targetAgentId;
+      if (eventAgentId === agentId) {
+        logger.debug('Skipping self-referential infrastructure event', {
+          subscriptionId: subscription.id,
+          agentId,
+          eventType: event.type,
+        });
+        return;
+      }
     }
 
     // Check if event matches additional filters
@@ -1121,6 +1163,29 @@ export class AgentEventSubscriptionService {
   private deliverEvents(agentId: string, events: WorkspaceEvent[]): Promise<void> | undefined {
     if (events.length === 0) return undefined;
 
+    // SAFETY NET: Detect rapid-fire delivery loops.
+    // If an agent is receiving deliveries faster than expected, something is
+    // likely causing a self-wake loop. Suppress further deliveries to prevent
+    // runaway API calls and wasted tokens.
+    const now = Date.now();
+    const recentTimestamps = this.recentDeliveries.get(agentId) || [];
+    const windowStart = now - AgentEventSubscriptionService.LOOP_DETECTION_WINDOW_MS;
+    const recentInWindow = recentTimestamps.filter(t => t > windowStart);
+    recentInWindow.push(now);
+    this.recentDeliveries.set(agentId, recentInWindow);
+
+    if (recentInWindow.length > AgentEventSubscriptionService.MAX_DELIVERIES_IN_WINDOW) {
+      logger.error('Rapid-fire delivery loop detected — suppressing delivery', {
+        agentId,
+        deliveriesInWindow: recentInWindow.length,
+        windowMs: AgentEventSubscriptionService.LOOP_DETECTION_WINDOW_MS,
+        maxAllowed: AgentEventSubscriptionService.MAX_DELIVERIES_IN_WINDOW,
+        eventCount: events.length,
+        eventTypes: events.map((e) => e.type),
+      });
+      return undefined;
+    }
+
     logger.info('Delivering events to agent', {
       agentId,
       eventCount: events.length,
@@ -1193,10 +1258,18 @@ export class AgentEventSubscriptionService {
   }
 
   /**
-   * Match event type against a pattern (supports wildcards)
+   * Match event type against a pattern (supports category wildcards like 'agent:*').
+   * Bare '*' is no longer supported — the tool layer expands it to category wildcards
+   * before it reaches here. If a bare '*' somehow slips through (e.g. from a persisted
+   * subscription), we log a warning and reject the match to prevent loops.
    */
   private matchEventType(eventType: string, pattern: string): boolean {
-    if (pattern === '*') return true;
+    if (pattern === '*') {
+      logger.warn('Bare "*" wildcard in subscription filter is deprecated and ignored', {
+        eventType,
+      });
+      return false;
+    }
     if (pattern.endsWith(':*')) {
       const prefix = pattern.slice(0, -1);
       return eventType.startsWith(prefix);
@@ -1296,7 +1369,7 @@ export class AgentEventSubscriptionService {
         agentId,
         agentName,
         subscriptionId,
-        eventTypes: filter.eventTypes || ['*'],
+        eventTypes: filter.eventTypes || [],
         filterDescription,
       },
     );
@@ -1365,33 +1438,11 @@ export class AgentEventSubscriptionService {
     // Synchronous final persist — use writeFileSync so we don't lose data
     try {
       if (this.subscriptions.size > 0 || this.delegationGroups.size > 0) {
-        const data = {
-          version: 1,
-          timestamp: new Date().toISOString(),
-          subscriptions: Array.from(this.subscriptions.values()).map(sub => ({
-            id: sub.id,
-            agentId: sub.agentId,
-            agentName: sub.agentName,
-            workspaceId: sub.workspaceId,
-            filter: sub.filter,
-            createdAt: sub.createdAt,
-          })),
-          delegationGroups: Array.from(this.delegationGroups.values()).map(t => ({
-            groupId: t.groupId,
-            parentAgentId: t.parentAgentId,
-            parentAgentName: t.parentAgentName,
-            awaitMode: t.awaitMode,
-            expectedAgentIds: Array.from(t.expectedAgentIds),
-            completedAgentIds: Array.from(t.completedAgentIds),
-            events: t.events,
-            subscriptionId: t.subscriptionId,
-          })),
-          firedOneShotSubscriptions: Array.from(this.firedOneShotSubscriptions),
-        };
+        const data = this.serializeState();
         const filePath = this.getSubscriptionsFilePath();
-        const { mkdirSync, writeFileSync } = require('fs');
+        const { mkdirSync, writeFileSync: writeFileSyncFs } = require('fs');
         mkdirSync(path.dirname(filePath), { recursive: true });
-        writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+        writeFileSyncFs(filePath, JSON.stringify(data, null, 2), 'utf-8');
         logger.info('Flushed subscriptions to disk on dispose', {
           subscriptionCount: data.subscriptions.length,
           delegationGroupCount: data.delegationGroups.length,
@@ -1431,6 +1482,7 @@ export class AgentEventSubscriptionService {
     this.agentStatuses.clear();
     this.delegationGroups.clear();
     this.firedOneShotSubscriptions.clear();
+    this.recentDeliveries.clear();
 
     logger.info('AgentEventSubscriptionService disposed');
   }
@@ -1676,7 +1728,7 @@ function createEventDeliveryCallback(
     try {
       const bus = getWorkspaceEventBus(workspaceId);
       bus.emitEvent(createWorkspaceEvent(
-        'agent:event-delivery-failed' as any,
+        'agent:event-delivery-failed',
         workspaceId,
         { type: 'system', id: 'subscription-service', name: 'Subscription Service' },
         {

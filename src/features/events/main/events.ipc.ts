@@ -319,7 +319,7 @@ export function setupEventsIPC(): void {
           data: subscriptions.map((sub) => ({
             id: sub.id,
             agentId: sub.agentId,
-            eventTypes: sub.filter.eventTypes || ['*'],
+            eventTypes: sub.filter.eventTypes || [],
             actorIds: sub.filter.actorIds || [],
             createdAt: sub.createdAt,
             description: describeSubscription(sub),

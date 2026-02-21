@@ -1702,13 +1702,19 @@ Event types you can subscribe to:
 - "agent:created" - When a new agent is created
 - "agent:idle" - When an agent finishes responding
 - "agent:message:sent" - When an agent sends a message
-- "file:*" - All file events
-- "task:*" - All task events
-- "*" - All events`,
+- "file:*" - All file events (changed, created, deleted, renamed)
+- "task:*" - All task events (status changes, ready tasks)
+- "git:*" - All git events (commit, push, pull, branch, merge)
+- "note:*" - All note events (created, updated, deleted)
+- "terminal:*" - Terminal command events
+- "test:*" - Test events (started, completed)
+- "build:*" - Build events (started, completed)
+
+You must specify at least one category. Use category wildcards like "agent:*" or specific types like "agent:idle".`,
       createInputSchema(
         {
           eventTypes: arrayProperty(
-            'Event types to subscribe to. Use wildcards like "agent:*" for all agent events.',
+            'Event types to subscribe to. Use category wildcards like "agent:*" or specific types like "file:changed". Bare "*" is not allowed — specify the categories you need.',
             'string',
           ),
           excludeSelf: booleanProperty('Exclude events caused by yourself (default: true)', {
@@ -1726,17 +1732,46 @@ Event types you can subscribe to:
     );
   }
 
+  /**
+   * Valid category wildcards that agents can subscribe to.
+   * Bare '*' is not allowed — agents must specify which categories they need.
+   */
+  private static readonly VALID_CATEGORY_WILDCARDS = [
+    'agent:*', 'file:*', 'task:*', 'git:*', 'note:*',
+    'terminal:*', 'test:*', 'build:*', 'workspace:*',
+    'spec:*', 'goal:*', 'comment:*',
+  ];
+
   async execute(call: ToolCall): Promise<ToolResult> {
     try {
       const ctx = getRequiredContext(call);
       const { eventTypes, excludeSelf, batchWindow } = call.arguments;
+
+      if (!eventTypes || eventTypes.length === 0) {
+        return this.error(
+          'eventTypes is required. Specify category wildcards like "agent:*", "file:*" or specific types like "agent:idle".',
+        );
+      }
+
+      // Reject bare '*' — force agents to be explicit about what they need
+      const resolvedTypes: string[] = [];
+      for (const t of eventTypes) {
+        if (t === '*') {
+          logger.warn('Agent attempted to subscribe to bare "*", expanding to category wildcards', {
+            agentId: ctx.agentId,
+          });
+          resolvedTypes.push(...SubscribeToEventsTool.VALID_CATEGORY_WILDCARDS);
+        } else {
+          resolvedTypes.push(t);
+        }
+      }
 
       const { getAgentEventSubscriptionService } =
         await import('../../../events/main/agent-event-subscription.service');
       const subscriptionService = getAgentEventSubscriptionService(this.workspaceId);
 
       const filter: AgentEventFilter = {
-        eventTypes: eventTypes || ['*'],
+        eventTypes: resolvedTypes,
         excludeActorIds: excludeSelf !== false ? [ctx.agentId] : undefined,
         batchWindow: batchWindow || 500,
       };
@@ -1746,12 +1781,12 @@ Event types you can subscribe to:
       logger.info('Agent subscribed to events', {
         agentId: ctx.agentId,
         subscriptionId,
-        eventTypes,
+        eventTypes: resolvedTypes,
       });
 
       return this.success(
-        `Subscribed to events: ${eventTypes.join(', ')}\nSubscription ID: ${subscriptionId}\nYou will receive notifications when matching events occur.`,
-        { subscriptionId, eventTypes },
+        `Subscribed to events: ${resolvedTypes.join(', ')}\nSubscription ID: ${subscriptionId}\nYou will receive notifications when matching events occur.`,
+        { subscriptionId, eventTypes: resolvedTypes },
       );
     } catch (error) {
       logger.error('Error subscribing to events', error as Error);

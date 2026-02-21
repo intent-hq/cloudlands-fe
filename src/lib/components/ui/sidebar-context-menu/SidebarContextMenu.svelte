@@ -98,7 +98,7 @@
           type="button"
           class="w-full px-3 py-1 text-sm text-left transition-colors flex items-center gap-2
             {entry.disabled ? 'text-muted-foreground cursor-not-allowed' : 'text-foreground hover:bg-accent cursor-pointer'}
-            {entry.destructive && !entry.disabled ? 'text-destructive hover:text-destructive' : ''}"
+            {entry.destructive && !entry.disabled ? 'text-destructive-foreground hover:text-destructive-foreground' : ''}"
           onclick={() => handleItemClick(entry)}
           disabled={entry.disabled}
           role="menuitem"

@@ -237,7 +237,7 @@
                   e.preventDefault();
                   removeSetup(setup.id);
                 }}
-                class="ml-1 p-0.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                class="ml-1 p-0.5 rounded text-muted-foreground hover:text-destructive-foreground hover:bg-destructive/10"
                 title="Remove setup"
               >
                 <Fa icon={faXmark} size="xs" />
@@ -332,7 +332,7 @@
                         removeSetup(setup.id);
                       }
                     }}
-                    class="p-0.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
+                    class="p-0.5 rounded text-muted-foreground hover:text-destructive-foreground hover:bg-destructive/10 cursor-pointer"
                     title="Remove setup"
                   >
                     <Fa icon={faXmark} size="xs" />

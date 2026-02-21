@@ -22,7 +22,7 @@ import { getAgentProvider } from '$shared/types/agent-session';
 import { modelStore } from '$lib/stores/model.store.svelte';
 import { specialistsStore } from '$lib/stores/specialists.store.svelte';
 import { SPECIALISTS } from '$lib/constants/specialists';
-import { getDefaultModelForProvider } from '$shared/config/provider-config';
+import { getDefaultModelForProvider, PROVIDER_MODEL_TIERS } from '$shared/config/provider-config';
 import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
 
 const logger = createLogger('task-delegation-handlers');
@@ -247,9 +247,11 @@ export function useTaskDelegationHandlers(options: UseTaskDelegationHandlersOpti
             implementorBehaviorPrompt = implementorSpec.defaultBehaviorPrompt;
             // Resolve model from tier if not already set
             if (!implementorModel) {
-              implementorModel = implementorSpec.defaultModelTier
-                ? getDefaultModelForProvider(activeProviderStore.activeProviderId, implementorSpec.defaultModelTier)
-                : implementorSpec.defaultModel ?? '';
+              const activeProvider = activeProviderStore.activeProviderId;
+              implementorModel =
+                implementorSpec.defaultModelTier && activeProvider in PROVIDER_MODEL_TIERS
+                  ? getDefaultModelForProvider(activeProvider, implementorSpec.defaultModelTier)
+                  : implementorSpec.defaultModel ?? '';
             }
           }
         }

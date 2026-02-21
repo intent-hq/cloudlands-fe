@@ -213,6 +213,7 @@ setTimeout(() => {
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 import { dialog, protocol } from 'electron';
 import * as fs from 'fs';
+import * as fsAsync from 'fs/promises';
 import * as path from 'path';
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -572,7 +573,7 @@ function getWindowSessionsPath(): string {
   return path.join(app.getPath('userData'), 'window-sessions.json');
 }
 
-function saveWindowSessions(): void {
+async function saveWindowSessions(): Promise<void> {
   try {
     const allWindows = BrowserWindow.getAllWindows();
     const sessions: WindowSession[] = allWindows
@@ -605,7 +606,7 @@ function saveWindowSessions(): void {
 
     const sessionsPath = getWindowSessionsPath();
     if (sessions.length > 0) {
-      fs.writeFileSync(sessionsPath, JSON.stringify(sessions), 'utf-8');
+      await fsAsync.writeFile(sessionsPath, JSON.stringify(sessions), 'utf-8');
       logger.info('Saved window sessions', { count: sessions.length, routes: sessions.map(s => s.route) });
     }
   } catch (err) {
@@ -774,11 +775,11 @@ function createWindowForSession(session: WindowSession, setAsMain: boolean): voi
     const savedBoundsPath = path.join(app.getPath('userData'), 'window-bounds.json');
     const saveWindowBounds = () => {
       if (saveBoundsTimeout) clearTimeout(saveBoundsTimeout);
-      saveBoundsTimeout = setTimeout(() => {
+      saveBoundsTimeout = setTimeout(async () => {
         if (window.isDestroyed() || window.isMinimized() || window.isFullScreen()) return;
         try {
           const currentBounds = window.getBounds();
-          fs.writeFileSync(savedBoundsPath, JSON.stringify(currentBounds), 'utf-8');
+          await fsAsync.writeFile(savedBoundsPath, JSON.stringify(currentBounds), 'utf-8');
         } catch (err) {
           logger.warn('Failed to save window bounds:', err);
         }
@@ -936,11 +937,11 @@ function createWindow() {
     if (saveBoundsTimeout) {
       clearTimeout(saveBoundsTimeout);
     }
-    saveBoundsTimeout = setTimeout(() => {
+    saveBoundsTimeout = setTimeout(async () => {
       if (window.isDestroyed() || window.isMinimized() || window.isFullScreen()) return;
       try {
         const bounds = window.getBounds();
-        fs.writeFileSync(savedBoundsPath, JSON.stringify(bounds), 'utf-8');
+        await fsAsync.writeFile(savedBoundsPath, JSON.stringify(bounds), 'utf-8');
         logger.info('Saved window bounds:', bounds);
       } catch (err) {
         logger.warn('Failed to save window bounds:', err);
@@ -2427,13 +2428,14 @@ app.whenReady().then(async () => {
 app.on('before-quit', async (event: Electron.Event) => {
   logger.info('App before-quit event triggered');
 
-  // Save window sessions before potentially closing windows
-  // This captures current window routes and bounds for session restore on next launch
-  saveWindowSessions();
-
   // Only prevent default and run gracefulShutdown if we're not already shutting down
   if (!isShuttingDown) {
     event.preventDefault();
+
+    // Save window sessions now that quit is prevented.
+    // Must be called AFTER event.preventDefault() because saveWindowSessions is async
+    // and preventDefault must be called synchronously within the event handler.
+    await saveWindowSessions();
 
     // Check if there are any running agents
     const activeStreams = agentBackendHandler.getActiveStreams();

@@ -164,7 +164,7 @@ async function emitMessageDeliveryFailure(
     const bus = getWorkspaceEventBus(workspaceId);
     bus.emitEvent(
       createWorkspaceEvent(
-        'agent:message:delivery-failed' as any,
+        'agent:message:delivery-failed',
         workspaceId,
         { type: 'agent', id: fromAgentId, name: fromAgentName },
         {

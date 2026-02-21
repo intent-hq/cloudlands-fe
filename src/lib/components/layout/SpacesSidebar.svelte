@@ -29,12 +29,16 @@
   import { spaceOrdering } from '$features/layout/space-ordering.svelte';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
+  import { pendingAgentsStore } from '$features/agent/services/pending-agents.store.svelte';
+  import { permissionStore } from '$lib/stores/permission.store.svelte';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { invoke } from '$lib/electron-bridge';
 
   // Components
   import { Tooltip } from '$lib/components/ui/tooltip';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
+  import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
+  import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import { SvelteMap } from 'svelte/reactivity';
   import { onMount } from 'svelte';
   import { getLineStats, type LineStats } from '$features/file-tracking/file-tracking.client';
@@ -198,26 +202,6 @@
     }));
   });
 
-  function isWorkspaceStreaming(workspaceId: string): boolean {
-    activeStreamsVersion;
-    return activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId).length > 0;
-  }
-
-  function getStreamingAgentCount(workspaceId: string): number {
-    activeStreamsVersion;
-    return activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId).length;
-  }
-
-  function hasUnreadMessages(workspaceId: string): boolean {
-    unreadVersion;
-    return unreadTrackingService.getUnreadAgentIdsForWorkspace(workspaceId).length > 0;
-  }
-
-  function getUnreadAgentCount(workspaceId: string): number {
-    unreadVersion;
-    return unreadTrackingService.getUnreadAgentIdsForWorkspace(workspaceId).length;
-  }
-
   function getWorkspaceLineChanges(workspaceId: string): { additions: number; deletions: number } {
     // Use lineStatsVersion to trigger reactivity when cache updates
     lineStatsVersion;
@@ -230,6 +214,68 @@
 
     // Return zeros while loading
     return { additions: 0, deletions: 0 };
+  }
+
+  // Agent display info with computed avatar state
+  interface AgentDisplayInfo {
+    id: string;
+    state: AvatarState;
+    specialist?: 'spec-writer' | 'implementor' | 'verifier' | null;
+    isActive: boolean;
+    isUnread: boolean;
+  }
+
+  // Get agent display info for a workspace (matches pattern from other space list components)
+  function getWorkspaceAgentInfo(ws: Workspace): AgentDisplayInfo[] {
+    // Reference version counters for reactivity
+    void activeStreamsVersion;
+    void unreadVersion;
+    void pendingAgentsStore.version;
+
+    const summary = ws.agentSummary;
+    const summaryAgents = summary?.agents || [];
+    const pendingAgents = pendingAgentsStore.getForWorkspace(ws.id);
+
+    const summaryAgentIds = new Set(summaryAgents.map((a) => a.id));
+    const allAgents = [
+      ...summaryAgents,
+      ...pendingAgents.filter((pa) => !summaryAgentIds.has(pa.id)),
+    ];
+
+    if (allAgents.length === 0) return [];
+
+    const unreadAgentIds = new Set(unreadTrackingService.getUnreadAgentIdsForWorkspace(ws.id));
+
+    return allAgents
+      .map((agent) => {
+        const isStreaming = activeStreamsTracker.isAgentStreaming(agent.id);
+        const isUnread = unreadAgentIds.has(agent.id);
+        const isPending = pendingAgents.some((pa) => pa.id === agent.id);
+
+        const hasPermissionRequest = permissionStore.getPendingCount(agent.id) > 0;
+        let state: AvatarState = 'idle';
+        if (agent.status === 'error' || agent.status === 'failed') {
+          state = 'failed';
+        } else if (hasPermissionRequest) {
+          state = 'needs-permission';
+        } else if (isStreaming || isPending) {
+          state = 'running';
+        } else if (agent.status === 'busy' || agent.status === 'processing') {
+          state = 'running';
+        } else if (agent.status === 'waiting') {
+          state = 'waiting';
+        }
+
+        return {
+          id: agent.id,
+          state,
+          specialist: agent.specialist,
+          isActive:
+            isStreaming || isPending || agent.status === 'busy' || agent.status === 'processing',
+          isUnread,
+        };
+      })
+      .filter((agent) => agent.isActive || agent.isUnread || agent.state === 'needs-permission');
   }
 
   function getRepoDisplayName(workspace: Workspace): string | null {
@@ -340,10 +386,9 @@
         {@const tooltipText = workspace.branch
           ? `${workspace.title}\n${workspace.branch}`
           : workspace.title}
-        {@const streaming = isWorkspaceStreaming(workspace.id)}
-        {@const unread = hasUnreadMessages(workspace.id)}
-        {@const streamingCount = getStreamingAgentCount(workspace.id)}
-        {@const unreadCount = getUnreadAgentCount(workspace.id)}
+        {@const agents = getWorkspaceAgentInfo(workspace)}
+        {@const streaming = agents.some((a) => a.isActive)}
+        {@const unread = agents.some((a) => a.isUnread)}
         {@const lineChanges = getWorkspaceLineChanges(workspace.id)}
         {@const repoName = getRepoDisplayName(workspace)}
 
@@ -377,11 +422,15 @@
               <div class="workspace-label flex-1 min-w-0 text-left">
                 <div class="text-xs font-medium truncate text-foreground flex items-center gap-1">
                   {#if showEnvironmentIcons}
-                    <span title={workspace.environmentConfig?.type === 'remote' ? 'Remote' : 'Local'}>
+                    <span
+                      title={workspace.environmentConfig?.type === 'remote' ? 'Remote' : 'Local'}
+                    >
                       <Fa
                         icon={workspace.environmentConfig?.type === 'remote' ? faServer : faLaptop}
                         size="xs"
-                        class={workspace.environmentConfig?.type === 'remote' ? 'text-blue-500' : 'text-muted-foreground/50'}
+                        class={workspace.environmentConfig?.type === 'remote'
+                          ? 'text-blue-500'
+                          : 'text-muted-foreground/50'}
                       />
                     </span>
                   {/if}
@@ -394,20 +443,28 @@
                   </div>
                 {/if}
                 <!-- Stats row: line changes, agents -->
-                <div class="flex items-center gap-2 text-[10px] text-muted-foreground">
+                <div class="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                   <LineChangesBadge
                     additions={lineChanges.additions}
                     deletions={lineChanges.deletions}
                     size="xxs"
                   />
-                  {#if streamingCount > 0}
-                    <span class="flex items-center gap-0.5 text-blue-500">
-                      <span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-                      {streamingCount}
-                    </span>
-                  {/if}
-                  {#if unreadCount > 0 && !streamingCount}
-                    <span class="text-orange-400">{unreadCount} unread</span>
+                  {#if agents.length > 0}
+                    <div class="flex items-center -space-x-1">
+                      {#each agents.slice(0, 3) as agent (agent.id)}
+                        <AugieAvatarWithState
+                          agentId={agent.id}
+                          state={agent.isUnread ? 'unread' : agent.state}
+                          size={14}
+                          specialist={agent.specialist}
+                        />
+                      {/each}
+                      {#if agents.length > 3}
+                        <span class="ml-1 text-[9px] text-muted-foreground font-medium">
+                          +{agents.length - 3}
+                        </span>
+                      {/if}
+                    </div>
                   {/if}
                 </div>
               </div>
@@ -431,10 +488,9 @@
           {@const tooltipText = workspace.branch
             ? `${workspace.title}\n${workspace.branch}`
             : workspace.title}
-          {@const streaming = isWorkspaceStreaming(workspace.id)}
-          {@const unread = hasUnreadMessages(workspace.id)}
-          {@const streamingCount = getStreamingAgentCount(workspace.id)}
-          {@const unreadCount = getUnreadAgentCount(workspace.id)}
+          {@const agents = getWorkspaceAgentInfo(workspace)}
+          {@const streaming = agents.some((a) => a.isActive)}
+          {@const unread = agents.some((a) => a.isUnread)}
           {@const lineChanges = getWorkspaceLineChanges(workspace.id)}
 
           <div in:receive={{ key: workspace.id }} out:send={{ key: workspace.id }}>
@@ -467,31 +523,45 @@
                 <div class="workspace-label flex-1 min-w-0 text-left">
                   <div class="text-xs font-medium truncate text-foreground flex items-center gap-1">
                     {#if showEnvironmentIcons}
-                      <span title={workspace.environmentConfig?.type === 'remote' ? 'Remote' : 'Local'}>
+                      <span
+                        title={workspace.environmentConfig?.type === 'remote' ? 'Remote' : 'Local'}
+                      >
                         <Fa
-                          icon={workspace.environmentConfig?.type === 'remote' ? faServer : faLaptop}
+                          icon={workspace.environmentConfig?.type === 'remote'
+                            ? faServer
+                            : faLaptop}
                           size="xs"
-                          class={workspace.environmentConfig?.type === 'remote' ? 'text-blue-500' : 'text-muted-foreground/50'}
+                          class={workspace.environmentConfig?.type === 'remote'
+                            ? 'text-blue-500'
+                            : 'text-muted-foreground/50'}
                         />
                       </span>
                     {/if}
                     {workspace.title}
                   </div>
                   <!-- Stats row: line changes, agents -->
-                  <div class="flex items-center gap-2 text-[10px] text-muted-foreground">
+                  <div class="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                     <LineChangesBadge
                       additions={lineChanges.additions}
                       deletions={lineChanges.deletions}
                       size="xxs"
                     />
-                    {#if streamingCount > 0}
-                      <span class="flex items-center gap-0.5 text-blue-500">
-                        <span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-                        {streamingCount}
-                      </span>
-                    {/if}
-                    {#if unreadCount > 0 && !streamingCount}
-                      <span class="text-orange-400">{unreadCount} unread</span>
+                    {#if agents.length > 0}
+                      <div class="flex items-center -space-x-1">
+                        {#each agents.slice(0, 3) as agent (agent.id)}
+                          <AugieAvatarWithState
+                            agentId={agent.id}
+                            state={agent.isUnread ? 'unread' : agent.state}
+                            size={14}
+                            specialist={agent.specialist}
+                          />
+                        {/each}
+                        {#if agents.length > 3}
+                          <span class="ml-1 text-[9px] text-muted-foreground font-medium">
+                            +{agents.length - 3}
+                          </span>
+                        {/if}
+                      </div>
                     {/if}
                   </div>
                 </div>

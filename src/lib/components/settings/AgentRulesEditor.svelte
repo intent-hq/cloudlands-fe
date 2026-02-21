@@ -250,6 +250,7 @@
       <Textarea
         bind:value={rulesContent}
         oninput={handleContentChange}
+        noFocusStyle
         placeholder="Add custom instructions for your agents...
 
 Example:

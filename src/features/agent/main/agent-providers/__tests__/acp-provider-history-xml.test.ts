@@ -191,7 +191,7 @@ describe('formatHistoryAsXml', () => {
 
     it('should include recovery preamble text', () => {
       const result = formatHistoryAsXml([userMsg('hello')]);
-      expect(result).toContain('recovered session');
+      expect(result).toContain('ACP session was lost');
       expect(result).toContain('Continue the conversation from this point.');
     });
   });
@@ -324,8 +324,8 @@ describe('formatHistoryAsXml', () => {
         userMsg('second question'),
         assistantMsg('second answer'),
       ];
-      // Use a limit that fits only the last exchange + wrapper
-      const result = formatHistoryAsXml(messages, 600);
+      // Use a limit that fits only the last exchange + wrapper overhead
+      const result = formatHistoryAsXml(messages, 700);
       // Should include the newer exchange
       expect(result).toContain('second');
       // Should have an omission comment

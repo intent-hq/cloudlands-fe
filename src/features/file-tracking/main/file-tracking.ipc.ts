@@ -28,6 +28,7 @@ import {
 } from '../../../main/ipc-schemas';
 import { execFileAsync } from '../../../shared/git/git-env';
 import { gitService } from '../../git/main/git.service';
+import { storeBlob } from '../../../shared/git/git-blob-storage';
 import { protocolAdapter } from '../../protocol/main/protocol-adapter';
 import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
 import type { TrackedChange } from '../types';
@@ -622,6 +623,35 @@ export function setupFileTrackingIPC() {
             validated.workspaceId,
           );
           const service = getService(validated.workspaceId, workspacePath, isRemote);
+
+          // Store content as git blobs when possible
+          let content = validated.change.content;
+          if (content && workspacePath && service.isGitRepo()) {
+            const blobContent: TrackedChange['content'] & {} = { ...content };
+            if (blobContent.newContent) {
+              const sha = await storeBlob(blobContent.newContent, workspacePath);
+              if (sha) {
+                blobContent.newContentSha = sha;
+                delete blobContent.newContent;
+              }
+            }
+            if (blobContent.oldContent) {
+              const sha = await storeBlob(blobContent.oldContent, workspacePath);
+              if (sha) {
+                blobContent.oldContentSha = sha;
+                delete blobContent.oldContent;
+              }
+            }
+            if (blobContent.diff && blobContent.diff.length > 10_000) {
+              const sha = await storeBlob(blobContent.diff, workspacePath);
+              if (sha) {
+                blobContent.diffSha = sha;
+                delete blobContent.diff;
+              }
+            }
+            content = blobContent;
+          }
+
           // Convert validated change to service-expected format
           const changeInput = {
             file: validated.change.file,
@@ -632,7 +662,7 @@ export function setupFileTrackingIPC() {
             attribution: validated.change.attribution ?? { timestamp: Date.now() },
             commitHash: validated.change.commitHash,
             prNumber: validated.change.prNumber,
-            content: validated.change.content,
+            content,
           };
           const trackedChange = await service.trackChange(changeInput);
 

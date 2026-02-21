@@ -200,7 +200,7 @@
     tooltip="Delete agent"
     tooltipSide="bottom"
     disabled={isAgentDeleting}
-    class="hover:text-destructive"
+    class="hover:text-destructive-foreground"
   >
     <Fa icon={faTrash} size="xs" />
   </Button>

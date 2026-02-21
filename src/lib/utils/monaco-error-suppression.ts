@@ -63,6 +63,7 @@ export function shouldSuppressMonacoConsoleError(args: unknown[]): boolean {
     // TextMate grammar tokenization errors (stack-based state machine issues)
     'trying to pop an empty stack',
     'no diff result available', // Race condition when diff editor models are disposed before diff computation completes
+    'isInHiddenArea', // Race condition when ViewLine renders during hideUnchangedRegions updates
   ];
 
   const isWebviewNavigationError =
@@ -116,6 +117,9 @@ export function shouldSuppressMonacoUnhandledRejection(reason: unknown): boolean
 
   // Race condition when diff editor models are disposed before diff computation completes
   if (errorStr.includes('no diff result available')) return true;
+
+  // Race condition when ViewLine renders during hideUnchangedRegions updates
+  if (errorStr.includes('isInHiddenArea')) return true;
 
   return false;
 }

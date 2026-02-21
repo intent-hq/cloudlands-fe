@@ -226,7 +226,7 @@
         variant="ghost-light"
         size="icon-xs"
         onclick={handleDelete}
-        class="hover:text-destructive hover:bg-destructive/10!"
+        class="hover:text-destructive-foreground hover:bg-destructive/10!"
         title="Delete space"
       >
         <Fa icon={faTrash} size="sm" />

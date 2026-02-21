@@ -369,7 +369,7 @@
                 <button
                   type="button"
                   onclick={() => deleteSpecialist(specialist.id)}
-                  class="text-sm text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1.5 cursor-pointer"
+                  class="text-sm text-muted-foreground hover:text-destructive-foreground transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <Fa icon={faTrash} class="w-3.5 h-3.5" />
                   Delete file
@@ -378,7 +378,7 @@
                 <button
                   type="button"
                   onclick={() => resetAllOverrides(specialist)}
-                  class="text-sm text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1.5 cursor-pointer"
+                  class="text-sm text-muted-foreground hover:text-destructive-foreground transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <Fa icon={faRotateLeft} class="w-3.5 h-3.5" />
                   Reset all customizations
@@ -387,7 +387,7 @@
                 <button
                   type="button"
                   onclick={() => deleteSpecialist(specialist.id)}
-                  class="text-sm text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1.5 cursor-pointer"
+                  class="text-sm text-muted-foreground hover:text-destructive-foreground transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <Fa icon={faTrash} class="w-3.5 h-3.5" />
                   Delete specialist

@@ -65,7 +65,13 @@ export interface TrackedChange {
   content?: {
     oldContent?: string;
     newContent?: string;
+    /** Git blob SHA for oldContent — when present, oldContent can be resolved lazily via getBlob() */
+    oldContentSha?: string;
+    /** Git blob SHA for newContent — when present, newContent can be resolved lazily via getBlob() */
+    newContentSha?: string;
     diff?: string;
+    /** Git blob SHA for diff — when present, diff can be resolved lazily via getBlob() */
+    diffSha?: string;
     /**
      * Whether the content is full file content (from git:diff) vs snippet content (from tool calls).
      * When true, the diff viewer can safely use git:diff to refresh content on external changes.

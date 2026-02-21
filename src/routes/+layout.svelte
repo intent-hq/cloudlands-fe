@@ -1257,34 +1257,22 @@
     if (!isMac) {
       register({ key: 'p', ctrl: true, description: 'Quick Open (Win/Linux)', action: openFile });
     }
-    // Cmd/Ctrl + Shift + P
+    // Cmd+Shift+P (Mac) / Ctrl+Shift+P (Win/Linux) -> command palette (VS Code-style)
     register({
       key: 'p',
-      meta: true,
+      meta: isMac,
+      ctrl: !isMac,
       shift: true,
       description: 'Command Palette (Alt)',
       action: openCmd,
     });
-    register({
-      key: 'p',
-      ctrl: true,
-      shift: true,
-      description: 'Command Palette (Alt)',
-      action: openCmd,
-    });
-    // Cmd/Ctrl + Shift + F -> search
+    // Cmd+Shift+F (Mac) / Ctrl+Shift+F (Win/Linux) -> search
     register({
       key: 'f',
-      meta: true,
+      meta: isMac,
+      ctrl: !isMac,
       shift: true,
-      description: 'Search in files (Mac)',
-      action: openSearch,
-    });
-    register({
-      key: 'f',
-      ctrl: true,
-      shift: true,
-      description: 'Search in files (Win/Linux)',
+      description: 'Search in files',
       action: openSearch,
     });
     // Alt/Option + Z -> toggle word wrap (like VS Code)
@@ -1311,16 +1299,9 @@
       description: 'Toggle Terminal Overlay',
       action: toggleTerminal,
     });
-    // Cmd+` (Mac) to toggle terminal - works even when focused in inputs
-    if (isMac) {
-      register({
-        key: '`',
-        meta: true,
-        global: true,
-        description: 'Toggle Terminal Overlay',
-        action: toggleTerminal,
-      });
-    }
+    // NOTE: Cmd+` is intentionally NOT registered here — it is the native macOS shortcut
+    // for cycling between application windows and must not be intercepted.
+    // Use Ctrl+` or Cmd+J instead to toggle the terminal overlay.
     // Cmd+J (Mac) / Ctrl+J (Win/Linux) -> toggle Quake-style terminal overlay (alternate)
     // Works both in workspace pages (uses workspaceId) and non-workspace pages (uses ROOT_WORKSPACE_ID)
     register({

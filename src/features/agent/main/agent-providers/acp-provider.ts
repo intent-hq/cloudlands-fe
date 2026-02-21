@@ -8,6 +8,7 @@ import type { WorkspaceId } from '$shared/types/branded-ids';
 
 import {
   buildProviderEnv,
+  createCompoundModelId,
   getDefaultProviderId,
   getProviderAuthErrorMessage,
   isProviderAuthenticationError,
@@ -349,10 +350,11 @@ export function formatHistoryAsXml(
 
   // Calculate supervisor wrapper overhead
   const supervisorPreamble = `<supervisor>
-This is a recovered session. The previous ACP session was lost. Below is the full conversation history from the prior session so you can continue seamlessly.
+The previous ACP session was lost. Below is the full conversation history from the prior session so you can continue seamlessly.
+Do NOT mention session recovery to the user. Just continue naturally as if nothing happened.
 
 `;
-  const supervisorClosing = `Continue the conversation from this point.
+  const supervisorClosing = `Continue the conversation from this point. Do not mention session recovery or interruption.
 </supervisor>`;
   const wrapperOverhead = supervisorPreamble.length + supervisorClosing.length;
   // Reserve space for the worst-case omission comment
@@ -662,6 +664,57 @@ export function isContextTooLargeError(rawError: string, errorCode: number): boo
 }
 
 /**
+ * Checks if an error is a transient/retryable prompt error.
+ * These are network-level failures where the LLM backend was unreachable
+ * but may recover on retry (e.g., fetch failed, timeout, DNS failure).
+ * Unlike session-recoverable errors, these don't require session recreation —
+ * just a simple retry of the same request.
+ */
+export function isTransientPromptError(
+  rawError: string,
+  errorData?: { apiStatus?: string; httpStatus?: number },
+): boolean {
+  const errorLower = rawError.toLowerCase();
+
+  // apiStatus: 'unavailable' explicitly indicates a transient backend issue
+  if (errorData?.apiStatus === 'unavailable') {
+    return true;
+  }
+
+  // Network-level fetch failures
+  if (
+    errorLower.includes('fetch failed') ||
+    errorLower.includes('econnrefused') ||
+    errorLower.includes('econnreset') ||
+    errorLower.includes('etimedout') ||
+    errorLower.includes('enotfound') ||
+    errorLower.includes('enetunreach') ||
+    errorLower.includes('socket hang up')
+  ) {
+    return true;
+  }
+
+  // Timeout errors that are NOT session-related
+  if (
+    (errorLower.includes('timeout') || errorLower.includes('timed out')) &&
+    !errorLower.includes('session')
+  ) {
+    return true;
+  }
+
+  // HTTP 502/503/504 gateway errors
+  if (
+    errorData?.httpStatus === 502 ||
+    errorData?.httpStatus === 503 ||
+    errorData?.httpStatus === 504
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Checks if an error indicates the user's plan doesn't include Intent access.
  * This is returned by auggie as a 403 with ErrorCode 11 (NO_INTENT_PLAN) in error_details.
  * The error_details.code is serialized as an integer in the JSON response.
@@ -915,6 +968,8 @@ export class ACPProvider extends BaseAgentProvider {
   private streamCompletionTimers = new Map<string, NodeJS.Timeout>();
   private sessionRecoveryAttempts = 0; // Track session recovery attempts to prevent infinite loops
   private readonly MAX_SESSION_RECOVERY_ATTEMPTS = 3; // Max times to auto-retry after session loss
+  private transientRetryAttempts = 0; // Track transient error retry attempts (fetch failed, timeout, etc.)
+  private readonly MAX_TRANSIENT_RETRY_ATTEMPTS = 3; // Max times to auto-retry after transient network errors
   private contextTooLargeRecoveryCount = 0; // Track 413-specific recovery for progressive history reduction
   private triedModels = new Set<string>(); // Track which models we've tried to prevent infinite loops
   // Stream generation counter - incremented on each interrupt to prevent stale cancelled responses
@@ -1779,7 +1834,7 @@ export class ACPProvider extends BaseAgentProvider {
 
             if (enableUserMcpServers) {
               logger.info('User MCP servers feature is enabled, loading user servers');
-              const userServers = readUserMcpServers();
+              const userServers = await readUserMcpServers();
 
               logger.info('Read user MCP servers result', {
                 hasServers: !!userServers,
@@ -2092,7 +2147,7 @@ export class ACPProvider extends BaseAgentProvider {
           const enableUserMcpServers = settingsStore.get('enableUserMcpServers', false);
 
           if (enableUserMcpServers) {
-            const userServers = readUserMcpServers();
+            const userServers = await readUserMcpServers();
             if (userServers) {
               const { getWorkspaceDisabledMcpServers } =
                 await import('../../../mcp/main/user-mcp-settings');
@@ -4270,6 +4325,26 @@ export class ACPProvider extends BaseAgentProvider {
           }
         }
       }
+      // POST-SESSION MODEL AUDIT
+      // Log the final state after all model-application pathways have run.
+      // Makes it trivial to verify the intended model was actually applied.
+      logger.info('[createSession] Model application audit', {
+        sessionId: this.sessionId,
+        providerId: caps.id,
+        configModel: this.config.model,
+        envModel: this.config.env?.OPENCODE_CONFIG_CONTENT
+          ? (() => { try { return JSON.parse(this.config.env.OPENCODE_CONFIG_CONTENT).model; } catch { return 'parse-error'; } })()
+          : undefined,
+        modelAppliedVia: caps.modelFlag
+          ? `CLI flag (${caps.modelFlag})`
+          : caps.id === 'opencode'
+            ? 'session/set_model + OPENCODE_CONFIG_CONTENT'
+            : caps.id === 'claude-code'
+              ? 'deferred session/set_model (on sessionUpdate)'
+              : caps.id === 'cortex'
+                ? 'sessionMetadata.model'
+                : 'unknown',
+      });
     } else {
       logger.error('Failed to create ACP session - no sessionId in response', sessionResponse);
       throw new Error('Failed to create ACP session');
@@ -4732,6 +4807,19 @@ export class ACPProvider extends BaseAgentProvider {
 
         const response = await this.sendRequest(setModelRequest, 5000);
         if (!response?.error) {
+          // Update config so session recovery / restart uses the new model.
+          // config.model stores the *compound* ID (e.g. "opencode:openrouter/...") so
+          // that parseCompoundModelId in createSession() resolves the correct provider.
+          // modelId here is the raw slug — re-compose the compound form.
+          const defaultProvider = getDefaultProviderId();
+          this.config.model = caps.id !== defaultProvider
+            ? createCompoundModelId(caps.id, modelId)
+            : modelId;
+          const providerEnv = buildProviderEnv(caps.id, modelId);
+          if (Object.keys(providerEnv).length > 0) {
+            this.config.env = { ...(this.config.env || {}), ...providerEnv };
+          }
+
           logger.info('ACP session model set successfully', {
             sessionId: this.sessionId,
             modelId,
@@ -6176,6 +6264,7 @@ export class ACPProvider extends BaseAgentProvider {
           // Reset recovery counters on success so future errors get a fresh budget
           this.sessionRecoveryAttempts = 0;
           this.contextTooLargeRecoveryCount = 0;
+          this.transientRetryAttempts = 0;
 
           // Call the original callback if provided and await it
           // This ensures persistence completes before we resolve the stream
@@ -6630,9 +6719,36 @@ export class ACPProvider extends BaseAgentProvider {
             }
 
             this.pendingRequests.delete(request.id);
-            // Don't reject, just resolve - streaming might have completed via session/update
-            logger.debug('Prompt response timeout - assuming streaming completed');
-            resolve();
+
+            // Check if streaming has been active — if we received chunks, the stream
+            // may have completed via session/update and we just missed the response.
+            // If no streaming activity was ever received, the agent is truly stuck.
+            const callbacks = this.streamingCallbacks.get(callbackSessionId);
+            const hasReceivedChunks = callbacks && (callbacks.chunksReceived ?? 0) > 0;
+
+            if (hasReceivedChunks) {
+              // Stream was active — assume it completed via session/update
+              logger.debug('Prompt response timeout - stream was active, assuming completed', {
+                chunksReceived: callbacks?.chunksReceived,
+                lastActivityTime: callbacks?.lastActivityTime,
+              });
+              resolve();
+            } else {
+              // No streaming activity at all — agent is stuck, reject to trigger error handling
+              logger.error('Prompt response timeout with no streaming activity - agent appears stuck', {
+                requestId: request.id,
+                callbackSessionId,
+                timeoutMs,
+                lastActivityTime: callbacks?.lastActivityTime,
+              });
+
+              const errorMessage = 'Agent did not respond within the expected time. The connection may have been lost.';
+              if (callbacks?.onError) {
+                callbacks.onError(new Error(errorMessage));
+              }
+              this.cleanupStreamingCallback(callbackSessionId);
+              reject(new Error(errorMessage));
+            }
           }, timeoutMs);
 
           this.pendingRequests.set(request.id, {
@@ -6989,12 +7105,84 @@ export class ACPProvider extends BaseAgentProvider {
                   return;
                 }
 
+                // Check if this is a transient/retryable error (fetch failed, timeout, unavailable)
+                // For background agents, auto-retry with exponential backoff
+                // For interactive agents, show a user-friendly error message
+                if (
+                  isTransientPromptError(rawErrorMessage, errorData as { apiStatus?: string; httpStatus?: number } | undefined) &&
+                  this.transientRetryAttempts < this.MAX_TRANSIENT_RETRY_ATTEMPTS
+                ) {
+                  this.transientRetryAttempts++;
+                  const retryDelayMs = Math.min(
+                    1000 * Math.pow(2, this.transientRetryAttempts - 1),
+                    10000,
+                  ); // 1s, 2s, 4s (capped at 10s)
+
+                  logger.warn('Transient prompt error detected, attempting retry', {
+                    rawErrorMessage,
+                    errorCode,
+                    apiStatus: (errorData as { apiStatus?: string } | undefined)?.apiStatus,
+                    retryAttempt: this.transientRetryAttempts,
+                    maxAttempts: this.MAX_TRANSIENT_RETRY_ATTEMPTS,
+                    retryDelayMs,
+                    isBackground: this.config.metadata?.isBackground === true,
+                    sessionId: this.sessionId,
+                  });
+
+                  // Clear the timeout and pending request before retry
+                  clearTimeout(timeout);
+                  this.pendingRequests.delete(request.id);
+
+                  const isBackground = this.config.metadata?.isBackground === true;
+
+                  if (isBackground) {
+                    // AUTO-RETRY: For background agents, retry automatically with backoff
+                    const completionSessionId = this.frontendSessionId || callbackSessionId;
+
+                    // Clear pendingRetry to prevent double-retry
+                    this.pendingRetry = undefined;
+
+                    // Clean up current streaming callbacks before retry
+                    this.cleanupStreamingCallback(completionSessionId);
+
+                    setTimeout(async () => {
+                      try {
+                        await this.streamMessage(messages, options);
+                        resolveStream();
+                      } catch (retryError: unknown) {
+                        logger.error('Auto-retry after transient error failed', {
+                          error: retryError instanceof Error ? retryError.message : String(retryError),
+                          attempt: this.transientRetryAttempts,
+                        });
+                        rejectStream(retryError instanceof Error ? retryError : new Error(String(retryError)));
+                      }
+                    }, retryDelayMs);
+                  } else {
+                    // For interactive agents, show error with retry hint
+                    const completionSessionId = this.frontendSessionId || callbackSessionId;
+                    const callbacks = this.streamingCallbacks.get(completionSessionId);
+                    if (callbacks?.onError) {
+                      callbacks.onError(
+                        new Error('Connection to the AI service was temporarily lost. Please try again.'),
+                      );
+                    }
+                    this.cleanupStreamingCallback(completionSessionId);
+                    reject(new Error('Connection to the AI service was temporarily lost. Please try again.'));
+                  }
+                  return;
+                }
+
                 // Reset recovery attempts on non-session errors (or if max attempts reached)
                 if (
                   !isSessionRecoverableError(rawErrorMessage, errorCode) &&
                   !isContextTooLargeError(rawErrorMessage, errorCode)
                 ) {
                   this.sessionRecoveryAttempts = 0;
+                }
+
+                // Reset transient retry counter on non-transient errors
+                if (!isTransientPromptError(rawErrorMessage, errorData as { apiStatus?: string; httpStatus?: number } | undefined)) {
+                  this.transientRetryAttempts = 0;
                 }
 
                 // Create user-friendly error message
@@ -7597,7 +7785,7 @@ export class ACPProvider extends BaseAgentProvider {
           }
         }
 
-        if (!finalContent && finalContentBlocks.length === 0) {
+        if (!finalContent?.trim() && finalContentBlocks.length === 0) {
           // If the stream was cancelled, this is expected behavior - not an error.
           // Cancellation happens when a new message is sent while a stream is in-flight,
           // or when the user explicitly cancels. In this case, we should just clean up
@@ -7622,9 +7810,11 @@ export class ACPProvider extends BaseAgentProvider {
 
             // Call onComplete with cancelled indicator so backend can clean up streamStartTimes
             // This is essential to prevent streams from appearing "active" after page refresh.
+            // IMPORTANT: Await the callback (like the normal path at line 7759) to ensure
+            // persistence completes before cleanup proceeds.
             if (callbacks.onComplete) {
               const messageId = unifiedIdService.generateMessageId();
-              callbacks.onComplete({
+              await Promise.resolve(callbacks.onComplete({
                 id: messageId,
                 role: 'assistant',
                 content: '',
@@ -7633,7 +7823,7 @@ export class ACPProvider extends BaseAgentProvider {
                   stopReason: 'cancelled',
                 },
                 timestamp: new Date().toISOString(),
-              });
+              }));
             }
 
             logger.info(

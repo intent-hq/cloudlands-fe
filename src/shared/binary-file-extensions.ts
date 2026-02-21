@@ -10,7 +10,7 @@
  * These files will show as "Binary file" in the UI.
  */
 export const BINARY_FILE_EXTENSIONS = new Set([
-  // Machine Learning / AI
+  // Machine Learning / AI / Scientific Data
   '.onnx',
   '.onnx_data',
   '.pt',
@@ -29,6 +29,10 @@ export const BINARY_FILE_EXTENSIONS = new Set([
   '.mlmodel',
   '.pb',
   '.ckpt',
+  '.mat',    // MATLAB data files
+  '.parquet', // Apache Parquet columnar data
+  '.feather', // Apache Arrow Feather format
+  '.arrow',   // Apache Arrow IPC format
 
   // WebAssembly
   '.wasm',

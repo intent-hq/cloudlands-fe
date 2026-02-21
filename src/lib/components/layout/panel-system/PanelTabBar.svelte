@@ -10,7 +10,7 @@
    * - Close button
    */
 
-  import type { PanelTab } from '$features/layout/panel-layout-manager.svelte';
+  import type { PanelTab, PanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
   import { cn } from '$lib/utils';
   import {
     faXmark,
@@ -37,7 +37,7 @@
   import Fa from 'svelte-fa';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
-  import { onMount, tick, type Snippet } from 'svelte';
+  import { getContext, onMount, tick, type Snippet } from 'svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import { tabDragStore } from '$lib/stores/tab-drag.store.svelte';
   import { faNote } from '$lib/icons/faNote';
@@ -118,8 +118,19 @@
     onSplitVertical,
   }: Props = $props();
 
+  // Access layout manager from context for expand-on-double-click
+  const getLayoutManager = getContext<(() => PanelLayoutManager) | undefined>(
+    'panelLayoutManager',
+  );
+
   // Context menu state
   let contextMenuTab = $state<{ tabId: string; x: number; y: number } | null>(null);
+
+  // Track whether a tab was already active before a mousedown,
+  // so we can distinguish "double-click on already-active tab" (→ expand toggle)
+  // from "double-click on inactive tab" (→ rename).
+  let tabActiveBeforeMouseDown: { tabId: string; wasActive: boolean; timestamp: number } | null =
+    null;
 
   // Tab rename state - tracks which tab is being renamed inline
   let renamingTabId = $state<string | null>(null);
@@ -926,12 +937,26 @@
   }
 
   /**
-   * Handle double-click on a tab to start rename
+   * Handle double-click on a tab.
+   * If the tab was already the active tab before the click sequence, toggle panel
+   * expand (VS Code-like "more room" — 85/15 split). Otherwise, start inline rename.
    */
   function handleTabDoubleClick(e: MouseEvent, tab: PanelTab) {
     e.preventDefault();
     e.stopPropagation();
-    startInlineRename(tab);
+
+    const wasAlreadyActive =
+      tabActiveBeforeMouseDown?.tabId === tab.id && tabActiveBeforeMouseDown.wasActive;
+    tabActiveBeforeMouseDown = null;
+
+    if (wasAlreadyActive) {
+      const layoutManager = getLayoutManager?.();
+      if (layoutManager) {
+        layoutManager.toggleExpandPanel(panelId);
+      }
+    } else {
+      startInlineRename(tab);
+    }
   }
 
   // Check if a tab type can be located in the sidebar
@@ -1014,7 +1039,22 @@
               draggedTabId === tab.id && 'opacity-50',
             )}
             onclick={() => handleTabClick(tab.id)}
-            onmousedown={() => handleTabClick(tab.id)}
+            onmousedown={() => {
+              // Capture whether this tab was already active *before* the click activates it.
+              // Only record on the first mousedown of a potential double-click (within 500ms window).
+              const now = Date.now();
+              if (
+                !tabActiveBeforeMouseDown ||
+                now - tabActiveBeforeMouseDown.timestamp > 500
+              ) {
+                tabActiveBeforeMouseDown = {
+                  tabId: tab.id,
+                  wasActive: tab.id === activeTabId,
+                  timestamp: now,
+                };
+              }
+              handleTabClick(tab.id);
+            }}
             ondblclick={(e) => handleTabDoubleClick(e, tab)}
             onkeydown={(e) => e.key === 'Enter' && handleTabClick(tab.id)}
             oncontextmenu={(e) => handleTabContextMenu(e, tab.id)}

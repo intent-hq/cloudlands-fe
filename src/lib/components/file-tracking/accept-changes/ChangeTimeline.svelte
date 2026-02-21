@@ -660,7 +660,7 @@
               <Button
                 variant="ghost"
                 size="icon-xs"
-                class="h-6 w-6 text-muted-foreground hover:text-destructive"
+                class="h-6 w-6 text-muted-foreground hover:text-destructive-foreground"
                 onclick={onStopGeneratingPR}
                 tooltip="Stop generating"
                 tooltipSide="top"
@@ -821,7 +821,7 @@
                     <Button
                       variant="ghost"
                       size="xs"
-                      class="h-5 px-2 text-muted-foreground hover:text-destructive"
+                      class="h-5 px-2 text-muted-foreground hover:text-destructive-foreground"
                       onclick={isAutofillAndCreatingPR || backgroundOperation?.type === 'create-pr'
                         ? onStopGeneratingPR
                         : onStopGeneratingMessage}
@@ -1291,7 +1291,7 @@
                           <Button
                             variant="ghost"
                             size="xs"
-                            class="h-5 px-1.5 text-muted-foreground hover:text-destructive"
+                            class="h-5 px-1.5 text-muted-foreground hover:text-destructive-foreground"
                             onclick={isAutofillAndCreatingPR ||
                             backgroundOperation?.type === 'create-pr'
                               ? onStopGeneratingPR
@@ -1433,7 +1433,7 @@
                             <Button
                               variant="ghost"
                               size="icon-xs"
-                              class="h-6 w-6 text-muted-foreground hover:text-destructive"
+                              class="h-6 w-6 text-muted-foreground hover:text-destructive-foreground"
                               onclick={onStopGeneratingMessage}
                               tooltip="Stop generating"
                               tooltipSide="top"
@@ -1512,7 +1512,7 @@
                           <Button
                             variant="ghost"
                             size="xs"
-                            class="h-5 px-1.5 text-muted-foreground hover:text-destructive"
+                            class="h-5 px-1.5 text-muted-foreground hover:text-destructive-foreground"
                             onclick={onStopGeneratingMessage}
                             tooltip="Stop generating"
                             tooltipSide="left"
@@ -1806,7 +1806,7 @@
                               <Button
                                 variant="ghost"
                                 size="xs"
-                                class="h-5 px-1.5 text-muted-foreground hover:text-destructive"
+                                class="h-5 px-1.5 text-muted-foreground hover:text-destructive-foreground"
                                 onclick={isAutofillAndCreatingPR ||
                                 backgroundOperation?.type === 'create-pr'
                                   ? onStopGeneratingPR

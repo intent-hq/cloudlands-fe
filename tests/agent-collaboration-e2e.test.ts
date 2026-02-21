@@ -689,12 +689,13 @@ describe('Agent Collaboration E2E', () => {
       expect(events.length).toBe(3);
     });
 
-    it('should match all events with *', () => {
+    it('should match all events with category wildcards', () => {
       subscriptionService.setAgentStatus(TEST_AGENT_ID, 'idle');
 
       // Exclude self to avoid receiving the agent:subscribed event from our own subscription
+      // Use category wildcards instead of bare '*' (which is no longer supported)
       subscriptionService.subscribe(TEST_AGENT_ID, TEST_AGENT_NAME, {
-        eventTypes: ['*'],
+        eventTypes: ['agent:*', 'file:*', 'task:*'],
         excludeActorIds: [TEST_AGENT_ID],
         priority: 'high',
       });
@@ -720,7 +721,7 @@ describe('Agent Collaboration E2E', () => {
         { noteId: 'note-1', noteTitle: 'Task', previousStatus: 'todo', newStatus: 'done' },
       ));
 
-      // All events should match (excluding our own subscription event)
+      // All events should match the category wildcards (excluding our own subscription event)
       const events = deliveredEvents.get(TEST_AGENT_ID) || [];
       expect(events.length).toBe(3);
     });

@@ -116,7 +116,7 @@
         <span class="text-muted-foreground/30">·</span>
         <button
           type="button"
-          class="text-muted-foreground hover:text-destructive cursor-pointer transition-colors"
+          class="text-muted-foreground hover:text-destructive-foreground cursor-pointer transition-colors"
           onclick={handleLinearDisconnect}
           disabled={isDisconnectingLinear}
         >

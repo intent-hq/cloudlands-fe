@@ -21,6 +21,7 @@ import {
   getAvailableProviders,
   switchProviderViaLocalStorage,
   setCodexModelViaSettingsUI,
+  setOpencodeModelViaSettingsUI,
   createWorkspaceWithPrompt,
   resolveWorktreeReadmePath,
   waitForFileContentWithNudge,
@@ -188,6 +189,16 @@ test.describe('Build Smoke — Provider Verification', () => {
           console.log(`🔧 Setting codex model via Settings UI: ${codexModel}`);
           await setCodexModelViaSettingsUI(page, codexModel);
         }
+
+        // OpenCode models are dynamic (fetched from the CLI at runtime) so
+        // they aren't in PROVIDER_MODEL_TIERS.  Without an explicit model
+        // override the tier resolution returns empty and the agent factory
+        // falls back to the auggie DEFAULT_AGENT_MODEL, which is invalid
+        // for opencode.  Set a real model via the Settings UI.
+        // if (providerId === 'opencode') {
+        //   console.log(`Setting opencode model via Settings UI`);
+        //   await setOpencodeModelViaSettingsUI(page);
+        // }
 
         // Reset README between providers (skip for the first one)
         if (results.length > 0) {

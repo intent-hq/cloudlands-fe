@@ -69,6 +69,8 @@ export const WorkspaceEventType = {
   AgentSubscribed: 'agent:subscribed',
   AgentUnsubscribed: 'agent:unsubscribed',
   AgentWokenBySubscription: 'agent:woken-by-subscription',
+  AgentEventDeliveryFailed: 'agent:event-delivery-failed',
+  AgentMessageDeliveryFailed: 'agent:message:delivery-failed',
 
   // Git events
   GitCommit: 'git:commit',
@@ -478,6 +480,32 @@ export interface AgentWokenBySubscriptionEvent extends WorkspaceEventBase {
   };
 }
 
+/**
+ * Emitted when event delivery to an agent fails after all retries
+ */
+export interface AgentEventDeliveryFailedEvent extends WorkspaceEventBase {
+  type: 'agent:event-delivery-failed';
+  data: {
+    targetAgentId: string;
+    eventCount: number;
+    eventTypes: string[];
+    error: string;
+  };
+}
+
+/**
+ * Emitted when a direct agent-to-agent message fails to deliver
+ */
+export interface AgentMessageDeliveryFailedEvent extends WorkspaceEventBase {
+  type: 'agent:message:delivery-failed';
+  data: {
+    fromAgentId: string;
+    toAgentId: string;
+    error: string;
+    timestamp: string;
+  };
+}
+
 // Union type for all specific events
 export type SpecificWorkspaceEvent =
   | FileChangedEvent
@@ -503,7 +531,9 @@ export type SpecificWorkspaceEvent =
   | AgentMessageReceivedEvent
   | AgentSubscribedEvent
   | AgentUnsubscribedEvent
-  | AgentWokenBySubscriptionEvent;
+  | AgentWokenBySubscriptionEvent
+  | AgentEventDeliveryFailedEvent
+  | AgentMessageDeliveryFailedEvent;
 
 // Main WorkspaceEvent type - includes legacy fields for backward compatibility
 export interface WorkspaceEvent extends WorkspaceEventBase {
@@ -740,7 +770,9 @@ export function isAgentInteractionEvent(event: WorkspaceEvent): boolean {
     event.type === 'agent:message:received' ||
     event.type === 'agent:subscribed' ||
     event.type === 'agent:unsubscribed' ||
-    event.type === 'agent:woken-by-subscription'
+    event.type === 'agent:woken-by-subscription' ||
+    event.type === 'agent:event-delivery-failed' ||
+    event.type === 'agent:message:delivery-failed'
   );
 }
 
@@ -748,6 +780,18 @@ export function isAgentWokenBySubscriptionEvent(
   event: WorkspaceEvent,
 ): event is AgentWokenBySubscriptionEvent {
   return event.type === 'agent:woken-by-subscription';
+}
+
+export function isAgentEventDeliveryFailedEvent(
+  event: WorkspaceEvent,
+): event is AgentEventDeliveryFailedEvent {
+  return event.type === 'agent:event-delivery-failed';
+}
+
+export function isAgentMessageDeliveryFailedEvent(
+  event: WorkspaceEvent,
+): event is AgentMessageDeliveryFailedEvent {
+  return event.type === 'agent:message:delivery-failed';
 }
 
 // ============================================================================

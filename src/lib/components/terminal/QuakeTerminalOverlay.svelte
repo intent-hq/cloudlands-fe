@@ -7,7 +7,7 @@
    * - Smooth slide-up animation for terminal panel
    * - Multiple terminal tabs with close buttons
    * - Drag-to-resize handle
-   * - Keyboard shortcuts (Cmd+`, Cmd+Shift+N, Cmd+W, Cmd+Shift+[/])
+   * - Keyboard shortcuts (Ctrl+`, Cmd+J, Cmd+Shift+N, Cmd+W, Cmd+Shift+[/])
    * - Double-click to rename tabs
    * - Persisted height and custom names
    */
@@ -330,7 +330,7 @@
   function handleKeydown(event: KeyboardEvent) {
     const isMod = event.metaKey || event.ctrlKey;
 
-    // Note: Cmd+` is handled by useDockNavigation to avoid duplicate handlers
+    // Note: Cmd+` is reserved for native macOS window cycling; use Ctrl+` or Cmd+J for terminal toggle
 
     // Only handle tab cycling when terminal is open
     if (!isOpen) return;

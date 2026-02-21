@@ -47,6 +47,11 @@ function shouldFilterSentryException(exception: {
     return true;
   }
 
+  // Filter Monaco ViewLine isInHiddenArea race condition
+  if (value?.includes('isInHiddenArea')) {
+    return true;
+  }
+
   // Filter minified bits-ui/Svelte snippet call errors during component teardown.
   // In production, Svelte 5 compiles {@render snippet()} to n.call(...) where n is a
   // minified variable. When bits-ui tooltip components are destroyed during workspace

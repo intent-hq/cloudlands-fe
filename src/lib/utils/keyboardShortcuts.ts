@@ -101,6 +101,30 @@ export function isFocusInEditableElement(target?: HTMLElement | null): boolean {
   return false;
 }
 
+/**
+ * Shortcuts reserved by the operating system that MUST NOT be intercepted.
+ * Registering any of these will log a warning in development mode.
+ *
+ * macOS reserves: Cmd+` (window cycling), Cmd+Tab (app switcher),
+ * Cmd+H (hide), Cmd+Q (quit), Cmd+Space (Spotlight).
+ * Some (hide/quit) are handled by Electron menu roles and are safe there,
+ * but must never be registered in the renderer-side KeyboardShortcutManager.
+ */
+export const RESERVED_NATIVE_SHORTCUTS: ReadonlyArray<{
+  key: string;
+  meta?: boolean;
+  ctrl?: boolean;
+  shift?: boolean;
+  alt?: boolean;
+  reason: string;
+}> = [
+  { key: '`', meta: true, reason: 'macOS window cycling (Cmd+`)' },
+  { key: 'tab', meta: true, reason: 'macOS app switcher (Cmd+Tab)' },
+  { key: 'h', meta: true, reason: 'macOS hide application (Cmd+H)' },
+  { key: 'q', meta: true, reason: 'macOS quit application (Cmd+Q)' },
+  { key: ' ', meta: true, reason: 'macOS Spotlight search (Cmd+Space)' },
+];
+
 export interface KeyboardShortcut {
   key: string;
   ctrl?: boolean;
@@ -133,9 +157,29 @@ export class KeyboardShortcutManager {
   }
 
   /**
-   * Register a keyboard shortcut
+   * Register a keyboard shortcut.
+   * Warns in development mode if the shortcut conflicts with a reserved native OS shortcut.
    */
   register(shortcut: KeyboardShortcut): void {
+    // Dev-mode guard: warn if registering a reserved native shortcut
+    if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {
+      for (const reserved of RESERVED_NATIVE_SHORTCUTS) {
+        if (
+          shortcut.key.toLowerCase() === reserved.key.toLowerCase() &&
+          !!shortcut.meta === !!reserved.meta &&
+          !!shortcut.ctrl === !!reserved.ctrl &&
+          !!shortcut.shift === !!reserved.shift &&
+          !!shortcut.alt === !!reserved.alt
+        ) {
+          console.warn(
+            `[KeyboardShortcutManager] WARNING: Registering shortcut "${this.getShortcutKey(shortcut)}" ` +
+              `conflicts with reserved native shortcut: ${reserved.reason}. ` +
+              `This will prevent the OS from handling this key combination.`,
+          );
+        }
+      }
+    }
+
     const key = this.getShortcutKey(shortcut);
     this.shortcuts.set(key, shortcut);
   }

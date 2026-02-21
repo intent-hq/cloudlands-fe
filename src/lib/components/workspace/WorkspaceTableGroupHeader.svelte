@@ -75,7 +75,7 @@
             e.stopPropagation();
             onBulkDeleteArchived?.();
           }}
-          class="opacity-20 group-hover/header:opacity-100 transition-opacity hover:text-destructive hover:!bg-destructive/10"
+          class="opacity-20 group-hover/header:opacity-100 transition-opacity hover:text-destructive-foreground hover:!bg-destructive/10"
           aria-label="Delete all archived spaces in this repo"
           tooltip="Delete all archived spaces in this repo"
         >

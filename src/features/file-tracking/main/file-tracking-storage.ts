@@ -10,8 +10,21 @@ import type { TrackedChange, StageTransition, AgentAttribution } from '../types'
 import { WorkspaceConfig } from '$shared/main/config';
 import { Logger } from '$lib/utils/logger';
 import { fsyncFile, fsyncDir, renameWithRetry } from '$shared/main/file-sync-utils';
+import { getBlob, isGitRepository } from '../../../shared/git/git-blob-storage';
 
 const logger = new Logger({ category: 'FileTrackingStorage' });
+
+/**
+ * Maximum per-change content size (bytes) that will be persisted.
+ * Content larger than this is stripped before saving to prevent bloated JSON.
+ */
+const MAX_PERSISTED_CONTENT_SIZE = 512 * 1024; // 512 KB per change
+
+/**
+ * Maximum file-tracking.json size (bytes) we will attempt to parse.
+ * Files larger than this are considered corrupt / bloated and will be reset.
+ */
+const MAX_TRACKING_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 
 /**
  * Storage service for file tracking data.
@@ -35,6 +48,10 @@ export class FileTrackingStorage {
   private metadataPath: string;
   /** @property {string} workspaceId - Unique identifier for the workspace */
   private workspaceId: string;
+  /** @property {string | null} workspacePath - Repo root path for git blob resolution */
+  private workspacePath: string | null = null;
+  /** @property {boolean} isGitRepo - Cached result of isGitRepository check */
+  private isGitRepo: boolean = false;
   /** @property {Promise<void> | null} saveLock - Lock for save operations to prevent concurrent writes */
   private saveLock: Promise<void> | null = null;
   /** @property {Promise<void> | null} transitionSaveLock - Lock for transition save operations */
@@ -116,6 +133,23 @@ export class FileTrackingStorage {
     if (instance) {
       instance.cleanup();
     }
+  }
+
+  /**
+   * Set the workspace path (repo root) for git blob resolution.
+   * Must be called before loadTrackedChanges() can resolve SHAs.
+   */
+  setWorkspacePath(workspacePath: string): void {
+    this.workspacePath = workspacePath;
+    this.isGitRepo = isGitRepository(workspacePath);
+  }
+
+  /**
+   * Get the cached isGitRepository result.
+   * @returns true if the workspace is inside a git repository
+   */
+  getIsGitRepo(): boolean {
+    return this.isGitRepo;
   }
 
   /**
@@ -251,7 +285,7 @@ export class FileTrackingStorage {
         return [];
       }
 
-      // Check if file is empty or corrupted
+      // Check if file is empty, corrupted, or dangerously large
       const stats = await fs.stat(filePath);
       if (stats.size === 0) {
         logger.warn('File tracking data file is empty, initializing with empty array', {
@@ -259,6 +293,28 @@ export class FileTrackingStorage {
         });
         // Initialize with empty data
         await this.saveTrackedChanges([]);
+        return [];
+      }
+
+      // Guard against bloated JSON files that would block the main thread during parsing.
+      // This can happen when binary/large file contents leak into tracked changes.
+      if (stats.size > MAX_TRACKING_FILE_SIZE) {
+        logger.error(
+          'File tracking data is dangerously large, resetting to prevent main-thread hang',
+          new Error(`file-tracking.json is ${stats.size} bytes (max ${MAX_TRACKING_FILE_SIZE})`),
+          { workspaceId: this.workspaceId },
+        );
+        // Back up the bloated file for debugging, then reset
+        const backupPath = `${filePath}.bloated.${Date.now()}`;
+        try {
+          await fs.rename(filePath, backupPath);
+          logger.info('Backed up bloated file-tracking.json', { backupPath });
+        } catch {
+          // If rename fails, just overwrite
+        }
+        await this._doSave([]);
+        this.trackedChangesCache = [];
+        this.cacheTimestamp = now;
         return [];
       }
 
@@ -272,7 +328,11 @@ export class FileTrackingStorage {
         return [];
       }
 
-      const changes = data.trackedChanges || [];
+      const changes: TrackedChange[] = data.trackedChanges || [];
+
+      // NOTE: SHA→content resolution is intentionally lazy.
+      // SHAs (oldContentSha, newContentSha, diffSha) are preserved on the change objects
+      // but content is NOT resolved here. Use resolveContent() to resolve on demand.
 
       // Update cache
       this.trackedChangesCache = changes;
@@ -297,6 +357,52 @@ export class FileTrackingStorage {
       return [];
     }
   }
+
+  /**
+   * Resolve blob SHAs to inline content for a single TrackedChange on demand.
+   * Call this only when content is actually needed (e.g., for diff viewing).
+   *
+   * If the change already has content populated (oldContent, newContent, diff),
+   * those fields are left as-is. Only missing content with a corresponding SHA is resolved.
+   *
+   * @param change - The tracked change to resolve content for
+   * @returns A new TrackedChange with content fields populated from git blobs
+   */
+  async resolveContent(change: TrackedChange): Promise<TrackedChange> {
+    if (!change.content) return change;
+    if (!this.workspacePath || !this.isGitRepo) return change;
+
+    // Clone the content to avoid mutating the cached object
+    const resolvedContent = { ...change.content };
+    let resolved = false;
+
+    if (resolvedContent.oldContentSha && resolvedContent.oldContent == null) {
+      const content = await getBlob(resolvedContent.oldContentSha, this.workspacePath);
+      if (content !== null) {
+        resolvedContent.oldContent = content;
+        resolved = true;
+      }
+    }
+    if (resolvedContent.newContentSha && resolvedContent.newContent == null) {
+      const content = await getBlob(resolvedContent.newContentSha, this.workspacePath);
+      if (content !== null) {
+        resolvedContent.newContent = content;
+        resolved = true;
+      }
+    }
+    if (resolvedContent.diffSha && resolvedContent.diff == null) {
+      const content = await getBlob(resolvedContent.diffSha, this.workspacePath);
+      if (content !== null) {
+        resolvedContent.diff = content;
+        resolved = true;
+      }
+    }
+
+    if (!resolved) return change;
+
+    return { ...change, content: resolvedContent };
+  }
+
 
   /**
    * Save tracked changes to storage atomically with locking
@@ -355,6 +461,40 @@ export class FileTrackingStorage {
   }
 
   /**
+   * Strip oversized inline content from tracked changes before persisting.
+   * Content that exceeds MAX_PERSISTED_CONTENT_SIZE is removed to prevent
+   * bloated JSON files. The content can be re-fetched from git or the filesystem.
+   */
+  private stripOversizedContent(changes: TrackedChange[]): TrackedChange[] {
+    let strippedCount = 0;
+    const result = changes.map((change) => {
+      if (!change.content) return change;
+
+      const contentSize =
+        (change.content.newContent?.length || 0) +
+        (change.content.oldContent?.length || 0) +
+        (change.content.diff?.length || 0);
+
+      if (contentSize > MAX_PERSISTED_CONTENT_SIZE) {
+        strippedCount++;
+        // Remove oversized content but keep the rest of the change metadata
+        const { content, ...rest } = change;
+        return { ...rest, content: { diff: content.diff?.substring(0, 10000), isFullFileContent: content.isFullFileContent } };
+      }
+      return change;
+    });
+
+    if (strippedCount > 0) {
+      logger.info('Stripped oversized content from tracked changes before save', {
+        strippedCount,
+        totalChanges: changes.length,
+        workspaceId: this.workspaceId,
+      });
+    }
+    return result;
+  }
+
+  /**
    * Internal method to perform the actual save operation.
    * PERF: Uses fast path for frequent saves (skips fsync/backup) and durable path for critical saves.
    * @param changes - Changes to save
@@ -368,18 +508,40 @@ export class FileTrackingStorage {
       // Use a unique temp file name to avoid conflicts with concurrent operations
       const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2, 11)}`;
 
-      // Log summary for debugging (don't log all changes for performance)
+      // Strip oversized inline content before persisting to prevent bloated JSON.
+      // Content can always be re-fetched from git blobs or the filesystem on demand.
+      const sanitizedChanges = this.stripOversizedContent(changes);
+
       logger.debug('Saving tracked changes', {
-        count: changes.length,
+        count: sanitizedChanges.length,
         workspaceId: this.workspaceId,
         durable,
+      });
+
+      // Strip inline content from changes that have corresponding SHAs to reduce JSON size
+      const changesToSerialize = sanitizedChanges.map((change) => {
+        if (!change.content) return change;
+        const { oldContentSha, newContentSha, diffSha } = change.content;
+        if (!oldContentSha && !newContentSha && !diffSha) return change;
+        // Create a shallow copy with content stripped where SHAs exist
+        const content = { ...change.content };
+        if (oldContentSha && content.oldContent !== undefined) {
+          delete content.oldContent;
+        }
+        if (newContentSha && content.newContent !== undefined) {
+          delete content.newContent;
+        }
+        if (diffSha && content.diff !== undefined) {
+          delete content.diff;
+        }
+        return { ...change, content };
       });
 
       const data = {
         version: '1.0.0',
         lastUpdated: new Date().toISOString(),
         workspaceId: this.workspaceId,
-        trackedChanges: changes,
+        trackedChanges: changesToSerialize,
       };
 
       // PERF: Fast path - skip fsync and backup for frequent saves
@@ -390,7 +552,7 @@ export class FileTrackingStorage {
           await renameWithRetry(tempPath, filePath);
 
           logger.debug('Saved tracked changes (fast path)', {
-            count: changes.length,
+            count: sanitizedChanges.length,
             workspaceId: this.workspaceId,
           });
         } catch (fastPathError) {
@@ -439,7 +601,7 @@ export class FileTrackingStorage {
       }
 
       logger.debug('Saved tracked changes (durable)', {
-        count: changes.length,
+        count: sanitizedChanges.length,
         workspaceId: this.workspaceId,
       });
     } catch (error) {

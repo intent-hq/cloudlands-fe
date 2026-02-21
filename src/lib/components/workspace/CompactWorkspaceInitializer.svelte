@@ -49,6 +49,7 @@
   import {
     getDefaultModelForProvider,
     getDefaultProviderId,
+    PROVIDER_MODEL_TIERS,
     parseCompoundModelId,
   } from '$shared/config/provider-config';
 
@@ -1374,7 +1375,7 @@
           });
         } else {
           const specialist = specialistsStore.specialists.find((s) => s.id === selectedSpecialist);
-          if (specialist?.defaultModelTier) {
+          if (specialist?.defaultModelTier && selectedProvider in PROVIDER_MODEL_TIERS) {
             const baseModel = getDefaultModelForProvider(
               selectedProvider,
               specialist.defaultModelTier,

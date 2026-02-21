@@ -90,4 +90,45 @@ describe('monaco-error-suppression', () => {
       ).toBe(true);
     });
   });
+
+  describe('isInHiddenArea error', () => {
+    it('suppresses "isInHiddenArea" console.error', () => {
+      expect(
+        shouldSuppressMonacoConsoleError([
+          "TypeError: Cannot read properties of undefined (reading 'isInHiddenArea')",
+        ]),
+      ).toBe(true);
+    });
+
+    it('suppresses "isInHiddenArea" when message is in Error object', () => {
+      const error = new TypeError(
+        "Cannot read properties of undefined (reading 'isInHiddenArea')",
+      );
+      expect(shouldSuppressMonacoConsoleError([error])).toBe(true);
+    });
+
+    it('suppresses "isInHiddenArea" unhandled rejection', () => {
+      expect(
+        shouldSuppressMonacoUnhandledRejection({
+          message: "Cannot read properties of undefined (reading 'isInHiddenArea')",
+        }),
+      ).toBe(true);
+    });
+
+    it('suppresses "isInHiddenArea" when wrapped in error object', () => {
+      expect(
+        shouldSuppressMonacoUnhandledRejection({
+          error: { message: "Cannot read properties of undefined (reading 'isInHiddenArea')" },
+        }),
+      ).toBe(true);
+    });
+
+    it('suppresses "isInHiddenArea" Error instance rejection', () => {
+      expect(
+        shouldSuppressMonacoUnhandledRejection(
+          new TypeError("Cannot read properties of undefined (reading 'isInHiddenArea')"),
+        ),
+      ).toBe(true);
+    });
+  });
 });

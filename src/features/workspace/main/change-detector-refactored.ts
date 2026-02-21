@@ -28,6 +28,13 @@ import {
   type FileWatchEvent,
   type ProcessedChange,
 } from './change-detection';
+import { isBinaryExtension } from '../../../shared/binary-file-extensions';
+
+/**
+ * Maximum file size (in bytes) for reading content into memory for tracking.
+ * Files larger than this will be tracked without inline content.
+ */
+const MAX_TRACKABLE_CONTENT_SIZE = 1 * 1024 * 1024; // 1 MB
 import { GitOperationsSafe as GitOperations } from './change-detection/git-operations-safe-wrapper';
 
 // Import performance monitor
@@ -633,7 +640,7 @@ export class ChangeDetectorRefactored extends EventEmitter {
    * Detect changes from git status
    */
   private async detectGitChanges(status: GitStatus): Promise<any[]> {
-    const { readFile } = await import('fs/promises');
+    const { readFile, stat } = await import('fs/promises');
     const { join } = await import('path');
 
     // Get raw changes from shared helper
@@ -677,15 +684,21 @@ export class ChangeDetectorRefactored extends EventEmitter {
         additions = diff?.additions || 0;
         deletions = diff?.deletions || 0;
       } else if (rawChange.action === 'Create') {
-        // For new/untracked files, count lines as additions
-        try {
-          const content = await readFile(join(this.workspacePath, rawChange.path), 'utf-8');
-          additions = content.split('\n').length;
-          if (content.endsWith('\n')) {
-            additions = Math.max(0, additions - 1);
+        // For new/untracked files, count lines as additions — skip binary/oversized files
+        if (!isBinaryExtension(rawChange.path)) {
+          try {
+            const filePath = join(this.workspacePath, rawChange.path);
+            const fileStats = await stat(filePath);
+            if (fileStats.size <= MAX_TRACKABLE_CONTENT_SIZE) {
+              const content = await readFile(filePath, 'utf-8');
+              additions = content.split('\n').length;
+              if (content.endsWith('\n')) {
+                additions = Math.max(0, additions - 1);
+              }
+            }
+          } catch {
+            // File might be inaccessible
           }
-        } catch {
-          // File might be inaccessible
         }
       } else if (rawChange.action === 'Delete') {
         // For deleted files, get old content from HEAD
@@ -779,8 +792,29 @@ export class ChangeDetectorRefactored extends EventEmitter {
     relativePath: string,
   ): Promise<void> {
     try {
+      // Skip binary files — they can't be displayed as text anyway
+      if (isBinaryExtension(relativePath)) {
+        return;
+      }
+
       // Read the file content
       const fs = await import('fs/promises');
+
+      // Check file size before reading to avoid loading huge files into memory
+      try {
+        const fileStats = await fs.stat(absolutePath);
+        if (fileStats.size > MAX_TRACKABLE_CONTENT_SIZE) {
+          logger.debug('Skipping content-changed emission for large file', {
+            path: relativePath,
+            size: fileStats.size,
+          });
+          return;
+        }
+      } catch {
+        // If we can't stat, skip
+        return;
+      }
+
       let content: string | null = null;
       try {
         content = await fs.readFile(absolutePath, 'utf-8');
@@ -1008,7 +1042,7 @@ export class ChangeDetectorRefactored extends EventEmitter {
   async getCurrentChanges(): Promise<DiffChunk | null> {
     try {
       const status = await this.gitOps.getStatus();
-      const { readFile } = await import('fs/promises');
+      const { readFile, stat } = await import('fs/promises');
       const { join } = await import('path');
 
       // Get raw changes from shared helper
@@ -1059,9 +1093,14 @@ export class ChangeDetectorRefactored extends EventEmitter {
         }
 
         // Try to read file content (won't exist for deleted files)
-        if (rawChange.action !== 'Delete') {
+        // Skip binary and oversized files to prevent bloated tracking JSON
+        if (rawChange.action !== 'Delete' && !isBinaryExtension(rawChange.path)) {
           try {
-            content = await readFile(join(this.workspacePath, rawChange.path), 'utf-8');
+            const filePath = join(this.workspacePath, rawChange.path);
+            const fileStats = await stat(filePath);
+            if (fileStats.size <= MAX_TRACKABLE_CONTENT_SIZE) {
+              content = await readFile(filePath, 'utf-8');
+            }
           } catch {
             // File might be deleted or inaccessible
           }

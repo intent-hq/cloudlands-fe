@@ -168,6 +168,8 @@ export class AgentBackendHandler {
   private lastPingSentTimes = new Map<string, number>();
   /** @property {Map<string, string>} deferredQueueProcessing - Agents whose queue processing was deferred because their workspace wasn't active (agentId -> workspaceId) */
   private deferredQueueProcessing = new Map<string, string>();
+  /** @property {Map<string, number>} emptyResponseRetries - Track consecutive empty end_turn responses per agent for auto-continue */
+  private emptyResponseRetries = new Map<string, number>();
 
   /**
    * Registers an event listener for cleanup tracking.
@@ -323,6 +325,7 @@ export class AgentBackendHandler {
         }
         this.providers.delete(agentId);
         this.providerLastUsed.delete(agentId);
+        this.emptyResponseRetries.delete(agentId);
       } catch (error) {
         logger.error('Error cleaning up idle provider', {
           agentId,
@@ -433,22 +436,7 @@ export class AgentBackendHandler {
         }
 
         // Clean up all tracking maps for this agent (always do this, even if stop times out)
-        this.providers.delete(agentId);
-        this.providerLastUsed.delete(agentId);
-        this.streamStartTimes.delete(agentId);
-        this.streamSessionIds.delete(agentId);
-        this.streamWorkspaceIds.delete(agentId);
-        this.streamWindowIds.delete(agentId);
-        this.messageQueues.delete(agentId);
-        this.deferredQueueProcessing.delete(agentId);
-        this.activeSessions.delete(agentId);
-
-        // Clear health check interval if exists
-        const healthCheck = this.streamHealthChecks.get(agentId);
-        if (healthCheck) {
-          clearInterval(healthCheck);
-          this.streamHealthChecks.delete(agentId);
-        }
+        this.cleanupAllAgentTrackingMaps(agentId);
 
         return true;
       } catch (error) {
@@ -459,21 +447,7 @@ export class AgentBackendHandler {
         });
 
         // Still clean up tracking maps even if stop failed
-        this.providers.delete(agentId);
-        this.providerLastUsed.delete(agentId);
-        this.streamStartTimes.delete(agentId);
-        this.streamSessionIds.delete(agentId);
-        this.streamWorkspaceIds.delete(agentId);
-        this.streamWindowIds.delete(agentId);
-        this.messageQueues.delete(agentId);
-        this.deferredQueueProcessing.delete(agentId);
-        this.activeSessions.delete(agentId);
-
-        const healthCheck = this.streamHealthChecks.get(agentId);
-        if (healthCheck) {
-          clearInterval(healthCheck);
-          this.streamHealthChecks.delete(agentId);
-        }
+        this.cleanupAllAgentTrackingMaps(agentId);
 
         return false;
       }
@@ -1448,6 +1422,15 @@ export class AgentBackendHandler {
               provider: explicitProvider,
               resolvedModel: modelId,
             });
+          } else if (explicitProvider !== defaultProviderId) {
+            // Provider has dynamic models not in PROVIDER_MODEL_TIERS (e.g., opencode).
+            // Use 'default' to let the provider pick its own default model instead of
+            // passing the Auggie-specific DEFAULT_AGENT_MODEL which would be invalid.
+            modelId = 'default';
+            logger.info('Using provider default model for provider without tier mappings', {
+              agentId: request.agentId,
+              provider: explicitProvider,
+            });
           }
         }
         let { providerId, modelId: rawModelId } = parseCompoundModelId(modelId);
@@ -1716,6 +1699,14 @@ export class AgentBackendHandler {
                     ) {
                       const baseModel = getDefaultModelForProvider(sessionProvider, 'balanced');
                       sessionModel = `${sessionProvider}:${baseModel}`;
+                    } else if (sessionProvider !== defaultProviderId) {
+                      // Provider has dynamic models not in PROVIDER_MODEL_TIERS (e.g., opencode).
+                      // Use 'default' to let the provider pick its own default model.
+                      sessionModel = 'default';
+                      logger.info('Using provider default model for provider without tier mappings', {
+                        agentId: request.agentId,
+                        provider: sessionProvider,
+                      });
                     }
                   }
 
@@ -2124,11 +2115,30 @@ export class AgentBackendHandler {
             backendSession.messages = [];
           }
           backendSession.messages.push(userMessage);
+          backendSession.updatedAt = new Date();
           logger.debug('Backend: Added user message to backend session', {
             agentId: request.agentId,
             messageId: userMessage.id,
             usedQueuedMessageId: !!(request as any).queuedMessageId,
             messageCount: backendSession.messages.length,
+          });
+
+          // CRITICAL: Persist user message to disk immediately so it survives page refresh.
+          // Without this, the user message only exists in memory until the stream completes
+          // (or 50 streaming chunks), meaning a refresh during streaming loses the message.
+          agentPersistence.saveAgent(backendSession).then((saveResult) => {
+            if (saveResult.success) {
+              logger.debug('Backend: Persisted user message to disk immediately', {
+                agentId: request.agentId,
+                messageId: userMessage.id,
+                messageCount: backendSession.messages.length,
+              });
+            } else {
+              logger.warn('Backend: Failed to persist user message to disk', {
+                agentId: request.agentId,
+                error: saveResult.error,
+              });
+            }
           });
         }
       } else if (skipUserMessage) {
@@ -2609,6 +2619,134 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
             });
           }
 
+          // AUTO-CONTINUE: Detect empty end_turn responses and retry automatically.
+          // The LLM sometimes returns end_turn with only whitespace text content (e.g., "\n\n"),
+          // causing the agent to go idle prematurely. Users then have to manually prompt
+          // "please continue" to get the agent working again. This detects the pattern and
+          // auto-continues instead of going idle.
+          const MAX_EMPTY_RESPONSE_RETRIES = 3;
+          if (finishReason === 'end_turn') {
+            const allTextContent = finalContentBlocks
+              .filter((b: ContentBlock) => b.type === 'text')
+              .map((b: ContentBlock) => b.text || '')
+              .join('')
+              .trim();
+
+            // Only consider the response "empty" if there are no meaningful content blocks.
+            // Responses with tool_use, tool_result, code, image, etc. are NOT empty even
+            // if they have no text — the LLM legitimately ended after tool execution.
+            const hasNonTextContent = finalContentBlocks.some(
+              (b: ContentBlock) =>
+                b.type === 'tool_use' ||
+                b.type === 'tool_result' ||
+                b.type === 'code' ||
+                b.type === 'image' ||
+                b.type === 'file' ||
+                b.type === 'audio',
+            );
+
+            if (!allTextContent && !hasNonTextContent) {
+              const retryCount = this.emptyResponseRetries.get(request.agentId) || 0;
+              if (retryCount < MAX_EMPTY_RESPONSE_RETRIES) {
+                this.emptyResponseRetries.set(request.agentId, retryCount + 1);
+                logger.warn('Empty end_turn response detected - auto-continuing agent', {
+                  agentId: request.agentId,
+                  streamId: request.streamId,
+                  retryCount: retryCount + 1,
+                  maxRetries: MAX_EMPTY_RESPONSE_RETRIES,
+                  contentBlockCount: finalContentBlocks.length,
+                  contentBlockTypes: finalContentBlocks.map((b: ContentBlock) => b.type),
+                });
+
+                // Clean up current stream resources so a new stream can start
+                this.cleanupStreamResources(request.agentId);
+                this.completedStreams.delete(request.agentId);
+
+                // Remove the empty streaming message from backend session to avoid
+                // polluting conversation history with empty assistant messages
+                try {
+                  const backend = await this.getBackend();
+                  const backendSession = backend.getSession(request.agentId);
+                  if (backendSession) {
+                    const streamingIdx = backendSession.messages.findIndex(
+                      (m: any) => m.role === 'assistant' && m.isStreaming,
+                    );
+                    if (streamingIdx >= 0) {
+                      backendSession.messages.splice(streamingIdx, 1);
+                    }
+                  }
+                } catch {
+                  // Ignore cleanup errors - the auto-continue is more important
+                }
+
+                // Capture agentId for the closure — avoid referencing `request` after return
+                const autoContinueAgentId = request.agentId;
+                const autoContinueWorkspaceId = request.workspaceId;
+
+                // Auto-continue by sending a system-initiated message after a brief delay
+                // to allow the current stream to fully tear down
+                setTimeout(() => {
+                  // Guard: If the agent was stopped/deleted during the delay, abort.
+                  // Check that the provider still exists and the agent wasn't interrupted.
+                  if (
+                    !this.providers.has(autoContinueAgentId) ||
+                    this.interruptedAgents.has(autoContinueAgentId)
+                  ) {
+                    logger.info('Auto-continue aborted - agent was stopped or interrupted', {
+                      agentId: autoContinueAgentId,
+                      hasProvider: this.providers.has(autoContinueAgentId),
+                      wasInterrupted: this.interruptedAgents.has(autoContinueAgentId),
+                    });
+                    this.emptyResponseRetries.delete(autoContinueAgentId);
+                    return;
+                  }
+
+                  this.handleBackendStreamMessage(null as any, {
+                    agentId: autoContinueAgentId,
+                    sessionId: autoContinueAgentId,
+                    streamId: autoContinueAgentId,
+                    content:
+                      'Continue with your current task. You stopped without producing output.',
+                    workspaceId: autoContinueWorkspaceId,
+                    skipUserMessage: true,
+                    agentName,
+                  }).catch((err) => {
+                    logger.error('Auto-continue failed, emitting idle to prevent stuck state', {
+                      agentId: autoContinueAgentId,
+                      error: err instanceof Error ? err.message : String(err),
+                    });
+                    this.emptyResponseRetries.delete(autoContinueAgentId);
+
+                    // CRITICAL: Emit agent:idle so the agent doesn't stay permanently stuck
+                    // in "responding" state. Without this, a failed auto-continue would leave
+                    // no one to transition the agent out of "responding", causing the exact
+                    // stuck-agent bug we're trying to fix.
+                    this.emitAgentIdleEvent(
+                      autoContinueAgentId,
+                      autoContinueWorkspaceId,
+                      agentName,
+                      undefined,
+                      'error',
+                    );
+                  });
+                }, 100);
+                return; // Skip normal completion flow (don't persist empty message, don't go idle)
+              } else {
+                logger.warn('Max empty response retries reached - allowing agent to go idle', {
+                  agentId: request.agentId,
+                  retryCount,
+                });
+                this.emptyResponseRetries.delete(request.agentId);
+              }
+            } else {
+              // Non-empty response (has text or non-text content) - reset retry counter
+              this.emptyResponseRetries.delete(request.agentId);
+            }
+          } else {
+            // Non-end_turn finish reason (e.g., cancelled, error) - reset retry counter
+            this.emptyResponseRetries.delete(request.agentId);
+          }
+
           // Build the final assistant message
           // Include metadata from provider message (e.g., modelUnavailable info)
           // Also set interrupted: true when stopReason is 'cancelled' for persistence
@@ -2869,9 +3007,13 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
           this.cleanupStreamResources(request.agentId);
 
           // Only emit agent:failed for real errors, not interruptions.
-          // emitAgentFailedEvent now coordinates setAgentStatus('failed') + event emission
-          // in a single async chain for guaranteed ordering.
+          // Interruptions mean a new message was sent — the agent stays in "responding"
+          // and a new stream takes over. Emitting agent:idle here would incorrectly
+          // trigger delegation subscriptions (oneShot), causing parent agents to think
+          // the child completed when it's actually about to process a new message.
           if (!isInterruption) {
+            // emitAgentFailedEvent coordinates setAgentStatus('failed') + event emission
+            // in a single async chain for guaranteed ordering.
             // Mark that onError handled the failure so the outer catch doesn't double-emit.
             // ACP provider's onError calls rejectStream(), which causes await provider.streamMessage()
             // to throw, hitting the outer catch. Without this guard, agent:failed fires twice.
@@ -2982,6 +3124,11 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
         // This is passed from frontend when user selects a specialist before sending first message
         behaviorPrompt: request.behaviorPrompt,
         specialist: request.specialist,
+        // CRITICAL: Pass through skipUserMessage so auto-continue and wake handler callers
+        // don't inject phantom user messages into the conversation history
+        skipUserMessage: request.skipUserMessage,
+        // Pass through queuedMessageId for queued message consistency
+        queuedMessageId: request.queuedMessageId,
       };
 
       // Try to send the message first
@@ -3173,6 +3320,9 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
         this.cleanupStreamResources(agentId);
       }
 
+      // Clean up auto-continue retry counter so a pending setTimeout doesn't fire
+      this.emptyResponseRetries.delete(agentId);
+
       // Then call backendStop to clean up streaming state
       const backend = await this.getBackend();
       const result = await backend.backendStop({ agentId });
@@ -3263,8 +3413,6 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
             logger.error('[AgentBackendHandler] Error cleaning up provider', { agentId, error });
           }
         }
-        this.providers.delete(agentId);
-        this.providerLastUsed.delete(agentId);
 
         // Memory instrumentation: provider cleanup complete
         memEvents.providerCleanup(agentId, {
@@ -3273,10 +3421,8 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
         });
       }
 
-      // Clean up message queue for this agent
-      this.messageQueues.delete(agentId);
-      this.processingQueue.delete(agentId);
-      this.deferredQueueProcessing.delete(agentId);
+      // Clean up ALL per-agent tracking maps (providers, streams, queues, heartbeats, etc.)
+      this.cleanupAllAgentTrackingMaps(agentId);
 
       // Clean up agent references from task notes
       if (workspaceId) {
@@ -4135,6 +4281,57 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
   }
 
   /**
+   * Clean up ALL per-agent tracking maps for a given agent.
+   * Use this when an agent is fully stopped, deleted, or its workspace is closed.
+   * This is the single source of truth for per-agent cleanup to prevent memory leaks
+   * from orphaned map entries.
+   *
+   * NOTE: This does NOT call provider.cleanup()/provider.stop() — callers must handle
+   * provider lifecycle separately before calling this method.
+   */
+  private cleanupAllAgentTrackingMaps(agentId: string): void {
+    // Provider tracking
+    this.providers.delete(agentId);
+    this.providerLastUsed.delete(agentId);
+
+    // Stream tracking
+    this.streamStartTimes.delete(agentId);
+    this.streamSessionIds.delete(agentId);
+    this.streamWorkspaceIds.delete(agentId);
+    this.streamWindowIds.delete(agentId);
+
+    // Health check interval
+    const healthCheck = this.streamHealthChecks.get(agentId);
+    if (healthCheck) {
+      clearInterval(healthCheck);
+      this.streamHealthChecks.delete(agentId);
+    }
+
+    // IPC heartbeat tracking
+    this.lastPongTimes.delete(agentId);
+    this.lastPingSentTimes.delete(agentId);
+
+    // Message queue tracking
+    this.messageQueues.delete(agentId);
+    this.processingQueue.delete(agentId);
+    this.deferredQueueProcessing.delete(agentId);
+
+    // Agent state tracking
+    this.activeSessions.delete(agentId);
+    this.interruptedAgents.delete(agentId);
+    this.completedStreams.delete(agentId);
+    this.pendingHandlerReady.delete(agentId);
+    this.emptyResponseRetries.delete(agentId);
+
+    // Clear message accumulator
+    try {
+      messageAccumulator.clear(agentId);
+    } catch {
+      // Ignore - best effort cleanup
+    }
+  }
+
+  /**
    * Send stream-related event to ALL windows viewing the agent's workspace.
    * This ensures that if multiple windows are open for the same workspace,
    * all of them receive streaming updates (not just the window that initiated the stream).
@@ -4785,6 +4982,14 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
           if (sessionProvider !== defaultProviderId && sessionProvider in PROVIDER_MODEL_TIERS) {
             const baseModel = getDefaultModelForProvider(sessionProvider, 'balanced');
             sessionModel = `${sessionProvider}:${baseModel}`;
+          } else if (sessionProvider !== defaultProviderId) {
+            // Provider has dynamic models not in PROVIDER_MODEL_TIERS (e.g., opencode).
+            // Use 'default' to let the provider pick its own default model.
+            sessionModel = 'default';
+            logger.info('Using provider default model for provider without tier mappings', {
+              agentId: sessionId,
+              provider: sessionProvider,
+            });
           }
         }
 
@@ -4922,6 +5127,14 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
             if (sessionProvider !== defaultProviderId && sessionProvider in PROVIDER_MODEL_TIERS) {
               const baseModel = getDefaultModelForProvider(sessionProvider, 'balanced');
               sessionModel = `${sessionProvider}:${baseModel}`;
+            } else if (sessionProvider !== defaultProviderId) {
+              // Provider has dynamic models not in PROVIDER_MODEL_TIERS (e.g., opencode).
+              // Use 'default' to let the provider pick its own default model.
+              sessionModel = 'default';
+              logger.info('Using provider default model for provider without tier mappings', {
+                agentId: sessionId,
+                provider: sessionProvider,
+              });
             }
           }
           agentModel = sessionModel;
@@ -5235,6 +5448,31 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
         // Use forceCleanup: true since we're restarting with a new model and old streams won't be valid
         if (typeof provider.stop === 'function') {
           await provider.stop({ forceCleanup: true });
+        }
+
+        // CRITICAL: Update config.model BEFORE re-initializing.
+        // Providers read config.model at session creation time for:
+        // - OpenCode: session/set_model ACP call after session creation
+        // - Cortex: sessionMetadata.model in session/new request
+        // - Claude Code: deferred model application after sessionUpdate
+        // Without this, the provider restarts with the OLD model.
+        if ((provider as any).config) {
+          (provider as any).config.model = modelId;
+          logger.debug('Updated provider config.model for restart', { modelId });
+        }
+
+        // Update provider-specific environment variables (e.g., OPENCODE_CONFIG_CONTENT).
+        // Providers like OpenCode pass model config via env vars at spawn time.
+        // Without this, the restarted process inherits stale env with the old model.
+        const providerEnv = buildProviderEnv(providerId, rawModelId, providerConfig.defaultAgent);
+        if (Object.keys(providerEnv).length > 0 && (provider as any).config) {
+          (provider as any).config.env = {
+            ...((provider as any).config.env || {}),
+            ...providerEnv,
+          };
+          logger.debug('Updated provider config.env for restart', {
+            envKeys: Object.keys(providerEnv),
+          });
         }
 
         // Update the args to include the new model when the provider uses a model flag
@@ -6185,7 +6423,7 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
     logger.info('Cleaning up AgentBackendHandler');
     this.cleanupAllListeners();
 
-    // Clear message queues
+    // Clear message queues and processing state
     this.messageQueues.clear();
     this.processingQueue.clear();
     this.interruptedAgents.clear();
@@ -6206,6 +6444,28 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
       clearInterval(healthCheck);
     }
     this.streamHealthChecks.clear();
+
+    // Clear auto-continue retry tracking
+    this.emptyResponseRetries.clear();
+
+    // Clear completion and handler tracking
+    this.completedStreams.clear();
+    this.pendingHandlerReady.clear();
+
+    // Clear session tracking
+    this.activeSessions.clear();
+
+    // Clean up providers
+    for (const [agentId, provider] of this.providers) {
+      if (provider && typeof provider.cleanup === 'function') {
+        try {
+          provider.cleanup();
+        } catch (error) {
+          logger.warn('Error cleaning up provider during shutdown', { agentId, error });
+        }
+      }
+    }
+    this.providers.clear();
 
     // Stop provider cleanup interval
     if (this.providerCleanupInterval) {

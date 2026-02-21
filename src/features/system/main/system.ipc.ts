@@ -2225,7 +2225,7 @@ export function setupSystemIPC() {
     createSafeValidatedHandler(
       EmptySchema,
       async () => {
-        const result = readAugmentSettingsFile();
+        const result = await readAugmentSettingsFile();
         return { success: true, data: result };
       },
       USER_MCP_CHANNELS.GET_SETTINGS_FILE,
@@ -2237,7 +2237,7 @@ export function setupSystemIPC() {
     createSafeValidatedHandler(
       UserMcpWriteSettingsFileSchema,
       async (_event, validated) => {
-        const result = writeAugmentSettingsFile(validated.content);
+        const result = await writeAugmentSettingsFile(validated.content);
         return result;
       },
       USER_MCP_CHANNELS.WRITE_SETTINGS_FILE,
@@ -2262,7 +2262,7 @@ export function setupSystemIPC() {
       async () => {
         // Dynamic import to get the function
         const { readUserMcpServers } = await import('../../mcp/main/user-mcp-settings');
-        const servers = readUserMcpServers();
+        const servers = await readUserMcpServers();
         return { success: true, data: servers };
       },
       USER_MCP_CHANNELS.GET_SERVERS,
@@ -2419,7 +2419,7 @@ export function setupSystemIPC() {
                     const { patchServerAuthType } = await import(
                       '../../mcp/main/user-mcp-settings'
                     );
-                    patchServerAuthType(validated.name, validated.authType);
+                    await patchServerAuthType(validated.name, validated.authType);
                   } catch (patchError) {
                     logger.warn('Failed to persist authType to settings.json', {
                       name: validated.name,

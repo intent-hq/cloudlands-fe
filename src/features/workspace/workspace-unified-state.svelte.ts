@@ -204,9 +204,10 @@ export function stopCleanupInterval() {
   stateCache.clear();
   activeCleanups.clear();
 
-  // Flush any pending saves synchronously if possible
+  // Flush any pending saves synchronously — flushSync() is safe for beforeunload
+  // (no async retry logic that would be abandoned during page unload)
   try {
-    globalSaveQueue.flush();
+    globalSaveQueue.flushSync();
   } catch (error) {
     // Ignore errors on unload
   }

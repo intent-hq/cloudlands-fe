@@ -329,8 +329,19 @@ export type ModelTier = 'fast' | 'balanced' | 'smart';
 /**
  * Get the default model for a provider at a specific capability tier.
  * Falls back to Auggie's models if the provider is not configured.
+ *
+ * IMPORTANT: Providers with dynamic model lists (e.g., opencode) are intentionally
+ * NOT in PROVIDER_MODEL_TIERS. Callers should check `providerId in PROVIDER_MODEL_TIERS`
+ * before calling this to avoid getting an Auggie model ID that's invalid for their provider.
  */
 export function getDefaultModelForProvider(providerId: string, tier: ModelTier): string {
+  if (!(providerId in PROVIDER_MODEL_TIERS)) {
+    console.warn(
+      `[provider-config] getDefaultModelForProvider called for provider "${providerId}" which has no ` +
+        `tier mappings. Falling back to auggie's "${tier}" model. This may produce an invalid model ID. ` +
+        `Callers should guard with "providerId in PROVIDER_MODEL_TIERS" before calling.`,
+    );
+  }
   return PROVIDER_MODEL_TIERS[providerId]?.[tier] ?? PROVIDER_MODEL_TIERS['auggie'][tier];
 }
 

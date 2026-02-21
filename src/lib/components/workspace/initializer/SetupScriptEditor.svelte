@@ -485,7 +485,7 @@
                 <span
                   role="button"
                   tabindex="0"
-                  class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground/50 hover:text-destructive rounded transition-all cursor-pointer"
+                  class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground/50 hover:text-destructive-foreground rounded transition-all cursor-pointer"
                   onclick={(e) => { e.stopPropagation(); handleDeleteSavedScript(script.id, script.name); }}
                   title="Delete"
                 >
@@ -544,7 +544,7 @@
                 <span
                   role="button"
                   tabindex="0"
-                  class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground/50 hover:text-destructive rounded transition-all cursor-pointer"
+                  class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground/50 hover:text-destructive-foreground rounded transition-all cursor-pointer"
                   onclick={(e) => { e.stopPropagation(); handleDeleteSavedScript(script.id, script.name); }}
                   title="Delete"
                 >

@@ -16,6 +16,7 @@
     ACP_PROVIDERS,
     getDefaultProviderId,
     getDefaultModelForProvider,
+    PROVIDER_MODEL_TIERS,
     resolvePreferredModel,
     parseCompoundModelId,
   } from '$shared/config/provider-config';
@@ -225,7 +226,7 @@
 
       // Resolve model tier using the locally-selected provider
       const info = specialistsStore.specialists.find((s) => s.id === specialist);
-      if (info?.defaultModelTier) {
+      if (info?.defaultModelTier && selectedProvider in PROVIDER_MODEL_TIERS) {
         const baseModel = getDefaultModelForProvider(selectedProvider, info.defaultModelTier);
         const defaultProviderId = getDefaultProviderId();
         const resolvedModel =

@@ -2409,6 +2409,7 @@ async function initializeGitIntegration(
   const fileTrackingService = new FileTrackingService(workspaceId, worktreePath, isRemote);
   gitIntegration = new GitIntegrationService(
     workspaceId,
+    worktreePath,
     fileTrackingService,
     isRemote ? undefined : gitService,
     workspaceMetadata,

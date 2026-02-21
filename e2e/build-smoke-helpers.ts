@@ -918,6 +918,102 @@ export async function setCodexModelViaSettingsUI(page: Page, model: string): Pro
 }
 
 // ---------------------------------------------------------------------------
+// setOpencodeModelViaSettingsUI
+// ---------------------------------------------------------------------------
+
+/**
+ * Set the OpenCode model for Default, Coordinator, and Implementor specialists
+ * by navigating through the Settings UI.
+ *
+ * OpenCode models are dynamic (fetched at runtime from the CLI), so unlike
+ * codex we can't look up a label from a static map.  Instead we open the
+ * model-picker dropdown, wait for real options to appear, and select:
+ *   - The option matching OPENCODE_SMOKE_MODEL env var (if set), OR
+ *   - The first non-"Use default" option in the list.
+ */
+export async function setOpencodeModelViaSettingsUI(page: Page): Promise<void> {
+  const envModel = process.env.OPENCODE_SMOKE_MODEL; // e.g. "anthropic/claude-sonnet-4"
+
+  // Helper: open a ModelPicker dropdown inside `container`, wait for real
+  // options to load, then click the best match.
+  async function selectFirstModelInDropdown(
+    container: ReturnType<Page['locator']>,
+    context: string,
+  ): Promise<string> {
+    const trigger = container.locator('button[aria-haspopup="listbox"]').first();
+    await trigger.waitFor({ state: 'visible', timeout: 10_000 });
+    await trigger.click();
+
+    // Wait for at least one non-"Use default" option to appear (models load async).
+    const realOption = page.locator('[role="option"]').filter({ hasNotText: 'Use default' });
+    await realOption.first().waitFor({ state: 'visible', timeout: 15_000 });
+
+    // If an env var hint was provided, try to match it (substring match on label text).
+    if (envModel) {
+      const hint = envModel.replace(/^opencode:/, '');
+      const matching = realOption.filter({ hasText: hint });
+      if ((await matching.count()) > 0) {
+        const label = (await matching.first().textContent()) || hint;
+        await matching.first().click();
+        await page.waitForTimeout(500);
+        console.log(`  [${context}] selected model matching hint: ${label.trim()}`);
+        return label.trim();
+      }
+    }
+
+    // Fallback: pick the first real option.
+    const label = (await realOption.first().textContent()) || 'unknown';
+    await realOption.first().click();
+    await page.waitForTimeout(500);
+    console.log(`  [${context}] selected first available model: ${label.trim()}`);
+    return label.trim();
+  }
+
+  // 1. Navigate to Settings > Agents
+  const baseUrl = await page.evaluate(() => window.location.origin);
+  await page.goto(`${baseUrl}/settings`);
+  await page.waitForLoadState('domcontentloaded');
+
+  const agentsTab = page.locator('button', { hasText: 'Agents' }).first();
+  await agentsTab.waitFor({ state: 'visible', timeout: 5_000 });
+  await agentsTab.click();
+  await page.waitForTimeout(500);
+
+  // 2. Set the Default Model
+  const defaultModelSection = page.locator('#default-model');
+  await defaultModelSection.waitFor({ state: 'visible', timeout: 5_000 });
+  await selectFirstModelInDropdown(defaultModelSection, 'Default');
+
+  // 3. Set Coordinator model
+  const coordinatorBtn = page.locator('button').filter({ hasText: 'Coordinator' }).first();
+  await coordinatorBtn.waitFor({ state: 'visible', timeout: 5_000 });
+  await coordinatorBtn.click();
+  await page.waitForTimeout(500);
+  await page
+    .locator('h2', { hasText: 'Coordinator' })
+    .first()
+    .waitFor({ state: 'visible', timeout: 5_000 });
+  const editorPanel = page.locator('.editor-container');
+  await selectFirstModelInDropdown(editorPanel, 'Coordinator');
+
+  // 4. Set Implementor model
+  const implementorBtn = page.locator('button').filter({ hasText: 'Implementor' }).first();
+  await implementorBtn.waitFor({ state: 'visible', timeout: 5_000 });
+  await implementorBtn.click();
+  await page.waitForTimeout(500);
+  await page
+    .locator('h2', { hasText: 'Implementor' })
+    .first()
+    .waitFor({ state: 'visible', timeout: 5_000 });
+  await selectFirstModelInDropdown(editorPanel, 'Implementor');
+
+  // 5. Navigate back to home
+  await page.goto(`${baseUrl}/`);
+  await page.waitForLoadState('domcontentloaded');
+  console.log(`  opencode model overrides applied via Settings UI`);
+}
+
+// ---------------------------------------------------------------------------
 // startPermissionAutoApprover
 // ---------------------------------------------------------------------------
 

@@ -144,8 +144,8 @@ async function getACPWithProvider(
     // Build args array with provider-specific base args
     let args = [...resolvedCommand.argsPrefix, ...providerConfig.baseArgs];
 
-    // Add model flag if specified
-    if (rawModelId && rawModelId.length > 0 && providerConfig.modelFlag) {
+    // Add model flag if specified ('default' is a sentinel — don't pass it as a real model ID)
+    if (rawModelId && rawModelId.length > 0 && rawModelId !== 'default' && providerConfig.modelFlag) {
       args.push(providerConfig.modelFlag, rawModelId);
       logger.info(`Setting ${providerConfig.displayName} model`, { model: rawModelId });
     }
@@ -176,9 +176,11 @@ async function getACPWithProvider(
     }
 
     // Args already provided, just ensure model is included if needed
+    // ('default' is a sentinel — don't pass it as a real model ID)
     if (
       rawModelId &&
       rawModelId.length > 0 &&
+      rawModelId !== 'default' &&
       providerConfig.modelFlag &&
       !config.args.includes(providerConfig.modelFlag)
     ) {
@@ -202,7 +204,9 @@ async function getACPWithProvider(
   }
 
   // Build provider-specific environment variables (e.g., OPENCODE_CONFIG_CONTENT)
-  const providerEnv = buildProviderEnv(providerConfig.id, rawModelId, providerConfig.defaultAgent);
+  // Pass undefined instead of 'default' so buildProviderEnv doesn't set an invalid model
+  const envModelId = rawModelId === 'default' ? undefined : rawModelId;
+  const providerEnv = buildProviderEnv(providerConfig.id, envModelId, providerConfig.defaultAgent);
   config.env = { ...(config.env || {}), ...providerEnv };
 
   // Safety check: warn if a model was specified but no mechanism exists to pass it
@@ -215,7 +219,7 @@ async function getACPWithProvider(
     // Check if buildProviderEnv returned model-carrying env vars (not just unrelated ones like ELECTRON_RUN_AS_NODE)
     const hasModelEnv = !!providerEnv.OPENCODE_CONFIG_CONTENT;
     const hasCustomArgs = providerConfig.id === 'codex'; // Codex uses -c model="..."
-    const appliesModelPostSession = providerConfig.id === 'claude-code' || providerConfig.id === 'cortex';
+    const appliesModelPostSession = providerConfig.id === 'claude-code' || providerConfig.id === 'cortex' || providerConfig.id === 'opencode';
     if (!hasModelFlag && !hasModelEnv && !hasCustomArgs && !appliesModelPostSession) {
       logger.warn(
         `[ProviderRegistry] Model "${rawModelId}" specified for provider "${providerConfig.id}" ` +
@@ -235,6 +239,28 @@ async function getACPWithProvider(
   // Store provider config on the agent config for use in ACPProvider
   // This allows the provider to use the correct agent name in permission dialogs
   (config as any)._providerConfig = providerConfig;
+
+  // MODEL RESOLUTION AUDIT LOG
+  // Single structured log that captures the entire model resolution chain.
+  // This makes it trivial to debug "wrong model" bugs by checking a single log line.
+  logger.info('[ProviderRegistry] Model resolution audit', {
+    providerId: providerConfig.id,
+    inputModel: config.model,                                // compound ID from caller
+    rawModelId,                                               // after stripping provider prefix
+    mechanism: providerConfig.modelFlag
+      ? `CLI flag (${providerConfig.modelFlag})`
+      : providerConfig.id === 'opencode'
+        ? 'OPENCODE_CONFIG_CONTENT env var + ACP session/set_model (post-session)'
+        : providerConfig.id === 'codex'
+          ? 'codex -c model="..."'
+          : providerConfig.id === 'claude-code' || providerConfig.id === 'cortex'
+            ? 'ACP session/set_model (post-session)'
+            : 'NONE — model may be ignored',
+    envModel: providerEnv.OPENCODE_CONFIG_CONTENT
+      ? (() => { try { return JSON.parse(providerEnv.OPENCODE_CONFIG_CONTENT).model; } catch { return 'parse-error'; } })()
+      : undefined,
+    cliArgs: config.args,
+  });
 
   logger.info('[ProviderRegistry] Creating ACPProvider with final config', {
     providerId: providerConfig.id,

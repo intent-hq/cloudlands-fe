@@ -207,7 +207,7 @@
           class="p-1 rounded hover:bg-destructive/10 transition-colors cursor-pointer"
           onclick={handleDeleteClick}
         >
-          <Fa icon={faTrash} size="xs" class="text-muted-foreground hover:text-destructive" />
+          <Fa icon={faTrash} size="xs" class="text-muted-foreground hover:text-destructive-foreground" />
         </button>
       </Tooltip>
     {/if} -->

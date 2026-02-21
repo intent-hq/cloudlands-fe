@@ -17,7 +17,7 @@
 | `Mod+J` | Toggle Quake Terminal Overlay | Anywhere |
 | `Ctrl+\`` | Toggle Quake Terminal Overlay | Anywhere (always Ctrl, even Mac) |
 | `Ctrl+Shift+\`` | Create New Terminal | Anywhere (always Ctrl, even Mac) |
-| `Mod+N` | Create New Agent | Anywhere (not in inputs) |
+| `Mod+N` | New Space | Anywhere (not in inputs) |
 | `Escape` | Close modal/dialog/cancel | Various contexts |
 
 ---
@@ -35,8 +35,8 @@
 | `Mod+Shift+\` | Split Panel Vertically | In panel |
 | `Mod+[` | Go Back in Panel History | In panel |
 | `Mod+]` | Go Forward in Panel History | In panel |
-| `Mod+Shift+[` | Focus Previous Panel | Multi-panel layout |
-| `Mod+Shift+]` | Focus Next Panel | Multi-panel layout |
+| `Mod+Shift+[` | Select Previous Tab | In panel (also terminal tabs) |
+| `Mod+Shift+]` | Select Next Tab | In panel (also terminal tabs) |
 | `Mod+Shift+M` | Toggle Panel Zoom/Maximize | In panel |
 
 ---
@@ -48,7 +48,8 @@
 | `Mod+1` | Focus Main Content | Anywhere |
 | `Mod+2` | Focus Drawer (sidebar panels) | Anywhere |
 | `Mod+3` | Focus Dock (agents/terminals) | Anywhere |
-| `Mod+B` | Toggle Spaces Overlay | Anywhere |
+| `Mod+B` | Toggle Workspace Sidebar | Anywhere |
+| `Mod+O` | Toggle Spaces Overlay | Anywhere |
 | `Mod+Shift+D` | Open Agent Overview | Anywhere |
 | `Mod+Shift+E` | Focus File Explorer Tab | Anywhere |
 | `Mod+Shift+G` | Focus Git Changes Tab | Anywhere |
@@ -163,10 +164,14 @@
 
 | Shortcut | Action | Context |
 |----------|--------|---------|
-| `Mod+\`` | Toggle Terminal Overlay | Anywhere |
+| `Ctrl+\`` | Toggle Terminal Overlay | Anywhere (always Ctrl, even Mac) |
+| `Mod+J` | Toggle Terminal Overlay | Anywhere (alternate) |
+| `Ctrl+Shift+\`` | Create New Terminal Tab | Anywhere |
 | `Mod+Shift+N` | Create New Terminal Tab | When terminal visible |
 | `Mod+Shift+]` | Next Terminal Tab | In terminal overlay |
 | `Mod+Shift+[` | Previous Terminal Tab | In terminal overlay |
+
+> ⚠️ **`Cmd+\`` is intentionally NOT used** — it is a reserved macOS shortcut for cycling between application windows.
 
 ---
 
@@ -188,8 +193,8 @@
 1. **`Mod+Shift+N`** - Used for both "Focus Notes Tab" AND "New Terminal Tab"
    - Recommendation: Keep `Mod+Shift+N` for Notes, use `Ctrl+Shift+\`` for new terminal (already works)
 
-2. **`Mod+Shift+[/]`** - Used for both "Previous/Next Panel" AND "Previous/Next Terminal Tab"
-   - Context-dependent but may confuse users
+2. **`Mod+Shift+[/]`** - Used for both "Select Previous/Next Tab" AND "Previous/Next Terminal Tab"
+   - Context-dependent: panel tabs vs terminal tabs
    - Recommendation: This is acceptable since they're in different contexts
 
 3. **`Escape`** - Overloaded for many purposes (close modal, stop agent, exit follow, zoom out)
@@ -197,6 +202,21 @@
 
 4. **`Mod+J`** vs `Ctrl+\`` for terminal** - Duplicate functionality
    - Recommendation: Keep both for discoverability (`Mod+J` is easier, `Ctrl+\`` matches VS Code)
+
+## Reserved OS Shortcuts (DO NOT OVERRIDE)
+
+These shortcuts are reserved by the operating system and **must not** be intercepted by the app.
+The `KeyboardShortcutManager` will warn in dev mode if any of these are registered.
+
+| Shortcut | OS | Purpose |
+|----------|-----|---------|
+| `Cmd+\`` | macOS | Cycle through application windows |
+| `Cmd+Tab` | macOS | Application switcher |
+| `Cmd+H` | macOS | Hide application |
+| `Cmd+Q` | macOS | Quit application |
+| `Cmd+Space` | macOS | Spotlight search |
+| `Cmd+Shift+3/4/5` | macOS | Screenshots |
+| `Ctrl+Tab` | Windows | Task switcher (handled by OS, but safe in Electron) |
 
 ## Inconsistencies
 

@@ -170,7 +170,7 @@
         >
           <span>{ref.name || ref.type || 'Context'}</span>
           <button
-            class="flex items-center justify-center size-4 p-0 bg-transparent border-none text-muted-foreground cursor-pointer transition-colors hover:text-destructive"
+            class="flex items-center justify-center size-4 p-0 bg-transparent border-none text-muted-foreground cursor-pointer transition-colors hover:text-destructive-foreground"
             onclick={() => {
               const newRefs = contextReferences.filter((r) => r !== ref);
               onContextUpdate?.({ references: newRefs });

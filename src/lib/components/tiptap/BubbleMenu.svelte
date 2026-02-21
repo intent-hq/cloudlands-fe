@@ -28,11 +28,13 @@
 
   interface Props {
     editor: Editor | null;
-    workspace: Workspace;
+    workspace?: Workspace;
     noteId?: string;
     onAddComment?: () => void;
     onAgentLaunched?: (agentData: any) => void;
     onCreateSessionComment?: (agentData: any, from: number, to: number) => void;
+    /** When false, hides notes-specific actions (comments, agent launch). Default: true */
+    showNoteActions?: boolean;
   }
 
   let {
@@ -42,6 +44,7 @@
     onAddComment,
     onAgentLaunched,
     onCreateSessionComment: _onCreateSessionComment,
+    showNoteActions = true,
   }: Props = $props();
   let bubbleMenuVisible = $state(false);
   let bubbleMenuPosition = $state({ x: 0, y: 0 });
@@ -467,23 +470,25 @@
           </button>
         </TooltipShortcut>
 
-        <div class="bubble-menu-divider"></div>
+        {#if showNoteActions}
+          <div class="bubble-menu-divider"></div>
 
-        <TooltipShortcut label="Add comment" side="top" delayDuration={200}>
-          <button class="bubble-menu-btn" onclick={handleAddComment} aria-label="Add comment">
-            <Fa icon={faCommentDots} size="xs" />
-          </button>
-        </TooltipShortcut>
+          <TooltipShortcut label="Add comment" side="top" delayDuration={200}>
+            <button class="bubble-menu-btn" onclick={handleAddComment} aria-label="Add comment">
+              <Fa icon={faCommentDots} size="xs" />
+            </button>
+          </TooltipShortcut>
 
-        <TooltipShortcut label="Send to Agent" side="top" delayDuration={200}>
-          <button
-            class="bubble-menu-btn"
-            onclick={handleLaunchAgentClick}
-            aria-label="Send to Agent"
-          >
-            <Fa icon={faPaperPlane} size="xs" />
-          </button>
-        </TooltipShortcut>
+          <TooltipShortcut label="Send to Agent" side="top" delayDuration={200}>
+            <button
+              class="bubble-menu-btn"
+              onclick={handleLaunchAgentClick}
+              aria-label="Send to Agent"
+            >
+              <Fa icon={faPaperPlane} size="xs" />
+            </button>
+          </TooltipShortcut>
+        {/if}
       </div>
 
       <!-- Link Input (appears below the bubble menu) -->
@@ -512,7 +517,7 @@
 {/if}
 
 <!-- Launch From Selection Dialog -->
-{#if showLaunchDialog}
+{#if showNoteActions && showLaunchDialog && workspace}
   <LaunchFromSelectionDialog
     x={launchDialogPosition.x}
     y={launchDialogPosition.y}

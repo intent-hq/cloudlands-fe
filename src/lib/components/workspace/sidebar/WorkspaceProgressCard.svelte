@@ -231,50 +231,15 @@
   async function performDelete() {
     if (isDeleting || !workspace) return;
 
-    const { toast } = await import('svelte-sonner');
-    const workspaceTitle = workspace.title;
-    const workspaceIdToDelete = workspace.id;
-
     try {
       isDeleting = true;
       // Navigate immediately to avoid UI stalling
       goto('/');
 
-      // Optimistically remove from UI immediately
-      workspaceStore.removeFromUI(workspaceIdToDelete);
-
-      let undoClicked = false;
-      const toastId = toast.warning(
-        workspaceTitle ? `Deleted "${workspaceTitle}"` : 'Space deleted',
-        {
-          duration: 15000,
-          action: {
-            label: 'Undo',
-            onClick: async () => {
-              undoClicked = true;
-              // Clear the pending deletion flag so load() can restore it
-              workspaceStore.restoreToUI(workspaceIdToDelete);
-              await workspaceStore.load();
-              toast.dismiss(toastId);
-            },
-          },
-        },
-      );
-
-      // After 15 seconds, actually delete from disk if not undone
-      setTimeout(async () => {
-        if (!undoClicked) {
-          // Pass skipOptimisticRemoval=true since we already removed from UI
-          const result = await workspaceStore.delete(workspaceIdToDelete, true);
-          if (!result.ok) {
-            await workspaceStore.load();
-            toast.error('Failed to delete space');
-          }
-        }
-        isDeleting = false;
-      }, 15000);
+      await workspaceStore.deleteWithUndo(workspace.id, workspace.title);
     } catch (error) {
       logger.error('Failed to delete workspace:', error);
+    } finally {
       isDeleting = false;
     }
   }

@@ -510,6 +510,11 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
     // Don't close if it's the only panel
     if (Object.keys(state.panels).length <= 1) return false;
 
+    // Clear expand state — closing any panel can restructure the tree,
+    // making saved split paths stale
+    expandedPanelId = null;
+    savedSizesBeforeExpand = [];
+
     const removeFromTree = (node: PanelLayoutNode): PanelLayoutNode | null => {
       if (node.type === 'panel') {
         return node.panelId === panelId ? null : node;
@@ -558,6 +563,51 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
       return true;
     }
     return false;
+  }
+
+  // ============================================================================
+  // Panel Expand (soft zoom: 85/15 split sizes instead of hiding panels)
+  // ============================================================================
+
+  const EXPANDED_SHARE = 80; // Percentage given to the expanded panel's branch
+
+  /** ID of the currently expanded panel, or null */
+  let expandedPanelId: string | null = null;
+
+  /** Saved original sizes at each split level before expansion, for restore */
+  let savedSizesBeforeExpand: { nodePath: number[]; sizes: number[] }[] = [];
+
+  /**
+   * Find the path of child indices from root to a panel.
+   * Returns an array of indices (one per split level), or null if not found.
+   */
+  function findPanelPath(node: PanelLayoutNode, panelId: string): number[] | null {
+    if (node.type === 'panel') {
+      return node.panelId === panelId ? [] : null;
+    }
+    for (let i = 0; i < node.children.length; i++) {
+      const childPath = findPanelPath(node.children[i], panelId);
+      if (childPath !== null) {
+        return [i, ...childPath];
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Navigate to a split node using a path of child indices from root.
+   * An empty path returns root itself.
+   */
+  function getSplitAtPath(path: number[]): PanelLayoutNode | null {
+    let node: PanelLayoutNode = state.root;
+    for (const idx of path) {
+      if (node.type === 'split' && node.children[idx]) {
+        node = node.children[idx];
+      } else {
+        return null;
+      }
+    }
+    return node;
   }
 
   const manager = {
@@ -1744,6 +1794,10 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
 
     /** Split a panel */
     splitPanel(panelId: string, direction: 'horizontal' | 'vertical') {
+      // Clear expand state — splitting changes the tree structure,
+      // making saved split paths stale
+      expandedPanelId = null;
+      savedSizesBeforeExpand = [];
       mutate(() => {
         // Track the new panel ID created during the split
         let createdPanelId: string | null = null;
@@ -1855,8 +1909,88 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
       );
     },
 
+    /** Whether a panel is currently expanded */
+    get expandedPanelId(): string | null {
+      return expandedPanelId;
+    },
+
+    /**
+     * Toggle "expand" on a panel: give it ~85% of the space at each split level
+     * along the path from root to the panel, or restore original sizes if already expanded.
+     * Unlike zoom, this keeps all panels visible — the others just get smaller.
+     */
+    toggleExpandPanel(panelId: string) {
+      mutate(
+        () => {
+          if (expandedPanelId === panelId) {
+            // Collapse: restore saved sizes
+            for (const entry of savedSizesBeforeExpand) {
+              const node = getSplitAtPath(entry.nodePath);
+              if (node && node.type === 'split') {
+                node.sizes = entry.sizes;
+              }
+            }
+            expandedPanelId = null;
+            savedSizesBeforeExpand = [];
+            logger.debug('Panel collapsed (expand toggled off)', { panelId });
+          } else {
+            // If a different panel was expanded, restore first
+            if (expandedPanelId !== null) {
+              for (const entry of savedSizesBeforeExpand) {
+                const node = getSplitAtPath(entry.nodePath);
+                if (node && node.type === 'split') {
+                  node.sizes = entry.sizes;
+                }
+              }
+              savedSizesBeforeExpand = [];
+            }
+
+            // Find path from root to the target panel
+            const panelPath = findPanelPath(state.root, panelId);
+            if (!panelPath || panelPath.length === 0) {
+              // Panel is the root (only panel) — nothing to expand
+              expandedPanelId = null;
+              return;
+            }
+
+            // Walk down the tree, saving sizes and expanding at each split level
+            let currentNode: PanelLayoutNode = state.root;
+            const currentNodePath: number[] = [];
+
+            for (const childIndex of panelPath) {
+              if (currentNode.type === 'split') {
+                // Save original sizes at this split
+                savedSizesBeforeExpand.push({
+                  nodePath: [...currentNodePath],
+                  sizes: [...currentNode.sizes],
+                });
+
+                // Set new sizes: EXPANDED_SHARE for the target branch,
+                // distribute the rest among siblings
+                const siblingCount = currentNode.children.length - 1;
+                const siblingShare =
+                  siblingCount > 0 ? (100 - EXPANDED_SHARE) / siblingCount : 0;
+                currentNode.sizes = currentNode.sizes.map((_, i) =>
+                  i === childIndex ? EXPANDED_SHARE : siblingShare,
+                );
+
+                currentNodePath.push(childIndex);
+                currentNode = currentNode.children[childIndex];
+              }
+            }
+
+            expandedPanelId = panelId;
+            logger.debug('Panel expanded', { panelId, levelsAdjusted: savedSizesBeforeExpand.length });
+          }
+        },
+        { addToHistory: false },
+      );
+    },
+
     /** Reset to default layout */
     reset() {
+      expandedPanelId = null;
+      savedSizesBeforeExpand = [];
       mutate(() => {
         const defaultLayout = createDefaultLayout();
         Object.assign(state, defaultLayout);
@@ -1865,6 +1999,8 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
 
     /** Apply a preset layout while preserving existing tabs */
     applyPreset(preset: 'single' | 'split-horizontal' | 'split-vertical' | 'three-column') {
+      expandedPanelId = null;
+      savedSizesBeforeExpand = [];
       mutate(() => {
         // Collect all tabs from all panels
         const allTabs: PanelTab[] = [];

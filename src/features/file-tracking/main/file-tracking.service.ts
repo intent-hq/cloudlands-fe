@@ -117,6 +117,7 @@ export class FileTrackingService {
     this.workspaceId = workspaceId;
     this.workspacePath = workspacePath;
     this.storage = FileTrackingStorage.getInstance(workspaceId);
+    this.storage.setWorkspacePath(workspacePath);
     this.isRemote = !!isRemote;
 
     // Start periodic cleanup
@@ -1031,6 +1032,30 @@ export class FileTrackingService {
 
     return { changes: filteredChanges, truncated, totalCount };
   }
+
+  /**
+   * Resolve blob SHAs to inline content for a single TrackedChange on demand.
+   * Delegates to the storage layer's resolveContent() method.
+   *
+   * Call this only when content is actually needed (e.g., for diff viewing).
+   * Most callers (listing changes, auto-commit, agent-commit) don't need content
+   * and should NOT call this.
+   *
+   * @param change - The tracked change to resolve content for
+   * @returns A new TrackedChange with content fields populated from git blobs
+   */
+  async resolveContent(change: TrackedChange): Promise<TrackedChange> {
+    return this.storage.resolveContent(change);
+  }
+
+  /**
+   * Get the cached isGitRepository result from storage.
+   * @returns true if the workspace is inside a git repository
+   */
+  isGitRepo(): boolean {
+    return this.storage.getIsGitRepo();
+  }
+
 
   /**
    * Clear all tracked changes.

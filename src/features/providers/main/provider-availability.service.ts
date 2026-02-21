@@ -6,7 +6,7 @@
  */
 
 import { ipcMain } from 'electron';
-import { existsSync, readFileSync, readdirSync } from 'fs';
+import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { PROVIDERS_CHANNELS } from '../../../shared/ipc/channels';
@@ -62,21 +62,33 @@ export interface ProviderAvailabilityResult {
  * This is a lightweight check that doesn't spawn processes
  */
 async function checkAuggieAvailability(): Promise<ProviderStatus> {
+  // Helper to check if a path exists without throwing
+  const pathExists = async (p: string): Promise<boolean> => {
+    try {
+      await fs.access(p);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   try {
     const homeDir = os.homedir();
 
     // Check for saved auggie path (fastest check)
     const savedPathFile = path.join(homeDir, '.augment', 'auggie-path');
-    if (existsSync(savedPathFile)) {
-      const savedPath = readFileSync(savedPathFile, 'utf8').trim();
-      if (savedPath && existsSync(savedPath)) {
+    try {
+      const savedPath = (await fs.readFile(savedPathFile, 'utf8')).trim();
+      if (savedPath && (await pathExists(savedPath))) {
         return { available: true };
       }
+    } catch {
+      // File doesn't exist or can't be read
     }
 
     // Check for auggie session file (indicates auggie was used before)
     const sessionPath = path.join(homeDir, '.augment', 'session.json');
-    if (existsSync(sessionPath)) {
+    if (await pathExists(sessionPath)) {
       // Session exists, auggie was likely installed and used
       return { available: true };
     }
@@ -110,7 +122,7 @@ async function checkAuggieAvailability(): Promise<ProviderStatus> {
           ];
 
     for (const p of commonPaths) {
-      if (p && existsSync(p)) {
+      if (p && (await pathExists(p))) {
         return { available: true };
       }
     }
@@ -118,13 +130,11 @@ async function checkAuggieAvailability(): Promise<ProviderStatus> {
     // Dynamically scan nvm directories (file system only, no process spawning)
     try {
       const nvmDir = path.join(homeDir, '.nvm', 'versions', 'node');
-      if (existsSync(nvmDir)) {
-        const nodeDirs = readdirSync(nvmDir).filter((d) => d.startsWith('v'));
-        for (const dir of nodeDirs) {
-          const auggiePath = path.join(nvmDir, dir, 'bin', 'auggie');
-          if (existsSync(auggiePath)) {
-            return { available: true };
-          }
+      const nodeDirs = (await fs.readdir(nvmDir)).filter((d) => d.startsWith('v'));
+      for (const dir of nodeDirs) {
+        const auggiePath = path.join(nvmDir, dir, 'bin', 'auggie');
+        if (await pathExists(auggiePath)) {
+          return { available: true };
         }
       }
     } catch {
@@ -134,13 +144,11 @@ async function checkAuggieAvailability(): Promise<ProviderStatus> {
     // Dynamically scan fnm directories
     try {
       const fnmDir = path.join(homeDir, '.fnm', 'node-versions');
-      if (existsSync(fnmDir)) {
-        const nodeDirs = readdirSync(fnmDir);
-        for (const dir of nodeDirs) {
-          const auggiePath = path.join(fnmDir, dir, 'installation', 'bin', 'auggie');
-          if (existsSync(auggiePath)) {
-            return { available: true };
-          }
+      const nodeDirs = await fs.readdir(fnmDir);
+      for (const dir of nodeDirs) {
+        const auggiePath = path.join(fnmDir, dir, 'installation', 'bin', 'auggie');
+        if (await pathExists(auggiePath)) {
+          return { available: true };
         }
       }
     } catch {

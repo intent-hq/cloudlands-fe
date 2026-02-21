@@ -662,7 +662,7 @@
           onClose?.();
         }}
         class="pl-3.75! gap-2.25! w-full justify-start {action.variant === 'destructive'
-          ? 'hover:bg-destructive/10 hover:text-destructive'
+          ? 'hover:bg-destructive hover:text-destructive-foreground'
           : ''}"
         size="sm"
       >
@@ -696,7 +696,7 @@
     <Button
       variant="ghost"
       onclick={handleDelete}
-      class="pl-3.75! gap-2.25! w-full justify-start hover:bg-destructive/10 hover:text-destructive"
+      class="pl-3.75! gap-2.25! w-full justify-start hover:bg-destructive hover:text-destructive-foreground"
       size="sm"
     >
       <Fa icon={faTrash} size="12" class="mr-1.5 opacity-50" />
@@ -711,7 +711,7 @@
       variant="ghost"
       onclick={handleDeleteFile}
       disabled={isDeletingFile}
-      class="pl-3.75! gap-2.25! w-full justify-start hover:bg-destructive/10 hover:text-destructive"
+      class="pl-3.75! gap-2.25! w-full justify-start hover:bg-destructive hover:text-destructive-foreground"
       size="sm"
     >
       {#if isDeletingFile}

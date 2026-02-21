@@ -13,6 +13,7 @@ import { Logger } from '$lib/utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { getDeduplicationService } from '../../events/event-deduplication.service';
 import { getAttributionEngine } from '../../workspace/main/provenance/attribution-engine';
+import { storeBlob, isGitRepository } from '../../../shared/git/git-blob-storage';
 
 const logger = new Logger({ category: 'GitIntegrationService' });
 
@@ -31,6 +32,8 @@ function debounce<T extends (...args: any[]) => any>(
 export class GitIntegrationService extends EventEmitter {
   private fileTrackingService: FileTrackingService;
   private workspaceId: string;
+  private workspacePath: string;
+  private isGitRepo: boolean;
   private changeDetector: any; // ChangeDetector instance
   private gitService: any; // GitService instance (optional, undefined for remote workspaces)
   private isRemote: boolean;
@@ -62,6 +65,7 @@ export class GitIntegrationService extends EventEmitter {
 
   constructor(
     workspaceId: string,
+    workspacePath: string,
     fileTrackingService: FileTrackingService,
     gitService?: any,
     workspaceMetadata?: { baseRef?: string; baseCommitSha?: string; createdAt?: string },
@@ -69,6 +73,8 @@ export class GitIntegrationService extends EventEmitter {
   ) {
     super();
     this.workspaceId = workspaceId;
+    this.workspacePath = workspacePath;
+    this.isGitRepo = isGitRepository(workspacePath);
     this.fileTrackingService = fileTrackingService;
     this.gitService = gitService;
     this.isRemote = !!isRemote;
@@ -655,6 +661,38 @@ export class GitIntegrationService extends EventEmitter {
           status = 'renamed';
         }
 
+        // Store content as git blobs when in a git repo (follows change-processor.ts pattern)
+        let newContent: string | undefined = fileChange.content || fileChange.newContent || '';
+        let oldContent: string | undefined = fileChange.oldContent;
+        let diff: string | undefined = fileChange.diff;
+        let newContentSha: string | undefined;
+        let oldContentSha: string | undefined;
+        let diffSha: string | undefined;
+
+        if (this.isGitRepo) {
+          if (newContent) {
+            const sha = await storeBlob(newContent, this.workspacePath);
+            if (sha) {
+              newContentSha = sha;
+              newContent = undefined; // Don't store inline if blob succeeded
+            }
+          }
+          if (oldContent) {
+            const sha = await storeBlob(oldContent, this.workspacePath);
+            if (sha) {
+              oldContentSha = sha;
+              oldContent = undefined; // Don't store inline if blob succeeded
+            }
+          }
+          if (diff && diff.length > 10_000) {
+            const sha = await storeBlob(diff, this.workspacePath);
+            if (sha) {
+              diffSha = sha;
+              diff = undefined; // Don't store inline if blob succeeded
+            }
+          }
+        }
+
         const trackedChange: TrackedChange = {
           id: uuidv4(),
           file: fileChange.path,
@@ -664,7 +702,12 @@ export class GitIntegrationService extends EventEmitter {
           status,
           attribution,
           content: {
-            newContent: fileChange.content || fileChange.newContent || '',
+            ...(newContent !== undefined && { newContent }),
+            ...(oldContent !== undefined && { oldContent }),
+            ...(diff !== undefined && { diff }),
+            ...(newContentSha && { newContentSha }),
+            ...(oldContentSha && { oldContentSha }),
+            ...(diffSha && { diffSha }),
           },
         };
 

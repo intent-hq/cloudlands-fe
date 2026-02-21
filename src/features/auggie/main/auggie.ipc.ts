@@ -794,9 +794,16 @@ export function setupAuggieIPC() {
       // Check authentication via session file or environment variable first (fast path)
       try {
         const sessionPath = path.join(os.homedir(), '.augment', 'session.json');
-        if (existsSync(sessionPath)) {
+        let sessionFileExists = false;
+        try {
+          await fs.access(sessionPath);
+          sessionFileExists = true;
+        } catch {
+          // File does not exist
+        }
+        if (sessionFileExists) {
           // Verify the session file has valid content
-          const sessionContent = fsSync.readFileSync(sessionPath, 'utf8');
+          const sessionContent = await fs.readFile(sessionPath, 'utf8');
           const session = JSON.parse(sessionContent);
           if (session.accessToken) {
             status.authenticated = true;
@@ -1460,19 +1467,16 @@ export function setupAuggieIPC() {
             const homedir = requireNode('os').homedir();
             const sessionPath = requireNode('path').join(homedir, '.augment', 'session.json');
             try {
-              if (existsSync(sessionPath)) {
-                const sessionData = JSON.parse(
-                  requireNode('fs').readFileSync(sessionPath, 'utf-8'),
-                );
-                if (sessionData.accessToken) {
-                  return {
-                    success: true,
-                    data: { completed: true, authenticated: true },
-                  };
-                }
+              const pollSessionContent = await fs.readFile(sessionPath, 'utf-8');
+              const sessionData = JSON.parse(pollSessionContent);
+              if (sessionData.accessToken) {
+                return {
+                  success: true,
+                  data: { completed: true, authenticated: true },
+                };
               }
             } catch {
-              // Ignore parse errors
+              // Ignore read/parse errors (file may not exist yet)
             }
             return {
               success: true,
@@ -1522,10 +1526,8 @@ export function setupAuggieIPC() {
             creationTime: number;
           };
           try {
-            if (!existsSync(oauthStatePath)) {
-              throw new Error('missing');
-            }
-            oauthState = JSON.parse(readFileSync(oauthStatePath, 'utf-8'));
+            const oauthRaw = await fs.readFile(oauthStatePath, 'utf-8');
+            oauthState = JSON.parse(oauthRaw);
             // Check that the state is not too old (10 minutes)
             if (Date.now() - oauthState.creationTime > 10 * 60 * 1000) {
               throw new Error('expired');
@@ -1612,11 +1614,11 @@ export function setupAuggieIPC() {
               tenantURL: authArgs.tenant_url,
               scopes: ['read', 'write'],
             };
-            fsSync.writeFileSync(sessionPath, JSON.stringify(session, null, 2), 'utf-8');
+            await fs.writeFile(sessionPath, JSON.stringify(session, null, 2), 'utf-8');
 
             // Clean up the OAuth state file
             try {
-              fsSync.unlinkSync(oauthStatePath);
+              await fs.unlink(oauthStatePath);
             } catch {
               // Ignore cleanup errors
             }
@@ -2026,9 +2028,7 @@ export function setupAuggieIPC() {
       const configFile = path.join(configDir, 'opencode.json');
 
       // Ensure directory exists
-      if (!existsSync(configDir)) {
-        await fs.mkdir(configDir, { recursive: true });
-      }
+      await fs.mkdir(configDir, { recursive: true });
 
       // Read existing config or create new one
       let config: any = {
@@ -2036,17 +2036,18 @@ export function setupAuggieIPC() {
         mcp: {},
       };
 
-      if (existsSync(configFile)) {
-        try {
-          const content = readFileSync(configFile, 'utf-8');
-          config = JSON.parse(content);
-          // Ensure mcp object exists
-          if (!config.mcp) {
-            config.mcp = {};
-          }
-        } catch (parseError) {
+      try {
+        const content = await fs.readFile(configFile, 'utf-8');
+        config = JSON.parse(content);
+        // Ensure mcp object exists
+        if (!config.mcp) {
+          config.mcp = {};
+        }
+      } catch (readError) {
+        const errCode = (readError as NodeJS.ErrnoException).code;
+        if (errCode !== 'ENOENT') {
           logger.warn('Failed to parse existing OpenCode config, will overwrite', {
-            error: (parseError as Error).message,
+            error: (readError as Error).message,
           });
         }
       }
@@ -2182,16 +2183,8 @@ export function setupAuggieIPC() {
 
       const configFile = path.join(os.homedir(), '.config', 'opencode', 'opencode.json');
 
-      if (!existsSync(configFile)) {
-        logger.info('OpenCode config file not found');
-        return {
-          success: true,
-          configured: false,
-        };
-      }
-
       try {
-        const content = readFileSync(configFile, 'utf-8');
+        const content = await fs.readFile(configFile, 'utf-8');
         const config = JSON.parse(content);
 
         // Check if augment-context-engine is configured and enabled
@@ -2205,10 +2198,15 @@ export function setupAuggieIPC() {
           success: true,
           configured: isConfigured,
         };
-      } catch (parseError) {
-        logger.warn('Failed to parse OpenCode config file', {
-          error: (parseError as Error).message,
-        });
+      } catch (readOrParseError) {
+        const errCode = (readOrParseError as NodeJS.ErrnoException).code;
+        if (errCode === 'ENOENT') {
+          logger.info('OpenCode config file not found');
+        } else {
+          logger.warn('Failed to read/parse OpenCode config file', {
+            error: (readOrParseError as Error).message,
+          });
+        }
         return {
           success: true,
           configured: false,
@@ -2435,15 +2433,8 @@ export function setupAuggieIPC() {
 
       const configFile = path.join(os.homedir(), '.config', 'opencode', 'opencode.json');
 
-      if (!existsSync(configFile)) {
-        logger.info('OpenCode config file not found, nothing to uninstall');
-        return {
-          success: true,
-        };
-      }
-
       try {
-        const content = readFileSync(configFile, 'utf-8');
+        const content = await fs.readFile(configFile, 'utf-8');
         const config = JSON.parse(content);
 
         if (config.mcp && config.mcp['augment-context-engine']) {
@@ -2457,13 +2448,18 @@ export function setupAuggieIPC() {
         return {
           success: true,
         };
-      } catch (parseError) {
-        logger.warn('Failed to parse OpenCode config file during uninstall', {
-          error: (parseError as Error).message,
+      } catch (readOrParseError) {
+        const errCode = (readOrParseError as NodeJS.ErrnoException).code;
+        if (errCode === 'ENOENT') {
+          logger.info('OpenCode config file not found, nothing to uninstall');
+          return { success: true };
+        }
+        logger.warn('Failed to read/parse OpenCode config file during uninstall', {
+          error: (readOrParseError as Error).message,
         });
         return {
           success: false,
-          error: `Failed to parse OpenCode config: ${(parseError as Error).message}`,
+          error: `Failed to parse OpenCode config: ${(readOrParseError as Error).message}`,
         };
       }
     } catch (error) {
