@@ -34,7 +34,8 @@
 set -e
 
 # Configuration
-VERSION=$(node -p "require('./package.json').version")
+# Use RELEASE_VERSION env var if set, otherwise read from package.json
+VERSION=${RELEASE_VERSION:-$(node -p "require('./package.json').version")}
 CHANNEL=${1:-stable}
 
 # Validate required environment variables

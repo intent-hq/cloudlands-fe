@@ -1,4 +1,10 @@
-name: Intent - Build and Release
+# ==========================================================================
+# DEPRECATED: This workflow is superseded by intent-app-release.yml.
+# Do NOT use this workflow for new releases. It is retained for reference
+# only and will be removed in a future cleanup.
+# ==========================================================================
+
+name: "[DEPRECATED] Intent - Build and Release"
 
 on:
   workflow_dispatch:

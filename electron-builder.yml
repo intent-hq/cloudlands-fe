@@ -116,4 +116,4 @@ linux:
 
 publish:
   provider: generic
-  url: https://dmdri9nt15ow8.cloudfront.net/stable/Intent-latest-arm64.dmg
+  url: https://cdn.augmentcode.com/stable
