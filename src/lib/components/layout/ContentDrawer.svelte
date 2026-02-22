@@ -42,7 +42,7 @@
   import DateSeparator from '../chat/DateSeparator.svelte';
   import ChatMessage from '../chat/ChatMessage.svelte';
   import StreamingTypingIndicator from '../chat/StreamingTypingIndicator.svelte';
-  import { isGenericAgentName, generateRandomAgentName } from '$lib/utils/agent-name-generator';
+  import { isGenericAgentName } from '$lib/utils/agent-name-generator';
   import { sessionStore, subscribeToAgent } from '$features/agent/browser';
   import type { AgentSession } from '$shared/types';
   import { modelStore } from '$lib/stores/model.store.svelte';
@@ -928,7 +928,7 @@
       case 'file':
         return data?.fileName || 'File View';
       case 'notes':
-        return 'Notes';
+        return 'Context';
       case 'note':
         return data?.title || 'Note';
       case 'code':
@@ -1003,7 +1003,7 @@
               {#if contentType === 'agent' && !isGenericAgentName(localContent?.name)}
                 {localContent.name}
               {:else if contentType === 'agent' && localContent?.id}
-                {localContent.name || generateRandomAgentName()}
+                {localContent.name || 'Agent'}
               {:else if contentType === 'overview'}
                 Overview
               {:else}

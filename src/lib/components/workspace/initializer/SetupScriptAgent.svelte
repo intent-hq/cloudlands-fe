@@ -191,7 +191,7 @@
   <!-- Content - contained scroll that won't affect parent -->
   <div class="p-4 max-h-60 overflow-y-auto overscroll-contain">
     {#if error}
-      <div class="text-sm text-destructive bg-destructive/10 rounded-md p-3">
+      <div class="text-sm text-destructive-foreground bg-destructive/10 rounded-md p-3">
         {error}
       </div>
     {:else if contentBlocks.length > 0}

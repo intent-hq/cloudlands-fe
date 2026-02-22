@@ -153,7 +153,7 @@
         <div class="flex gap-2 mb-2">
           <Input bind:value={pair.key} placeholder="KEY" class="h-7 text-xs flex-1" />
           <Input bind:value={pair.value} placeholder="value" class="h-7 text-xs flex-1" />
-          <button type="button" onclick={() => removeEnvPair(i)} class="text-destructive p-1">
+          <button type="button" onclick={() => removeEnvPair(i)} class="text-destructive-foreground p-1">
             <Fa icon={faTrash} size="xs" />
           </button>
         </div>
@@ -178,7 +178,7 @@
         <div class="flex gap-2 mb-2">
           <Input bind:value={pair.key} placeholder="Authorization" class="h-7 text-xs flex-1" />
           <Input bind:value={pair.value} placeholder="Bearer ..." class="h-7 text-xs flex-1" />
-          <button type="button" onclick={() => removeHeaderPair(i)} class="text-destructive p-1">
+          <button type="button" onclick={() => removeHeaderPair(i)} class="text-destructive-foreground p-1">
             <Fa icon={faTrash} size="xs" />
           </button>
         </div>
@@ -187,7 +187,7 @@
   {/if}
 
   {#if error}
-    <p class="text-xs text-destructive">{error}</p>
+    <p class="text-xs text-destructive-foreground">{error}</p>
   {/if}
 
   <div class="flex justify-end gap-2 pt-2">

@@ -263,6 +263,7 @@ const ALLOWED_CHANNELS = [
   'system:workspace-root',
   'system:execute-command',
   'system:execute-command-streaming',
+  'system:check-git',
   'app:set-badge',
   'app:version',
   'app:get-version',

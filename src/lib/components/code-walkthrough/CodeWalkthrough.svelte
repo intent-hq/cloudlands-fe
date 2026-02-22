@@ -53,7 +53,7 @@
     </div>
   {:else if error}
     <!-- Error state -->
-    <div class="flex items-center gap-3 p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive">
+    <div class="flex items-center gap-3 p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive-foreground">
       <Fa icon={faExclamationTriangle} class="h-5 w-5 shrink-0" />
       <div>
         <p class="font-medium">Failed to generate walkthrough</p>

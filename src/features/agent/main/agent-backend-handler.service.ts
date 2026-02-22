@@ -10,7 +10,7 @@
  * by unified-agent-handlers.ts for IPC routing.
  */
 
-import { generateRandomAgentName, isRandomAgentName } from '$lib/utils/agent-name-generator';
+import { isRandomAgentName } from '$lib/utils/agent-name-generator';
 import {
   buildProviderEnv,
   createCompoundModelId,
@@ -533,6 +533,18 @@ export class AgentBackendHandler {
     timeoutMs: number = 10000,
     wakeMessage?: any,
   ): Promise<void> {
+    // OPTIMIZATION: Skip handshake if no windows exist for this workspace.
+    // This eliminates the 30s timeout (10s × 3 retries) for background agents
+    // and cases where all windows are closed.
+    const windowIds = getWindowIdsForWorkspace(workspaceId);
+    if (windowIds.length === 0) {
+      logger.info('Skipping frontend handler handshake - no windows for workspace', {
+        agentId,
+        workspaceId,
+      });
+      return;
+    }
+
     const backend = await this.getBackend();
 
     // ROBUSTNESS FIX: Add retry logic to handle the restart timing issue.
@@ -812,7 +824,7 @@ export class AgentBackendHandler {
 
       // Validate request
       const validation = agentValidator.validateConfig({
-        name: request.name || generateRandomAgentName(),
+        name: request.name || 'Agent',
         workspaceId: request.workspaceId,
         model: request.model,
         systemPrompt,
@@ -842,7 +854,7 @@ export class AgentBackendHandler {
       });
 
       const result = await backend.createAgent(workspace, {
-        name: request.name || generateRandomAgentName(),
+        name: request.name || 'Agent',
         model: request.model,
         systemPrompt, // Use the built system prompt
         provider:
@@ -963,7 +975,7 @@ export class AgentBackendHandler {
       this.emitAgentCreatedEvent(
         agent.id,
         request.workspaceId,
-        agent.name || request.name || generateRandomAgentName(),
+        agent.name || request.name || 'Agent',
         request.model,
       );
 
@@ -974,7 +986,7 @@ export class AgentBackendHandler {
         workspaceId: request.workspaceId,
         agent: {
           id: agent.id,
-          name: agent.name || request.name || generateRandomAgentName(),
+          name: agent.name || request.name || 'Agent',
           workspaceId: request.workspaceId,
           model: request.model,
           provider: agent.provider, // Top-level ACP provider for frontend session creation
@@ -1044,9 +1056,9 @@ export class AgentBackendHandler {
       let loadResult: any = null; // Store load result for message history
       // Track agent name for idle event. The agentName is passed through from
       // sendBackendInitiatedMessage to prevent existing agents from being renamed.
-      // generateRandomAgentName() is only a fallback for edge cases (e.g., direct calls
+      // 'Agent' is only a fallback for edge cases (e.g., direct calls
       // without agentName) — the real name will be resolved from persistence later.
-      let agentName = (request as any).agentName || generateRandomAgentName();
+      let agentName = (request as any).agentName || 'Agent';
 
       // RESILIENCE: If the provider exists but its process is dead, remove it
       // so a fresh provider is created below. This handles ACP process crashes/disconnects.
@@ -1553,7 +1565,7 @@ export class AgentBackendHandler {
           const agentSession: AgentSession = {
             id: request.agentId as AgentId,
             workspaceId: request.workspaceId as WorkspaceId,
-            name: loadResult.data.name || agentName || generateRandomAgentName(),
+            name: loadResult.data.name || agentName || 'Agent',
             status: AgentStatus.Idle,
             model: modelId, // Use already-resolved provider-aware model
             systemPrompt: loadResult.data.systemPrompt || systemPrompt,
@@ -1725,7 +1737,7 @@ export class AgentBackendHandler {
                   const agentSession: AgentSession = {
                     id: request.agentId as AgentId,
                     workspaceId: request.workspaceId as WorkspaceId,
-                    name: loadResult.data.name || agentName || generateRandomAgentName(),
+                    name: loadResult.data.name || agentName || 'Agent',
                     status: AgentStatus.Idle,
                     model: sessionModel,
                     systemPrompt: loadResult.data.systemPrompt,
@@ -3128,7 +3140,7 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
       // which causes this catch to fire AFTER onError already emitted agent:failed.
       const isRecoverableNotFound = errorMessage.includes('not found');
       if (request.workspaceId && !isRecoverableNotFound && !onErrorHandled) {
-        const failedAgentName = (request as any).agentName || generateRandomAgentName();
+        const failedAgentName = (request as any).agentName || 'Agent';
         this.emitAgentFailedEvent(
           request.agentId,
           request.workspaceId,
@@ -3307,7 +3319,7 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
       // Without this, if handleBackendStreamMessage fails (e.g., persistence load error,
       // frontend handshake failure), the parent coordinator is never notified and hangs.
       if (request.workspaceId) {
-        const agentName = request.agentName || generateRandomAgentName();
+        const agentName = request.agentName || 'Agent';
         this.emitAgentFailedEvent(request.agentId, request.workspaceId, agentName, errorMessage);
       }
 
@@ -4165,7 +4177,7 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
           this.getBackend()
             .then(async (backend) => {
               const agent = await backend.getAgent(agentId);
-              const agentName = agent?.name || generateRandomAgentName();
+              const agentName = agent?.name || 'Agent';
               this.emitAgentFailedEvent(
                 agentId,
                 workspaceId,
@@ -5061,7 +5073,7 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
         const agentSession: AgentSession = {
           id: sessionId as AgentId,
           workspaceId: workspaceId as WorkspaceId,
-          name: loadedData.name || generateRandomAgentName(),
+          name: loadedData.name || 'Agent',
           status: AgentStatus.Idle,
           model: sessionModel,
           systemPrompt: loadedData.systemPrompt,
@@ -5114,7 +5126,7 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
 
         // Tell handleBackendStreamMessage to skip adding the user message since we already included it
         // Pass the same message ID so the backend uses it for persistence
-        // CRITICAL: Pass agentName so handleSendMessage doesn't fall back to generateRandomAgentName()
+        // CRITICAL: Pass agentName so handleSendMessage doesn't fall back to 'Agent'
         return await this.handleBackendStreamMessage(null as any, {
           agentId: sessionId,
           sessionId,
@@ -5322,7 +5334,7 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
 
       // Send the message, skipping user message creation since we already sent it to frontend
       // Use the same message ID for consistency between frontend and backend
-      // CRITICAL: Pass agentName so handleSendMessage doesn't fall back to generateRandomAgentName()
+      // CRITICAL: Pass agentName so handleSendMessage doesn't fall back to 'Agent'
       return await this.handleBackendStreamMessage(null as any, {
         agentId: sessionId,
         sessionId,

@@ -9,6 +9,7 @@
   import AIBehaviorSidebar, {
     type AIBehaviorView,
   } from '$lib/components/settings/AIBehaviorSidebar.svelte';
+  import BackgroundAgentSettings from '$lib/components/settings/BackgroundAgentSettings.svelte';
   import ConnectionsSettings from '$lib/components/settings/ConnectionsSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
   import McpServersSettings from '$lib/components/settings/McpServersSettings.svelte';
@@ -36,18 +37,28 @@
   import { cn } from '$lib/utils';
 
   // Tab types
-  type SettingsTab = 'agents' | 'connections' | 'interface-system';
+  type SettingsTab = 'accounts' | 'agents' | 'setup' | 'fonts-colors' | 'general';
 
   // Valid tab IDs for validation
-  const validTabs: SettingsTab[] = ['agents', 'connections', 'interface-system'];
+  const validTabs: SettingsTab[] = ['accounts', 'agents', 'setup', 'fonts-colors', 'general'];
 
-  // Get initial tab from URL or default to Agents
+  // Legacy tab mapping for backwards compatibility with old URLs
+  const legacyTabMap: Record<string, SettingsTab> = {
+    'connections': 'accounts',
+    'interface-system': 'fonts-colors',
+  };
+
+  // Get initial tab from URL or default to Accounts
   function getInitialTab(): SettingsTab {
     const tabParam = page.url.searchParams.get('tab');
     if (tabParam && validTabs.includes(tabParam as SettingsTab)) {
       return tabParam as SettingsTab;
     }
-    return 'connections';
+    // Handle legacy tab IDs
+    if (tabParam && legacyTabMap[tabParam]) {
+      return legacyTabMap[tabParam];
+    }
+    return 'accounts';
   }
 
   // Current active tab - initialized from URL or default to Agents
@@ -66,9 +77,11 @@
 
   // Tab definitions
   const tabs: { id: SettingsTab; label: string }[] = [
-    { id: 'connections', label: 'Integrations' },
+    { id: 'accounts', label: 'Accounts' },
     { id: 'agents', label: 'Agents' },
-    { id: 'interface-system', label: 'Interface & System' },
+    { id: 'setup', label: 'Setup' },
+    { id: 'fonts-colors', label: 'Fonts & Colors' },
+    { id: 'general', label: 'General' },
   ];
 
   // Get specialist ID from URL query parameter for auto-selecting
@@ -158,9 +171,12 @@
   const hashToTab: Record<string, SettingsTab> = {
     'default-model': 'agents',
     specialists: 'agents',
-    providers: 'connections',
-    integrations: 'connections',
-    'mcp-servers': 'connections',
+    providers: 'accounts',
+    integrations: 'accounts',
+    'mcp-servers': 'accounts',
+    'git-workspace': 'setup',
+    'utility-default-model': 'setup',
+    notifications: 'setup',
   };
 
   onMount(async () => {
@@ -305,26 +321,11 @@
 
   <div class="overflow-auto h-full">
     <div class="min-h-[calc(100%-2rem)] flex flex-col max-w-5xl mx-auto mt-6 px-6 pb-8">
-      <!-- Agents Tab -->
-      {#if activeTab === 'agents'}
-        <div class="grid grid-cols-[min-content_1fr] gap-6 grow">
-          <AIBehaviorSidebar
-            activeView={aiBehaviorView}
-            onSelect={(view) => (aiBehaviorView = view)}
-          />
-          <AIBehaviorEditor
-            activeView={aiBehaviorView}
-            onSpecialistCreated={(id) => (aiBehaviorView = { type: 'specialist', id })}
-            onSpecialistDeleted={() => (aiBehaviorView = { type: 'system-prompt' })}
-            onDiscard={() => (aiBehaviorView = { type: 'system-prompt' })}
-          />
-        </div>
-      {/if}
-      <!-- Connections Tab -->
-      {#if activeTab === 'connections'}
+      <!-- Accounts Tab -->
+      {#if activeTab === 'accounts'}
         <div class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Providers
+            Model Providers
           </h2>
           <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
             <section class="px-6 py-5">
@@ -334,10 +335,10 @@
         </div>
 
         <div class={cn({ 'opacity-50 pointer-events-none': !isAuggieProvider })}>
-          <!-- Auth Connections -->
+          <!-- Connections -->
           <div id="integrations" class="mb-6 scroll-mt-20">
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              Integrations
+              Connections
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
               <section class="px-6 py-5">
@@ -356,8 +357,59 @@
         </div>
       {/if}
 
-      <!-- Interface & System Tab -->
-      {#if activeTab === 'interface-system'}
+      <!-- Agents Tab -->
+      {#if activeTab === 'agents'}
+        <div class="grid grid-cols-[min-content_1fr] gap-6 grow">
+          <AIBehaviorSidebar
+            activeView={aiBehaviorView}
+            onSelect={(view) => (aiBehaviorView = view)}
+          />
+          <AIBehaviorEditor
+            activeView={aiBehaviorView}
+            onSpecialistCreated={(id) => (aiBehaviorView = { type: 'specialist', id })}
+            onSpecialistDeleted={() => (aiBehaviorView = { type: 'system-prompt' })}
+            onDiscard={() => (aiBehaviorView = { type: 'system-prompt' })}
+          />
+        </div>
+      {/if}
+
+      <!-- Setup Tab -->
+      {#if activeTab === 'setup'}
+        <!-- Git & Workspace -->
+        <div class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            Git & Workspace
+          </h2>
+          <GitWorkspaceSettings bind:this={gitWorkspaceSettingsRef} />
+        </div>
+
+        <!-- Quick Actions (Background Agents) -->
+        <div class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            Quick Actions
+          </h2>
+          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+            <section class="px-6 py-5">
+              <BackgroundAgentSettings />
+            </section>
+          </div>
+        </div>
+
+        <!-- Notifications -->
+        <div id="notifications" class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            Notifications
+          </h2>
+          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+            <section class="px-6 py-5">
+              <NotificationSettings />
+            </section>
+          </div>
+        </div>
+      {/if}
+
+      <!-- Fonts & Colors Tab -->
+      {#if activeTab === 'fonts-colors'}
         <!-- Theme -->
         <div class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
@@ -430,27 +482,10 @@
             </section>
           </div>
         </div>
+      {/if}
 
-        <!-- Notifications -->
-        <div class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Notifications
-          </h2>
-          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-            <section class="px-6 py-5">
-              <NotificationSettings />
-            </section>
-          </div>
-        </div>
-
-        <!-- Git & Workspace -->
-        <div class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Git & Workspace
-          </h2>
-          <GitWorkspaceSettings bind:this={gitWorkspaceSettingsRef} />
-        </div>
-
+      <!-- General Tab -->
+      {#if activeTab === 'general'}
         <!-- Reset -->
         <div class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
@@ -461,7 +496,7 @@
               <div class="flex items-center justify-between">
                 <div>
                   <p class="text-sm font-medium text-foreground">
-                    Reset Interface & System Settings
+                    Reset Settings
                   </p>
                   <p class="text-xs text-muted-foreground">
                     Restore theme, notifications, git settings, and update preferences to defaults

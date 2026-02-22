@@ -649,7 +649,7 @@ import { unifiedStateStore } from '$features/agent/services/unified-state-store'
 import type { Workspace } from '$shared/types';
 import type { AgentSession } from '../../../shared/types';
 import type { WorkspaceId } from '$shared/types/branded-ids';
-import { generateRandomAgentName } from '$lib/utils/agent-name-generator';
+
 
 const agentProxiesLogger = createLogger('AgentProxies');
 
@@ -717,7 +717,7 @@ export class AgentIpcProxy {
           agent: {
             id: String(response.data.id),
             workspaceId: config.workspaceId,
-            name: config.name || generateRandomAgentName(),
+            name: config.name || 'Agent',
           },
         };
       } else {

@@ -63,8 +63,12 @@ function syncToMainProcess(workspaceId: string, autoCommitEnabled: boolean): voi
   invoke(WORKSPACE_CHANNELS.UPDATE_SETTINGS, {
     id: workspaceId,
     settings: { autoCommitEnabled },
-  }).catch(() => {
-    // Ignore IPC errors
+  }).catch((error) => {
+    console.warn('[WorkspaceSettings] Failed to sync autoCommit to main process', {
+      workspaceId,
+      autoCommitEnabled,
+      error,
+    });
   });
 
   // Persist to electron-store so the setting survives app restarts
@@ -72,8 +76,11 @@ function syncToMainProcess(workspaceId: string, autoCommitEnabled: boolean): voi
     window.electronAPI.invoke(SETTINGS_CHANNELS.SET, {
       key: 'autoCommit',
       value: autoCommitEnabled,
-    }).catch(() => {
-      // Ignore IPC errors
+    }).catch((error) => {
+      console.warn('[WorkspaceSettings] Failed to persist autoCommit to electron-store', {
+        autoCommitEnabled,
+        error,
+      });
     });
   }
 }

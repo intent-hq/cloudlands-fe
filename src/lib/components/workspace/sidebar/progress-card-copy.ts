@@ -11,12 +11,12 @@ export const progressCardCopy = {
     subtext: '',
   },
   specCreating: {
-    headline: 'Agent working on spec.',
+    headline: 'Coordinator writing spec...',
     subtext: '',
   },
   specReady: {
     headline: 'Ready to start.',
-    subtext: 'Review the plan and split into tasks.',
+    subtext: 'Spec ready for review.',
   },
   tasksReady: {
     headline: 'Tasks ready to go!',

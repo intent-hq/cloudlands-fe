@@ -848,6 +848,18 @@ class RefactoredAgentService extends EventEmitter {
           streamWorkspaceId || (session?.workspaceId ? String(session.workspaceId) : undefined),
         );
 
+        // CRITICAL FIX: Explicitly set streaming.active via setStreaming/setStreamingForWorkspace.
+        // sessionStore.addSession() calls setAgent() which PRESERVES existing streaming.active
+        // to prevent stale disk data from resetting active streams. Since the backend confirmed
+        // this agent IS actively streaming, we must explicitly set streaming.active. Without this,
+        // streaming.active stays false after HMR/page refresh, allowing the user to send a new
+        // message that bypasses the isStreaming guard and clears the in-progress streaming response.
+        if (streamWorkspaceId) {
+          sessionStore.setStreamingForWorkspace(streamWorkspaceId, agentId, true);
+        } else {
+          sessionStore.setStreaming(agentId, true);
+        }
+
         // Update the session to mark it as streaming if not already
         if (session && !session.isStreaming) {
           // CRITICAL FIX: Re-read session from store to pick up any message updates
@@ -2672,13 +2684,12 @@ class RefactoredAgentService extends EventEmitter {
 
             // Use agent factory for consistent agent creation
             const { agentFactory } = await import('./services/agent-factory');
-            const { generateRandomAgentName } = await import('$lib/utils/agent-name-generator');
 
             // Direct factory call - no intermediate layers
             const createdSession = await agentFactory.createAgent(workspace, {
               // CRITICAL: Pass the agentId if provided to avoid creating duplicate agents
               id: options.agentId,
-              name: options.name || generateRandomAgentName(),
+              name: options.name || 'Agent',
               workspaceId: WorkspaceId(workspace.id),
               model: options.model, // Let factory handle provider-aware default
               provider: options.provider, // ACP provider ID
@@ -2815,11 +2826,10 @@ class RefactoredAgentService extends EventEmitter {
 
     // Use agent factory for consistent agent creation
     const { agentFactory } = await import('./services/agent-factory');
-    const { generateRandomAgentName } = await import('$lib/utils/agent-name-generator');
 
     // Direct factory call - no intermediate layers
     const createdSession = await agentFactory.createAgent(workspace, {
-      name: options.name || generateRandomAgentName(),
+      name: options.name || 'Agent',
       workspaceId: WorkspaceId(workspace.id),
       model: options.model, // Let factory handle provider-aware default
       provider: options.provider, // ACP provider ID

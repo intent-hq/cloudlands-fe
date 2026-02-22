@@ -17,6 +17,8 @@
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { formatRelativeTime } from '$lib/utils/timeFormatting';
+  import Fa from 'svelte-fa';
+  import { faGear } from '@fortawesome/free-solid-svg-icons';
 
   interface Props {
     agents: AgentNode[];
@@ -28,8 +30,6 @@
 
   // Layout constants
   const GAPX = 12; // Gap between cards
-  const GAPY = 6; // Gap between cards
-  const MAX_CHILDREN_PER_ROW = 5; // Max agents in odd rows (even rows have N-1 for stagger)
 
   // Utility agent type groups - agents that run in the background for specific tasks
   const UTILITY_AGENT_GROUPS = [
@@ -151,6 +151,74 @@
     activeNote?: string;
   }
 
+  // ---- Batch grouping: group children created in the same delegation response ----
+  const BATCH_THRESHOLD_MS = 5000;
+  const BOX_PADDING = 10;
+  const MAX_BATCH_COLS = 4;
+  const MAX_CHILDREN_PER_ROW = 6;
+
+  interface LayoutItemSingle {
+    type: 'single';
+    child: HierarchyAgent;
+    width: number;
+  }
+
+  interface LayoutItemBatch {
+    type: 'batch';
+    children: HierarchyAgent[];
+    cols: number;
+    rows: number;
+    width: number;
+  }
+
+  type LayoutItem = LayoutItemSingle | LayoutItemBatch;
+
+  /**
+   * Group already-sorted children into layout items: single agents and batch boxes.
+   * Children created within BATCH_THRESHOLD_MS of each other are grouped into a batch.
+   * Single-child groups stay as individual items.
+   */
+  function groupChildrenIntoLayoutItems(
+    children: HierarchyAgent[],
+    cardWidth: number,
+    gap: number,
+  ): LayoutItem[] {
+    if (children.length === 0) return [];
+
+    // Children are already sorted by createdAt from the hierarchy builder
+    const groups: HierarchyAgent[][] = [];
+    let currentGroup: HierarchyAgent[] = [children[0]];
+
+    for (let i = 1; i < children.length; i++) {
+      const prevTime = new Date(children[i - 1].agent.createdAt).getTime();
+      const currTime = new Date(children[i].agent.createdAt).getTime();
+      if (currTime - prevTime <= BATCH_THRESHOLD_MS) {
+        currentGroup.push(children[i]);
+      } else {
+        groups.push(currentGroup);
+        currentGroup = [children[i]];
+      }
+    }
+    groups.push(currentGroup);
+
+    const cardStep = cardWidth + gap;
+
+    return groups.map((group) => {
+      if (group.length === 1) {
+        return { type: 'single' as const, child: group[0], width: cardWidth };
+      }
+      const cols = Math.min(Math.ceil(Math.sqrt(group.length)), MAX_BATCH_COLS);
+      const rows = Math.ceil(group.length / cols);
+      return {
+        type: 'batch' as const,
+        children: group,
+        cols,
+        rows,
+        width: cols * cardStep - gap + BOX_PADDING * 2,
+      };
+    });
+  }
+
   // Map of agentId -> agent name for displaying waiting-for info
   const agentNames = $derived.by(() => {
     const map = new Map<string, string>();
@@ -229,6 +297,14 @@
       }
     }
 
+    // Sort children by createdAt at every level
+    const sortByCreatedAt = (a: HierarchyAgent, b: HierarchyAgent) =>
+      new Date(a.agent.createdAt).getTime() - new Date(b.agent.createdAt).getTime();
+    for (const [, ha] of agentMap) {
+      ha.children.sort(sortByCreatedAt);
+    }
+    roots.sort(sortByCreatedAt);
+
     return roots;
   });
 
@@ -243,27 +319,18 @@
   {@const childCardWidth = hasChildren && node.children[0]?.agent.isBackground ? BG_CARD_SIZE : CARD_WIDTH}
   {@const curveRadius = 16}
   {@const connectorHeight = 60}
-  {@const cardStep = childCardWidth + GAPX}
 
-  <!-- Build honeycomb rows: odd rows have N agents, even rows have N-1 agents staggered -->
-  {@const childRows = hasChildren ? (() => {
-    const rows: typeof node.children[] = [];
-    let remaining = [...node.children];
-    let isOddRow = true;
-    while (remaining.length > 0) {
-      // Odd rows: up to MAX_CHILDREN_PER_ROW
-      // Even rows: up to MAX_CHILDREN_PER_ROW - 1 (staggered)
-      const rowSize = isOddRow ? MAX_CHILDREN_PER_ROW : MAX_CHILDREN_PER_ROW - 1;
-      rows.push(remaining.slice(0, rowSize));
-      remaining = remaining.slice(rowSize);
-      isOddRow = !isOddRow;
+  <!-- Group children into layout items (singles and batch boxes), then chunk into rows -->
+  {@const layoutItems = hasChildren ? groupChildrenIntoLayoutItems(node.children, childCardWidth, GAPX) : []}
+  {@const layoutRows = (() => {
+    const rows: LayoutItem[][] = [];
+    for (let i = 0; i < layoutItems.length; i += MAX_CHILDREN_PER_ROW) {
+      rows.push(layoutItems.slice(i, i + MAX_CHILDREN_PER_ROW));
     }
     return rows;
-  })() : []}
-
-  <!-- Calculate the width of the first row for parent center reference -->
-  {@const firstRowCount = childRows[0]?.length ?? 0}
-  {@const firstRowWidth = firstRowCount * cardStep - GAPX}
+  })()}
+  {@const rowWidths = layoutRows.map(row => row.reduce((sum, item) => sum + item.width, 0) + Math.max(0, row.length - 1) * GAPX)}
+  {@const maxRowWidth = Math.max(...rowWidths, 0)}
 
   <div class="agent-tree-node flex flex-col items-center">
     <!-- Agent card - use BackgroundAgentCard for background agents -->
@@ -286,86 +353,93 @@
       />
     {/if}
 
-    <!-- Children with curved connectors -->
+    <!-- Children with connectors -->
     {#if hasChildren}
       {@const parentWaitingFor = node.agent.waitingForAgentIds || []}
       {@const hasAnyWaiting = parentWaitingFor.length > 0}
-      {@const horizontalY1 = connectorHeight / 2}
-      {@const horizontalYStep = 3.5}
-      {@const staggerAmount = BG_CARD_SIZE + GAPX }
-      {@const cardHeight = isBackground ? BG_CARD_SIZE : CARD_HEIGHT}
-      <!-- Total width needed: first row width + stagger for second row -->
-      {@const totalWidth = firstRowWidth + staggerAmount}
-      <!-- Parent center is at the middle of the first row (not including stagger) -->
-      {@const parentCenterX = staggerAmount / 2 + firstRowWidth / 2}
+      {@const horizontalY = connectorHeight / 2}
 
-      <!-- Wrapper to keep SVG and children aligned -->
-      <div class="children-wrapper" style="width: {totalWidth}px;">
-        <!-- Single SVG for ALL connector lines from parent -->
-        <svg
-          class="connector-svg"
-          width={totalWidth}
-          height={connectorHeight}
-          style="overflow: visible; display: block;"
-        >
-          <!-- Vertical line from parent center down -->
-          <path
-            d="M {parentCenterX} 0 L {parentCenterX} {connectorHeight / 3}"
-            stroke={hasAnyWaiting ? 'var(--primary)' : 'currentColor'}
-            class={hasAnyWaiting ? '' : 'text-border'}
-            stroke-width={hasAnyWaiting ? 2 : 1}
-            fill="none"
-          />
+      <div class="children-wrapper flex flex-col items-center" style="width: {maxRowWidth}px;">
+        {#each layoutRows as row, rowIndex}
+          {@const rowWidth = rowWidths[rowIndex]}
+          {@const rowOffsetX = (maxRowWidth - rowWidth) / 2}
+          {@const rowItemCenters = (() => {
+            let x = 0;
+            return row.map(item => {
+              const center = x + item.width / 2;
+              x += item.width + GAPX;
+              return center;
+            });
+          })()}
 
-          <!-- Draw connectors for ALL rows from the same parent origin -->
-          {#each childRows as row, rowIndex}
-            {@const isStaggeredRow = rowIndex % 2 === 1}
-            <!-- Non-staggered rows start at staggerAmount/2, staggered rows start at staggerAmount -->
-            {@const rowStartX = isStaggeredRow ? staggerAmount : staggerAmount / 2}
-            <!-- Each row's horizontal line is 5px lower than the previous -->
-            {@const thisHorizontalY = horizontalY1 + rowIndex * horizontalYStep}
-            <!-- Y position where lines end for this row -->
-            {@const rowEndY = connectorHeight + rowIndex * (BG_CARD_SIZE + GAPY)}
+          <!-- SVG connectors for this row -->
+          <svg
+            class="connector-svg"
+            width={maxRowWidth}
+            height={connectorHeight}
+            style="overflow: visible; display: block;"
+          >
+            {#if rowIndex > 0}
+              <!-- Continuation line from previous row's cards down into this SVG -->
+              <path
+                d="M {maxRowWidth / 2} -{CARD_HEIGHT} L {maxRowWidth / 2} {connectorHeight / 3}"
+                stroke={hasAnyWaiting ? 'var(--primary)' : 'currentColor'}
+                class={hasAnyWaiting ? '' : 'text-border'}
+                stroke-width={hasAnyWaiting ? 2 : 1}
+                fill="none"
+              />
+            {:else}
+              <!-- First row: trunk line from parent down to branch point -->
+              <path
+                d="M {maxRowWidth / 2} 0 L {maxRowWidth / 2} {connectorHeight / 3}"
+                stroke={hasAnyWaiting ? 'var(--primary)' : 'currentColor'}
+                class={hasAnyWaiting ? '' : 'text-border'}
+                stroke-width={hasAnyWaiting ? 2 : 1}
+                fill="none"
+              />
+            {/if}
 
-            {#each row as child, i}
-              {@const childCenterX = rowStartX + i * cardStep + childCardWidth / 2}
-              {@const isWaitingForChild = parentWaitingFor.includes(child.agent.agentId)}
-              {@const lineStroke = isWaitingForChild ? 'var(--color-primary)' : 'currentColor'}
-              {@const lineClass = isWaitingForChild ? '' : 'text-border'}
-              {@const lineWidth = isWaitingForChild ? 2 : 1}
+            <!-- Draw connector to each layout item in this row -->
+            {#each row as item, i}
+              {@const itemCenterX = rowOffsetX + rowItemCenters[i]}
+              {@const branchX = maxRowWidth / 2}
+              {@const isWaitingForItem = item.type === 'batch'
+                ? item.children.some(c => parentWaitingFor.includes(c.agent.agentId))
+                : parentWaitingFor.includes(item.child.agent.agentId)}
+              {@const lineStroke = isWaitingForItem ? 'var(--color-primary)' : 'currentColor'}
+              {@const lineClass = isWaitingForItem ? '' : 'text-border'}
+              {@const lineWidth = isWaitingForItem ? 2 : 1}
+              {@const endY = item.type === 'batch' ? connectorHeight - BOX_PADDING : connectorHeight}
 
-              {#if Math.abs(childCenterX - parentCenterX) < 1}
-                <!-- Center child - straight line down -->
+              {#if Math.abs(itemCenterX - branchX) < 1}
                 <path
-                  d="M {parentCenterX} {connectorHeight / 3} L {parentCenterX} {rowEndY}"
+                  d="M {branchX} {connectorHeight / 3} L {branchX} {endY}"
                   stroke={lineStroke}
                   class={lineClass}
                   stroke-width={lineWidth}
                   fill="none"
                 />
-              {:else if childCenterX < parentCenterX}
-                <!-- Left child - curve left then down -->
+              {:else if itemCenterX < branchX}
                 <path
-                  d="M {parentCenterX} {connectorHeight / 3}
-                     L {parentCenterX} {thisHorizontalY - curveRadius}
-                     Q {parentCenterX} {thisHorizontalY}, {parentCenterX - curveRadius} {thisHorizontalY}
-                     L {childCenterX + curveRadius} {thisHorizontalY}
-                     Q {childCenterX} {thisHorizontalY}, {childCenterX} {thisHorizontalY + curveRadius}
-                     L {childCenterX} {rowEndY}"
+                  d="M {branchX} {connectorHeight / 3}
+                     L {branchX} {horizontalY - curveRadius}
+                     Q {branchX} {horizontalY}, {branchX - curveRadius} {horizontalY}
+                     L {itemCenterX + curveRadius} {horizontalY}
+                     Q {itemCenterX} {horizontalY}, {itemCenterX} {horizontalY + curveRadius}
+                     L {itemCenterX} {endY}"
                   stroke={lineStroke}
                   class={lineClass}
                   stroke-width={lineWidth}
                   fill="none"
                 />
               {:else}
-                <!-- Right child - curve right then down -->
                 <path
-                  d="M {parentCenterX} {connectorHeight / 3}
-                     L {parentCenterX} {thisHorizontalY - curveRadius}
-                     Q {parentCenterX} {thisHorizontalY}, {parentCenterX + curveRadius} {thisHorizontalY}
-                     L {childCenterX - curveRadius} {thisHorizontalY}
-                     Q {childCenterX} {thisHorizontalY}, {childCenterX} {thisHorizontalY + curveRadius}
-                     L {childCenterX} {rowEndY}"
+                  d="M {branchX} {connectorHeight / 3}
+                     L {branchX} {horizontalY - curveRadius}
+                     Q {branchX} {horizontalY}, {branchX + curveRadius} {horizontalY}
+                     L {itemCenterX - curveRadius} {horizontalY}
+                     Q {itemCenterX} {horizontalY}, {itemCenterX} {horizontalY + curveRadius}
+                     L {itemCenterX} {endY}"
                   stroke={lineStroke}
                   class={lineClass}
                   stroke-width={lineWidth}
@@ -373,27 +447,26 @@
                 />
               {/if}
             {/each}
-          {/each}
-        </svg>
+          </svg>
 
-        <!-- Children rows container -->
-        <div class="children-rows flex flex-col" style="gap: {GAPY}px;">
-          {#each childRows as row, rowIndex}
-            {@const isStaggeredRow = rowIndex % 2 === 1}
-            <!-- Match the SVG positioning: non-staggered at staggerAmount/2, staggered at staggerAmount -->
-            {@const rowStartX = isStaggeredRow ? staggerAmount : staggerAmount / 2}
-
-            <!-- Children row -->
-            <div
-              class="children-row flex"
-              style="gap: {GAPX}px; margin-left: {rowStartX}px;"
-            >
-              {#each row as child (child.agent.agentId)}
-                {@render agentTree(child, depth + 1)}
-              {/each}
-            </div>
-          {/each}
-        </div>
+          <!-- Children items for this row -->
+          <div class="children-items-row flex items-start justify-center" style="gap: {GAPX}px; width: {maxRowWidth}px;">
+            {#each row as item}
+              {#if item.type === 'batch'}
+                <div
+                  class="batch-group-box border border-border/50 rounded-xl"
+                  style="padding: {BOX_PADDING}px; margin-top: -{BOX_PADDING}px; display: grid; grid-template-columns: repeat({item.cols}, auto); gap: {GAPX}px;"
+                >
+                  {#each item.children as child (child.agent.agentId)}
+                    {@render agentTree(child, depth + 1)}
+                  {/each}
+                </div>
+              {:else}
+                {@render agentTree(item.child, depth + 1)}
+              {/if}
+            {/each}
+          </div>
+        {/each}
       </div>
     {/if}
   </div>
@@ -427,7 +500,7 @@
         {#if utilityAgentGroups.length > 0}
           <div class="utility-corrals flex flex-col gap-4">
             {#each utilityAgentGroups as group (group.id)}
-              <div class="utility-corral border-2 border-dashed border-border/50 rounded-lg p-3 min-w-20">
+              <div class="utility-corral border border-dashed border-border/50 rounded-lg p-3 min-w-20">
                 <div class="corral-label text-xs text-muted-foreground font-medium mb-2 text-center">
                   {group.label}
                 </div>
@@ -514,7 +587,7 @@
             <!-- Active tool -->
             {#if hoveredAgent.activeToolName}
               <div class="text-xs text-muted-foreground flex items-center gap-1">
-                <span class="animate-spin">⚙️</span>
+                <Fa icon={faGear} size="xs" class="animate-spin" />
                 <span>Using: {hoveredAgent.activeToolName}</span>
               </div>
             {/if}

@@ -49,7 +49,7 @@
 
       {#if error}
         <div
-          class="mb-4 p-3 bg-destructive/10 border border-destructive/30 rounded text-sm text-destructive"
+          class="mb-4 p-3 bg-destructive/10 border border-destructive/30 rounded text-sm text-destructive-foreground"
         >
           {error}
           {#if error.includes('authentication')}

@@ -632,9 +632,9 @@
       addItems(agents, 'Agents', '@', 'agent');
     }
 
-    // 5. Notes (separate group)
+    // 5. Context / Notes (separate group)
     if (notes.length > 0 && (!activeFilter || activeFilter === 'note')) {
-      addItems(notes, 'Notes', '#', 'note');
+      addItems(notes, 'Context', '#', 'note');
     }
 
     // 6. Changes (separate group)

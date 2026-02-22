@@ -45,7 +45,7 @@
   <!-- Delete button - only visible on hover -->
   {#if isHovered}
     <button
-      class="absolute top-2 right-2 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+      class="absolute top-2 right-2 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive-foreground transition-colors"
       onclick={handleDelete}
       onkeydown={handleKeyDown}
       aria-label="Delete choice block"

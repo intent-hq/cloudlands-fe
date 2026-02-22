@@ -886,7 +886,7 @@
                             : 'hover:bg-destructive/10'}"
                           title={locked ? LOCKED_TOOLTIP : 'Unstage this file'}
                         >
-                          <Fa icon={faMinus} size="xs" class="text-destructive" />
+                          <Fa icon={faMinus} size="xs" class="text-destructive-foreground" />
                         </button>
                         <button
                           onclick={() => handleFileClick(change)}

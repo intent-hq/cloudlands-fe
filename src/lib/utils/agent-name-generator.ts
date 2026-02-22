@@ -1,9 +1,10 @@
 /**
  * Agent Name Generator
  *
- * Generates descriptive names for agent sessions based on their initial message.
- * Uses simple text-based generation - agents can rename themselves if needed.
- * For default names, uses unique-names-generator with Adjective Animal format.
+ * Generates descriptive names for agent sessions based on their specialist role.
+ * Agents are named after their specialist (e.g., "Coordinator", "Implementor")
+ * with a numeric suffix when duplicates exist in the workspace (e.g., "Implementor 2").
+ * For agents without a specialist, uses "Agent" as the base name.
  */
 
 import { uniqueNamesGenerator, adjectives, animals } from 'unique-names-generator';
@@ -46,8 +47,8 @@ const safeAdjectives = adjectives.filter(
 
 /**
  * Generate a random agent name in "Adjective Animal" format (e.g., "Witty Penguin", "Swift Falcon").
- * Uses unique-names-generator for consistent, memorable names.
- * Filters out inappropriate adjectives to ensure professional naming.
+ * @deprecated Prefer generateSpecialistAgentName() which uses the specialist name + number.
+ * Kept for backward compatibility in deep fallback paths.
  */
 export function generateRandomAgentName(): string {
   return uniqueNamesGenerator({
@@ -59,9 +60,45 @@ export function generateRandomAgentName(): string {
 }
 
 /**
+ * Generate an agent name based on the specialist role, appending a number
+ * if there's already an agent with that name in the workspace.
+ *
+ * Examples:
+ *   - First "Coordinator" → "Coordinator"
+ *   - Second "Coordinator" → "Coordinator 2"
+ *   - Third "Coordinator" → "Coordinator 3"
+ *   - No specialist → "Agent", "Agent 2", etc.
+ *
+ * @param baseName - The specialist display name (e.g., "Coordinator", "Implementor") or "Agent" for non-specialist agents
+ * @param existingNames - Array of existing agent names in the workspace to check for conflicts
+ * @returns A unique agent name based on the specialist role
+ */
+export function generateSpecialistAgentName(baseName: string, existingNames: string[]): string {
+  const normalizedBase = baseName.trim();
+  if (!normalizedBase) {
+    return generateSpecialistAgentName('Agent', existingNames);
+  }
+
+  // Build a set of normalized existing names for efficient lookup
+  const existingSet = new Set(existingNames.map((n) => n.trim().toLowerCase()));
+
+  // If the base name isn't taken, use it as-is
+  if (!existingSet.has(normalizedBase.toLowerCase())) {
+    return normalizedBase;
+  }
+
+  // Find the next available number
+  let counter = 2;
+  while (existingSet.has(`${normalizedBase.toLowerCase()} ${counter}`)) {
+    counter++;
+  }
+  return `${normalizedBase} ${counter}`;
+}
+
+/**
  * Default name for agents without a derived name.
  * Use this constant throughout the codebase for consistency.
- * @deprecated Use generateRandomAgentName() for new agents to get unique names.
+ * @deprecated Use generateSpecialistAgentName() for new agents.
  * This constant is kept for backwards compatibility with existing code that checks for generic names.
  */
 export const DEFAULT_AGENT_NAME = 'Coordinator';
@@ -69,17 +106,15 @@ export const DEFAULT_AGENT_NAME = 'Coordinator';
 /**
  * Check if a name is a generic/default name that should be replaced.
  * Used by UI components to determine how to display agent names.
- * Note: Adjective Animal names are NOT considered generic - they are unique random names.
+ * Note: Specialist-based names (e.g., "Coordinator", "Implementor 2") are NOT generic.
  */
 export function isGenericAgentName(name: string | undefined | null): boolean {
   if (!name) return true;
   const normalized = name.trim().toLowerCase();
   return (
     normalized === 'new agent' ||
-    normalized === 'coordinator' ||
     normalized === 'orchestrator' ||
     normalized === 'assistant' ||
-    normalized.startsWith('agent ') ||
     normalized.startsWith('thread ') ||
     normalized.startsWith('workspace agent') ||
     // Match "Chat HH-MM AM/PM" pattern from legacy timestamp-based names
@@ -127,7 +162,7 @@ export function generateAgentNameFromText(
   const maxLength = options.maxLength ?? MAX_NAME_LENGTH;
 
   if (!text || text.trim().length === 0) {
-    return generateRandomAgentName();
+    return 'Agent';
   }
 
   // Clean up the text
@@ -181,5 +216,5 @@ export function generateAgentNameFromText(
     }
   }
 
-  return name || generateRandomAgentName();
+  return name || 'Agent';
 }

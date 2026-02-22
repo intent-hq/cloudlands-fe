@@ -204,6 +204,21 @@ export const commandTool: Tool = {
       };
     }
 
+    // Block git commit commands when auto-commit is disabled
+    if (workspaceId && command.trim().toLowerCase().startsWith('git commit')) {
+      const { assertAgentCommitAllowed } = await import(
+        '../../../workspace/main/workspace-settings.service'
+      );
+      const commitCheck = assertAgentCommitAllowed(workspaceId);
+      if (!commitCheck.allowed) {
+        return {
+          stdout: '',
+          stderr: commitCheck.reason,
+          exitCode: 1,
+        };
+      }
+    }
+
     if (workspaceId) {
       // Execute remotely via RPC
       try {
@@ -299,6 +314,20 @@ export const gitTool: Tool = {
           success: false,
           error: 'Using "git commit -a" is not allowed. Please stage specific files first using "git add <file>", then commit.',
         };
+      }
+
+      // Check auto-commit setting - block commits when auto-commit is disabled
+      if (params.workspaceId) {
+        const { assertAgentCommitAllowed } = await import(
+          '../../../workspace/main/workspace-settings.service'
+        );
+        const commitCheck = assertAgentCommitAllowed(params.workspaceId);
+        if (!commitCheck.allowed) {
+          return {
+            success: false,
+            error: commitCheck.reason,
+          };
+        }
       }
     }
 

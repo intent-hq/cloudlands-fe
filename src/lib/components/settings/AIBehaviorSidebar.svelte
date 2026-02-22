@@ -1,6 +1,6 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faPlus, faGear, faBolt } from '@fortawesome/free-solid-svg-icons';
+  import { faPlus, faGear } from '@fortawesome/free-solid-svg-icons';
   import { specialistsStore } from '$lib/stores/specialists.store.svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
 
@@ -57,23 +57,6 @@
       <Fa icon={faGear} class="w-3 h-3" />
     </div>
     <span class="text-sm font-medium">All agents</span>
-  </button>
-
-  <!-- Utility Agents -->
-  <button
-    type="button"
-    onclick={() => onSelect({ type: 'background-agents' })}
-    class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors cursor-pointer
-      {isSelected({ type: 'background-agents' })
-      ? 'bg-muted text-foreground'
-      : 'hover:bg-muted/50 text-foreground'}"
-  >
-    <div
-      class="w-5 h-5 rounded-md bg-primary/10 flex items-center justify-center text-primary shrink-0"
-    >
-      <Fa icon={faBolt} class="w-3 h-3" />
-    </div>
-    <span class="text-sm font-medium">Utility agents</span>
   </button>
 
   <!-- Specialists section - scrollable with max height -->

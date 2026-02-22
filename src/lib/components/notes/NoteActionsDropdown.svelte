@@ -112,7 +112,7 @@
         value: 'delete',
         label: 'Delete note',
         icon: faTrash,
-        class: 'text-destructive hover:bg-destructive/10',
+        class: 'text-destructive-foreground hover:bg-destructive/10',
         onclick: () => {
           onDelete?.();
           dropdownOpen = false;

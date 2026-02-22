@@ -463,6 +463,10 @@
   let isInitialized = $state(false);
   let isInitializing = $state(true);
 
+  // Streaming-in animation state: triggers a cascading reveal
+  // when a newly created note first loads
+  let isStreamingIn = $state(false);
+
   // CRITICAL: Destruction flag to prevent async callbacks from accessing reactive state after destruction.
   // This prevents "N is not a function" errors when Svelte's reactive system tries to call
   // nullified internal functions. This MUST be set FIRST in onDestroy, before any other cleanup.
@@ -1693,6 +1697,18 @@
           requestAnimationFrame(() => {
             isInitializing = false;
             isInitialized = true;
+
+            // Trigger streaming-in animation when a note was just created
+            if (noteId && notesStateManager.newlyCreatedNoteId === noteId) {
+              isStreamingIn = true;
+              // Clear the store flag so it doesn't re-trigger
+              notesStateManager.clearNewlyCreatedNoteId();
+              // Clear the animation flag after the animation completes
+              setTimeout(() => {
+                isStreamingIn = false;
+              }, 900);
+            }
+
             // Check for pending scroll position after editor is fully ready
             checkAndRestoreScrollPosition();
 
@@ -1891,6 +1907,7 @@
           class:opacity-0={isInitializing || isTooLargeForRichEditor}
           class:absolute={isInitializing || isTooLargeForRichEditor}
           class:invisible={isTooLargeForRichEditor}
+          class:streaming-in={isStreamingIn}
           onpaste={handleImagePaste}
           ondrop={handleDrop}
           ondragenter={handleDragEnter}
@@ -2063,6 +2080,50 @@
   :global(.comment-node.selected) {
     background-color: rgba(255, 193, 7, 0.3);
     border: 1px solid rgba(255, 193, 7, 0.5);
+  }
+
+  /* Streaming-in reveal animation for newly created notes */
+  :global(.tiptap-editor-wrapper.streaming-in) {
+    animation: note-stream-in 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *) {
+    animation: note-child-fade-up 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  /* Stagger children for a cascading reveal */
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(1)) { animation-delay: 0ms; }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(2)) { animation-delay: 40ms; }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(3)) { animation-delay: 80ms; }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(4)) { animation-delay: 120ms; }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(5)) { animation-delay: 160ms; }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(6)) { animation-delay: 200ms; }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(7)) { animation-delay: 240ms; }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(8)) { animation-delay: 280ms; }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(9)) { animation-delay: 320ms; }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(10)) { animation-delay: 360ms; }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(n+11)) { animation-delay: 400ms; }
+
+  @keyframes note-stream-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes note-child-fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+      filter: blur(2px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+      filter: blur(0);
+    }
   }
 
   /* Flash animation for task highlight when navigating from agent pill */

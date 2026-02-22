@@ -580,7 +580,7 @@
   <div class="flex flex-col gap-6 border-t border-border pt-8 min-h-[24rem]">
     {#if checkError && hasLoadedOnce}
       <div class="flex flex-col items-center gap-3 py-4">
-        <p class="text-sm text-destructive">{checkError}</p>
+        <p class="text-sm text-destructive-foreground">{checkError}</p>
         <Button size="sm" variant="outline" onclick={() => checkProviderAvailability(true)}>
           Try Again
         </Button>
@@ -683,7 +683,7 @@
           class="flex flex-col gap-2 p-3 bg-destructive/5 border border-destructive/20 rounded-lg"
           transition:slide={{ axis: 'y', duration: 200 }}
         >
-          <p class="text-xs text-destructive">{installError}</p>
+          <p class="text-xs text-destructive-foreground">{installError}</p>
           {#if installErrorType === 'permission'}
             <p class="text-xs text-muted-foreground">
               Try running with sudo or fix npm permissions.
@@ -755,7 +755,7 @@
           transition:slide={{ axis: 'y', duration: 200 }}
         >
           {#if authError}
-            <p class="text-xs text-destructive">{authError}</p>
+            <p class="text-xs text-destructive-foreground">{authError}</p>
           {/if}
           <textarea
             bind:value={authInput}

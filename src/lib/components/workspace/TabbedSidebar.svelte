@@ -8,7 +8,6 @@
   import type { Note, Workspace } from '$shared/types';
   import {
     faAlignLeft,
-    faBell,
     faCompressAlt,
     faExpandAlt,
     faFolderTree,
@@ -22,7 +21,6 @@
   import {
     FilesPanel,
     NotesPanel,
-    SidebarActivityPanel,
     SidebarChangesPanel,
     WorkspaceProgressCard,
     isSpecNote,
@@ -327,6 +325,16 @@
   const agentsLoading = $derived(agentSubscription.loading);
   const agentCount = $derived(workspaceAgents.length);
 
+  // Derive if the workspace is in team/orchestration mode
+  // (has a spec-writer agent, indicating coordinator-driven workflow)
+  const isTeamMode = $derived(
+    workspaceAgents.some(
+      (a) =>
+        a.metadata?.specialist === 'spec-writer' ||
+        (a as any).agentMetadata?.specialist === 'spec-writer',
+    ),
+  );
+
   const tabs = $derived([
     {
       id: 'agents',
@@ -335,7 +343,7 @@
       count: agentCount > 0 ? agentCount : undefined,
       iconOnly: true,
     },
-    { id: 'notes', label: 'Notes', icon: faAlignLeft, iconOnly: true },
+    { id: 'notes', label: 'Context', icon: faAlignLeft, iconOnly: true },
     {
       id: 'changes',
       label: 'Changes',
@@ -352,7 +360,6 @@
     { id: 'files', label: 'Files', icon: faFolderTree, iconOnly: true },
     // { id: 'terminals', label: 'Terminals', icon: faTerminal, iconOnly:true },
     { id: 'browser', label: 'Browser', icon: faGlobe, iconOnly: true },
-    { id: 'activity', label: 'Activity', icon: faBell, iconOnly: true },
   ]);
 
   // Active tab is derived from the transient UI store
@@ -607,11 +614,10 @@
             : ''}"
       >
         <div class={cn('pt-3 pb-3 min-h-full flex flex-col', activeTab !== 'notes' && 'hidden')}>
-          <!-- Notes panel description -->
+          <!-- Context panel description -->
           {#if !isVeryNarrow}
             <p class="text-xs text-muted-foreground/60 {isNarrow ? 'px-3' : 'px-6'} pb-3 leading-snug">
-              Notes are used for planning and communication. Every Space begins with a Spec note for
-              planning.
+              Context about the task, shared with all agents in this space.
             </p>
           {/if}
           <NotesPanel
@@ -665,8 +671,7 @@
                   ? 'opacity-0'
                   : 'opacity-100'} {isVeryNarrow ? 'hidden' : ''}"
               >
-                {workspace?.skipWorktree ? 'Working directly in' : 'Your isolated copy of the repo lives in'}
-                {#if workspacePath}
+                The agents in this space are working off a copy of your files{#if workspacePath}:
                   <FileActionsDropdown
                     filePath={workspacePath}
                     {workspaceId}
@@ -678,8 +683,7 @@
                     label={workspacePath.split(/[/\\]/).pop() || 'repo'}
                     class="inline-flex underline underline-offset-2 decoration-muted-foreground/20 text-muted-foreground/60 -ml-1 font-normal!"
                   />
-                {:else}
-                  <span class="text-muted-foreground/80">this space</span>
+                {:else}.
                 {/if}
               </p>
             </div>
@@ -765,7 +769,11 @@
           <!-- Agents panel description -->
           {#if !isVeryNarrow}
             <p class="text-xs text-muted-foreground/60 {isNarrow ? 'px-3' : 'px-6'} pb-2 leading-snug">
-              Agents working in this space.
+              {#if isTeamMode}
+                A coordinator agent writes a spec and manages the work of different agents.
+              {:else}
+                Agents working on your task in this space.
+              {/if}
             </p>
           {/if}
           <div class="{isNarrow ? 'px-1' : 'px-3'}">
@@ -784,7 +792,7 @@
           <!-- Terminals panel description -->
           {#if !isVeryNarrow}
             <p class="text-xs text-muted-foreground/60 {isNarrow ? 'px-3' : 'px-6'} pb-2 leading-snug">
-              Terminal sessions in this workspace.
+              Terminal sessions in this space.
             </p>
           {/if}
           <div class="{isNarrow ? 'px-1' : 'px-3'}">
@@ -810,23 +818,6 @@
             </p>
           {/if}
           <BrowserPanel {workspaceId} onOpenUrl={handleOpenBrowserUrl} />
-        </div>
-        <div class={cn('pt-3 pb-3 min-h-full flex flex-col', activeTab !== 'activity' && 'hidden')}>
-          <!-- Activity panel description -->
-          {#if !isVeryNarrow}
-            <p class="text-xs text-muted-foreground/60 {isNarrow ? 'px-3' : 'px-6'} pb-2 leading-snug">
-              All events in the workspace are logged here.
-            </p>
-          {/if}
-          <SidebarActivityPanel
-            {workspaceId}
-            onOpenFileChanges={(event) => {
-              const data = event.data as Record<string, unknown> | undefined;
-              const filePath = (data?.path || data?.filePath) as string | undefined;
-              if (filePath) handleOpenFileInPanel(filePath);
-            }}
-            onShowAgent={handleOpenAgentInPanel}
-          />
         </div>
       </div>
 

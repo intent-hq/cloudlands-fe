@@ -40,6 +40,8 @@ export interface AgentNode extends BaseNode {
   isThinking?: boolean;
   /** Name of the currently active tool call */
   activeToolName?: string;
+  /** Input parameters of the currently active tool call */
+  activeToolInput?: Record<string, unknown>;
   /** Last meaningful response line from the agent */
   lastResponse?: string;
   /** Agent type (e.g., 'commit-message', 'pr-description', 'code-review') */

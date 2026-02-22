@@ -2471,6 +2471,23 @@ app.on('before-quit', async (event: Electron.Event) => {
 });
 
 app.on('window-all-closed', async () => {
+  // On macOS the app stays alive after all windows are closed.
+  // Clear the saved sessions file so that clicking the dock icon opens a single
+  // fresh window instead of restoring every window the user just closed.
+  // Guard with !isShuttingDown so that an intentional quit (Cmd+Q) — which
+  // already saved sessions in before-quit — doesn't lose them.
+  if (process.platform === 'darwin' && !isShuttingDown) {
+    try {
+      const sessionsPath = getWindowSessionsPath();
+      if (fs.existsSync(sessionsPath)) {
+        fs.unlinkSync(sessionsPath);
+        logger.info('Cleared window sessions (all windows manually closed on macOS)');
+      }
+    } catch (err) {
+      logger.warn('Failed to clear sessions file on window-all-closed:', err);
+    }
+  }
+
   // Cleanup terminals gracefully - this properly cleans up PTY processes
   // to prevent Napi::Error crashes during shutdown (AUGMENT-INTENT-8)
   await cleanupTerminals();

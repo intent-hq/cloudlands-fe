@@ -209,7 +209,7 @@
 
   {#if errorMessage}
     <div
-      class="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-2 rounded-md text-sm shrink-0"
+      class="bg-destructive/10 border border-destructive/20 text-destructive-foreground px-4 py-2 rounded-md text-sm shrink-0"
     >
       {errorMessage}
     </div>
@@ -218,7 +218,7 @@
   <!-- Character limit warning/error callout -->
   {#if isOverLimit}
     <div
-      class="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-md text-destructive shrink-0"
+      class="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-md text-destructive-foreground shrink-0"
     >
       <Fa icon={faCircleExclamation} class="w-4 h-4 flex-shrink-0" />
       <span class="text-sm">

@@ -1959,6 +1959,13 @@ export class ChatService implements IDisposable {
       }
 
       // MULTI-AGENT FIX: Always update sessionStore, only update singleton state for active session
+      // CRITICAL FIX: Use setStreaming() to explicitly set streaming.active = true.
+      // addSession() calls setAgent() which PRESERVES existing streaming.active, so calling
+      // addSession({...session, isStreaming: true}) does NOT actually turn on streaming.active.
+      // After HMR/page refresh, streaming.active is initialized to false from disk data,
+      // and without this explicit setStreaming call, it stays false even though the backend
+      // is actively streaming. This allows users to bypass the isStreaming guard in sendMessage().
+      sessionStore.setStreaming(sessionId, true);
       const session = sessionStore.getSession(sessionId);
       if (session) {
         sessionStore.addSession({

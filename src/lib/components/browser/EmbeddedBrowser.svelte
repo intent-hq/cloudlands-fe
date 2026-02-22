@@ -750,7 +750,7 @@
   <!-- Error banner -->
   {#if errorMessage}
     <div
-      class="flex items-center gap-2 px-3 py-2 bg-destructive/10 text-destructive text-sm border-b border-destructive/20"
+      class="flex items-center gap-2 px-3 py-2 bg-destructive/10 text-destructive-foreground text-sm border-b border-destructive/20"
     >
       <Fa icon={faExclamationTriangle} />
       <span>{errorMessage}</span>

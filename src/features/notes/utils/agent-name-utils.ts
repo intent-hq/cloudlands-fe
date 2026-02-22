@@ -1,5 +1,4 @@
 import { PATTERNS, LIMITS } from '$shared/constants';
-import { generateRandomAgentName } from '$lib/utils/agent-name-generator';
 
 /**
  * Sanitize a string to create a valid agent name.
@@ -9,7 +8,7 @@ import { generateRandomAgentName } from '$lib/utils/agent-name-generator';
  */
 export function sanitizeAgentName(name: string): string {
   if (!name || typeof name !== 'string') {
-    return generateRandomAgentName();
+    return 'Agent';
   }
 
   // Replace invalid characters with hyphens
@@ -29,7 +28,7 @@ export function sanitizeAgentName(name: string): string {
 
   // If empty after sanitization, return default
   if (sanitized.length === 0) {
-    return generateRandomAgentName();
+    return 'Agent';
   }
 
   return sanitized;
@@ -37,11 +36,11 @@ export function sanitizeAgentName(name: string): string {
 
 /**
  * Generate an agent name from a task title.
- * Truncates to reasonable length. If no title provided, generates a random name.
+ * Truncates to reasonable length. If no title provided, returns "Agent".
  */
 export function generateAgentNameFromTask(taskTitle: string): string {
   if (!taskTitle || typeof taskTitle !== 'string') {
-    return generateRandomAgentName();
+    return 'Agent';
   }
 
   // Take first 50 chars

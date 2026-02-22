@@ -173,10 +173,24 @@ export class GitCommitTool extends BaseMCPTool {
   async execute(call: ToolCall): Promise<ToolResult> {
     try {
       const { message } = call.arguments;
+      const agentId = call.context?.agentId;
+
+      // Check auto-commit setting - this deprecated tool should respect the workspace setting
+      const { assertAgentCommitAllowed } = await import(
+        '../../../workspace/main/workspace-settings.service'
+      );
+      const commitCheck = assertAgentCommitAllowed(this.workspaceId);
+      if (!commitCheck.allowed) {
+        logger.info('git_commit rejected: auto-commit disabled for workspace', {
+          workspaceId: this.workspaceId,
+          agentId,
+        });
+        return this.error(commitCheck.reason);
+      }
+
       const { gitService } = await import('../../../git/main/git.service');
 
       // Build commit message with agent trailers if available
-      const agentId = call.context?.agentId;
       let fullMessage = message;
       if (agentId) {
         // Add Agent-Id trailer (git convention: blank line then key: value pairs)
@@ -251,22 +265,17 @@ If auto-commit is disabled for this workspace, you must set userRequested: true 
         return this.error('No agent context available. This tool must be called by an agent.');
       }
 
-      // Check auto-commit setting
-      const { isAutoCommitEnabled } = await import(
+      // Check auto-commit setting using centralized guard
+      const { assertAgentCommitAllowed } = await import(
         '../../../workspace/main/workspace-settings.service'
       );
-      const autoCommitEnabled = isAutoCommitEnabled(this.workspaceId);
-
-      // If auto-commit is OFF, require explicit userRequested flag
-      if (!autoCommitEnabled && !userRequested) {
+      const commitCheck = assertAgentCommitAllowed(this.workspaceId, { userRequested });
+      if (!commitCheck.allowed) {
         logger.info('agent_commit_changes rejected: auto-commit disabled and userRequested=false', {
           workspaceId: this.workspaceId,
           agentId,
         });
-        return this.error(
-          'Auto-commit is disabled for this workspace. ' +
-            'If the user asked you to commit, call again with userRequested: true.',
-        );
+        return this.error(commitCheck.reason);
       }
 
       // Delegate to shared commit logic

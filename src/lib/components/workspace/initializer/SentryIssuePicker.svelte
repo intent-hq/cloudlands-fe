@@ -544,7 +544,7 @@
                   />
                 </div>
                 {#if sentryAuthStore.state.error}
-                  <p class="text-xs text-destructive">{sentryAuthStore.state.error}</p>
+                  <p class="text-xs text-destructive-foreground">{sentryAuthStore.state.error}</p>
                 {/if}
                 <div class="flex items-center gap-2">
                   <button

@@ -214,7 +214,7 @@
         Loading diff...
       </div>
     {:else if error}
-      <div class="flex items-center justify-center h-full text-destructive text-sm">
+      <div class="flex items-center justify-center h-full text-destructive-foreground text-sm">
         {error}
       </div>
     {:else}

@@ -281,6 +281,14 @@ function computeGraphState(
     // Get waiting-for agent IDs from metadata if available
     const waitingForAgentIds = (session.metadata as any)?.waitingForAgentIds as string[] | undefined;
 
+    // Determine status: if getNodeStatus says idle but streaming state shows
+    // active work (tool in use, thinking, or streaming text), override to 'responding'.
+    // This catches delegated agents whose session-level flags may not be set.
+    let nodeStatus = getNodeStatus(session);
+    if (nodeStatus === 'idle' && (streamingState.activeToolName || streamingState.isThinking || streamingState.streamingText)) {
+      nodeStatus = 'responding';
+    }
+
     const agentNode: AgentNode = {
       id: `agent-${agentId}`,
       type: 'agent',
@@ -288,7 +296,7 @@ function computeGraphState(
       name: session.name || 'Agent',
       isCoordinator: agentId === coordinatorId,
       isBackground: session.isBackground || false,
-      status: getNodeStatus(session),
+      status: nodeStatus,
       specialist: (session.metadata as any)?.specialist || null,
       parentAgentId: parentId,
       createdAt: session.createdAt?.toString() || currentTime,
@@ -297,6 +305,7 @@ function computeGraphState(
       streamingText: streamingState.streamingText,
       isThinking: streamingState.isThinking,
       activeToolName: streamingState.activeToolName,
+      activeToolInput: streamingState.activeToolInput,
       lastResponse: streamingState.lastResponse,
       // Agent type for utility agent grouping
       agentType: (session.metadata as any)?.agentType || null,

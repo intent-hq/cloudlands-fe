@@ -264,7 +264,7 @@
   {#if executor.error}
     <div
       transition:fade={{ duration: 200 }}
-      class="p-2 bg-destructive/10 text-destructive rounded-md text-xs"
+      class="p-2 bg-destructive/10 text-destructive-foreground rounded-md text-xs"
     >
       <div class="flex items-center gap-1.5">
         <Fa icon={faExclamationTriangle} size="xs" />

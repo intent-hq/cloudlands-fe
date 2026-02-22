@@ -30,7 +30,7 @@
     github: 'GitHub Issues',
     sentry: 'Sentry Issues',
     browser: 'Add URL',
-    internal: 'Notes',
+    internal: 'Context',
   };
 
   function handleBackdropClick(e: MouseEvent) {

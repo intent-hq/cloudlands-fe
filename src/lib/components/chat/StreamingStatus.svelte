@@ -158,7 +158,7 @@
         </span>
       {:else if status === 'error' && error}
         <Fa icon={faExclamationTriangle} class="text-destructive/70 shrink-0" />
-        <span class="text-destructive text-sm">{statusMessage}</span>
+        <span class="text-destructive-foreground text-sm">{statusMessage}</span>
       {:else if status === 'stalled'}
         <!-- Stalled just means no chunks for 90s - agent is likely doing complex work -->
         <Fa icon={faInfoCircle} class="text-amber-500/70 shrink-0" />

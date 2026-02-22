@@ -126,7 +126,9 @@
   let hoveredWorkspaceId = $state<string | null>(null);
   let hoveredRowRect = $state<{ top: number; height: number } | null>(null);
   let hoveredWorkspace = $derived(
-    hoveredWorkspaceId ? workspaceStore.items.find((w) => w.id === hoveredWorkspaceId) ?? null : null,
+    hoveredWorkspaceId
+      ? (workspaceStore.items.find((w) => w.id === hoveredWorkspaceId) ?? null)
+      : null,
   );
 
   // Reactivity versions for subscriptions
@@ -339,7 +341,9 @@
     }
     const wsId = visibleWorkspaceIds[highlightedIndex];
     if (!wsId) return;
-    const el = scrollContainerEl.querySelector(`[data-workspace-id="${wsId}"]`) as HTMLElement | null;
+    const el = scrollContainerEl.querySelector(
+      `[data-workspace-id="${wsId}"]`,
+    ) as HTMLElement | null;
     el?.scrollIntoView({ block: 'nearest' });
 
     // Keep the compact hover card in sync with keyboard navigation
@@ -641,7 +645,11 @@
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <div
       bind:this={overlayContainerEl}
-      class="spaces-overlay absolute left-0 top-[30px] bottom-0 bg-sidebar border-r border-border overflow-hidden flex flex-col outline-none {isResizing ? '' : 'transition-[width] duration-150 ease-out'} {isCollapsedByDrag ? 'opacity-0' : 'opacity-100'}"
+      class="spaces-overlay absolute left-0 top-[30px] bottom-0 bg-sidebar border-r border-border overflow-hidden flex flex-col outline-none {isResizing
+        ? ''
+        : 'transition-[width] duration-150 ease-out'} {isCollapsedByDrag
+        ? 'opacity-0'
+        : 'opacity-100'}"
       style="width: {isCollapsedByDrag ? 0 : overlayWidth}px;"
       tabindex="0"
       role="listbox"
@@ -657,8 +665,8 @@
         >
           <span
             class="font-medium transition-[font-size] duration-150"
-            style="font-size: {isVeryNarrow ? 12 : 14}px;"
-          >All Spaces</span>
+            style="font-size: {isVeryNarrow ? 12 : 14}px;">All Spaces</span
+          >
           <div class="flex items-center">
             <Tooltip content={groupByRepo ? 'Show flat list' : 'Group by repo'} side="bottom">
               <Button
@@ -677,7 +685,13 @@
       {/if}
 
       <!-- Spaces list -->
-      <div bind:this={scrollContainerEl} class="flex-1 overflow-y-auto pb-16" style="padding-top: {isIndicatorOnly ? 2 : 8}px; padding-bottom: {isIndicatorOnly ? 2 : 64}px;">
+      <div
+        bind:this={scrollContainerEl}
+        class="flex-1 overflow-y-auto pb-16"
+        style="padding-top: {isIndicatorOnly ? 2 : 8}px; padding-bottom: {isIndicatorOnly
+          ? 2
+          : 64}px;"
+      >
         {#each groupedWorkspaces as group (group.key)}
           {@const isCollapsed = collapsedGroups.has(group.key)}
 
@@ -713,7 +727,9 @@
                 tabindex="-1"
                 title="New space for {group.label}"
                 onclick={(e) => handleNewSpaceForGroup(group, e)}
-                onkeydown={(e) => { if (e.key === 'Enter') handleNewSpaceForGroup(group, e); }}
+                onkeydown={(e) => {
+                  if (e.key === 'Enter') handleNewSpaceForGroup(group, e);
+                }}
               >
                 <Fa icon={faPlus} size="xs" />
               </span>
@@ -735,19 +751,49 @@
               {@const statusTooltip = getStatusTooltipText(workspace, workspaceStatus)}
 
               {@const isGrouped = groupByRepo && group.key !== 'all'}
-              {@const rowPl = isIndicatorOnly ? 0 : isCompact ? 4 : isGrouped
-                ? isTiny ? 12 : isNarrow ? 24 : 40
-                : isNarrow ? 8 : 16}
-              {@const rowPr = isIndicatorOnly ? 0 : isCompact ? 4 : isGrouped
-                ? isTiny ? 4 : isNarrow ? 8 : 16
-                : isNarrow ? 8 : 16}
+              {@const rowPl = isIndicatorOnly
+                ? 0
+                : isCompact
+                  ? 4
+                  : isGrouped
+                    ? isTiny
+                      ? 12
+                      : isNarrow
+                        ? 24
+                        : 40
+                    : isNarrow
+                      ? 8
+                      : 16}
+              {@const rowPr = isIndicatorOnly
+                ? 0
+                : isCompact
+                  ? 4
+                  : isGrouped
+                    ? isTiny
+                      ? 4
+                      : isNarrow
+                        ? 8
+                        : 16
+                    : isNarrow
+                      ? 8
+                      : 16}
               {@const isHighlighted = visibleWorkspaceIds[highlightedIndex] === workspace.id}
               <button
                 data-workspace-id={workspace.id}
-                class="w-full text-left cursor-pointer transition-[padding,background-color] duration-150
-                       {isIndicatorOnly ? 'flex items-center justify-center' : 'flex flex-col gap-1'}
-                       {isHighlighted ? 'bg-muted' : isActive ? 'bg-background' : 'hover:bg-muted/50'}"
-                style="padding: {isIndicatorOnly ? 3 : isVeryNarrow ? 6 : 8}px {rowPr}px {isIndicatorOnly ? 3 : isVeryNarrow ? 6 : 8}px {rowPl}px;"
+                class="w-full text-left cursor-pointer transition-[padding] duration-150
+                       {isIndicatorOnly
+                  ? 'flex items-center justify-center'
+                  : 'flex flex-col gap-1'}
+                       {isHighlighted
+                  ? 'bg-background'
+                  : isActive
+                    ? 'bg-background'
+                    : 'hover:bg-background'}"
+                style="padding: {isIndicatorOnly
+                  ? 3
+                  : isVeryNarrow
+                    ? 6
+                    : 8}px {rowPr}px {isIndicatorOnly ? 3 : isVeryNarrow ? 6 : 8}px {rowPl}px;"
                 onclick={(e) => handleSpaceClick(workspace.id, e)}
                 onmouseenter={(e) => {
                   const idx = visibleWorkspaceIds.indexOf(workspace.id);
@@ -773,15 +819,21 @@
                   <div class="relative" title={statusTooltip}>
                     <WorkspaceStatusIcon status={workspaceStatus} size={12} />
                     {#if isWorkspaceStreaming(workspace.id)}
-                      <div class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-green-500 animate-pulse"></div>
+                      <div
+                        class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-green-500 animate-pulse"
+                      ></div>
                     {:else if hasUnreadMessages(workspace.id)}
-                      <div class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-blue-500"></div>
+                      <div
+                        class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-blue-500"
+                      ></div>
                     {/if}
                   </div>
                 {:else}
                   <!-- First row: Avatar, status icon, title -->
                   <div
-                    class="flex items-center w-full transition-[gap] duration-150 {isCompact ? 'justify-center' : ''}"
+                    class="flex items-center w-full transition-[gap] duration-150 {isCompact
+                      ? 'justify-center'
+                      : ''}"
                     style="gap: {isNarrow ? 6 : 8}px;"
                   >
                     <!-- GitHub avatar or fallback (only show when not grouped and not very narrow) -->
@@ -807,9 +859,13 @@
                       <WorkspaceStatusIcon status={workspaceStatus} size={12} />
                       {#if isCompact}
                         {#if isWorkspaceStreaming(workspace.id)}
-                          <div class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-green-500 animate-pulse"></div>
+                          <div
+                            class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-green-500 animate-pulse"
+                          ></div>
                         {:else if hasUnreadMessages(workspace.id)}
-                          <div class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-blue-500"></div>
+                          <div
+                            class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-blue-500"
+                          ></div>
                         {/if}
                       {/if}
                     </div>
@@ -818,11 +874,20 @@
                     {#if !isCompact}
                       <div class="flex-1 min-w-0 flex items-center gap-1">
                         {#if showEnvironmentIcons}
-                          <span title={workspace.environmentConfig?.type === 'remote' ? 'Remote' : 'Local'} class="shrink-0">
+                          <span
+                            title={workspace.environmentConfig?.type === 'remote'
+                              ? 'Remote'
+                              : 'Local'}
+                            class="shrink-0"
+                          >
                             <Fa
-                              icon={workspace.environmentConfig?.type === 'remote' ? faServer : faLaptop}
+                              icon={workspace.environmentConfig?.type === 'remote'
+                                ? faServer
+                                : faLaptop}
                               size="xs"
-                              class={workspace.environmentConfig?.type === 'remote' ? 'text-blue-500' : 'text-muted-foreground/50'}
+                              class={workspace.environmentConfig?.type === 'remote'
+                                ? 'text-blue-500'
+                                : 'text-muted-foreground/50'}
                             />
                           </span>
                         {/if}
@@ -832,7 +897,9 @@
                             : workspace.title
                               ? 'text-foreground'
                               : 'text-muted-foreground/70'}"
-                          style="font-size: {isVeryNarrow ? 12 : 13}px; line-height: {isVeryNarrow ? 16 : 20}px;"
+                          style="font-size: {isVeryNarrow ? 12 : 13}px; line-height: {isVeryNarrow
+                            ? 16
+                            : 20}px;"
                         >
                           {workspace.title || 'Untitled'}
                         </span>
@@ -875,7 +942,6 @@
           {/if}
         {/each}
       </div>
-
     </div>
 
     <!-- Resize handle (only when sidebar is on the right) - outside overflow-hidden container -->

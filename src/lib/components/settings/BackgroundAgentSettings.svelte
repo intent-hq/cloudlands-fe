@@ -1,8 +1,8 @@
 <script lang="ts">
   /**
-   * Utility Agent Settings Component
+   * Quick Actions Settings Component
    *
-   * Allows users to configure default models for utility agents
+   * Allows users to configure default models for quick actions
    * (commit message, PR description, quick tasks) with a general default
    * and per-type overrides.
    */
@@ -56,7 +56,7 @@
 
   // Model options for override dropdowns - includes "Use default" option
   const overrideModelOptions = $derived<DropdownOption[]>([
-    { value: USE_DEFAULT_VALUE, label: 'Use default utility agent model' },
+    { value: USE_DEFAULT_VALUE, label: 'Use default quick action model' },
     ...modelStore.availableModels.map((model) => ({
       value: model.value,
       label: model.label,
@@ -65,21 +65,21 @@
 
   // Get display label for an override value
   function getOverrideLabel(value: string): string {
-    if (value === USE_DEFAULT_VALUE) return 'Use default utility agent model';
+    if (value === USE_DEFAULT_VALUE) return 'Use default quick action model';
     return modelStore.getModelLabel(value) || value;
   }
 </script>
 
 <!-- Page intro -->
 <p class="text-muted-foreground mb-6">
-  Utility agents handle common microtasks like generating commit messages, writing PR descriptions, and reviewing code changes.
+  Quick actions handle things like generating commit messages, writing PR descriptions, and reviewing code changes.
 </p>
 
 <!-- Default Model -->
 <div id="utility-default-model" class="mb-6">
-  <Header size={3} class="mb-3">Default utility agent model</Header>
+  <Header size={3} class="mb-3">Default quick action model</Header>
   <p class="text-muted-foreground mb-3">
-    Used for all utility agents unless overridden below.
+    Used for all quick actions unless overridden below.
   </p>
   <ModelPicker
     bind:selectedModel={defaultModelValue}
@@ -92,9 +92,9 @@
 
 <!-- Per-type Overrides -->
 <div>
-  <Header size={3} class="mb-3">Per-task overrides</Header>
+  <Header size={3} class="mb-3">Per-action overrides</Header>
   <p class="text-muted-foreground mb-4">
-    Override the default model for specific tasks.
+    Override the default model for specific actions.
   </p>
 
   <div class="space-y-4">

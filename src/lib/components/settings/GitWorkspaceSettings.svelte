@@ -239,7 +239,7 @@
           placeholder="feature/ or user/name/"
         />
         {#if branchPrefixError}
-          <p class="text-xs text-destructive">{branchPrefixError}</p>
+          <p class="text-xs text-destructive-foreground">{branchPrefixError}</p>
         {/if}
       </div>
     </div>

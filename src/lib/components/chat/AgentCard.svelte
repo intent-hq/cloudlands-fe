@@ -286,8 +286,11 @@
   // Extract display data
   const displayName = $derived(agentData?.name || agentName || 'Agent');
   const lastUserMsg = $derived(
-    // filter out [Currently viewing: ...] prefixes
-    agentData?.lastUserMessage?.replace(/^\[.*?\]\s*/g, '') || '',
+    // filter out [Currently viewing: ...] prefixes and @context[...] mentions (raw base64/pipe format)
+    agentData?.lastUserMessage
+      ?.replace(/^\[.*?\]\s*/g, '')
+      ?.replace(/@context\[[^\]]*\]/g, '')
+      ?.trim() || '',
   );
   // Use centralized getAvatarState for consistent state calculation
   const avatarState = $derived(

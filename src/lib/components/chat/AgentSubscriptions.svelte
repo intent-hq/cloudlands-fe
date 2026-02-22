@@ -71,6 +71,22 @@
   let mountTime: number = 0;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let lastLoadAgentId: string | null = null;
+  let discoveryStartTime: number = 0; // Track when discovery window started
+  let doubleTapTimer: ReturnType<typeof setTimeout> | null = null; // For double-tap reconciliation
+  let discoveryPermanentlyStopped: boolean = false; // Flag to prevent restart after wake event
+
+  /**
+   * Clear all pending timers (debounce, double-tap, retry, wokenUp).
+   * Extracted to avoid duplication — the same cleanup is needed on wake, cancel,
+   * stop-all, agentId change, and unmount. Missing a timer in any of these
+   * caused the original subscription-UI-reappearing bug.
+   */
+  function clearAllPendingTimers() {
+    if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
+    if (doubleTapTimer) { clearTimeout(doubleTapTimer); doubleTapTimer = null; }
+    if (retryTimeout) { clearTimeout(retryTimeout); retryTimeout = null; }
+    if (wokenUpTimeout) { clearTimeout(wokenUpTimeout); wokenUpTimeout = null; }
+  }
 
   function toggleCollapsed() {
     isCollapsed = !isCollapsed;
@@ -114,16 +130,31 @@
    * Debounced wrapper: coalesces rapid-fire event triggers into a single IPC call.
    * Multiple events (subscribed, created, idle, status-changed) can fire within ms of
    * each other — without debounce this produces 10+ redundant IPC calls.
+   *
+   * Also schedules a double-tap reconciliation fetch at +250ms to catch backend state
+   * that's still settling (Gap B mitigation).
    */
   function requestLoadSubscriptions() {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debounceTimer = null;
       loadSubscriptions();
+
+      // Schedule double-tap reconciliation: re-fetch at +250ms to catch backend settling
+      if (doubleTapTimer) clearTimeout(doubleTapTimer);
+      doubleTapTimer = setTimeout(() => {
+        doubleTapTimer = null;
+        loadSubscriptions();
+      }, 250);
     }, 150);
   }
 
   async function loadSubscriptions(retryCount = 0) {
+    // Don't load subscriptions while agent is actively streaming after wake.
+    // This prevents pending timers (debounce, double-tap, retry) from
+    // re-populating subscriptions and re-showing the "Waiting for" UI.
+    if (discoveryPermanentlyStopped) return;
+
     // Capture prop values safely - they may throw if parent component's workspace is null
     let wsId: string | undefined;
     let aId: string | undefined;
@@ -145,6 +176,22 @@
         });
 
         if (result?.success) {
+          // POST-AWAIT GUARD: State may have changed while we were waiting for the IPC response.
+          // If the agent was woken or agentId changed during the await, discard the stale response.
+          // This prevents the exact bug where a wake event fires mid-IPC and clears subscriptions,
+          // but the in-flight response then writes them back.
+          if (discoveryPermanentlyStopped) {
+            logger.debug('Discarding stale IPC response — agent woken during fetch', { agentId: aId });
+            return;
+          }
+          if (aId !== agentId) {
+            logger.debug('Discarding stale IPC response — agentId changed during fetch', {
+              fetchedFor: aId,
+              currentAgentId: agentId,
+            });
+            return;
+          }
+
           const newSubscriptions = result.data || [];
           const newDelegationGroups = result.delegationGroups || [];
           const prevCount = subscriptions.length;
@@ -215,20 +262,44 @@
   }
 
   /**
-   * Aggressive discovery polling for the first 30s after mount.
-   * This catches subscriptions regardless of IPC event timing.
-   * Runs every 3s until subscriptions are found or the window expires.
+   * Dynamic discovery polling with convergence reconciliation.
+   *
+   * Behavior:
+   * - Starts on mount (3s interval)
+   * - Stops when subscriptions are found (regular polling takes over)
+   * - Restarts when agent:created is received for a child agent (30s window)
+   * - Immediate one-time fetch when agent:idle is received for THIS agent
+   * - Stops permanently when agent starts responding to a wake event
+   * - Max lifetime: 5 minutes (prevents infinite polling for orphaned agents)
    */
   function startDiscoveryPolling() {
     if (discoveryInterval) return;
+    if (discoveryPermanentlyStopped) return; // Don't restart after wake event
+
+    discoveryStartTime = Date.now();
+    const DISCOVERY_WINDOW = 30000; // 30s window per discovery session
+    const MAX_LIFETIME = 5 * 60 * 1000; // 5 minutes max total
+
     discoveryInterval = setInterval(() => {
-      const elapsed = Date.now() - mountTime;
-      if (elapsed > 30000) {
-        // Discovery period over
-        console.warn('[AgentSubscriptions] Discovery period ended (30s), no subscriptions found', { agentId });
+      const elapsedSinceStart = Date.now() - mountTime;
+      const elapsedSinceWindowStart = Date.now() - discoveryStartTime;
+
+      // Check max lifetime (5 minutes from mount)
+      if (elapsedSinceStart > MAX_LIFETIME) {
+        console.warn('[AgentSubscriptions] Discovery max lifetime reached (5m), stopping permanently', { agentId });
+        stopDiscoveryPolling();
+        discoveryPermanentlyStopped = true;
+        return;
+      }
+
+      // Check current window (30s from window start)
+      if (elapsedSinceWindowStart > DISCOVERY_WINDOW) {
+        // Current discovery window expired
+        console.warn('[AgentSubscriptions] Discovery window ended (30s), no subscriptions found', { agentId });
         stopDiscoveryPolling();
         return;
       }
+
       // Only poll if we don't already have subscriptions (if we do, regular polling handles it)
       if (subscriptions.length === 0 && delegationGroups.length === 0) {
         requestLoadSubscriptions();
@@ -244,6 +315,29 @@
       clearInterval(discoveryInterval);
       discoveryInterval = null;
     }
+  }
+
+  /**
+   * Restart discovery polling for a new 30s window.
+   * Called when agent:created is received for a child agent.
+   */
+  function restartDiscoveryPolling() {
+    if (discoveryPermanentlyStopped) {
+      console.warn('[AgentSubscriptions] Discovery permanently stopped (wake event received), not restarting', { agentId });
+      return;
+    }
+
+    const elapsedSinceStart = Date.now() - mountTime;
+    const MAX_LIFETIME = 5 * 60 * 1000; // 5 minutes max total
+
+    if (elapsedSinceStart > MAX_LIFETIME) {
+      console.warn('[AgentSubscriptions] Max lifetime exceeded, not restarting discovery', { agentId });
+      return;
+    }
+
+    console.warn('[AgentSubscriptions] Restarting discovery polling for new 30s window', { agentId });
+    stopDiscoveryPolling();
+    startDiscoveryPolling();
   }
 
   onMount(() => {
@@ -266,32 +360,73 @@
     // Listen for agent subscription events
     // Uses extractEventData to handle both WorkspaceEvent (wrapped) and flat IPC formats
     const unsubSubscribed = listenSync('agent:subscribed', (event: any) => {
+      // Workspace-scoped filtering: skip events from other workspaces
+      const eventWorkspaceId = extractEventData<string>(event, 'workspaceId')
+        || event?.payload?.workspaceId;
+      if (eventWorkspaceId && eventWorkspaceId !== workspaceId) {
+        // Event is from a different workspace - skip it
+        return;
+      }
+
       // Reload if the event is for our agent
       // Note: We always reload when eventAgentId === agentId because new subscriptions
       // won't be in watchedAgentIds() yet (they're added after reload)
       const eventAgentId = extractEventData<string>(event, 'agentId');
       console.warn('[AgentSubscriptions] agent:subscribed event received', { eventAgentId, agentId, match: eventAgentId === agentId });
       if (eventAgentId === agentId) {
-        // This agent created a new subscription - always reload
-        requestLoadSubscriptions();
+        // This agent created a new subscription - reload unless agent was just woken
+        // (discoveryPermanentlyStopped means agent is actively streaming after wake,
+        // so we skip loading to prevent the subscription UI from re-appearing mid-turn)
+        if (!discoveryPermanentlyStopped) {
+          requestLoadSubscriptions();
+        } else {
+          console.warn('[AgentSubscriptions] Skipping subscription load - agent is streaming after wake', { agentId });
+        }
       } else if (watchedAgentIds.includes(eventAgentId)) {
         requestLoadSubscriptions();
       }
     });
 
     const unsubUnsubscribed = listenSync('agent:unsubscribed', (event: any) => {
+      // Workspace-scoped filtering: skip events from other workspaces
+      const eventWorkspaceId = extractEventData<string>(event, 'workspaceId')
+        || event?.payload?.workspaceId;
+      if (eventWorkspaceId && eventWorkspaceId !== workspaceId) {
+        // Event is from a different workspace - skip it
+        return;
+      }
+
       const eventAgentId = extractEventData<string>(event, 'agentId');
-      if (eventAgentId === agentId || watchedAgentIds.includes(eventAgentId)) {
+      if (eventAgentId === agentId) {
+        if (!discoveryPermanentlyStopped) {
+          requestLoadSubscriptions();
+        }
+      } else if (watchedAgentIds.includes(eventAgentId)) {
         requestLoadSubscriptions();
       }
     });
 
     // Listen for agent:idle events (when agents go idle/waiting)
     const unsubIdle = listenSync('agent:idle', (event: any) => {
+      // Workspace-scoped filtering: skip events from other workspaces
+      const eventWorkspaceId = extractEventData<string>(event, 'workspaceId')
+        || event?.payload?.workspaceId;
+      if (eventWorkspaceId && eventWorkspaceId !== workspaceId) {
+        // Event is from a different workspace - skip it
+        return;
+      }
+
       const eventAgentId = extractEventData<string>(event, 'agentId');
       if (eventAgentId === agentId) {
         // THIS agent went idle — it may have just finished setting up delegations.
-        requestLoadSubscriptions();
+        // Reset discoveryPermanentlyStopped so new delegation rounds show correctly
+        if (discoveryPermanentlyStopped) {
+          console.warn('[AgentSubscriptions] Agent went idle, resetting discoveryPermanentlyStopped', { agentId });
+          discoveryPermanentlyStopped = false;
+        }
+        // Do immediate one-time fetch (not debounced) to catch fresh state
+        console.warn('[AgentSubscriptions] THIS agent went idle, doing immediate fetch', { agentId });
+        loadSubscriptions();
       } else if (watchedAgentIds.includes(eventAgentId)) {
         requestLoadSubscriptions();
       }
@@ -299,10 +434,21 @@
 
     // Listen for agent:status-changed events (when agents change status: idle -> responding, etc.)
     const unsubStatusChanged = listenSync('agent:status-changed', (event: any) => {
+      // Workspace-scoped filtering: skip events from other workspaces
+      const eventWorkspaceId = extractEventData<string>(event, 'workspaceId')
+        || event?.payload?.workspaceId;
+      if (eventWorkspaceId && eventWorkspaceId !== workspaceId) {
+        // Event is from a different workspace - skip it
+        return;
+      }
+
       const eventAgentId = extractEventData<string>(event, 'agentId');
       const status = extractEventData<string>(event, 'status');
       if (eventAgentId === agentId && status === 'idle') {
-        // THIS agent became idle — check for subscriptions (same rationale as agent:idle above)
+        // THIS agent became idle — reset discoveryPermanentlyStopped and check for subscriptions
+        if (discoveryPermanentlyStopped) {
+          discoveryPermanentlyStopped = false;
+        }
         requestLoadSubscriptions();
       } else if (watchedAgentIds.includes(eventAgentId)) {
         requestLoadSubscriptions();
@@ -311,6 +457,14 @@
 
     // Listen for agent:created events (when new delegated agents are created)
     const unsubCreated = listenSync('agent:created', (event: any) => {
+      // Workspace-scoped filtering: skip events from other workspaces
+      const eventWorkspaceId = extractEventData<string>(event, 'workspaceId')
+        || event?.payload?.workspaceId;
+      if (eventWorkspaceId && eventWorkspaceId !== workspaceId) {
+        // Event is from a different workspace - skip it
+        return;
+      }
+
       // Check if this created agent is a child of this agent (delegated by this agent)
       // The event from setupEventForwarding includes agent.metadata.parentAgentId
       const payload = event?.payload ?? event;
@@ -318,8 +472,12 @@
         payload?.agent?.metadata?.parentAgentId ||
         payload?.data?.parentAgentId;
 
-      if (parentAgentId === agentId) {
-        // This is a direct child - always reload to pick up the new delegation
+      if (parentAgentId === agentId && !discoveryPermanentlyStopped) {
+        // This is a direct child - restart discovery polling for a new 30s window
+        // to catch subscriptions that may be set up by the child agent
+        // Skip if discoveryPermanentlyStopped (agent is streaming after wake)
+        console.warn('[AgentSubscriptions] Child agent created, restarting discovery polling', { agentId, childAgentId: payload?.agent?.id });
+        restartDiscoveryPolling();
         requestLoadSubscriptions();
       } else if (subscriptions.length > 0 || delegationGroups.length > 0) {
         // Already have subscriptions - reload to update state
@@ -336,6 +494,14 @@
 
     // Listen for agent:woken-by-subscription events to show a brief indicator
     const unsubWoken = listenSync('agent:woken-by-subscription', (event: any) => {
+      // Workspace-scoped filtering: skip events from other workspaces
+      const eventWorkspaceId = extractEventData<string>(event, 'workspaceId')
+        || event?.payload?.workspaceId;
+      if (eventWorkspaceId && eventWorkspaceId !== workspaceId) {
+        // Event is from a different workspace - skip it
+        return;
+      }
+
       const eventAgentId = extractEventData<string>(event, 'agentId');
       console.warn('[AgentSubscriptions] agent:woken-by-subscription event received', {
         eventAgentId,
@@ -343,6 +509,18 @@
         match: eventAgentId === agentId,
       });
       if (eventAgentId === agentId) {
+        // Agent is responding to a wake event - stop discovery permanently
+        // and clear subscription UI since the agent is now actively streaming
+        console.warn('[AgentSubscriptions] Agent woken by subscription, stopping discovery permanently', { agentId });
+        discoveryPermanentlyStopped = true;
+        stopDiscoveryPolling();
+        stopPolling();
+        clearAllPendingTimers();
+        // Clear subscriptions so the "Waiting for" UI doesn't reappear
+        // after the woken-up indicator times out
+        subscriptions = [];
+        delegationGroups = [];
+
         const eventData = extractEventData(event) || {};
         logger.info('Showing woken up indicator', { eventData });
         // Show the woken up indicator
@@ -351,11 +529,7 @@
           eventTypes: eventData.eventTypes || [],
           timestamp: Date.now(),
         };
-        // Clear any existing timeout
-        if (wokenUpTimeout) {
-          clearTimeout(wokenUpTimeout);
-        }
-        // Auto-hide after 4 seconds
+        // Auto-hide after 4 seconds (clearAllPendingTimers already cleared any old wokenUpTimeout)
         wokenUpTimeout = setTimeout(() => {
           wokenUpInfo = null;
         }, 4000);
@@ -364,6 +538,72 @@
           eventAgentId,
           agentId,
         });
+      }
+    });
+
+    // Listen for agent:event-delivery-failed events to retract the woken-up banner
+    const unsubDeliveryFailed = listenSync('agent:event-delivery-failed', (event: any) => {
+      // Workspace-scoped filtering: skip events from other workspaces
+      const eventWorkspaceId = extractEventData<string>(event, 'workspaceId')
+        || event?.payload?.workspaceId;
+      if (eventWorkspaceId && eventWorkspaceId !== workspaceId) {
+        // Event is from a different workspace - skip it
+        return;
+      }
+
+      const targetAgentId = extractEventData<string>(event, 'targetAgentId');
+      console.warn('[AgentSubscriptions] agent:event-delivery-failed event received', {
+        targetAgentId,
+        agentId,
+        match: targetAgentId === agentId,
+      });
+      if (targetAgentId === agentId) {
+        // Delivery failed for this agent - retract the woken-up banner
+        // and reset discoveryPermanentlyStopped since the agent is NOT streaming
+        // (delivery failed means it never woke up properly)
+        logger.info('Retracting woken-up banner due to delivery failure', { targetAgentId });
+        wokenUpInfo = null;
+        // Clear any pending timeout
+        if (wokenUpTimeout) {
+          clearTimeout(wokenUpTimeout);
+          wokenUpTimeout = null;
+        }
+        // Reset the streaming-after-wake guard so subscriptions can reload
+        if (discoveryPermanentlyStopped) {
+          console.warn('[AgentSubscriptions] Delivery failed, resetting discoveryPermanentlyStopped', { agentId });
+          discoveryPermanentlyStopped = false;
+        }
+        // Reload subscriptions - agent is still waiting, subscriptions may still be active
+        loadSubscriptions();
+      }
+    });
+
+    // Listen for agent:subscriptions-restored events (batch restoration on startup)
+    const unsubSubscriptionsRestored = listenSync('agent:subscriptions-restored', (event: any) => {
+      // Workspace-scoped filtering: skip events from other workspaces
+      const eventWorkspaceId = extractEventData<string>(event, 'workspaceId')
+        || event?.payload?.workspaceId;
+      if (eventWorkspaceId && eventWorkspaceId !== workspaceId) {
+        // Event is from a different workspace - skip it
+        return;
+      }
+
+      const eventData = extractEventData(event) || {};
+      const restoredAgentIds = eventData.agentIds || [];
+      console.warn('[AgentSubscriptions] agent:subscriptions-restored event received', {
+        count: eventData.count,
+        restoredAgentIds,
+        agentId,
+        isRelevant: restoredAgentIds.includes(agentId),
+      });
+
+      // Reload subscriptions if this agent or any watched agents had subscriptions restored
+      // Skip if agent is streaming after wake (discoveryPermanentlyStopped)
+      if (discoveryPermanentlyStopped && restoredAgentIds.includes(agentId)) {
+        return;
+      }
+      if (restoredAgentIds.includes(agentId) || restoredAgentIds.some((id: string) => watchedAgentIds.includes(id))) {
+        requestLoadSubscriptions();
       }
     });
 
@@ -378,22 +618,11 @@
       unsubStatusChanged();
       unsubCreated();
       unsubWoken();
+      unsubDeliveryFailed();
+      unsubSubscriptionsRestored();
       stopPolling();
       stopDiscoveryPolling();
-      // Clean up retry timeout
-      if (retryTimeout) {
-        clearTimeout(retryTimeout);
-        retryTimeout = null;
-      }
-      // Clean up debounce timer
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-        debounceTimer = null;
-      }
-      // Clean up woken up timeout
-      if (wokenUpTimeout) {
-        clearTimeout(wokenUpTimeout);
-      }
+      clearAllPendingTimers();
     };
   });
 
@@ -405,18 +634,12 @@
       subscriptions = [];
       delegationGroups = [];
       wokenUpInfo = null;
-      // Cancel any pending debounce from the old agent's events
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-        debounceTimer = null;
-      }
       // Stop all old timers and restart for the new agent
       stopPolling();
       stopDiscoveryPolling();
-      if (retryTimeout) {
-        clearTimeout(retryTimeout);
-        retryTimeout = null;
-      }
+      clearAllPendingTimers();
+      // Reset discovery flag for new agent
+      discoveryPermanentlyStopped = false;
       mountTime = Date.now();
       startDiscoveryPolling();
       loadSubscriptions();
@@ -461,14 +684,7 @@
         delegationGroups = [];
         stopPolling();
         stopDiscoveryPolling();
-        if (retryTimeout) {
-          clearTimeout(retryTimeout);
-          retryTimeout = null;
-        }
-        if (debounceTimer) {
-          clearTimeout(debounceTimer);
-          debounceTimer = null;
-        }
+        clearAllPendingTimers();
       }
     } catch (error) {
       logger.error('Failed to cancel subscriptions', { error });
@@ -494,14 +710,7 @@
       delegationGroups = [];
       stopPolling();
       stopDiscoveryPolling();
-      if (retryTimeout) {
-        clearTimeout(retryTimeout);
-        retryTimeout = null;
-      }
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-        debounceTimer = null;
-      }
+      clearAllPendingTimers();
 
       // Stop the parent agent to prevent it from responding to any in-flight wake-up events
       await agentService.stopSession(agentId);

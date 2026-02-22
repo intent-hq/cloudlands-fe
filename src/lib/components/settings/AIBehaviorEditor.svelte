@@ -169,12 +169,20 @@
 
   function deleteSpecialist() {
     if (!currentSpecialist) return;
+    // Capture values before deletion since currentSpecialist is a $derived
+    // that will become null once the specialist is removed from the store
     const specialistId = currentSpecialist.id;
-    specialistsStore.deleteCustomSpecialist(specialistId);
+    const specialistName = currentSpecialist.name;
+    const wasFileBased = isFileBased;
+    if (wasFileBased) {
+      specialistsStore.deleteFileSpecialist(specialistId);
+    } else {
+      specialistsStore.deleteCustomSpecialist(specialistId);
+    }
     onSpecialistDeleted?.();
     track('Deleted Specialist', {
       specialist_id: specialistId,
-      specialist_name: currentSpecialist.name,
+      specialist_name: specialistName,
     });
   }
 

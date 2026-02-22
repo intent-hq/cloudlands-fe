@@ -8,19 +8,19 @@ import type { AgentId } from '$shared/types/branded-ids';
 
 import type { AgentConfig, StreamConfig, PersistenceConfig, AppConfig } from './types';
 import { TIMEOUTS, LIMITS, DEFAULTS as CONST_DEFAULTS } from '../constants';
-import { generateRandomAgentName } from '../../lib/utils/agent-name-generator';
+
 
 // ============================================================================
 // Default Agent Configuration
 // ============================================================================
 
 /**
- * Get default agent configuration with a unique random name.
+ * Get default agent configuration.
  * Use this function instead of DEFAULT_AGENT_CONFIG for new agents.
  */
 export function getDefaultAgentConfig(): AgentConfig {
   return {
-    name: generateRandomAgentName(),
+    name: 'Agent',
     model: CONST_DEFAULTS.AGENT_MODEL,
     temperature: CONST_DEFAULTS.TEMPERATURE,
     maxTokens: CONST_DEFAULTS.MAX_TOKENS,

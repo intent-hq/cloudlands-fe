@@ -78,7 +78,7 @@ const SUBSECTION_CRITERIA: Record<string, SubsectionCriterion> = {
   // Note: For now, all content nav rail subsections map to navigationRailRevealed
   // In the future, we may want more granular state tracking
   notes: {
-    name: 'Notes',
+    name: 'Context',
     parentRail: 'contentNavRail',
     showEvent: 'panelVisibility:showNotes',
     showParentEvent: 'panelVisibility:showNavigationRail',

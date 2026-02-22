@@ -983,6 +983,24 @@ export class McpBridge extends EventEmitter {
   }
 
   private async handleGitCommit(params: any, context: BridgeCallContext): Promise<BridgeResponse> {
+    // Check auto-commit setting using centralized guard
+    const { assertAgentCommitAllowed } = await import(
+      '../../../workspace/main/workspace-settings.service'
+    );
+    const workspaceId = params.workspaceId || context.workspaceId;
+    if (workspaceId) {
+      const commitCheck = assertAgentCommitAllowed(workspaceId);
+      if (!commitCheck.allowed) {
+        return {
+          success: false,
+          error: {
+            code: 'AUTO_COMMIT_DISABLED',
+            message: commitCheck.reason,
+          },
+        };
+      }
+    }
+
     const result = await this.gitService.commit(
       params.workspaceId,
       params.message,

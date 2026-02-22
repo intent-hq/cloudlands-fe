@@ -64,7 +64,7 @@
     /** Callback when branch status changes (behind count and unstaged changes) */
     onBranchStatusChange?: (status: BranchStatus) => void;
     onchange?: (event: CustomEvent<{ branch: string }>) => void;
-    /** Whether to show the uncommitted changes indicator (default: true) */
+    /** Whether to show the uncommitted changes indicator (default: false) */
     showUncommittedIndicator?: boolean;
   }
 
@@ -325,6 +325,7 @@
         hasAttemptedRemoteFetch = false; // Reset so we can fetch for new repo
         githubAuthNeeded = 'none'; // Reset auth state for new repo
         error = null;
+        resetBranchStatus(); // Reset stale branch status from previous repo
 
         // Use debounced fetch to prevent rapid repeated calls
         debouncedFetchBranches();
@@ -1055,6 +1056,9 @@
     prevIsOpen = isOpen;
   });
 
+  // Track previous open state for detecting open transitions in the regular effect
+  let prevIsOpenForEffect = false;
+
   // Regular effect runs after render - clear skeleton and focus input
   $effect(() => {
     if (isDropdownMounting) {
@@ -1067,6 +1071,9 @@
     }
 
     if (isOpen) {
+      // Detect open transition to avoid re-running on every dependency change
+      const justOpened = !prevIsOpenForEffect;
+
       // Focus input
       requestAnimationFrame(() => {
         if (searchInputElement) {
@@ -1074,6 +1081,13 @@
           searchInputElement.select();
         }
       });
+
+      if (justOpened) {
+        // Refresh branch status when dropdown opens to clear stale indicators
+        if (selectedBranch && repoType === 'local') {
+          fetchBranchStatus(selectedBranch);
+        }
+      }
 
       // Background prefetch remote branches when dropdown opens (for local repos)
       // This way they're already loaded or loading when user clicks to expand
@@ -1096,6 +1110,7 @@
         }, 100);
       }
     }
+    prevIsOpenForEffect = isOpen;
   });
 
   // Auto-expand collapsed sections when searching and there are matches
@@ -1392,14 +1407,14 @@
           {:else if githubAuthNeeded === 'no-access'}
             <!-- User is authenticated but doesn't have access -->
             <div class="px-2 py-2 border-l-2 border-destructive bg-destructive/10">
-              <div class="text-sm text-destructive">You don't have access to this repository.</div>
+              <div class="text-sm text-destructive-foreground">You don't have access to this repository.</div>
               <div class="text-sm text-muted-foreground mt-1">
                 Make sure you have permission to view this repo, or check if the URL is correct.
               </div>
             </div>
           {:else if error}
             <div class="px-2 py-2 border-l-2 border-destructive bg-destructive/10">
-              <div class="text-sm text-destructive">{error}</div>
+              <div class="text-sm text-destructive-foreground">{error}</div>
               {#if repoType === 'github'}
                 <div class="text-sm text-muted-foreground mt-1">
                   You can still type a branch name manually above.

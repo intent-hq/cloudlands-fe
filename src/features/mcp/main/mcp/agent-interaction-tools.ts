@@ -21,7 +21,7 @@
  *   subscribeCallerToAgentCompletion(workspaceId, callerId, callerName, targetAgentId)
  *
  * This ensures:
- * 1. Callers are woken when target agents complete (agent:idle, agent:completed)
+ * 1. Callers are woken when target agents complete (agent:idle)
  * 2. Subscriptions are cleaned up if target fails or is deleted (agent:failed, agent:deleted)
  * 3. Subscriptions auto-unsubscribe after first delivery (oneShot: true)
  * 4. High priority delivery when caller becomes idle
@@ -211,13 +211,11 @@ function getRequiredContext(call: ToolCall): {
  * The standard event types for agent completion subscriptions.
  * Includes all lifecycle events to ensure proper cleanup:
  * - agent:idle - Agent finished processing and is waiting
- * - agent:completed - Agent marked task as complete
  * - agent:failed - Agent encountered an error
  * - agent:deleted - Agent was deleted (cleanup subscription)
  */
 const AGENT_COMPLETION_EVENT_TYPES = [
   'agent:idle',
-  'agent:completed',
   'agent:failed',
   'agent:deleted',
 ] as const;
@@ -291,6 +289,23 @@ To commit manually before finishing (e.g., user asks for a checkpoint):
 };
 
 /**
+ * Instructions injected when auto-commit is DISABLED.
+ * Tells agents NOT to auto-commit, but explains how to commit if the user asks.
+ */
+const NO_AUTO_COMMIT_INSTRUCTIONS = {
+  coordinator: `
+## Committing Changes
+Auto-commit is disabled. Implementer agents will NOT automatically commit their changes.
+If the user asks you to commit, use \`agent_commit_changes\` with \`userRequested: true\`.`,
+
+  implementor: `
+## Committing Changes
+Auto-commit is disabled. Your changes will NOT be committed automatically.
+Do not commit unless the user explicitly asks you to.
+If the user asks you to commit, use \`agent_commit_changes\` with \`userRequested: true\`.`,
+};
+
+/**
  * Helper to resolve specialist configuration
  * Returns model and behaviorPrompt based on specialist ID, with optional overrides
  *
@@ -361,14 +376,15 @@ function resolveSpecialistConfig(
       };
     }
 
-    // MCP-specific: Build the behavior prompt with optional auto-commit instructions
+    // MCP-specific: Build the behavior prompt with auto-commit instructions
+    // Always inject commit instructions — either auto-commit or no-auto-commit guidance
     let behaviorPrompt = behaviorPromptOverride || resolved.behaviorPrompt;
-    if (behaviorPrompt && autoCommitEnabled) {
-      // Inject auto-commit instructions based on specialist type
+    if (behaviorPrompt) {
+      const instructions = autoCommitEnabled ? AUTO_COMMIT_INSTRUCTIONS : NO_AUTO_COMMIT_INSTRUCTIONS;
       if (effectiveSpecialistId === 'spec-writer') {
-        behaviorPrompt += AUTO_COMMIT_INSTRUCTIONS.coordinator;
+        behaviorPrompt += instructions.coordinator;
       } else if (effectiveSpecialistId === 'implementor') {
-        behaviorPrompt += AUTO_COMMIT_INSTRUCTIONS.implementor;
+        behaviorPrompt += instructions.implementor;
       }
     }
 
@@ -623,6 +639,7 @@ This allows you to create multiple agents in parallel and be notified as each fi
           taskNoteId: linkedNoteId,
           ...(config.effectiveSpecialistId && { specialist: config.effectiveSpecialistId }),
           isBackground: isBackground !== false, // Default to true for delegated agents
+          ...(!autoCommitEnabled && { skipAutoCommit: true }),
         },
         onBeforeStart: async (agentId: string) => {
           subscriptionId = await subscribeCallerToAgentCompletion(
@@ -1173,7 +1190,7 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
 
       // Build enhanced initial message that tells the agent about their linked note
       const commitInstruction = skipAutoCommit
-        ? '\n\n**DO NOT COMMIT:** Leave your changes uncommitted for review.'
+        ? '\n\n**Auto-commit is OFF.** Do not commit unless the user explicitly asks. If asked, use `agent_commit_changes` with `userRequested: true`.'
         : '';
       const enhancedInitialMessage = `${
         initialMessage
@@ -1354,7 +1371,7 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
 
     // Build enhanced initial message that tells the agent about their linked note
     const commitInstruction = skipAutoCommit
-      ? '\n\n**DO NOT COMMIT:** Leave your changes uncommitted for review.'
+      ? '\n\n**Auto-commit is OFF.** Do not commit unless the user explicitly asks. If asked, use `agent_commit_changes` with `userRequested: true`.'
       : '';
     const enhancedInitialMessage = `${
       initialMessage
@@ -2118,10 +2135,16 @@ an agent is working on the task.`,
         }
       }
 
+      // Check workspace auto-commit setting
+      const { isAutoCommitEnabled } =
+        await import('../../../workspace/main/workspace-settings.service');
+      const autoCommitEnabled = isAutoCommitEnabled(this.workspaceId);
+
       logger.info('Wake or create task agent', {
         taskNoteId,
         callerAgentId: ctx.agentId,
         workspaceId: this.workspaceId,
+        autoCommitEnabled,
       });
 
       // Get the task note to find assigned agents
@@ -2333,6 +2356,7 @@ an agent is working on the task.`,
           taskNoteId,
           isBackground: true, // Task agents run in background
           source: 'wake_or_create_task_agent',
+          ...(!autoCommitEnabled && { skipAutoCommit: true }),
         },
         onBeforeStart: async (agentId: string) => {
           subscriptionId = await subscribeCallerToAgentCompletion(

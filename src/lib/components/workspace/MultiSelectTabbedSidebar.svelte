@@ -6,9 +6,7 @@
   import { noteReadTrackingStore } from '$lib/stores/note-read-tracking.store.svelte';
   import { cn } from '$lib/utils';
   import type { Note, Workspace } from '$shared/types';
-  import type { WorkspaceEvent } from '$features/events/types';
   import {
-    faBell,
     faCompressAlt,
     faExpandAlt,
     faFolderTree,
@@ -21,7 +19,6 @@
   import Fa from 'svelte-fa';
   import {
     FilesPanel,
-    SidebarActivityPanel,
     SidebarChangesPanel,
     WorkspaceProgressCard,
     isSpecNote,
@@ -124,32 +121,25 @@
       id: 'agents',
       label: 'Agents',
       icon: faRobot,
-      description: 'Agents write code, maintain notes, and coordinate tasks.',
+      description: 'Agents working on your task in this space.',
     },
     {
       id: 'context',
       label: 'Context',
       icon: faNote,
-      description: 'Context about the task, shared with all agents on demand.',
+      description: 'Context about the task, shared with all agents in this space.',
     },
     {
       id: 'changes',
       label: 'Changes',
       icon: faPencil,
-      description: 'View and accept file changes.',
+      description: 'Changes made to files by agents working in this space.',
     },
     {
       id: 'files',
       label: 'Files',
       icon: faFolderTree,
-      description: 'All files in the codebase.',
-    },
-    {
-      id: 'activity',
-      label: 'Activity',
-      icon: faBell,
-      description: 'See all events in the space.',
-      hideLabel: true,
+      description: 'The agents in this space are working off a copy of your files.',
     },
   ];
 
@@ -486,20 +476,6 @@
     });
   }
 
-  function handleOpenActivityChangesInPanel(event: WorkspaceEvent) {
-    const data = event.data as Record<string, unknown> | undefined;
-    const filePath = (data?.path || data?.filePath || '') as string;
-    const fileName = filePath.split('/').pop() || 'Changes';
-    panelLayoutManager.openTab({
-      type: 'activity-changes',
-      title: fileName,
-      closable: true,
-      workspaceId,
-      filePath, // Used for tab reuse - matching by file path
-      data: { event },
-    });
-  }
-
   // Working changes for badges
   const workingChanges = $derived(
     storeHasCorrectWorkspace
@@ -575,7 +551,7 @@
       files: 'files',
       terminals: 'agents', // terminals don't have their own tab, fall back to agents
       changes: 'changes',
-      browser: 'activity',
+      browser: 'agents',
     };
     return mapping[registryTabId] ?? null;
   }
@@ -709,7 +685,6 @@
       >
         {#each orderedTabDefinitions as tab, tabIndex (tab.id)}
           {@const isSelected = isTabSelected(tab.id)}
-          {@const isActivity = tab.id === 'activity'}
           {@const isDragging = draggedTabId === tab.id}
           {@const showDropBefore =
             dropIndicator?.tabId === tab.id && dropIndicator?.position === 'before'}
@@ -732,7 +707,7 @@
             iconClass="text-muted-foreground/50 order-2 ml-auto size-3"
             contentClass="shadow-xs mx-2 max-w-[calc(100vw-2rem)] rounded-none px-1.25"
             footerClass="border-t-0 bg-transparent! !pt-1 !px-3 rounded-none"
-            class={isActivity ? 'shrink-0' : 'flex-1 shrink-0'}
+            class="flex-1 shrink-0"
           >
             {#snippet footer()}
               <div class="flex items-center gap-1.5 text-xs -ml-1 -mt-1 text-muted-foreground/70">
@@ -745,12 +720,12 @@
               class={cn(
                 'relative flex items-center justify-center gap-1.5 py-1.5 rounded-mdx text-xs font-medium transition-all duration-150 cursor-pointer focus:ring-0 active:ring-0',
                 'focus-visible:outline-none focus-visible:ring-0',
-                tab.hideLabel ? 'px-1.5' : 'px-2',
+                'px-2',
                 isSelected
                   ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground hover:bg-background/50',
                 isDragging && 'opacity-50 cursor-grabbing',
-                !isActivity && 'w-full',
+                'w-full',
               )}
               onpointerenter={() => (openTooltipTabId = tab.id)}
               onclick={(e) => {
@@ -763,13 +738,11 @@
               ondrop={(e) => handleDrop(e)}
               ondragend={handleDragEnd}
             >
-              <div class={cn('shrink-0 opacity-50', isActivity ? '' : 'tab-icon')}>
+              <div class={cn('shrink-0 opacity-50', 'tab-icon')}>
                 <Fa icon={tab.icon} class="size-3.5" />
               </div>
               <!-- Responsive labels - hidden at narrow widths via container query -->
-              {#if !isActivity}
-                <span class="tab-label truncate">{tab.label}</span>
-              {/if}
+              <span class="tab-label truncate">{tab.label}</span>
               <!-- Badges for specific tabs - inline when wide, absolute when narrow -->
               {#if tab.id === 'agents' && (hasRunningAgents || hasUnreadAgents)}
                 <div
@@ -890,7 +863,7 @@
                   {:else if tabId === 'files' && workspacePath}
                     {workspace?.skipWorktree
                       ? 'Working directly in'
-                      : 'Your copy of the repo lives in'}
+                      : 'The agents in this space are working off a copy of your files in'}
                     <span class="inline-flex items-baseline gap-1">
                       <OpenComboButton
                         filePath={workspacePath}
@@ -1045,15 +1018,6 @@
                     onSelectAgent={handleOpenAgentInPanel}
                     showOnlyChanged={showOnlyChangedFiles}
                     searchQuery={fileSearchQuery}
-                  />
-                </div>
-              {:else if tabId === 'activity'}
-                <div class="px-3 transition-all duration-200">
-                  <SidebarActivityPanel
-                    {workspaceId}
-                    onOpenFileChanges={handleOpenActivityChangesInPanel}
-                    onShowAgent={handleOpenAgentInPanel}
-                    onOpenNote={handleOpenNoteInPanel}
                   />
                 </div>
               {/if}

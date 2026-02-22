@@ -70,6 +70,7 @@ export const WorkspaceEventType = {
   AgentUnsubscribed: 'agent:unsubscribed',
   AgentWokenBySubscription: 'agent:woken-by-subscription',
   AgentEventDeliveryFailed: 'agent:event-delivery-failed',
+  AgentSubscriptionsRestored: 'agent:subscriptions-restored',
   AgentMessageDeliveryFailed: 'agent:message:delivery-failed',
 
   // Git events
@@ -462,6 +463,10 @@ export interface AgentUnsubscribedEvent extends WorkspaceEventBase {
     agentId: string;
     agentName: string;
     subscriptionId: string;
+    /** Reason for unsubscription */
+    reason?: 'manual-unsubscribe' | 'oneshot-fired' | 'delegation-complete';
+    /** Group ID if this was a delegation group subscription */
+    groupId?: string;
   };
 }
 
@@ -490,6 +495,20 @@ export interface AgentEventDeliveryFailedEvent extends WorkspaceEventBase {
     eventCount: number;
     eventTypes: string[];
     error: string;
+  };
+}
+
+/**
+ * Emitted when persisted subscriptions are restored on startup
+ * Contains a batch count and list of unique agent IDs that have restored subscriptions
+ */
+export interface AgentSubscriptionsRestoredEvent extends WorkspaceEventBase {
+  type: 'agent:subscriptions-restored';
+  data: {
+    /** Number of subscriptions restored */
+    count: number;
+    /** Array of unique agent IDs that have restored subscriptions */
+    agentIds: string[];
   };
 }
 
@@ -533,6 +552,7 @@ export type SpecificWorkspaceEvent =
   | AgentUnsubscribedEvent
   | AgentWokenBySubscriptionEvent
   | AgentEventDeliveryFailedEvent
+  | AgentSubscriptionsRestoredEvent
   | AgentMessageDeliveryFailedEvent;
 
 // Main WorkspaceEvent type - includes legacy fields for backward compatibility
@@ -923,6 +943,10 @@ export interface AgentUnsubscribedPayload {
   agentId: string;
   agentName?: string;
   subscriptionId: string;
+  /** Reason for unsubscription */
+  reason?: 'manual-unsubscribe' | 'oneshot-fired' | 'delegation-complete';
+  /** Group ID if this was a delegation group subscription */
+  groupId?: string;
 }
 
 /**

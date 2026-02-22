@@ -510,7 +510,7 @@
                     <span class="font-mono text-primary">Tool: {event.data.toolName}</span>
                   {:else if event.data?.error}
                     <span
-                      class="text-destructive truncate max-w-[250px] block"
+                      class="text-destructive-foreground truncate max-w-[250px] block"
                       title={event.data.error}
                     >
                       Error: {event.data.error.substring(0, 50)}{event.data.error.length > 50

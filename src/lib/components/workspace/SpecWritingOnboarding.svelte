@@ -50,8 +50,8 @@
           <div class="step-content">
             <h4>Creating Spec</h4>
             <p>
-              The Coordinator is analyzing your codebase to spec out the work. Once it's done, you
-              can make edits or iterate with agents until you're satisfied.
+              The Coordinator is analyzing your codebase and writing a spec. Once ready, you
+              can review, edit, or iterate on it with agents.
             </p>
             <p class="secondary">
               <em>Want to take over?</em>
@@ -72,13 +72,12 @@
           <div class="step-content">
             <h4>Implement</h4>
             <p>
-              Once you're happy with the plan, ask the Coordinator to start implementing. They will
-              delegate the tasks in waves—independent tasks run in parallel, dependent ones wait.
+              Once you're happy with the spec, ask the Coordinator to start implementing. It will
+              delegate tasks to agents—independent tasks run in parallel, dependent ones wait.
             </p>
 
             <p class="secondary">
-              You can always edit the code yourself from the Files tab, in here or in your usual
-              IDE.
+              You can always edit the code yourself from the Files tab, or in your usual IDE.
             </p>
           </div>
         </li>
@@ -88,8 +87,8 @@
           <div class="step-content">
             <h4>Accept changes</h4>
             <p>
-              You can review the changes in the Changes tab, or by running from the terminal or
-              poking around in a browser panel.
+              Review the changes in the Changes tab, run from the terminal, or test in a browser
+              panel.
             </p>
             <p class="secondary">Stage, commit, create a PR, and/or merge to fit your workflow.</p>
           </div>

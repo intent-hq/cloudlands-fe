@@ -103,7 +103,7 @@
 
       <div class="p-6 text-center text-foreground">
         {#if githubAuthStore.state.error}
-          <div class="text-destructive">
+          <div class="text-destructive-foreground">
             <p>{githubAuthStore.state.error}</p>
             <button
               class="mt-3 bg-muted border-none px-4 py-2 rounded cursor-pointer text-foreground hover:bg-muted/80"

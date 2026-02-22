@@ -91,7 +91,7 @@
     </div>
     <p class="text-xs text-muted-foreground pl-6">Create spaces directly from issues.</p>
     {#if sentryAuthStore.state.error}
-      <p class="text-xs text-destructive pl-6">{sentryAuthStore.state.error}</p>
+      <p class="text-xs text-destructive-foreground pl-6">{sentryAuthStore.state.error}</p>
     {/if}
   </div>
 

@@ -704,7 +704,7 @@
                 class="mt-1 {errors.host ? 'border-destructive' : ''}"
               />
               {#if errors.host}
-                <span class="text-xs text-destructive">{errors.host}</span>
+                <span class="text-xs text-destructive-foreground">{errors.host}</span>
               {/if}
             </div>
             <div>
@@ -729,7 +729,7 @@
                 class="mt-1 {errors.user ? 'border-destructive' : ''}"
               />
               {#if errors.user}
-                <span class="text-xs text-destructive">{errors.user}</span>
+                <span class="text-xs text-destructive-foreground">{errors.user}</span>
               {/if}
             </div>
             <div>
@@ -759,7 +759,7 @@
                 </Button>
               </div>
               {#if errors.workspacePath}
-                <span class="text-xs text-destructive">{errors.workspacePath}</span>
+                <span class="text-xs text-destructive-foreground">{errors.workspacePath}</span>
               {/if}
             </div>
             <div>
@@ -859,7 +859,7 @@
         </div>
 
         {#if errors.repo}
-          <span class="text-sm text-destructive">{errors.repo}</span>
+          <span class="text-sm text-destructive-foreground">{errors.repo}</span>
         {/if}
       </div>
 
@@ -942,7 +942,7 @@
             class="w-full"
           />
           {#if errors.branch}
-            <span class="text-xs text-destructive">{errors.branch}</span>
+            <span class="text-xs text-destructive-foreground">{errors.branch}</span>
           {/if}
         </div>
       {/if}

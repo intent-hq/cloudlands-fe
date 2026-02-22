@@ -1125,8 +1125,8 @@
     </div>
   {:else if error}
     <div class="error-state">
-      <Fa icon={faExclamationTriangle} class="text-destructive" />
-      <span class="text-destructive text-sm ml-2">{error}</span>
+      <Fa icon={faExclamationTriangle} class="text-destructive-foreground" />
+      <span class="text-destructive-foreground text-sm ml-2">{error}</span>
     </div>
   {:else if contentTooLarge}
     <div class="error-state">

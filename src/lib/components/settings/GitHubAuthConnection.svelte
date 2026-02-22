@@ -71,7 +71,7 @@
       Push changes and create pull requests directly from workspaces.
     </p>
     {#if githubAuthStore.state.error}
-      <p class="text-xs text-destructive pl-6">{githubAuthStore.state.error}</p>
+      <p class="text-xs text-destructive-foreground pl-6">{githubAuthStore.state.error}</p>
     {/if}
   </div>
 

@@ -549,7 +549,7 @@
       </div>
     {:else if fileError}
       <div class="flex flex-col items-center justify-center h-full text-muted-foreground gap-2">
-        <p class="text-destructive">Error loading file</p>
+        <p class="text-destructive-foreground">Error loading file</p>
         <p class="text-xs">{fileError}</p>
       </div>
     {:else if fileContent !== null}

@@ -116,7 +116,7 @@
       </Button>
     </div>
     {#if urlError}
-      <p class="text-xs text-destructive">{urlError}</p>
+      <p class="text-xs text-destructive-foreground">{urlError}</p>
     {/if}
   </div>
 

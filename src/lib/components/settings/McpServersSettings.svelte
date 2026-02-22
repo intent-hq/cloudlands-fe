@@ -454,7 +454,7 @@
               </div>
             </div>
           {:else if error}
-            <p class="text-sm text-destructive py-4">{error}</p>
+            <p class="text-sm text-destructive-foreground py-4">{error}</p>
           {:else if servers.length === 0}
             <p class="text-xs text-muted-foreground mb-4">No servers configured yet</p>
           {:else}
@@ -510,7 +510,7 @@
                       {/each}
 
                       {#if installError}
-                        <p class="text-xs text-destructive mb-2">{installError}</p>
+                        <p class="text-xs text-destructive-foreground mb-2">{installError}</p>
                       {/if}
 
                       <div class="flex gap-2 mt-3">
@@ -600,7 +600,7 @@
                 {#if userMcpSaveStatus === 'saved'}
                   <span class="text-xs text-green-500">✓ Saved</span>
                 {:else if userMcpSaveStatus === 'error'}
-                  <span class="text-xs text-destructive">✗ {userMcpSaveError}</span>
+                  <span class="text-xs text-destructive-foreground">✗ {userMcpSaveError}</span>
                 {:else if userMcpSaveStatus === 'saving'}
                   <span class="text-xs text-muted-foreground">Saving...</span>
                 {/if}

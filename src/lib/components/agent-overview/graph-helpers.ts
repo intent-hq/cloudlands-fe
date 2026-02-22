@@ -30,20 +30,31 @@ export function getNodeStatus(session: AgentSession | undefined): AgentNode['sta
 
   // Check processing flags first for responding state
   // These flags indicate the agent is actively working
-  if (session.isProcessing || session.isStreaming || session.isResponding) {
+  if (session.isProcessing || session.isStreaming || (session as any).isResponding) {
     return 'responding';
   }
 
+  // Also check the last assistant message's streaming state.
+  // Delegated agents may not have session-level isStreaming/isProcessing set,
+  // but their last message will have isStreaming=true or streamingComplete still
+  // falsy while they are actively working.
+  // Use explicit === false for streamingComplete (undefined means never set, not actively streaming)
+  if (session.messages && session.messages.length > 0) {
+    const lastAssistantMsg = [...session.messages].reverse().find((m) => m.role === 'assistant');
+    if (lastAssistantMsg && (lastAssistantMsg.isStreaming || lastAssistantMsg.streamingComplete === false)) {
+      return 'responding';
+    }
+  }
+
   // Map AgentStatus enum to our node status
-  // Note: AgentStatus.Active means the agent is available, not that it's actively responding
-  // Only return 'responding' if one of the processing flags above is true
   switch (session.status) {
     case AgentStatus.Active:
-      // Active but not processing = idle (available but not working)
       return 'idle';
     case AgentStatus.Pending:
     case AgentStatus.Idle:
       return 'idle';
+    case AgentStatus.Processing:
+      return 'responding';
     case AgentStatus.Waiting:
       return 'waiting';
     case AgentStatus.Completed:
@@ -67,6 +78,8 @@ export interface StreamingState {
   isThinking: boolean;
   /** Name of the currently active tool call */
   activeToolName?: string;
+  /** Input parameters of the currently active tool call */
+  activeToolInput?: Record<string, unknown>;
   /** Last meaningful response line from the agent */
   lastResponse?: string;
 }
@@ -120,8 +133,10 @@ export function getStreamingState(session: AgentSession | undefined): StreamingS
     }
   }
 
-  // Check if the message is still streaming for active state
-  const isStreaming = lastMessage.isStreaming || !lastMessage.streamingComplete;
+  // Check if the message is still streaming for active state.
+  // Use explicit === false check: undefined means the field was never set (completed message),
+  // only false means actively streaming and not yet complete.
+  const isStreaming = lastMessage.isStreaming || lastMessage.streamingComplete === false;
   if (!isStreaming) return result;
 
   for (const block of contentBlocks) {
@@ -138,6 +153,7 @@ export function getStreamingState(session: AgentSession | undefined): StreamingS
       );
       if (!hasResult) {
         result.activeToolName = block.name;
+        result.activeToolInput = (block.input as Record<string, unknown>) || {};
       }
     }
 

@@ -740,7 +740,7 @@
                     <span class="text-xs text-muted-foreground truncate max-w-[150px]">({check.path})</span>
                   {/if}
                   {#if !check.passed && check.error}
-                    <span class="text-xs text-destructive truncate flex-1">{check.error}</span>
+                    <span class="text-xs text-destructive-foreground truncate flex-1">{check.error}</span>
                   {/if}
                 </div>
               {/each}
@@ -773,14 +773,14 @@
           {/if}
 
           {#if testErrorMessage && testStatus === 'failed' && !testResult}
-            <div class="text-sm text-destructive">
+            <div class="text-sm text-destructive-foreground">
               {testErrorMessage}
             </div>
           {/if}
         </div>
 
         {#if error}
-          <div class="text-sm text-destructive">{error}</div>
+          <div class="text-sm text-destructive-foreground">{error}</div>
         {/if}
       </div>
 

@@ -679,7 +679,7 @@
     {/if}
   {:else if checkError}
     <div class="flex items-center justify-between gap-4">
-      <p class="text-sm text-destructive">{checkError}</p>
+      <p class="text-sm text-destructive-foreground">{checkError}</p>
       <button
         type="button"
         class="text-primary hover:text-primary/80 cursor-pointer transition-colors text-xs font-medium"
@@ -838,7 +838,7 @@
           transition:slide={{ axis: 'y', duration: 200 }}
         >
           {#if authError}
-            <p class="text-xs text-destructive">{authError}</p>
+            <p class="text-xs text-destructive-foreground">{authError}</p>
           {/if}
           <textarea
             bind:value={authInput}
@@ -885,7 +885,7 @@
           class="flex flex-col gap-2 p-3 bg-destructive/5 border border-destructive/20 rounded-lg"
           transition:slide={{ axis: 'y', duration: 200 }}
         >
-          <p class="text-xs text-destructive">{installError}</p>
+          <p class="text-xs text-destructive-foreground">{installError}</p>
           {#if installErrorType === 'permission'}
             <p class="text-xs text-muted-foreground">
               Try running with sudo or fix npm permissions.
@@ -958,7 +958,7 @@
                   <span>Context Engine</span>
                   <Fa
                     icon={faXmark}
-                    class="w-2.5 h-2.5 text-destructive hidden group-hover:inline"
+                    class="w-2.5 h-2.5 text-destructive-foreground hidden group-hover:inline"
                   />
                 </Button>
               {:else}

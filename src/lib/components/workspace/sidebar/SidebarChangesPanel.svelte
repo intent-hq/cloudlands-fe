@@ -1440,6 +1440,126 @@
   // Note: lockedAgentIds and lockedFilePaths are now provided by the shared agentLockStore
   // (created near the top of the script block)
 
+  // --- Group commit queue ---
+  // Allows users to click commit on multiple groups in sequence.
+  // Each entry is { groupKey, section, group } where section is 'unstaged' | 'staged'.
+  type GroupCommitQueueEntry = {
+    groupKey: string;
+    section: 'unstaged' | 'staged';
+    group: AgentChangeGroup;
+  };
+  let groupCommitQueue = $state<GroupCommitQueueEntry[]>([]);
+  let groupCommitActive = $state<string | null>(null); // groupKey currently being committed
+
+  function getGroupKey(group: AgentChangeGroup, section: 'unstaged' | 'staged'): string {
+    return `${section}:${group.agentId ?? 'manual'}`;
+  }
+
+  function getGroupCommitState(group: AgentChangeGroup, section: 'unstaged' | 'staged'): 'idle' | 'active' | 'queued' {
+    const key = getGroupKey(group, section);
+    if (groupCommitActive === key) return 'active';
+    if (groupCommitQueue.some((e) => e.groupKey === key)) return 'queued';
+    return 'idle';
+  }
+
+  function getGroupQueuePosition(group: AgentChangeGroup, section: 'unstaged' | 'staged'): number {
+    const key = getGroupKey(group, section);
+    const idx = groupCommitQueue.findIndex((e) => e.groupKey === key);
+    return idx + 1; // 1-based, 0 means not queued
+  }
+
+  function enqueueGroupCommit(group: AgentChangeGroup, section: 'unstaged' | 'staged') {
+    const key = getGroupKey(group, section);
+    // Don't enqueue if already active or queued
+    if (groupCommitActive === key || groupCommitQueue.some((e) => e.groupKey === key)) return;
+    // Don't allow committing locked groups
+    if (group.agentId && lockedAgentIds.has(group.agentId)) return;
+
+    groupCommitQueue = [...groupCommitQueue, { groupKey: key, section, group }];
+
+    // If nothing is currently processing, start
+    if (!groupCommitActive) {
+      processGroupCommitQueue();
+    }
+  }
+
+  function cancelGroupCommit(group: AgentChangeGroup, section: 'unstaged' | 'staged') {
+    const key = getGroupKey(group, section);
+    // Can only cancel queued items, not the active one
+    if (groupCommitActive === key) return;
+    groupCommitQueue = groupCommitQueue.filter((e) => e.groupKey !== key);
+  }
+
+  async function processGroupCommitQueue() {
+    while (groupCommitQueue.length > 0) {
+      const next = groupCommitQueue[0];
+      groupCommitActive = next.groupKey;
+      // Remove from queue (it's now active)
+      groupCommitQueue = groupCommitQueue.slice(1);
+
+      try {
+        await commitSingleGroup(next.group, next.section);
+      } catch (error) {
+        logger.error('Group commit failed', error as Error);
+        toast.error('Commit failed', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+    groupCommitActive = null;
+  }
+
+  async function commitSingleGroup(group: AgentChangeGroup, section: 'unstaged' | 'staged') {
+    const paths = group.files.map((f) => f.path);
+    const pathSet = new Set(paths);
+    const message = group.agentId
+      ? (getAgentDisplayName(group) || group.agentName || 'Agent changes')
+      : 'Manual changes';
+
+    // To commit only this group's files, we need to ensure only these files are staged.
+    // git commit commits ALL staged files, so we must temporarily unstage other files.
+    const otherStagedPaths = stagedChanges
+      .filter((c) => !pathSet.has(c.relativePath))
+      .map((c) => c.relativePath);
+
+    try {
+      // Temporarily unstage other files so only this group gets committed
+      if (otherStagedPaths.length > 0) {
+        await fileTrackingStore.unstageByPath(otherStagedPaths);
+      }
+
+      // Stage this group's files if they're currently unstaged
+      if (section === 'unstaged') {
+        await fileTrackingStore.stageByPath(paths);
+      }
+
+      // Now only this group's files are staged — commit
+      const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'commit', {
+        commitMessage: message,
+      });
+
+      if (!result.success) {
+        throw new Error(result.error || 'Commit failed');
+      }
+    } finally {
+      // Re-stage other files that were temporarily unstaged
+      if (otherStagedPaths.length > 0) {
+        try {
+          await fileTrackingStore.stageByPath(otherStagedPaths);
+        } catch (restageError) {
+          logger.error('Failed to re-stage files after group commit', restageError as Error);
+        }
+      }
+
+      // Always refresh stores regardless of success/failure
+      // so the UI reflects the current git state
+      await Promise.all([
+        gitStore.loadStatus(workspaceId as WorkspaceId, true),
+        fileTrackingStore.refresh(),
+      ]).catch(() => {});
+    }
+  }
+
   // Collapsed state for agent groups
   let collapsedAgentGroups = $state(new Set<string>());
 
@@ -3756,6 +3876,8 @@
                     {#each unstagedByAgent as group (group.agentId ?? 'manual')}
                       {@const isCollapsed = isAgentGroupCollapsed(group.agentId)}
                       {@const isLocked = isAgentGroupLocked(group.agentId)}
+                      {@const commitState = getGroupCommitState(group, 'unstaged')}
+                      {@const queuePos = getGroupQueuePosition(group, 'unstaged')}
                       <div class="space-y-px">
                         <!-- Agent header -->
                         <div
@@ -3797,12 +3919,12 @@
                                 size={15}
                               />
                             {:else}
-                              <Fa icon={faUser} class="h-2.5 w-2.5 text-muted-foreground/30" />
+                              <Fa icon={faUser} class="h-2.5 w-2.5 text-muted-foreground/30 {!isLocked ? 'group-hover/agent-header:opacity-0' : ''}" />
                             {/if}
                           </button>
                           <!-- Action buttons - linked note always visible, staging controls hidden when locked -->
                           <div
-                            class="bg-sidebar absolute top-1/2 right-1 transform translate-x-1 transition-transform group-hover/agent-header:translate-x-0 -translate-y-1/2 opacity-0 group-hover/agent-header:opacity-100 flex items-center pl-0.25"
+                            class="bg-sidebar absolute top-1/2 right-1 transform translate-x-1 transition-transform {commitState !== 'idle' ? 'translate-x-0 opacity-100' : 'group-hover/agent-header:translate-x-0'} -translate-y-1/2 {commitState !== 'idle' ? '' : 'opacity-0 group-hover/agent-header:opacity-100'} flex items-center pl-0.25"
                           >
                             {#if group.agentId && getLinkedNoteId(group.agentId)}
                               <Button
@@ -3832,15 +3954,35 @@
                               >
                                 <Fa icon={faPlus} class="h-2.5! w-2.5!" />
                               </Button>
-                              {#if group.agentId}
+                              <!-- Commit group button with queue state -->
+                              {#if commitState === 'active'}
+                                <Tooltip content="Committing..." side="top">
+                                  <span class="h-5 w-5 flex items-center justify-center">
+                                    <Fa icon={faSpinner} class="h-2.5! w-2.5! animate-spin text-primary" />
+                                  </span>
+                                </Tooltip>
+                              {:else if commitState === 'queued'}
+                                <Button
+                                  variant="ghost-light"
+                                  size="icon-xs"
+                                  class="h-5 w-5 relative"
+                                  tooltip="Queued — click to cancel"
+                                  onclick={(e: MouseEvent) => {
+                                    e.stopPropagation();
+                                    cancelGroupCommit(group, 'unstaged');
+                                  }}
+                                >
+                                  <span class="text-[9px] font-semibold text-primary leading-none">{queuePos}</span>
+                                </Button>
+                              {:else}
                                 <Button
                                   variant="ghost-light"
                                   size="icon-xs"
                                   class="h-5 w-5"
-                                  tooltip="Commit changes"
+                                  tooltip="Stage & commit"
                                   onclick={(e: MouseEvent) => {
                                     e.stopPropagation();
-                                    handleCommitGroup(group);
+                                    enqueueGroupCommit(group, 'unstaged');
                                   }}
                                 >
                                   <Fa icon={faCodeCommit} class="h-2.5! w-2.5!" />
@@ -3952,6 +4094,8 @@
                     {#each stagedByAgent as group (group.agentId ?? 'manual')}
                       {@const isCollapsed = isAgentGroupCollapsed(group.agentId)}
                       {@const isLocked = isAgentGroupLocked(group.agentId)}
+                      {@const commitState = getGroupCommitState(group, 'staged')}
+                      {@const queuePos = getGroupQueuePosition(group, 'staged')}
                       <div class="space-y-px">
                         <!-- Agent header -->
                         <div
@@ -3979,13 +4123,13 @@
                             {:else}
                               <Fa
                                 icon={faUser}
-                                class="h-2.5 w-2.5 ml-1 mr-1 text-muted-foreground/30"
+                                class="h-2.5 w-2.5 ml-1 mr-1 text-muted-foreground/30 {!isLocked ? 'group-hover/agent-header:opacity-0' : ''}"
                               />
                             {/if}
                           </button>
                           <!-- Action buttons - linked note always visible, staging controls hidden when locked -->
                           <div
-                            class="bg-sidebar absolute top-1/2 right-1 transform translate-x-1 transition-transform group-hover/agent-header:translate-x-0 -translate-y-1/2 opacity-0 group-hover/agent-header:opacity-100 flex items-center gap-0.5"
+                            class="bg-sidebar absolute top-1/2 right-1 transform translate-x-1 transition-transform {commitState !== 'idle' ? 'translate-x-0 opacity-100' : 'group-hover/agent-header:translate-x-0'} -translate-y-1/2 {commitState !== 'idle' ? '' : 'opacity-0 group-hover/agent-header:opacity-100'} flex items-center gap-0.5"
                           >
                             {#if group.agentId && getLinkedNoteId(group.agentId)}
                               <Button
@@ -4015,6 +4159,40 @@
                               >
                                 <Fa icon={faMinus} class="h-2.5! w-2.5!" />
                               </Button>
+                              <!-- Commit group button with queue state -->
+                              {#if commitState === 'active'}
+                                <Tooltip content="Committing..." side="top">
+                                  <span class="h-5 w-5 flex items-center justify-center">
+                                    <Fa icon={faSpinner} class="h-2.5! w-2.5! animate-spin text-primary" />
+                                  </span>
+                                </Tooltip>
+                              {:else if commitState === 'queued'}
+                                <Button
+                                  variant="ghost-light"
+                                  size="icon-xs"
+                                  class="h-5 w-5 relative"
+                                  tooltip="Queued — click to cancel"
+                                  onclick={(e: MouseEvent) => {
+                                    e.stopPropagation();
+                                    cancelGroupCommit(group, 'staged');
+                                  }}
+                                >
+                                  <span class="text-[9px] font-semibold text-primary leading-none">{queuePos}</span>
+                                </Button>
+                              {:else}
+                                <Button
+                                  variant="ghost-light"
+                                  size="icon-xs"
+                                  class="h-5 w-5"
+                                  tooltip="Commit"
+                                  onclick={(e: MouseEvent) => {
+                                    e.stopPropagation();
+                                    enqueueGroupCommit(group, 'staged');
+                                  }}
+                                >
+                                  <Fa icon={faCodeCommit} class="h-2.5! w-2.5!" />
+                                </Button>
+                              {/if}
                             {/if}
                           </div>
                         </div>

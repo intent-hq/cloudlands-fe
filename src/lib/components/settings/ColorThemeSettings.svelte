@@ -159,7 +159,7 @@
   {/if}
 
   {#if errorMessage}
-    <p class="text-xs text-destructive">{errorMessage}</p>
+    <p class="text-xs text-destructive-foreground">{errorMessage}</p>
   {/if}
 </div>
 

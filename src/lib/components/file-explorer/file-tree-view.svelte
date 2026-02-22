@@ -750,7 +750,7 @@
         </div>
       </ScrollArea>
     {:else if store.error}
-      <div class="text-xs text-destructive py-2">
+      <div class="text-xs text-destructive-foreground py-2">
         {store.error}
       </div>
     {:else if searchQuery && searchQuery.trim()}

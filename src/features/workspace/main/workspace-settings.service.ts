@@ -106,6 +106,39 @@ export function isAutoCommitEnabled(workspaceId: string): boolean {
 }
 
 /**
+ * Centralized guard for agent-initiated commits.
+ *
+ * Call this from ANY tool or code path where an agent attempts to commit.
+ * Returns { allowed: true } if the commit should proceed, or
+ * { allowed: false, reason: string } if it should be blocked.
+ *
+ * This exists to prevent the class of bug where a new commit tool/path
+ * is added without checking the auto-commit setting. All agent commit
+ * paths should use this single function rather than inlining the check.
+ *
+ * @param workspaceId - The workspace to check
+ * @param opts.userRequested - If the user explicitly asked for the commit (bypasses auto-commit check)
+ */
+export function assertAgentCommitAllowed(
+  workspaceId: string,
+  opts?: { userRequested?: boolean },
+): { allowed: true } | { allowed: false; reason: string } {
+  if (opts?.userRequested) {
+    return { allowed: true };
+  }
+  if (!isAutoCommitEnabled(workspaceId)) {
+    logger.info('Agent commit blocked: auto-commit disabled', { workspaceId });
+    return {
+      allowed: false,
+      reason:
+        'Auto-commit is disabled for this workspace. ' +
+        'Use agent_commit_changes with userRequested: true if the user asked you to commit.',
+    };
+  }
+  return { allowed: true };
+}
+
+/**
  * Clear settings for a workspace (e.g., when workspace is closed)
  */
 export function clearWorkspaceSettings(workspaceId: string): void {

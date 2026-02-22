@@ -239,7 +239,7 @@
 <!-- This component has no UI - it's a pure logic component -->
 {#if streamingError}
   <div
-    class="flex items-center gap-2 px-4 py-3 bg-destructive/10 text-destructive border border-destructive rounded-lg my-2 text-sm"
+    class="flex items-center gap-2 px-4 py-3 bg-destructive/10 text-destructive-foreground border border-destructive rounded-lg my-2 text-sm"
   >
     <span class="text-xl">⚠️</span>
     <span class="flex-1">{streamingError}</span>

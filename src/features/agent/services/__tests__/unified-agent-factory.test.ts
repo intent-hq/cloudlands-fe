@@ -122,7 +122,7 @@ describe('UnifiedAgentFactory', () => {
       expect(result.agent?.name.length).toBeLessThanOrEqual(100);
     });
 
-    it('should use random name if not provided', async () => {
+    it('should use default name if not provided', async () => {
       const config: UnifiedAgentConfig = {
         name: '',
         workspaceId: mockWorkspace.id as any,
@@ -131,11 +131,8 @@ describe('UnifiedAgentFactory', () => {
       const result = await factory.createAgent(mockWorkspace, config);
 
       expect(result.success).toBe(true);
-      // Random names are in "Adjective Animal" format (e.g., "Witty Penguin")
-      expect(result.agent?.name).toBeTruthy();
-      expect(result.agent?.name.length).toBeGreaterThan(0);
-      // Should contain a space (Adjective Animal format)
-      expect(result.agent?.name).toMatch(/^\w+ \w+$/);
+      // When no name and no initialMessage, falls back to generic "Agent" name
+      expect(result.agent?.name).toBe('Agent');
     });
 
     it('should fail if workspace has no path', async () => {

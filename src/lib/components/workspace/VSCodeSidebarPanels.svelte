@@ -64,7 +64,7 @@
   // Panel configuration
   // Note: defaultHeight is the content height (excluding the 28px header)
   const panels = [
-    { id: 'notes', title: 'Notes', minHeight: 100, defaultHeight: 92 }, // Total will be 92 + 28 = 120px
+    { id: 'notes', title: 'Context', minHeight: 100, defaultHeight: 92 }, // Total will be 92 + 28 = 120px
     { id: 'source-control', title: 'Code Changes', minHeight: 100, defaultHeight: 200 },
     { id: 'explorer', title: 'Explorer', minHeight: 100, defaultHeight: 200 },
     { id: 'activity', title: 'Activity', minHeight: 100, defaultHeight: 200 },

@@ -104,7 +104,7 @@ export function registerAllTabTypes(): void {
     component: NoteTabType,
     icon: faNote,
     defaultTitle: 'Note',
-    categoryLabel: 'Notes',
+    categoryLabel: 'Context',
     sidebarTabId: 'notes',
     renameable: true,
   });
@@ -169,7 +169,7 @@ export function registerAllTabTypes(): void {
     component: ActivityChangesTabType,
     icon: faCodeBranch,
     defaultTitle: 'Activity Changes',
-    categoryLabel: 'Activity',
+    categoryLabel: 'Changes',
     renameable: false,
   });
 

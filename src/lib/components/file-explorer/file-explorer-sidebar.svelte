@@ -167,7 +167,7 @@
                 <Fa icon={faSpinner} size="lg" class="w-6 h-6 animate-spin text-muted-foreground" />
               </div>
             {:else if store.error}
-              <div class="px-4 py-2 text-sm text-destructive">
+              <div class="px-4 py-2 text-sm text-destructive-foreground">
                 {store.error}
               </div>
             {:else if store.rootNode}

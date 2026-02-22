@@ -245,18 +245,18 @@ function registerCoreHandlers(backend: IAgentBackendService): void {
       });
 
       // Derive name from instruction/initialMessage if not provided
-      const { generateAgentNameFromText, generateRandomAgentName } = await import(
+      const { generateAgentNameFromText } = await import(
         '../../../lib/utils/agent-name-generator'
       );
       if (!normalizedData.name && (normalizedData.initialMessage || data.instruction)) {
         normalizedData.name =
           generateAgentNameFromText(normalizedData.initialMessage || data.instruction) ||
-          generateRandomAgentName();
+          'Agent';
       }
 
       // Default name if still not set
       if (!normalizedData.name) {
-        normalizedData.name = generateRandomAgentName();
+        normalizedData.name = 'Agent';
       }
 
       // Derive workspacePath from workspace if not provided
@@ -287,7 +287,7 @@ function registerCoreHandlers(backend: IAgentBackendService): void {
         ...validated,
         workspaceId,
         workspacePath: validated.workspacePath,
-        name: validated.name || generateRandomAgentName(),
+        name: validated.name || 'Agent',
         agentId: validated.agentId ? restoreAgentId(validated.agentId as string) : undefined,
       };
       const response = await backend.createAgent(restoredRequest);

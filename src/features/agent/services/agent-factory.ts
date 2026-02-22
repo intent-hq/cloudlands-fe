@@ -20,7 +20,6 @@ import type { AgentIpc } from '$shared/ipc/contracts';
 import { AGENT_CHANNELS, AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
 import {
   generateAgentNameFromText,
-  generateRandomAgentName,
 } from '$lib/utils/agent-name-generator';
 import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
 import { track } from '$lib/services/analytics';
@@ -757,8 +756,8 @@ export class UnifiedAgentFactory {
       if (config.initialMessage && config.initialMessage.trim().length > 0) {
         normalizedName = generateAgentNameFromText(config.initialMessage);
       } else {
-        // Fallback to random agent name (Adjective Animal format)
-        normalizedName = generateRandomAgentName();
+        // Fallback to generic "Agent" name (callers should provide specialist-based names)
+        normalizedName = 'Agent';
       }
     } else {
       // Sanitize the provided name using the same utility

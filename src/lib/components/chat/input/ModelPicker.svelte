@@ -696,7 +696,7 @@
           </div>
         {:else if loadError}
           <div class="flex flex-col items-center gap-2">
-            <div class="flex items-center gap-1.5 text-destructive">
+            <div class="flex items-center gap-1.5 text-destructive-foreground">
               <Fa icon={faExclamationTriangle} class="h-3 w-3" />
               <span class="text-xs">Failed to load models</span>
             </div>

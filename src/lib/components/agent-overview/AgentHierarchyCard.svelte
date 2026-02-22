@@ -14,6 +14,10 @@
   import type { AgentNode } from './types';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
+  import { Spinner } from '$lib/components/ui/indicators';
+  import { classifyTool } from '$lib/components/chat/tool-classifier';
+  import Fa from 'svelte-fa';
+  import { faHourglass, faFile, faStickyNote } from '@fortawesome/free-solid-svg-icons';
 
   interface Props {
     agent: AgentNode;
@@ -50,15 +54,6 @@
   }
 
   const avatarState = $derived(getAvatarState(agent.status));
-
-  // Format tool name for display
-  function formatToolName(name: string): string {
-    // Remove common prefixes and format
-    return name
-      .replace(/^(str-replace-editor|browser_|file_|note_)/, '')
-      .replace(/_/g, ' ')
-      .slice(0, 12);
-  }
 </script>
 
 <div class="agent-card-wrapper flex items-center gap-3 shadow">
@@ -67,7 +62,7 @@
     <div
       class="activity-pill shrink-0 text-xs px-3 py-1.5 bg-muted/60 border border-border rounded-lg text-muted-foreground max-w-32 truncate"
     >
-      📄 {activeFile}
+      <Fa icon={faFile} size="xs" class="inline" /> {activeFile}
     </div>
   {/if}
 
@@ -101,35 +96,36 @@
     {/if} -->
 
     <!-- Status footer - shows current activity or last response -->
-    <div class="status-footer mt-auto pt-2 w-full text-center mt-auto">
+    <div class="status-footer mt-auto pt-2 w-full text-center">
       {#if isWaiting && waitingForNames.length > 0}
         <!-- Waiting for other agents -->
         <div class="text-sm text-primary flex items-center justify-center gap-1">
-          <span class="animate-pulse">⏳</span>
+          <Fa icon={faHourglass} size="xs" class="animate-pulse" />
           <span class="truncate">Waiting for {waitingForNames.join(', ')}</span>
         </div>
-      {:else if agent.isThinking}
-        <!-- Thinking -->
-        <div class="text-sm text-muted-foreground flex items-center justify-center gap-1">
-          <span class="animate-pulse">💭</span>
-          <span>Thinking...</span>
-        </div>
-      {:else if agent.activeToolName}
-        <!-- Active tool call -->
-        <div class="text-sm text-muted-foreground flex items-center justify-center gap-1">
-          <span class="animate-spin">⚙️</span>
-          <span class="truncate">{formatToolName(agent.activeToolName)}</span>
-        </div>
-      {:else if agent.streamingText && isActive}
-        <!-- Streaming text preview -->
-        <div class="text-sm text-muted-foreground truncate px-1">
-          {agent.streamingText}
-        </div>
       {:else if isActive}
-        <!-- Generic responding indicator -->
-        <div class="text-sm text-muted-foreground flex items-center justify-center gap-1">
-          <span class="animate-pulse">●</span>
-          <span>Responding...</span>
+        <!-- Active: always show spinner + descriptive label -->
+        {@const toolDisplay = agent.activeToolName ? classifyTool(agent.activeToolName, agent.activeToolInput || {}) : null}
+        <div class="flex flex-col items-center gap-1">
+          <div class="flex items-center justify-center gap-1.5">
+            <Spinner seed={agent.agentId} size={4} />
+            {#if toolDisplay && toolDisplay.subject}
+              <span class="status-pill text-xs px-1.5 py-0.5 bg-muted/80 rounded-md text-muted-foreground truncate max-w-[130px]">
+                {toolDisplay.verb} {toolDisplay.subject}
+              </span>
+            {:else if toolDisplay}
+              <span class="text-xs text-muted-foreground">{toolDisplay.verb}...</span>
+            {:else if agent.isThinking}
+              <span class="text-xs text-muted-foreground">Thinking...</span>
+            {:else}
+              <span class="text-xs text-muted-foreground">Responding...</span>
+            {/if}
+          </div>
+          {#if !toolDisplay && (agent.streamingText || agent.lastResponse)}
+            <div class="text-[11px] text-muted-foreground/60 truncate w-full px-1 leading-tight">
+              {agent.streamingText || agent.lastResponse}
+            </div>
+          {/if}
         </div>
       {:else if agent.lastResponse}
         <!-- Last response (when idle) -->
@@ -145,7 +141,7 @@
     <div
       class="activity-pill shrink-0 text-xs px-3 py-1.5 bg-muted/60 border border-border rounded-lg text-muted-foreground max-w-32 truncate"
     >
-      📝 Note
+      <Fa icon={faStickyNote} size="xs" class="inline" /> Note
     </div>
   {/if}
 </div>

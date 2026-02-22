@@ -125,7 +125,7 @@
       </div>
     {:else if error}
       <div class="flex flex-col items-center justify-center h-full gap-2">
-        <p class="text-sm text-destructive">{error}</p>
+        <p class="text-sm text-destructive-foreground">{error}</p>
         <Button size="sm" variant="outline" onclick={() => loadDirectory(currentPath)}>
           Retry
         </Button>

@@ -83,7 +83,7 @@
   import { SPEC_NOTE_ID } from '$shared/constants/notes';
   import { taskNoteUrl } from '$shared/constants/intent-links';
   import { listenSync, extractEventData } from '$lib/electron-bridge';
-  import { generateRandomAgentName } from '$lib/utils/agent-name-generator';
+  import { generateSpecialistAgentName } from '$lib/utils/agent-name-generator';
   import { acquireAgentLoadLock, releaseAgentLoadLock } from '$lib/utils/agent-subscription.svelte';
   import { specialistsStore } from '$lib/stores/specialists.store.svelte';
   import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
@@ -894,7 +894,15 @@
               openAgentInLayout(agentId, config.name || 'Agent', capturedWorkspaceId);
 
               // Also open the spec note in the right panel for new workspaces
-              if (capturedWorkspaceId && (config.isInitialAgent || config.isFirstWorkspaceAgent)) {
+              // Only auto-open spec note for team/orchestration mode (spec-writer agent)
+              // Single-agent mode agents don't need the spec note opened
+              const isSpecWriter =
+                config.specialist === 'spec-writer' || config.metadata?.specialist === 'spec-writer';
+              if (
+                capturedWorkspaceId &&
+                (config.isInitialAgent || config.isFirstWorkspaceAgent) &&
+                isSpecWriter
+              ) {
                 const layoutManager = getPanelLayoutManager(capturedWorkspaceId);
                 layoutManager.openTabInOtherPanel({
                   type: 'note',
@@ -1486,14 +1494,12 @@
 
         // Ensure panels have content - fallback to agent | spec layout
         // This runs after all other restoration logic to fill any empty panels
-        // ONLY run this if the layout is completely empty (no tabs at all)
         const layoutManager = getPanelLayoutManager(capturedWorkspaceId);
         const allTabs = Object.values(layoutManager.layout.panels).flatMap((p) => p.tabs);
         const hasAnyTabs = allTabs.length > 0;
 
-        // Only apply fallback logic if there are NO tabs at all
-        // This preserves user's intentional layout choices (e.g., closing the spec note)
         if (!hasAnyTabs) {
+          // Layout is completely empty - open agent + spec
           logger.info('[WorkspacePage] No tabs in layout, applying fallback content', {
             workspaceId: capturedWorkspaceId,
           });
@@ -1537,10 +1543,38 @@
             closable: true,
           });
         } else {
-          logger.info('[WorkspacePage] Layout has existing tabs, skipping fallback content', {
-            workspaceId: capturedWorkspaceId,
-            tabCount: allTabs.length,
-          });
+          // Layout has some tabs, but check if any panel in a multi-panel layout
+          // is empty - if so, open the spec note there to avoid an empty right panel
+          const panels = Object.entries(layoutManager.layout.panels);
+          const emptyPanel = panels.find(([, panel]) => panel.tabs.length === 0);
+          const hasSpecAnywhere = allTabs.some(
+            (t) => t.type === 'note' && t.noteId === SPEC_NOTE_ID,
+          );
+
+          if (emptyPanel && panels.length >= 2 && !hasSpecAnywhere) {
+            logger.info(
+              '[WorkspacePage] Found empty panel in multi-panel layout, opening spec note',
+              {
+                workspaceId: capturedWorkspaceId,
+                emptyPanelId: emptyPanel[0],
+                tabCount: allTabs.length,
+              },
+            );
+            layoutManager.openTab(
+              {
+                type: 'note',
+                title: 'Spec',
+                noteId: SPEC_NOTE_ID,
+                closable: true,
+              },
+              emptyPanel[0],
+            );
+          } else {
+            logger.info('[WorkspacePage] Layout has existing tabs, skipping fallback content', {
+              workspaceId: capturedWorkspaceId,
+              tabCount: allTabs.length,
+            });
+          }
         }
       } catch (error) {
         logger.error('[WorkspacePage] Failed to load agents from disk', error);
@@ -3188,8 +3222,11 @@
       return;
     }
 
+    const existingNames = agents.map((a: AgentSession) => a.name).filter(Boolean) as string[];
+    const agentName = generateSpecialistAgentName('Agent', existingNames);
+
     const result = await agentFactory.createAgent(safeWorkspace, {
-      name: generateRandomAgentName(),
+      name: agentName,
       workspaceId: WorkspaceId(safeWorkspace.id),
       model: modelStore.getWorkspaceDefaultModel(safeWorkspace.id),
       provider: activeProviderStore.activeProviderId,
@@ -3213,7 +3250,7 @@
     markAgentRecentlyCreated(session.id);
 
     // Open the new agent with delay - use openAgentInLayout to support panel layout
-    setTimeout(() => openAgentInLayout(session.id, session.name || generateRandomAgentName()), 100);
+    setTimeout(() => openAgentInLayout(session.id, session.name || agentName), 100);
   }
 
   /**
@@ -3234,25 +3271,28 @@
     }
 
     // Get specialist configuration if provided
-    let agentName = generateRandomAgentName();
+    const existingNames = agents.map((a: AgentSession) => a.name).filter(Boolean) as string[];
     let model = modelStore.getWorkspaceDefaultModel(safeWorkspace.id);
     let behaviorPrompt: string | undefined;
+    let specialistBaseName = 'Agent';
 
     if (specialistId) {
       const specialist = specialistsStore.specialists.find((s) => s.id === specialistId);
       if (specialist) {
-        // Keep the random adjective+animal name, but use specialist's model and behavior
+        specialistBaseName = specialist.name;
         model = specialistsStore.getEffectiveModel(specialistId);
         behaviorPrompt = specialistsStore.getEffectiveBehaviorPrompt(specialistId);
         logger.info('[WorkspacePage] Creating agent with specialist config', {
           specialistId,
-          agentName,
+          specialistBaseName,
           model,
           behaviorPromptLength: behaviorPrompt?.length || 0,
           behaviorPromptPreview: behaviorPrompt?.substring(0, 100),
         });
       }
     }
+
+    const agentName = generateSpecialistAgentName(specialistBaseName, existingNames);
 
     const result = await agentFactory.createAgent(safeWorkspace, {
       name: agentName,
@@ -3419,9 +3459,9 @@
       transientUIStore.setSidebarActiveTab('notes');
     },
     onFocusActivity: () => {
-      // Switch to activity tab in TabbedSidebar
+      // Switch to agents tab in TabbedSidebar (Activity tab was removed)
       const transientUIStore = getTransientUIStore(workspaceId);
-      transientUIStore.setSidebarActiveTab('activity');
+      transientUIStore.setSidebarActiveTab('agents');
     },
     onMaximizePanel: () => {
       // Toggle maximize: hide sidebar and dock for focus mode

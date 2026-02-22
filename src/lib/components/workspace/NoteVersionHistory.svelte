@@ -149,7 +149,7 @@
     {#if loading}
       <div class="px-2.5 py-1.5 text-[11px] text-muted-foreground">Loading…</div>
     {:else if error}
-      <div class="px-2.5 py-1.5 text-[11px] text-destructive">Error</div>
+      <div class="px-2.5 py-1.5 text-[11px] text-destructive-foreground">Error</div>
     {:else}
       {#each versions as version, index (version.versionId)}
         <button

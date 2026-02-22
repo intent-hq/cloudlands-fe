@@ -238,9 +238,9 @@
         {:else}
           <!-- Agent not found error (comment is old) -->
           <div class="flex items-start gap-2">
-            <Fa icon={faExclamationTriangle} class="h-4 w-4 mt-0.5 text-destructive" />
+            <Fa icon={faExclamationTriangle} class="h-4 w-4 mt-0.5 text-destructive-foreground" />
             <div class="flex-1">
-              <div class="text-sm font-medium text-destructive">
+              <div class="text-sm font-medium text-destructive-foreground">
                 {#if displayMode === 'full'}
                   Assigned{/if} Agent Not Found
               </div>

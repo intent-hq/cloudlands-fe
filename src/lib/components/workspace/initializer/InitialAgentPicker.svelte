@@ -351,7 +351,7 @@
     class="agent-card min-w-0 {isTeamMode ? 'agent-card-selected' : 'grayscale opacity-50'}"
     onclick={selectTeamMode}
   >
-    <div class="text-sm font-medium text-foreground">Team orchestration</div>
+    <div class="text-sm font-medium text-foreground">Agent orchestration</div>
     <div class="flex items-center gap-1 py-1.5">
       <AuggieAvatar faceSeed="blank" colorSeed="blank" size={22} specialist="spec-writer" />
       <span class="text-muted-foreground text-xs mx-0.5">→</span>
@@ -359,8 +359,8 @@
       <AuggieAvatar faceSeed="blank" colorSeed="blank" size={22} specialist="verifier" />
     </div>
     <div class="text-sm text-muted-foreground leading-snug">
-      Have a Coordinator plan, delegate, and orchestrate the work. Work from a Spec to help with
-      larger or more complex tasks.
+      A coordinator agent will write a spec for your task and manage the work for you across
+      different agents.
     </div>
     <div
       class="model-picker-row {isTeamMode ? '' : 'opacity-0 pointer-events-none'}"
@@ -391,7 +391,7 @@
     role="button"
     tabindex="0"
   >
-    <div class="text-sm font-medium text-foreground">Start with single agent</div>
+    <div class="text-sm font-medium text-foreground">Single agent</div>
     <!-- Specialist selector dropdown -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -500,7 +500,7 @@
     </div>
 
     <p class="text-sm text-muted-foreground leading-snug">
-      Your workspace will kick off with a new {specialistDisplayLabel} agent.
+      Work on specific tasks with an agent of your choosing.
     </p>
 
     <div

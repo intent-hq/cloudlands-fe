@@ -98,7 +98,7 @@
         Create workspaces tasks directly from tickets.
       </p>
       {#if linearAuthStore.state.error}
-        <p class="text-xs text-destructive pl-6">{linearAuthStore.state.error}</p>
+        <p class="text-xs text-destructive-foreground pl-6">{linearAuthStore.state.error}</p>
       {/if}
     </div>
 

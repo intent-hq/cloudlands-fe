@@ -131,7 +131,7 @@
             Accept
           </button>
           <button
-            class="text-xs px-3 py-1 rounded bg-destructive/20 text-destructive hover:bg-destructive/30 transition-colors"
+            class="text-xs px-3 py-1 rounded bg-destructive/20 text-destructive-foreground hover:bg-destructive/30 transition-colors"
             onclick={handleReject}
           >
             Reject

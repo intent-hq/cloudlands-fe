@@ -438,7 +438,7 @@
   const PREFILL_KEY = 'workspace-prefill';
 
   // Ref to RepoAndBranchPicker for focusing the input after prefill
-  let repoAndBranchPicker: any;
+  let repoAndBranchPicker: any = $state(null);
 
   // Preload Linear and Sentry issues as soon as this component mounts
   // so they're ready when the user expands the form
@@ -1135,7 +1135,8 @@
 
       // Auto-pull latest changes if branch is behind remote
       // We always pull automatically to ensure workspace starts with latest code
-      if (branchBehind > 0 && repoType === 'local' && !isNewRepo) {
+      // Skip pull if user explicitly chose to create without pulling (via PullConflictDialog)
+      if (branchBehind > 0 && repoType === 'local' && !isNewRepo && shouldPullBeforeCreate) {
         isPulling = true;
         logger.info('Auto-pulling latest changes before workspace creation', {
           branch,
@@ -2098,14 +2099,7 @@
         maxHeight={Math.min(window?.innerHeight * 0.3 || 300, 500)}
         class="bg-transparent border-none"
       />
-      {#if isExpanded && !initialPrompt.trim() && !hasSelectedContext && !hasImages}
-        <div
-          class="absolute top-8.5 left-4 text-muted-foreground/40 text-sm pointer-events-none"
-          transition:fly={{ y: 3, duration: 200 }}
-        >
-          Describe your goal or leave blank to start an empty space.
-        </div>
-      {/if}
+
       {#if isEnhancing}
         <div class="enhance-shimmer-wrapper">
           <div class="enhance-shimmer"></div>
@@ -2137,7 +2131,7 @@
             tooltipSide="top"
           >
             {#if isEnhancing}
-              <Fa icon={faStop} size="xs" class="text-destructive" />
+              <Fa icon={faStop} size="xs" class="text-destructive-foreground" />
             {:else}
               <Fa icon={faMagicWandSparkles} size="xs" />
             {/if}
@@ -2166,9 +2160,9 @@
       {#if gitAvailable === false}
         <div class="mx-0 mb-3 px-4 py-3 bg-destructive/10 border border-destructive/30 rounded-md text-sm" transition:slide={{ axis: 'y', duration: 200 }}>
           <div class="flex items-start gap-3">
-            <Fa icon={faExclamationTriangle} class="text-destructive mt-0.5 shrink-0" />
+            <Fa icon={faExclamationTriangle} class="text-destructive-foreground mt-0.5 shrink-0" />
             <div>
-              <p class="font-medium text-destructive">Git is not installed</p>
+              <p class="font-medium text-destructive-foreground">Git is not installed</p>
               <p class="text-muted-foreground mt-1">
                 Git is required to create workspaces. Please install Git and restart the app.
               </p>
@@ -2308,7 +2302,7 @@
               class="flex items-center gap-1 whitespace-nowrap text-sm text-muted-foreground/75 hover:text-foreground transition-colors cursor-pointer"
               onclick={() => (showSetupScript = !showSetupScript)}
             >
-              <span>Set up the environment with</span>
+              <span>Set up dev environment with</span>
               <div class="bg-background px-2 py-0.5 font-medium">{setupScriptName}</div>
               <p class="text-sm text-muted-foreground/75">script</p>
             </button>

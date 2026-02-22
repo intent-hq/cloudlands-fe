@@ -1298,6 +1298,12 @@ export class GitService {
    *
    * Uses mutex to prevent race conditions with concurrent operations.
    *
+   * **IMPORTANT FOR AGENT CODE PATHS:** This method does NOT check the
+   * workspace auto-commit setting. Any code path where an AGENT triggers
+   * a commit MUST call `assertAgentCommitAllowed()` from
+   * `workspace-settings.service` BEFORE calling this method. User-initiated
+   * commits (from the UI) should NOT be gated.
+   *
    * @param filesToStage - Optional list of files to re-stage on retry (for auto-commit)
    */
   async commit(

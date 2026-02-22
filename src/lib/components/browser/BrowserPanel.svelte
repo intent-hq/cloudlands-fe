@@ -154,7 +154,7 @@
       </Button>
     </div>
     {#if inputError}
-      <p class="text-xs text-destructive mt-1">{inputError}</p>
+      <p class="text-xs text-destructive-foreground mt-1">{inputError}</p>
     {/if}
   </div>
 

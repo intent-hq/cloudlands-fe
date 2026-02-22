@@ -80,7 +80,6 @@ export type SidebarTabId =
   | 'notes'
   | 'changes'
   | 'files'
-  | 'activity'
   | 'agents'
   | 'terminals'
   | 'browser';
@@ -168,6 +167,11 @@ function createTransientUIStore(workspaceId: string) {
             ...parsed.sidebarChanges,
           },
         };
+
+        // Migrate removed sidebar tab values from persisted state
+        if ((state.sidebarActiveTab as string) === 'activity') {
+          state.sidebarActiveTab = 'agents';
+        }
 
         // Clear problematic states if stale to prevent crash loops
         // These states indicate incomplete operations that should not be resumed after restart

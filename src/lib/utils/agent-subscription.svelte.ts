@@ -45,10 +45,17 @@ function agentSessionFingerprint(agent: AgentSession | null): string {
     workspaceId: String((agent as any).workspaceId ?? ''),
     status: String((agent as any).status ?? ''),
     isProcessing: Boolean((agent as any).isProcessing),
+    isStreaming: Boolean((agent as any).isStreaming),
+    isResponding: Boolean((agent as any).isResponding),
     updatedAt: String((agent as any).updatedAt ?? ''),
     lastActivity: String((agent as any).lastActivity ?? ''),
     lastMessageId: String((lastMessage as any)?.id ?? ''),
     lastMessageText: lastText,
+    // Content block count so fingerprint changes when new tool_use blocks appear
+    lastMsgBlockCount: lastMessage?.contentBlocks?.length ?? 0,
+    // Message-level streaming flags (delegated agents may only have these)
+    lastMsgIsStreaming: Boolean(lastMessage?.isStreaming),
+    lastMsgStreamingComplete: Boolean(lastMessage?.streamingComplete),
     // Include metadata fields that affect AgentCard rendering
     specialist: String(metadata?.specialist ?? ''),
     createdByAgentId: String(metadata?.createdByAgentId ?? ''),
@@ -74,11 +81,17 @@ function agentsFingerprint(agents: AgentSession[]): string {
         status: String((a as any).status ?? ''),
         isProcessing: Boolean((a as any).isProcessing),
         isStreaming: Boolean((a as any).isStreaming),
+        isResponding: Boolean((a as any).isResponding),
         updatedAt: String((a as any).updatedAt ?? ''),
         lastActivity: String((a as any).lastActivity ?? ''),
         messageCount: (a.messages?.length ?? 0) as number,
         lastMessageId: String((lastMessage as any)?.id ?? ''),
         lastMessageText: textSnippet,
+        // Content block count so fingerprint changes when new tool_use blocks appear
+        lastMsgBlockCount: lastMessage?.contentBlocks?.length ?? 0,
+        // Message-level streaming flags (delegated agents may only have these)
+        lastMsgIsStreaming: Boolean(lastMessage?.isStreaming),
+        lastMsgStreamingComplete: Boolean(lastMessage?.streamingComplete),
         // Include metadata fields that affect AgentCard rendering
         specialist: String(metadata?.specialist ?? ''),
         createdByAgentId: String(metadata?.createdByAgentId ?? ''),

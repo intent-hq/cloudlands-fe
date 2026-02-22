@@ -109,7 +109,7 @@
   <!-- Server Name -->
   <div>
     <span class="block text-sm font-medium mb-1.5">
-      Server Name <span class="text-destructive">*</span>
+      Server Name <span class="text-destructive-foreground">*</span>
     </span>
     <Input
       bind:value={form.name}
@@ -122,7 +122,7 @@
   <!-- Connection Type -->
   <div>
     <span class="block text-sm font-medium mb-1.5">
-      Connection Type <span class="text-destructive">*</span>
+      Connection Type <span class="text-destructive-foreground">*</span>
     </span>
     <div class="flex gap-1 p-1 bg-muted rounded-lg w-fit">
       {#each transportTypes as type (type.value)}
@@ -154,7 +154,7 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
         <span class="block text-sm font-medium mb-1.5">
-          Command <span class="text-destructive">*</span>
+          Command <span class="text-destructive-foreground">*</span>
         </span>
         <Input bind:value={form.command} placeholder="npx -y @some/mcp-server" />
         <p class="text-xs text-muted-foreground mt-1">e.g., npx, node, python</p>
@@ -187,7 +187,7 @@
               <span class="text-muted-foreground">=</span>
               <Input bind:value={pair.value} placeholder="value" class="flex-1" />
               <Button size="sm" variant="ghost" onclick={() => removeEnvVar(pair.id)}>
-                <Fa icon={faTrash} size="xs" class="text-destructive" />
+                <Fa icon={faTrash} size="xs" class="text-destructive-foreground" />
               </Button>
             </div>
           {/each}
@@ -198,7 +198,7 @@
     <!-- Remote fields (http/sse) -->
     <div>
       <span class="block text-sm font-medium mb-1.5">
-        URL <span class="text-destructive">*</span>
+        URL <span class="text-destructive-foreground">*</span>
       </span>
       <Input bind:value={form.url} placeholder="https://example.com/mcp" />
       <p class="text-xs text-muted-foreground mt-1">The full URL of the MCP server endpoint</p>
@@ -253,7 +253,7 @@
                 <span class="text-muted-foreground">:</span>
                 <Input bind:value={pair.value} placeholder="value" class="flex-1" />
                 <Button size="sm" variant="ghost" onclick={() => removeHeader(pair.id)}>
-                  <Fa icon={faTrash} size="xs" class="text-destructive" />
+                  <Fa icon={faTrash} size="xs" class="text-destructive-foreground" />
                 </Button>
               </div>
             {/each}
@@ -273,7 +273,7 @@
 
   <!-- Error message -->
   {#if error}
-    <div class="text-sm text-destructive">{error}</div>
+    <div class="text-sm text-destructive-foreground">{error}</div>
   {/if}
 
   <!-- Actions -->

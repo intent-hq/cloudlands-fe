@@ -22,7 +22,7 @@
   class="flex items-start gap-3 p-4 bg-card border border-destructive/50 shadow-lg min-w-[360px] max-w-[500px]"
 >
   <!-- Error icon -->
-  <div class="flex-shrink-0 mt-0.5 text-destructive">
+  <div class="flex-shrink-0 mt-0.5 text-destructive-foreground">
     <Fa icon={faExclamationCircle} class="w-5 h-5" />
   </div>
 

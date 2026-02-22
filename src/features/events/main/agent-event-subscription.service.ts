@@ -123,6 +123,7 @@ interface DelegationGroupTracker {
   awaitMode: 'any' | 'all';
   expectedAgentIds: Set<string>;
   completedAgentIds: Set<string>;
+  deletedAgentIds: Set<string>; // Track agents that were deleted (vs normally completed)
   events: WorkspaceEvent[]; // Accumulate events from completed agents
   subscriptionId: string;
 }
@@ -153,6 +154,7 @@ export class AgentEventSubscriptionService {
     totalDeliveries: 0,
     successfulDeliveries: 0,
     failedDeliveries: 0,
+    timeoutDeliveries: 0, // Deliveries that timed out (status unknown)
     droppedEvents: 0, // Events dropped due to missing callback
     lastDeliveryTime: null as string | null,
     lastFailureTime: null as string | null,
@@ -183,6 +185,7 @@ export class AgentEventSubscriptionService {
     totalDeliveries: number;
     successfulDeliveries: number;
     failedDeliveries: number;
+    timeoutDeliveries: number;
     droppedEvents: number;
     successRate: number;
     lastDeliveryTime: string | null;
@@ -244,6 +247,18 @@ export class AgentEventSubscriptionService {
     logger.warn('Recorded failed delivery', { agentId, eventCount, error });
   }
 
+  /**
+   * Record a delivery timeout (status unknown)
+   * Timeouts are treated separately from successes/failures because the message
+   * may have been delivered but we couldn't confirm completion within the timeout window.
+   */
+  recordDeliveryTimeout(agentId: string, eventCount: number): void {
+    this.deliveryStats.totalDeliveries++;
+    this.deliveryStats.timeoutDeliveries++;
+    this.deliveryStats.lastDeliveryTime = new Date().toISOString();
+    logger.warn('Recorded delivery timeout - status unknown', { agentId, eventCount });
+  }
+
   // ============================================================================
   // Subscription Persistence
   // ============================================================================
@@ -284,6 +299,7 @@ export class AgentEventSubscriptionService {
         awaitMode: t.awaitMode,
         expectedAgentIds: Array.from(t.expectedAgentIds),
         completedAgentIds: Array.from(t.completedAgentIds),
+        deletedAgentIds: Array.from(t.deletedAgentIds),
         events: t.events,
         subscriptionId: t.subscriptionId,
       })),
@@ -320,6 +336,7 @@ export class AgentEventSubscriptionService {
           awaitMode: g.awaitMode as 'any' | 'all',
           expectedAgentIds: new Set(g.expectedAgentIds as string[]),
           completedAgentIds: new Set(g.completedAgentIds as string[]),
+          deletedAgentIds: new Set(g.deletedAgentIds as string[] || []),
           events: Array.isArray(g.events) ? g.events : [],
           subscriptionId: g.subscriptionId as string,
         });
@@ -428,6 +445,11 @@ export class AgentEventSubscriptionService {
         firedOneShots: (data.firedOneShotSubscriptions as unknown[])?.length || 0,
       });
 
+      // Emit batch agent:subscriptions-restored event after ALL subscriptions are restored
+      if (restored > 0) {
+        this.emitSubscriptionsRestoredEvent(restored);
+      }
+
       return restored;
     } catch (err) {
       logger.warn('Failed to restore subscriptions from disk (sync)', { error: String(err) });
@@ -512,6 +534,7 @@ export class AgentEventSubscriptionService {
           awaitMode: group.awaitMode,
           expectedAgentIds: new Set(group.expectedAgentIds),
           completedAgentIds: new Set(),
+          deletedAgentIds: new Set(),
           events: [],
           subscriptionId,
         });
@@ -688,7 +711,11 @@ export class AgentEventSubscriptionService {
   /**
    * Unsubscribe an agent from events
    */
-  unsubscribe(subscriptionId: string): boolean {
+  unsubscribe(
+    subscriptionId: string,
+    reason?: 'manual-unsubscribe' | 'oneshot-fired' | 'delegation-complete',
+    groupId?: string,
+  ): boolean {
     const subscription = this.subscriptions.get(subscriptionId);
     if (!subscription) {
       return false;
@@ -705,12 +732,14 @@ export class AgentEventSubscriptionService {
     // Clean up oneShot guard
     this.firedOneShotSubscriptions.delete(subscriptionId);
 
-    // Emit unsubscription event
-    this.emitUnsubscriptionEvent(subscription.agentId, subscription.agentName, subscriptionId);
+    // Emit unsubscription event with reason and groupId
+    this.emitUnsubscriptionEvent(subscription.agentId, subscription.agentName, subscriptionId, reason, groupId);
 
     logger.info('Agent unsubscribed from events', {
       subscriptionId,
       agentId: subscription.agentId,
+      reason,
+      groupId,
     });
 
     this.schedulePersist();
@@ -833,6 +862,7 @@ export class AgentEventSubscriptionService {
     'agent:subscribed',
     'agent:unsubscribed',
     'agent:event-delivery-failed',
+    'agent:subscriptions-restored',
   ]);
 
   /**
@@ -917,7 +947,7 @@ export class AgentEventSubscriptionService {
       if (isOneShot) {
         if (deliveryPromise) {
           deliveryPromise.then(() => {
-            this.unsubscribe(subscription.id);
+            this.unsubscribe(subscription.id, 'oneshot-fired');
             logger.info('OneShot subscription: unsubscribed after immediate delivery', {
               subscriptionId: subscription.id,
               agentId,
@@ -934,7 +964,7 @@ export class AgentEventSubscriptionService {
           });
         } else {
           // Synchronous / no-promise delivery — clean up immediately
-          this.unsubscribe(subscription.id);
+          this.unsubscribe(subscription.id, 'oneshot-fired');
           logger.info('OneShot subscription: unsubscribed after immediate delivery', {
             subscriptionId: subscription.id,
             agentId,
@@ -972,6 +1002,7 @@ export class AgentEventSubscriptionService {
         awaitMode: group.awaitMode,
         expectedAgentIds: new Set(group.expectedAgentIds),
         completedAgentIds: new Set(),
+        deletedAgentIds: new Set(),
         events: [],
         subscriptionId: subscription.id,
       };
@@ -982,14 +1013,22 @@ export class AgentEventSubscriptionService {
     const completedAgentId = event.actor.id;
     if (completedAgentId && tracker.expectedAgentIds.has(completedAgentId)) {
       tracker.completedAgentIds.add(completedAgentId);
+
+      // Track if this agent was deleted (vs normally completed)
+      if (event.type === 'agent:deleted') {
+        tracker.deletedAgentIds.add(completedAgentId);
+      }
+
       tracker.events.push(event);
       this.schedulePersist();
 
       logger.info('Delegation group: agent completed', {
         groupId: group.groupId,
         completedAgentId,
+        eventType: event.type,
         completed: tracker.completedAgentIds.size,
         expected: tracker.expectedAgentIds.size,
+        deleted: tracker.deletedAgentIds.size,
       });
 
       // Check if all agents have completed
@@ -1009,7 +1048,7 @@ export class AgentEventSubscriptionService {
         const cleanupDelegationGroup = () => {
           // Unsubscribe from the delegation group subscription
           if (subscriptionIdForCleanup) {
-            this.unsubscribe(subscriptionIdForCleanup);
+            this.unsubscribe(subscriptionIdForCleanup, 'delegation-complete', groupIdForCleanup);
             logger.info('Delegation group: unsubscribed after completion', {
               groupId: groupIdForCleanup,
               subscriptionId: subscriptionIdForCleanup,
@@ -1019,8 +1058,20 @@ export class AgentEventSubscriptionService {
           this.delegationGroups.delete(groupIdForCleanup);
         };
 
+        // Add completion status metadata to events
+        const completionStatus = tracker.deletedAgentIds.size > 0 ? 'partial' : 'completed';
+        const eventsWithMetadata = tracker.events.map((e) => ({
+          ...e,
+          metadata: {
+            ...e.metadata,
+            delegationGroupId: group.groupId,
+            completionStatus,
+            deletedAgentCount: tracker.deletedAgentIds.size,
+          },
+        }));
+
         if (status === 'idle') {
-          const deliveryPromise = this.deliverEvents(agentId, tracker.events);
+          const deliveryPromise = this.deliverEvents(agentId, eventsWithMetadata);
           // Defer cleanup until delivery completes — if delivery fails,
           // keep the tracker and subscription so it can be retried.
           if (deliveryPromise) {
@@ -1034,13 +1085,27 @@ export class AgentEventSubscriptionService {
             cleanupDelegationGroup();
           }
         } else {
-          // Queue all events for later delivery
-          for (const e of tracker.events) {
-            this.queueEvent(agentId, e, filter.priority || 'high', filter);
+          // Parent is busy — queue events as a batch to preserve delegation group context
+          // Keep the tracker alive until the queued delivery succeeds
+          const queuedDeliveryPromise = this.queueDelegationGroupEvents(
+            agentId,
+            eventsWithMetadata,
+            filter.priority || 'high',
+            filter,
+            tracker,
+          );
+
+          // Defer cleanup until the queued delivery completes
+          if (queuedDeliveryPromise) {
+            queuedDeliveryPromise.then(cleanupDelegationGroup).catch((err) => {
+              logger.warn('Delegation group: queued delivery failed, keeping subscription for retry', {
+                groupId: groupIdForCleanup,
+                error: String(err),
+              });
+            });
+          } else {
+            cleanupDelegationGroup();
           }
-          // Events are queued — cleanup can proceed since delivery
-          // will happen when the agent becomes idle via deliverQueuedEvents
-          cleanupDelegationGroup();
         }
       }
     }
@@ -1089,6 +1154,55 @@ export class AgentEventSubscriptionService {
   }
 
   /**
+   * Queue delegation group events as a batch for later delivery.
+   * This preserves batch semantics by keeping the tracker alive until delivery succeeds.
+   * Returns a promise that resolves when the batch is delivered.
+   */
+  private queueDelegationGroupEvents(
+    agentId: string,
+    events: WorkspaceEvent[],
+    priority: 'high' | 'normal' | 'low',
+    filter: AgentEventFilter,
+    tracker: DelegationGroupTracker,
+  ): Promise<void> | undefined {
+    if (events.length === 0) return undefined;
+
+    // Create a synthetic event that wraps the batch with completion status
+    const completionStatus = tracker.deletedAgentIds.size > 0 ? 'partial' : 'completed';
+
+    logger.info('Delegation group: queuing batch for later delivery', {
+      groupId: tracker.groupId,
+      eventCount: events.length,
+      completionStatus,
+      deletedCount: tracker.deletedAgentIds.size,
+    });
+
+    // Queue all events individually but track that they're part of a delegation group batch
+    for (const e of events) {
+      this.queueEvent(agentId, e, priority, filter);
+    }
+
+    // Return a promise that resolves when the agent becomes idle and events are delivered
+    // This keeps the tracker alive until delivery succeeds
+    return new Promise((resolve, reject) => {
+      const checkAndDeliver = () => {
+        const status = this.getAgentStatus(agentId);
+        if (status === 'idle') {
+          // Agent is now idle, deliver the queued events
+          this.deliverQueuedEvents(agentId);
+          resolve();
+        } else {
+          // Still busy, check again soon
+          setTimeout(checkAndDeliver, 100);
+        }
+      };
+
+      // Start checking if agent becomes idle
+      checkAndDeliver();
+    });
+  }
+
+  /**
    * Deliver queued events to an agent
    */
   private deliverQueuedEvents(agentId: string): void {
@@ -1131,7 +1245,7 @@ export class AgentEventSubscriptionService {
     if (oneShotSubscriptionIds.size > 0) {
       const cleanupOneShots = () => {
         for (const subscriptionId of oneShotSubscriptionIds) {
-          this.unsubscribe(subscriptionId);
+          this.unsubscribe(subscriptionId, 'oneshot-fired');
           logger.info('OneShot subscription: unsubscribed after queued delivery', {
             subscriptionId,
             agentId,
@@ -1158,6 +1272,43 @@ export class AgentEventSubscriptionService {
   }
 
   /**
+   * Gather diagnostic information about subscriptions for an agent
+   * Used for enriching loop detection logs
+   */
+  private getSubscriptionDiagnostics(agentId: string): {
+    subscriptionCount: number;
+    subscriptionTypes: string[];
+    delegationGroupIds: string[];
+  } {
+    const subscriptionTypes = new Set<string>();
+    const delegationGroupIds = new Set<string>();
+    let subscriptionCount = 0;
+
+    // Find all subscriptions for this agent
+    for (const sub of this.subscriptions.values()) {
+      if (sub.agentId === agentId) {
+        subscriptionCount++;
+        // Determine subscription type
+        if (sub.filter.oneShot) {
+          subscriptionTypes.add('oneShot');
+        } else {
+          subscriptionTypes.add('persistent');
+        }
+        // Collect delegation group IDs if any
+        if (sub.filter.delegationGroup?.groupId) {
+          delegationGroupIds.add(sub.filter.delegationGroup.groupId);
+        }
+      }
+    }
+
+    return {
+      subscriptionCount,
+      subscriptionTypes: Array.from(subscriptionTypes),
+      delegationGroupIds: Array.from(delegationGroupIds),
+    };
+  }
+
+  /**
    * Deliver events to an agent
    */
   private deliverEvents(agentId: string, events: WorkspaceEvent[]): Promise<void> | undefined {
@@ -1175,13 +1326,20 @@ export class AgentEventSubscriptionService {
     this.recentDeliveries.set(agentId, recentInWindow);
 
     if (recentInWindow.length > AgentEventSubscriptionService.MAX_DELIVERIES_IN_WINDOW) {
+      // Gather diagnostic information for the log
+      const diagnostics = this.getSubscriptionDiagnostics(agentId);
+      const eventTypes = [...new Set(events.map((e) => e.type))];
+
       logger.error('Rapid-fire delivery loop detected — suppressing delivery', {
         agentId,
         deliveriesInWindow: recentInWindow.length,
         windowMs: AgentEventSubscriptionService.LOOP_DETECTION_WINDOW_MS,
         maxAllowed: AgentEventSubscriptionService.MAX_DELIVERIES_IN_WINDOW,
         eventCount: events.length,
-        eventTypes: events.map((e) => e.type),
+        eventTypes,
+        subscriptionCount: diagnostics.subscriptionCount,
+        subscriptionTypes: diagnostics.subscriptionTypes,
+        delegationGroupIds: diagnostics.delegationGroupIds,
       });
       return undefined;
     }
@@ -1384,6 +1542,8 @@ export class AgentEventSubscriptionService {
     agentId: string,
     agentName: string,
     subscriptionId: string,
+    reason?: 'manual-unsubscribe' | 'oneshot-fired' | 'delegation-complete',
+    groupId?: string,
   ): void {
     const event = createWorkspaceEvent(
       'agent:unsubscribed',
@@ -1393,6 +1553,37 @@ export class AgentEventSubscriptionService {
         agentId,
         agentName,
         subscriptionId,
+        reason,
+        groupId,
+      },
+    );
+    // Use WorkspaceEventBus which forwards to UnifiedEventBus automatically
+    this.eventBus.emitEvent(event);
+  }
+
+  /**
+   * Emit a batch subscriptions-restored event after restoration completes
+   */
+  private emitSubscriptionsRestoredEvent(count: number): void {
+    // Collect unique agent IDs from restored subscriptions
+    const agentIds = new Set<string>();
+    for (const sub of this.subscriptions.values()) {
+      agentIds.add(sub.agentId);
+    }
+
+    logger.info('Emitting agent:subscriptions-restored event', {
+      count,
+      uniqueAgentIds: agentIds.size,
+      agentIds: Array.from(agentIds),
+    });
+
+    const event = createWorkspaceEvent(
+      'agent:subscriptions-restored',
+      this.workspaceId,
+      { type: 'system', id: 'subscription-service' },
+      {
+        count,
+        agentIds: Array.from(agentIds),
       },
     );
     // Use WorkspaceEventBus which forwards to UnifiedEventBus automatically
@@ -1647,15 +1838,15 @@ function createEventDeliveryCallback(
             // causing the agent to process it multiple times (Bug: duplicate idle notifications).
             // Instead, treat timeout as a "fire and forget" — the message was delivered,
             // but we can't wait for the agent to finish processing it.
-            logger.warn('Event delivery timed out — message was likely delivered, skipping retries', {
+            logger.warn('Delivery timeout - status unknown', {
               agentId,
               workspaceId,
               eventCount: events.length,
               attempt,
               timeoutMs: DELIVERY_TIMEOUT_MS,
             });
-            // Record as a partial success — the message was sent, just not confirmed complete
-            service.recordDeliverySuccess(agentId, events.length);
+            // Record as a timeout — the message was sent, but we couldn't confirm completion
+            service.recordDeliveryTimeout(agentId, events.length);
             return;
           }
           throw new Error(result.error || 'sendBackendInitiatedMessage returned success=false');

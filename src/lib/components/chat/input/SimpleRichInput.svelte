@@ -953,7 +953,7 @@
             size="icon-sm"
             onclick={() => onstop?.()}
             aria-label="Stop streaming"
-            class="text-destructive"
+            class="text-destructive-foreground"
           >
             <Fa icon={faStop} size="sm" />
           </Button>
@@ -987,7 +987,7 @@
 
             <!-- Interrupt button (stop + send immediately) -->
             <button
-              class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer transition-colors text-destructive not-disabled:hover:bg-background"
+              class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer transition-colors text-destructive-foreground not-disabled:hover:bg-background"
               onclick={handleForceSubmit}
               aria-label="Interrupt and send"
             >
