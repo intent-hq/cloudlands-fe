@@ -37,13 +37,13 @@
 
   const DISMISSED_STORAGE_KEY = 'setup-script-banner-dismissed';
 
-  /** Check localStorage to see if this workspace was permanently dismissed */
+  /** Check localStorage to see if the banner was permanently dismissed (globally or per-workspace) */
   function isWorkspaceDismissed(wsId: string): boolean {
     try {
       const dismissed = localStorage.getItem(DISMISSED_STORAGE_KEY);
       if (dismissed) {
         const parsed = JSON.parse(dismissed) as Record<string, boolean>;
-        return parsed[wsId] === true;
+        return parsed._global === true || parsed[wsId] === true;
       }
     } catch {
       // ignore
@@ -119,7 +119,7 @@
       const dismissed = localStorage.getItem(DISMISSED_STORAGE_KEY);
       if (dismissed) {
         const parsed = JSON.parse(dismissed) as Record<string, boolean>;
-        return parsed[workspaceId] === true;
+        return parsed._global === true || parsed[workspaceId] === true;
       }
     } catch {
       // ignore
@@ -186,7 +186,7 @@
   function dismiss() {
     try {
       const dismissed = JSON.parse(localStorage.getItem(DISMISSED_STORAGE_KEY) || '{}');
-      dismissed[workspaceId] = true;
+      dismissed._global = true;
       localStorage.setItem(DISMISSED_STORAGE_KEY, JSON.stringify(dismissed));
     } catch {
       // ignore
