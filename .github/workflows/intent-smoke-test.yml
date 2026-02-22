@@ -166,12 +166,113 @@ jobs:
         run: npm install -g opencode-ai
 
       - name: Run smoke tests
-        run: npx playwright test --config=e2e/build-smoke.config.ts --grep "${{ matrix.provider }}"
+        run: npx playwright test --config=e2e/build-smoke.config.ts --grep "${{ matrix.provider }}" --grep-invert "multi-provider"
 
       - name: Upload test artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: smoke-test-report-${{ matrix.provider }}
+          path: e2e-reports/
+          retention-days: 7
+
+
+  test-multi-provider:
+    name: Test (multi-provider)
+    needs: build
+    runs-on: macos-14
+    timeout-minutes: 45
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+      AUGMENT_SESSION_AUTH: ${{ secrets.AUGMENT_SESSION_AUTH }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Restore node_modules cache
+        uses: actions/cache/restore@v4
+        with:
+          path: node_modules
+          key: deps-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Download Electron build
+        uses: actions/download-artifact@v4
+        with:
+          name: electron-build
+          path: dist-electron/
+
+      - name: Fix executable permissions
+        run: |
+          find dist-electron -path "*/MacOS/*" -type f -exec chmod +x {} +
+          find dist-electron -name "*.sh" -type f -exec chmod +x {} +
+
+      - name: Install and authenticate auggie
+        if: env.AUGMENT_SESSION_AUTH != ''
+        run: |
+          npm install -g @augmentcode/auggie
+          mkdir -p ~/.augment
+          echo '${{ env.AUGMENT_SESSION_AUTH }}' > ~/.augment/session.json
+
+      - name: Verify auggie auth
+        if: env.AUGMENT_SESSION_AUTH != ''
+        run: auggie --version
+
+      - name: Install claude-code
+        if: env.ANTHROPIC_API_KEY != ''
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Install codex
+        if: env.OPENAI_API_KEY != ''
+        run: npm install -g @openai/codex
+
+      - name: Authenticate codex CLI
+        if: env.OPENAI_API_KEY != ''
+        run: echo "$OPENAI_API_KEY" | codex login --with-api-key
+
+      - name: Verify codex login
+        if: env.OPENAI_API_KEY != ''
+        run: codex login status
+
+      - name: Verify codex CLI works end-to-end
+        if: env.OPENAI_API_KEY != ''
+        timeout-minutes: 2
+        run: codex exec "Respond with just the word ok" --sandbox read-only
+
+      - name: Detect available codex model
+        if: env.OPENAI_API_KEY != ''
+        timeout-minutes: 3
+        run: |
+          for model in gpt-5.3-codex gpt-5.2-codex gpt-5.1-codex gpt-5-codex; do
+            echo "Trying model: $model"
+            if codex exec --model "$model" "Respond with just ok" --sandbox read-only 2>&1; then
+              echo "CODEX_SMOKE_MODEL=codex:$model/low" >> $GITHUB_ENV
+              echo "✅ Using model: $model"
+              exit 0
+            fi
+            echo "❌ $model not available"
+          done
+          echo "⚠️ No codex model available — test will likely fail"
+
+      - name: Install opencode
+        if: env.ANTHROPIC_API_KEY != ''
+        run: npm install -g opencode-ai
+
+      - name: Run smoke tests
+        run: npx playwright test --config=e2e/build-smoke.config.ts --grep "multi-provider"
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-test-report-multi-provider
           path: e2e-reports/
           retention-days: 7

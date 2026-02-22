@@ -1137,6 +1137,158 @@ export function startChatNudgeMonitor(
 }
 
 // ---------------------------------------------------------------------------
+// findImplementorAgent
+// ---------------------------------------------------------------------------
+
+/**
+ * Find the implementor agent in a workspace by scanning the AgentNavRail
+ * (the vertical sidebar with agent avatar buttons).
+ *
+ * The first entry is the coordinator (initial agent); subsequent entries are
+ * delegated agents. Returns the agent ID of the second agent (the implementor).
+ *
+ * Uses `[data-agent-id]` selectors from the AgentNavRail component which
+ * is always visible, unlike the "Threads" list in AgentsList which requires the
+ * Threads tab to be active.
+ *
+ * Note: The source code defines these as `<button>` elements but the packaged
+ * build may render them as `<div>` elements, so we use the attribute-only
+ * selector `[data-agent-id]` instead of `button[data-agent-id]`.
+ *
+ * Throws if no implementor agent is found.
+ */
+export async function findImplementorAgent(
+  page: Page,
+): Promise<{ name: string; agentId: string }> {
+  // Agent entries in the AgentNavRail have data-agent-id attributes.
+  // This rail is always visible regardless of which sidebar tab is active.
+  const agentButtons = page.locator('[data-agent-id]');
+
+  // Wait for at least 2 agents to appear (coordinator + implementor)
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const count = await agentButtons.count();
+    if (count >= 2) break;
+    await new Promise((r) => setTimeout(r, 1_000));
+  }
+
+  const count = await agentButtons.count();
+  if (count < 2) {
+    throw new Error(`Expected at least 2 agents in nav rail, found ${count}`);
+  }
+
+  // First agent = coordinator, second = implementor
+  const agentId = await agentButtons.nth(1).getAttribute('data-agent-id');
+  if (!agentId) {
+    throw new Error('Implementor agent button has no data-agent-id attribute');
+  }
+
+  // Agent name isn't visible in the nav rail; use a short ID label for logging
+  return { name: `implementor (${agentId.substring(0, 8)})`, agentId };
+}
+
+// ---------------------------------------------------------------------------
+// openAgentChat
+// ---------------------------------------------------------------------------
+
+/**
+ * Open an agent's chat panel by clicking its avatar button in the AgentNavRail.
+ *
+ * Uses `[data-agent-id]` which is always visible in the left rail,
+ * unlike the "Threads" list which requires a specific sidebar tab.
+ *
+ * After clicking, waits for the chat panel to become visible (indicated by
+ * the presence of a chat message or the chat input).
+ */
+export async function openAgentChat(page: Page, agentId: string): Promise<void> {
+  const agentButton = page.locator(`[data-agent-id="${agentId}"]`);
+
+  await agentButton.waitFor({ state: 'visible', timeout: 10_000 });
+  await agentButton.click();
+
+  // Wait for the chat panel to render — look for the chat input or a message
+  await page
+    .locator('.tiptap-editor[contenteditable="true"], [data-message-role]')
+    .first()
+    .waitFor({ state: 'visible', timeout: 10_000 });
+  // Brief settle time for the panel to fully load
+  await page.waitForTimeout(1_000);
+}
+
+// ---------------------------------------------------------------------------
+// waitForAssistantResponse
+// ---------------------------------------------------------------------------
+
+/**
+ * Wait for the assistant to finish streaming and return the text of the last
+ * assistant message.
+ *
+ * After sending a message, call this to wait for the response. It polls until
+ * no streaming indicators are visible and then extracts the inner text of the
+ * last `[data-message-role="assistant"]` element.
+ *
+ * @param previousMessageCount - If provided, wait until the number of assistant
+ *   messages exceeds this count before extracting. This prevents returning a
+ *   stale message from a prior exchange when the chat already has history.
+ */
+export async function waitForAssistantResponse(
+  page: Page,
+  timeout: number = 60_000,
+  previousMessageCount?: number,
+): Promise<string> {
+  const pollInterval = 2_000;
+  const deadline = Date.now() + timeout;
+
+  // If a previous count was provided, wait until at least one new assistant
+  // message appears beyond that count before proceeding.
+  if (previousMessageCount !== undefined) {
+    while (Date.now() < deadline) {
+      const currentCount = await page
+        .locator('[data-message-role="assistant"]')
+        .count();
+      if (currentCount > previousMessageCount) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+    }
+  } else {
+    // No count guard — just wait for at least one assistant message to appear
+    await page.locator('[data-message-role="assistant"]').last().waitFor({
+      state: 'visible',
+      timeout: Math.min(timeout, 30_000),
+    });
+  }
+
+  // Then wait for streaming to stop
+  while (Date.now() < deadline) {
+    const isStreaming = await page
+      .locator('[data-streaming="true"], .animate-pulse, [data-agent-status="streaming"]')
+      .first()
+      .isVisible({ timeout: 1_000 })
+      .catch(() => false);
+
+    if (!isStreaming) {
+      // Streaming stopped — grab the last assistant message text
+      const text = await page
+        .locator('[data-message-role="assistant"]')
+        .last()
+        .innerText({ timeout: 5_000 });
+      return text;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollInterval));
+  }
+
+  // Timeout — return whatever is there
+  const text = await page
+    .locator('[data-message-role="assistant"]')
+    .last()
+    .innerText({ timeout: 5_000 })
+    .catch(() => '');
+  return text;
+}
+
+// ---------------------------------------------------------------------------
 // archiveAndGoHome
 // ---------------------------------------------------------------------------
 

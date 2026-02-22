@@ -207,6 +207,7 @@ export class HttpMcpBridge {
       agentName: string;
       sessionId?: string;
       agentModel?: string;
+      agentProvider?: string;
     },
   ): Promise<any> {
     const maxRetries = 1; // Only retry once with fresh server
@@ -260,6 +261,7 @@ export class HttpMcpBridge {
           sessionId: context.sessionId,
           metadata: {
             model: context.agentModel,
+            provider: context.agentProvider,
           },
         });
 
@@ -434,8 +436,9 @@ export class HttpMcpBridge {
         const sessionId = sessionIdFromHeader || registeredContext?.sessionId;
         const turnNumber = turnNumberFromHeader ?? registeredContext?.turnNumber;
 
-        // Get model from registered context
+        // Get model and provider from registered context
         const agentModel = registeredContext?.model;
+        const agentProvider = registeredContext?.provider;
 
         // Log agent context resolution for debugging
         if (jsonRpcRequest.method === 'tools/call') {
@@ -492,7 +495,7 @@ export class HttpMcpBridge {
             workspacePath,
             environmentConfig,
             jsonRpcRequest,
-            { workspaceId, agentId, agentName, sessionId, agentModel },
+            { workspaceId, agentId, agentName, sessionId, agentModel, agentProvider },
           );
 
           // Send response back

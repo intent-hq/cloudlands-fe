@@ -27,6 +27,8 @@ import { track } from '$lib/services/analytics';
 import {
   getDefaultModelForProvider,
   getDefaultProviderId,
+  isModelValidForProvider,
+  parseCompoundModelId,
   PROVIDER_MODEL_TIERS,
 } from '$shared/config/provider-config';
 
@@ -433,6 +435,31 @@ export class UnifiedAgentFactory {
       // Final fallback to DEFAULT_AGENT_MODEL (only for backend or when no provider)
       if (!resolvedModel) {
         resolvedModel = DEFAULT_AGENT_MODEL;
+      }
+
+      // Step 6.8: Safety-net — reject cross-provider compound model IDs.
+      // If the resolved model is a compound ID whose provider prefix doesn't match
+      // the target provider, log a warning and re-resolve to the provider's default.
+      // This catches edge cases where an LLM-supplied or inherited model slips through
+      // earlier validation (e.g., "codex:opencode/big-pickle").
+      if (resolvedModel && provider && resolvedModel.includes(':')) {
+        if (!isModelValidForProvider(resolvedModel, provider)) {
+          const { providerId: modelProvider } = parseCompoundModelId(resolvedModel);
+          logger.warn('Safety net: cross-provider model mismatch in agent creation', {
+            resolvedModel,
+            modelProvider,
+            expectedProvider: provider,
+          });
+          if (provider in PROVIDER_MODEL_TIERS) {
+            const baseModel = getDefaultModelForProvider(provider, 'balanced');
+            const defaultProviderId = getDefaultProviderId();
+            resolvedModel =
+              provider !== defaultProviderId ? `${provider}:${baseModel}` : baseModel;
+            logger.debug('Re-resolved model to provider default', { resolvedModel });
+          }
+          // If provider has no tier mappings (e.g., opencode), keep resolvedModel as-is.
+          // We cannot safely guess a model for dynamic-model providers.
+        }
       }
 
       // Step 7: Create agent session object (system prompt will be built by backend)

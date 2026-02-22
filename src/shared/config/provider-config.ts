@@ -380,6 +380,19 @@ export function getModelTierFromModel(
 }
 
 /**
+ * Check if a model ID (compound or bare) is compatible with a target provider.
+ *
+ * A bare model (e.g., 'opus4.5') is treated as belonging to the default provider.
+ * A compound model (e.g., 'codex:gpt-5.3-codex/high') belongs to its explicit provider.
+ *
+ * Returns true if the model's provider matches the target provider.
+ */
+export function isModelValidForProvider(model: string, targetProviderId: string): boolean {
+  const { providerId: modelProvider } = parseCompoundModelId(model);
+  return modelProvider === targetProviderId;
+}
+
+/**
  * Resolve the best default model from a preference list against the available models.
  * Walks the preference list in order and returns the first match found in availableValues.
  * Returns undefined if none of the preferred models are available.

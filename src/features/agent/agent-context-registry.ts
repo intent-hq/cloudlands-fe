@@ -17,6 +17,7 @@ interface AgentContext {
   turnNumber?: number;
   workspaceId: string;
   model?: string; // Agent model (used for delegation to inherit parent model)
+  provider?: string; // Explicit provider ID (e.g., 'opencode') so child agents inherit the correct provider
   updatedAt: Date;
 }
 
@@ -44,6 +45,7 @@ class AgentContextRegistry {
       turnNumber: context.turnNumber,
       workspaceId: context.workspaceId,
       model: context.model,
+      provider: context.provider,
     });
   }
 

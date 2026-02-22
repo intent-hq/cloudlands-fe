@@ -13,6 +13,8 @@
 import { generateRandomAgentName, isRandomAgentName } from '$lib/utils/agent-name-generator';
 import {
   buildProviderEnv,
+  createCompoundModelId,
+  getDefaultProviderId,
   getProviderConfig,
   parseCompoundModelId,
 } from '$shared/config/provider-config';
@@ -1446,6 +1448,15 @@ export class AgentBackendHandler {
           });
         }
 
+        // Ensure modelId includes provider prefix so child agents inherit the correct provider
+        // via parseCompoundModelId() in getRequiredContext()
+        if (!modelId.includes(':') && providerId !== getDefaultProviderId()) {
+          modelId = createCompoundModelId(providerId, modelId);
+          logger.info('Prefixed model with provider for context inheritance', {
+            agentId: request.agentId, providerId, modelId,
+          });
+        }
+
         const providerConfig = getProviderConfig(providerId);
 
         // Log the systemPrompt to debug if it's being passed correctly
@@ -1577,6 +1588,7 @@ export class AgentBackendHandler {
             sessionId: provider.sessionId || request.agentId,
             workspaceId: request.workspaceId || 'default',
             model: modelId, // Use already-resolved provider-aware model for delegation tools to inherit
+            provider: providerId, // Explicit provider so child agents don't have to parse model string
             updatedAt: new Date(),
           });
           logger.info('Registered agent context', {

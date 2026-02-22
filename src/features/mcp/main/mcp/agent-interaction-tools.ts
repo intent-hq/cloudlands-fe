@@ -57,6 +57,7 @@ import {
   createCompoundModelId,
   getDefaultProviderId,
   getDefaultModelForProvider,
+  isModelValidForProvider,
   PROVIDER_MODEL_TIERS,
   type ModelTier,
 } from '$shared/config/provider-config';
@@ -149,17 +150,31 @@ function resolveModelForProvider(
     return result;
   }
 
-  // No tier available — fall back to compound model prefixing (legacy behavior)
-  // This is a best-effort fallback for specialists with unknown model tiers.
+  // No tier available — legacy fallback.
+  // Without tier info we cannot safely map the specialist model to the parent's provider.
+  // If the specialist model belongs to a different provider, inherit parentModel instead of
+  // blindly creating a cross-provider compound ID (e.g., 'codex:sonnet4.5').
   if (specialistModel.includes(':')) {
+    const { providerId: specialistProvider } = parseCompoundModelId(specialistModel);
+    if (specialistProvider !== parentProvider) {
+      logger.warn(
+        'Cross-provider specialist model without tier mapping, inheriting parent model',
+        { specialistModel, specialistProvider, parentProvider, parentModel },
+      );
+      return parentModel;
+    }
     return specialistModel;
   }
+
+  // Bare model ID — implicitly belongs to the default provider
   if (parentProvider !== defaultProvider) {
+    // specialistModel is for the default provider but parent uses a different one.
+    // Without tier info we can't map it — inherit parentModel to avoid invalid IDs.
     logger.warn(
-      'No modelTier available for specialist, falling back to provider prefix (model may not be valid)',
-      { specialistModel, parentProvider },
+      'No modelTier available, specialist model from different provider, inheriting parent model',
+      { specialistModel, parentProvider, parentModel },
     );
-    return createCompoundModelId(parentProvider, specialistModel);
+    return parentModel;
   }
   return specialistModel;
 }
@@ -178,10 +193,11 @@ function getRequiredContext(call: ToolCall): {
   if (!ctx?.workspaceId) {
     throw new Error('Workspace context not available');
   }
-  // Derive the parent agent's ACP provider from its compound model ID (e.g., 'auggie:opus4.6' → 'auggie')
-  // This ensures delegated agents inherit the correct provider for session creation
+  // Derive the parent agent's ACP provider. Prefer explicit provider metadata (set by
+  // agent-context-registry) over parsing the compound model ID, since bare model strings
+  // like "default" would incorrectly resolve to the default provider (auggie).
   const parentModel = ctx.metadata?.model;
-  const provider = parentModel ? parseCompoundModelId(parentModel).providerId : undefined;
+  const provider = ctx.metadata?.provider || (parentModel ? parseCompoundModelId(parentModel).providerId : undefined);
   return {
     workspaceId: ctx.workspaceId,
     agentId: ctx.agentId || 'unknown-agent',
@@ -302,6 +318,21 @@ function resolveSpecialistConfig(
   specialistName: string | undefined;
   roleReminder: string | undefined;
 } {
+  // Validate modelOverride against the parent's provider.
+  // If the LLM specified a model from a different provider, discard it and fall through
+  // to tier-based resolution (prevents cross-provider compound IDs like 'codex:opencode/model').
+  let validatedModelOverride = modelOverride;
+  if (validatedModelOverride && parentModel) {
+    const { providerId: parentProvider } = parseCompoundModelId(parentModel);
+    if (!isModelValidForProvider(validatedModelOverride, parentProvider)) {
+      logger.warn('Model override belongs to a different provider, discarding', {
+        modelOverride: validatedModelOverride,
+        parentProvider,
+      });
+      validatedModelOverride = undefined;
+    }
+  }
+
   // Resolve specialist ID - default to 'implementor' if not provided and defaultToImplementor is true
   const effectiveSpecialistId = specialistId || (defaultToImplementor ? 'implementor' : undefined);
 
@@ -316,7 +347,7 @@ function resolveSpecialistConfig(
         specialistId: effectiveSpecialistId,
       });
       // Use provider-aware fallback instead of hardcoded model
-      let fallbackModel = modelOverride || parentModel;
+      let fallbackModel = validatedModelOverride || parentModel;
       if (!fallbackModel) {
         const defaultProvider = getDefaultProviderId();
         fallbackModel = getDefaultModelForProvider(defaultProvider, 'fast');
@@ -349,7 +380,7 @@ function resolveSpecialistConfig(
       resolved.modelTier,
       parentModel,
     );
-    const finalModel = modelOverride || specialistModelForProvider;
+    const finalModel = validatedModelOverride || specialistModelForProvider;
 
     logger.debug('Resolved specialist configuration', {
       specialistId: effectiveSpecialistId,
@@ -373,7 +404,7 @@ function resolveSpecialistConfig(
   }
 
   // No specialist and not defaulting - use manual model/behaviorPrompt or inherit from parent
-  let fallbackModel = modelOverride || parentModel;
+  let fallbackModel = validatedModelOverride || parentModel;
   if (!fallbackModel) {
     const defaultProvider = getDefaultProviderId();
     fallbackModel = getDefaultModelForProvider(defaultProvider, 'fast');
@@ -2071,7 +2102,21 @@ an agent is working on the task.`,
         );
       }
 
-      const { taskNoteId, contextMessage, model } = call.arguments;
+      const { taskNoteId, contextMessage, model: rawModel } = call.arguments;
+
+      // Validate the model argument against the parent's provider.
+      // If the LLM specified a model from a different provider, discard it and
+      // let the child agent inherit the parent's default model instead.
+      let model = rawModel;
+      if (model && ctx.provider) {
+        if (!isModelValidForProvider(model, ctx.provider)) {
+          logger.warn('wake_or_create_task_agent: model belongs to different provider, discarding', {
+            model,
+            parentProvider: ctx.provider,
+          });
+          model = undefined;
+        }
+      }
 
       logger.info('Wake or create task agent', {
         taskNoteId,

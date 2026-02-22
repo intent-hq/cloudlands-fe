@@ -283,7 +283,10 @@
   // Whether a model is explicitly selected (vs using default)
   // Also treat the literal string "undefined" as no selection (can happen from bad String(undefined) conversion)
   const hasExplicitModel = $derived(
-    localModel !== undefined && localModel !== USE_DEFAULT_VALUE && localModel !== 'undefined',
+    localModel !== undefined &&
+      localModel !== USE_DEFAULT_VALUE &&
+      localModel !== 'undefined' &&
+      parseCompoundModelId(localModel).modelId !== 'default',
   );
 
   // Get the label for a model ID from available models list

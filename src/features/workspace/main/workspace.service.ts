@@ -18,6 +18,7 @@ import {
   createCompoundModelId,
   getDefaultModelForProvider,
   getDefaultProviderId,
+  isModelValidForProvider,
   PROVIDER_MODEL_TIERS,
 } from '../../../shared/config/provider-config';
 import { isSpecNote } from '../../../shared/constants/notes';
@@ -1420,11 +1421,22 @@ export class WorkspaceService {
                 ? createCompoundModelId(effectiveProvider, providerModel)
                 : providerModel;
           } else if (resolved.model) {
-            // Legacy fallback: no tier available, use compound model prefixing (best-effort)
-            effectiveModel =
-              provider && provider !== defaultProviderId
-                ? createCompoundModelId(provider, resolved.model)
-                : resolved.model;
+            // Legacy fallback: no tier available.
+            // Validate the specialist model belongs to the target provider before
+            // creating a compound ID — prevents cross-provider IDs like 'codex:sonnet4.5'.
+            if (provider && provider !== defaultProviderId) {
+              if (isModelValidForProvider(resolved.model, provider)) {
+                effectiveModel = createCompoundModelId(provider, resolved.model);
+              } else {
+                logger.warn(
+                  'Legacy specialist model not valid for target provider, skipping compound ID',
+                  { model: resolved.model, provider },
+                );
+                // Don't set effectiveModel — fall through to balanced-tier or DEFAULT_AGENT_MODEL
+              }
+            } else {
+              effectiveModel = resolved.model;
+            }
           }
         }
         if (!effectiveModel && provider && provider in PROVIDER_MODEL_TIERS) {
