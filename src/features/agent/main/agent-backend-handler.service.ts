@@ -1935,6 +1935,59 @@ export class AgentBackendHandler {
         messagesFromFrontend ||
         userMessageAlreadyExists;
 
+      // DEFENSIVE CHECK: When skipUserMessage is true, the last message MUST be from user.
+      // If it isn't, the ACP provider will throw "Last message must be from user".
+      // This can happen when backend-initiated wake-ups load stale messages from disk
+      // that don't include the wake message added to the in-memory session.
+      if (skipUserMessage && messages.length > 0) {
+        const lastMsg = messages[messages.length - 1];
+        if (lastMsg?.role !== 'user') {
+          logger.warn(
+            'Backend: skipUserMessage is true but last message is not from user - attempting recovery from in-memory session',
+            {
+              agentId: request.agentId,
+              lastMessageRole: lastMsg?.role,
+              messageCount: messages.length,
+            },
+          );
+
+          // Try to get messages from the in-memory backend session, which should
+          // have the wake message that was added by sendBackendInitiatedMessage
+          const backend = await this.getBackend();
+          const backendSession = backend.getSession(request.agentId);
+          if (backendSession?.messages && backendSession.messages.length > 0) {
+            const inMemoryLast = backendSession.messages[backendSession.messages.length - 1];
+            if (inMemoryLast?.role === 'user') {
+              logger.warn(
+                'Backend: Recovered messages from in-memory session - last message is from user',
+                {
+                  agentId: request.agentId,
+                  diskMessageCount: messages.length,
+                  inMemoryMessageCount: backendSession.messages.length,
+                  recoveredLastMessageRole: inMemoryLast.role,
+                },
+              );
+              messages = [...backendSession.messages];
+            } else {
+              logger.error(
+                'Backend: In-memory session also does not end with user message - cannot recover',
+                {
+                  agentId: request.agentId,
+                  inMemoryLastRole: inMemoryLast?.role,
+                  inMemoryMessageCount: backendSession.messages.length,
+                },
+              );
+            }
+          } else {
+            logger.error('Backend: No in-memory session available for recovery', {
+              agentId: request.agentId,
+              hasBackendSession: !!backendSession,
+              inMemoryMessageCount: backendSession?.messages?.length || 0,
+            });
+          }
+        }
+      }
+
       // Create user message with ORIGINAL content for display and persistence
       // Skip if the message was already added (e.g., during agent creation)
       // Use queuedMessageId if provided (for queued messages) to ensure frontend and backend use the same ID
@@ -5071,6 +5124,7 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
           skipUserMessage: true,
           queuedMessageId: wakeMessageId, // Use same ID for consistency
           agentName: agentSession.name,
+          messages: messagesWithWake, // Pass in-memory messages so handleSendMessage uses them instead of reloading from disk
           ...otherParams,
         });
       } else {
@@ -5278,6 +5332,7 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
         skipUserMessage: true,
         queuedMessageId: wakeMessageId,
         agentName,
+        messages: existingSession?.messages ? [...existingSession.messages] : [], // Pass in-memory messages (includes wake message) so handleSendMessage uses them instead of reloading from disk
         ...otherParams,
       });
     }
