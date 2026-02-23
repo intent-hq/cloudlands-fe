@@ -117,12 +117,6 @@ if aws s3 ls "s3://$S3_BUCKET/beta/latest-mac.yml" --region "$AWS_REGION" &>/dev
   echo -e "   ${GREEN}✓${NC} latest-mac.yml"
 fi
 
-if aws s3 ls "s3://$S3_BUCKET/beta/latest-mac-arm64.yml" --region "$AWS_REGION" &>/dev/null; then
-  aws s3 cp "s3://$S3_BUCKET/beta/latest-mac-arm64.yml" "s3://$S3_BUCKET/stable/latest-mac-arm64.yml" \
-    --region "$AWS_REGION" --no-progress
-  echo -e "   ${GREEN}✓${NC} latest-mac-arm64.yml"
-fi
-
 # Copy ZIP files for auto-update
 echo -e "${BLUE}📤 Copying ZIP files...${NC}"
 aws s3 ls "s3://$S3_BUCKET/beta/" --region "$AWS_REGION" | grep "$VERSION.*\.zip" | while read -r line; do

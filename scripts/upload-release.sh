@@ -159,12 +159,6 @@ if [ -f "$DIST_DIR/latest-mac.yml" ]; then
   echo "   ✓ latest-mac.yml"
 fi
 
-if [ -f "$DIST_DIR/latest-mac-arm64.yml" ]; then
-  url_encode_manifest "$DIST_DIR/latest-mac-arm64.yml" "$MANIFEST_TEMP_DIR/latest-mac-arm64.yml"
-  upload_file "$MANIFEST_TEMP_DIR/latest-mac-arm64.yml" "$CHANNEL/latest-mac-arm64.yml" "application/x-yaml"
-  echo "   ✓ latest-mac-arm64.yml"
-fi
-
 # Upload ZIP files for current version only (required for auto-update)
 echo "📤 Uploading ZIP files for v$VERSION..."
 
@@ -292,15 +286,6 @@ if [ "$AWS_ENABLED" = true ]; then
     echo "   ✓ latest-mac.yml (with GCP URLs)"
   fi
 
-  # Rewrite and upload latest-mac-arm64.yml
-  if [ -f "$DIST_DIR/latest-mac-arm64.yml" ]; then
-    rewrite_manifest_urls_for_aws "$DIST_DIR/latest-mac-arm64.yml" "$AWS_TEMP_DIR/latest-mac-arm64.yml"
-    aws s3 cp "$AWS_TEMP_DIR/latest-mac-arm64.yml" "s3://$S3_BUCKET/$CHANNEL/latest-mac-arm64.yml" \
-      --content-type "application/x-yaml" \
-      --region "$AWS_REGION"
-    echo "   ✓ latest-mac-arm64.yml (with GCP URLs)"
-  fi
-
   # Invalidate CloudFront cache (if configured)
   if [ -n "$CLOUDFRONT_DISTRIBUTION_ID" ]; then
     echo "🔄 Invalidating CloudFront cache..."
@@ -330,7 +315,6 @@ gcloud storage ls "gs://$GCS_BUCKET/$CHANNEL/" 2>/dev/null | grep -E "\.(yml|zip
 echo ""
 echo "🌐 CDN URLs (primary):"
 echo "   https://cdn.augmentcode.com/$CHANNEL/latest-mac.yml"
-echo "   https://cdn.augmentcode.com/$CHANNEL/latest-mac-arm64.yml"
 echo "   https://cdn.augmentcode.com/$CHANNEL/Intent-latest-arm64.dmg"
 echo "   https://cdn.augmentcode.com/$CHANNEL/Intent-latest.dmg"
 

@@ -102,10 +102,9 @@ trap 'rm -rf "$TMPDIR"' EXIT
 echo ""
 echo "📝 Rewriting update manifests..."
 
-rewrite_manifest() {
-  local manifest_name="$1"
-  local zip_file="$2"
-  local versioned_manifest="${manifest_name%.yml}-${VERSION}.yml"
+rewrite_mac_manifest() {
+  local manifest_name="latest-mac.yml"
+  local versioned_manifest="latest-mac-${VERSION}.yml"
   local gcs_path="gs://$GCS_BUCKET/$CHANNEL"
 
   # Prefer versioned manifest if it exists
@@ -116,41 +115,47 @@ rewrite_manifest() {
     return 0
   fi
 
-  # No versioned manifest — rewrite from current manifest + zip metadata
+  # No versioned manifest — download both ZIPs and build a merged manifest
   echo "   No versioned manifest found, rewriting $manifest_name..."
 
-  # Download the zip to compute sha512 (electron-builder uses base64-encoded sha512)
-  echo "   Downloading $zip_file to compute sha512 (this may take a moment)..."
-  gcloud storage cp "$gcs_path/$zip_file" "$TMPDIR/$zip_file" --quiet
+  # Download both ZIPs to compute sha512 (electron-builder uses base64-encoded sha512)
+  echo "   Downloading $X64_ZIP to compute sha512 (this may take a moment)..."
+  gcloud storage cp "$gcs_path/$X64_ZIP" "$TMPDIR/$X64_ZIP" --quiet
+  echo "   Downloading $ARM64_ZIP to compute sha512 (this may take a moment)..."
+  gcloud storage cp "$gcs_path/$ARM64_ZIP" "$TMPDIR/$ARM64_ZIP" --quiet
 
-  local sha512
-  sha512=$(openssl dgst -sha512 -binary "$TMPDIR/$zip_file" | base64 | tr -d '\n')
-  local size
-  size=$(stat -c%s "$TMPDIR/$zip_file" 2>/dev/null || stat -f%z "$TMPDIR/$zip_file")
+  local x64_sha512 x64_size arm64_sha512 arm64_size
+  x64_sha512=$(openssl dgst -sha512 -binary "$TMPDIR/$X64_ZIP" | base64 | tr -d '\n')
+  x64_size=$(stat -c%s "$TMPDIR/$X64_ZIP" 2>/dev/null || stat -f%z "$TMPDIR/$X64_ZIP")
+  arm64_sha512=$(openssl dgst -sha512 -binary "$TMPDIR/$ARM64_ZIP" | base64 | tr -d '\n')
+  arm64_size=$(stat -c%s "$TMPDIR/$ARM64_ZIP" 2>/dev/null || stat -f%z "$TMPDIR/$ARM64_ZIP")
 
-  rm -f "$TMPDIR/$zip_file"
+  rm -f "$TMPDIR/$X64_ZIP" "$TMPDIR/$ARM64_ZIP"
 
-  local url_encoded_zip
-  url_encoded_zip=$(echo "$zip_file" | sed 's/ /%20/g')
+  local x64_url arm64_url
+  x64_url=$(echo "$X64_ZIP" | sed 's/ /%20/g')
+  arm64_url=$(echo "$ARM64_ZIP" | sed 's/ /%20/g')
 
   cat > "$TMPDIR/$manifest_name" <<EOF
 version: ${VERSION}
 files:
-  - url: ${url_encoded_zip}
-    sha512: ${sha512}
-    size: ${size}
-path: ${url_encoded_zip}
-sha512: ${sha512}
+  - url: ${x64_url}
+    sha512: ${x64_sha512}
+    size: ${x64_size}
+  - url: ${arm64_url}
+    sha512: ${arm64_sha512}
+    size: ${arm64_size}
+path: ${x64_url}
+sha512: ${x64_sha512}
 releaseDate: '$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")'
 EOF
 
   gcloud storage cp "$TMPDIR/$manifest_name" "$gcs_path/$manifest_name" \
     --content-type="application/x-yaml" --quiet
-  echo "   ✓ $manifest_name (rewritten)"
+  echo "   ✓ $manifest_name (rewritten with both architectures)"
 }
 
-rewrite_manifest "latest-mac-arm64.yml" "$ARM64_ZIP"
-rewrite_manifest "latest-mac.yml" "$X64_ZIP"
+rewrite_mac_manifest
 
 # --- Update "latest" DMG links ---
 echo ""
@@ -180,14 +185,12 @@ echo "   ✅ Stable channel rolled back to v$VERSION"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
 echo "📋 Updated files:"
-echo "   - stable/latest-mac.yml → v$VERSION"
-echo "   - stable/latest-mac-arm64.yml → v$VERSION"
+echo "   - stable/latest-mac.yml → v$VERSION (both architectures)"
 echo "   - stable/Intent-latest-arm64.dmg → $ARM64_DMG"
 echo "   - stable/Intent-latest.dmg → $X64_DMG"
 echo ""
 echo "🌐 CDN URLs (may take a few minutes to update):"
 echo "   https://cdn.augmentcode.com/$CHANNEL/latest-mac.yml"
-echo "   https://cdn.augmentcode.com/$CHANNEL/latest-mac-arm64.yml"
 echo "   https://cdn.augmentcode.com/$CHANNEL/Intent-latest-arm64.dmg"
 echo "   https://cdn.augmentcode.com/$CHANNEL/Intent-latest.dmg"
 

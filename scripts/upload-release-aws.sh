@@ -86,13 +86,6 @@ if [ -f "$DIST_DIR/latest-mac.yml" ]; then
   echo "   ✓ latest-mac.yml"
 fi
 
-if [ -f "$DIST_DIR/latest-mac-arm64.yml" ]; then
-  aws s3 cp "$DIST_DIR/latest-mac-arm64.yml" "s3://$S3_BUCKET/$CHANNEL/latest-mac-arm64.yml" \
-    --content-type "application/x-yaml" \
-    --region "$AWS_REGION"
-  echo "   ✓ latest-mac-arm64.yml"
-fi
-
 # Upload ZIP files for current version only (required for auto-update)
 echo "📤 Uploading ZIP files for v$VERSION..."
 

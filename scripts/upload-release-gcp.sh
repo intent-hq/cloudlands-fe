@@ -121,11 +121,6 @@ if [ -f "$DIST_DIR/latest-mac.yml" ]; then
   echo "   ✓ latest-mac.yml"
 fi
 
-if [ -f "$DIST_DIR/latest-mac-arm64.yml" ]; then
-  upload_file "$DIST_DIR/latest-mac-arm64.yml" "$CHANNEL/latest-mac-arm64.yml" "application/x-yaml"
-  echo "   ✓ latest-mac-arm64.yml"
-fi
-
 # Upload ZIP files for current version only (required for auto-update)
 echo "📤 Uploading ZIP files for v$VERSION..."
 
@@ -213,6 +208,5 @@ gcloud storage ls "gs://$GCS_BUCKET/$CHANNEL/" 2>/dev/null | grep -E "\.(yml|zip
 echo ""
 echo "🌐 CDN URLs:"
 echo "   https://cdn.augmentcode.com/$CHANNEL/latest-mac.yml"
-echo "   https://cdn.augmentcode.com/$CHANNEL/latest-mac-arm64.yml"
 echo "   https://cdn.augmentcode.com/$CHANNEL/Intent-latest-arm64.dmg"
 echo "   https://cdn.augmentcode.com/$CHANNEL/Intent-latest.dmg"

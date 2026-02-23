@@ -53,7 +53,7 @@ if [ -n "$1" ]; then
   echo "Promoting specified version: v$VERSION"
 else
   echo "Fetching current beta version..."
-  BETA_MANIFEST=$(gcloud storage cat "gs://$GCS_BUCKET/beta/latest-mac-arm64.yml" 2>/dev/null || true)
+  BETA_MANIFEST=$(gcloud storage cat "gs://$GCS_BUCKET/beta/latest-mac.yml" 2>/dev/null || true)
 
   if [ -z "$BETA_MANIFEST" ]; then
     echo "Error: Could not fetch beta manifest. Is there a beta release?"
@@ -92,7 +92,7 @@ echo ""
 
 # Copy update manifests
 echo "Copying update manifests..."
-for manifest in latest-mac.yml latest-mac-arm64.yml; do
+for manifest in latest-mac.yml; do
   if gcloud storage ls "gs://$GCS_BUCKET/beta/$manifest" &>/dev/null; then
     gcloud storage cp "gs://$GCS_BUCKET/beta/$manifest" "gs://$GCS_BUCKET/stable/$manifest" --quiet
     echo "  $manifest"
@@ -145,7 +145,6 @@ gcloud storage ls "gs://$GCS_BUCKET/stable/" 2>/dev/null | grep -E "\.(yml|zip|d
 echo ""
 echo "CDN URLs:"
 echo "  https://cdn.augmentcode.com/stable/latest-mac.yml"
-echo "  https://cdn.augmentcode.com/stable/latest-mac-arm64.yml"
 echo "  https://cdn.augmentcode.com/stable/Intent-latest-arm64.dmg"
 echo "  https://cdn.augmentcode.com/stable/Intent-latest.dmg"
 echo ""
