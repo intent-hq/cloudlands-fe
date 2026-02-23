@@ -33,7 +33,7 @@
   import { notesClient } from '$features/notes/notes.client';
   import { createWorkspaceId, WorkspaceId } from '$shared/types/branded-ids';
   import { listenSync } from '$lib/electron-bridge';
-  import { ChatService } from '$features/agent/services/chat.service';
+  import { ChatServiceManager } from '$features/agent/services/chat.service';
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import type { WorkspaceGitStatus } from '$features/accept-changes/types';
   import FlameGraph from './FlameGraph.svelte';
@@ -692,33 +692,38 @@
   // Track if any agent is currently working (streaming or processing)
   let isAgentWorking = $state(false);
 
-  // Subscribe to ChatService to detect if an agent is working
-  // Using onMount to avoid effect loops - the subscription callback updates state
-  // which could trigger effect re-runs in certain conditions
-  // Skip in compact mode - we don't need agent working state on homepage
-  let chatServiceUnsubscribe: (() => void) | null = null;
+  // Check all active ChatService instances via ChatServiceManager to detect if ANY agent is working.
+  // Uses a polling interval since services can be created/destroyed dynamically.
+  // Skip in compact mode - we don't need agent working state on homepage.
   onMount(() => {
     if (!workspaceId || compact) {
       isAgentWorking = false;
       return;
     }
 
-    // Get the ChatService instance
-    const chatService = ChatService.getInstance();
+    const manager = ChatServiceManager.getInstance();
 
-    // Subscribe to chat service state
-    chatServiceUnsubscribe = chatService.getStore().subscribe((state) => {
-      // Agent is working if it's streaming or processing
-      const newValue = state.isStreaming || state.isProcessing;
-      // Only update if value actually changed to avoid unnecessary re-renders
-      if (newValue !== isAgentWorking) {
-        isAgentWorking = newValue;
+    const checkAgentWorking = () => {
+      let anyWorking = false;
+      for (const [, service] of manager.getActiveServices()) {
+        const state = service.getState();
+        if (state.isStreaming || state.isProcessing) {
+          anyWorking = true;
+          break;
+        }
       }
-    });
+      if (anyWorking !== isAgentWorking) {
+        isAgentWorking = anyWorking;
+      }
+    };
+
+    // Poll at ~1s interval — sufficient for a progress indicator
+    const intervalId = setInterval(checkAgentWorking, 1000);
+    // Also check immediately on mount
+    checkAgentWorking();
 
     return () => {
-      chatServiceUnsubscribe?.();
-      chatServiceUnsubscribe = null;
+      clearInterval(intervalId);
     };
   });
 

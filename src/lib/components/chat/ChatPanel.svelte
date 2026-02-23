@@ -35,9 +35,9 @@
    */
 
   import { onMount, onDestroy, untrack, tick } from 'svelte';
-  import { ChatService, type ChatState } from '$features/agent/services/chat.service';
+  import { ChatService, getChatService, type ChatState } from '$features/agent/services/chat.service';
   import { agentService, type AgentMessage } from '$features/agent/agent.service';
-  import { subscribeToAgent, sessionStore } from '$features/agent/browser';
+  import { sessionStore } from '$features/agent/browser';
   import { browser } from '$app/environment';
   import { unifiedStateStore } from '$features/agent/services/unified-state-store';
   import { getUnifiedWorkspaceState } from '$features/workspace/workspace-unified-state.svelte';
@@ -216,8 +216,8 @@
     sandboxError = null,
   }: Props = $props();
 
-  // Service instance
-  const chatService = ChatService.getInstance();
+  // Service instance — per-agent, permanently bound to this agent's ID
+  const chatService = getChatService(agentId);
 
   // Local state (real state from service, or base for sandbox mode)
   let _chatStateInternal = $state<ChatState>({
@@ -316,7 +316,7 @@
 
   // Track which message is currently "sticky" (scrolled past its natural position)
   let stickyMessageId = $state<string | null>(null);
-  let agentServiceUnsubscribe: (() => void) | null = null;
+
   let waitForSessionUnsub: (() => void) | null = null;
 
   // CRITICAL: Destruction flag to prevent async callbacks from accessing reactive state after destruction.
@@ -1081,7 +1081,7 @@
   let pendingInitialPrompt = $derived(pendingInitialData.prompt);
 
   // Flag to preserve streaming state when message was already sent by workspace initializer.
-  // This prevents the subscribeToAgent callback from overwriting our local streaming state
+  // This prevents the ChatService store subscription from overwriting our local streaming state
   // before the actual streaming data arrives from the backend.
   let preserveStreamingState = $state(false);
   let preserveStreamingStateTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -1506,68 +1506,46 @@
       return;
     }
 
-    // IMPORTANT: Set up streaming handlers immediately for agents that might already be processing
-    // This is critical for agents created from contextual menu with initial messages
+    // Initialize the per-agent ChatService to load messages and set up streaming handlers.
+    // Each ChatPanel owns its own ChatService instance (via getChatService(agentId)),
+    // so there are no singleton race conditions — no need for session-mismatch guards.
     if (workspace && agentId) {
-      // Initialize chat service immediately to set up streaming handlers
-      // This ensures we catch streaming events even if the agent was just created
       try {
         await chatService.initializeChat(workspace, agentId, {
           agentName,
           agentModel,
           isInitialWorkspaceAgent,
         });
-        logger.info('Chat service initialized early for streaming', { agentId });
+        logger.info('Per-agent ChatService initialized on mount', { agentId });
 
-        // FIX: After ChatService initialization, use its state directly
-        // ChatService.initializeChat() correctly restores messages with streaming content
-        // from contentBlocks. Previously we were overwriting this with data from
-        // agentService/unifiedStateStore which doesn't have the streaming content.
-        const chatServiceState = chatService.getState();
-        // CRITICAL FIX: Verify the singleton's state belongs to THIS agent before using it.
-        // ChatService is a singleton, so when multiple ChatPanels mount simultaneously,
-        // each calls initializeChat() which modifies the singleton's state. By the time
-        // we call getState() here, another panel may have already called initializeChat()
-        // for a different agent, overwriting the state. Without this check, we could
-        // display the wrong agent's messages in this panel.
-        if (chatServiceState.session && chatServiceState.session.id === agentId) {
+        // Use the per-agent instance's state directly — it's always for this agent
+        const initialState = chatService.getState();
+        if (initialState.session) {
           _chatStateInternal = {
             ..._chatStateInternal,
-            messages: chatServiceState.messages,
-            isStreaming: chatServiceState.isStreaming,
-            isProcessing: chatServiceState.isProcessing,
-            streamingContent: chatServiceState.streamingContent,
-            session: chatServiceState.session,
-            error: chatServiceState.error,
+            messages: initialState.messages,
+            isStreaming: initialState.isStreaming,
+            isProcessing: initialState.isProcessing,
+            streamingContent: initialState.streamingContent,
+            session: initialState.session,
+            error: initialState.error,
           };
 
-          logger.info('Restored agent state from ChatService on mount', {
+          logger.info('Restored agent state from per-agent ChatService on mount', {
             agentId,
-            messageCount: chatServiceState.messages?.length || 0,
-            isStreaming: chatServiceState.isStreaming,
-            hasStreamingContent: (chatServiceState.streamingContent?.length || 0) > 0,
-            streamingContentLength: chatServiceState.streamingContent?.length || 0,
+            messageCount: initialState.messages?.length || 0,
+            isStreaming: initialState.isStreaming,
+            hasStreamingContent: (initialState.streamingContent?.length || 0) > 0,
           });
-        } else if (chatServiceState.session) {
-          // ChatService singleton was initialized for a different agent (race condition)
-          // Fall through to the per-agent subscription which will provide correct data
-          logger.info(
-            'ChatService state belongs to different agent, using per-agent subscription',
-            {
-              thisAgentId: agentId,
-              chatServiceAgentId: chatServiceState.session.id,
-            },
-          );
         }
       } catch (error) {
-        logger.error('Failed to initialize chat service early', error);
+        logger.error('Failed to initialize per-agent ChatService', error);
 
         // Fallback: restore from agentService if ChatService init fails
         const currentAgent = agentService.getSession(agentId);
         if (currentAgent) {
           let isCurrentlyStreaming = currentAgent.isStreaming || false;
 
-          // Check unified state store as fallback
           if (currentAgent.workspaceId) {
             const workspaceState = unifiedStateStore.getWorkspace(currentAgent.workspaceId);
             const agentFromStore = workspaceState?.agents.get(agentId);
@@ -1591,34 +1569,6 @@
           });
         }
       }
-    } else {
-      // No workspace or agentId - fallback to agentService
-      const currentAgent = agentService.getSession(agentId);
-      if (currentAgent) {
-        let isCurrentlyStreaming = currentAgent.isStreaming || false;
-
-        if (currentAgent.workspaceId) {
-          const workspaceState = unifiedStateStore.getWorkspace(currentAgent.workspaceId);
-          const agentFromStore = workspaceState?.agents.get(agentId);
-          if (agentFromStore?.streaming?.active) {
-            isCurrentlyStreaming = true;
-          }
-        }
-
-        _chatStateInternal = {
-          ..._chatStateInternal,
-          messages: currentAgent.messages || [],
-          isStreaming: isCurrentlyStreaming,
-          isProcessing: currentAgent.isProcessing || isCurrentlyStreaming,
-          session: currentAgent,
-        };
-
-        logger.info('Restored agent state (no workspace) on mount', {
-          agentId,
-          messageCount: currentAgent.messages?.length || 0,
-          isStreaming: isCurrentlyStreaming,
-        });
-      }
     }
 
     // Set up queue listener using listenSync for proper cleanup without race conditions
@@ -1633,8 +1583,6 @@
     // Note: Initial queue fetch is now handled by the reactive $effect above
     // This ensures the queue is refetched when switching between agents
 
-    // Keep track of chat service state separately
-    let chatServiceState: ChatState | null = null;
     let storeSubscriptionCallCount = 0;
 
     // Subscribe to chat service state - this manages the streaming state
@@ -1655,8 +1603,6 @@
           isStreaming: state.isStreaming,
         });
       }
-      chatServiceState = state;
-
       // CRITICAL FIX: Use untrack() to read _chatStateInternal without creating reactive dependencies.
       // Previously used $state.snapshot() which calls structuredClone() internally.
       // structuredClone() can cause "maximum call stack exceeded" errors with large message arrays
@@ -1685,15 +1631,7 @@
         return; // No changes, skip update
       }
 
-      // CRITICAL FIX: Only update if the ChatService session matches THIS panel's agentId.
-      // ChatService is a singleton, so when another panel calls initializeChat() for a
-      // different agent, ALL panels receive the state update. Without this check, opening
-      // an agent in one panel would clear the chat history in other panels.
-      if (state.session?.id !== agentId) {
-        // State is for a different agent - ignore this update
-        // The agentServiceUnsubscribe subscription (below) handles per-agent updates
-        return;
-      }
+      // Per-agent ChatService: state is always for this agent, no session-mismatch guard needed.
 
       // CRITICAL FIX: Don't overwrite existing messages with empty messages.
       // This can happen during initialization race conditions.
@@ -1817,244 +1755,9 @@
       }
     });
 
-    // Subscribe to agent service for real-time message updates
-    // IMPORTANT: Only update from agent service when chat service is NOT actively streaming
-    // to avoid conflicting updates that can cause infinite loops
-    // Using subscribeToAgent instead of sessionStore.getStore().subscribe for efficiency:
-    // - Global store subscription triggers for ALL agents when ANY agent updates
-    // - Per-agent subscription only triggers when THIS agent's data changes
-    // - This significantly reduces unnecessary subscription callbacks during streaming
-    agentServiceUnsubscribe = subscribeToAgent(agentId, (session) => {
-      if (session) {
-        // MULTI-AGENT FIX: Skip subscribeToAgent updates ONLY when ChatService singleton is actively
-        // streaming FOR THIS AGENT. In that case, ChatService store subscription is the primary source.
-        //
-        // When ChatService is for a DIFFERENT agent, subscribeToAgent is the ONLY source of updates
-        // for this panel, so we must NOT skip even if this session is streaming.
-        //
-        // Logic:
-        // - chatServiceState?.session?.id === agentId: ChatService singleton is for THIS agent
-        // - chatServiceState?.isStreaming: AND it's actively streaming
-        // Only skip if BOTH conditions are true - meaning ChatService is handling updates for us.
-        const chatServiceIsForThisAgent = chatServiceState?.session?.id === agentId;
-        const chatServiceIsStreaming = chatServiceState?.isStreaming;
-        if (chatServiceIsForThisAgent && chatServiceIsStreaming) {
-          logger.debug(
-            '[ChatPanel] subscribeToAgent: Skipping - ChatService is handling this agent',
-            {
-              agentId,
-              chatServiceSessionId: chatServiceState?.session?.id,
-              isStreaming: chatServiceIsStreaming,
-            },
-          );
-          return;
-        }
-
-        logger.debug('[ChatPanel] subscribeToAgent: Processing update', {
-          agentId,
-          chatServiceSessionId: chatServiceState?.session?.id,
-          chatServiceIsForThisAgent,
-          chatServiceIsStreaming,
-          sessionIsStreaming: session.isStreaming,
-          sessionMessageCount: session.messages?.length,
-        });
-
-        // CRITICAL FIX: Use untrack() to read _chatStateInternal without creating reactive dependencies.
-        // Previously used $state.snapshot() which calls structuredClone() internally.
-        // structuredClone() can cause "maximum call stack exceeded" errors with large message arrays
-        // containing deeply nested content blocks (tool calls, etc.) during long chat sessions.
-        // untrack() reads the current value without cloning, avoiding stack overflow.
-        const currentChatState = untrack(() => _chatStateInternal);
-        const previousMessageCount = currentChatState.messages?.length || 0;
-        const sessionMessages = session.messages || [];
-
-        // Check if session changed (important for multi-panel scenarios where chatService
-        // might be initialized for a different agent)
-        const sessionChanged = currentChatState.session?.id !== session.id;
-
-        // BUG FIX: Check if streaming state changed - this was missing!
-        // Without this check, when streaming ends and session.isStreaming changes from true to false,
-        // but messages haven't changed, the callback early-returns without updating _chatStateInternal.isStreaming.
-        // This causes the streaming indicator to remain visible indefinitely until page refresh.
-        const currentComputedIsStreaming =
-          (chatServiceState?.session?.id === agentId && chatServiceState?.isStreaming) ||
-          currentChatState.isStreaming ||
-          false;
-        const newComputedIsStreaming =
-          (chatServiceState?.session?.id === agentId && chatServiceState?.isStreaming) ||
-          session.isStreaming ||
-          false;
-        const streamingChanged = newComputedIsStreaming !== currentComputedIsStreaming;
-
-        // CRITICAL FIX: Don't overwrite existing messages with empty messages from agent store.
-        // This can happen during workspace loading when:
-        // 1. ChatService loads messages from disk first (correct state)
-        // 2. AgentService/loadAgentsFromDisk runs later and notifies with empty messages
-        // Only accept updates that have MORE messages, or if we currently have no messages.
-        if (sessionMessages.length < previousMessageCount && previousMessageCount > 0) {
-          logger.debug('[ChatPanel] Ignoring agent store update with fewer messages', {
-            agentId,
-            currentMessageCount: previousMessageCount,
-            incomingMessageCount: sessionMessages.length,
-          });
-          return;
-        }
-
-        // Only update if messages actually changed (compare by length, last message id, AND contentBlocks)
-        const lastCurrentMsg = currentChatState.messages?.[currentChatState.messages.length - 1];
-        const lastSessionMsg = sessionMessages[sessionMessages.length - 1];
-
-        // MULTI-AGENT FIX: Compare actual text content length, not just contentBlocks array length.
-        // During streaming, text is appended to the last text block without changing the array length.
-        // Without this check, panels would stop updating when subscribeToAgent fires but the
-        // contentBlocks length hasn't changed (only the text content grew).
-        const getLastTextBlockLength = (msg: AgentMessage | undefined): number => {
-          if (!msg?.contentBlocks?.length) return 0;
-          const lastBlock = msg.contentBlocks[msg.contentBlocks.length - 1];
-          if (lastBlock?.type === 'text') {
-            return lastBlock.text?.length ?? 0;
-          }
-          return 0;
-        };
-
-        const messagesChanged =
-          sessionMessages.length !== previousMessageCount ||
-          lastCurrentMsg?.id !== lastSessionMsg?.id ||
-          // Compare contentBlocks array length
-          lastSessionMsg?.contentBlocks?.length !== lastCurrentMsg?.contentBlocks?.length ||
-          // MULTI-AGENT FIX: Also compare last text block's content length to detect streaming updates
-          // This catches the case where text is being streamed into an existing block
-          getLastTextBlockLength(lastSessionMsg) !== getLastTextBlockLength(lastCurrentMsg);
-
-        if (!messagesChanged && !sessionChanged && !streamingChanged) {
-          logger.debug('[ChatPanel] subscribeToAgent: No changes detected, skipping', {
-            agentId,
-            messagesChanged,
-            sessionChanged,
-            streamingChanged,
-            previousMessageCount,
-            sessionMessageCount: sessionMessages.length,
-          });
-          return;
-        }
-
-        // CRITICAL FIX: Don't overwrite with fewer contentBlocks during or just after streaming
-        // This prevents agentService from reverting chatService's streaming updates
-        const currentBlockCount = lastCurrentMsg?.contentBlocks?.length || 0;
-        const sessionBlockCount = lastSessionMsg?.contentBlocks?.length || 0;
-        if (
-          lastCurrentMsg?.id === lastSessionMsg?.id &&
-          sessionBlockCount < currentBlockCount &&
-          currentBlockCount > 0
-        ) {
-          logger.debug('[ChatPanel] Ignoring agent store update with fewer contentBlocks', {
-            agentId,
-            messageId: lastCurrentMsg?.id,
-            currentBlockCount,
-            sessionBlockCount,
-          });
-          return;
-        }
-
-        logger.info('[ChatPanel] subscribeToAgent: Updating _chatStateInternal', {
-          agentId,
-          previousMessageCount,
-          newMessageCount: sessionMessages.length,
-          sessionIsStreaming: session.isStreaming,
-          sessionChanged,
-        });
-
-        // SCROLL FIX: Capture scroll anchor BEFORE state update to prevent scroll jump
-        // This preserves scroll position relative to visible elements when content changes
-        // (e.g., when agent events add/remove messages above the viewport)
-        let scrollAnchor: ScrollAnchor | null = null;
-        if (scrollContainer && !shouldFollowBottom) {
-          scrollAnchor = captureScrollAnchor(scrollContainer);
-        }
-
-        // DEBUG: Log the state update for duplicate flash diagnosis
-        const computedIsStreaming =
-          (chatServiceState?.session?.id === agentId && chatServiceState?.isStreaming) ||
-          session.isStreaming ||
-          false;
-        logger.debug('[ChatPanel] DEBUG: subscribeToAgent updating state', {
-          agentId,
-          source: 'subscribeToAgent',
-          timestamp: Date.now(),
-          prevMessageCount: previousMessageCount,
-          newMessageCount: sessionMessages.length,
-          isStreaming: computedIsStreaming,
-          sessionIsStreaming: session.isStreaming,
-          chatServiceIsStreaming: chatServiceState?.isStreaming,
-          lastMessageId: sessionMessages[sessionMessages.length - 1]?.id,
-        });
-
-        // Merge state: use agent service session and messages but preserve chat service streaming state
-        // CRITICAL FIX: Also update session here to handle multi-panel scenarios where
-        // chatService might be initialized for a different agent
-
-        // PRESERVE STREAMING STATE FIX: If preserveStreamingState is true, we've set isStreaming=true
-        // because the message was already sent by workspace initializer. Don't overwrite this until
-        // actual streaming data arrives (indicated by computedIsStreaming becoming true or messages arriving).
-        let effectiveIsStreaming = computedIsStreaming;
-        let effectiveIsProcessing =
-          (chatServiceState?.session?.id === agentId && chatServiceState?.isProcessing) ||
-          session.isStreaming ||
-          false;
-
-        if (preserveStreamingState) {
-          // Keep streaming state true until actual streaming data arrives
-          if (computedIsStreaming || sessionMessages.length > 0) {
-            // Actual streaming data has arrived, clear the preserve flag
-            preserveStreamingState = false;
-          } else {
-            // Preserve the streaming state we set earlier
-            effectiveIsStreaming = currentChatState.isStreaming;
-            effectiveIsProcessing = currentChatState.isProcessing;
-          }
-        }
-
-        _chatStateInternal = {
-          ...currentChatState,
-          session: session,
-          messages: sessionMessages,
-          // MULTI-AGENT FIX: Only use chatServiceState's streaming state if it's for THIS agent.
-          // Otherwise, fall back to session.isStreaming from the sessionStore.
-          // Previously, using chatServiceState?.isStreaming unconditionally caused incorrect streaming
-          // indicators when the ChatService singleton was initialized for a different agent.
-          isStreaming: effectiveIsStreaming,
-          isProcessing: effectiveIsProcessing,
-        };
-
-        // SCROLL FIX: Restore scroll anchor AFTER DOM settles to prevent jump to top
-        if (scrollAnchor && scrollContainer) {
-          requestAnimationFrame(() => {
-            if (scrollContainer && scrollAnchor) {
-              restoreScrollAnchor(scrollContainer, scrollAnchor);
-            }
-          });
-        }
-
-        // Note: Auto-scroll is handled by the followBottom action
-
-        // Notify parent of updates
-        if (typeof onChatUpdate === 'function' && sessionMessages.length > 0) {
-          const lastUserMessage = [...sessionMessages].reverse().find((m) => m.role === 'user');
-          const lastAgentMessage = [...sessionMessages]
-            .reverse()
-            .find((m) => m.role === 'assistant');
-
-          onChatUpdate({
-            lastUserMessage:
-              lastUserMessage?.contentBlocks?.[0]?.text || (lastUserMessage as any)?.content,
-            lastAgentResponse:
-              lastAgentMessage?.contentBlocks?.[0]?.text || (lastAgentMessage as any)?.content,
-            isProcessing: currentChatState.isProcessing,
-            messageCount: sessionMessages.length,
-          });
-        }
-      }
-    });
+    // Per-agent ChatService: The chatService.getStore().subscribe() above is the single
+    // source of truth. No dual subscription to subscribeToAgent() is needed — the per-agent
+    // ChatService instance handles all streaming and message state for this agent.
 
     // Initialize chat session (skip if already done above)
     if (workspace && agentId) {
@@ -2096,8 +1799,8 @@
 
                     // IMPORTANT: Since the message was already sent, streaming should be in progress.
                     // Set local streaming state to true so the StreamingStatus indicator shows immediately.
-                    // Also set preserveStreamingState flag to prevent subscribeToAgent from overwriting
-                    // this state before actual streaming data arrives.
+                    // Also set preserveStreamingState flag to prevent the ChatService store subscription
+                    // from overwriting this state before actual streaming data arrives.
                     preserveStreamingState = true;
 
                     // Safety timeout: Clear the preserve flag after 10 seconds if streaming never starts.
@@ -2679,7 +2382,6 @@
     logger.info('ChatPanel destroyed', { instanceId, agentId });
     // Clean up subscriptions and scroll manager
     unsubscribe?.();
-    agentServiceUnsubscribe?.();
     waitForSessionUnsub?.();
     queueListenerCleanup?.();
     // Note: followBottom action cleanup is handled automatically by Svelte
@@ -2744,8 +2446,7 @@
       const noteIds = currentMainPanelContext?.noteId
         ? [currentMainPanelContext.noteId]
         : undefined;
-      // CRITICAL: Pass agentId to ensure message goes to the correct agent
-      // ChatService is a singleton, so without this, it may use a stale session
+      // Pass agentId to ensure message goes to the correct agent
       // Convert queued image blocks to context items so they are sent to the agent
       const imageContextItems = message.imageBlocks?.map((block, index) => ({
         id: `queued-image-${index}`,
@@ -2916,7 +2617,7 @@
     //
     // CRITICAL FIX: Also check the source of truth (unifiedStateStore) directly.
     // The chatState._chatStateInternal can become stale because updates are delivered
-    // via requestAnimationFrame in subscribeToAgent. If the user sends a message after
+    // via requestAnimationFrame in the store subscription. If the user sends a message after
     // streaming stops but before the RAF callback fires, chatState.isStreaming is still
     // true even though the actual streaming has stopped. Checking unifiedStateStore gives
     // us the real-time streaming state.
@@ -3068,8 +2769,7 @@
       const noteIds = currentMainPanelContext?.noteId
         ? [currentMainPanelContext.noteId]
         : undefined;
-      // CRITICAL: Pass agentId to ensure message goes to the correct agent
-      // ChatService is a singleton, so without this, it may use a stale session
+      // Pass agentId to ensure message goes to the correct agent
       await chatService.sendMessage(messageWithContext, workspace, {
         contextItems: serializedContext,
         noteIds,
@@ -3101,24 +2801,8 @@
   // Handle stopping the current generation
   async function handleStop() {
     try {
-      // MULTI-AGENT FIX: Check if the ChatService singleton is for THIS agent.
-      // If the singleton is for a different agent, we need to stop this agent directly
-      // using agentService.stopSession() instead of chatService.stopChat().
-      const currentChatServiceState = chatService.getState();
-      const chatServiceIsForThisAgent = currentChatServiceState.session?.id === agentId;
-
-      if (chatServiceIsForThisAgent) {
-        // ChatService is for this agent - use the full stopChat() which handles
-        // cleanup of stream handlers and isInterrupting flag
-        await chatService.stopChat();
-      } else {
-        // ChatService is for a different agent - stop this agent directly
-        logger.info('Stopping agent directly (ChatService is for different agent)', {
-          thisAgentId: agentId,
-          chatServiceAgentId: currentChatServiceState.session?.id,
-        });
-        await agentService.stopSession(agentId);
-      }
+      // Per-agent ChatService: always bound to this agent, use stopChat() directly
+      await chatService.stopChat();
 
       // FIX: Directly update the last message with interrupted flag and clear streaming state.
       // We can't rely on the backend completion event because the stream handler is cleaned up
@@ -3147,7 +2831,7 @@
           });
 
           // Also update local state directly to ensure UI updates immediately
-          // The subscribeToAgent may not fire synchronously after sessionStore update
+          // The store subscription may not fire synchronously after sessionStore update
           const messageIndex = messages.findIndex((m) => m.id === lastAssistantMessage.id);
           if (messageIndex !== -1) {
             const updatedMessage = {
@@ -3380,8 +3064,7 @@
       const noteIds = currentMainPanelContext?.noteId
         ? [currentMainPanelContext.noteId]
         : undefined;
-      // CRITICAL: Pass agentId to ensure message goes to the correct agent
-      // ChatService is a singleton, so without this, it may use a stale session
+      // Pass agentId to ensure message goes to the correct agent
       await chatService.sendMessage(messageWithContext, workspace, {
         contextItems: contextToSend,
         noteIds,
@@ -3403,24 +3086,7 @@
   async function handleEditMessage(messageId: string, newText: string) {
     if (!workspace) return;
     try {
-      // CRITICAL FIX: Ensure chatService is initialized for THIS agent before editing.
-      // ChatService is a singleton, so if another panel was the last to call initializeChat(),
-      // the chatService.state.messages will contain that agent's messages, not this panel's.
-      // This would cause "Message not found" errors when trying to edit.
-      const currentSession = chatService.getState().session;
-      if (!currentSession || currentSession.id !== agentId) {
-        logger.info('Reinitializing chatService before edit - session mismatch', {
-          agentId,
-          currentSessionId: currentSession?.id,
-        });
-        await chatService.initializeChat(workspace, agentId!, {
-          agentName,
-          agentModel,
-          isInitialWorkspaceAgent,
-        });
-        await waitForSessionReady(2000);
-      }
-
+      // Per-agent ChatService: always bound to this agent, no re-acquisition needed
       await chatService.editAndRegenerate(messageId, newText, workspace);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Something went wrong';
@@ -3433,24 +3099,7 @@
   async function handleRegenerateFromMessage(assistantMessageId: string) {
     if (!workspace) return;
     try {
-      // CRITICAL FIX: Ensure chatService is initialized for THIS agent before regenerating.
-      // ChatService is a singleton, so if another panel was the last to call initializeChat(),
-      // the chatService.state.messages will contain that agent's messages, not this panel's.
-      // This would cause "Message not found" errors when trying to regenerate.
-      const currentSession = chatService.getState().session;
-      if (!currentSession || currentSession.id !== agentId) {
-        logger.info('Reinitializing chatService before regenerate - session mismatch', {
-          agentId,
-          currentSessionId: currentSession?.id,
-        });
-        await chatService.initializeChat(workspace, agentId!, {
-          agentName,
-          agentModel,
-          isInitialWorkspaceAgent,
-        });
-        await waitForSessionReady(2000);
-      }
-
+      // Per-agent ChatService: always bound to this agent, no re-acquisition needed
       await chatService.regenerateFromMessage(assistantMessageId, workspace);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Something went wrong';
@@ -3463,23 +3112,7 @@
   async function handleForkFromMessage(messageId: string) {
     if (!workspace) return;
     try {
-      // CRITICAL FIX: Ensure chatService is initialized for THIS agent before forking.
-      // ChatService is a singleton, so if another panel was the last to call initializeChat(),
-      // the chatService.state.messages will contain that agent's messages, not this panel's.
-      const currentSession = chatService.getState().session;
-      if (!currentSession || currentSession.id !== agentId) {
-        logger.info('Reinitializing chatService before fork - session mismatch', {
-          agentId,
-          currentSessionId: currentSession?.id,
-        });
-        await chatService.initializeChat(workspace, agentId!, {
-          agentName,
-          agentModel,
-          isInitialWorkspaceAgent,
-        });
-        await waitForSessionReady(2000);
-      }
-
+      // Per-agent ChatService: always bound to this agent, no re-acquisition needed
       const forkedId = await chatService.forkSession(workspace, {
         forkFromMessageId: messageId,
         switchToForked: true,
@@ -3643,8 +3276,7 @@
       imageMimeType: block.mimeType,
     }));
 
-    // CRITICAL: Pass agentId to ensure message goes to the correct agent
-    // ChatService is a singleton, so without this, it may use a stale session
+    // Pass agentId to ensure message goes to the correct agent
     await chatService.sendMessage(messageWithContext, workspace, {
       contextItems: imageContextItems,
       contextReferences,

@@ -111,7 +111,7 @@ export function subscribeToAgent(
  * @param agentId - The agent ID to notify subscribers for
  * @param targetWorkspaceId - Optional specific workspace to look in (for cross-workspace scenarios)
  */
-function notifyAgentSubscribers(agentId: string, targetWorkspaceId?: WorkspaceId) {
+export function notifyAgentSubscribers(agentId: string, targetWorkspaceId?: WorkspaceId) {
   const subscribers = agentSubscribers.get(agentId);
   if (!subscribers || subscribers.size === 0) return;
 

@@ -9,13 +9,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { createMessageId } from '$shared/types/branded-ids';
 import { writable, get, type Writable } from 'svelte/store';
 import { createLogger } from '$lib/utils/client-logger';
-import type { Workspace, AgentMessage, AgentSession, ContentBlock } from '$shared/types';
+import type { Workspace, AgentMessage, AgentSession, ContentBlock, WorkspaceId } from '$shared/types';
 import { normalizeContentBlocks } from '$shared/types';
 import type { IDisposable } from '$shared/types/disposable';
 import { memoryManager } from './memory-manager';
 import type { ContextItem } from '$lib/components/chat/input/context-api';
 import { agentService } from '../agent.service';
-import { unifiedStateStore, sessionStore } from '$features/agent/browser';
+import { unifiedStateStore, sessionStore, notifyAgentSubscribers } from '$features/agent/browser';
 import { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';
 import { getAgentProvider } from '$shared/types/agent-session';
 import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
@@ -98,10 +98,6 @@ export interface SendMessageOptions {
   model?: string;
   /**
    * The agent ID to send the message to.
-   * CRITICAL: This must be passed when using ChatService from ChatPanel to ensure
-   * the message is sent to the correct agent. Without this, the singleton ChatService
-   * may send to the wrong agent if another panel has called initializeChat() since
-   * this panel was last active.
    */
   agentId?: string;
   /**
@@ -113,8 +109,13 @@ export interface SendMessageOptions {
 }
 
 export class ChatService implements IDisposable {
-  private static instance: ChatService;
   private state: Writable<ChatState>;
+
+  /**
+   * The agent ID this instance is permanently bound to.
+   * This instance only handles events for this specific agent.
+   */
+  public readonly agentId: string | undefined;
   private streamHandlers = new Map<string, (data: any) => void>();
   private sessionUpdatedCleanups = new Map<string, () => void>();
   private streamTimeouts = new Map<string, { cleanup: () => void }>();
@@ -133,34 +134,11 @@ export class ChatService implements IDisposable {
   private readonly CHUNK_THROTTLE_MS = 16; // ~60fps
   private lastChunkUpdateTime = 0;
 
-  // FIX: Per-session accumulator to track true streaming content
+  // Per-instance accumulator to track true streaming content
   // This prevents race conditions where chunks arrive faster than RAF can flush updates
   // Without this, reading from the store would return stale values
-  // MULTI-AGENT FIX: Use a Map keyed by sessionId to support multiple concurrent streams
-  private sessionStreamingContent = new Map<string, string>();
-
-  // Legacy alias for backwards compatibility within this class
-  // TODO: Remove once all usages are migrated to sessionStreamingContent
-  private get localStreamingContent(): string {
-    const currentState = get(this.state);
-    const sessionId = currentState.session?.id;
-    return sessionId ? (this.sessionStreamingContent.get(sessionId) ?? '') : '';
-  }
-  private set localStreamingContent(value: string) {
-    const currentState = get(this.state);
-    const sessionId = currentState.session?.id;
-    if (sessionId) {
-      if (value === '') {
-        this.sessionStreamingContent.delete(sessionId);
-      } else {
-        this.sessionStreamingContent.set(sessionId, value);
-      }
-    }
-  }
-
-  // Tracks which session is currently streaming, used by flushChunkUpdate
-  // to verify the session hasn't changed between scheduling and flushing
-  private currentStreamingSessionId: string | null = null;
+  // Each ChatService instance handles exactly one agent, so a simple string suffices
+  private localStreamingContent = '';
 
   // Stall detection: if no chunks received for this duration, mark as stalled
   // This is more aggressive than the backend's 5-minute timeout for better UX
@@ -177,7 +155,8 @@ export class ChatService implements IDisposable {
   private stateReconciliationFailureCount = 0;
   private readonly STATE_RECONCILIATION_FAILURE_THRESHOLD = 2; // Reset after 2 consecutive failures (20 seconds)
 
-  private constructor() {
+  constructor(agentId?: string) {
+    this.agentId = agentId;
     this.state = writable<ChatState>({
       session: null,
       messages: [],
@@ -201,27 +180,16 @@ export class ChatService implements IDisposable {
   private flushChunkUpdate(): void {
     if (this.pendingStreamingContent !== null) {
       const newStreamingContent = this.pendingStreamingContent;
-      const targetSessionId = this.currentStreamingSessionId;
       this.pendingStreamingContent = null;
 
       // Only log at debug level to avoid excessive logging during streaming
       logger.debug('[ChatService] flushChunkUpdate called', {
         contentLength: newStreamingContent.length,
-        targetSessionId,
       });
 
-      // FIX: Compute updated messages from CURRENT state, not cached messages
+      // Compute updated messages from CURRENT state, not cached messages
       // This prevents race conditions where content-blocks updates are overwritten
       this.state.update((s) => {
-        // RACE CONDITION FIX: Verify the session hasn't changed between scheduling and flushing.
-        // initializeChat() may have switched to a different agent.
-        if (targetSessionId && s.session?.id !== targetSessionId) {
-          logger.debug('[ChatService] flushChunkUpdate: skipping - session changed', {
-            targetSessionId,
-            currentSessionId: s.session?.id,
-          });
-          return s; // Don't modify - session has changed
-        }
         const existingMessages = s.messages;
         const lastMessage = existingMessages[existingMessages.length - 1];
         const hasStreamingAssistantMessage =
@@ -232,12 +200,13 @@ export class ChatService implements IDisposable {
         if (!hasStreamingAssistantMessage) {
           // Create a new streaming assistant message
           // IMPORTANT: Message IDs must start with 'msg_' for Zod validation
-          // FIX: Reuse the streaming message ID from sessionStore if one exists,
-          // to prevent divergence between singleton and sessionStore that causes
+          // Reuse the streaming message ID from sessionStore if one exists,
+          // to prevent divergence between this instance and sessionStore that causes
           // the streaming response to appear in the wrong conversation turn.
           let streamingMessageId: ReturnType<typeof createMessageId> | undefined;
-          if (targetSessionId) {
-            const storeSession = sessionStore.getSession(targetSessionId);
+          const sessionId = s.session?.id;
+          if (sessionId) {
+            const storeSession = sessionStore.getSession(sessionId);
             const storeLastMsg = storeSession?.messages?.[storeSession.messages.length - 1];
             if (storeLastMsg?.role === 'assistant' && storeLastMsg?.isStreaming) {
               streamingMessageId = createMessageId(storeLastMsg.id);
@@ -344,28 +313,6 @@ export class ChatService implements IDisposable {
       });
     }
     // If RAF is already scheduled, the pending update will be used
-  }
-
-  /**
-   * Track which session is currently streaming.
-   * Used by flushChunkUpdate to verify the session hasn't changed between
-   * scheduling and flushing (prevents cross-agent contamination).
-   *
-   * NOTE: AgentService is the sole writer to sessionStore during streaming
-   * (via updateMessageForWorkspace). ChatService no longer syncs to sessionStore
-   * periodically — the previous 500ms timer used addSession() which could
-   * overwrite AgentService's more recent contentBlocks with stale singleton state.
-   */
-  private startStreamingSession(sessionId: string): void {
-    this.stopStreamingSession();
-    this.currentStreamingSessionId = sessionId;
-  }
-
-  /**
-   * Clear the current streaming session tracking.
-   */
-  private stopStreamingSession(): void {
-    this.currentStreamingSessionId = null;
   }
 
   /**
@@ -542,12 +489,7 @@ export class ChatService implements IDisposable {
     }));
   }
 
-  static getInstance(): ChatService {
-    if (!this.instance) {
-      this.instance = new ChatService();
-    }
-    return this.instance;
-  }
+
 
   /**
    * Initialize or switch to a chat session
@@ -563,12 +505,6 @@ export class ChatService implements IDisposable {
     },
   ): Promise<void> {
     logger.info('Initializing chat', { workspaceId: workspace.id, agentId });
-
-    // Clear streaming session tracking before switching agents to prevent
-    // cross-agent contamination in flushChunkUpdate.
-    if (this.currentStreamingSessionId) {
-      this.stopStreamingSession();
-    }
 
     try {
       // Get or create session
@@ -631,21 +567,19 @@ export class ChatService implements IDisposable {
       }
 
       // Get messages for this session
-      // CRITICAL FIX: During HMR/remount, if the singleton is already streaming for this session,
-      // prefer ChatService.state.messages over sessionStore because the singleton has the most
-      // up-to-date data. sessionStore is only synced periodically, so it may have stale data.
+      // During HMR/remount, if this instance is already streaming, prefer its own
+      // state.messages because sessionStore is only synced periodically and may be stale.
       let messages: AgentMessage[] = [];
       try {
         const currentState = get(this.state);
-        const singletonHasActiveStream =
-          currentState.session?.id === agentId &&
+        const hasActiveStream =
           currentState.isStreaming &&
           currentState.messages.length > 0;
 
-        if (singletonHasActiveStream) {
-          // Use the singleton's messages - they're the most up-to-date during streaming
+        if (hasActiveStream) {
+          // Use this instance's messages - they're the most up-to-date during streaming
           messages = currentState.messages;
-          logger.info('Using singleton state messages during active stream (HMR recovery)', {
+          logger.info('Using instance state messages during active stream (HMR recovery)', {
             agentId,
             count: messages.length,
             lastMessageBlocks: messages[messages.length - 1]?.contentBlocks?.length || 0,
@@ -732,7 +666,7 @@ export class ChatService implements IDisposable {
         isCurrentlyStreaming,
       });
 
-      // CRITICAL FIX: If the session is streaming, initialize localStreamingContent with existing text
+      // If the session is streaming, initialize localStreamingContent with existing text
       // This ensures that when new chunks arrive, they're appended to the existing content
       // rather than starting from empty (which causes the "mid-stream" display issue)
       //
@@ -741,21 +675,18 @@ export class ChatService implements IDisposable {
       // If we join all text blocks, the first text block's content would be duplicated in the last block.
       let existingStreamingContent = '';
 
-      // Check if we already have a valid localStreamingContent from an active singleton stream
-      // This happens during HMR - the singleton's accumulator may have content that hasn't been
+      // Check if we already have a valid localStreamingContent from an active stream
+      // This happens during HMR - the accumulator may have content that hasn't been
       // flushed to the message yet, so we should preserve it rather than re-extracting from messages
-      // NOTE: We intentionally re-fetch state here because there's an `await` between line 498 and here
-      // (agentService.restoreSession at line 545), so state may have changed during that async operation.
       const freshState = get(this.state);
-      const singletonHasActiveStreamForContent =
-        freshState.session?.id === agentId &&
+      const hasActiveStreamForContent =
         freshState.isStreaming &&
         this.localStreamingContent.length > 0;
 
-      if (singletonHasActiveStreamForContent) {
-        // Preserve the singleton's current accumulator - it has unflushed content
+      if (hasActiveStreamForContent) {
+        // Preserve the current accumulator - it has unflushed content
         existingStreamingContent = this.localStreamingContent;
-        logger.info('Preserving singleton localStreamingContent during HMR', {
+        logger.info('Preserving localStreamingContent during HMR', {
           agentId,
           preservedContentLength: existingStreamingContent.length,
         });
@@ -868,10 +799,9 @@ export class ChatService implements IDisposable {
     }
 
     // CRITICAL FIX: ALWAYS fetch the session from sessionStore to get fresh isStreaming state.
-    // ChatService is a singleton with its own internal state copy that can become stale.
-    // The sessionStore reflects the true state from unifiedStateStore, which is updated
-    // when setStreamingForWorkspace() is called on stream completion.
-    // Without always refreshing, we might check a stale isStreaming=true and block sends.
+    // The internal state copy can become stale. The sessionStore reflects the true state from
+    // unifiedStateStore, which is updated when setStreamingForWorkspace() is called on stream
+    // completion. Without always refreshing, we might check a stale isStreaming=true and block sends.
     const agentId = options?.agentId || currentState.session.id;
     let session = sessionStore.getSession(agentId);
 
@@ -882,33 +812,6 @@ export class ChatService implements IDisposable {
         cachedSessionId: currentState.session?.id,
       });
       session = currentState.session;
-    } else if (session.id !== currentState.session.id) {
-      // Different agent than the singleton's current session
-      logger.info('Using passed agentId instead of stale singleton state', {
-        passedAgentId: agentId,
-        staleSessionId: currentState.session.id,
-      });
-
-      // CRITICAL FIX: Also update the singleton's state to match the target session.
-      // Otherwise, the state update below (isProcessing: true, isStreaming: true) will be
-      // applied to the wrong session, causing the streaming indicator to appear in the wrong panel.
-      // Additionally, handleStreamEvent checks currentState.session.id against the event sessionId
-      // and ignores events if they don't match - updating the session here ensures stream events
-      // are processed correctly.
-      this.state.update((s) => ({
-        ...s,
-        session: session!,
-        messages: session!.messages || [],
-        // FIX: Reset streaming/processing state from the previous agent's session.
-        // Without this, stale isStreaming: true causes the fewer-messages guard bypass
-        // to remain active in ChatPanel, allowing the singleton to be overwritten with
-        // messages missing the new user message — causing the streaming response to
-        // appear on the previous turn.
-        isStreaming: false,
-        isProcessing: false,
-      }));
-      // Refresh currentState after the update
-      currentState = get(this.state);
     }
 
     // Wait for any ongoing interrupt to complete before sending
@@ -943,11 +846,9 @@ export class ChatService implements IDisposable {
     //   );
     // }
 
-    // Prevent sending while already processing
-    // MULTI-AGENT FIX: Only check the TARGET agent's per-session isStreaming property.
-    // The singleton's isProcessing flag reflects the "currently active" panel which may be
-    // a different agent. We use session.isStreaming from sessionStore as the source of truth
-    // for whether THIS specific agent is processing.
+    // Prevent sending while already processing.
+    // We check the per-session isStreaming property from sessionStore as the source of truth
+    // for whether this specific agent is processing.
     if (session.isStreaming) {
       logger.warn('Already processing a message for this agent, ignoring new send request', {
         agentId: session.id,
@@ -1729,7 +1630,7 @@ export class ChatService implements IDisposable {
         // When switching workspaces, resumeSession() loads stale disk data into sessionStore,
         // then reconnectToBackendStreams() dispatches agent:session-updated which triggers this handler.
         // The sessionStore data is stale because flushChunkUpdate() (the streaming content accumulator)
-        // never writes to sessionStore — the ChatService singleton has the correct, up-to-date messages.
+        // never writes to sessionStore — the ChatService instance has the correct, up-to-date messages.
         //
         // IMPORTANT: Only apply this guard when the session ALSO says streaming is active (newIsStreaming).
         // If the session says streaming ended (newIsStreaming=false), we must let the update through
@@ -1800,7 +1701,7 @@ export class ChatService implements IDisposable {
             const lastTextBlock = textBlocks[textBlocks.length - 1];
             if (lastTextBlock && 'text' in lastTextBlock) {
               const messageContent = lastTextBlock.text || '';
-              const currentLocalContent = this.sessionStreamingContent.get(sessionId) ?? '';
+              const currentLocalContent = this.localStreamingContent;
 
               // Only update if the message has more content than our local accumulator
               // This prevents overwriting content that arrived via chunk events
@@ -1813,7 +1714,7 @@ export class ChatService implements IDisposable {
                     newLength: messageContent.length,
                   },
                 );
-                this.sessionStreamingContent.set(sessionId, messageContent);
+                this.localStreamingContent = messageContent;
                 newStreamingContent = messageContent;
               }
             }
@@ -1821,17 +1722,7 @@ export class ChatService implements IDisposable {
         }
 
         this.state.update((s) => {
-          // RACE CONDITION FIX: Verify the singleton is still for THIS session.
-          // The singleton may have been switched to a different agent by initializeChat().
-          // Without this check, Agent 1's session-updated event could overwrite Agent 2's state.
-          if (s.session?.id !== sessionId) {
-            logger.debug('[ChatService] sessionUpdatedHandler: skipping - session changed', {
-              handlerSessionId: sessionId,
-              currentSessionId: s.session?.id,
-            });
-            return s; // Don't modify - singleton is for a different agent
-          }
-          // CRITICAL FIX: Deduplicate messages to prevent Svelte "duplicate key" error
+          // Deduplicate messages to prevent Svelte "duplicate key" error
           // This handles cases where session.messages might already contain duplicates
           const seen = new Set<string>();
           const deduplicatedMessages = session.messages.filter((m) => {
@@ -1909,10 +1800,8 @@ export class ChatService implements IDisposable {
       contentLength: data?.content?.length,
     });
 
-    // MULTI-AGENT FIX: Verify we have an active handler for this session
-    // Previously this compared sessionId to the singleton's "active" session, which caused
-    // stream events to be dropped when users switched between agent panels.
-    // Now we check if a stream handler exists for this session - if it does, we should process it.
+    // Verify we have an active handler for this session.
+    // We check if a stream handler exists for this session - if it does, we should process it.
     if (!this.streamHandlers.has(sessionId)) {
       logger.debug('[ChatService] Ignoring stream event - no handler registered', {
         sessionId,
@@ -1921,9 +1810,7 @@ export class ChatService implements IDisposable {
       return;
     }
 
-    // Check if this is the "active" session (the one displayed in singleton state)
-    const currentState = get(this.state);
-    const isActiveSession = currentState.session?.id === sessionId;
+    // Per-agent instance: this instance always handles its own session
 
     // Clear any existing timeout before processing new event
     // This prevents accumulating multiple timeouts when many chunks arrive
@@ -1934,14 +1821,13 @@ export class ChatService implements IDisposable {
     }
 
     if (data.type === 'start') {
-      // MULTI-AGENT FIX: Use per-session content tracking
-      // IMPORTANT: Only reset accumulator if we don't already have restored content
+      // Only reset accumulator if we don't already have restored content
       // When the frontend reconnects after HMR refresh, the backend sends a new 'start' event.
       // If we unconditionally reset, we lose all the content that was accumulated before the refresh.
-      const existingContent = this.sessionStreamingContent.get(sessionId) ?? '';
+      const existingContent = this.localStreamingContent;
       const hasRestoredContent = existingContent.length > 0;
       if (!hasRestoredContent) {
-        this.sessionStreamingContent.set(sessionId, '');
+        this.localStreamingContent = '';
       } else {
         logger.info('Preserving restored streaming content on start event', {
           sessionId,
@@ -1949,17 +1835,13 @@ export class ChatService implements IDisposable {
         });
       }
 
-      // Track which session is streaming (used by flushChunkUpdate for session verification)
-      this.startStreamingSession(sessionId);
-      // Start stall detection for unresponsive streams (only for active session)
-      if (isActiveSession) {
-        this.startStallDetection();
-        // FIX: Start state reconciliation to detect and recover from stuck states
-        this.startStateReconciliation(sessionId);
-      }
+      // Start stall detection for unresponsive streams
+      this.startStallDetection();
+      // Start state reconciliation to detect and recover from stuck states
+      this.startStateReconciliation(sessionId);
 
-      // MULTI-AGENT FIX: Always update sessionStore, only update singleton state for active session
-      // CRITICAL FIX: Use setStreaming() to explicitly set streaming.active = true.
+      // Update sessionStore streaming state
+      // Use setStreaming() to explicitly set streaming.active = true.
       // addSession() calls setAgent() which PRESERVES existing streaming.active, so calling
       // addSession({...session, isStreaming: true}) does NOT actually turn on streaming.active.
       // After HMR/page refresh, streaming.active is initialized to false from disk data,
@@ -1974,79 +1856,64 @@ export class ChatService implements IDisposable {
         });
       }
 
-      // Only update singleton state if this is the active session
-      if (isActiveSession) {
-        this.state.update((s) => {
-          // RACE CONDITION FIX: Re-verify session ID inside the update callback.
-          if (s.session?.id !== sessionId) {
-            return s; // Don't modify - session has changed
-          }
-          return {
-            ...s,
-            isStreaming: true,
-            streamingContent: hasRestoredContent ? existingContent : '',
-            error: null,
-            lastChunkTime: Date.now(),
-            isStalled: false,
-          };
-        });
-      }
+      // Update instance state
+      this.state.update((s) => ({
+        ...s,
+        isStreaming: true,
+        streamingContent: hasRestoredContent ? existingContent : '',
+        error: null,
+        lastChunkTime: Date.now(),
+        isStalled: false,
+      }));
     } else if (data.type === 'chunk') {
-      // Record chunk received for stall detection (only for active session)
-      if (isActiveSession) {
-        this.recordChunkReceived();
-      }
+      // Record chunk received for stall detection
+      this.recordChunkReceived();
 
-      // Accumulate text in per-session accumulator
-      const currentContent = this.sessionStreamingContent.get(sessionId) ?? '';
+      // Accumulate text in per-instance accumulator
+      const currentContent = this.localStreamingContent;
       const newStreamingContent = currentContent + (data.content || '');
-      this.sessionStreamingContent.set(sessionId, newStreamingContent);
+      this.localStreamingContent = newStreamingContent;
 
       // NOTE: Do NOT read from or write to sessionStore here. AgentService is the sole
       // writer to sessionStore during streaming (via updateMessageForWorkspace). Having
       // ChatService also call addSession() creates a race condition where stale snapshots
       // overwrite AgentService's correctly accumulated contentBlocks. ChatService only
-      // updates its own singleton state (for UI rendering of the active session).
+      // updates its own instance state (for UI rendering).
 
-      // Only update singleton state if this is the active session
-      if (isActiveSession) {
-        this.scheduleChunkUpdate(newStreamingContent);
-      }
+      this.scheduleChunkUpdate(newStreamingContent);
     } else if (data.type === 'content-blocks') {
       // Handle content blocks (tool calls, etc.)
       // Add the content blocks to the current streaming message
 
-      // Record chunk received for stall detection (only for active session)
-      if (isActiveSession) {
-        this.recordChunkReceived();
-      }
+      // Record chunk received for stall detection
+      this.recordChunkReceived();
 
-      // MULTI-AGENT FIX: Cancel pending chunk update for active session.
+      // Cancel pending chunk update.
       // IMPORTANT: Do NOT call flushChunkUpdate() here. flushChunkUpdate() reads from
       // ChatService's own state (s.messages) which may not yet include tool blocks from
       // previous content-blocks events. Flushing stale state triggers ChatPanel's Path A
       // subscription with fewer contentBlocks, causing tool calls to briefly disappear.
       // Instead, just cancel the pending RAF and clear the pending content. The content-blocks
       // handler below will update state with the correct messages from sessionStore.
-      if (isActiveSession && this.chunkUpdateRafId !== null) {
+      if (this.chunkUpdateRafId !== null) {
         cancelAnimationFrame(this.chunkUpdateRafId);
         this.chunkUpdateRafId = null;
         // Carry forward the pending streaming text so it's not lost.
-        // The content-blocks handler reads sessionStreamingContent (set below) and
+        // The content-blocks handler reads localStreamingContent and
         // sessionStore messages, so we just need to make sure the accumulated text is
-        // preserved in sessionStreamingContent (it already is — chunk handler appends to it).
+        // preserved in localStreamingContent (it already is — chunk handler appends to it).
         this.pendingStreamingContent = null;
       }
 
-      // MULTI-AGENT FIX: Get messages from sessionStore (source of truth for all sessions)
+      // Get messages from sessionStore (source of truth)
       const session = sessionStore.getSession(sessionId);
       const existingMessages = session?.messages ?? [];
       const lastMessage = existingMessages[existingMessages.length - 1];
       const hasStreamingAssistantMessage =
         lastMessage?.role === 'assistant' && lastMessage?.isStreaming === true;
 
-      // Get per-session streaming content
-      const sessionContent = this.sessionStreamingContent.get(sessionId) ?? '';
+      // Get per-instance streaming content
+      const sessionContent = this.localStreamingContent;
 
       if (!Array.isArray(data.data)) {
         logger.warn('[ChatService] content-blocks event missing data array', { sessionId });
@@ -2149,7 +2016,7 @@ export class ChatService implements IDisposable {
       if (hasNewToolUse) {
         logger.debug('[ChatService] tool_use arrived, resetting streaming accumulators', {
           sessionId,
-          previousContentLength: this.sessionStreamingContent.get(sessionId)?.length ?? 0,
+          previousContentLength: this.localStreamingContent.length,
           updatedBlockCount:
             updatedMessages[updatedMessages.length - 1]?.contentBlocks?.length || 0,
           updatedBlockTypes:
@@ -2157,32 +2024,22 @@ export class ChatService implements IDisposable {
               (b: ContentBlock) => b.type,
             ) || [],
         });
-        // Reset per-session accumulator so subsequent text goes into a NEW text block after the tool
-        this.sessionStreamingContent.set(sessionId, '');
-        if (isActiveSession) {
-          this.pendingStreamingContent = null;
-        }
+        // Reset per-instance accumulator so subsequent text goes into a NEW text block after the tool
+        this.localStreamingContent = '';
+        this.pendingStreamingContent = null;
       }
 
       // NOTE: Do NOT update sessionStore here. AgentService is the sole writer to
       // sessionStore during streaming (via updateMessageForWorkspace). See chunk handler
       // comment above for full explanation of the race condition this prevents.
 
-      // MULTI-AGENT FIX: Only update singleton state if this is the active session
-      if (isActiveSession) {
-        this.state.update((s) => {
-          // RACE CONDITION FIX: Re-verify session ID inside the update callback.
-          if (s.session?.id !== sessionId) {
-            return s; // Don't modify - session has changed
-          }
-          return {
-            ...s,
-            messages: updatedMessages,
-            isStreaming: true,
-            streamingContent: hasNewToolUse ? '' : s.streamingContent,
-          };
-        });
-      }
+      // Update instance state
+      this.state.update((s) => ({
+        ...s,
+        messages: updatedMessages,
+        isStreaming: true,
+        streamingContent: hasNewToolUse ? '' : s.streamingContent,
+      }));
     } else if (data.type === 'end' || data.type === 'complete') {
       // Handle both 'end' and 'complete' events (different sources may use different names)
       logger.info('[ChatService] Handling complete/end event', {
@@ -2190,64 +2047,67 @@ export class ChatService implements IDisposable {
         eventType: data.type,
         hasMessage: !!data.message,
         messageContentBlocksCount: data.message?.contentBlocks?.length || 0,
-        isActiveSession,
         messageMetadataKeys: data.message?.metadata ? Object.keys(data.message.metadata) : [],
         stopReason: data.message?.metadata?.stopReason,
       });
 
-      // MULTI-AGENT FIX: Handle model unavailable state only for active session
+      // Handle model unavailable state
       const messageMetadata = data.message?.metadata;
-      if (isActiveSession) {
-        if (messageMetadata?.modelUnavailable === true && messageMetadata?.nextAvailableModel) {
-          logger.info('[ChatService] Model unavailable - user can retry with different model', {
-            sessionId,
+      if (messageMetadata?.modelUnavailable === true && messageMetadata?.nextAvailableModel) {
+        logger.info('[ChatService] Model unavailable - user can retry with different model', {
+          sessionId,
+          failedModel: messageMetadata.failedModel,
+          nextAvailableModel: messageMetadata.nextAvailableModel,
+        });
+        this.state.update((s) => ({
+          ...s,
+          modelUnavailable: {
             failedModel: messageMetadata.failedModel,
             nextAvailableModel: messageMetadata.nextAvailableModel,
-          });
-          this.state.update((s) => {
-            // RACE CONDITION FIX: Verify session hasn't changed
-            if (s.session?.id !== sessionId) {
-              return s;
-            }
-            return {
-              ...s,
-              modelUnavailable: {
-                failedModel: messageMetadata.failedModel,
-                nextAvailableModel: messageMetadata.nextAvailableModel,
-              },
-            };
-          });
-        } else {
-          this.state.update((s) => {
-            // RACE CONDITION FIX: Verify session hasn't changed
-            if (s.session?.id !== sessionId) {
-              return s;
-            }
-            return {
-              ...s,
-              modelUnavailable: null,
-            };
-          });
-        }
+          },
+        }));
+      } else {
+        this.state.update((s) => ({
+          ...s,
+          modelUnavailable: null,
+        }));
       }
 
-      // Clear streaming session tracking (only affects active session)
-      if (isActiveSession) {
-        this.stopStreamingSession();
-        this.stopStallDetection();
-        // FIX: Stop state reconciliation since we received completion
-        this.stopStateReconciliation();
+      // Stop stall detection and state reconciliation
+      this.stopStallDetection();
+      this.stopStateReconciliation();
 
-        // Flush any pending chunk updates before finalizing
-        if (this.chunkUpdateRafId !== null) {
-          cancelAnimationFrame(this.chunkUpdateRafId);
-          this.chunkUpdateRafId = null;
-        }
-        this.flushChunkUpdate();
+      // Flush any pending chunk updates before finalizing
+      if (this.chunkUpdateRafId !== null) {
+        cancelAnimationFrame(this.chunkUpdateRafId);
+        this.chunkUpdateRafId = null;
       }
+      this.flushChunkUpdate();
 
       // MULTI-AGENT FIX: Get messages from sessionStore (source of truth)
-      const session = sessionStore.getSession(sessionId);
+      // CROSS-WORKSPACE FIX: Try current workspace first, then search all workspaces.
+      // sessionStore.getSession() only searches the current workspace, so if the user
+      // switched to a different agent/workspace while streaming was completing, the
+      // session won't be found and finalization would be skipped entirely.
+      let session = sessionStore.getSession(sessionId);
+      if (!session) {
+        // Search all workspaces for this session
+        const allWorkspaces = unifiedStateStore.getAllWorkspaces();
+        for (const ws of allWorkspaces) {
+          const wsId = ws.workspace?.id;
+          if (wsId) {
+            session = sessionStore.getSessionForWorkspace(wsId, sessionId) ?? undefined;
+            if (session) {
+              logger.warn('[ChatService] Session found via cross-workspace lookup (user switched workspaces during streaming)', {
+                sessionId,
+                foundInWorkspaceId: wsId,
+                currentWorkspaceId: unifiedStateStore.currentWorkspace?.workspace?.id,
+              });
+              break;
+            }
+          }
+        }
+      }
       const existingMessages = session?.messages ?? [];
       const lastMessage = existingMessages[existingMessages.length - 1];
 
@@ -2262,11 +2122,9 @@ export class ChatService implements IDisposable {
         sessionStore.setStreaming(sessionId, false);
       }
 
-      // MULTI-AGENT FIX: Clean up per-session accumulator
-      this.sessionStreamingContent.delete(sessionId);
-      if (isActiveSession) {
-        this.pendingStreamingContent = null;
-      }
+      // Clean up per-instance accumulator
+      this.localStreamingContent = '';
+      this.pendingStreamingContent = null;
 
       // Finalize the streaming message by removing the isStreaming flag
       let updatedMessages = existingMessages;
@@ -2357,40 +2215,33 @@ export class ChatService implements IDisposable {
           messages: updatedMessages,
           isStreaming: false,
         });
+
+        // SAFETY NET: Force a direct notification after a short delay.
+        // This catches cases where the RAF-based notification from addSession()
+        // was lost due to batching, coalescing, or timing issues.
+        // If the first notification already updated the UI, subscribers' change
+        // detection will see "no change" and this becomes a no-op.
+        const completedSessionId = sessionId;
+        const completedWorkspaceId = session.workspaceId;
+        setTimeout(() => {
+          notifyAgentSubscribers(completedSessionId, completedWorkspaceId as WorkspaceId);
+        }, 50);
       }
 
-      // MULTI-AGENT FIX: Only update singleton state if this is the active session
-      if (isActiveSession) {
-        this.state.update((s) => {
-          // RACE CONDITION FIX: Re-verify session ID inside the update callback.
-          // The outer isActiveSession check was computed at the START of handleStreamEvent,
-          // but initializeChat() for a different agent may have changed s.session in between.
-          // Without this atomic check, we could overwrite Agent2's messages with Agent1's.
-          if (s.session?.id !== sessionId) {
-            logger.info('[ChatService] Skipping complete state update - session changed', {
-              sessionId,
-              currentSessionId: s.session?.id,
-            });
-            return s; // Don't modify - session has changed
-          }
-          return {
-            ...s,
-            messages: updatedMessages,
-            isStreaming: false,
-            isProcessing: false,
-            streamingContent: '',
-            streamingStartTime: null,
-            lastAttemptedMessage: null,
-          };
-        });
-      }
+      // Update instance state
+      this.state.update((s) => ({
+        ...s,
+        messages: updatedMessages,
+        isStreaming: false,
+        isProcessing: false,
+        streamingContent: '',
+        streamingStartTime: null,
+        lastAttemptedMessage: null,
+      }));
     } else if (data.type === 'error') {
-      // Clear streaming session tracking
-      this.stopStreamingSession();
-
       // Stop stall detection on error
       this.stopStallDetection();
-      // FIX: Stop state reconciliation on error
+      // Stop state reconciliation on error
       this.stopStateReconciliation();
 
       // Reset local accumulator on error to prevent stale data in next stream
@@ -2428,11 +2279,7 @@ export class ChatService implements IDisposable {
         };
 
         this.state.update((s) => {
-          // RACE CONDITION FIX: Verify session hasn't changed
-          if (s.session?.id !== sessionId) {
-            return s;
-          }
-          // CRITICAL FIX: Check for duplicate message ID before adding
+          // Check for duplicate message ID before adding
           const isDuplicate = s.messages.some((m) => m.id === errorMessage.id);
           const newMessages = isDuplicate ? s.messages : [...s.messages, errorMessage];
           return {
@@ -2446,20 +2293,14 @@ export class ChatService implements IDisposable {
           };
         });
       } else {
-        this.state.update((s) => {
-          // RACE CONDITION FIX: Verify session hasn't changed
-          if (s.session?.id !== sessionId) {
-            return s;
-          }
-          return {
-            ...s,
-            isStreaming: false,
-            isProcessing: false,
-            streamingContent: '',
-            streamingStartTime: null,
-            error: cleanErrorMessage(data.error || 'The response was interrupted. Please try again.'),
-          };
-        });
+        this.state.update((s) => ({
+          ...s,
+          isStreaming: false,
+          isProcessing: false,
+          streamingContent: '',
+          streamingStartTime: null,
+          error: cleanErrorMessage(data.error || 'The response was interrupted. Please try again.'),
+        }));
       }
     }
 
@@ -2469,13 +2310,11 @@ export class ChatService implements IDisposable {
         const currentState = get(this.state);
         if (currentState.isStreaming) {
           logger.warn('Stream timeout - cleaning up', { sessionId });
-          // Clear streaming session tracking
-          this.stopStreamingSession();
-          // MULTI-AGENT FIX: Reset per-session accumulator for the timed-out session
-          this.sessionStreamingContent.delete(sessionId);
+          // Reset per-instance accumulator for the timed-out session
+          this.localStreamingContent = '';
           this.pendingStreamingContent = null;
 
-          // Clear streaming state in unifiedStateStore on timeout
+          // Clear streaming state in sessionStore on timeout
           if (currentState.session?.workspaceId) {
             sessionStore.setStreamingForWorkspace(
               currentState.session.workspaceId,
@@ -2486,18 +2325,12 @@ export class ChatService implements IDisposable {
             sessionStore.setStreaming(sessionId, false);
           }
 
-          this.state.update((s) => {
-            // RACE CONDITION FIX: Verify session hasn't changed
-            if (s.session?.id !== sessionId) {
-              return s;
-            }
-            return {
-              ...s,
-              isStreaming: false,
-              isProcessing: false,
-              streamingStartTime: null,
-            };
-          });
+          this.state.update((s) => ({
+            ...s,
+            isStreaming: false,
+            isProcessing: false,
+            streamingStartTime: null,
+          }));
         }
       },
       this.STREAM_TIMEOUT_MS,
@@ -2541,19 +2374,14 @@ export class ChatService implements IDisposable {
       this.streamTimeouts.delete(sessionId);
     }
 
-    // Clear streaming session tracking
-    this.stopStreamingSession();
-
     // Cancel any pending RAF to prevent stale updates
     if (this.chunkUpdateRafId !== null) {
       cancelAnimationFrame(this.chunkUpdateRafId);
       this.chunkUpdateRafId = null;
     }
 
-    // MULTI-AGENT FIX: Reset per-session accumulator for the specific session being cleaned up
-    // Previously used `this.localStreamingContent = ''` which targeted the *active* session,
-    // not the session being cleaned up (they could be different in multi-agent scenarios)
-    this.sessionStreamingContent.delete(sessionId);
+    // Reset per-instance accumulator
+    this.localStreamingContent = '';
     this.pendingStreamingContent = null;
   }
 
@@ -2895,9 +2723,6 @@ export class ChatService implements IDisposable {
     this.disposed = true;
     logger.info('Disposing ChatService');
 
-    // Clear streaming session tracking
-    this.stopStreamingSession();
-
     // Reuse destroy() for shared cleanup (stream handlers, timeouts, connection listeners, stall/reconciliation)
     this.destroy();
 
@@ -2911,9 +2736,96 @@ export class ChatService implements IDisposable {
     // Clean up with memory manager
     memoryManager.cleanup(this);
 
-    // Clear singleton instance
-    ChatService.instance = undefined as any;
-
     logger.info('ChatService disposed successfully');
   }
+}
+
+
+/**
+ * ChatServiceManager
+ *
+ * Maintains a Map of per-agent ChatService instances. Each agent gets its own
+ * ChatService instance that is permanently bound to that agent's ID.
+ *
+ * Usage:
+ *   const service = getChatService(agentId);
+ *   // service.agentId === agentId
+ *   // Calling getChatService(agentId) again returns the same instance
+ */
+export class ChatServiceManager {
+  private static managerInstance: ChatServiceManager;
+  private services = new Map<string, ChatService>();
+
+  static getInstance(): ChatServiceManager {
+    if (!this.managerInstance) {
+      this.managerInstance = new ChatServiceManager();
+    }
+    return this.managerInstance;
+  }
+
+  /**
+   * Get or create a ChatService instance for the given agent.
+   * Calling this with the same agentId always returns the same instance.
+   */
+  getChatService(agentId: string): ChatService {
+    let service = this.services.get(agentId);
+    if (!service) {
+      service = new ChatService(agentId);
+      this.services.set(agentId, service);
+      logger.info('ChatServiceManager: created per-agent ChatService', { agentId });
+    }
+    return service;
+  }
+
+  /**
+   * Dispose and remove the ChatService instance for the given agent.
+   * Call this when an agent panel is closed or an agent is removed.
+   */
+  disposeService(agentId: string): void {
+    const service = this.services.get(agentId);
+    if (service) {
+      service.dispose();
+      this.services.delete(agentId);
+      logger.info('ChatServiceManager: disposed per-agent ChatService', { agentId });
+    }
+  }
+
+  /**
+   * Get all active (non-disposed) service entries.
+   * Returns an array of [agentId, ChatService] tuples.
+   * Useful for WorkspaceProgressCard to check streaming state across all agents.
+   */
+  getActiveServices(): Array<[string, ChatService]> {
+    return Array.from(this.services.entries());
+  }
+
+  /**
+   * Check if a service exists for the given agent.
+   */
+  hasService(agentId: string): boolean {
+    return this.services.has(agentId);
+  }
+
+  /**
+   * Dispose all managed services and reset the manager.
+   * Typically called on workspace close / app shutdown.
+   */
+  disposeAll(): void {
+    for (const [agentId, service] of this.services) {
+      service.dispose();
+      logger.info('ChatServiceManager: disposed per-agent ChatService', { agentId });
+    }
+    this.services.clear();
+  }
+}
+
+/**
+ * Module-level factory function for getting a per-agent ChatService.
+ * This is the primary API for consumers that need a ChatService bound to a specific agent.
+ *
+ * @param agentId - The agent ID to get or create a ChatService for
+ * @returns A ChatService instance permanently bound to the given agent
+ */
+export function getChatService(agentId: string): ChatService {
+  return ChatServiceManager.getInstance().getChatService(agentId);
 }

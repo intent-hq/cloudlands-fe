@@ -37,6 +37,7 @@ vi.mock('../../agent.service', () => ({
 vi.mock('$features/agent/browser', () => ({
   sessionStore: {
     getSession: vi.fn(),
+    getSessionForWorkspace: vi.fn(),
     addSession: vi.fn(),
     setActiveSession: vi.fn(),
     updateMessages: vi.fn(),
@@ -49,6 +50,7 @@ vi.mock('$features/agent/browser', () => ({
   unifiedStateStore: {
     currentWorkspace: null,
     getWorkspace: vi.fn(),
+    getAllWorkspaces: vi.fn(() => []),
     setAgent: vi.fn(),
     getAgent: vi.fn(),
   },
@@ -102,9 +104,8 @@ describe('ChatService Streaming Race Conditions', () => {
       return 1;
     }) as unknown as typeof requestAnimationFrame;
 
-    // Reset singleton
-    (ChatService as any).instance = null;
-    chatService = ChatService.getInstance();
+    // Create a fresh per-agent ChatService instance for each test
+    chatService = new ChatService('test-agent');
   });
 
   afterEach(() => {
@@ -672,7 +673,7 @@ describe('ChatService Streaming Race Conditions', () => {
       }));
 
       // Verify localStreamingContent is empty before the fix kicks in
-      expect((chatService as any).sessionStreamingContent.get(sessionId) ?? '').toBe('');
+      expect((chatService as any).localStreamingContent).toBe('');
 
       // Simulate the sessionUpdatedHandler being called (as if session-updated event fired)
       // We need to call the handler directly since we're mocking window.addEventListener
@@ -693,9 +694,9 @@ describe('ChatService Streaming Race Conditions', () => {
             if (lastTextBlock && 'text' in lastTextBlock) {
               const messageContent = (lastTextBlock as any).text || '';
               const currentLocalContent =
-                (chatService as any).sessionStreamingContent.get(sessionId) ?? '';
+                (chatService as any).localStreamingContent;
               if (messageContent.length > currentLocalContent.length) {
-                (chatService as any).sessionStreamingContent.set(sessionId, messageContent);
+                (chatService as any).localStreamingContent = messageContent;
                 store.update((s) => ({
                   ...s,
                   streamingContent: messageContent,
@@ -707,7 +708,7 @@ describe('ChatService Streaming Race Conditions', () => {
       }
 
       // Verify localStreamingContent is now synced from the message
-      expect((chatService as any).sessionStreamingContent.get(sessionId)).toBe(
+      expect((chatService as any).localStreamingContent).toBe(
         'This is the accumulated content from backend',
       );
 
@@ -722,10 +723,8 @@ describe('ChatService Streaming Race Conditions', () => {
 
       // Simulate scenario where chunks have arrived AFTER the backend content was fetched
       // localStreamingContent has MORE content than the message
-      (chatService as any).sessionStreamingContent.set(
-        sessionId,
-        'This is the accumulated content from backend PLUS new chunks',
-      );
+      (chatService as any).localStreamingContent =
+        'This is the accumulated content from backend PLUS new chunks';
 
       const store = chatService.getStore();
       store.update((s) => ({
@@ -762,7 +761,7 @@ describe('ChatService Streaming Race Conditions', () => {
         ],
       }));
 
-      const contentBefore = (chatService as any).sessionStreamingContent.get(sessionId);
+      const contentBefore = (chatService as any).localStreamingContent;
 
       // Simulate sessionUpdatedHandler sync logic
       const currentState = get(store);
@@ -775,18 +774,18 @@ describe('ChatService Streaming Race Conditions', () => {
           if (lastTextBlock && 'text' in lastTextBlock) {
             const messageContent = (lastTextBlock as any).text || '';
             const currentLocalContent =
-              (chatService as any).sessionStreamingContent.get(sessionId) ?? '';
+              (chatService as any).localStreamingContent;
             // This check should PREVENT overwriting
             if (messageContent.length > currentLocalContent.length) {
-              (chatService as any).sessionStreamingContent.set(sessionId, messageContent);
+              (chatService as any).localStreamingContent = messageContent;
             }
           }
         }
       }
 
       // Verify localStreamingContent was NOT overwritten (it had more content)
-      expect((chatService as any).sessionStreamingContent.get(sessionId)).toBe(contentBefore);
-      expect((chatService as any).sessionStreamingContent.get(sessionId)).toBe(
+      expect((chatService as any).localStreamingContent).toBe(contentBefore);
+      expect((chatService as any).localStreamingContent).toBe(
         'This is the accumulated content from backend PLUS new chunks',
       );
     });
@@ -821,7 +820,7 @@ describe('ChatService Streaming Race Conditions', () => {
       }).not.toThrow();
 
       // localStreamingContent should remain empty
-      expect((chatService as any).sessionStreamingContent.get(sessionId) ?? '').toBe('');
+      expect((chatService as any).localStreamingContent).toBe('');
     });
 
     it('should handle last message being a user message gracefully', () => {
@@ -865,7 +864,7 @@ describe('ChatService Streaming Race Conditions', () => {
       }
 
       // localStreamingContent should remain empty
-      expect((chatService as any).sessionStreamingContent.get(sessionId) ?? '').toBe('');
+      expect((chatService as any).localStreamingContent).toBe('');
     });
 
     it('should handle message with no text blocks gracefully', () => {
@@ -915,7 +914,7 @@ describe('ChatService Streaming Race Conditions', () => {
       }
 
       // localStreamingContent should remain empty
-      expect((chatService as any).sessionStreamingContent.get(sessionId) ?? '').toBe('');
+      expect((chatService as any).localStreamingContent).toBe('');
     });
   });
 
@@ -990,114 +989,34 @@ describe('ChatService Streaming Race Conditions', () => {
     });
   });
 
-  describe('Fix 2: initializeChat clears streaming session tracking', () => {
-    it('should clear streaming session when stopStreamingSession is called', () => {
+  describe('Fix 2: localStreamingContent is a simple string accumulator', () => {
+    it('should have localStreamingContent as a direct string property', () => {
+      // After refactor, localStreamingContent is a simple string, not a Map
+      expect(typeof (chatService as any).localStreamingContent).toBe('string');
+      expect((chatService as any).localStreamingContent).toBe('');
+    });
+
+    it('should reset localStreamingContent when a stream completes', () => {
       const sessionId = 'test-session-fix2';
       setupSession(sessionId);
 
-      // Start streaming to activate session tracking
+      // Set some accumulated content (simulating chunks arriving)
+      (chatService as any).localStreamingContent = 'accumulated during stream';
+
+      // Simulate stream end — the complete handler resets localStreamingContent
       simulateStreamEvent(sessionId, { type: 'start' });
-
-      // Verify the streaming session is tracked
-      expect((chatService as any).currentStreamingSessionId).toBe(sessionId);
-
-      // Call stopStreamingSession (which is what initializeChat now calls)
-      (chatService as any).stopStreamingSession();
-
-      // Verify it's cleared
-      expect((chatService as any).currentStreamingSessionId).toBeNull();
-    });
-
-    it('should clear streaming session when initializeChat detects an active stream', async () => {
-      const sessionId = 'test-session-fix2b';
-      setupSession(sessionId);
-
-      // Start streaming
-      simulateStreamEvent(sessionId, { type: 'start' });
-
-      // Verify streaming session is tracked
-      expect((chatService as any).currentStreamingSessionId).toBe(sessionId);
-
-      // initializeChat will clear the session at the top, then may throw
-      // due to missing workspace data — but the session clear happens first
-      try {
-        await chatService.initializeChat(
-          { id: 'ws-1', name: 'Test', path: '/test' } as any,
-          'new-agent-id',
-        );
-      } catch {
-        // Expected — initializeChat may fail downstream, but Fix 2 runs first
-      }
-
-      // Streaming session should be cleared by Fix 2
-      expect((chatService as any).currentStreamingSessionId).toBeNull();
-    });
-  });
-
-  describe('Fix 3: sendMessage resets isStreaming when switching sessions', () => {
-    it('should set isStreaming and isProcessing to false when switching to a different session', async () => {
-      const sessionA = 'session-a';
-      const sessionB = 'session-b';
-
-      // Set up session A as current, with streaming active
-      setupSession(sessionA);
-      const store = chatService.getStore();
-      store.update((s) => ({
-        ...s,
-        isStreaming: true,
-        isProcessing: true,
-      }));
-
-      // Configure sessionStore to return session B (different from current)
-      vi.mocked(sessionStore.getSession).mockReturnValue({
-        id: sessionB,
-        backendSessionId: sessionB,
-        workspaceId: 'test-workspace',
-        name: 'Session B',
-        status: 'active',
-        model: 'test',
-        systemPrompt: '',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        isStreaming: false,
-        messages: [],
-      } as any);
-
-      // Capture intermediate state snapshots
-      const stateSnapshots: Array<{
-        sessionId: string;
-        isStreaming: boolean;
-        isProcessing: boolean;
-      }> = [];
-      const unsubscribe = store.subscribe((s) => {
-        stateSnapshots.push({
-          sessionId: s.session?.id ?? '',
-          isStreaming: s.isStreaming,
-          isProcessing: s.isProcessing,
-        });
+      simulateStreamEvent(sessionId, {
+        type: 'end',
+        message: {
+          id: 'msg_test',
+          role: 'assistant',
+          contentBlocks: [{ type: 'text', text: 'final content' }],
+        },
       });
 
-      // Call sendMessage with agentId pointing to session B
-      try {
-        await chatService.sendMessage(
-          'Hello from B',
-          { id: 'ws-1', name: 'Test', path: '/test' } as any,
-          { agentId: sessionB },
-        );
-      } catch {
-        // Expected — may fail on downstream calls, but Fix 3 runs early
-      }
-
-      unsubscribe();
-
-      // Find the snapshot where session switched to B with streaming reset
-      const sessionSwitchSnapshot = stateSnapshots.find(
-        (snap) =>
-          snap.sessionId === sessionB && snap.isStreaming === false && snap.isProcessing === false,
-      );
-      expect(sessionSwitchSnapshot).toBeDefined();
-      expect(sessionSwitchSnapshot!.isStreaming).toBe(false);
-      expect(sessionSwitchSnapshot!.isProcessing).toBe(false);
+      // localStreamingContent should be cleared after stream end
+      expect((chatService as any).localStreamingContent).toBe('');
     });
   });
+
 });

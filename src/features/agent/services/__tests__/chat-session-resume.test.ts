@@ -54,8 +54,8 @@ describe('Chat Session Resume', () => {
     };
     Object.assign(sessionStore, mockSessionStore);
 
-    // Create chat service instance
-    chatService = new ChatService();
+    // Create a fresh per-agent ChatService instance for each test
+    chatService = new ChatService('test-agent');
   });
 
   afterEach(() => {
