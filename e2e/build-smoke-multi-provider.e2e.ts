@@ -49,9 +49,9 @@ function getProviderTimeout(providerId: string): number {
  * These are loose regexes that tolerate model version bumps.
  */
 const EXPECTED_MODEL_PATTERNS: Record<string, RegExp> = {
-  auggie: /claude|haiku/i,
-  'claude-code': /claude|haiku/i,
-  codex: /gpt|codex|openai/i,
+  auggie: /auggie|augment|claude|opus|sonnet/i,
+  'claude-code': /anthropic|claude|opus|sonnet|haiku/i,
+  codex: /codex|openai/i,
   opencode: /pickle|opencode/i,
 };
 
@@ -240,9 +240,7 @@ test.describe('multi-provider smoke tests', () => {
         // Count existing assistant messages before sending, so
         // waitForAssistantResponse can wait for a genuinely new reply
         // instead of returning a stale message from the hello-world flow.
-        const msgCountBefore = await page
-          .locator('[data-message-role="assistant"]')
-          .count();
+        const msgCountBefore = await page.locator('[data-message-role="assistant"]').count();
 
         await sendFollowUpMessage(page, 'What model are you?');
         console.log(`💬 Sent "What model are you?" to implementor`);
@@ -262,7 +260,9 @@ test.describe('multi-provider smoke tests', () => {
           if (providerId === 'auggie') {
             expect(response).toMatch(expectedPattern);
           } else {
-            expect.soft(response, `${providerId} model response did not match ${expectedPattern}`).toMatch(expectedPattern);
+            expect
+              .soft(response, `${providerId} model response did not match ${expectedPattern}`)
+              .toMatch(expectedPattern);
           }
         }
 
@@ -271,7 +271,12 @@ test.describe('multi-provider smoke tests', () => {
         console.log(`✅ ${providerId}: PASS (${(durationMs / 1000).toFixed(1)}s)`);
 
         await archiveAndGoHome(page, workspaceId);
-        results.push({ providerId, status: 'pass', durationMs, modelResponse: response.slice(0, 200) });
+        results.push({
+          providerId,
+          status: 'pass',
+          durationMs,
+          modelResponse: response.slice(0, 200),
+        });
 
         if (providerId === 'auggie') {
           expect(true).toBe(true);
@@ -280,9 +285,7 @@ test.describe('multi-provider smoke tests', () => {
         const durationMs = Date.now() - start;
         const errorMsg = error instanceof Error ? error.message : String(error);
         await takeScreenshot(page, `mp-${providerId}-fail`).catch(() => {});
-        console.error(
-          `❌ ${providerId}: FAIL (${(durationMs / 1000).toFixed(1)}s) — ${errorMsg}`,
-        );
+        console.error(`❌ ${providerId}: FAIL (${(durationMs / 1000).toFixed(1)}s) — ${errorMsg}`);
 
         // Diagnostic dump on failure
         try {
