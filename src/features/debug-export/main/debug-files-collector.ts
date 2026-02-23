@@ -73,8 +73,7 @@ export async function collectDebugFiles(workspaceId?: string): Promise<DebugFile
   }
 
   // Global logs
-  await addFile(path.join(userDataPath, 'logs', 'main.log'), 'logs/main.log');
-  await addFile(path.join(userDataPath, 'logs', 'renderer.log'), 'logs/renderer.log');
+  await addDirectory(path.join(userDataPath, 'logs'), 'logs');
   await addFile(path.join(homeDir, '.augment', 'mcp-stdio.log'), 'logs/mcp-stdio.log');
   await addFile(
     path.join(homeDir, '.augment', 'memory', 'memory-events.jsonl'),

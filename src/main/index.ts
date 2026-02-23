@@ -24,6 +24,22 @@ const { ipcMain, app, BrowserWindow, screen, nativeTheme } = require('electron')
 // See memoryMonitor.onPressure handler below for usage
 app.commandLine.appendSwitch('js-flags', '--expose-gc');
 
+// EARLY: Support multiple dev instances by using unique userData paths
+// This must run before setupConsoleLogCapture() so logs go to the correct userData directory
+import * as path from 'path';
+if (process.env.NODE_ENV === 'development' && process.env.DEV_INSTANCE) {
+  const uniqueUserData = path.join(
+    app.getPath('userData'),
+    `dev-instance-${process.env.DEV_INSTANCE}`,
+  );
+  app.setPath('userData', uniqueUserData);
+}
+
+// EARLY: Capture all main-process console output to {userData}/logs/console-output.log
+// This must run before most initialization so we capture everything.
+import { setupConsoleLogCapture } from './logging/console-log-capture.js';
+setupConsoleLogCapture();
+
 // Use app.isPackaged for reliable production detection
 // This is true when running from a packaged app (dmg, exe), false in development
 const isProduction = app.isPackaged;
@@ -214,7 +230,7 @@ import type { BrowserWindow as BrowserWindowType } from 'electron';
 import { dialog, protocol } from 'electron';
 import * as fs from 'fs';
 import * as fsAsync from 'fs/promises';
-import * as path from 'path';
+
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { Logger } from '../shared/logger';
@@ -2578,15 +2594,6 @@ app.on('open-url', async (event: Electron.Event, url: string) => {
 // Handle intent:// protocol URLs on Windows/Linux (second instance)
 // This is called when the user tries to open the app again with an intent:// URL
 let isSecondInstance = false;
-
-// Support multiple dev instances by using unique userData paths
-if (process.env.NODE_ENV === 'development' && process.env.DEV_INSTANCE) {
-  const uniqueUserData = path.join(
-    app.getPath('userData'),
-    `dev-instance-${process.env.DEV_INSTANCE}`,
-  );
-  app.setPath('userData', uniqueUserData);
-}
 
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
