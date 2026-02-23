@@ -56,6 +56,11 @@ class NotesStore {
   // Event listeners
   #eventUnsubscribers: (() => void)[] = [];
 
+  // Initialization state - tracks whether we're in the middle of loading notes
+  // Events that arrive during initialization are buffered for reconciliation
+  #initializing = false;
+  #pendingEventNoteIds = new Set<NoteId>();
+
   // Primitives serializer
   #primitivesSerializer = new NotesPrimitivesSerializer();
 
@@ -184,6 +189,12 @@ class NotesStore {
     this.#loading = true;
     this.#error = null;
 
+    // Set up event listeners BEFORE the async fetch to avoid missing events
+    // Events that arrive during initialization are buffered for reconciliation
+    this.#initializing = true;
+    this.#pendingEventNoteIds.clear();
+    this.setupEventListeners();
+
     try {
       // Check if this is an optimistic workspace
       const isOptimisticWorkspace = workspaceId.startsWith('optimistic-');
@@ -307,13 +318,25 @@ class NotesStore {
       } else {
         this.#error = result.error;
       }
-
-      // Set up event listeners (synchronous for proper cleanup)
-      this.setupEventListeners();
     } catch (err) {
       this.#error = err instanceof Error ? err.message : 'Failed to load notes';
     } finally {
+      this.#initializing = false;
       this.#loading = false;
+    }
+
+    // Reconciliation: re-fetch any notes that received events during initialization
+    // This ensures we have the latest content for notes that were updated while we were loading
+    if (this.#pendingEventNoteIds.size > 0 && this.#workspaceId === workspaceId) {
+      const pendingIds = [...this.#pendingEventNoteIds];
+      this.#pendingEventNoteIds.clear();
+      logger.info('Reconciling notes that received events during initialization', {
+        noteIds: pendingIds,
+        count: pendingIds.length,
+      });
+      // Re-fetch all notes to get the latest state
+      // This is simpler and more reliable than fetching individual notes
+      await this.reloadNotes();
     }
   }
 
@@ -356,6 +379,13 @@ class NotesStore {
             eventWorkspace: workspaceId,
             currentWorkspace: this.#workspaceId,
           });
+          return;
+        }
+
+        // Buffer events during initialization for post-load reconciliation
+        if (this.#initializing) {
+          logger.debug('Buffering note:updated event during initialization', { noteId });
+          this.#pendingEventNoteIds.add(noteId);
           return;
         }
 
@@ -413,6 +443,15 @@ class NotesStore {
         const workspaceId = payload.workspaceId;
 
         if (workspaceId === this.#workspaceId) {
+          // Buffer events during initialization for post-load reconciliation
+          if (this.#initializing) {
+            logger.debug('Buffering note:created event during initialization', { noteId });
+            if (noteId) {
+              this.#pendingEventNoteIds.add(noteId);
+            }
+            return;
+          }
+
           if (noteId) {
             // Reload just the new note to avoid race conditions with note:updated
             logger.debug('Note created, reloading single note', { noteId });
@@ -432,6 +471,15 @@ class NotesStore {
         const payload = (event as any).payload || {};
         // noteId can be at top level (domain events) or inside data (workspace events)
         const noteId = payload.noteId || payload.data?.noteId;
+
+        // Buffer events during initialization for post-load reconciliation
+        if (this.#initializing) {
+          logger.debug('Buffering note:deleted event during initialization', { noteId });
+          if (noteId) {
+            this.#pendingEventNoteIds.add(noteId);
+          }
+          return;
+        }
 
         if (noteId && this.#notes.has(noteId)) {
           logger.debug('Note deleted', { noteId });
@@ -1161,6 +1209,10 @@ class NotesStore {
 
     // Remove event listeners
     this.cleanupEventListeners();
+
+    // Clear initialization state
+    this.#initializing = false;
+    this.#pendingEventNoteIds.clear();
 
     // Clear callbacks
     this.contentUpdateCallbacks.clear();

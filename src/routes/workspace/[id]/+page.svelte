@@ -45,6 +45,7 @@
 
   // Stores
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { workspaceClient } from '$features/workspace/workspace.client';
   import { agentService } from '$features/agent/agent.service'; // Keep for backward compat
   import { agentFactory } from '$features/agent/services/agent-factory';
   import { sessionStore } from '$features/agent/browser';
@@ -534,6 +535,41 @@
             workspaceState.updateState({
               workspaceData: updated,
               workspace: { id: base.id, status: 'ready' },
+            });
+          }
+        }
+      }
+    });
+
+    // One-time catch-up fetch: re-read workspace data from the backend to pick up
+    // any title (or other field) updates that arrived while the page was navigating
+    // and the listener was not yet active.  This closes the race window described in
+    // the root-cause analysis — the fetch is lightweight (single GET) and only
+    // updates the store/state if the backend data actually differs.
+    const catchUpId = workspaceId; // capture for closure
+    workspaceClient.get(WorkspaceId(catchUpId)).then((result) => {
+      // Guard: effect may have been cleaned up (workspace changed) by now
+      if (catchUpId !== workspaceId) return;
+      if (!result.ok) return;
+
+      const backend = result.data;
+      const local = workspaceStore.findById(WorkspaceId(catchUpId));
+
+      // Only push an update when the backend has something newer
+      if (local && backend.title !== local.title) {
+        logger.info('[WorkspacePage] Catch-up: backend title differs, updating', {
+          workspaceId: catchUpId,
+          localTitle: local.title,
+          backendTitle: backend.title,
+        });
+        workspaceStore.updateLocalWorkspace(WorkspaceId(catchUpId), { title: backend.title });
+
+        // Also update the page-level workspaceState so the header re-renders
+        if (workspaceState) {
+          const currentData = workspaceState.state.workspaceData;
+          if (currentData) {
+            workspaceState.updateState({
+              workspaceData: { ...currentData, title: backend.title },
             });
           }
         }
