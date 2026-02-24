@@ -222,12 +222,17 @@
   // Service instance — per-agent, permanently bound to this agent's ID
   const chatService = getChatService(agentId);
 
+  // Synchronously check if agent is actively streaming so first render shows "Thinking"
+  const _isAgentStreaming = workspace?.id
+    ? (unifiedStateStore.getWorkspace(workspace.id)?.agents.get(agentId)?.streaming?.active ?? false)
+    : false;
+
   // Local state (real state from service, or base for sandbox mode)
   let _chatStateInternal = $state<ChatState>({
     session: null,
     messages: [],
-    isStreaming: false,
-    isProcessing: false,
+    isStreaming: _isAgentStreaming,
+    isProcessing: _isAgentStreaming,
     isInterrupting: false,
     streamingContent: '',
     error: null,
