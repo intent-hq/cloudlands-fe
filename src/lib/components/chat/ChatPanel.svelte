@@ -184,6 +184,8 @@
       isProcessing?: boolean;
       messageCount?: number;
     }) => void;
+    /** Whether this panel is focused (has DOM focus within panel wrapper) */
+    isPanelFocused?: boolean;
     /** Sandbox/preview mode - bypasses services and uses mock data */
     sandboxMode?: boolean;
     /** Mock messages to display in sandbox mode */
@@ -209,6 +211,7 @@
     onClose: _onClose, // Prefix with underscore to indicate intentionally unused
     onFocus,
     onChatUpdate,
+    isPanelFocused = false,
     sandboxMode = false,
     sandboxMessages = [],
     sandboxIsStreaming = false,
@@ -3294,10 +3297,10 @@
 <svelte:window
   onkeydown={(e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
-      // Only open search if this panel contains the focused element and focus is not in terminal
+      // Only open search if this panel is focused and active, and focus is not in terminal
       if (
-        panelElement &&
-        panelElement.contains(document.activeElement) &&
+        isPanelFocused &&
+        isActive &&
         !isFocusInTerminal(document.activeElement as HTMLElement | null)
       ) {
         e.preventDefault();

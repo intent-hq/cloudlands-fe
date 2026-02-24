@@ -32,7 +32,7 @@
 
   const logger = createLogger('NoteTabType');
 
-  let { tab, workspaceId, isActive }: TabTypeComponentProps = $props();
+  let { tab, workspaceId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
 
   const headerContext = getPanelHeaderContext();
   const layoutManager = $derived(getPanelLayoutManager(workspaceId));
@@ -310,6 +310,7 @@
       {workspace}
       noteId={tab.noteId}
       editable={noteEditable}
+      {isPanelFocused}
       initialScrollPosition={tabScrollStore.get(tab.id)}
       onScrollPositionSave={(scrollTop: number) => tabScrollStore.save(tab.id, scrollTop)}
     />

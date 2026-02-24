@@ -206,6 +206,7 @@
     onagentlaunched,
     onnavigatetoagent,
     isInitialSpecWriteInProgress = false,
+    isPanelFocused = false,
   }: {
     workspace: Workspace;
     noteId?: string;
@@ -225,6 +226,8 @@
     onnavigatetoagent?: (data: { agentId: string }) => void;
     /** Whether the initial spec write is in progress (coordinator writing first draft) */
     isInitialSpecWriteInProgress?: boolean;
+    /** Whether this panel is focused (has DOM focus within panel wrapper) */
+    isPanelFocused?: boolean;
   } = $props();
 
   // Note: _onAttachContent is received but not yet implemented - reserved for future attach content feature
@@ -422,8 +425,8 @@
   // Handle Cmd+F only when this panel is focused
   function handleGlobalKeydown(e: KeyboardEvent) {
     if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
-      // Only open search if this panel contains the focused element
-      if (element && element.contains(document.activeElement)) {
+      // Only open search if this panel is focused
+      if (isPanelFocused) {
         e.preventDefault();
         showSearch = true;
         // Focus the search input after it renders

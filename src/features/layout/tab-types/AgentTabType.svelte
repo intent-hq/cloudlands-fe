@@ -28,7 +28,7 @@
 
   const logger = createLogger('AgentTabType');
 
-  let { tab, workspaceId, isActive }: TabTypeComponentProps = $props();
+  let { tab, workspaceId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
 
   const headerContext = getPanelHeaderContext();
   const layoutManager = $derived(getPanelLayoutManager(workspaceId));
@@ -210,7 +210,7 @@
   {#if workspace}
     {#key tab.agentId}
       <div class="w-full h-full flex-1 flex pb-1.5">
-        <ChatPanel {workspace} agentId={tab.agentId} {agentModel} {isActive} />
+        <ChatPanel {workspace} agentId={tab.agentId} {agentModel} {isActive} {isPanelFocused} />
       </div>
     {/key}
   {:else}
