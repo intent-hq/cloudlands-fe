@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.9
+
+- Settings page reorganized for clarity.
+- Agents are named by role (Coordinator, Implementor, Verifier) instead of random names.
+- Per-group commit buttons in the changes panel let you commit each agent's work independently.
+- Auto-commit is now respected everywhere. When you turn it off, agents will not commit on your behalf.
+- Delegated agents reliably inherit their parent's provider, fixing cases where child agents could end up on the wrong model.
+- Fixes: workspace title not updating for new spaces, improved agent isolation, stale messages after agent wake-ups, streaming state lost on page refresh, subscription UI reappearing after delegation, and various small UI cleanups.
+
+## 0.2.8
+
+- File tracking now uses Git blob storage. Diffs and file contents are stored as SHA blobs rather than inline, with lazy resolution and cached repo checks.
+- Open spaces in a new window with Cmd+Click. Also added a Markdown file editor for notes and docs.
+- More reliable rebase detection. We now track the HEAD SHA and use follow-up polling, so the UI refreshes correctly after both app-initiated and external rebases.
+- Fixed model selection in OpenCode. Now uses session/set_model to prevent a silent fallback to OpenRouter.
+- No more duplicate task agents. If the target agent is already streaming, we skip spinning up another one.
+- Two small bug fixes: Atomic file writes no longer hit a race condition (solved with unique temp paths), and remote workspace git status no longer truncates filenames.
+
 ## 0.2.7
 
 - PR Shepherd specialist for automated PR review cycles. New `wait_for_pr_changes` MCP tool and post-merge workspace reset workflow.
