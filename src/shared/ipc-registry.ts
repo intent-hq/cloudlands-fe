@@ -408,6 +408,7 @@ export const IPC_CHANNELS = {
     GET_ZOOM_FACTOR: 'window:get-zoom-factor',
     SET_TITLE: 'window:set-title',
     SET_IN_WORKSPACE: 'window:set-in-workspace',
+    SET_OPEN_WORKSPACE_TABS: 'window:set-open-workspace-tabs',
     SET_BROWSER_FOCUSED: 'window:set-browser-focused',
   },
 
@@ -1232,6 +1233,8 @@ export const EVENT_CHANNELS = [
   'browser:list-tabs-request',
   // Browser tab open request from main process (agent wants to open a browser tab)
   'browser:open-tab',
+  // MCP server error events (main → renderer)
+  'mcp:server-error',
 ] as const;
 
 // Dynamic channel patterns that use runtime IDs

@@ -43,6 +43,7 @@ import {
   WindowSetThemeSchema,
   WindowSetTitleSchema,
   WindowSetInWorkspaceSchema,
+  WindowSetOpenWorkspaceTabsSchema,
   WindowSetBrowserFocusedSchema,
   XcodeOpenSchema,
 } from '../../../main/ipc-schemas';
@@ -88,6 +89,8 @@ const windowWorkspaceState = new Map<number, boolean>();
 const windowWorkspaceIds = new Map<number, string>();
 /** Track which windows have a browser panel as the focused/active panel */
 const windowBrowserFocusState = new Map<number, boolean>();
+/** Track which workspace tabs are open per window */
+const windowOpenWorkspaceTabs = new Map<number, string[]>();
 
 /**
  * Check if the currently focused window is in a workspace.
@@ -107,6 +110,12 @@ export function getFocusedWindowWorkspaceId(): string | undefined {
   const focusedWindow = BrowserWindow.getFocusedWindow();
   if (!focusedWindow) return undefined;
   return windowWorkspaceIds.get(focusedWindow.id);
+}
+
+export function getOpenWorkspaceTabsForFocusedWindow(): string[] {
+  const focusedWindow = BrowserWindow.getFocusedWindow();
+  if (!focusedWindow) return [];
+  return windowOpenWorkspaceTabs.get(focusedWindow.id) ?? [];
 }
 
 /**
@@ -212,6 +221,7 @@ app.on('browser-window-created', (_event, window) => {
     windowWorkspaceState.delete(window.id);
     windowWorkspaceIds.delete(window.id);
     windowBrowserFocusState.delete(window.id);
+    windowOpenWorkspaceTabs.delete(window.id);
   });
 });
 
@@ -680,6 +690,23 @@ export function setupSystemIPC() {
         }
       },
       WINDOW_CHANNELS.SET_IN_WORKSPACE,
+    ),
+  );
+
+  // Track which workspace tabs are open in this window (for Window menu)
+  ipcMain.handle(
+    WINDOW_CHANNELS.SET_OPEN_WORKSPACE_TABS,
+    createSafeValidatedHandler(
+      WindowSetOpenWorkspaceTabsSchema,
+      async (event, validated) => {
+        const window = BrowserWindow.fromWebContents(event.sender);
+        if (window) {
+          windowOpenWorkspaceTabs.set(window.id, validated.workspaceIds);
+          app.emit('window-workspace-state-changed');
+        }
+        return { success: true };
+      },
+      WINDOW_CHANNELS.SET_OPEN_WORKSPACE_TABS,
     ),
   );
 

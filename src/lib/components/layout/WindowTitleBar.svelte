@@ -324,6 +324,11 @@
           </button>
         </Tooltip>
       {/if}
+      {#if import.meta.env.DEV && __DEV_GIT_BRANCH__}
+        <span class="text-[11px] text-muted-foreground/40 font-mono ml-1 truncate max-w-[150px]" title={__DEV_GIT_BRANCH__}>
+          {__DEV_GIT_BRANCH__}
+        </span>
+      {/if}
     </div>
 
     <!-- Center: Search bar (workspace pages only) -->

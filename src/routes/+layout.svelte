@@ -157,6 +157,16 @@
     }
   });
 
+  // Send open workspace tabs to main process for Window menu
+  $effect(() => {
+    const tabOrder = workspaceTabManager.tabOrder;
+    invoke(IPC_CHANNELS.WINDOW.SET_OPEN_WORKSPACE_TABS, {
+      workspaceIds: [...tabOrder],
+    }).catch(() => {
+      // Silently ignore errors
+    });
+  });
+
   // Terminal overlay state is now persisted per-workspace in terminalOverlayStore.setWorkspace()
   // No need to close it here - the store handles saving/restoring state when switching workspaces
 

@@ -338,6 +338,7 @@ const ALLOWED_CHANNELS = [
   "window:get-zoom-factor",
   "window:set-title",
   "window:set-in-workspace",
+  "window:set-open-workspace-tabs",
   "window:set-browser-focused",
   "terminal:createWithCommand",
   "terminal:professional:create",
@@ -851,7 +852,8 @@ const ALLOWED_CHANNELS = [
   "menu:reset-zoom",
   "browser:focus-tab",
   "browser:list-tabs-request",
-  "browser:open-tab"
+  "browser:open-tab",
+  "mcp:server-error"
 ];
 
 // Dynamic channel patterns that are matched with startsWith()

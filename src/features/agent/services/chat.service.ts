@@ -799,9 +799,15 @@ export class ChatService implements IDisposable {
     workspace: Workspace,
     options?: SendMessageOptions,
   ): Promise<void> {
-    // Validate inputs - allow empty text if there are images attached
-    const hasImages = options?.contextItems?.some((item) => item.imageData && item.imageMimeType);
-    if (!message?.trim() && !hasImages) {
+    // Validate inputs - allow empty text if there are media attachments (images or files)
+    // Check all attachment forms: base64 image data, base64 file data, and File objects (uploads)
+    const hasMediaAttachments = options?.contextItems?.some(
+      (item) =>
+        (item.imageData && item.imageMimeType) ||
+        (item.fileData && item.fileMimeType) ||
+        item.file,
+    );
+    if (!message?.trim() && !hasMediaAttachments) {
       throw new Error('Message cannot be empty');
     }
 
@@ -1327,22 +1333,30 @@ export class ChatService implements IDisposable {
     }
 
     // Extract image and file blocks from the original message so they are preserved on regenerate
-    const imageContextItems: ContextItem[] = [];
+    const mediaContextItems: ContextItem[] = [];
     if (lastUserMessage.contentBlocks && Array.isArray(lastUserMessage.contentBlocks)) {
       for (const block of lastUserMessage.contentBlocks) {
         if (block.type === 'image' && block.data && block.mimeType) {
-          imageContextItems.push({
-            id: `regen-image-${imageContextItems.length}`,
+          mediaContextItems.push({
+            id: `regen-image-${mediaContextItems.length}`,
             type: 'file',
-            label: `Image ${imageContextItems.length + 1}`,
+            label: `Image ${mediaContextItems.length + 1}`,
             imageData: block.data,
             imageMimeType: block.mimeType,
+          });
+        } else if (block.type === 'file' && block.data && block.mimeType) {
+          mediaContextItems.push({
+            id: `regen-file-${mediaContextItems.length}`,
+            type: 'file',
+            label: block.fileName || 'file',
+            fileData: block.data,
+            fileMimeType: block.mimeType,
           });
         }
       }
     }
 
-    const hasAttachments = imageContextItems.length > 0;
+    const hasAttachments = mediaContextItems.length > 0;
 
     if (!userText.trim() && !hasAttachments) {
       throw new Error('Could not extract text from user message');
@@ -1372,12 +1386,12 @@ export class ChatService implements IDisposable {
     }
 
     // Resend the user message with resetHistory flag to clear ACP session history
-    // Include original image blocks as context items so they are preserved
+    // Include original media blocks as context items so they are preserved
     const regenerateOptions: SendMessageOptions = { ...options, resetHistory: true };
-    if (imageContextItems.length > 0) {
+    if (mediaContextItems.length > 0) {
       regenerateOptions.contextItems = [
         ...(regenerateOptions.contextItems || []),
-        ...imageContextItems,
+        ...mediaContextItems,
       ];
     }
     await this.sendMessage(userText, workspace, regenerateOptions);
@@ -1451,22 +1465,30 @@ export class ChatService implements IDisposable {
     }
 
     // Extract image and file blocks from the original message so they are preserved on regenerate
-    const imageContextItems: ContextItem[] = [];
+    const mediaContextItems: ContextItem[] = [];
     if (userMessage.contentBlocks && Array.isArray(userMessage.contentBlocks)) {
       for (const block of userMessage.contentBlocks) {
         if (block.type === 'image' && block.data && block.mimeType) {
-          imageContextItems.push({
-            id: `regen-image-${imageContextItems.length}`,
+          mediaContextItems.push({
+            id: `regen-image-${mediaContextItems.length}`,
             type: 'file',
-            label: `Image ${imageContextItems.length + 1}`,
+            label: `Image ${mediaContextItems.length + 1}`,
             imageData: block.data,
             imageMimeType: block.mimeType,
+          });
+        } else if (block.type === 'file' && block.data && block.mimeType) {
+          mediaContextItems.push({
+            id: `regen-file-${mediaContextItems.length}`,
+            type: 'file',
+            label: block.fileName || 'file',
+            fileData: block.data,
+            fileMimeType: block.mimeType,
           });
         }
       }
     }
 
-    const hasAttachments = imageContextItems.length > 0;
+    const hasAttachments = mediaContextItems.length > 0;
 
     if (!userText.trim() && !hasAttachments) {
       throw new Error('Could not extract text from user message');
@@ -1477,7 +1499,7 @@ export class ChatService implements IDisposable {
       userMessageIndex,
       totalMessages: messages.length,
       messagesAfterTruncation: messagesBeforeRegenerate.length,
-      hasImageBlocks: hasAttachments,
+      hasMediaBlocks: hasAttachments,
     });
 
     // Update state to remove messages from the user message onwards
@@ -1502,12 +1524,12 @@ export class ChatService implements IDisposable {
     }
 
     // Resend the user message with resetHistory flag to clear ACP session history
-    // Include original image blocks as context items so they are preserved
+    // Include original media blocks as context items so they are preserved
     const regenerateOptions: SendMessageOptions = { ...options, resetHistory: true };
-    if (imageContextItems.length > 0) {
+    if (mediaContextItems.length > 0) {
       regenerateOptions.contextItems = [
         ...(regenerateOptions.contextItems || []),
-        ...imageContextItems,
+        ...mediaContextItems,
       ];
     }
     await this.sendMessage(userText, workspace, regenerateOptions);
@@ -1516,14 +1538,13 @@ export class ChatService implements IDisposable {
   /**
    * Retry the last failed message.
    * This clears the error and resends the stored message.
+   *
+   * If lastAttemptedMessage is not available (e.g., for background/delegated agents
+   * whose initial message was sent through the backend), falls back to extracting
+   * the last user message from the conversation history and resending it.
    */
   async retryLastMessage(workspace: Workspace): Promise<void> {
     const currentState = get(this.state);
-
-    if (!currentState.lastAttemptedMessage) {
-      logger.warn('No message to retry');
-      return;
-    }
 
     if (!currentState.session) {
       throw new Error('No active chat session');
@@ -1535,19 +1556,28 @@ export class ChatService implements IDisposable {
       return;
     }
 
-    const { text, options } = currentState.lastAttemptedMessage;
+    if (currentState.lastAttemptedMessage) {
+      // Standard path: retry from stored message
+      const { text, options } = currentState.lastAttemptedMessage;
 
-    // Clear error state before retrying
-    this.state.update((s) => ({
-      ...s,
-      error: null,
-      lastAttemptedMessage: null,
-    }));
+      // Clear error state before retrying
+      this.state.update((s) => ({
+        ...s,
+        error: null,
+        lastAttemptedMessage: null,
+      }));
 
-    logger.info('Retrying last message', { messageLength: text.length });
+      logger.info('Retrying last message', { messageLength: text.length });
 
-    // Resend the message
-    await this.sendMessage(text, workspace, options);
+      // Resend the message
+      await this.sendMessage(text, workspace, options);
+    } else {
+      // Fallback path: extract last user message from conversation history.
+      // This handles background/delegated agents whose initial message was sent
+      // through the backend (bypassing chatService.sendMessage), so
+      // lastAttemptedMessage was never set.
+      await this.retryFromConversationHistory(workspace);
+    }
   }
 
   /**
@@ -1557,11 +1587,6 @@ export class ChatService implements IDisposable {
   async retryWithModel(workspace: Workspace, model: string): Promise<void> {
     const currentState = get(this.state);
 
-    if (!currentState.lastAttemptedMessage) {
-      logger.warn('No message to retry with new model');
-      return;
-    }
-
     if (!currentState.session) {
       throw new Error('No active chat session');
     }
@@ -1572,26 +1597,147 @@ export class ChatService implements IDisposable {
       return;
     }
 
-    const { text, options } = currentState.lastAttemptedMessage;
+    if (currentState.lastAttemptedMessage) {
+      // Standard path: retry from stored message with new model
+      const { text, options } = currentState.lastAttemptedMessage;
 
-    // Clear error and modelUnavailable state before retrying
+      // Clear error and modelUnavailable state before retrying
+      this.state.update((s) => ({
+        ...s,
+        error: null,
+        modelUnavailable: null,
+        lastAttemptedMessage: null,
+      }));
+
+      logger.info('Retrying last message with different model', {
+        messageLength: text.length,
+        newModel: model,
+      });
+
+      // Resend the message with the new model
+      await this.sendMessage(text, workspace, {
+        ...options,
+        model,
+      });
+    } else {
+      // Fallback path: extract last user message from conversation history
+      await this.retryFromConversationHistory(workspace, { model });
+    }
+  }
+
+  /**
+   * Fallback retry: extract the last user message from conversation history and resend it.
+   * Used when lastAttemptedMessage is null (e.g., background/delegated agents whose initial
+   * message was sent through the backend, bypassing chatService.sendMessage).
+   *
+   * This finds the last user message, removes it and any subsequent messages (error/partial
+   * assistant messages), and resends via sendMessage().
+   */
+  private async retryFromConversationHistory(
+    workspace: Workspace,
+    options?: SendMessageOptions,
+  ): Promise<void> {
+    const currentState = get(this.state);
+    const messages = currentState.messages;
+
+    // Find the last user message
+    let lastUserMessageIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        lastUserMessageIndex = i;
+        break;
+      }
+    }
+
+    if (lastUserMessageIndex === -1) {
+      logger.warn('No user message found in conversation history to retry');
+      return;
+    }
+
+    const lastUserMessage = messages[lastUserMessageIndex];
+
+    // Extract text from content blocks
+    let userText = '';
+    if (lastUserMessage.contentBlocks && Array.isArray(lastUserMessage.contentBlocks)) {
+      userText = lastUserMessage.contentBlocks
+        .filter((block) => block.type === 'text' && block.text)
+        .map((block) => block.text)
+        .join('');
+    }
+
+    // Extract image and file blocks to preserve all attachments
+    const mediaContextItems: ContextItem[] = [];
+    if (lastUserMessage.contentBlocks && Array.isArray(lastUserMessage.contentBlocks)) {
+      for (const block of lastUserMessage.contentBlocks) {
+        if (block.type === 'image' && block.data && block.mimeType) {
+          mediaContextItems.push({
+            id: `retry-image-${mediaContextItems.length}`,
+            type: 'file',
+            label: `Image ${mediaContextItems.length + 1}`,
+            imageData: block.data,
+            imageMimeType: block.mimeType,
+          });
+        } else if (block.type === 'file' && block.data && block.mimeType) {
+          mediaContextItems.push({
+            id: `retry-file-${mediaContextItems.length}`,
+            type: 'file',
+            label: block.fileName || 'file',
+            fileData: block.data,
+            fileMimeType: block.mimeType,
+          });
+        }
+      }
+    }
+
+    const hasAttachments = mediaContextItems.length > 0;
+
+    if (!userText.trim() && !hasAttachments) {
+      logger.warn('Could not extract content from last user message to retry');
+      return;
+    }
+
+    // Remove the user message and everything after it (error/partial assistant messages)
+    const messagesBeforeRetry = messages.slice(0, lastUserMessageIndex);
+
+    logger.info('Retrying from conversation history (fallback)', {
+      messageLength: userText.length,
+      removedMessages: messages.length - lastUserMessageIndex,
+      hasAttachments,
+    });
+
+    // Update state: truncate messages and clear error
     this.state.update((s) => ({
       ...s,
+      messages: messagesBeforeRetry,
       error: null,
       modelUnavailable: null,
       lastAttemptedMessage: null,
     }));
 
-    logger.info('Retrying last message with different model', {
-      messageLength: text.length,
-      newModel: model,
-    });
+    // Sync truncated messages to sessionStore so they persist
+    const sessionId = currentState.session?.id;
+    if (sessionId) {
+      sessionStore.updateMessages(sessionId, messagesBeforeRetry);
 
-    // Resend the message with the new model
-    await this.sendMessage(text, workspace, {
-      ...options,
-      model,
-    });
+      // Persist truncated messages to disk
+      agentService.saveSession(sessionId, workspace.id).catch((err) => {
+        logger.warn('Failed to persist truncated messages after retry fallback', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
+
+    // Resend with resetHistory to clear ACP session history
+    const retryOptions: SendMessageOptions = { ...options, resetHistory: true };
+    if (mediaContextItems.length > 0) {
+      retryOptions.contextItems = [
+        ...(retryOptions.contextItems || []),
+        ...mediaContextItems,
+      ];
+    }
+
+    await this.sendMessage(userText, workspace, retryOptions);
   }
 
   /**

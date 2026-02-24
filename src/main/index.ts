@@ -397,6 +397,7 @@ import {
   isFocusedWindowInWorkspace,
   isFocusedWindowBrowserActive,
   getFocusedWindowWorkspaceId,
+  getOpenWorkspaceTabsForFocusedWindow,
   installIntentCli,
   autoRepairCliSymlink,
 } from '../features/system/main/system.ipc';
@@ -1394,6 +1395,42 @@ app.whenReady().then(async () => {
     // Add 'Bring All to Front' only on macOS (role: 'front' is macOS-only)
     if (isMacOS) {
       windowMenuItems.push({ role: 'front', label: 'Bring All to Front' });
+    }
+
+    // Add open workspace tabs to the Window menu
+    const openTabIds = getOpenWorkspaceTabsForFocusedWindow();
+    if (openTabIds.length > 0) {
+      type WorkspaceItem = { status?: string; title?: string; name?: string; id: string };
+      const workspaceTitles = new Map<string, string>();
+      try {
+        const result = await protocolAdapter.listAllWorkspaces();
+        if (result.ok && result.data) {
+          for (const ws of result.data as WorkspaceItem[]) {
+            const displayName = ws.title || ws.name || ws.id;
+            workspaceTitles.set(ws.id, displayName);
+          }
+        }
+      } catch {
+        // Fall back to workspace IDs
+      }
+
+      const focusedWorkspaceId = getFocusedWindowWorkspaceId();
+
+      windowMenuItems.push({ type: 'separator' });
+      for (const wsId of openTabIds) {
+        const label = workspaceTitles.get(wsId) || wsId;
+        windowMenuItems.push({
+          label,
+          type: 'radio',
+          checked: wsId === focusedWorkspaceId,
+          click: () => {
+            const focusedWindow = BrowserWindow.getFocusedWindow();
+            if (focusedWindow && !focusedWindow.isDestroyed()) {
+              focusedWindow.webContents.send('navigate', `/workspace/${wsId}`);
+            }
+          },
+        });
+      }
     }
 
     // Build the Help menu items
@@ -2625,8 +2662,17 @@ if (!gotTheLock) {
 }
 
 app.on('activate', () => {
-  if (mainWindow === null && !isSecondInstance) {
-    // Try to restore saved sessions (e.g., user closed all windows on macOS then clicked dock icon)
+  if (isSecondInstance) return;
+
+  const allWindows = BrowserWindow.getAllWindows().filter((w: BrowserWindowType) => !w.isDestroyed());
+  if (allWindows.length > 0) {
+    // Focus an existing window instead of creating a new one
+    const targetWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : allWindows[0];
+    if (targetWindow.isMinimized()) targetWindow.restore();
+    targetWindow.show();
+    targetWindow.focus();
+  } else {
+    // No windows at all — restore sessions or create a new one
     const savedSessions = loadWindowSessions();
     if (savedSessions && savedSessions.length > 0) {
       logger.info('Restoring window sessions on activate', { count: savedSessions.length });

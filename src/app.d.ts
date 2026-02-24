@@ -11,6 +11,8 @@ declare module 'svelte/elements' {
 declare global {
   namespace App {}
 
+  const __DEV_GIT_BRANCH__: string;
+
   interface Window {
     electronAPI: {
       // Sentry config exposed from preload (DSN not bundled into client JS)

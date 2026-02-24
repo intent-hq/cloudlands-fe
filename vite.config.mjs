@@ -3,6 +3,7 @@ import { defineConfig } from 'vite';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync } from 'fs';
+import { execSync } from 'child_process';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -360,6 +361,11 @@ export default defineConfig({
 
   define: {
     'process.env.IS_ELECTRON': JSON.stringify(true),
+    '__DEV_GIT_BRANCH__': JSON.stringify(
+      process.env.NODE_ENV === 'development'
+        ? (() => { try { return execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim(); } catch { return ''; } })()
+        : ''
+    ),
   },
 
   optimizeDeps: {

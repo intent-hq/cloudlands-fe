@@ -1564,6 +1564,10 @@ export const WindowSetInWorkspaceSchema = z.object({
   workspaceId: z.string().optional(),
 });
 
+export const WindowSetOpenWorkspaceTabsSchema = z.object({
+  workspaceIds: z.array(z.string()),
+});
+
 export const WindowSetBrowserFocusedSchema = z.object({
   browserFocused: z.boolean(),
 });
