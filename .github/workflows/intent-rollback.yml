@@ -61,7 +61,7 @@ jobs:
           VERSION="${{ inputs.version }}"
           echo "🔍 Validating stable manifests point at v$VERSION..."
 
-          for manifest in latest-mac.yml latest-mac-arm64.yml; do
+          for manifest in latest-mac.yml; do
             echo ""
             echo "--- $manifest ---"
             CONTENT=$(gcloud storage cat "gs://$GCS_BUCKET/stable/$manifest")
@@ -133,4 +133,3 @@ jobs:
               ]
             }" \
             ${{ secrets.INTENT_SLACK_WEBHOOK_URL }}
-

@@ -40,7 +40,7 @@ jobs:
 
           echo "Checking beta manifests for v$VERSION..."
 
-          for manifest in latest-mac.yml latest-mac-arm64.yml; do
+          for manifest in latest-mac.yml; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$CDN_BASE/$manifest")
             if [ "$STATUS" = "200" ]; then
               echo "  $manifest: OK ($STATUS)"
@@ -173,7 +173,7 @@ jobs:
           echo "Waiting for CDN cache to propagate..."
           sleep 10
 
-          for manifest in latest-mac.yml latest-mac-arm64.yml; do
+          for manifest in latest-mac.yml; do
             MANIFEST_VERSION=$(curl -s "$CDN_BASE/$manifest" | grep "^version:" | sed 's/version: //')
             if [ "$MANIFEST_VERSION" = "$VERSION" ]; then
               echo "  $manifest: v$MANIFEST_VERSION (correct)"
