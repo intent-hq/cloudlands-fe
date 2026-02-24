@@ -233,79 +233,100 @@ export class GitService {
       let diverged = ahead > 0 && behind > 0; // Keep as fallback
       const branchName = branch.trim();
       if (branchName) {
-        // Check divergence cache first to avoid expensive git subprocess calls (~580ms each)
-        const divergenceCacheKey = `${workspaceId}-${branchName}`;
-        const cachedDivergence = this.divergenceCache.get(divergenceCacheKey);
-        if (cachedDivergence && Date.now() - cachedDivergence.timestamp < this.DIVERGENCE_CACHE_TTL) {
-          diverged = cachedDivergence.diverged;
-          logger.info('Using cached divergence result', {
+        // Fast path: if ahead=0 && behind=0, the branch is perfectly in sync with
+        // upstream (or has no upstream). Divergence is impossible — skip the expensive
+        // merge-base subprocess calls (~580ms each).
+        if (ahead === 0 && behind === 0) {
+          diverged = false;
+          logger.debug('Branch in sync (ahead=0, behind=0), skipping divergence check', {
             workspaceId,
             branch: branchName,
-            diverged,
-            remoteBranchExists: cachedDivergence.remoteBranchExists,
           });
-        } else {
-          logger.info('Checking divergence with merge-base', { workspaceId, branch: branchName });
-
-          // First, check if the remote branch exists
-          let remoteBranchExists = false;
-          try {
-            await execAsync(`git rev-parse --verify origin/${branchName}`, {
-              cwd: worktreePath,
+        }
+        // Check divergence cache to avoid expensive git subprocess calls (~580ms each)
+        else {
+          const divergenceCacheKey = `${workspaceId}-${branchName}`;
+          const cachedDivergence = this.divergenceCache.get(divergenceCacheKey);
+          if (
+            cachedDivergence &&
+            Date.now() - cachedDivergence.timestamp < this.DIVERGENCE_CACHE_TTL
+          ) {
+            diverged = cachedDivergence.diverged;
+            logger.info('Using cached divergence result', {
+              workspaceId,
+              branch: branchName,
+              diverged,
+              remoteBranchExists: cachedDivergence.remoteBranchExists,
             });
-            remoteBranchExists = true;
-            logger.debug('Remote branch exists', { workspaceId, branch: branchName });
-          } catch {
-            remoteBranchExists = false;
-            logger.debug('Remote branch does not exist', { workspaceId, branch: branchName });
-          }
-
-          // Only check for divergence if the remote branch exists
-          if (remoteBranchExists) {
-            try {
-              await execAsync(`git merge-base --is-ancestor origin/${branchName} HEAD`, {
-                cwd: worktreePath,
-              });
-              // Command succeeded = origin/branch is ancestor of HEAD = NOT diverged
-              diverged = false;
-              logger.info('Branch is NOT diverged (merge-base succeeded)', {
-                workspaceId,
-                branch: branchName,
-              });
-            } catch {
-              // Command failed = origin/branch is NOT ancestor of HEAD
-              // But only mark as diverged if we also have local commits (ahead > 0)
-              // If ahead === 0, it's just "remote ahead" and we can pull normally
-              diverged = ahead > 0;
-              if (diverged) {
-                logger.info('Branch IS DIVERGED (merge-base failed and ahead > 0)', {
-                  workspaceId,
-                  branch: branchName,
-                  ahead,
-                });
-              } else {
-                logger.info('Branch is BEHIND but not diverged (merge-base failed but ahead === 0)', {
-                  workspaceId,
-                  branch: branchName,
-                  behind,
-                });
-              }
-            }
           } else {
-            // Remote branch doesn't exist, so it's not diverged - just unpushed
-            diverged = false;
-            logger.info('Remote branch does not exist, not diverged', {
+            logger.info('Checking divergence with merge-base', {
               workspaceId,
               branch: branchName,
             });
-          }
 
-          // Cache the divergence result
-          this.divergenceCache.set(divergenceCacheKey, {
-            remoteBranchExists,
-            diverged,
-            timestamp: Date.now(),
-          });
+            // First, check if the remote branch exists
+            let remoteBranchExists = false;
+            try {
+              await execAsync(`git rev-parse --verify origin/${branchName}`, {
+                cwd: worktreePath,
+              });
+              remoteBranchExists = true;
+              logger.debug('Remote branch exists', { workspaceId, branch: branchName });
+            } catch {
+              remoteBranchExists = false;
+              logger.debug('Remote branch does not exist', { workspaceId, branch: branchName });
+            }
+
+            // Only check for divergence if the remote branch exists
+            if (remoteBranchExists) {
+              try {
+                await execAsync(`git merge-base --is-ancestor origin/${branchName} HEAD`, {
+                  cwd: worktreePath,
+                });
+                // Command succeeded = origin/branch is ancestor of HEAD = NOT diverged
+                diverged = false;
+                logger.info('Branch is NOT diverged (merge-base succeeded)', {
+                  workspaceId,
+                  branch: branchName,
+                });
+              } catch {
+                // Command failed = origin/branch is NOT ancestor of HEAD
+                // But only mark as diverged if we also have local commits (ahead > 0)
+                // If ahead === 0, it's just "remote ahead" and we can pull normally
+                diverged = ahead > 0;
+                if (diverged) {
+                  logger.info('Branch IS DIVERGED (merge-base failed and ahead > 0)', {
+                    workspaceId,
+                    branch: branchName,
+                    ahead,
+                  });
+                } else {
+                  logger.info(
+                    'Branch is BEHIND but not diverged (merge-base failed but ahead === 0)',
+                    {
+                      workspaceId,
+                      branch: branchName,
+                      behind,
+                    },
+                  );
+                }
+              }
+            } else {
+              // Remote branch doesn't exist, so it's not diverged - just unpushed
+              diverged = false;
+              logger.info('Remote branch does not exist, not diverged', {
+                workspaceId,
+                branch: branchName,
+              });
+            }
+
+            // Cache the divergence result
+            this.divergenceCache.set(divergenceCacheKey, {
+              remoteBranchExists,
+              diverged,
+              timestamp: Date.now(),
+            });
+          }
         }
       }
 

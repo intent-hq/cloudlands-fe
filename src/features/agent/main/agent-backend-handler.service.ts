@@ -3365,7 +3365,27 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
       // Handle both string and object parameter formats
       const agentId = typeof validated === 'string' ? validated : validated.agentId;
 
-      logger.info('Stopping session', { agentId });
+      // Determine cancellation trigger for diagnostics.
+      // _stopTrigger is set by internal callers (lifecycle, programmatic stop, workspace deletion).
+      // When absent, the call came from the renderer IPC (user action).
+      const trigger: string = (typeof validated === 'object' && validated?._stopTrigger) || 'user_action';
+      const triggerReason: string | undefined = typeof validated === 'object' ? validated?._stopReason : undefined;
+
+      // Look up workspaceId and sessionId from tracking maps for correlation
+      const workspaceId = this.streamWorkspaceIds.get(agentId);
+      const sessionId = this.streamSessionIds.get(agentId);
+
+      // Structured cancellation-origin log: identifies WHO triggered the stop and WHY.
+      // This is the single chokepoint for all session stops that produce finishReason="cancelled".
+      logger.info('[cancellation-origin] Stopping session', {
+        trigger,
+        triggerReason: triggerReason || 'none',
+        agentId,
+        workspaceId: workspaceId || 'unknown',
+        sessionId: sessionId || 'unknown',
+        hasActiveStream: this.streamStartTimes.has(agentId),
+        hasProvider: this.providers.has(agentId),
+      });
 
       // Mark the agent as intentionally interrupted to skip automatic queue processing
       // This prevents the race condition where processNextQueuedMessage picks up the wrong message
@@ -3402,7 +3422,11 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
 
       // Then call backendStop to clean up streaming state
       const backend = await this.getBackend();
-      const result = await backend.backendStop({ agentId });
+      const result = await backend.backendStop({
+        agentId,
+        _stopTrigger: trigger,
+        _stopReason: triggerReason || 'handleStopSession_cleanup',
+      });
 
       // Clean up any active session tracking
       this.activeSessions.delete(agentId);
@@ -4015,7 +4039,11 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
     try {
       const { agentId } = validated;
       // Similar to handleStopSession but for lifecycle management
-      return await this.handleStopSession(_event, agentId);
+      return await this.handleStopSession(_event, {
+        agentId,
+        _stopTrigger: 'lifecycle_stop',
+        _stopReason: 'lifecycle_management',
+      });
     } catch (error) {
       logger.error('Failed to stop agent lifecycle', error as Error);
       return { success: false, error: String(error) };
@@ -4854,9 +4882,13 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
   /**
    * Stop an agent
    */
-  public async stopAgent(sessionId: string): Promise<void> {
+  public async stopAgent(sessionId: string, trigger?: string): Promise<void> {
     try {
-      await this.handleStopSession(null as any, { agentId: sessionId });
+      await this.handleStopSession(null as any, {
+        agentId: sessionId,
+        _stopTrigger: trigger || 'programmatic_stop',
+        _stopReason: trigger || 'stopAgent_call',
+      });
     } catch (error) {
       logger.error('Error stopping agent', error as Error);
       throw error;

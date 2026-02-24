@@ -150,6 +150,8 @@ class AgentBackendAdapter implements IAgentBackendService {
 
     const result = await (this.handler as any).handleStopSession(null, {
       agentId: request.agentId,
+      _stopTrigger: 'user_action',
+      _stopReason: 'adapter_stopSession',
     });
 
     if (!result.success) {
@@ -517,7 +519,12 @@ class AgentBackendAdapter implements IAgentBackendService {
     logger.debug('Adapter: backendStop', { agentId: request.agentId });
 
     // Call the existing stop session handler
-    const result = await (this.handler as any).handleStopSession(null, request);
+    // Preserve any _stopTrigger from the request, default to user_action (renderer IPC)
+    const result = await (this.handler as any).handleStopSession(null, {
+      ...request,
+      _stopTrigger: request._stopTrigger || 'user_action',
+      _stopReason: request._stopReason || 'adapter_backendStop',
+    });
 
     if (!result.success) {
       throw new Error(result.error || 'Failed to stop session');

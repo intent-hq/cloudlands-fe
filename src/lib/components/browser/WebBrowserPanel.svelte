@@ -179,8 +179,10 @@
     if (e.key === 'Enter') {
       let urlToNavigate = displayUrl;
 
-      // Add protocol if missing
-      if (!urlToNavigate.match(/^https?:\/\//)) {
+      // Only prepend a protocol if the input doesn't already have one (scheme://...).
+      // This avoids turning "file:///path" into "https://file:///path" (ERR_NAME_NOT_RESOLVED).
+      // navigateTo() will reject non-http(s) protocols with a clear error message.
+      if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(urlToNavigate)) {
         urlToNavigate = `https://${urlToNavigate}`;
       }
 

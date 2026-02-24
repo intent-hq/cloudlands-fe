@@ -28,6 +28,7 @@ import {
   extractFileChangesFromMessages,
   extractNoteChangesFromMessages,
   extractTaskChangesFromMessages,
+  extractDelegationBatchMap,
 } from './graph-helpers';
 
 const logger = createLogger('AgentOverviewStore');
@@ -550,6 +551,26 @@ function computeGraphState(
             isActive: false,
           },
         });
+      }
+    }
+  }
+
+  // ============================================================================
+  // STEP 3.7: Compute delegation batch IDs for child agents
+  // Scan parent agent messages to find delegation tool calls in the same response
+  // ============================================================================
+  for (const [agentId, session] of agents) {
+    const messages = session.messages || [];
+    if (messages.length === 0) continue;
+
+    const batchMap = extractDelegationBatchMap(messages, agentId);
+    if (batchMap.size === 0) continue;
+
+    // Apply batch IDs to child agent nodes
+    for (const [childAgentId, batchId] of batchMap) {
+      const childNode = nodeMap.get(childAgentId);
+      if (childNode && childNode.type === 'agent') {
+        (childNode as AgentNode).delegationBatchId = batchId;
       }
     }
   }

@@ -9,7 +9,6 @@
   import AIBehaviorSidebar, {
     type AIBehaviorView,
   } from '$lib/components/settings/AIBehaviorSidebar.svelte';
-  import BackgroundAgentSettings from '$lib/components/settings/BackgroundAgentSettings.svelte';
   import ConnectionsSettings from '$lib/components/settings/ConnectionsSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
   import McpServersSettings from '$lib/components/settings/McpServersSettings.svelte';
@@ -175,7 +174,7 @@
     integrations: 'accounts',
     'mcp-servers': 'accounts',
     'git-workspace': 'setup',
-    'utility-default-model': 'setup',
+    'utility-default-model': 'agents',
     notifications: 'setup',
   };
 
@@ -381,18 +380,6 @@
             Git & Workspace
           </h2>
           <GitWorkspaceSettings bind:this={gitWorkspaceSettingsRef} />
-        </div>
-
-        <!-- Quick Actions (Background Agents) -->
-        <div class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Quick Actions
-          </h2>
-          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-            <section class="px-6 py-5">
-              <BackgroundAgentSettings />
-            </section>
-          </div>
         </div>
 
         <!-- Notifications -->

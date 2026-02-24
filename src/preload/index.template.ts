@@ -582,6 +582,8 @@ const ALLOWED_CHANNELS = [
   'agent:deleted',
   'agent:renamed',
   'agent:status',
+	  'agent:idle',
+	  'agent:status-changed',
   'agent:loaded',
   'agent:message',
   'agent:chunk',
@@ -590,6 +592,11 @@ const ALLOWED_CHANNELS = [
   'agent:session-completed',
   'agent:subscribed',
   'agent:unsubscribed',
+	  'agent:woken-by-subscription',
+	  'agent:subscriptions-restored',
+	  'agent:subscriptions-changed',
+	  'agent:event-delivery-failed',
+	  'agent:event-delivery-timeout',
   'agent:queue:updated',
   'agent:queue:processing',
   'agent:message:error',
@@ -686,10 +693,21 @@ const EVENT_CHANNELS = [
   'agent:deleted',
   'agent:renamed',
   'agent:status',
+	  'agent:idle',
+	  'agent:status-changed',
   'agent:loaded',
   'agent:message',
   'agent:chunk',
   'agent:session:recovered',
+	  'agent:session-updated',
+	  'agent:session-completed',
+	  'agent:subscribed',
+	  'agent:unsubscribed',
+	  'agent:woken-by-subscription',
+	  'agent:subscriptions-restored',
+	  'agent:subscriptions-changed',
+	  'agent:event-delivery-failed',
+	  'agent:event-delivery-timeout',
   'agent:queue:updated',
   'agent:queue:processing',
   'agent:message:error',
@@ -726,12 +744,13 @@ const EVENT_CHANNELS = [
 ];
 
 /**
- * Check if a channel is allowed (either static or dynamic)
+ * Check if a channel is allowed (either static, dynamic, or event)
  */
 function isChannelAllowed(channel: string): boolean {
   return (
     ALLOWED_CHANNELS.includes(channel) ||
     DYNAMIC_CHANNEL_PATTERNS.some((pattern) => channel.startsWith(pattern)) ||
+    EVENT_CHANNELS.includes(channel) ||
     // Safety fallback: allow GitHub auth channels even if generated list is stale
     channel.startsWith('github-auth:')
   );

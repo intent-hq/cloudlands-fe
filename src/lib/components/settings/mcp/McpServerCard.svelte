@@ -111,6 +111,11 @@
         </div>
         <p class="text-xs text-muted-foreground truncate">{displayCommand()}</p>
 
+        <!-- Error message (shown inline when server failed to start) -->
+        {#if server.status === 'error' && server.errorMessage}
+          <p class="mt-1 text-xs text-red-500 dark:text-red-400 line-clamp-2">{server.errorMessage}</p>
+        {/if}
+
         <!-- Tools expansion (inline, only if has tools) -->
         {#if server.tools.length > 0}
           <button

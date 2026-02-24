@@ -107,7 +107,17 @@ export type AgentStatus = 'idle' | 'responding' | 'waiting' | 'completed' | 'fai
 /**
  * Callback for delivering events to an agent
  */
-export type EventDeliveryCallback = (agentId: string, events: WorkspaceEvent[]) => void | Promise<void>;
+export type DeliveryResult =
+  | { status: 'success' }
+  | { status: 'failed'; error: string }
+  | { status: 'timeout'; error: string; timeoutMs?: number }
+  | { status: 'suppressed'; reason: 'loop' }
+  | { status: 'no-callback' };
+
+export type EventDeliveryCallback = (
+  agentId: string,
+  events: WorkspaceEvent[],
+) => void | DeliveryResult | Promise<void | DeliveryResult>;
 
 // ============================================================================
 // Service Implementation
@@ -139,6 +149,8 @@ export class AgentEventSubscriptionService {
   private delegationGroups: Map<string, DelegationGroupTracker> = new Map();
   /** Guards against double-delivery of oneShot subscriptions */
   private firedOneShotSubscriptions: Set<string> = new Set();
+  /** Monotonically increasing version counter — increments on every subscribe/unsubscribe/group change */
+  private _version: number = 0;
 
   /**
    * SAFETY NET: Tracks recent delivery timestamps per agent to detect rapid-fire
@@ -148,6 +160,15 @@ export class AgentEventSubscriptionService {
   private recentDeliveries: Map<string, number[]> = new Map();
   private static readonly LOOP_DETECTION_WINDOW_MS = 30_000; // 30 seconds
   private static readonly MAX_DELIVERIES_IN_WINDOW = 15;
+
+  /**
+   * SAFETY NET: Bounds the delegation-group delivery polling loop.
+   * If delivery keeps failing or the agent never becomes idle, the loop
+   * terminates after MAX_DELEGATION_POLL_DURATION_MS or MAX_DELEGATION_POLL_ATTEMPTS,
+   * whichever comes first.
+   */
+  static readonly MAX_DELEGATION_POLL_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+  static readonly MAX_DELEGATION_POLL_ATTEMPTS = 200;
 
   // ROBUSTNESS: Health monitoring for event delivery
   private deliveryStats = {
@@ -169,6 +190,39 @@ export class AgentEventSubscriptionService {
   ) {
     logger.info('AgentEventSubscriptionService initialized', { workspaceId });
     this.startHealthReporting();
+  }
+
+  /**
+   * Current subscription version — monotonically increasing counter that
+   * increments on every subscribe/unsubscribe/group change. Used by the
+   * frontend to detect and discard stale IPC responses.
+   */
+  get version(): number {
+    return this._version;
+  }
+
+  /**
+   * Bump version and emit a single invalidation event so renderers can refetch a
+   * snapshot and converge even if they missed legacy hint events.
+   */
+  private bumpVersionAndEmit(agentId: string, reason: string): number {
+    this._version++;
+    try {
+      const event = createWorkspaceEvent(
+        'agent:subscriptions-changed',
+        this.workspaceId,
+        { type: 'system', id: 'subscription-service', name: 'Subscription Service' },
+        {
+          agentId,
+          subscriptionVersion: this._version,
+          reason,
+        },
+      );
+      this.eventBus.emitEvent(event);
+    } catch {
+      // Best-effort: invalidation hint should never break delivery/subscription logic.
+    }
+    return this._version;
   }
 
   /**
@@ -359,8 +413,51 @@ export class AgentEventSubscriptionService {
       }
     }
 
+    // Clean up already-completed delegation groups that were persisted before
+    // cleanup could run (e.g., app crashed between completion and cleanup).
+    // Without this, the "Waiting for all (n/n)" UI lingers after restart.
+    this.cleanupCompletedDelegationGroups();
+
     return restored;
   }
+
+  /**
+   * Remove delegation groups where all expected agents have already completed.
+   * This handles the case where a group was persisted to disk after completion
+   * was detected but before cleanup could run (e.g., app crash or restart).
+   */
+  private cleanupCompletedDelegationGroups(): void {
+    const completedGroupIds: string[] = [];
+    for (const tracker of this.delegationGroups.values()) {
+      if (tracker.completedAgentIds.size >= tracker.expectedAgentIds.size) {
+        completedGroupIds.push(tracker.groupId);
+      }
+    }
+
+    for (const groupId of completedGroupIds) {
+      const tracker = this.delegationGroups.get(groupId);
+      if (!tracker) continue;
+
+      // Delete tracker first, then unsubscribe (same ordering as cleanupDelegationGroup)
+      this.delegationGroups.delete(groupId);
+
+      if (tracker.subscriptionId && this.subscriptions.has(tracker.subscriptionId)) {
+        this.unsubscribe(tracker.subscriptionId, 'delegation-complete', groupId);
+      }
+
+      logger.info('Cleaned up already-completed delegation group on restore', {
+        groupId,
+        parentAgentId: tracker.parentAgentId,
+        completed: tracker.completedAgentIds.size,
+        expected: tracker.expectedAgentIds.size,
+      });
+    }
+
+    if (completedGroupIds.length > 0) {
+      this.schedulePersist();
+    }
+  }
+
 
   /** Schedule a debounced persistence write */
   private schedulePersist(): void {
@@ -546,6 +643,9 @@ export class AgentEventSubscriptionService {
       }
     }
 
+    // Registry changed (snapshot now includes this subscription)
+    this.bumpVersionAndEmit(agentId, 'subscribe');
+
     // Emit subscription event
     this.emitSubscriptionEvent(agentId, agentName, subscriptionId, filter);
 
@@ -610,6 +710,10 @@ export class AgentEventSubscriptionService {
 
       // IMPORTANT: Emit agent:subscribed event so UI can update
       // This was missing - the UI only got notified on the first subscription
+
+      // Registry changed (group expanded)
+      this.bumpVersionAndEmit(parentAgentId, 'group-expand');
+
       this.emitSubscriptionEvent(
         parentAgentId,
         parentAgentName,
@@ -684,6 +788,13 @@ export class AgentEventSubscriptionService {
 
     for (const tracker of this.delegationGroups.values()) {
       if (tracker.parentAgentId === parentAgentId) {
+        // Skip completed groups that are pending async cleanup.
+        // Without this filter, sequential delegations accumulate completed
+        // agents into subsequent totals (e.g., 2nd delegation shows 4 instead of 2).
+        if (tracker.completedAgentIds.size >= tracker.expectedAgentIds.size) {
+          continue;
+        }
+
         const agentStatuses: Record<string, AgentStatus> = {};
         for (const agentId of tracker.expectedAgentIds) {
           // If the agent is in completedAgentIds, mark as 'completed'
@@ -732,6 +843,9 @@ export class AgentEventSubscriptionService {
     // Clean up oneShot guard
     this.firedOneShotSubscriptions.delete(subscriptionId);
 
+    // Registry changed (snapshot no longer includes this subscription)
+    this.bumpVersionAndEmit(subscription.agentId, 'unsubscribe');
+
     // Emit unsubscription event with reason and groupId
     this.emitUnsubscriptionEvent(subscription.agentId, subscription.agentName, subscriptionId, reason, groupId);
 
@@ -747,7 +861,10 @@ export class AgentEventSubscriptionService {
   }
 
   /**
-   * Unsubscribe all subscriptions for an agent
+   * Unsubscribe all subscriptions for an agent.
+   * Also cleans up per-agent maps (queues, statuses, delivery tracking)
+   * and orphaned delegation group trackers to prevent memory leaks and
+   * stale "Waiting for all" UI after cancellation.
    */
   unsubscribeAll(agentId: string): number {
     // Collect IDs first to avoid modifying map during iteration
@@ -761,6 +878,39 @@ export class AgentEventSubscriptionService {
     for (const subId of idsToUnsubscribe) {
       this.unsubscribe(subId);
     }
+
+    // Clean up orphaned delegation group trackers where this agent is the parent.
+    // Without this, cancelling subscriptions leaves trackers in the map, causing
+    // getDelegationGroupsForParent() to return stale groups and the "Waiting for all"
+    // UI to persist or reappear.
+    const orphanedGroupIds: string[] = [];
+    for (const tracker of this.delegationGroups.values()) {
+      if (tracker.parentAgentId === agentId) {
+        orphanedGroupIds.push(tracker.groupId);
+      }
+    }
+    for (const groupId of orphanedGroupIds) {
+      this.delegationGroups.delete(groupId);
+      logger.info('Cleaned up orphaned delegation group tracker on unsubscribeAll', {
+        groupId,
+        agentId,
+      });
+    }
+
+    // Clean up per-agent maps to prevent unbounded growth in long-running workspaces.
+    // These maps accumulate entries for every agent that ever subscribed/delivered but
+    // are only cleared on dispose(). After unsubscribeAll, the agent has no active
+    // subscriptions and these entries serve no purpose.
+    this.agentQueues.delete(agentId);
+    this.agentStatuses.delete(agentId);
+    this.recentDeliveries.delete(agentId);
+
+    if (orphanedGroupIds.length > 0) {
+      // Bump version so renderer converges to the clean state
+      this.bumpVersionAndEmit(agentId, 'unsubscribe-all-cleanup');
+      this.schedulePersist();
+    }
+
     return idsToUnsubscribe.length;
   }
 
@@ -794,7 +944,8 @@ export class AgentEventSubscriptionService {
     // queued events were silently lost if the agent transitioned from other
     // states (e.g. undefined, 'waiting', 'completed', 'failed') to 'idle'.
     if (status === 'idle' && previousStatus !== 'idle') {
-      this.deliverQueuedEvents(agentId);
+      // Fire-and-forget: events are re-queued internally on failure
+      this.deliverQueuedEvents(agentId)?.catch(() => {});
     }
   }
 
@@ -862,6 +1013,8 @@ export class AgentEventSubscriptionService {
     'agent:subscribed',
     'agent:unsubscribed',
     'agent:event-delivery-failed',
+    'agent:event-delivery-timeout',
+    'agent:subscriptions-changed',
     'agent:subscriptions-restored',
   ]);
 
@@ -940,38 +1093,53 @@ export class AgentEventSubscriptionService {
       if (isOneShot) {
         this.firedOneShotSubscriptions.add(subscription.id);
       }
-      const deliveryPromise = this.deliverEvents(agentId, [event]);
-      // Defer oneShot cleanup until delivery actually completes.
-      // If delivery fails after all retries, remove the fired guard so
-      // the subscription can fire again on the next matching event.
-      if (isOneShot) {
-        if (deliveryPromise) {
-          deliveryPromise.then(() => {
-            this.unsubscribe(subscription.id, 'oneshot-fired');
-            logger.info('OneShot subscription: unsubscribed after immediate delivery', {
-              subscriptionId: subscription.id,
-              agentId,
-              eventType: event.type,
-            });
-          }).catch(() => {
-            // Delivery failed — allow the subscription to fire again
+      // IMPORTANT: Cleanup (oneShot unsubscribe) only happens on known success or timeout.
+      // Timeout means the message was sent but completion couldn't be confirmed — retrying
+      // would send duplicate notifications. On other non-success, rollback the fired guard
+      // so future matching events can retry.
+      this.deliverEvents(agentId, [event])
+        .then((result) => {
+          if (result.status === 'success' || result.status === 'timeout') {
+            if (isOneShot) {
+              this.unsubscribe(subscription.id, 'oneshot-fired');
+              logger.info('OneShot subscription: unsubscribed after immediate delivery', {
+                subscriptionId: subscription.id,
+                agentId,
+                eventType: event.type,
+                deliveryStatus: result.status,
+              });
+            }
+            return;
+          }
+
+          // Non-success (failed, suppressed, no-callback): allow the subscription to fire again
+          if (isOneShot) {
             this.firedOneShotSubscriptions.delete(subscription.id);
-            logger.warn('OneShot subscription: delivery failed, allowing retry', {
-              subscriptionId: subscription.id,
-              agentId,
-              eventType: event.type,
-            });
-          });
-        } else {
-          // Synchronous / no-promise delivery — clean up immediately
-          this.unsubscribe(subscription.id, 'oneshot-fired');
-          logger.info('OneShot subscription: unsubscribed after immediate delivery', {
-            subscriptionId: subscription.id,
+          }
+
+          // Re-queue for retry (these non-success outcomes are retriable)
+          this.queueEvent(agentId, event, priority, filter, isOneShot ? subscription.id : undefined);
+
+          logger.warn('Immediate delivery was not successful; event re-queued for retry', {
             agentId,
+            subscriptionId: subscription.id,
             eventType: event.type,
+            deliveryStatus: result.status,
           });
-        }
-      }
+        })
+        .catch((err) => {
+          // Should be rare: deliverEvents normalizes to DeliveryResult.
+          if (isOneShot) {
+            this.firedOneShotSubscriptions.delete(subscription.id);
+          }
+          this.queueEvent(agentId, event, priority, filter, isOneShot ? subscription.id : undefined);
+          logger.warn('Immediate delivery threw; event re-queued for retry', {
+            agentId,
+            subscriptionId: subscription.id,
+            eventType: event.type,
+            error: String(err),
+          });
+        });
       return;
     }
 
@@ -1022,6 +1190,9 @@ export class AgentEventSubscriptionService {
       tracker.events.push(event);
       this.schedulePersist();
 
+      // Group progress changed (completion count, deleted count, etc.)
+      this.bumpVersionAndEmit(agentId, 'delegation-progress');
+
       logger.info('Delegation group: agent completed', {
         groupId: group.groupId,
         completedAgentId,
@@ -1046,6 +1217,12 @@ export class AgentEventSubscriptionService {
         const subscriptionIdForCleanup = tracker.subscriptionId;
 
         const cleanupDelegationGroup = () => {
+          // IMPORTANT: Delete the tracker BEFORE unsubscribing.
+          // unsubscribe() calls bumpVersionAndEmit() which triggers the renderer
+          // to refetch via getDelegationGroupsForParent(). If the tracker still
+          // exists at that point, the renderer will re-show the "Waiting for" UI.
+          this.delegationGroups.delete(groupIdForCleanup);
+
           // Unsubscribe from the delegation group subscription
           if (subscriptionIdForCleanup) {
             this.unsubscribe(subscriptionIdForCleanup, 'delegation-complete', groupIdForCleanup);
@@ -1053,9 +1230,10 @@ export class AgentEventSubscriptionService {
               groupId: groupIdForCleanup,
               subscriptionId: subscriptionIdForCleanup,
             });
+          } else {
+            // No subscription to unsubscribe — still bump version so renderer converges
+            this.bumpVersionAndEmit(agentId, 'delegation-group-cleanup');
           }
-          // Clean up the tracker
-          this.delegationGroups.delete(groupIdForCleanup);
         };
 
         // Add completion status metadata to events
@@ -1071,19 +1249,60 @@ export class AgentEventSubscriptionService {
         }));
 
         if (status === 'idle') {
-          const deliveryPromise = this.deliverEvents(agentId, eventsWithMetadata);
-          // Defer cleanup until delivery completes — if delivery fails,
-          // keep the tracker and subscription so it can be retried.
-          if (deliveryPromise) {
-            deliveryPromise.then(cleanupDelegationGroup).catch((err) => {
-              logger.warn('Delegation group: delivery failed, keeping subscription for retry', {
-                groupId: groupIdForCleanup,
-                error: String(err),
+          // Bounded retry for idle-path delivery failure.
+          // Without this, a failed/suppressed/no-callback delivery leaves the
+          // delegation group tracker and subscription lingering forever with no
+          // retry mechanism (the busy-path has queueDelegationGroupEvents with
+          // bounded polling, but the idle-path had none).
+          const MAX_IDLE_RETRIES = 3;
+          const IDLE_RETRY_DELAY_MS = 2000;
+
+          const attemptIdleDelivery = (attempt: number) => {
+            this.deliverEvents(agentId, eventsWithMetadata)
+              .then((result) => {
+                if (result.status === 'success' || result.status === 'timeout') {
+                  // Timeout means the message was sent but we couldn't confirm completion.
+                  // Treat as terminal to avoid lingering group tracker + subscription (Bug: "Waiting for all n/n" forever).
+                  cleanupDelegationGroup();
+                } else if (attempt < MAX_IDLE_RETRIES) {
+                  logger.warn('Delegation group: idle delivery not successful, retrying', {
+                    groupId: groupIdForCleanup,
+                    deliveryStatus: result.status,
+                    attempt,
+                    maxRetries: MAX_IDLE_RETRIES,
+                  });
+                  setTimeout(() => attemptIdleDelivery(attempt + 1), IDLE_RETRY_DELAY_MS * attempt);
+                } else {
+                  // Exhausted retries — clean up to prevent lingering UI
+                  logger.warn('Delegation group: idle delivery failed after all retries, cleaning up', {
+                    groupId: groupIdForCleanup,
+                    deliveryStatus: result.status,
+                    attempts: attempt,
+                  });
+                  cleanupDelegationGroup();
+                }
+              })
+              .catch((err) => {
+                if (attempt < MAX_IDLE_RETRIES) {
+                  logger.warn('Delegation group: idle delivery threw, retrying', {
+                    groupId: groupIdForCleanup,
+                    error: String(err),
+                    attempt,
+                    maxRetries: MAX_IDLE_RETRIES,
+                  });
+                  setTimeout(() => attemptIdleDelivery(attempt + 1), IDLE_RETRY_DELAY_MS * attempt);
+                } else {
+                  logger.warn('Delegation group: idle delivery threw after all retries, cleaning up', {
+                    groupId: groupIdForCleanup,
+                    error: String(err),
+                    attempts: attempt,
+                  });
+                  cleanupDelegationGroup();
+                }
               });
-            });
-          } else {
-            cleanupDelegationGroup();
-          }
+          };
+
+          attemptIdleDelivery(1);
         } else {
           // Parent is busy — queue events as a batch to preserve delegation group context
           // Keep the tracker alive until the queued delivery succeeds
@@ -1097,14 +1316,31 @@ export class AgentEventSubscriptionService {
 
           // Defer cleanup until the queued delivery completes
           if (queuedDeliveryPromise) {
-            queuedDeliveryPromise.then(cleanupDelegationGroup).catch((err) => {
-              logger.warn('Delegation group: queued delivery failed, keeping subscription for retry', {
-                groupId: groupIdForCleanup,
-                error: String(err),
+            queuedDeliveryPromise
+              .then((result) => {
+                if (result.status === 'success' || result.status === 'timeout') {
+                  // Timeout means the message was sent but we couldn't confirm completion.
+                  // Treat as terminal to avoid lingering group tracker + subscription.
+                  cleanupDelegationGroup();
+                } else {
+                  logger.warn('Delegation group: queued delivery not successful, keeping subscription for retry', {
+                    groupId: groupIdForCleanup,
+                    deliveryStatus: result.status,
+                  });
+                }
+              })
+              .catch((err) => {
+                logger.warn('Delegation group: queued delivery threw, keeping subscription for retry', {
+                  groupId: groupIdForCleanup,
+                  error: String(err),
+                });
               });
-            });
           } else {
-            cleanupDelegationGroup();
+            // No queued promise means there was nothing to queue/deliver.
+            // Conservatively do NOT clean up; allow future retries.
+            logger.warn('Delegation group: nothing queued for delivery; keeping subscription for retry', {
+              groupId: groupIdForCleanup,
+            });
           }
         }
       }
@@ -1135,7 +1371,8 @@ export class AgentEventSubscriptionService {
     // Check if we should force delivery due to batch size
     const batchMaxEvents = filter.batchMaxEvents || 50;
     if (queue.length >= batchMaxEvents) {
-      this.deliverQueuedEvents(agentId);
+      // Fire-and-forget: events are re-queued internally on failure
+      this.deliverQueuedEvents(agentId)?.catch(() => {});
       return;
     }
 
@@ -1146,7 +1383,8 @@ export class AgentEventSubscriptionService {
         this.batchTimers.delete(agentId);
         const status = this.getAgentStatus(agentId);
         if (status === 'idle') {
-          this.deliverQueuedEvents(agentId);
+          // Fire-and-forget: events are re-queued internally on failure
+          this.deliverQueuedEvents(agentId)?.catch(() => {});
         }
       }, batchWindow);
       this.batchTimers.set(agentId, timer);
@@ -1164,7 +1402,7 @@ export class AgentEventSubscriptionService {
     priority: 'high' | 'normal' | 'low',
     filter: AgentEventFilter,
     tracker: DelegationGroupTracker,
-  ): Promise<void> | undefined {
+  ): Promise<DeliveryResult> | undefined {
     if (events.length === 0) return undefined;
 
     // Create a synthetic event that wraps the batch with completion status
@@ -1182,15 +1420,71 @@ export class AgentEventSubscriptionService {
       this.queueEvent(agentId, e, priority, filter);
     }
 
-    // Return a promise that resolves when the agent becomes idle and events are delivered
-    // This keeps the tracker alive until delivery succeeds
-    return new Promise((resolve, reject) => {
+    // Return a promise that resolves only after the agent becomes idle AND
+    // delivery is confirmed. This keeps the tracker alive until delivery succeeds.
+    // SAFETY: Bounded by max duration and max attempts to prevent infinite loops.
+    return new Promise<DeliveryResult>((resolve) => {
+      const startTime = Date.now();
+      let attempts = 0;
+
       const checkAndDeliver = () => {
+        attempts++;
+
+        // SAFETY NET: Check if we've exceeded the polling budget.
+        const elapsed = Date.now() - startTime;
+        if (
+          elapsed >= AgentEventSubscriptionService.MAX_DELEGATION_POLL_DURATION_MS ||
+          attempts > AgentEventSubscriptionService.MAX_DELEGATION_POLL_ATTEMPTS
+        ) {
+          logger.warn('Delegation group: polling budget exhausted, terminating with failure', {
+            groupId: tracker.groupId,
+            agentId,
+            elapsedMs: elapsed,
+            attempts,
+            maxDurationMs: AgentEventSubscriptionService.MAX_DELEGATION_POLL_DURATION_MS,
+            maxAttempts: AgentEventSubscriptionService.MAX_DELEGATION_POLL_ATTEMPTS,
+          });
+          // Bump version so the UI converges to the terminal state
+          this.bumpVersionAndEmit(agentId, 'delegation-poll-exhausted');
+          resolve({ status: 'failed', error: `Delegation group polling exhausted after ${attempts} attempts / ${elapsed}ms` });
+          return;
+        }
+
+        // If the tracker has been cleaned up externally, stop waiting.
+        if (!this.delegationGroups.has(tracker.groupId)) {
+          resolve({ status: 'failed', error: 'Delegation group tracker was removed before delivery' });
+          return;
+        }
+
         const status = this.getAgentStatus(agentId);
         if (status === 'idle') {
-          // Agent is now idle, deliver the queued events
-          this.deliverQueuedEvents(agentId);
-          resolve();
+          // Agent is now idle, deliver the queued events and await the result
+          const deliveryResult = this.deliverQueuedEvents(agentId);
+          if (deliveryResult) {
+            deliveryResult
+              .then((result) => {
+                if (result.status === 'success' || result.status === 'timeout') {
+                  // Timeout means the message was sent but we couldn't confirm completion.
+                  // Treat as terminal to avoid infinite polling loop.
+                  resolve(result);
+                } else {
+                  // Keep waiting for a future successful delivery attempt.
+                  setTimeout(checkAndDeliver, 1000);
+                }
+              })
+              .catch((err) => {
+                logger.warn('Delegation group: delivery threw during polling', {
+                  groupId: tracker.groupId,
+                  error: String(err),
+                  attempts,
+                });
+                // Keep polling — the budget check above will eventually terminate.
+                setTimeout(checkAndDeliver, 1000);
+              });
+          } else {
+            // Nothing to deliver — keep waiting.
+            setTimeout(checkAndDeliver, 1000);
+          }
         } else {
           // Still busy, check again soon
           setTimeout(checkAndDeliver, 100);
@@ -1203,15 +1497,20 @@ export class AgentEventSubscriptionService {
   }
 
   /**
-   * Deliver queued events to an agent
+   * Deliver queued events to an agent.
+   * Returns a promise that resolves when delivery is confirmed, or undefined
+   * if there is nothing to deliver. On failure, events are re-queued so they
+   * are not lost.
    */
-  private deliverQueuedEvents(agentId: string): void {
+  private deliverQueuedEvents(agentId: string): Promise<DeliveryResult> | undefined {
     const queue = this.agentQueues.get(agentId);
     if (!queue || queue.length === 0) {
-      return;
+      return undefined;
     }
 
-    // Clear the queue
+    // Snapshot the current queue and replace it with an empty array so new
+    // events arriving during delivery are queued separately.
+    const snapshot = [...queue];
     this.agentQueues.set(agentId, []);
 
     // Clear any pending batch timer
@@ -1223,14 +1522,14 @@ export class AgentEventSubscriptionService {
 
     // Collect oneShot subscription IDs to clean up after delivery
     const oneShotSubscriptionIds = new Set<string>();
-    for (const queuedEvent of queue) {
+    for (const queuedEvent of snapshot) {
       if (queuedEvent.oneShot && queuedEvent.subscriptionId) {
         oneShotSubscriptionIds.add(queuedEvent.subscriptionId);
       }
     }
 
     // Sort by priority (high first) then by time
-    const sortedEvents = queue
+    const sortedEvents = snapshot
       .sort((a, b) => {
         const priorityOrder = { high: 0, normal: 1, low: 2 };
         const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
@@ -1241,34 +1540,66 @@ export class AgentEventSubscriptionService {
 
     const deliveryPromise = this.deliverEvents(agentId, sortedEvents);
 
-    // Defer oneShot cleanup until delivery actually completes
-    if (oneShotSubscriptionIds.size > 0) {
-      const cleanupOneShots = () => {
-        for (const subscriptionId of oneShotSubscriptionIds) {
-          this.unsubscribe(subscriptionId, 'oneshot-fired');
-          logger.info('OneShot subscription: unsubscribed after queued delivery', {
-            subscriptionId,
-            agentId,
-          });
-        }
-      };
-      const rollbackOneShots = () => {
-        for (const subscriptionId of oneShotSubscriptionIds) {
-          // Delivery failed — allow the subscription to fire again
-          this.firedOneShotSubscriptions.delete(subscriptionId);
-          logger.warn('OneShot subscription: queued delivery failed, allowing retry', {
-            subscriptionId,
-            agentId,
-          });
-        }
-      };
+    // Build a result promise that resolves only after delivery is confirmed.
+    // On failure, re-queue the events so they are not lost.
+    const requeue = () => {
+      const currentQueue = this.agentQueues.get(agentId) || [];
+      // Prepend the failed events so they are retried first
+      this.agentQueues.set(agentId, [...snapshot, ...currentQueue]);
+      logger.warn('deliverQueuedEvents: delivery failed, events re-queued', {
+        agentId,
+        requeuedCount: snapshot.length,
+      });
+    };
 
-      if (deliveryPromise) {
-        deliveryPromise.then(cleanupOneShots).catch(rollbackOneShots);
-      } else {
-        cleanupOneShots();
+    const cleanupOneShots = () => {
+      for (const subscriptionId of oneShotSubscriptionIds) {
+        this.unsubscribe(subscriptionId, 'oneshot-fired');
+        logger.info('OneShot subscription: unsubscribed after queued delivery', {
+          subscriptionId,
+          agentId,
+        });
       }
-    }
+    };
+
+    const rollbackOneShots = () => {
+      for (const subscriptionId of oneShotSubscriptionIds) {
+        // Delivery failed — allow the subscription to fire again
+        this.firedOneShotSubscriptions.delete(subscriptionId);
+        logger.warn('OneShot subscription: queued delivery failed, allowing retry', {
+          subscriptionId,
+          agentId,
+        });
+      }
+    };
+
+    return deliveryPromise
+      .then((result) => {
+        if (result.status === 'success' || result.status === 'timeout') {
+          // Known success or timeout (message was sent but completion unconfirmed).
+          // Timeout is terminal: retrying would send duplicate notifications.
+          // Clean up oneShot subscriptions in both cases.
+          if (oneShotSubscriptionIds.size > 0) {
+            cleanupOneShots();
+          }
+          return result;
+        }
+
+        // Non-success (failed, suppressed, no-callback) — re-queue events and rollback oneShots so retries are possible
+        requeue();
+        if (oneShotSubscriptionIds.size > 0) {
+          rollbackOneShots();
+        }
+        return result;
+      })
+      .catch((err) => {
+        // Unexpected throw — treat as failed and retry later
+        requeue();
+        if (oneShotSubscriptionIds.size > 0) {
+          rollbackOneShots();
+        }
+        return { status: 'failed', error: String(err) } as DeliveryResult;
+      });
   }
 
   /**
@@ -1311,8 +1642,12 @@ export class AgentEventSubscriptionService {
   /**
    * Deliver events to an agent
    */
-  private deliverEvents(agentId: string, events: WorkspaceEvent[]): Promise<void> | undefined {
-    if (events.length === 0) return undefined;
+  private async deliverEvents(agentId: string, events: WorkspaceEvent[]): Promise<DeliveryResult> {
+    if (events.length === 0) return { status: 'success' };
+
+    // Bump version for delivery attempt so renderer can converge even if it missed
+    // any of the legacy hint events.
+    this.bumpVersionAndEmit(agentId, 'delivery-attempt');
 
     // SAFETY NET: Detect rapid-fire delivery loops.
     // If an agent is receiving deliveries faster than expected, something is
@@ -1341,7 +1676,10 @@ export class AgentEventSubscriptionService {
         subscriptionTypes: diagnostics.subscriptionTypes,
         delegationGroupIds: diagnostics.delegationGroupIds,
       });
-      return undefined;
+
+      // Bump version for outcome transition
+      this.bumpVersionAndEmit(agentId, 'delivery-outcome');
+      return { status: 'suppressed', reason: 'loop' };
     }
 
     logger.info('Delivering events to agent', {
@@ -1350,15 +1688,7 @@ export class AgentEventSubscriptionService {
       eventTypes: events.map((e) => e.type),
     });
 
-    if (this.deliveryCallback) {
-      const result = this.deliveryCallback(agentId, events);
-      // The callback may be async — return its promise so callers can
-      // defer cleanup (e.g., oneShot unsubscribe) until delivery completes.
-      if (result && typeof (result as Promise<void>).then === 'function') {
-        return result as Promise<void>;
-      }
-      return undefined;
-    } else {
+    if (!this.deliveryCallback) {
       // Log warning when events are dropped due to missing callback
       // This helps debug issues where agents don't receive expected events
       logger.warn('Events dropped: no delivery callback registered', {
@@ -1368,7 +1698,33 @@ export class AgentEventSubscriptionService {
       });
       // ROBUSTNESS: Track dropped events in health monitoring
       this.deliveryStats.droppedEvents += events.length;
-      return undefined;
+      // Bump version for outcome transition
+      this.bumpVersionAndEmit(agentId, 'delivery-outcome');
+      return { status: 'no-callback' };
+    }
+
+    const normalize = (value: unknown): DeliveryResult => {
+      if (!value) return { status: 'success' };
+      if (typeof value === 'object' && value && 'status' in (value as any)) {
+        return value as DeliveryResult;
+      }
+      return { status: 'success' };
+    };
+
+    try {
+      const result = this.deliveryCallback(agentId, events);
+      const normalized =
+        result && typeof (result as Promise<unknown>).then === 'function'
+          ? normalize(await (result as Promise<unknown>))
+          : normalize(result);
+
+      // Bump version for outcome transition
+      this.bumpVersionAndEmit(agentId, 'delivery-outcome');
+      return normalized;
+    } catch (err) {
+      // Bump version for outcome transition
+      this.bumpVersionAndEmit(agentId, 'delivery-outcome');
+      return { status: 'failed', error: String(err) };
     }
   }
 
@@ -1730,7 +2086,7 @@ function createEventDeliveryCallback(
   const DELIVERY_TIMEOUT_MS = 120_000; // 2 minutes per attempt
 
   return async (agentId: string, events: WorkspaceEvent[]) => {
-    if (events.length === 0) return;
+    if (events.length === 0) return { status: 'success' };
 
     const maxRetries = 3;
     const retryDelayMs = 2000; // Slightly longer base delay to give provider cleanup time
@@ -1747,7 +2103,7 @@ function createEventDeliveryCallback(
         eventCount: events.length,
         eventTypes: events.map((e) => e.type),
       });
-      return;
+      return { status: 'failed', error: 'Event notification formatter returned empty notification' };
     }
 
     const eventTypes = [...new Set(events.map((e) => e.type))];
@@ -1771,31 +2127,6 @@ function createEventDeliveryCallback(
           notificationLength: notification.length,
           attempt,
         });
-
-        // CRITICAL: Emit agent:woken-by-subscription event BEFORE streaming starts
-        // This allows the UI to show the wake-up banner in the chat history
-        // Only emit on first attempt to avoid duplicate UI banners on retries
-        if (attempt === 1) {
-          const wokenEvent = createWorkspaceEvent(
-            'agent:woken-by-subscription',
-            workspaceId,
-            { type: 'system', id: 'subscription-service', name: 'Subscription Service' },
-            {
-              agentId,
-              eventCount: events.length,
-              eventTypes,
-            },
-          );
-          const bus = getWorkspaceEventBus(workspaceId);
-          bus.emitEvent(wokenEvent);
-
-          logger.info('Emitted agent:woken-by-subscription event (before streaming)', {
-            agentId,
-            workspaceId,
-            eventCount: events.length,
-            eventTypes,
-          });
-        }
 
         // RESILIENCE: Wrap sendBackendInitiatedMessage with a timeout so a hung ACP
         // connection doesn't block forever. The health check in sendBackendInitiatedMessage
@@ -1847,7 +2178,31 @@ function createEventDeliveryCallback(
             });
             // Record as a timeout — the message was sent, but we couldn't confirm completion
             service.recordDeliveryTimeout(agentId, events.length);
-            return;
+
+            // Emit a distinct timeout event so the UI can handle it differently from failure.
+            // Timeout ≠ failure: the message was sent but we couldn't confirm completion.
+            // This prevents the wake indicator from persisting permanently.
+            try {
+              const bus = getWorkspaceEventBus(workspaceId);
+              bus.emitEvent(createWorkspaceEvent(
+                'agent:event-delivery-timeout',
+                workspaceId,
+                { type: 'system', id: 'subscription-service', name: 'Subscription Service' },
+                {
+                  targetAgentId: agentId,
+                  eventCount: events.length,
+                  eventTypes: events.map((e) => e.type),
+                  timeoutMs: DELIVERY_TIMEOUT_MS,
+                },
+              ));
+            } catch {
+              // Ignore errors emitting the timeout event
+            }
+            return {
+              status: 'timeout',
+              error: result.error || `Delivery timed out after ${DELIVERY_TIMEOUT_MS}ms`,
+              timeoutMs: DELIVERY_TIMEOUT_MS,
+            };
           }
           throw new Error(result.error || 'sendBackendInitiatedMessage returned success=false');
         }
@@ -1862,8 +2217,38 @@ function createEventDeliveryCallback(
         // ROBUSTNESS: Record successful delivery for health monitoring
         service.recordDeliverySuccess(agentId, events.length);
 
+        // Emit agent:woken-by-subscription AFTER confirming delivery success.
+        // This ensures the UI wake indicator is only shown when the agent actually
+        // received and started processing the message (not on mere attempt).
+        // Only emit on first successful attempt to avoid duplicate UI banners.
+        if (attempt === 1) {
+          try {
+            const bus = getWorkspaceEventBus(workspaceId);
+            bus.emitEvent(createWorkspaceEvent(
+              'agent:woken-by-subscription',
+              workspaceId,
+              { type: 'system', id: 'subscription-service', name: 'Subscription Service' },
+              {
+                agentId,
+                eventCount: events.length,
+                eventTypes,
+                subscriptionVersion: service.version,
+              },
+            ));
+
+            logger.info('Emitted agent:woken-by-subscription event (after delivery success)', {
+              agentId,
+              workspaceId,
+              eventCount: events.length,
+              eventTypes,
+            });
+          } catch {
+            // Ignore errors emitting the woken event — delivery already succeeded
+          }
+        }
+
         // Success - exit the retry loop
-        return;
+        return { status: 'success' };
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
         logger.warn('Failed to deliver events to agent', {
@@ -1932,6 +2317,8 @@ function createEventDeliveryCallback(
     } catch {
       // Ignore errors emitting the failure event
     }
+
+    return { status: 'failed', error: lastError?.message || 'Unknown error' };
   };
 }
 

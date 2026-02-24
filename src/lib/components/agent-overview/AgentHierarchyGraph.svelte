@@ -79,19 +79,27 @@
   // Pan/zoom handlers
   function handleWheel(e: WheelEvent) {
     e.preventDefault();
-    const delta = -e.deltaY * 0.001;
-    const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * (1 + delta)));
 
-    // Zoom towards cursor
-    if (containerRef) {
-      const rect = containerRef.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-      const scaleFactor = newScale / scale;
-      panX = mouseX - (mouseX - panX) * scaleFactor;
-      panY = mouseY - (mouseY - panY) * scaleFactor;
+    // Pinch-to-zoom (ctrlKey is set for trackpad pinch gestures) or metaKey+scroll
+    if (e.ctrlKey || e.metaKey) {
+      const delta = -e.deltaY * 0.001;
+      const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * (1 + delta)));
+
+      // Zoom towards cursor
+      if (containerRef) {
+        const rect = containerRef.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const scaleFactor = newScale / scale;
+        panX = mouseX - (mouseX - panX) * scaleFactor;
+        panY = mouseY - (mouseY - panY) * scaleFactor;
+      }
+      scale = newScale;
+    } else {
+      // Regular scroll/trackpad: pan
+      panX -= e.deltaX;
+      panY -= e.deltaY;
     }
-    scale = newScale;
   }
 
   function handleMouseDown(e: MouseEvent) {
@@ -175,7 +183,8 @@
 
   /**
    * Group already-sorted children into layout items: single agents and batch boxes.
-   * Children created within BATCH_THRESHOLD_MS of each other are grouped into a batch.
+   * Groups by delegationBatchId when available (children created in the same parent response),
+   * falling back to time-based proximity (BATCH_THRESHOLD_MS) for children without batch IDs.
    * Single-child groups stay as individual items.
    */
   function groupChildrenIntoLayoutItems(
@@ -185,21 +194,43 @@
   ): LayoutItem[] {
     if (children.length === 0) return [];
 
-    // Children are already sorted by createdAt from the hierarchy builder
+    // Pre-collect batch groups by delegationBatchId
     const groups: HierarchyAgent[][] = [];
-    let currentGroup: HierarchyAgent[] = [children[0]];
+    const batchGroups = new Map<string, HierarchyAgent[]>();
 
-    for (let i = 1; i < children.length; i++) {
-      const prevTime = new Date(children[i - 1].agent.createdAt).getTime();
-      const currTime = new Date(children[i].agent.createdAt).getTime();
-      if (currTime - prevTime <= BATCH_THRESHOLD_MS) {
-        currentGroup.push(children[i]);
-      } else {
-        groups.push(currentGroup);
-        currentGroup = [children[i]];
+    for (const child of children) {
+      const batchId = child.agent.delegationBatchId;
+      if (batchId) {
+        if (!batchGroups.has(batchId)) {
+          batchGroups.set(batchId, []);
+        }
+        batchGroups.get(batchId)!.push(child);
       }
     }
-    groups.push(currentGroup);
+
+    // Process children in order, inserting batch groups at the position of their first member
+    const batchGroupsUsed = new Set<string>();
+    for (const child of children) {
+      const batchId = child.agent.delegationBatchId;
+      if (batchId) {
+        if (!batchGroupsUsed.has(batchId)) {
+          batchGroupsUsed.add(batchId);
+          groups.push(batchGroups.get(batchId)!);
+        }
+      } else {
+        // For ungrouped children, use time-based proximity with the previous group
+        const lastGroup = groups[groups.length - 1];
+        if (lastGroup && !lastGroup[0].agent.delegationBatchId) {
+          const prevTime = new Date(lastGroup[lastGroup.length - 1].agent.createdAt).getTime();
+          const currTime = new Date(child.agent.createdAt).getTime();
+          if (currTime - prevTime <= BATCH_THRESHOLD_MS) {
+            lastGroup.push(child);
+            continue;
+          }
+        }
+        groups.push([child]);
+      }
+    }
 
     const cardStep = cardWidth + gap;
 
@@ -334,24 +365,26 @@
 
   <div class="agent-tree-node flex flex-col items-center">
     <!-- Agent card - use BackgroundAgentCard for background agents -->
-    {#if isBackground}
-      <BackgroundAgentCard
-        agent={node.agent}
-        onclick={(e) => handleClick(node.agent, e)}
-        onmouseenter={() => handleAgentHover(node.agent.agentId)}
-        onmouseleave={handleAgentLeave}
-      />
-    {:else}
-      <AgentHierarchyCard
-        agent={node.agent}
-        activeFile={node.activeFile}
-        activeNote={node.activeNote}
-        {agentNames}
-        onclick={(e) => handleClick(node.agent, e)}
-        onmouseenter={() => handleAgentHover(node.agent.agentId)}
-        onmouseleave={handleAgentLeave}
-      />
-    {/if}
+    <div class="agent-card-wrapper relative z-10">
+      {#if isBackground}
+        <BackgroundAgentCard
+          agent={node.agent}
+          onclick={(e) => handleClick(node.agent, e)}
+          onmouseenter={() => handleAgentHover(node.agent.agentId)}
+          onmouseleave={handleAgentLeave}
+        />
+      {:else}
+        <AgentHierarchyCard
+          agent={node.agent}
+          activeFile={node.activeFile}
+          activeNote={node.activeNote}
+          {agentNames}
+          onclick={(e) => handleClick(node.agent, e)}
+          onmouseenter={() => handleAgentHover(node.agent.agentId)}
+          onmouseleave={handleAgentLeave}
+        />
+      {/if}
+    </div>
 
     <!-- Children with connectors -->
     {#if hasChildren}
@@ -454,7 +487,7 @@
             {#each row as item}
               {#if item.type === 'batch'}
                 <div
-                  class="batch-group-box border border-border/50 rounded-xl"
+                  class="batch-group-box relative z-10 bg-background border border-border/50 rounded-xl"
                   style="padding: {BOX_PADDING}px; margin-top: -{BOX_PADDING}px; display: grid; grid-template-columns: repeat({item.cols}, auto); gap: {GAPX}px;"
                 >
                   {#each item.children as child (child.agent.agentId)}
@@ -646,7 +679,7 @@
 
     <!-- Pan hint -->
     <div class="absolute bottom-4 left-4 text-xs text-muted-foreground/50">
-      Scroll to zoom • Drag to pan
+      Scroll to pan • Pinch to zoom
     </div>
   {/if}
 </div>

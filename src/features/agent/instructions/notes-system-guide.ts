@@ -13,6 +13,7 @@ Notes are markdown documents for specs, plans, and documentation. The spec (ID: 
 ### Reading Notes
 - \`read_note_workspace-mcp(noteId)\` — Read a note (use "spec" for the specification)
 - \`list_notes_workspace-mcp()\` — List all notes
+- \`list_note_tasks_workspace-mcp(noteId)\` — List just the tasks in a note (returns task IDs, status, and text without the full note content — use this instead of read_note when you only need task IDs for delegation)
 
 ### Editing Notes (Choose the Right Tool!)
 

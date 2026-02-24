@@ -53,9 +53,10 @@ describe('Background Agent Tool Restrictions', () => {
       expect(NOTE_WRITE_TOOLS).toContain('edit_note_lines_workspace-mcp');
       expect(NOTE_WRITE_TOOLS).toContain('update_note_metadata_workspace-mcp');
       expect(NOTE_WRITE_TOOLS).toContain('delete_note_workspace-mcp');
-      // Should NOT contain read_note (that's read-only)
+      // Should NOT contain read-only tools
       expect(NOTE_WRITE_TOOLS).not.toContain('read_note_workspace-mcp');
       expect(NOTE_WRITE_TOOLS).not.toContain('list_notes_workspace-mcp');
+      expect(NOTE_WRITE_TOOLS).not.toContain('list_note_tasks_workspace-mcp');
     });
 
     it('MCP tools should have _workspace-mcp suffix', () => {

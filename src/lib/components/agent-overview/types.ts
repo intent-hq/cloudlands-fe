@@ -46,6 +46,8 @@ export interface AgentNode extends BaseNode {
   lastResponse?: string;
   /** Agent type (e.g., 'commit-message', 'pr-description', 'code-review') */
   agentType?: string | null;
+  /** Batch ID grouping children created in the same parent response */
+  delegationBatchId?: string | null;
 }
 
 export interface FileNode extends BaseNode {

@@ -63,11 +63,12 @@ const DYNAMIC_CHANNEL_PATTERNS = ${JSON.stringify(DYNAMIC_CHANNEL_PATTERNS, null
 const EVENT_CHANNELS = ${JSON.stringify(EVENT_CHANNELS, null, 2)};
 
 /**
- * Check if a channel is allowed (either static or dynamic)
+ * Check if a channel is allowed (either static, dynamic, or event)
  */
 function isChannelAllowed(channel: string): boolean {
   return ALLOWED_CHANNELS.includes(channel) ||
-         DYNAMIC_CHANNEL_PATTERNS.some(pattern => channel.startsWith(pattern));
+         DYNAMIC_CHANNEL_PATTERNS.some(pattern => channel.startsWith(pattern)) ||
+         EVENT_CHANNELS.includes(channel);
 }
 
 // ============================================

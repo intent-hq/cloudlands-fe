@@ -116,9 +116,9 @@ describe('Agent Instructions', () => {
     });
 
     it('should include critical delegation instructions in common', () => {
-      // Delegation instructions - these ensure agents read notes before delegating
+      // Delegation instructions - these ensure agents list tasks before delegating
       expect(common).toContain('Before delegating');
-      expect(common).toContain('read the note');
+      expect(common).toContain('list the tasks');
       expect(common).toContain('delegate_task(taskNoteId=');
       expect(common).toContain('Never use `create_agent` for tasks that already have IDs');
     });

@@ -537,6 +537,19 @@ export const AgentSessionSchema = z.object({
       metadata: z.record(z.any()).optional(),
     })
     .optional(),
+  // Fork metadata (for conversation forking)
+  parentSessionId: z.string().optional(), // ID of parent session if this is a fork
+  forkedAt: z.string().optional(), // When this session was forked from parent
+  forkPoint: z.number().optional(), // Message index at which the fork occurred
+  childSessionIds: z.array(z.string()).optional(), // IDs of sessions forked from this one
+  forkMetadata: z
+    .object({
+      selectedText: z.string().optional(),
+      selectedModel: z.string().optional(),
+    })
+    .optional(),
+  // Task delegation
+  digest: z.string().optional(), // Short summary for display in task status
 });
 
 /**

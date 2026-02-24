@@ -772,6 +772,10 @@ const ALLOWED_CHANNELS = [
   "agent:subscribed",
   "agent:unsubscribed",
   "agent:woken-by-subscription",
+  "agent:subscriptions-changed",
+  "agent:subscriptions-restored",
+  "agent:event-delivery-failed",
+  "agent:event-delivery-timeout",
   "agent:queue:updated",
   "agent:queue:processing",
   "agent:queue:processing-cancelled",
@@ -923,6 +927,10 @@ const EVENT_CHANNELS = [
   "agent:subscribed",
   "agent:unsubscribed",
   "agent:woken-by-subscription",
+  "agent:subscriptions-changed",
+  "agent:subscriptions-restored",
+  "agent:event-delivery-failed",
+  "agent:event-delivery-timeout",
   "agent:queue:updated",
   "agent:queue:processing",
   "agent:queue:processing-cancelled",
@@ -998,15 +1006,17 @@ const EVENT_CHANNELS = [
   "menu:reset-zoom",
   "browser:focus-tab",
   "browser:list-tabs-request",
-  "browser:open-tab"
+  "browser:open-tab",
+  "mcp:server-error"
 ];
 
 /**
- * Check if a channel is allowed (either static or dynamic)
+ * Check if a channel is allowed (either static, dynamic, or event)
  */
 function isChannelAllowed(channel: string): boolean {
   return ALLOWED_CHANNELS.includes(channel) ||
-         DYNAMIC_CHANNEL_PATTERNS.some(pattern => channel.startsWith(pattern));
+         DYNAMIC_CHANNEL_PATTERNS.some(pattern => channel.startsWith(pattern)) ||
+         EVENT_CHANNELS.includes(channel);
 }
 
 // ============================================

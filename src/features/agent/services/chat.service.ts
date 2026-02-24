@@ -737,6 +737,27 @@ export class ChatService implements IDisposable {
         });
       }
 
+      // BUGFIX: If restoring a streaming session, populate lastAttemptedMessage from the
+      // last user message so retry works if the stream errors out. Without this, retry
+      // after a restored stream error shows "No message to retry" because lastAttemptedMessage
+      // is not persisted across page refreshes.
+      let restoredLastAttemptedMessage: ChatState['lastAttemptedMessage'] = null;
+      if (isCurrentlyStreaming && deduplicatedMessages.length > 0) {
+        // Find the last user message in the conversation
+        for (let i = deduplicatedMessages.length - 1; i >= 0; i--) {
+          const msg = deduplicatedMessages[i];
+          if (msg.role === 'user') {
+            const textBlock = msg.contentBlocks?.find(
+              (b: ContentBlock) => b.type === 'text' && 'text' in b,
+            );
+            if (textBlock && 'text' in textBlock) {
+              restoredLastAttemptedMessage = { text: textBlock.text || '' };
+            }
+            break;
+          }
+        }
+      }
+
       // Update state - ensure isStreaming has a default value
       this.state.update((s) => ({
         ...s,
@@ -746,6 +767,7 @@ export class ChatService implements IDisposable {
         isProcessing: isCurrentlyStreaming,
         streamingContent: existingStreamingContent, // Use existing content instead of empty string
         error: null,
+        lastAttemptedMessage: restoredLastAttemptedMessage ?? s.lastAttemptedMessage,
       }));
 
       // Set up streaming for this session
@@ -877,6 +899,14 @@ export class ChatService implements IDisposable {
         agentId: session.id,
         status: session.status,
       });
+
+      // Show processing indicator immediately so the user sees activity
+      // during the activation wait (which can take several seconds)
+      this.state.update((s) => ({
+        ...s,
+        isProcessing: true,
+        streamingStartTime: Date.now(),
+      }));
 
       try {
         const activatedAgent = await agentService.activateAgent(session.id, workspace.id);
@@ -2629,14 +2659,20 @@ export class ChatService implements IDisposable {
         forkedAt: new Date().toISOString(),
         forkPoint,
       };
-      await persistenceService.saveSession(forkedSessionWithHistory, forkedSession.workspaceId);
+      // Use immediate saves for fork metadata to prevent debounced saves from
+      // overwriting fork metadata with stale session data that lacks these fields
+      await persistenceService.saveSession(forkedSessionWithHistory, forkedSession.workspaceId, {
+        immediate: true,
+      });
 
       if (parentSession) {
         const updatedParentSession: AgentSession = {
           ...parentSession,
           childSessionIds: [...(parentSession.childSessionIds || []), forkedSession.id],
         };
-        await persistenceService.saveSession(updatedParentSession, sourceSession.workspaceId);
+        await persistenceService.saveSession(updatedParentSession, sourceSession.workspaceId, {
+          immediate: true,
+        });
       }
     } catch (err) {
       logger.warn('Failed to persist forked session', { error: err });
@@ -2648,12 +2684,19 @@ export class ChatService implements IDisposable {
       messageCount: clonedMessages.length,
     });
 
-    // Switch to the forked session if requested (default: true)
+    // Navigate to the forked session if requested (default: true)
+    // IMPORTANT: We dispatch workspace:open-agent instead of calling this.initializeChat
+    // to avoid corrupting this (parent) ChatService's state. The forked session will get
+    // its own ChatService instance when its view/panel is created.
+    // Using the workspace:open-agent event ensures the fork opens correctly in both
+    // panel layout (as a new tab) and drawer layout modes.
     if (options?.switchToForked !== false) {
-      await this.initializeChat(workspace, forkedSession.id, {
-        agentName: forkName,
-        agentModel: options?.model || sourceSession.model,
-      });
+      window.dispatchEvent(
+        new CustomEvent('workspace:open-agent', {
+          detail: { agentId: forkedSession.id },
+          bubbles: true,
+        }),
+      );
     }
 
     return forkedSession.id;

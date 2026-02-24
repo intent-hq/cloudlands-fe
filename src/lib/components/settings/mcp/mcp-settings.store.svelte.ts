@@ -17,6 +17,9 @@ class McpSettingsStore {
   // Server status map (name -> status)
   #statusMap = $state<Record<string, McpServerStatus>>({});
 
+  // Server error messages (name -> error message)
+  #errorMessages = $state<Record<string, string>>({});
+
   // Server tools map (name -> tools[])
   #toolsMap = $state<Record<string, McpTool[]>>({});
 
@@ -29,6 +32,59 @@ class McpSettingsStore {
 
   // Feature toggle
   #enabled = $state(false);
+
+  // Whether we've set up the IPC listener
+  #listenerInitialized = false;
+
+  constructor() {
+    this.initErrorListener();
+  }
+
+  /** Set up listener for MCP server error events from main process */
+  private initErrorListener(): void {
+    if (this.#listenerInitialized) return;
+    this.#listenerInitialized = true;
+
+    try {
+      window.electronAPI?.on('mcp:server-error', (_event: any, data: any) => {
+        const { serverName, command, errorMessage } = data || {};
+        if (!errorMessage) return;
+
+        // If we have a server name, use it directly
+        if (serverName) {
+          this.#statusMap = { ...this.#statusMap, [serverName]: 'error' };
+          this.#errorMessages = { ...this.#errorMessages, [serverName]: errorMessage };
+          logger.warn('MCP server error received', { serverName, errorMessage });
+          return;
+        }
+
+        // Try to match by command/URL against our loaded servers
+        if (command) {
+          for (const server of this.#servers) {
+            const serverCmd = server.type === 'stdio'
+              ? (server.args?.length ? `${server.command} ${server.args.join(' ')}` : server.command)
+              : server.url;
+            if (serverCmd && command.includes(serverCmd)) {
+              this.#statusMap = { ...this.#statusMap, [server.name]: 'error' };
+              this.#errorMessages = { ...this.#errorMessages, [server.name]: errorMessage };
+              logger.warn('MCP server error matched by command', {
+                serverName: server.name,
+                errorMessage,
+              });
+              return;
+            }
+          }
+        }
+
+        logger.warn('MCP server error received but could not match to server', {
+          command,
+          errorMessage,
+        });
+      });
+    } catch {
+      // electronAPI may not be available in all contexts
+    }
+  }
 
   // Getters
   get servers(): McpServerConfig[] {
@@ -64,6 +120,7 @@ class McpSettingsStore {
         status,
         tools,
         toolCount: tools.length,
+        errorMessage: this.#errorMessages[server.name],
       };
     });
   }
@@ -210,10 +267,17 @@ class McpSettingsStore {
 
         logger.info('Loaded MCP servers:', { count: this.#servers.length });
 
-        // Simulate connected status for now (real status would come from MCP hub)
+        // Set initial status to connected for non-disabled servers.
+        // Error events from the main process will override this for servers that fail to start.
+        // Clear previous errors — new errors will arrive via IPC if servers still fail.
+        this.#errorMessages = {};
         for (const server of this.#servers) {
           if (!this.#disabledServers.has(server.name)) {
-            this.#statusMap[server.name] = 'connected';
+            // Only set to connected if not already in error state
+            // (error events may arrive before loadServers completes)
+            if (this.#statusMap[server.name] !== 'error') {
+              this.#statusMap[server.name] = 'connected';
+            }
           }
         }
       } else {

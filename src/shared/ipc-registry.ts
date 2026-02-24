@@ -1139,6 +1139,10 @@ export const EVENT_CHANNELS = [
   'agent:subscribed', // Agent subscribed to workspace events
   'agent:unsubscribed', // Agent unsubscribed from workspace events
   'agent:woken-by-subscription', // Agent woken from idle by subscription event
+  'agent:subscriptions-changed', // Agent subscription registry changed (hint for renderer refetch)
+  'agent:subscriptions-restored', // Persisted subscriptions restored on startup
+  'agent:event-delivery-failed', // Event delivery to agent failed after retries
+  'agent:event-delivery-timeout', // Event delivery to agent timed out
   'agent:queue:updated',
   'agent:queue:processing',
   'agent:queue:processing-cancelled',

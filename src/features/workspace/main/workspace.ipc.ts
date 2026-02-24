@@ -2437,10 +2437,20 @@ async function initializeGitIntegration(
   // Adding a 'file-changed' listener here was causing duplicate events in the activity log.
   gitIntegration.on('changes-tracked', changeHandler);
 
-  await gitIntegration.startListening(detector);
+  // Skip the expensive initial sync for freshly created workspaces.
+  // A brand-new worktree has zero uncommitted changes and zero commits ahead,
+  // so syncCurrentState() would do ~3s of git operations returning empty results.
+  // We detect "fresh" by checking if createdAt is within the last 30 seconds.
+  const isFreshWorkspace =
+    workspaceMetadata?.createdAt &&
+    Date.now() - new Date(workspaceMetadata.createdAt).getTime() < 30_000;
+
+  await gitIntegration.startListening(detector, {
+    skipInitialSync: !!isFreshWorkspace,
+  });
 
   // Store the git integration for cleanup later
   global.gitIntegrations.set(workspaceId, gitIntegration);
 
-  logger.info('Set up git integration', { workspaceId });
+  logger.info('Set up git integration', { workspaceId, skippedInitialSync: !!isFreshWorkspace });
 }

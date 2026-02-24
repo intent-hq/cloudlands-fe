@@ -19,6 +19,7 @@ export interface McpServerInfo {
   type: 'http' | 'sse' | 'command';
   url?: string;
   command?: string;
+  error?: string;
 }
 
 /**
@@ -39,15 +40,74 @@ class McpServersStore {
   /** Error message if any */
   #error = $state<string | null>(null);
 
+  /** Per-server startup error messages */
+  #serverErrors = $state<Record<string, string>>({});
+
   /** Per-workspace enable state */
   #stateByWorkspace: Record<string, WorkspaceMcpState> = $state({});
 
   /** Current workspace ID */
   #currentWorkspaceId: string | null = $state(null);
 
+  /** Whether we've set up the IPC listener */
+  #listenerInitialized = false;
+
+  constructor() {
+    this.initErrorListener();
+  }
+
+  /** Set up listener for MCP server error events from main process */
+  private initErrorListener(): void {
+    if (this.#listenerInitialized) return;
+    this.#listenerInitialized = true;
+
+    try {
+      window.electronAPI?.on('mcp:server-error', (_event: any, data: any) => {
+        const { serverName, command, errorMessage } = data || {};
+        if (!errorMessage) return;
+
+        // If we have a server name, use it directly
+        if (serverName) {
+          this.#serverErrors = { ...this.#serverErrors, [serverName]: errorMessage };
+          logger.warn('MCP server error received', { serverName, errorMessage });
+          return;
+        }
+
+        // Try to match by command/URL against our loaded servers
+        if (command) {
+          for (const server of this.#servers) {
+            if (
+              (server.url && command.includes(server.url)) ||
+              (server.command && command.includes(server.command))
+            ) {
+              this.#serverErrors = { ...this.#serverErrors, [server.name]: errorMessage };
+              logger.warn('MCP server error matched by command', {
+                serverName: server.name,
+                errorMessage,
+              });
+              return;
+            }
+          }
+        }
+
+        logger.warn('MCP server error received but could not match to server', {
+          command,
+          errorMessage,
+        });
+      });
+    } catch {
+      // electronAPI may not be available in all contexts
+    }
+  }
+
   // Getters
   get servers(): McpServerInfo[] {
     return this.#servers;
+  }
+
+  /** Get per-server errors */
+  get serverErrors(): Record<string, string> {
+    return this.#serverErrors;
   }
 
   get loading(): boolean {
@@ -80,6 +140,11 @@ class McpServersStore {
     return Object.entries(state.enabledServers)
       .filter(([, enabled]) => enabled === false)
       .map(([name]) => name);
+  }
+
+  /** Get error message for a specific server */
+  getServerError(serverName: string): string | undefined {
+    return this.#serverErrors[serverName];
   }
 
   /** Check if a specific server is enabled */
@@ -128,6 +193,8 @@ class McpServersStore {
   async loadServers(): Promise<void> {
     this.#loading = true;
     this.#error = null;
+    // Clear previous errors on reload — new errors will arrive via IPC if servers still fail
+    this.#serverErrors = {};
 
     try {
       // First check if the feature is enabled

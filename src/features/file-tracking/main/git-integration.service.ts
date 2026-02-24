@@ -123,8 +123,16 @@ export class GitIntegrationService extends EventEmitter {
 
   /**
    * Start listening to git changes
+   * @param changeDetector - The change detector to listen to
+   * @param options - Options for starting the listener
+   * @param options.skipInitialSync - Skip the initial syncCurrentState call.
+   *   Use this for newly created workspaces where the worktree has no changes yet,
+   *   avoiding expensive git operations (~3s) that would return empty results.
    */
-  async startListening(changeDetector: any): Promise<void> {
+  async startListening(
+    changeDetector: any,
+    options?: { skipInitialSync?: boolean },
+  ): Promise<void> {
     const startTime = Date.now();
     if (this.isListening) {
       logger.debug('Already listening to git changes', { workspaceId: this.workspaceId });
@@ -144,14 +152,21 @@ export class GitIntegrationService extends EventEmitter {
 
     logger.debug('Started listening to git changes', { workspaceId: this.workspaceId });
 
-    // Do an initial sync
-    const syncStart = Date.now();
-    await this.syncCurrentState();
-    logger.debug('Initial syncCurrentState completed', {
-      workspaceId: this.workspaceId,
-      syncDurationMs: Date.now() - syncStart,
-      totalDurationMs: Date.now() - startTime,
-    });
+    // Do an initial sync (skip for fresh workspaces with no changes)
+    if (options?.skipInitialSync) {
+      logger.debug('Skipping initial sync (fresh workspace)', {
+        workspaceId: this.workspaceId,
+        totalDurationMs: Date.now() - startTime,
+      });
+    } else {
+      const syncStart = Date.now();
+      await this.syncCurrentState();
+      logger.debug('Initial syncCurrentState completed', {
+        workspaceId: this.workspaceId,
+        syncDurationMs: Date.now() - syncStart,
+        totalDurationMs: Date.now() - startTime,
+      });
+    }
   }
 
   /**

@@ -275,6 +275,138 @@ export class ListNotesTool extends BaseMCPTool {
 }
 
 /**
+ * Tool to list just the task items from a note.
+ * Returns a compact list of tasks with their text, checkbox status,
+ * linked task note IDs, and line numbers — without the full note content.
+ *
+ * This is much more efficient than read_note when you only need task IDs
+ * for delegation (e.g., coordinators extracting task IDs from the spec).
+ */
+export class ListNoteTasksTool extends BaseMCPTool {
+  private workspaceManager: any;
+  private workspaceId: string;
+
+  constructor(workspaceManager: any, workspaceId: string) {
+    super(
+      'list_note_tasks',
+      `List all task checkboxes in a note. Returns task text, status, linked task note IDs, and line numbers — without returning the full note content.
+
+Use this instead of read_note when you only need task IDs for delegation. Much more efficient for coordinators.
+
+Example response:
+  Tasks in "Project Plan" (3 tasks):
+    Line 5: [ ] Build auth system → task note: abc-123
+    Line 6: [x] Set up database → task note: def-456
+    Line 7: [/] Design API → (no linked task note)`,
+      createInputSchema(
+        {
+          noteId: stringProperty(
+            "The ID of the note to list tasks from (use 'spec' for the workspace specification)",
+          ),
+        },
+        ['noteId'],
+      ),
+    );
+    this.workspaceManager = workspaceManager;
+    this.workspaceId = workspaceId;
+  }
+
+  async execute(call: ToolCall): Promise<ToolResult> {
+    try {
+      const { noteId } = call.arguments;
+
+      if (!noteId) {
+        return this.error('Note ID is required');
+      }
+
+      if (!this.workspaceManager) {
+        return this.error('Workspace manager not available');
+      }
+
+      const note = await this.workspaceManager.getNote(this.workspaceId, noteId);
+
+      if (!note) {
+        return this.error(`Note not found: ${noteId}`);
+      }
+
+      const content = note.content || '';
+      const lines = content.split('\n');
+
+      // Parse task checkboxes from the note content
+      // Match: optional whitespace, -, whitespace, [status], whitespace, text
+      // where text may include a linked task note: [Title](intent://local/task/{id})
+      const TASK_LINE_REGEX = /^(\s*[-*]\s*)\[([ xX\/])\]\s*(.+)$/;
+      const TASK_LINK_PATTERN = /\[([^\]]+)\]\(intent:\/\/local\/task\/([a-f0-9-]+)\)/;
+
+      interface TaskEntry {
+        lineNumber: number;
+        text: string;
+        status: 'todo' | 'in-progress' | 'done';
+        taskNoteId: string | null;
+      }
+
+      const tasks: TaskEntry[] = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const match = line.match(TASK_LINE_REGEX);
+        if (!match) continue;
+
+        const [, , checkbox, taskText] = match;
+
+        // Determine status from checkbox
+        const status: TaskEntry['status'] =
+          checkbox === 'x' || checkbox === 'X' ? 'done' :
+          checkbox === '/' ? 'in-progress' :
+          'todo';
+
+        // Check for linked task note
+        const linkMatch = taskText.match(TASK_LINK_PATTERN);
+        const taskNoteId = linkMatch ? linkMatch[2] : null;
+
+        // Clean task text: use link text if it's a linked task, otherwise raw text
+        // Strip agent anchors (<!--agent:id-->) for cleaner output
+        const cleanText = linkMatch
+          ? linkMatch[1]
+          : taskText.replace(/<!--agent:[^>]+-->/g, '').trim();
+
+        tasks.push({
+          lineNumber: i + 1,
+          text: cleanText,
+          status,
+          taskNoteId,
+        });
+      }
+
+      // Format response
+      const noteTitle = note.title || noteId;
+      let responseText = `Tasks in "${noteTitle}" (${tasks.length} task${tasks.length !== 1 ? 's' : ''}):\n`;
+
+      if (tasks.length === 0) {
+        responseText += '\n(no task checkboxes found)';
+      } else {
+        for (const task of tasks) {
+          const checkbox = task.status === 'done' ? '[x]' : task.status === 'in-progress' ? '[/]' : '[ ]';
+          const linkInfo = task.taskNoteId ? ` → task note: ${task.taskNoteId}` : '';
+          responseText += `\n  Line ${task.lineNumber}: ${checkbox} ${task.text}${linkInfo}`;
+        }
+      }
+
+      return this.success(responseText, {
+        noteId: note.id,
+        title: noteTitle,
+        taskCount: tasks.length,
+        tasks,
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error('Error listing note tasks', error as Error);
+      return this.error(`Failed to list note tasks: ${errorMessage}`);
+    }
+  }
+}
+
+/**
  * Tool to read a specific note
  */
 export class ReadNoteTool extends BaseMCPTool {

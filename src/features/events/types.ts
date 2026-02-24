@@ -70,7 +70,9 @@ export const WorkspaceEventType = {
   AgentUnsubscribed: 'agent:unsubscribed',
   AgentWokenBySubscription: 'agent:woken-by-subscription',
   AgentEventDeliveryFailed: 'agent:event-delivery-failed',
+  AgentEventDeliveryTimeout: 'agent:event-delivery-timeout',
   AgentSubscriptionsRestored: 'agent:subscriptions-restored',
+	  AgentSubscriptionsChanged: 'agent:subscriptions-changed',
   AgentMessageDeliveryFailed: 'agent:message:delivery-failed',
 
   // Git events
@@ -499,6 +501,21 @@ export interface AgentEventDeliveryFailedEvent extends WorkspaceEventBase {
 }
 
 /**
+ * Emitted when event delivery to an agent times out (status unknown).
+ * This is distinct from delivery failure — timeout means the message was sent
+ * but we couldn't confirm completion within the timeout window.
+ */
+export interface AgentEventDeliveryTimeoutEvent extends WorkspaceEventBase {
+  type: 'agent:event-delivery-timeout';
+  data: {
+    targetAgentId: string;
+    eventCount: number;
+    eventTypes: string[];
+    timeoutMs: number;
+  };
+}
+
+/**
  * Emitted when persisted subscriptions are restored on startup
  * Contains a batch count and list of unique agent IDs that have restored subscriptions
  */
@@ -510,6 +527,19 @@ export interface AgentSubscriptionsRestoredEvent extends WorkspaceEventBase {
     /** Array of unique agent IDs that have restored subscriptions */
     agentIds: string[];
   };
+}
+
+/**
+ * Emitted whenever an agent's subscription registry changes.
+ * Used as a hint for renderers to refetch a snapshot.
+ */
+export interface AgentSubscriptionsChangedEvent extends WorkspaceEventBase {
+	  type: 'agent:subscriptions-changed';
+	  data: {
+	    agentId: string;
+	    subscriptionVersion: number;
+	    reason?: string;
+	  };
 }
 
 /**
@@ -552,7 +582,9 @@ export type SpecificWorkspaceEvent =
   | AgentUnsubscribedEvent
   | AgentWokenBySubscriptionEvent
   | AgentEventDeliveryFailedEvent
+  | AgentEventDeliveryTimeoutEvent
   | AgentSubscriptionsRestoredEvent
+	  | AgentSubscriptionsChangedEvent
   | AgentMessageDeliveryFailedEvent;
 
 // Main WorkspaceEvent type - includes legacy fields for backward compatibility
@@ -792,6 +824,8 @@ export function isAgentInteractionEvent(event: WorkspaceEvent): boolean {
     event.type === 'agent:unsubscribed' ||
     event.type === 'agent:woken-by-subscription' ||
     event.type === 'agent:event-delivery-failed' ||
+    event.type === 'agent:event-delivery-timeout' ||
+	    event.type === 'agent:subscriptions-changed' ||
     event.type === 'agent:message:delivery-failed'
   );
 }

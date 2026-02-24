@@ -342,6 +342,8 @@ export function setupEventsIPC(): void {
           })),
           // Include real-time status for all watched agents (for 'any' mode subscriptions)
           agentStatuses,
+          // Monotonically increasing version for stale response detection
+          version: subscriptionService.version,
         };
       } catch (error) {
         logger.error('Failed to get agent subscriptions', { error, params });

@@ -175,7 +175,7 @@ describe('Agent Orchestration', () => {
       expect(status?.isComplete).toBe(false);
     });
 
-    it('should mark group complete when all agents finish', () => {
+    it('should mark group complete when all agents finish', async () => {
       const parentAgentId = 'parent-agent';
       const groupId = 'test-group-4';
 
@@ -193,6 +193,9 @@ describe('Agent Orchestration', () => {
 
       // Second child completes - group is cleaned up after delivery
       mockEventBus.emitEvent(createAgentEvent('agent:idle', 'child-2', workspaceId));
+
+      // Cleanup happens after delivery is confirmed (async microtask)
+      await Promise.resolve();
 
       // After all complete and events delivered, group is cleaned up
       // So status should be null (group no longer exists)

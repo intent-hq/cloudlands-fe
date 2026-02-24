@@ -1393,7 +1393,7 @@ export class ACPProviderStreaming {
       // Codex never sends tool_call_update events, so without this the auto-complete mechanism
       // would create a synthetic empty tool_result and the UI would show "Completed" instead of
       // the actual note content / note list / task data.
-      const CODEX_READABLE_TOOLS = new Set(['read_note', 'list_notes', 'get_my_task']);
+      const CODEX_READABLE_TOOLS = new Set(['read_note', 'list_notes', 'list_note_tasks', 'get_my_task']);
       let fetchedResult = false;
 
       if (isCodexWorkspaceMcp && session?.workspaceId && CODEX_READABLE_TOOLS.has(codexResolvedToolName)) {
@@ -1425,6 +1425,33 @@ export class ACPProviderStreaming {
                 updated_at: n.updated_at || n.updatedAt,
               }));
               resultContent = JSON.stringify(notesList, null, 2);
+            }
+          } else if (codexResolvedToolName === 'list_note_tasks' && input.noteId) {
+            const noteResult = await notesService.getNote(session.workspaceId as any, String(input.noteId) as any);
+            if (noteResult.ok && noteResult.data) {
+              const note = noteResult.data;
+              const content = note.content || '';
+              const lines = content.split('\n');
+              const TASK_LINE_REGEX = /^(\s*[-*]\s*)\[([ xX\/])\]\s*(.+)$/;
+              const TASK_LINK_PATTERN = /\[([^\]]+)\]\(intent:\/\/local\/task\/([a-f0-9-]+)\)/;
+              const tasks: Array<{ lineNumber: number; text: string; status: string; taskNoteId: string | null }> = [];
+              for (let i = 0; i < lines.length; i++) {
+                const match = lines[i].match(TASK_LINE_REGEX);
+                if (!match) continue;
+                const [, , checkbox, taskText] = match;
+                const status = checkbox === 'x' || checkbox === 'X' ? 'done' : checkbox === '/' ? 'in-progress' : 'todo';
+                const linkMatch = taskText.match(TASK_LINK_PATTERN);
+                const taskNoteId = linkMatch ? linkMatch[2] : null;
+                const cleanText = linkMatch ? linkMatch[1] : taskText.replace(/<!--agent:[^>]+-->/g, '').trim();
+                tasks.push({ lineNumber: i + 1, text: cleanText, status, taskNoteId });
+              }
+              let text = `Tasks in "${note.title || input.noteId}" (${tasks.length} task${tasks.length !== 1 ? 's' : ''}):\n`;
+              for (const task of tasks) {
+                const cb = task.status === 'done' ? '[x]' : task.status === 'in-progress' ? '[/]' : '[ ]';
+                const linkInfo = task.taskNoteId ? ` → task note: ${task.taskNoteId}` : '';
+                text += `\n  Line ${task.lineNumber}: ${cb} ${task.text}${linkInfo}`;
+              }
+              resultContent = text;
             }
           } else if (codexResolvedToolName === 'get_my_task' && input.taskNoteId) {
             const taskResult = await notesService.getNote(session.workspaceId as any, String(input.taskNoteId) as any);

@@ -114,7 +114,7 @@ describe('Specialist Prompts Verification', () => {
   describe('Delegation Instructions in Prompts', () => {
     it('common instructions should contain delegation guidance', () => {
       expect(common).toContain('Before delegating');
-      expect(common).toContain('read the note');
+      expect(common).toContain('list the tasks');
       expect(common).toContain('delegate_task');
       expect(common).toContain('Never use `create_agent` for tasks that already have IDs');
     });

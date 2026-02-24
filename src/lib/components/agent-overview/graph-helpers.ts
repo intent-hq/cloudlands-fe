@@ -14,6 +14,7 @@ import {
   NOTE_READ_TOOLS,
   TASK_TOOLS,
   TASK_READ_TOOLS,
+  DELEGATION_TOOLS,
 } from './constants';
 import { parseSuggestedPrompts } from '$lib/utils/messageParser';
 
@@ -207,6 +208,7 @@ interface ToolCallLike {
 
 interface ContentBlockLike {
   type: string;
+  id?: string;
   name?: string;
   toolName?: string;
   input?: Record<string, unknown>;
@@ -688,4 +690,160 @@ export function extractTaskChangesFromMessages(
   }
 
   return changes;
+}
+
+
+// ============================================================================
+// Delegation Batch Extraction
+// ============================================================================
+
+/**
+ * Check if a tool name is a delegation tool.
+ * Handles tool name suffixes like '_workspace-mcp'.
+ */
+export function isDelegationTool(toolName: string): boolean {
+  if (DELEGATION_TOOLS.has(toolName)) return true;
+  for (const tool of DELEGATION_TOOLS) {
+    if (toolName.startsWith(tool)) return true;
+  }
+  return false;
+}
+
+/**
+ * Extract agent ID from a tool result text.
+ * Looks for patterns like "Agent ID: agent-xxx" in the result content.
+ */
+function extractAgentIdFromResultText(text: string): string | null {
+  if (!text) return null;
+  const match = text.match(/Agent ID:\s*(\S+)/i);
+  return match ? match[1] : null;
+}
+
+/**
+ * Extract a text string from a tool result content field.
+ * Handles multiple formats:
+ * - string: returned as-is
+ * - array of content items: extracts text from { type: 'text', text: '...' } items
+ * - object with text property: returns the text
+ * - other: returns empty string
+ */
+function getResultText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value
+      .filter((item: any) => item && typeof item === 'object' && item.type === 'text' && item.text)
+      .map((item: any) => item.text)
+      .join('\n');
+  }
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    if (typeof obj.text === 'string') return obj.text;
+    if (typeof obj.content === 'string') return obj.content;
+  }
+  return '';
+}
+
+/**
+ * Extract a map from child agent IDs to delegation batch IDs by scanning
+ * a parent agent's messages. Tool calls for delegation tools that appear
+ * in the same assistant message/response are assigned the same batch ID.
+ *
+ * @param messages - The parent agent's messages
+ * @param parentAgentId - The parent agent's ID (used to construct batch IDs)
+ * @returns Map from child agent ID to batch ID string
+ */
+export function extractDelegationBatchMap(
+  messages: MessageLike[],
+  parentAgentId: string,
+): Map<string, string> {
+  const result = new Map<string, string>();
+
+  // Phase 1: Find delegation tool_use blocks in assistant messages
+  // and map their tool call IDs to a batch ID per message
+  const toolUseToBatch = new Map<string, string>();
+  let batchIndex = 0;
+
+  for (const message of messages) {
+    const delegationToolUseIds: string[] = [];
+
+    // Check contentBlocks for tool_use blocks
+    if (message.contentBlocks && Array.isArray(message.contentBlocks)) {
+      for (const block of message.contentBlocks) {
+        if (block.type === 'tool_use' && block.name) {
+          const toolName = getToolName(block);
+          if (isDelegationTool(toolName) && block.id) {
+            delegationToolUseIds.push(block.id);
+          }
+        }
+      }
+    }
+
+    // Check toolCalls array
+    if (message.toolCalls && Array.isArray(message.toolCalls)) {
+      for (const toolCall of message.toolCalls) {
+        const toolName = getToolName(toolCall);
+        if (isDelegationTool(toolName)) {
+          const id = (toolCall as any).id;
+          if (id && !delegationToolUseIds.includes(id)) {
+            delegationToolUseIds.push(id);
+          }
+        }
+      }
+    }
+
+    // If this message had delegation tool calls, assign them a batch
+    if (delegationToolUseIds.length > 1) {
+      // Only create batches for messages with multiple delegation calls
+      const batchId = `${parentAgentId}-batch-${batchIndex}`;
+      for (const toolUseId of delegationToolUseIds) {
+        toolUseToBatch.set(toolUseId, batchId);
+      }
+      batchIndex++;
+    }
+  }
+
+  // Phase 2: Find tool_result blocks and extract child agent IDs
+  for (const message of messages) {
+    // Check contentBlocks for tool_result blocks
+    if (message.contentBlocks && Array.isArray(message.contentBlocks)) {
+      for (const block of message.contentBlocks) {
+        if (block.type === 'tool_result' && (block as any).tool_use_id) {
+          const toolUseId = (block as any).tool_use_id as string;
+          const batchId = toolUseToBatch.get(toolUseId);
+          if (batchId) {
+            // Extract agent ID from the result — handle string, array, and object formats
+            const resultText = getResultText((block as any).text)
+              || getResultText((block as any).content)
+              || getResultText((block as any).output);
+            const agentId = extractAgentIdFromResultText(resultText);
+            if (agentId) {
+              result.set(agentId, batchId);
+            }
+          }
+        }
+      }
+    }
+
+    // Check toolCalls with results
+    if (message.toolCalls && Array.isArray(message.toolCalls)) {
+      for (const toolCall of message.toolCalls) {
+        const id = (toolCall as any).id;
+        if (!id) continue;
+        const batchId = toolUseToBatch.get(id);
+        if (!batchId) continue;
+
+        // Try to extract agent ID from toolCall.result
+        const tcResult = (toolCall as any).result;
+        if (tcResult) {
+          const resultText = getResultText(tcResult);
+          const agentId = extractAgentIdFromResultText(resultText);
+          if (agentId) {
+            result.set(agentId, batchId);
+          }
+        }
+      }
+    }
+  }
+
+  return result;
 }

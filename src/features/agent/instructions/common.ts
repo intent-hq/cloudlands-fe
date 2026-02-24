@@ -7,10 +7,12 @@
 
 const INSTRUCTION = `## Delegating Tasks
 
-Before delegating, read the note to find existing task links:
-1. Read note: \`read_note_workspace-mcp(noteId="spec")\`
-2. Find links: \`[Task Name](intent://local/task/{id})\`
+Before delegating, list the tasks to find existing task IDs:
+1. List tasks: \`list_note_tasks_workspace-mcp(noteId="spec")\`
+2. Use the returned task note IDs directly
 3. Delegate by ID: \`delegate_task(taskNoteId="{id}", specialist="implementor")\`
+
+Use \`list_note_tasks\` instead of \`read_note\` when you only need task IDs — it's much faster and returns just the tasks.
 
 **Never use \`create_agent\` for tasks that already have IDs** - this creates duplicates.
 

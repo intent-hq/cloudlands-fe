@@ -342,6 +342,12 @@ export function parseToolResult(
     return parseTaskResult(input, resultText);
   }
 
+  // list_note_tasks — returns a compact task summary, display as note-view
+  // Must be checked BEFORE the generic task catch-all below
+  if (name.includes('list_note_tasks') || name.includes('list-note-tasks')) {
+    return { type: 'note-view' as const, content: resultText || undefined };
+  }
+
   // Remaining task tools (mark_as_task, create_prerequisite, convert_task_blocks)
   if (name.includes('task') || name.includes('prerequisite')) {
     return parseTaskUpdateResult(input, resultText);

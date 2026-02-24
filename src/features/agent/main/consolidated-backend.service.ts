@@ -412,16 +412,27 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
   async backendStop(params: {
     agentId: string;
     killProcess?: boolean;
+    _stopTrigger?: string;
+    _stopReason?: string;
   }): Promise<{ success: boolean; error?: string }> {
     try {
-      const { agentId, killProcess = false } = params;
+      const { agentId, killProcess = false, _stopTrigger, _stopReason } = params;
+      const trigger = _stopTrigger || 'unknown';
+      const triggerReason = _stopReason || 'none';
       const id = createAgentId(agentId);
       const record = this.sessions.get(id);
 
-      logger.info('[backendStop] Stopping agent', {
+      // Structured cancellation-origin log: identifies WHO triggered the stop and WHY.
+      // This is the consolidated-backend entry point — it can bypass handleStopSession
+      // and call provider.interrupt() directly, so it needs its own origin log.
+      logger.info('[cancellation-origin] [consolidated-backend] backendStop', {
+        trigger,
+        triggerReason,
         agentId,
         hasRecord: !!record,
         killProcess,
+        hasProvider: !!record?.provider,
+        sessionStatus: record?.session?.status,
       });
 
       // Cancel streaming if active

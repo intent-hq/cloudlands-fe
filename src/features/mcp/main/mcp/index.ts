@@ -17,6 +17,7 @@ import {
   GetWorkspaceInfoTool,
   CreateNoteTool,
   ListNotesTool,
+  ListNoteTasksTool,
   ReadNoteTool,
   ReadAssetTool,
   SetNoteContentTool,
@@ -160,6 +161,7 @@ export async function createWorkspaceMCPServer(
   if (workspaceManager) {
     server.registerTool(new CreateNoteTool(workspaceManager, workspaceId));
     server.registerTool(new ListNotesTool(workspaceManager, workspaceId));
+    server.registerTool(new ListNoteTasksTool(workspaceManager, workspaceId));
     server.registerTool(new ReadNoteTool(workspaceManager, workspaceId));
     server.registerTool(new ReadAssetTool(workspaceId));
     server.registerTool(new SetNoteContentTool(workspaceManager, workspaceId));

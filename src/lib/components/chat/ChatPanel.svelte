@@ -3113,9 +3113,11 @@
     if (!workspace) return;
     try {
       // Per-agent ChatService: always bound to this agent, no re-acquisition needed
+      // forkSession creates the fork and opens it via workspace:open-agent event,
+      // which opens the fork in its own panel tab with its own ChatService instance.
+      // This preserves the parent ChatService's state.
       const forkedId = await chatService.forkSession(workspace, {
         forkFromMessageId: messageId,
-        switchToForked: true,
       });
       toast.success('Conversation forked');
       logger.info('Forked conversation from message', { messageId, forkedId });
@@ -3872,10 +3874,14 @@
       {/if}
 
       <!-- Agent Subscriptions (shows what events agent is waiting for) -->
+      <!-- {#key} forces a full remount when workspace or agent changes,
+           preventing stale "Waiting for N agents" UI from leaking across switches -->
       {#if workspace?.id}
-        <div class="w-full pb-6">
-          <AgentSubscriptions workspaceId={workspace.id} {agentId} />
-        </div>
+        {#key `${workspace.id}::${agentId}`}
+          <div class="w-full pb-6">
+            <AgentSubscriptions workspaceId={workspace.id} {agentId} />
+          </div>
+        {/key}
       {/if}
 
       <!-- Scroll anchor - ensures proper scroll to absolute bottom -->

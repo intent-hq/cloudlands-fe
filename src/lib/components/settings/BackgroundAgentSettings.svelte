@@ -15,6 +15,8 @@
   import { Dropdown, type DropdownOption } from '$lib/components/ui/dropdown';
   import Header from '../ui/Header.svelte';
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
+  import Fa from 'svelte-fa';
+  import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
 
   const USE_DEFAULT_VALUE = '__default__';
 
@@ -119,7 +121,8 @@
           contentClass="min-w-[280px]"
         >
           {#snippet trigger({ open: _open, value: _value })}
-            <span class="truncate">{getOverrideLabel(commitOverride)}</span>
+            <span class="truncate flex-1 text-left">{getOverrideLabel(commitOverride)}</span>
+            <Fa icon={faChevronDown} class="h-2! w-2! opacity-50 shrink-0" />
           {/snippet}
         </Dropdown>
       </div>
@@ -146,7 +149,8 @@
           contentClass="min-w-[280px]"
         >
           {#snippet trigger({ open: _open, value: _value })}
-            <span class="truncate">{getOverrideLabel(prOverride)}</span>
+            <span class="truncate flex-1 text-left">{getOverrideLabel(prOverride)}</span>
+            <Fa icon={faChevronDown} class="h-2! w-2! opacity-50 shrink-0" />
           {/snippet}
         </Dropdown>
       </div>
@@ -173,7 +177,8 @@
           contentClass="min-w-[280px]"
         >
           {#snippet trigger({ open: _open, value: _value })}
-            <span class="truncate">{getOverrideLabel(fastOverride)}</span>
+            <span class="truncate flex-1 text-left">{getOverrideLabel(fastOverride)}</span>
+            <Fa icon={faChevronDown} class="h-2! w-2! opacity-50 shrink-0" />
           {/snippet}
         </Dropdown>
       </div>

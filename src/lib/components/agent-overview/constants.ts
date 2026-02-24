@@ -168,7 +168,7 @@ export const NOTE_TOOLS = new Set([
 ]);
 
 /** Read-only note tools (for determining action type) */
-export const NOTE_READ_TOOLS = new Set(['read_note', 'view_note']);
+export const NOTE_READ_TOOLS = new Set(['read_note', 'view_note', 'list_note_tasks']);
 
 /** Tool names that indicate task operations */
 export const TASK_TOOLS = new Set([
@@ -180,6 +180,13 @@ export const TASK_TOOLS = new Set([
 
 /** Read-only task tools */
 export const TASK_READ_TOOLS = new Set(['view_tasklist']);
+
+/** Tool names that indicate agent delegation operations */
+export const DELEGATION_TOOLS = new Set([
+  'delegate_task',
+  'create_sub_agent',
+  'create_agent',
+]);
 
 // ============================================================================
 // Timing Constants

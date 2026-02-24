@@ -152,6 +152,25 @@ export class ChangeDetectorRefactored extends EventEmitter {
       this.emit('error', error);
     });
 
+    // When the OS file-event queue overflows (e.g. macOS FSEvents drop),
+    // the FileWatcher emits 'rescan-required'.  We must re-poll git so that
+    // any changes made while events were lost are still detected.
+    this.fileWatcher.on('rescan-required', () => {
+      logger.info('File watcher rescan required - triggering immediate git poll', {
+        workspaceId: this.workspaceId,
+      });
+      // Invalidate git status cache so the poll reads fresh state from disk
+      this.gitOps.invalidateCache();
+      // Reset activity time so adaptive polling uses a short interval
+      this.lastActivityTime = Date.now();
+      this.adaptivePolling.recordActivity(1, true);
+      this.triggerImmediateCheck('rescan-required').catch((error) => {
+        logger.error('Failed to poll git status after rescan', error as Error, {
+          workspaceId: this.workspaceId,
+        });
+      });
+    });
+
     // Change processor events
     this.changeProcessor.on('changes-batch', (changes: ProcessedChange[]) => {
       this.handleChangesBatch(changes);

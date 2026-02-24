@@ -12,6 +12,7 @@
   import {
     faChevronDown,
     faChevronRight,
+    faExclamationTriangle,
     faGear,
     faPlug,
     faTerminal,
@@ -113,6 +114,7 @@
       <div class="space-y-0.5 mt-1 pl-4" transition:slide={{ axis: 'y', duration: 200 }}>
         {#each servers as server (server.name)}
           {@const isEnabled = mcpServersStore.isServerEnabled(server.name)}
+          {@const serverError = mcpServersStore.getServerError(server.name)}
           {@const faviconUrl = getFaviconUrl(server)}
           {@const showFallback = !faviconUrl || faviconErrors[server.name]}
           <div
@@ -150,11 +152,11 @@
                 >
                   {server.name}
                 </span>
-                <!-- <span
-                  class="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground font-medium"
-                >
-                  {getServerTypeLabel(server)}
-                </span> -->
+                {#if serverError && isEnabled}
+                  <Tooltip content={serverError} side="right" delayDuration={200}>
+                    <Fa icon={faExclamationTriangle} size="xs" class="text-red-500 shrink-0" />
+                  </Tooltip>
+                {/if}
               </div>
               <!-- {#if server.url}
                 <Tooltip content={server.url} side="bottom" delayDuration={500}>

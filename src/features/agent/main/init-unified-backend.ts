@@ -76,6 +76,8 @@ function setupWorkspaceDeletionListener(): void {
             await consolidatedBackend.backendStop({
               agentId: session.id.toString(),
               killProcess: true, // Kill the auggie process, not just interrupt
+              _stopTrigger: 'workspace_deletion',
+              _stopReason: 'workspace:deleting event',
             });
             logger.info('Killed agent for deleted workspace', {
               agentId: session.id,
@@ -153,6 +155,8 @@ function setupWorkspaceArchiveListener(): void {
             await consolidatedBackend.backendStop({
               agentId: session.id.toString(),
               killProcess: true, // Kill the auggie process, not just interrupt
+              _stopTrigger: 'workspace_archival',
+              _stopReason: 'workspace:archived event',
             });
             logger.info('Killed agent for archived workspace', {
               agentId: session.id,

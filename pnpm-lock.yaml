@@ -258,6 +258,9 @@ importers:
       electron-updater:
         specifier: ^6.7.3
         version: 6.7.3
+      encoding:
+        specifier: ^0.1.3
+        version: 0.1.13
       entities:
         specifier: 7.0.0
         version: 7.0.0
@@ -10659,7 +10662,6 @@ snapshots:
   encoding@0.1.13:
     dependencies:
       iconv-lite: 0.6.3
-    optional: true
 
   end-of-stream@1.4.5:
     dependencies:

@@ -630,7 +630,10 @@
 
     if (displayUrl) {
       let urlToLoad = displayUrl.trim();
-      if (!urlToLoad.startsWith('http://') && !urlToLoad.startsWith('https://')) {
+      // Only prepend a protocol if the input doesn't already have one (scheme://...).
+      // This avoids turning "file:///path" into "https://file:///path" (ERR_NAME_NOT_RESOLVED).
+      // loadUrl() will reject non-http(s) protocols with a clear error message.
+      if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(urlToLoad)) {
         const isLocalhost =
           urlToLoad.includes('localhost') ||
           urlToLoad.includes('127.0.0.1') ||

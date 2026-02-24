@@ -334,6 +334,7 @@ export const ALLOWED_CHANNELS = [
   'agent:auth-required',
   'agent:remote-error',
   'app:reload-request',
+  'mcp:server-error',
 ];
 
 // Dynamic channel patterns that are matched with startsWith()
@@ -415,6 +416,7 @@ export const EVENT_CHANNELS = [
   'window:focus',
   'window:blur',
   'window:fullscreen',
+  'mcp:server-error',
 ];
 
 /**

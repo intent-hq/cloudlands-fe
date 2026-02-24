@@ -17,7 +17,7 @@ import {
 import { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';
 import { unifiedIdService } from '$shared/services/unified-id.service';
 import { ChildProcess, spawn, SpawnOptions } from 'child_process';
-import { app } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -916,6 +916,8 @@ export class ACPProvider extends BaseAgentProvider {
   // These files are needed by auggie for the lifetime of the process
   private tempRulesFilePath?: string;
   private tempMcpConfigPath?: string;
+  // Mapping from command/URL to server name, used to match MCP startup errors to server names
+  private mcpServerCommandMap: Map<string, string> = new Map();
   // MCP servers to pass via the ACP session/new mcpServers field.
   // Used by providers (e.g. Claude Code) that don't support --mcp-config.
   private acpMcpServersForSession: AcpMcpServer[] = [];
@@ -1462,6 +1464,25 @@ export class ACPProvider extends BaseAgentProvider {
           });
           return proc;
         }
+
+        // spawn() returned a process object but without a PID. This typically means
+        // the command was not found or not executable. Node.js emits the actual error
+        // asynchronously via the 'error' event, so we can't capture it here.
+        // Record this as a failed attempt.
+        logger.warn(`spawn returned process without PID for stdio ${JSON.stringify(stdio)}`, {
+          command,
+          hasProc: !!proc,
+        });
+        attempts.push({
+          stdio,
+          error: new Error(
+            `spawn returned without PID (command "${command}" may not be found or not executable)`,
+          ),
+        });
+        // Attach a no-op error listener to prevent the asynchronous ENOENT 'error'
+        // event from becoming an uncaught exception. Do NOT call proc.kill() here —
+        // killing a process with no PID causes a hang in Node.js internals.
+        proc?.on('error', () => {});
       } catch (error) {
         const errnoError = error as NodeJS.ErrnoException;
         attempts.push({ stdio, error: errnoError });
@@ -1477,10 +1498,10 @@ export class ACPProvider extends BaseAgentProvider {
     // If we get here, all attempts failed
     const errorDetails = attempts
       .map((a) => `${JSON.stringify(a.stdio)}: ${a.error?.message || 'unknown error'}`)
-      .join(', ');
+      .join('; ');
 
     throw new Error(
-      `Failed to spawn process after trying all stdio configurations: ${errorDetails}`,
+      `Failed to spawn process after trying all stdio configurations (command: "${command}"): ${errorDetails}`,
     );
   }
 
@@ -1890,6 +1911,25 @@ export class ACPProvider extends BaseAgentProvider {
 
           const mcpConfig = { mcpServers: finalMcpServers };
           workspaceMcpServers = finalMcpServers;
+
+          // Build command/URL → server name mapping for matching MCP startup errors
+          this.mcpServerCommandMap.clear();
+          for (const [name, serverCfg] of Object.entries(finalMcpServers)) {
+            if (name === 'workspace-mcp') continue; // Skip built-in server
+            const cfg = serverCfg as any;
+            if (cfg.url) {
+              this.mcpServerCommandMap.set(cfg.url.trim(), name);
+            }
+            if (cfg.command) {
+              // Store the full command string that auggie prints
+              const fullCmd = cfg.args?.length
+                ? `${cfg.command} ${(cfg.args as string[]).join(' ')}`
+                : cfg.command;
+              this.mcpServerCommandMap.set(fullCmd.trim(), name);
+              // Also store just the command in case auggie only prints the command without args
+              this.mcpServerCommandMap.set(cfg.command.trim(), name);
+            }
+          }
 
           // Log detailed MCP config for debugging production issues
           const mcpServerPathExists = fs.existsSync(mcpServerPath);
@@ -2530,6 +2570,60 @@ export class ACPProvider extends BaseAgentProvider {
           this.recentStderrErrors.push(stderr);
           if (this.recentStderrErrors.length > 5) {
             this.recentStderrErrors.shift();
+          }
+
+          // Detect MCP server startup errors and forward to renderer UI
+          // Auggie prints these with ANSI color codes:
+          //   ⚠️ MCP server startup error: <message>
+          //      Command: <command or url>
+          if (stderr.includes('MCP server startup error')) {
+            try {
+              // Strip ANSI escape codes
+              const clean = stderr.replace(/\x1b\[[0-9;]*m/g, '').trim();
+              const errorMatch = clean.match(/MCP server startup error:\s*(.+)/);
+              const commandMatch = clean.match(/Command:\s*(.+)/);
+
+              if (errorMatch) {
+                const errorMessage = errorMatch[1].trim();
+                const command = commandMatch?.[1]?.trim() || '';
+
+                // Look up server name from the command/URL
+                let serverName = '';
+                if (command) {
+                  serverName = this.mcpServerCommandMap.get(command) || '';
+                  // If no exact match, try partial match (command may include extra whitespace)
+                  if (!serverName) {
+                    for (const [key, name] of this.mcpServerCommandMap.entries()) {
+                      if (command.includes(key) || key.includes(command)) {
+                        serverName = name;
+                        break;
+                      }
+                    }
+                  }
+                }
+
+                logger.warn('MCP server startup error detected', {
+                  serverName: serverName || '(unknown)',
+                  command,
+                  errorMessage,
+                });
+
+                // Broadcast to all renderer windows
+                BrowserWindow.getAllWindows().forEach((window) => {
+                  if (!window.isDestroyed()) {
+                    window.webContents.send('mcp:server-error', {
+                      serverName,
+                      command,
+                      errorMessage,
+                    });
+                  }
+                });
+              }
+            } catch (parseError) {
+              logger.debug('Failed to parse MCP startup error from stderr', {
+                parseError: (parseError as Error).message,
+              });
+            }
           }
 
           // CRITICAL: Detect agent parse errors on stdin (corrupted JSON-RPC message).
@@ -6648,9 +6742,12 @@ export class ACPProvider extends BaseAgentProvider {
               }
 
               const callbacks = this.streamingCallbacks.get(callbackSessionId);
-              const hasReceivedActivity =
-                callbacks?.lastActivityTime &&
-                callbacks.lastActivityTime > (this.lastInterruptTime || 0);
+              // BUGFIX: Check chunksReceived instead of lastActivityTime.
+              // lastActivityTime is initialized to Date.now() at stream setup (line ~6309),
+              // which is always AFTER lastInterruptTime, making this check always true
+              // even when no actual streaming content has been received.
+              // chunksReceived is only incremented when real content arrives.
+              const hasReceivedActivity = (callbacks?.chunksReceived ?? 0) > 0;
 
               if (!hasReceivedActivity) {
                 logger.warn(
@@ -8080,7 +8177,7 @@ export class ACPProvider extends BaseAgentProvider {
       '- **Workspace Management**: view_workspace, view_workspace_details, rename_workspace',
     );
     parts.push(
-      '- **Notes**: create_note, list_notes, read_note, add_to_note, edit_note, delete_note',
+      '- **Notes**: create_note, list_notes, list_note_tasks, read_note, add_to_note, edit_note, delete_note',
     );
     parts.push(
       '- **Specification**: read_spec, write_spec (the main workspace specification document)',
