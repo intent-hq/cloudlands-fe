@@ -101,8 +101,7 @@ done
 
 # Copy versioned artifacts (zips, dmgs, blockmaps)
 echo "Copying versioned artifacts..."
-VERSIONED_FILES=$(gcloud storage ls "gs://$GCS_BUCKET/beta/" 2>/dev/null | grep "$VERSION" || true)
-for file_path in $VERSIONED_FILES; do
+gcloud storage ls "gs://$GCS_BUCKET/beta/" 2>/dev/null | grep "$VERSION" | while IFS= read -r file_path; do
   filename=$(basename "$file_path")
   gcloud storage cp "$file_path" "gs://$GCS_BUCKET/stable/$filename" --quiet
   echo "  $filename"
