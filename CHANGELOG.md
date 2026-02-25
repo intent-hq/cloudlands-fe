@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.10
+
+- Agent responses can now be organized into collapsible groups, making long outputs easier to scan.
+- New workspaces start with a single panel. The spec slides in once the agent begins writing it.
+- Redesigned workspace sidebar with phase indicators and PR status pills.
+- Faster workspace loading. New workspaces skip unnecessary git operations and show the streaming indicator right away.
+- MCP server startup errors now surface in the UI instead of failing silently.
+- Cmd+F search works in chat and notes panels. Open workspaces listed in the Window menu.
+- Fixes: memory leaks on workspace close, MCP server restart loops, stale changes panel after file event drops, streaming content lost on workspace switch, fork session corruption, and queued messages now process in the background.
+
 ## 0.2.9
 
 - Settings page reorganized for clarity.
