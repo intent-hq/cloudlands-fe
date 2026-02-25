@@ -119,6 +119,32 @@ export function getOpenWorkspaceTabsForFocusedWindow(): string[] {
 }
 
 /**
+ * Get all workspace IDs that have an open Electron window.
+ * Iterates windowWorkspaceIds, filters out stale/destroyed windows,
+ * cleans up stale entries, and returns unique workspace IDs.
+ */
+export function getAllOpenWorkspaceIds(): string[] {
+  const workspaceIds = new Set<string>();
+  const staleWindowIds: number[] = [];
+
+  for (const [windowId, wsId] of windowWorkspaceIds) {
+    const win = BrowserWindow.fromId(windowId);
+    if (win && !win.isDestroyed()) {
+      workspaceIds.add(wsId);
+    } else {
+      staleWindowIds.push(windowId);
+    }
+  }
+
+  // Clean up stale entries
+  for (const windowId of staleWindowIds) {
+    windowWorkspaceIds.delete(windowId);
+  }
+
+  return [...workspaceIds];
+}
+
+/**
  * Get the Electron window ID for a given workspace ID.
  * Returns undefined if no window is currently viewing that workspace.
  * NOTE: Returns only the FIRST matching window. Use getWindowIdsForWorkspace()

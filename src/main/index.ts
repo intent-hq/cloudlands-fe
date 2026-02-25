@@ -397,7 +397,8 @@ import {
   isFocusedWindowInWorkspace,
   isFocusedWindowBrowserActive,
   getFocusedWindowWorkspaceId,
-  getOpenWorkspaceTabsForFocusedWindow,
+  getAllOpenWorkspaceIds,
+  getWindowIdForWorkspace,
   installIntentCli,
   autoRepairCliSymlink,
 } from '../features/system/main/system.ipc';
@@ -1397,9 +1398,9 @@ app.whenReady().then(async () => {
       windowMenuItems.push({ role: 'front', label: 'Bring All to Front' });
     }
 
-    // Add open workspace tabs to the Window menu
-    const openTabIds = getOpenWorkspaceTabsForFocusedWindow();
-    if (openTabIds.length > 0) {
+    // Add workspaces with open windows to the Window menu
+    const openWorkspaceIds = getAllOpenWorkspaceIds();
+    if (openWorkspaceIds.length > 0) {
       type WorkspaceItem = { status?: string; title?: string; name?: string; id: string };
       const workspaceTitles = new Map<string, string>();
       try {
@@ -1417,16 +1418,22 @@ app.whenReady().then(async () => {
       const focusedWorkspaceId = getFocusedWindowWorkspaceId();
 
       windowMenuItems.push({ type: 'separator' });
-      for (const wsId of openTabIds) {
+      for (const wsId of openWorkspaceIds) {
         const label = workspaceTitles.get(wsId) || wsId;
         windowMenuItems.push({
           label,
           type: 'radio',
           checked: wsId === focusedWorkspaceId,
           click: () => {
-            const focusedWindow = BrowserWindow.getFocusedWindow();
-            if (focusedWindow && !focusedWindow.isDestroyed()) {
-              focusedWindow.webContents.send('navigate', `/workspace/${wsId}`);
+            const windowId = getWindowIdForWorkspace(wsId);
+            if (windowId !== undefined) {
+              const win = BrowserWindow.fromId(windowId);
+              if (win && !win.isDestroyed()) {
+                if (win.isMinimized()) {
+                  win.restore();
+                }
+                win.focus();
+              }
             }
           },
         });
