@@ -89,8 +89,12 @@
         result.push(a);
       }
     }
-    // Sort by most recently updated first
+    // Sort: coordinator first, then by most recently updated
     return result.sort((a, b) => {
+      const aCoord = isCoordinatorAgent(a);
+      const bCoord = isCoordinatorAgent(b);
+      if (aCoord && !bCoord) return -1;
+      if (!aCoord && bCoord) return 1;
       const aTime = new Date(a.updatedAt || a.createdAt || 0).getTime();
       const bTime = new Date(b.updatedAt || b.createdAt || 0).getTime();
       return bTime - aTime;
@@ -101,6 +105,14 @@
   const activeAgentCount = $derived(
     workspaceAgentSessions.filter((s) => s.isStreaming || s.isProcessing).length,
   );
+
+  // Check if an agent is the coordinator (must be a spec-writer specialist)
+  function isCoordinatorAgent(agent: AgentSummary): boolean {
+    return agent.metadata?.specialist === 'spec-writer';
+  }
+
+  // Whether the workspace has a coordinator
+  const hasCoordinator = $derived(reactiveAgents.some(isCoordinatorAgent));
 </script>
 
 <div class={cn('overview-panel h-full overflow-y-auto', className)}>
@@ -145,7 +157,27 @@
         </button>
       {:else}
         <div class="space-y-1">
-          {#each reactiveAgents as agent (agent.id)}
+          {#each reactiveAgents as agent, i (agent.id)}
+            {#if hasCoordinator && isCoordinatorAgent(agent) && i === 0}
+              <div class="pt-0.5 pb-0.5">
+                <span class="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider"
+                  >Coordinator</span
+                >
+              </div>
+            {/if}
+            {#if hasCoordinator && !isCoordinatorAgent(agent)}
+              {@const isFirstNonCoordinator = reactiveAgents.slice(0, i).every(isCoordinatorAgent)}
+              {#if isFirstNonCoordinator}
+                <div class="pt-2 pb-0.5">
+                  <span class="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider"
+                    >Your Agents</span
+                  >
+                  <p class="text-[10px] text-muted-foreground/75 mt-0.5">
+                    The Coordinator can delegate and verify tasks for these agents
+                  </p>
+                </div>
+              {/if}
+            {/if}
             <AgentCard
               agentId={agent.id}
               agentName={agent.name}

@@ -44,6 +44,22 @@ Review changes before committing.
 | Change title/tags | \`update_note_metadata\` ✅ |
 | Replace entire note | \`set_note_content\` ⚠️ |
 
-**CRITICAL**: "Add to the spec" means \`add_to_note\`, not \`set_note_content\` (which replaces everything).`;
+**CRITICAL**: "Add to the spec" means \`add_to_note\`, not \`set_note_content\` (which replaces everything).
+
+## Response Organization
+
+Use \`<group:Name>\` tags to organize long responses into collapsible sections.
+
+\`\`\`
+<group:Setup>
+[reading context, searching codebase...]
+</group>
+
+<group:Working>
+Here's what I'm doing...
+</group>
+\`\`\`
+
+Rules: one group per phase, no nesting, keep names to 1-3 words. Both \`</group:Name>\` and \`</group>\` work as closing tags.`;
 
 export default INSTRUCTION;

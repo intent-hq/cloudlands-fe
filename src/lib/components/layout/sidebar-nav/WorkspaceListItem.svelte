@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { faCheck, faThumbtack, faFolder } from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faThumbtack } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import WorkspacePhaseIndicator from '$lib/components/workspace/WorkspacePhaseIndicator.svelte';
@@ -8,6 +8,7 @@
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import type { Workspace } from '$shared/types';
   import { PullRequestStatus } from '$shared/types';
+  import { cn } from '$lib/utils';
 
   interface Props {
     workspace: Workspace;
@@ -21,9 +22,13 @@
     hideRepoAvatar?: boolean;
     onMarkAsRead?: (e: MouseEvent) => void;
     onTogglePin?: (e: MouseEvent) => void;
-    onClick?: () => void;
+    onClick?: (e?: MouseEvent | KeyboardEvent) => void;
+    /** Called when the mouse enters this item */
+    onHover?: () => void;
     /** Whether this item is highlighted via keyboard navigation */
     highlighted?: boolean;
+    /** Whether to suppress hover styling (when keyboard navigation is active) */
+    suppressHover?: boolean;
   }
 
   let {
@@ -37,7 +42,9 @@
     onMarkAsRead,
     onTogglePin,
     onClick,
+    onHover,
     highlighted = false,
+    suppressHover = false,
   }: Props = $props();
 
   const phaseInfo = $derived(deriveWorkspacePhase(workspace));
@@ -74,41 +81,25 @@
     );
   });
 
-  function getGitHubAvatarUrl(owner: string, size: number = 32): string {
-    return `https://github.com/${owner}.png?size=${size}`;
-  }
-
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') onClick?.();
+    if (e.key === 'Enter') onClick?.(e);
   }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="group relative flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left
-    {isCurrent ? 'bg-sidebar' : highlighted ? 'bg-sidebar' : 'hover:bg-sidebar'}"
+  class={cn(
+    'group relative flex w-full cursor-pointer items-start gap-2 px-3 py-2 text-left',
+    isCurrent ? 'bg-background' : highlighted ? 'bg-sidebar' : !suppressHover && 'hover:bg-sidebar',
+  )}
   role="button"
   tabindex="0"
-  onclick={() => onClick?.()}
+  onclick={(e) => onClick?.(e)}
   onkeydown={handleKeydown}
+  onmouseenter={() => onHover?.()}
 >
-  <!-- Left column: repo avatar + status indicator side by side -->
-  <div class="flex items-center gap-2 shrink-0">
-    {#if !hideRepoAvatar}
-      {#if workspace.repositoryOwner}
-        <img
-          src={getGitHubAvatarUrl(workspace.repositoryOwner)}
-          alt={workspace.repositoryOwner}
-          class="size-3.5 rounded-full shrink-0"
-          loading="lazy"
-          onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
-        />
-      {:else}
-        <span class="text-muted-foreground/50 shrink-0 size-3.5 flex items-center justify-center">
-          <Fa icon={faFolder} size="xs" />
-        </span>
-      {/if}
-    {/if}
+  <!-- Left column: status indicator -->
+  <div class="flex items-center shrink-0 mt-[3px]">
     <div class="shrink-0 relative">
       <WorkspacePhaseIndicator phase={phaseInfo.phase} progress={buildProgress} size={14} />
       {#if isRunning}
@@ -121,81 +112,102 @@
     </div>
   </div>
 
-  <!-- Content: single row -->
-  <div class="flex-1 min-w-0 flex items-center gap-1.5">
-    <span
-      class="truncate text-[13px] flex-1 min-w-0
-      {isCurrent
-        ? 'font-medium text-foreground'
-        : workspace.title
-          ? 'text-foreground'
-          : 'text-muted-foreground/70'}"
-    >
-      {workspace.title || 'Untitled'}
-    </span>
-
-    <!-- Agent avatars -->
-    {#if isRunning && streamingAgentIds.length > 0}
-      <div class="flex items-center -space-x-1.5 shrink-0">
-        {#each streamingAgentIds.slice(0, 3) as agentId (agentId)}
-          <AugieAvatarWithState {agentId} size={14} state="running" />
-        {/each}
-        {#if streamingAgentIds.length > 3}
-          <div class="ml-1 text-[10px] text-muted-foreground font-medium">
-            +{streamingAgentIds.length - 3}
-          </div>
-        {/if}
-      </div>
-    {:else if agentInfos.length > 0}
-      <div class="flex items-center -space-x-1.5 shrink-0">
-        {#each agentInfos.slice(0, 3) as agent (agent.id)}
-          <AugieAvatarWithState
-            agentId={agent.id}
-            size={14}
-            state={agent.status === 'streaming' || agent.status === 'processing'
-              ? 'running'
-              : 'idle'}
-            specialist={agent.specialist}
-          />
-        {/each}
-        {#if agentInfos.length > 3}
-          <div class="ml-1 text-[10px] text-muted-foreground/50 font-medium">
-            +{agentInfos.length - 3}
-          </div>
-        {/if}
-      </div>
-    {/if}
-
-    <!-- PR status pill -->
-    {#if prStatus}
-      {@const statusColor =
-        prStatus === PullRequestStatus.Merged
-          ? 'bg-purple-500/10 text-purple-500'
-          : prStatus === PullRequestStatus.Open
-            ? 'bg-emerald-500/10 text-emerald-500'
-            : prStatus === PullRequestStatus.Draft
-              ? 'bg-muted-foreground/10 text-muted-foreground/60'
-              : 'bg-red-500/10 text-red-500'}
-      <span class="text-[9px] font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}">
-        PR{prNumber ? ` #${prNumber}` : ''}
+  <!-- Content: two rows -->
+  <div class="flex-1 min-w-0 flex flex-col gap-0.5">
+    <!-- Row 1: title + agents + PR + time -->
+    <div class="flex items-center gap-1.5">
+      <span
+        class="truncate text-[13px] flex-1 min-w-0
+        {isCurrent
+          ? 'font-medium text-foreground'
+          : workspace.title
+            ? 'text-foreground'
+            : 'text-muted-foreground/70'}"
+      >
+        {workspace.title || 'Untitled'}
       </span>
-    {/if}
 
-    <span
-      class="shrink-0 {onTogglePin || (isUnread && onMarkAsRead) ? 'group-hover:opacity-0' : ''}"
-    >
-      <RelativeTime
-        date={workspace.lastActivity || workspace.updatedAt}
-        class="text-[11px] text-muted-foreground/50 whitespace-nowrap"
-        compact
-      />
-    </span>
+      <!-- Agent avatars -->
+      {#if isRunning && streamingAgentIds.length > 0}
+        <div class="flex items-center -space-x-1.5 shrink-0">
+          {#each streamingAgentIds.slice(0, 3) as agentId (agentId)}
+            <AugieAvatarWithState {agentId} size={14} state="running" />
+          {/each}
+          {#if streamingAgentIds.length > 3}
+            <div class="ml-1 text-[10px] text-muted-foreground font-medium">
+              +{streamingAgentIds.length - 3}
+            </div>
+          {/if}
+        </div>
+      {:else if agentInfos.length > 0}
+        <div class="flex items-center -space-x-1.5 shrink-0">
+          {#each agentInfos.slice(0, 3) as agent (agent.id)}
+            <AugieAvatarWithState
+              agentId={agent.id}
+              size={14}
+              state={agent.status === 'streaming' || agent.status === 'processing'
+                ? 'running'
+                : 'idle'}
+              specialist={agent.specialist}
+            />
+          {/each}
+          {#if agentInfos.length > 3}
+            <div class="ml-1 text-[10px] text-muted-foreground/50 font-medium">
+              +{agentInfos.length - 3}
+            </div>
+          {/if}
+        </div>
+      {/if}
+
+      <!-- PR status pill -->
+      {#if prStatus}
+        {@const statusColor =
+          prStatus === PullRequestStatus.Merged
+            ? 'bg-purple-500/10 text-purple-500'
+            : prStatus === PullRequestStatus.Open
+              ? 'bg-emerald-500/10 text-emerald-500'
+              : prStatus === PullRequestStatus.Draft
+                ? 'bg-muted-foreground/10 text-muted-foreground/60'
+                : 'bg-red-500/10 text-red-500'}
+        <span class="text-[9px] font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}">
+          PR{prNumber ? ` #${prNumber}` : ''}
+        </span>
+      {/if}
+
+      <span
+        class="shrink-0 {onTogglePin || (isUnread && onMarkAsRead)
+          ? highlighted
+            ? 'opacity-0'
+            : suppressHover
+              ? ''
+              : 'group-hover:opacity-0'
+          : ''}"
+      >
+        <RelativeTime
+          date={workspace.lastActivity || workspace.updatedAt}
+          class="text-[11px] text-muted-foreground/50 whitespace-nowrap"
+          compact
+        />
+      </span>
+    </div>
+
+    <!-- Row 2: repo info -->
+    {#if !hideRepoAvatar && workspace.repositoryOwner && workspace.repositoryName}
+      <div class="truncate text-[11px] text-muted-foreground/70">
+        {workspace.repositoryOwner}/{workspace.repositoryName}
+      </div>
+    {/if}
   </div>
 
   <!-- Hover actions (absolute positioned) -->
   {#if onTogglePin || (isUnread && onMarkAsRead)}
     <div
-      class="absolute right-0 top-1.5 px-2 bg-sidebar flex opacity-0 group-hover:opacity-100 items-center gap-0.5"
+      class="absolute right-0 top-1.5 px-2 flex items-center gap-0.5 bg-[inherit]
+        {highlighted
+        ? 'opacity-100'
+        : suppressHover
+          ? 'opacity-0'
+          : 'opacity-0 group-hover:opacity-100'}"
     >
       {#if isUnread && onMarkAsRead}
         <button

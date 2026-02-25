@@ -113,34 +113,34 @@
       variant="ghost"
       value=""
       onchange={handleRepoChange}
-      triggerClass="pl-1.5 pr-1 font-medium bg-background! py-0.75! rounded-none ml-1"
+      triggerClass="pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none ml-1"
     />
   {:else if isNewRepo}
     <!-- New repo mode: show create with repo selector -->
-    <Fa icon={faPlus} size="sm" class="text-muted-foreground ml-0.75 mr-2 shrink-0" />
+    <Fa icon={faPlus} size="sm" class="ml-0.75 mr-2 shrink-0" />
     <span class="text-sm text-muted-foreground whitespace-nowrap shrink-0">Create new repo</span>
     <RepoSelector
       variant="ghost"
       value={repoPath}
       onchange={handleRepoChange}
-      triggerClass="pl-1.5 pr-1 font-medium bg-background! py-0.75! rounded-none ml-1"
+      triggerClass="pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none ml-1"
     />
   {:else if repoType === 'github' && githubUrl}
     <!-- GitHub clone flow -->
-    <GitRepoIcon size={16} class="text-muted-foreground ml-0.75 -mb-px mr-2 shrink-0" />
+    <GitRepoIcon size={16} class="ml-0.75 -mb-px mr-2 shrink-0" />
     <span class="text-sm text-muted-foreground whitespace-nowrap shrink-0">Clone</span>
     <RepoSelector
       variant="ghost"
       value={repoPath}
       onchange={handleRepoChange}
-      triggerClass="pl-1.5 pr-1 font-medium bg-background! py-0.75! rounded-none ml-1"
+      triggerClass="pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none ml-1"
     />
     <span class="text-sm text-muted-foreground whitespace-nowrap shrink-0 ml-1"
       >and create worktree off</span
     >
     <BranchSelector
       variant="ghost"
-      triggerClass="pl-1.5 pr-1.5 font-medium bg-background! py-0.75! rounded-none overflow-hidden"
+      triggerClass="pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none overflow-hidden"
       value={branch}
       repoPath={repoPath || ''}
       repoType={repoType as 'local' | 'github'}
@@ -163,7 +163,7 @@
       variant="ghost"
       value={remoteSetup.name}
       onchange={handleRepoChange}
-      triggerClass="pl-1.5 pr-1 font-medium bg-background! py-0.75! rounded-none ml-1"
+      triggerClass="pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none ml-1"
     />
     <span
       class="text-xs text-muted-foreground/70 whitespace-nowrap shrink-0 ml-1 font-mono truncate max-w-60"
@@ -172,21 +172,23 @@
       {remoteDisplayPath}
     </span>
     <span class="text-sm text-muted-foreground whitespace-nowrap shrink-0 mx-1 ml-2">off</span>
-    <span class="text-sm font-medium whitespace-nowrap shrink-0 font-mono">{remoteSetup.branch || 'main'}</span>
+    <span class="text-sm font-medium whitespace-nowrap shrink-0 font-mono"
+      >{remoteSetup.branch || 'main'}</span
+    >
   {:else}
     <!-- Local repo flow -->
-    <GitRepoIcon size={16} class="text-muted-foreground ml-0.75 -mb-px mr-2 shrink-0" />
+    <GitRepoIcon size={16} class="ml-0.75 -mb-px mr-2 shrink-0" />
     <span class="text-sm text-muted-foreground whitespace-nowrap shrink-0">Work on</span>
     <RepoSelector
       variant="ghost"
       value={repoPath}
       onchange={handleRepoChange}
-      triggerClass="pl-1.5 pr-1 font-medium bg-background! py-0.75! rounded-none ml-1"
+      triggerClass="pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none ml-1"
     />
     <span class="text-sm text-muted-foreground whitespace-nowrap shrink-0 mx-1 ml-2">off</span>
     <BranchSelector
       variant="ghost"
-      triggerClass="pl-1.5 pr-1.5 font-medium bg-background! py-0.75! rounded-none overflow-hidden"
+      triggerClass="pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none overflow-hidden"
       value={branch}
       repoPath={repoPath || ''}
       repoType={repoType as 'local' | 'github'}

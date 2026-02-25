@@ -177,9 +177,19 @@ export function createFileExplorerStore(
       // Guard against invalid workspace IDs (e.g., "new" from /workspace/new route)
       if (currentWorkspaceId && isValidWorkspaceId(currentWorkspaceId)) {
         try {
-          // Initialize the stores if needed - setWorkspace handles duplicate calls
-          // and already loads workspace data internally
-          await fileTrackingStore.setWorkspace(currentWorkspaceId);
+          // Wait for the store to be ready if it's already initializing for our workspace.
+          // Don't call setWorkspace() here - the workspace page is the authority for that.
+          // Calling setWorkspace() with a potentially stale ID can hijack the singleton store
+          // and cause other components (e.g., SidebarChangesPanel) to get stuck on loading.
+          if (fileTrackingStore.currentWorkspaceId !== currentWorkspaceId) {
+            // Store is on a different workspace - skip git status loading,
+            // we'll get it on the next refresh after the store switches
+            logger.debug('[Git Status] Store on different workspace, skipping', {
+              storeWorkspaceId: fileTrackingStore.currentWorkspaceId,
+              currentWorkspaceId,
+            });
+            return;
+          }
 
           // Load fresh git status
           await gitStore.loadStatus(WorkspaceIdFn(currentWorkspaceId), true);

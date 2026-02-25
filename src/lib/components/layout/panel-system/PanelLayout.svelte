@@ -28,11 +28,13 @@
   import { fade } from 'svelte/transition';
   import { agentService } from '$features/agent/agent.service';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { layoutSettings } from '$features/layout/layout-settings.svelte';
   import { notesStateManager } from '$features/notes/notes.store.svelte';
   import { NoteId } from '$shared/types/branded-ids';
   import { renameWithUndo } from '$lib/utils/reversible-actions';
   import { sessionStore } from '$features/agent/browser';
   import { invoke, listenSync } from '$lib/electron-bridge';
+  import { IPC_CHANNELS } from '$shared/ipc-registry';
 
   const logger = createLogger('PanelLayout');
 
@@ -65,7 +67,7 @@
   // instead of the main app when the browser panel is active.
   $effect(() => {
     const isBrowser = layoutManager.focusedContent.type === 'browser';
-    invoke('window:set-browser-focused', { browserFocused: isBrowser }).catch(() => {
+    invoke(IPC_CHANNELS.WINDOW.SET_BROWSER_FOCUSED, { browserFocused: isBrowser }).catch(() => {
       // Silently ignore errors (e.g., if main process handler not ready)
     });
   });
@@ -1005,7 +1007,7 @@
 
 <div class="panel-layout h-full w-full flex flex-col">
   <!-- Main panel area -->
-  <div class="flex-1 min-h-0 overflow-hidden p-3 pl-0">
+  <div class="flex-1 min-h-0 overflow-hidden {layoutSettings.sidebarSide === 'left' ? 'p-3 pl-0' : 'p-3 pr-0'}">
     {#if layoutManager.layout}
       {@const currentFocusedPanelId = layoutManager.focusedPanelId}
       <PanelContainer

@@ -8,6 +8,7 @@
 import type { AgentSession, AgentMessage, FileOperation } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { AuggieTextParser } from './auggie-text-parser';
+import { stripGroupTags } from './text-utils';
 
 export interface AgentPeekData {
   id: string;
@@ -97,11 +98,13 @@ export function getAgentPeekData(agent: AgentSession | null | undefined): AgentP
 function extractMessageText(msg: AgentMessage): string {
   if (msg.contentBlocks && Array.isArray(msg.contentBlocks)) {
     // Extract text from content blocks
-    const textContent = msg.contentBlocks
-      .filter((block: any) => block.type === 'text')
-      .map((block: any) => block.text || block.content || '')
-      .join(' ')
-      .trim();
+    const textContent = stripGroupTags(
+      msg.contentBlocks
+        .filter((block: any) => block.type === 'text')
+        .map((block: any) => block.text || block.content || '')
+        .join(' ')
+        .trim(),
+    );
 
     // If we have text content, return it
     if (textContent) {

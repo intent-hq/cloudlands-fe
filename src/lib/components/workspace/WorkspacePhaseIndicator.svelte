@@ -74,6 +74,8 @@
       />
     {:else if phase === 'reviewing'}
       <circle {cx} {cy} r={circleR * 0.6} fill={color} />
+    {:else if phase === 'shipped'}
+      <circle {cx} {cy} r={circleR} fill={color} />
     {/if}
   </svg>
 

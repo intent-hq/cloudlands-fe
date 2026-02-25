@@ -6,6 +6,17 @@
 export { stripMarkdownFormatting } from '$shared/utils-client';
 
 /**
+ * Strip `<group:Name>` and `</group>` (or `</group:Name>`) tags from text.
+ * These are internal markers used for response grouping and should never be
+ * shown to the user in previews, agent cards, or other plain-text contexts.
+ */
+const GROUP_TAG_STRIP_REGEX = /<group:[^>]+>|<\/group(?::[^>]+)?>/g;
+export function stripGroupTags(text: string): string {
+  if (!text) return text;
+  return text.replace(GROUP_TAG_STRIP_REGEX, '').trim();
+}
+
+/**
  * Patterns that are not meaningful content (markdown artifacts, arrows, etc.)
  */
 const NON_MEANINGFUL_PATTERNS = [
@@ -43,8 +54,12 @@ function isMeaningfulLine(line: string): boolean {
 export function getLastMeaningfulLine(text: string): string {
   if (!text) return '';
 
+  // Strip group tags before extracting meaningful lines
+  const cleaned = stripGroupTags(text);
+  if (!cleaned) return '';
+
   // Split into lines and work backwards
-  const lines = text.split('\n');
+  const lines = cleaned.split('\n');
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim();
     if (isMeaningfulLine(line)) {

@@ -2294,7 +2294,11 @@ export class WorkspaceService {
         changes: request,
       });
 
-      logger.info('Workspace updated', { workspaceId: workspace.id });
+      logger.info('Workspace updated', {
+        workspaceId: workspace.id,
+        changedFields: Object.keys(rest).filter((k) => k !== 'id'),
+        ...(request.title !== undefined ? { newTitle: request.title } : {}),
+      });
 
       return { ok: true, data: workspace };
     } catch (error) {

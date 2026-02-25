@@ -57,7 +57,7 @@
         <Fa icon={faFolder} size="sm" />
       </span>
     {/if}
-    <span class="flex-1 text-[13px] font-mediumx text-muted-foreground">{label}</span>
+    <span class="flex-1 text-[13px] font-medium text-muted-foreground/75">{label}</span>
   </button>
   <div class="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-0">
     {#if isDev}

@@ -570,10 +570,26 @@ export class UnifiedEventBus extends EventEmitter {
   }
 
   /**
+   * Domain events that must be broadcast to ALL windows regardless of workspace scope.
+   * These events affect global UI elements (e.g., workspace sidebar) that are
+   * rendered in every window, not just the workspace-specific page.
+   */
+  private static readonly GLOBAL_BROADCAST_EVENTS: ReadonlySet<DomainEvent> = new Set([
+    'workspace:created',
+    'workspace:updated',
+    'workspace:deleting',
+    'workspace:deleted',
+    'workspace:archived',
+  ]);
+
+  /**
    * Broadcast a domain event to renderer windows and STDIO.
    * Uses workspace-scoped targeting when the event data contains a workspaceId,
    * so that events are only sent to windows viewing the relevant workspace.
    * Falls back to broadcasting to all windows for events without workspace context.
+   *
+   * Exception: workspace lifecycle events (created/updated/deleted/archived) are
+   * always broadcast to ALL windows since they affect the sidebar workspace list.
    */
   private broadcastDomainEvent<E extends DomainEvent>(
     eventName: E,
@@ -587,7 +603,10 @@ export class UnifiedEventBus extends EventEmitter {
       const workspaceId = (safeData as any)?.workspaceId;
       let targetWindows: BrowserWindow[];
 
-      if (workspaceId) {
+      // Workspace lifecycle events must reach ALL windows (sidebar shows all workspaces)
+      const forceGlobalBroadcast = UnifiedEventBus.GLOBAL_BROADCAST_EVENTS.has(eventName);
+
+      if (workspaceId && !forceGlobalBroadcast) {
         const windowIds = getWindowIdsForWorkspace(workspaceId);
         if (windowIds.length > 0) {
           targetWindows = windowIds
@@ -598,12 +617,19 @@ export class UnifiedEventBus extends EventEmitter {
           targetWindows = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
         }
       } else {
-        // No workspace context - broadcast to all windows
+        // No workspace context or global broadcast - send to all windows
         targetWindows = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
       }
 
       for (const window of targetWindows) {
         window.webContents.send(eventName, safeData);
+      }
+
+      if (targetWindows.length === 0) {
+        logger.warn('No target windows for domain event broadcast', {
+          eventName,
+          workspaceId,
+        });
       }
     } catch (error) {
       logger.error('Failed to broadcast domain event to renderer windows', {

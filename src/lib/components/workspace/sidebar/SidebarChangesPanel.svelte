@@ -564,6 +564,16 @@
     } else if (!isLoading && storeWsId === workspaceId && !hasLoadedForWorkspace) {
       // Loading finished for current workspace
       hasLoadedForWorkspace = true;
+    } else if (!storeLoading && storeWsId !== workspaceId && !hasLoadedForWorkspace) {
+      // Recovery: Store completed loading for a DIFFERENT workspace than ours.
+      // This can happen when stale callers (e.g., file-explorer-store during cleanup)
+      // call setWorkspace() with an old workspace ID, hijacking the singleton store.
+      // Re-trigger setWorkspace for our workspace to recover.
+      logger.warn('[SidebarChangesPanel] Store on wrong workspace, re-initializing', {
+        expected: workspaceId,
+        actual: storeWsId,
+      });
+      fileTrackingStore.setWorkspace(workspaceId);
     }
   });
 

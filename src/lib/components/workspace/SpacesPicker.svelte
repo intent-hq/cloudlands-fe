@@ -18,7 +18,7 @@
   import { faBars, faHome, faPlus } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import type { DropdownItemProps } from '$lib/components/ui/dropdown/types';
-  import { WINDOW_CHANNELS } from '$shared/ipc';
+  import { IPC_CHANNELS } from '$shared/ipc-registry';
 
   interface Props {
     workspaceId?: string;
@@ -103,7 +103,7 @@
     if (openInNewWindow) {
       // Open in a new Electron window
       try {
-        await invoke(WINDOW_CHANNELS.OPEN_NEW, { route });
+        await invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route });
       } catch (error) {
         // Fallback to regular navigation if IPC fails
         console.warn('Failed to open new window, navigating instead:', error);

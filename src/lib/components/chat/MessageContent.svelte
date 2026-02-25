@@ -9,7 +9,17 @@
   import { PatchBlockContent } from '$lib/components/ui/diff';
   import DigestCard from './DigestCard.svelte';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
-  import { parseAgentMessage, parseSuggestedPrompts, groupParsedBlocks, groupContentBlocks, type ParsedContent, type RenderBlock, type GroupedBlock, type ContentBlockGroup, type RenderContentBlock } from '$lib/utils/messageParser';
+  import {
+    parseAgentMessage,
+    parseSuggestedPrompts,
+    groupParsedBlocks,
+    groupContentBlocks,
+    type ParsedContent,
+    type RenderBlock,
+    type GroupedBlock,
+    type ContentBlockGroup,
+    type RenderContentBlock,
+  } from '$lib/utils/messageParser';
   import ResponseGroup from './ResponseGroup.svelte';
 
   // Dynamically import MermaidRenderer to reduce bundle size (used infrequently)
@@ -227,12 +237,8 @@
   {:else if parsedBlock.type === 'diff'}
     <ChatDiffViewer diff={parsedBlock.content} filePath={parsedBlock.metadata?.path} />
   {:else if parsedBlock.type === 'commit_message'}
-    <div
-      class="commit-message-block p-3 my-2 rounded-md bg-background border border-border"
-    >
-      <div class="text-xs font-medium text-muted-foreground mb-1.5">
-        Generated Commit Message
-      </div>
+    <div class="commit-message-block p-3 my-2 rounded-md bg-background border border-border">
+      <div class="text-xs font-medium text-muted-foreground mb-1.5">Generated Commit Message</div>
       <div class="font-mono text-sm whitespace-pre-wrap text-foreground">
         {parsedBlock.content}
       </div>
@@ -286,12 +292,15 @@
           {@render renderParsedContentBlock(renderBlock as ParsedContent)}
         {/each}
       {:else}
-        <!-- Fallback to regular MarkdownViewer -->
-        <MarkdownViewer
-          content={block.text}
-          {isStreaming}
-          onFileClick={(path) => handleOpenFile({ path })}
-        />
+        <!-- Only render fallback if text has content after stripping suggested prompts -->
+        {@const cleanedText = parseSuggestedPrompts(block.text).cleanedContent}
+        {#if cleanedText.trim()}
+          <MarkdownViewer
+            content={cleanedText}
+            {isStreaming}
+            onFileClick={(path) => handleOpenFile({ path })}
+          />
+        {/if}
       {/if}
     </div>
   {:else if block.type === 'tool_use'}
@@ -325,7 +334,11 @@
               {@const nestedToolResult = toolResultsMap.get(nestedToolBlock.id)}
               {@const nestedToolState = toolStates.get(nestedToolBlock.id) || 'completed'}
               {@const nestedResultContent = nestedToolResult ? nestedToolResult.content : null}
-              <ToolCall toolUse={nestedToolBlock} toolState={nestedToolState} result={nestedResultContent} />
+              <ToolCall
+                toolUse={nestedToolBlock}
+                toolState={nestedToolState}
+                result={nestedResultContent}
+              />
             {/if}
           {/each}
         {/if}
@@ -345,7 +358,12 @@
   {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
     {#if block.type === 'content_group'}
       {@const group = block as ContentBlockGroup}
-      <ResponseGroup name={group.name} isStreaming={group.isStreaming} blocks={group.children}>
+      <ResponseGroup
+        name={group.name}
+        isStreaming={group.isStreaming}
+        isLast={blockIndex === groupedBlocks.length - 1}
+        blocks={group.children}
+      >
         {#snippet children()}
           {#each group.children as childBlock, childIndex (`${blockIndex}-group-${childIndex}`)}
             {@render renderContentBlock(childBlock, `${blockIndex}-${childIndex}`, blockIndex)}

@@ -13,6 +13,7 @@
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { onMount } from 'svelte';
   import { getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
+  import Header from '../ui/Header.svelte';
 
   interface Props {
     agents?: AgentSession[];
@@ -217,6 +218,11 @@
     ).length;
   });
 
+  // Whether the workspace has a coordinator agent (must be a spec-writer specialist)
+  const hasCoordinator = $derived(
+    topLevelForegroundAgents.some((a) => getAgentSpecialistId(a) === 'spec-writer'),
+  );
+
   // Fall back to regular list when delegations exist (tree heights are variable)
   const shouldUseVirtual = $derived(
     useVirtualScrolling && topLevelForegroundAgents.length > 20 && delegationMap.size === 0,
@@ -240,12 +246,24 @@
 {#snippet agentTree(agentList: AgentSession[], depth: number, showCoordinatorBanner?: boolean)}
   {#each agentList as agent, i (agent.id)}
     {#if showCoordinatorBanner && i === 0 && isCoordinatorAgent(agent)}
-      <div class="px-2 pt-1 pb-0.5">
-        <span class="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider"
-          >Coordinator</span
-        >
+      <div class="pt-1 pb-0.5">
+        <Header size={6}>Coordinator</Header>
       </div>
     {/if}
+
+    <!-- Section header before the first non-coordinator agent when a coordinator exists -->
+    {#if showCoordinatorBanner && hasCoordinator && !isCoordinatorAgent(agent) && depth === 0}
+      {@const isFirstNonCoordinator = agentList.slice(0, i).every(isCoordinatorAgent)}
+      {#if isFirstNonCoordinator}
+        <div class="pt-2.5 pb-0.5">
+          <Header size={6}>Your Agents</Header>
+          <p class="text-xs text-muted-foreground/75 mt-0.5">
+            The Coordinator can delegate and verify tasks for these agents
+          </p>
+        </div>
+      {/if}
+    {/if}
+
     <AgentCard
       agentId={agent.id}
       isBackground={isBackgroundAgent(agent)}

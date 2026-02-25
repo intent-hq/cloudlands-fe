@@ -18,7 +18,6 @@
   import { unifiedIdService } from '$shared/services/unified-id.service';
   import { createAgentTypeId } from '$shared/types/agent.types';
   import {
-    faArrowRight,
     faMagicWandSparkles,
     faPaperclip,
     faSpinner,
@@ -1485,7 +1484,7 @@
         initialAgent,
       });
 
-      if (!result.ok) throw new Error(result.error || 'Failed to create space');
+      if (!result.ok) throw new Error(result.error || 'Failed to create workspace');
 
       const workspace = result.data;
 
@@ -1497,6 +1496,19 @@
         clearPanelLayout(workspace.id);
       } catch (error) {
         logger.debug('Could not clear panel layout', { error });
+      }
+
+      // Clear any stale workspace storage state (drawer state, main panel, etc.)
+      // for this workspace ID. When workspace IDs are reused, stale drawer state
+      // can cause the workspace page to open a non-existent agent from a previous
+      // workspace, leading to spurious agent creation.
+      try {
+        const { workspaceStorageManager } = await import(
+          '$features/workspace/workspace-storage-manager'
+        );
+        workspaceStorageManager.clearState(workspace.id);
+      } catch (error) {
+        logger.debug('Could not clear workspace storage state', { error });
       }
 
       // Set workspace default model to the EFFECTIVE model (the one the agent will actually use).
@@ -1682,7 +1694,7 @@
         }, 100);
       }
     } catch (err) {
-      error = err instanceof Error ? getGitErrorMessage(err.message) : 'Failed to create space';
+      error = err instanceof Error ? getGitErrorMessage(err.message) : 'Failed to create workspace';
     } finally {
       isCreating = false;
     }
@@ -2206,7 +2218,7 @@
       {/if}
 
       <!-- Agent picker row -->
-      <div class="w-full min-w-0 flex flex-wrap items-center gap-2">
+      <div class="w-full min-w-0 flex flex-wrap items-center gap-2 pt-1 pb-4">
         <div class="flex-1 min-w-fit flex-col">
           <!-- Repo + Branch picker row (above border) -->
           {#if isExpanded}
@@ -2251,8 +2263,7 @@
                   {navigator.userAgent?.includes('Mac') ? '⌘' : 'Ctrl'} + ↵
                 </span>
               {/if}
-              <span>Create space</span>
-              <Fa icon={faArrowRight} size="sm" class="ml-1 mr-0.5" />
+              <span>Create workspace</span>
             {/if}
           </Button>
         </div>

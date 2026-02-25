@@ -599,9 +599,14 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
     return node;
   }
 
-  // When true, openTab / openTabInAdjacentOrSplit silently reject spec-note
-  // tabs.  The workspace page sets this to `true` when a spec-writer agent is
-  // pending and clears it right before triggering the animated slide-in.
+  // When true, openTab / openTabInAdjacentOrSplit / reopenClosedTab silently
+  // reject spec-note tabs.  The workspace page sets this to `true` when a
+  // spec-writer agent is pending and clears it right before triggering the
+  // animated slide-in.
+  //
+  // IMPORTANT: Every method that can add a tab to a panel must check this flag.
+  // Currently guarded: openTab, openTabInAdjacentOrSplit, reopenClosedTab.
+  // Methods that move existing tabs (moveTabToPanel, etc.) don't need the guard.
   let deferSpecTab = false;
 
   const manager = {
@@ -1357,6 +1362,18 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
     reopenClosedTab(): boolean {
       if (recentlyClosed.length === 0) {
         logger.debug('No recently closed tabs to reopen');
+        return false;
+      }
+
+      // ── Spec-note guard ──
+      // Peek at the tab before removing it from the queue. If it's a spec-note
+      // and deferral is active, leave it in the queue and skip it.
+      const next = recentlyClosed[0];
+      if (deferSpecTab && next.tab.type === 'note' && next.tab.noteId === 'spec') {
+        logger.info(
+          '[reopenClosedTab] BLOCKED spec-note tab — deferSpecTab is active',
+          { workspaceId },
+        );
         return false;
       }
 

@@ -17,9 +17,9 @@
   import { fly } from 'svelte/transition';
 
   const cardMeta: Partial<Record<SidebarNavItem, { title: string; description: string }>> = {
-    'new-workspace': { title: 'New Space', description: 'Create a new workspace' },
-    active: { title: 'Active Spaces', description: 'Running, unread, and pinned spaces' },
-    'all-workspaces': { title: 'All Spaces', description: 'Browse all your workspaces' },
+    'new-workspace': { title: 'Create new workspace', description: '' },
+    active: { title: 'Active workspaces', description: '' },
+    'all-workspaces': { title: 'All workspaces', description: '' },
   };
 
   interface Props {

@@ -1528,30 +1528,64 @@
 
         // If we didn't open a streaming agent, restore the persisted drawer state
         // This prevents the flash where we show the persisted agent briefly before switching to streaming
-        if (!hasOpenedStreamingAgent) {
+        //
+        // IMPORTANT: Skip restoring persisted drawer state when we already have an initial
+        // agent open (newly created workspace). The persisted state may contain a stale agent
+        // ID from a previous workspace with the same ID, which would cause a spurious second
+        // agent to be created when the ChatPanel mounts for the non-existent agent.
+        const hasInitialAgentOpen = !!initialAgentId;
+        if (hasInitialAgentOpen) {
+          logger.info(
+            '[WorkspacePage] Skipping persisted drawer restore - initial agent already open',
+            {
+              workspaceId: capturedWorkspaceId,
+              initialAgentId,
+            },
+          );
+        }
+        if (!hasOpenedStreamingAgent && !hasInitialAgentOpen) {
           const persistedState = workspaceState?.getPersistedState();
           if (persistedState?.drawer?.open && persistedState?.drawer?.itemId) {
-            logger.info('[WorkspacePage] Restoring persisted drawer state after agent load', {
-              workspaceId: capturedWorkspaceId,
-              drawer: persistedState.drawer,
-            });
-            // Also open in panel layout for the new panel-based UI
-            // The drawer system is the old UI, but we need to support both during transition
-            if (persistedState.drawer.type === 'agent') {
-              // Find the agent to get its name
-              const agent = restoredAgents.find(
-                (a: AgentSession) => a.id === persistedState.drawer?.itemId,
+            // Validate that the persisted agent actually exists in the restored agents list
+            // to prevent opening stale agent IDs from previous workspaces
+            const persistedAgentExists =
+              persistedState.drawer.type !== 'agent' ||
+              restoredAgents.some(
+                (a: AgentSession) => String(a.id) === String(persistedState.drawer?.itemId),
               );
-              // Use focusIfExists: false to preserve panel layout's persisted active tab state
-              // The panel layout already stores which tab was active, so we shouldn't override it
-              openAgentInLayout(
-                persistedState.drawer.itemId,
-                agent?.name || 'Agent',
-                capturedWorkspaceId,
-                { focusIfExists: false },
+
+            if (!persistedAgentExists) {
+              logger.info(
+                '[WorkspacePage] Skipping persisted drawer state - agent not found in restored agents',
+                {
+                  workspaceId: capturedWorkspaceId,
+                  persistedAgentId: persistedState.drawer.itemId,
+                  restoredAgentIds: restoredAgents.map((a: AgentSession) => a.id),
+                },
               );
+            } else {
+              logger.info('[WorkspacePage] Restoring persisted drawer state after agent load', {
+                workspaceId: capturedWorkspaceId,
+                drawer: persistedState.drawer,
+              });
+              // Also open in panel layout for the new panel-based UI
+              // The drawer system is the old UI, but we need to support both during transition
+              if (persistedState.drawer.type === 'agent') {
+                // Find the agent to get its name
+                const agent = restoredAgents.find(
+                  (a: AgentSession) => a.id === persistedState.drawer?.itemId,
+                );
+                // Use focusIfExists: false to preserve panel layout's persisted active tab state
+                // The panel layout already stores which tab was active, so we shouldn't override it
+                openAgentInLayout(
+                  persistedState.drawer.itemId,
+                  agent?.name || 'Agent',
+                  capturedWorkspaceId,
+                  { focusIfExists: false },
+                );
+              }
+              workspaceState?.openDrawer(persistedState.drawer.type, persistedState.drawer.itemId);
             }
-            workspaceState?.openDrawer(persistedState.drawer.type, persistedState.drawer.itemId);
           } else if (restoredAgents.length > 0) {
             // No persisted drawer state, but we have agents
             // Check if the panel layout already has tabs - if not, open the most recent agent
@@ -2171,22 +2205,33 @@
     }
   });
 
-  // Slide in the spec panel when the spec note is first populated with content.
-  // For new workspaces, the layout starts as a single panel (agent only). Once the
-  // spec-writer agent actually writes content to the spec note, we split the panel
-  // and open the spec note with a slide-in animation.
+  // Open the spec panel when the spec note is populated with content.
   //
-  // IMPORTANT: The animated slide-in ONLY triggers from a `note:updated` IPC event,
-  // meaning the agent is actively writing to the spec right now. If the spec already
-  // has content (returning to an existing workspace), we open it normally without
-  // animation via a delayed fallback.
+  // This effect handles TWO scenarios:
+  //
+  // 1. **New workspace (isDeferring=true):** The layout starts as a single panel
+  //    (agent only). When the spec-writer agent writes content, we split the panel
+  //    and open the spec note with a slide-in animation. An 8-second fallback timer
+  //    (must exceed the backend's 5s NOTE_UPDATE_DEBOUNCE_MS) handles the case where
+  //    the spec already has content (stale sessionStorage).
+  //
+  // 2. **Existing workspace (isDeferring=false):** The spec tab may not be in the
+  //    saved layout (user closed it, or it was never persisted). When the agent
+  //    writes to the spec, we open it normally without animation.
+  //
+  // In both cases, the trigger is a `note:updated` IPC event from the agent's
+  // set_note_content tool call.
   $effect(() => {
     const capturedWorkspaceId = safeWorkspace?.id;
     if (!capturedWorkspaceId) return;
 
-    // Only set up the watcher if spec deferral is active for this workspace
     const layoutManager = untrack(() => getPanelLayoutManager(capturedWorkspaceId));
-    if (!untrack(() => layoutManager.isDeferringSpecTab)) return;
+    const isDeferring = untrack(() => layoutManager.isDeferringSpecTab);
+
+    logger.info('[WorkspacePage] Spec panel watcher active', {
+      workspaceId: capturedWorkspaceId,
+      isDeferring,
+    });
 
     let hasOpened = false;
 
@@ -2237,7 +2282,9 @@
     }
 
     // Helper: open the spec panel normally WITHOUT animation.
-    // Used when spec already has content (returning visit with stale sessionStorage keys).
+    // Used in two scenarios:
+    //   1. Returning visit with stale sessionStorage keys (fallback timer)
+    //   2. Agent writes to spec on an existing workspace where spec tab isn't open
     function openSpecNormally() {
       if (hasOpened) return;
       hasOpened = true;
@@ -2245,16 +2292,17 @@
       const allTabs = Object.values(layoutManager.layout.panels).flatMap((p) => p.tabs);
       const hasSpec = allTabs.some((t) => t.type === 'note' && t.noteId === SPEC_NOTE_ID);
       if (hasSpec) {
-        layoutManager.setDeferSpecTab(false);
+        if (isDeferring) layoutManager.setDeferSpecTab(false);
         cleanupDeferralKeys();
         return;
       }
 
-      logger.info('[WorkspacePage] Spec already had content (returning visit) — opening normally', {
+      logger.info('[WorkspacePage] Opening spec panel (no animation)', {
         workspaceId: capturedWorkspaceId,
+        isDeferring,
       });
 
-      layoutManager.setDeferSpecTab(false);
+      if (isDeferring) layoutManager.setDeferSpecTab(false);
       layoutManager.openTabInAdjacentOrSplit(
         {
           type: 'note',
@@ -2269,9 +2317,16 @@
     }
 
     // Listen for note:updated events on the spec note.
-    // The spec-writer agent writes to the spec via set_note_content which emits
-    // this event. We trigger the ANIMATED slide-in only from this event path,
-    // because it means the agent is actively writing right now.
+    // The agent writes to the spec via set_note_content which emits this event.
+    // - When deferring (new workspace): triggers animated slide-in
+    // - When not deferring (existing workspace): opens spec panel normally
+    //
+    // NOTE: The event payload varies depending on the emission path:
+    //   - Domain events (flat): { noteId, workspaceId, content, changes: {...} }
+    //   - WorkspaceEvents (wrapped): { type, workspaceId, data: { noteId, ... } }
+    // We extract noteId/workspaceId from both formats, but content is NOT reliably
+    // present in the event (WorkspaceEvents omit it). Always fall back to
+    // notesStateManager.spec for content checks.
     const unsubNoteUpdated = listenSync('note:updated', (event: any) => {
       if (hasOpened) return;
       const payload = event.payload || {};
@@ -2281,40 +2336,107 @@
       // Only care about spec note updates for this workspace
       if (noteId !== 'spec' || eventWorkspaceId !== capturedWorkspaceId) return;
 
-      // Check if the spec actually has content now
-      const content = payload.content || payload.changes?.content;
+      // Check if the spec actually has content now.
+      // Prefer event payload content (available from domain events), but always
+      // fall back to the notes store (the canonical source of truth).
+      const eventContent = payload.content || payload.data?.content || payload.changes?.content;
       const specNote = notesStateManager.spec;
-      const specContent = content || specNote?.content || '';
+      const specContent = eventContent || specNote?.content || '';
 
       if (specContent.trim().length > 0) {
-        logger.info('[WorkspacePage] Spec note:updated with content — triggering slide-in', {
+        logger.info('[WorkspacePage] Spec note:updated — opening spec panel', {
           workspaceId: capturedWorkspaceId,
           contentLength: specContent.trim().length,
+          isDeferring,
         });
-        slideInSpecPanel();
+        if (isDeferring) {
+          slideInSpecPanel();
+        } else {
+          openSpecNormally();
+        }
       }
     });
 
-    // Delayed fallback: if after 3 seconds the spec hasn't been opened via
+    // Delayed fallback: if after 8 seconds the spec hasn't been opened via
     // note:updated (i.e. the agent isn't actively writing), check if the spec
     // already has content. If so, this is a returning visit with stale
     // sessionStorage keys — open the spec normally without animation.
     // If the spec is still empty, the note:updated listener will handle it later.
-    const fallbackTimer = setTimeout(() => {
-      if (hasOpened) return;
-      const specNote = notesStateManager.spec;
-      if (specNote?.content && specNote.content.trim().length > 0) {
-        logger.info('[WorkspacePage] Fallback: spec has content but no note:updated received — opening normally', {
-          workspaceId: capturedWorkspaceId,
-          contentLength: specNote.content.trim().length,
-        });
-        openSpecNormally();
-      }
-    }, 3000);
+    // Only relevant when deferring — otherwise the spec was already handled at load time.
+    //
+    // NOTE: This timeout MUST be longer than the backend's NOTE_UPDATE_DEBOUNCE_MS
+    // (currently 5 seconds in workspace-event-service.ts). The backend debounces
+    // rapid note:updated events, so we need to wait for the debounce to flush
+    // before concluding that no event is coming. Using 8s to provide a safe margin.
+    const FALLBACK_TIMER_MS = 8000;
+    const fallbackTimer = isDeferring
+      ? setTimeout(() => {
+          if (hasOpened) return;
+          const specNote = notesStateManager.spec;
+          if (specNote?.content && specNote.content.trim().length > 0) {
+            logger.info('[WorkspacePage] Fallback: spec has content but no note:updated received — opening normally', {
+              workspaceId: capturedWorkspaceId,
+              contentLength: specNote.content.trim().length,
+            });
+            openSpecNormally();
+          }
+        }, FALLBACK_TIMER_MS)
+      : null;
+
+    // Agent idle fallback: when the spec-writer agent finishes streaming
+    // without ever writing to the spec note, the note:updated event never
+    // fires and deferSpecTab stays true forever — blocking all future
+    // attempts to open the spec tab. Listen for agent:idle to clear the
+    // deferral and open the spec if it has content.
+    const unsubAgentIdle = isDeferring
+      ? listenSync('agent:idle', (event: any) => {
+          if (hasOpened) return;
+          const payload = event.payload || event.data || {};
+          const eventWorkspaceId = payload.workspaceId;
+          if (eventWorkspaceId !== capturedWorkspaceId) return;
+
+          // The spec-writer agent finished — check if spec has content
+          const specNote = notesStateManager.spec;
+          const specContent = specNote?.content?.trim() || '';
+
+          if (specContent.length > 0) {
+            logger.info('[WorkspacePage] Agent idle with spec content — sliding in spec panel', {
+              workspaceId: capturedWorkspaceId,
+              contentLength: specContent.length,
+            });
+            slideInSpecPanel();
+          } else {
+            // Agent finished without writing spec content.
+            // Clear the deferral so the spec tab can be opened later
+            // (e.g. manually or by a subsequent agent).
+            logger.info('[WorkspacePage] Agent idle with no spec content — clearing deferral', {
+              workspaceId: capturedWorkspaceId,
+            });
+            layoutManager.setDeferSpecTab(false);
+            cleanupDeferralKeys();
+            hasOpened = true;
+          }
+        })
+      : null;
+
+    // Safety-net fallback: if after 90 seconds neither note:updated nor
+    // agent:idle has cleared the deferral, force-clear it to prevent the
+    // spec tab from being permanently blocked.
+    const safetyTimer = isDeferring
+      ? setTimeout(() => {
+          if (hasOpened) return;
+          logger.info('[WorkspacePage] Safety fallback: clearing stuck deferSpecTab after timeout', {
+            workspaceId: capturedWorkspaceId,
+          });
+          openSpecNormally();
+        }, 90_000)
+      : null;
 
     return () => {
       unsubNoteUpdated();
-      clearTimeout(fallbackTimer);
+      if (unsubAgentIdle) unsubAgentIdle();
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      if (safetyTimer) clearTimeout(safetyTimer);
     };
   });
 
@@ -2620,11 +2742,24 @@
     const handleOpenNote = (event: Event) => {
       const detail = (event as CustomEvent)?.detail;
       const noteId = detail?.noteId;
-      const openInAdjacentPanel = detail?.openInAdjacentPanel ?? false;
+      let openInAdjacentPanel = detail?.openInAdjacentPanel ?? false;
       const sourcePanelId = detail?.sourcePanelId;
       if (noteId) {
         event.stopImmediatePropagation();
         const layoutManager = getPanelLayoutManager(wsId);
+
+        // If the source panel has an active agent tab, always open the note in an
+        // adjacent panel so the agent view is not covered by the new tab.
+        if (!openInAdjacentPanel && sourcePanelId) {
+          const sourcePanel = layoutManager.getPanel(sourcePanelId);
+          if (sourcePanel) {
+            const activeTab = sourcePanel.tabs.find((t) => t.id === sourcePanel.activeTabId);
+            if (activeTab?.type === 'agent') {
+              openInAdjacentPanel = true;
+            }
+          }
+        }
+
         // Try to get the note title from the workspace
         const note = safeWorkspace?.notes?.find((n: { id: string }) => n.id === noteId);
         const title = note?.title || noteId;
@@ -2744,12 +2879,23 @@
     if (!agentId) return;
     recentlyCreatedAgents.add(agentId);
     recentlyCreatedAgents = new Set(recentlyCreatedAgents);
+    // Auto-remove after 10 seconds — by then the agent should be in the agents list.
+    // This prevents the set from growing unboundedly during long sessions.
+    setTimeout(() => {
+      recentlyCreatedAgents.delete(agentId);
+      recentlyCreatedAgents = new Set(recentlyCreatedAgents);
+    }, 10_000);
   }
 
   function markTerminalRecentlyCreated(terminalId: string) {
     if (!terminalId) return;
     recentlyCreatedTerminals.add(terminalId);
     recentlyCreatedTerminals = new Set(recentlyCreatedTerminals);
+    // Auto-remove after 10 seconds — by then the terminal should be in the terminals list.
+    setTimeout(() => {
+      recentlyCreatedTerminals.delete(terminalId);
+      recentlyCreatedTerminals = new Set(recentlyCreatedTerminals);
+    }, 10_000);
   }
 
   // Track last checked drawer state to prevent infinite loops
@@ -2871,6 +3017,15 @@
         // If the deleted agent was selected, clear the selection
         if (state?.drawer?.itemId === agentId) {
           closeDrawer();
+        }
+
+        // Close any panel tabs for this agent to unmount ChatPanel
+        // Without this, the ChatPanel stays mounted and may try to re-create the session
+        try {
+          const layoutManager = getPanelLayoutManager(workspaceId);
+          layoutManager.closeTabsMatching((tab) => tab.type === 'agent' && tab.agentId === agentId);
+        } catch {
+          // Layout manager may not exist yet during early initialization
         }
 
         // Clear initialAgentId if we're deleting the initial agent

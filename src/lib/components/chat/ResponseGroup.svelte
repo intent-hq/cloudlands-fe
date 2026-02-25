@@ -19,14 +19,23 @@
   interface Props {
     name: string;
     isStreaming?: boolean;
+    /** When true, the group stays expanded after streaming ends (e.g., last group in response) */
+    isLast?: boolean;
     children: Snippet;
     blocks?: ContentBlock[];
     class?: string;
   }
 
-  let { name, isStreaming = false, children, blocks, class: className = '' }: Props = $props();
+  let {
+    name,
+    isStreaming = false,
+    isLast = false,
+    children,
+    blocks,
+    class: className = '',
+  }: Props = $props();
 
-  // Auto-expand while streaming, collapse when done
+  // Auto-expand while streaming, collapse when done (unless it's the last group)
   let isExpanded = $state(false);
 
   // Track if user has manually toggled
@@ -34,7 +43,7 @@
 
   $effect(() => {
     if (!userToggled) {
-      isExpanded = isStreaming;
+      isExpanded = isStreaming || isLast;
     }
   });
 

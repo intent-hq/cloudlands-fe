@@ -598,7 +598,16 @@ export class FirstVisitManager {
       const payload = event.payload || {};
       // noteId can be at top level (domain events) or inside data (workspace events)
       const noteId = payload.noteId || payload.data?.noteId;
-      const content = payload.content || payload.changes?.content;
+      // Content extraction: try all known paths. Domain events have content at
+      // top level; WorkspaceEvents have it nested in data or metadata.changes.
+      // NOTE: WorkspaceEvents (NoteChangedEvent) do NOT include content in their
+      // `data` field — only noteId, title, path, action. Content may be in
+      // metadata.changes if the original domain event included it.
+      const content =
+        payload.content ||
+        payload.data?.content ||
+        payload.changes?.content ||
+        payload.metadata?.changes?.content;
       const eventWorkspaceId = payload.workspaceId;
 
       logger.info('[FirstVisitManager] note:updated event received', {

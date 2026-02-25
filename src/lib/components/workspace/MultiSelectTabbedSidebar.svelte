@@ -205,7 +205,7 @@
     localStorage.setItem(getOrderStorageKey(), JSON.stringify(order));
   }
 
-  let selectedTabs = $state<Set<TabId>>(new Set(['agents', 'context']));
+  let selectedTabs = $state<Set<TabId>>(new Set(['overview']));
   let tabOrder = $state<TabId[]>(TAB_DEFINITIONS.map((t) => t.id));
   let previousWorkspaceId = $state<string | null>(null);
 
@@ -331,7 +331,7 @@
   $effect(() => {
     const currentWorkspaceId = workspaceId;
     if (!currentWorkspaceId) {
-      selectedTabs = new Set(['agents', 'context']);
+      selectedTabs = new Set(['overview']);
       previousWorkspaceId = null;
       // Reset fly/slide state to prevent overlapping panels
       flyDirection = 0;

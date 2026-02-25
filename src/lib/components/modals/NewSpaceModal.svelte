@@ -58,8 +58,11 @@
 </script>
 
 {#if open}
-    <div class="absolute inset-0 bg-background/50 backdrop-blur cursor-pointer z-50"
-    onclick={close} transition:fade={{ duration: 150 }} />
+  <div
+    class="absolute inset-0 bg-background/50 backdrop-blur cursor-pointer z-50"
+    onclick={close}
+    transition:fade={{ duration: 150 }}
+  />
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
     class="fixed inset-0 z-60 flex items-start justify-center overflow-y-auto pointer-events-none"
@@ -77,7 +80,7 @@
     >
       <!-- Header -->
       <div class="px-1 pb-4 flex items-center justify-between shrink-0">
-        <h2 class="text-lg font-medium tracking-[-0.02em] text-foreground/90">New Space</h2>
+        <h2 class="text-lg font-medium tracking-[-0.02em] text-foreground/90">New Workspace</h2>
         <Button
           variant="ghost-light"
           size="icon-xs"

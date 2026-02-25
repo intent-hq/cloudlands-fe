@@ -19,6 +19,7 @@
   import Fa from 'svelte-fa';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import { invoke } from '$lib/electron-bridge';
+  import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { Kbd } from '$lib/components/ui/kbd';
   import { createLogger } from '$lib/utils/client-logger';
   import { untrack } from 'svelte';
@@ -227,7 +228,7 @@
     // Check if cmd/ctrl key is pressed for opening in new window
     if (event?.metaKey || event?.ctrlKey) {
       try {
-        await invoke('window:open-new', { route: `/workspace/${value}` });
+        await invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route: `/workspace/${value}` });
       } catch (error) {
         logger.error('Failed to open new window:', error);
         await goto(`/workspace/${value}`);
@@ -281,7 +282,7 @@
         class="flex-1 flex items-center gap-2 px-2 py-1 cursor-pointer text-sm text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/50 rounded-md transition-colors"
       >
         <Fa icon={faPlus} class="w-3 h-3 opacity-50" />
-        <span>New Space</span>
+        <span>New Workspace</span>
       </button>
       {#if lastOpenedWorkspace}
         <button

@@ -19,9 +19,9 @@
       case 'home':
         return { title: 'Home', description: 'Your workspace dashboard' };
       case 'active':
-        return { title: 'Active', description: 'Running, unread, and pinned spaces' };
+        return { title: 'Active workspaces', description: '' };
       case 'all-workspaces':
-        return { title: 'All Spaces', description: 'Browse all your workspaces' };
+        return { title: 'All workspaces', description: '' };
       case 'settings':
         return { title: 'Settings', description: 'Accounts, agents, and preferences' };
       default:

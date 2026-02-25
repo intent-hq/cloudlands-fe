@@ -9,6 +9,8 @@
    * Supports mark-as-read and pin/unpin actions.
    */
   import { goto } from '$app/navigation';
+  import { invoke } from '$lib/electron-bridge';
+  import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { sidebarNavStore } from '../sidebar-nav.store.svelte';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
@@ -155,10 +157,25 @@
     );
   });
 
-  function handleClick(workspaceId: string) {
+  async function handleClick(workspaceId: string, event?: MouseEvent | KeyboardEvent) {
+    const route = `/workspace/${workspaceId}`;
+
+    // Command-click (or Ctrl-click on non-Mac) opens in new window
+    if (event?.metaKey || event?.ctrlKey) {
+      try {
+        await invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route });
+      } catch (error) {
+        console.warn('Failed to open new window, navigating instead:', error);
+        goto(route);
+      }
+      return;
+    }
+
+    keyboardNavActive = false;
+    highlightedIndex = -1;
     sidebarNavStore.closeAll();
     unreadTrackingService.clearUnreadForWorkspace(workspaceId);
-    goto(`/workspace/${workspaceId}`);
+    goto(route);
   }
 
   function handleMarkAsRead(e: MouseEvent, workspaceId: string) {
@@ -173,18 +190,29 @@
 
   // Flat list of all visible workspace IDs for keyboard nav
   const allVisibleIds = $derived([
-    ...filteredRunning.map((r) => r.workspace.id),
     ...filteredUnread.map((u) => u.workspace.id),
+    ...filteredRunning.map((r) => r.workspace.id),
     ...filteredPinned.map((p) => p.workspace.id),
   ]);
+
+  let keyboardNavActive = $state(false);
+  let hoveredIndex = $state(-1);
 
   function handleSearchKeydown(e: KeyboardEvent) {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
+      if (!keyboardNavActive && hoveredIndex >= 0) {
+        highlightedIndex = hoveredIndex;
+      }
       highlightedIndex = Math.min(highlightedIndex + 1, allVisibleIds.length - 1);
+      keyboardNavActive = true;
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
+      if (!keyboardNavActive && hoveredIndex >= 0) {
+        highlightedIndex = hoveredIndex;
+      }
       highlightedIndex = Math.max(highlightedIndex - 1, 0);
+      keyboardNavActive = true;
     } else if (
       e.key === 'Enter' &&
       highlightedIndex >= 0 &&
@@ -195,9 +223,18 @@
     } else if (e.key === 'Home') {
       e.preventDefault();
       highlightedIndex = 0;
+      keyboardNavActive = true;
     } else if (e.key === 'End') {
       e.preventDefault();
       highlightedIndex = Math.max(allVisibleIds.length - 1, 0);
+      keyboardNavActive = true;
+    }
+  }
+
+  function handleMouseMove() {
+    if (keyboardNavActive) {
+      keyboardNavActive = false;
+      highlightedIndex = -1;
     }
   }
 </script>
@@ -205,6 +242,7 @@
 <div
   class="flex flex-col pb-2 outline-none"
   onkeydown={handleSearchKeydown}
+  onmousemove={handleMouseMove}
   role="listbox"
   tabindex="0"
 >
@@ -228,8 +266,30 @@
       </div>
     {/if}
 
+    <!-- Unread section -->
+    {#if filteredUnread.length > 0}
+      <div class="px-3 pt-2 pb-1 flex items-center gap-1.5">
+        <Header size={3}>Unread</Header>
+      </div>
+      {#each filteredUnread as { workspace, unreadIds }, i (workspace.id)}
+        <WorkspaceListItem
+          {workspace}
+          isUnread={true}
+          unreadAgentIds={unreadIds}
+          isPinned={sidebarNavStore.isPinned(workspace.id)}
+          highlighted={keyboardNavActive && highlightedIndex === i}
+          suppressHover={keyboardNavActive}
+          onHover={() => (hoveredIndex = i)}
+          onMarkAsRead={(e) => handleMarkAsRead(e, workspace.id)}
+          onTogglePin={(e) => handleTogglePin(e, workspace.id)}
+          onClick={(e) => handleClick(workspace.id, e)}
+        />
+      {/each}
+    {/if}
+
     <!-- Running section -->
     {#if filteredRunning.length > 0}
+      {@const unreadOffset = filteredUnread.length}
       <div class="px-3 pt-2 pb-1 flex items-center gap-1.5">
         <Header size={3}>Running</Header>
         <span class="text-[10px] text-muted-foreground/30">{runningWorkspaces.length}</span>
@@ -240,36 +300,18 @@
           isRunning={true}
           streamingAgentIds={streamingIds}
           isPinned={sidebarNavStore.isPinned(workspace.id)}
-          highlighted={highlightedIndex === i}
+          highlighted={keyboardNavActive && highlightedIndex === unreadOffset + i}
+          suppressHover={keyboardNavActive}
+          onHover={() => (hoveredIndex = unreadOffset + i)}
           onTogglePin={(e) => handleTogglePin(e, workspace.id)}
-          onClick={() => handleClick(workspace.id)}
-        />
-      {/each}
-    {/if}
-
-    <!-- Unread section -->
-    {#if filteredUnread.length > 0}
-      {@const runningOffset = filteredRunning.length}
-      <div class="px-3 pt-2 pb-1 flex items-center gap-1.5">
-        <Header size={3}>Unread</Header>
-      </div>
-      {#each filteredUnread as { workspace, unreadIds }, i (workspace.id)}
-        <WorkspaceListItem
-          {workspace}
-          isUnread={true}
-          unreadAgentIds={unreadIds}
-          isPinned={sidebarNavStore.isPinned(workspace.id)}
-          highlighted={highlightedIndex === runningOffset + i}
-          onMarkAsRead={(e) => handleMarkAsRead(e, workspace.id)}
-          onTogglePin={(e) => handleTogglePin(e, workspace.id)}
-          onClick={() => handleClick(workspace.id)}
+          onClick={(e) => handleClick(workspace.id, e)}
         />
       {/each}
     {/if}
 
     <!-- Pinned section -->
     {#if filteredPinned.length > 0}
-      {@const pinnedOffset = filteredRunning.length + filteredUnread.length}
+      {@const pinnedOffset = filteredUnread.length + filteredRunning.length}
       <div class="px-3 pt-2 pb-1 flex items-center gap-1.5">
         <Header size={3}>Pinned</Header>
       </div>
@@ -277,9 +319,11 @@
         <WorkspaceListItem
           {workspace}
           isPinned={true}
-          highlighted={highlightedIndex === pinnedOffset + i}
+          highlighted={keyboardNavActive && highlightedIndex === pinnedOffset + i}
+          suppressHover={keyboardNavActive}
+          onHover={() => (hoveredIndex = pinnedOffset + i)}
           onTogglePin={(e) => handleTogglePin(e, workspace.id)}
-          onClick={() => handleClick(workspace.id)}
+          onClick={(e) => handleClick(workspace.id, e)}
         />
       {/each}
     {/if}

@@ -73,18 +73,20 @@ exact commands or steps the implementor should run
 
 ## Response Organization
 
-Use `<group:Name>` tags to organize long responses into collapsible sections.
+Use `<group:Name>` tags to organize long responses into collapsible sections that contain **multiple tool calls**. Groups collapse the tool-call-heavy parts so the user sees a clean summary.
 
-**Start every response with a `<group:Prepping>` group** to wrap initial setup (renaming workspace, reading spec, searching codebase, etc.). This keeps the tool-call-heavy preamble collapsed and tidy.
+**IMPORTANT**: Only use groups when the section will contain tool calls. Do NOT wrap plain text in a group — that just adds visual noise. The final summary/plan should be plain text, not inside a group.
+
+**Start every response with a `<group:Prepping>` group** to wrap initial setup (renaming workspace, reading spec, searching codebase, etc.). Keep the `</group>` tag AFTER all the tool calls in that phase, not before them:
 
 ```
 <group:Prepping>
-[rename workspace, read spec, search codebase...]
+I'll start by reading the spec and searching the codebase.
+[tool calls happen here — rename workspace, read spec, search codebase...]
+Done prepping.
 </group>
 
-<group:Planning>
 Here's the plan...
-</group>
 ```
 
-Use groups for distinct phases: **Prepping**, **Researching**, **Planning**, **Delegating**. Rules: one group per phase, no nesting, keep names to 1-3 words. Both `</group:Name>` and `</group>` work as closing tags.
+Use groups for tool-heavy phases: **Prepping**, **Researching**, **Delegating**. Do NOT put the final summary or plan inside a group — the user needs to see it directly. Rules: one group per phase, no nesting, keep names to 1-3 words. Both `</group:Name>` and `</group>` work as closing tags.

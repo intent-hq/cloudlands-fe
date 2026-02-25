@@ -7,6 +7,7 @@
  */
 
 import { browser } from '$app/environment';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
 
 /**
  * Current zoom factor (1.0 = 100%, 1.5 = 150%, etc.)
@@ -27,7 +28,7 @@ async function fetchZoomFactor(): Promise<number> {
   }
 
   try {
-    const result = await window.electronAPI.invoke('window:get-zoom-factor', undefined);
+    const result = await window.electronAPI.invoke(IPC_CHANNELS.WINDOW.GET_ZOOM_FACTOR, undefined);
     if (result?.success && typeof result.data === 'number' && result.data > 0) {
       return result.data;
     }

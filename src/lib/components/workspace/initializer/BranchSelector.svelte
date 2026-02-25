@@ -994,9 +994,8 @@
 
     try {
       // Import and use the github auth store
-      const { githubAuthStore } = await import(
-        '$features/github-auth/renderer/github-auth.store.svelte'
-      );
+      const { githubAuthStore } =
+        await import('$features/github-auth/renderer/github-auth.store.svelte');
 
       // Initialize the auth store if not already
       await githubAuthStore.initialize();
@@ -1268,9 +1267,9 @@
     <Select.Root bind:value={internalSelectedBranch} bind:open={isOpen}>
       <Select.Trigger
         {variant}
-        class={`w-full ${triggerClass} ${githubAuthNeeded === 'not-authenticated' ? 'ring-1 ring-orange-400 rounded-sm' : suggestedBranch && suggestedBranch !== internalSelectedBranch ? 'ring-1 ring-primary rounded-sm' : ''}`}
+        class={`w-full text-muted-foreground ${triggerClass} ${githubAuthNeeded === 'not-authenticated' ? 'ring-1 ring-orange-400 rounded-sm' : suggestedBranch && suggestedBranch !== internalSelectedBranch ? 'ring-1 ring-primary rounded-sm' : ''}`}
       >
-        <div class="flex items-center gap-0.75 truncate text-muted-foreground min-w-0">
+        <div class="flex items-center gap-0.75 truncate min-w-0">
           {#if githubAuthNeeded === 'not-authenticated'}
             <Fa icon={faExclamationTriangle} class="text-orange-500" size="xs" />
           {:else if hasTriggerIcon}
@@ -1407,7 +1406,9 @@
           {:else if githubAuthNeeded === 'no-access'}
             <!-- User is authenticated but doesn't have access -->
             <div class="px-2 py-2 border-l-2 border-destructive bg-destructive/10">
-              <div class="text-sm text-destructive-foreground">You don't have access to this repository.</div>
+              <div class="text-sm text-destructive-foreground">
+                You don't have access to this repository.
+              </div>
               <div class="text-sm text-muted-foreground mt-1">
                 Make sure you have permission to view this repo, or check if the URL is correct.
               </div>
@@ -1649,18 +1650,22 @@
               }}
               class="w-full flex items-start gap-3 px-2 py-1 rounded-md text-left cursor-pointer"
             >
-              <Checkbox checked={skipWorktree} class="-mb-1" onCheckedChange={() => {
-                const enabling = !skipWorktree;
-                try {
-                  onSkipWorktreeChange(enabling);
-                } catch (e) {
-                  logger.error('Error in onSkipWorktreeChange callback', e);
-                }
-                if (enabling) {
-                  selectBranch(currentBranch, true);
-                }
-                isOpen = false;
-              }} />
+              <Checkbox
+                checked={skipWorktree}
+                class="-mb-1"
+                onCheckedChange={() => {
+                  const enabling = !skipWorktree;
+                  try {
+                    onSkipWorktreeChange(enabling);
+                  } catch (e) {
+                    logger.error('Error in onSkipWorktreeChange callback', e);
+                  }
+                  if (enabling) {
+                    selectBranch(currentBranch, true);
+                  }
+                  isOpen = false;
+                }}
+              />
               <div class="items-start flex-1 min-w-0 text-[0.85rem] font-medium -mt-0.25">
                 Work directly in your folder on the <span class="font-semibold"
                   >{currentBranch}</span

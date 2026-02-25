@@ -542,7 +542,7 @@
       {isEmpty ||
     showProviderPanel ||
     showOnboarding ||
-    (!workspaceStore.hasLoaded && !hasCompletedProviderSetup)
+    !workspaceStore.hasLoaded
       ? 'flex items-center justify-center overflow-auto px-[clamp(2rem,6.25rem,6%)]'
       : 'grid gap-15 lg:grid-cols-[minmax(40rem,1fr)_2fr] px-[clamp(2rem,6.25rem,6%)] lg:pl-[clamp(2rem,6.25rem,6%)] lg:pr-0'}"
   >
@@ -609,7 +609,7 @@
     {/if}
 
     <!-- Header + Controls Bar (hidden when empty, showing provider setup, onboarding, or still loading for new users) -->
-    {#if !isEmpty && !showProviderPanel && !showOnboarding && (workspaceStore.hasLoaded || hasCompletedProviderSetup)}
+    {#if !isEmpty && !showProviderPanel && !showOnboarding && workspaceStore.hasLoaded}
       <div
         class="right-column animate-entry min-w-0 lg:pr-[clamp(2rem,6.25rem,6%)]"
         style="--entry-delay: 120ms"

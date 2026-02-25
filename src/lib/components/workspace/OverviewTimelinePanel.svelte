@@ -26,6 +26,7 @@
   import { invoke } from '$lib/electron-bridge';
   import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
   import { faFolder } from '@fortawesome/free-solid-svg-icons';
+  import Header from '../ui/Header.svelte';
 
   interface OverviewAgent {
     id: string;
@@ -295,6 +296,12 @@
 
         <!-- Non-delegated agents (hide preview unless actively running) -->
         {#if otherAgents.length > 0}
+          <div class="pt-2 pb-0.5 px-2">
+            <Header size={6}>Your Agents</Header>
+            <p class="text-xs text-muted-foreground/75 mt-0.5">
+              The Coordinator can delegate and verify tasks for these agents
+            </p>
+          </div>
           <div class="flex flex-col gap-0.5 mt-1">
             {#each otherAgents.slice(0, 3) as agent}
               <AgentCard
@@ -332,58 +339,23 @@
         </p>
       </div>
 
-      {#if primaryAgent}
-        <div class="px-2 pb-2">
+      <div class="px-2 pb-2 flex flex-col gap-0.5">
+        {#each agents.slice(0, 4) as agent}
           <AgentCard
-            agentId={primaryAgent.id}
-            showBorder
-            selected={selectedAgentId === primaryAgent.id}
-            onclick={() => onOpenAgent?.(primaryAgent!.id)}
+            agentId={agent.id}
+            selected={selectedAgentId === agent.id}
+            onclick={() => onOpenAgent?.(agent.id)}
           />
-
-          {#if otherAgents.length > 0}
-            <button
-              class="flex items-center gap-2 text-sm text-muted-foreground/70 transition-colors cursor-pointer pl-8 pr-2 py-1 rounded-md w-full hover:bg-muted/30"
-              onclick={() => onSwitchTab?.('agents')}
-            >
-              <div class="flex -space-x-1.5">
-                {#each otherAgents.slice(0, 5) as agent}
-                  <AugieAvatarWithState
-                    agentId={agent.id}
-                    state={agent.state}
-                    size={14}
-                    specialist={agent.specialist}
-                  />
-                {/each}
-              </div>
-              <span class="text-muted-foreground/50">
-                {otherAgents.length} delegated
-                {#if runningOtherCount > 0}
-                  <span class="text-emerald-500 font-medium">· {runningOtherCount} working</span>
-                {/if}
-              </span>
-            </button>
-          {/if}
-        </div>
-      {:else}
-        <div class="px-2 pb-2 flex flex-col gap-0.5">
-          {#each agents.slice(0, 3) as agent}
-            <AgentCard
-              agentId={agent.id}
-              selected={selectedAgentId === agent.id}
-              onclick={() => onOpenAgent?.(agent.id)}
-            />
-          {/each}
-          {#if agents.length > 3}
-            <button
-              class="text-[11px] text-muted-foreground/60 text-left px-2 py-0.5 flex items-center cursor-pointer"
-              onclick={() => onSwitchTab?.('agents')}
-            >
-              See all...
-            </button>
-          {/if}
-        </div>
-      {/if}
+        {/each}
+        {#if agents.length > 4}
+          <button
+            class="text-[11px] text-muted-foreground/60 text-left px-2 py-0.5 flex items-center cursor-pointer"
+            onclick={() => onSwitchTab?.('agents')}
+          >
+            See all...
+          </button>
+        {/if}
+      </div>
     </section>
   {/if}
 
@@ -395,7 +367,7 @@
       <div class="px-4 pt-3 pb-1">
         <h3 class="text-sm font-semibold text-foreground">Context</h3>
         <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight mb-2">
-          Context about the task, shared with all agents in this space.
+          Notes about the task, shared with all agents in this space.
         </p>
       </div>
       <div class="px-4 pb-3">
@@ -424,7 +396,7 @@
           <Fa icon={faArrowRight} size="xs" class="ml-auto text-muted-foreground/40 shrink-0" />
         </button>
         <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight mb-2">
-          Context about the task, shared with all agents in this space.
+          Notes about the task, shared with all agents in this space.
         </p>
       </div>
 
@@ -500,7 +472,7 @@
       <div class="px-4 pt-3 pb-1">
         <h3 class="text-sm font-semibold text-foreground">Changes</h3>
         <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight mb-2">
-          Changes made to files by agents working in this space.
+          Files changed by agents working in this space.
         </p>
       </div>
       <div class="px-4 pb-3">
@@ -532,7 +504,7 @@
           <Fa icon={faArrowRight} size="xs" class="ml-auto text-muted-foreground/40 shrink-0" />
         </button>
         <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight mb-2">
-          Changes made to files by agents working in this space.
+          Files changed by agents working in this space.
         </p>
       </div>
 
@@ -618,7 +590,7 @@
   <!-- FILES CARD                                              -->
   <!-- ═══════════════════════════════════════════════════════ -->
   <section class="bg-background/50 rounded-lg overflow-hidden">
-    <div class="px-4 pt-3 pb-1">
+    <div class="px-4 pt-3 pb-3">
       <div class="flex items-center gap-1">
         <button
           class="flex items-center gap-1 text-left cursor-pointer"
@@ -639,7 +611,7 @@
           <Fa icon={faArrowRight} size="xs" class="ml-auto text-muted-foreground/40 shrink-0" />
         </button>
       </div>
-      <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight">
+      <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight text-pretty">
         The agents in this space are working off a copy of your files.
       </p>
     </div>

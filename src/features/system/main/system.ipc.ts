@@ -752,6 +752,62 @@ export function setupSystemIPC() {
     ),
   );
 
+  /**
+   * Create a new BrowserWindow with standard app configuration.
+   * All new windows should use this to avoid config drift.
+   * Keep in sync with createWindow / createWindowForSession in main/index.ts.
+   */
+  async function createAppWindow(route?: string): Promise<BrowserWindow> {
+    const { BrowserWindow } = await import('electron');
+    const path = await import('path');
+
+    const isDarkMode = nativeTheme.shouldUseDarkColors;
+    const newWindow = new BrowserWindow({
+      width: 1920,
+      height: 1080,
+      minWidth: 800,
+      minHeight: 600,
+      show: false, // Don't show until ready to prevent white flash
+      webPreferences: {
+        // Path from dist/features/system/main/ to dist/preload/
+        preload: path.join(__dirname, '../../../preload/index.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        webviewTag: true,
+      },
+      titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+      frame: process.platform !== 'darwin',
+      ...(process.platform === 'darwin' && {
+        trafficLightPosition: { x: 9, y: 11 },
+        tabbingIdentifier: 'intent',
+      }),
+      title: 'Intent',
+      backgroundColor: isDarkMode ? '#0a0a0a' : '#ffffff',
+    });
+
+    newWindow.once('ready-to-show', () => {
+      newWindow.show();
+    });
+
+    // Load the app with the specified route
+    const isDev = process.env.NODE_ENV === 'development';
+
+    if (isDev) {
+      const devPort = process.env.DEV_PORT || '5177';
+      const baseUrl = `http://127.0.0.1:${devPort}`;
+      const url = route ? `${baseUrl}${route}` : baseUrl;
+      await newWindow.loadURL(url);
+    } else {
+      // In production, use the custom app:// protocol (same as main window)
+      // The protocol handler in main/index.ts serves files from dist/renderer
+      // and handles client-side routing for SvelteKit
+      const url = route ? `app://workspaces${route}` : 'app://workspaces/';
+      await newWindow.loadURL(url);
+    }
+
+    return newWindow;
+  }
+
   // Create new window
   ipcMain.handle(
     WINDOW_CHANNELS.CREATE,
@@ -759,53 +815,9 @@ export function setupSystemIPC() {
       WindowCreateSchema,
       async (_event, validated) => {
         try {
-          const { BrowserWindow } = await import('electron');
-          const path = await import('path');
-
-          // Create a new window with the same configuration as main window
-          // Path from dist/features/system/main/ to dist/preload/
-          const isDarkMode = nativeTheme.shouldUseDarkColors;
-          const newWindow = new BrowserWindow({
-            width: 1920,
-            height: 1080,
-            webPreferences: {
-              preload: path.join(__dirname, '../../../preload/index.js'),
-              contextIsolation: true,
-              nodeIntegration: false,
-            },
-            titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-            frame: process.platform !== 'darwin',
-            ...(process.platform === 'darwin' && {
-              trafficLightPosition: { x: 15, y: 15 },
-              tabbingIdentifier: 'intent-by-augment',
-            }),
-            title: 'Intent by Augment',
-            backgroundColor: isDarkMode ? '#0a0a0a' : '#ffffff',
-          });
-
-          // Load the app with the specified route
-          const isDev = process.env.NODE_ENV === 'development';
-
-          if (isDev) {
-            const devPort = process.env.DEV_PORT || '5177';
-            const baseUrl = `http://127.0.0.1:${devPort}`;
-            const url = validated.route ? `${baseUrl}${validated.route}` : baseUrl;
-            await newWindow.loadURL(url);
-          } else {
-            // __dirname is dist/features/system/main, renderer is at dist/renderer
-            const htmlPath = path.join(__dirname, '../../../renderer/index.html');
-            const url = validated.route
-              ? `file://${htmlPath}?initialRoute=${encodeURIComponent(validated.route)}`
-              : `file://${htmlPath}`;
-            await newWindow.loadURL(url);
-          }
-
+          const newWindow = await createAppWindow(validated.route);
           logger.info('New window created', { route: validated.route });
-
-          return {
-            success: true,
-            windowId: newWindow.id,
-          };
+          return { success: true, windowId: newWindow.id };
         } catch (error) {
           logger.error('Failed to create window', error as Error);
           return {
@@ -825,57 +837,7 @@ export function setupSystemIPC() {
       WindowOpenNewSchema,
       async (_event, validated) => {
         try {
-          const { BrowserWindow } = await import('electron');
-          const path = await import('path');
-
-          // Build window options matching the main window (see main/index.ts)
-          const windowOptions: Electron.BrowserWindowConstructorOptions = {
-            width: 1920,
-            height: 1080,
-            show: false, // Don't show until ready to prevent white flash
-            webPreferences: {
-              // Path from dist/features/system/main/ to dist/preload/
-              preload: path.join(__dirname, '../../../preload/index.js'),
-              contextIsolation: true,
-              nodeIntegration: false,
-            },
-            titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-            frame: process.platform !== 'darwin',
-            ...(process.platform === 'darwin' && {
-              trafficLightPosition: { x: 15, y: 15 },
-            }),
-          };
-
-          // Use solid background for better performance (vibrancy disabled)
-          const isDarkMode = nativeTheme.shouldUseDarkColors;
-          windowOptions.backgroundColor = isDarkMode ? '#0a0a0a' : '#ffffff';
-
-          const newWindow = new BrowserWindow(windowOptions);
-
-          // Show window once content is ready to prevent white flash
-          newWindow.once('ready-to-show', () => {
-            newWindow.show();
-          });
-
-          // Load the app with the specified route
-          const isDev = process.env.NODE_ENV === 'development';
-
-          if (isDev) {
-            // In development, append the route directly to the URL
-            const devPort = process.env.DEV_PORT || '5177';
-            const baseUrl = `http://127.0.0.1:${devPort}`;
-            const url = validated.route ? `${baseUrl}${validated.route}` : baseUrl;
-            await newWindow.loadURL(url);
-          } else {
-            // In production, use the custom app:// protocol (same as main window)
-            // The protocol handler in main/index.ts serves files from dist/renderer
-            // and handles client-side routing for SvelteKit
-            const url = validated.route
-              ? `app://workspaces${validated.route}`
-              : 'app://workspaces/';
-            await newWindow.loadURL(url);
-          }
-
+          const newWindow = await createAppWindow(validated.route);
           return { success: true, windowId: newWindow.id };
         } catch (error) {
           logger.error('Failed to open new window', error as Error);

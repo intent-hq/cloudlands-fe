@@ -491,17 +491,16 @@
     });
 
     try {
-      // Initialize the file tracking and git stores first if we have a workspace ID
-      // The stores handle duplicate initialization internally
+      // Load git status if we have a workspace ID.
+      // Don't call fileTrackingStore.setWorkspace() here - the workspace page is the
+      // authority for that. Calling it with a potentially stale workspace ID can hijack
+      // the singleton store and cause other components to get stuck on loading skeleton.
       if (wsId) {
         try {
-          await Promise.all([
-            fileTrackingStore.setWorkspace(WorkspaceId(wsId)),
-            gitStore.loadStatus(WorkspaceId(wsId)),
-          ]);
+          await gitStore.loadStatus(WorkspaceId(wsId));
         } catch (storeError) {
-          logger.warn('[FileTreeView] Failed to initialize stores:', storeError);
-          // Continue with file tree initialization even if stores fail
+          logger.warn('[FileTreeView] Failed to initialize git store:', storeError);
+          // Continue with file tree initialization even if store fails
         }
       }
 

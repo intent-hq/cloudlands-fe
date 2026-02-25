@@ -8,7 +8,6 @@
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import AgentRulesEditor from './AgentRulesEditor.svelte';
   import AutoSaveTextarea from './AutoSaveTextarea.svelte';
-  import BackgroundAgentSettings from './BackgroundAgentSettings.svelte';
   import type { AIBehaviorView } from './AIBehaviorSidebar.svelte';
   import Header from '../ui/Header.svelte';
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
@@ -239,10 +238,6 @@
 
     <!-- Actions (empty for system prompt) -->
     <div></div>
-
-    <!-- Background Agents View -->
-  {:else if activeView.type === 'background-agents'}
-    <BackgroundAgentSettings />
 
     <!-- Specialist Editor View -->
   {:else if activeView.type === 'specialist' && currentSpecialist}

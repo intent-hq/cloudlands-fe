@@ -14,6 +14,9 @@
 
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import { invoke } from '$lib/electron-bridge';
+  import { navigateToSettings, navigateBackFromSettings } from '$lib/utils/workspace-navigation';
+  import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { faHome, faPlus, faLayerGroup, faCog, faBell } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { sidebarNavStore, type SidebarNavItem } from './sidebar-nav.store.svelte';
@@ -88,10 +91,19 @@
       goto('/');
     } else if (id === 'settings') {
       sidebarNavStore.closeAll();
-      goto('/settings');
+      const isOnSettings = page.url.pathname.startsWith('/settings');
+      if (isOnSettings) {
+        navigateBackFromSettings();
+      } else {
+        navigateToSettings();
+      }
     } else if (id === 'new-workspace') {
       sidebarNavStore.closeAll();
-      window.dispatchEvent(new CustomEvent('app:open-new-space-modal', { detail: {} }));
+      // Open new space in a new window
+      invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route: '/' }).catch(() => {
+        // Fallback to modal in current window if IPC fails
+        window.dispatchEvent(new CustomEvent('app:open-new-space-modal', { detail: {} }));
+      });
     } else {
       // Toggle the persistent sidebar panel
       sidebarNavStore.togglePanel(id);

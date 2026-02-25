@@ -22,6 +22,7 @@
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import Header from '../ui/Header.svelte';
+  import { cn } from '$lib/utils';
 
   interface Props {
     toolUse: ToolUseBlock;
@@ -36,6 +37,10 @@
   );
 
   let expanded = $state(false);
+  // Only allow expanding if there are actual results to show
+  const hasResults = $derived(
+    (parsedResult?.snippets?.length ?? 0) > 0 || !!parsedResult?.content,
+  );
   let hoveredIndex = $state<number | null>(null);
   let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -65,9 +70,7 @@
   const sourceLabel = $derived(isCommitRetrieval ? 'commit history' : 'codebase');
 
   // Get the query/information request (cast to String to handle non-string values safely)
-  const query = $derived(
-    String(toolUse.input?.information_request || toolUse.input?.query || ''),
-  );
+  const query = $derived(String(toolUse.input?.information_request || toolUse.input?.query || ''));
 
   // Get snippets from parsed result
   const snippets = $derived(parsedResult?.snippets || []);
@@ -198,8 +201,10 @@
 >
   <div class="flex flex-col w-full min-w-0 pt-2 relative min-h-8">
     <button
-      class="flex flex-col text-left items-start gap-1.5 cursor-pointer"
-      onclick={() => (expanded = !expanded)}
+      class={cn('flex flex-col text-left items-start gap-1.5', hasResults ? 'cursor-pointer' : 'cursor-default')}
+      onclick={() => {
+        if (hasResults) expanded = !expanded;
+      }}
     >
       <!-- Context Engine label -->
       <div class="w-full flex mb-1">
@@ -246,8 +251,10 @@
     <!-- Query preview (truncated) -->
     {#if query}
       <button
-        class="flex-1 flex items-center gap-2 min-w-0 text-left bg-transparent border-0 p-0 cursor-pointer my-0.5"
-        onclick={() => (expanded = !expanded)}
+        class={cn('flex-1 flex items-center gap-2 min-w-0 text-left bg-transparent border-0 p-0 my-0.5', hasResults ? 'cursor-pointer' : 'cursor-default')}
+        onclick={() => {
+          if (hasResults) expanded = !expanded;
+        }}
       >
         <span class="text-foreground/70 text-sm line-clamp-2 block leading-tight">
           {query.slice(0, 600)}
@@ -255,11 +262,7 @@
       </button>
 
       {#if !expanded}
-        <div
-          class="w-full flex -ml-1 shrink"
-          role="list"
-          onmouseleave={handleMouseLeave}
-        >
+        <div class="w-full flex -ml-1 shrink" role="list" onmouseleave={handleMouseLeave}>
           {#each snippets.slice(0, 20) as snippet, i (`snippet-${i}-${snippet.path}`)}
             {@const fileName = snippet.path.split('/').pop() || snippet.path}
             {@const lineInfo = snippet.lineStart ? `:${snippet.lineStart}` : ''}

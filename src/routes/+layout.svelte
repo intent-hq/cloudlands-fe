@@ -279,7 +279,7 @@
   // Feature code dialog state
   let showFeatureCodeDialog = $state(false);
 
-  // New Space modal state
+  // New Workspace modal state
   let showNewSpaceModal = $state(false);
   let newSpaceInitialRepo = $state<InitialRepoInfo | undefined>(undefined);
 
@@ -308,6 +308,9 @@
       // Remove from DOM after fade-out transition completes
       splash.addEventListener('transitionend', () => splash.remove(), { once: true });
     }
+
+    // Remove the static drag region from app.html now that Svelte's own drag region is active
+    document.getElementById('app-drag-region')?.remove();
 
     // ===== PERF: Animation pause when tab hidden =====
     // Adds/removes 'animations-paused' class on body to pause CSS animations
@@ -1916,7 +1919,7 @@
     onClose={() => releaseNotesStore.closeModal()}
   />
 
-  <!-- New Space Modal -->
+  <!-- New Workspace Modal -->
   <NewSpaceModal
     bind:open={showNewSpaceModal}
     initialRepo={newSpaceInitialRepo}

@@ -1,5 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { invoke } from '$lib/electron-bridge';
+  import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { sidebarNavStore } from '../sidebar-nav.store.svelte';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
@@ -29,9 +31,10 @@
   let searchInputEl = $state<HTMLInputElement | null>(null);
   let highlightedIndex = $state(-1);
 
-  // Reset highlight when search query changes
+  // Reset highlight when search query or view mode changes
   $effect(() => {
     void searchQuery;
+    void viewMode;
     highlightedIndex = filteredWorkspaces.length > 0 ? 0 : -1;
   });
 
@@ -111,7 +114,7 @@
   });
 
   const statusLabels: Record<WorkspaceDisplayStatus, string> = {
-    not_started: 'Not Started',
+    not_started: 'No Code Changes',
     in_progress: 'In Progress',
     complete: 'Complete',
     pr_open: 'PR Open',
@@ -160,9 +163,24 @@
     return getUnreadAgentIds(ws).length > 0;
   }
 
-  function handleClick(workspaceId: string) {
+  async function handleClick(workspaceId: string, event?: MouseEvent | KeyboardEvent) {
+    const route = `/workspace/${workspaceId}`;
+
+    // Command-click (or Ctrl-click on non-Mac) opens in new window
+    if (event?.metaKey || event?.ctrlKey) {
+      try {
+        await invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route });
+      } catch (error) {
+        console.warn('Failed to open new window, navigating instead:', error);
+        goto(route);
+      }
+      return;
+    }
+
+    keyboardNavActive = false;
+    highlightedIndex = -1;
     sidebarNavStore.closeAll();
-    goto(`/workspace/${workspaceId}`);
+    goto(route);
   }
 
   function handleTogglePin(e: MouseEvent, workspaceId: string) {
@@ -175,23 +193,57 @@
     unreadTrackingService.clearUnreadForWorkspace(workspaceId);
   }
 
+  // Flat ordered list of workspace IDs matching the current view mode's display order
+  const allVisibleIds = $derived.by(() => {
+    if (viewMode === 'repo') {
+      return groupedByRepo.flatMap(([, group]) => group.workspaces.map((w) => w.id));
+    } else if (viewMode === 'status') {
+      return groupedByStatus.flatMap(([, workspaces]) => workspaces.map((w) => w.id));
+    }
+    return filteredWorkspaces.map((w) => w.id);
+  });
+
+  // Map from workspace ID to its position in the flat visible list (for highlighting)
+  const visibleIdIndex = $derived(
+    new Map(allVisibleIds.map((id, i) => [id, i])),
+  );
+
+  let keyboardNavActive = $state(false);
+  let hoveredIndex = $state(-1);
+
   function handleSearchKeydown(e: KeyboardEvent) {
-    const ids = filteredWorkspaces.map((w) => w.id);
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      highlightedIndex = Math.min(highlightedIndex + 1, ids.length - 1);
+      if (!keyboardNavActive && hoveredIndex >= 0) {
+        highlightedIndex = hoveredIndex;
+      }
+      highlightedIndex = Math.min(highlightedIndex + 1, allVisibleIds.length - 1);
+      keyboardNavActive = true;
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
+      if (!keyboardNavActive && hoveredIndex >= 0) {
+        highlightedIndex = hoveredIndex;
+      }
       highlightedIndex = Math.max(highlightedIndex - 1, 0);
-    } else if (e.key === 'Enter' && highlightedIndex >= 0 && highlightedIndex < ids.length) {
+      keyboardNavActive = true;
+    } else if (e.key === 'Enter' && highlightedIndex >= 0 && highlightedIndex < allVisibleIds.length) {
       e.preventDefault();
-      handleClick(ids[highlightedIndex]);
+      handleClick(allVisibleIds[highlightedIndex]);
     } else if (e.key === 'Home') {
       e.preventDefault();
       highlightedIndex = 0;
+      keyboardNavActive = true;
     } else if (e.key === 'End') {
       e.preventDefault();
-      highlightedIndex = Math.max(ids.length - 1, 0);
+      highlightedIndex = Math.max(allVisibleIds.length - 1, 0);
+      keyboardNavActive = true;
+    }
+  }
+
+  function handleMouseMove() {
+    if (keyboardNavActive) {
+      keyboardNavActive = false;
+      highlightedIndex = -1;
     }
   }
 </script>
@@ -199,6 +251,7 @@
 <div
   class="flex flex-col h-full outline-none"
   onkeydown={handleSearchKeydown}
+  onmousemove={handleMouseMove}
   role="listbox"
   tabindex="0"
 >
@@ -243,12 +296,14 @@
             unreadAgentIds={getUnreadAgentIds(workspace)}
             isUnread={isUnread(workspace)}
             isPinned={sidebarNavStore.isPinned(workspace.id)}
-            highlighted={highlightedIndex === i}
+            highlighted={keyboardNavActive && highlightedIndex === i}
+            suppressHover={keyboardNavActive}
+            onHover={() => (hoveredIndex = i)}
             onTogglePin={(e) => handleTogglePin(e, workspace.id)}
             onMarkAsRead={isUnread(workspace)
               ? (e) => handleMarkAsRead(e, workspace.id)
               : undefined}
-            onClick={() => handleClick(workspace.id)}
+            onClick={(e) => handleClick(workspace.id, e)}
           />
         {/each}
       {:else if viewMode === 'repo'}
@@ -274,11 +329,14 @@
               unreadAgentIds={getUnreadAgentIds(workspace)}
               isUnread={isUnread(workspace)}
               isPinned={sidebarNavStore.isPinned(workspace.id)}
+              highlighted={keyboardNavActive && highlightedIndex === visibleIdIndex.get(workspace.id)}
+              suppressHover={keyboardNavActive}
+              onHover={() => (hoveredIndex = visibleIdIndex.get(workspace.id) ?? -1)}
               onTogglePin={(e) => handleTogglePin(e, workspace.id)}
               onMarkAsRead={isUnread(workspace)
                 ? (e) => handleMarkAsRead(e, workspace.id)
                 : undefined}
-              onClick={() => handleClick(workspace.id)}
+              onClick={(e) => handleClick(workspace.id, e)}
             />
           {/each}
         {/each}
@@ -295,11 +353,14 @@
               unreadAgentIds={getUnreadAgentIds(workspace)}
               isUnread={isUnread(workspace)}
               isPinned={sidebarNavStore.isPinned(workspace.id)}
+              highlighted={keyboardNavActive && highlightedIndex === visibleIdIndex.get(workspace.id)}
+              suppressHover={keyboardNavActive}
+              onHover={() => (hoveredIndex = visibleIdIndex.get(workspace.id) ?? -1)}
               onTogglePin={(e) => handleTogglePin(e, workspace.id)}
               onMarkAsRead={isUnread(workspace)
                 ? (e) => handleMarkAsRead(e, workspace.id)
                 : undefined}
-              onClick={() => handleClick(workspace.id)}
+              onClick={(e) => handleClick(workspace.id, e)}
             />
           {/each}
         {/each}

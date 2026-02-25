@@ -126,7 +126,13 @@
     isSubdirectoryOfGitRepo?: boolean;
   } | null>(null);
   let recentRepos = $state<
-    Array<{ path: string; type: 'local' | 'github'; githubUrl?: string; name: string; owner?: string }>
+    Array<{
+      path: string;
+      type: 'local' | 'github';
+      githubUrl?: string;
+      name: string;
+      owner?: string;
+    }>
   >([]);
 
   // Track if the current input is a recognized GitHub URL
@@ -172,7 +178,7 @@
 
   function handleSelectRemoteSetup(setup: RemoteSetup) {
     selectedValue = setup.name;
-    inputValue = '';  // Don't contaminate the local/github input with remote server name
+    inputValue = ''; // Don't contaminate the local/github input with remote server name
     selectedRepoType = 'local'; // Keep selectedRepoType compatible with existing code
     isNewRepo = false;
     isValidPath = true;
@@ -1216,8 +1222,8 @@
 
 <div class="relative">
   <Select.Root bind:value={selectedValue} bind:open={isOpen}>
-    <Select.Trigger {variant} class={`w-full ${triggerClass}`}>
-      <div class="flex items-center gap-0.75 truncate text-muted-foreground">
+    <Select.Trigger {variant} class={`w-full text-muted-foreground ${triggerClass}`}>
+      <div class="flex items-center gap-0.75 truncate">
         <!-- {#if isNewRepo}
           <Fa icon={faPlus} size="sm" class="text-muted-foreground" />
         {:else}
@@ -1550,7 +1556,8 @@
                       alt={repo.owner}
                       class="w-4 h-4 rounded-full shrink-0"
                       loading="lazy"
-                      onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
+                      onerror={(e) =>
+                        ((e.currentTarget as HTMLImageElement).style.display = 'none')}
                     />
                   {:else}
                     <Fa

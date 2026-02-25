@@ -350,13 +350,13 @@
       </button>
     </Tooltip>
 
-    <Tooltip content="New Space" side="right" delayDuration={300}>
+    <Tooltip content="New Workspace" side="right" delayDuration={300}>
       <button
         class="action-btn w-full flex items-center gap-2 px-2 py-1.5 rounded transition-colors cursor-pointer text-muted-foreground hover:text-foreground hover:bg-muted/50"
         onclick={handleNewWorkspace}
       >
         <Fa icon={faPlus} class="w-4 h-4 shrink-0" />
-        <span class="action-label text-xs truncate">New Space</span>
+        <span class="action-label text-xs truncate">New Workspace</span>
       </button>
     </Tooltip>
   </div>

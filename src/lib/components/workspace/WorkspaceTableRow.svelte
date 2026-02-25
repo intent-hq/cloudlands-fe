@@ -7,7 +7,7 @@
   import { cn } from '$lib/utils';
   import type { Workspace } from '$shared/types';
   import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
-  import { faBoxArchive, faBoxOpen, faFolder, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import { faBoxArchive, faBoxOpen, faTrash } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Button from '../ui/button/button.svelte';
 
@@ -95,11 +95,6 @@
     }, 100);
   }
 
-  // Get GitHub avatar URL for org/user
-  function getGitHubAvatarUrl(owner: string, size: number = 32): string {
-    return `https://github.com/${owner}.png?size=${size}`;
-  }
-
   function handleDelete(e: MouseEvent) {
     e.stopPropagation();
     onDelete?.(ws);
@@ -118,7 +113,7 @@
 <div class="group relative">
   <button
     class={cn(
-      'relative flex flex-col w-full min-w-0 pl-2.25 pr-5 py-3 text-left cursor-pointer transition-colors',
+      'relative flex flex-col w-full min-w-0 pl-4.75 pr-5 py-3 text-left cursor-pointer transition-colors',
       isArchived ? 'bg-sidebar hover:bg-muted/20' : 'hover:bg-muted/30',
     )}
     onclick={(e) => onOpen(ws, e)}
@@ -128,87 +123,81 @@
     {/if}
 
     <div class="flex items-start w-full gap-2.5">
-      <!-- Left: icons column -->
-      <div class="flex items-center gap-2.5 shrink-0 pt-0.5">
-        <!-- Repo avatar when not grouped -->
-        {#if showRepoAvatar && ws.repositoryOwner}
-          <img
-            src={getGitHubAvatarUrl(ws.repositoryOwner, 32)}
-            alt={ws.repositoryOwner}
-            class="w-5 h-5 rounded-full shrink-0"
-            loading="lazy"
-            onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
-          />
-        {:else if !groupByRepo}
-          <span class="text-muted-foreground/50 shrink-0 w-5 flex justify-center">
-            <Fa icon={faFolder} size="sm" />
-          </span>
-        {/if}
+      <!-- Left: phase indicator -->
+      <div class="flex items-center shrink-0 pt-0.5">
+        <WorkspacePhaseIndicator phase={workspacePhase.phase} progress={buildProgress} />
       </div>
 
-      <!-- Right: content - single row -->
-      <div class="flex-1 min-w-0 flex items-center gap-2">
-        <div class="-my-1">
-          <WorkspacePhaseIndicator phase={workspacePhase.phase} progress={buildProgress} />
-        </div>
-        <span
-          class={cn(
-            'text-base font-medium truncate flex-1 min-w-0',
-            ws.archived || !ws.title ? 'text-muted-foreground/70' : 'text-foreground',
-          )}
-          title={ws.title || 'Untitled'}>{ws.title || 'Untitled'}</span
-        >
+      <!-- Right: content - two rows -->
+      <div class="flex-1 min-w-0 flex flex-col gap-0.5">
+        <!-- Row 1: title + agents + PR + time -->
+        <div class="flex items-center gap-2">
+          <span
+            class={cn(
+              'text-base font-medium truncate flex-1 min-w-0',
+              ws.archived || !ws.title ? 'text-muted-foreground/70' : 'text-foreground',
+            )}
+            title={ws.title || 'Untitled'}>{ws.title || 'Untitled'}</span
+          >
 
-        <!-- Agent avatars -->
-        {#if agents.length > 0}
-          <div class="flex items-center -space-x-1.5 shrink-0 pr-1">
-            {#each agents.slice(0, 4) as agent (agent.id)}
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <div
-                class="relative flex"
-                style:anchor-name="--agent-row-{ws.id}-{agent.id}"
-                onmouseenter={() => handleAgentMouseEnter(agent.id)}
-                onmouseleave={handleAgentMouseLeave}
-              >
-                <AugieAvatarWithState
-                  agentId={agent.id}
-                  state={agent.isUnread ? 'unread' : 'running'}
-                  size={16}
-                  specialist={agent.specialist}
-                />
-              </div>
-            {/each}
-            {#if agents.length > 4}
-              <div
-                class="ml-1.5 flex items-center justify-center text-[10px] text-muted-foreground/60 font-medium"
-              >
-                +{agents.length - 4}
-              </div>
-            {/if}
+          <!-- Agent avatars -->
+          {#if agents.length > 0}
+            <div class="flex items-center -space-x-1.5 shrink-0 pr-1">
+              {#each agents.slice(0, 4) as agent (agent.id)}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div
+                  class="relative flex"
+                  style:anchor-name="--agent-row-{ws.id}-{agent.id}"
+                  onmouseenter={() => handleAgentMouseEnter(agent.id)}
+                  onmouseleave={handleAgentMouseLeave}
+                >
+                  <AugieAvatarWithState
+                    agentId={agent.id}
+                    state={agent.isUnread ? 'unread' : 'running'}
+                    size={16}
+                    specialist={agent.specialist}
+                  />
+                </div>
+              {/each}
+              {#if agents.length > 4}
+                <div
+                  class="ml-1.5 flex items-center justify-center text-[10px] text-muted-foreground/60 font-medium"
+                >
+                  +{agents.length - 4}
+                </div>
+              {/if}
+            </div>
+          {/if}
+
+          <!-- PR status pill -->
+          {#if prDisplayStatus}
+            {@const statusColor =
+              prDisplayStatus === PullRequestStatus.Merged
+                ? 'bg-purple-500/10 text-purple-500'
+                : prDisplayStatus === PullRequestStatus.Open
+                  ? 'bg-emerald-500/10 text-emerald-500'
+                  : prDisplayStatus === PullRequestStatus.Draft
+                    ? 'bg-muted-foreground/10 text-muted-foreground/60'
+                    : 'bg-red-500/10 text-red-500'}
+            <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 {statusColor}">
+              PR{prDisplayNumber ? ` #${prDisplayNumber}` : ''}
+            </span>
+          {/if}
+
+          <!-- Activity time -->
+          <RelativeTime
+            date={ws.lastActivity || ws.createdAt}
+            class="text-[0.82rem] text-muted-foreground/70 whitespace-nowrap"
+            compact
+          />
+        </div>
+
+        <!-- Row 2: repo info (hidden when grouped by repo) -->
+        {#if !groupByRepo && ws.repositoryOwner && ws.repositoryName}
+          <div class="truncate text-[12px] text-muted-foreground/50">
+            {ws.repositoryOwner}/{ws.repositoryName}
           </div>
         {/if}
-
-        <!-- PR status pill -->
-        {#if prDisplayStatus}
-          {@const statusColor =
-            prDisplayStatus === PullRequestStatus.Merged
-              ? 'bg-purple-500/10 text-purple-500'
-              : prDisplayStatus === PullRequestStatus.Open
-                ? 'bg-emerald-500/10 text-emerald-500'
-                : prDisplayStatus === PullRequestStatus.Draft
-                  ? 'bg-muted-foreground/10 text-muted-foreground/60'
-                  : 'bg-red-500/10 text-red-500'}
-          <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 {statusColor}">
-            PR{prDisplayNumber ? ` #${prDisplayNumber}` : ''}
-          </span>
-        {/if}
-
-        <!-- Activity time -->
-        <RelativeTime
-          date={ws.lastActivity || ws.createdAt}
-          class="text-[0.82rem] text-muted-foreground/70 whitespace-nowrap"
-          compact
-        />
       </div>
     </div>
   </button>

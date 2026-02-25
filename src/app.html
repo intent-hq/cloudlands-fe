@@ -32,6 +32,17 @@
       }
       /* Hide splash once Svelte layout mounts */
       #splash.mounted { opacity: 0; pointer-events: none; }
+      /* Drag region available immediately so the window is draggable before Svelte mounts.
+         Once Svelte's layout renders its own drag region, this one is removed. */
+      #app-drag-region {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 35px;
+        -webkit-app-region: drag;
+        z-index: 9998;
+      }
     </style>
     <script>
       // Apply theme immediately to prevent FOUC
@@ -59,6 +70,7 @@
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">
+    <div id="app-drag-region"></div>
     <div id="splash">
       <svg width="32" viewBox="0 0 33 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <path

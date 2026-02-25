@@ -12,6 +12,7 @@
   import ConnectionsSettings from '$lib/components/settings/ConnectionsSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
   import McpServersSettings from '$lib/components/settings/McpServersSettings.svelte';
+  import BackgroundAgentSettings from '$lib/components/settings/BackgroundAgentSettings.svelte';
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
@@ -77,7 +78,7 @@
   const tabs: { id: SettingsTab; label: string }[] = [
     { id: 'accounts', label: 'Accounts' },
     { id: 'agents', label: 'Agents' },
-    { id: 'setup', label: 'Setup' },
+    { id: 'setup', label: 'Workspace Setup' },
     { id: 'fonts-colors', label: 'Fonts & Colors' },
     { id: 'general', label: 'General' },
   ];
@@ -173,7 +174,7 @@
     integrations: 'accounts',
     'mcp-servers': 'setup',
     'git-workspace': 'setup',
-    'utility-default-model': 'agents',
+    'utility-default-model': 'setup',
     notifications: 'setup',
   };
 
@@ -392,6 +393,18 @@
             MCP Servers
           </h2>
           <McpServersSettings {isAuggieProvider} />
+        </div>
+
+        <!-- Quick Actions -->
+        <div id="utility-default-model" class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            Quick Actions
+          </h2>
+          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+            <section class="px-6 py-5">
+              <BackgroundAgentSettings />
+            </section>
+          </div>
         </div>
       {/if}
 

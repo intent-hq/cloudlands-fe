@@ -336,7 +336,8 @@ Done.`;
   it('should parse ws-block:patch with literal newlines in diff (agent raw output)', () => {
     // Simulate what the agent actually sends: the diff field contains literal newline
     // characters rather than escaped \\n sequences, which breaks naive JSON.parse()
-    const input = '```ws-block:patch\n{"target":{"filePath":"README.md","diff":"--- a/README.md\n+++ b/README.md\n@@ -1,5 +1,7 @@\n # Title\n \n+New line here.\n+\n > Description","description":"Add a line"}}\n```';
+    const input =
+      '```ws-block:patch\n{"target":{"filePath":"README.md","diff":"--- a/README.md\n+++ b/README.md\n@@ -1,5 +1,7 @@\n # Title\n \n+New line here.\n+\n > Description","description":"Add a line"}}\n```';
 
     const result = parseAgentMessage(input);
 
@@ -390,7 +391,9 @@ Check it out.`;
 
     expect(result.length).toBe(1);
     expect(result[0].type).toBe('reference');
-    expect(result[0].metadata?.referenceData?.snapshot?.code).toBe('function init() { return true; }');
+    expect(result[0].metadata?.referenceData?.snapshot?.code).toBe(
+      'function init() { return true; }',
+    );
     expect(result[0].metadata?.referenceData?.snapshot?.languageId).toBe('typescript');
   });
 
@@ -458,7 +461,9 @@ Let me know when it's done.`;
     expect(result[1].type).toBe('agent_action');
     expect(result[1].content).toBe('Review the PR and suggest improvements');
     expect(result[1].metadata?.agentActionData?.agentId).toBe('agent-123');
-    expect(result[1].metadata?.agentActionData?.goal).toBe('Review the PR and suggest improvements');
+    expect(result[1].metadata?.agentActionData?.goal).toBe(
+      'Review the PR and suggest improvements',
+    );
     expect(result[1].metadata?.agentActionData?.description).toBe('Code review agent');
     expect(result[2].type).toBe('text');
     expect(result[2].content).toContain("Let me know when it's done");
@@ -598,7 +603,6 @@ Some trailing content.`;
   });
 });
 
-
 describe('parseAgentMessage - group tags', () => {
   // NOTE: Group tags are now handled at the ContentBlock level by groupContentBlocks().
   // parseAgentMessage() no longer extracts group markers — group tags are treated as plain text.
@@ -708,9 +712,7 @@ describe('groupParsedBlocks', () => {
   });
 
   it('should pass through non-grouped content', () => {
-    const input: ParsedContent[] = [
-      { type: 'text', content: 'Just plain text without groups' },
-    ];
+    const input: ParsedContent[] = [{ type: 'text', content: 'Just plain text without groups' }];
     const result = groupParsedBlocks(input);
 
     expect(result.length).toBe(1);
@@ -785,7 +787,6 @@ describe('groupParsedBlocks', () => {
   });
 });
 
-
 describe('groupContentBlocks', () => {
   // Helper to create ContentBlock
   function textBlock(text: string): ContentBlock {
@@ -817,20 +818,14 @@ describe('groupContentBlocks', () => {
     expect(result[3].type).toBe('text');
   });
 
-  it('should group text blocks within a single group', () => {
-    const blocks: ContentBlock[] = [
-      textBlock('<group:Research>Finding files...</group:Research>'),
-    ];
+  it('should unwrap single-child group to plain text block', () => {
+    const blocks: ContentBlock[] = [textBlock('<group:Research>Finding files...</group:Research>')];
     const result = groupContentBlocks(blocks);
 
+    // Single-child groups are unwrapped to their child
     expect(result.length).toBe(1);
-    expect(result[0].type).toBe('content_group');
-    const group = result[0] as ContentBlockGroup;
-    expect(group.name).toBe('Research');
-    expect(group.isStreaming).toBe(false);
-    expect(group.children.length).toBe(1);
-    expect(group.children[0].type).toBe('text');
-    expect(group.children[0].text).toBe('Finding files...');
+    expect(result[0].type).toBe('text');
+    expect((result[0] as ContentBlock).text).toBe('Finding files...');
   });
 
   it('should group text + tool_use + tool_result blocks', () => {
@@ -874,37 +869,33 @@ describe('groupContentBlocks', () => {
     expect(group.children[2].text).toBe('I have decided.');
   });
 
-  it('should handle multiple groups in sequence', () => {
+  it('should unwrap multiple single-child groups in sequence', () => {
     const blocks: ContentBlock[] = [
       textBlock('<group:First>content 1</group:First>'),
       textBlock('<group:Second>content 2</group:Second>'),
     ];
     const result = groupContentBlocks(blocks);
 
+    // Single-child groups are unwrapped
     expect(result.length).toBe(2);
-    expect(result[0].type).toBe('content_group');
-    expect(result[1].type).toBe('content_group');
-    const g1 = result[0] as ContentBlockGroup;
-    const g2 = result[1] as ContentBlockGroup;
-    expect(g1.name).toBe('First');
-    expect(g2.name).toBe('Second');
-    expect(g1.children[0].text).toBe('content 1');
-    expect(g2.children[0].text).toBe('content 2');
+    expect(result[0].type).toBe('text');
+    expect(result[1].type).toBe('text');
+    expect((result[0] as ContentBlock).text).toBe('content 1');
+    expect((result[1] as ContentBlock).text).toBe('content 2');
   });
 
-  it('should split text before and after group tags', () => {
+  it('should split text before and after group tags, unwrapping single-child group', () => {
     const blocks: ContentBlock[] = [
       textBlock('Before text <group:Middle>inside group</group:Middle> After text'),
     ];
     const result = groupContentBlocks(blocks);
 
+    // Single-child group is unwrapped, so we get 3 text blocks
     expect(result.length).toBe(3);
     expect(result[0].type).toBe('text');
     expect((result[0] as ContentBlock).text).toBe('Before text');
-    expect(result[1].type).toBe('content_group');
-    const group = result[1] as ContentBlockGroup;
-    expect(group.name).toBe('Middle');
-    expect(group.children[0].text).toBe('inside group');
+    expect(result[1].type).toBe('text');
+    expect((result[1] as ContentBlock).text).toBe('inside group');
     expect(result[2].type).toBe('text');
     expect((result[2] as ContentBlock).text).toBe('After text');
   });
@@ -949,63 +940,56 @@ describe('groupContentBlocks', () => {
     ];
     const result = groupContentBlocks(blocks);
 
+    // First group has 2 children (text + tool_use), so it stays as a group
+    // Second group has 1 child, so it's unwrapped
     expect(result.length).toBe(2);
     const g1 = result[0] as ContentBlockGroup;
-    const g2 = result[1] as ContentBlockGroup;
     expect(g1.type).toBe('content_group');
     expect(g1.name).toBe('First');
     expect(g1.isStreaming).toBe(false); // auto-closed, not streaming
     expect(g1.children.length).toBe(2); // text + tool_use
-    expect(g2.type).toBe('content_group');
-    expect(g2.name).toBe('Second');
-    expect(g2.children[0].text).toBe('content 2');
+    // Second group unwrapped to plain text
+    expect(result[1].type).toBe('text');
+    expect((result[1] as ContentBlock).text).toBe('content 2');
   });
 
-  it('should handle short close tag </group>', () => {
-    const blocks: ContentBlock[] = [
-      textBlock('<group:Test>content</group>'),
-    ];
+  it('should handle short close tag </group> (single-child unwrapped)', () => {
+    const blocks: ContentBlock[] = [textBlock('<group:Test>content</group>')];
     const result = groupContentBlocks(blocks);
 
+    // Single-child group is unwrapped
     expect(result.length).toBe(1);
-    expect(result[0].type).toBe('content_group');
-    const group = result[0] as ContentBlockGroup;
-    expect(group.name).toBe('Test');
-    expect(group.isStreaming).toBe(false);
-    expect(group.children[0].text).toBe('content');
+    expect(result[0].type).toBe('text');
+    expect((result[0] as ContentBlock).text).toBe('content');
   });
 
-  it('should handle named close tag </group:Name>', () => {
-    const blocks: ContentBlock[] = [
-      textBlock('<group:MyGroup>content</group:MyGroup>'),
-    ];
+  it('should handle named close tag </group:Name> (single-child unwrapped)', () => {
+    const blocks: ContentBlock[] = [textBlock('<group:MyGroup>content</group:MyGroup>')];
     const result = groupContentBlocks(blocks);
 
+    // Single-child group is unwrapped
     expect(result.length).toBe(1);
-    expect(result[0].type).toBe('content_group');
-    const group = result[0] as ContentBlockGroup;
-    expect(group.name).toBe('MyGroup');
-    expect(group.isStreaming).toBe(false);
+    expect(result[0].type).toBe('text');
+    expect((result[0] as ContentBlock).text).toBe('content');
   });
 
   it('should handle empty group (open immediately followed by close)', () => {
-    const blocks: ContentBlock[] = [
-      textBlock('<group:Empty></group:Empty>'),
-    ];
+    const blocks: ContentBlock[] = [textBlock('<group:Empty></group:Empty>')];
     const result = groupContentBlocks(blocks);
 
-    expect(result.length).toBe(1);
-    expect(result[0].type).toBe('content_group');
-    const group = result[0] as ContentBlockGroup;
-    expect(group.name).toBe('Empty');
-    expect(group.isStreaming).toBe(false);
-    expect(group.children.length).toBe(0);
+    // Empty group (0 children) is unwrapped to nothing
+    expect(result.length).toBe(0);
   });
 
   it('should not process group tags inside non-text blocks', () => {
     // tool_use blocks with group-like strings in their input should pass through
     const blocks: ContentBlock[] = [
-      { type: 'tool_use', name: 'write', id: 'tool-1', input: { content: '<group:Fake>test</group>' } } as ContentBlock,
+      {
+        type: 'tool_use',
+        name: 'write',
+        id: 'tool-1',
+        input: { content: '<group:Fake>test</group>' },
+      } as ContentBlock,
     ];
     const result = groupContentBlocks(blocks);
 
@@ -1037,6 +1021,196 @@ describe('groupContentBlocks', () => {
     expect(group.children[2].type).toBe('tool_result');
     expect(group.children[3].type).toBe('thinking');
     expect(group.children[4].text).toBe('Finishing');
+    expect(result[2].type).toBe('text');
+    expect((result[2] as ContentBlock).text).toBe('After');
+  });
+});
+
+describe('groupContentBlocks - think tag handling', () => {
+  function textBlock(text: string): ContentBlock {
+    return { type: 'text', text } as ContentBlock;
+  }
+  function toolUseBlock(name: string, id: string): ContentBlock {
+    return { type: 'tool_use', name, id, input: {} } as ContentBlock;
+  }
+
+  it('should extract <think> tags from text blocks and create thinking ContentBlocks', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('Hello <think>I need to figure this out</think> world'),
+    ];
+    const result = groupContentBlocks(blocks);
+
+    expect(result.length).toBe(3);
+    expect(result[0].type).toBe('text');
+    expect((result[0] as ContentBlock).text).toBe('Hello');
+    expect(result[1].type).toBe('thinking');
+    expect((result[1] as ContentBlock).content).toBe('I need to figure this out');
+    expect(result[2].type).toBe('text');
+    expect((result[2] as ContentBlock).text).toBe('world');
+  });
+
+  it('should handle <think> inside a <group> tag', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('<group:Prepping><think>Planning the approach</think>Here is my answer</group:Prepping>'),
+    ];
+    const result = groupContentBlocks(blocks);
+
+    // Single group with 2 children: thinking + text -> stays as group since >1 child
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('Prepping');
+    expect(group.children.length).toBe(2);
+    expect(group.children[0].type).toBe('thinking');
+    expect((group.children[0] as ContentBlock).content).toBe('Planning the approach');
+    expect(group.children[1].type).toBe('text');
+    expect((group.children[1] as ContentBlock).text).toBe('Here is my answer');
+  });
+
+  it('should handle unclosed <think> tag during streaming', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('<group:Prepping><think>Still thinking about this...'),
+    ];
+    const result = groupContentBlocks(blocks, true);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('Prepping');
+    expect(group.isStreaming).toBe(true);
+    expect(group.children.length).toBe(1);
+    expect(group.children[0].type).toBe('thinking');
+    expect((group.children[0] as ContentBlock).content).toBe('Still thinking about this...');
+  });
+
+  it('should handle stray </think> without opening tag', () => {
+    const blocks: ContentBlock[] = [textBlock('Some text</think>more text')];
+    const result = groupContentBlocks(blocks);
+
+    // Stray </think> is consumed, text around it is kept
+    expect(result.length).toBe(2);
+    expect(result[0].type).toBe('text');
+    expect((result[0] as ContentBlock).text).toBe('Some text');
+    expect(result[1].type).toBe('text');
+    expect((result[1] as ContentBlock).text).toBe('more text');
+  });
+
+  it('should handle <think> only text block', () => {
+    const blocks: ContentBlock[] = [textBlock('<think>Just thinking</think>')];
+    const result = groupContentBlocks(blocks);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('thinking');
+    expect((result[0] as ContentBlock).content).toBe('Just thinking');
+  });
+
+  it('should handle <think> with group and tool blocks', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('<group:Work><think>Let me plan</think>Starting'),
+      toolUseBlock('edit', 'tool-1'),
+      textBlock('Done</group:Work>'),
+    ];
+    const result = groupContentBlocks(blocks);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('Work');
+    expect(group.children.length).toBe(4); // thinking, text, tool_use, text
+    expect(group.children[0].type).toBe('thinking');
+    expect((group.children[0] as ContentBlock).content).toBe('Let me plan');
+    expect(group.children[1].type).toBe('text');
+    expect((group.children[1] as ContentBlock).text).toBe('Starting');
+    expect(group.children[2].type).toBe('tool_use');
+    expect(group.children[3].type).toBe('text');
+    expect((group.children[3] as ContentBlock).text).toBe('Done');
+  });
+
+  it('should handle malformed group tag without closing > followed by <think>', () => {
+    // This is the exact pattern from the opencode provider bug:
+    // <group:Prepping\n<think>thinking content</think>\nvisible text
+    const blocks: ContentBlock[] = [
+      textBlock('<group:Prepping\n<think>I\'ll set the workspace title</think>\nHere is my answer</group:Prepping>'),
+    ];
+    const result = groupContentBlocks(blocks);
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('Prepping');
+    expect(group.children.length).toBe(2);
+    expect(group.children[0].type).toBe('thinking');
+    expect((group.children[0] as ContentBlock).content).toBe('I\'ll set the workspace title');
+    expect(group.children[1].type).toBe('text');
+    expect((group.children[1] as ContentBlock).text).toContain('Here is my answer');
+  });
+
+  it('should handle malformed group tag during streaming (no close tag)', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('<group:Prepping\n<think>Still thinking...'),
+    ];
+    const result = groupContentBlocks(blocks, true);
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('Prepping');
+    expect(group.isStreaming).toBe(true);
+    expect(group.children.length).toBe(1);
+    expect(group.children[0].type).toBe('thinking');
+    expect((group.children[0] as ContentBlock).content).toBe('Still thinking...');
+  });
+
+  it('should handle <thinking> tags (Claude variant)', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('Hello <thinking>deep reasoning here</thinking> world'),
+    ];
+    const result = groupContentBlocks(blocks);
+    expect(result.length).toBe(3);
+    expect(result[0].type).toBe('text');
+    expect((result[0] as ContentBlock).text).toBe('Hello');
+    expect(result[1].type).toBe('thinking');
+    expect((result[1] as ContentBlock).content).toBe('deep reasoning here');
+    expect(result[2].type).toBe('text');
+    expect((result[2] as ContentBlock).text).toBe('world');
+  });
+
+  it('should handle think tags spanning across multiple text blocks', () => {
+    // <think> in block 1, </think> in block 3, tool_use block in between
+    const blocks: ContentBlock[] = [
+      textBlock('Before <think>start of thinking'),
+      toolUseBlock('read', 'tool-1'),
+      textBlock('end of thinking</think> After'),
+    ];
+    const result = groupContentBlocks(blocks);
+    // The think block should flush when it hits the tool_use block,
+    // then </think> in block 3 is a stray close tag consumed silently.
+    // "end of thinking" between the stray </think> and "After" becomes separate text.
+    expect(result.length).toBe(5); // text "Before", thinking, tool_use, text "end of thinking", text "After"
+    expect(result[0].type).toBe('text');
+    expect((result[0] as ContentBlock).text).toBe('Before');
+    expect(result[1].type).toBe('thinking');
+    expect((result[1] as ContentBlock).content).toBe('start of thinking');
+    expect(result[2].type).toBe('tool_use');
+    expect(result[3].type).toBe('text');
+    expect((result[3] as ContentBlock).text).toBe('end of thinking');
+    expect(result[4].type).toBe('text');
+    expect((result[4] as ContentBlock).text).toBe('After');
+  });
+
+  it('should handle think tags spanning multiple consecutive text blocks', () => {
+    // <think> in block 1, continuation in block 2, </think> in block 3
+    const blocks: ContentBlock[] = [
+      textBlock('Before <think>part one'),
+      textBlock('part two'),
+      textBlock('part three</think> After'),
+    ];
+    const result = groupContentBlocks(blocks);
+    expect(result.length).toBe(3); // text "Before", thinking (all 3 parts), text "After"
+    expect(result[0].type).toBe('text');
+    expect((result[0] as ContentBlock).text).toBe('Before');
+    expect(result[1].type).toBe('thinking');
+    expect((result[1] as ContentBlock).content).toContain('part one');
+    expect((result[1] as ContentBlock).content).toContain('part two');
+    expect((result[1] as ContentBlock).content).toContain('part three');
     expect(result[2].type).toBe('text');
     expect((result[2] as ContentBlock).text).toBe('After');
   });

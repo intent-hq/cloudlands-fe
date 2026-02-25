@@ -518,12 +518,16 @@
             {@render renderParsedContentBlock(renderBlock as ParsedContent, blockIndex)}
           {/each}
         {:else}
-          <!-- Fallback to regular MarkdownViewer if no parsed content -->
-          <MarkdownViewer
-            content={textContent}
-            isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
-            onFileClick={(path) => handleOpenFile({ path })}
-          />
+          <!-- Only render fallback if text has content after stripping suggested prompts -->
+          <!-- (suggested prompts are rendered separately; empty blocks should be hidden) -->
+          {@const cleanedText = parseSuggestedPrompts(textContent).cleanedContent}
+          {#if cleanedText.trim()}
+            <MarkdownViewer
+              content={cleanedText}
+              isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+              onFileClick={(path) => handleOpenFile({ path })}
+            />
+          {/if}
         {/if}
       </div>
     {:else if block.type === 'tool_use'}
@@ -559,7 +563,12 @@
       {#if block.type === 'content_group'}
         {@const group = block as ContentBlockGroup}
         <div class="content-block content-block--group my-1.25">
-          <ResponseGroup name={group.name} isStreaming={group.isStreaming} blocks={group.children}>
+          <ResponseGroup
+            name={group.name}
+            isStreaming={group.isStreaming}
+            isLast={blockIndex === groupedBlocks.length - 1}
+            blocks={group.children}
+          >
             {#snippet children()}
               {#each group.children as childBlock, childIndex (`${blockIndex}-group-${childIndex}`)}
                 {#if childBlock.type !== 'tool_result'}

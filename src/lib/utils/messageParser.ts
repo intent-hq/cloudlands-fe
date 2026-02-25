@@ -265,7 +265,8 @@ function parseSpecialBlock(blockText: string): ParsedContent | null {
         }
 
         const semanticId = refJson.target?.semanticId || refJson.semanticId || '';
-        const filePath = refJson.target?.filePath || refJson.filePath || semanticId?.split('#')[0] || '';
+        const filePath =
+          refJson.target?.filePath || refJson.filePath || semanticId?.split('#')[0] || '';
         const description = refJson.description || '';
         const snapshot = refJson.snapshot || undefined;
 
@@ -632,7 +633,24 @@ function mergeConsecutiveTextBlocks(blocks: ParsedContent[]): ParsedContent[] {
 }
 
 // Combined pattern to find any group tag (open or close) in a single pass
-const GROUP_TAG_REGEX = /<group:([^>]+)>|<\/group(?::([^>]+))?>/g;
+// Note: Group name capture uses [^>\n<]+ to avoid capturing across newlines or into
+// nested tags like <think> that may appear immediately after the group name.
+// The second alternative (<group:([^<\n]+)\n) handles malformed tags without closing >
+// (e.g., "<group:Prepping\n<think>..." where the model omits the closing bracket).
+const GROUP_TAG_REGEX = /<group:([^>\n<]+)>|<\/group(?::([^>\n<]+))?>/g;
+
+// Combined pattern to find group tags AND think tags in a single pass.
+// Think tags are used by some external providers (e.g., opencode) that embed
+// model thinking directly in text rather than as separate thinking content blocks.
+// Supports both <think>/<thinking> variants (different models use different tags).
+// Pattern priority (left to right):
+//   1. <group:Name> — standard group open
+//   2. <group:Name\n — malformed group open (missing closing >)
+//   3. </group:Name> or </group> — group close
+//   4. <think> or <thinking> — think open
+//   5. </think> or </thinking> — think close
+const GROUP_AND_THINK_TAG_REGEX =
+  /<group:([^>\n<]+)>|<group:([^\n<]+)\n|<\/group(?::([^>\n<]+))?>|<think(?:ing)?>|<\/think(?:ing)?>/g;
 
 /**
  * Post-processing step: extract group markers from text blocks.
@@ -861,36 +879,88 @@ export function groupContentBlocks(
     }
   }
 
+  // Track think state across text blocks (think tags can span multiple blocks
+  // when tool_use/tool_result blocks appear between <think> and </think>)
+  let insideThink = false;
+  let thinkContent = '';
+
+  function flushThinkContent() {
+    if (insideThink) {
+      const trimmedThink = thinkContent.trim();
+      if (trimmedThink) {
+        addBlock({ type: 'thinking', content: trimmedThink } as ContentBlock);
+      }
+      insideThink = false;
+      thinkContent = '';
+    }
+  }
+
   for (const block of blocks) {
-    // Only scan text blocks for group tags
+    // Only scan text blocks for group tags and think tags
     const blockText = block.type === 'text' ? (block.text ?? block.content ?? '') : '';
 
     if (block.type !== 'text' || !blockText) {
       // Non-text block or empty text block — pass through into current context
       if (block.type !== 'text') {
+        // If we're inside a think block and hit a non-text block (e.g. tool_use),
+        // flush the think content accumulated so far, then pass the block through.
+        // The think "context" doesn't survive across non-text blocks.
+        if (insideThink) {
+          flushThinkContent();
+        }
         addBlock(block);
       }
       continue;
     }
 
-    // Scan this text block for group tags
-    GROUP_TAG_REGEX.lastIndex = 0;
+    // Scan this text block for group tags and think tags
+    GROUP_AND_THINK_TAG_REGEX.lastIndex = 0;
     let lastIndex = 0;
     let match;
-    let hasGroupTags = false;
+    let hasTags = insideThink; // if we're continuing a think from a previous block, mark as having tags
 
-    while ((match = GROUP_TAG_REGEX.exec(blockText)) !== null) {
-      hasGroupTags = true;
+    while ((match = GROUP_AND_THINK_TAG_REGEX.exec(blockText)) !== null) {
       const matchStart = match.index;
       const matchEnd = match.index + match[0].length;
+      const matchStr = match[0];
 
-      // Text before this tag
-      if (matchStart > lastIndex) {
-        addTextIfNonEmpty(blockText.slice(lastIndex, matchStart));
-      }
-
-      if (match[1] !== undefined) {
-        // Open tag: <group:Name>
+      if (matchStr === '<think>' || matchStr === '<thinking>') {
+        hasTags = true;
+        // Text before <think>/<thinking> tag
+        if (matchStart > lastIndex) {
+          addTextIfNonEmpty(blockText.slice(lastIndex, matchStart));
+        }
+        insideThink = true;
+        thinkContent = '';
+        lastIndex = matchEnd;
+      } else if (matchStr === '</think>' || matchStr === '</thinking>') {
+        hasTags = true;
+        if (insideThink) {
+          // Collect content between <think> and </think>
+          thinkContent += blockText.slice(lastIndex, matchStart);
+          const trimmedThink = thinkContent.trim();
+          if (trimmedThink) {
+            addBlock({ type: 'thinking', content: trimmedThink } as ContentBlock);
+          }
+          insideThink = false;
+          thinkContent = '';
+        } else {
+          // Stray </think> without opening tag — add text before it, then consume the tag
+          if (matchStart > lastIndex) {
+            addTextIfNonEmpty(blockText.slice(lastIndex, matchStart));
+          }
+        }
+        lastIndex = matchEnd;
+      } else if (insideThink) {
+        // Inside a think block — group/close-group tags are part of thinking content, skip them
+        continue;
+      } else if (match[1] !== undefined || match[2] !== undefined) {
+        // Open tag: <group:Name> (match[1]) or malformed <group:Name\n (match[2])
+        const groupName = (match[1] || match[2] || '').trim();
+        hasTags = true;
+        if (matchStart > lastIndex) {
+          addTextIfNonEmpty(blockText.slice(lastIndex, matchStart));
+        }
         // Auto-close previous group if one is open
         if (currentGroup) {
           currentGroup.isStreaming = false;
@@ -898,24 +968,35 @@ export function groupContentBlocks(
         }
         currentGroup = {
           type: 'content_group',
-          name: match[1],
+          name: groupName,
           isStreaming: !!isStreaming, // default based on param; will be set to false on close
           children: [],
         };
+        lastIndex = matchEnd;
       } else {
         // Close tag: </group:Name> or </group>
+        hasTags = true;
+        if (matchStart > lastIndex) {
+          addTextIfNonEmpty(blockText.slice(lastIndex, matchStart));
+        }
         if (currentGroup) {
           currentGroup.isStreaming = false;
           closeCurrentGroup();
         }
         // If no group is open, stray close tag is silently consumed
+        lastIndex = matchEnd;
       }
-
-      lastIndex = matchEnd;
     }
 
-    if (!hasGroupTags) {
-      // No group tags in this text block — pass through as-is
+    // Handle unclosed <think> tag at end of this text block
+    if (insideThink) {
+      // Accumulate remaining text — the closing </think> may be in a later block
+      thinkContent += blockText.slice(lastIndex);
+      lastIndex = blockText.length;
+    }
+
+    if (!hasTags) {
+      // No group/think tags in this text block — pass through as-is
       addBlock(block);
     } else {
       // Add any remaining text after the last tag
@@ -925,15 +1006,36 @@ export function groupContentBlocks(
     }
   }
 
+  // Flush any remaining unclosed think block at the very end
+  flushThinkContent();
+
   // Handle unclosed group at end
   if (currentGroup) {
     currentGroup.isStreaming = !!isStreaming;
     closeCurrentGroup();
   }
 
-  return result;
-}
+  // Unwrap single-child groups: if a content_group has only one child (a single text chunk),
+  // promote the child directly to the top level. Groups are only useful when they wrap
+  // multiple chunks (e.g., text + tool calls).
+  const unwrapped: RenderContentBlock[] = [];
+  for (const item of result) {
+    if (
+      item.type === 'content_group' &&
+      (item as ContentBlockGroup).children.length <= 1 &&
+      !isStreaming
+    ) {
+      // Unwrap: add children directly
+      for (const child of (item as ContentBlockGroup).children) {
+        unwrapped.push(child);
+      }
+    } else {
+      unwrapped.push(item);
+    }
+  }
 
+  return unwrapped;
+}
 
 /**
  * Format parsed content blocks into markdown

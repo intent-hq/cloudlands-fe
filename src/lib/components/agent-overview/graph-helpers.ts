@@ -90,7 +90,10 @@ export interface StreamingState {
  */
 function getLastMeaningfulLine(text: string): string {
   if (!text) return '';
-  const lines = text.split('\n');
+  // Strip group tags so they don't leak into previews
+  const cleaned = text.replace(/<group:[^>]+>|<\/group(?::[^>]+)?>/g, '').trim();
+  if (!cleaned) return '';
+  const lines = cleaned.split('\n');
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim();
     if (line && line.length > 3) {

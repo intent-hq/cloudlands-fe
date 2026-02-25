@@ -4,6 +4,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { invoke } from '$lib/electron-bridge';
+  import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import { faCodeBranch, faFile, faServer, faPlus } from '@fortawesome/free-solid-svg-icons';
@@ -106,7 +107,7 @@
     if (event.metaKey || event.ctrlKey) {
       event.preventDefault();
       try {
-        await invoke('window:create', { route: `/workspace/${workspaceId}` });
+        await invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route: `/workspace/${workspaceId}` });
       } catch (error) {
         logger.error('Failed to open workspace in new window:', error);
       }

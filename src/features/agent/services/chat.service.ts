@@ -544,7 +544,24 @@ export class ChatService implements IDisposable {
 
       if (!session) {
         // Only create new session if agentId is provided and no session exists
-        // This prevents duplicate agent creation
+        // This prevents duplicate agent creation.
+        //
+        // GUARD: Verify the current workspace still matches the requested one.
+        // During workspace transitions or when stale panel tabs mount ChatPanels
+        // for agents that don't belong to the current workspace, we must NOT
+        // create a spurious new session. This was the root cause of ghost agents
+        // appearing when workspace IDs were reused with stale localStorage state.
+        const activeWorkspace = unifiedStateStore.currentWorkspace;
+        const activeWorkspaceId = activeWorkspace?.workspace?.id;
+        if (activeWorkspaceId && String(activeWorkspaceId) !== String(workspace.id)) {
+          logger.warn('Skipping session creation - workspace mismatch', {
+            agentId,
+            requestedWorkspace: workspace.id,
+            activeWorkspace: activeWorkspaceId,
+          });
+          return;
+        }
+
         logger.info('No existing session found, creating new one', { agentId });
 
         const newSession = await agentService.createSession(workspace, {

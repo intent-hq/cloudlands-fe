@@ -104,7 +104,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       workspace: { id: workspaceId, status: 'ready' }, // Don't show loading state
       workspaceData: {
         id: workspaceId,
-        title: config?.title ?? 'New Space',
+        title: config?.title ?? 'New Workspace',
         repositoryPath: config?.repositoryPath ?? '',
         branch: config?.branch ?? '',
         status: 'creating',

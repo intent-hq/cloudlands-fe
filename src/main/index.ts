@@ -68,11 +68,7 @@ function shouldFilterMainProcessException(exception: { type?: string; value?: st
   // In @sentry/electron, renderer events may be forwarded through the main process SDK.
   // The renderer's beforeSend should catch these, but this is a safety net.
   // See: https://github.com/huntabyte/bits-ui/discussions/1302
-  if (
-    type === 'TypeError' &&
-    value &&
-    /^[a-zA-Z_$]{1,3}\.call is not a function$/.test(value)
-  ) {
+  if (type === 'TypeError' && value && /^[a-zA-Z_$]{1,3}\.call is not a function$/.test(value)) {
     return true;
   }
 
@@ -381,10 +377,16 @@ import { setupMemoriesIPC } from '../features/memories/main/memories.ipc';
 import { setupAssetsIPC } from '../features/notes/main/assets.ipc';
 import { setupLineAttributionIPC } from '../features/notes/main/line-attribution.ipc';
 import { lineAttributionService } from '../features/notes/main/line-attribution.service';
-import { setupNotesPrimitivesIPC, cleanupNoteTerminals } from '../features/notes/main/notes-primitives.ipc';
+import {
+  setupNotesPrimitivesIPC,
+  cleanupNoteTerminals,
+} from '../features/notes/main/notes-primitives.ipc';
 import { setupNotesIPC } from '../features/notes/main/notes.ipc';
 import { setupNotificationIPC } from '../features/notifications/main/notification.ipc';
-import { setupObservabilityIPC, cleanupObservability } from '../features/observability/main/observability.ipc';
+import {
+  setupObservabilityIPC,
+  cleanupObservability,
+} from '../features/observability/main/observability.ipc';
 import { setupRemoteFileSystemIPC } from '../features/remote-fs/main/remote-fs.ipc';
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
 import { setupSpecialistsIPC } from '../features/specialists/main/specialists.ipc';
@@ -497,7 +499,10 @@ async function gracefulShutdown() {
       cleanupNoteTerminals();
       logger.info('Note terminals cleaned up');
     } catch (error) {
-      logger.error('Error cleaning up note terminals:', error instanceof Error ? error : new Error(String(error)));
+      logger.error(
+        'Error cleaning up note terminals:',
+        error instanceof Error ? error : new Error(String(error)),
+      );
     }
 
     // Stop all MCP Hub child processes (workspace, notes, git servers per workspace)
@@ -506,7 +511,10 @@ async function gracefulShutdown() {
       await cleanupMCP();
       logger.info('MCP Hub servers stopped');
     } catch (error) {
-      logger.error('Error stopping MCP Hub servers:', error instanceof Error ? error : new Error(String(error)));
+      logger.error(
+        'Error stopping MCP Hub servers:',
+        error instanceof Error ? error : new Error(String(error)),
+      );
     }
 
     // Shutdown unified backend - kills all active agent (auggie) processes
@@ -515,7 +523,10 @@ async function gracefulShutdown() {
       await shutdownUnifiedBackend();
       logger.info('Unified backend shutdown complete');
     } catch (error) {
-      logger.error('Error during unified backend shutdown:', error instanceof Error ? error : new Error(String(error)));
+      logger.error(
+        'Error during unified backend shutdown:',
+        error instanceof Error ? error : new Error(String(error)),
+      );
     }
 
     // Stop HTTP MCP Server
@@ -528,7 +539,10 @@ async function gracefulShutdown() {
         await httpMcpServer.stop();
         logger.info('HTTP MCP Server stopped');
       } catch (error) {
-        logger.error('Error stopping HTTP MCP Server:', error instanceof Error ? error : new Error(String(error)));
+        logger.error(
+          'Error stopping HTTP MCP Server:',
+          error instanceof Error ? error : new Error(String(error)),
+        );
       }
     }
 
@@ -538,7 +552,10 @@ async function gracefulShutdown() {
         await cdpMcpServer.stop();
         logger.info('CDP MCP Server stopped');
       } catch (error) {
-        logger.error('Error stopping CDP MCP Server:', error instanceof Error ? error : new Error(String(error)));
+        logger.error(
+          'Error stopping CDP MCP Server:',
+          error instanceof Error ? error : new Error(String(error)),
+        );
       }
     }
 
@@ -625,7 +642,10 @@ async function saveWindowSessions(): Promise<void> {
     const sessionsPath = getWindowSessionsPath();
     if (sessions.length > 0) {
       await fsAsync.writeFile(sessionsPath, JSON.stringify(sessions), 'utf-8');
-      logger.info('Saved window sessions', { count: sessions.length, routes: sessions.map(s => s.route) });
+      logger.info('Saved window sessions', {
+        count: sessions.length,
+        routes: sessions.map((s) => s.route),
+      });
     }
   } catch (err) {
     logger.warn('Failed to save window sessions:', err);
@@ -1228,7 +1248,7 @@ app.whenReady().then(async () => {
         },
       },
       {
-        label: 'New Space',
+        label: 'New Workspace',
         accelerator: 'CmdOrCtrl+N',
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -1495,9 +1515,7 @@ app.whenReady().then(async () => {
                 isDev: true,
               });
             } else {
-              logger.warn(
-                '[Menu] mainWindow not available for sending up-to-date notification',
-              );
+              logger.warn('[Menu] mainWindow not available for sending up-to-date notification');
             }
           } else {
             // In production, use the auto-update service
@@ -2283,11 +2301,18 @@ app.whenReady().then(async () => {
     // NOTE: Stream cleanup is also skipped during forced GC (critical pressure) because the GC pause
     // itself can make active streams appear stalled, causing a death spiral where cleanup kills
     // streams that are merely paused by the GC.
-    const performMemoryCleanup = (reason: string, { forceGC = false, skipStreamCleanup = false } = {}) => {
+    const performMemoryCleanup = (
+      reason: string,
+      { forceGC = false, skipStreamCleanup = false } = {},
+    ) => {
       // Always skip stream cleanup when forcing GC — the GC pause blocks the event loop,
       // making active streams appear stalled and causing false-positive cleanup
       const effectiveSkipStreamCleanup = skipStreamCleanup || forceGC;
-      logger.info('Memory cleanup triggered', { reason, skipStreamCleanup: effectiveSkipStreamCleanup, forceGC });
+      logger.info('Memory cleanup triggered', {
+        reason,
+        skipStreamCleanup: effectiveSkipStreamCleanup,
+        forceGC,
+      });
 
       if (!effectiveSkipStreamCleanup) {
         import('../features/agent/services/stream-manager')
@@ -2690,7 +2715,9 @@ if (!gotTheLock) {
 app.on('activate', () => {
   if (isSecondInstance) return;
 
-  const allWindows = BrowserWindow.getAllWindows().filter((w: BrowserWindowType) => !w.isDestroyed());
+  const allWindows = BrowserWindow.getAllWindows().filter(
+    (w: BrowserWindowType) => !w.isDestroyed(),
+  );
   if (allWindows.length > 0) {
     // Focus an existing window instead of creating a new one
     const targetWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : allWindows[0];

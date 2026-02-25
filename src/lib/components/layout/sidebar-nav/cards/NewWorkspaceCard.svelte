@@ -5,12 +5,15 @@
    * Shows WIP state if there's draft content, recent repos for quick access,
    * and a button to open the full creation modal.
    */
-  import { faPlus, faArrowRight, faCodeBranch, faFolder } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowRight, faFolder } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { invoke } from '$lib/electron-bridge';
+  import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { sidebarNavStore } from '../sidebar-nav.store.svelte';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import type { Workspace } from '$shared/types';
   import { WorkspaceStatusEnum } from '$shared/types';
+  import Header from '$lib/components/ui/Header.svelte';
 
   interface Props {
     expanded?: boolean;
@@ -51,8 +54,22 @@
     return [...repoMap.values()];
   });
 
-  function openModal(initialRepo?: { repoPath?: string; owner?: string; name?: string }) {
+  function openModal(initialRepo?: { repoPath?: string; owner?: string; name?: string }, event?: MouseEvent) {
     sidebarNavStore.closeAll();
+
+    // Command-click (or Ctrl-click on non-Mac) opens in new window
+    if (event?.metaKey || event?.ctrlKey) {
+      invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route: '/' }).catch(() => {
+        // Fallback to modal in current window if IPC fails
+        window.dispatchEvent(
+          new CustomEvent('app:open-new-space-modal', {
+            detail: initialRepo ? { initialRepo } : {},
+          }),
+        );
+      });
+      return;
+    }
+
     window.dispatchEvent(
       new CustomEvent('app:open-new-space-modal', {
         detail: initialRepo ? { initialRepo } : {},
@@ -98,16 +115,13 @@
 
   <!-- Quick start with recent repos -->
   {#if recentRepos.length > 0}
+    <Header size={6}>Work on...</Header>
     <div>
-      <!-- <span
-        class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50 px-0.5"
-        >Recent repos</span
-      > -->
       <div class="flex flex-col">
         {#each recentRepos as repo}
           <button
-            class="flex items-center gap-2 px-1 py-1 rounded-md text-left hover:bg-sidebar cursor-pointer w-full"
-            onclick={() => openModal({ repoPath: repo.path, owner: repo.owner, name: repo.name })}
+            class="flex items-center gap-2 px-1 py-1 rounded-md text-left hover:bg-sidebar cursor-pointer w-full focus:outline-0"
+            onclick={(e) => openModal({ repoPath: repo.path, owner: repo.owner, name: repo.name }, e)}
           >
             {#if repo.owner}
               <img
@@ -122,21 +136,9 @@
               >
             {/if}
             <span class="text-sm text-foreground/80 truncate font-medium flex-1">{repo.name}</span>
-            <!-- <span class="text-[11px] text-muted-foreground/40 flex items-center gap-0.5 shrink-0">
-              <Fa icon={faCodeBranch} class="text-[9px]" />{repo.branch}
-            </span> -->
           </button>
         {/each}
       </div>
     </div>
   {/if}
-
-  <!-- New space button -->
-  <button
-    class="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-muted/30 hover:bg-muted/50 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-    onclick={() => openModal()}
-  >
-    <Fa icon={faPlus} size="xs" />
-    Create in another project
-  </button>
 </div>

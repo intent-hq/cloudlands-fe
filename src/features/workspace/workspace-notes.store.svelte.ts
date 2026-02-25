@@ -219,7 +219,8 @@ class WorkspaceNotesStore {
   private handleNoteUpdated(payload: any): void {
     const workspaceId = payload.workspaceId;
     const note = payload.note as Note | undefined;
-    const noteId = payload.noteId || note?.id;
+    // noteId can be at top level (domain events) or inside data (workspace events)
+    const noteId = payload.noteId || payload.data?.noteId || note?.id;
 
     if (!workspaceId || !noteId) return;
 
