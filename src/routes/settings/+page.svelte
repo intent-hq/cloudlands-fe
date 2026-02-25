@@ -33,7 +33,6 @@
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import { cn } from '$lib/utils';
 
   // Tab types
   type SettingsTab = 'accounts' | 'agents' | 'setup' | 'fonts-colors' | 'general';
@@ -172,7 +171,7 @@
     specialists: 'agents',
     providers: 'accounts',
     integrations: 'accounts',
-    'mcp-servers': 'accounts',
+    'mcp-servers': 'setup',
     'git-workspace': 'setup',
     'utility-default-model': 'agents',
     notifications: 'setup',
@@ -331,27 +330,20 @@
               <ProviderSelector />
             </section>
           </div>
+          <p class="text-xs text-muted-foreground mt-2">
+            You can sign in or switch accounts using your model provider in the terminal.
+          </p>
         </div>
 
-        <div class={cn({ 'opacity-50 pointer-events-none': !isAuggieProvider })}>
-          <!-- Connections -->
-          <div id="integrations" class="mb-6 scroll-mt-20">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              Connections
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
-                <ConnectionsSettings />
-              </section>
-            </div>
-          </div>
-
-          <!-- MCP Servers -->
-          <div id="mcp-servers" class="mb-6">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              MCP Servers
-            </h2>
-            <McpServersSettings />
+        <!-- Connections -->
+        <div id="integrations" class="mb-6 scroll-mt-20">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            Connections
+          </h2>
+          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+            <section class="px-6 py-5">
+              <ConnectionsSettings />
+            </section>
           </div>
         </div>
       {/if}
@@ -392,6 +384,14 @@
               <NotificationSettings />
             </section>
           </div>
+        </div>
+
+        <!-- MCP Servers -->
+        <div id="mcp-servers" class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            MCP Servers
+          </h2>
+          <McpServersSettings {isAuggieProvider} />
         </div>
       {/if}
 

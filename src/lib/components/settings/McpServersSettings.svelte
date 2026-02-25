@@ -22,6 +22,9 @@
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import type { WorkspaceId } from '$shared/types/branded-ids';
 
+  // Props
+  let { isAuggieProvider = true }: { isAuggieProvider?: boolean } = $props();
+
   // UI state
   let showAddPanel = $state(false);
   let addMode = $state<'form' | 'import'>('form');
@@ -338,6 +341,11 @@
       </div>
       <Switch checked={enabled} onCheckedChange={handleToggleEnabled} size="md" />
     </div>
+    {#if !isAuggieProvider}
+      <p class="text-xs text-muted-foreground mt-2">
+        MCP server configuration applies to the Augment CLI only and does not affect the currently selected provider.
+      </p>
+    {/if}
   </section>
 
   {#if enabled}
