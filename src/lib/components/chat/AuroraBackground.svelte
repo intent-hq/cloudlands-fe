@@ -39,12 +39,37 @@
   // Random seed for variety each session
   const seed = Math.random() * 1000;
 
-  // Detect dark mode
+  // Cached uniform locations (avoid getUniformLocation every frame)
+  let uniformLocations: {
+    time: WebGLUniformLocation | null;
+    resolution: WebGLUniformLocation | null;
+    color1: WebGLUniformLocation | null;
+    color2: WebGLUniformLocation | null;
+    color3: WebGLUniformLocation | null;
+    seed: WebGLUniformLocation | null;
+  } | null = null;
+
+  // Cached RGB color values (recomputed only when agentId or dark mode changes)
+  let cachedRgbColors: { rgb1: [number, number, number]; rgb2: [number, number, number]; rgb3: [number, number, number] } | null = null;
+  let cachedColorKey = '';
+
+  // Cached device pixel ratio (updated on resize, not every frame)
+  let cachedDpr = 1;
+
+  // Dark mode observer cleanup
+  let darkModeObserver: MutationObserver | null = null;
+  let darkModeMediaQuery: MediaQueryList | null = null;
+  // Must store a stable reference so removeEventListener can find the same function
+  const darkModeMediaHandler = () => updateDarkMode();
+
+  // Detect dark mode (called once and on changes, NOT every frame)
   function updateDarkMode() {
     if (browser) {
       isDarkMode =
         document.documentElement.classList.contains('dark') ||
         window.matchMedia('(prefers-color-scheme: dark)').matches;
+      // Invalidate cached colors when dark mode changes
+      cachedColorKey = '';
     }
   }
 
@@ -404,6 +429,19 @@
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
+    // Cache uniform locations once (avoids 6x getUniformLocation calls per frame)
+    uniformLocations = {
+      time: gl.getUniformLocation(program, 'u_time'),
+      resolution: gl.getUniformLocation(program, 'u_resolution'),
+      color1: gl.getUniformLocation(program, 'u_color1'),
+      color2: gl.getUniformLocation(program, 'u_color2'),
+      color3: gl.getUniformLocation(program, 'u_color3'),
+      seed: gl.getUniformLocation(program, 'u_seed'),
+    };
+
+    // Cache initial DPR
+    cachedDpr = window.devicePixelRatio || 1;
+
     startTime = performance.now();
     render();
   }
@@ -427,9 +465,9 @@
     }
     lastFrameTime = now - (elapsed % TARGET_FRAME_TIME);
 
-    const dpr = window.devicePixelRatio || 1;
-    const width = canvas.clientWidth * dpr;
-    const height = canvas.clientHeight * dpr;
+    // Use cached DPR instead of reading window.devicePixelRatio every frame
+    const width = canvas.clientWidth * cachedDpr;
+    const height = canvas.clientHeight * cachedDpr;
 
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width;
@@ -442,27 +480,29 @@
 
     gl.useProgram(program);
 
-    // Set uniforms
-    const timeLoc = gl.getUniformLocation(program, 'u_time');
-    const resLoc = gl.getUniformLocation(program, 'u_resolution');
-    const color1Loc = gl.getUniformLocation(program, 'u_color1');
-    const color2Loc = gl.getUniformLocation(program, 'u_color2');
-    const color3Loc = gl.getUniformLocation(program, 'u_color3');
-    const seedLoc = gl.getUniformLocation(program, 'u_seed');
+    // Use cached uniform locations (set once in initWebGL)
+    if (!uniformLocations) return;
 
-    gl.uniform1f(timeLoc, (performance.now() - startTime) / 1000);
-    gl.uniform2f(resLoc, width, height);
-    gl.uniform1f(seedLoc, seed);
+    gl.uniform1f(uniformLocations.time, (performance.now() - startTime) / 1000);
+    gl.uniform2f(uniformLocations.resolution, width, height);
+    gl.uniform1f(uniformLocations.seed, seed);
 
-    // Pass agent-seeded colors with dark mode adjustment
-    updateDarkMode();
-    const [c1, c2, c3] = auroraColors;
-    const rgb1 = hexToRgb(c1, isDarkMode);
-    const rgb2 = hexToRgb(c2, isDarkMode);
-    const rgb3 = hexToRgb(c3, isDarkMode);
-    gl.uniform3f(color1Loc, rgb1[0], rgb1[1], rgb1[2]);
-    gl.uniform3f(color2Loc, rgb2[0], rgb2[1], rgb2[2]);
-    gl.uniform3f(color3Loc, rgb3[0], rgb3[1], rgb3[2]);
+    // Use cached RGB colors (recomputed only when agentId or dark mode changes)
+    const colorKey = `${agentId}-${isDarkMode}`;
+    if (cachedColorKey !== colorKey) {
+      const [c1, c2, c3] = auroraColors;
+      cachedRgbColors = {
+        rgb1: hexToRgb(c1, isDarkMode),
+        rgb2: hexToRgb(c2, isDarkMode),
+        rgb3: hexToRgb(c3, isDarkMode),
+      };
+      cachedColorKey = colorKey;
+    }
+    if (cachedRgbColors) {
+      gl.uniform3f(uniformLocations.color1, cachedRgbColors.rgb1[0], cachedRgbColors.rgb1[1], cachedRgbColors.rgb1[2]);
+      gl.uniform3f(uniformLocations.color2, cachedRgbColors.rgb2[0], cachedRgbColors.rgb2[1], cachedRgbColors.rgb2[2]);
+      gl.uniform3f(uniformLocations.color3, cachedRgbColors.rgb3[0], cachedRgbColors.rgb3[1], cachedRgbColors.rgb3[2]);
+    }
 
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
@@ -479,6 +519,19 @@
       program = null;
     }
     gl = null;
+    uniformLocations = null;
+    cachedRgbColors = null;
+    cachedColorKey = '';
+
+    // Clean up dark mode observers
+    if (darkModeObserver) {
+      darkModeObserver.disconnect();
+      darkModeObserver = null;
+    }
+    if (darkModeMediaQuery) {
+      darkModeMediaQuery.removeEventListener('change', darkModeMediaHandler);
+      darkModeMediaQuery = null;
+    }
   }
 
   // Handle page visibility changes
@@ -491,10 +544,43 @@
     prefersReducedMotion = e.matches;
   }
 
+  // Handle DPR changes (e.g., moving window between displays)
+  // We need to recreate the media query each time because a query for a specific
+  // DPR value only fires once (when it stops matching). By recreating with the
+  // new DPR, we can detect the next transition too.
+  let dprCleanup: (() => void) | undefined;
+
+  function setupDprListener() {
+    const dpr = window.devicePixelRatio || 1;
+    const dprQuery = window.matchMedia(`(resolution: ${dpr}dppx)`);
+    const handler = () => {
+      cachedDpr = window.devicePixelRatio || 1;
+      // Remove old listener and set up a new one with the updated DPR
+      dprQuery.removeEventListener('change', handler);
+      setupDprListener();
+    };
+    dprQuery.addEventListener('change', handler);
+    dprCleanup = () => dprQuery.removeEventListener('change', handler);
+  }
+
   onMount(() => {
     // Check initial states
     isPageVisible = !document.hidden;
     prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // Initial dark mode check
+    updateDarkMode();
+
+    // Observe dark mode changes via MutationObserver instead of polling every frame
+    darkModeObserver = new MutationObserver(() => updateDarkMode());
+    darkModeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class'],
+    });
+
+    // Also listen for system color scheme changes
+    darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    darkModeMediaQuery.addEventListener('change', darkModeMediaHandler);
 
     // Listen for visibility changes
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -503,11 +589,16 @@
     const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     motionQuery.addEventListener('change', handleMotionPreference);
 
+    // Listen for DPR changes (e.g., moving between retina/non-retina displays)
+    setupDprListener();
+
     initWebGL();
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       motionQuery.removeEventListener('change', handleMotionPreference);
+      dprCleanup?.();
+      // darkModeMediaQuery cleanup is handled in cleanup() which is called from onDestroy
     };
   });
 

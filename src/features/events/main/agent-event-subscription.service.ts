@@ -136,6 +136,8 @@ interface DelegationGroupTracker {
   deletedAgentIds: Set<string>; // Track agents that were deleted (vs normally completed)
   events: WorkspaceEvent[]; // Accumulate events from completed agents
   subscriptionId: string;
+  /** Guards against double-delivery when multiple events arrive before async cleanup runs */
+  delivered?: boolean;
 }
 
 export class AgentEventSubscriptionService {
@@ -356,6 +358,7 @@ export class AgentEventSubscriptionService {
         deletedAgentIds: Array.from(t.deletedAgentIds),
         events: t.events,
         subscriptionId: t.subscriptionId,
+        delivered: t.delivered ?? false,
       })),
       firedOneShotSubscriptions: Array.from(this.firedOneShotSubscriptions),
     };
@@ -393,6 +396,7 @@ export class AgentEventSubscriptionService {
           deletedAgentIds: new Set(g.deletedAgentIds as string[] || []),
           events: Array.isArray(g.events) ? g.events : [],
           subscriptionId: g.subscriptionId as string,
+          delivered: !!(g.delivered),
         });
       }
     }
@@ -698,6 +702,19 @@ export class AgentEventSubscriptionService {
       // Update the delegation group tracker as well
       const tracker = this.delegationGroups.get(groupId);
       if (tracker) {
+        // SAFETY: Warn if adding to a group that has already been delivered.
+        // This can happen if a new delegation is created in the brief window
+        // between delivery and async cleanup. The new agent won't trigger
+        // delivery again because tracker.delivered is already true.
+        if (tracker.delivered) {
+          logger.warn('Adding agent to a delegation group that has already been delivered', {
+            groupId,
+            parentAgentId,
+            delegatedAgentId,
+            completedCount: tracker.completedAgentIds.size,
+            expectedCount: tracker.expectedAgentIds.size,
+          });
+        }
         tracker.expectedAgentIds.add(delegatedAgentId);
       }
 
@@ -1204,6 +1221,19 @@ export class AgentEventSubscriptionService {
 
       // Check if all agents have completed
       if (tracker.completedAgentIds.size >= tracker.expectedAgentIds.size) {
+        // Guard against double-delivery: if delivery was already triggered for
+        // this group (e.g., a second matching event arrived before the async
+        // cleanup deleted the tracker and unsubscribed), skip the duplicate.
+        if (tracker.delivered) {
+          logger.info('Delegation group: all agents completed but delivery already triggered, skipping duplicate', {
+            groupId: group.groupId,
+            parentAgentId: agentId,
+            eventType: event.type,
+          });
+          return;
+        }
+        tracker.delivered = true;
+
         logger.info('Delegation group: all agents completed, delivering events', {
           groupId: group.groupId,
           parentAgentId: agentId,
@@ -1323,24 +1353,33 @@ export class AgentEventSubscriptionService {
                   // Treat as terminal to avoid lingering group tracker + subscription.
                   cleanupDelegationGroup();
                 } else {
-                  logger.warn('Delegation group: queued delivery not successful, keeping subscription for retry', {
+                  // FIX: Clean up on failure to prevent lingering "Waiting for all (n/n)" UI.
+                  // Previously this kept the subscription "for retry", but since
+                  // tracker.delivered is already true, no new events can re-trigger
+                  // delivery — the group would linger forever.
+                  logger.warn('Delegation group: queued delivery failed after polling budget exhausted, cleaning up', {
                     groupId: groupIdForCleanup,
                     deliveryStatus: result.status,
                   });
+                  cleanupDelegationGroup();
                 }
               })
               .catch((err) => {
-                logger.warn('Delegation group: queued delivery threw, keeping subscription for retry', {
+                // FIX: Same as above — clean up to prevent lingering group.
+                logger.warn('Delegation group: queued delivery threw after polling budget exhausted, cleaning up', {
                   groupId: groupIdForCleanup,
                   error: String(err),
                 });
+                cleanupDelegationGroup();
               });
           } else {
-            // No queued promise means there was nothing to queue/deliver.
-            // Conservatively do NOT clean up; allow future retries.
-            logger.warn('Delegation group: nothing queued for delivery; keeping subscription for retry', {
+            // No queued promise means there was nothing to queue/deliver
+            // (empty events array). This shouldn't happen if all agents completed,
+            // but clean up defensively to prevent a lingering group.
+            logger.warn('Delegation group: nothing queued for delivery, cleaning up defensively', {
               groupId: groupIdForCleanup,
             });
+            cleanupDelegationGroup();
           }
         }
       }

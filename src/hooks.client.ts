@@ -161,12 +161,19 @@ let consecutiveNotFoundErrors = 0;
 const MAX_CONSECUTIVE_NOT_FOUND = 2;
 
 export const handleError: HandleClientError = ({ error, event }) => {
-  // Check if this is a Monaco diff editor race condition error
-  // This happens when diff models are disposed before diff computation completes - it's non-fatal
+  // Check if this is a known Monaco/editor race condition error - non-fatal
   if (error && typeof error === 'object' && 'message' in error) {
     const message = String(error.message);
+    // Diff models disposed before diff computation completes
     if (message.includes('no diff result available')) {
-      // Silently suppress this error - it's a known Monaco race condition
+      return { message: '' };
+    }
+    // ViewLine.render fires during hideUnchangedRegions model swap
+    if (message.includes('isInHiddenArea')) {
+      return { message: '' };
+    }
+    // Model disposed during async operations (e.g., diff computation, tokenization)
+    if (message.includes('TextModel got disposed')) {
       return { message: '' };
     }
   }

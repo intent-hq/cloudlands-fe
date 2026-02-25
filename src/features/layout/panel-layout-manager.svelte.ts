@@ -1039,7 +1039,12 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
       // This is important for:
       // - Agent tabs: prevent race conditions where multiple effects try to open the same agent
       // - Singleton tabs (agent-overview, local-changes): only one should exist per workspace
-      const isSingletonTab = tab.type === 'agent-overview' || tab.type === 'local-changes';
+      const isSingletonTab =
+        tab.type === 'agent-overview' ||
+        tab.type === 'local-changes' ||
+        tab.type === 'code-review' ||
+        tab.type === 'settings' ||
+        tab.type === 'overview';
       const isAgentTab = tab.type === 'agent' && tab.agentId;
 
       if (isSingletonTab || isAgentTab) {
@@ -1100,15 +1105,36 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
             }
             // Fall back to URL matching
             return t.browserUrl === tab.browserUrl;
+          case 'changes': {
+            // Match by commitHash - reuse existing tab for the same commit changeset
+            const tabHash = (tab.data as { commitHash?: string })?.commitHash;
+            const existingHash = (t.data as { commitHash?: string })?.commitHash;
+            return !!tabHash && tabHash === existingHash;
+          }
           case 'activity-changes':
             // Match by filePath - reuse existing tab for same file
             return t.filePath === tab.filePath;
+          case 'chat-changes': {
+            // Match by messageId - reuse existing tab for same chat message's changes
+            const tabMessageId = (tab.data as { messageId?: string })?.messageId;
+            const existingMessageId = (t.data as { messageId?: string })?.messageId;
+            return !!tabMessageId && tabMessageId === existingMessageId;
+          }
           // Singleton tabs - only one per workspace, match by type alone
+          case 'activity':
+          case 'code-review':
+          case 'settings':
+          case 'overview':
           case 'agent-overview':
           case 'local-changes':
             return true;
-          default:
+          default: {
+            // Exhaustive check: if a new PanelTabType is added to the union
+            // without a dedup case here, TypeScript will error on this line.
+            const _exhaustive: never = tab.type;
+            logger.warn(`[openTab] No dedup logic for tab type: ${_exhaustive}`);
             return false;
+          }
         }
       });
 

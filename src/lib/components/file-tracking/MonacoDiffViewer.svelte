@@ -2171,6 +2171,13 @@
         }
 
         try {
+          // Temporarily disable hideUnchangedRegions during model swap to prevent
+          // the "isInHiddenArea" race condition where ViewLine.render tries to
+          // access hidden-area data that is stale/undefined during the transition.
+          editor.updateOptions({
+            hideUnchangedRegions: { enabled: false },
+          });
+
           editor.setModel(null);
 
           // Then set the new models
@@ -2192,10 +2199,19 @@
           });
 
           // Trigger layout after a short delay to let Monaco stabilize
-          // Also restore scroll position
+          // Also restore scroll position and re-enable hideUnchangedRegions
           setTimeout(() => {
             if (editor && !isDisposing) {
               try {
+                // Re-enable hideUnchangedRegions now that models are stable
+                editor.updateOptions({
+                  hideUnchangedRegions: {
+                    enabled: foldUnchanged,
+                    revealLineCount: 40,
+                    minimumLineCount: 1,
+                    contextLineCount: 3,
+                  },
+                });
                 editor.layout();
                 // Restore scroll position
                 const modEditor = editor.getModifiedEditor();
@@ -2214,6 +2230,19 @@
           }, 50);
         } catch (err) {
           logger.error('[DiffViewer] Error setting models in RAF:', err);
+          // Restore hideUnchangedRegions so fold regions aren't permanently lost
+          try {
+            editor?.updateOptions({
+              hideUnchangedRegions: {
+                enabled: foldUnchanged,
+                revealLineCount: 40,
+                minimumLineCount: 1,
+                contextLineCount: 3,
+              },
+            });
+          } catch {
+            // Ignore - editor may be in bad state
+          }
           isUpdating = false;
         }
       });

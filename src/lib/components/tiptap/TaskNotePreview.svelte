@@ -81,7 +81,7 @@
           >
             {@html renderedHtml}
             <div
-              class="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-background to-transparent pointer-events-none"
+              class="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-popover to-transparent pointer-events-none"
             ></div>
           </div>
         </div>

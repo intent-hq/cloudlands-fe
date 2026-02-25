@@ -127,6 +127,11 @@ class RefactoredAgentService extends EventEmitter {
   // when multiple agent:created events arrive in quick succession
   private pendingStreamRegistrations = new Set<string>();
 
+  // Deduplication for agent:created events - same agentId can arrive multiple times
+  // from different IPC channels within milliseconds
+  private recentAgentCreatedEvents = new Map<string, number>();
+  private readonly AGENT_CREATED_DEDUP_WINDOW = 500; // ms
+
   // Track the message count from disk for each agent session.
   // This prevents beforeunload from overwriting a complete session on disk
   // with a stale in-memory session that has fewer messages.
@@ -913,7 +918,7 @@ class RefactoredAgentService extends EventEmitter {
     const resolvedWorkspaceId = workspaceId || sessionStore.getSession(agentId)?.workspaceId;
     const streamChannel = `agent:stream:${agentId}`;
 
-    logger.info('Registering stream handler for restored session', {
+    logger.debug('Registering stream handler for restored session', {
       agentId,
       streamChannel,
       hasExistingMessage: !!existingMessage,
@@ -924,14 +929,14 @@ class RefactoredAgentService extends EventEmitter {
 
     // Check if we already have a handler for this agent
     if (this.activeStreamHandlers.has(agentId)) {
-      logger.info('Stream handler already exists for agent', { agentId });
+      logger.debug('Stream handler already exists for agent', { agentId });
       return;
     }
 
     // Check if registration is already in progress (prevents race conditions when
     // multiple agent:created events arrive in quick succession)
     if (this.pendingStreamRegistrations.has(agentId)) {
-      logger.info('Stream handler registration already in progress for agent', { agentId });
+      logger.debug('Stream handler registration already in progress for agent', { agentId });
       return;
     }
 
@@ -1967,14 +1972,31 @@ class RefactoredAgentService extends EventEmitter {
           return;
         }
 
-        logger.info('Backend-created agent detected', {
+        // Deduplicate agent:created events - the same agentId arrives from multiple
+        // IPC channels (workspace:event, event:broadcast, events:new) within milliseconds
+        const now = Date.now();
+        const lastSeen = this.recentAgentCreatedEvents.get(agentId);
+        if (lastSeen && now - lastSeen < this.AGENT_CREATED_DEDUP_WINDOW) {
+          logger.debug('Skipping duplicate agent:created event', { agentId, msSinceLast: now - lastSeen });
+          return;
+        }
+        this.recentAgentCreatedEvents.set(agentId, now);
+
+        // Clean up old entries periodically to prevent unbounded growth
+        if (this.recentAgentCreatedEvents.size > 50) {
+          for (const [id, ts] of this.recentAgentCreatedEvents) {
+            if (now - ts > this.AGENT_CREATED_DEDUP_WINDOW * 2) {
+              this.recentAgentCreatedEvents.delete(id);
+            }
+          }
+        }
+
+        logger.debug('Backend-created agent detected', {
           agentId,
           workspaceId,
           agentName: agentName || agent?.name,
           isWorkspaceEvent,
           hasAgent: !!agent,
-          agentMetadata: agent?.metadata,
-          hasSpecialist: !!agent?.metadata?.specialist,
         });
 
         // Check if we already have a session for this agent
@@ -2062,21 +2084,18 @@ class RefactoredAgentService extends EventEmitter {
           };
 
           sessionStore.addSession(newSession);
-          logger.info('Created session for backend-created agent', {
+          logger.debug('Created session for backend-created agent', {
             agentId,
             sessionName: newSession.name,
             isBackground: newSession.isBackground,
             isStreaming: newSession.isStreaming,
-            sessionMetadata: newSession.metadata,
-            hasSpecialist: !!newSession.metadata?.specialist,
-            specialistValue: newSession.metadata?.specialist,
           });
         }
 
         // Register stream handler so we receive streaming events via the IPC→DOM bridge
         // Pass workspaceId so stream completion updates the correct workspace's streaming state
         this.registerStreamHandlerForSession(agentId, undefined, workspaceId);
-        logger.info('Stream handler registered for backend-created agent', {
+        logger.debug('Stream handler registered for backend-created agent', {
           agentId,
           workspaceId,
         });

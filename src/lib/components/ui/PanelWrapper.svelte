@@ -49,7 +49,7 @@
 </script>
 
 <div
-  class="flex-1 min-h-0 h-[calc(100%_-_1.5rem)] flex flex-col overflow-auto rounded shadow shadow-muted-foreground/15 border border-border bg-background my-3.5 col-span-full row-span-full {className}"
+  class="flex-1 min-h-0 h-[calc(100%_-_1.5rem)] flex flex-col overflow-auto rounded shadow shadow-muted-foreground/15 m-1 bg-background my-3.5 col-span-full row-span-full {className}"
   in:fly={{
     y: 10,
     duration: 200,

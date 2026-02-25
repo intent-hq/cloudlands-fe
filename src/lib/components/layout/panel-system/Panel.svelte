@@ -255,7 +255,7 @@
   <div
     bind:this={panelRef}
     class={cn(
-      'panel group/panel relative flex flex-col h-full bg-background',
+      'panel group/panel relative flex flex-col h-full bg-background overflow-hidden',
       isFocused && 'focused',
     )}
     data-panel-id={panel.id}

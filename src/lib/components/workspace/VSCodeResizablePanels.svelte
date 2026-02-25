@@ -406,7 +406,7 @@
   </div> -->
 
   <!-- Panels Container -->
-  <div bind:this={containerRef} class="vscode-resizable-panels divide-y-[1px] divide-border">
+  <div bind:this={containerRef} class="vscode-resizable-panels">
     <!-- Notes Panel -->
     {#if showNotes}
       <div

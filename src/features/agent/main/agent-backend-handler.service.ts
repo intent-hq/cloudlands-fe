@@ -168,8 +168,7 @@ export class AgentBackendHandler {
   private lastPongTimes = new Map<string, number>();
   /** @property {Map<string, number>} lastPingSentTimes - Track when last ping was sent to check for missed pongs */
   private lastPingSentTimes = new Map<string, number>();
-  /** @property {Map<string, string>} deferredQueueProcessing - Agents whose queue processing was deferred because their workspace wasn't active (agentId -> workspaceId) */
-  private deferredQueueProcessing = new Map<string, string>();
+
   /** @property {Map<string, number>} emptyResponseRetries - Track consecutive empty end_turn responses per agent for auto-continue */
   private emptyResponseRetries = new Map<string, number>();
 
@@ -704,14 +703,6 @@ export class AgentBackendHandler {
         this.lastPongTimes.set(agentId, Date.now());
         logger.debug('Received pong from frontend', { agentId });
       }
-    });
-
-    // Listen for workspace state changes (user switches workspace).
-    // When a workspace becomes active, process any queued messages that were
-    // deferred because the workspace wasn't visible.
-    // @ts-expect-error - Custom event emitted by system.ipc.ts, not in Electron's typed overloads
-    app.on('window-workspace-state-changed', () => {
-      this.processDeferredQueues();
     });
   }
 
@@ -2995,8 +2986,8 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
             hasStreamStartTime: this.streamStartTimes.has(request.agentId),
           });
 
-          // Cleanup after completion
-          this.cleanupStreamResources(request.agentId);
+          // Cleanup after completion + advance the queue
+          this.finalizeStream(request.agentId, request.workspaceId, 'complete');
 
           // Memory instrumentation: cleanup complete
           memEvents.cleanupComplete(request.agentId, {
@@ -3007,30 +2998,6 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
           // NOTE: We no longer force GC after every agent turn - this fights V8's heuristics
           // and can cause UI jank. Instead, GC is only forced on critical memory pressure
           // (see main/index.ts memoryMonitor.onPressure handler)
-
-          // Process next queued message if any
-          // Use setTimeout to allow the current stream to fully complete
-          // Also clean up the completed stream tracking after queue processing
-          setTimeout(() => {
-            this.processNextQueuedMessage(request.agentId, request.workspaceId)
-              .catch((error) => {
-                logger.error('Error processing next queued message', {
-                  agentId: request.agentId,
-                  error: error instanceof Error ? error.message : String(error),
-                });
-              })
-              .finally(() => {
-                // Clean up the completed stream entry to avoid memory leaks
-                // Using finally ensures cleanup runs even if queue processing rejects
-                const agentCompletedStreams = this.completedStreams.get(request.agentId);
-                if (agentCompletedStreams) {
-                  agentCompletedStreams.delete(request.streamId);
-                  if (agentCompletedStreams.size === 0) {
-                    this.completedStreams.delete(request.agentId);
-                  }
-                }
-              });
-          }, 100);
         },
         onError: async (error: Error) => {
           // Check if this is an expected interruption (user sent a new message)
@@ -3080,15 +3047,17 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
             });
           }
 
-          // Cleanup after error/interruption
-          this.cleanupStreamResources(request.agentId);
-
           // Only emit agent:failed for real errors, not interruptions.
           // Interruptions mean a new message was sent — the agent stays in "responding"
           // and a new stream takes over. Emitting agent:idle here would incorrectly
           // trigger delegation subscriptions (oneShot), causing parent agents to think
           // the child completed when it's actually about to process a new message.
-          if (!isInterruption) {
+          if (isInterruption) {
+            // Interruption: just clean up resources. The new message's stream takes over;
+            // queue advancement is not needed (and would be harmful).
+            this.cleanupStreamResources(request.agentId);
+          } else {
+            // Real error: clean up resources AND advance the queue.
             // emitAgentFailedEvent coordinates setAgentStatus('failed') + event emission
             // in a single async chain for guaranteed ordering.
             // Mark that onError handled the failure so the outer catch doesn't double-emit.
@@ -3101,6 +3070,7 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
               agentName,
               error.message,
             );
+            this.finalizeStream(request.agentId, request.workspaceId, 'error');
           }
         },
       });
@@ -4113,10 +4083,16 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
       healthCheckCount++;
       const windows = BrowserWindow.getAllWindows();
 
-      // If no windows exist, cleanup the stream
+      // If no windows exist, cleanup the stream and advance the queue
       if (windows.length === 0) {
         logger.warn('No renderer windows found, cleaning up stream', { agentId });
-        this.cleanupStreamResources(agentId);
+        // Capture workspaceId before cleanup deletes it from streamWorkspaceIds
+        const wsId = this.streamWorkspaceIds.get(agentId);
+        if (wsId) {
+          this.finalizeStream(agentId, wsId, 'window-closed');
+        } else {
+          this.cleanupStreamResources(agentId);
+        }
         return;
       }
 
@@ -4221,7 +4197,11 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
             });
         }
 
-        this.cleanupStreamResources(agentId);
+        if (workspaceId) {
+          this.finalizeStream(agentId, workspaceId, 'timeout');
+        } else {
+          this.cleanupStreamResources(agentId);
+        }
       }
     }, 5000);
 
@@ -4328,7 +4308,40 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
   }
 
   /**
-   * Cleanup stream resources
+   * Finalize a stream: clean up resources AND advance the message queue.
+   *
+   * This is the single, centralized method for terminal stream outcomes
+   * (success, error, timeout, window closure). It enforces the invariant:
+   *   "every terminated stream must attempt to process the next queued message."
+   *
+   * For non-terminal cleanup (auto-continue retries, interruptions, explicit stops,
+   * stale-entry housekeeping) use `cleanupStreamResources` directly — those cases
+   * intentionally skip queue advancement.
+   *
+   * @param agentId  - The agent whose stream just ended
+   * @param workspaceId - Must be captured BEFORE cleanup (cleanup deletes it from streamWorkspaceIds)
+   * @param reason   - Human-readable label for logging (e.g. 'complete', 'error', 'timeout')
+   */
+  private finalizeStream(agentId: string, workspaceId: string, reason: string): void {
+    this.cleanupStreamResources(agentId);
+
+    // Advance the queue asynchronously so the current stack unwinds first
+    setTimeout(() => {
+      this.processNextQueuedMessage(agentId, workspaceId)
+        .catch((queueError) => {
+          logger.error(`Error processing next queued message after stream ${reason}`, {
+            agentId,
+            error: queueError instanceof Error ? queueError.message : String(queueError),
+          });
+        });
+    }, 100);
+  }
+
+  /**
+   * Cleanup stream resources (low-level — does NOT advance the queue).
+   *
+   * Use `finalizeStream` instead for terminal stream outcomes (success, error,
+   * timeout, window closure) so the queue invariant is enforced automatically.
    */
   private cleanupStreamResources(agentId: string): void {
     logger.debug('Cleaning up stream resources', { agentId });
@@ -4419,7 +4432,6 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
     // Message queue tracking
     this.messageQueues.delete(agentId);
     this.processingQueue.delete(agentId);
-    this.deferredQueueProcessing.delete(agentId);
 
     // Agent state tracking
     this.activeSessions.delete(agentId);
@@ -5850,22 +5862,21 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
       return;
     }
 
-    // GUARD: Check if the workspace is currently being viewed by any window.
-    // If the user is in a different workspace, the frontend can't set up its stream
-    // handler, so the queued message would be sent to ACP but the response would
-    // never be displayed. Defer processing until the workspace becomes active.
-    const activeWindowId = getWindowIdForWorkspace(workspaceId);
-    if (!activeWindowId) {
+    // Check if the workspace is currently being viewed by any window.
+    // Queue processing continues regardless — the backend persists all messages to disk,
+    // so when the user returns to the workspace they'll see the completed responses.
+    // We only use this flag to skip the frontend handler handshake (which would time out
+    // wastefully if no window is available).
+    const hasActiveWindow = !!getWindowIdForWorkspace(workspaceId);
+    if (!hasActiveWindow) {
       logger.info(
-        'Workspace not currently active, deferring queue processing until workspace is viewed',
+        'Workspace not currently active - processing queue anyway (backend will persist results)',
         {
           agentId,
           workspaceId,
           queueLength: queue.length,
         },
       );
-      this.deferredQueueProcessing.set(agentId, workspaceId);
-      return;
     }
 
     this.processingQueue.add(agentId);
@@ -5906,7 +5917,7 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
           messageId: nextMessage.id,
           ageMinutes,
           queuedAt: nextMessage.queuedAt,
-        }, wsWindows.length > 0 ? wsWindows : undefined);
+        }, wsWindows);
       }
 
       logger.info('Processing queued message - starting new stream turn', {
@@ -5923,9 +5934,9 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
       logger.info('Sending agent:queue:processing to frontend', {
         agentId,
         messageId: nextMessage.id,
+        hasActiveWindow,
       });
-      const queueWindows = getWindowIdsForWorkspace(workspaceId);
-      const queueTargetWindows = queueWindows.length > 0 ? queueWindows : undefined;
+      const queueTargetWindows = getWindowIdsForWorkspace(workspaceId);
       this.sendToRenderer('agent:queue:processing', {
         agentId,
         messageId: nextMessage.id,
@@ -5935,24 +5946,31 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
       }, queueTargetWindows);
       // Don't send queue:updated yet — message is still in the queue until send succeeds
 
-      // FIX: Wait for frontend to re-register stream handler before starting new stream
-      // This uses the same handshake pattern as backend-initiated agents to prevent
-      // the race condition where chunks arrive before the handler is registered.
-      // The frontend will send agent:handler-ready after re-registering in the
-      // agent:queue:processing handler.
-      try {
-        await this.waitForFrontendHandlerReady(agentId, 5000);
-        logger.info('Frontend handler ready for queued message', {
+      // Wait for frontend to re-register stream handler before starting new stream.
+      // Skip the handshake if no window is viewing this workspace — the frontend can't
+      // respond, so waiting would just burn the 5s timeout. The message will still be
+      // processed and persisted; the user will see the result when they return.
+      if (hasActiveWindow) {
+        try {
+          await this.waitForFrontendHandlerReady(agentId, 5000);
+          logger.info('Frontend handler ready for queued message', {
+            agentId,
+            messageId: nextMessage.id,
+          });
+        } catch (handlerError) {
+          // If frontend doesn't respond, log a warning but continue anyway
+          // The message will still be processed and persisted, user can refresh to see it
+          logger.warn('Frontend handler not ready for queued message, continuing anyway', {
+            agentId,
+            messageId: nextMessage.id,
+            error: handlerError instanceof Error ? handlerError.message : String(handlerError),
+          });
+        }
+      } else {
+        logger.info('Skipping frontend handler handshake - no active window for workspace', {
           agentId,
+          workspaceId,
           messageId: nextMessage.id,
-        });
-      } catch (handlerError) {
-        // If frontend doesn't respond, log a warning but continue anyway
-        // The message will still be processed and persisted, user can refresh to see it
-        logger.warn('Frontend handler not ready for queued message, continuing anyway', {
-          agentId,
-          messageId: nextMessage.id,
-          error: handlerError instanceof Error ? handlerError.message : String(handlerError),
         });
       }
 
@@ -6024,7 +6042,7 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
         });
         // Emit queue:updated so the UI shows the message back in the queue
         const wsWindows = getWindowIdsForWorkspace(workspaceId);
-        this.sendToRenderer('agent:queue:updated', { agentId, queue: currentQueue }, wsWindows.length > 0 ? wsWindows : undefined);
+        this.sendToRenderer('agent:queue:updated', { agentId, queue: currentQueue }, wsWindows);
         logger.info('Re-added message to queue after send failure', {
           agentId,
           messageId: nextMessage.id,
@@ -6046,34 +6064,6 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
       });
     } finally {
       this.processingQueue.delete(agentId);
-    }
-  }
-
-  /**
-   * Process deferred queued messages for workspaces that have become active.
-   * Called when the user switches to a workspace that has pending queue items.
-   */
-  private processDeferredQueues(): void {
-    if (this.deferredQueueProcessing.size === 0) return;
-
-    for (const [agentId, workspaceId] of this.deferredQueueProcessing) {
-      const windowId = getWindowIdForWorkspace(workspaceId);
-      if (windowId) {
-        logger.info('Processing deferred queue - workspace is now active', {
-          agentId,
-          workspaceId,
-        });
-        this.deferredQueueProcessing.delete(agentId);
-        // Use setTimeout to give the frontend time to fully render and register handlers
-        setTimeout(() => {
-          this.processNextQueuedMessage(agentId, workspaceId).catch((error) => {
-            logger.error('Error processing deferred queued message', {
-              agentId,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          });
-        }, 500);
-      }
     }
   }
 
@@ -6538,7 +6528,6 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
     this.messageQueues.clear();
     this.processingQueue.clear();
     this.interruptedAgents.clear();
-    this.deferredQueueProcessing.clear();
 
     // Clear stream tracking maps
     this.streamStartTimes.clear();

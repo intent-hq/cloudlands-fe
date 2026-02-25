@@ -2272,11 +2272,17 @@ app.whenReady().then(async () => {
 
     // Shared cleanup function used by both memory pressure and proactive workspace-switch cleanup
     // skipStreamCleanup: when true, skips cleanupStalledStreams() to avoid killing active streams
-    // (cleanupStalledStreams uses a 1.5s inactivity threshold which is too aggressive for workspace switch)
+    // (cleanupStalledStreams uses a short inactivity threshold which is too aggressive for workspace switch)
+    // NOTE: Stream cleanup is also skipped during forced GC (critical pressure) because the GC pause
+    // itself can make active streams appear stalled, causing a death spiral where cleanup kills
+    // streams that are merely paused by the GC.
     const performMemoryCleanup = (reason: string, { forceGC = false, skipStreamCleanup = false } = {}) => {
-      logger.info('Memory cleanup triggered', { reason, skipStreamCleanup });
+      // Always skip stream cleanup when forcing GC — the GC pause blocks the event loop,
+      // making active streams appear stalled and causing false-positive cleanup
+      const effectiveSkipStreamCleanup = skipStreamCleanup || forceGC;
+      logger.info('Memory cleanup triggered', { reason, skipStreamCleanup: effectiveSkipStreamCleanup, forceGC });
 
-      if (!skipStreamCleanup) {
+      if (!effectiveSkipStreamCleanup) {
         import('../features/agent/services/stream-manager')
           .then(({ streamManager }) => {
             const beforeMetrics = streamManager.getMetrics();
@@ -2297,6 +2303,19 @@ app.whenReady().then(async () => {
           logger.info('Message accumulator cleanup complete', { afterStats });
         })
         .catch(() => {});
+
+      // On critical pressure, evict cached MCP servers to free memory.
+      // These will be lazily re-created on next tool call.
+      if (forceGC && httpMcpServer) {
+        try {
+          const cleared = httpMcpServer.clearAllMcpServers();
+          if (cleared > 0) {
+            logger.info('Evicted MCP server cache during critical memory pressure', { cleared });
+          }
+        } catch (error) {
+          logger.warn('Failed to evict MCP server cache', { error: (error as Error).message });
+        }
+      }
 
       if (forceGC) {
         const gc = (global as unknown as { gc?: () => void }).gc;

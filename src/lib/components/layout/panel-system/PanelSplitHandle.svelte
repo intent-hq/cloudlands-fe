@@ -311,14 +311,14 @@
     border: 0;
     padding: 0;
     appearance: none;
-    transition: background-color 0.15s ease;
     z-index: 35;
   }
 
+  /* 8px gap, handle is 16px wide, so margin = -(16 - 8) / 2 = -4px each side */
   .panel-split-handle.horizontal {
-    width: 10px;
+    width: 16px;
     cursor: col-resize;
-    margin: 0 -5px;
+    margin: 0 -4px;
   }
 
   .panel-split-handle.horizontal::before {
@@ -327,17 +327,20 @@
     top: 0;
     bottom: 0;
     left: 50%;
-    transform: translate(-50%, 0);
-    width: 1px;
+    transform: translateX(-50%);
+    width: 2px;
     height: 100%;
-    background: hsl(var(--border));
+    border-radius: 1px;
+    background: hsl(var(--primary));
+    opacity: 0;
+    transition: opacity 0.15s ease;
   }
 
   .panel-split-handle.vertical {
-    height: 10px;
+    height: 16px;
     width: 100%;
     cursor: row-resize;
-    margin: -5px 0;
+    margin: -4px 0;
   }
 
   .panel-split-handle.vertical::before {
@@ -345,21 +348,19 @@
     position: absolute;
     top: 50%;
     left: 0;
-    transform: translate(0, -50%);
+    transform: translateY(-50%);
     width: 100%;
-    height: 1px;
-    background: hsl(var(--border));
-  }
-
-  .panel-split-handle:hover:before,
-  .panel-split-handle.dragging:before {
+    height: 2px;
+    border-radius: 1px;
     background: hsl(var(--primary));
+    opacity: 0;
+    transition: opacity 0.15s ease;
   }
 
-  /* .panel-split-handle:hover::before,
+  .panel-split-handle:hover::before,
   .panel-split-handle.dragging::before {
-    background: none;
-  } */
+    opacity: 1;
+  }
 
   .panel-split-handle:focus-visible {
     outline: 2px solid hsl(var(--primary));

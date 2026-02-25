@@ -93,7 +93,7 @@
   onkeydown={handleKeydown}
 >
   <!-- Left column: repo avatar + status indicator side by side -->
-  <div class="flex items-center gap-1 shrink-0">
+  <div class="flex items-center gap-2 shrink-0">
     {#if !hideRepoAvatar}
       {#if workspace.repositoryOwner}
         <img

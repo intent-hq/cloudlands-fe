@@ -119,9 +119,7 @@
   }: Props = $props();
 
   // Access layout manager from context for expand-on-double-click
-  const getLayoutManager = getContext<(() => PanelLayoutManager) | undefined>(
-    'panelLayoutManager',
-  );
+  const getLayoutManager = getContext<(() => PanelLayoutManager) | undefined>('panelLayoutManager');
 
   // Context menu state
   let contextMenuTab = $state<{ tabId: string; x: number; y: number } | null>(null);
@@ -999,10 +997,12 @@
     bind:this={tabBarRef}
     class={cn(
       'panel-tab-bar group/tabbar relative flex items-center h-[var(--panel-header-height)]',
-      tabs.length ? 'bg-sidebar' : 'border-transparent',
+      tabs.length
+        ? 'bg-[color-mix(in_srgb,_var(--color-background)_30%,_var(--color-muted)_70%)] dark:bg-[color-mix(in_srgb,_var(--color-background)_90%,_var(--color-sidebar)_10%)]'
+        : 'bg-transparent',
     )}
   >
-    <div class="absolute inset-x-0 bottom-0 border-b border-border z-0"></div>
+    <div class="absolute inset-x-0 bottom-0 z-0"></div>
 
     <!-- Tabs (scrollable container) -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1028,13 +1028,12 @@
             data-tab-id={tab.id}
             class={cn(
               'panel-tab group cursor-pointer relative',
-              'border-r border-border',
               isActive
                 ? isFocused
-                  ? 'bg-background text-foreground'
-                  : 'bg-sidebar text-muted-foreground/50'
+                  ? 'text-foreground bg-[color-mix(in_srgb,_var(--color-background)_90%,_var(--color-muted)_10%)] dark:bg-[color-mix(in_srgb,_var(--color-background)_85%,_var(--color-muted-foreground)_15%)]'
+                  : 'text-foreground bg-[color-mix(in_srgb,_var(--color-background)_50%,_var(--color-muted)_50%)] dark:bg-[color-mix(in_srgb,_var(--color-background)_95%,_var(--color-muted-foreground)_5%)]'
                 : isFocused
-                  ? 'text-muted-foreground hover:text-foreground hover:bg-background/50'
+                  ? 'text-muted-foreground hover:text-foreground'
                   : 'text-muted-foreground/30',
               draggedTabId === tab.id && 'opacity-50',
             )}
@@ -1043,10 +1042,7 @@
               // Capture whether this tab was already active *before* the click activates it.
               // Only record on the first mousedown of a potential double-click (within 500ms window).
               const now = Date.now();
-              if (
-                !tabActiveBeforeMouseDown ||
-                now - tabActiveBeforeMouseDown.timestamp > 500
-              ) {
+              if (!tabActiveBeforeMouseDown || now - tabActiveBeforeMouseDown.timestamp > 500) {
                 tabActiveBeforeMouseDown = {
                   tabId: tab.id,
                   wasActive: tab.id === activeTabId,
@@ -1082,8 +1078,7 @@
             {/if}
             <div
               class={cn(
-                'flex items-center gap-1.5 pl-2.5 pr-2 py-1 h-9 text-[0.82rem] whitespace-nowrap border-b',
-                isActive ? 'border-transparent' : 'border-border',
+                'flex items-center gap-1.5 pl-2.5 pr-2 py-1 h-9 text-[0.82rem] whitespace-nowrap',
               )}
             >
               {#if tab.type === 'agent' && tab.agentId}
@@ -1164,7 +1159,7 @@
       <!-- Add new tab button (inside scrollable area, sticky to right when overflowing) -->
       {#if hasCreateActions && tabs.length > 0}
         <div
-          class="shrink-0 flex items-center self-stretch pl-1 pr-1 transition-opacity border-b border-border sticky right-0 bg-sidebar"
+          class="shrink-0 flex items-center self-stretch pl-1 pr-1 transition-opacity sticky right-0 bg-[color-mix(in_srgb,_var(--color-background)_30%,_var(--color-muted)_70%)] dark:bg-[color-mix(in_srgb,_var(--color-background)_90%,_var(--color-sidebar)_10%)]"
         >
           <DropdownMenu align="start" side="bottom">
             {#snippet trigger({ toggle }: { toggle: () => void })}
@@ -1238,7 +1233,7 @@
     </div>
 
     <!-- Panel Actions (on tab bar) -->
-    <div class="shrink-0 border-b border-border h-full flex items-center">
+    <div class="shrink-0 h-full flex items-center">
       <div
         class="panel-actions flex items-center gap-0.5 px-1 opacity-30 group-hover/tabbar:opacity-100 transition-opacity z-20"
       >
@@ -1330,8 +1325,10 @@
     {@const hidesBreadcrumb = activeTab.type === 'changes'}
     <div
       class={cn(
-        'panel-header group/header relative flex items-center h-[var(--panel-header-height)] border-b border-border px-2.5',
-        isFocused ? 'bg-background focused' : 'bg-sidebar',
+        'panel-header group/header relative flex items-center h-[var(--panel-header-height)] px-2.5 border-b border-border/20 dark:border-transparent',
+        isFocused
+          ? 'focused bg-[color-mix(in_srgb,_var(--color-background)_90%,_var(--color-muted)_10%)] dark:bg-[color-mix(in_srgb,_var(--color-background)_85%,_var(--color-muted-foreground)_15%)]'
+          : 'bg-[color-mix(in_srgb,_var(--color-background)_50%,_var(--color-muted)_50%)] dark:bg-[color-mix(in_srgb,_var(--color-background)_95%,_var(--color-muted-foreground)_5%)]',
       )}
     >
       <!-- Left: Category breadcrumb + Path (hidden for changes tabs which have their own header) -->

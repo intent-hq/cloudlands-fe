@@ -717,8 +717,11 @@ export class WorkspaceEventService extends EventEmitter {
       this.noteDeletedListener = undefined;
     }
 
-    // Clean up event bus
-    await this.eventBus.clear();
+    // NOTE: Do NOT call this.eventBus.clear() here.
+    // clear() is destructive — it wipes events from memory AND disk (events.jsonl).
+    // The EventBus singleton is disposed separately via disposeWorkspaceEventBus(),
+    // which calls eventStore.dispose() to save pending events and then lets GC
+    // reclaim the bus and all its data once it's removed from the singleton map.
 
     // Remove all listeners
     this.removeAllListeners();

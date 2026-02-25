@@ -407,22 +407,34 @@ async function makeHttpRequest(
 }
 
 /**
- * Wait for HTTP MCP server to be available
- * Reduced timeout from 40s to 5s since if the app is running, the bridge should be available quickly.
- * If it's not available after 5 seconds, something is wrong (app crashed, bridge down, etc.)
+ * Wait for HTTP MCP server to be available.
+ * Uses exponential backoff (1s, 2s, 4s, 4s, 4s) for ~15s total wait.
+ * This is long enough to survive GC pauses on large heaps (which can block
+ * the main process event loop for several seconds) while still failing
+ * reasonably fast if the app is truly down.
  */
 async function waitForHttpServer(
   ports: number[],
   maxRetries: number = 5,
-  retryDelay: number = 1000,
+  initialDelay: number = 1000,
 ): Promise<number | null> {
+  const MAX_DELAY = 4000; // Cap backoff at 4 seconds
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     for (const port of ports) {
       try {
-        const response = await fetch(`http://${HTTP_MCP_HOST}:${port}/health`);
-        if (response.ok) {
-          logToStderr('INFO', 'HTTP MCP server is available', { port });
-          return port;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        try {
+          const response = await fetch(`http://${HTTP_MCP_HOST}:${port}/health`, {
+            signal: controller.signal,
+          });
+          if (response.ok) {
+            logToStderr('INFO', 'HTTP MCP server is available', { port, attempt });
+            return port;
+          }
+        } finally {
+          clearTimeout(timeoutId);
         }
       } catch {
         // Server not ready yet, continue waiting
@@ -430,13 +442,14 @@ async function waitForHttpServer(
     }
 
     if (attempt < maxRetries) {
+      const delay = Math.min(initialDelay * Math.pow(2, attempt), MAX_DELAY);
       logToStderr('DEBUG', 'Waiting for HTTP MCP server...', {
         attempt: attempt + 1,
         maxRetries,
-        retryDelay,
+        delay,
         ports,
       });
-      await new Promise((resolve) => setTimeout(resolve, retryDelay));
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
 

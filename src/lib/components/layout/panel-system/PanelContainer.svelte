@@ -41,7 +41,12 @@
     onZoomToggle?: (panelId: string) => void;
     onUpdateSizes?: (nodePath: number[], sizes: number[]) => void;
     /** Handler for dropping a tab to create a split */
-    onTabDropToSplit?: (targetPanelId: string, tabId: string, fromPanelId: string, zone: DropZone) => void;
+    onTabDropToSplit?: (
+      targetPanelId: string,
+      tabId: string,
+      fromPanelId: string,
+      zone: DropZone,
+    ) => void;
     /** Handler for moving a tab to another panel */
     onTabMoveToPanel?: (
       targetPanelId: string,
@@ -243,9 +248,7 @@
       }
 
       // Same direction split - look through it
-      const nextChild = lookAtFirst
-        ? child.children[0]
-        : child.children[child.children.length - 1];
+      const nextChild = lookAtFirst ? child.children[0] : child.children[child.children.length - 1];
 
       return findPerpendicularSplit(nextChild, lookAtFirst);
     }
@@ -301,15 +304,23 @@
         if (childNode?.type === 'split') {
           // The child's container size in its layout direction
           const childContainerSize =
-            childNode.direction === 'horizontal' ? containerRef.offsetWidth : containerRef.offsetHeight;
+            childNode.direction === 'horizontal'
+              ? containerRef.offsetWidth
+              : containerRef.offsetHeight;
           const deltaPercent = (childDelta / childContainerSize) * 100;
 
           const childPath = [...nodePath, childIndex];
           const childSizes = [...childNode.sizes];
           const minSize = 10;
 
-          childSizes[childHandleIndex] = Math.max(minSize, childSizes[childHandleIndex] + deltaPercent);
-          childSizes[childHandleIndex + 1] = Math.max(minSize, childSizes[childHandleIndex + 1] - deltaPercent);
+          childSizes[childHandleIndex] = Math.max(
+            minSize,
+            childSizes[childHandleIndex] + deltaPercent,
+          );
+          childSizes[childHandleIndex + 1] = Math.max(
+            minSize,
+            childSizes[childHandleIndex + 1] - deltaPercent,
+          );
 
           // Normalize
           const total = childSizes.reduce((a, b) => a + b, 0);
@@ -344,7 +355,8 @@
       onCloseAllOthersEverywhere={(tabId) => onCloseAllOthersEverywhere?.(node.panelId, tabId)}
       onClosePanel={() => onClosePanel?.(node.panelId)}
       onZoomToggle={() => onZoomToggle?.(node.panelId)}
-      onTabDrop={(tabId, fromPanelId, zone) => onTabDropToSplit?.(node.panelId, tabId, fromPanelId, zone)}
+      onTabDrop={(tabId, fromPanelId, zone) =>
+        onTabDropToSplit?.(node.panelId, tabId, fromPanelId, zone)}
       onTabMoveToPanel={(tabId, fromPanelId, insertIndex?: number) =>
         onTabMoveToPanel?.(node.panelId, tabId, fromPanelId, insertIndex)}
       {onTabRename}
@@ -359,7 +371,10 @@
 {:else if node.type === 'split'}
   <div
     bind:this={containerRef}
-    class={cn('panel-split-container flex h-full w-full', node.direction === 'vertical' && 'flex-col')}
+    class={cn(
+      'panel-split-container flex h-full w-full',
+      node.direction === 'vertical' && 'flex-col',
+    )}
   >
     {#each node.children as child, i (i)}
       {@const isHiddenByZoom = isPanelHiddenByZoom(child)}
@@ -369,7 +384,7 @@
         class:hidden={isHiddenByZoom}
         style={containsZoomedPanel
           ? 'flex: 1 1 100%'
-          : `flex: 0 0 ${isHiddenByZoom ? 0 : (sizes[i] ?? node.sizes[i])}%`}
+          : `flex: 1 1 ${isHiddenByZoom ? 0 : (sizes[i] ?? node.sizes[i])}%`}
       >
         <PanelContainer
           node={child}
@@ -415,8 +430,7 @@
           <!-- Corner handles at intersection points -->
           {#each corners as corner (corner.position)}
             <PanelCornerHandle
-              onResize={(deltaX, deltaY) =>
-                handleCornerResize(i, corner.targets, deltaX, deltaY)}
+              onResize={(deltaX, deltaY) => handleCornerResize(i, corner.targets, deltaX, deltaY)}
               onResizeEnd={() => handleCornerResizeEnd(i)}
               style={node.direction === 'horizontal'
                 ? `top: ${corner.position}%; left: 50%;`
@@ -433,6 +447,7 @@
   .panel-split-container {
     min-width: 0;
     min-height: 0;
+    gap: 4px;
   }
 
   .panel-split-child {

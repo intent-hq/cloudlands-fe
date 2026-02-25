@@ -38,7 +38,7 @@ const STREAM_CONFIG = {
   SESSION_TIMEOUT: AGENT_STREAMING_CONFIG.BACKEND_STREAM_TIMEOUT_MS, // Use shared constant (30 minutes)
   RECOVERY_TIMEOUT: 5000, // 5 seconds - quick recovery attempts
   STALLED_TIMEOUT: 30000, // 30 seconds - health status updates (was 10 seconds, too aggressive)
-  TIMEOUT: 1500, // 1.5 seconds for test compatibility
+  TIMEOUT: 10000, // 10 seconds - stalled stream cleanup threshold (was 1.5s, too aggressive during GC pauses)
 
   // Limits - PERF: Reduced from 1000/500 to prevent memory pressure
   MAX_SESSIONS: 10,

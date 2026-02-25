@@ -108,9 +108,7 @@
   }
 </script>
 
-<div
-  class="h-(--panel-header-height) flex items-center justify-between border-b border-border px-3 shrink-0 {className}"
->
+<div class="h-(--panel-header-height) flex items-center justify-between px-3 shrink-0 {className}">
   <!-- Left side: Navigation + Breadcrumbs + Title -->
   <div class="flex items-center min-w-0 h-full gap-0">
     <!-- Breadcrumbs + Icon + Title -->

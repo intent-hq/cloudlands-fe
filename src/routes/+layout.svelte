@@ -1811,7 +1811,7 @@
 
         <!-- Content area with rounded corners -->
         <main
-          class="flex flex-1 min-h-0 flex-col mr-1.5 mb-1.5 rounded-xl overflow-hidden bg-sidebar border border-border shadow-sm"
+          class="flex flex-1 min-h-0 flex-col mr-1.5 mb-1.5 rounded-xl overflow-hidden bg-sidebar border border-border/30 shadow-sm"
         >
           <div class="flex-1 min-h-0 overflow-auto">
             {@render children?.()}

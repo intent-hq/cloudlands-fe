@@ -87,7 +87,7 @@
           style="width: {spacesOverlayWidth}px;"
         ></div>
         <!-- Main Content Area (Panel Layout) - rendered first when sidebar is on right -->
-        <div class="main-content-area flex h-full min-w-0 z-10 border-r border-border">
+        <div class="main-content-area flex h-full min-w-0 z-10">
           {@render content()}
         </div>
       {/if}
@@ -102,14 +102,16 @@
         storageKey={sidebarStorageKey}
         expandedStorageKey={sidebarExpandedStorageKey}
         percentageWeight={sidebarPercentageWeight}
-        className="flex-none h-full min-w-0 {sidebarSide === 'left' ? 'mr-auto ml-0' : 'ml-auto mr-0'}"
+        className="flex-none h-full min-w-0 {sidebarSide === 'left'
+          ? 'mr-auto ml-0'
+          : 'ml-auto mr-0'}"
       >
         {@render sidebar()}
       </ResizablePanel>
 
       {#if sidebarSide === 'left'}
         <!-- Main Content Area (Panel Layout) - rendered after when sidebar is on left -->
-        <div class="main-content-area flex h-full min-w-0 z-10 border-l border-border">
+        <div class="main-content-area flex h-full min-w-0 z-10">
           {@render content()}
         </div>
       {/if}

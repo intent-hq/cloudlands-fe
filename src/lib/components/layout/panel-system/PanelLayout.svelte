@@ -1005,7 +1005,7 @@
 
 <div class="panel-layout h-full w-full flex flex-col">
   <!-- Main panel area -->
-  <div class="flex-1 min-h-0 overflow-hidden">
+  <div class="flex-1 min-h-0 overflow-hidden p-3 pl-0">
     {#if layoutManager.layout}
       {@const currentFocusedPanelId = layoutManager.focusedPanelId}
       <PanelContainer

@@ -61,10 +61,10 @@ export async function queryEvents(
 export function onEventCreated(
   callback: (data: { workspaceId: string; event: WorkspaceEvent }) => void,
 ): () => void {
-  logger.info('[events.client] Set up listener for events:new channel');
+  logger.debug('[events.client] Set up listener for events:new channel');
   return listenSync('events:new', (event: any) => {
     const data = event.payload || event;
-    logger.info('[events.client] Received events:new IPC message:', data);
+    logger.debug('[events.client] Received events:new IPC message:', data);
     callback(data);
   });
 }

@@ -716,7 +716,7 @@
 <div
   bind:this={containerRef}
   class={cn(
-    'relative rich-input-container flex flex-col group-[.focused]/panel:bg-sidebar bg-background border rounded transition-colors',
+    'relative rich-input-container flex flex-col group-[.focused]/panel:bg-sidebar bg-sidebar rounded transition-colors',
     {
       'border-border': !isDragging,
       'border-primary border-dashed': isDragging,
@@ -1097,6 +1097,10 @@
     100% {
       transform: translateX(100%);
     }
+  }
+
+  :global(.panel:not(.focused) .rich-input-container) {
+    background-color: color-mix(in srgb, var(--color-background) 60%, var(--color-sidebar) 40%);
   }
 
   /* Hide placeholder when panel is not focused */

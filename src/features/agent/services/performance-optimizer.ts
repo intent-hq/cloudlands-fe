@@ -97,9 +97,11 @@ interface CacheEntry<T> {
 export class PerformanceOptimizer {
   private static instance: PerformanceOptimizer;
 
-  // Performance tracking
-  private metrics: PerformanceMetric[] = [];
-  private readonly MAX_METRICS = 1000;
+  // Performance tracking — ring buffer to avoid O(n) shift() on every metric
+  private metricsBuffer: (PerformanceMetric | null)[];
+  private metricsIndex = 0;
+  private metricsCount = 0;
+  private readonly MAX_METRICS = 500; // Reduced from 1000 — 500 is plenty for reporting
   private readonly TARGET_RESPONSE_TIME = 100; // 100ms
 
   // Advanced memoization cache with LRU eviction
@@ -122,6 +124,8 @@ export class PerformanceOptimizer {
   private workerIdCounter = 0;
 
   private constructor() {
+    // Pre-allocate ring buffer with nulls — avoids dynamic array growth
+    this.metricsBuffer = new Array<PerformanceMetric | null>(this.MAX_METRICS).fill(null);
     this.initializeWorkerPool();
     this.startCacheCleanup();
     logger.info('PerformanceOptimizer initialized');
@@ -138,7 +142,9 @@ export class PerformanceOptimizer {
    * Reset performance metrics and optimizations
    */
   reset(): void {
-    this.metrics = [];
+    this.metricsBuffer = new Array<PerformanceMetric | null>(this.MAX_METRICS).fill(null);
+    this.metricsIndex = 0;
+    this.metricsCount = 0;
     this.memoCache.clear();
     this.pendingRequests.clear();
     this.requestQueue = [];
@@ -490,7 +496,7 @@ export class PerformanceOptimizer {
     successRate: number;
     slowOperations: string[];
     } {
-    if (this.metrics.length === 0) {
+    if (this.metricsCount === 0) {
       return {
         avgResponseTime: 0,
         p95ResponseTime: 0,
@@ -500,23 +506,46 @@ export class PerformanceOptimizer {
       };
     }
 
-    const sorted = [...this.metrics].sort((a, b) => a.duration - b.duration);
-    const successful = this.metrics.filter((m) => m.success);
+    // Collect non-null entries from the ring buffer in logical order.
+    // After wraparound, metricsIndex points to the oldest slot, so we
+    // start there and walk forward modulo MAX_METRICS.
+    const metrics: PerformanceMetric[] = [];
+    const startIdx = this.metricsCount < this.MAX_METRICS ? 0 : this.metricsIndex;
+    for (let i = 0; i < this.metricsCount; i++) {
+      const entry = this.metricsBuffer[(startIdx + i) % this.MAX_METRICS];
+      if (entry) metrics.push(entry);
+    }
 
-    const avgResponseTime = sorted.reduce((sum, m) => sum + m.duration, 0) / sorted.length;
+    if (metrics.length === 0) {
+      return {
+        avgResponseTime: 0,
+        p95ResponseTime: 0,
+        p99ResponseTime: 0,
+        successRate: 100,
+        slowOperations: [],
+      };
+    }
+
+    const sorted = metrics.sort((a, b) => a.duration - b.duration);
+    let successCount = 0;
+    let totalDuration = 0;
+    const slowOps = new Set<string>();
+
+    for (const m of metrics) {
+      totalDuration += m.duration;
+      if (m.success) successCount++;
+      if (m.duration > this.TARGET_RESPONSE_TIME) slowOps.add(m.operation);
+    }
+
+    const avgResponseTime = totalDuration / metrics.length;
     const p95Index = Math.floor(sorted.length * 0.95);
     const p99Index = Math.floor(sorted.length * 0.99);
-
-    const slowOps = new Set<string>();
-    this.metrics
-      .filter((m) => m.duration > this.TARGET_RESPONSE_TIME)
-      .forEach((m) => slowOps.add(m.operation));
 
     return {
       avgResponseTime: Math.round(avgResponseTime),
       p95ResponseTime: Math.round(sorted[p95Index]?.duration || 0),
       p99ResponseTime: Math.round(sorted[p99Index]?.duration || 0),
-      successRate: (successful.length / this.metrics.length) * 100,
+      successRate: (successCount / metrics.length) * 100,
       slowOperations: Array.from(slowOps),
     };
   }
@@ -597,17 +626,17 @@ export class PerformanceOptimizer {
     success: boolean,
     metadata?: Record<string, any>,
   ): void {
-    this.metrics.push({
+    // Ring buffer: O(1) insert, no array copying, no GC pressure from shift()
+    this.metricsBuffer[this.metricsIndex] = {
       operation,
       duration,
       timestamp: Date.now(),
       success,
       metadata,
-    });
-
-    // Keep only the most recent metrics
-    if (this.metrics.length > this.MAX_METRICS) {
-      this.metrics.shift();
+    };
+    this.metricsIndex = (this.metricsIndex + 1) % this.MAX_METRICS;
+    if (this.metricsCount < this.MAX_METRICS) {
+      this.metricsCount++;
     }
 
     // Log slow operations

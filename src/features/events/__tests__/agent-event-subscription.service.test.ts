@@ -391,69 +391,68 @@ describe('AgentEventSubscriptionService', () => {
 
       vi.useFakeTimers();
 
-      const groupId = 'poll-bound-group';
+      try {
+        const groupId = 'poll-bound-group';
 
-      // Delivery always fails — this would loop forever without the bound
-      service.setDeliveryCallback((_agentId, _events) => {
-        return { status: 'failed' as const, error: 'Permanent failure' };
-      });
+        // Delivery always fails — this would loop forever without the bound
+        service.setDeliveryCallback((_agentId, _events) => {
+          return { status: 'failed' as const, error: 'Permanent failure' };
+        });
 
-      // Parent starts busy so events go through queueDelegationGroupEvents
-      service.setAgentStatus('agent-1', 'responding');
+        // Parent starts busy so events go through queueDelegationGroupEvents
+        service.setAgentStatus('agent-1', 'responding');
 
-      service.subscribe('agent-1', 'Parent Agent', {
-        eventTypes: ['agent:idle', 'agent:deleted'],
-        actorIds: ['agent-2'],
-        delegationGroup: {
-          groupId,
-          awaitMode: 'all',
-          expectedAgentIds: ['agent-2'],
-        },
-      });
+        service.subscribe('agent-1', 'Parent Agent', {
+          eventTypes: ['agent:idle', 'agent:deleted'],
+          actorIds: ['agent-2'],
+          delegationGroup: {
+            groupId,
+            awaitMode: 'all',
+            expectedAgentIds: ['agent-2'],
+          },
+        });
 
-      // Trigger delegation group completion while parent is busy
-      const idleEvent: WorkspaceEvent = {
-        id: 'poll-bound-event-1',
-        workspaceId,
-        timestamp: new Date().toISOString(),
-        type: 'agent:idle',
-        actor: { type: 'agent', id: 'agent-2', name: 'Child Agent' },
-        data: { agentId: 'agent-2' },
-      };
+        // Trigger delegation group completion while parent is busy
+        const idleEvent: WorkspaceEvent = {
+          id: 'poll-bound-event-1',
+          workspaceId,
+          timestamp: new Date().toISOString(),
+          type: 'agent:idle',
+          actor: { type: 'agent', id: 'agent-2', name: 'Child Agent' },
+          data: { agentId: 'agent-2' },
+        };
 
-      eventBus.emitEvent(idleEvent);
+        eventBus.emitEvent(idleEvent);
 
-      // Now set parent to idle so the polling loop starts attempting delivery
-      service.setAgentStatus('agent-1', 'idle');
+        // Now set parent to idle so the polling loop starts attempting delivery
+        service.setAgentStatus('agent-1', 'idle');
 
-      // Advance timers to let the polling loop run through its attempts.
-      // Each failed delivery retries after 1000ms. With max 3 attempts:
-      // Attempt 1: immediate (checkAndDeliver called), delivery fails, schedules +1000ms
-      // Attempt 2: +1000ms, delivery fails, schedules +1000ms
-      // Attempt 3: +1000ms, delivery fails, schedules +1000ms
-      // Attempt 4: +1000ms, budget check fires (attempts > 3), resolves with failed
-      for (let i = 0; i < 10; i++) {
-        await vi.advanceTimersByTimeAsync(1000);
+        // Advance timers to let the polling loop run through its attempts.
+        // Each failed delivery retries after 1000ms. With max 3 attempts:
+        // Attempt 1: immediate (checkAndDeliver called), delivery fails, schedules +1000ms
+        // Attempt 2: +1000ms, delivery fails, schedules +1000ms
+        // Attempt 3: +1000ms, delivery fails, schedules +1000ms
+        // Attempt 4: +1000ms, budget check fires (attempts > 3), resolves with failed
+        for (let i = 0; i < 10; i++) {
+          await vi.advanceTimersByTimeAsync(1000);
+        }
+
+        // After polling exhaustion, the delegation group should be cleaned up
+        // to prevent a lingering "Waiting for all (n/n)" UI. Previously the
+        // group was kept "for retry", but since tracker.delivered is already
+        // true, no new events can re-trigger delivery — so cleanup is correct.
+        const groupStatus = service.getDelegationGroupStatus(groupId);
+        expect(groupStatus).toBeNull();
+      } finally {
+        // Restore original value and real timers even if assertions fail,
+        // otherwise subsequent tests hang on fake timers.
+        Object.defineProperty(AgentEventSubscriptionService, 'MAX_DELEGATION_POLL_ATTEMPTS', {
+          value: originalMaxAttempts,
+          writable: true,
+          configurable: true,
+        });
+        vi.useRealTimers();
       }
-
-      // The delegation group tracker should still exist (caller keeps it for retry),
-      // but the polling loop should have terminated — verified by the fact that
-      // we're not stuck in an infinite loop and the test completes.
-      // The key assertion: the version was bumped with 'delegation-poll-exhausted'
-      // reason, which we can verify indirectly by checking the service is still functional.
-      // The group status should still be present since the caller logs but doesn't clean up.
-      const groupStatus = service.getDelegationGroupStatus(groupId);
-      expect(groupStatus).not.toBeNull();
-      expect(groupStatus?.isComplete).toBe(true);
-
-      // Restore original value
-      Object.defineProperty(AgentEventSubscriptionService, 'MAX_DELEGATION_POLL_ATTEMPTS', {
-        value: originalMaxAttempts,
-        writable: true,
-        configurable: true,
-      });
-
-      vi.useRealTimers();
     });
   });
 

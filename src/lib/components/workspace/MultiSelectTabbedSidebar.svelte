@@ -828,75 +828,55 @@
           {#if showDropBefore}
             <div class="drop-indicator"></div>
           {/if}
-          <TooltipRich
-            title={tab.label}
-            description={getTabDescription(tab.id, tab.description)}
-            icon={tab.icon}
-            side="top"
-            align="center"
-            sideOffset={0}
-            delayDuration={0}
-            open={openTooltipTabId === tab.id && !draggedTabId}
-            descriptionClass="text-muted-foreground text-sm"
-            iconClass="text-muted-foreground/50 order-2 ml-auto size-3"
-            contentClass="shadow-xs mx-2 max-w-[calc(100vw-2rem)] rounded-none px-1.25"
-            footerClass="border-t-0 bg-transparent! !pt-1 !px-3 rounded-none"
-            class={tab.hideLabel ? 'shrink-0' : 'flex-1 shrink-0'}
+          <button
+            type="button"
+            draggable="true"
+            class={cn(
+              'relative flex items-center justify-center gap-1.5 py-1.5 h-7.5 rounded-mdx text-xs font-medium transition-all duration-150 cursor-pointer focus:ring-0 active:ring-0',
+              'focus-visible:outline-none focus-visible:ring-0',
+              tab.hideLabel ? 'px-2' : 'px-3',
+              isSelected
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground hover:bg-background/50',
+              isDragging && 'opacity-50 cursor-grabbing',
+              tab.hideLabel ? 'shrink-0' : 'flex-1 shrink-0',
+            )}
+            onpointerenter={() => (openTooltipTabId = tab.id)}
+            onclick={(e) => {
+              tooltipPinned = true;
+              handleTabClick(tab.id, e);
+            }}
+            ondragstart={(e) => handleDragStart(tab.id, e)}
+            ondragover={(e) => handleDragOver(tab.id, e)}
+            ondragleave={(e) => handleDragLeave(e)}
+            ondrop={(e) => handleDrop(e)}
+            ondragend={handleDragEnd}
           >
-            {#snippet footer()}
-              <div class="flex items-center gap-1.5 text-xs -ml-1 -mt-1 text-muted-foreground/70">
-                Hold Shift to select multiple
+            <div class={cn('shrink-0 opacity-50', tab.hideLabel ? '' : 'tab-icon')}>
+              <Fa icon={tab.icon} class="size-3.5" />
+            </div>
+            {#if !tab.hideLabel}
+              <!-- Responsive labels - hidden at narrow widths via container query -->
+              <span class="tab-label truncate">{tab.label}</span>
+            {/if}
+            <!-- Badges for specific tabs - inline when wide, absolute when narrow -->
+            {#if tab.id === 'agents' && (hasRunningAgents || hasUnreadAgents)}
+              <div
+                class={cn(
+                  'tab-badge tab-badge--agents size-1.5 rounded-full z-10 shrink-0',
+                  hasRunningAgents ? 'bg-emerald-500' : 'bg-blue-500',
+                )}
+              ></div>
+            {/if}
+            {#if tab.id === 'changes' && changedFilesCount > 0}
+              <div
+                class="tab-badge min-w-4 h-4 px-1 rounded-full bg-background text-muted-foreground text-[9px] font-semibold flex items-center justify-center z-10 shrink-0"
+              >
+                <AnimatedNumber value={changedFilesCount} />
               </div>
-            {/snippet}
-            <button
-              type="button"
-              draggable="true"
-              class={cn(
-                'relative flex items-center justify-center gap-1.5 py-1.5 h-7.5 rounded-mdx text-xs font-medium transition-all duration-150 cursor-pointer focus:ring-0 active:ring-0',
-                'focus-visible:outline-none focus-visible:ring-0',
-                tab.hideLabel ? 'px-2' : 'px-3',
-                isSelected
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-background/50',
-                isDragging && 'opacity-50 cursor-grabbing',
-                'w-full',
-              )}
-              onpointerenter={() => (openTooltipTabId = tab.id)}
-              onclick={(e) => {
-                tooltipPinned = true;
-                handleTabClick(tab.id, e);
-              }}
-              ondragstart={(e) => handleDragStart(tab.id, e)}
-              ondragover={(e) => handleDragOver(tab.id, e)}
-              ondragleave={(e) => handleDragLeave(e)}
-              ondrop={(e) => handleDrop(e)}
-              ondragend={handleDragEnd}
-            >
-              <div class={cn('shrink-0 opacity-50', tab.hideLabel ? '' : 'tab-icon')}>
-                <Fa icon={tab.icon} class="size-3.5" />
-              </div>
-              {#if !tab.hideLabel}
-                <!-- Responsive labels - hidden at narrow widths via container query -->
-                <span class="tab-label truncate">{tab.label}</span>
-              {/if}
-              <!-- Badges for specific tabs - inline when wide, absolute when narrow -->
-              {#if tab.id === 'agents' && (hasRunningAgents || hasUnreadAgents)}
-                <div
-                  class={cn(
-                    'tab-badge tab-badge--agents size-1.5 rounded-full z-10 shrink-0',
-                    hasRunningAgents ? 'bg-emerald-500' : 'bg-blue-500',
-                  )}
-                ></div>
-              {/if}
-              {#if tab.id === 'changes' && changedFilesCount > 0}
-                <div
-                  class="tab-badge min-w-4 h-4 px-1 rounded-full bg-background text-muted-foreground text-[9px] font-semibold flex items-center justify-center z-10 shrink-0"
-                >
-                  <AnimatedNumber value={changedFilesCount} />
-                </div>
-              {/if}
-            </button>
-          </TooltipRich>
+            {/if}
+          </button>
+
           <!-- Drop indicator after this tab -->
           {#if showDropAfter}
             <div class="drop-indicator"></div>
@@ -925,7 +905,7 @@
         {@const useFly = !useSlideTransition && flyDirection !== 0}
         <!-- Outer wrapper for fly transition (single panel switches) -->
         <div
-          class={cn('w-full min-w-0 flex flex-col', !isLast && 'border-b border-border')}
+          class={cn('w-full min-w-0 flex flex-col px-2', !isLast && 'border-b border-border')}
           in:fly={{ x: useFly ? flyDirection * 30 : 0, duration: useFly ? 200 : 0 }}
           out:fly={{ x: useFly ? -flyDirection * 30 : 0, duration: useFly ? 200 : 0 }}
         >
@@ -1297,14 +1277,14 @@
   }
 
   /* Narrow (200px-250px): hide icons, show only labels */
-  @container (min-width: 235px) and (max-width: 310px) {
+  @container (min-width: 255px) and (max-width: 330px) {
     .tab-icon {
       display: none;
     }
   }
 
   /* Very narrow (under 200px): show only icons, hide labels */
-  @container (max-width: 235px) {
+  @container (max-width: 255px) {
     .tab-icon {
       display: flex;
       opacity: 1;

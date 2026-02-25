@@ -1374,7 +1374,20 @@ export class ACPProviderStreaming {
     // a single tool_call event with status:"completed" instead of a separate tool_call_update)
     const status = update?.status || update?.content?.status;
     if (status === 'completed' || status === 'failed') {
-      const output = update?.rawOutput?.output || update?.result || update?.content?.result || '';
+      let output = update?.rawOutput?.output || update?.result || update?.content?.result || '';
+      // When a tool fails with an empty result, extract the error message so the UI
+      // shows a meaningful error instead of a blank "Tool Error:" line
+      if (!output && status === 'failed') {
+        const errorMsg = update?.error?.message || update?.content?.error?.message
+          || update?.error || update?.content?.error;
+        if (errorMsg) {
+          try {
+            output = typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg);
+          } catch {
+            output = String(errorMsg);
+          }
+        }
+      }
       const resultBlock: ContentBlock = {
         type: 'tool_result',
         tool_use_id: toolId,
@@ -1385,6 +1398,7 @@ export class ACPProviderStreaming {
       logger.debug('[ACPProviderStreaming] tool_call had terminal status, emitted tool_result', {
         toolId,
         status,
+        hasOutput: !!output,
         agentId: session.agentId,
       });
       this.lastPendingToolId = undefined;
@@ -1513,6 +1527,22 @@ export class ACPProviderStreaming {
       // Production format
       output = update?.rawOutput?.output || update?.result || '';
       toolCallId = update?.toolCallId || '';
+    }
+
+    // When output is empty but the update carries an error (e.g., MCP connection lost,
+    // timeout, bridge unavailable), extract the error message so the UI shows something
+    // meaningful instead of a blank "Tool Error:" line
+    const isError = update?.status === 'failed' || update?.isError;
+    if (!output && isError) {
+      const errorMsg = update?.error?.message || update?.content?.error?.message
+        || update?.error || update?.content?.error;
+      if (errorMsg) {
+        try {
+          output = typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg);
+        } catch {
+          output = String(errorMsg);
+        }
+      }
     }
 
     // Clear lastPendingToolId since we received a proper tool_call_update

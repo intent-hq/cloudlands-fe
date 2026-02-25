@@ -209,9 +209,9 @@
   tabindex="0"
 >
   {#if totalCount === 0}
-    <div class="px-3 py-4 text-center">
-      <p class="text-xs text-muted-foreground/60">No active workspaces</p>
-      <p class="text-[11px] text-muted-foreground/40 mt-1">
+    <div class="px-3 py-4">
+      <p class="text-sm text-muted-foreground/60">No active workspaces</p>
+      <p class="text-sm text-muted-foreground/40 mt-1 leading-tight">
         Pin workspaces from All Spaces for quick access
       </p>
     </div>

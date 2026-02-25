@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { WorkspacePhaseInfo, WorkspacePhaseStats } from './workspace-phase';
   import { cn } from '$lib/utils';
+  import { joinPath } from '$lib/utils/path-utils';
   import type { Note, Workspace } from '$shared/types';
   import { isSpecNote } from './sidebar';
   import { getNoteIcon, getNoteTitle, getNoteIconClass, getNoteDepth } from './sidebar/utils';
@@ -22,6 +23,9 @@
   import type { UIFileChange } from '$lib/components/file-tracking/accept-changes/types';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import Skeleton from '$lib/components/ui/skeleton/skeleton.svelte';
+  import { invoke } from '$lib/electron-bridge';
+  import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
+  import { faFolder } from '@fortawesome/free-solid-svg-icons';
 
   interface OverviewAgent {
     id: string;
@@ -114,15 +118,8 @@
   let otherAgents = $derived.by(() => {
     const others = agents.filter((a) => a !== primaryAgent);
     if (!isCoordinator || !primaryAgent) return others;
-    return others.filter((a) => {
-      // Always show running agents
-      if (a.state === 'running' || a.state === 'responding') return true;
-      // Hide background agents delegated by coordinator
-      if (a.isBackground && a.parentAgentId === primaryAgent.id) return false;
-      // Hide agents created by coordinator (they're managed by it)
-      if (a.parentAgentId === primaryAgent.id) return false;
-      return true;
-    });
+    // In coordinator mode, only show agents NOT delegated by the coordinator
+    return others.filter((a) => a.parentAgentId !== primaryAgent.id);
   });
   let runningOtherCount = $derived(
     otherAgents.filter((a) => a.state === 'running' || a.state === 'responding').length,
@@ -156,8 +153,8 @@
   let moreContextCount = $derived(Math.max(0, contextItemCount - shownContextCount));
 
   // Changes
-  let topFiles = $derived(changedFiles.slice(0, 6));
-  let moreFilesCount = $derived(Math.max(0, changedFiles.length - 6));
+  let topFiles = $derived(changedFiles.slice(0, 12));
+  let moreFilesCount = $derived(Math.max(0, changedFiles.length - 12));
 
   // Convert OverviewChange to UIFileChange for FileRow component
   function toUIFileChange(change: OverviewChange): UIFileChange {
@@ -169,50 +166,98 @@
       staged: change.staged,
     };
   }
+
+  // Root file listing for the Files card
+  interface RootFileEntry {
+    name: string;
+    isDirectory: boolean;
+    path: string;
+  }
+  const MAX_ROOT_FILES = 12;
+  let rootFiles = $state<RootFileEntry[]>([]);
+  let rootFilesTotal = $state(0);
+  let rootFilesLoading = $state(false);
+
+  async function loadRootFiles() {
+    const worktreePath = workspace?.worktreePath;
+    if (!worktreePath) return;
+    rootFilesLoading = true;
+    try {
+      const response = (await invoke('file:readDirWithStats', { path: worktreePath })) as {
+        success: boolean;
+        data?: { name: string; isDirectory: boolean }[];
+      };
+      if (response?.success && response.data) {
+        // Sort: directories first, then alphabetically
+        const sorted = response.data
+          .filter((e) => !e.name.startsWith('.'))
+          .sort((a, b) => {
+            if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+            return a.name.localeCompare(b.name);
+          });
+        rootFilesTotal = sorted.length;
+        rootFiles = sorted.slice(0, MAX_ROOT_FILES).map((e) => ({
+          name: e.name,
+          isDirectory: e.isDirectory,
+          path: joinPath(worktreePath, e.name),
+        }));
+      }
+    } catch {
+      // ignore
+    } finally {
+      rootFilesLoading = false;
+    }
+  }
+
+  $effect(() => {
+    if (workspace?.worktreePath) {
+      loadRootFiles();
+    }
+  });
 </script>
 
-<div class={cn('flex flex-col gap-3 px-4 py-2', className)}>
+<div class={cn('flex flex-col gap-3 px-1', className)}>
   <!-- ═══════════════════════════════════════════════════════ -->
   <!-- AGENT ORCHESTRATION CARD                               -->
   <!-- ═══════════════════════════════════════════════════════ -->
   {#if agentsLoading}
-    <section class="rounded-lg bg-background/60 overflow-hidden px-4 py-3">
-      <Skeleton class="h-4 w-32 mb-2" />
-      <Skeleton class="h-3 w-48 mb-3" />
-      <div class="flex items-center gap-2 py-2">
-        <Skeleton class="size-6 rounded-full" />
-        <Skeleton class="h-3 flex-1" />
+    <section class="bg-background/50 rounded-lg overflow-hidden">
+      <div class="px-4 pt-3 pb-1">
+        <h3 class="text-sm font-semibold text-foreground">Agents</h3>
+        <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight mb-2">
+          Agents working on your task in this space.
+        </p>
       </div>
-      <div class="flex items-center gap-2 py-2">
-        <Skeleton class="size-6 rounded-full" />
-        <Skeleton class="h-3 w-3/4" />
+      <div class="px-4 pb-3">
+        <div class="flex items-center gap-2 py-2">
+          <Skeleton class="size-6 rounded-full" />
+          <Skeleton class="h-3 flex-1" />
+        </div>
+        <div class="flex items-center gap-2 py-2">
+          <Skeleton class="size-6 rounded-full" />
+          <Skeleton class="h-3 w-3/4" />
+        </div>
       </div>
     </section>
   {:else if isCoordinator && primaryAgent}
-    <section class="rounded-lg bg-background/60 overflow-hidden">
+    <section class="bg-background/50 rounded-lg overflow-hidden">
       <!-- Card header -->
-      <div class="flex items-start justify-between px-4 pt-3 pb-1">
+      <div class="px-4 pt-3 pb-1">
         <button
-          class="flex-1 min-w-0 text-left cursor-pointer"
+          class="flex items-center gap-1 w-full text-left cursor-pointer"
           onclick={() => onSwitchTab?.('agents')}
         >
           <h3 class="text-sm font-semibold text-foreground hover:underline">Agent orchestration</h3>
-          <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-snug mb-2">
-            A coordinator agent breaks down your task into a spec, then delegates work to specialist
-            agents that run in parallel.
-          </p>
+          <Fa icon={faArrowRight} size="xs" class="ml-auto text-muted-foreground/40 shrink-0" />
         </button>
-        <button
-          class="p-1 rounded text-muted-foreground/40 hover:text-muted-foreground transition-colors cursor-pointer shrink-0"
-          onclick={() => onSwitchTab?.('agents')}
-          title="View all agents"
-        >
-          <Fa icon={faArrowRight} size="xs" />
-        </button>
+        <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight mb-2">
+          A coordinator agent breaks down your task into a spec, then delegates work to specialist
+          agents that run in parallel.
+        </p>
       </div>
 
       <div class="px-2 pb-2">
-        <div class="bg-background">
+        <div>
           <!-- Coordinator agent -->
           <AgentCard
             agentId={primaryAgent.id}
@@ -223,7 +268,7 @@
           <!-- Delegated agents (within parent card) -->
           {#if delegatedCount > 0}
             <button
-              class="flex items-center gap-2 w-full px-3 py-1.5 border-t border-border/30 text-left transition-colors cursor-pointer hover:bg-muted/30"
+              class="flex items-center gap-2 w-full px-3 pl-9 py-1.5 text-left transition-colors cursor-pointer hover:bg-muted/30"
               onclick={() => onSwitchTab?.('agents')}
             >
               <div class="flex -space-x-1.5 shrink-0">
@@ -273,24 +318,18 @@
       </div>
     </section>
   {:else if agents.length > 0}
-    <section class="rounded-lg bg-background/60 overflow-hidden">
-      <div class="flex items-start justify-between px-4 pt-3 pb-1">
+    <section class="bg-background/50 rounded-lg overflow-hidden">
+      <div class="px-4 pt-3 pb-1">
         <button
-          class="flex-1 min-w-0 text-left cursor-pointer"
+          class="flex items-center gap-1 w-full text-left cursor-pointer"
           onclick={() => onSwitchTab?.('agents')}
         >
           <h3 class="text-sm font-semibold text-foreground hover:underline">Agents</h3>
-          <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-snug mb-2">
-            Agents working on your task in this space.
-          </p>
+          <Fa icon={faArrowRight} size="xs" class="ml-auto text-muted-foreground/40 shrink-0" />
         </button>
-        <button
-          class="p-1 rounded text-muted-foreground/60 transition-colors cursor-pointer shrink-0"
-          onclick={() => onSwitchTab?.('agents')}
-          title="View all agents"
-        >
-          <Fa icon={faArrowRight} size="xs" />
-        </button>
+        <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight mb-2">
+          Agents working on your task in this space.
+        </p>
       </div>
 
       {#if primaryAgent}
@@ -352,41 +391,41 @@
   <!-- CONTEXT CARD                                            -->
   <!-- ═══════════════════════════════════════════════════════ -->
   {#if notesLoading}
-    <section class="rounded-lg bg-background/60 overflow-hidden px-4 py-3">
-      <Skeleton class="h-4 w-24 mb-2" />
-      <Skeleton class="h-3 w-44 mb-3" />
-      <div class="flex items-center gap-2 py-1.5">
-        <Skeleton class="size-4 rounded" />
-        <Skeleton class="h-3 flex-1" />
+    <section class="bg-background/50 rounded-lg overflow-hidden">
+      <div class="px-4 pt-3 pb-1">
+        <h3 class="text-sm font-semibold text-foreground">Context</h3>
+        <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight mb-2">
+          Context about the task, shared with all agents in this space.
+        </p>
       </div>
-      <div class="flex items-center gap-2 py-1.5">
-        <Skeleton class="size-4 rounded" />
-        <Skeleton class="h-3 w-2/3" />
-      </div>
-      <div class="flex items-center gap-2 py-1.5">
-        <Skeleton class="size-4 rounded" />
-        <Skeleton class="h-3 w-1/2" />
+      <div class="px-4 pb-3">
+        <div class="flex items-center gap-2 py-1.5">
+          <Skeleton class="size-4 rounded" />
+          <Skeleton class="h-3 flex-1" />
+        </div>
+        <div class="flex items-center gap-2 py-1.5">
+          <Skeleton class="size-4 rounded" />
+          <Skeleton class="h-3 w-2/3" />
+        </div>
+        <div class="flex items-center gap-2 py-1.5">
+          <Skeleton class="size-4 rounded" />
+          <Skeleton class="h-3 w-1/2" />
+        </div>
       </div>
     </section>
   {:else if specNote || taskNotes.length > 0 || otherNotes.length > 0}
-    <section class="rounded-lg bg-background/60 overflow-hidden">
-      <div class="flex items-start justify-between px-4 pt-3 pb-1">
+    <section class="bg-background/50 rounded-lg overflow-hidden">
+      <div class="px-4 pt-3 pb-1">
         <button
-          class="flex-1 min-w-0 text-left cursor-pointer"
+          class="flex items-center gap-1 w-full text-left cursor-pointer"
           onclick={() => onSwitchTab?.('context')}
         >
           <h3 class="text-sm font-semibold text-foreground hover:underline">Context</h3>
-          <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-snug mb-2">
-            Notes about the task, shared with all agents in this space.
-          </p>
+          <Fa icon={faArrowRight} size="xs" class="ml-auto text-muted-foreground/40 shrink-0" />
         </button>
-        <button
-          class="p-1 rounded text-muted-foreground/60 transition-colors cursor-pointer shrink-0"
-          onclick={() => onSwitchTab?.('context')}
-          title="View all context"
-        >
-          <Fa icon={faArrowRight} size="xs" />
-        </button>
+        <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight mb-2">
+          Context about the task, shared with all agents in this space.
+        </p>
       </div>
 
       <div class="px-2 pb-2 flex flex-col">
@@ -457,44 +496,44 @@
   <!-- CHANGES CARD                                            -->
   <!-- ═══════════════════════════════════════════════════════ -->
   {#if changesLoading}
-    <section class="rounded-lg bg-background/60 overflow-hidden px-4 py-3">
-      <Skeleton class="h-4 w-28 mb-2" />
-      <Skeleton class="h-3 w-52 mb-3" />
-      <div class="flex items-center gap-2 py-1.5">
-        <Skeleton class="size-3 rounded" />
-        <Skeleton class="h-3 flex-1" />
-        <Skeleton class="h-3 w-10" />
+    <section class="bg-background/50 rounded-lg overflow-hidden">
+      <div class="px-4 pt-3 pb-1">
+        <h3 class="text-sm font-semibold text-foreground">Changes</h3>
+        <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight mb-2">
+          Changes made to files by agents working in this space.
+        </p>
       </div>
-      <div class="flex items-center gap-2 py-1.5">
-        <Skeleton class="size-3 rounded" />
-        <Skeleton class="h-3 w-3/4" />
-        <Skeleton class="h-3 w-8" />
-      </div>
-      <div class="flex items-center gap-2 py-1.5">
-        <Skeleton class="size-3 rounded" />
-        <Skeleton class="h-3 w-1/2" />
-        <Skeleton class="h-3 w-10" />
+      <div class="px-4 pb-3">
+        <div class="flex items-center gap-2 py-1.5">
+          <Skeleton class="size-3 rounded" />
+          <Skeleton class="h-3 flex-1" />
+          <Skeleton class="h-3 w-10" />
+        </div>
+        <div class="flex items-center gap-2 py-1.5">
+          <Skeleton class="size-3 rounded" />
+          <Skeleton class="h-3 w-3/4" />
+          <Skeleton class="h-3 w-8" />
+        </div>
+        <div class="flex items-center gap-2 py-1.5">
+          <Skeleton class="size-3 rounded" />
+          <Skeleton class="h-3 w-1/2" />
+          <Skeleton class="h-3 w-10" />
+        </div>
       </div>
     </section>
   {:else}
-    <section class="rounded-lg bg-background/60 overflow-hidden">
-      <div class="flex items-start justify-between px-4 pt-3 pb-1">
+    <section class="bg-background/50 rounded-lg overflow-hidden">
+      <div class="px-4 pt-3 pb-1">
         <button
-          class="flex-1 min-w-0 text-left cursor-pointer"
+          class="flex items-center gap-1 w-full text-left cursor-pointer"
           onclick={() => onSwitchTab?.('changes')}
         >
           <h3 class="text-sm font-semibold text-foreground hover:underline">Changes</h3>
-          <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-snug mb-2">
-            Files changed by agents working in this space.
-          </p>
+          <Fa icon={faArrowRight} size="xs" class="ml-auto text-muted-foreground/40 shrink-0" />
         </button>
-        <button
-          class="p-1 rounded text-muted-foreground/60 transition-colors cursor-pointer shrink-0"
-          onclick={() => onSwitchTab?.('changes')}
-          title="View all changes"
-        >
-          <Fa icon={faArrowRight} size="xs" />
-        </button>
+        <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight mb-2">
+          Changes made to files by agents working in this space.
+        </p>
       </div>
 
       <div class="px-4 pb-2 flex flex-col gap-0.5">
@@ -503,7 +542,7 @@
             <Fa icon={faCodeBranch} size="xs" class="text-muted-foreground/30" />
             <span class="text-muted-foreground/60 truncate text-xs">{workspace.branch}</span>
             {#if workspace.baseRef}
-              <Fa icon={faArrowRight} size="xs" class="text-muted-foreground/20" />
+              <Fa icon={faArrowRight} size="xs" class="text-muted-foreground/30" />
               <span class="text-muted-foreground/60 truncate text-xs">{workspace.baseRef}</span>
             {/if}
           </div>
@@ -578,29 +617,76 @@
   <!-- ═══════════════════════════════════════════════════════ -->
   <!-- FILES CARD                                              -->
   <!-- ═══════════════════════════════════════════════════════ -->
-  <section class="rounded-lg bg-background/60 overflow-hidden">
-    <div class="flex items-start justify-between px-4 pt-3 pb-3">
-      <button
-        class="flex-1 min-w-0 text-left cursor-pointer"
-        onclick={() => onSwitchTab?.('files')}
-      >
-        <h3 class="text-sm font-semibold text-foreground hover:underline">Files</h3>
-        <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-snug text-pretty">
-          The agents in this space are working off a copy of your files.
-        </p>
-      </button>
-      <div class="flex items-center gap-2 shrink-0">
-        {#if workspace?.worktreePath}
-          <OpenComboButton filePath={workspace.worktreePath} isDirectory />
-        {/if}
+  <section class="bg-background/50 rounded-lg overflow-hidden">
+    <div class="px-4 pt-3 pb-1">
+      <div class="flex items-center gap-1">
         <button
-          class="p-1 rounded text-muted-foreground/60 transition-colors cursor-pointer"
+          class="flex items-center gap-1 text-left cursor-pointer"
           onclick={() => onSwitchTab?.('files')}
-          title="Browse files"
         >
-          <Fa icon={faArrowRight} size="xs" />
+          <h3 class="text-sm font-semibold text-foreground hover:underline">Files</h3>
+        </button>
+        {#if workspace?.worktreePath}
+          <div class="ml-auto -my-1">
+            <OpenComboButton filePath={workspace.worktreePath} isDirectory />
+          </div>
+        {/if}
+
+        <button
+          class="flex items-center gap-1 text-left cursor-pointer ml-2"
+          onclick={() => onSwitchTab?.('files')}
+        >
+          <Fa icon={faArrowRight} size="xs" class="ml-auto text-muted-foreground/40 shrink-0" />
         </button>
       </div>
+      <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight">
+        The agents in this space are working off a copy of your files.
+      </p>
+    </div>
+
+    <div class="px-2 pb-3.5 flex flex-col">
+      {#if rootFilesLoading}
+        <div class="px-2 py-1 space-y-1">
+          {#each Array(6) as _}
+            <div class="flex items-center gap-2 py-1">
+              <Skeleton class="size-4 rounded shrink-0" />
+              <Skeleton class="h-3 flex-1" />
+            </div>
+          {/each}
+        </div>
+      {:else}
+        {#each rootFiles as entry (entry.path)}
+          <button
+            class="flex items-center gap-1.5 w-full px-2 py-0.75 text-left text-[0.82rem] hover:bg-muted/50 transition-colors border cursor-pointer truncate {activeFilePath ===
+              entry.path || selectedFilePath === entry.path
+              ? 'bg-background border-border shadow-xs'
+              : 'border-transparent'}"
+            onclick={() => {
+              if (!entry.isDirectory && onOpenFileInPanel) onOpenFileInPanel(entry.path);
+              else onSwitchTab?.('files');
+            }}
+          >
+            {#if entry.isDirectory}
+              <Fa icon={faFolder} size="xs" class="text-muted-foreground/50 shrink-0 w-4" />
+            {:else}
+              <span class="w-4 h-4 shrink-0 [&>svg]:w-full [&>svg]:h-full">
+                {@html getFileTypeIconSvg(entry.name)}
+              </span>
+            {/if}
+            <span class="truncate text-foreground/80">{entry.name}</span>
+          </button>
+        {/each}
+
+        {#if rootFilesTotal > MAX_ROOT_FILES}
+          <button
+            class="mt-1 flex items-center text-xs text-muted-foreground/60 text-left py-0.5 transition-colors cursor-pointer px-2 hover:text-muted-foreground"
+            onclick={() => onSwitchTab?.('files')}
+          >
+            <Fa icon={faPlus} size="xs" class="ml-0.75 -mt-px mr-0.75" />
+            {rootFilesTotal - MAX_ROOT_FILES} more
+          </button>
+        {/if}
+      {/if}
     </div>
   </section>
 </div>

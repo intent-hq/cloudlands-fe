@@ -461,6 +461,19 @@ export function setupWorkspaceIPC(): void {
             });
           }
 
+          // Clean up file tracking service (force-save pending changes, stop timers, remove from cache)
+          try {
+            const { cleanupGitIntegration } = await import(
+              '../../file-tracking/main/file-tracking.ipc'
+            );
+            await cleanupGitIntegration(id);
+            logger.debug('[WorkspaceIPC] File tracking service cleanup', { workspaceId: id });
+          } catch (error) {
+            logger.warn('[WorkspaceIPC] Failed to cleanup file tracking service', error as Error, {
+              workspaceId: id,
+            });
+          }
+
           // Stop change detector monitoring
           if (changeDetectorManager) {
             try {
@@ -504,6 +517,29 @@ export function setupWorkspaceIPC(): void {
             logger.warn('[WorkspaceIPC] Failed to cleanup event service', error as Error, {
               workspaceId: id,
             });
+          }
+
+          // Dispose workspace event bus singleton to free EventStore memory
+          // This MUST happen after cleanupWorkspaceEventService (which detaches listeners)
+          try {
+            const { disposeWorkspaceEventBus } = await import(
+              '../../events/main/workspace-event-bus'
+            );
+            await disposeWorkspaceEventBus(id);
+            logger.debug('[WorkspaceIPC] Workspace event bus disposed', { workspaceId: id });
+          } catch (error) {
+            logger.debug('[WorkspaceIPC] Workspace event bus disposal failed', { error });
+          }
+
+          // Clean up UnifiedEventBus workspace cache (lastEvents)
+          try {
+            const { unifiedEventBus } = await import('../../events/main/unified-event-bus');
+            await unifiedEventBus.cleanupWorkspace(id);
+            logger.debug('[WorkspaceIPC] UnifiedEventBus workspace cache cleaned', {
+              workspaceId: id,
+            });
+          } catch (error) {
+            logger.debug('[WorkspaceIPC] UnifiedEventBus cleanup failed', { error });
           }
 
           // Clean up agent event subscription service to prevent memory leaks
@@ -1025,20 +1061,78 @@ export function setupWorkspaceIPC(): void {
           });
         }
 
-        // Cleanup activity log and git tracking
+        // Clean up git integration locks
+        if (global.gitIntegrationLocks?.has(validatedId)) {
+          global.gitIntegrationLocks.delete(validatedId);
+        }
+
+        // Stop file tracking storage cleanup timer
         try {
-          // Clean up event service if needed
-          // Note: Event service cleanup is handled automatically
-          logger.info('Cleaned up activity log and git tracking before delete', {
+          const { FileTrackingStorage } = await import(
+            '../../file-tracking/main/file-tracking-storage'
+          );
+          FileTrackingStorage.cleanupWorkspace(validatedId);
+          logger.debug('File tracking storage cleanup before delete', {
             workspaceId: validatedId,
           });
         } catch (error) {
-          logger.error('Failed to cleanup activity log before delete', error as Error, {
+          logger.warn('Failed to cleanup file tracking storage before delete', error as Error, {
             workspaceId: validatedId,
           });
         }
 
-        // Clean up agent event subscription service to prevent memory leaks
+        // Clean up file tracking service (force-save, stop timers, remove from cache)
+        try {
+          const { cleanupGitIntegration } = await import(
+            '../../file-tracking/main/file-tracking.ipc'
+          );
+          await cleanupGitIntegration(validatedId);
+          logger.debug('File tracking service cleanup before delete', {
+            workspaceId: validatedId,
+          });
+        } catch (error) {
+          logger.warn('Failed to cleanup file tracking service before delete', error as Error, {
+            workspaceId: validatedId,
+          });
+        }
+
+        // Clean up workspace event service
+        try {
+          await cleanupWorkspaceEventService(validatedId);
+          logger.debug('Workspace event service cleanup before delete', {
+            workspaceId: validatedId,
+          });
+        } catch (error) {
+          logger.warn('Failed to cleanup workspace event service before delete', error as Error, {
+            workspaceId: validatedId,
+          });
+        }
+
+        // Dispose workspace event bus singleton (MUST happen after event service cleanup)
+        try {
+          const { disposeWorkspaceEventBus } = await import(
+            '../../events/main/workspace-event-bus'
+          );
+          await disposeWorkspaceEventBus(validatedId);
+          logger.debug('Workspace event bus disposed before delete', {
+            workspaceId: validatedId,
+          });
+        } catch (error) {
+          logger.debug('Workspace event bus disposal failed before delete', { error });
+        }
+
+        // Clean up UnifiedEventBus workspace cache
+        try {
+          const { unifiedEventBus } = await import('../../events/main/unified-event-bus');
+          await unifiedEventBus.cleanupWorkspace(validatedId);
+          logger.debug('UnifiedEventBus workspace cache cleaned before delete', {
+            workspaceId: validatedId,
+          });
+        } catch (error) {
+          logger.debug('UnifiedEventBus cleanup failed before delete', { error });
+        }
+
+        // Clean up agent event subscription service
         try {
           const { disposeAgentEventSubscriptionService } = await import(
             '../../events/main/agent-event-subscription.service'
@@ -1051,6 +1145,59 @@ export function setupWorkspaceIPC(): void {
           logger.debug('Agent subscription service cleanup not available before delete', {
             error,
           });
+        }
+
+        // Clean up agent pool
+        try {
+          const { agentPoolService } = await import('../../agent/main/agent-pool.service');
+          await agentPoolService.disposeWorkspace(validatedId);
+          logger.debug('Agent pool cleanup before delete', { workspaceId: validatedId });
+        } catch (error) {
+          logger.debug('Agent pool cleanup not available before delete', { error });
+        }
+
+        // Clean up notification service
+        try {
+          const { disposeNotificationService } = await import(
+            '../../notifications/main/notification.service'
+          );
+          disposeNotificationService(validatedId);
+          logger.debug('Notification service cleanup before delete', {
+            workspaceId: validatedId,
+          });
+        } catch (error) {
+          logger.debug('Notification service cleanup not available before delete', { error });
+        }
+
+        // Clean up agent context registry
+        try {
+          const { getAgentContextRegistry } = await import('../../agent/agent-context-registry');
+          const registry = getAgentContextRegistry();
+          const clearedCount = registry.clearForWorkspace(validatedId);
+          if (clearedCount > 0) {
+            logger.debug('Agent context registry cleanup before delete', {
+              workspaceId: validatedId,
+              clearedCount,
+            });
+          }
+        } catch (error) {
+          logger.debug('Agent context registry cleanup not available before delete', { error });
+        }
+
+        // Clean up HTTP MCP bridge cached servers
+        try {
+          const httpMcpBridge = (global as any).__httpMcpBridgeInstance;
+          if (httpMcpBridge && typeof httpMcpBridge.clearMcpServersForWorkspace === 'function') {
+            const clearedCount = httpMcpBridge.clearMcpServersForWorkspace(validatedId);
+            if (clearedCount > 0) {
+              logger.debug('HTTP MCP bridge cache cleanup before delete', {
+                workspaceId: validatedId,
+                clearedCount,
+              });
+            }
+          }
+        } catch (error) {
+          logger.debug('HTTP MCP bridge cache cleanup failed before delete', { error });
         }
 
         const result = await protocolAdapter.deleteWorkspace(validatedId);

@@ -465,9 +465,7 @@
     {/if}
 
     <!-- Tab Bar - Always visible when terminals exist -->
-    <div
-      class="flex items-center justify-between h-9 px-1 bg-sidebar backdrop-blur-xl border-t border-border"
-    >
+    <div class="flex items-center justify-between h-9 px-1 bg-background backdrop-blur-xl">
       <!-- Tabs Container -->
       <div class="flex items-center h-full min-w-0 overflow-x-auto scrollbar-none">
         <!-- Terminal Icon -->
