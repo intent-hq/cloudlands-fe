@@ -9,7 +9,8 @@
   import { PatchBlockContent } from '$lib/components/ui/diff';
   import DigestCard from './DigestCard.svelte';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
-  import { parseAgentMessage, parseSuggestedPrompts, type ParsedContent } from '$lib/utils/messageParser';
+  import { parseAgentMessage, parseSuggestedPrompts, groupParsedBlocks, groupContentBlocks, type ParsedContent, type RenderBlock, type GroupedBlock, type ContentBlockGroup, type RenderContentBlock } from '$lib/utils/messageParser';
+  import ResponseGroup from './ResponseGroup.svelte';
 
   // Dynamically import MermaidRenderer to reduce bundle size (used infrequently)
   const MermaidRenderer = import('$lib/components/markdown/MermaidRenderer.svelte');
@@ -36,6 +37,11 @@
       }
       return true;
     });
+  });
+
+  // Group content blocks by <group:Name> tags at the ContentBlock level
+  const groupedBlocks = $derived.by(() => {
+    return groupContentBlocks(blocks, isStreaming);
   });
 
   // Build a map of tool results from tool_result blocks
@@ -118,17 +124,30 @@
 
   // Pre-compute parsed content for all text blocks - memoized via $derived
   // This avoids calling parseAgentMessage in the template loop on every render
+  // Keys are "blockIndex" for top-level text blocks and "blockIndex-childIndex" for children inside groups
   const parsedContentMap = $derived.by(() => {
-    if (isStreaming) return new Map<string, ParsedContent[]>();
+    if (isStreaming) return new Map<string, RenderBlock[]>();
 
-    const map = new Map<string, ParsedContent[]>();
-    for (const block of blocks) {
-      if (block.type === 'text' && block.text) {
-        // Strip suggested prompts before parsing (they're rendered separately in ChatPanel)
-        const { cleanedContent } = parseSuggestedPrompts(block.text);
-        map.set(block.text, parseAgentMessage(cleanedContent));
+    const map = new Map<string, RenderBlock[]>();
+    groupedBlocks.forEach((block, index) => {
+      if (block.type === 'text') {
+        const contentBlock = block as ContentBlock;
+        if (contentBlock.text) {
+          const { cleanedContent } = parseSuggestedPrompts(contentBlock.text);
+          const parsed = parseAgentMessage(cleanedContent);
+          map.set(String(index), groupParsedBlocks(parsed));
+        }
+      } else if (block.type === 'content_group') {
+        const group = block as ContentBlockGroup;
+        group.children.forEach((child, childIndex) => {
+          if (child.type === 'text' && child.text) {
+            const { cleanedContent } = parseSuggestedPrompts(child.text);
+            const parsed = parseAgentMessage(cleanedContent);
+            map.set(`${index}-${childIndex}`, groupParsedBlocks(parsed));
+          }
+        });
       }
-    }
+    });
     return map;
   });
 
@@ -168,158 +187,173 @@
   }
 
   /**
-   * Generate a stable unique key for a content block.
+   * Generate a stable unique key for a render content block.
+   * Handles both regular ContentBlocks and ContentBlockGroups.
    */
-  function getBlockKey(block: ContentBlock, index: number): string {
-    if (block.id) return block.id;
-    if (block.type === 'text') {
-      const text = block.text || '';
+  function getBlockKey(block: RenderContentBlock, index: number): string {
+    if (block.type === 'content_group') {
+      const group = block as ContentBlockGroup;
+      return `group-${index}-${group.name}`;
+    }
+    const contentBlock = block as ContentBlock;
+    if (contentBlock.id) return contentBlock.id;
+    if (contentBlock.type === 'text') {
+      const text = contentBlock.text || '';
       const hash = text
         .slice(0, 50)
         .split('')
         .reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0);
       return `text-${index}-${hash}`;
     }
-    if (block.type === 'tool_result' && block.tool_use_id) {
-      return `result-${block.tool_use_id}`;
+    if (contentBlock.type === 'tool_result' && contentBlock.tool_use_id) {
+      return `result-${contentBlock.tool_use_id}`;
     }
-    return `${block.type}-${index}`;
+    return `${contentBlock.type}-${index}`;
   }
 
   // Pre-compute block keys for stable iteration
-  const blockKeys = $derived(blocks.map((block, index) => getBlockKey(block, index)));
+  const blockKeys = $derived(groupedBlocks.map((block, index) => getBlockKey(block, index)));
 </script>
 
-<div class="flex flex-col gap-1.5" style="contain: layout style paint;">
-  {#each blocks as block, blockIndex (blockKeys[blockIndex])}
-    {#if block.type === 'text' && block.text}
-      {@const parsedContent = parsedContentMap.get(block.text) || []}
-      <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
-        {#if isStreaming}
-          <!-- During streaming, use simple text display to avoid expensive markdown processing -->
-          <div class="streaming-text whitespace-pre-wrap">{block.text}</div>
-        {:else if parsedContent.length > 0}
-          <!-- Render parsed content blocks -->
-          {#each parsedContent as parsedBlock, parsedBlockIndex (`${blockIndex}-${parsedBlock.type}-${parsedBlockIndex}-${(parsedBlock.content || '')
-            .slice(0, 20)
-            .split('')
-            .reduce((a: number, c: string) => a + c.charCodeAt(0), 0)}`)}
-            {#if parsedBlock.type === 'augment_code_snippet'}
-              <AugmentCodeSnippet
-                code={parsedBlock.content}
-                language={parsedBlock.metadata?.language}
-                path={parsedBlock.metadata?.path}
-                mode={parsedBlock.metadata?.mode}
-                onOpenFile={handleOpenFile}
-              />
-            {:else if parsedBlock.type === 'diff'}
-              <!-- Render diff viewer for diff blocks -->
-              <ChatDiffViewer diff={parsedBlock.content} filePath={parsedBlock.metadata?.path} />
-            {:else if parsedBlock.type === 'commit_message'}
-              <!-- Render commit message in a nice format -->
-              <div
-                class="commit-message-block p-3 my-2 rounded-md bg-background border border-border"
-              >
-                <div class="text-xs font-medium text-muted-foreground mb-1.5">
-                  Generated Commit Message
-                </div>
-                <div class="font-mono text-sm whitespace-pre-wrap text-foreground">
-                  {parsedBlock.content}
-                </div>
-              </div>
-            {:else if parsedBlock.type === 'diagram' && parsedBlock.metadata?.diagramData}
-              <!-- Render diagram -->
-              <div class="diagram-block my-2">
-                <DiagramRenderer
-                  diagram={parsedBlock.metadata.diagramData as DiagramPrimitive}
-                  editable={false}
-                  onBindingClick={handleDiagramBindingClick}
+{#snippet renderParsedContentBlock(parsedBlock: ParsedContent)}
+  {#if parsedBlock.type === 'augment_code_snippet'}
+    <AugmentCodeSnippet
+      code={parsedBlock.content}
+      language={parsedBlock.metadata?.language}
+      path={parsedBlock.metadata?.path}
+      mode={parsedBlock.metadata?.mode}
+      onOpenFile={handleOpenFile}
+    />
+  {:else if parsedBlock.type === 'diff'}
+    <ChatDiffViewer diff={parsedBlock.content} filePath={parsedBlock.metadata?.path} />
+  {:else if parsedBlock.type === 'commit_message'}
+    <div
+      class="commit-message-block p-3 my-2 rounded-md bg-background border border-border"
+    >
+      <div class="text-xs font-medium text-muted-foreground mb-1.5">
+        Generated Commit Message
+      </div>
+      <div class="font-mono text-sm whitespace-pre-wrap text-foreground">
+        {parsedBlock.content}
+      </div>
+    </div>
+  {:else if parsedBlock.type === 'diagram' && parsedBlock.metadata?.diagramData}
+    <div class="diagram-block my-2">
+      <DiagramRenderer
+        diagram={parsedBlock.metadata.diagramData as DiagramPrimitive}
+        editable={false}
+        onBindingClick={handleDiagramBindingClick}
+      />
+    </div>
+  {:else if parsedBlock.type === 'patch' && parsedBlock.metadata?.patchData}
+    {@const patchData = parsedBlock.metadata.patchData}
+    <PatchBlockContent
+      patches={[{ filePath: patchData.filePath, diff: patchData.diff }]}
+      label={patchData.description || patchData.filePath}
+    />
+  {:else if parsedBlock.type === 'digest'}
+    <DigestCard digest={parsedBlock.content || ''} />
+  {:else if parsedBlock.type === 'mermaid'}
+    <div class="mermaid-block my-2">
+      {#await MermaidRenderer then module}
+        <module.default code={parsedBlock.content || ''} />
+      {/await}
+    </div>
+  {:else if parsedBlock.type === 'code'}
+    <CodeBlock
+      code={parsedBlock.content || ''}
+      language={parsedBlock.metadata?.language || 'plaintext'}
+    />
+  {:else}
+    <MarkdownViewer
+      content={parsedBlock.content || ''}
+      {isStreaming}
+      onFileClick={(path) => handleOpenFile({ path })}
+    />
+  {/if}
+{/snippet}
+
+{#snippet renderContentBlock(block: ContentBlock, parsedKey: string, blockIndex: number)}
+  {#if block.type === 'text' && block.text}
+    {@const parsedContent = parsedContentMap.get(parsedKey) || []}
+    <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
+      {#if isStreaming}
+        <!-- During streaming, use simple text display to avoid expensive markdown processing -->
+        <div class="streaming-text whitespace-pre-wrap">{block.text}</div>
+      {:else if parsedContent.length > 0}
+        <!-- Render parsed content blocks -->
+        {#each parsedContent as renderBlock, parsedBlockIndex (`${parsedKey}-parsed-${parsedBlockIndex}`)}
+          {@render renderParsedContentBlock(renderBlock as ParsedContent)}
+        {/each}
+      {:else}
+        <!-- Fallback to regular MarkdownViewer -->
+        <MarkdownViewer
+          content={block.text}
+          {isStreaming}
+          onFileClick={(path) => handleOpenFile({ path })}
+        />
+      {/if}
+    </div>
+  {:else if block.type === 'tool_use'}
+    {@const toolBlock = block as ToolUseBlock}
+    {@const toolResult = toolResultsMap.get(toolBlock.id)}
+    {@const toolState = toolStates.get(toolBlock.id) || 'completed'}
+    {@const resultContent = toolResult ? toolResult.content : null}
+    <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
+      <ToolCall toolUse={toolBlock} {toolState} result={resultContent} />
+    </div>
+  {:else if block.type === 'tool_result'}
+    <div class="border border-border rounded-md" in:fly={{ y: 10, duration: 200 }}>
+      <div class="px-3 py-2 bg-muted/50 border-b border-border">
+        <span class="text-xs text-muted-foreground">Tool Result</span>
+      </div>
+      <div class="p-3">
+        {#if typeof block.content === 'string'}
+          <CodeBlock code={block.content} />
+        {:else if Array.isArray(block.content)}
+          <!-- Recursively render nested content blocks -->
+          {#each block.content as any[] as nestedBlock, nestedIndex (nestedBlock.id || `nested-${blockIndex}-${nestedIndex}-${nestedBlock.type}`)}
+            {#if nestedBlock.type === 'text' && nestedBlock.text}
+              <div class="w-full">
+                <MarkdownViewer
+                  content={nestedBlock.text}
+                  onFileClick={(path) => handleOpenFile({ path })}
                 />
               </div>
-            {:else if parsedBlock.type === 'patch' && parsedBlock.metadata?.patchData}
-              <!-- Render patch block using shared PatchBlockContent (same as notes) -->
-              {@const patchData = parsedBlock.metadata.patchData}
-              <PatchBlockContent
-                patches={[{ filePath: patchData.filePath, diff: patchData.diff }]}
-                label={patchData.description || patchData.filePath}
-              />
-            {:else if parsedBlock.type === 'digest'}
-              <!-- Digest card rendered inline where the agent placed it -->
-              <DigestCard digest={parsedBlock.content || ''} />
-            {:else if parsedBlock.type === 'mermaid'}
-              <!-- Render mermaid diagrams -->
-              <div class="mermaid-block my-2">
-                {#await MermaidRenderer then module}
-                  <module.default code={parsedBlock.content || ''} />
-                {/await}
-              </div>
-            {:else if parsedBlock.type === 'code'}
-              <!-- Render standalone code blocks with proper syntax highlighting -->
-              <CodeBlock
-                code={parsedBlock.content || ''}
-                language={parsedBlock.metadata?.language || 'plaintext'}
-              />
-            {:else}
-              <MarkdownViewer
-                content={parsedBlock.content || ''}
-                {isStreaming}
-                onFileClick={(path) => handleOpenFile({ path })}
-              />
+            {:else if nestedBlock.type === 'tool_use'}
+              {@const nestedToolBlock = nestedBlock as ToolUseBlock}
+              {@const nestedToolResult = toolResultsMap.get(nestedToolBlock.id)}
+              {@const nestedToolState = toolStates.get(nestedToolBlock.id) || 'completed'}
+              {@const nestedResultContent = nestedToolResult ? nestedToolResult.content : null}
+              <ToolCall toolUse={nestedToolBlock} toolState={nestedToolState} result={nestedResultContent} />
             {/if}
           {/each}
-        {:else}
-          <!-- Fallback to regular MarkdownViewer -->
-          <MarkdownViewer
-            content={block.text}
-            {isStreaming}
-            onFileClick={(path) => handleOpenFile({ path })}
-          />
         {/if}
       </div>
-    {:else if block.type === 'tool_use'}
-      {@const toolBlock = block as ToolUseBlock}
-      {@const toolResult = toolResultsMap.get(toolBlock.id)}
-      {@const toolState = toolStates.get(toolBlock.id) || 'completed'}
-      {@const resultContent = toolResult ? toolResult.content : null}
-      <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
-        <ToolCall toolUse={toolBlock} {toolState} result={resultContent} />
+    </div>
+  {:else if block.type === 'thinking'}
+    <details class="p-2 bg-muted/50 rounded-md">
+      <summary class="cursor-pointer text-sm text-muted-foreground"> 💭 Thinking... </summary>
+      <div class="pl-4 mt-2 text-sm opacity-75">
+        <MarkdownViewer content={block.content || 'Processing...'} />
       </div>
-    {:else if block.type === 'tool_result'}
-      <div class="border border-border rounded-md" in:fly={{ y: 10, duration: 200 }}>
-        <div class="px-3 py-2 bg-muted/50 border-b border-border">
-          <span class="text-xs text-muted-foreground">Tool Result</span>
-        </div>
-        <div class="p-3">
-          {#if typeof block.content === 'string'}
-            <CodeBlock code={block.content} />
-          {:else if Array.isArray(block.content)}
-            <!-- Recursively render nested content blocks -->
-            {#each block.content as any[] as nestedBlock, nestedIndex (nestedBlock.id || `nested-${blockIndex}-${nestedIndex}-${nestedBlock.type}`)}
-              {#if nestedBlock.type === 'text' && nestedBlock.text}
-                <div class="w-full">
-                  <MarkdownViewer
-                    content={nestedBlock.text}
-                    onFileClick={(path) => handleOpenFile({ path })}
-                  />
-                </div>
-              {:else if nestedBlock.type === 'tool_use'}
-                {@const nestedToolBlock = nestedBlock as ToolUseBlock}
-                {@const nestedToolResult = toolResultsMap.get(nestedToolBlock.id)}
-                {@const nestedToolState = toolStates.get(nestedToolBlock.id) || 'completed'}
-                {@const nestedResultContent = nestedToolResult ? nestedToolResult.content : null}
-                <ToolCall toolUse={nestedToolBlock} toolState={nestedToolState} result={nestedResultContent} />
-              {/if}
-            {/each}
-          {/if}
-        </div>
-      </div>
-    {:else if block.type === 'thinking'}
-      <details class="p-2 bg-muted/50 rounded-md">
-        <summary class="cursor-pointer text-sm text-muted-foreground"> 💭 Thinking... </summary>
-        <div class="pl-4 mt-2 text-sm opacity-75">
-          <MarkdownViewer content={block.content || 'Processing...'} />
-        </div>
-      </details>
+    </details>
+  {/if}
+{/snippet}
+
+<div class="flex flex-col gap-1.5" style="contain: layout style paint;">
+  {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
+    {#if block.type === 'content_group'}
+      {@const group = block as ContentBlockGroup}
+      <ResponseGroup name={group.name} isStreaming={group.isStreaming} blocks={group.children}>
+        {#snippet children()}
+          {#each group.children as childBlock, childIndex (`${blockIndex}-group-${childIndex}`)}
+            {@render renderContentBlock(childBlock, `${blockIndex}-${childIndex}`, blockIndex)}
+          {/each}
+        {/snippet}
+      </ResponseGroup>
+    {:else}
+      {@render renderContentBlock(block as ContentBlock, String(blockIndex), blockIndex)}
     {/if}
   {/each}
 </div>

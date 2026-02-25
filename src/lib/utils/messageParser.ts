@@ -21,6 +21,7 @@
 
 import { Logger } from '$shared/logger';
 import type { SuggestedPrompt } from '$shared/types';
+import type { ContentBlock } from '$shared/types/content-block';
 
 const logger = new Logger('MessageParser');
 
@@ -41,7 +42,9 @@ export interface ParsedContent {
     | 'patch'
     | 'reference'
     | 'cli'
-    | 'agent_action';
+    | 'agent_action'
+    | 'group_start'
+    | 'group_end';
   content: string;
   metadata?: {
     language?: string;
@@ -60,6 +63,8 @@ export interface ParsedContent {
     };
     cliData?: { command: string; description?: string; cwd?: string };
     agentActionData?: { agentId: string; goal: string; description?: string };
+    groupName?: string;
+    isStreaming?: boolean;
   };
 }
 
@@ -459,7 +464,9 @@ export function parseAgentMessage(content: string): ParsedContent[] {
   }
 
   // Merge consecutive text blocks
-  return mergeConsecutiveTextBlocks(result);
+  const merged = mergeConsecutiveTextBlocks(result);
+
+  return merged;
 }
 
 /**
@@ -623,6 +630,310 @@ function mergeConsecutiveTextBlocks(blocks: ParsedContent[]): ParsedContent[] {
   }
   return merged;
 }
+
+// Combined pattern to find any group tag (open or close) in a single pass
+const GROUP_TAG_REGEX = /<group:([^>]+)>|<\/group(?::([^>]+))?>/g;
+
+/**
+ * Post-processing step: extract group markers from text blocks.
+ * Scans text blocks for `<group:Name>` and `</group:Name>` (or `</group>`) tags,
+ * splitting them into separate `group_start` / `group_end` entries.
+ *
+ * Handles the streaming case: if the last group_start has no matching group_end,
+ * it is marked with `metadata.isStreaming = true`.
+ */
+function extractGroupMarkers(blocks: ParsedContent[]): ParsedContent[] {
+  const result: ParsedContent[] = [];
+
+  for (const block of blocks) {
+    // Only process text blocks for group markers
+    if (block.type !== 'text') {
+      result.push(block);
+      continue;
+    }
+
+    const text = block.content;
+    GROUP_TAG_REGEX.lastIndex = 0;
+
+    let lastIndex = 0;
+    let match;
+    let hasGroupTags = false;
+
+    while ((match = GROUP_TAG_REGEX.exec(text)) !== null) {
+      hasGroupTags = true;
+      const matchStart = match.index;
+      const matchEnd = match.index + match[0].length;
+
+      // Add text before this tag (if any)
+      if (matchStart > lastIndex) {
+        const textBefore = text.slice(lastIndex, matchStart).trim();
+        if (textBefore) {
+          result.push({ type: 'text', content: textBefore });
+        }
+      }
+
+      if (match[1] !== undefined) {
+        // This is an open tag: <group:Name>
+        result.push({
+          type: 'group_start',
+          content: '',
+          metadata: { groupName: match[1], isStreaming: false },
+        });
+      } else {
+        // This is a close tag: </group:Name> or </group>
+        result.push({
+          type: 'group_end',
+          content: '',
+          metadata: { groupName: match[2] || undefined },
+        });
+      }
+
+      lastIndex = matchEnd;
+    }
+
+    if (!hasGroupTags) {
+      // No group tags found, keep the block as-is
+      result.push(block);
+    } else {
+      // Add any remaining text after the last tag
+      if (lastIndex < text.length) {
+        const textAfter = text.slice(lastIndex).trim();
+        if (textAfter) {
+          result.push({ type: 'text', content: textAfter });
+        }
+      }
+    }
+  }
+
+  // Streaming detection: if there's a group_start without a matching group_end,
+  // mark the last unmatched group_start with isStreaming = true
+  let openCount = 0;
+  let lastOpenIndex = -1;
+  for (let i = 0; i < result.length; i++) {
+    if (result[i].type === 'group_start') {
+      openCount++;
+      lastOpenIndex = i;
+    } else if (result[i].type === 'group_end') {
+      openCount--;
+    }
+  }
+  if (openCount > 0 && lastOpenIndex >= 0) {
+    // Find all unmatched group_starts (walk backwards)
+    let unmatchedCount = 0;
+    for (let i = result.length - 1; i >= 0; i--) {
+      if (result[i].type === 'group_end') {
+        unmatchedCount--;
+      } else if (result[i].type === 'group_start') {
+        unmatchedCount++;
+        if (unmatchedCount > 0) {
+          result[i].metadata = { ...result[i].metadata, isStreaming: true };
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Grouped block structure for rendering.
+ * Wraps content between group_start and group_end markers.
+ */
+export interface GroupedBlock {
+  type: 'group';
+  name: string;
+  isStreaming: boolean;
+  children: ParsedContent[];
+}
+
+export type RenderBlock = ParsedContent | GroupedBlock;
+
+/**
+ * Transform a flat ParsedContent[] (with group_start/group_end markers) into a
+ * tree structure where grouped content is nested inside GroupedBlock objects.
+ *
+ * - Content between `group_start` and `group_end` is wrapped in a `GroupedBlock`
+ * - Content outside groups passes through as-is
+ * - Unclosed groups (streaming) are still wrapped, with `isStreaming: true`
+ * - `group_start` and `group_end` markers themselves are consumed (not in output)
+ */
+export function groupParsedBlocks(blocks: ParsedContent[]): RenderBlock[] {
+  const result: RenderBlock[] = [];
+  let i = 0;
+
+  while (i < blocks.length) {
+    const block = blocks[i];
+
+    if (block.type === 'group_start') {
+      const groupName = block.metadata?.groupName || '';
+      const isStreaming = block.metadata?.isStreaming || false;
+      const children: ParsedContent[] = [];
+      i++; // skip the group_start marker
+
+      // Collect children until we find a matching group_end or run out of blocks
+      while (i < blocks.length && blocks[i].type !== 'group_end') {
+        // If we hit another group_start, the previous group auto-closes (flat groups only)
+        if (blocks[i].type === 'group_start') {
+          break;
+        }
+        children.push(blocks[i]);
+        i++;
+      }
+
+      // Skip the group_end marker if present
+      if (i < blocks.length && blocks[i].type === 'group_end') {
+        i++;
+      }
+
+      result.push({
+        type: 'group',
+        name: groupName,
+        isStreaming,
+        children,
+      });
+    } else if (block.type === 'group_end') {
+      // Stray group_end without a matching group_start — skip it
+      i++;
+    } else {
+      result.push(block);
+      i++;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Grouped content block structure for rendering at the ContentBlock level.
+ * Wraps ContentBlocks that appear between `<group:Name>` and `</group>` tags.
+ */
+export interface ContentBlockGroup {
+  type: 'content_group';
+  name: string;
+  isStreaming: boolean;
+  children: ContentBlock[];
+}
+
+export type RenderContentBlock = ContentBlock | ContentBlockGroup;
+
+/**
+ * Group ContentBlocks that appear between `<group:Name>` and `</group>` tags
+ * found in text-type ContentBlocks.
+ *
+ * This operates at the ContentBlock[] level (not ParsedContent[]), grouping
+ * tool_use, tool_result, thinking, and text blocks that appear between
+ * group open/close tags.
+ *
+ * Algorithm:
+ * 1. Walk through ContentBlocks in order
+ * 2. When a text block contains `<group:Name>`, split text and start collecting
+ * 3. All subsequent blocks go inside the group
+ * 4. When `</group>` is found, split text and close the group
+ * 5. If a new group opens while another is open, auto-close the previous
+ * 6. Unclosed groups: isStreaming param controls the group's isStreaming flag
+ */
+export function groupContentBlocks(
+  blocks: ContentBlock[],
+  isStreaming?: boolean,
+): RenderContentBlock[] {
+  const result: RenderContentBlock[] = [];
+  let currentGroup: ContentBlockGroup | null = null;
+
+  function closeCurrentGroup() {
+    if (currentGroup) {
+      result.push(currentGroup);
+      currentGroup = null;
+    }
+  }
+
+  function addBlock(block: ContentBlock) {
+    if (currentGroup) {
+      currentGroup.children.push(block);
+    } else {
+      result.push(block);
+    }
+  }
+
+  function addTextIfNonEmpty(text: string) {
+    const trimmed = text.trim();
+    if (trimmed) {
+      addBlock({ type: 'text', text: trimmed } as ContentBlock);
+    }
+  }
+
+  for (const block of blocks) {
+    // Only scan text blocks for group tags
+    const blockText = block.type === 'text' ? (block.text ?? block.content ?? '') : '';
+
+    if (block.type !== 'text' || !blockText) {
+      // Non-text block or empty text block — pass through into current context
+      if (block.type !== 'text') {
+        addBlock(block);
+      }
+      continue;
+    }
+
+    // Scan this text block for group tags
+    GROUP_TAG_REGEX.lastIndex = 0;
+    let lastIndex = 0;
+    let match;
+    let hasGroupTags = false;
+
+    while ((match = GROUP_TAG_REGEX.exec(blockText)) !== null) {
+      hasGroupTags = true;
+      const matchStart = match.index;
+      const matchEnd = match.index + match[0].length;
+
+      // Text before this tag
+      if (matchStart > lastIndex) {
+        addTextIfNonEmpty(blockText.slice(lastIndex, matchStart));
+      }
+
+      if (match[1] !== undefined) {
+        // Open tag: <group:Name>
+        // Auto-close previous group if one is open
+        if (currentGroup) {
+          currentGroup.isStreaming = false;
+          closeCurrentGroup();
+        }
+        currentGroup = {
+          type: 'content_group',
+          name: match[1],
+          isStreaming: !!isStreaming, // default based on param; will be set to false on close
+          children: [],
+        };
+      } else {
+        // Close tag: </group:Name> or </group>
+        if (currentGroup) {
+          currentGroup.isStreaming = false;
+          closeCurrentGroup();
+        }
+        // If no group is open, stray close tag is silently consumed
+      }
+
+      lastIndex = matchEnd;
+    }
+
+    if (!hasGroupTags) {
+      // No group tags in this text block — pass through as-is
+      addBlock(block);
+    } else {
+      // Add any remaining text after the last tag
+      if (lastIndex < blockText.length) {
+        addTextIfNonEmpty(blockText.slice(lastIndex));
+      }
+    }
+  }
+
+  // Handle unclosed group at end
+  if (currentGroup) {
+    currentGroup.isStreaming = !!isStreaming;
+    closeCurrentGroup();
+  }
+
+  return result;
+}
+
 
 /**
  * Format parsed content blocks into markdown

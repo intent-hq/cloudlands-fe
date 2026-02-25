@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { cleanAgentMessage, parseAgentMessage, parseSuggestedPrompts } from '../messageParser';
+import {
+  cleanAgentMessage,
+  parseAgentMessage,
+  parseSuggestedPrompts,
+  groupParsedBlocks,
+  groupContentBlocks,
+} from '../messageParser';
+import type { GroupedBlock, ContentBlockGroup } from '../messageParser';
+import type { ContentBlock } from '$shared/types/content-block';
 
 describe('cleanAgentMessage', () => {
   it('should remove ANSI escape codes', () => {
@@ -587,5 +595,449 @@ Some trailing content.`;
 
     expect(result.prompts).toEqual([]);
     expect(result.cleanedContent).toBe('');
+  });
+});
+
+
+describe('parseAgentMessage - group tags', () => {
+  // NOTE: Group tags are now handled at the ContentBlock level by groupContentBlocks().
+  // parseAgentMessage() no longer extracts group markers — group tags are treated as plain text.
+  // The tests below verify that group tags pass through as text content.
+
+  it('should treat group tags as plain text (no longer extracted)', () => {
+    const input = '<group:Test>content here</group:Test>';
+    const result = parseAgentMessage(input);
+
+    // Group tags are now plain text — no group_start/group_end markers
+    expect(result.every((b) => b.type !== 'group_start' && b.type !== 'group_end')).toBe(true);
+    // The content should contain the group tags as text
+    const allText = result.map((b) => b.content).join('');
+    expect(allText).toContain('content here');
+  });
+
+  it('should treat short close tags as plain text', () => {
+    const input = '<group:Test>content here</group>';
+    const result = parseAgentMessage(input);
+
+    expect(result.every((b) => b.type !== 'group_start' && b.type !== 'group_end')).toBe(true);
+    const allText = result.map((b) => b.content).join('');
+    expect(allText).toContain('content here');
+  });
+
+  it('should treat multiple sequential groups as plain text', () => {
+    const input = '<group:First>content 1</group:First>\n<group:Second>content 2</group:Second>';
+    const result = parseAgentMessage(input);
+
+    expect(result.every((b) => b.type !== 'group_start' && b.type !== 'group_end')).toBe(true);
+    const allText = result.map((b) => b.content).join('');
+    expect(allText).toContain('content 1');
+    expect(allText).toContain('content 2');
+  });
+
+  it('should treat unclosed group as plain text', () => {
+    const input = '<group:Streaming>partial content being streamed';
+    const result = parseAgentMessage(input);
+
+    expect(result.every((b) => b.type !== 'group_start')).toBe(true);
+    const allText = result.map((b) => b.content).join('');
+    expect(allText).toContain('partial content being streamed');
+  });
+
+  it('should treat malformed/partial tags as text', () => {
+    const input = 'This has a <group without closing bracket and some text';
+    const result = parseAgentMessage(input);
+
+    // Should be treated as plain text since <group without : is not a valid tag
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('text');
+    expect(result[0].content).toContain('<group without closing bracket');
+  });
+
+  it('should treat incomplete group tag syntax as text', () => {
+    const input = 'Text with </group and more text';
+    const result = parseAgentMessage(input);
+
+    // </group without > is not a valid close tag
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('text');
+    expect(result[0].content).toContain('</group');
+  });
+
+  it('should handle group containing code blocks (tags treated as text)', () => {
+    const input = `<group:Implementation>
+Here is the code:
+
+\`\`\`typescript path=src/app.ts
+const x = 1;
+\`\`\`
+
+Done with implementation.
+</group:Implementation>`;
+
+    const result = parseAgentMessage(input);
+
+    // Group tags are now plain text, but code blocks are still parsed
+    const types = result.map((b) => b.type);
+    expect(types).not.toContain('group_start');
+    expect(types).not.toContain('group_end');
+    expect(types).toContain('augment_code_snippet');
+  });
+});
+
+describe('groupParsedBlocks', () => {
+  // NOTE: parseAgentMessage() no longer produces group_start/group_end markers.
+  // Group tags are now handled at the ContentBlock level by groupContentBlocks().
+  // These tests construct input manually to test groupParsedBlocks() in isolation.
+
+  it('should transform flat blocks with group markers into grouped structure', () => {
+    const input: ParsedContent[] = [
+      { type: 'group_start', content: '', metadata: { groupName: 'Test', isStreaming: false } },
+      { type: 'text', content: 'content here' },
+      { type: 'group_end', content: '', metadata: { groupName: 'Test' } },
+    ];
+    const result = groupParsedBlocks(input);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('group');
+    const group = result[0] as GroupedBlock;
+    expect(group.name).toBe('Test');
+    expect(group.isStreaming).toBe(false);
+    expect(group.children.length).toBe(1);
+    expect(group.children[0].type).toBe('text');
+    expect(group.children[0].content).toBe('content here');
+  });
+
+  it('should pass through non-grouped content', () => {
+    const input: ParsedContent[] = [
+      { type: 'text', content: 'Just plain text without groups' },
+    ];
+    const result = groupParsedBlocks(input);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('text');
+  });
+
+  it('should handle mixed grouped and ungrouped content', () => {
+    const input: ParsedContent[] = [
+      { type: 'text', content: 'Before' },
+      { type: 'group_start', content: '', metadata: { groupName: 'A', isStreaming: false } },
+      { type: 'text', content: 'inside' },
+      { type: 'group_end', content: '', metadata: { groupName: 'A' } },
+      { type: 'text', content: 'After' },
+    ];
+    const result = groupParsedBlocks(input);
+
+    // Should be: text("Before"), group("A"), text("After")
+    expect(result[0].type).toBe('text');
+    expect(result[1].type).toBe('group');
+    const group = result[1] as GroupedBlock;
+    expect(group.name).toBe('A');
+    expect(group.children[0].content).toBe('inside');
+    expect(result[2].type).toBe('text');
+  });
+
+  it('should handle streaming (unclosed) groups', () => {
+    const input: ParsedContent[] = [
+      { type: 'group_start', content: '', metadata: { groupName: 'Loading', isStreaming: true } },
+      { type: 'text', content: 'streaming content...' },
+    ];
+    const result = groupParsedBlocks(input);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('group');
+    const group = result[0] as GroupedBlock;
+    expect(group.name).toBe('Loading');
+    expect(group.isStreaming).toBe(true);
+    expect(group.children.length).toBe(1);
+    expect(group.children[0].content).toBe('streaming content...');
+  });
+
+  it('should handle multiple sequential groups', () => {
+    const input: ParsedContent[] = [
+      { type: 'group_start', content: '', metadata: { groupName: 'A', isStreaming: false } },
+      { type: 'text', content: 'content A' },
+      { type: 'group_end', content: '', metadata: { groupName: 'A' } },
+      { type: 'group_start', content: '', metadata: { groupName: 'B', isStreaming: false } },
+      { type: 'text', content: 'content B' },
+      { type: 'group_end', content: '', metadata: { groupName: 'B' } },
+    ];
+    const result = groupParsedBlocks(input);
+
+    const groups = result.filter((b) => b.type === 'group') as GroupedBlock[];
+    expect(groups.length).toBe(2);
+    expect(groups[0].name).toBe('A');
+    expect(groups[1].name).toBe('B');
+  });
+
+  it('should skip stray group_end markers', () => {
+    const input: ParsedContent[] = [
+      { type: 'text', content: 'text' },
+      { type: 'group_end', content: '', metadata: { groupName: 'Stray' } },
+      { type: 'text', content: 'more text' },
+    ];
+    const result = groupParsedBlocks(input);
+
+    // The stray group_end should be consumed, text around it preserved
+    const types = result.map((b) => b.type);
+    expect(types).not.toContain('group_end');
+    // Should have text blocks
+    expect(result.some((b) => b.type === 'text')).toBe(true);
+  });
+});
+
+
+describe('groupContentBlocks', () => {
+  // Helper to create ContentBlock
+  function textBlock(text: string): ContentBlock {
+    return { type: 'text', text } as ContentBlock;
+  }
+  function toolUseBlock(name: string, id: string): ContentBlock {
+    return { type: 'tool_use', name, id, input: {} } as ContentBlock;
+  }
+  function toolResultBlock(id: string, text: string): ContentBlock {
+    return { type: 'tool_result', tool_use_id: id, content: text } as ContentBlock;
+  }
+  function thinkingBlock(text: string): ContentBlock {
+    return { type: 'thinking', text } as ContentBlock;
+  }
+
+  it('should pass through blocks unchanged when no groups', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('Hello world'),
+      toolUseBlock('view', 'tool-1'),
+      toolResultBlock('tool-1', 'result'),
+      textBlock('Done'),
+    ];
+    const result = groupContentBlocks(blocks);
+
+    expect(result.length).toBe(4);
+    expect(result[0].type).toBe('text');
+    expect(result[1].type).toBe('tool_use');
+    expect(result[2].type).toBe('tool_result');
+    expect(result[3].type).toBe('text');
+  });
+
+  it('should group text blocks within a single group', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('<group:Research>Finding files...</group:Research>'),
+    ];
+    const result = groupContentBlocks(blocks);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('Research');
+    expect(group.isStreaming).toBe(false);
+    expect(group.children.length).toBe(1);
+    expect(group.children[0].type).toBe('text');
+    expect(group.children[0].text).toBe('Finding files...');
+  });
+
+  it('should group text + tool_use + tool_result blocks', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('<group:Implementation>Starting work'),
+      toolUseBlock('str-replace-editor', 'tool-1'),
+      toolResultBlock('tool-1', 'File edited'),
+      textBlock('Done editing</group:Implementation>'),
+    ];
+    const result = groupContentBlocks(blocks);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('Implementation');
+    expect(group.isStreaming).toBe(false);
+    expect(group.children.length).toBe(4);
+    expect(group.children[0].type).toBe('text');
+    expect(group.children[0].text).toBe('Starting work');
+    expect(group.children[1].type).toBe('tool_use');
+    expect(group.children[2].type).toBe('tool_result');
+    expect(group.children[3].type).toBe('text');
+    expect(group.children[3].text).toBe('Done editing');
+  });
+
+  it('should group text + thinking blocks', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('<group:Analysis>Let me think...'),
+      thinkingBlock('Considering the options...'),
+      textBlock('I have decided.</group:Analysis>'),
+    ];
+    const result = groupContentBlocks(blocks);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('Analysis');
+    expect(group.children.length).toBe(3);
+    expect(group.children[0].text).toBe('Let me think...');
+    expect(group.children[1].type).toBe('thinking');
+    expect(group.children[2].text).toBe('I have decided.');
+  });
+
+  it('should handle multiple groups in sequence', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('<group:First>content 1</group:First>'),
+      textBlock('<group:Second>content 2</group:Second>'),
+    ];
+    const result = groupContentBlocks(blocks);
+
+    expect(result.length).toBe(2);
+    expect(result[0].type).toBe('content_group');
+    expect(result[1].type).toBe('content_group');
+    const g1 = result[0] as ContentBlockGroup;
+    const g2 = result[1] as ContentBlockGroup;
+    expect(g1.name).toBe('First');
+    expect(g2.name).toBe('Second');
+    expect(g1.children[0].text).toBe('content 1');
+    expect(g2.children[0].text).toBe('content 2');
+  });
+
+  it('should split text before and after group tags', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('Before text <group:Middle>inside group</group:Middle> After text'),
+    ];
+    const result = groupContentBlocks(blocks);
+
+    expect(result.length).toBe(3);
+    expect(result[0].type).toBe('text');
+    expect((result[0] as ContentBlock).text).toBe('Before text');
+    expect(result[1].type).toBe('content_group');
+    const group = result[1] as ContentBlockGroup;
+    expect(group.name).toBe('Middle');
+    expect(group.children[0].text).toBe('inside group');
+    expect(result[2].type).toBe('text');
+    expect((result[2] as ContentBlock).text).toBe('After text');
+  });
+
+  it('should mark unclosed group as streaming when isStreaming=true', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('<group:Loading>partial content...'),
+      toolUseBlock('search', 'tool-1'),
+    ];
+    const result = groupContentBlocks(blocks, true);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('Loading');
+    expect(group.isStreaming).toBe(true);
+    expect(group.children.length).toBe(2);
+    expect(group.children[0].text).toBe('partial content...');
+    expect(group.children[1].type).toBe('tool_use');
+  });
+
+  it('should auto-close unclosed group gracefully when isStreaming=false', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('<group:Unclosed>some content'),
+      toolUseBlock('view', 'tool-1'),
+    ];
+    const result = groupContentBlocks(blocks, false);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('Unclosed');
+    expect(group.isStreaming).toBe(false);
+    expect(group.children.length).toBe(2);
+  });
+
+  it('should auto-close previous group when new group opens', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('<group:First>content 1'),
+      toolUseBlock('view', 'tool-1'),
+      textBlock('<group:Second>content 2</group:Second>'),
+    ];
+    const result = groupContentBlocks(blocks);
+
+    expect(result.length).toBe(2);
+    const g1 = result[0] as ContentBlockGroup;
+    const g2 = result[1] as ContentBlockGroup;
+    expect(g1.type).toBe('content_group');
+    expect(g1.name).toBe('First');
+    expect(g1.isStreaming).toBe(false); // auto-closed, not streaming
+    expect(g1.children.length).toBe(2); // text + tool_use
+    expect(g2.type).toBe('content_group');
+    expect(g2.name).toBe('Second');
+    expect(g2.children[0].text).toBe('content 2');
+  });
+
+  it('should handle short close tag </group>', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('<group:Test>content</group>'),
+    ];
+    const result = groupContentBlocks(blocks);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('Test');
+    expect(group.isStreaming).toBe(false);
+    expect(group.children[0].text).toBe('content');
+  });
+
+  it('should handle named close tag </group:Name>', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('<group:MyGroup>content</group:MyGroup>'),
+    ];
+    const result = groupContentBlocks(blocks);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('MyGroup');
+    expect(group.isStreaming).toBe(false);
+  });
+
+  it('should handle empty group (open immediately followed by close)', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('<group:Empty></group:Empty>'),
+    ];
+    const result = groupContentBlocks(blocks);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('Empty');
+    expect(group.isStreaming).toBe(false);
+    expect(group.children.length).toBe(0);
+  });
+
+  it('should not process group tags inside non-text blocks', () => {
+    // tool_use blocks with group-like strings in their input should pass through
+    const blocks: ContentBlock[] = [
+      { type: 'tool_use', name: 'write', id: 'tool-1', input: { content: '<group:Fake>test</group>' } } as ContentBlock,
+    ];
+    const result = groupContentBlocks(blocks);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('tool_use');
+  });
+
+  it('should handle group spanning multiple text blocks with tool blocks between', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('Before'),
+      textBlock('<group:Work>Starting'),
+      toolUseBlock('edit', 'tool-1'),
+      toolResultBlock('tool-1', 'edited'),
+      thinkingBlock('Hmm...'),
+      textBlock('Finishing</group:Work>'),
+      textBlock('After'),
+    ];
+    const result = groupContentBlocks(blocks);
+
+    expect(result.length).toBe(3); // Before, group, After
+    expect(result[0].type).toBe('text');
+    expect((result[0] as ContentBlock).text).toBe('Before');
+    expect(result[1].type).toBe('content_group');
+    const group = result[1] as ContentBlockGroup;
+    expect(group.name).toBe('Work');
+    expect(group.children.length).toBe(5); // Starting, tool_use, tool_result, thinking, Finishing
+    expect(group.children[0].text).toBe('Starting');
+    expect(group.children[1].type).toBe('tool_use');
+    expect(group.children[2].type).toBe('tool_result');
+    expect(group.children[3].type).toBe('thinking');
+    expect(group.children[4].text).toBe('Finishing');
+    expect(result[2].type).toBe('text');
+    expect((result[2] as ContentBlock).text).toBe('After');
   });
 });

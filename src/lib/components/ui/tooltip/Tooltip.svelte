@@ -69,7 +69,7 @@
   // Combined content classes - use $derived to react to prop changes
   const contentClasses = $derived(
     cn(
-      'z-50 w-fit max-w-xs text-balance shadow-xs whitespace-pre-wrap',
+      'z-[200] w-fit max-w-xs text-balance shadow-xs whitespace-pre-wrap',
       'animate-in fade-in-0 zoom-in-95',
       'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
       'data-[side=bottom]:slide-in-from-top-2',

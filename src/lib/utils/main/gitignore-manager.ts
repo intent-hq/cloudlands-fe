@@ -43,7 +43,7 @@ export class GitignoreManager {
     '*.log',
     '.env',
     '.env.local',
-    '.augment',
+    '.augment/*',
   ];
 
   private loadGitignore(): void {

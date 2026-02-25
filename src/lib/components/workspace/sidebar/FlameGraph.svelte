@@ -241,7 +241,7 @@
                   >
                     {#if isUnread}
                       <span
-                        class="absolute top-1/2 -translate-y-1/2 left-1 size-1 bg-background rounded-full"
+                        class="absolute top-1/2 -translate-y-1/2 left-1 size-0.75 bg-background rounded-full"
                       ></span>
                     {/if}
                   </button>

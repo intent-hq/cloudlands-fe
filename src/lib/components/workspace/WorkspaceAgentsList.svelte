@@ -159,11 +159,29 @@
     return delegationMap.get(agentId) || [];
   }
 
+  // Helper to check if an agent is the coordinator (initial spec-writer agent)
+  function isCoordinatorAgent(agent: AgentSession): boolean {
+    const specialist = getAgentSpecialistId(agent);
+    return (
+      specialist === 'spec-writer' ||
+      agent.isInitialAgent === true ||
+      agent.metadata?.isInitialAgent === true ||
+      agent.metadata?.isInitialWorkspaceAgent === true
+    );
+  }
+
   // Top-level foreground agents: not background, not delegated under another agent
+  // Coordinator agent is always sorted first
   const topLevelForegroundAgents = $derived.by(() => {
     return dedupedAgents
       .filter((a) => !isBackgroundAgent(a) && !delegatedAgentIds.has(a.id))
       .sort((a, b) => {
+        // Coordinator always first
+        const aCoord = isCoordinatorAgent(a);
+        const bCoord = isCoordinatorAgent(b);
+        if (aCoord && !bCoord) return -1;
+        if (!aCoord && bCoord) return 1;
+        // Then by creation time
         const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
         const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
         return aTime - bTime;
@@ -219,8 +237,15 @@
 {/if}
 
 <!-- Recursive snippet: renders an agent card + collapsible delegated children -->
-{#snippet agentTree(agentList: AgentSession[], depth: number)}
-  {#each agentList as agent (agent.id)}
+{#snippet agentTree(agentList: AgentSession[], depth: number, showCoordinatorBanner?: boolean)}
+  {#each agentList as agent, i (agent.id)}
+    {#if showCoordinatorBanner && i === 0 && isCoordinatorAgent(agent)}
+      <div class="px-2 pt-1 pb-0.5">
+        <span class="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider"
+          >Coordinator</span
+        >
+      </div>
+    {/if}
     <AgentCard
       agentId={agent.id}
       isBackground={isBackgroundAgent(agent)}
@@ -319,7 +344,7 @@
 {:else}
   <!-- Tree list for foreground agents with collapsible delegated children -->
   <div class="flex flex-col gap-0.5 pl-2">
-    {@render agentTree(topLevelForegroundAgents, 0)}
+    {@render agentTree(topLevelForegroundAgents, 0, true)}
   </div>
 {/if}
 

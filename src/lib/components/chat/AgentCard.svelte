@@ -22,7 +22,10 @@
   import { slide } from 'svelte/transition';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { sessionStore } from '$features/agent/browser';
-  import { getPanelLayoutManager, hasPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
+  import {
+    getPanelLayoutManager,
+    hasPanelLayoutManager,
+  } from '$features/layout/panel-layout-manager.svelte';
   import type { Workspace } from '$shared/types';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import { specialistsStore } from '$lib/stores/specialists.store.svelte';
@@ -54,6 +57,8 @@
     showBorder?: boolean;
     /** Show colored border based on agent state (green for running, red for failed, etc.) */
     showStateBorder?: boolean;
+    /** Hide the message preview / second line */
+    hidePreview?: boolean;
     /** Optional workspace to load agent session from (for home page usage) */
     workspace?: Workspace | null;
   }
@@ -69,6 +74,7 @@
     depth = 0,
     showBorder = false,
     showStateBorder = false,
+    hidePreview = false,
     workspace = null,
   }: Props = $props();
 
@@ -456,27 +462,29 @@
       </div>
 
       <!-- Message preview - show completion report if available, otherwise last response -->
-      {#if effectiveCompletionReport}
-        <div class="mt-0.5">
-          <p class="text-sm text-foreground/70 truncate">
-            {effectiveCompletionReport}
-          </p>
-        </div>
-      {:else if lastUserMsg || lastResponse}
-        <div class="space-y-0.5">
-          {#if lastResponse}
-            <p
-              class="text-sm text-muted-foreground/60 truncate"
-              transition:slide={{ axis: 'y', duration: 150 }}
-            >
-              {lastResponse}
+      {#if !hidePreview}
+        {#if effectiveCompletionReport}
+          <div class="mt-0.5">
+            <p class="text-sm text-foreground/70 truncate">
+              {effectiveCompletionReport}
             </p>
-          {:else if lastUserMsg}
-            <p class="text-sm text-muted-foreground truncate">
-              {lastUserMsg}
-            </p>
-          {/if}
-        </div>
+          </div>
+        {:else if lastUserMsg || lastResponse}
+          <div class="space-y-0.5">
+            {#if lastResponse}
+              <p
+                class="text-sm text-muted-foreground/60 truncate"
+                transition:slide={{ axis: 'y', duration: 150 }}
+              >
+                {lastResponse}
+              </p>
+            {:else if lastUserMsg}
+              <p class="text-sm text-muted-foreground truncate">
+                {lastUserMsg}
+              </p>
+            {/if}
+          </div>
+        {/if}
       {/if}
     </div>
   </button>

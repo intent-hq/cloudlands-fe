@@ -63,6 +63,7 @@
   import FeatureCodeDialog from '$lib/components/modals/FeatureCodeDialog.svelte';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import type { InitialRepoInfo } from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
+  import { SidebarNav, SidebarPanel } from '$lib/components/layout/sidebar-nav';
 
   const logger = createLogger('+layout');
 
@@ -183,11 +184,15 @@
 
     // Derive route name from current route
     const routeName: AnalyticsUIContext['routeName'] =
-      routeId === '/' ? 'home'
-      : pathname.startsWith('/settings') ? 'settings'
-      : pathname.startsWith('/agent/') ? 'agent'
-      : pathname.startsWith('/workspace/creating') ? 'creating'
-      : null;
+      routeId === '/'
+        ? 'home'
+        : pathname.startsWith('/settings')
+          ? 'settings'
+          : pathname.startsWith('/agent/')
+            ? 'agent'
+            : pathname.startsWith('/workspace/creating')
+              ? 'creating'
+              : null;
 
     // Set analytics context for non-workspace routes
     setAnalyticsContextProvider(() => ({
@@ -1376,7 +1381,9 @@
       shift: true,
       global: true,
       description: 'Feature Code Entry',
-      action: () => { showFeatureCodeDialog = !showFeatureCodeDialog; },
+      action: () => {
+        showFeatureCodeDialog = !showFeatureCodeDialog;
+      },
     });
 
     // Cmd+Up (Mac) / Ctrl+Up (Win/Linux) -> Scroll to previous message
@@ -1783,7 +1790,7 @@
 <TooltipProvider>
   <!-- Main Layout with Title Bar -->
   <div
-    class="panel-layout-container relative h-screen w-screen overflow-hidden text-foreground flex flex-col"
+    class="panel-layout-container relative h-screen w-screen overflow-hidden text-foreground flex flex-col bg-app-background"
   >
     <!-- Title bar at top -->
     <WindowTitleBar {workspaceId} />
@@ -1793,19 +1800,30 @@
       <UpdateDownloadIndicator />
     </div>
 
-    <!-- Main Content Area -->
+    <!-- Main Content Area with Sidebar Nav -->
     <ErrorBoundary componentName="MainLayout">
-      <main class="flex w-full flex-1 min-h-0 flex-col">
-        <div class="flex-1 min-h-0 overflow-auto bg-sidebar">
-          {@render children?.()}
-        </div>
+      <div class="flex flex-1 min-h-0">
+        <!-- Global Sidebar Nav Rail -->
+        <SidebarNav />
 
-        <!-- Root Quake Terminal Overlay (for non-workspace pages) -->
-        <!-- Only shown when not in a workspace context -->
-        {#if !workspaceId}
-          <RootQuakeTerminalOverlay />
-        {/if}
-      </main>
+        <!-- Sidebar Panel (persistent, pushes content) -->
+        <SidebarPanel />
+
+        <!-- Content area with rounded corners -->
+        <main
+          class="flex flex-1 min-h-0 flex-col mr-1.5 mb-1.5 rounded-xl overflow-hidden bg-sidebar border border-border shadow-sm"
+        >
+          <div class="flex-1 min-h-0 overflow-auto">
+            {@render children?.()}
+          </div>
+
+          <!-- Root Quake Terminal Overlay (for non-workspace pages) -->
+          <!-- Only shown when not in a workspace context -->
+          {#if !workspaceId}
+            <RootQuakeTerminalOverlay />
+          {/if}
+        </main>
+      </div>
     </ErrorBoundary>
   </div>
 

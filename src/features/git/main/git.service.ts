@@ -3534,11 +3534,6 @@ export class GitService {
 
       if (!filePath) continue; // Skip if no path
 
-      // Skip .augment folder files (they're gitignored)
-      if (filePath.startsWith('.augment/') || filePath === '.augment') {
-        continue;
-      }
-
       // Skip directory paths (end with /) - git sometimes returns directories
       // even with --untracked-files=all if the directory is empty or all contents are gitignored
       if (filePath.endsWith('/')) {

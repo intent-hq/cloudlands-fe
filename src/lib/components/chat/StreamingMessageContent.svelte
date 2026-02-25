@@ -13,7 +13,18 @@
   import { faCode, faTerminal, faRobot } from '@fortawesome/free-solid-svg-icons';
   import SetupScriptCard from './SetupScriptCard.svelte';
   import ThinkingBlock from './ThinkingBlock.svelte';
-  import { parseAgentMessage, parseSuggestedPrompts } from '$lib/utils/messageParser';
+  import {
+    parseAgentMessage,
+    parseSuggestedPrompts,
+    groupParsedBlocks,
+    groupContentBlocks,
+    type RenderBlock,
+    type GroupedBlock,
+    type ParsedContent,
+    type ContentBlockGroup,
+    type RenderContentBlock,
+  } from '$lib/utils/messageParser';
+  import ResponseGroup from './ResponseGroup.svelte';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { createLogger } from '$lib/utils/client-logger';
   import { onDestroy } from 'svelte';
@@ -123,6 +134,11 @@
         return true;
       });
     }
+  });
+
+  // Group content blocks by <group:Name> tags at the ContentBlock level
+  let groupedBlocks = $derived.by(() => {
+    return groupContentBlocks(blocks, isStreaming);
   });
 
   // Track tool states
@@ -242,7 +258,7 @@
   // Parse text blocks to extract augment_code_snippet blocks, digests, and setup scripts
   // PERFORMANCE: Memoize results to avoid re-parsing on every render
   type ParsedTextResult = {
-    blocks: ReturnType<typeof parseAgentMessage>;
+    blocks: RenderBlock[];
     setupScript: { name: string; description: string; content: string } | null;
   };
 
@@ -263,7 +279,9 @@
     const { cleanedContent: contentWithoutSuggestions } = parseSuggestedPrompts(text);
     // Parse the content - this handles digests inline as 'digest' type blocks
     const parsed = parseAgentMessage(contentWithoutSuggestions);
-    const result = { blocks: parsed, setupScript };
+    // Group parsed blocks to wrap group_start/group_end markers into GroupedBlock objects
+    const grouped = groupParsedBlocks(parsed);
+    const result = { blocks: grouped, setupScript };
 
     // Cache the result
     parsedTextCache.set(text, result);
@@ -281,14 +299,25 @@
 
   // Pre-compute parsed results for all text blocks to avoid parsing in template
   // This runs once when blocks change, not on every render
+  // Keys are "blockIndex" for top-level text blocks and "blockIndex-childIndex" for children inside groups
   let parsedTextBlocks = $derived.by(() => {
-    const results = new Map<number, ParsedTextResult>();
-    blocks.forEach((block, index) => {
+    const results = new Map<string, ParsedTextResult>();
+    groupedBlocks.forEach((block, index) => {
       if (block.type === 'text') {
-        const textContent = block.text || (block as any).content || '';
+        const textContent = (block as ContentBlock).text || (block as any).content || '';
         if (textContent) {
-          results.set(index, parseTextBlock(textContent));
+          results.set(String(index), parseTextBlock(textContent));
         }
+      } else if (block.type === 'content_group') {
+        const group = block as ContentBlockGroup;
+        group.children.forEach((child, childIndex) => {
+          if (child.type === 'text') {
+            const textContent = child.text || (child as any).content || '';
+            if (textContent) {
+              results.set(`${index}-${childIndex}`, parseTextBlock(textContent));
+            }
+          }
+        });
       }
     });
     return results;
@@ -300,22 +329,26 @@
   });
 
   /**
-   * Generate a stable unique key for a content block.
-   * Uses block.id if available, otherwise creates a composite key from:
-   * - Block type
-   * - Block index (stable within a single render)
-   * - Content hash for text blocks (to differentiate blocks with same type)
+   * Generate a stable unique key for a render content block.
+   * Handles both regular ContentBlocks and ContentBlockGroups.
    */
-  function getBlockKey(block: ContentBlock, index: number): string {
+  function getBlockKey(block: RenderContentBlock, index: number): string {
+    // ContentBlockGroup: use group name + index
+    if (block.type === 'content_group') {
+      const group = block as ContentBlockGroup;
+      return `group-${index}-${group.name}`;
+    }
+
+    const contentBlock = block as ContentBlock;
+
     // If block has an explicit ID, use it (tool_use blocks typically have IDs)
-    if (block.id) {
-      return block.id;
+    if (contentBlock.id) {
+      return contentBlock.id;
     }
 
     // For text blocks, include a simple hash of the first 50 chars to differentiate
-    if (block.type === 'text') {
-      const text = block.text || (block as any).content || '';
-      // Simple hash: sum of char codes of first 50 chars
+    if (contentBlock.type === 'text') {
+      const text = contentBlock.text || (contentBlock as any).content || '';
       const hash = text
         .slice(0, 50)
         .split('')
@@ -324,8 +357,8 @@
     }
 
     // For thinking blocks
-    if (block.type === 'thinking') {
-      const thinking = (block as any).thinking || '';
+    if (contentBlock.type === 'thinking') {
+      const thinking = (contentBlock as any).thinking || '';
       const hash = thinking
         .slice(0, 50)
         .split('')
@@ -334,17 +367,17 @@
     }
 
     // For tool_result blocks, use the tool_use_id if available
-    if (block.type === 'tool_result' && block.tool_use_id) {
-      return `result-${block.tool_use_id}`;
+    if (contentBlock.type === 'tool_result' && contentBlock.tool_use_id) {
+      return `result-${contentBlock.tool_use_id}`;
     }
 
     // Fallback: type + index (should rarely be reached)
-    return `${block.type}-${index}`;
+    return `${contentBlock.type}-${index}`;
   }
 
   // Pre-compute block keys for stable iteration, ensuring uniqueness
   let blockKeys = $derived.by(() => {
-    const keys = blocks.map((block, index) => getBlockKey(block, index));
+    const keys = groupedBlocks.map((block, index) => getBlockKey(block, index));
     // Ensure uniqueness by appending index if duplicates exist
     const seen = new Map<string, number>();
     return keys.map((key, index) => {
@@ -362,189 +395,195 @@
   <StreamingAnimatedContent {content} {isStreaming} {hideToolCalls} />
 {:else} -->
 {#if true}
+  {#snippet renderParsedContentBlock(parsedBlock: ParsedContent, blockIndex: number)}
+    {#if parsedBlock.type === 'augment_code_snippet'}
+      <AugmentCodeSnippet
+        code={parsedBlock.content}
+        language={parsedBlock.metadata?.language}
+        path={parsedBlock.metadata?.path}
+        mode={parsedBlock.metadata?.mode}
+        onOpenFile={handleOpenFile}
+      />
+    {:else if parsedBlock.type === 'digest'}
+      <DigestCard digest={parsedBlock.content || ''} />
+    {:else if parsedBlock.type === 'diff'}
+      <ChatDiffViewer diff={parsedBlock.content} filePath={parsedBlock.metadata?.path} />
+    {:else if parsedBlock.type === 'commit_message'}
+      <div class="commit-message-block p-3 my-2 rounded-md bg-background border border-border">
+        <div class="text-xs font-medium text-muted-foreground mb-1.5">Generated Commit Message</div>
+        <div class="font-mono text-sm whitespace-pre-wrap text-foreground">
+          {parsedBlock.content}
+        </div>
+      </div>
+    {:else if parsedBlock.type === 'diagram' && parsedBlock.metadata?.diagramData}
+      <div class="diagram-block my-2">
+        <DiagramRenderer
+          diagram={parsedBlock.metadata.diagramData as DiagramPrimitive}
+          editable={false}
+          onBindingClick={handleDiagramBindingClick}
+        />
+      </div>
+    {:else if parsedBlock.type === 'mermaid'}
+      <div class="mermaid-block my-8">
+        {#await MermaidRenderer then module}
+          <module.default code={parsedBlock.content || ''} />
+        {/await}
+      </div>
+    {:else if parsedBlock.type === 'patch' && parsedBlock.metadata?.patchData}
+      {@const patchData = parsedBlock.metadata.patchData}
+      <PatchBlockContent
+        patches={[{ filePath: patchData.filePath, diff: patchData.diff }]}
+        label={patchData.description || patchData.filePath}
+      />
+    {:else if parsedBlock.type === 'reference' && parsedBlock.metadata?.referenceData}
+      {@const refData = parsedBlock.metadata.referenceData}
+      {@const refFileName = refData.filePath?.split('/').pop() || refData.semanticId || 'Reference'}
+      <div class="my-2 rounded-lg border border-border overflow-hidden bg-background">
+        <div class="flex items-center gap-2 px-3 py-1.5">
+          <Fa icon={faCode} size="xs" class="flex-none text-muted-foreground/50" />
+          <span class="text-sm font-medium truncate">{refFileName}</span>
+          {#if refData.filePath && refData.filePath !== refFileName}
+            <span class="text-sm text-muted-foreground truncate flex-1 min-w-0">
+              {refData.filePath}
+            </span>
+          {/if}
+        </div>
+        {#if refData.snapshot?.code}
+          <div class="border-t border-border">
+            <CodeBlock
+              code={refData.snapshot.code}
+              language={refData.snapshot.languageId || 'plaintext'}
+              showLineNumbers={true}
+              noBorder={true}
+              noMargin={true}
+            />
+          </div>
+        {/if}
+      </div>
+    {:else if parsedBlock.type === 'cli' && parsedBlock.metadata?.cliData}
+      {@const cliData = parsedBlock.metadata.cliData}
+      <div class="my-1.5 flex items-center gap-2">
+        <Fa icon={faTerminal} size="sm" class="text-muted-foreground flex-none" />
+        <code class="font-mono text-sm text-muted-foreground flex-1 min-w-0 truncate">
+          {cliData.command}
+        </code>
+      </div>
+    {:else if parsedBlock.type === 'agent_action' && parsedBlock.metadata?.agentActionData}
+      {@const actionData = parsedBlock.metadata.agentActionData}
+      <div class="my-1.5 flex items-center gap-2">
+        <Fa icon={faRobot} size="sm" class="text-muted-foreground flex-none" />
+        <span class="text-sm text-muted-foreground flex-1 min-w-0 truncate">
+          {actionData.goal}
+        </span>
+      </div>
+    {:else if parsedBlock.type === 'code'}
+      <CodeBlock
+        code={parsedBlock.content || ''}
+        language={parsedBlock.metadata?.language || 'plaintext'}
+      />
+    {:else if parsedBlock.type === 'text'}
+      <MarkdownViewer
+        content={parsedBlock.content || ''}
+        isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+        onFileClick={(path) => handleOpenFile({ path })}
+      />
+    {:else}
+      <MarkdownViewer
+        content={parsedBlock.content || ''}
+        isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+        onFileClick={(path) => handleOpenFile({ path })}
+      />
+    {/if}
+  {/snippet}
+
+  {#snippet renderContentBlock(block: ContentBlock, parsedKey: string, blockIndex: number)}
+    {#if block.type === 'text' && (block.text || (block as any).content)}
+      {@const textContent = block.text || (block as any).content || ''}
+      {@const parsedResult = parsedTextBlocks.get(parsedKey) || {
+        blocks: [],
+        setupScript: null,
+      }}
+      <div class="w-full">
+        <!-- Show setup script card if present (unless hidden) -->
+        {#if parsedResult.setupScript && !hideSetupScripts}
+          <SetupScriptCard
+            name={parsedResult.setupScript.name}
+            description={parsedResult.setupScript.description}
+            content={parsedResult.setupScript.content}
+            onUseScript={onSetupScriptGenerated}
+          />
+        {/if}
+        {#if parsedResult.blocks.length > 0}
+          {#each parsedResult.blocks as renderBlock, parsedBlockIndex (`${parsedKey}-parsed-${parsedBlockIndex}`)}
+            {@render renderParsedContentBlock(renderBlock as ParsedContent, blockIndex)}
+          {/each}
+        {:else}
+          <!-- Fallback to regular MarkdownViewer if no parsed content -->
+          <MarkdownViewer
+            content={textContent}
+            isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+            onFileClick={(path) => handleOpenFile({ path })}
+          />
+        {/if}
+      </div>
+    {:else if block.type === 'tool_use'}
+      {@const toolBlock = block as ToolUseBlock}
+      {@const toolResultBlock = blocks.find(
+        (b) => b.type === 'tool_result' && (b as any).tool_use_id === toolBlock.id,
+      )}
+      {@const resultContent = toolResultBlock ? (toolResultBlock as ToolResultBlock).content : null}
+      <div class="relative w-full min-w-0">
+        <ToolCall
+          toolUse={toolBlock}
+          toolState={toolStates.get(toolBlock.id) || 'running'}
+          result={resultContent}
+        />
+      </div>
+    {:else if block.type === 'tool_result'}
+      <!-- Tool results are handled by associating them with their tool_use blocks -->
+      <!-- We don't render them separately as they're shown within the ToolCall component -->
+    {:else if block.type === 'thinking'}
+      <ThinkingBlock
+        content={block.content || 'Processing...'}
+        isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+      />
+    {/if}
+  {/snippet}
+
   <div
     class="flex flex-col gap-1.5 relative"
     class:streaming={isStreaming}
     style="contain: layout style paint;"
   >
-    {#each blocks as block, blockIndex (blockKeys[blockIndex])}
-      {#if ['text', 'tool_use', 'thinking'].includes(block.type)}
-        <div class="content-block content-block--{block.type}  my-1.25">
-          {#if block.type === 'text' && (block.text || (block as any).content)}
-            {@const textContent = block.text || (block as any).content || ''}
-            {@const parsedResult = parsedTextBlocks.get(blockIndex) || {
-              blocks: [],
-              setupScript: null,
-            }}
-            <div class="w-full">
-              <!-- Show setup script card if present (unless hidden) -->
-              {#if parsedResult.setupScript && !hideSetupScripts}
-                <SetupScriptCard
-                  name={parsedResult.setupScript.name}
-                  description={parsedResult.setupScript.description}
-                  content={parsedResult.setupScript.content}
-                  onUseScript={onSetupScriptGenerated}
-                />
-              {/if}
-              {#if parsedResult.blocks.length > 0}
-                {#each parsedResult.blocks as parsedBlock, parsedBlockIndex (`${blockIndex}-parsed-${parsedBlockIndex}`)}
-                  {#if parsedBlock.type === 'augment_code_snippet'}
-                    <AugmentCodeSnippet
-                      code={parsedBlock.content}
-                      language={parsedBlock.metadata?.language}
-                      path={parsedBlock.metadata?.path}
-                      mode={parsedBlock.metadata?.mode}
-                      onOpenFile={handleOpenFile}
-                    />
-                  {:else if parsedBlock.type === 'digest'}
-                    <!-- Digest card rendered inline where the agent placed it -->
-                    <DigestCard digest={parsedBlock.content || ''} />
-                  {:else if parsedBlock.type === 'diff'}
-                    <!-- Render diff viewer for diff blocks -->
-                    <ChatDiffViewer
-                      diff={parsedBlock.content}
-                      filePath={parsedBlock.metadata?.path}
-                    />
-                  {:else if parsedBlock.type === 'commit_message'}
-                    <!-- Render commit message in a nice format -->
-                    <div
-                      class="commit-message-block p-3 my-2 rounded-md bg-background border border-border"
-                    >
-                      <div class="text-xs font-medium text-muted-foreground mb-1.5">
-                        Generated Commit Message
-                      </div>
-                      <div class="font-mono text-sm whitespace-pre-wrap text-foreground">
-                        {parsedBlock.content}
-                      </div>
-                    </div>
-                  {:else if parsedBlock.type === 'diagram' && parsedBlock.metadata?.diagramData}
-                    <!-- Render diagram -->
-                    <div class="diagram-block my-2">
-                      <DiagramRenderer
-                        diagram={parsedBlock.metadata.diagramData as DiagramPrimitive}
-                        editable={false}
-                        onBindingClick={handleDiagramBindingClick}
-                      />
-                    </div>
-                  {:else if parsedBlock.type === 'mermaid'}
-                    <!-- Render mermaid diagrams -->
-                    <div class="mermaid-block my-8">
-                      {#await MermaidRenderer then module}
-                        <module.default code={parsedBlock.content || ''} />
-                      {/await}
-                    </div>
-                  {:else if parsedBlock.type === 'patch' && parsedBlock.metadata?.patchData}
-                    <!-- Render patch block using shared PatchBlockContent (same as notes) -->
-                    {@const patchData = parsedBlock.metadata.patchData}
-                    <PatchBlockContent
-                      patches={[{ filePath: patchData.filePath, diff: patchData.diff }]}
-                      label={patchData.description || patchData.filePath}
-                    />
-                  {:else if parsedBlock.type === 'reference' && parsedBlock.metadata?.referenceData}
-                    <!-- Render reference block (compact header like notes, without interactive features) -->
-                    {@const refData = parsedBlock.metadata.referenceData}
-                    {@const refFileName = refData.filePath?.split('/').pop() || refData.semanticId || 'Reference'}
-                    <div class="my-2 rounded-lg border border-border overflow-hidden bg-background">
-                      <div class="flex items-center gap-2 px-3 py-1.5">
-                        <Fa icon={faCode} size="xs" class="flex-none text-muted-foreground/50" />
-                        <span class="text-sm font-medium truncate">{refFileName}</span>
-                        {#if refData.filePath && refData.filePath !== refFileName}
-                          <span class="text-sm text-muted-foreground truncate flex-1 min-w-0">
-                            {refData.filePath}
-                          </span>
-                        {/if}
-                      </div>
-                      {#if refData.snapshot?.code}
-                        <div class="border-t border-border">
-                          <CodeBlock
-                            code={refData.snapshot.code}
-                            language={refData.snapshot.languageId || 'plaintext'}
-                            showLineNumbers={true}
-                            noBorder={true}
-                            noMargin={true}
-                          />
-                        </div>
-                      {/if}
-                    </div>
-                  {:else if parsedBlock.type === 'cli' && parsedBlock.metadata?.cliData}
-                    <!-- Render CLI block (terminal icon + command, without run functionality) -->
-                    {@const cliData = parsedBlock.metadata.cliData}
-                    <div class="my-1.5 flex items-center gap-2">
-                      <Fa icon={faTerminal} size="sm" class="text-muted-foreground flex-none" />
-                      <code class="font-mono text-sm text-muted-foreground flex-1 min-w-0 truncate">
-                        {cliData.command}
-                      </code>
-                    </div>
-                  {:else if parsedBlock.type === 'agent_action' && parsedBlock.metadata?.agentActionData}
-                    <!-- Render agent action block (robot icon + goal, without run functionality) -->
-                    {@const actionData = parsedBlock.metadata.agentActionData}
-                    <div class="my-1.5 flex items-center gap-2">
-                      <Fa icon={faRobot} size="sm" class="text-muted-foreground flex-none" />
-                      <span class="text-sm text-muted-foreground flex-1 min-w-0 truncate">
-                        {actionData.goal}
-                      </span>
-                    </div>
-                  {:else if parsedBlock.type === 'code'}
-                    <!-- Render standalone code blocks with proper syntax highlighting -->
-                    <CodeBlock
-                      code={parsedBlock.content || ''}
-                      language={parsedBlock.metadata?.language || 'plaintext'}
-                    />
-                  {:else if parsedBlock.type === 'text'}
-                    <!-- For regular text blocks, use MarkdownViewer -->
-                    <MarkdownViewer
-                      content={parsedBlock.content || ''}
-                      isStreaming={isStreaming && blockIndex === blocks.length - 1}
-                      onFileClick={(path) => handleOpenFile({ path })}
-                    />
-                  {:else}
-                    <!-- Handle other block types like file, etc. -->
-                    <MarkdownViewer
-                      content={parsedBlock.content || ''}
-                      isStreaming={isStreaming && blockIndex === blocks.length - 1}
-                      onFileClick={(path) => handleOpenFile({ path })}
-                    />
-                  {/if}
-                {/each}
-              {:else}
-                <!-- Fallback to regular MarkdownViewer if no parsed content -->
-                <MarkdownViewer
-                  content={textContent}
-                  isStreaming={isStreaming && blockIndex === blocks.length - 1}
-                  onFileClick={(path) => handleOpenFile({ path })}
-                />
-              {/if}
-            </div>
-          {:else if block.type === 'tool_use'}
-            {@const toolBlock = block as ToolUseBlock}
-            {@const toolResultBlock = blocks.find(
-              (b) => b.type === 'tool_result' && (b as any).tool_use_id === toolBlock.id,
-            )}
-            {@const resultContent = toolResultBlock
-              ? (toolResultBlock as ToolResultBlock).content
-              : null}
-            <div class="relative w-full min-w-0">
-              <ToolCall
-                toolUse={toolBlock}
-                toolState={toolStates.get(toolBlock.id) || 'running'}
-                result={resultContent}
-              />
-            </div>
-          {:else if block.type === 'tool_result'}
-            <!-- Tool results are handled by associating them with their tool_use blocks -->
-            <!-- We don't render them separately as they're shown within the ToolCall component -->
-          {:else if block.type === 'thinking'}
-            <ThinkingBlock
-              content={block.content || 'Processing...'}
-              isStreaming={isStreaming && blockIndex === blocks.length - 1}
-            />
-          {/if}
+    {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
+      {#if block.type === 'content_group'}
+        {@const group = block as ContentBlockGroup}
+        <div class="content-block content-block--group my-1.25">
+          <ResponseGroup name={group.name} isStreaming={group.isStreaming} blocks={group.children}>
+            {#snippet children()}
+              {#each group.children as childBlock, childIndex (`${blockIndex}-group-${childIndex}`)}
+                {#if childBlock.type !== 'tool_result'}
+                  <div class="content-block content-block--{childBlock.type} my-1.25">
+                    {@render renderContentBlock(
+                      childBlock,
+                      `${blockIndex}-${childIndex}`,
+                      blockIndex,
+                    )}
+                  </div>
+                {/if}
+              {/each}
+            {/snippet}
+          </ResponseGroup>
+        </div>
+      {:else if ['text', 'tool_use', 'thinking'].includes(block.type)}
+        <div class="content-block content-block--{block.type} my-1.25">
+          {@render renderContentBlock(block as ContentBlock, String(blockIndex), blockIndex)}
         </div>
       {/if}
     {/each}
 
     <!-- Show streaming cursor if streaming but no content yet -->
-    {#if isStreaming && blocks.length === 0}
+    {#if isStreaming && groupedBlocks.length === 0}
       <div class="w-full">
         <MarkdownViewer content="" isStreaming={true} />
       </div>
@@ -557,6 +596,10 @@
 <style>
   /* Adjacent tool_use blocks should have reduced spacing */
   .content-block--tool_use + .content-block--tool_use {
+    margin-top: -0.5rem;
+  }
+  /* Adjacent tool_use blocks should have reduced spacing */
+  .content-block--group + .content-block--group {
     margin-top: -0.5rem;
   }
 

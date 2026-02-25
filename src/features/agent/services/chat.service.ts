@@ -1769,8 +1769,9 @@ export class ChatService implements IDisposable {
       eventName: `agent:stream:${sessionId}`,
     });
 
-    // Clean up any existing handler
-    this.cleanupStream(sessionId);
+    // Clean up any existing handler, but preserve accumulated content.
+    // setupStreaming is about re-registering event handlers, not discarding content.
+    this.cleanupStream(sessionId, /* preserveContent */ true);
 
     // Create stream handler
     const handler = (data: any) => {
@@ -2518,9 +2519,12 @@ export class ChatService implements IDisposable {
   }
 
   /**
-   * Clean up stream handlers
+   * Clean up stream handlers.
+   * @param preserveContent - If true, keeps localStreamingContent intact.
+   *   Use this when re-registering handlers for an active stream (setupStreaming),
+   *   NOT when terminating a stream (stopChat, clearChat, error, end).
    */
-  private cleanupStream(sessionId: string): void {
+  private cleanupStream(sessionId: string, preserveContent = false): void {
     const handler = this.streamHandlers.get(sessionId);
     if (handler) {
       // Clean up DOM event listener (we only listen to DOM events now)
@@ -2556,9 +2560,13 @@ export class ChatService implements IDisposable {
       this.chunkUpdateRafId = null;
     }
 
-    // Reset per-instance accumulator
-    this.localStreamingContent = '';
-    this.pendingStreamingContent = null;
+    // Reset per-instance accumulator unless caller explicitly wants to preserve it.
+    // setupStreaming() passes preserveContent=true because it's re-registering handlers
+    // for an already-active stream, not discarding content.
+    if (!preserveContent) {
+      this.localStreamingContent = '';
+      this.pendingStreamingContent = null;
+    }
   }
 
   /**

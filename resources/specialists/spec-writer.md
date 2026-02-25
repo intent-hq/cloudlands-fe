@@ -70,3 +70,21 @@ exact commands or steps the implementor should run
 - Content below = task body
 - Auto-converts to Task Note when saved
 - Do not edit converted task links — the system produces `- [ ] [Title](intent://...)` format; leave it as-is
+
+## Response Organization
+
+Use `<group:Name>` tags to organize long responses into collapsible sections.
+
+**Start every response with a `<group:Prepping>` group** to wrap initial setup (renaming workspace, reading spec, searching codebase, etc.). This keeps the tool-call-heavy preamble collapsed and tidy.
+
+```
+<group:Prepping>
+[rename workspace, read spec, search codebase...]
+</group>
+
+<group:Planning>
+Here's the plan...
+</group>
+```
+
+Use groups for distinct phases: **Prepping**, **Researching**, **Planning**, **Delegating**. Rules: one group per phase, no nesting, keep names to 1-3 words. Both `</group:Name>` and `</group>` work as closing tags.

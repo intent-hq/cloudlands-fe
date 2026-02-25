@@ -543,11 +543,6 @@ export class GitIntegrationService extends EventEmitter {
       const existingByFileOnly = new Map(existingChanges.map((c) => [c.file, c]));
 
       for (const fileChange of changes.files) {
-        // Skip .augment folder files (they're gitignored)
-        if (fileChange.path.startsWith('.augment/') || fileChange.path === '.augment') {
-          continue;
-        }
-
         // Create TrackedChange with proper content
         // Get line change statistics first
         const additions = fileChange.additions || 0;

@@ -62,6 +62,7 @@
   import { unifiedIdService } from '$shared/services/unified-id.service';
   import { stripMarkdownFormatting } from '$shared/utils-client';
   import { noteReadTrackingStore } from '$lib/stores/note-read-tracking.store.svelte';
+  import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
   import { getTransientUIStore } from '$features/workspace/transient-ui-state.store.svelte';
   import { track, setAnalyticsContextProvider, getFileExtension } from '$lib/services/analytics';
   import { layoutSettings } from '$features/layout/layout-settings.svelte';
@@ -77,6 +78,7 @@
   import QuakeTerminalOverlay from '$lib/components/terminal/QuakeTerminalOverlay.svelte';
   import { PanelLayout } from '$lib/components/layout/panel-system';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
+  import { unifiedStateStore } from '$features/agent/services/unified-state-store';
 
   // Utils
   import { createLogger } from '$lib/utils/client-logger';
@@ -718,6 +720,107 @@
     });
   }
 
+  /**
+   * Check whether the spec panel should be deferred for this workspace.
+   * Returns true when an initial spec-writer agent exists — the spec panel
+   * will slide in reactively once spec generation actually starts.
+   */
+  // Track workspaces where the spec slide-in has already completed.
+  // Once the spec has been opened (animated or not), we must NOT defer again
+  // on subsequent navigations back to this workspace within the same session.
+  const specSlideInCompleted = new Set<string>();
+
+  function shouldDeferSpecPanel(wsId: string): boolean {
+    // If the spec slide-in already completed for this workspace, never defer again.
+    // This prevents setDeferSpecTab(true) from stripping the spec tab when the
+    // user navigates away and back.
+    if (specSlideInCompleted.has(wsId)) {
+      logger.info('[shouldDeferSpecPanel] NOT deferring — slide-in already completed for this workspace', { wsId });
+      return false;
+    }
+
+    const brandedId = WorkspaceId(wsId);
+    // Check if the initial spec write is already in progress
+    if (unifiedStateStore.getInitialSpecWriteInProgress(brandedId)) {
+      logger.info('[shouldDeferSpecPanel] Deferring: isInitialSpecWriteInProgress=true', { wsId });
+      return true;
+    }
+    // Check if there's a pending initial agent config that is a spec-writer
+    const agentConfigData = sessionStorage.getItem(`workspace:${wsId}:agent-config`);
+    if (agentConfigData) {
+      try {
+        const config = JSON.parse(agentConfigData);
+        const isSpecWriter =
+          config.specialist === 'spec-writer' || config.metadata?.specialist === 'spec-writer';
+        if (isSpecWriter && (config.isInitialAgent || config.isFirstWorkspaceAgent)) {
+          logger.info('[shouldDeferSpecPanel] Deferring: found spec-writer agent config in sessionStorage', { wsId });
+          return true;
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+    // Check if we have a pending initial agent marker (even if agent-config was cleaned up)
+    const pendingAgentData = sessionStorage.getItem(`workspace:${wsId}:initial-agent-pending`);
+    if (pendingAgentData) {
+      try {
+        const parsed = JSON.parse(pendingAgentData);
+        const isSpecWriter =
+          parsed.config?.specialist === 'spec-writer' ||
+          parsed.config?.metadata?.specialist === 'spec-writer';
+        if (isSpecWriter) {
+          logger.info('[shouldDeferSpecPanel] Deferring: found spec-writer in initial-agent-pending', { wsId });
+          return true;
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+    // NOTE: We intentionally do NOT check the unified state store for initial
+    // spec-writer agents here. The agent's isInitialAgent metadata persists
+    // forever (it's a property of the agent session saved to disk), so that
+    // check would trigger deferral on every fresh page load for any workspace
+    // that was ever created with a spec-writer — causing a 3-second delay
+    // before the spec panel appears. The sessionStorage checks above are
+    // sufficient: they only exist during the browser session in which the
+    // workspace was created, and the getInitialSpecWriteInProgress check
+    // above handles the case where the agent is actively streaming right now.
+    logger.info('[shouldDeferSpecPanel] NOT deferring — no spec-writer signals found', { wsId });
+    return false;
+  }
+
+  // ── Universal spec-tab deferral ──
+  // As soon as a workspace ID is available, set the deferSpecTab flag on its
+  // layout manager.  This runs BEFORE any restoration/fallback logic that might
+  // try to open a spec tab, ensuring the guard catches every code path.
+  //
+  // IMPORTANT: The entire body (except the wsId read) is wrapped in `untrack`
+  // because `setDeferSpecTab(true)` mutates reactive panel state (stripping
+  // existing spec tabs) and `persistState` reads it.  Without `untrack` this
+  // creates a read→write→read loop that hits `effect_update_depth_exceeded`.
+  $effect(() => {
+    const wsId = safeWorkspace?.id;
+    if (!wsId) return;
+
+    // Everything below must be untracked to avoid reactive loops.
+    untrack(() => {
+      const shouldDefer = shouldDeferSpecPanel(wsId);
+      if (shouldDefer) {
+        const layoutManager = getPanelLayoutManager(wsId);
+        layoutManager.setDeferSpecTab(true);
+      }
+    });
+
+    // Clean up: ensure the flag is cleared when the workspace changes or unmounts
+    // so it doesn't stick around for workspaces that don't need it.
+    return () => {
+      untrack(() => {
+        const layoutManager = getPanelLayoutManager(wsId);
+        layoutManager.setDeferSpecTab(false);
+      });
+    };
+  });
+
   // Check for optimistic initial agent on mount and transitions
   $effect(() => {
     // Capture workspace ID and workspace reference at the start to avoid race conditions
@@ -929,27 +1032,9 @@
               // Open the agent in panel layout
               openAgentInLayout(agentId, config.name || 'Agent', capturedWorkspaceId);
 
-              // Also open the spec note in the right panel for new workspaces
-              // Only auto-open spec note for team/orchestration mode (spec-writer agent)
-              // Single-agent mode agents don't need the spec note opened
-              const isSpecWriter =
-                config.specialist === 'spec-writer' || config.metadata?.specialist === 'spec-writer';
-              if (
-                capturedWorkspaceId &&
-                (config.isInitialAgent || config.isFirstWorkspaceAgent) &&
-                isSpecWriter
-              ) {
-                const layoutManager = getPanelLayoutManager(capturedWorkspaceId);
-                layoutManager.openTabInOtherPanel({
-                  type: 'note',
-                  title: 'Spec',
-                  noteId: SPEC_NOTE_ID,
-                  closable: true,
-                });
-                logger.info('[WorkspacePage] Opened spec note in right panel for new workspace', {
-                  workspaceId: capturedWorkspaceId,
-                });
-              }
+              // For spec-writer agents in new workspaces, the spec panel will be
+              // opened dynamically (with a slide-in animation) once spec generation
+              // begins. See the specPanelSlideIn effect below.
             }
 
             // Cleanup pending marker once handled (non-optimistic only)
@@ -1402,21 +1487,10 @@
           isNewlyCreated,
         });
 
-        // Clean up stale agent-config if this workspace already has agents
-        // This prevents the initial agent from being opened on subsequent visits
-        if (!isNewlyCreated) {
-          const agentConfigKey = `workspace:${capturedWorkspaceId}:agent-config`;
-          const pendingAgentKey = `workspace:${capturedWorkspaceId}:initial-agent-pending`;
-          if (sessionStorage.getItem(agentConfigKey)) {
-            logger.debug('[WorkspacePage] Cleaning up stale agent-config for existing workspace', {
-              workspaceId: capturedWorkspaceId,
-            });
-            sessionStorage.removeItem(agentConfigKey);
-          }
-          if (sessionStorage.getItem(pendingAgentKey)) {
-            sessionStorage.removeItem(pendingAgentKey);
-          }
-        }
+        // NOTE: Stale agent-config cleanup is deferred until AFTER the restoration
+        // logic below, because shouldDeferSpecPanel() reads from sessionStorage to
+        // decide whether to show the spec panel immediately or defer it for the
+        // slide-in animation. Cleaning up too early would remove the signal.
 
         // After loading agents, verify streaming states with the backend
         // This clears stale isStreaming flags for agents whose backend streams have completed
@@ -1506,18 +1580,17 @@
                 );
 
                 // If the layout has no tabs at all (fresh default layout), also open the spec
-                // note in the right panel. We check allTabs.length === 0 rather than just
-                // !hasAgentTabs to avoid overriding a user's intentional layout that may have
-                // non-agent tabs (e.g., files) but no agent tabs.
-                if (allTabs.length === 0) {
-                  layoutManager.openTabInOtherPanel({
+                // note in an adjacent panel (creating a split if needed).
+                // Skip if a spec-writer agent is pending — the spec panel will slide in reactively.
+                if (allTabs.length === 0 && !shouldDeferSpecPanel(capturedWorkspaceId)) {
+                  layoutManager.openTabInAdjacentOrSplit({
                     type: 'note',
                     title: 'Spec',
                     noteId: SPEC_NOTE_ID,
                     closable: true,
                   });
                   logger.info(
-                    '[WorkspacePage] Opened spec note in right panel (empty default layout)',
+                    '[WorkspacePage] Opened spec note in adjacent panel (empty default layout)',
                     {
                       workspaceId: capturedWorkspaceId,
                     },
@@ -1568,16 +1641,19 @@
             }
           }
 
-          // Open the spec note in the other panel
-          logger.info('[WorkspacePage] Fallback: opening spec note in other panel', {
-            workspaceId: capturedWorkspaceId,
-          });
-          layoutManager.openTabInOtherPanel({
-            type: 'note',
-            title: 'Spec',
-            noteId: SPEC_NOTE_ID,
-            closable: true,
-          });
+          // Open the spec note in an adjacent panel (creating a split if needed).
+          // Skip if a spec-writer agent is pending — the spec panel will slide in reactively.
+          if (!shouldDeferSpecPanel(capturedWorkspaceId)) {
+            logger.info('[WorkspacePage] Fallback: opening spec note in adjacent panel', {
+              workspaceId: capturedWorkspaceId,
+            });
+            layoutManager.openTabInAdjacentOrSplit({
+              type: 'note',
+              title: 'Spec',
+              noteId: SPEC_NOTE_ID,
+              closable: true,
+            });
+          }
         } else {
           // Layout has some tabs, but check if any panel in a multi-panel layout
           // is empty - if so, open the spec note there to avoid an empty right panel
@@ -1587,7 +1663,7 @@
             (t) => t.type === 'note' && t.noteId === SPEC_NOTE_ID,
           );
 
-          if (emptyPanel && panels.length >= 2 && !hasSpecAnywhere) {
+          if (emptyPanel && panels.length >= 2 && !hasSpecAnywhere && !shouldDeferSpecPanel(capturedWorkspaceId)) {
             logger.info(
               '[WorkspacePage] Found empty panel in multi-panel layout, opening spec note',
               {
@@ -1610,6 +1686,22 @@
               workspaceId: capturedWorkspaceId,
               tabCount: allTabs.length,
             });
+          }
+        }
+
+        // NOW clean up stale agent-config (deferred from above so shouldDeferSpecPanel
+        // could still read it during the restoration logic).
+        if (!isNewlyCreated) {
+          const agentConfigKey = `workspace:${capturedWorkspaceId}:agent-config`;
+          const pendingAgentKey = `workspace:${capturedWorkspaceId}:initial-agent-pending`;
+          if (sessionStorage.getItem(agentConfigKey)) {
+            logger.debug('[WorkspacePage] Cleaning up stale agent-config for existing workspace', {
+              workspaceId: capturedWorkspaceId,
+            });
+            sessionStorage.removeItem(agentConfigKey);
+          }
+          if (sessionStorage.getItem(pendingAgentKey)) {
+            sessionStorage.removeItem(pendingAgentKey);
           }
         }
       } catch (error) {
@@ -2077,6 +2169,153 @@
         }
       }
     }
+  });
+
+  // Slide in the spec panel when the spec note is first populated with content.
+  // For new workspaces, the layout starts as a single panel (agent only). Once the
+  // spec-writer agent actually writes content to the spec note, we split the panel
+  // and open the spec note with a slide-in animation.
+  //
+  // IMPORTANT: The animated slide-in ONLY triggers from a `note:updated` IPC event,
+  // meaning the agent is actively writing to the spec right now. If the spec already
+  // has content (returning to an existing workspace), we open it normally without
+  // animation via a delayed fallback.
+  $effect(() => {
+    const capturedWorkspaceId = safeWorkspace?.id;
+    if (!capturedWorkspaceId) return;
+
+    // Only set up the watcher if spec deferral is active for this workspace
+    const layoutManager = untrack(() => getPanelLayoutManager(capturedWorkspaceId));
+    if (!untrack(() => layoutManager.isDeferringSpecTab)) return;
+
+    let hasOpened = false;
+
+    // Helper: clean up sessionStorage keys and mark slide-in as completed
+    // so subsequent visits don't defer again
+    function cleanupDeferralKeys() {
+      sessionStorage.removeItem(`workspace:${capturedWorkspaceId}:agent-config`);
+      sessionStorage.removeItem(`workspace:${capturedWorkspaceId}:initial-agent-pending`);
+      specSlideInCompleted.add(capturedWorkspaceId);
+    }
+
+    // Helper: open the spec panel with a slide-in animation (only for fresh agent writes)
+    function slideInSpecPanel() {
+      if (hasOpened) return;
+      hasOpened = true;
+
+      // Check if the spec note is already open somewhere
+      const allTabs = Object.values(layoutManager.layout.panels).flatMap((p) => p.tabs);
+      const hasSpec = allTabs.some((t) => t.type === 'note' && t.noteId === SPEC_NOTE_ID);
+      if (hasSpec) {
+        logger.info('[WorkspacePage] Spec already open, skipping slide-in', {
+          workspaceId: capturedWorkspaceId,
+        });
+        cleanupDeferralKeys();
+        return;
+      }
+
+      logger.info('[WorkspacePage] Spec note populated — sliding in spec panel', {
+        workspaceId: capturedWorkspaceId,
+      });
+
+      // Clear the deferSpecTab guard so the openTab call below goes through.
+      layoutManager.setDeferSpecTab(false);
+
+      // openTabInAdjacentOrSplit will create a horizontal split if only one panel exists,
+      // then open the spec note in the new panel. The animated option makes it slide in.
+      layoutManager.openTabInAdjacentOrSplit(
+        {
+          type: 'note',
+          title: 'Spec',
+          noteId: SPEC_NOTE_ID,
+          closable: true,
+        },
+        undefined,
+        { animated: true },
+      );
+      cleanupDeferralKeys();
+    }
+
+    // Helper: open the spec panel normally WITHOUT animation.
+    // Used when spec already has content (returning visit with stale sessionStorage keys).
+    function openSpecNormally() {
+      if (hasOpened) return;
+      hasOpened = true;
+
+      const allTabs = Object.values(layoutManager.layout.panels).flatMap((p) => p.tabs);
+      const hasSpec = allTabs.some((t) => t.type === 'note' && t.noteId === SPEC_NOTE_ID);
+      if (hasSpec) {
+        layoutManager.setDeferSpecTab(false);
+        cleanupDeferralKeys();
+        return;
+      }
+
+      logger.info('[WorkspacePage] Spec already had content (returning visit) — opening normally', {
+        workspaceId: capturedWorkspaceId,
+      });
+
+      layoutManager.setDeferSpecTab(false);
+      layoutManager.openTabInAdjacentOrSplit(
+        {
+          type: 'note',
+          title: 'Spec',
+          noteId: SPEC_NOTE_ID,
+          closable: true,
+        },
+        undefined,
+        // No { animated: true } — opens instantly
+      );
+      cleanupDeferralKeys();
+    }
+
+    // Listen for note:updated events on the spec note.
+    // The spec-writer agent writes to the spec via set_note_content which emits
+    // this event. We trigger the ANIMATED slide-in only from this event path,
+    // because it means the agent is actively writing right now.
+    const unsubNoteUpdated = listenSync('note:updated', (event: any) => {
+      if (hasOpened) return;
+      const payload = event.payload || {};
+      const noteId = payload.noteId || payload.data?.noteId;
+      const eventWorkspaceId = payload.workspaceId;
+
+      // Only care about spec note updates for this workspace
+      if (noteId !== 'spec' || eventWorkspaceId !== capturedWorkspaceId) return;
+
+      // Check if the spec actually has content now
+      const content = payload.content || payload.changes?.content;
+      const specNote = notesStateManager.spec;
+      const specContent = content || specNote?.content || '';
+
+      if (specContent.trim().length > 0) {
+        logger.info('[WorkspacePage] Spec note:updated with content — triggering slide-in', {
+          workspaceId: capturedWorkspaceId,
+          contentLength: specContent.trim().length,
+        });
+        slideInSpecPanel();
+      }
+    });
+
+    // Delayed fallback: if after 3 seconds the spec hasn't been opened via
+    // note:updated (i.e. the agent isn't actively writing), check if the spec
+    // already has content. If so, this is a returning visit with stale
+    // sessionStorage keys — open the spec normally without animation.
+    // If the spec is still empty, the note:updated listener will handle it later.
+    const fallbackTimer = setTimeout(() => {
+      if (hasOpened) return;
+      const specNote = notesStateManager.spec;
+      if (specNote?.content && specNote.content.trim().length > 0) {
+        logger.info('[WorkspacePage] Fallback: spec has content but no note:updated received — opening normally', {
+          workspaceId: capturedWorkspaceId,
+          contentLength: specNote.content.trim().length,
+        });
+        openSpecNormally();
+      }
+    }, 3000);
+
+    return () => {
+      unsubNoteUpdated();
+      clearTimeout(fallbackTimer);
+    };
   });
 
   // Subscribe to agent updates for this workspace
@@ -2873,6 +3112,16 @@
     } else {
       // No note is being viewed in the main panel
       noteReadTrackingStore.clearCurrentlyViewed();
+    }
+  });
+
+  // Clear unread status for agents in this workspace when the user navigates to it.
+  // This handles direct URL navigation (e.g., browser back/forward, bookmark, link).
+  // Sidebar navigation components already call clearUnreadForWorkspace on click,
+  // but direct URL access bypasses those components entirely.
+  $effect(() => {
+    if (workspaceId && workspaceId !== 'new' && !workspaceId.startsWith('optimistic-')) {
+      unreadTrackingService.clearUnreadForWorkspace(workspaceId);
     }
   });
 

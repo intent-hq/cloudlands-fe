@@ -22,6 +22,11 @@
   let contentRef: HTMLDivElement | null = $state(null);
   let portalStyle = $state('');
 
+  const coordinator = $derived(specialistsStore.specialists.find((s) => s.id === 'spec-writer'));
+  const otherSpecialists = $derived(
+    specialistsStore.specialists.filter((s) => s.id !== 'spec-writer'),
+  );
+
   // Handle creating agent with specialist
   function handleCreateAgent(specialistId: string | null) {
     if (onCreateWithSpecialist) {
@@ -152,9 +157,9 @@
         </p>
       </div>
 
-      <!-- Specialist Cards -->
+      <!-- Specialist Cards: coordinator first, then the rest -->
       <div class="pt-1.5 max-h-[280px] overflow-y-auto">
-        {#each specialistsStore.specialists as specialist (specialist.id)}
+        {#each [coordinator, ...otherSpecialists].filter((s): s is NonNullable<typeof s> => Boolean(s)) as specialist (specialist.id)}
           <button
             class="w-full px-2.5 py-2 flex items-start gap-2.5 hover:bg-muted/50 transition-colors text-left group cursor-pointer"
             onclick={() => handleCreateAgent(specialist.id)}
@@ -168,7 +173,14 @@
             />
             <div class="flex-1 min-w-0">
               <div class="text-sm font-medium">{specialist.name}</div>
-              <div class="text-sm text-muted-foreground line-clamp-2">{specialist.description}</div>
+              <div class="text-sm text-muted-foreground line-clamp-2">
+                {specialist.description}
+              </div>
+              {#if specialist.id === 'spec-writer'}
+                <div class="text-[10px] text-muted-foreground/50 mt-0.5">
+                  Default for agent orchestration
+                </div>
+              {/if}
             </div>
           </button>
         {/each}

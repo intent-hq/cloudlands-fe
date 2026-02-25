@@ -1,12 +1,24 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
+  import { agentService } from '$features/agent/agent.service';
+  import { sessionStore } from '$features/agent/browser';
+  import { contextStore } from '$features/context/context.store.svelte';
   import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
-  import { track, getFileExtension } from '$lib/services/analytics';
+  import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
+  import { getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import { Button } from '$lib/components/ui/button';
+  import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import { TooltipRich } from '$lib/components/ui/tooltip';
+  import { faNote } from '$lib/icons/faNote';
+  import { getFileExtension, track } from '$lib/services/analytics';
   import { noteReadTrackingStore } from '$lib/stores/note-read-tracking.store.svelte';
+  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { cn } from '$lib/utils';
+  import { useAllAgentsSubscription } from '$lib/utils/agent-subscription.svelte';
   import type { Note, Workspace } from '$shared/types';
+  import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import {
+    faAsterisk,
     faCompressAlt,
     faExpandAlt,
     faFolderTree,
@@ -16,30 +28,23 @@
     faSearch,
     faTimes,
   } from '@fortawesome/free-solid-svg-icons';
-  import Fa from 'svelte-fa';
-  import {
-    FilesPanel,
-    SidebarChangesPanel,
-    WorkspaceProgressCard,
-    isSpecNote,
-  } from './sidebar';
-  import ContextPanel from './sidebar/ContextPanel.svelte';
-  import WorkspaceAgentsList from './WorkspaceAgentsList.svelte';
-  import CreateAgentSection from './CreateAgentSection.svelte';
-  import AddContextSection from './sidebar/AddContextSection.svelte';
-  import { contextStore } from '$features/context/context.store.svelte';
-  import { getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
-  import { agentService } from '$features/agent/agent.service';
-  import { sessionStore } from '$features/agent/browser';
-  import { useAllAgentsSubscription } from '$lib/utils/agent-subscription.svelte';
-  import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
   import { onMount } from 'svelte';
-  import Input from '../ui/input/input.svelte';
-  import { faNote } from '$lib/icons/faNote';
-  import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
+  import Fa from 'svelte-fa';
   import { fly, slide } from 'svelte/transition';
-  import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import AnimatedNumber from '../ui/AnimatedNumber.svelte';
+  import Input from '../ui/input/input.svelte';
+  import CreateAgentSection from './CreateAgentSection.svelte';
+  import OverviewTimelinePanel from './OverviewTimelinePanel.svelte';
+  import { FilesPanel, SidebarChangesPanel, isSpecNote } from './sidebar';
+  import AddContextSection from './sidebar/AddContextSection.svelte';
+  import ContextPanel from './sidebar/ContextPanel.svelte';
+  import WorkspaceProgressCard from './sidebar/WorkspaceProgressCard.svelte';
+  import {
+    deriveWorkspacePhase,
+    deriveWorkspaceStats,
+    type WorkspacePhase,
+  } from './workspace-phase';
+  import WorkspaceAgentsList from './WorkspaceAgentsList.svelte';
 
   interface Terminal {
     id: string;
@@ -114,9 +119,18 @@
     icon: IconDefinition;
     description: string;
     hideLabel?: boolean; // Hide label even at wide widths
+    hideHeader?: boolean; // Show header even when only one tab is selected
   }
 
   const TAB_DEFINITIONS: TabDefinition[] = [
+    {
+      id: 'overview',
+      label: 'Overview',
+      icon: faAsterisk,
+      description: 'Workspace status, progress, and key metrics at a glance.',
+      hideLabel: true,
+      hideHeader: true,
+    },
     {
       id: 'agents',
       label: 'Agents',
@@ -127,13 +141,13 @@
       id: 'context',
       label: 'Context',
       icon: faNote,
-      description: 'Context about the task, shared with all agents in this space.',
+      description: 'Notes about the task, shared with all agents in this space.',
     },
     {
       id: 'changes',
       label: 'Changes',
       icon: faPencil,
-      description: 'Changes made to files by agents working in this space.',
+      description: 'Files changed by agents working in this space.',
     },
     {
       id: 'files',
@@ -155,7 +169,7 @@
   }
 
   function loadSelectedTabs(wsId: string): Set<TabId> {
-    if (typeof window === 'undefined') return new Set(['agents', 'context']);
+    if (typeof window === 'undefined') return new Set(['overview']);
     try {
       const stored = localStorage.getItem(getStorageKey(wsId));
       if (stored) {
@@ -165,7 +179,7 @@
     } catch {
       // Ignore parsing errors
     }
-    return new Set(['agents', 'context']);
+    return new Set(['overview']);
   }
 
   function loadTabOrder(): TabId[] {
@@ -219,8 +233,10 @@
     return fallbackUrl || '';
   };
 
-  // For tooltip - return plain text version
+  // Dynamic tab description overrides for coordinator mode
   function getTabDescription(tabId: string, defaultDescription: string): string {
+    if (tabId === 'agents' && isCoordinator)
+      return 'A coordinator agent writes a spec and manages the work of different agents.';
     return defaultDescription;
   }
 
@@ -384,6 +400,49 @@
     return selectedTabs.has(tabId);
   }
 
+  function switchToTab(tabId: string) {
+    const id = tabId as TabId;
+    if (!TAB_DEFINITIONS.find((t) => t.id === id)) return;
+    const wasSingleTab = selectedTabs.size === 1;
+    const previousTabId = wasSingleTab ? [...selectedTabs][0] : null;
+    if (wasSingleTab && previousTabId && previousTabId !== id) {
+      const prevIndex = getTabIndex(previousTabId);
+      const newIndex = getTabIndex(id);
+      flyDirection = newIndex > prevIndex ? 1 : -1;
+    } else {
+      flyDirection = 0;
+    }
+    useSlideTransition = selectedTabs.size > 1;
+    previousSingleTabId = id;
+    selectedTabs = new Set([id]);
+    saveSelectedTabs();
+  }
+
+  // Workspace phase derivation for Overview tab
+  const workspacePhaseInfo = $derived.by(() => {
+    if (!workspace)
+      return {
+        phase: 'planning' as WorkspacePhase,
+        label: 'Planning',
+        subtitle: 'Describe what you want to build',
+        isActive: false,
+      };
+    const hasActiveAgents = workspaceAgents.some(
+      (a) => a.isStreaming || a.isProcessing || a.isResponding,
+    );
+    return deriveWorkspacePhase(workspace, { hasActiveAgents });
+  });
+  const workspacePhaseStats = $derived.by(() => {
+    if (!workspace)
+      return {
+        tasks: { total: 0, completed: 0, inProgress: 0, notStarted: 0 },
+        files: { changed: 0, additions: 0, deletions: 0 },
+        commits: { total: 0, unpushed: 0 },
+        pr: { hasOpen: false, hasMerged: false },
+      };
+    return deriveWorkspaceStats(workspace);
+  });
+
   // Core state and handlers (same as StackedSidebar)
   const handleOpenAcceptChanges = $derived(onOpenAcceptChanges || onAcceptChanges);
   const storeHasCorrectWorkspace = $derived(fileTrackingStore.currentWorkspaceId === workspaceId);
@@ -516,6 +575,81 @@
     activeAgents.some(({ state }) => state === 'running' || state === 'responding'),
   );
   const hasUnreadAgents = $derived(activeAgents.some(({ state }) => state === 'unread'));
+
+  // Status card context: spec, coordinator agent, digest
+  const hasSpec = $derived(
+    notes.some((n) => isSpecNote(n.id as string) && n.content && n.content.trim().length > 0),
+  );
+  const coordinatorAgent = $derived(
+    workspaceAgents.find(
+      (a) => a.metadata?.isInitialAgent === true || a.metadata?.isInitialWorkspaceAgent === true,
+    ) || (workspaceAgents.length === 1 ? workspaceAgents[0] : null),
+  );
+  const isCoordinatorRunning = $derived(
+    coordinatorAgent
+      ? coordinatorAgent.isStreaming ||
+          coordinatorAgent.isProcessing ||
+          coordinatorAgent.isResponding
+      : false,
+  );
+  const coordinatorDigest = $derived(coordinatorAgent?.digest || undefined);
+  const isCoordinator = $derived(coordinatorAgent?.metadata?.specialist === 'spec-writer');
+
+  function handleStatusCardAction(action: string) {
+    switch (action) {
+      case 'show-coordinator':
+        if (coordinatorAgent) {
+          handleOpenAgentInPanel(coordinatorAgent.id);
+        } else if (workspaceAgents.length > 0) {
+          handleOpenAgentInPanel(workspaceAgents[0].id);
+        }
+        break;
+      case 'view-spec': {
+        const spec = notes.find((n) => isSpecNote(n.id as string));
+        if (spec) handleOpenNoteInPanel(spec.id as string);
+        break;
+      }
+      case 'approve':
+        window.dispatchEvent(
+          new CustomEvent('workspace:approve-spec', { detail: { workspaceId } }),
+        );
+        break;
+      case 'pause':
+        // TODO: implement pause functionality
+        break;
+      case 'show-changes':
+        switchToTab('changes');
+        break;
+      case 'create-pr':
+        window.dispatchEvent(new CustomEvent('workspace:create-pr', { detail: { workspaceId } }));
+        break;
+      case 'archive':
+        handleArchiveWorkspace();
+        break;
+    }
+  }
+
+  async function handleArchiveWorkspace() {
+    if (!workspace) return;
+    const { toast } = await import('svelte-sonner');
+    const workspaceTitle = workspace.title || 'space';
+
+    const result = await workspaceStore.archive(workspace.id);
+    if (result.ok) {
+      toast.warning(`Archived space ${workspaceTitle}`, {
+        duration: 15000,
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            await workspaceStore.unarchive(workspace.id);
+          },
+        },
+      });
+      goto('/');
+    } else {
+      toast.error('Failed to archive space');
+    }
+  }
 
   // Changed files count
   const changedFilesCount = $derived(
@@ -698,7 +832,7 @@
             title={tab.label}
             description={getTabDescription(tab.id, tab.description)}
             icon={tab.icon}
-            side="bottom"
+            side="top"
             align="center"
             sideOffset={0}
             delayDuration={0}
@@ -707,7 +841,7 @@
             iconClass="text-muted-foreground/50 order-2 ml-auto size-3"
             contentClass="shadow-xs mx-2 max-w-[calc(100vw-2rem)] rounded-none px-1.25"
             footerClass="border-t-0 bg-transparent! !pt-1 !px-3 rounded-none"
-            class="flex-1 shrink-0"
+            class={tab.hideLabel ? 'shrink-0' : 'flex-1 shrink-0'}
           >
             {#snippet footer()}
               <div class="flex items-center gap-1.5 text-xs -ml-1 -mt-1 text-muted-foreground/70">
@@ -718,9 +852,9 @@
               type="button"
               draggable="true"
               class={cn(
-                'relative flex items-center justify-center gap-1.5 py-1.5 rounded-mdx text-xs font-medium transition-all duration-150 cursor-pointer focus:ring-0 active:ring-0',
+                'relative flex items-center justify-center gap-1.5 py-1.5 h-7.5 rounded-mdx text-xs font-medium transition-all duration-150 cursor-pointer focus:ring-0 active:ring-0',
                 'focus-visible:outline-none focus-visible:ring-0',
-                'px-2',
+                tab.hideLabel ? 'px-2' : 'px-3',
                 isSelected
                   ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground hover:bg-background/50',
@@ -738,11 +872,13 @@
               ondrop={(e) => handleDrop(e)}
               ondragend={handleDragEnd}
             >
-              <div class={cn('shrink-0 opacity-50', 'tab-icon')}>
+              <div class={cn('shrink-0 opacity-50', tab.hideLabel ? '' : 'tab-icon')}>
                 <Fa icon={tab.icon} class="size-3.5" />
               </div>
-              <!-- Responsive labels - hidden at narrow widths via container query -->
-              <span class="tab-label truncate">{tab.label}</span>
+              {#if !tab.hideLabel}
+                <!-- Responsive labels - hidden at narrow widths via container query -->
+                <span class="tab-label truncate">{tab.label}</span>
+              {/if}
               <!-- Badges for specific tabs - inline when wide, absolute when narrow -->
               {#if tab.id === 'agents' && (hasRunningAgents || hasUnreadAgents)}
                 <div
@@ -786,15 +922,10 @@
       {#each orderedSelectedTabs as tabId, index (tabId)}
         {@const tab = TAB_DEFINITIONS.find((t) => t.id === tabId)}
         {@const isLast = index === selectedTabCount - 1}
-        {@const showHeader = selectedTabCount > 1}
         {@const useFly = !useSlideTransition && flyDirection !== 0}
         <!-- Outer wrapper for fly transition (single panel switches) -->
         <div
-          class={cn(
-            'w-full min-w-0 flex flex-col',
-            !isLast && 'border-b border-border',
-            !showHeader && 'flex-1',
-          )}
+          class={cn('w-full min-w-0 flex flex-col', !isLast && 'border-b border-border')}
           in:fly={{ x: useFly ? flyDirection * 30 : 0, duration: useFly ? 200 : 0 }}
           out:fly={{ x: useFly ? -flyDirection * 30 : 0, duration: useFly ? 200 : 0 }}
         >
@@ -804,12 +935,16 @@
             transition:slide={{ axis: 'y', duration: useSlideTransition ? 200 : 0 }}
           >
             <!-- Panel header/description -->
-            {#if tab}
+            {#if tab && !tab.hideHeader}
               <div class="px-5 pt-3 pb-1">
                 <h6
-                  class="text-sm font-semibold text-muted-foreground flex items-center gap-2 mb-0.5 mt-2"
+                  class="text-sm font-semibold text-foreground flex items-center gap-2 mb-0.5 mt-2"
                 >
-                  {tab.label}
+                  {#if tabId === 'agents' && isCoordinator}
+                    Agent orchestration
+                  {:else}
+                    {tab.label}
+                  {/if}
                   {#if tabId === 'agents' && (onCreateAgent || onCreateAgentWithSpecialist)}
                     <span class="ml-auto">
                       <CreateAgentSection
@@ -842,7 +977,7 @@
                   {/if}
                 </h6>
                 <p
-                  class="text-sm pt-2 text-muted-foreground/70 leading-snug transition-all duration-200"
+                  class="text-[11px] text-muted-foreground/60 mt-0.5 leading-snug transition-all duration-200"
                 >
                   {#if tabId === 'context' && workspace?.path}
                     {getTabDescription(tab.id, tab.description)} Your notes live in
@@ -886,7 +1021,103 @@
             {/if}
             <!-- Panel content -->
             <div class="h-full pt-2 pb-6">
-              {#if tabId === 'agents'}
+              {#if tabId === 'overview'}
+                {@const overviewAgents = workspaceAgents.map((agent) => {
+                  const state = getAvatarState(
+                    {
+                      isStreaming: agent.isStreaming,
+                      isProcessing: agent.isProcessing,
+                      isResponding: agent.isResponding,
+                      status: agent.status,
+                    },
+                    {},
+                  );
+                  const specialist = (agent.metadata?.specialist as string) || null;
+                  const validSpecialist =
+                    specialist === 'spec-writer' ||
+                    specialist === 'implementor' ||
+                    specialist === 'verifier' ||
+                    specialist === 'ui-designer'
+                      ? (specialist as 'spec-writer' | 'implementor' | 'verifier' | 'ui-designer')
+                      : null;
+                  return {
+                    id: agent.id,
+                    name: agent.name,
+                    specialist: validSpecialist,
+                    state,
+                    isActive: state === 'running' || state === 'responding',
+                    isInitialAgent:
+                      agent.metadata?.isInitialAgent === true ||
+                      agent.metadata?.isInitialWorkspaceAgent === true,
+                    isBackground: agent.metadata?.isBackground === true,
+                    parentAgentId: (agent.metadata?.createdByAgentId as string) || null,
+                    hasUnread: agent.hasUnread === true,
+                    digest: agent.digest || undefined,
+                    statusLabel:
+                      state === 'waiting'
+                        ? 'waiting'
+                        : state === 'running' || state === 'responding'
+                          ? 'running'
+                          : 'idle',
+                    waitingForCount: agent.metadata?.delegatedAgentIds
+                      ? (agent.metadata.delegatedAgentIds as string[]).length
+                      : 0,
+                  };
+                })}
+                {@const overviewChangedFiles = [
+                  ...workingChanges.unstaged.map((c) => ({
+                    path: c.relativePath || c.file,
+                    additions: c.stats?.additions ?? 0,
+                    deletions: c.stats?.deletions ?? 0,
+                    status: c.status,
+                    staged: false,
+                  })),
+                  ...workingChanges.staged
+                    .filter(
+                      (s) =>
+                        !workingChanges.unstaged.some(
+                          (u) => u.file === s.file || u.relativePath === s.relativePath,
+                        ),
+                    )
+                    .map((c) => ({
+                      path: c.relativePath || c.file,
+                      additions: c.stats?.additions ?? 0,
+                      deletions: c.stats?.deletions ?? 0,
+                      status: c.status,
+                      staged: true,
+                    })),
+                ]}
+                <OverviewTimelinePanel
+                  {workspace}
+                  phase={workspacePhaseInfo}
+                  stats={workspacePhaseStats}
+                  {notes}
+                  agents={overviewAgents}
+                  changedFiles={overviewChangedFiles}
+                  commits={allCommits.map((c) => ({
+                    hash: c.hash || '',
+                    message: c.message || '',
+                  }))}
+                  selectedNoteId={effectiveSelectedNoteId}
+                  selectedAgentId={effectiveSelectedAgentId}
+                  selectedFilePath={effectiveSelectedFile}
+                  activeFilePath={effectiveActiveFilePath}
+                  {agentsLoading}
+                  {notesLoading}
+                  changesLoading={!storeHasCorrectWorkspace}
+                  onSwitchTab={switchToTab}
+                  onOpenNote={(noteId) => handleOpenNoteInPanel(noteId)}
+                  onOpenAgent={(agentId) => handleOpenAgentInPanel(agentId)}
+                  onOpenFile={(filePath) => {
+                    window.dispatchEvent(
+                      new CustomEvent('workspace:open-diff', {
+                        detail: { filePath },
+                      }),
+                    );
+                  }}
+                  onOpenFileInPanel={handleOpenFileInPanel}
+                />
+              {:else if tabId === 'agents'}
                 <div class="px-3 transition-all duration-200">
                   <WorkspaceAgentsList
                     agents={workspaceAgents}
@@ -910,9 +1141,7 @@
                   />
                 </div>
               {:else if tabId === 'changes'}
-                <div
-                  class="px-2.5 flex-1 h-full flex flex-col transition-all duration-200"
-                >
+                <div class="px-2.5 flex-1 h-full flex flex-col transition-all duration-200">
                   <div class="w-full flex-1">
                     <SidebarChangesPanel
                       {workspaceId}

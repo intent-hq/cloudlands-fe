@@ -108,6 +108,7 @@
   import InlinePermissionRequest from './InlinePermissionRequest.svelte';
   import { permissionStore } from '$lib/stores/permission.store.svelte';
   import { agentFontSettings } from '$lib/stores/agent-font-settings.store.svelte';
+  import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
   import AuroraBackground from './AuroraBackground.svelte';
   import { invoke, listenSync } from '$lib/electron-bridge';
   import { specialistsStore } from '$lib/stores/specialists.store.svelte';
@@ -2380,12 +2381,31 @@
     }, 100);
   });
 
+  // Track unread status - mark agent as viewed when this panel is active
+  // This prevents the workspace from being shown as "unread" in the spaces list
+  // when the user is actively viewing the agent in the panel layout.
+  // (ContentDrawer handles this for drawer layout; this handles panel layout.)
+  $effect(() => {
+    if (agentId && isActive) {
+      unreadTrackingService.markAsViewed(agentId);
+    } else {
+      // Panel is no longer active (user switched to another tab) —
+      // clear so new messages for this agent are properly marked as unread.
+      unreadTrackingService.clearCurrentlyViewed();
+    }
+  });
+
   onDestroy(() => {
     // CRITICAL: Set destruction flag FIRST, before any other cleanup.
     // This prevents async callbacks (like unifiedOrchestrator.getQueue().then(...))
     // from accessing reactive state after destruction, which would cause
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
+
+    // Clear currently viewed agent so other agents can properly be marked as unread
+    if (agentId) {
+      unreadTrackingService.clearCurrentlyViewed();
+    }
 
     logger.info('ChatPanel destroyed', { instanceId, agentId });
     // Clean up subscriptions and scroll manager

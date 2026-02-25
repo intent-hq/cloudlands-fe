@@ -11,6 +11,7 @@
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
   import ProviderStatusPanel from '$lib/components/ProviderStatusPanel.svelte';
+  import OnboardingWelcome from '$lib/components/onboarding/OnboardingWelcome.svelte';
   import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
   import { modelStore } from '$lib/stores/model.store.svelte';
   import StarterPromptButton from '$lib/components/workspace/StarterPromptButton.svelte';
@@ -203,6 +204,7 @@
   const PREF_SHOW_ARCHIVED = 'workspace-list:showArchived';
   const PREF_GROUP_BY_REPO = 'workspace-list:groupByRepo';
   const PREF_COMPLETED_PROVIDER_SETUP = 'workspace-list:completedProviderSetup';
+  const PREF_COMPLETED_ONBOARDING = 'workspace-list:completedOnboarding';
 
   // Load persisted preferences
   function loadPref<T>(key: string, defaultValue: T): T {
@@ -220,10 +222,17 @@
   let showArchived = $state(loadPref(PREF_SHOW_ARCHIVED, false));
   let groupByRepo = $state(loadPref(PREF_GROUP_BY_REPO, true));
   let hasCompletedProviderSetup = $state(loadPref(PREF_COMPLETED_PROVIDER_SETUP, false));
+  let hasCompletedOnboarding = $state(loadPref(PREF_COMPLETED_ONBOARDING, false));
+
+  // True when the onboarding welcome should be shown (first-time users who haven't seen it yet).
+  const showOnboarding = $derived(!hasCompletedOnboarding && isEmpty);
 
   // True when the provider setup panel should be shown (first-time users with no workspaces).
   // Wait for workspaces to load before deciding — avoids flashing the panel for users who have spaces.
-  const showProviderPanel = $derived(!hasCompletedProviderSetup && isEmpty);
+  // Only show after onboarding is complete.
+  const showProviderPanel = $derived(
+    !hasCompletedProviderSetup && isEmpty && hasCompletedOnboarding,
+  );
 
   // Persist preferences when they change
   $effect(() => {
@@ -530,15 +539,28 @@
 <div class="h-full flex flex-col">
   <div
     class="home-layout flex-1 w-full min-h-0
-      {isEmpty || showProviderPanel || (!workspaceStore.hasLoaded && !hasCompletedProviderSetup)
+      {isEmpty ||
+    showProviderPanel ||
+    showOnboarding ||
+    (!workspaceStore.hasLoaded && !hasCompletedProviderSetup)
       ? 'flex items-center justify-center overflow-auto px-[clamp(2rem,6.25rem,6%)]'
       : 'grid gap-15 lg:grid-cols-[minmax(40rem,1fr)_2fr] px-[clamp(2rem,6.25rem,6%)] lg:pl-[clamp(2rem,6.25rem,6%)] lg:pr-0'}"
   >
-    <!-- Wait for workspaces to load before rendering for users who haven't completed provider setup.
-         This prevents flashing "Let's get building!" before we know to show the ProviderStatusPanel.
+    <!-- Wait for workspaces to load before rendering for users who haven't completed setup.
+         This prevents flashing onboarding/provider setup before we know if they're a new user.
          The splash screen in app.html covers this loading period. -->
-    {#if !workspaceStore.hasLoaded && !hasCompletedProviderSetup}
+    {#if !workspaceStore.hasLoaded && (!hasCompletedProviderSetup || !hasCompletedOnboarding)}
       <!-- Empty: splash screen / bg-sidebar visible while workspaces load -->
+    {:else if showOnboarding}
+      <!-- Onboarding welcome for first-time users -->
+      <div class="animate-entry" style="--entry-delay: 0ms">
+        <OnboardingWelcome
+          onComplete={() => {
+            hasCompletedOnboarding = true;
+            localStorage.setItem(PREF_COMPLETED_ONBOARDING, JSON.stringify(true));
+          }}
+        />
+      </div>
     {:else if showProviderPanel}
       <div class="animate-entry" style="--entry-delay: 0ms">
         <ProviderStatusPanel
@@ -558,7 +580,9 @@
         style="--entry-delay: 0ms"
       >
         <div class="w-full flex items-baseline space-between mb-5 relative">
-          <h1 class="text-3xl font-medium tracking-[-0.03em]">Let's get building!</h1>
+          <h1 class="text-3xl font-medium tracking-[-0.03em]">
+            {isEmpty ? 'Create your first workspace' : 'Workspaces'}
+          </h1>
           {#if isInitializerExpanded}
             <div class="ml-auto absolute -right-3 top-3" transition:fly={{ y: 10, duration: 200 }}>
               <Button
@@ -579,12 +603,13 @@
           bind:this={workspaceInitializer}
           bind:isExpanded={isInitializerExpanded}
           initialRepo={initialRepoForCreate}
+          showFirstTimeHints={isEmpty}
         />
       </div>
     {/if}
 
-    <!-- Header + Controls Bar (hidden when empty, showing provider setup, or still loading for new users) -->
-    {#if !isEmpty && !showProviderPanel && (workspaceStore.hasLoaded || hasCompletedProviderSetup)}
+    <!-- Header + Controls Bar (hidden when empty, showing provider setup, onboarding, or still loading for new users) -->
+    {#if !isEmpty && !showProviderPanel && !showOnboarding && (workspaceStore.hasLoaded || hasCompletedProviderSetup)}
       <div
         class="right-column animate-entry min-w-0 lg:pr-[clamp(2rem,6.25rem,6%)]"
         style="--entry-delay: 120ms"

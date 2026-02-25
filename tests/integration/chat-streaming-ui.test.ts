@@ -45,6 +45,8 @@ vi.mock('$lib/utils/messageParser', () => ({
     // Return content unchanged with no suggested prompts
     ({ cleanedContent: content, suggestedPrompts: [] }),
   ),
+  groupParsedBlocks: vi.fn((blocks) => blocks),
+  groupContentBlocks: vi.fn((blocks) => blocks),
 }));
 
 vi.mock('$lib/components/markdown/MarkdownViewer.svelte', async () => {

@@ -71,9 +71,7 @@ export function createSpacesSwitcherKeyboard(callbacks: SpacesSwitcherCallbacks)
     }
 
     // Put current workspace first, then others sorted by recency
-    const workspaces = currentWorkspace
-      ? [currentWorkspace, ...otherWorkspaces]
-      : otherWorkspaces;
+    const workspaces = currentWorkspace ? [currentWorkspace, ...otherWorkspaces] : otherWorkspaces;
 
     state.isOpen = true;
     state.selectedIndex = 1; // Start with the second item (first non-current workspace)
@@ -206,6 +204,41 @@ export function createSpacesSwitcherKeyboard(callbacks: SpacesSwitcherCallbacks)
       e.preventDefault();
       close();
       return true;
+    }
+
+    // Arrow keys and vim keys for navigation when overlay is open
+    if (state.isOpen) {
+      switch (e.key) {
+        case 'ArrowDown':
+        case 'j': {
+          e.preventDefault();
+          cycleNext();
+          return true;
+        }
+        case 'ArrowUp':
+        case 'k': {
+          e.preventDefault();
+          cyclePrevious();
+          return true;
+        }
+        case 'Enter': {
+          e.preventDefault();
+          confirmSelection();
+          return true;
+        }
+        case 'Home': {
+          e.preventDefault();
+          state.selectedIndex = 0;
+          return true;
+        }
+        case 'End': {
+          e.preventDefault();
+          if (state.workspaces.length > 0) {
+            state.selectedIndex = state.workspaces.length - 1;
+          }
+          return true;
+        }
+      }
     }
 
     return false;

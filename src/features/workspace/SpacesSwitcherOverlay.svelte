@@ -12,12 +12,7 @@
   import type { Workspace } from '$shared/types';
   import { PullRequestStatus } from '$shared/types';
   import Fa from 'svelte-fa';
-  import {
-    faCodeCommit,
-    faCodePullRequest,
-    faFolder,
-    faPlusMinus,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faFolder } from '@fortawesome/free-solid-svg-icons';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
   import { pendingAgentsStore } from '$features/agent/services/pending-agents.store.svelte';
@@ -29,6 +24,7 @@
   import { permissionStore } from '$lib/stores/permission.store.svelte';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
+  import TaskProgressBar from '$lib/components/workspace/TaskProgressBar.svelte';
 
   interface Props {
     isOpen: boolean;
@@ -179,20 +175,18 @@
       .filter((agent) => agent.isActive || agent.isUnread || agent.state === 'needs-permission');
   }
 
-  // Derived helpers matching WorkspaceTableRow
-  function hasChanges(ws: Workspace): boolean {
-    return !!(ws.diffSummary && ws.diffSummary.totalFiles > 0);
+  // PR status helpers
+  function getPrStatus(ws: Workspace): PullRequestStatus | null {
+    const active = ws.activePullRequest;
+    if (active) return active.status;
+    if (ws.prStatus) return ws.prStatus;
+    const prs = ws.pullRequests ?? [];
+    if (prs.length > 0) return prs[0].status;
+    return null;
   }
 
-  function hasPR(ws: Workspace): boolean {
-    const pullRequests = ws.pullRequests || [];
-    return (
-      pullRequests.length > 0 || !!ws.activePullRequest || ws.prStatus === PullRequestStatus.Open
-    );
-  }
-
-  function getCommitCount(ws: Workspace): number {
-    return ws.gitSummary?.ahead || 0;
+  function getPrNumber(ws: Workspace): number | undefined {
+    return ws.activePullRequest?.number ?? ws.prNumber ?? ws.pullRequests?.[0]?.number;
   }
 </script>
 
@@ -217,9 +211,8 @@
           {@const isCurrent = workspace.id === currentWorkspaceId}
           {@const agents = getWorkspaceAgentInfo(workspace)}
           {@const workspaceStatus = getWorkspaceDisplayStatus(workspace, agents)}
-          {@const wsHasChanges = hasChanges(workspace)}
-          {@const wsHasPR = hasPR(workspace)}
-          {@const commitCount = getCommitCount(workspace)}
+          {@const wsPrStatus = getPrStatus(workspace)}
+          {@const wsPrNumber = getPrNumber(workspace)}
           <button
             type="button"
             data-switcher-item
@@ -258,25 +251,44 @@
               </span>
             </div>
 
-            <!-- Line changes indicator -->
-            {#if wsHasChanges}
-              <span class="text-muted-foreground/50 shrink-0">
-                <Fa icon={faPlusMinus} size="xs" />
+            <!-- PR status pill -->
+            {#if wsPrStatus}
+              {@const statusColor =
+                wsPrStatus === PullRequestStatus.Merged
+                  ? 'bg-purple-500/10 text-purple-500'
+                  : wsPrStatus === PullRequestStatus.Open
+                    ? 'bg-emerald-500/10 text-emerald-500'
+                    : wsPrStatus === PullRequestStatus.Draft
+                      ? 'bg-muted-foreground/10 text-muted-foreground/60'
+                      : 'bg-red-500/10 text-red-500'}
+              <span class="text-[9px] font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}">
+                PR{wsPrNumber ? ` #${wsPrNumber}` : ''}
               </span>
             {/if}
 
-            <!-- Commits ahead indicator -->
-            {#if commitCount > 0}
-              <span class="text-muted-foreground/50 shrink-0">
-                <Fa icon={faCodeCommit} size="xs" />
-              </span>
-            {/if}
-
-            <!-- PR indicator -->
-            {#if wsHasPR}
-              <span class="text-muted-foreground/50 shrink-0">
-                <Fa icon={faCodePullRequest} size="xs" />
-              </span>
+            <!-- Task progress -->
+            {#if workspace.taskStats && workspace.taskStats.total > 0}
+              <TaskProgressBar
+                stats={{
+                  total: workspace.taskStats.total,
+                  completed: workspace.taskStats.completed,
+                  inProgress: workspace.taskStats.inProgress,
+                  notStarted: Math.max(
+                    0,
+                    workspace.taskStats.total -
+                      workspace.taskStats.completed -
+                      workspace.taskStats.inProgress,
+                  ),
+                }}
+                tasks={workspace.taskStats.tasks?.map((t) => ({
+                  title: t.title,
+                  status: t.status,
+                })) ?? []}
+                maxBars={12}
+                barWidth="2px"
+                barHeight="10px"
+                class="shrink-0"
+              />
             {/if}
 
             <!-- Agent avatars -->

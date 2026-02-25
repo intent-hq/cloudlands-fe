@@ -66,7 +66,7 @@ interface ResultMetadata {
 }
 
 // Icons per category
-const CATEGORY_ICONS: Record<ToolCategory, IconDefinition> = {
+export const CATEGORY_ICONS: Record<ToolCategory, IconDefinition> = {
   'file-read': faFileLines,
   'file-write': faPenToSquare,
   'file-delete': faTrash,

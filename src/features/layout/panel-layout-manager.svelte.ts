@@ -176,35 +176,24 @@ function generateTabId(): string {
 }
 
 function createDefaultLayout(): WorkspacePanelLayout {
-  // Create a horizontal split with two panels:
-  // - Left panel: for agent conversations
-  // - Right panel: for spec note
-  const leftPanelId = generatePanelId();
-  const rightPanelId = generatePanelId();
+  // Create a single panel layout by default.
+  // For new workspaces with a spec-writer agent, the spec panel will be
+  // added dynamically (with a slide-in animation) once spec generation begins.
+  const panelId = generatePanelId();
 
   return {
     root: {
-      type: 'split',
-      direction: 'horizontal',
-      children: [
-        { type: 'panel', panelId: leftPanelId },
-        { type: 'panel', panelId: rightPanelId },
-      ],
-      sizes: [50, 50],
+      type: 'panel',
+      panelId,
     },
     panels: {
-      [leftPanelId]: {
-        id: leftPanelId,
-        tabs: [],
-        activeTabId: null,
-      },
-      [rightPanelId]: {
-        id: rightPanelId,
+      [panelId]: {
+        id: panelId,
         tabs: [],
         activeTabId: null,
       },
     },
-    focusedPanelId: leftPanelId,
+    focusedPanelId: panelId,
   };
 }
 
@@ -610,6 +599,11 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
     return node;
   }
 
+  // When true, openTab / openTabInAdjacentOrSplit silently reject spec-note
+  // tabs.  The workspace page sets this to `true` when a spec-writer agent is
+  // pending and clears it right before triggering the animated slide-in.
+  let deferSpecTab = false;
+
   const manager = {
     get layout() {
       return state;
@@ -635,6 +629,43 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
         return true;
       }
       return false;
+    },
+
+    /**
+     * Block (true) or allow (false) spec-note tabs from being opened.
+     * When enabling deferral, also strips any spec-note tabs that are
+     * already present in the layout (e.g. loaded from localStorage).
+     */
+    setDeferSpecTab(value: boolean) {
+      deferSpecTab = value;
+      logger.info('[PanelLayoutManager] setDeferSpecTab', { workspaceId, deferSpecTab: value });
+
+      // When activating the guard, remove any spec tabs already in the layout
+      if (value) {
+        let removed = false;
+        for (const panel of Object.values(state.panels)) {
+          const before = panel.tabs.length;
+          panel.tabs = panel.tabs.filter(
+            (t) => !(t.type === 'note' && t.noteId === 'spec'),
+          );
+          if (panel.tabs.length < before) {
+            removed = true;
+            // Fix activeTabId if the removed tab was active
+            if (panel.activeTabId && !panel.tabs.find((t) => t.id === panel.activeTabId)) {
+              panel.activeTabId = panel.tabs[0]?.id ?? null;
+            }
+          }
+        }
+        if (removed) {
+          logger.info('[PanelLayoutManager] Stripped existing spec tabs from layout', { workspaceId });
+          persistState();
+        }
+      }
+    },
+
+    /** Whether spec-note tabs are currently being deferred. */
+    get isDeferringSpecTab() {
+      return deferSpecTab;
     },
 
     get focusedPanel(): PanelState | null {
@@ -911,9 +942,23 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
      *
      * @param tab - The tab to open
      * @param sourcePanelId - Optional panel ID where the click originated (to find the "other" panel relative to it)
+     * @param options.animated - If true and a split is created, the new panel slides in with an animation
      * @returns The ID of the opened tab
      */
-    openTabInAdjacentOrSplit(tab: Omit<PanelTab, 'id'>, sourcePanelId?: string): string {
+    openTabInAdjacentOrSplit(
+      tab: Omit<PanelTab, 'id'>,
+      sourcePanelId?: string,
+      options?: { animated?: boolean },
+    ): string {
+      // ── Universal spec-note guard (same as openTab) ──
+      if (deferSpecTab && tab.type === 'note' && tab.noteId === 'spec') {
+        logger.info(
+          '[openTabInAdjacentOrSplit] BLOCKED spec-note tab — deferSpecTab is active',
+          { workspaceId },
+        );
+        return '';
+      }
+
       // If a source panel ID is provided, find the other panel relative to it
       // Otherwise, use the focused panel as the source
       const effectiveSourcePanelId = sourcePanelId ?? state.focusedPanelId;
@@ -948,7 +993,9 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
         }
 
         // Split the source panel horizontally
-        this.splitPanel(splitSourceId, 'horizontal');
+        this.splitPanel(splitSourceId, 'horizontal', {
+          animated: options?.animated,
+        });
 
         // After splitting, the new panel is now focused (splitPanel focuses the new panel)
         // Open the tab in the newly focused panel
@@ -970,6 +1017,18 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
 
     /** Open a tab in the focused panel (or specified panel) */
     openTab(tab: Omit<PanelTab, 'id'>, panelId?: string): string {
+      // ── Universal spec-note guard ──
+      // When deferSpecTab is true, silently reject any attempt to open the
+      // spec note — regardless of which caller initiates it.  The workspace
+      // page will clear the flag right before triggering the animated slide-in.
+      if (deferSpecTab && tab.type === 'note' && tab.noteId === 'spec') {
+        logger.info(
+          '[openTab] BLOCKED spec-note tab — deferSpecTab is active, waiting for slide-in animation',
+          { workspaceId },
+        );
+        return '';
+      }
+
       const targetPanelId = panelId ?? state.focusedPanelId;
       if (!targetPanelId || !state.panels[targetPanelId]) {
         logger.warn('No panel to open tab in', { panelId, focusedPanelId: state.focusedPanelId });
@@ -1792,8 +1851,16 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
       });
     },
 
-    /** Split a panel */
-    splitPanel(panelId: string, direction: 'horizontal' | 'vertical') {
+    /**
+     * Split a panel.
+     * @param animated - If true, the new panel slides in from 0% to 50% via a JS animation.
+     */
+    splitPanel(
+      panelId: string,
+      direction: 'horizontal' | 'vertical',
+      options?: { animated?: boolean },
+    ) {
+      const animated = options?.animated ?? false;
       // Clear expand state — splitting changes the tree structure,
       // making saved split paths stale
       expandedPanelId = null;
@@ -1816,6 +1883,10 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
               activeTabId: null,
             };
 
+            // When animated, start with [100, 0] so the new panel slides in from nothing.
+            // A follow-up rAF will transition sizes to [50, 50].
+            const initialSizes = animated ? [100, 0] : [50, 50];
+
             // Replace this panel node with a split containing both panels
             return {
               found: true,
@@ -1826,7 +1897,7 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
                   { type: 'panel', panelId },
                   { type: 'panel', panelId: newPanelId },
                 ],
-                sizes: [50, 50],
+                sizes: initialSizes,
               },
             };
           }
@@ -1851,9 +1922,69 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
           if (createdPanelId) {
             state.focusedPanelId = createdPanelId;
           }
-          logger.debug('Split panel', { panelId, direction, newPanelId: createdPanelId });
+          logger.debug('Split panel', {
+            panelId,
+            direction,
+            newPanelId: createdPanelId,
+            animated,
+          });
         }
       });
+
+      // When animated, smoothly interpolate sizes from [100, 0] to [50, 50]
+      // using a JavaScript rAF loop. This avoids CSS transitions (which would
+      // affect every flex-basis change globally, including expand/collapse).
+      if (animated) {
+        const DURATION_MS = 500;
+        // cubic-bezier(0.4, 0, 0.2, 1) approximation (Material standard easing)
+        const ease = (t: number) =>
+          t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+        // Find the split node that contains the source panel
+        const findSplitNode = (node: PanelLayoutNode): (PanelLayoutNode & { type: 'split' }) | null => {
+          if (node.type === 'split') {
+            for (const child of node.children) {
+              if (child.type === 'panel' && child.panelId === panelId) {
+                return node;
+              }
+              const deeper = findSplitNode(child);
+              if (deeper) return deeper;
+            }
+          }
+          return null;
+        };
+
+        // Wait one frame so the DOM renders with [100, 0] first
+        requestAnimationFrame(() => {
+          const startTime = performance.now();
+
+          const animate = () => {
+            const elapsed = performance.now() - startTime;
+            const progress = Math.min(elapsed / DURATION_MS, 1);
+            const eased = ease(progress);
+            const newPanelSize = 50 * eased; // 0 → 50
+
+            const splitNode = findSplitNode(state.root)
+              ?? (state.root.type === 'split' ? state.root as PanelLayoutNode & { type: 'split' } : null);
+
+            if (splitNode) {
+              // Direct mutation — Svelte 5's deep $state proxy detects this
+              // and re-renders the component. We skip mutate() to avoid
+              // persisting to localStorage on every frame (~30 writes).
+              splitNode.sizes = [100 - newPanelSize, newPanelSize];
+            }
+
+            if (progress < 1) {
+              requestAnimationFrame(animate);
+            } else {
+              // Final frame — persist the final sizes to localStorage
+              persistState();
+            }
+          };
+
+          requestAnimationFrame(animate);
+        });
+      }
     },
 
     /** Update split sizes - does not add to history */

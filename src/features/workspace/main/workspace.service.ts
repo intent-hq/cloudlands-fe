@@ -23,7 +23,12 @@ import {
 } from '../../../shared/config/provider-config';
 import { isSpecNote } from '../../../shared/constants/notes';
 import * as Errors from '../../../shared/errors';
-import { execAsync, execFileAsync, getConfiguredSshKeyPath, gitEnv } from '../../../shared/git/git-env';
+import {
+  execAsync,
+  execFileAsync,
+  getConfiguredSshKeyPath,
+  gitEnv,
+} from '../../../shared/git/git-env';
 import { findParentGitDir } from '../../../shared/git/git-utils';
 import { Logger } from '../../../shared/logger';
 import { WorkspaceConfig } from '../../../shared/main/config';
@@ -43,6 +48,7 @@ import type {
   WorkspaceAgentSummary,
   WorkspaceDiffSummary,
   WorkspaceGitSummary,
+  WorkspaceTaskInfo,
   WorkspaceTaskStats,
   WorkspaceUIContext,
 } from '../../../shared/types';
@@ -1603,7 +1609,8 @@ export class WorkspaceService {
         try {
           addRepo({
             path: workspace.repositoryPath,
-            name: workspace.repositoryName || workspace.repositoryPath.split('/').pop() || 'Unknown',
+            name:
+              workspace.repositoryName || workspace.repositoryPath.split('/').pop() || 'Unknown',
             owner: workspace.repositoryOwner,
           });
         } catch (regErr) {
@@ -1843,6 +1850,9 @@ export class WorkspaceService {
       let total = 0;
       let completed = 0;
       let inProgress = 0;
+      const inProgressTasks: WorkspaceTaskInfo[] = [];
+      const notStartedTasks: WorkspaceTaskInfo[] = [];
+      const completedTasks: WorkspaceTaskInfo[] = [];
 
       for (const note of taskNotes) {
         const status = note.metadata?.task?.status;
@@ -1851,16 +1861,27 @@ export class WorkspaceService {
           continue;
         }
         total++;
+        const taskInfo: WorkspaceTaskInfo = {
+          title: note.title || 'Untitled task',
+          status: (status ?? 'not_started') as WorkspaceTaskInfo['status'],
+        };
         if (status === 'complete') {
           completed++;
-        } else if (status === 'in_progress') {
+          completedTasks.push(taskInfo);
+        } else if (status === 'in_progress' || status === 'review_required') {
           inProgress++;
+          inProgressTasks.push(taskInfo);
+        } else {
+          notStartedTasks.push(taskInfo);
         }
       }
 
       if (total === 0) {
         return undefined;
       }
+
+      // Order: in_progress first, then not_started, then completed
+      const tasks = [...inProgressTasks, ...notStartedTasks, ...completedTasks];
 
       // PERF: Changed from INFO to DEBUG to reduce log spam during bulk operations
       // TaskStats is computed for every workspace on every list call, which creates excessive logs
@@ -1872,7 +1893,7 @@ export class WorkspaceService {
         taskNoteCount: taskNotes.length,
       });
 
-      return { total, completed, inProgress };
+      return { total, completed, inProgress, tasks };
     } catch (error) {
       logger.warn('Failed to load task stats for workspace', {
         workspaceId,
@@ -2113,7 +2134,11 @@ export class WorkspaceService {
 
       // Validate worktree path exists, clear it if not
       // Skip validation for remote workspaces — their worktree paths only exist on the SSH host
-      if (workspace.worktreePath && !workspace.isRemote && workspace.environmentConfig?.type !== 'remote') {
+      if (
+        workspace.worktreePath &&
+        !workspace.isRemote &&
+        workspace.environmentConfig?.type !== 'remote'
+      ) {
         try {
           await fs.access(workspace.worktreePath);
           logger.debug('Worktree path exists', { worktreePath: workspace.worktreePath });
@@ -2128,7 +2153,10 @@ export class WorkspaceService {
           };
           updated = true;
         }
-      } else if (workspace.worktreePath && (workspace.isRemote || workspace.environmentConfig?.type === 'remote')) {
+      } else if (
+        workspace.worktreePath &&
+        (workspace.isRemote || workspace.environmentConfig?.type === 'remote')
+      ) {
         logger.debug('Skipping worktree path validation for remote workspace', {
           workspaceId: id,
           worktreePath: workspace.worktreePath,
@@ -2820,7 +2848,11 @@ export class WorkspaceService {
           // Check if workspace has a worktree path that no longer exists
           // This can happen after 'git worktree prune'
           // Skip validation for remote workspaces — their worktree paths only exist on the SSH host
-          else if (workspace.worktreePath && !workspace.isRemote && workspace.environmentConfig?.type !== 'remote') {
+          else if (
+            workspace.worktreePath &&
+            !workspace.isRemote &&
+            workspace.environmentConfig?.type !== 'remote'
+          ) {
             try {
               await fs.access(workspace.worktreePath);
               // Worktree exists, check if it's still a valid git worktree

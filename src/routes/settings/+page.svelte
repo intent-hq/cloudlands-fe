@@ -42,7 +42,7 @@
 
   // Legacy tab mapping for backwards compatibility with old URLs
   const legacyTabMap: Record<string, SettingsTab> = {
-    'connections': 'accounts',
+    connections: 'accounts',
     'interface-system': 'fonts-colors',
   };
 
@@ -435,7 +435,8 @@
                     class="text-xs text-muted-foreground mt-0.5 transition-all duration-200"
                     class:font-mono={noteFontSettings.fontStyle === 'monospace'}
                   >
-                    The typeface used for your notes, specs, and documents. Monospace can feel more focused for technical writing.
+                    The typeface used for your notes, specs, and documents. Monospace can feel more
+                    focused for technical writing.
                   </p>
                 </div>
                 <Toggle
@@ -455,7 +456,8 @@
                     class="text-xs text-muted-foreground mt-0.5 transition-all duration-200"
                     class:font-mono={agentFontSettings.fontStyle === 'monospace'}
                   >
-                    The typeface used for agent conversation messages, including code references and explanations.
+                    The typeface used for agent conversation messages, including code references and
+                    explanations.
                   </p>
                 </div>
                 <Toggle
@@ -482,9 +484,7 @@
             <section class="px-6 py-5">
               <div class="flex items-center justify-between">
                 <div>
-                  <p class="text-sm font-medium text-foreground">
-                    Reset Settings
-                  </p>
+                  <p class="text-sm font-medium text-foreground">Reset Settings</p>
                   <p class="text-xs text-muted-foreground">
                     Restore theme, notifications, git settings, and update preferences to defaults
                   </p>
@@ -582,7 +582,9 @@
               flashCopied(anchor);
             } else {
               try {
-                await window.electronAPI?.invoke('shell:openExternal', { url: 'mailto:intentfeedback@augmentcode.com' });
+                await window.electronAPI?.invoke('shell:openExternal', {
+                  url: 'mailto:intentfeedback@augmentcode.com',
+                });
               } catch {
                 // Fallback: copy to clipboard if mailto fails
                 await navigator.clipboard.writeText('intentfeedback@augmentcode.com');

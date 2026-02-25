@@ -39,7 +39,7 @@ export const TRACKING_CONFIG = {
     gitPollingOnly: false, // Use both file watching and git polling for better detection
 
     // Ignored patterns (in addition to .gitignore)
-    additionalIgnorePatterns: ['.augment/**', '.workspace-notes/**', '.workspace-notes.backup/**'],
+    additionalIgnorePatterns: ['.workspace-notes/**', '.workspace-notes.backup/**'],
   },
 
   // Remote Change Detection (for remote workspaces)

@@ -9,17 +9,9 @@
    * - Counter-scaling to maintain fixed position relative to macOS traffic lights when zoomed
    */
 
-  import { goto, beforeNavigate } from '$app/navigation';
+  import { beforeNavigate } from '$app/navigation';
   import { page } from '$app/state';
-  import {
-    faHome,
-    faSearch,
-    faLayerGroup,
-    faFolder,
-    faHamburger,
-    faList,
-    faBars,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faSearch } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import SidebarIcon from '$lib/components/icons/SidebarIcon.svelte';
   import { onMount } from 'svelte';
@@ -27,7 +19,7 @@
 
   import { invoke } from '$lib/electron-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
-  import { Tooltip, TooltipRich } from '$lib/components/ui/tooltip';
+  import { Tooltip } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
   import { paletteStore } from '$features/palette/palette.store.svelte';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
@@ -39,9 +31,7 @@
   import SpacesListOverlay from './SpacesListOverlay.svelte';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
-  import { spaceOrdering } from '$features/layout/space-ordering.svelte';
   import { WorkspaceStatusEnum } from '$shared/types';
-  import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
   import { getLineStats, type LineStats } from '$features/file-tracking/file-tracking.client';
   import { zoomStore } from '$lib/stores/zoom.store.svelte';
   import { sidebarWidthStore } from '$lib/stores/sidebar-width.store.svelte';
@@ -114,12 +104,6 @@
     lineStatsVersion++;
   }
 
-  // Helper to get line stats for a workspace
-  function getWorkspaceLineStats(wsId: string): LineStats | undefined {
-    void lineStatsVersion; // Touch for reactivity
-    return lineStatsCache.get(wsId);
-  }
-
   // Check if we're on a workspace page
   const isWorkspacePage = $derived(page.url.pathname.startsWith('/workspace/'));
   const isHomePage = $derived(page.url.pathname === '/');
@@ -158,24 +142,6 @@
       })
       .filter(({ streaming, hasUnread }) => streaming || hasUnread)
       .slice(0, 5); // Limit to 5 items to not crowd the title bar
-  });
-
-  // Get current workspace agent status (streaming or unread)
-  const currentWorkspaceStatus = $derived.by(() => {
-    // Touch reactive versions
-    void activeStreamsVersion;
-    void unreadVersion;
-
-    if (!workspaceId) return { streaming: false, hasUnread: false };
-
-    const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId);
-    const streaming = streamingAgentIds.length > 0;
-    const hasUnread =
-      unreadTrackingService
-        .getUnreadAgentIdsForWorkspace(workspaceId)
-        .filter((id) => !streamingAgentIds.includes(id)).length > 0;
-
-    return { streaming, hasUnread };
   });
 
   // Close the spaces overlay when navigating away (but not on full refresh).
@@ -249,16 +215,6 @@
     paletteStore.open();
   }
 
-  function getGitHubAvatarUrl(owner: string, size: number = 24): string {
-    return `https://github.com/${owner}.png?size=${size}`;
-  }
-
-  function handleActivitySpaceClick(wsId: string) {
-    spaceOrdering.openSpace(wsId);
-    unreadTrackingService.clearUnreadForWorkspace(wsId);
-    goto(`/workspace/${wsId}`);
-  }
-
   async function handleApplyPreset(presetId: LayoutPresetId) {
     if (!layoutManager || !workspaceId) return;
     await applyContentPreset(presetId, layoutManager, {
@@ -280,36 +236,9 @@
     style:transform-origin="top left"
     style:width="{100 * zoomStore.zoomFactor}%"
   >
-    <!-- Left: Home link and spaces toggle (not on home page) -->
+    <!-- Left column -->
     <div class="flex items-center app-no-drag min-w-0">
-      {#if !isHomePage}
-        <Tooltip content="Home" side="bottom" delayDuration={300}>
-          <button
-            class="p-2 rounded hover:bg-muted/50 transition-colors text-muted-foreground/50 hover:text-foreground cursor-pointer"
-            onclick={() => goto('/')}
-            aria-label="Go to home"
-          >
-            <Fa icon={faHome} size="1x" />
-          </button>
-        </Tooltip>
-        <Tooltip side="bottom" delayDuration={300}>
-          {#snippet content()}
-            <span>Spaces</span>
-            <span class="text-muted-foreground ml-1.5">{isMac ? '⌘' : 'Ctrl+'}O</span>
-          {/snippet}
-          <button
-            class={cn(
-              'p-2 rounded hover:bg-muted/50 transition-colors cursor-pointer',
-              layoutSettings.spacesOverlayOpen
-                ? 'bg-muted/50 text-foreground'
-                : 'text-muted-foreground/50 hover:text-foreground',
-            )}
-            onclick={() => (layoutSettings.spacesOverlayOpen = !layoutSettings.spacesOverlayOpen)}
-            aria-label="Toggle spaces list"
-          >
-            <Fa icon={faBars} size="1x" />
-          </button>
-        </Tooltip>
+      {#if !isHomePage && layoutSettings.sidebarSide === 'left'}
         <Tooltip side="bottom" delayDuration={300}>
           {#snippet content()}
             <span>Sidebar</span>
@@ -320,7 +249,7 @@
             onclick={() => sidebarWidthStore.toggle()}
             aria-label="Toggle sidebar"
           >
-            <SidebarIcon size={16} side={layoutSettings.sidebarSide} />
+            <SidebarIcon size={16} side="left" />
           </button>
         </Tooltip>
       {/if}
@@ -354,9 +283,9 @@
       <div></div>
     {/if}
 
-    <!-- Right: Layout controls (workspace pages only) -->
-    {#if isWorkspacePage && workspaceId && layoutManager}
-      <div class="flex items-center justify-end pr-4 app-no-drag">
+    <!-- Right column: Layout controls + sidebar toggle (when sidebar is on right) -->
+    <div class="flex items-center justify-end pr-4 app-no-drag gap-1">
+      {#if isWorkspacePage && workspaceId && layoutManager}
         <PanelLayoutControls
           layoutRoot={layoutManager.layout.root}
           canGoBack={layoutManager.canGoBack}
@@ -366,10 +295,23 @@
           onGoForward={() => layoutManager.goForward()}
           onApplyPreset={handleApplyPreset}
         />
-      </div>
-    {:else}
-      <div class="w-2"></div>
-    {/if}
+      {/if}
+      {#if !isHomePage && layoutSettings.sidebarSide === 'right'}
+        <Tooltip side="bottom" delayDuration={300}>
+          {#snippet content()}
+            <span>Sidebar</span>
+            <span class="text-muted-foreground ml-1.5">⌘B</span>
+          {/snippet}
+          <button
+            class="p-2 rounded hover:bg-muted/50 transition-colors text-muted-foreground/50 hover:text-foreground cursor-pointer"
+            onclick={() => sidebarWidthStore.toggle()}
+            aria-label="Toggle sidebar"
+          >
+            <SidebarIcon size={16} side="right" />
+          </button>
+        </Tooltip>
+      {/if}
+    </div>
   </div>
 </div>
 

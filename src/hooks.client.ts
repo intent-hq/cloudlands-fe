@@ -62,11 +62,7 @@ function shouldFilterSentryException(exception: {
   //   2. The stack trace references a SvelteKit production chunk (immutable/chunks/)
   // This prevents accidentally suppressing legitimate errors.
   // See: https://github.com/huntabyte/bits-ui/discussions/1302
-  if (
-    type === 'TypeError' &&
-    value &&
-    /^[a-zA-Z_$]{1,3}\.call is not a function$/.test(value)
-  ) {
+  if (type === 'TypeError' && value && /^[a-zA-Z_$]{1,3}\.call is not a function$/.test(value)) {
     // Check stack trace to confirm this is from a SvelteKit production chunk
     const frames = exception.stacktrace?.frames;
     const isFromSvelteKitChunk = frames?.some((f) => f.filename?.includes('immutable/chunks/'));
@@ -137,6 +133,19 @@ async function initAnalyticsClient() {
   } catch (error) {
     console.warn('[Analytics] Failed to initialize:', error);
   }
+}
+
+// Provide a minimal electronAPI stub when running outside Electron (e.g. browser-only dev/sandbox).
+// This prevents crashes in stores and layouts that call window.electronAPI.on/invoke at module level.
+if (typeof window !== 'undefined' && !window.electronAPI) {
+  (window as any).electronAPI = {
+    invoke: () => Promise.resolve(undefined),
+    on: () => () => {},
+    off: () => {},
+    offById: () => {},
+    send: () => {},
+    fetchSentryConfig: () => Promise.resolve(undefined),
+  };
 }
 
 // Initialize Sentry and Analytics asynchronously

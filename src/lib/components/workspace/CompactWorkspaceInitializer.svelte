@@ -31,7 +31,7 @@
   import PullConflictDialog, { type PullErrorType } from '../modals/PullConflictDialog.svelte';
   import { onMount, onDestroy } from 'svelte';
   import { toast } from 'svelte-sonner';
-  import { fly, slide } from 'svelte/transition';
+  import { fade, fly, slide } from 'svelte/transition';
   import Button from '../ui/button/button.svelte';
   import { Checkbox } from '../ui/checkbox';
   import Tooltip from '../ui/tooltip/Tooltip.svelte';
@@ -161,8 +161,15 @@
     isExpanded: boolean;
     initialRepo?: InitialRepoInfo;
     oncreate?: () => void;
+    /** Show contextual hints for first-time users */
+    showFirstTimeHints?: boolean;
   }
-  let { isExpanded = $bindable(false), initialRepo, oncreate }: Props = $props();
+  let {
+    isExpanded = $bindable(false),
+    initialRepo,
+    oncreate,
+    showFirstTimeHints = false,
+  }: Props = $props();
 
   /**
    * Focus the prompt textarea (e.g., triggered by Cmd+N menu or ?create=true)
@@ -986,7 +993,11 @@
     scope = event.detail.scope || '';
     githubUrl = event.detail.githubUrl || '';
     clonePath = event.detail.clonePath || '';
-    branch = isNewRepo ? 'main' : (event.detail.type === 'remote' ? (event.detail.remoteSetup?.branch || 'main') : '');
+    branch = isNewRepo
+      ? 'main'
+      : event.detail.type === 'remote'
+        ? event.detail.remoteSetup?.branch || 'main'
+        : '';
 
     // Handle remote setup from repo selector
     if (event.detail.type === 'remote' && event.detail.remoteSetup) {
@@ -1464,9 +1475,7 @@
         repositoryPath: String(remoteSetupSnapshot?.workspacePath || repoPath),
         githubUrl: repoType === 'github' && githubUrl ? githubUrl : undefined, // GitHub URL to clone
         clonePath:
-          repoType === 'github' && (clonePath || repoPath)
-            ? clonePath || repoPath
-            : undefined, // User-selected clone destination (falls back to repoPath since they're the same for GitHub repos)
+          repoType === 'github' && (clonePath || repoPath) ? clonePath || repoPath : undefined, // User-selected clone destination (falls back to repoPath since they're the same for GitHub repos)
         baseRef: String(baseBranch),
         setupScript: setupScript.trim() || undefined,
         environmentConfig,
@@ -2153,12 +2162,25 @@
     {/if}
   </div>
 
+  <!-- First-time user hint -->
+  {#if showFirstTimeHints && !isExpanded}
+    <p
+      class="mt-3 text-xs text-muted-foreground/50 leading-relaxed"
+      transition:fade={{ duration: 200 }}
+    >
+      Describe a feature, bug fix, or refactor — the agent will create a branch and start coding.
+    </p>
+  {/if}
+
   <!-- Bottom: Agent picker, Setup script, Create button -->
   {#if isExpanded}
     <div class="w-full min-w-0 mt-3.5 mb-3" transition:slide={{ axis: 'y', duration: 200 }}>
       <!-- Git not installed banner -->
       {#if gitAvailable === false}
-        <div class="mx-0 mb-3 px-4 py-3 bg-destructive/10 border border-destructive/30 rounded-md text-sm" transition:slide={{ axis: 'y', duration: 200 }}>
+        <div
+          class="mx-0 mb-3 px-4 py-3 bg-destructive/10 border border-destructive/30 rounded-md text-sm"
+          transition:slide={{ axis: 'y', duration: 200 }}
+        >
           <div class="flex items-start gap-3">
             <Fa icon={faExclamationTriangle} class="text-destructive-foreground mt-0.5 shrink-0" />
             <div>
@@ -2170,7 +2192,9 @@
                 class="mt-2 text-primary hover:text-primary/80 underline cursor-pointer"
                 onclick={() => {
                   if (typeof window !== 'undefined' && window.electronAPI) {
-                    window.electronAPI.invoke('shell:openExternal', { url: 'https://git-scm.com/downloads' });
+                    window.electronAPI.invoke('shell:openExternal', {
+                      url: 'https://git-scm.com/downloads',
+                    });
                   }
                 }}
               >
@@ -2245,7 +2269,10 @@
       {/if}
       <!-- Validation hint -->
       {#if isExpanded && !isValid && !isCreating && !error}
-        <div class="mt-2 px-4.5 text-sm text-muted-foreground/70" transition:slide={{ axis: 'y', duration: 200 }}>
+        <div
+          class="mt-2 px-4.5 text-sm text-muted-foreground/70"
+          transition:slide={{ axis: 'y', duration: 200 }}
+        >
           {#if gitAvailable === false}
             Git is required — install it and restart to continue.
           {:else if gitAvailable === null}

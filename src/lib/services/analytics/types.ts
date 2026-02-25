@@ -379,6 +379,17 @@ export interface AnalyticsEvents {
   'Completed Setup': {
     provider_id: string;
   };
+
+  // ============================================
+  // Onboarding
+  // ============================================
+  'Viewed Onboarding': {
+    step: number;
+  };
+  'Completed Onboarding': {
+    skipped: boolean;
+    final_step: number;
+  };
 }
 
 /**

@@ -152,10 +152,7 @@ export {
 export type { AgentMessage, MessageMetadata, MessageRole, ProviderMessage, ToolCall, ToolResult };
 
 // Re-export SuggestedPrompt types and helpers
-export type {
-  SuggestedPrompt,
-  SuggestedPromptsEvent,
-} from './types/suggested-prompt';
+export type { SuggestedPrompt, SuggestedPromptsEvent } from './types/suggested-prompt';
 export { getPromptText } from './types/suggested-prompt';
 
 // ============================================================================
@@ -446,6 +443,14 @@ export interface WorkspaceAgentSummary {
 }
 
 /**
+ * Individual task info for workspace list view tooltips
+ */
+export interface WorkspaceTaskInfo {
+  title: string;
+  status: TaskStatus;
+}
+
+/**
  * Task progress statistics for workspace list view
  * Shows completion progress like the flame graph
  */
@@ -453,6 +458,8 @@ export interface WorkspaceTaskStats {
   total: number;
   completed: number;
   inProgress: number;
+  /** Individual task details for tooltip display (ordered: in_progress, not_started, complete) */
+  tasks?: WorkspaceTaskInfo[];
 }
 
 /**

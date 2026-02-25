@@ -4,29 +4,18 @@
    */
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
-  import { Tooltip } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
-  import type { Workspace, WorkspaceCommitInfo } from '$shared/types';
+  import type { Workspace } from '$shared/types';
   import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
-  import {
-    faBoxArchive,
-    faBoxOpen,
-    faCodeCommit,
-    faCodePullRequest,
-    faFolder,
-    faPlusMinus,
-    faTrash,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faBoxArchive, faBoxOpen, faFolder, faTrash } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Button from '../ui/button/button.svelte';
 
   import AgentCard from '$lib/components/chat/AgentCard.svelte';
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
-  import LineChangesBadge from '../shared/LineChangesBadge.svelte';
-  import WorkspaceStatusIcon, {
-    type WorkspaceDisplayStatus,
-  } from './WorkspaceStatusIcon.svelte';
+  import { deriveWorkspacePhase } from './workspace-phase';
+  import WorkspacePhaseIndicator from './WorkspacePhaseIndicator.svelte';
 
   // Agent display info with computed avatar state
   interface AgentDisplayInfo {
@@ -64,101 +53,31 @@
   // Check if workspace is archived
   const isArchived = $derived(ws.status === WorkspaceStatusEnum.Archived);
 
-  // Derived values
-  const hasChanges = $derived(ws.diffSummary && ws.diffSummary.totalFiles > 0);
-  const pullRequests = $derived(ws.pullRequests || []);
-  const hasPR = $derived(
-    pullRequests.length > 0 || ws.activePullRequest || ws.prStatus === PullRequestStatus.Open,
-  );
-  const taskStats = $derived(ws.taskStats);
-  const commits = $derived<WorkspaceCommitInfo[]>(ws.gitSummary?.commits || []);
-  const commitCount = $derived(ws.gitSummary?.ahead || 0);
-
-  // Compute workspace display status based on available data
-  // Priority: PR merged > PR open > Complete > In progress > Not started
-  const workspaceDisplayStatus = $derived.by((): WorkspaceDisplayStatus => {
-    // Check for merged PR first (highest priority - work is done)
-    const hasMergedPR =
-      ws.prStatus === PullRequestStatus.Merged ||
-      pullRequests.some((pr) => pr.status === PullRequestStatus.Merged);
-    if (hasMergedPR) return 'pr_merged';
-
-    // Check for open PR
-    const hasOpenPR =
-      ws.prStatus === PullRequestStatus.Open ||
-      ws.prStatus === PullRequestStatus.Draft ||
-      pullRequests.some(
-        (pr) => pr.status === PullRequestStatus.Open || pr.status === PullRequestStatus.Draft,
-      ) ||
-      ws.activePullRequest;
-    if (hasOpenPR) return 'pr_open';
-
-    // Check task completion status
-    const total = taskStats?.total || 0;
-    const completed = taskStats?.completed || 0;
-    const inProgress = taskStats?.inProgress || 0;
-
-    // All tasks complete
-    if (total > 0 && completed === total) return 'complete';
-
-    // Has in-progress tasks or active agents
+  // Compute workspace phase
+  const workspacePhase = $derived.by(() => {
     const hasActiveAgents = agents.some((a) => a.isActive);
-    if (inProgress > 0 || hasActiveAgents || completed > 0) return 'in_progress';
-
-    // Default: not started
-    return 'not_started';
+    return deriveWorkspacePhase(ws, { hasActiveAgents });
   });
 
-  // Tooltip text for workspace status
-  const statusTooltipText = $derived.by((): string => {
-    const total = taskStats?.total || 0;
-    const completed = taskStats?.completed || 0;
-    const inProgress = taskStats?.inProgress || 0;
-
-    switch (workspaceDisplayStatus) {
-      case 'pr_merged':
-        return 'PR merged';
-      case 'pr_open':
-        return 'PR open';
-      case 'complete':
-        return total > 0 ? `All ${total} tasks complete` : 'Complete';
-      case 'in_progress': {
-        const parts: string[] = [];
-        if (completed > 0) parts.push(`${completed} complete`);
-        if (inProgress > 0) parts.push(`${inProgress} in progress`);
-        if (total > 0 && parts.length > 0) {
-          return `${parts.join(', ')} of ${total} tasks`;
-        }
-        return 'In progress';
-      }
-      default:
-        return 'Not started';
-    }
+  // Task progress for building phase pie chart (0–1)
+  const buildProgress = $derived.by(() => {
+    const t = ws.taskStats?.total ?? 0;
+    if (t === 0) return 0;
+    return (ws.taskStats?.completed ?? 0) / t;
   });
 
-  // Prepare commit data for tooltip
-  const commitTooltipData = $derived(() => {
-    if (commitCount === 0) return null;
-    const displayCount = Math.min(commits.length, 6);
-    const items = commits
-      .slice(0, displayCount)
-      .map((commit, i) => commit?.title || `Commit ${i + 1}`);
-    const remaining = commitCount > 6 ? commitCount - 6 : 0;
-    return { items, remaining };
+  // PR status
+  const prDisplayStatus = $derived.by(() => {
+    const active = ws.activePullRequest;
+    if (active) return active.status;
+    if (ws.prStatus) return ws.prStatus;
+    const prs = ws.pullRequests ?? [];
+    if (prs.length > 0) return prs[0].status;
+    return null;
   });
-
-  // Prepare PR data for tooltip
-  const prTooltipData = $derived(() => {
-    if (!hasPR) return null;
-    const displayCount = Math.min(pullRequests.length, 6);
-    const items = pullRequests.slice(0, displayCount).map((pr) => `#${pr.number}: ${pr.title}`);
-    // Fallback to activePullRequest if pullRequests is empty
-    if (pullRequests.length === 0 && ws.activePullRequest) {
-      items.push(`#${ws.activePullRequest.number}: ${ws.activePullRequest.title}`);
-    }
-    const remaining = pullRequests.length > 6 ? pullRequests.length - 6 : 0;
-    return { items, remaining };
-  });
+  const prDisplayNumber = $derived(
+    ws.activePullRequest?.number ?? ws.prNumber ?? ws.pullRequests?.[0]?.number,
+  );
 
   // Hover state for agent cards
   let hoveredAgentId: string | null = $state(null);
@@ -198,178 +117,93 @@
 
 <div class="group relative">
   <button
-    class="relative flex flex-col justify-center w-full min-w-0 pr-5 pl-3 h-10 text-left hover:bg-muted/30 cursor-pointer {isArchived ? 'bg-sidebar' : ''}"
+    class={cn(
+      'relative flex flex-col w-full min-w-0 pl-2.25 pr-5 py-3 text-left cursor-pointer transition-colors',
+      isArchived ? 'bg-sidebar hover:bg-muted/20' : 'hover:bg-muted/30',
+    )}
     onclick={(e) => onOpen(ws, e)}
   >
     {#if !isLastInGroup}
       <div class="absolute bottom-0 left-5 right-5 h-px bg-border/40"></div>
     {/if}
 
-    <!-- Row content -->
-    <div class="flex items-center w-full gap-2">
-      <!-- Repo avatar when not grouped -->
-      {#if showRepoAvatar && ws.repositoryOwner}
-        <img
-          src={getGitHubAvatarUrl(ws.repositoryOwner, 32)}
-          alt={ws.repositoryOwner}
-          class="w-5 h-5 rounded-full shrink-0"
-          loading="lazy"
-          onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
-        />
-      {:else if !groupByRepo}
-        <span class="text-muted-foreground/50 shrink-0 w-5 flex justify-center">
-          <Fa icon={faFolder} size="sm" />
-        </span>
-      {/if}
-
-      <!-- Workspace status indicator -->
-      {#if ws.archived}
-        <div class="shrink-0 ml-2.25 mr-1.5">
-          <Fa icon={faBoxArchive} size="sm" class="text-muted-foreground/30" />
-        </div>
-      {:else}
-        <Tooltip side="top" delayDuration={0}>
-          {#snippet content()}
-            <span class="text-sm">{statusTooltipText}</span>
-          {/snippet}
-          <div class="shrink-0 ml-2.25 mr-1.5">
-            <WorkspaceStatusIcon status={workspaceDisplayStatus} size={12} />
-          </div>
-        </Tooltip>
-      {/if}
-
-      <!-- Title -->
-      <div class="flex-1 min-w-0 pr-4">
-        <span
-          class={cn(
-            'text-[13px] font-mediumx text-foreground truncate block',
-            ws.archived || !ws.title ? 'text-muted-foreground/70' : '',
-          )}
-          title={ws.title || 'Untitled'}
-        >{ws.title || 'Untitled'}</span
-        >
+    <div class="flex items-start w-full gap-2.5">
+      <!-- Left: icons column -->
+      <div class="flex items-center gap-2.5 shrink-0 pt-0.5">
+        <!-- Repo avatar when not grouped -->
+        {#if showRepoAvatar && ws.repositoryOwner}
+          <img
+            src={getGitHubAvatarUrl(ws.repositoryOwner, 32)}
+            alt={ws.repositoryOwner}
+            class="w-5 h-5 rounded-full shrink-0"
+            loading="lazy"
+            onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
+          />
+        {:else if !groupByRepo}
+          <span class="text-muted-foreground/50 shrink-0 w-5 flex justify-center">
+            <Fa icon={faFolder} size="sm" />
+          </span>
+        {/if}
       </div>
 
-      <!-- Line changes visualization -->
-      {#if hasChanges}
-        <Tooltip side="top" delayDuration={0} contentClass="mb-0 whitespace-nowrap">
-          {#snippet content()}
-            <div class="text-sm flex flex-col space-y-0 mb-0">
-              <div class="font-semibold">
-                {ws.diffSummary?.totalFiles} files with local changes:
-              </div>
-              <!-- list files -->
-              <ul class="space-y-px m-0 p-0 list-none my-1">
-                {#each ws.diffSummary?.files.slice(0, 5) as file}
-                  {@const fileName = file.path.split('/').pop()}
-                  <li class="truncate flex items-center max-w-xs w-full">
-                    <div class="flex-1 truncate">
-                    {fileName}
-                    </div>
-                    <LineChangesBadge
-                    class="ml-2"
-                      additions={file.additions}
-                      deletions={file.deletions}
-                      size="xs"
-                    />
-                  </li>
-                {/each}
-                {#if ws.diffSummary?.files.length && ws.diffSummary?.files.length > 5}
-                  <li class="text-muted-foreground">+ {ws.diffSummary?.files.length - 5} more</li>
-                {/if}
-              </ul>
-            </div>
-          {/snippet}
-          <span class="text-muted-foreground/50 py-2 -my-1">
-            <Fa icon={faPlusMinus} size="xs" />
-          </span>
-        </Tooltip>
-      {/if}
-
-      <!-- Commits ahead indicator -->
-      {#if commitCount > 0}
-        {@const data = commitTooltipData()}
-        <Tooltip side="top" contentClass="mb-0 whitespace-nowrap">
-          {#snippet content()}
-            {#if data}
-              <div class="text-sm flex flex-col space-y-0 mb-0">
-                <div class="font-semibold">Commits:</div>
-                <ul class="space-y-px m-0 p-0 list-none my-1">
-                  {#each data.items as item}
-                    <li class="truncate max-w-xs">{item}</li>
-                  {/each}
-                  {#if data.remaining > 0}
-                    <li class="text-muted-foreground">+ {data.remaining} more</li>
-                  {/if}
-                </ul>
-              </div>
-            {/if}
-          {/snippet}
-          <span class="text-muted-foreground/50 py-2 -my-1">
-            <Fa icon={faCodeCommit} size="xs" />
-          </span>
-        </Tooltip>
-      {/if}
-
-      <!-- PR info -->
-      {#if hasPR}
-        {@const data = prTooltipData()}
-        <Tooltip side="top" contentClass="mb-0 whitespace-nowrap">
-          {#snippet content()}
-            {#if data}
-              <div class="text-sm flex flex-col space-y-0 mb-0">
-                <div class="font-semibold">PRs:</div>
-                <ul class="space-y-px m-0 p-0 list-none my-1">
-                  {#each data.items as item}
-                    <li class="truncate max-w-xs">#{item}</li>
-                  {/each}
-                  {#if data.remaining > 0}
-                    <li class="text-muted-foreground">+ {data.remaining} more</li>
-                  {/if}
-                </ul>
-              </div>
-            {/if}
-          {/snippet}
-          <span class="text-muted-foreground/50 py-2 -my-1">
-            <Fa icon={faCodePullRequest} size="xs" />
-          </span>
-        </Tooltip>
-      {/if}
-
-
-      <!-- Agent avatars -->
-      {#if agents.length > 0}
-        <div class="flex items-center -space-x-1.5 shrink-0">
-          {#each agents.slice(0, 6) as agent (agent.id)}
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div
-              class="relative flex"
-              style:anchor-name="--agent-row-{ws.id}-{agent.id}"
-              onmouseenter={() => handleAgentMouseEnter(agent.id)}
-              onmouseleave={handleAgentMouseLeave}
-            >
-              <AugieAvatarWithState
-                agentId={agent.id}
-                state={agent.isUnread ? 'unread' : 'running'}
-                size={16}
-                specialist={agent.specialist}
-              />
-            </div>
-          {/each}
-          {#if agents.length > 6}
-            <div
-              class="ml-2 flex items-center justify-center text-xs text-muted-foreground font-medium"
-            >
-              +{agents.length - 6}
-            </div>
-          {/if}
+      <!-- Right: content - single row -->
+      <div class="flex-1 min-w-0 flex items-center gap-2">
+        <div class="-my-1">
+          <WorkspacePhaseIndicator phase={workspacePhase.phase} progress={buildProgress} />
         </div>
-      {/if}
+        <span
+          class={cn(
+            'text-base font-medium truncate flex-1 min-w-0',
+            ws.archived || !ws.title ? 'text-muted-foreground/70' : 'text-foreground',
+          )}
+          title={ws.title || 'Untitled'}>{ws.title || 'Untitled'}</span
+        >
 
-      <!-- Activity time -->
-      <div
-        class="shrink-0 hidden w-8 text-right sm:block group-hover:opacity-0 pointer-events-none"
-      >
+        <!-- Agent avatars -->
+        {#if agents.length > 0}
+          <div class="flex items-center -space-x-1.5 shrink-0 pr-1">
+            {#each agents.slice(0, 4) as agent (agent.id)}
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div
+                class="relative flex"
+                style:anchor-name="--agent-row-{ws.id}-{agent.id}"
+                onmouseenter={() => handleAgentMouseEnter(agent.id)}
+                onmouseleave={handleAgentMouseLeave}
+              >
+                <AugieAvatarWithState
+                  agentId={agent.id}
+                  state={agent.isUnread ? 'unread' : 'running'}
+                  size={16}
+                  specialist={agent.specialist}
+                />
+              </div>
+            {/each}
+            {#if agents.length > 4}
+              <div
+                class="ml-1.5 flex items-center justify-center text-[10px] text-muted-foreground/60 font-medium"
+              >
+                +{agents.length - 4}
+              </div>
+            {/if}
+          </div>
+        {/if}
+
+        <!-- PR status pill -->
+        {#if prDisplayStatus}
+          {@const statusColor =
+            prDisplayStatus === PullRequestStatus.Merged
+              ? 'bg-purple-500/10 text-purple-500'
+              : prDisplayStatus === PullRequestStatus.Open
+                ? 'bg-emerald-500/10 text-emerald-500'
+                : prDisplayStatus === PullRequestStatus.Draft
+                  ? 'bg-muted-foreground/10 text-muted-foreground/60'
+                  : 'bg-red-500/10 text-red-500'}
+          <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 {statusColor}">
+            PR{prDisplayNumber ? ` #${prDisplayNumber}` : ''}
+          </span>
+        {/if}
+
+        <!-- Activity time -->
         <RelativeTime
           date={ws.lastActivity || ws.createdAt}
           class="text-[0.82rem] text-muted-foreground/70 whitespace-nowrap"
@@ -382,7 +216,7 @@
   <!-- Hover action buttons -->
   {#if onArchive || onUnarchive || onDelete}
     <div
-      class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0 opacity-0 group-hover:opacity-100"
+      class="absolute right-2.5 top-2.5 flex items-center gap-0 opacity-0 group-hover:opacity-100 bg-sidebar pl-1"
     >
       {#if onArchive || onUnarchive}
         <Button
