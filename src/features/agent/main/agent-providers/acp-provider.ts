@@ -2315,6 +2315,18 @@ export class ACPProvider extends BaseAgentProvider {
       configEnvKeys: Object.keys(configEnv),
     });
 
+    // Isolate npm cache per agent to prevent ENOTEMPTY race condition.
+    // When multiple providers (e.g., codex + claude-code) run concurrently via npx,
+    // they share ~/.npm/_npx/ and corrupt each other's cache during npm reify.
+    // Giving each agent its own NPM_CONFIG_CACHE eliminates the shared-cache collision.
+    const isExternalNpx = caps.id !== 'auggie' && this.config.command?.includes('npx');
+    let agentNpmCachePath: string | undefined;
+    if (isExternalNpx) {
+      const agentHash = this.config.agentId?.replace(/[^a-zA-Z0-9-]/g, '') || crypto.randomUUID();
+      agentNpmCachePath = path.join(os.tmpdir(), 'intent-npm-cache', agentHash);
+      fs.mkdirSync(agentNpmCachePath, { recursive: true });
+    }
+
     // Spawn the agent process using safe spawn with fallback options
     const spawnOptions: SpawnOptions = {
       cwd: workingDirectory,
@@ -2324,6 +2336,8 @@ export class ACPProvider extends BaseAgentProvider {
         // Force unbuffered output
         NODE_NO_READLINE: '1',
         PYTHONUNBUFFERED: '1',
+        // Isolate npm cache per agent to prevent cross-provider ENOTEMPTY errors
+        ...(agentNpmCachePath ? { NPM_CONFIG_CACHE: agentNpmCachePath } : {}),
       },
       // stdio will be set by safeSpawn
       detached: false,
