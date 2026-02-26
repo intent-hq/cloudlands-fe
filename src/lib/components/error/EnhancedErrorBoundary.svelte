@@ -81,6 +81,12 @@
       return;
     }
 
+    // Skip Monaco ViewZones "isInHiddenArea" race condition - benign error when
+    // hideUnchangedRegions triggers a re-render while view zones are stale
+    if (errorMsg.includes('isInHiddenArea')) {
+      return;
+    }
+
     // Skip if we already have an error
     if (error) return;
 
