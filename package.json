@@ -23,8 +23,8 @@
     "build:preload": "cross-env NODE_ENV=production npm run generate:ipc-channels && tsc -p tsconfig.preload.json && tsc-alias -p tsconfig.preload.json && npx tsx scripts/fix-esm-imports.ts",
     "preview": "vite preview",
     "start": "electron .",
-    "dist": "npm run build && electron-builder",
-    "dist:mac": "npm run build && electron-builder --mac",
+    "dist": "npm run build && node scripts/ensure-native-deps.cjs && electron-builder",
+    "dist:mac": "npm run build && node scripts/ensure-native-deps.cjs && electron-builder --mac",
     "dist:win": "npm run build && electron-builder --win",
     "dist:linux": "npm run build && electron-builder --linux",
     "dist:all": "npm run build && electron-builder -mwl",
@@ -362,6 +362,7 @@
       "entities": "7.0.0"
     },
     "onlyBuiltDependencies": [
+      "@parcel/watcher",
       "@sentry/cli",
       "better-sqlite3",
       "cpu-features",

@@ -17,6 +17,7 @@ files:
 # Unpack renderer files from asar to avoid MIME type issues
 # Also unpack MCP server files since Node.js can't execute scripts from within asar
 # Unpack Express and related modules for HTTP MCP Bridge
+# Unpack native modules to ensure prebuilds are accessible
 asarUnpack:
   - dist/renderer/**/*
   - resources/**/*
@@ -28,6 +29,8 @@ asarUnpack:
   - node_modules/mime/**/*
   - node_modules/mime-types/**/*
   - node_modules/mime-db/**/*
+  - node_modules/@parcel/watcher/**/*
+  - node_modules/@parcel/watcher-*/**/*
 
 # Skip native module rebuild to avoid hanging on cpu-features
 buildDependenciesFromSource: false
