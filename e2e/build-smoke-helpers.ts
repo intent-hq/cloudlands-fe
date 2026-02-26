@@ -49,25 +49,25 @@ export function findPackagedApp(): string {
     process.platform === 'win32'
       ? [join(root, 'dist-electron', 'win-unpacked', 'Intent by Augment.exe')]
       : [
-          join(
-            root,
-            'dist-electron',
-            'mac-arm64',
-            'Intent by Augment.app',
-            'Contents',
-            'MacOS',
-            'Intent by Augment',
-          ),
-          join(
-            root,
-            'dist-electron',
-            'mac',
-            'Intent by Augment.app',
-            'Contents',
-            'MacOS',
-            'Intent by Augment',
-          ),
-        ];
+        join(
+          root,
+          'dist-electron',
+          'mac-arm64',
+          'Intent by Augment.app',
+          'Contents',
+          'MacOS',
+          'Intent by Augment',
+        ),
+        join(
+          root,
+          'dist-electron',
+          'mac',
+          'Intent by Augment.app',
+          'Contents',
+          'MacOS',
+          'Intent by Augment',
+        ),
+      ];
 
   for (const candidate of candidates) {
     if (existsSync(candidate)) {
@@ -77,7 +77,7 @@ export function findPackagedApp(): string {
 
   throw new Error(
     `Could not find packaged app. Looked in:\n${candidates.map((c) => `  - ${c}`).join('\n')}\n` +
-      'Set PACKAGED_APP_PATH to override.',
+    'Set PACKAGED_APP_PATH to override.',
   );
 }
 
@@ -387,7 +387,7 @@ export async function createWorkspaceWithPrompt(
     );
     throw new Error(
       `"Create workspace" button is still disabled after 10s. ` +
-        `The repo selector likely shows a stale/invalid path. Repo path: ${repoPath}`,
+      `The repo selector likely shows a stale/invalid path. Repo path: ${repoPath}`,
     );
   }
 
@@ -1381,7 +1381,7 @@ export async function archiveAndGoHome(page: Page, workspaceId: string): Promise
           if (s.isStreaming && s.id) {
             await (window as any).electronAPI
               .invoke('agent:stop', { agentId: s.id })
-              .catch(() => {});
+              .catch(() => { });
           }
         }
       } catch {

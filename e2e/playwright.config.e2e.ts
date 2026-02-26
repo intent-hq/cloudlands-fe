@@ -6,10 +6,13 @@
 
 import { defineConfig, devices } from '@playwright/test';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   // Test directory
-  testDir: './e2e',
+  testDir: '.',
 
   // Test file patterns
   testMatch: '**/*.e2e.ts',
@@ -38,8 +41,8 @@ export default defineConfig({
   outputDir: 'e2e-reports/test-results',
 
   // Global setup/teardown
-  globalSetup: './e2e/global-setup.ts',
-  globalTeardown: './e2e/global-teardown.ts',
+  globalSetup: './global-setup.ts',
+  globalTeardown: './global-teardown.ts',
 
   // Shared settings
   use: {
