@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.11
+
+- Optimize home page and workspace loading for faster startup.
+- Choose your preferred monospace font for editors and diff viewers.
+- All interactive agents now organize long responses into collapsible groups, not just the Coordinator. Think/reasoning blocks from external providers are parsed and displayed correctly.
+- Workspace creation is more reliable. Duplicate agent activations are prevented and setup scripts auto-restore per repo.
+- Fixes: Intel Mac support, workspace deletion errors, changes panel getting stuck on loading, spec panel not opening on existing workspaces, GitHub links now open in your browser, npm cache collisions between concurrent agents, and lifecycle events (rename, archive) now update across all windows.
+
 ## 0.2.10
 
 - Agent responses can now be organized into collapsible groups, making long outputs easier to scan.
