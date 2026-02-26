@@ -641,7 +641,10 @@
                   prDrawerOpen = false;
                 })
                 .catch((error) => {
-                  logger.error('[SidebarChangesPanel] Failed to auto-create PR after deferred result', { error });
+                  logger.error(
+                    '[SidebarChangesPanel] Failed to auto-create PR after deferred result',
+                    { error },
+                  );
                   prDrawerOpen = false;
                 })
                 .finally(() => {
@@ -1131,8 +1134,12 @@
     },
   });
 
-  const isGenerating = $derived(commitExecutor.status === 'running' && commitExecutor.currentWorkspaceId === workspaceId);
-  const commitAgentId = $derived(commitExecutor.currentWorkspaceId === workspaceId ? commitExecutor.agentId : null);
+  const isGenerating = $derived(
+    commitExecutor.status === 'running' && commitExecutor.currentWorkspaceId === workspaceId,
+  );
+  const commitAgentId = $derived(
+    commitExecutor.currentWorkspaceId === workspaceId ? commitExecutor.agentId : null,
+  );
 
   // PR description executor for auto-fill
   const prExecutor = createPRDescriptionExecutor({
@@ -1161,10 +1168,13 @@
         // Note: executionContext may be undefined on restore paths (e.g., reconnect after app restart) -
         // in that case we fall back to the current targetBranch state which should be correct since user is in this workspace
         if (!context?.executionContext?.targetBranch) {
-          logger.warn('[SidebarChangesPanel] Auto-PR: executionContext.targetBranch undefined, using current state', {
-            workspaceId: context?.workspaceId,
-            fallbackTargetBranch: targetBranch,
-          });
+          logger.warn(
+            '[SidebarChangesPanel] Auto-PR: executionContext.targetBranch undefined, using current state',
+            {
+              workspaceId: context?.workspaceId,
+              fallbackTargetBranch: targetBranch,
+            },
+          );
         }
         await handleCreatePR(context?.workspaceId, context?.executionContext?.targetBranch);
         prDrawerOpen = false;
@@ -1183,8 +1193,12 @@
     },
   });
 
-  const isGeneratingPR = $derived(prExecutor.status === 'running' && prExecutor.currentWorkspaceId === workspaceId);
-  const prAgentId = $derived(prExecutor.currentWorkspaceId === workspaceId ? prExecutor.agentId : null);
+  const isGeneratingPR = $derived(
+    prExecutor.status === 'running' && prExecutor.currentWorkspaceId === workspaceId,
+  );
+  const prAgentId = $derived(
+    prExecutor.currentWorkspaceId === workspaceId ? prExecutor.agentId : null,
+  );
 
   // Track whether we've already reconnected to the PR executor to avoid infinite loops
   let hasReconnectedPRExecutor = false;
@@ -1261,14 +1275,16 @@
           createPRWhenReady: stored.createPRWhenReady,
         });
 
-        prExecutor.reconnect(workspaceId, agentId, { status: savedStatus, result }).then((reconnectResult) => {
-          // If reconnect failed (agent gone), clear state
-          if (reconnectResult === null && !prExecutor.result && prExecutor.agentId === agentId) {
-            logger.info('[SidebarChangesPanel] PR executor reconnect failed, clearing state');
-            createPRWhenReady = false;
-            getTransientStore()?.clearSidebarExecutorStates();
-          }
-        });
+        prExecutor
+          .reconnect(workspaceId, agentId, { status: savedStatus, result })
+          .then((reconnectResult) => {
+            // If reconnect failed (agent gone), clear state
+            if (reconnectResult === null && !prExecutor.result && prExecutor.agentId === agentId) {
+              logger.info('[SidebarChangesPanel] PR executor reconnect failed, clearing state');
+              createPRWhenReady = false;
+              getTransientStore()?.clearSidebarExecutorStates();
+            }
+          });
       } else if (result && !prExecutor.result) {
         // Restore completed result only if executor doesn't have it
         hasReconnectedPRExecutor = true;
@@ -1311,8 +1327,12 @@
     },
   });
 
-  const isGeneratingMerge = $derived(mergeExecutor.status === 'running' && mergeExecutor.currentWorkspaceId === workspaceId);
-  const mergeAgentId = $derived(mergeExecutor.currentWorkspaceId === workspaceId ? mergeExecutor.agentId : null);
+  const isGeneratingMerge = $derived(
+    mergeExecutor.status === 'running' && mergeExecutor.currentWorkspaceId === workspaceId,
+  );
+  const mergeAgentId = $derived(
+    mergeExecutor.currentWorkspaceId === workspaceId ? mergeExecutor.agentId : null,
+  );
 
   // Computed
   const hasUnstaged = $derived(unstagedChanges.length > 0);
@@ -1465,7 +1485,10 @@
     return `${section}:${group.agentId ?? 'manual'}`;
   }
 
-  function getGroupCommitState(group: AgentChangeGroup, section: 'unstaged' | 'staged'): 'idle' | 'active' | 'queued' {
+  function getGroupCommitState(
+    group: AgentChangeGroup,
+    section: 'unstaged' | 'staged',
+  ): 'idle' | 'active' | 'queued' {
     const key = getGroupKey(group, section);
     if (groupCommitActive === key) return 'active';
     if (groupCommitQueue.some((e) => e.groupKey === key)) return 'queued';
@@ -1523,7 +1546,7 @@
     const paths = group.files.map((f) => f.path);
     const pathSet = new Set(paths);
     const message = group.agentId
-      ? (getAgentDisplayName(group) || group.agentName || 'Agent changes')
+      ? getAgentDisplayName(group) || group.agentName || 'Agent changes'
       : 'Manual changes';
 
     // To commit only this group's files, we need to ensure only these files are staged.
@@ -2483,7 +2506,11 @@
     }
   }
 
-  async function handleMergeToTrunk(options?: { squash?: boolean; rebaseFirst?: boolean; localOnly?: boolean }) {
+  async function handleMergeToTrunk(options?: {
+    squash?: boolean;
+    rebaseFirst?: boolean;
+    localOnly?: boolean;
+  }) {
     if (!workspaceId) return;
 
     // If there are staged changes, commit them first
@@ -2529,7 +2556,9 @@
         // This ensures the sidebar shows only the rebased commits, not stale/duplicate old SHAs
         if (result.result?.autoRebased && result.result?.newBaseSha) {
           try {
-            await workspaceStore.update(workspaceId as WorkspaceId, { baseCommitSha: result.result.newBaseSha });
+            await workspaceStore.update(workspaceId as WorkspaceId, {
+              baseCommitSha: result.result.newBaseSha,
+            });
             // Clear older commits pagination cache which may reference commits from old history
             fileTrackingStore.clearOlderCommits();
           } catch (err) {
@@ -2583,11 +2612,9 @@
 
     isMergingPROnGitHub = true;
     try {
-      const result = await AcceptChangesClient.mergePR(
-        workspaceId as WorkspaceId,
-        openPR.number,
-        { mergeMethod: options?.mergeMethod || (squashMerge ? 'squash' : 'merge') },
-      );
+      const result = await AcceptChangesClient.mergePR(workspaceId as WorkspaceId, openPR.number, {
+        mergeMethod: options?.mergeMethod || (squashMerge ? 'squash' : 'merge'),
+      });
 
       // Track analytics event for both success and failure
       track('Merged Pull Request on GitHub', {
@@ -3497,10 +3524,7 @@
 
     // Pre-fill the create form with the current repo info via sessionStorage
     if (repo) {
-      sessionStorage.setItem(
-        'workspace-prefill',
-        JSON.stringify({ repoPath: repo }),
-      );
+      sessionStorage.setItem('workspace-prefill', JSON.stringify({ repoPath: repo }));
     }
 
     // Navigate to home page with ?create=true to expand and focus the create form
@@ -3537,14 +3561,16 @@
 
           // Also refresh aheadOfTrunk and isContentMergedToTrunk to ensure button hides itself
           const resetWsId = workspaceId;
-          AcceptChangesClient.getStatus(workspaceId as WorkspaceId).then((s) => {
-            if (workspaceId !== resetWsId) return; // workspace changed, discard stale update
-            aheadOfTrunk = s.aheadOfTrunk;
-            hasRemote = s.hasRemote;
-            isContentMergedToTrunk = s.isContentMergedToTrunk ?? false;
-          }).catch((err) => {
-            console.error('Failed to refresh accept-changes status after reset:', err);
-          });
+          AcceptChangesClient.getStatus(workspaceId as WorkspaceId)
+            .then((s) => {
+              if (workspaceId !== resetWsId) return; // workspace changed, discard stale update
+              aheadOfTrunk = s.aheadOfTrunk;
+              hasRemote = s.hasRemote;
+              isContentMergedToTrunk = s.isContentMergedToTrunk ?? false;
+            })
+            .catch((err) => {
+              console.error('Failed to refresh accept-changes status after reset:', err);
+            });
 
           // Clear merge flags
           isMergedToTrunk = false;
@@ -3929,12 +3955,23 @@
                                 size={15}
                               />
                             {:else}
-                              <Fa icon={faUser} class="h-2.5 w-2.5 text-muted-foreground/30 {!isLocked ? 'group-hover/agent-header:opacity-0' : ''}" />
+                              <Fa
+                                icon={faUser}
+                                class="h-2.5 w-2.5 text-muted-foreground/30 {!isLocked
+                                  ? 'group-hover/agent-header:opacity-0'
+                                  : ''}"
+                              />
                             {/if}
                           </button>
                           <!-- Action buttons - linked note always visible, staging controls hidden when locked -->
                           <div
-                            class="bg-sidebar absolute top-1/2 right-1 transform translate-x-1 transition-transform {commitState !== 'idle' ? 'translate-x-0 opacity-100' : 'group-hover/agent-header:translate-x-0'} -translate-y-1/2 {commitState !== 'idle' ? '' : 'opacity-0 group-hover/agent-header:opacity-100'} flex items-center pl-0.25"
+                            class="bg-sidebar absolute top-1/2 right-1 transform translate-x-1 transition-transform {commitState !==
+                            'idle'
+                              ? 'translate-x-0 opacity-100'
+                              : 'group-hover/agent-header:translate-x-0'} -translate-y-1/2 {commitState !==
+                            'idle'
+                              ? ''
+                              : 'opacity-0 group-hover/agent-header:opacity-100'} flex items-center pl-0.25"
                           >
                             {#if group.agentId && getLinkedNoteId(group.agentId)}
                               <Button
@@ -3968,7 +4005,10 @@
                               {#if commitState === 'active'}
                                 <Tooltip content="Committing..." side="top">
                                   <span class="h-5 w-5 flex items-center justify-center">
-                                    <Fa icon={faSpinner} class="h-2.5! w-2.5! animate-spin text-primary" />
+                                    <Fa
+                                      icon={faSpinner}
+                                      class="h-2.5! w-2.5! animate-spin text-primary"
+                                    />
                                   </span>
                                 </Tooltip>
                               {:else if commitState === 'queued'}
@@ -3982,7 +4022,9 @@
                                     cancelGroupCommit(group, 'unstaged');
                                   }}
                                 >
-                                  <span class="text-[9px] font-semibold text-primary leading-none">{queuePos}</span>
+                                  <span class="text-[9px] font-semibold text-primary leading-none"
+                                    >{queuePos}</span
+                                  >
                                 </Button>
                               {:else}
                                 <Button
@@ -4133,13 +4175,21 @@
                             {:else}
                               <Fa
                                 icon={faUser}
-                                class="h-2.5 w-2.5 ml-1 mr-1 text-muted-foreground/30 {!isLocked ? 'group-hover/agent-header:opacity-0' : ''}"
+                                class="h-2.5 w-2.5 ml-1 mr-1 text-muted-foreground/30 {!isLocked
+                                  ? 'group-hover/agent-header:opacity-0'
+                                  : ''}"
                               />
                             {/if}
                           </button>
                           <!-- Action buttons - linked note always visible, staging controls hidden when locked -->
                           <div
-                            class="bg-sidebar absolute top-1/2 right-1 transform translate-x-1 transition-transform {commitState !== 'idle' ? 'translate-x-0 opacity-100' : 'group-hover/agent-header:translate-x-0'} -translate-y-1/2 {commitState !== 'idle' ? '' : 'opacity-0 group-hover/agent-header:opacity-100'} flex items-center gap-0.5"
+                            class="bg-sidebar absolute top-1/2 right-1 transform translate-x-1 transition-transform {commitState !==
+                            'idle'
+                              ? 'translate-x-0 opacity-100'
+                              : 'group-hover/agent-header:translate-x-0'} -translate-y-1/2 {commitState !==
+                            'idle'
+                              ? ''
+                              : 'opacity-0 group-hover/agent-header:opacity-100'} flex items-center gap-0.5"
                           >
                             {#if group.agentId && getLinkedNoteId(group.agentId)}
                               <Button
@@ -4173,7 +4223,10 @@
                               {#if commitState === 'active'}
                                 <Tooltip content="Committing..." side="top">
                                   <span class="h-5 w-5 flex items-center justify-center">
-                                    <Fa icon={faSpinner} class="h-2.5! w-2.5! animate-spin text-primary" />
+                                    <Fa
+                                      icon={faSpinner}
+                                      class="h-2.5! w-2.5! animate-spin text-primary"
+                                    />
                                   </span>
                                 </Tooltip>
                               {:else if commitState === 'queued'}
@@ -4187,7 +4240,9 @@
                                     cancelGroupCommit(group, 'staged');
                                   }}
                                 >
-                                  <span class="text-[9px] font-semibold text-primary leading-none">{queuePos}</span>
+                                  <span class="text-[9px] font-semibold text-primary leading-none"
+                                    >{queuePos}</span
+                                  >
                                 </Button>
                               {:else}
                                 <Button
@@ -4877,17 +4932,23 @@
 
             {#if mergeViaPR && hasOpenPR && hasRemote}
               <!-- GitHub merge: merge the PR via the GitHub API -->
-              {@const openPR = pullRequests.find((pr) => pr.status === 'open' || pr.status === 'draft')}
+              {@const openPR = pullRequests.find(
+                (pr) => pr.status === 'open' || pr.status === 'draft',
+              )}
               {#if openPR}
                 <p class="text-xs text-muted-foreground">
-                  PR #{openPR.number} will be merged on GitHub into <span class="font-medium text-foreground">{targetBranch || trunkBranch || 'main'}</span>.
+                  PR #{openPR.number} will be merged on GitHub into
+                  <span class="font-medium text-foreground"
+                    >{targetBranch || trunkBranch || 'main'}</span
+                  >.
                 </p>
 
                 <!-- Squash toggle -->
                 {@const totalCommitsGH = allCommits.length + (hasStaged ? 1 : 0)}
                 {#if totalCommitsGH > 1}
                   <Tooltip
-                    content="Combine all {totalCommitsGH} commits into one called &quot;Squashed commit from {workspace?.branch || 'branch'}&quot;. Keeps the target branch history clean."
+                    content="Combine all {totalCommitsGH} commits into one called &quot;Squashed commit from {workspace?.branch ||
+                      'branch'}&quot;. Keeps the target branch history clean."
                     side="top"
                     align="start"
                     contentClass="w-[14rem]"
@@ -4911,7 +4972,8 @@
 
                 {#if hasStaged}
                   <p class="text-xs text-amber-500">
-                    You have staged changes that haven't been committed. They won't be included in this merge.
+                    You have staged changes that haven't been committed. They won't be included in
+                    this merge.
                   </p>
                 {/if}
 
@@ -4919,7 +4981,8 @@
                   <Button
                     variant="default"
                     size="xs"
-                    onclick={() => handleMergePROnGitHub({ mergeMethod: squashMerge ? 'squash' : 'merge' })}
+                    onclick={() =>
+                      handleMergePROnGitHub({ mergeMethod: squashMerge ? 'squash' : 'merge' })}
                     disabled={isMergingPROnGitHub}
                   >
                     {#if isMergingPROnGitHub}
@@ -4944,9 +5007,10 @@
               {@const mergeParts = [mergeStaged, mergeCommits].filter(Boolean)}
               {#if mergeParts.length > 0}
                 <p class="text-xs text-muted-foreground">
-                  {mergeParts.join(' and ')} will be merged into <span class="font-medium text-foreground">{targetBranch ||
-                    trunkBranch ||
-                    'trunk'}</span>.
+                  {mergeParts.join(' and ')} will be merged into
+                  <span class="font-medium text-foreground"
+                    >{targetBranch || trunkBranch || 'trunk'}</span
+                  >.
                 </p>
               {/if}
 
@@ -4994,7 +5058,8 @@
               <div class="flex flex-col gap-1.5">
                 {#if totalCommitsToMerge > 1}
                   <Tooltip
-                    content="Combine all {totalCommitsToMerge} commits into one called &quot;Squashed commit from {workspace?.branch || 'branch'}&quot;. Keeps the target branch history clean."
+                    content="Combine all {totalCommitsToMerge} commits into one called &quot;Squashed commit from {workspace?.branch ||
+                      'branch'}&quot;. Keeps the target branch history clean."
                     side="top"
                     align="start"
                     contentClass="w-[14rem]"
@@ -5048,7 +5113,8 @@
                 <Button
                   variant="default"
                   size="xs"
-                  onclick={() => handleMergeToTrunk({ squash: squashMerge, localOnly: !pushAfterMerge })}
+                  onclick={() =>
+                    handleMergeToTrunk({ squash: squashMerge, localOnly: !pushAfterMerge })}
                   disabled={isMergingToTrunk ||
                     (hasStaged && !commitMessage.trim()) ||
                     (isGeneratingMerge && mergeWhenReady)}
@@ -5134,419 +5200,430 @@
 
           <!-- Divider with Create PR, Push Commits button, or Synced status (only when remote exists) -->
           {#if hasRemote}
-          <TimelineDivider>
-            {#if hasOpenPR && hasUnpushedCommits && unpushedCount > 0 && !isDiverged && !isBehind}
-              <!-- Show Push Commits button when open PR exists, there are unpushed commits, branches haven't diverged, and we're not behind -->
-              <DividerButton
-                onclick={handlePushAllUnpushed}
-                disabled={isPushing}
-                loading={isPushing}
-              >
-                Push {unpushedCount} Commit{unpushedCount === 1 ? '' : 's'}
-              </DividerButton>
-            {:else if !hasOpenPR && !(isMergedToTrunk || isWorkspaceCompleted || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)}
-              <!-- Show Create PR + Merge buttons when no open PR and not post-merge -->
-              <div class="w-full flex gap-1">
+            <TimelineDivider>
+              {#if hasOpenPR && hasUnpushedCommits && unpushedCount > 0 && !isDiverged && !isBehind}
+                <!-- Show Push Commits button when open PR exists, there are unpushed commits, branches haven't diverged, and we're not behind -->
                 <DividerButton
-                  tooltipContents={!hasStaged && !hasCommits
-                    ? 'No staged changes or commits to create PR from'
-                    : ''}
-                  onclick={() => {
-                    const wasOpen = prDrawerOpen;
-                    prDrawerOpen = !prDrawerOpen;
-                    if (prDrawerOpen) mergeDrawerOpen = false;
-                    // Track when PR creator is opened (not closed)
-                    if (!wasOpen) {
-                      track('Opened PR Creator', {
-                        workspace_id: workspaceId,
-                      });
-                    }
-                  }}
-                  expanded={prDrawerOpen}
-                  disabled={!hasStaged && !hasCommits}
+                  onclick={handlePushAllUnpushed}
+                  disabled={isPushing}
+                  loading={isPushing}
                 >
-                  Create PR
+                  Push {unpushedCount} Commit{unpushedCount === 1 ? '' : 's'}
                 </DividerButton>
-                <DividerButton
-                  tooltipContents={!hasStaged && !hasCommits
-                    ? 'No staged changes or commits to merge'
-                    : ''}
-                  onclick={() => {
-                    mergeDrawerOpen = !mergeDrawerOpen;
-                    if (mergeDrawerOpen) prDrawerOpen = false;
-                  }}
-                  expanded={mergeDrawerOpen}
-                  disabled={!hasStaged && !hasCommits}
-                >
-                  Merge
-                </DividerButton>
-              </div>
-              <DividerPanel open={prDrawerOpen}>
-                <!-- GitHub Auth Banner - show when not authenticated -->
-                {#if !githubAuthState.isAuthenticated}
-                  <GitHubAuthBanner
-                    onSuccess={() => {
-                      // Auth succeeded, user can now create PR
+              {:else if !hasOpenPR && !(isMergedToTrunk || isWorkspaceCompleted || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)}
+                <!-- Show Create PR + Merge buttons when no open PR and not post-merge -->
+                <div class="w-full flex gap-1">
+                  <DividerButton
+                    tooltipContents={!hasStaged && !hasCommits
+                      ? 'No staged changes or commits to create PR from'
+                      : ''}
+                    onclick={() => {
+                      const wasOpen = prDrawerOpen;
+                      prDrawerOpen = !prDrawerOpen;
+                      if (prDrawerOpen) mergeDrawerOpen = false;
+                      // Track when PR creator is opened (not closed)
+                      if (!wasOpen) {
+                        track('Opened PR Creator', {
+                          workspace_id: workspaceId,
+                        });
+                      }
                     }}
-                  />
-                {:else}
-                  <!-- What will be included description -->
-                  {@const stagedDescription = hasStaged
-                    ? `${stagedChanges.length} staged file${stagedChanges.length === 1 ? '' : 's'}`
-                    : ''}
-                  {@const commitDescription = hasCommits
-                    ? `${allCommits.length} commit${allCommits.length === 1 ? '' : 's'}`
-                    : ''}
-                  {@const prParts = [stagedDescription, commitDescription].filter(Boolean)}
-                  {#if prParts.length > 0}
-                    <p class="text-xs text-muted-foreground">
-                      {prParts.join(' and ')} will be included in this PR.
-                    </p>
-                  {/if}
-
-                  <!-- Title -->
-                  {#if !isGeneratingPR}
-                    <div>
-                      <span class="text-xs text-muted-foreground mb-1 block">Title</span>
-                      <input
-                        type="text"
-                        class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/50"
-                        placeholder="PR title..."
-                        bind:value={prTitle}
-                      />
-                    </div>
-                  {/if}
-
-                  <!-- Description -->
-                  <div>
-                    <span class="text-xs text-muted-foreground mb-1 block">Description</span>
-                    <div class="relative">
-                      <Textarea
-                        value={prDescription}
-                        oninput={(e) => (prDescription = (e.target as HTMLTextAreaElement).value)}
-                        placeholder="Describe your changes..."
-                        doesExpandToFit
-                        minHeight={80}
-                        maxHeight={200}
-                        readonly={isGeneratingPR}
-                        class="text-sm {isGeneratingPR ? 'border-primary/40 bg-muted/20' : ''}"
-                      />
-                    </div>
-                  </div>
-
-                  <!-- Target Branch -->
-                  <div>
-                    <span class="text-xs text-muted-foreground mb-1 block">Target Branch</span>
-                    <BranchSelector
-                      variant="default"
-                      value={targetBranch}
-                      {repoPath}
-                      {repoType}
-                      onchange={(e) => {
-                        targetBranch = e.detail.branch;
+                    expanded={prDrawerOpen}
+                    disabled={!hasStaged && !hasCommits}
+                  >
+                    Create PR
+                  </DividerButton>
+                  <DividerButton
+                    tooltipContents={!hasStaged && !hasCommits
+                      ? 'No staged changes or commits to merge'
+                      : ''}
+                    onclick={() => {
+                      mergeDrawerOpen = !mergeDrawerOpen;
+                      if (mergeDrawerOpen) prDrawerOpen = false;
+                    }}
+                    expanded={mergeDrawerOpen}
+                    disabled={!hasStaged && !hasCommits}
+                  >
+                    Merge
+                  </DividerButton>
+                </div>
+                <DividerPanel open={prDrawerOpen}>
+                  <!-- GitHub Auth Banner - show when not authenticated -->
+                  {#if !githubAuthState.isAuthenticated}
+                    <GitHubAuthBanner
+                      onSuccess={() => {
+                        // Auth succeeded, user can now create PR
                       }}
                     />
-                  </div>
+                  {:else}
+                    <!-- What will be included description -->
+                    {@const stagedDescription = hasStaged
+                      ? `${stagedChanges.length} staged file${stagedChanges.length === 1 ? '' : 's'}`
+                      : ''}
+                    {@const commitDescription = hasCommits
+                      ? `${allCommits.length} commit${allCommits.length === 1 ? '' : 's'}`
+                      : ''}
+                    {@const prParts = [stagedDescription, commitDescription].filter(Boolean)}
+                    {#if prParts.length > 0}
+                      <p class="text-xs text-muted-foreground">
+                        {prParts.join(' and ')} will be included in this PR.
+                      </p>
+                    {/if}
 
-                  <!-- Buttons -->
-                  <div class="flex items-center gap-2 flex-wrap w-full">
-                    <!-- Submit button - show pending state when createPRWhenReady is toggled during generation -->
+                    <!-- Title -->
+                    {#if !isGeneratingPR}
+                      <div>
+                        <span class="text-xs text-muted-foreground mb-1 block">Title</span>
+                        <input
+                          type="text"
+                          class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/50"
+                          placeholder="PR title..."
+                          bind:value={prTitle}
+                        />
+                      </div>
+                    {/if}
+
+                    <!-- Description -->
+                    <div>
+                      <span class="text-xs text-muted-foreground mb-1 block">Description</span>
+                      <div class="relative">
+                        <Textarea
+                          value={prDescription}
+                          oninput={(e) => (prDescription = (e.target as HTMLTextAreaElement).value)}
+                          placeholder="Describe your changes..."
+                          doesExpandToFit
+                          minHeight={80}
+                          maxHeight={200}
+                          readonly={isGeneratingPR}
+                          class="text-sm {isGeneratingPR ? 'border-primary/40 bg-muted/20' : ''}"
+                        />
+                      </div>
+                    </div>
+
+                    <!-- Target Branch -->
+                    <div>
+                      <span class="text-xs text-muted-foreground mb-1 block">Target Branch</span>
+                      <BranchSelector
+                        variant="default"
+                        value={targetBranch}
+                        {repoPath}
+                        {repoType}
+                        onchange={(e) => {
+                          targetBranch = e.detail.branch;
+                        }}
+                      />
+                    </div>
+
+                    <!-- Buttons -->
+                    <div class="flex items-center gap-2 flex-wrap w-full">
+                      <!-- Submit button - show pending state when createPRWhenReady is toggled during generation -->
+                      <Button
+                        variant="default"
+                        size="xs"
+                        onclick={() => handleCreatePR()}
+                        disabled={!prTitle.trim() ||
+                          isCreatingPR ||
+                          (isGeneratingPR && createPRWhenReady)}
+                      >
+                        {#if isCreatingPR || (isGeneratingPR && createPRWhenReady)}
+                          <Fa icon={faSpinner} size="xs" class="animate-spin" />
+                          <span>{isCreatingPR ? 'Creating PR...' : 'Preparing...'}</span>
+                        {:else}
+                          <Fa icon={faCodePullRequest} size="xs" class="opacity-50" />
+                          <span>Create PR</span>
+                        {/if}
+                      </Button>
+                      <!-- Auto-fill button with eye/stop icons when generating -->
+                      {#if isGeneratingPR}
+                        <div class="flex items-center">
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            class="rounded-r-none border-r-0"
+                            onclick={handleStopGeneratingPR}
+                          >
+                            <Fa icon={faSpinner} size="xs" class="animate-spin" />
+                            <span class="mr-1">Auto-fill</span>
+                            <Fa icon={faStop} size="xs" />
+                          </Button>
+                          {#if prAgentId}
+                            <Button
+                              variant="outline"
+                              size="icon-xs"
+                              class="rounded-none h-7!"
+                              onclick={viewPRThoughtProcess}
+                              tooltip="View thought process"
+                              tooltipSide="top"
+                              tooltipDelayDuration={0}
+                            >
+                              <Fa icon={faEye} size="xs" />
+                            </Button>
+                          {/if}
+
+                          <Button
+                            variant={createPRWhenReady ? 'default' : 'outline'}
+                            size="xs"
+                            class="rounded-l-none border-l-0"
+                            onclick={toggleCreatePRWhenReady}
+                          >
+                            {#if createPRWhenReady}
+                              <Fa icon={faCheck} size="xs" />
+                            {/if}
+                            Create PR when done
+                          </Button>
+                        </div>
+                      {:else}
+                        <div class="flex items-center">
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            class={prAgentId ? 'rounded-r-none border-r-0' : ''}
+                            onclick={handleAutoFillPR}
+                          >
+                            <Fa icon={faRobot} size="xs" class="opacity-50" />
+                            <span>Auto-fill</span>
+                          </Button>
+                          {#if prAgentId}
+                            <Button
+                              variant="outline"
+                              size="icon-xs"
+                              class="rounded-l-none border-l-0 h-7!"
+                              onclick={viewPRThoughtProcess}
+                              tooltip="View thought process"
+                              tooltipSide="top"
+                              tooltipDelayDuration={0}
+                            >
+                              <Fa icon={faEye} size="xs" />
+                            </Button>
+                          {/if}
+                        </div>
+                      {/if}
+                    </div>
+                  {/if}
+                </DividerPanel>
+                <DividerPanel open={mergeDrawerOpen}>
+                  {@render mergePanelContent()}
+                </DividerPanel>
+              {:else if isBehind}
+                <!-- Show Pull Commits button when remote is ahead and local is not -->
+                <DividerButton
+                  onclick={handlePull}
+                  disabled={isPulling}
+                  loading={isPulling}
+                  showArrow={false}
+                >
+                  Pull {behindCount} Commit{behindCount === 1 ? '' : 's'}
+                  <Fa icon={faArrowDown} size="xs" class="text-muted-foreground/50 rotate-180" />
+                </DividerButton>
+              {:else if !isDiverged && !isBehind}
+                <!-- Synced - only when truly synced -->
+                <span
+                  class="relative z-20 text-xs text-muted-foreground/60 flex items-center gap-1 py-1.5 px-3 rounded-md bg-background"
+                >
+                  <Fa icon={faCheck} size="xs" />
+                  <span>Synced</span>
+                </span>
+              {/if}
+
+              <!-- Force Push Section - shown when branches have diverged -->
+              {#if isDiverged}
+                <DividerButton
+                  onclick={() => {
+                    forcePushDrawerOpen = !forcePushDrawerOpen;
+                  }}
+                  expanded={forcePushDrawerOpen}
+                  showArrow={true}
+                >
+                  Force Push
+                </DividerButton>
+                <DividerPanel open={forcePushDrawerOpen}>
+                  <p class="text-xs text-muted-foreground">
+                    Your local <span class="font-medium">{workspace?.branch || 'branch'}</span> is {gitStore.ahead}
+                    commit{gitStore.ahead === 1 ? '' : 's'} ahead and {gitStore.behind} commit{gitStore.behind ===
+                    1
+                      ? ''
+                      : 's'} behind
+                    <span class="font-medium">origin/{workspace?.branch || 'branch'}</span>. Force
+                    pushing will overwrite the GitHub version with your local commits.
+                  </p>
+                  <div class="flex items-center gap-2">
                     <Button
                       variant="default"
                       size="xs"
-                      onclick={() => handleCreatePR()}
-                      disabled={!prTitle.trim() ||
-                        isCreatingPR ||
-                        (isGeneratingPR && createPRWhenReady)}
+                      onclick={handleForcePush}
+                      disabled={isForcePushing}
                     >
-                      {#if isCreatingPR || (isGeneratingPR && createPRWhenReady)}
+                      {#if isForcePushing}
                         <Fa icon={faSpinner} size="xs" class="animate-spin" />
-                        <span>{isCreatingPR ? 'Creating PR...' : 'Will create when done...'}</span>
+                        <span>Pushing...</span>
                       {:else}
-                        <Fa icon={faCodePullRequest} size="xs" class="opacity-50" />
-                        <span>Create PR</span>
+                        <span>Force Push</span>
                       {/if}
                     </Button>
-                    <!-- Auto-fill button with eye/stop icons when generating -->
-                    {#if isGeneratingPR}
-                      <div class="flex items-center">
-                        <Button
-                          variant="outline"
-                          size="xs"
-                          class="rounded-r-none border-r-0"
-                          onclick={handleStopGeneratingPR}
-                        >
-                          <Fa icon={faSpinner} size="xs" class="animate-spin" />
-                          <span class="mr-1">Auto-fill</span>
-                          <Fa icon={faStop} size="xs" />
-                        </Button>
-                        {#if prAgentId}
-                          <Button
-                            variant="outline"
-                            size="icon-xs"
-                            class="rounded-none h-7!"
-                            onclick={viewPRThoughtProcess}
-                            tooltip="View thought process"
-                            tooltipSide="top"
-                            tooltipDelayDuration={0}
-                          >
-                            <Fa icon={faEye} size="xs" />
-                          </Button>
-                        {/if}
-
-                        <Button
-                          variant={createPRWhenReady ? 'default' : 'outline'}
-                          size="xs"
-                          class="rounded-l-none border-l-0"
-                          onclick={toggleCreatePRWhenReady}
-                        >
-                          {#if createPRWhenReady}
-                            <Fa icon={faCheck} size="xs" />
-                          {/if}
-                          Create PR when done
-                        </Button>
-                      </div>
-                    {:else}
-                      <div class="flex items-center">
-                        <Button
-                          variant="outline"
-                          size="xs"
-                          class={prAgentId ? 'rounded-r-none border-r-0' : ''}
-                          onclick={handleAutoFillPR}
-                        >
-                          <Fa icon={faRobot} size="xs" class="opacity-50" />
-                          <span>Auto-fill</span>
-                        </Button>
-                        {#if prAgentId}
-                          <Button
-                            variant="outline"
-                            size="icon-xs"
-                            class="rounded-l-none border-l-0 h-7!"
-                            onclick={viewPRThoughtProcess}
-                            tooltip="View thought process"
-                            tooltipSide="top"
-                            tooltipDelayDuration={0}
-                          >
-                            <Fa icon={faEye} size="xs" />
-                          </Button>
-                        {/if}
-                      </div>
-                    {/if}
-                  </div>
-                {/if}
-              </DividerPanel>
-              <DividerPanel open={mergeDrawerOpen}>
-                {@render mergePanelContent()}
-              </DividerPanel>
-            {:else if isBehind}
-              <!-- Show Pull Commits button when remote is ahead and local is not -->
-              <DividerButton
-                onclick={handlePull}
-                disabled={isPulling}
-                loading={isPulling}
-                showArrow={false}
-              >
-                Pull {behindCount} Commit{behindCount === 1 ? '' : 's'}
-                <Fa icon={faArrowDown} size="xs" class="text-muted-foreground/50 rotate-180" />
-              </DividerButton>
-            {:else if !isDiverged && !isBehind}
-              <!-- Synced - only when truly synced -->
-              <span
-                class="relative z-20 text-xs text-muted-foreground/60 flex items-center gap-1 py-1.5 px-3 rounded-md bg-background"
-              >
-                <Fa icon={faCheck} size="xs" />
-                <span>Synced</span>
-              </span>
-            {/if}
-
-            <!-- Force Push Section - shown when branches have diverged -->
-            {#if isDiverged}
-              <DividerButton
-                onclick={() => {
-                  forcePushDrawerOpen = !forcePushDrawerOpen;
-                }}
-                expanded={forcePushDrawerOpen}
-                showArrow={true}
-              >
-                Force Push
-              </DividerButton>
-              <DividerPanel open={forcePushDrawerOpen}>
-                <p class="text-xs text-muted-foreground">
-                  Your local <span class="font-medium">{workspace?.branch || 'branch'}</span> is {gitStore.ahead} commit{gitStore.ahead === 1 ? '' : 's'} ahead and {gitStore.behind} commit{gitStore.behind === 1 ? '' : 's'} behind <span class="font-medium">origin/{workspace?.branch || 'branch'}</span>. Force pushing will overwrite the GitHub version with your local commits.
-                </p>
-                <div class="flex items-center gap-2">
-                  <Button
-                    variant="default"
-                    size="xs"
-                    onclick={handleForcePush}
-                    disabled={isForcePushing}
-                  >
-                    {#if isForcePushing}
-                      <Fa icon={faSpinner} size="xs" class="animate-spin" />
-                      <span>Pushing...</span>
-                    {:else}
-                      <span>Force Push</span>
-                    {/if}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    onclick={() => {
-                      forcePushDrawerOpen = false;
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </DividerPanel>
-            {/if}
-          </TimelineDivider>
-
-          <!-- PULL REQUESTS SECTION - slides in when PRs exist -->
-          {#if hasPRs}
-          <div transition:slide={{ duration: 200 }}>
-          <TimelineSection title="Pull Requests" active={hasPRs} activeColor="bg-purple-500">
-            {#snippet action()}
-              {#if hasPRs || githubAuthState.isAuthenticated}
-                <button
-                  type="button"
-                  class="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"
-                  onclick={() => {
-                    if (!githubAuthState.isAuthenticated) {
-                      // Trigger the auth banner by incrementing the key with autoStart
-                      pendingActionAfterAuth = 'refresh-pr';
-                      authBannerKey++;
-                    } else {
-                      handleRefreshPRStatus();
-                    }
-                  }}
-                  disabled={isRefreshingPR}
-                  title={githubAuthState.isAuthenticated
-                    ? 'Refresh PR status'
-                    : 'Connect to GitHub'}
-                >
-                  <Fa
-                    icon={faArrowsRotate}
-                    class="opacity-50 text-[8px] {isRefreshingPR ? 'animate-spin' : ''}"
-                  />
-                </button>
-              {/if}
-            {/snippet}
-            {#if !githubAuthState.isAuthenticated}
-              {#key authBannerKey}
-                <GitHubAuthBanner
-                  message="Connect to GitHub"
-                  onSuccess={handleGitHubAuthSuccess}
-                  autoStart={authBannerKey > 0}
-                />
-              {/key}
-            {/if}
-            {#if hasPRs}
-              <div class="space-y-0.5">
-                {#each pullRequests as pr (pr.number)}
-                  {@const statusColor =
-                    pr.status === 'open'
-                      ? 'text-emerald-500'
-                      : pr.status === 'merged'
-                        ? 'text-purple-500'
-                        : pr.status === 'closed'
-                          ? 'text-red-500'
-                          : 'text-muted-foreground'}
-                  {@const statusIcon = pr.status === 'merged' ? faCodeMerge : faCodePullRequest}
-                  {@const isPRExpanded = expandedPRs.has(pr.number)}
-                  {@const hasPRFiles = prFiles.length > 0}
-                  <div>
-                    <!-- PR header -->
-                    <div
-                      class="relative flex items-center gap-2 py-0.5 group w-full rounded px-1 -mx-1"
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      onclick={() => {
+                        forcePushDrawerOpen = false;
+                      }}
                     >
-                      {#if hasPRFiles}
-                        <Button
-                          variant="ghost-light"
-                          size="icon-xs"
-                          class="absolute left-0.75 bg-sidebar opacity-0 group-hover:opacity-100 hover:text-foreground! -ml-1"
-                          onclick={(e: MouseEvent) => {
-                            e.stopPropagation();
-                            togglePRExpanded(pr.number);
-                          }}
-                          title="Toggle file list"
-                        >
-                          <Fa
-                            icon={faChevronDown}
-                            size={12}
-                            class="text-muted-foreground/60 shrink-0 transition-transform {isPRExpanded
-                              ? 'rotate-0'
-                              : '-rotate-90'}"
-                          />
-                          <LineChangesBadge
-                            additions={prTotalAdditions}
-                            deletions={prTotalDeletions}
-                            size="xs"
-                          />
-                        </Button>
-                      {/if}
+                      Cancel
+                    </Button>
+                  </div>
+                </DividerPanel>
+              {/if}
+            </TimelineDivider>
 
-                      <Fa icon={statusIcon} size="xs" class="{statusColor} shrink-0" />
+            <!-- PULL REQUESTS SECTION - slides in when PRs exist -->
+            {#if hasPRs}
+              <div transition:slide={{ duration: 200 }}>
+                <TimelineSection title="Pull Requests" active={hasPRs} activeColor="bg-purple-500">
+                  {#snippet action()}
+                    {#if hasPRs || githubAuthState.isAuthenticated}
                       <button
                         type="button"
-                        class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
-                        onclick={onOpenFullPanel}
+                        class="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"
+                        onclick={() => {
+                          if (!githubAuthState.isAuthenticated) {
+                            // Trigger the auth banner by incrementing the key with autoStart
+                            pendingActionAfterAuth = 'refresh-pr';
+                            authBannerKey++;
+                          } else {
+                            handleRefreshPRStatus();
+                          }
+                        }}
+                        disabled={isRefreshingPR}
+                        title={githubAuthState.isAuthenticated
+                          ? 'Refresh PR status'
+                          : 'Connect to GitHub'}
                       >
-                        <span class="text-[0.82rem] text-muted-foreground truncate flex-1"
-                          >{pr.title}</span
-                        >
-                        <span class="text-[10px] text-muted-foreground/40">#{pr.number}</span>
-                        {#if pr.status === 'merged'}
-                          <span class="text-[10px] text-purple-500 font-medium">Merged</span>
-                        {:else if pr.status === 'closed'}
-                          <span class="text-[10px] text-red-500 font-medium">Closed</span>
-                        {/if}
+                        <Fa
+                          icon={faArrowsRotate}
+                          class="opacity-50 text-[8px] {isRefreshingPR ? 'animate-spin' : ''}"
+                        />
                       </button>
-
-                      <div
-                        class="absolute -right-1 pl-1 bg-sidebar flex items-center opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <Button
-                          variant="ghost-light"
-                          size="icon-xs"
-                          class="shrink-0"
-                          onclick={() => handleLink(pr.url, { workspaceId: workspaceId as WorkspaceId, forceExternal: true })}
-                          tooltip="Open in browser"
-                          tooltipSide="top"
-                        >
-                          <Fa icon={faArrowUpRightFromSquare} size="xs" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    <!-- Expanded panel content - PR files -->
-                    {#if isPRExpanded}
-                      <div
-                        class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px"
-                        transition:slide={{ duration: 150 }}
-                      >
-                        {#each prFiles as file (file.path)}
-                          <FileRow
-                            {file}
-                            muted={true}
-                            active={activeFilePath === file.path && activeFileStaged === null}
-                            onFileClick={(filePath) => {
-                              handlePRFileClick(filePath).catch((error) => {
-                                logger.error('Error in handlePRFileClick', { error });
-                              });
-                            }}
-                            onOpenFile={handleOpenFile}
-                          />
-                        {/each}
-                      </div>
                     {/if}
-                  </div>
-                {/each}
+                  {/snippet}
+                  {#if !githubAuthState.isAuthenticated}
+                    {#key authBannerKey}
+                      <GitHubAuthBanner
+                        message="Connect to GitHub"
+                        onSuccess={handleGitHubAuthSuccess}
+                        autoStart={authBannerKey > 0}
+                      />
+                    {/key}
+                  {/if}
+                  {#if hasPRs}
+                    <div class="space-y-0.5">
+                      {#each pullRequests as pr (pr.number)}
+                        {@const statusColor =
+                          pr.status === 'open'
+                            ? 'text-emerald-500'
+                            : pr.status === 'merged'
+                              ? 'text-purple-500'
+                              : pr.status === 'closed'
+                                ? 'text-red-500'
+                                : 'text-muted-foreground'}
+                        {@const statusIcon =
+                          pr.status === 'merged' ? faCodeMerge : faCodePullRequest}
+                        {@const isPRExpanded = expandedPRs.has(pr.number)}
+                        {@const hasPRFiles = prFiles.length > 0}
+                        <div>
+                          <!-- PR header -->
+                          <div
+                            class="relative flex items-center gap-2 py-0.5 group w-full rounded px-1 -mx-1"
+                          >
+                            {#if hasPRFiles}
+                              <Button
+                                variant="ghost-light"
+                                size="icon-xs"
+                                class="absolute left-0.75 bg-sidebar opacity-0 group-hover:opacity-100 hover:text-foreground! -ml-1"
+                                onclick={(e: MouseEvent) => {
+                                  e.stopPropagation();
+                                  togglePRExpanded(pr.number);
+                                }}
+                                title="Toggle file list"
+                              >
+                                <Fa
+                                  icon={faChevronDown}
+                                  size={12}
+                                  class="text-muted-foreground/60 shrink-0 transition-transform {isPRExpanded
+                                    ? 'rotate-0'
+                                    : '-rotate-90'}"
+                                />
+                                <LineChangesBadge
+                                  additions={prTotalAdditions}
+                                  deletions={prTotalDeletions}
+                                  size="xs"
+                                />
+                              </Button>
+                            {/if}
+
+                            <Fa icon={statusIcon} size="xs" class="{statusColor} shrink-0" />
+                            <button
+                              type="button"
+                              class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
+                              onclick={onOpenFullPanel}
+                            >
+                              <span class="text-[0.82rem] text-muted-foreground truncate flex-1"
+                                >{pr.title}</span
+                              >
+                              <span class="text-[10px] text-muted-foreground/40">#{pr.number}</span>
+                              {#if pr.status === 'merged'}
+                                <span class="text-[10px] text-purple-500 font-medium">Merged</span>
+                              {:else if pr.status === 'closed'}
+                                <span class="text-[10px] text-red-500 font-medium">Closed</span>
+                              {/if}
+                            </button>
+
+                            <div
+                              class="absolute -right-1 pl-1 bg-sidebar flex items-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <Button
+                                variant="ghost-light"
+                                size="icon-xs"
+                                class="shrink-0"
+                                onclick={() =>
+                                  handleLink(pr.url, {
+                                    workspaceId: workspaceId as WorkspaceId,
+                                    forceExternal: true,
+                                  })}
+                                tooltip="Open in browser"
+                                tooltipSide="top"
+                              >
+                                <Fa icon={faArrowUpRightFromSquare} size="xs" />
+                              </Button>
+                            </div>
+                          </div>
+
+                          <!-- Expanded panel content - PR files -->
+                          {#if isPRExpanded}
+                            <div
+                              class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px"
+                              transition:slide={{ duration: 150 }}
+                            >
+                              {#each prFiles as file (file.path)}
+                                <FileRow
+                                  {file}
+                                  muted={true}
+                                  active={activeFilePath === file.path && activeFileStaged === null}
+                                  onFileClick={(filePath) => {
+                                    handlePRFileClick(filePath).catch((error) => {
+                                      logger.error('Error in handlePRFileClick', { error });
+                                    });
+                                  }}
+                                  onOpenFile={handleOpenFile}
+                                />
+                              {/each}
+                            </div>
+                          {/if}
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                </TimelineSection>
               </div>
             {/if}
-          </TimelineSection>
-          </div>
-          {/if}
           {/if}
 
           <!-- Divider with Merge button - hide when PR is already merged, when merge is in upper section, or post-merge -->
@@ -5633,7 +5710,13 @@
                   <a
                     href="https://github.com/new"
                     class="text-primary hover:underline inline-flex items-center gap-0.5"
-                    onclick={(e) => { e.preventDefault(); handleLink('https://github.com/new', { workspaceId: workspaceId as WorkspaceId, event: e }); }}
+                    onclick={(e) => {
+                      e.preventDefault();
+                      handleLink('https://github.com/new', {
+                        workspaceId: workspaceId as WorkspaceId,
+                        event: e,
+                      });
+                    }}
                   >
                     Create one on GitHub
                     <Fa icon={faArrowUpRightFromSquare} size="xs" class="opacity-70" />

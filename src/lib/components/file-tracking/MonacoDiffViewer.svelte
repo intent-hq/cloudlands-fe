@@ -1061,7 +1061,10 @@
   async function saveModifiedContent(expectedGeneration?: number) {
     // Check if this save is stale (a newer edit has occurred)
     if (expectedGeneration !== undefined && expectedGeneration !== saveGeneration) {
-      logger.debug('Cancelling stale save', { expectedGeneration, currentGeneration: saveGeneration });
+      logger.debug('Cancelling stale save', {
+        expectedGeneration,
+        currentGeneration: saveGeneration,
+      });
       return;
     }
 
@@ -1135,7 +1138,10 @@
         }
 
         // Read the current file content
-        const fileResult = (await invoke('file:read', { workspaceId: wsId, path: absolutePath })) as {
+        const fileResult = (await invoke('file:read', {
+          workspaceId: wsId,
+          path: absolutePath,
+        })) as {
           success: boolean;
           data?: { content: string; stats: { size: number; modified: string } };
           error?: { code: string; message: string } | string;
@@ -1457,11 +1463,14 @@
         // This prevents double-refresh which destroys focus and scroll position
         const timeSinceInPlaceRefresh = Date.now() - lastInPlaceRefreshTimestamp;
         if (timeSinceInPlaceRefresh < IN_PLACE_REFRESH_SUPPRESSION_MS) {
-          logger.info('Refresh triggered by refreshKey change - SKIPPING (recent in-place refresh)', {
-            refreshKey: currentRefreshKey,
-            filePath: change?.relativePath || change?.file,
-            timeSinceInPlaceRefresh,
-          });
+          logger.info(
+            'Refresh triggered by refreshKey change - SKIPPING (recent in-place refresh)',
+            {
+              refreshKey: currentRefreshKey,
+              filePath: change?.relativePath || change?.file,
+              timeSinceInPlaceRefresh,
+            },
+          );
           return;
         }
         logger.info('Refresh triggered by refreshKey change - will reload content', {
@@ -1666,7 +1675,9 @@
         // If file path is absolute, convert to relative
         if (filePath.startsWith('/')) {
           // First try: check if it starts with the current workspace path (with directory boundary check)
-          const strippedPath = workspacePath ? stripWorkspacePrefix(filePath, workspacePath) : filePath;
+          const strippedPath = workspacePath
+            ? stripWorkspacePrefix(filePath, workspacePath)
+            : filePath;
           if (strippedPath !== filePath) {
             filePath = strippedPath;
           } else {
@@ -1948,7 +1959,9 @@
               }
             } else if (diffChunk.isBinary) {
               // Binary file - can't display as text diff
-              logger.info('Binary file detected, showing binary file message', { file: diffChunk.file });
+              logger.info('Binary file detected, showing binary file message', {
+                file: diffChunk.file,
+              });
               isBinaryFile = true;
               loading = false;
               return;
@@ -2379,7 +2392,10 @@
       const absolutePath = filePath.startsWith('/') ? filePath : `${workspacePath}/${filePath}`;
 
       // Read the current file content
-      const fileResult = (await invoke('file:read', { workspaceId: workspaceId || workspace?.id, path: absolutePath })) as {
+      const fileResult = (await invoke('file:read', {
+        workspaceId: workspaceId || workspace?.id,
+        path: absolutePath,
+      })) as {
         success: boolean;
         data?: { content: string; stats: { size: number; modified: string } };
         error?: { code: string; message: string } | string;
@@ -2516,7 +2532,9 @@
 
       // Convert absolute path to relative if needed
       if (filePath.startsWith('/')) {
-        const strippedPath = workspacePath ? stripWorkspacePrefix(filePath, workspacePath) : filePath;
+        const strippedPath = workspacePath
+          ? stripWorkspacePrefix(filePath, workspacePath)
+          : filePath;
         if (strippedPath !== filePath) {
           filePath = strippedPath;
         } else {
@@ -2816,23 +2834,21 @@
       </p>
       <div class="flex gap-2">
         <Button variant="outline" size="sm" onclick={openInVSCode}>
-          <Fa icon={faExternalLinkAlt}  />
+          <Fa icon={faExternalLinkAlt} />
           Open in VS Code
         </Button>
         <Button variant="ghost" size="sm" onclick={revealInFolder}>
-          <Fa icon={faFolderOpen}  />
+          <Fa icon={faFolderOpen} />
           Reveal in Finder
         </Button>
       </div>
     </div>
   {:else if isBinaryFile}
     <div class="flex flex-col items-center justify-center h-full gap-4 p-6">
-      <div class="text-muted-foreground text-center">
-        Binary file cannot be displayed
-      </div>
+      <div class="text-muted-foreground text-center">Binary file cannot be displayed</div>
       <p class="text-sm text-muted-foreground text-center max-w-md">
-        This file is binary and cannot be shown as a text diff.
-        You can open it in an external editor instead.
+        This file is binary and cannot be shown as a text diff. You can open it in an external
+        editor instead.
       </p>
       <div class="flex gap-2">
         <Button variant="outline" size="sm" onclick={openInVSCode}>
@@ -2848,16 +2864,16 @@
   {:else if error}
     <div class="flex flex-col items-center justify-center h-full gap-4 p-6">
       <div class="text-red-500">
-        <Fa icon={faExclamationTriangle}  />
+        <Fa icon={faExclamationTriangle} />
         {error}
       </div>
       <div class="flex gap-2">
         <Button variant="outline" size="sm" onclick={openInVSCode}>
-          <Fa icon={faExternalLinkAlt}  />
+          <Fa icon={faExternalLinkAlt} />
           Open in VS Code
         </Button>
         <Button variant="ghost" size="sm" onclick={revealInFolder}>
-          <Fa icon={faFolderOpen}  />
+          <Fa icon={faFolderOpen} />
           Reveal in Finder
         </Button>
       </div>
@@ -2877,7 +2893,7 @@
       </p>
       <div class="flex gap-2 mt-2">
         <Button variant="outline" size="sm" onclick={openInVSCode}>
-          <Fa icon={faExternalLinkAlt}  />
+          <Fa icon={faExternalLinkAlt} />
           Open in VS Code
         </Button>
       </div>
@@ -2918,7 +2934,6 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    border-radius: 8px;
     overflow: hidden;
   }
 

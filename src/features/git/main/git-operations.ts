@@ -252,7 +252,7 @@ export class GitOperations {
       // Use execFileAsync to safely pass arguments without shell interpretation
       const { stdout: commitsRaw } = await execFileAsync(
         'git',
-        ['log', `${baseBranch}..HEAD`, '--format=%H|%an|%ae|%aI|%s', '-n', String(limit)],
+        ['log', '--first-parent', '--no-merges', `${baseBranch}..HEAD`, '--format=%H|%an|%ae|%aI|%s', '-n', String(limit)],
         { cwd: workspacePath },
       );
 

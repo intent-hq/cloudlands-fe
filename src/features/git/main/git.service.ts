@@ -2929,7 +2929,7 @@ export class GitService {
       // Use %x00 as delimiter between commits and %x01 for field separator
       // Include %b (body) to get commit message body which may contain trailers
       const logFormatArg = '--format=%H%x01%an%x01%ae%x01%aI%x01%s%x01%b%x00';
-      let gitArgs = ['log', '-n', String(limit), logFormatArg];
+      let gitArgs = ['log', '--first-parent', '--no-merges', '-n', String(limit), logFormatArg];
 
       // Determine the commit range to show.
       // Strategy: if user has explicitly set a baseCommitSha, always use it.
@@ -3044,7 +3044,7 @@ export class GitService {
       }
 
       if (boundary) {
-        gitArgs = ['log', '-n', String(limit), logFormatArg, `${boundary}..${currentBranch}`];
+        gitArgs = ['log', '--first-parent', '--no-merges', '-n', String(limit), logFormatArg, `${boundary}..${currentBranch}`];
         rangeResolved = true;
       }
 

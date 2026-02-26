@@ -99,6 +99,7 @@ export interface TransientUIState {
   sidebarChanges: SidebarChangesState;
   chatDrafts: Record<string, string>; // agentId -> draft input text
   sidebarActiveTab: SidebarTabId; // Active tab in the sidebar
+  viewedFiles: Record<string, string>; // filePath → commitFingerprint (for invalidation)
   timestamp: number;
 }
 
@@ -135,6 +136,7 @@ function createDefaultState(): TransientUIState {
     sidebarChanges: createDefaultSidebarChangesState(),
     chatDrafts: {},
     sidebarActiveTab: 'notes',
+    viewedFiles: {},
     timestamp: Date.now(),
   };
 }
@@ -278,6 +280,15 @@ function createTransientUIStore(workspaceId: string) {
     },
     get sidebarActiveTab() {
       return state.sidebarActiveTab;
+    },
+    get viewedFiles() {
+      return state.viewedFiles;
+    },
+
+    // Viewed files management (for ChatChangesPanel persistence)
+    setViewedFiles(viewedFiles: Record<string, string>) {
+      state.viewedFiles = viewedFiles;
+      saveState();
     },
 
     // Sidebar tab management

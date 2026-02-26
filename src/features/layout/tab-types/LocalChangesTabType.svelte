@@ -100,39 +100,62 @@
 </script>
 
 {#snippet changesActions()}
-  <Button variant="ghost-light" size="icon-xs"
+  <Button
+    variant="ghost-light"
+    size="icon-xs"
     onclick={() => {
       changesAllExpanded = !changesAllExpanded;
       if (changesAllExpanded) changesPanelRef?.expandAll();
       else changesPanelRef?.collapseAll();
     }}
-    tooltip={changesAllExpanded ? 'Collapse all files' : 'Expand all files'} tooltipSide="bottom"
-    class={changesAllExpanded ? 'text-foreground' : 'text-muted-foreground/50'}>
+    tooltip={changesAllExpanded ? 'Collapse all files' : 'Expand all files'}
+    tooltipSide="bottom"
+    class={changesAllExpanded ? 'text-foreground' : 'text-muted-foreground/50'}
+  >
     <Fa icon={faCompressAlt} size="xs" class={changesAllExpanded ? '' : 'rotate-180'} />
   </Button>
-  <Button variant="ghost-light" size="icon-xs" onclick={() => editorSettings.toggleLineWrapping()}
-    tooltip={editorSettings.lineWrapping ? 'Wrapping lines. Click to disable.' : 'Click to wrap lines'}
-    tooltipSide="bottom" class={editorSettings.lineWrapping ? 'text-foreground' : 'text-muted-foreground/50'}>
+  <Button
+    variant="ghost-light"
+    size="icon-xs"
+    onclick={() => editorSettings.toggleLineWrapping()}
+    tooltip={editorSettings.lineWrapping
+      ? 'Wrapping lines. Click to disable.'
+      : 'Click to wrap lines'}
+    tooltipSide="bottom"
+    class={editorSettings.lineWrapping ? 'text-foreground' : 'text-muted-foreground/50'}
+  >
     <Fa icon={faTextWidth} size="xs" />
   </Button>
-  <Button variant="ghost-light" size="icon-xs" onclick={() => editorSettings.toggleFoldUnchanged()}
-    tooltip={editorSettings.foldUnchanged ? 'Folding unchanged lines. Click to disable.' : 'Click to fold unchanged lines'}
-    tooltipSide="bottom" class={editorSettings.foldUnchanged ? 'text-foreground' : 'text-muted-foreground/50'}>
+  <Button
+    variant="ghost-light"
+    size="icon-xs"
+    onclick={() => editorSettings.toggleFoldUnchanged()}
+    tooltip={editorSettings.foldUnchanged
+      ? 'Folding unchanged lines. Click to disable.'
+      : 'Click to fold unchanged lines'}
+    tooltipSide="bottom"
+    class={editorSettings.foldUnchanged ? 'text-foreground' : 'text-muted-foreground/50'}
+  >
     <Fa icon={faMap} size="xs" />
   </Button>
-  <Button variant="ghost-light" size="icon-xs" onclick={() => editorSettings.toggleDiffSideBySide()}
-    tooltip={editorSettings.diffSideBySide ? 'Click to show unified view' : 'Click to show split view'}
-    tooltipSide="bottom" class={editorSettings.diffSideBySide ? 'text-foreground' : 'text-muted-foreground/50'}>
+  <Button
+    variant="ghost-light"
+    size="icon-xs"
+    onclick={() => editorSettings.toggleDiffSideBySide()}
+    tooltip={editorSettings.diffSideBySide
+      ? 'Click to show unified view'
+      : 'Click to show split view'}
+    tooltipSide="bottom"
+    class={editorSettings.diffSideBySide ? 'text-foreground' : 'text-muted-foreground/50'}
+  >
     <Fa icon={faColumns} size="xs" />
   </Button>
 {/snippet}
 
 <ChatChangesPanel
   bind:this={changesPanelRef}
-  showHeader={false}
   isLoading={fileTrackingStore.loading}
   changes={localChangesForPanel}
-  title="All Changes in Space"
   showStagingControls={true}
   showCategoryFilter={true}
   onStage={(path) => fileTrackingStore.stageByPath([path])}
@@ -153,8 +176,5 @@
       return rawPath?.startsWith('/') ? rawPath : `${workspacePath}/${rawPath}`;
     });
     fileTrackingStore.unstageByPath(paths);
-  }}
-  onClose={() => {
-    window.dispatchEvent(new CustomEvent('close-local-changes'));
   }}
 />

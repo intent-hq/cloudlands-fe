@@ -259,7 +259,7 @@ export function setupFileTrackingIPC() {
               // %H=hash, %an=author, %ae=email, %aI=date, %s=subject, %b=body
               // %x00 as commit delimiter, %x01 as field separator
               const logFormat = '--format=%H%x01%an%x01%ae%x01%aI%x01%s%x01%b%x00';
-              const gitLogCmd = `cd "${workspacePath}" && git log -n ${maxCount} ${logFormat}`;
+              const gitLogCmd = `cd "${workspacePath}" && git log --first-parent --no-merges -n ${maxCount} ${logFormat}`;
 
               // Run git log and unpushed check in parallel
               const [logResult, unpushedResult] = await Promise.all([
@@ -510,7 +510,7 @@ export function setupFileTrackingIPC() {
             // Remote workspace: run git log via RPC exec()
             const rpcClient = await remoteRPCManager.getClient(workspaceId);
             const result = await rpcClient.exec({
-              command: `cd "${workspacePath}" && git log --max-count=${maxCount} --format=%H%n%s%n%an%n%ae%n%aI ${beforeSha}`,
+              command: `cd "${workspacePath}" && git log --first-parent --no-merges --max-count=${maxCount} --format=%H%n%s%n%an%n%ae%n%aI ${beforeSha}`,
               timeout: 30000,
             });
             stdout = result.stdout;
@@ -518,7 +518,7 @@ export function setupFileTrackingIPC() {
             // Local workspace: use execFileAsync as before
             const result = await execFileAsync(
               'git',
-              ['log', `--max-count=${maxCount}`, '--format=%H%n%s%n%an%n%ae%n%aI', beforeSha],
+              ['log', '--first-parent', '--no-merges', `--max-count=${maxCount}`, '--format=%H%n%s%n%an%n%ae%n%aI', beforeSha],
               { cwd: workspacePath },
             );
             stdout = result.stdout;

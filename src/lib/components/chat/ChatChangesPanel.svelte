@@ -36,7 +36,7 @@
   import { Dropdown } from '$lib/components/ui/dropdown';
   import ViewSettingsDropdown from '$lib/components/ui/ViewSettingsDropdown.svelte';
   import { slide } from 'svelte/transition';
-  import { untrack, onMount, onDestroy } from 'svelte';
+  import { tick, untrack, onMount, onDestroy } from 'svelte';
   import PanelWrapper from '$lib/components/ui/PanelWrapper.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { editorSettings } from '$lib/stores/editor-settings.store.svelte';
@@ -45,8 +45,10 @@
     type VisualizationLine,
   } from '$lib/components/file-tracking/change-set-visualization';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { getTransientUIStore } from '$features/workspace/transient-ui-state.store.svelte';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
   import { gitStore } from '$features/git/git.store.svelte';
+  import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
   import { invoke, listenSync } from '$lib/electron-bridge';
   import { toast } from '$lib/components/ui/toast';
   import { NoteId, type WorkspaceId } from '$shared/types/branded-ids';
@@ -71,27 +73,27 @@
     return 'unstaged';
   }
 
+  /**
+   * Get the expand/collapse key for a change entry.
+   * In combined mode (groupByCommit=false): uses filePath (one entry per file)
+   * In by-commit mode (groupByCommit=true): uses filePath + commitHash (unique per file per commit)
+   */
+  function getExpandKey(change: LocalFileChange): string {
+    if (groupByCommit && change.commitHash) {
+      return `${change.filePath}-${change.commitHash}`;
+    }
+    return change.filePath;
+  }
+
   interface Props {
     /** Initial changes passed when panel was opened */
     changes: LocalFileChange[];
-    title?: string;
     /** Agent ID for linking back */
     agentId?: string | null;
-    /** Turn number within the conversation */
-    turnNumber?: number | null;
     /** Whether this is showing aggregate changes */
     isAggregate?: boolean;
-    /** Navigation state */
-    canGoBack?: boolean;
-    canGoForward?: boolean;
-    onNavigateBack?: () => void;
-    onNavigateForward?: () => void;
-    /** Close handler */
-    onClose?: () => void;
     /** Open agent handler */
     onOpenAgent?: (agentId: string, event?: MouseEvent) => void;
-    /** Navigate to Changes panel handler */
-    onNavigateToChanges?: () => void;
     /** Whether to show staging controls (for local changes view) */
     showStagingControls?: boolean;
     /** Whether to show category filter toggles (unstaged/staged/committed) */
@@ -110,8 +112,6 @@
     onUnstageAll?: () => void;
     /** Whether parent data is still loading (shows blank instead of "No changes") */
     isLoading?: boolean;
-    /** Whether to show the internal header (when false, assumes panel tab bar handles header) */
-    showHeader?: boolean;
     /** Commit details for commit changeset view */
     commitInfo?: {
       hash?: string;
@@ -124,21 +124,15 @@
     } | null;
     /** Handler for opening a note */
     onOpenNote?: (noteId: string, event?: MouseEvent) => void;
+    /** Initial group-by-commit mode (default: false = combined view) */
+    groupByCommit?: boolean;
   }
 
   let {
     changes,
-    title = 'Files Changed',
     agentId = null,
-    turnNumber = null,
     isAggregate = false,
-    canGoBack = false,
-    canGoForward = false,
-    onNavigateBack,
-    onNavigateForward,
-    onClose,
     onOpenAgent,
-    onNavigateToChanges,
     showStagingControls = false,
     showCategoryFilter = false,
     lockedFilePaths = new Set<string>(),
@@ -148,10 +142,13 @@
     onStageAll: _onStageAll,
     onUnstageAll: _onUnstageAll,
     isLoading = false,
-    showHeader = true,
     commitInfo = null,
     onOpenNote,
+    groupByCommit: initialGroupByCommit = false,
   }: Props = $props();
+
+  // Group-by-commit toggle state (default: combined view)
+  let groupByCommit = $state(initialGroupByCommit);
 
   // Helper to check if a file is locked
   function isFileLocked(filePath: string): boolean {
@@ -160,6 +157,86 @@
 
   // Instance ID for debugging
   const instanceId = Math.random().toString(36).substring(2, 8);
+
+  // Get transient UI store lazily without creating $state during effect flush.
+  // getTransientUIStore creates a new store with $state if one doesn't exist,
+  // so we defer creation to a microtask after the effect flush completes.
+  let cachedTransientStore = $state<ReturnType<typeof getTransientUIStore> | null>(null);
+  let cachedTransientWorkspaceId: string | null = null;
+  $effect(() => {
+    const currentWorkspaceId = workspaceStore.current?.id ?? null;
+    if (!currentWorkspaceId) {
+      cachedTransientWorkspaceId = null;
+      cachedTransientStore = null;
+      return;
+    }
+    if (currentWorkspaceId === cachedTransientWorkspaceId && cachedTransientStore) return;
+
+    cachedTransientWorkspaceId = currentWorkspaceId;
+    queueMicrotask(() => {
+      if (cachedTransientWorkspaceId !== currentWorkspaceId) return;
+      cachedTransientStore = getTransientUIStore(currentWorkspaceId);
+    });
+  });
+
+  /**
+   * Get a commit fingerprint for a file path.
+   * Returns a string derived from the sorted commit hashes that touch this file.
+   * Used for invalidation: if the fingerprint changes, the file has new commits.
+   *
+   * Uses reactiveChanges (pre-merge) instead of mergedChanges because in combined
+   * mode, merging can collapse multiple committed entries into one, losing individual
+   * commit hashes needed for accurate invalidation.
+   */
+  function getCommitFingerprint(filePath: string): string {
+    const hashes = reactiveChanges
+      .filter((c) => c.filePath === filePath && c.commitHash)
+      .map((c) => c.commitHash!)
+      .sort();
+    return hashes.join(',');
+  }
+
+  // Track whether we've already restored viewed files from the transient store
+  let hasRestoredViewedFiles = false;
+
+  // Restore viewed files from transient store when mergedChanges first loads
+  $effect(() => {
+    // Depend on mergedChanges and cachedTransientStore
+    const currentMergedChanges = mergedChanges;
+    const store = cachedTransientStore;
+
+    if (!store || currentMergedChanges.length === 0) return;
+    if (hasRestoredViewedFiles) return;
+
+    const stored = store.viewedFiles || {};
+    if (Object.keys(stored).length === 0) {
+      hasRestoredViewedFiles = true;
+      return;
+    }
+
+    const restoredViewed = new Set<string>();
+    for (const [filePath, storedFingerprint] of Object.entries(stored)) {
+      const currentFingerprint = getCommitFingerprint(filePath);
+      if (currentFingerprint === storedFingerprint) {
+        restoredViewed.add(filePath);
+      }
+      // else: fingerprint changed → new commits → don't restore
+    }
+
+    hasRestoredViewedFiles = true;
+
+    if (restoredViewed.size > 0) {
+      viewedFiles = restoredViewed;
+      // Also collapse viewed files — remove all expand keys that match viewed file paths
+      const newExpanded = new Set(expandedFiles);
+      for (const change of mergedChanges) {
+        if (restoredViewed.has(change.filePath)) {
+          newExpanded.delete(getExpandKey(change));
+        }
+      }
+      expandedFiles = newExpanded;
+    }
+  });
 
   // Track if we've ever shown content - once shown, don't go back to loading state
   // This prevents flashing when stores refresh during streaming
@@ -261,6 +338,9 @@
   onDestroy(() => {
     if (diffEditorSaveHandler) {
       window.removeEventListener('diff-editor:file-saved', diffEditorSaveHandler);
+    }
+    if (summaryBarHoverTimeout) {
+      clearTimeout(summaryBarHoverTimeout);
     }
   });
 
@@ -805,6 +885,20 @@
     });
   }
 
+  // Whether any committed changes exist (for showing the group-by-commit toggle)
+  let hasCommittedChanges = $derived(
+    changes.some((c) => getChangeCategory(c) === 'committed'),
+  );
+
+  // Count unique commits for the header bar
+  let commitCount = $derived.by(() => {
+    const hashes = new Set<string>();
+    for (const c of changes) {
+      if (c.commitHash) hashes.add(c.commitHash);
+    }
+    return hashes.size;
+  });
+
   // Use enriched changes for display - no category sorting needed since we merge staged/unstaged
   let reactiveChanges = $derived(categoryFilteredChanges);
 
@@ -884,10 +978,27 @@
         // Single part - just add it directly
         merged.push(allParts[0].change);
       } else if (!hasNonCommittedParts && parts.committed && parts.committed.length > 0) {
-        // Only committed changes - show each commit separately
-        // This allows each commit to be displayed with its own diff viewer
-        for (const commit of parts.committed) {
-          merged.push(commit);
+        if (groupByCommit) {
+          // By-commit mode: show each commit separately
+          for (const commit of parts.committed) {
+            merged.push(commit);
+          }
+        } else if (parts.committed.length === 1) {
+          // Single committed change - add directly
+          merged.push(parts.committed[0]);
+        } else {
+          // Combined mode: merge all committed changes into a single entry
+          const basePart = parts.committed[0];
+          merged.push({
+            ...basePart,
+            filePath,
+            isMerged: true,
+            allParts,
+            additions: totalAdditions,
+            deletions: totalDeletions,
+            category: undefined,
+            staged: undefined,
+          });
         }
       }
     }
@@ -908,7 +1019,8 @@
     // Generate key to detect actual changes
     // Include additions/deletions because these change when hunks are staged/unstaged
     // For merged changes, also include the staged/unstaged part stats to detect changes
-    const newKey = sorted
+    // Include groupByCommit in key to ensure recalculation on toggle
+    const newKey = `gbc:${groupByCommit}::` + sorted
       .map((c) => {
         const baseKey = `${c.filePath}|${c.category || c.staged}|${c.isMerged || false}|${c.additions || 0}|${c.deletions || 0}`;
         // For merged changes, also include the individual part stats
@@ -1041,36 +1153,123 @@
   // Once a file becomes visible, we keep the DiffViewer mounted to avoid re-init on scroll back
   let visibleFiles = $state<Set<string>>(new Set());
 
+  // Track which files the user has marked as "viewed" (like GitHub PR reviews)
+  let viewedFiles = $state<Set<string>>(new Set());
+  let viewedCount = $derived(viewedFiles.size);
+  let totalFileCount = $derived(new Set(mergedChanges.map((c) => c.filePath)).size);
+
+  // Track which commit groups are expanded in "By commit" mode (default: all expanded)
+  let expandedCommits = $state<Set<string>>(new Set());
+
+  // Group mergedChanges by commit for "By commit" mode
+  interface CommitGroup {
+    hash: string;
+    message: string;
+    author?: string;
+    authorEmail?: string;
+    date?: string;
+    agentId?: string;
+    linkedNoteId?: string;
+    changes: LocalFileChange[];
+  }
+
+  let commitGroups = $derived.by((): CommitGroup[] | null => {
+    if (!groupByCommit) return null;
+    const groups: CommitGroup[] = [];
+    const seen = new Map<string, number>();
+    const allCommits = fileTrackingStore.commits || [];
+
+    for (const change of mergedChanges) {
+      if (change.commitHash) {
+        const idx = seen.get(change.commitHash);
+        if (idx !== undefined) {
+          groups[idx].changes.push(change);
+        } else {
+          // Look up full commit info from fileTrackingStore
+          const commitDetail = allCommits.find((c) => c.hash === change.commitHash);
+          seen.set(change.commitHash, groups.length);
+          groups.push({
+            hash: change.commitHash,
+            message: change.commitMessage || change.commitHash.substring(0, 7),
+            author: commitDetail?.author,
+            authorEmail: commitDetail?.authorEmail,
+            date: commitDetail?.date,
+            agentId: commitDetail?.agentId,
+            linkedNoteId: commitDetail?.linkedNoteId,
+            changes: [change],
+          });
+        }
+      } else {
+        // Non-committed changes (unstaged/staged) — render without a commit header
+        // Group consecutive non-committed changes together
+        const lastGroup = groups.length > 0 ? groups[groups.length - 1] : null;
+        if (lastGroup && lastGroup.hash === '') {
+          lastGroup.changes.push(change);
+        } else {
+          groups.push({ hash: '', message: 'Working changes', changes: [change] });
+        }
+      }
+    }
+    return groups;
+  });
+
+  // When commitGroups change, only auto-expand the first commit group for performance
+  $effect(() => {
+    if (commitGroups) {
+      const currentExpanded = untrack(() => expandedCommits);
+      const firstWithHash = commitGroups.find((g) => g.hash);
+      if (firstWithHash && !currentExpanded.has(firstWithHash.hash)) {
+        expandedCommits = new Set([...currentExpanded, firstWithHash.hash]);
+      }
+    }
+  });
+
   // Initialize expanded state when changes load
   // Preserves the user's expansion preference when switching between commits
+  // Uses getExpandKey to ensure correct keying in both combined and by-commit modes
   $effect(() => {
-    const currentPaths = new Set(mergedChanges.map((c) => c.filePath));
+    const currentKeys = new Set(mergedChanges.map((c) => getExpandKey(c)));
 
     // Use untrack to read current state without creating dependency
     const preference = untrack(() => userExpansionPreference);
     const currentExpanded = untrack(() => expandedFiles);
-    const hasOverlap = [...currentExpanded].some((path) => currentPaths.has(path));
+    const hasOverlap = [...currentExpanded].some((key) => currentKeys.has(key));
 
-    // If files changed completely (switching commits) or it's the first load,
+    // If files changed completely (switching commits/modes) or it's the first load,
     // apply the user's preference or default to expanded
-    if (currentPaths.size > 0 && !hasOverlap) {
+    if (currentKeys.size > 0 && !hasOverlap) {
       if (preference === 'collapsed') {
         // User prefers collapsed - keep all files collapsed
         expandedFiles = new Set();
+        visibleFiles = new Set();
       } else {
-        // Default: expand all (preference is 'expanded' or null)
-        expandedFiles = new Set(currentPaths);
+        // Default: expand files (preference is 'expanded' or null)
+        // In by-commit mode, only expand files belonging to expanded commit groups
+        const currentExpandedCommits = untrack(() => expandedCommits);
+        let keysToExpand: Set<string>;
+        if (groupByCommit && currentExpandedCommits.size > 0) {
+          keysToExpand = new Set(
+            mergedChanges
+              .filter((c) => c.commitHash && currentExpandedCommits.has(c.commitHash))
+              .map((c) => getExpandKey(c)),
+          );
+        } else {
+          keysToExpand = currentKeys;
+        }
+        expandedFiles = keysToExpand;
+        // Let IntersectionObserver lazily populate visibleFiles as elements
+        // scroll into view. Pre-populating with all keys causes OOM when
+        // there are 100+ files (each mounts a Monaco diff editor).
+        visibleFiles = new Set();
       }
-      // Reset visible files when switching changesets
-      visibleFiles = new Set();
     } else {
       // Files have some overlap - preserve existing expansion state for matching files
       const currentVisible = untrack(() => visibleFiles);
 
       const newExpanded = new Set<string>();
-      for (const path of currentExpanded) {
-        if (currentPaths.has(path)) {
-          newExpanded.add(path);
+      for (const key of currentExpanded) {
+        if (currentKeys.has(key)) {
+          newExpanded.add(key);
         }
       }
       // Only update if something was actually removed
@@ -1079,9 +1278,9 @@
       }
 
       const newVisible = new Set<string>();
-      for (const path of currentVisible) {
-        if (currentPaths.has(path)) {
-          newVisible.add(path);
+      for (const key of currentVisible) {
+        if (currentKeys.has(key)) {
+          newVisible.add(key);
         }
       }
       // Only update if something was actually removed
@@ -1424,20 +1623,66 @@
     );
   }
 
-  function toggleFile(filePath: string) {
+  function toggleFile(expandKey: string) {
     const newSet = new Set(expandedFiles);
-    if (newSet.has(filePath)) {
-      newSet.delete(filePath);
+    if (newSet.has(expandKey)) {
+      newSet.delete(expandKey);
     } else {
-      newSet.add(filePath);
+      newSet.add(expandKey);
     }
     expandedFiles = newSet;
+  }
+
+  // Toggle a commit group's expanded/collapsed state in "By commit" mode
+  function toggleCommitGroup(hash: string) {
+    const newSet = new Set(expandedCommits);
+    if (newSet.has(hash)) {
+      newSet.delete(hash);
+    } else {
+      newSet.add(hash);
+    }
+    expandedCommits = newSet;
+  }
+
+  // Toggle a file's "viewed" state (like GitHub PR review checkboxes)
+  // viewedFiles always stores file paths (not expand keys) for consistency
+  // across combined and by-commit modes.
+  function toggleViewed(filePath: string, expandKey: string) {
+    const newViewed = new Set(viewedFiles);
+    const newExpanded = new Set(expandedFiles);
+    if (newViewed.has(filePath)) {
+      // Unmark as viewed — re-expand the diff
+      newViewed.delete(filePath);
+      newExpanded.add(expandKey);
+    } else {
+      // Mark as viewed — collapse all expand keys for this file path
+      newViewed.add(filePath);
+      for (const change of mergedChanges) {
+        if (change.filePath === filePath) {
+          newExpanded.delete(getExpandKey(change));
+        }
+      }
+    }
+    viewedFiles = newViewed;
+    expandedFiles = newExpanded;
+
+    // Persist to transient store
+    if (cachedTransientStore) {
+      const newStoredViewed: Record<string, string> = {};
+      for (const fp of newViewed) {
+        newStoredViewed[fp] = getCommitFingerprint(fp);
+      }
+      cachedTransientStore.setViewedFiles(newStoredViewed);
+    }
   }
 
   // Export these functions so parent can control expansion
   export function expandAll() {
     userExpansionPreference = 'expanded';
-    expandedFiles = new Set(mergedChanges.map((c) => c.filePath));
+    // Do NOT expand files the user has marked as viewed
+    expandedFiles = new Set(
+      mergedChanges.filter((c) => !viewedFiles.has(c.filePath)).map((c) => getExpandKey(c)),
+    );
   }
 
   export function collapseAll() {
@@ -1445,12 +1690,60 @@
     expandedFiles = new Set();
   }
 
+  // Export setter so parent tab wrappers can control group-by-commit mode
+  export function setGroupByCommit(value: boolean) {
+    groupByCommit = value;
+  }
+
   let allExpanded = $derived(
-    mergedChanges.length > 0 && mergedChanges.every((c) => expandedFiles.has(c.filePath)),
+    mergedChanges.length > 0 &&
+      mergedChanges
+        .filter((c) => !viewedFiles.has(c.filePath))
+        .every((c) => expandedFiles.has(getExpandKey(c))),
   );
 
   // File refs for visualization navigation
   let fileRefs = $state<Map<string, HTMLDivElement>>(new Map());
+
+  // Commit group refs for scroll-to-commit navigation
+  let commitGroupRefs = $state<Map<string, HTMLDivElement>>(new Map());
+
+  // Svelte action to register commit group element refs for scroll-to-commit
+  function registerCommitGroupRef(node: HTMLDivElement, hash: string) {
+    commitGroupRefs.set(hash, node);
+    return {
+      destroy() {
+        commitGroupRefs.delete(hash);
+      },
+    };
+  }
+
+  // Scroll to a commit group and expand it
+  function scrollToCommitGroup(hash: string) {
+    // Close the dropdown
+    isSummaryBarHovered = false;
+
+    // Expand the commit group if not already expanded
+    if (!expandedCommits.has(hash)) {
+      expandedCommits = new Set([...expandedCommits, hash]);
+    }
+
+    // Scroll to the commit group header after a tick to allow DOM updates
+    requestAnimationFrame(() => {
+      const ref = commitGroupRefs.get(hash);
+      if (ref && scrollContainerRef) {
+        const containerRect = scrollContainerRef.getBoundingClientRect();
+        const elRect = ref.getBoundingClientRect();
+        const offset = elRect.top - containerRect.top + scrollContainerRef.scrollTop - 53;
+        scrollContainerRef.scrollTo({ top: offset, behavior: 'smooth' });
+        // Brief highlight effect
+        ref.classList.add('bg-accent/20');
+        setTimeout(() => {
+          ref.classList.remove('bg-accent/20');
+        }, 1500);
+      }
+    });
+  }
 
   // Svelte action to register file element refs for scroll-to-file
   function registerRef(node: HTMLDivElement, filePath: string) {
@@ -1502,19 +1795,47 @@
   }
 
   // Common logic for scrolling to a file
-  function scrollToFile(filePath: string) {
+  async function scrollToFile(filePath: string) {
+    // In by-commit mode, ensure the commit group containing this file is expanded first
+    if (groupByCommit && commitGroups) {
+      let needsTick = false;
+      for (const group of commitGroups) {
+        if (group.hash && group.changes.some((c) => c.filePath === filePath)) {
+          if (!expandedCommits.has(group.hash)) {
+            const newSet = new Set(expandedCommits);
+            newSet.add(group.hash);
+            expandedCommits = newSet;
+            needsTick = true;
+          }
+          break;
+        }
+      }
+      // Wait for DOM to update after expanding the commit group
+      if (needsTick) {
+        await tick();
+      }
+    }
+
     const ref = fileRefs.get(filePath);
-    if (ref) {
-      ref.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (ref && scrollContainerRef) {
+      const containerRect = scrollContainerRef.getBoundingClientRect();
+      const elRect = ref.getBoundingClientRect();
+      // Scroll so the file sits 20px below the sticky summary bar (~33px)
+      const offset = elRect.top - containerRect.top + scrollContainerRef.scrollTop - 53;
+      scrollContainerRef.scrollTo({ top: offset, behavior: 'smooth' });
       // Brief highlight effect using background color instead of ring
       ref.classList.add('bg-accent/20');
       setTimeout(() => {
         ref.classList.remove('bg-accent/20');
       }, 1500);
     }
-    // Expand the file if collapsed
-    if (!expandedFiles.has(filePath)) {
-      toggleFile(filePath);
+    // Expand the file if collapsed - find matching expand key(s) for this file
+    const matchingKeys = mergedChanges
+      .filter((c) => c.filePath === filePath)
+      .map((c) => getExpandKey(c));
+    const anyExpanded = matchingKeys.some((key) => expandedFiles.has(key));
+    if (!anyExpanded && matchingKeys.length > 0) {
+      toggleFile(matchingKeys[0]);
     }
   }
 
@@ -1530,10 +1851,58 @@
     const target = e.target as HTMLElement;
     // Collapse after scrolling down 100px
     isStuck = target.scrollTop > 100;
+    updateFirstInViewFile(target);
   }
 
   // Derived state for whether header should be collapsed
   const isHeaderCollapsed = $derived(isStuck && !isHeaderHovered);
+
+  // Track which file is first in view in the scroll container
+  let firstInViewFilePath = $state<string | null>(null);
+
+  function updateFirstInViewFile(scrollContainer: HTMLElement) {
+    const containerRect = scrollContainer.getBoundingClientRect();
+    // Account for sticky summary bar height (~33px)
+    const topEdge = containerRect.top + 33;
+    let topmost: string | null = null;
+    let topmostTop = Infinity;
+
+    for (const [filePath, el] of fileRefs) {
+      const rect = el.getBoundingClientRect();
+      // File is in view if its bottom is below the top edge and top is above the container bottom
+      if (rect.bottom > topEdge && rect.top < containerRect.bottom) {
+        // Pick the file whose top is closest to (but not necessarily above) the top edge
+        if (rect.top < topmostTop) {
+          topmostTop = rect.top;
+          topmost = filePath;
+        }
+      }
+    }
+    firstInViewFilePath = topmost;
+  }
+
+  // Hover state for summary bar file list
+  let isSummaryBarHovered = $state(false);
+  let summaryBarHoverTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  function handleSummaryBarMouseEnter() {
+    if (summaryBarHoverTimeout) {
+      clearTimeout(summaryBarHoverTimeout);
+      summaryBarHoverTimeout = null;
+    }
+    isSummaryBarHovered = true;
+  }
+
+  function handleSummaryBarMouseLeave() {
+    summaryBarHoverTimeout = setTimeout(() => {
+      isSummaryBarHovered = false;
+    }, 200);
+  }
+
+  function handleSummaryFileClick(filePath: string) {
+    isSummaryBarHovered = false;
+    scrollToFile(filePath);
+  }
 
   // State for copy SHA functionality
   let copiedSha = $state(false);
@@ -1607,247 +1976,241 @@
   }
 </script>
 
-{#if showHeader}
-  <PanelWrapper
-    {title}
-    breadcrumbs={[
-      {
-        label: 'Changes',
-        icon: faPencil,
-        onClick: onNavigateToChanges,
-      },
-    ]}
-    {canGoBack}
-    {canGoForward}
-    {onNavigateBack}
-    {onNavigateForward}
-    showClose={!!onClose}
-    {onClose}
-    contentClass="flex-1 min-h-0"
-  >
-    {#snippet actions()}
-      <div class="flex items-center gap-2">
-        <!-- Agent link with avatar -->
-        {#if agentId}
-          <button
-            onclick={(e) => onOpenAgent?.(agentId!, e)}
-            class="flex items-center gap-1.5 px-2 py-0.5 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
-            title={isAggregate ? 'View agent conversation' : `Turn ${turnNumber}`}
-          >
-            <AuggieAvatar seed={agentId} size={16} />
-            <span class="text-xs">
-              {#if isAggregate}
-                <!-- Aggregate -->
-              {:else if turnNumber}
-                Turn {turnNumber}
-              {/if}
-            </span>
-          </button>
-        {/if}
+<!-- header is managed by panel tab bar -->
+<div class="h-full w-full flex flex-col overflow-hidden">
+  <!-- Scroll container -->
+  <div class="h-full overflow-auto p-5 pt-0" onscroll={handleScroll} bind:this={scrollContainerRef}>
+    <!-- Commit Details Section -->
+    {#if commitInfo}
+      {@render commitDetailsSection()}
+    {/if}
 
-        <!-- Category filter dropdown -->
-        {#if showCategoryFilter}
-          {@const filterOptions = [
-            { value: 'unstaged', label: `New (${unstagedCount})`, disabled: unstagedCount === 0 },
-            { value: 'staged', label: `Approved (${stagedCount})`, disabled: stagedCount === 0 },
-            {
-              value: 'committed',
-              label: `Committed (${committedCount})`,
-              disabled: committedCount === 0,
-            },
-          ]}
-          {@const selectedCategories = Array.from(enabledCategories)}
-          <div class="border-r border-border pr-2 mr-1">
-            <Dropdown
-              options={filterOptions}
-              value={selectedCategories}
-              multiple={true}
-              searchable={false}
-              variant="ghost"
-              size="xs"
-              onchange={(value) => {
-                // Ensure value is an array and has at least one item
-                const newCategories = Array.isArray(value) ? value : [value];
-                if (newCategories.length > 0) {
-                  enabledCategories = new Set(newCategories as ChangeCategory[]);
-                }
-              }}
-            >
-              {#snippet trigger({ value })}
-                <div class="flex items-center gap-1.5 text-xs">
-                  <Fa icon={faFilter} class="w-3 h-3 text-muted-foreground" />
-                  <span class="text-muted-foreground">
-                    {Array.isArray(value) && value.length === 3
-                      ? 'All'
-                      : Array.isArray(value) && value.length === 1
-                        ? filterOptions.find((o) => o.value === value[0])?.label || 'Filter'
-                        : `${Array.isArray(value) ? value.length : 0} selected`}
+    <!-- File List with Inline Diffs -->
+    {#if showLoadingState}
+      <!-- Skeleton loader for file changes -->
+      <div class="flex flex-col gap-3 py-6">
+        {#each Array(4) as _, i}
+          <div class="rounded-lg border border-border bg-card p-4">
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2 flex-1">
+                <Skeleton class="h-4 w-4 rounded" />
+                <Skeleton class="h-4 w-48" />
+              </div>
+              <Skeleton class="h-5 w-16 rounded-full" />
+            </div>
+            <div class="space-y-2">
+              <Skeleton class="h-3 w-full" />
+              <Skeleton class="h-3 w-5/6" />
+              <Skeleton class="h-3 w-4/6" />
+            </div>
+          </div>
+        {/each}
+      </div>
+    {:else if mergedChanges.length === 0}
+      <div class="flex items-center justify-center h-full text-muted-foreground py-6">
+        No changes to display
+      </div>
+    {:else}
+      <!-- Sticky summary bar: "N files changed" with hover file list -->
+      <div
+        class="sticky top-0 z-20 -mx-5 px-5"
+      >
+        <div class="flex items-center justify-between py-2 bg-background/95 backdrop-blur-sm border-b border-border">
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <span
+            class="text-xs font-medium text-muted-foreground whitespace-nowrap"
+            onmouseenter={handleSummaryBarMouseEnter}
+            onmouseleave={handleSummaryBarMouseLeave}
+          >
+            {totalFileCount} file{totalFileCount === 1 ? '' : 's'} changed
+            {#if groupByCommit && commitCount > 0}
+              , {commitCount} commit{commitCount === 1 ? '' : 's'}
+            {/if}
+            {#if viewedCount > 0}
+              <span class="text-muted-foreground/50">·</span>
+              <span>{viewedCount} viewed</span>
+            {/if}
+          </span>
+          <div class="flex items-center gap-2">
+            {#if hasCommittedChanges && !commitInfo}
+              <div class="flex items-center gap-0.5 rounded-md border border-border bg-muted/50 p-0.5 -my-1">
+                <button
+                  type="button"
+                  class="px-2 py-0.5 text-xs rounded cursor-pointer transition-colors {!groupByCommit ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
+                  onclick={() => (groupByCommit = false)}
+                >
+                  Combined
+                </button>
+                <button
+                  type="button"
+                  class="px-2 py-0.5 text-xs rounded cursor-pointer transition-colors {groupByCommit ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
+                  onclick={() => (groupByCommit = true)}
+                >
+                  By commit
+                </button>
+              </div>
+            {/if}
+          </div>
+        </div>
+
+        <!-- Expandable file list on hover (absolute overlay, doesn't push content) -->
+        {#if isSummaryBarHovered}
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            class="absolute left-0 right-0 bg-background/95 backdrop-blur-sm border-b border-border shadow-lg py-1 px-3 overflow-y-auto"
+            style="max-height: 80vh;"
+            transition:slide={{ axis: 'y', duration: 150 }}
+            onmouseenter={handleSummaryBarMouseEnter}
+            onmouseleave={handleSummaryBarMouseLeave}
+          >
+            {#if groupByCommit && commitGroups}
+              <!-- Show files grouped by commit -->
+              {#each commitGroups as group (group.hash || 'working')}
+                {#if group.hash}
+                  <button
+                    type="button"
+                    class="w-full flex items-center gap-1.5 px-2 py-1 text-left text-[11px] text-muted-foreground/70 font-medium mt-1 first:mt-0 cursor-pointer hover:text-foreground transition-colors"
+                    onclick={() => scrollToCommitGroup(group.hash)}
+                    title="Scroll to commit"
+                  >
+                    <span class="truncate">{group.message.split('\n')[0]}</span>
+                    <span class="shrink-0 text-muted-foreground/40">·</span>
+                    <span class="shrink-0">{group.changes.length} file{group.changes.length === 1 ? '' : 's'}</span>
+                  </button>
+                {:else}
+                  <div class="px-2 py-1 text-[11px] text-muted-foreground/70 font-medium mt-1 first:mt-0">
+                    Working changes
+                  </div>
+                {/if}
+                {#each group.changes as change (change.filePath + '-summary-' + group.hash)}
+                  {@const displayPath = getDisplayPath(change.filePath)}
+                  {@const isActive = firstInViewFilePath === change.filePath}
+                  {@const isViewed = viewedFiles.has(change.filePath)}
+                  <button
+                    type="button"
+                    class="w-full flex items-center gap-2 px-2 pl-5 py-1 rounded text-left transition-colors cursor-pointer text-xs hover:bg-muted/50 {isActive ? 'bg-accent/15 text-foreground' : 'text-muted-foreground'} {isViewed ? 'opacity-50' : ''}"
+                    onclick={() => handleSummaryFileClick(change.filePath)}
+                  >
+                    <span class="truncate flex-1 min-w-0">
+                      <span class="font-medium">{getFileName(displayPath)}</span>
+                      {#if getDirectoryPath(displayPath)}
+                        <span class="text-muted-foreground/50 ml-1">{getDirectoryPath(displayPath)}</span>
+                      {/if}
+                    </span>
+                    <LineChangesBadge additions={change.additions} deletions={change.deletions} size="xs" />
+                  </button>
+                {/each}
+              {/each}
+            {:else}
+              <!-- Flat file list -->
+              {#each mergedChanges as change (change.filePath + '-summary')}
+                {@const displayPath = getDisplayPath(change.filePath)}
+                {@const isActive = firstInViewFilePath === change.filePath}
+                {@const isViewed = viewedFiles.has(change.filePath)}
+                <button
+                  type="button"
+                  class="w-full flex items-center gap-2 px-2 py-1 rounded text-left transition-colors cursor-pointer text-xs hover:bg-muted/50 {isActive ? 'bg-accent/15 text-foreground' : 'text-muted-foreground'} {isViewed ? 'opacity-50' : ''}"
+                  onclick={() => handleSummaryFileClick(change.filePath)}
+                >
+                  <span class="truncate flex-1 min-w-0">
+                    <span class="font-medium">{getFileName(displayPath)}</span>
+                    {#if getDirectoryPath(displayPath)}
+                      <span class="text-muted-foreground/50 ml-1">{getDirectoryPath(displayPath)}</span>
+                    {/if}
                   </span>
-                  <Fa icon={faChevronDown} class="w-2.5 h-2.5 text-muted-foreground/50" />
-                </div>
-              {/snippet}
-            </Dropdown>
+                  <LineChangesBadge additions={change.additions} deletions={change.deletions} size="xs" />
+                </button>
+              {/each}
+            {/if}
           </div>
         {/if}
-
-        <!-- Expand/Collapse all files toggle -->
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          onclick={() => (allExpanded ? collapseAll() : expandAll())}
-          tooltip={allExpanded ? 'Collapse all' : 'Expand all'}
-          tooltipSide="bottom"
-          class={allExpanded ? 'text-foreground' : 'text-muted-foreground/50'}
-        >
-          <Fa icon={allExpanded ? faCompressAlt : faExpandAlt} size="xs" />
-        </Button>
-        <ViewSettingsDropdown showFold showWrap={false} showSplit />
-        <LineChangesBadge additions={totalAdditions} deletions={totalDeletions} />
       </div>
-    {/snippet}
-
-    <!-- Scroll container with scroll listener for sticky header collapse -->
-    <div
-      class="h-full overflow-auto p-5 pt-0"
-      onscroll={handleScroll}
-      bind:this={scrollContainerRef}
-    >
-      <!-- Sticky Visualization -->
-      {#if mergedChanges.length > 0}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div
-          class="sticky top-0 z-10 -mx-5 -mt-6 mb-4 border-b border-border bg-background/95 backdrop-blur-sm transition-[clip-path] duration-200 ease-in-out"
-          style="clip-path: inset(0 0 {isHeaderCollapsed ? 'calc(100% - 60px)' : '0'} 0);"
-          onmouseenter={() => (isHeaderHovered = true)}
-          onmouseleave={() => (isHeaderHovered = false)}
-        >
-          <ChangeSetVisualization
-            chatChanges={visualizationChanges}
-            onFileClick={handleVisualizationFileClick}
-            onLineClick={handleVisualizationLineClick}
-          />
-          <!-- Fade gradient overlay when collapsed -->
-          <div
-            class="absolute inset-x-0 bottom-[calc(100%_-_60px)] h-8 bg-gradient-to-t from-background/95 to-transparent pointer-events-none transition-opacity duration-300 z-20"
-            style:opacity={isHeaderCollapsed ? 1 : 0}
-          ></div>
-        </div>
-      {/if}
-
-      <!-- Commit Details Section -->
-      {#if commitInfo}
-        {@render commitDetailsSection()}
-      {/if}
-
-      <!-- File List with Inline Diffs -->
-      {#if showLoadingState}
-        <!-- Skeleton loader for file changes -->
-        <div class="flex flex-col gap-3 py-6">
-          {#each Array(4) as _, i}
-            <div class="rounded-lg border border-border bg-card p-4">
-              <div class="flex items-center justify-between mb-3">
-                <div class="flex items-center gap-2 flex-1">
-                  <Skeleton class="h-4 w-4 rounded" />
-                  <Skeleton class="h-4 w-48" />
+      <div class="flex flex-col gap-2 py-6">
+        {#if groupByCommit && commitGroups}
+          <!-- Group-by-commit mode: render changes grouped under commit headers -->
+          {#each commitGroups as group, i (group.hash || 'working-' + i)}
+            {#if group.hash}
+              <!-- Commit group with sticky collapsible header -->
+              <div class="mb-2" use:registerCommitGroupRef={group.hash}>
+                <div class="sticky top-[31.5px] z-[11] bg-background/95 backdrop-blur-sm rounded-md">
+                  <div class="flex items-center gap-2 w-full px-3 py-2 rounded-md bg-muted/30">
+                    <button
+                      type="button"
+                      class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
+                      onclick={() => toggleCommitGroup(group.hash)}
+                    >
+                      <Fa
+                        icon={expandedCommits.has(group.hash) ? faChevronDown : faChevronRight}
+                        class="text-muted-foreground/50 w-2.5! h-2.5! shrink-0"
+                      />
+                      <!-- Author avatar -->
+                      <div
+                        class="shrink-0 w-5 h-5 rounded-full bg-muted-foreground/15 flex items-center justify-center text-[8px] font-medium text-muted-foreground select-none overflow-hidden"
+                        title={group.author || ''}
+                      >
+                        {#if getGitHubAvatarUrl(group.authorEmail, 20)}
+                          <img
+                            src={getGitHubAvatarUrl(group.authorEmail, 20) ?? ''}
+                            alt={group.author || ''}
+                            class="w-full h-full object-cover"
+                            loading="lazy"
+                            onerror={(e) => {
+                              (e.currentTarget as HTMLImageElement).style.display = 'none';
+                              const sibling = (e.currentTarget as HTMLImageElement).nextElementSibling;
+                              if (sibling) (sibling as HTMLElement).classList.remove('hidden');
+                            }}
+                          />
+                          <span class="hidden">{getAuthorInitials(group.author)}</span>
+                        {:else}
+                          {getAuthorInitials(group.author)}
+                        {/if}
+                      </div>
+                      <span class="text-sm font-medium text-foreground truncate flex-1 min-w-0">
+                        {group.message.split('\n')[0]}
+                      </span>
+                    </button>
+                    <span class="text-[11px] text-muted-foreground/60 shrink-0 flex items-center gap-1.5">
+                      {#if group.date}
+                        <span>{formatRelativeTime(group.date)}</span>
+                        <span class="text-muted-foreground/30">·</span>
+                      {/if}
+                      <span>{group.changes.length} file{group.changes.length === 1 ? '' : 's'}</span>
+                    </span>
+                    <button
+                      type="button"
+                      class="text-[11px] text-muted-foreground/50 hover:text-foreground transition-colors cursor-pointer shrink-0"
+                      onclick={() => handleOpenCommit(group.hash)}
+                      title="Open commit"
+                    >
+                      <Fa icon={faArrowUpRightFromSquare} class="w-2.5 h-2.5" />
+                    </button>
+                  </div>
                 </div>
-                <Skeleton class="h-5 w-16 rounded-full" />
+                {#if expandedCommits.has(group.hash)}
+                  <div class="flex flex-col gap-2 mt-2 mx-2" transition:slide={{ duration: 150 }}>
+                    {#each group.changes as change (getExpandKey(change))}
+                      {@render fileCard(change, true)}
+                    {/each}
+                  </div>
+                {/if}
               </div>
-              <div class="space-y-2">
-                <Skeleton class="h-3 w-full" />
-                <Skeleton class="h-3 w-5/6" />
-                <Skeleton class="h-3 w-4/6" />
-              </div>
-            </div>
+            {:else}
+              <!-- Working changes (unstaged/staged) without a commit header -->
+              {#each group.changes as change (getExpandKey(change))}
+                {@render fileCard(change, false)}
+              {/each}
+            {/if}
           {/each}
-        </div>
-      {:else if mergedChanges.length === 0}
-        <div class="flex items-center justify-center h-full text-muted-foreground py-6">
-          No changes to display
-        </div>
-      {:else}
-        <div class="flex flex-col gap-2 py-6">
-          <!-- Single loop over merged changes - files with both staged/unstaged show as one entry -->
+        {:else}
+          <!-- Combined mode: flat list of merged changes -->
           {#each mergedChanges as change (change.filePath + '-' + (change.commitHash || 'working'))}
             {@render fileCard(change)}
           {/each}
-        </div>
-      {/if}
-    </div>
-  </PanelWrapper>
-{:else}
-  <!-- Headerless mode - content only, header is managed by panel tab bar -->
-  <div class="h-full w-full flex flex-col overflow-hidden">
-    <!-- Scroll container -->
-    <div
-      class="h-full overflow-auto p-5 pt-0"
-      onscroll={handleScroll}
-      bind:this={scrollContainerRef}
-    >
-      <!-- Sticky Visualization -->
-      {#if mergedChanges.length > 0}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div
-          class="sticky top-0 z-10 -mx-5 mb-4 border-b border-border bg-background/95 backdrop-blur-sm relative transition-[clip-path] duration-200 ease-in-out"
-          style="clip-path: inset(0 0 {isHeaderCollapsed ? 'calc(100% - 60px)' : '0'} 0);"
-          onmouseenter={() => (isHeaderHovered = true)}
-          onmouseleave={() => (isHeaderHovered = false)}
-        >
-          <ChangeSetVisualization
-            chatChanges={visualizationChanges}
-            onFileClick={handleVisualizationFileClick}
-            onLineClick={handleVisualizationLineClick}
-          />
-          <!-- Fade gradient overlay when collapsed -->
-          <div
-            class="absolute left-0 right-0 h-8 bg-gradient-to-t from-background to-transparent pointer-events-none transition-all duration-200"
-            class:opacity-100={isHeaderCollapsed}
-            class:opacity-0={!isHeaderCollapsed}
-            style:bottom={isHeaderCollapsed ? 'calc(100% - 60px)' : '0'}
-          ></div>
-        </div>
-      {/if}
-
-      <!-- Commit Details Section -->
-      {#if commitInfo}
-        {@render commitDetailsSection()}
-      {/if}
-
-      <!-- File List with Inline Diffs -->
-      {#if showLoadingState}
-        <!-- Skeleton loader for file changes -->
-        <div class="flex flex-col gap-3 py-6">
-          {#each Array(4) as _, i}
-            <div class="rounded-lg border border-border bg-card p-4">
-              <div class="flex items-center justify-between mb-3">
-                <div class="flex items-center gap-2 flex-1">
-                  <Skeleton class="h-4 w-4 rounded" />
-                  <Skeleton class="h-4 w-48" />
-                </div>
-                <Skeleton class="h-5 w-16 rounded-full" />
-              </div>
-              <div class="space-y-2">
-                <Skeleton class="h-3 w-full" />
-                <Skeleton class="h-3 w-5/6" />
-                <Skeleton class="h-3 w-4/6" />
-              </div>
-            </div>
-          {/each}
-        </div>
-      {:else if mergedChanges.length === 0}
-        <div class="flex items-center justify-center h-full text-muted-foreground py-6">
-          No changes to display
-        </div>
-      {:else}
-        <div class="flex flex-col gap-2 py-6">
-          <!-- Single loop over merged changes - files with both staged/unstaged show as one entry -->
-          {#each mergedChanges as change (change.filePath + '-' + (change.commitHash || 'working'))}
-            {@render fileCard(change)}
-          {/each}
-        </div>
-      {/if}
-    </div>
+        {/if}
+      </div>
+    {/if}
   </div>
-{/if}
+</div>
 
 {#snippet commitDetailsSection()}
   <div class="mb-3 px-1">
@@ -1974,21 +2337,24 @@
   </div>
 {/snippet}
 
-{#snippet fileCard(change: LocalFileChange)}
+{#snippet fileCard(change: LocalFileChange, inCommitGroup?: boolean)}
   {@const displayPath = getDisplayPath(change.filePath)}
+  {@const expandKey = getExpandKey(change)}
+  {@const isViewed = viewedFiles.has(change.filePath)}
+  {@const stickyTop = inCommitGroup ? '64px' : '31.5px'}
   <div
-    class="mb-16 bg-card border border-border rounded-lg overflow-hidden transition-all duration-300"
+    class="mb-4 bg-sidebar border border-border rounded-lg overflow-clip transition-all duration-300 {isViewed ? 'opacity-50' : ''}"
     style="overflow-anchor: none;"
     use:registerRef={change.filePath}
   >
-    <!-- File Header -->
-    <div class="flex items-center gap-2 px-4 py-1.5 hover:bg-background/30 group relative">
+    <!-- File Header (sticky within scroll container) -->
+    <div class="flex items-center gap-2 px-4 py-1.5 group relative sticky z-10 bg-sidebar" style="top: {stickyTop}; border-bottom: 1px solid {expandedFiles.has(expandKey) ? 'var(--border)' : 'transparent'}">
       <button
-        onclick={() => toggleFile(change.filePath)}
+        onclick={() => toggleFile(expandKey)}
         class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer shrink"
       >
         <Fa
-          icon={expandedFiles.has(change.filePath) ? faChevronDown : faChevronRight}
+          icon={expandedFiles.has(expandKey) ? faChevronDown : faChevronRight}
           class="text-muted-foreground/50 w-2.5! h-2.5! shrink-0"
         />
 
@@ -2000,6 +2366,7 @@
             {getDirectoryPath(displayPath)}
           </span>
         {/if}
+        <LineChangesBadge additions={change.additions} deletions={change.deletions} size="xs" />
         <!-- Loading indicator when file is being refreshed -->
         {#if refreshingFiles.has(change.filePath)}
           <Fa icon={faSpinner} class="w-3 h-3 text-muted-foreground animate-spin shrink-0" />
@@ -2008,8 +2375,9 @@
 
       <!-- Action buttons -->
       <div
-        class="absolute right-2 flex items-center gap-px bg-background opacity-0 group-hover:opacity-100 transition-opacity"
+        class="absolute right-2 flex items-center gap-px"
       >
+        <div class="flex items-center gap-px bg-background opacity-0 group-hover:opacity-100 transition-opacity">
         {#if showStagingControls}
           {@const locked = isFileLocked(change.filePath)}
           <!-- Staging controls for merged changes (both staged and unstaged) -->
@@ -2112,19 +2480,41 @@
         >
           <Fa icon={faArrowUpRightFromSquare} class="w-3 h-3" />
         </Button>
+        </div>
+        <!-- Always-visible viewed checkbox -->
+        <label
+          class="shrink-0 flex items-center gap-1.5 cursor-pointer ml-1"
+          title={isViewed ? 'Mark as not viewed' : 'Mark as viewed'}
+          onclick={(e: MouseEvent) => e.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            checked={isViewed}
+            onchange={() => toggleViewed(change.filePath, expandKey)}
+            class="sr-only peer"
+          />
+          <span
+            class="w-3.5 h-3.5 rounded border border-muted-foreground/30 flex items-center justify-center
+              peer-checked:bg-primary peer-checked:border-primary transition-colors"
+          >
+            {#if isViewed}
+              <Fa icon={faCheck} class="w-2! h-2! text-primary-foreground" />
+            {/if}
+          </span>
+          <span class="text-xs text-muted-foreground">Viewed</span>
+        </label>
       </div>
 
-      <LineChangesBadge additions={change.additions} deletions={change.deletions} size="xs" />
     </div>
 
     <!-- Inline Diff (when expanded) - lazy loaded via Intersection Observer -->
-    {#if expandedFiles.has(change.filePath)}
+    {#if expandedFiles.has(expandKey)}
       <div
         class="border-t border-border"
         transition:slide={{ axis: 'y', duration: 200 }}
-        use:observeVisibility={change.filePath}
+        use:observeVisibility={expandKey}
       >
-        {#if visibleFiles.has(change.filePath)}
+        {#if visibleFiles.has(expandKey)}
           {#if change.isMerged && change.allParts && change.allParts.length > 1}
             <!-- Merged change: show all parts with gutter indicators -->
             <CombinedInlineDiffItem

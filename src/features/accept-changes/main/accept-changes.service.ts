@@ -561,7 +561,7 @@ export class AcceptChangesService {
       try {
         const { stdout: revList } = await this.execGitCommand(
           workspaceId,
-          `git rev-list --left-right --count ${trunkRef}...${branch}`,
+          `git rev-list --first-parent --left-right --count ${trunkRef}...${branch}`,
           worktreePath,
         );
         const [behind, ahead] = revList.trim().split('\t').map(Number);

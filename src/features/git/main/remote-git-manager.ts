@@ -597,7 +597,7 @@ export class RemoteGitManager extends EventEmitter {
 
     const cwd = worktreePath || this.config.repositoryPath;
     const format = '--format=%H|%s|%an|%ae|%aI';
-    const result = await this.executeGitCommand(`log -n ${limit} ${format}`, cwd);
+    const result = await this.executeGitCommand(`log --first-parent --no-merges -n ${limit} ${format}`, cwd);
 
     if (result.exitCode !== 0) {
       throw new Error(`Failed to get history: ${result.stderr}`);

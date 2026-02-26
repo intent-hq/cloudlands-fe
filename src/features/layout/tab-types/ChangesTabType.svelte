@@ -32,13 +32,17 @@
   const olderCommits = $derived(fileTrackingStore.olderCommits || []);
   const targetCommit = $derived(
     allCommits.find((c) => c.hash === commitHash) ||
-    olderCommits.find((c) => c.hash === commitHash),
+      olderCommits.find((c) => c.hash === commitHash),
   );
   const storeCommitFiles = $derived(targetCommit?.files || []);
 
   // Fetched commit details for commits not in the store (or with empty files like older commits)
-  let fetchedFileDetails = $state<Array<{ path: string; additions: number; deletions: number }>>([]);
-  let fetchedCommitInfo = $state<{ author?: string; authorEmail?: string; date?: string } | null>(null);
+  let fetchedFileDetails = $state<Array<{ path: string; additions: number; deletions: number }>>(
+    [],
+  );
+  let fetchedCommitInfo = $state<{ author?: string; authorEmail?: string; date?: string } | null>(
+    null,
+  );
   let isFetchingDetails = $state(false);
   let fetchedForHash = $state('');
 
@@ -62,21 +66,27 @@
     invoke<{ success: boolean; data?: any; error?: string }>('git:commit-details', {
       workspaceId: wsId,
       commitHash: hash,
-    }).then((result) => {
-      if (result?.success && result.data) {
-        fetchedFileDetails = result.data.fileDetails || (result.data.files || []).map((f: string) => ({ path: f, additions: 0, deletions: 0 }));
-        fetchedCommitInfo = { author: result.data.author, authorEmail: result.data.email, date: result.data.date };
-      }
-      isFetchingDetails = false;
-    }).catch(() => {
-      isFetchingDetails = false;
-    });
+    })
+      .then((result) => {
+        if (result?.success && result.data) {
+          fetchedFileDetails =
+            result.data.fileDetails ||
+            (result.data.files || []).map((f: string) => ({ path: f, additions: 0, deletions: 0 }));
+          fetchedCommitInfo = {
+            author: result.data.author,
+            authorEmail: result.data.email,
+            date: result.data.date,
+          };
+        }
+        isFetchingDetails = false;
+      })
+      .catch(() => {
+        isFetchingDetails = false;
+      });
   });
 
   // Use store files if available, otherwise use fetched details
-  const commitFiles = $derived(
-    storeCommitFiles.length > 0 ? storeCommitFiles : fetchedFileDetails,
-  );
+  const commitFiles = $derived(storeCommitFiles.length > 0 ? storeCommitFiles : fetchedFileDetails);
 
   // State for expand/collapse and panel ref
   let changesAllExpanded = $state(true);
@@ -111,29 +121,54 @@
 </script>
 
 {#snippet changesActions()}
-  <Button variant="ghost-light" size="icon-xs"
+  <Button
+    variant="ghost-light"
+    size="icon-xs"
     onclick={() => {
       changesAllExpanded = !changesAllExpanded;
       if (changesAllExpanded) changesPanelRef?.expandAll();
       else changesPanelRef?.collapseAll();
     }}
-    tooltip={changesAllExpanded ? 'Collapse all files' : 'Expand all files'} tooltipSide="bottom"
-    class={changesAllExpanded ? 'text-foreground' : 'text-muted-foreground/50'}>
+    tooltip={changesAllExpanded ? 'Collapse all files' : 'Expand all files'}
+    tooltipSide="bottom"
+    class={changesAllExpanded ? 'text-foreground' : 'text-muted-foreground/50'}
+  >
     <Fa icon={faCompressAlt} size="xs" class={changesAllExpanded ? '' : 'rotate-180'} />
   </Button>
-  <Button variant="ghost-light" size="icon-xs" onclick={() => editorSettings.toggleLineWrapping()}
-    tooltip={editorSettings.lineWrapping ? 'Wrapping lines. Click to disable.' : 'Click to wrap lines'}
-    tooltipSide="bottom" class={editorSettings.lineWrapping ? 'text-foreground' : 'text-muted-foreground/50'}>
+  <Button
+    variant="ghost-light"
+    size="icon-xs"
+    onclick={() => editorSettings.toggleLineWrapping()}
+    tooltip={editorSettings.lineWrapping
+      ? 'Wrapping lines. Click to disable.'
+      : 'Click to wrap lines'}
+    tooltipSide="bottom"
+    class={editorSettings.lineWrapping ? 'text-foreground' : 'text-muted-foreground/50'}
+  >
     <Fa icon={faTextWidth} size="xs" />
   </Button>
-  <Button variant="ghost-light" size="icon-xs" onclick={() => editorSettings.toggleFoldUnchanged()}
-    tooltip={editorSettings.foldUnchanged ? 'Folding unchanged lines. Click to disable.' : 'Click to fold unchanged lines'}
-    tooltipSide="bottom" class={editorSettings.foldUnchanged ? 'text-foreground' : 'text-muted-foreground/50'}>
+  <Button
+    variant="ghost-light"
+    size="icon-xs"
+    onclick={() => editorSettings.toggleFoldUnchanged()}
+    tooltip={editorSettings.foldUnchanged
+      ? 'Folding unchanged lines. Click to disable.'
+      : 'Click to fold unchanged lines'}
+    tooltipSide="bottom"
+    class={editorSettings.foldUnchanged ? 'text-foreground' : 'text-muted-foreground/50'}
+  >
     <Fa icon={faMap} size="xs" />
   </Button>
-  <Button variant="ghost-light" size="icon-xs" onclick={() => editorSettings.toggleDiffSideBySide()}
-    tooltip={editorSettings.diffSideBySide ? 'Click to show unified view' : 'Click to show split view'}
-    tooltipSide="bottom" class={editorSettings.diffSideBySide ? 'text-foreground' : 'text-muted-foreground/50'}>
+  <Button
+    variant="ghost-light"
+    size="icon-xs"
+    onclick={() => editorSettings.toggleDiffSideBySide()}
+    tooltip={editorSettings.diffSideBySide
+      ? 'Click to show unified view'
+      : 'Click to show split view'}
+    tooltipSide="bottom"
+    class={editorSettings.diffSideBySide ? 'text-foreground' : 'text-muted-foreground/50'}
+  >
     <Fa icon={faColumns} size="xs" />
   </Button>
 {/snippet}
@@ -141,10 +176,8 @@
 {#key commitHash}
   <ChatChangesPanel
     bind:this={changesPanelRef}
-    showHeader={false}
     isLoading={fileTrackingStore.loading || isFetchingDetails}
     {changes}
-    title={`Commit: ${commitMessage || commitHash?.substring(0, 7) || 'Unknown'}`}
     commitInfo={{
       hash: commitHash,
       message: commitMessage,
@@ -158,16 +191,21 @@
       const openInAdjacentPanel = event?.metaKey || event?.ctrlKey || false;
       const panelElement = (event?.target as HTMLElement | null)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-      window.dispatchEvent(new CustomEvent('workspace:open-agent', { detail: { agentId, openInAdjacentPanel, sourcePanelId } }));
+      window.dispatchEvent(
+        new CustomEvent('workspace:open-agent', {
+          detail: { agentId, openInAdjacentPanel, sourcePanelId },
+        }),
+      );
     }}
     onOpenNote={(noteId, event) => {
       const openInAdjacentPanel = event?.metaKey || event?.ctrlKey || false;
       const panelElement = (event?.target as HTMLElement | null)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-      window.dispatchEvent(new CustomEvent('workspace:open-note', { detail: { noteId, openInAdjacentPanel, sourcePanelId } }));
-    }}
-    onClose={() => {
-      window.dispatchEvent(new CustomEvent('close-commit-changeset'));
+      window.dispatchEvent(
+        new CustomEvent('workspace:open-note', {
+          detail: { noteId, openInAdjacentPanel, sourcePanelId },
+        }),
+      );
     }}
   />
 {/key}

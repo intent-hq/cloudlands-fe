@@ -79,6 +79,8 @@
     onOpenNote?: (noteId: string) => void;
     onOpenAgent?: (agentId: string) => void;
     onOpenFile?: (filePath: string) => void;
+    onOpenAllChanges?: () => void;
+    onOpenCommit?: (hash: string) => void;
     onOpenFileInPanel?: (filePath: string) => void;
     class?: string;
   }
@@ -102,6 +104,8 @@
     onOpenNote,
     onOpenAgent,
     onOpenFile,
+    onOpenAllChanges,
+    onOpenCommit,
     onOpenFileInPanel,
     class: className,
   }: Props = $props();
@@ -508,80 +512,102 @@
         </p>
       </div>
 
-      <div class="px-4 pb-2 flex flex-col gap-0.5">
-        {#if workspace?.branch}
-          <div class="flex items-center gap-1 text-sm py-0.5">
-            <Fa icon={faCodeBranch} size="xs" class="text-muted-foreground/30" />
-            <span class="text-muted-foreground/60 truncate text-xs">{workspace.branch}</span>
-            {#if workspace.baseRef}
-              <Fa icon={faArrowRight} size="xs" class="text-muted-foreground/30" />
-              <span class="text-muted-foreground/60 truncate text-xs">{workspace.baseRef}</span>
-            {/if}
-          </div>
-        {/if}
-      </div>
+      <div>
+        <div class="px-4 pb-2 flex flex-col gap-0.5">
+          {#if workspace?.branch}
+            <div class="flex items-center gap-1 text-sm py-0.5">
+              <Fa icon={faCodeBranch} size="xs" class="text-muted-foreground/30" />
+              <span class="text-muted-foreground/60 truncate text-xs">{workspace.branch}</span>
+              {#if workspace.baseRef}
+                <Fa icon={faArrowRight} size="xs" class="text-muted-foreground/30" />
+                <span class="text-muted-foreground/60 truncate text-xs">{workspace.baseRef}</span>
+              {/if}
+            </div>
+          {/if}
+        </div>
 
-      <!-- File list -->
-      <div class="px-4 pb-1 flex flex-col gap-0">
-        {#each topFiles as file}
-          <FileRow
-            file={toUIFileChange(file)}
-            active={activeFilePath === file.path || selectedFilePath === file.path}
-            onFileClick={() => {
-              if (onOpenFile) onOpenFile(file.path);
-              else onSwitchTab?.('changes');
-            }}
-          />
-        {/each}
+        <!-- File list -->
+        <div class="px-4 pb-1 flex flex-col gap-0">
+          {#each topFiles as file}
+            <FileRow
+              file={toUIFileChange(file)}
+              active={activeFilePath === file.path || selectedFilePath === file.path}
+              onFileClick={(_path, _hash, _staged, event) => {
+                event?.stopPropagation?.();
+                if (onOpenFile) onOpenFile(file.path);
+                else onSwitchTab?.('changes');
+              }}
+            />
+          {/each}
 
-        {#if moreFilesCount > 0}
+          {#if moreFilesCount > 0}
+            <button
+              class="mt-1 flex items-center text-xs text-muted-foreground/60 text-left py-0.5 transition-colors cursor-pointer px-2"
+              onclick={(e) => {
+                e.stopPropagation();
+                onSwitchTab?.('changes');
+              }}
+            >
+              <Fa icon={faPlus} size="xs" class="ml-0.75 -mt-px mr-0.75" />
+              {moreFilesCount} more files changed
+            </button>
+          {/if}
+        </div>
+
+        <div class="px-4 pb-2 flex flex-col gap-0.5">
+          <!-- Commits -->
+          {#if commits.length > 0}
+            <div class="flex flex-col gap-0.5">
+              {#each commits.slice(0, 6) as commit}
+                <button
+                  class="flex items-center gap-2 text-[11px] py-0.5 w-full text-left cursor-pointer hover:bg-muted/30 rounded transition-colors"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    onOpenCommit?.(commit.hash);
+                  }}
+                >
+                  <Fa icon={faCodeCommit} size="xs" class="text-muted-foreground/20 shrink-0" />
+                  <span class="text-muted-foreground/50 truncate">{commit.message}</span>
+                </button>
+              {/each}
+              {#if commits.length > 6}
+                <span class="text-[10px] text-muted-foreground/40 pl-5"
+                  >+{commits.length - 6} more</span
+                >
+              {/if}
+            </div>
+          {/if}
+
+          <!-- PR status -->
+          {#if stats.pr.hasOpen || stats.pr.hasMerged}
+            <div class="flex items-center gap-2 text-sm py-0.5">
+              <Fa icon={faCodePullRequest} size="xs" class="text-muted-foreground/30" />
+              {#if stats.pr.hasOpen && stats.pr.number}
+                <span class="text-muted-foreground/60 text-[11px]">PR #{stats.pr.number}</span>
+                <span
+                  class="text-emerald-500 font-medium text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10"
+                  >open</span
+                >
+              {:else if stats.pr.hasMerged}
+                <span class="text-muted-foreground/60 text-[11px]">PR merged</span>
+                <span
+                  class="text-purple-500 font-medium text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/10"
+                  >merged</span
+                >
+              {/if}
+            </div>
+          {/if}
+        </div>
+
+        <!-- View all changes button -->
+        <div class="px-4 pb-2">
           <button
-            class="mt-1 flex items-center text-xs text-muted-foreground/60 text-left py-0.5 transition-colors cursor-pointer px-2"
-            onclick={() => onSwitchTab?.('changes')}
+            class="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer"
+            onclick={() => onOpenAllChanges?.()}
           >
-            <Fa icon={faPlus} size="xs" class="ml-0.75 -mt-px mr-0.75" />
-            {moreFilesCount} more files changed
+            View all changes
           </button>
-        {/if}
-      </div>
-
-      <div class="px-4 pb-2 flex flex-col gap-0.5">
-        <!-- Commits -->
-        {#if commits.length > 0}
-          <div class="flex flex-col gap-0.5">
-            {#each commits.slice(0, 6) as commit}
-              <div class="flex items-center gap-2 text-[11px] py-0.5">
-                <Fa icon={faCodeCommit} size="xs" class="text-muted-foreground/20 shrink-0" />
-                <span class="text-muted-foreground/50 truncate">{commit.message}</span>
-              </div>
-            {/each}
-            {#if commits.length > 6}
-              <span class="text-[10px] text-muted-foreground/40 pl-5"
-                >+{commits.length - 6} more</span
-              >
-            {/if}
-          </div>
-        {/if}
-
-        <!-- PR status -->
-        {#if stats.pr.hasOpen || stats.pr.hasMerged}
-          <div class="flex items-center gap-2 text-sm py-0.5">
-            <Fa icon={faCodePullRequest} size="xs" class="text-muted-foreground/30" />
-            {#if stats.pr.hasOpen && stats.pr.number}
-              <span class="text-muted-foreground/60 text-[11px]">PR #{stats.pr.number}</span>
-              <span
-                class="text-emerald-500 font-medium text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10"
-                >open</span
-              >
-            {:else if stats.pr.hasMerged}
-              <span class="text-muted-foreground/60 text-[11px]">PR merged</span>
-              <span
-                class="text-purple-500 font-medium text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/10"
-                >merged</span
-              >
-            {/if}
-          </div>
-        {/if}
+        </div>
       </div>
     </section>
   {/if}

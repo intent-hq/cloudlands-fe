@@ -1095,6 +1095,10 @@
                       }),
                     );
                   }}
+                  onOpenAllChanges={() => window.dispatchEvent(new CustomEvent('workspace:open-local-changes'))}
+                  onOpenCommit={(hash) => {
+                    window.dispatchEvent(new CustomEvent('workspace:open-commit-changeset', { detail: { commitHash: hash } }));
+                  }}
                   onOpenFileInPanel={handleOpenFileInPanel}
                 />
               {:else if tabId === 'agents'}
