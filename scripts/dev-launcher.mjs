@@ -253,10 +253,29 @@ function parseNameArg(args) {
   return '';
 }
 
+/**
+ * Get the current git branch name to use as the default dev instance name.
+ */
+function getCurrentGitBranch() {
+  try {
+    const result = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: dirname(__dirname),
+      encoding: 'utf-8',
+      timeout: 3000,
+    });
+    if (result.status === 0 && result.stdout) {
+      return result.stdout.trim();
+    }
+  } catch {
+    // Not in a git repo or git not available
+  }
+  return '';
+}
+
 // Main
 const args = process.argv.slice(2);
 const cdpMode = args.includes('--cdp') || args.includes('-c');
-const devName = parseNameArg(args);
+const devName = parseNameArg(args) || getCurrentGitBranch();
 
 findAvailablePorts(cdpMode)
   .then((ports) => runDev(ports, cdpMode, devName))
