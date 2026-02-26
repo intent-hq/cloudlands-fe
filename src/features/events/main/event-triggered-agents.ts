@@ -109,6 +109,36 @@ export const handleAgentMessageSent: EventHandler<AgentMessageSentEvent> = async
           toAgentId,
           fromAgentId,
         });
+      } else if ((sendResult as any).errorCode === 'QUEUE_PENDING' || (sendResult as any).errorCode === 'ALREADY_STREAMING') {
+        // Agent has queued messages being processed or is streaming — fall back to queuing
+        // so the message is delivered after the current stream completes.
+        logger.info('[MESSAGE-DELIVERY] Agent busy (queue pending or streaming), falling back to queue', {
+          toAgentId,
+          fromAgentId,
+          errorCode: (sendResult as any).errorCode,
+        });
+        const queueResult = await handler.handleQueueMessage(null, {
+          agentId: toAgentId,
+          content: formattedMessage,
+        });
+        if (!queueResult.success) {
+          logger.error('[MESSAGE-DELIVERY] ✗ Fallback queue also failed', {
+            toAgentId,
+            error: queueResult.error,
+          });
+          await emitMessageDeliveryFailure(
+            workspaceId,
+            fromAgentId,
+            fromAgentName,
+            toAgentId,
+            queueResult.error || 'Failed to queue message',
+          );
+        } else {
+          logger.info('[MESSAGE-DELIVERY] ✓ Message queued via fallback', {
+            toAgentId,
+            messageId: queueResult.queuedMessage?.id,
+          });
+        }
       } else {
         logger.error('[MESSAGE-DELIVERY] ✗ Failed to send message', {
           toAgentId,

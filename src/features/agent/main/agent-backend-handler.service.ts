@@ -155,6 +155,10 @@ export class AgentBackendHandler {
   private messageQueues = new Map<string, QueuedMessage[]>();
   /** @property {Set<string>} processingQueue - Agents currently processing queued messages */
   private processingQueue = new Set<string>();
+  /** @property {Set<string>} pendingQueueProcessing - Agents with queued messages about to be processed.
+   *  Set synchronously in finalizeStream, checked in sendBackendInitiatedMessage to prevent
+   *  event delivery from racing ahead of queued message processing. */
+  private pendingQueueProcessing = new Set<string>();
   /** @property {Set<string>} interruptedAgents - Agents that were intentionally interrupted (skip auto queue processing) */
   private interruptedAgents = new Set<string>();
   /** @property {Map<string, Set<string>>} completedStreams - Track completed streamIds per agentId to prevent duplicate onComplete calls */
@@ -1069,8 +1073,11 @@ export class AgentBackendHandler {
         }
         this.providers.delete(request.agentId);
         this.providerLastUsed.delete(request.agentId);
+        // Clean up all stream tracking state (consistent with cleanupStreamResources)
         this.streamStartTimes.delete(request.agentId);
         this.streamSessionIds.delete(request.agentId);
+        this.streamWorkspaceIds.delete(request.agentId);
+        this.streamWindowIds.delete(request.agentId);
         provider = undefined;
       }
 
@@ -2785,7 +2792,18 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
                     });
                     this.emptyResponseRetries.delete(autoContinueAgentId);
 
-                    // CRITICAL: Emit agent:idle so the agent doesn't stay permanently stuck
+                    // CRITICAL: Clean up resources and advance the queue BEFORE emitting idle.
+                    // The auto-continue skipped finalizeStream (intentionally), but now that
+                    // auto-continue itself failed, we must advance the queue so queued messages
+                    // aren't stuck. finalizeStream also sets pendingQueueProcessing to prevent
+                    // the idle event from racing with queue processing.
+                    this.finalizeStream(
+                      autoContinueAgentId,
+                      autoContinueWorkspaceId,
+                      'auto-continue-failed',
+                    );
+
+                    // Emit agent:idle so the agent doesn't stay permanently stuck
                     // in "responding" state. Without this, a failed auto-continue would leave
                     // no one to transition the agent out of "responding", causing the exact
                     // stuck-agent bug we're trying to fix.
@@ -2924,6 +2942,21 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
             message: assistantMessage,
           });
 
+          // Memory instrumentation: cleanup starting
+          memEvents.cleanupStart(request.agentId, {
+            hasHealthCheck: this.streamHealthChecks.has(request.agentId),
+            hasStreamStartTime: this.streamStartTimes.has(request.agentId),
+          });
+
+          // Cleanup after completion + advance the queue
+          // IMPORTANT: finalizeStream MUST run BEFORE emitAgentIdleEvent.
+          // emitAgentIdleEvent can trigger event subscription delivery which starts
+          // a new stream via sendBackendInitiatedMessage. If that happens before
+          // processNextQueuedMessage fires, the queued message gets deferred
+          // ("Stream already active") and may never be sent. By finalizing first,
+          // the queue gets priority over event-triggered streams.
+          this.finalizeStream(request.agentId, request.workspaceId, 'complete');
+
           // Emit agent:idle event for agent-to-agent coordination
           // Use the agentName from the outer scope (loaded from persistence at line 643)
           // Pass assistantMessage to ensure lastResponseSummary includes the final message
@@ -2979,15 +3012,6 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
               finishReason,
             });
           }
-
-          // Memory instrumentation: cleanup starting
-          memEvents.cleanupStart(request.agentId, {
-            hasHealthCheck: this.streamHealthChecks.has(request.agentId),
-            hasStreamStartTime: this.streamStartTimes.has(request.agentId),
-          });
-
-          // Cleanup after completion + advance the queue
-          this.finalizeStream(request.agentId, request.workspaceId, 'complete');
 
           // Memory instrumentation: cleanup complete
           memEvents.cleanupComplete(request.agentId, {
@@ -3058,19 +3082,22 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
             this.cleanupStreamResources(request.agentId);
           } else {
             // Real error: clean up resources AND advance the queue.
-            // emitAgentFailedEvent coordinates setAgentStatus('failed') + event emission
-            // in a single async chain for guaranteed ordering.
             // Mark that onError handled the failure so the outer catch doesn't double-emit.
             // ACP provider's onError calls rejectStream(), which causes await provider.streamMessage()
             // to throw, hitting the outer catch. Without this guard, agent:failed fires twice.
             onErrorHandled = true;
+            // IMPORTANT: finalizeStream MUST run BEFORE emitAgentFailedEvent (same as onComplete).
+            // emitAgentFailedEvent can trigger event subscription delivery which starts
+            // a new stream, racing with queued message processing.
+            this.finalizeStream(request.agentId, request.workspaceId, 'error');
+            // emitAgentFailedEvent coordinates setAgentStatus('failed') + event emission
+            // in a single async chain for guaranteed ordering.
             this.emitAgentFailedEvent(
               request.agentId,
               request.workspaceId,
               agentName,
               error.message,
             );
-            this.finalizeStream(request.agentId, request.workspaceId, 'error');
           }
         },
       });
@@ -3110,6 +3137,9 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
       // which causes this catch to fire AFTER onError already emitted agent:failed.
       const isRecoverableNotFound = errorMessage.includes('not found');
       if (request.workspaceId && !isRecoverableNotFound && !onErrorHandled) {
+        // Clean up stream resources and advance the queue. onError didn't fire,
+        // so streamStartTimes may be stale and the queue would never advance.
+        this.finalizeStream(request.agentId, request.workspaceId, 'outer-catch-error');
         const failedAgentName = (request as any).agentName || 'Agent';
         this.emitAgentFailedEvent(
           request.agentId,
@@ -3117,6 +3147,10 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
           failedAgentName,
           errorMessage,
         );
+      } else if (!onErrorHandled && this.streamStartTimes.has(request.agentId)) {
+        // Even if we can't emit the failed event (no workspaceId or recoverable error),
+        // still clean up stale stream resources to prevent the agent from being stuck
+        this.cleanupStreamResources(request.agentId);
       }
 
       return {
@@ -4172,6 +4206,15 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
           });
         }
 
+        // IMPORTANT: finalizeStream MUST run BEFORE emitAgentFailedEvent (same pattern
+        // as onComplete/onError). emitAgentFailedEvent can trigger event subscription
+        // delivery which races with queued message processing.
+        if (workspaceId) {
+          this.finalizeStream(agentId, workspaceId, 'timeout');
+        } else {
+          this.cleanupStreamResources(agentId);
+        }
+
         // CRITICAL FIX: Always emit agent:failed event on timeout, regardless of whether
         // partial content was recovered. This ensures delegation subscriptions are triggered
         // so the parent orchestrator can be notified when delegated agents timeout.
@@ -4195,12 +4238,6 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
                 error: err,
               });
             });
-        }
-
-        if (workspaceId) {
-          this.finalizeStream(agentId, workspaceId, 'timeout');
-        } else {
-          this.cleanupStreamResources(agentId);
         }
       }
     }, 5000);
@@ -4325,6 +4362,23 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
   private finalizeStream(agentId: string, workspaceId: string, reason: string): void {
     this.cleanupStreamResources(agentId);
 
+    // DETERMINISTIC QUEUE PRIORITY: If there are queued messages, set a synchronous
+    // reservation flag BEFORE any async work. sendBackendInitiatedMessage checks this
+    // flag and defers if set, preventing event-triggered streams from racing ahead of
+    // queued messages. Without this, emitAgentIdleEvent's async chain could call
+    // sendBackendInitiatedMessage and start a new stream before processNextQueuedMessage
+    // reaches the streamStartTimes.set() call (which is ~37 awaits deep in
+    // handleBackendStreamMessage), causing queued messages to be indefinitely deferred.
+    const queue = this.messageQueues.get(agentId);
+    if (queue && queue.length > 0) {
+      this.pendingQueueProcessing.add(agentId);
+      logger.info('Set pendingQueueProcessing reservation for queued messages', {
+        agentId,
+        queueLength: queue.length,
+        reason,
+      });
+    }
+
     // Advance the queue asynchronously so the current stack unwinds first
     setTimeout(() => {
       this.processNextQueuedMessage(agentId, workspaceId)
@@ -4333,8 +4387,15 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
             agentId,
             error: queueError instanceof Error ? queueError.message : String(queueError),
           });
+        })
+        .finally(() => {
+          // Always clear the reservation flag when queue processing completes (success or failure)
+          if (this.pendingQueueProcessing.has(agentId)) {
+            this.pendingQueueProcessing.delete(agentId);
+            logger.info('Cleared pendingQueueProcessing reservation', { agentId, reason });
+          }
         });
-    }, 100);
+    }, 0);
   }
 
   /**
@@ -4432,6 +4493,7 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
     // Message queue tracking
     this.messageQueues.delete(agentId);
     this.processingQueue.delete(agentId);
+    this.pendingQueueProcessing.delete(agentId);
 
     // Agent state tracking
     this.activeSessions.delete(agentId);
@@ -5008,8 +5070,11 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
       }
       this.providers.delete(sessionId);
       this.providerLastUsed.delete(sessionId);
+      // Clean up all stream tracking state (consistent with cleanupStreamResources)
       this.streamStartTimes.delete(sessionId);
       this.streamSessionIds.delete(sessionId);
+      this.streamWorkspaceIds.delete(sessionId);
+      this.streamWindowIds.delete(sessionId);
       existingProvider = undefined;
     }
 
@@ -5029,6 +5094,24 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
         success: false,
         error: `Agent is already streaming (started ${Math.round(streamAge / 1000)}s ago). Message not delivered to avoid corrupting the in-progress stream.`,
         errorCode: 'ALREADY_STREAMING',
+      };
+    }
+
+    // QUEUE PRIORITY GUARD: If queued messages are pending processing (set synchronously
+    // by finalizeStream), defer event delivery so queued messages go first.
+    // handleBackendStreamMessage has ~37 await points before setting streamStartTimes,
+    // so the streamStartTimes guard above can't catch this race. The event subscription
+    // service will retry delivery after the queued message stream completes.
+    if (this.pendingQueueProcessing.has(sessionId)) {
+      logger.info('Backend-initiated message: queued messages pending, deferring event delivery', {
+        agentId: sessionId,
+        workspaceId,
+        queueLength: this.messageQueues.get(sessionId)?.length || 0,
+      });
+      return {
+        success: false,
+        error: 'Queued messages are pending processing. Event delivery deferred until queue is drained.',
+        errorCode: 'QUEUE_PENDING',
       };
     }
 
