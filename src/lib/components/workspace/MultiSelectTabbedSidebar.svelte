@@ -28,6 +28,7 @@
     faSearch,
     faTimes,
   } from '@fortawesome/free-solid-svg-icons';
+
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { fly, slide } from 'svelte/transition';
@@ -959,7 +960,14 @@
                 <p
                   class="text-[11px] text-muted-foreground/60 mt-0.5 leading-snug transition-all duration-200"
                 >
-                  {#if tabId === 'context' && workspace?.path}
+                  {#if tabId === 'context' && workspace?.isRemote}
+                    {getTabDescription(tab.id, tab.description)} Your notes live on
+                    <span class="font-mono text-muted-foreground/80"
+                      >{workspace.environmentConfig?.ssh?.host
+                        ? `${workspace.environmentConfig.ssh.host}:`
+                        : ''}{workspace.id}/.workspace</span
+                    >.
+                  {:else if tabId === 'context' && workspace?.path}
                     {getTabDescription(tab.id, tab.description)} Your notes live in
                     <span class="inline-flex items-baseline gap-1">
                       <OpenComboButton
@@ -978,7 +986,7 @@
                   {:else if tabId === 'files' && workspacePath}
                     {workspace?.skipWorktree
                       ? 'Working directly in'
-                      : 'The agents in this space are working off a copy of your files in'}
+                      : 'Your copy of the repo lives in'}
                     <span class="inline-flex items-baseline gap-1">
                       <OpenComboButton
                         filePath={workspacePath}

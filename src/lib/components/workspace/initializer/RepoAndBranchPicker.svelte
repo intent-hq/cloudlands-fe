@@ -1,6 +1,7 @@
 <script lang="ts">
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
+  import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
   import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import BranchSelector, { type BranchStatus } from './BranchSelector.svelte';
@@ -171,10 +172,25 @@
     >
       {remoteDisplayPath}
     </span>
-    <span class="text-sm text-muted-foreground whitespace-nowrap shrink-0 mx-1 ml-2">off</span>
-    <span class="text-sm font-medium whitespace-nowrap shrink-0 font-mono"
-      >{remoteSetup.branch || 'main'}</span
-    >
+    {#if skipWorktree}
+      <span class="text-sm text-muted-foreground whitespace-nowrap shrink-0 mx-1 ml-2">on</span>
+    {:else}
+      <span class="text-sm text-muted-foreground whitespace-nowrap shrink-0 mx-1 ml-2">off</span>
+    {/if}
+    <span class="text-sm font-medium whitespace-nowrap shrink-0 font-mono">{remoteSetup.branch || 'main'}</span>
+    <!-- Skip worktree toggle for remote -->
+    {#if typeof onSkipWorktreeChange === 'function'}
+      <button
+        type="button"
+        onclick={() => onSkipWorktreeChange?.(!skipWorktree)}
+        class="flex items-center gap-1.5 ml-3 shrink-0 cursor-pointer"
+      >
+        <Checkbox checked={skipWorktree} class="-mb-0.5" onCheckedChange={(value) => onSkipWorktreeChange?.(value)} />
+        <span class="text-[0.8rem] text-muted-foreground whitespace-nowrap">
+          Work directly in your folder
+        </span>
+      </button>
+    {/if}
   {:else}
     <!-- Local repo flow -->
     <GitRepoIcon size={16} class="ml-0.75 -mb-px mr-2 shrink-0" />

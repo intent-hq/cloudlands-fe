@@ -18,7 +18,6 @@ import {
   createCompoundModelId,
   getDefaultModelForProvider,
   getDefaultProviderId,
-  isModelValidForProvider,
   PROVIDER_MODEL_TIERS,
 } from '../../../shared/config/provider-config';
 import { isSpecNote } from '../../../shared/constants/notes';
@@ -1169,66 +1168,144 @@ export class WorkspaceService {
             wsUrl: request.environmentConfig.ssh.ws_url,
           };
 
-          const remoteGitManager = new RemoteGitManager({
-            repositoryPath: effectiveRepositoryPath,
-            workspaceId: id,
-            sshConfig,
-          });
-
-          // Start RPC serve daemon so rpc.sock exists for createWorktree()
-          const rpcConnectionId = `rpc-${id}`;
-          try {
-            await sshManager.connect(rpcConnectionId, sshConfig);
-            const localBundlePath = getIntentServerPath();
-            await sshManager.deployIntentServer(rpcConnectionId, localBundlePath);
-            const serveResult = await sshManager.executeCommand(
-              rpcConnectionId,
-              `node ~/.intent-server/server.js serve --workspace ${escapeShellArg(id)}`,
-              { timeout: 15000 },
-            );
-            if (serveResult.exitCode !== 0) {
-              logger.warn('Failed to start RPC serve daemon during workspace creation', {
-                workspaceId: id,
-                exitCode: serveResult.exitCode,
-                stderr: serveResult.stderr,
-              });
-            } else {
-              logger.info('RPC serve daemon ready for workspace creation', { workspaceId: id });
-            }
-          } catch (err) {
-            // Non-fatal — createWorktree() might still work if a daemon was already running
-            logger.warn('Failed to start RPC daemon during workspace creation', {
-              workspaceId: id,
-              error: err instanceof Error ? err.message : String(err),
+          // Check if skipWorktree mode is enabled for remote
+          if (request.skipWorktree) {
+            // Skip worktree creation - use repository path directly (mirrors local skipWorktree)
+            logger.info('Creating remote workspace in skipWorktree mode', {
+              repositoryPath: effectiveRepositoryPath,
             });
+            worktreePath = effectiveRepositoryPath;
+
+            // Get the current HEAD commit SHA from the remote repository via SSH
+            const rpcConnectionId = `rpc-${id}`;
+            try {
+              await sshManager.connect(rpcConnectionId, sshConfig);
+
+              // Deploy intent-server and start RPC daemon (mirrors non-skipWorktree path)
+              const localBundlePath = getIntentServerPath();
+              await sshManager.deployIntentServer(rpcConnectionId, localBundlePath);
+              const serveResult = await sshManager.executeCommand(
+                rpcConnectionId,
+                `node ~/.intent-server/server.js serve --workspace ${escapeShellArg(id)}`,
+                { timeout: 15000 },
+              );
+              if (serveResult.exitCode !== 0) {
+                logger.warn('Failed to start RPC serve daemon during skipWorktree workspace creation', {
+                  workspaceId: id,
+                  exitCode: serveResult.exitCode,
+                  stderr: serveResult.stderr,
+                });
+              } else {
+                logger.info('RPC serve daemon ready for skipWorktree workspace creation', {
+                  workspaceId: id,
+                });
+              }
+
+              const result = await sshManager.executeCommand(
+                rpcConnectionId,
+                `git -C ${escapeShellArg(effectiveRepositoryPath)} rev-parse HEAD`,
+                { timeout: 10000 },
+              );
+              if (result.exitCode === 0 && result.stdout.trim()) {
+                baseCommitSha = result.stdout.trim();
+                logger.debug('Base commit SHA from remote repository', { baseCommitSha });
+              }
+            } catch (error) {
+              logger.warn('Could not get remote base commit SHA or start RPC daemon', {
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+          } else {
+            const remoteGitManager = new RemoteGitManager({
+              repositoryPath: effectiveRepositoryPath,
+              workspaceId: id,
+              sshConfig,
+            });
+
+            // Start RPC serve daemon so rpc.sock exists for createWorktree()
+            const rpcConnectionId = `rpc-${id}`;
+            try {
+              await sshManager.connect(rpcConnectionId, sshConfig);
+              const localBundlePath = getIntentServerPath();
+              await sshManager.deployIntentServer(rpcConnectionId, localBundlePath);
+              const serveResult = await sshManager.executeCommand(
+                rpcConnectionId,
+                `node ~/.intent-server/server.js serve --workspace ${escapeShellArg(id)}`,
+                { timeout: 15000 },
+              );
+              if (serveResult.exitCode !== 0) {
+                logger.warn('Failed to start RPC serve daemon during workspace creation', {
+                  workspaceId: id,
+                  exitCode: serveResult.exitCode,
+                  stderr: serveResult.stderr,
+                });
+              } else {
+                logger.info('RPC serve daemon ready for workspace creation', { workspaceId: id });
+              }
+            } catch (err) {
+              // Non-fatal — createWorktree() might still work if a daemon was already running
+              logger.warn('Failed to start RPC daemon during workspace creation', {
+                workspaceId: id,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+
+            try {
+              // Create worktree on remote
+              worktreePath = await remoteGitManager.createWorktree(branch, request.baseRef);
+
+              // Update workspace_path to use the worktree (not the repository root)
+              // This ensures the agent, MCP tools, and all remote operations use the correct path
+              if (request.environmentConfig) {
+                request.environmentConfig.workspace_path = worktreePath;
+              }
+
+              // Get base commit SHA from remote
+              try {
+                const status = await remoteGitManager.getStatus(worktreePath);
+                // The status doesn't include commit SHA, so we'll get it separately
+                // For now, we'll skip this for remote workspaces
+                logger.debug('Remote worktree created', { worktreePath, branch: status.branch });
+              } catch (error) {
+                logger.warn('Could not get remote git status', error as Error);
+              }
+            } catch (error) {
+              logger.error('Failed to create remote worktree', error as Error);
+              await this.repository.cleanup(id);
+              return {
+                ok: false,
+                error: `Failed to create remote worktree: ${(error as Error).message}`,
+              };
+            }
           }
 
+          // Create .workspace metadata directory on the remote machine
+          // This mirrors the local workspace setup where .workspace/ is created by the repository layer
+          const remoteWorkspaceDir = `~/intent/workspaces/${escapeShellArg(id)}/.workspace`;
+          const mkdirConnectionId = `mkdir-${id}`;
           try {
-            // Create worktree on remote
-            worktreePath = await remoteGitManager.createWorktree(branch, request.baseRef);
-
-            // Update workspace_path to use the worktree (not the repository root)
-            // This ensures the agent, MCP tools, and all remote operations use the correct path
-            if (request.environmentConfig) {
-              request.environmentConfig.workspace_path = worktreePath;
-            }
-
-            // Get base commit SHA from remote
-            try {
-              const status = await remoteGitManager.getStatus(worktreePath);
-              // The status doesn't include commit SHA, so we'll get it separately
-              // For now, we'll skip this for remote workspaces
-              logger.debug('Remote worktree created', { worktreePath, branch: status.branch });
-            } catch (error) {
-              logger.warn('Could not get remote git status', error as Error);
+            await sshManager.connect(mkdirConnectionId, sshConfig);
+            const mkdirResult = await sshManager.executeCommand(
+              mkdirConnectionId,
+              `mkdir -p ${remoteWorkspaceDir}`,
+              { timeout: 10000 },
+            );
+            if (mkdirResult.exitCode !== 0) {
+              logger.warn('Failed to create .workspace directory on remote', {
+                workspaceId: id,
+                exitCode: mkdirResult.exitCode,
+                stderr: mkdirResult.stderr,
+              });
+            } else {
+              logger.info('Created .workspace directory on remote', { workspaceId: id });
             }
           } catch (error) {
-            logger.error('Failed to create remote worktree', error as Error);
-            await this.repository.cleanup(id);
-            return {
-              ok: false,
-              error: `Failed to create remote worktree: ${(error as Error).message}`,
-            };
+            logger.warn('Could not create .workspace directory on remote', {
+              workspaceId: id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          } finally {
+            try { await sshManager.disconnect(mkdirConnectionId); } catch { /* ignore */ }
           }
 
           // Extract git repository info from remote git config
@@ -1427,22 +1504,11 @@ export class WorkspaceService {
                 ? createCompoundModelId(effectiveProvider, providerModel)
                 : providerModel;
           } else if (resolved.model) {
-            // Legacy fallback: no tier available.
-            // Validate the specialist model belongs to the target provider before
-            // creating a compound ID — prevents cross-provider IDs like 'codex:sonnet4.5'.
-            if (provider && provider !== defaultProviderId) {
-              if (isModelValidForProvider(resolved.model, provider)) {
-                effectiveModel = createCompoundModelId(provider, resolved.model);
-              } else {
-                logger.warn(
-                  'Legacy specialist model not valid for target provider, skipping compound ID',
-                  { model: resolved.model, provider },
-                );
-                // Don't set effectiveModel — fall through to balanced-tier or DEFAULT_AGENT_MODEL
-              }
-            } else {
-              effectiveModel = resolved.model;
-            }
+            // Legacy fallback: no tier available, use compound model prefixing (best-effort)
+            effectiveModel =
+              provider && provider !== defaultProviderId
+                ? createCompoundModelId(provider, resolved.model)
+                : resolved.model;
           }
         }
         if (!effectiveModel && provider && provider in PROVIDER_MODEL_TIERS) {
@@ -2479,12 +2545,61 @@ export class WorkspaceService {
           });
 
           if (workspace.isRemote && workspace.environmentConfig?.ssh) {
-            // For remote workspaces, use RemoteGitManager
-            const remoteGit = new RemoteGitManager({
-              repositoryPath: workspace.repositoryPath!,
-              workspaceId: id,
-            });
-            await remoteGit.removeWorktree(workspace.worktreePath!, true);
+            // For remote workspaces, open a dedicated SSH connection first.
+            // When deleting from the home page there is no active RPC/SSH
+            // connection, so we must create one before any remote operations.
+            const ssh = workspace.environmentConfig.ssh;
+            const sshConfig: SSHConnectionConfig = {
+              host: ssh.host,
+              port: ssh.port || 22,
+              username: ssh.user,
+              password: ssh.password,
+              privateKeyPath: ssh.key_path,
+              useAgent: ssh.use_agent,
+              transport: ssh.transport,
+              wsUrl: ssh.ws_url,
+            };
+            const deleteConnectionId = `delete-${id}`;
+            try {
+              await sshManager.connect(deleteConnectionId, sshConfig);
+
+              // Kill intent-server process for this workspace before cleanup
+              await sshManager.executeCommand(
+                deleteConnectionId,
+                `pkill -f "server.js.*--workspace ${id}" || true`,
+                { timeout: 5000 },
+              );
+
+              // Remove the git worktree via direct SSH command (avoids RPC dependency)
+              const worktreePath = escapeShellArg(workspace.worktreePath!);
+              const repoPath = escapeShellArg(workspace.repositoryPath!);
+              await sshManager.executeCommand(
+                deleteConnectionId,
+                `cd ${repoPath} && git worktree remove --force ${worktreePath} 2>/dev/null; cd ${repoPath} && git worktree prune 2>/dev/null; true`,
+                { timeout: 15000 },
+              );
+
+              // Remove the workspace folder (parent of worktreePath) - only if empty
+              const workspaceFolder = path.posix.dirname(workspace.worktreePath!);
+              await sshManager.executeCommand(
+                deleteConnectionId,
+                `rmdir ${escapeShellArg(workspaceFolder)} 2>/dev/null || true`,
+                { timeout: 5000 },
+              );
+              // Also clean up ~/.intent-server/workspaces/{id}/ directory
+              await sshManager.executeCommand(
+                deleteConnectionId,
+                `rm -rf ~/.intent-server/workspaces/${escapeShellArg(id)}`,
+                { timeout: 5000 },
+              );
+            } catch (cleanupErr) {
+              logger.warn('Failed to clean up remote workspace', {
+                workspaceId: id,
+                error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+              });
+            } finally {
+              await sshManager.disconnect(deleteConnectionId).catch(() => {});
+            }
           } else if (workspace.repositoryPath && workspace.worktreePath) {
             // For local workspaces, use local git commands
             // Pass the workspace ID to only delete the branch if it matches
@@ -2501,6 +2616,47 @@ export class WorkspaceService {
         logger.info('Skipping git worktree removal for direct-branch mode workspace', {
           workspaceId: id,
         });
+
+        // Skip-worktree workspaces still start the RPC daemon, so we need to
+        // clean up ~/.intent-server/workspaces/{id}/ on the remote host.
+        const workspace = workspaceResult.data;
+        if (workspace.isRemote && workspace.environmentConfig?.ssh) {
+          const ssh = workspace.environmentConfig.ssh;
+          const sshConfig: SSHConnectionConfig = {
+            host: ssh.host,
+            port: ssh.port || 22,
+            username: ssh.user,
+            password: ssh.password,
+            privateKeyPath: ssh.key_path,
+            useAgent: ssh.use_agent,
+            transport: ssh.transport,
+            wsUrl: ssh.ws_url,
+          };
+          const deleteConnectionId = `delete-${id}`;
+          try {
+            await sshManager.connect(deleteConnectionId, sshConfig);
+
+            // Kill intent-server process for this workspace before cleanup
+            await sshManager.executeCommand(
+              deleteConnectionId,
+              `pkill -f "server.js.*--workspace ${id}" || true`,
+              { timeout: 5000 },
+            );
+
+            await sshManager.executeCommand(
+              deleteConnectionId,
+              `rm -rf ~/.intent-server/workspaces/${escapeShellArg(id)}`,
+              { timeout: 5000 },
+            );
+          } catch (cleanupErr) {
+            logger.warn('Failed to clean up remote intent-server directory for skip-worktree workspace', {
+              workspaceId: id,
+              error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+            });
+          } finally {
+            await sshManager.disconnect(deleteConnectionId).catch(() => {});
+          }
+        }
       }
 
       // Remove workspace directory via repository

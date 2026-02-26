@@ -347,6 +347,7 @@
     "openai": "^6.2.0",
     "rimraf": "^6.0.1",
     "sharp": "^0.34.4",
+    "ssh-config": "^5.0.4",
     "ssh2": "^1.17.0",
     "svelte-fa": "^4.0.4",
     "svelte-sonner": "^1.0.5",

@@ -16,6 +16,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import SSHConfig, { LineType } from 'ssh-config';
 
 const execAsync = promisify(exec);
 const logger = new Logger('SSH-IPC');
@@ -31,75 +32,194 @@ interface SSHConfigHost {
 }
 
 /**
- * Parse the user's ~/.ssh/config file and extract host entries
+ * Expand a simple glob pattern (supporting * and ?) against a directory listing.
+ * Returns matching file paths sorted lexically, as OpenSSH specifies.
  */
-function parseSSHConfig(configContent: string): SSHConfigHost[] {
-  const hosts: SSHConfigHost[] = [];
-  const lines = configContent.split('\n');
+async function expandGlob(pattern: string): Promise<string[]> {
+  const dir = path.dirname(pattern);
+  const base = path.basename(pattern);
 
-  let currentHost: Partial<SSHConfigHost> | null = null;
+  // If no glob characters in the basename, return the pattern as-is
+  if (!base.includes('*') && !base.includes('?')) {
+    return [pattern];
+  }
+
+  // Convert glob pattern to regex: * -> .*, ? -> ., escape the rest
+  const regexStr = '^' + base.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.') + '$';
+  const regex = new RegExp(regexStr);
+
+  try {
+    const entries = await fs.promises.readdir(dir);
+    const matched = entries.filter((e) => regex.test(e)).sort();
+    return matched.map((e) => path.join(dir, e));
+  } catch {
+    // Directory doesn't exist or is inaccessible
+    return [];
+  }
+}
+
+/**
+ * Resolve Include directives in SSH config content.
+ * Reads included files, expands globs, and returns the fully merged config.
+ *
+ * Per OpenSSH spec:
+ * - `~` expands to the user's home directory
+ * - Relative paths are resolved relative to ~/.ssh/
+ * - Glob patterns are resolved in lexical order
+ */
+async function resolveSSHConfigIncludes(
+  configContent: string,
+  visitedFiles: Set<string> = new Set(),
+): Promise<string> {
+  const lines = configContent.split('\n');
+  const resultLines: string[] = [];
+  const sshDir = path.join(os.homedir(), '.ssh');
 
   for (const line of lines) {
     const trimmedLine = line.trim();
 
-    // Skip comments and empty lines
+    // Skip comments and empty lines for Include detection
     if (trimmedLine.startsWith('#') || trimmedLine === '') {
+      resultLines.push(line);
       continue;
     }
 
-    // Parse key-value pairs (handle both "Key Value" and "Key=Value" formats)
-    const match = trimmedLine.match(/^(\S+)\s*[=\s]\s*(.+)$/i);
-    if (!match) continue;
+    // Check for Include directive
+    const includeMatch = trimmedLine.match(/^include\s+(.+)$/i);
+    if (!includeMatch) {
+      resultLines.push(line);
+      continue;
+    }
 
-    const [, key, value] = match;
-    const keyLower = key.toLowerCase();
+    // OpenSSH allows multiple space-separated patterns on a single Include line.
+    // Split by whitespace to handle each pattern separately.
+    const patterns = includeMatch[1].trim().split(/\s+/);
 
-    if (keyLower === 'host') {
-      // Save previous host if exists
-      if (currentHost && currentHost.name) {
-        // Skip wildcard hosts
-        if (!currentHost.name.includes('*') && !currentHost.name.includes('?')) {
-          hosts.push({
-            name: currentHost.name,
-            hostname: currentHost.hostname || currentHost.name,
-            user: currentHost.user,
-            port: currentHost.port,
-            identityFile: currentHost.identityFile,
-          });
-        }
+    for (const rawPattern of patterns) {
+      let includePath = rawPattern;
+
+      // Remove surrounding quotes if present
+      if ((includePath.startsWith('"') && includePath.endsWith('"')) ||
+          (includePath.startsWith("'") && includePath.endsWith("'"))) {
+        includePath = includePath.slice(1, -1);
       }
 
-      // Start new host
-      currentHost = { name: value };
-    } else if (currentHost) {
-      // Add properties to current host
-      switch (keyLower) {
-        case 'hostname':
-          currentHost.hostname = value;
-          break;
-        case 'user':
-          currentHost.user = value;
-          break;
-        case 'port':
-          currentHost.port = parseInt(value, 10) || 22;
-          break;
-        case 'identityfile':
-          // Expand ~ to home directory
-          currentHost.identityFile = value.replace(/^~/, os.homedir());
-          break;
+      // Expand ~ to home directory
+      includePath = includePath.replace(/^~/, os.homedir());
+
+      // Relative paths are relative to ~/.ssh/ per OpenSSH spec
+      if (!path.isAbsolute(includePath)) {
+        includePath = path.join(sshDir, includePath);
+      }
+
+      // Expand globs
+      const matchedFiles = await expandGlob(includePath);
+
+      for (const filePath of matchedFiles) {
+        const resolvedPath = path.resolve(filePath);
+
+        // Guard against circular includes
+        if (visitedFiles.has(resolvedPath)) {
+          continue;
+        }
+
+        try {
+          visitedFiles.add(resolvedPath);
+          const fileContent = await fs.promises.readFile(resolvedPath, 'utf8');
+          // Recursively resolve includes in the included file
+          const resolved = await resolveSSHConfigIncludes(fileContent, visitedFiles);
+          resultLines.push(resolved);
+        } catch {
+          // File doesn't exist or can't be read — skip silently (OpenSSH does the same)
+        }
       }
     }
   }
 
-  // Don't forget the last host
-  if (currentHost && currentHost.name) {
-    if (!currentHost.name.includes('*') && !currentHost.name.includes('?')) {
+  return resultLines.join('\n');
+}
+
+/**
+ * Parse SSH config content and extract host entries.
+ * Uses the ssh-config package for proper parsing with OpenSSH
+ * first-match-wins semantics via SSHConfig.parse() and .compute().
+ */
+function parseSSHConfig(configContent: string): SSHConfigHost[] {
+  const config = SSHConfig.parse(configContent);
+  const hosts: SSHConfigHost[] = [];
+  const seen = new Set<string>();
+
+  // Iterate over top-level directives to find Host sections
+  for (const line of config) {
+    if (line.type !== LineType.DIRECTIVE || line.param !== 'Host') {
+      continue;
+    }
+
+    // Collect host names from the Host directive value
+    const hostNames: string[] = [];
+    if (typeof line.value === 'string') {
+      // Single host name or space-separated names in a string
+      for (const name of line.value.split(/\s+/)) {
+        hostNames.push(name);
+      }
+    } else if (Array.isArray(line.value)) {
+      // Multi-value Host directive (e.g., Host foo bar)
+      for (const item of line.value) {
+        hostNames.push(item.val);
+      }
+    }
+
+    for (const hostName of hostNames) {
+      // Skip wildcards and negations
+      if (hostName.includes('*') || hostName.includes('?') || hostName.startsWith('!')) {
+        continue;
+      }
+
+      // Deduplicate (a host name may appear in multiple Host directives)
+      if (seen.has(hostName)) {
+        continue;
+      }
+      seen.add(hostName);
+
+      // Resolve effective config using first-match-wins semantics
+      const resolved = config.compute(hostName);
+
+      // Map IdentityFile: ssh-config returns string[] for repeatable directives
+      let identityFile: string | undefined;
+      if (resolved.IdentityFile) {
+        const idFile = Array.isArray(resolved.IdentityFile)
+          ? resolved.IdentityFile[0]
+          : resolved.IdentityFile;
+        if (idFile) {
+          identityFile = idFile.replace(/^~/, os.homedir());
+        }
+      }
+
+      // Map Port: ssh-config returns it as a string
+      let port: number | undefined;
+      if (resolved.Port) {
+        const portStr = Array.isArray(resolved.Port) ? resolved.Port[0] : resolved.Port;
+        const parsed = parseInt(portStr, 10);
+        if (!isNaN(parsed)) {
+          port = parsed;
+        }
+      }
+
+      const hostname = Array.isArray(resolved.HostName)
+        ? resolved.HostName[0]
+        : resolved.HostName;
+      const user = Array.isArray(resolved.User)
+        ? resolved.User[0]
+        : resolved.User;
+
       hosts.push({
-        name: currentHost.name,
-        hostname: currentHost.hostname || currentHost.name,
-        user: currentHost.user,
-        port: currentHost.port,
-        identityFile: currentHost.identityFile,
+        name: hostName,
+        hostname: hostname ?? hostName,
+        user: user || undefined,
+        port,
+        identityFile,
       });
     }
   }
@@ -368,7 +488,13 @@ export function registerSSHHandlers(): void {
     try {
       const configPath = path.join(os.homedir(), '.ssh', 'config');
       const configContent = await fs.promises.readFile(configPath, 'utf8');
-      const hosts = parseSSHConfig(configContent);
+
+      // Resolve Include directives before parsing
+      const visitedFiles = new Set<string>();
+      visitedFiles.add(path.resolve(configPath));
+      const resolvedContent = await resolveSSHConfigIncludes(configContent, visitedFiles);
+
+      const hosts = parseSSHConfig(resolvedContent);
 
       logger.info('Parsed SSH config hosts', { count: hosts.length });
 

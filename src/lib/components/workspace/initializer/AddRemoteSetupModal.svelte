@@ -98,6 +98,8 @@
   let username = $state('');
   let password = $state('');
   let keyPath = $state('');
+  let selectedKeyOption = $state('');
+  let manualKeyEntry = $state(false);
   let authMode = $state<AuthMode>('agent');
   let workspacePath = $state('');
   let branch = $state('main');
@@ -183,6 +185,7 @@
         } else if (sshKeys.length > 0) {
           authMode = 'keyfile';
           keyPath = sshKeys[0].path;
+          selectedKeyOption = sshKeys[0].path;
         }
       }
     } catch (err) {
@@ -211,6 +214,15 @@
       if (configHost.identityFile) {
         keyPath = configHost.identityFile;
         authMode = 'keyfile';
+        // Check if this key is in the discovered sshKeys list
+        if (sshKeys.some((k) => k.path === configHost.identityFile)) {
+          selectedKeyOption = configHost.identityFile;
+          manualKeyEntry = false;
+        } else {
+          // Key not in list — show manual input with the path pre-filled
+          selectedKeyOption = '';
+          manualKeyEntry = true;
+        }
       }
       // Invalidate test if we had one
       markFieldEdited('host');
@@ -305,6 +317,8 @@
     username = '';
     password = '';
     keyPath = '';
+    selectedKeyOption = '';
+    manualKeyEntry = false;
     authMode = agentStatus.available && agentStatus.identities.length > 0 ? 'agent' : 'keyfile';
     workspacePath = '';
     branch = 'main';
@@ -417,6 +431,8 @@
                   port = 22;
                   authMode = agentStatus.available && agentStatus.identities.length > 0 ? 'agent' : 'keyfile';
                   keyPath = '';
+                  selectedKeyOption = '';
+                  manualKeyEntry = false;
                   password = '';
                   selectedConfigHost = '';
                   workspacePath = '';
@@ -446,6 +462,8 @@
                   // Clear SSH auth fields since WebSocket doesn't use them
                   authMode = 'agent';
                   keyPath = '';
+                  selectedKeyOption = '';
+                  manualKeyEntry = false;
                   password = '';
                   // Reset test state since connection params changed
                   testStatus = 'untested';
@@ -582,12 +600,25 @@
                 <div class="flex-1">
                   <span class="text-sm font-medium">Key File</span>
                   {#if authMode === 'keyfile'}
-                    <div class="mt-1">
+                    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                    <!-- stopPropagation prevents clicks on interactive elements from bubbling
+                         to the parent <label>, which would steal focus to the radio button -->
+                    <div class="mt-1" onclick={(e) => e.stopPropagation()}>
+
                       {#if sshKeys.length > 0}
                         <select
                           class="w-full h-8 px-2 text-sm rounded border border-input bg-background"
-                          bind:value={keyPath}
-                          onchange={() => markFieldEdited('keyPath')}
+                          bind:value={selectedKeyOption}
+                          onchange={() => {
+                            markFieldEdited('keyPath');
+                            if (selectedKeyOption === '') {
+                              manualKeyEntry = true;
+                              keyPath = '';
+                            } else {
+                              manualKeyEntry = false;
+                              keyPath = selectedKeyOption;
+                            }
+                          }}
                         >
                           {#each sshKeys as key}
                             <option value={key.path}>
@@ -598,7 +629,7 @@
                           <option value="">Enter path manually...</option>
                         </select>
                       {/if}
-                      {#if sshKeys.length === 0 || keyPath === ''}
+                      {#if sshKeys.length === 0 || manualKeyEntry || selectedKeyOption === ''}
                         <Input
                           bind:value={keyPath}
                           placeholder="~/.ssh/id_rsa"
@@ -740,7 +771,7 @@
                     <span class="text-xs text-muted-foreground truncate max-w-[150px]">({check.path})</span>
                   {/if}
                   {#if !check.passed && check.error}
-                    <span class="text-xs text-destructive-foreground truncate flex-1">{check.error}</span>
+                    <span class="text-xs text-destructive truncate flex-1">{check.error}</span>
                   {/if}
                 </div>
               {/each}
@@ -773,14 +804,14 @@
           {/if}
 
           {#if testErrorMessage && testStatus === 'failed' && !testResult}
-            <div class="text-sm text-destructive-foreground">
+            <div class="text-sm text-destructive">
               {testErrorMessage}
             </div>
           {/if}
         </div>
 
         {#if error}
-          <div class="text-sm text-destructive-foreground">{error}</div>
+          <div class="text-sm text-destructive">{error}</div>
         {/if}
       </div>
 
