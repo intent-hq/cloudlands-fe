@@ -344,7 +344,8 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
       }
 
       // Delete entire workspace directory
-      await fs.rm(workspacePath, { recursive: true, force: true });
+      // maxRetries handles ENOTEMPTY errors from concurrent file writes during deletion
+      await fs.rm(workspacePath, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 
       // Clear from cache
       this.cache.delete(id);
