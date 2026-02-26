@@ -16,6 +16,7 @@ import { TerminalStateMachine, TerminalState } from './terminal-state-machine';
 import { TerminalBufferManager } from './terminal-buffer-manager';
 import { TerminalThemeManager } from './terminal-theme-manager';
 import { terminalHistoryTracker } from './terminal-history-tracker';
+import { isGitHubUrl } from '$features/navigation/link-handler';
 
 const logger = new Logger('TerminalAdapter');
 
@@ -1370,10 +1371,21 @@ export class TerminalAdapter {
   }
 
   /**
-   * Handle link clicks - open URLs in browser panel instead of popup
+   * Handle link clicks - open URLs in browser panel instead of popup.
+   * GitHub URLs are always opened in the external browser.
    */
   private handleLinkClick(uri: string): void {
     try {
+      // GitHub URLs always open in external browser
+      if (isGitHubUrl(uri)) {
+        logger.debug('GitHub URL detected in terminal, opening in external browser', {
+          uri,
+          workspaceId: this.workspaceId,
+        });
+        window.electronAPI?.invoke('shell:openExternal', { url: uri });
+        return;
+      }
+
       // Import and use the panel layout manager to open browser panel
       import('$features/layout/panel-layout-manager.svelte')
         .then(({ getPanelLayoutManager }) => {

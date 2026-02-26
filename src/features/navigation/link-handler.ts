@@ -8,6 +8,7 @@
  * - HTTP/HTTPS links → Open in embedded browser panel
  * - Cmd+Click (⌘ on Mac, Ctrl on Windows/Linux) → Open in external browser
  * - Auth/OAuth URLs → Always open in external browser
+ * - GitHub URLs (github.com) → Always open in external browser
  * - Intent links (intent://) → Handle internally (navigate to notes/tasks)
  * - File links (file://) → Open in external editor
  * - Other links → External browser as fallback
@@ -64,6 +65,24 @@ export function isAuthUrl(url: string): boolean {
 }
 
 // ============================================================================
+// GitHub URL detection
+// ============================================================================
+
+/**
+ * Detect whether a URL points to GitHub.
+ * GitHub URLs should always open in the external browser because the embedded
+ * browser panel cannot handle GitHub's authentication and interactive features.
+ */
+export function isGitHubUrl(url: string): boolean {
+  try {
+    const { hostname } = new URL(url);
+    return hostname === 'github.com' || hostname.endsWith('.github.com');
+  } catch {
+    return false;
+  }
+}
+
+// ============================================================================
 // Modifier-key helpers
 // ============================================================================
 
@@ -89,10 +108,11 @@ function isCmdClickModifier(options: LinkHandlerOptions): boolean {
  * 1. Custom handler (if provided and returns true)
  * 2. `intent://` → internal navigation
  * 3. Auth/OAuth URLs → external browser (always)
- * 4. `http(s)://` + Cmd+Click or forceExternal → external browser
- * 5. `http(s)://` (plain click) → embedded browser panel
- * 6. `file://` → external editor
- * 7. Anything else → external browser (fallback)
+ * 4. GitHub URLs (`github.com`) → external browser (always)
+ * 5. `http(s)://` + Cmd+Click or forceExternal → external browser
+ * 6. `http(s)://` (plain click) → embedded browser panel
+ * 7. `file://` → external editor
+ * 8. Anything else → external browser (fallback)
  *
  * @returns true if handled, false if not
  */
@@ -117,6 +137,12 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
       // Auth URLs always go to external browser
       if (isAuthUrl(url)) {
         logger.debug('Auth URL detected, opening in external browser', { url });
+        return await openInExternalBrowser(url);
+      }
+
+      // GitHub URLs always go to external browser
+      if (isGitHubUrl(url)) {
+        logger.debug('GitHub URL detected, opening in external browser', { url });
         return await openInExternalBrowser(url);
       }
 
