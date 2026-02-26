@@ -361,6 +361,23 @@
   let setupScriptName = $state(savedState?.setupScriptName ?? 'Custom');
   let isCustomSetupScript = $state(savedState?.isCustomSetupScript ?? false);
 
+  // Helper to restore the last used setup script for a repo
+  // If no saved script exists for the repo, resets to defaults
+  function restoreLastUsedSetupScript(repo: string) {
+    const lastUsed = repo ? setupScriptStore.getLastUsedForRepo(repo) : undefined;
+    if (lastUsed) {
+      setupScript = lastUsed.content;
+      setupScriptName = lastUsed.name;
+      isCustomSetupScript = false;
+    } else {
+      // No saved script for this repo — reset to defaults
+      // The SetupScriptEditor will apply the default template when opened
+      setupScript = '';
+      setupScriptName = 'Custom';
+      isCustomSetupScript = false;
+    }
+  }
+
   // Skip worktree toggle
   let skipWorktree = $state(savedState?.skipWorktree ?? false);
 
@@ -858,6 +875,31 @@
     })();
   });
 
+  // Auto-restore last used setup script when repo changes
+  // This ensures the setup script name/content are correct in the button bar
+  // without requiring the user to open the setup script modal
+  let previousSetupScriptRepo = $state<string | null>(null);
+  $effect(() => {
+    const path = repoPath;
+    // Only run when repo actually changes
+    if (path === previousSetupScriptRepo) return;
+    const isInitialMount = previousSetupScriptRepo === null;
+    previousSetupScriptRepo = path;
+
+    // On initial mount, don't override if there's already a setup script set
+    // (e.g., from restored form state). On repo switches, always restore.
+    if (isInitialMount && setupScript.trim()) return;
+
+    // Restore last used script for this repo (or clear if no saved script exists)
+    if (path) {
+      restoreLastUsedSetupScript(path);
+    } else {
+      setupScript = '';
+      setupScriptName = 'Custom';
+      isCustomSetupScript = false;
+    }
+  });
+
   // Derived validation
   // For GitHub repos, also require successful branch fetch (no auth issues)
   const isValid = $derived(
@@ -914,7 +956,7 @@
     }
   }
 
-  // Global Escape key listener when expanded
+  // Global keyboard shortcuts when expanded
   $effect(() => {
     if (!isExpanded) return;
 
@@ -922,6 +964,17 @@
       if (e.key === 'Escape') {
         e.preventDefault();
         collapse();
+      }
+
+      // Cmd+Enter (Mac) / Ctrl+Enter (Win/Linux) to submit from anywhere in the form
+      // Guard: only fire when focus is inside the initializer, not in dialogs/popovers
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        const activeEl = document.activeElement;
+        const isInsideForm = activeEl && controlsContainer?.contains(activeEl);
+        if (isInsideForm) {
+          e.preventDefault();
+          handleSubmit();
+        }
       }
     }
 
@@ -1723,6 +1776,12 @@
     showSetupScript = false;
     setupScriptName = 'Custom';
     isCustomSetupScript = false;
+
+    // When preserving repo (stayOnHomePage), restore the last used setup script
+    // so the next workspace creation uses the same script
+    if (preserveRepo && repoPath) {
+      restoreLastUsedSetupScript(repoPath);
+    }
     hasImages = false;
     hasSelectedContext = false; // Reset context selection state
     error = null;
