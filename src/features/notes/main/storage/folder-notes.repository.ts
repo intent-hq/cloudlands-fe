@@ -15,7 +15,6 @@
  * - Soft delete with 30-day recovery
  */
 
-import { promises as fs } from 'fs';
 import * as path from 'path';
 import type {
   Note,
@@ -28,7 +27,6 @@ import { ContentType, NoteVisibility, AuthorType } from '../../../../shared/type
 import type { NotesRepository } from '../notes.repository';
 import { Logger } from '../../../../shared/logger';
 import { WorkspaceConfig } from '../../../../shared/main/config';
-import { renameWithRetry } from '../../../../shared/main/file-sync-utils';
 import { getNoteStoragePaths, getLegacyNotePath, getLegacyFolderPath } from './note-storage-paths';
 import type { NoteFrontmatter, VersionEntry, VersionAuthor } from './note-storage.types';
 import { STORAGE_FILES } from './note-storage.types';
@@ -36,6 +34,8 @@ import { parseFrontmatter, serializeFrontmatter, createDefaultFrontmatter } from
 import { readVersions, getContentAtVersion } from './version.service';
 import { trackChange, flushPendingVersion, clearVersionState } from './version-manager';
 import { moveToTrash } from './trash.service';
+import type { IMetadataFS } from '../../../metadata-fs/main/metadata-fs';
+import { LocalMetadataFS } from '../../../metadata-fs/main/local-metadata-fs';
 
 const logger = new Logger('FlatNotesRepository');
 
@@ -116,6 +116,10 @@ export class FolderBasedNotesRepository implements NotesRepository {
   // Uses a queue-based approach to properly serialize operations
   private lockQueues: Map<string, Promise<void>> = new Map();
 
+  constructor(
+    private readonly metadataFSResolver: (workspaceId: string) => IMetadataFS = () => new LocalMetadataFS(),
+  ) {}
+
   private async withLock<T>(
     workspaceId: WorkspaceId,
     noteId: NoteId,
@@ -152,6 +156,7 @@ export class FolderBasedNotesRepository implements NotesRepository {
   }
 
   async exists(workspaceId: WorkspaceId, noteId: NoteId): Promise<boolean> {
+    const fs = this.metadataFSResolver(workspaceId);
     const paths = getNoteStoragePaths(workspaceId, noteId);
     try {
       await fs.access(paths.contentFile);
@@ -173,6 +178,7 @@ export class FolderBasedNotesRepository implements NotesRepository {
   }
 
   async findById(workspaceId: WorkspaceId, noteId: NoteId): Promise<Note | null> {
+    const fs = this.metadataFSResolver(workspaceId);
     const paths = getNoteStoragePaths(workspaceId, noteId);
 
     try {
@@ -233,6 +239,7 @@ export class FolderBasedNotesRepository implements NotesRepository {
     noteId: NoteId,
     content: string,
   ): Promise<Note | null> {
+    const fs = this.metadataFSResolver(workspaceId);
     const paths = getNoteStoragePaths(workspaceId, noteId);
     try {
       // Try old .meta/{noteId}.json format
@@ -246,6 +253,7 @@ export class FolderBasedNotesRepository implements NotesRepository {
   }
 
   private async loadLegacyJsonNote(workspaceId: WorkspaceId, noteId: NoteId): Promise<Note | null> {
+    const fs = this.metadataFSResolver(workspaceId);
     try {
       const raw = await fs.readFile(getLegacyNotePath(workspaceId, noteId), 'utf-8');
       return JSON.parse(raw) as Note;
@@ -279,6 +287,7 @@ export class FolderBasedNotesRepository implements NotesRepository {
   }
 
   async findByWorkspace(workspaceId: WorkspaceId): Promise<Note[]> {
+    const fs = this.metadataFSResolver(workspaceId);
     const notesDir = WorkspaceConfig.paths.notes(workspaceId);
     const metaDir = path.join(notesDir, STORAGE_FILES.META_DIR);
 
@@ -339,6 +348,7 @@ export class FolderBasedNotesRepository implements NotesRepository {
   async save(note: Note): Promise<void> {
     logger.info('save called', { noteId: note.id, workspaceId: note.workspaceId });
     return this.withLock(note.workspaceId, note.id, async () => {
+      const fs = this.metadataFSResolver(note.workspaceId);
       const paths = getNoteStoragePaths(note.workspaceId, note.id);
       logger.info('save - paths', {
         noteId: note.id,
@@ -362,7 +372,7 @@ export class FolderBasedNotesRepository implements NotesRepository {
         contentLength: fileContent.length,
       });
       await fs.writeFile(contentTmp, fileContent, 'utf-8');
-      await renameWithRetry(contentTmp, paths.contentFile);
+      await fs.rename(contentTmp, paths.contentFile);
       logger.info('save - file written', { noteId: note.id, contentFile: paths.contentFile });
 
       // Track version (debounced - creates version on author change or idle)
@@ -395,6 +405,7 @@ export class FolderBasedNotesRepository implements NotesRepository {
     noteId: NoteId,
     savedContent?: string,
   ): Promise<void> {
+    const fs = this.metadataFSResolver(workspaceId);
     const paths = getNoteStoragePaths(workspaceId, noteId);
 
     // Remove legacy JSON file (only log if it actually existed)
@@ -465,6 +476,7 @@ export class FolderBasedNotesRepository implements NotesRepository {
 
   async delete(workspaceId: WorkspaceId, noteId: NoteId): Promise<void> {
     return this.withLock(workspaceId, noteId, async () => {
+      const fs = this.metadataFSResolver(workspaceId);
       const paths = getNoteStoragePaths(workspaceId, noteId);
 
       // Get note title for trash metadata

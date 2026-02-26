@@ -49,6 +49,7 @@ import {
   migrateWorkspaceNotes,
   workspaceNeedsMigration,
 } from './storage';
+import { getMetadataFS } from '../../metadata-fs/main/metadata-fs-factory';
 
 import type { AgentSession } from '../../../shared/types';
 import { workspaceService } from '../../workspace/main/workspace.service';
@@ -72,7 +73,7 @@ export class NotesService {
 
   constructor(
     private readonly notesRepository: NotesRepository = USE_NEW_STORAGE
-      ? new FolderBasedNotesRepository()
+      ? new FolderBasedNotesRepository(getMetadataFS)
       : new FileSystemNotesRepository(),
     private readonly commentsRepository: CommentsRepository = new FileSystemCommentsRepository(),
     private readonly eventBus: UnifiedEventBus = unifiedEventBus,
@@ -705,9 +706,17 @@ export class NotesService {
    */
   async ensureSpecExists(workspaceId: WorkspaceId): Promise<Result<Note, string>> {
     const specId = 'spec' as NoteId;
-    const specExists = await this.notesRepository.exists(workspaceId, specId);
+    const existingSpec = await this.notesRepository.findById(workspaceId, specId);
 
-    if (!specExists) {
+    if (!existingSpec) {
+      // On remote workspaces, the spec may exist remotely but not be cached locally yet.
+      // Only delete if the file physically exists but couldn't be parsed (corrupt).
+      const fileExists = await this.notesRepository.exists(workspaceId, specId);
+      if (fileExists) {
+        try {
+          await this.notesRepository.delete(workspaceId, specId);
+        } catch { /* File might already be gone */ }
+      }
       await this.createDefaultSpec(workspaceId);
     }
 

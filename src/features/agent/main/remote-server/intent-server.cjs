@@ -372,7 +372,7 @@ function rpcStat(params) {
 
 /**
  * listDir — List directory entries.
- * params: { path: string, includeHidden?: boolean }
+ * params: { path: string, includeHidden?: boolean, recursive?: boolean }
  */
 function rpcListDir(params) {
   if (!params || typeof params.path !== 'string') {
@@ -385,26 +385,37 @@ function rpcListDir(params) {
   }
 
   const includeHidden = params.includeHidden === true;
+  const recursive = params.recursive === true;
 
   try {
-    const names = fs.readdirSync(dirPath);
     const entries = [];
-    for (const name of names) {
-      if (!includeHidden && name.startsWith('.')) continue;
-      try {
-        const fullPath = path.join(dirPath, name);
-        const stat = fs.statSync(fullPath);
-        entries.push({
-          name,
-          type: stat.isFile() ? 'file' : stat.isDirectory() ? 'directory' : 'other',
-          size: stat.size,
-          mtime: stat.mtime.toISOString(),
-        });
-      } catch {
-        // Skip entries we can't stat (e.g. broken symlinks)
-        entries.push({ name, type: 'unknown', size: 0, mtime: null });
+
+    function walkDir(currentPath, relativeTo) {
+      const names = fs.readdirSync(currentPath);
+      for (const name of names) {
+        if (!includeHidden && name.startsWith('.')) continue;
+        const fullPath = path.join(currentPath, name);
+        const relPath = path.relative(relativeTo, fullPath);
+        try {
+          const stat = fs.statSync(fullPath);
+          const type = stat.isFile() ? 'file' : stat.isDirectory() ? 'directory' : 'other';
+          entries.push({
+            name: recursive ? relPath : name,
+            type,
+            size: stat.size,
+            mtime: stat.mtime.toISOString(),
+          });
+          if (recursive && type === 'directory') {
+            walkDir(fullPath, relativeTo);
+          }
+        } catch {
+          // Skip entries we can't stat (e.g. broken symlinks)
+          entries.push({ name: recursive ? relPath : name, type: 'unknown', size: 0, mtime: null });
+        }
       }
     }
+
+    walkDir(dirPath, dirPath);
     return { result: { entries } };
   } catch (err) {
     if (err.code === 'ENOENT') {
@@ -668,6 +679,12 @@ async function handleRpcRequest(request) {
     case 'watchSubscribe':
       response = rpcWatchSubscribe(params);
       break;
+    case 'watchDirectory':
+      response = rpcWatchDirectory(params);
+      break;
+    case 'watchDirectoryUnsubscribe':
+      response = rpcWatchDirectoryUnsubscribe(params);
+      break;
     case 'gitStatus':
       response = rpcGitStatus(params);
       break;
@@ -924,6 +941,180 @@ function rpcWatchSubscribe(params) {
 }
 
 // ---------------------------------------------------------------------------
+// RPC: watchDirectory — fs.watch-based directory watcher (no git dependency)
+// ---------------------------------------------------------------------------
+
+/** Active directory watch subscriptions keyed by subscriptionId. */
+const directoryWatchSubscriptions = new Map();
+
+/**
+ * watchDirectory — Watch a directory for file changes using fs.watch.
+ * params: { basePath: string, recursive?: boolean, includeHidden?: boolean }
+ *
+ * Unlike watchSubscribe (which uses git status), this watches any directory
+ * using fs.watch and emits individual file change entries.
+ * Falls back to polling if fs.watch with recursive fails (e.g. Linux < 5.9).
+ */
+function rpcWatchDirectory(params) {
+  if (!params || typeof params.basePath !== 'string') {
+    return { error: { code: -32602, message: 'Missing required param: basePath' } };
+  }
+
+  const basePath = params.basePath.startsWith('~')
+    ? params.basePath.replace(/^~/, os.homedir())
+    : path.resolve(params.basePath);
+
+  if (!fs.existsSync(basePath)) {
+    return { error: { code: -32602, message: `basePath does not exist: ${basePath}` } };
+  }
+
+  const recursive = params.recursive !== false; // default true
+  const includeHidden = params.includeHidden === true;
+  const subscriptionId = `dirwatch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  /**
+   * Snapshot the directory tree and return a map of relativePath -> { type, mtime, size }.
+   */
+  function snapshotDir(dirPath, relativeTo) {
+    const snapshot = new Map();
+    try {
+      const names = fs.readdirSync(dirPath);
+      for (const name of names) {
+        if (!includeHidden && name.startsWith('.')) continue;
+        const fullPath = path.join(dirPath, name);
+        const relPath = path.relative(relativeTo, fullPath);
+        try {
+          const stat = fs.statSync(fullPath);
+          const type = stat.isFile() ? 'file' : stat.isDirectory() ? 'directory' : 'other';
+          snapshot.set(relPath, {
+            type,
+            mtime: stat.mtime.toISOString(),
+            size: stat.size,
+          });
+          if (recursive && type === 'directory') {
+            const subSnapshot = snapshotDir(fullPath, relativeTo);
+            for (const [subPath, subEntry] of subSnapshot) {
+              snapshot.set(subPath, subEntry);
+            }
+          }
+        } catch {
+          // Skip entries we can't stat
+        }
+      }
+    } catch {
+      // Directory may have been deleted
+    }
+    return snapshot;
+  }
+
+  // Take initial snapshot for diffing
+  let lastSnapshot = snapshotDir(basePath, basePath);
+
+  /**
+   * Diff current state against last snapshot and emit changes.
+   */
+  function emitChanges() {
+    const currentSnapshot = snapshotDir(basePath, basePath);
+    const changes = [];
+
+    // Check for new or modified entries
+    for (const [relPath, entry] of currentSnapshot) {
+      const prev = lastSnapshot.get(relPath);
+      if (!prev) {
+        changes.push({ path: relPath, action: 'create', type: entry.type, mtime: entry.mtime, size: entry.size });
+      } else if (prev.mtime !== entry.mtime || prev.size !== entry.size) {
+        changes.push({ path: relPath, action: 'modify', type: entry.type, mtime: entry.mtime, size: entry.size });
+      }
+    }
+
+    // Check for deleted entries
+    for (const [relPath, entry] of lastSnapshot) {
+      if (!currentSnapshot.has(relPath)) {
+        changes.push({ path: relPath, action: 'delete', type: entry.type, mtime: null, size: 0 });
+      }
+    }
+
+    lastSnapshot = currentSnapshot;
+
+    if (changes.length > 0) {
+      sendNotification('directory/changes', {
+        subscriptionId,
+        changes,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  // Debounce mechanism (300ms, same as watchSubscribe)
+  let debounceTimer = null;
+  function scheduleEmit() {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => { debounceTimer = null; emitChanges(); }, 300);
+  }
+
+  // Try fs.watch with recursive option; fall back to polling
+  let watcher = null;
+  let pollInterval = null;
+
+  function startFsWatch() {
+    try {
+      watcher = fs.watch(basePath, { recursive: recursive }, (eventType, filename) => {
+        if (filename && !includeHidden && path.basename(filename).startsWith('.')) return;
+        scheduleEmit();
+      });
+      watcher.on('error', () => {
+        try { watcher.close(); } catch { /* ignore */ }
+        watcher = null;
+        startPolling();
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function startPolling() {
+    pollInterval = setInterval(() => {
+      emitChanges();
+    }, 2000);
+  }
+
+  function cleanup() {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    if (watcher) { try { watcher.close(); } catch { /* ignore */ } }
+    if (pollInterval) clearInterval(pollInterval);
+    directoryWatchSubscriptions.delete(subscriptionId);
+  }
+
+  // Start watching
+  if (!startFsWatch()) {
+    startPolling();
+  }
+
+  directoryWatchSubscriptions.set(subscriptionId, { cleanup });
+
+  return { result: { subscriptionId } };
+}
+
+/**
+ * watchDirectoryUnsubscribe — Stop watching a directory.
+ * params: { subscriptionId: string }
+ */
+function rpcWatchDirectoryUnsubscribe(params) {
+  if (!params || typeof params.subscriptionId !== 'string') {
+    return { error: { code: -32602, message: 'Missing required param: subscriptionId' } };
+  }
+
+  const sub = directoryWatchSubscriptions.get(params.subscriptionId);
+  if (!sub) {
+    return { error: { code: -32000, message: `Unknown subscription: ${params.subscriptionId}` } };
+  }
+
+  sub.cleanup();
+  return { result: { ok: true } };
+}
+
+// ---------------------------------------------------------------------------
 // RPC: gitStatus — structured git status
 // ---------------------------------------------------------------------------
 
@@ -1055,7 +1246,8 @@ function rpcInitialize() {
       capabilities: {
         methods: [
           'exec', 'readFile', 'writeFile', 'fileExists', 'stat', 'listDir',
-          'search', 'watchSubscribe', 'gitStatus', 'gitDiff', 'initialize',
+          'search', 'watchSubscribe', 'watchDirectory', 'watchDirectoryUnsubscribe',
+          'gitStatus', 'gitDiff', 'initialize',
         ],
       },
     },
@@ -2065,9 +2257,9 @@ function cmdWatch(workspaceId, opts) {
 
     if (porcelain.trim() === '') return; // no changes
 
-    // Parse git status --porcelain
     // IMPORTANT: Use trimEnd() not trim() — trim() strips leading whitespace which
     // corrupts the first status line's index/workTree status characters (e.g. " M" → "M").
+    // Parse git status --porcelain
     const statusLines = porcelain.trimEnd().split('\n');
     const fileEntries = [];
 

@@ -52,6 +52,7 @@ let WorkspaceConfig: typeof import('$shared/main/config').WorkspaceConfig | unde
 // Lazy-loaded invoke function for frontend context
 let invokeFunction: (typeof import('$lib/electron-bridge'))['invoke'] | undefined;
 let agentPersistence: any;
+let metadataFSFactory: ((workspaceId: string) => import('../../metadata-fs/main/metadata-fs').IMetadataFS) | undefined;
 
 // Lazy-loaded unified state store for frontend context
 let unifiedStateStoreModule:
@@ -110,11 +111,15 @@ async function getNodeModules() {
     try {
       const persistenceModule = await import('../main/agent-persistence');
       agentPersistence = persistenceModule.agentPersistence;
+      // Wire up IMetadataFS resolver for remote workspace support
+      const { getMetadataFS } = await import('../../metadata-fs/main/metadata-fs-factory');
+      metadataFSFactory = getMetadataFS;
+      persistenceModule.unifiedPersistence.setMetadataFSResolver(getMetadataFS);
     } catch (error) {
       logger.warn('Could not load agent persistence module', error);
     }
   }
-  return { fs, path, ipcMain, BrowserWindow, agentPersistence, WorkspaceConfig };
+  return { fs, path, ipcMain, BrowserWindow, agentPersistence, WorkspaceConfig, metadataFSFactory };
 }
 
 const logger = new Logger('ConsolidatedBackend');
@@ -1096,32 +1101,37 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
   async loadPersistedSessions(workspaceId: string): Promise<number> {
     if (!this.config.persistenceEnabled) return 0;
 
-    const { fs, path, WorkspaceConfig } = await getNodeModules();
-    if (!fs || !path || !WorkspaceConfig) {
-      logger.warn('[loadPersistedSessions] File system or WorkspaceConfig not available');
+    const { path, WorkspaceConfig, metadataFSFactory } = await getNodeModules();
+    if (!path || !WorkspaceConfig) {
+      logger.warn('[loadPersistedSessions] path or WorkspaceConfig not available');
       return 0;
     }
 
     try {
+      // Use IMetadataFS for remote workspace support.
+      // Falls back to LocalMetadataFS (pass-through to fs/promises) for local workspaces.
+      const { LocalMetadataFS } = await import('../../metadata-fs/main/local-metadata-fs');
+      const metadataFS = metadataFSFactory ? metadataFSFactory(workspaceId) : new LocalMetadataFS();
+
       // Use the correct workspace metadata directory, NOT process.cwd()
       const agentsDir = WorkspaceConfig.paths.agents(workspaceId);
 
       // Check if directory exists
       try {
-        await fs.access(agentsDir);
+        await metadataFS.access(agentsDir);
       } catch {
         return 0; // Directory doesn't exist
       }
 
       // Load all agent files
-      const files = await fs.readdir(agentsDir);
-      const jsonFiles = files.filter((f: string) => f.endsWith('.json'));
+      const entries = await metadataFS.readdir(agentsDir, { withFileTypes: true });
+      const jsonFiles = entries.filter((e) => e.isFile() && e.name.endsWith('.json'));
       let loadedCount = 0;
 
-      for (const file of jsonFiles) {
+      for (const entry of jsonFiles) {
         try {
-          const filePath = path.join(agentsDir, file);
-          const content = await fs.readFile(filePath, 'utf-8');
+          const filePath = path.join(agentsDir, entry.name);
+          const content = await metadataFS.readFile(filePath, 'utf-8');
           const session = JSON.parse(content) as AgentSession;
 
           // Only load sessions for this workspace
@@ -1142,7 +1152,7 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
             loadedCount++;
           }
         } catch (error) {
-          logger.warn('[loadPersistedSessions] Failed to load session file', { file, error });
+          logger.warn('[loadPersistedSessions] Failed to load session file', { file: entry.name, error });
         }
       }
 

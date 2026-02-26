@@ -83,6 +83,7 @@ import { FileSystemWorkspaceRepository } from './workspace.repository';
 import { getBranchPrefix, getWorktreesLocation } from './app-settings.service';
 import { getRepoBranchPrefix, getRepoSetupScript } from './repo-config.service';
 import { fsyncFile } from '../../../shared/main/file-sync-utils';
+import { getMetadataFS } from '../../metadata-fs/main/metadata-fs-factory';
 import { sshManager, type SSHConnectionConfig } from '../../../shared/main/ssh-manager';
 
 const { WorkspaceNotFoundError, WorkspaceValidationError, GitWorktreeError } = Errors;
@@ -1299,6 +1300,45 @@ export class WorkspaceService {
             } else {
               logger.info('Created .workspace directory on remote', { workspaceId: id });
             }
+
+            // Create default spec note on remote so MetadataSyncService has content to sync
+            try {
+              const specTimestamp = new Date().toISOString();
+              const notesDir = `${remoteWorkspaceDir}/notes`;
+              // Build the spec.md content matching serializeFrontmatter() output
+              // Use heredoc to write multi-line content safely (same pattern as terminal.ipc.ts)
+              const specFileContent = `---
+id: spec
+title: Spec
+tags: [spec]
+pinned: true
+created: ${specTimestamp}
+task:
+  status: not_started
+---
+
+`;
+              const heredocDelimiter = `INTENT_SPEC_EOF_${Date.now().toString(36)}`;
+              const writeSpecResult = await sshManager.executeCommand(
+                mkdirConnectionId,
+                `mkdir -p ${notesDir} && cat > ${notesDir}/spec.md << '${heredocDelimiter}'\n${specFileContent}${heredocDelimiter}`,
+                { timeout: 10000 },
+              );
+              if (writeSpecResult.exitCode !== 0) {
+                logger.warn('Failed to create spec note on remote', {
+                  workspaceId: id,
+                  exitCode: writeSpecResult.exitCode,
+                  stderr: writeSpecResult.stderr,
+                });
+              } else {
+                logger.info('Created default spec note on remote', { workspaceId: id });
+              }
+            } catch (specError) {
+              logger.warn('Could not create spec note on remote', {
+                workspaceId: id,
+                error: specError instanceof Error ? specError.message : String(specError),
+              });
+            }
           } catch (error) {
             logger.warn('Could not create .workspace directory on remote', {
               workspaceId: id,
@@ -1464,15 +1504,12 @@ export class WorkspaceService {
           };
         }
 
-        const agentPath = path.join(
-          WorkspaceConfig.paths.workspace(id),
-          '.workspace',
-          'agents',
-          `${agentId}.json`,
-        );
+        const metadataFS = getMetadataFS(id);
+        const agentsDir = WorkspaceConfig.paths.agents(id);
+        const agentPath = path.join(agentsDir, `${agentId}.json`);
 
         // Ensure directory exists
-        await fs.mkdir(path.dirname(agentPath), { recursive: true });
+        await metadataFS.mkdir(agentsDir, { recursive: true });
 
         // Resolve specialist configuration if a specialist is specified
         // This allows the initial agent to inherit model and behavior from the specialist
@@ -1591,10 +1628,13 @@ export class WorkspaceService {
           data: agentSession,
         };
 
-        await fs.writeFile(agentPath, JSON.stringify(versionedData, null, 2));
+        await metadataFS.writeFile(agentPath, JSON.stringify(versionedData, null, 2), 'utf-8');
 
-        // Sync file to disk for durability
-        await fsyncFile(agentPath);
+        // Sync file to disk for durability (only needed for local workspaces;
+        // for remote workspaces the RPC round-trip already provides durability)
+        if (!isRemote) {
+          await fsyncFile(agentPath);
+        }
 
         logger.info('Saved initial agent config', {
           workspaceId: id,
@@ -2590,6 +2630,12 @@ export class WorkspaceService {
               await sshManager.executeCommand(
                 deleteConnectionId,
                 `rm -rf ~/.intent-server/workspaces/${escapeShellArg(id)}`,
+                { timeout: 5000 },
+              );
+              // Clean up remote .workspace/ metadata directory
+              await sshManager.executeCommand(
+                deleteConnectionId,
+                `rm -rf ~/intent/workspaces/${escapeShellArg(id)}/.workspace`,
                 { timeout: 5000 },
               );
             } catch (cleanupErr) {

@@ -78,6 +78,7 @@ export interface StatResult {
 export interface ListDirParams {
   path: string;
   includeHidden?: boolean;
+  recursive?: boolean;
 }
 
 export interface DirEntry {
@@ -146,6 +147,38 @@ export interface WatchChangeEvent {
   subscriptionId: string;
   files: WatchChangeFileEntry[];
   summary: { filesChanged: number; additions: number; deletions: number };
+  timestamp: string;
+}
+
+// ---------------------------------------------------------------------------
+// Directory watch types (fs.watch-based, no git dependency)
+// ---------------------------------------------------------------------------
+
+export interface WatchDirectoryParams {
+  basePath: string;
+  recursive?: boolean;
+  includeHidden?: boolean;
+}
+
+export interface WatchDirectoryResult {
+  subscriptionId: string;
+}
+
+export interface WatchDirectoryUnsubscribeParams {
+  subscriptionId: string;
+}
+
+export interface DirectoryChangeEntry {
+  path: string;
+  action: 'create' | 'modify' | 'delete';
+  type: string;
+  mtime: string | null;
+  size: number;
+}
+
+export interface DirectoryChangeEvent {
+  subscriptionId: string;
+  changes: DirectoryChangeEntry[];
   timestamp: string;
 }
 
@@ -398,6 +431,32 @@ export class RemoteRPCClient {
    */
   removeWatchChangesListener(handler: (event: WatchChangeEvent) => void): void {
     this.removeNotificationListener('watch/changes', handler);
+  }
+
+  // -------------------------------------------------------------------------
+  // Directory watch subscription (fs.watch-based, no git dependency)
+  // -------------------------------------------------------------------------
+
+  async watchDirectory(params: WatchDirectoryParams): Promise<WatchDirectoryResult> {
+    return this.call<WatchDirectoryResult>('watchDirectory', params);
+  }
+
+  async watchDirectoryUnsubscribe(params: WatchDirectoryUnsubscribeParams): Promise<void> {
+    await this.call<void>('watchDirectoryUnsubscribe', params);
+  }
+
+  /**
+   * Register a handler for `directory/changes` notifications.
+   */
+  onDirectoryChanges(handler: (event: DirectoryChangeEvent) => void): void {
+    this.onNotification('directory/changes', handler);
+  }
+
+  /**
+   * Remove a previously registered `directory/changes` handler.
+   */
+  removeDirectoryChangesListener(handler: (event: DirectoryChangeEvent) => void): void {
+    this.removeNotificationListener('directory/changes', handler);
   }
 
   /**

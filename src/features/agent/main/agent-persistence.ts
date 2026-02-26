@@ -25,6 +25,8 @@ import { validateAgentSession } from '$shared/schemas';
 import { AgentStatus } from '$shared/types/agent.types';
 import { WorkspaceConfig } from '$shared/main/config';
 import { fsyncFile, renameWithRetry } from '$shared/main/file-sync-utils';
+import type { IMetadataFS } from '../../metadata-fs/main/metadata-fs';
+import { LocalMetadataFS } from '../../metadata-fs/main/local-metadata-fs';
 
 const logger = new Logger('UnifiedPersistence');
 
@@ -124,6 +126,14 @@ export class UnifiedPersistence {
   >();
   private readonly LOAD_CACHE_TTL_MS = 2000; // 2 second TTL - enough to dedupe rapid calls
 
+  /**
+   * Resolver that returns the correct IMetadataFS for a workspace.
+   * For local workspaces: LocalMetadataFS (pass-through to fs/promises)
+   * For remote workspaces: CachedRemoteMetadataFS (write-through cache)
+   * Defaults to LocalMetadataFS for backward compatibility.
+   */
+  private metadataFSResolver: (workspaceId: string) => IMetadataFS = () => new LocalMetadataFS();
+
   private constructor() {
     this.config = {
       basePath: 'agents', // Just the agents folder name, not the full path
@@ -167,6 +177,23 @@ export class UnifiedPersistence {
       this.stopHealthChecks();
       this.startHealthChecks();
     }
+  }
+
+  /**
+   * Set the IMetadataFS resolver for remote workspace support.
+   * Must be called before any read/write operations for remote workspaces.
+   */
+  setMetadataFSResolver(resolver: (workspaceId: string) => IMetadataFS): void {
+    this.metadataFSResolver = resolver;
+    logger.info('MetadataFS resolver configured');
+  }
+
+  /**
+   * Get the IMetadataFS instance for a workspace.
+   * Returns LocalMetadataFS by default (backward compatible).
+   */
+  private getFS(workspaceId: string): IMetadataFS {
+    return this.metadataFSResolver(workspaceId);
   }
 
   /**
@@ -470,8 +497,9 @@ export class UnifiedPersistence {
     // session without knowing about the config or name
     let preservedConfig: Record<string, any> | undefined;
     let preservedName: string | undefined;
+    const metadataFS = workspacePath ? new LocalMetadataFS() : this.getFS(agent.workspaceId);
     try {
-      const existingData = await fs.readFile(agentPath, 'utf-8');
+      const existingData = await metadataFS.readFile(agentPath, 'utf-8');
       const existingRaw = JSON.parse(existingData);
       // Handle both versioned (with data wrapper) and unversioned formats
       const existingAgent =
@@ -602,7 +630,7 @@ export class UnifiedPersistence {
 
         try {
           // Create write promise with timeout
-          const writePromise = this.performAtomicWrite(agentPath, agent);
+          const writePromise = this.performAtomicWrite(agentPath, agent, metadataFS);
           this.writeQueue.set(agentId, writePromise);
 
           const result = await Promise.race([
@@ -732,7 +760,8 @@ export class UnifiedPersistence {
     const agentPath = this.getAgentPath(agentId, workspaceId, workspacePath);
 
     // Create the load promise to dedupe concurrent requests
-    const loadPromise = this.loadAgentFromDisk(agentId, workspaceId, agentPath);
+    // When workspacePath is provided (testing), use local FS directly
+    const loadPromise = this.loadAgentFromDisk(agentId, workspaceId, agentPath, !!workspacePath);
 
     // Store the promise in cache so concurrent calls can wait for it
     this.loadCache.set(cacheKey, {
@@ -761,10 +790,12 @@ export class UnifiedPersistence {
     agentId: AgentId,
     workspaceId: WorkspaceId,
     agentPath: string,
+    useLocalFS?: boolean,
   ): Promise<LoadResult<AgentSession>> {
     try {
       // Try to load main file
-      const data = await fs.readFile(agentPath, 'utf-8');
+      const metadataFS = useLocalFS ? new LocalMetadataFS() : this.getFS(workspaceId);
+      const data = await metadataFS.readFile(agentPath, 'utf-8');
       let parsed = JSON.parse(data);
 
       // Handle versioned format (from workspace creation or persistence service)
@@ -838,7 +869,7 @@ export class UnifiedPersistence {
           logger.info('Successfully repaired corrupted agent data', { agentId });
 
           // Save the repaired data back to disk (without version wrapper)
-          await this.performAtomicWrite(agentPath, agent);
+          await this.performAtomicWrite(agentPath, agent, metadataFS);
         } catch (repairError) {
           // If repair fails, try backup
           throw repairError;
@@ -886,7 +917,7 @@ export class UnifiedPersistence {
           // Save the cleaned data back to disk
           agent.messages = uniqueMessages;
           // Schedule a save to clean up the file (don't await to avoid blocking load)
-          this.performAtomicWrite(agentPath, agent).catch((err) => {
+          this.performAtomicWrite(agentPath, agent, metadataFS).catch((err) => {
             logger.warn('Failed to save cleaned agent data', { agentId, error: err });
           });
         } else {
@@ -1001,20 +1032,21 @@ export class UnifiedPersistence {
     workspacePath?: string,
   ): Promise<SaveResult> {
     const agentPath = this.getAgentPath(agentId, workspaceId, workspacePath);
+    const metadataFS = workspacePath ? new LocalMetadataFS() : this.getFS(workspaceId);
 
     try {
-      // Create backup before deletion
+      // Create backup before deletion (always local)
       if (this.config.backupEnabled) {
         await this.createBackup(agentPath);
       }
 
-      // Delete main file
-      await fs.unlink(agentPath);
+      // Delete main file via IMetadataFS (supports remote workspaces)
+      await metadataFS.unlink(agentPath);
 
-      // Delete backups
+      // Delete backups (always local - backups are a local-only concern)
       const backupDir = `${agentPath}.backups`;
       try {
-        await fs.rmdir(backupDir, { recursive: true });
+        await fs.rm(backupDir, { recursive: true });
       } catch {
         // Ignore if backup dir doesn't exist
       }
@@ -1036,12 +1068,13 @@ export class UnifiedPersistence {
    */
   async listAgents(workspaceId: string, workspacePath?: string): Promise<string[]> {
     const agentsPath = this.getAgentsDirectory(workspaceId, workspacePath);
+    const metadataFS = workspacePath ? new LocalMetadataFS() : this.getFS(workspaceId);
 
     try {
-      const files = await fs.readdir(agentsPath);
-      const agentIds = files
-        .filter((file) => file.endsWith('.json') && !file.includes('.tmp'))
-        .map((file) => file.replace('.json', ''))
+      const entries = await metadataFS.readdir(agentsPath, { withFileTypes: true });
+      const agentIds = entries
+        .filter((entry) => entry.isFile() && entry.name.endsWith('.json') && !entry.name.includes('.tmp'))
+        .map((entry) => entry.name.replace('.json', ''))
         .filter((id) => unifiedIdService.isValidAgentId(id));
 
       logger.debug('Listed agents', { workspaceId, count: agentIds.length });
@@ -1053,9 +1086,11 @@ export class UnifiedPersistence {
   }
 
   /**
-   * Perform atomic write operation with robust backup strategy
+   * Perform atomic write operation with robust backup strategy.
+   * When metadataFS is provided, the final write goes through IMetadataFS
+   * (supporting remote workspaces). Temp files and backups always use local fs.
    */
-  private async performAtomicWrite(filePath: string, data: any): Promise<SaveResult> {
+  private async performAtomicWrite(filePath: string, data: any, metadataFS?: IMetadataFS): Promise<SaveResult> {
     // Use a unique temp file name to avoid race conditions
     const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     const tempPath = `${filePath}.tmp.${uniqueSuffix}`;
@@ -1063,11 +1098,15 @@ export class UnifiedPersistence {
     const checksumPath = `${filePath}.checksum`;
 
     try {
-      // Ensure directory exists
+      // Ensure directory exists (use metadataFS if available for remote support)
       const dir = path.dirname(filePath);
       try {
-        await fs.mkdir(dir, { recursive: true });
-        // Verify directory was created
+        if (metadataFS) {
+          await metadataFS.mkdir(dir, { recursive: true });
+        } else {
+          await fs.mkdir(dir, { recursive: true });
+        }
+        // Verify directory was created (always check locally since reads go to local cache)
         await fs.access(dir);
       } catch (dirError) {
         logger.error('Failed to create directory', { dir, error: dirError });
@@ -1168,107 +1207,130 @@ export class UnifiedPersistence {
         }
       }
 
-      // Move temp to final (atomic operation)
-      try {
-        // Double-check temp file exists before rename
+      // Write verified content to final destination
+      if (metadataFS) {
+        // When metadataFS is provided, write through IMetadataFS (supports remote workspaces).
+        // The verified content from the temp file is written directly via metadataFS.writeFile,
+        // which for CachedRemoteMetadataFS writes remote-first then updates local cache.
         try {
-          const tempStats = await fs.stat(tempPath);
-          logger.debug('About to rename temp file', {
-            tempPath,
+          await metadataFS.writeFile(filePath, verification, 'utf-8');
+          logger.debug('Successfully wrote final file via metadataFS', { filePath });
+        } catch (writeError) {
+          logger.error('Failed to write final file via metadataFS', {
             filePath,
-            tempSize: tempStats.size,
+            error: writeError,
           });
-        } catch (statError) {
-          logger.error('Temp file disappeared before rename', {
-            tempPath,
-            error: statError,
-          });
-          throw new Error(`Temp file disappeared before rename: ${tempPath}`);
+          throw writeError;
         }
-
-        // Attempt the rename - if the final file already exists, this will fail naturally
-        // which is fine - it means another process already wrote the file
+        // Clean up temp file (always local)
         try {
-          await renameWithRetry(tempPath, filePath);
-        } catch (renameError) {
-          const errnoError = renameError as NodeJS.ErrnoException;
-          // Check if the error is because the destination already exists
-          if (errnoError.code === 'EEXIST' || errnoError.code === 'ENOTEMPTY') {
-            logger.debug('Final file already exists, another process completed the write', {
-              filePath,
+          await fs.unlink(tempPath);
+        } catch {
+          // Ignore cleanup errors
+        }
+      } else {
+        // Move temp to final (atomic operation) - original local-only path
+        try {
+          // Double-check temp file exists before rename
+          try {
+            const tempStats = await fs.stat(tempPath);
+            logger.debug('About to rename temp file', {
               tempPath,
+              filePath,
+              tempSize: tempStats.size,
             });
+          } catch (statError) {
+            logger.error('Temp file disappeared before rename', {
+              tempPath,
+              error: statError,
+            });
+            throw new Error(`Temp file disappeared before rename: ${tempPath}`);
+          }
 
-            // Clean up our temp file
-            try {
-              await fs.unlink(tempPath);
-              logger.debug('Cleaned up temp file after concurrent write', { tempPath });
-            } catch {
-              // Ignore cleanup errors
+          // Attempt the rename - if the final file already exists, this will fail naturally
+          // which is fine - it means another process already wrote the file
+          try {
+            await renameWithRetry(tempPath, filePath);
+          } catch (renameError) {
+            const errnoError = renameError as NodeJS.ErrnoException;
+            // Check if the error is because the destination already exists
+            if (errnoError.code === 'EEXIST' || errnoError.code === 'ENOTEMPTY') {
+              logger.debug('Final file already exists, another process completed the write', {
+                filePath,
+                tempPath,
+              });
+
+              // Clean up our temp file
+              try {
+                await fs.unlink(tempPath);
+                logger.debug('Cleaned up temp file after concurrent write', { tempPath });
+              } catch {
+                // Ignore cleanup errors
+              }
+
+              // Return success since the file is in place (written by another process)
+              return { success: true, path: filePath };
             }
 
-            // Return success since the file is in place (written by another process)
-            return { success: true, path: filePath };
-          }
-
-          // For other errors, re-throw
-          throw renameError;
-        }
-
-        logger.debug('Successfully renamed temp file to final', {
-          tempPath,
-          filePath,
-        });
-      } catch (renameError) {
-        const errnoError = renameError as NodeJS.ErrnoException;
-        // Check if the error is because the temp file doesn't exist (ENOENT)
-        if (errnoError.code === 'ENOENT' && errnoError.syscall === 'rename') {
-          // The temp file doesn't exist - likely because another process already renamed it
-          // Check if the final file exists now
-          try {
-            await fs.access(filePath);
-            const finalStats = await fs.stat(filePath);
-
-            logger.debug('Rename failed but final file exists (race condition resolved)', {
-              filePath,
-              finalSize: finalStats.size,
-            });
-
-            // Return success since the file is in place
-            return { success: true, path: filePath };
-          } catch {
-            // Final file doesn't exist either - this is a real error
-            logger.error('Rename failed and final file does not exist', {
-              tempPath,
-              filePath,
-              error: (renameError as Error).message,
-            });
+            // For other errors, re-throw
             throw renameError;
           }
-        }
 
-        // For other errors, check if temp file still exists
-        const tempExists = await fs
-          .access(tempPath)
-          .then(() => true)
-          .catch(() => false);
+          logger.debug('Successfully renamed temp file to final', {
+            tempPath,
+            filePath,
+          });
+        } catch (renameError) {
+          const errnoError = renameError as NodeJS.ErrnoException;
+          // Check if the error is because the temp file doesn't exist (ENOENT)
+          if (errnoError.code === 'ENOENT' && errnoError.syscall === 'rename') {
+            // The temp file doesn't exist - likely because another process already renamed it
+            // Check if the final file exists now
+            try {
+              await fs.access(filePath);
+              const finalStats = await fs.stat(filePath);
 
-        // If rename fails and temp file exists, try to clean it up
-        if (tempExists) {
-          try {
-            await fs.unlink(tempPath);
-          } catch {
-            // Ignore cleanup error
+              logger.debug('Rename failed but final file exists (race condition resolved)', {
+                filePath,
+                finalSize: finalStats.size,
+              });
+
+              // Return success since the file is in place
+              return { success: true, path: filePath };
+            } catch {
+              // Final file doesn't exist either - this is a real error
+              logger.error('Rename failed and final file does not exist', {
+                tempPath,
+                filePath,
+                error: (renameError as Error).message,
+              });
+              throw renameError;
+            }
           }
-        }
 
-        logger.error('Failed to rename temp file to final', {
-          tempPath,
-          filePath,
-          tempExists,
-          error: renameError,
-        });
-        throw renameError;
+          // For other errors, check if temp file still exists
+          const tempExists = await fs
+            .access(tempPath)
+            .then(() => true)
+            .catch(() => false);
+
+          // If rename fails and temp file exists, try to clean it up
+          if (tempExists) {
+            try {
+              await fs.unlink(tempPath);
+            } catch {
+              // Ignore cleanup error
+            }
+          }
+
+          logger.error('Failed to rename temp file to final', {
+            tempPath,
+            filePath,
+            tempExists,
+            error: renameError,
+          });
+          throw renameError;
+        }
       }
 
       // Write checksum file

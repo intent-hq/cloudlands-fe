@@ -245,18 +245,18 @@ function registerCoreHandlers(backend: IAgentBackendService): void {
       });
 
       // Derive name from instruction/initialMessage if not provided
-      const { generateAgentNameFromText } = await import(
+      const { generateAgentNameFromText, generateRandomAgentName } = await import(
         '../../../lib/utils/agent-name-generator'
       );
       if (!normalizedData.name && (normalizedData.initialMessage || data.instruction)) {
         normalizedData.name =
           generateAgentNameFromText(normalizedData.initialMessage || data.instruction) ||
-          'Agent';
+          generateRandomAgentName();
       }
 
       // Default name if still not set
       if (!normalizedData.name) {
-        normalizedData.name = 'Agent';
+        normalizedData.name = generateRandomAgentName();
       }
 
       // Derive workspacePath from workspace if not provided
@@ -287,7 +287,7 @@ function registerCoreHandlers(backend: IAgentBackendService): void {
         ...validated,
         workspaceId,
         workspacePath: validated.workspacePath,
-        name: validated.name || 'Agent',
+        name: validated.name || generateRandomAgentName(),
         agentId: validated.agentId ? restoreAgentId(validated.agentId as string) : undefined,
       };
       const response = await backend.createAgent(restoredRequest);
@@ -500,19 +500,21 @@ function registerCoreHandlers(backend: IAgentBackendService): void {
       }
 
       const path = await import('path');
-      const fs = await import('fs/promises');
+      // Use IMetadataFS for remote workspace support
+      const { getMetadataFS } = await import('../../metadata-fs/main/metadata-fs-factory');
+      const metadataFS = getMetadataFS(workspaceId);
 
       const agentConfigDir = WorkspaceConfig.paths.agents(workspaceId);
 
       // Check if directory exists and look for config files
       try {
-        const files = await fs.readdir(agentConfigDir);
+        const entries = await metadataFS.readdir(agentConfigDir, { withFileTypes: true });
         // Look for any config file ending with -config.json
-        const configFile = files.find((f: string) => f.endsWith('-config.json'));
+        const configEntry = entries.find((e) => e.isFile() && e.name.endsWith('-config.json'));
 
-        if (configFile) {
-          const configPath = path.join(agentConfigDir, configFile);
-          const configData = await fs.readFile(configPath, 'utf-8');
+        if (configEntry) {
+          const configPath = path.join(agentConfigDir, configEntry.name);
+          const configData = await metadataFS.readFile(configPath, 'utf-8');
           const config = JSON.parse(configData);
 
           logger.info('Loaded initial agent config', {

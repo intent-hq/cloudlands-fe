@@ -3,6 +3,10 @@
  *
  * Handles saving and retrieving image assets for notes.
  * Assets are stored in the workspace metadata assets folder.
+ *
+ * Storage format:
+ * - **Local workspaces**: Binary (backwards compatible with pre-IMetadataFS assets)
+ * - **Remote workspaces**: Base64 text (IMetadataFS only supports utf-8 encoding)
  */
 
 import * as fs from 'fs/promises';
@@ -10,6 +14,8 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { WorkspaceConfig } from '../../../shared/main/config';
 import { Logger } from '../../../shared/logger';
+import type { IMetadataFS } from '../../metadata-fs/main/metadata-fs';
+import { LocalMetadataFS } from '../../metadata-fs/main/local-metadata-fs';
 
 const logger = new Logger('AssetsService');
 
@@ -29,6 +35,33 @@ export interface AssetMetadata {
 
 class AssetsService {
   /**
+   * Resolver that returns the correct IMetadataFS for a workspace.
+   * Defaults to LocalMetadataFS for backward compatibility.
+   */
+  private metadataFSResolver: (workspaceId: string) => IMetadataFS = () => new LocalMetadataFS();
+
+  /**
+   * Set the IMetadataFS resolver for remote workspace support.
+   */
+  setMetadataFSResolver(resolver: (workspaceId: string) => IMetadataFS): void {
+    this.metadataFSResolver = resolver;
+  }
+
+  private getFS(workspaceId: string): IMetadataFS {
+    return this.metadataFSResolver(workspaceId);
+  }
+
+  /**
+   * Check if a workspace uses local storage (vs remote/cached).
+   * Local workspaces store assets as binary for backwards compatibility.
+   * Remote workspaces store assets as base64 text (IMetadataFS only supports utf-8).
+   */
+  private isLocalWorkspace(workspaceId: string): boolean {
+    const metadataFS = this.getFS(workspaceId);
+    return metadataFS instanceof LocalMetadataFS;
+  }
+
+  /**
    * Save an image asset to the workspace assets folder
    *
    * @param workspaceId - The workspace ID
@@ -44,9 +77,12 @@ class AssetsService {
     originalName?: string,
   ): Promise<SaveAssetResult> {
     try {
+      const metadataFS = this.getFS(workspaceId);
+      const isLocal = this.isLocalWorkspace(workspaceId);
+
       // Ensure assets directory exists
       const assetsDir = WorkspaceConfig.paths.assets(workspaceId);
-      await fs.mkdir(assetsDir, { recursive: true });
+      await metadataFS.mkdir(assetsDir, { recursive: true });
 
       // Strip data URL prefix if present
       const base64Data = data.replace(/^data:[^;]+;base64,/, '');
@@ -57,10 +93,16 @@ class AssetsService {
       const extension = this.getExtensionFromMimeType(mimeType);
       const assetId = `${timestamp}-${contentHash}${extension}`;
 
-      // Convert base64 to buffer and save
       const buffer = Buffer.from(base64Data, 'base64');
       const assetPath = WorkspaceConfig.paths.asset(workspaceId, assetId);
-      await fs.writeFile(assetPath, buffer);
+
+      if (isLocal) {
+        // Local: save as binary (backwards compatible with existing assets)
+        await fs.writeFile(assetPath, buffer);
+      } else {
+        // Remote: save as base64 text (IMetadataFS only supports utf-8)
+        await metadataFS.writeFile(assetPath, base64Data, 'utf-8');
+      }
 
       // Save metadata alongside the asset
       const metadata: AssetMetadata = {
@@ -70,13 +112,14 @@ class AssetsService {
         size: buffer.length,
         createdAt: new Date().toISOString(),
       };
-      await fs.writeFile(`${assetPath}.meta.json`, JSON.stringify(metadata, null, 2));
+      await metadataFS.writeFile(`${assetPath}.meta.json`, JSON.stringify(metadata, null, 2), 'utf-8');
 
       logger.info('Asset saved successfully', {
         workspaceId,
         assetId,
         size: buffer.length,
         mimeType,
+        storageFormat: isLocal ? 'binary' : 'base64',
       });
 
       // Return the asset info with a workspace-relative URL
@@ -99,22 +142,48 @@ class AssetsService {
   }
 
   /**
-   * Read an asset as a buffer
+   * Read an asset as a buffer.
+   *
+   * Storage format depends on workspace type:
+   * - Local: binary (backwards compatible)
+   * - Remote: base64 text
    */
   async readAsset(workspaceId: string, assetId: string): Promise<Buffer> {
     const assetPath = this.getAssetPath(workspaceId, assetId);
-    return fs.readFile(assetPath);
+
+    if (this.isLocalWorkspace(workspaceId)) {
+      // Local: read as binary (backwards compatible with existing assets)
+      return fs.readFile(assetPath);
+    } else {
+      // Remote: read as base64 text
+      const metadataFS = this.getFS(workspaceId);
+      const base64Data = await metadataFS.readFile(assetPath, 'utf-8');
+      return Buffer.from(base64Data, 'base64');
+    }
   }
 
   /**
-   * Read an asset as base64 data URL
+   * Read an asset as base64 data URL.
+   *
+   * Storage format depends on workspace type:
+   * - Local: binary (backwards compatible)
+   * - Remote: base64 text
    */
   async readAssetAsDataUrl(workspaceId: string, assetId: string): Promise<string> {
     const assetPath = this.getAssetPath(workspaceId, assetId);
-    const buffer = await fs.readFile(assetPath);
     const metadata = await this.getAssetMetadata(workspaceId, assetId);
     const mimeType = metadata?.mimeType || this.getMimeTypeFromExtension(assetId);
-    return `data:${mimeType};base64,${buffer.toString('base64')}`;
+
+    if (this.isLocalWorkspace(workspaceId)) {
+      // Local: read as binary, then convert to base64
+      const buffer = await fs.readFile(assetPath);
+      return `data:${mimeType};base64,${buffer.toString('base64')}`;
+    } else {
+      // Remote: already stored as base64 text
+      const metadataFS = this.getFS(workspaceId);
+      const base64Data = await metadataFS.readFile(assetPath, 'utf-8');
+      return `data:${mimeType};base64,${base64Data}`;
+    }
   }
 
   /**
@@ -122,9 +191,10 @@ class AssetsService {
    */
   async getAssetMetadata(workspaceId: string, assetId: string): Promise<AssetMetadata | null> {
     try {
+      const metadataFS = this.getFS(workspaceId);
       const assetPath = this.getAssetPath(workspaceId, assetId);
       const metadataPath = `${assetPath}.meta.json`;
-      const content = await fs.readFile(metadataPath, 'utf-8');
+      const content = await metadataFS.readFile(metadataPath, 'utf-8');
       return JSON.parse(content);
     } catch {
       return null;
@@ -135,9 +205,10 @@ class AssetsService {
    * Delete an asset
    */
   async deleteAsset(workspaceId: string, assetId: string): Promise<void> {
+    const metadataFS = this.getFS(workspaceId);
     const assetPath = this.getAssetPath(workspaceId, assetId);
-    await fs.unlink(assetPath).catch(() => {});
-    await fs.unlink(`${assetPath}.meta.json`).catch(() => {});
+    try { await metadataFS.unlink(assetPath); } catch { /* ignore */ }
+    try { await metadataFS.unlink(`${assetPath}.meta.json`); } catch { /* ignore */ }
   }
 
   /**
@@ -145,13 +216,14 @@ class AssetsService {
    */
   async listAssets(workspaceId: string): Promise<AssetMetadata[]> {
     try {
+      const metadataFS = this.getFS(workspaceId);
       const assetsDir = WorkspaceConfig.paths.assets(workspaceId);
-      const files = await fs.readdir(assetsDir);
+      const entries = await metadataFS.readdir(assetsDir, { withFileTypes: true });
       const assets: AssetMetadata[] = [];
 
-      for (const file of files) {
-        if (file.endsWith('.meta.json')) continue;
-        const metadata = await this.getAssetMetadata(workspaceId, file);
+      for (const entry of entries) {
+        if (!entry.isFile() || entry.name.endsWith('.meta.json')) continue;
+        const metadata = await this.getAssetMetadata(workspaceId, entry.name);
         if (metadata) {
           assets.push(metadata);
         }

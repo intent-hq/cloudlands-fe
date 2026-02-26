@@ -1471,6 +1471,7 @@ export const NotesUpdateSchema = z.object({
   isArchived: z.boolean().optional(),
   visibility: z.string().optional(),
   metadata: z.record(z.any()).optional(),
+  isUserAction: z.boolean().optional(),
 });
 
 export const NotesDeleteSchema = z.object({

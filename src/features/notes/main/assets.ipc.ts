@@ -15,11 +15,15 @@ import {
 } from '../../../main/ipc-schemas';
 import { Logger } from '../../../shared/logger';
 import { assetsService } from './assets.service';
+import { getMetadataFS } from '../../metadata-fs/main/metadata-fs-factory';
 
 const logger = new Logger('AssetsIPC');
 
 export function setupAssetsIPC() {
   logger.info('Setting up assets IPC handlers');
+
+  // Wire up IMetadataFS resolver for remote workspace support
+  assetsService.setMetadataFSResolver(getMetadataFS);
 
   // Save an asset
   ipcMain.handle(

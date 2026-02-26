@@ -31,6 +31,11 @@ import { getUnifiedWatcher, shutdownUnifiedWatcher } from './unified-workspace-w
 import { initRepoRegistry, getAllRepos, addRepo, syncRepos, clearRepos } from './repo-registry';
 import { sshManager, type SSHConnectionConfig } from '../../../shared/main/ssh-manager';
 import { getIntentServerPath, escapeShellArg } from '../../agent/main/agent-providers/acp-provider';
+import { MetadataSyncService } from '../../metadata-fs/main/metadata-sync-service';
+import { clearMetadataFSCache } from '../../metadata-fs/main/metadata-fs-factory';
+import { notesService } from '../../notes/main/notes.service';
+import { createHash } from 'crypto';
+import * as path from 'path';
 
 const require = createRequire(import.meta.url);
 import {
@@ -95,6 +100,9 @@ import {
 } from '../../../main/ipc-schemas';
 
 const logger = new Logger('WorkspaceIPC');
+
+// Storage for MetadataSyncService instances per workspace
+const metadataSyncServices = new Map<string, MetadataSyncService>();
 
 // Global storage for git integrations
 declare global {
@@ -499,6 +507,22 @@ export function setupWorkspaceIPC(): void {
             }
           }
 
+          // Stop MetadataSyncService for remote workspaces
+          if (metadataSyncServices.has(id)) {
+            try {
+              const syncService = metadataSyncServices.get(id);
+              await syncService?.stop();
+              metadataSyncServices.delete(id);
+              logger.info('[WorkspaceIPC] Stopped MetadataSyncService', { workspaceId: id });
+            } catch (error) {
+              logger.warn('[WorkspaceIPC] Failed to stop MetadataSyncService', error as Error, {
+                workspaceId: id,
+              });
+            }
+          }
+          // Clear MetadataFS cache so it's re-created on next open
+          clearMetadataFSCache();
+
           // Shut down unified workspace watcher (after other watchers that depend on it)
           try {
             await shutdownUnifiedWatcher(id);
@@ -676,8 +700,11 @@ export function setupWorkspaceIPC(): void {
 
           // Initialize the unified workspace watcher early, before other watchers that
           // depend on it. This creates a single @parcel/watcher instance for the entire workspace.
+          // Skip for remote workspaces — the worktree path doesn't exist locally and
+          // RemoteChangeDetector handles file watching instead.
+          const isRemote = !!workspace.isRemote && !!workspace.environmentConfig?.ssh;
           const worktreePath = workspace.worktreePath || workspace.repositoryPath;
-          if (worktreePath) {
+          if (worktreePath && !isRemote) {
             try {
               const unifiedWatcher = await getUnifiedWatcher(id, worktreePath);
               const stats = unifiedWatcher.getStats();
@@ -693,6 +720,10 @@ export function setupWorkspaceIPC(): void {
               });
               // Non-fatal: file watching will be unavailable for this workspace
             }
+          } else if (isRemote) {
+            logger.info('[WorkspaceIPC] Skipping UnifiedWorkspaceWatcher for remote workspace (RemoteChangeDetector handles file watching)', {
+              workspaceId: id,
+            });
           }
 
           // PERFORMANCE OPTIMIZATION: Start all background initialization without blocking
@@ -775,6 +806,191 @@ export function setupWorkspaceIPC(): void {
                   logger.warn('Failed to start RPC daemon during workspace open', {
                     workspaceId: workspace.id,
                     error: err instanceof Error ? err.message : String(err),
+                  });
+                }
+              }
+
+              // Start MetadataSyncService to sync remote .workspace/ → local cache
+              if (workspace.environmentConfig?.ssh) {
+                try {
+                  const remoteWorkspacePath = `~/intent/workspaces/${workspace.id}/.workspace`;
+                  const localCachePath = WorkspaceConfig.paths.metadata(workspace.id);
+                  const syncService = new MetadataSyncService({
+                    workspaceId: workspace.id,
+                    remoteWorkspacePath,
+                    localCachePath,
+                  });
+                  await syncService.start();
+                  metadataSyncServices.set(workspace.id, syncService);
+                  logger.info('[WorkspaceIPC] MetadataSyncService started for remote workspace', {
+                    workspaceId: workspace.id,
+                  });
+
+                  // ── Bridge: MetadataSyncService → UI domain events ──────────────
+                  // Translates sync:file-changed events (from remote → local cache writes)
+                  // into IPC events that the renderer's notes.store / workspace-content-event-handlers
+                  // already listen for.
+                  //
+                  // SAFETY: This bridge only READS from local cache and SENDS to renderer.
+                  // It never writes back to the filesystem, so there is no risk of infinite loops.
+                  // The source is set to 'external' to distinguish from agent/user edits.
+                  //
+                  // Content hash deduplication: We track the last content hash sent per note
+                  // to avoid redundant UI refreshes when a file is synced but hasn't changed.
+                  const syncContentHashes = new Map<string, string>();
+
+                  // Debounce: Collect changed note IDs and flush after 500ms of quiet.
+                  // This prevents UI thrashing when many files change in rapid succession
+                  // (e.g., during streaming watch events from an active remote agent).
+                  let pendingNoteRefreshes = new Set<string>();
+                  let pendingNoteDeletes = new Set<string>();
+                  let pendingAgentRefresh = false;
+                  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+                  const flushPendingSyncEvents = async () => {
+                    const notesToRefresh = [...pendingNoteRefreshes];
+                    const notesToDelete = [...pendingNoteDeletes];
+                    const shouldRefreshAgents = pendingAgentRefresh;
+                    pendingNoteRefreshes = new Set();
+                    pendingNoteDeletes = new Set();
+                    pendingAgentRefresh = false;
+                    debounceTimer = null;
+
+                    // Handle note deletions
+                    for (const noteId of notesToDelete) {
+                      syncContentHashes.delete(noteId);
+                      sendToWorkspaceWindows(workspace.id, 'note:deleted', {
+                        workspaceId: workspace.id,
+                        noteId,
+                        source: 'external',
+                      });
+                      sendToWorkspaceWindows(workspace.id, `note:deleted:${workspace.id}`, {
+                        noteId,
+                        source: 'external',
+                        workspaceId: workspace.id,
+                      });
+                    }
+
+                    // Handle note creates/updates
+                    for (const noteId of notesToRefresh) {
+                      try {
+                        const notePath = path.join(localCachePath, 'notes', `${noteId}.md`);
+                        const content = await fs.readFile(notePath, 'utf-8');
+
+                        // Content hash dedup: skip if content hasn't changed since last send
+                        const hash = createHash('sha256').update(content).digest('hex');
+                        if (syncContentHashes.get(noteId) === hash) {
+                          continue;
+                        }
+                        syncContentHashes.set(noteId, hash);
+
+                        // Extract markdown content after YAML frontmatter for the UI
+                        let markdownContent = content;
+                        const trimmed = content.trim();
+                        if (trimmed.startsWith('---')) {
+                          const endIndex = trimmed.indexOf('---', 3);
+                          if (endIndex !== -1) {
+                            markdownContent = trimmed.slice(endIndex + 3).trim();
+                          }
+                        }
+
+                        sendToWorkspaceWindows(workspace.id, 'note:updated', {
+                          workspaceId: workspace.id,
+                          noteId,
+                          content: markdownContent,
+                          source: 'external',
+                        });
+                        sendToWorkspaceWindows(workspace.id, `note:content-changed:${workspace.id}`, {
+                          noteId,
+                          content: markdownContent,
+                          source: 'external',
+                          workspaceId: workspace.id,
+                        });
+                      } catch (err) {
+                        logger.warn('[WorkspaceIPC] Failed to read synced note for UI refresh', {
+                          noteId,
+                          error: (err as Error).message,
+                        });
+                      }
+                    }
+
+                    // Handle agent list refresh
+                    if (shouldRefreshAgents) {
+                      unifiedEventBus.emitDomainEvent('agent:session-updated', {
+                        workspaceId: workspace.id,
+                        sessionId: '',
+                      });
+                    }
+                  };
+
+                  const scheduleSyncFlush = () => {
+                    if (debounceTimer) {
+                      clearTimeout(debounceTimer);
+                    }
+                    debounceTimer = setTimeout(() => {
+                      flushPendingSyncEvents().catch((err) => {
+                        logger.warn('[WorkspaceIPC] Error flushing sync events', {
+                          error: (err as Error).message,
+                        });
+                      });
+                    }, 500);
+                  };
+
+                  syncService.on('sync:file-changed', ({ path: relativePath, action }: { path: string; action: string }) => {
+                    // ── Note files: notes/{noteId}.md ──
+                    if (relativePath.startsWith('notes/') && relativePath.endsWith('.md') && !relativePath.includes('.meta/')) {
+                      const noteId = relativePath.replace('notes/', '').replace('.md', '');
+                      if (action === 'delete') {
+                        pendingNoteDeletes.add(noteId);
+                        pendingNoteRefreshes.delete(noteId); // Don't refresh a deleted note
+                      } else {
+                        pendingNoteRefreshes.add(noteId);
+                        pendingNoteDeletes.delete(noteId); // Create/modify overrides pending delete
+                      }
+                      scheduleSyncFlush();
+                      return;
+                    }
+
+                    // ── Note metadata: notes/.meta/{noteId}.*.json ──
+                    // When task metadata, comments, etc. change, refresh the parent note
+                    if (relativePath.startsWith('notes/.meta/') && relativePath.endsWith('.json')) {
+                      const fileName = path.basename(relativePath);
+                      // Extract noteId: e.g. "abc-123.comments.json" → "abc-123"
+                      const dotIndex = fileName.indexOf('.');
+                      if (dotIndex > 0) {
+                        const noteId = fileName.substring(0, dotIndex);
+                        pendingNoteRefreshes.add(noteId);
+                        scheduleSyncFlush();
+                      }
+                      return;
+                    }
+
+                    // ── Agent files: agents/{agentId}.json ──
+                    if (relativePath.startsWith('agents/') && relativePath.endsWith('.json')) {
+                      pendingAgentRefresh = true;
+                      scheduleSyncFlush();
+                      return;
+                    }
+                  });
+
+                  // After a full sync completes, flush all pending events immediately
+                  // to ensure the UI reflects the latest state.
+                  syncService.on('sync:complete', () => {
+                    // Full sync wrote all files to local cache. Trigger a full notes reload
+                    // by emitting note:updated without content — the store will call reloadNote().
+                    // We use a short delay to let the filesystem settle.
+                    setTimeout(() => {
+                      flushPendingSyncEvents().catch((err) => {
+                        logger.warn('[WorkspaceIPC] Error flushing sync events after full sync', {
+                          error: (err as Error).message,
+                        });
+                      });
+                    }, 200);
+                  });
+                } catch (syncError) {
+                  logger.warn('[WorkspaceIPC] Failed to start MetadataSyncService', {
+                    workspaceId: workspace.id,
+                    error: syncError instanceof Error ? syncError.message : String(syncError),
                   });
                 }
               }
@@ -947,12 +1163,23 @@ export function setupWorkspaceIPC(): void {
             }
           })();
 
+          // Ensure spec note exists and is valid (recovers from corrupt/empty spec files)
+          const ensureSpecPromise = (async () => {
+            try {
+              await notesService.ensureSpecExists(id as WorkspaceId);
+              logger.info('Ensured spec note exists for workspace', { workspaceId: id });
+            } catch (error) {
+              logger.error('Failed to ensure spec note exists', error as Error, { workspaceId: id });
+            }
+          })();
+
           // Only wait for metadata watcher (fast) - let monitoring run in background
           await metadataWatcherPromise;
 
           // Fire and forget the background initialization
           // Use void to explicitly indicate we're not awaiting this
           void monitoringAndGitPromise;
+          void ensureSpecPromise;
 
           logger.info('[WorkspaceIPC] Workspace open returning immediately', {
             workspaceId: id,
@@ -1050,6 +1277,24 @@ export function setupWorkspaceIPC(): void {
             workspaceId: validatedId,
           });
         }
+
+        // Stop MetadataSyncService for remote workspaces
+        if (metadataSyncServices.has(validatedId)) {
+          try {
+            const syncService = metadataSyncServices.get(validatedId);
+            await syncService?.stop();
+            metadataSyncServices.delete(validatedId);
+            logger.info('Stopped MetadataSyncService for deleted workspace', {
+              workspaceId: validatedId,
+            });
+          } catch (error) {
+            logger.warn('Failed to stop MetadataSyncService during delete', error as Error, {
+              workspaceId: validatedId,
+            });
+          }
+        }
+        // Clear MetadataFS cache for deleted workspace
+        clearMetadataFSCache();
 
         // Shut down unified workspace watcher
         try {
@@ -2020,6 +2265,9 @@ export function setupWorkspaceIPC(): void {
               workspace = res as any;
             }
           }
+
+          const isRemote = !!workspace?.isRemote && !!workspace?.environmentConfig?.ssh;
+
           if (!workspace) {
             logger.warn(
               'Workspace not found (or adapter returned unexpected shape), trying direct path',
@@ -2172,6 +2420,69 @@ export function setupWorkspaceIPC(): void {
             });
           }
 
+          const maxResults = typeof limit === 'number' && limit > 0 ? limit : 50;
+
+          // ──── Remote workspace: route through RPC ────
+          if (isRemote) {
+            const rpcClient = await remoteRPCManager.getClient(workspaceId);
+
+            if (pattern && String(pattern).trim().length > 0) {
+              // Pattern search: use exec with find command on remote
+              const needle = String(pattern).toLowerCase();
+              const result = await rpcClient.exec({
+                command: `find ${escapeShellArg(listingPath)} -maxdepth 5 -type f -not -path '*/.git/*' -not -path '*/node_modules/*' -not -path '*/dist/*' -not -path '*/build/*' -not -path '*/bazel-*/*' | head -${maxResults}`,
+                timeout: 30000,
+              });
+              // Parse find output into file objects
+              const files = (result.stdout || '')
+                .split('\n')
+                .filter(Boolean)
+                .filter((f) => {
+                  const name = path.basename(f).toLowerCase();
+                  const rel = f.startsWith(listingPath + '/')
+                    ? f.slice(listingPath.length + 1)
+                    : path.basename(f);
+                  return name.includes(needle) || rel.toLowerCase().includes(needle);
+                })
+                .slice(0, maxResults)
+                .map((f) => ({
+                  name: path.basename(f),
+                  path: f,
+                  relativePath: f.startsWith(listingPath + '/')
+                    ? f.slice(listingPath.length + 1)
+                    : path.basename(f),
+                  type: 'file' as const,
+                }));
+              return { files, folders: [] };
+            } else {
+              // Shallow listing: use RPC listDir
+              const result = await rpcClient.listDir({
+                path: listingPath,
+                includeHidden: false,
+              });
+              const files = result.entries
+                .filter((e) => e.type === 'file')
+                .slice(0, maxResults)
+                .map((e) => ({
+                  name: e.name,
+                  path: path.join(listingPath, e.name),
+                  relativePath: e.name,
+                  type: 'file' as const,
+                }));
+              const folders = result.entries
+                .filter((e) => e.type === 'directory' && !e.name.startsWith('.'))
+                .slice(0, maxResults)
+                .map((e) => ({
+                  name: e.name,
+                  path: path.join(listingPath, e.name),
+                  relativePath: e.name,
+                  type: 'directory' as const,
+                }));
+              return { files, folders };
+            }
+          }
+
+          // ──── Local workspace: use local fs ────
           // Check if directory exists first
           try {
             await fs.access(listingPath);
@@ -2209,8 +2520,6 @@ export function setupWorkspaceIPC(): void {
               relativePath: entry.name,
               type: 'directory',
             }));
-
-          const maxResults = typeof limit === 'number' && limit > 0 ? limit : 50;
 
           if (pattern && String(pattern).trim().length > 0) {
             const needle = String(pattern).toLowerCase();
