@@ -177,9 +177,9 @@
     return dedupedAgents
       .filter((a) => !isBackgroundAgent(a) && !delegatedAgentIds.has(a.id))
       .sort((a, b) => {
-        // Coordinator always first
-        const aCoord = isCoordinatorAgent(a);
-        const bCoord = isCoordinatorAgent(b);
+        // Spec-writer coordinator always first
+        const aCoord = getAgentSpecialistId(a) === 'spec-writer';
+        const bCoord = getAgentSpecialistId(b) === 'spec-writer';
         if (aCoord && !bCoord) return -1;
         if (!aCoord && bCoord) return 1;
         // Then by creation time
@@ -245,15 +245,15 @@
 <!-- Recursive snippet: renders an agent card + collapsible delegated children -->
 {#snippet agentTree(agentList: AgentSession[], depth: number, showCoordinatorBanner?: boolean)}
   {#each agentList as agent, i (agent.id)}
-    {#if showCoordinatorBanner && i === 0 && isCoordinatorAgent(agent)}
+    {#if showCoordinatorBanner && i === 0 && getAgentSpecialistId(agent) === 'spec-writer'}
       <div class="pt-1 pb-0.5">
         <Header size={6}>Coordinator</Header>
       </div>
     {/if}
 
     <!-- Section header before the first non-coordinator agent when a coordinator exists -->
-    {#if showCoordinatorBanner && hasCoordinator && !isCoordinatorAgent(agent) && depth === 0}
-      {@const isFirstNonCoordinator = agentList.slice(0, i).every(isCoordinatorAgent)}
+    {#if showCoordinatorBanner && hasCoordinator && getAgentSpecialistId(agent) !== 'spec-writer' && depth === 0}
+      {@const isFirstNonCoordinator = agentList.slice(0, i).every((a) => getAgentSpecialistId(a) === 'spec-writer')}
       {#if isFirstNonCoordinator}
         <div class="pt-2.5 pb-0.5">
           <Header size={6}>Your Agents</Header>
