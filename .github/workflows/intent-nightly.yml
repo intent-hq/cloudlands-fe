@@ -39,12 +39,13 @@ jobs:
         id: version
         run: |
           BASE_VERSION=$(node -p "require('./package.json').version")
+          NEXT_PATCH=$(node -p "v = require('./package.json').version.split('.'), v[2] = +v[2] + 1, v.join('.')")
           DATE_STAMP=$(date -u +%Y%m%d)
-          ALPHA_VERSION="${BASE_VERSION}-alpha.${DATE_STAMP}"
+          ALPHA_VERSION="${NEXT_PATCH}-alpha.${DATE_STAMP}"
           echo "base=$BASE_VERSION" >> "$GITHUB_OUTPUT"
           echo "alpha=$ALPHA_VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v${ALPHA_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Nightly version: $ALPHA_VERSION"
+          echo "Nightly version: $ALPHA_VERSION (base: $BASE_VERSION)"
 
       - name: Set alpha version
         run: npm run version:set -- ${{ steps.version.outputs.alpha }}
@@ -131,4 +132,3 @@ jobs:
           echo "### Download URLs" >> "$GITHUB_STEP_SUMMARY"
           echo "- [Apple Silicon Mac](https://cdn.augmentcode.com/alpha/Intent-latest-arm64.dmg)" >> "$GITHUB_STEP_SUMMARY"
           echo "- [Intel Mac](https://cdn.augmentcode.com/alpha/Intent-latest.dmg)" >> "$GITHUB_STEP_SUMMARY"
-
