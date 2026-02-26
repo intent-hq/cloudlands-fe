@@ -284,7 +284,7 @@ export interface CreateWorkspaceOptions {
  *     restores it on mount (no dropdown interaction needed)
  *  2. Mock electronAPI.invoke('dialog:open') as fallback (correct format)
  *  3. Focus the prompt textarea and type the prompt
- *  4. Click "Create space"
+ *  4. Click "Create workspace"
  *  5. Wait for navigation to /workspace/ and return the workspace ID
  */
 export async function createWorkspaceWithPrompt(
@@ -363,17 +363,17 @@ export async function createWorkspaceWithPrompt(
   await page.waitForTimeout(300);
   await page.keyboard.type(prompt, { delay: 10 });
 
-  // Wait for "Create space" button to be enabled before clicking.
+  // Wait for "Create workspace" button to be enabled before clicking.
   // If the repo selector still shows an invalid/stale path the button stays
   // disabled.  Waiting here gives a clear error instead of a silent no-op click.
-  const createBtn = page.locator('button', { hasText: 'Create space' });
+  const createBtn = page.locator('button', { hasText: 'Create workspace' });
   await createBtn.waitFor({ state: 'visible', timeout: 10_000 });
 
   try {
     await page.waitForFunction(
       () => {
         const btn = [...document.querySelectorAll('button')].find((b) =>
-          b.textContent?.includes('Create space'),
+          b.textContent?.includes('Create workspace'),
         );
         return btn && !btn.disabled;
       },
@@ -383,15 +383,15 @@ export async function createWorkspaceWithPrompt(
     // Take a screenshot for debugging before throwing
     const enabled = await createBtn.isEnabled();
     console.error(
-      `❌ "Create space" button enabled=${enabled} — repo selector may show stale path`,
+      `❌ "Create workspace" button enabled=${enabled} — repo selector may show stale path`,
     );
     throw new Error(
-      `"Create space" button is still disabled after 10s. ` +
+      `"Create workspace" button is still disabled after 10s. ` +
         `The repo selector likely shows a stale/invalid path. Repo path: ${repoPath}`,
     );
   }
 
-  console.log('✅ "Create space" button is enabled — clicking');
+  console.log('✅ "Create workspace" button is enabled — clicking');
   await createBtn.click();
 
   // Wait for navigation to a workspace page and extract the workspace ID
