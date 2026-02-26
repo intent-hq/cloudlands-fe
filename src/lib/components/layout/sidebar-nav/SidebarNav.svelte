@@ -85,7 +85,7 @@
     return false;
   }
 
-  function handleClick(id: SidebarNavItem) {
+  function handleClick(id: SidebarNavItem, event?: MouseEvent) {
     if (id === 'home') {
       sidebarNavStore.closeAll();
       goto('/');
@@ -99,11 +99,16 @@
       }
     } else if (id === 'new-workspace') {
       sidebarNavStore.closeAll();
-      // Open new space in a new window
-      invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route: '/' }).catch(() => {
-        // Fallback to modal in current window if IPC fails
-        window.dispatchEvent(new CustomEvent('app:open-new-space-modal', { detail: {} }));
-      });
+      // Command-click (or Ctrl-click on non-Mac) opens new window on home
+      if (event?.metaKey || event?.ctrlKey) {
+        invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route: '/' }).catch(() => {
+          // Fallback to modal in current window if IPC fails
+          window.dispatchEvent(new CustomEvent('app:open-new-space-modal', { detail: {} }));
+        });
+        return;
+      }
+      // Normal click opens create modal
+      window.dispatchEvent(new CustomEvent('app:open-new-space-modal', { detail: {} }));
     } else {
       // Toggle the persistent sidebar panel
       sidebarNavStore.togglePanel(id);
@@ -128,7 +133,7 @@
           {active || isHovered
           ? 'text-foreground'
           : 'text-muted-foreground/60 hover:text-foreground'}"
-        onclick={() => handleClick(item.id)}
+        onclick={(e) => handleClick(item.id, e)}
         onmouseenter={() => sidebarNavStore.handleMouseEnter(item.id)}
         onmouseleave={() => sidebarNavStore.handleMouseLeave()}
         aria-label={item.label}
@@ -162,7 +167,7 @@
         bind:this={iconRefs[item.id]}
         class="sidebar-nav-btn relative flex flex-col items-center gap-1 cursor-pointer transition-all duration-150
           {active ? 'text-foreground' : 'text-muted-foreground/60 hover:text-foreground'}"
-        onclick={() => handleClick(item.id)}
+        onclick={(e) => handleClick(item.id, e)}
         onmouseenter={() => sidebarNavStore.handleMouseEnter(item.id)}
         onmouseleave={() => sidebarNavStore.handleMouseLeave()}
         aria-label={item.label}
