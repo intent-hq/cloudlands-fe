@@ -403,13 +403,19 @@
   let selectedPRBranch = $state<string>('');
 
   // Save prompt to sessionStorage so it survives navigation (but not browser close)
+  // Debounced to avoid blocking the main thread on every keystroke
+  let promptSaveTimer: ReturnType<typeof setTimeout> | null = null;
   $effect(() => {
-    const promptKey = `${FORM_STATE_KEY}-prompt`;
-    if (initialPrompt) {
-      sessionStorage.setItem(promptKey, initialPrompt);
-    } else {
-      sessionStorage.removeItem(promptKey);
-    }
+    const prompt = initialPrompt; // read dependency
+    if (promptSaveTimer) clearTimeout(promptSaveTimer);
+    promptSaveTimer = setTimeout(() => {
+      const promptKey = `${FORM_STATE_KEY}-prompt`;
+      if (prompt) {
+        sessionStorage.setItem(promptKey, prompt);
+      } else {
+        sessionStorage.removeItem(promptKey);
+      }
+    }, 300);
   });
 
   // Notify context mention pills when the branch changes (for switch-to-pr-branch feature)
@@ -1984,8 +1990,17 @@
   // This prevents repeated fetch attempts for the same PR
   let lastFetchedPRIdentifier: string | null = null;
 
+  // Debounce timer for content change handler
+  let contentChangeTimer: ReturnType<typeof setTimeout> | null = null;
+
   // Handle content changes - check for PRs and fetch branch info if needed
+  // Debounced to avoid expensive ProseMirror traversals on every keystroke
   function handleContentChange() {
+    if (contentChangeTimer) clearTimeout(contentChangeTimer);
+    contentChangeTimer = setTimeout(handleContentChangeImmediate, 300);
+  }
+
+  function handleContentChangeImmediate() {
     // Check for inline images whenever content changes
     hasImages = (richTextarea?.getInlineImages()?.length ?? 0) > 0;
 

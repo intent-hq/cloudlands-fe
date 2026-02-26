@@ -259,8 +259,10 @@
     }
   }
 
-  // Show skeleton only during initial load
-  let showSkeleton = $derived(workspaceStore.loading && workspaces.length === 0);
+  // Show skeleton during initial load or before first load completes (returning users)
+  let showSkeleton = $derived(
+    (!workspaceStore.hasLoaded || workspaceStore.loading) && workspaces.length === 0,
+  );
 
   // Track container width for skeleton column calculation
   let skeletonContainerWidth = $state(0);
@@ -532,7 +534,7 @@
 <div class="h-full flex flex-col">
   <div
     class="home-layout flex-1 w-full min-h-0
-      {isEmpty || showProviderPanel || !workspaceStore.hasLoaded
+      {isEmpty || showProviderPanel || (!workspaceStore.hasLoaded && !hasCompletedProviderSetup)
       ? 'flex items-center justify-center overflow-auto px-[clamp(2rem,6.25rem,6%)]'
       : 'grid gap-15 lg:grid-cols-[minmax(40rem,1fr)_2fr] px-[clamp(2rem,6.25rem,6%)] lg:pl-[clamp(2rem,6.25rem,6%)] lg:pr-0'}"
   >
@@ -589,7 +591,7 @@
     {/if}
 
     <!-- Header + Controls Bar (hidden when empty, showing provider setup, onboarding, or still loading for new users) -->
-    {#if !isEmpty && !showProviderPanel && workspaceStore.hasLoaded}
+    {#if !isEmpty && !showProviderPanel && (workspaceStore.hasLoaded || hasCompletedProviderSetup)}
       <div
         class="right-column animate-entry min-w-0 lg:pr-[clamp(2rem,6.25rem,6%)]"
         style="--entry-delay: 120ms"

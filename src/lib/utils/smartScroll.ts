@@ -205,10 +205,19 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       if (newOptions.follow && !isAtBottom) {
         isUserScrolling = false;
         setIsAtBottom(true);
-        container.scrollTo({
-          top: container.scrollHeight,
-          behavior: 'instant',
-        });
+        // Defer scrollTo to avoid forced synchronous layout during Svelte batch updates.
+        // Reading scrollHeight in the middle of a batch triggers expensive layout recalc.
+        const scrollFn = () => {
+          container.scrollTo({
+            top: container.scrollHeight,
+            behavior: 'instant',
+          });
+        };
+        if (typeof requestAnimationFrame !== 'undefined') {
+          requestAnimationFrame(scrollFn);
+        } else {
+          scrollFn();
+        }
       } else if (!newOptions.follow && isAtBottom) {
         setIsAtBottom(false);
       }

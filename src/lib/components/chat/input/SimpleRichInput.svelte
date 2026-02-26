@@ -824,8 +824,7 @@
       : 'flex-1 overflow-hidden'} {editMode ? 'pr-5' : ''}"
     onclick={() => tiptap?.focus()}
   >
-    {#key disabled}
-      <TipTapEditor
+    <TipTapEditor
         bind:this={tiptap}
         class={isAutoExpand ? '' : 'h-full overflow-y-auto'}
         editorClassName="px-2!"
@@ -857,7 +856,6 @@
           logger.debug('Mention selected:', item);
         }}
       />
-    {/key}
 
     {#if isEnhancing}
       <div class="shimmer-overlay-wrapper">

@@ -3618,7 +3618,7 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
     string,
     { agents: any[]; timestamp: number; loadPromise?: Promise<any[]> }
   >();
-  private static PERSISTENCE_LIST_CACHE_TTL_MS = 5000; // 5 second cache
+  private static PERSISTENCE_LIST_CACHE_TTL_MS = 30000; // 30 second cache - 5s was too short for rapid workspace switching
 
   /**
    * Invalidate the persistence list cache for a workspace

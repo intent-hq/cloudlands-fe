@@ -164,10 +164,12 @@ class NotesStore {
     this.#workspaceId = workspaceId;
 
     if (previousWorkspaceId === workspaceId) {
-      logger.debug('Already initialized for workspace', { workspaceId });
-      // Even if already initialized, ensure we have the latest data
-      // This helps when switching between panels/views
-      await this.reloadNotes();
+      logger.debug('Already initialized for workspace, refreshing in background', { workspaceId });
+      // Refresh in the background so we don't block the UI on space switch.
+      // Existing notes remain visible while the fetch completes.
+      this.reloadNotes().catch((err) => {
+        logger.warn('Background note reload failed', { workspaceId, error: err });
+      });
       return;
     }
 
@@ -181,8 +183,10 @@ class NotesStore {
     // Always clean up event listeners to prevent duplicates
     this.cleanupEventListeners();
 
-    // Clear all state before loading new workspace
-    this.#notes = new Map();
+    // Keep existing notes visible while loading new workspace data.
+    // They'll be replaced atomically once the fetch completes (line ~206).
+    // Only clear if switching to a genuinely different workspace.
+    // this.#notes is replaced atomically in the fetch callback below.
     // Preserve the selected note if provided (from URL state), otherwise reset
     this.#selectedNoteId = initialSelectedNoteId ?? null;
     this.#newlyCreatedNoteId = null;

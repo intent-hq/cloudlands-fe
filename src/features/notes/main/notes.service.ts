@@ -236,18 +236,26 @@ export class NotesService {
       // Get all notes via repository
       const allNotes = await this.notesRepository.findByWorkspace(workspaceId);
 
-      // Prune versions from all notes if needed and save any that were pruned
-      const notesToSave: Note[] = [];
-      for (const note of allNotes) {
-        if (this.pruneVersionsIfNeeded(note) > 0) {
-          notesToSave.push(note);
-        }
-      }
-
-      // Save all notes that had versions pruned
-      for (const note of notesToSave) {
-        await this.notesRepository.save(note);
-      }
+      // PERF: Defer version pruning entirely off the critical path.
+      // setTimeout ensures the synchronous prune loop doesn't run until after
+      // the current microtask queue drains and the response is sent.
+      setTimeout(() => {
+        void (async () => {
+          try {
+            const notesToSave: Note[] = [];
+            for (const note of allNotes) {
+              if (this.pruneVersionsIfNeeded(note) > 0) {
+                notesToSave.push(note);
+              }
+            }
+            for (const note of notesToSave) {
+              await this.notesRepository.save(note);
+            }
+          } catch (err) {
+            logger.warn('Background version pruning failed', { error: err });
+          }
+        })();
+      }, 0);
 
       // Sort by updated date, newest first (unless skipped for performance)
       if (!options?.skipSort) {
@@ -2219,8 +2227,9 @@ export class NotesService {
     try {
       logger.info('Finding ready tasks', { workspaceId });
 
-      // Get all notes for the workspace
-      const allNotesResult = await this.listNotes(workspaceId);
+      // PERF: Use listNotes with skipSort since findReadyTasks does its own ordering.
+      // This avoids the expensive sort of all notes.
+      const allNotesResult = await this.listNotes(workspaceId, { skipSort: true });
       if (!allNotesResult.ok) {
         return { ok: false, error: allNotesResult.error };
       }

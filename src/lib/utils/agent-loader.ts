@@ -27,7 +27,7 @@ interface AgentCacheEntry {
   loadPromise?: Promise<StoredAgent[]>;
 }
 const agentCache = new Map<string, AgentCacheEntry>();
-const CACHE_TTL_MS = 1000; // 1 second frontend cache - backend has 5 second cache
+const CACHE_TTL_MS = 10000; // 10 second frontend cache - backend has 30 second cache
 
 /**
  * Invalidate the agent cache for a workspace

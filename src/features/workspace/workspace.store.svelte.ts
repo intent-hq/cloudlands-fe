@@ -146,7 +146,16 @@ class WorkspaceStore {
           }
         }
 
-        this.#items = Array.from(uniqueWorkspaces.values());
+        // PERF: Only update #items if the workspace list actually changed.
+        // Assigning a new array to $state triggers a full Svelte reactive flush
+        // (147ms for 156 workspaces). Skip if the list is unchanged.
+        const newItems = Array.from(uniqueWorkspaces.values());
+        const itemsChanged =
+          newItems.length !== this.#items.length ||
+          newItems.some((w, i) => w.id !== this.#items[i]?.id || w.updatedAt !== this.#items[i]?.updatedAt);
+        if (itemsChanged) {
+          this.#items = newItems;
+        }
         this.#error = null; // Clear any previous errors on success
         this.#hasLoaded = true; // Mark that initial load has completed
         logger.info('Workspaces loaded successfully', { count: this.#items.length });

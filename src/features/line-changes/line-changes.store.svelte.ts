@@ -31,7 +31,7 @@ class LineChangesStore {
   #agentStats = $state<Map<AgentId, LineChangeStats>>(new Map());
   #fileChanges = $state<Map<string, FileLineChange[]>>(new Map());
   private syncTimers = new Map<string, number>();
-  private readonly SYNC_INTERVAL = 5000; // Sync every 5 seconds
+  private readonly SYNC_INTERVAL = 60000; // Sync every 60 seconds (safety net; real-time updates come via workspace-changes event)
 
   constructor() {
     // Start periodic sync
@@ -90,10 +90,9 @@ class LineChangesStore {
       timestamp: stats.timestamp || new Date().toISOString(),
     };
 
-    // Create a new Map to trigger Svelte reactivity (Map.set() doesn't trigger updates)
-    const newMap = new Map(this.#workspaceStats);
-    newMap.set(workspaceId, updated);
-    this.#workspaceStats = newMap;
+    // In Svelte 5, $state Maps are proxied — .set() triggers fine-grained reactivity.
+    // Avoid creating a new Map which forces all consumers to re-evaluate.
+    this.#workspaceStats.set(workspaceId, updated);
     logger.info(`Updated workspace stats for ${workspaceId}:`, updated);
 
     // Sync with main process
@@ -180,14 +179,12 @@ class LineChangesStore {
     try {
       const allStats = await lineChangesClient.getAllWorkspaceStats();
       if (allStats && typeof allStats === 'object') {
-        // Create a new Map to trigger Svelte reactivity
-        const newMap = new Map(this.#workspaceStats);
+        // Use .set() on the proxied $state Map for fine-grained reactivity.
         for (const [workspaceId, stats] of Object.entries(allStats)) {
           if (stats && stats.additions !== undefined && stats.deletions !== undefined) {
-            newMap.set(workspaceId as WorkspaceId, stats);
+            this.#workspaceStats.set(workspaceId as WorkspaceId, stats);
           }
         }
-        this.#workspaceStats = newMap;
         logger.info(`Synced ${Object.keys(allStats).length} workspace stats from main`);
       }
     } catch (error) {
@@ -205,13 +202,21 @@ class LineChangesStore {
     // Clear any existing interval
     this.stopPeriodicSync();
 
-    // Sync all tracked workspaces and agents periodically
+    // Sync all tracked workspaces and agents periodically.
+    // Use requestIdleCallback to avoid blocking during user interaction.
     this.syncInterval = setInterval(() => {
-      for (const workspaceId of this.#workspaceStats.keys()) {
-        this.syncFromMain(workspaceId);
-      }
-      for (const agentId of this.#agentStats.keys()) {
-        this.syncFromMain(undefined, agentId);
+      const doSync = () => {
+        for (const workspaceId of this.#workspaceStats.keys()) {
+          this.syncFromMain(workspaceId);
+        }
+        for (const agentId of this.#agentStats.keys()) {
+          this.syncFromMain(undefined, agentId);
+        }
+      };
+      if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(doSync, { timeout: 5000 });
+      } else {
+        doSync();
       }
     }, this.SYNC_INTERVAL);
   }
