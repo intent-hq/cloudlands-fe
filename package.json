@@ -325,6 +325,7 @@
     "express": "^5.1.0",
     "file-icon": "^6.0.0",
     "fix-path": "^5.0.0",
+    "font-list": "^2.0.2",
     "fs-extra": "^11.3.2",
     "highlight.js": "^11.11.1",
     "ignore": "^7.0.5",

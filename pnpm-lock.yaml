@@ -273,6 +273,9 @@ importers:
       fix-path:
         specifier: ^5.0.0
         version: 5.0.0
+      font-list:
+        specifier: ^2.0.2
+        version: 2.0.2
       fs-extra:
         specifier: ^11.3.2
         version: 11.3.2
@@ -4338,6 +4341,9 @@ packages:
     peerDependenciesMeta:
       debug:
         optional: true
+
+  font-list@2.0.2:
+    resolution: {integrity: sha512-kNG2sY5+Nh5bbWL9kgAi+k8tuXfZ3m+6fjNGF4iUITTyex2S6wITREgr9ZqY1xw2+mFM6Bi5NPEPpRB6jLLOnw==}
 
   foreground-child@3.3.1:
     resolution: {integrity: sha512-gIXjKqtFuWEgzFRJA9WCQeSJLZDjgJUOMCMzxtvFq/37KojM1BFGufqsCy0r4qSQmYLsZYMeyRqzIWOMup03sw==}
@@ -11097,6 +11103,8 @@ snapshots:
   flatted@3.3.3: {}
 
   follow-redirects@1.15.11: {}
+
+  font-list@2.0.2: {}
 
   foreground-child@3.3.1:
     dependencies:

@@ -2787,5 +2787,46 @@ export function setupSystemIPC() {
     }
   });
 
+  // List available system fonts using font-list module
+  ipcMain.handle(
+    SYSTEM_CHANNELS.LIST_FONTS,
+    createSafeValidatedHandler(
+      EmptySchema,
+      async () => {
+        try {
+          const fontListModule = await import('font-list');
+          // Handle CommonJS module - getFonts may be on default or directly on the module
+          const getFonts =
+            typeof fontListModule.getFonts === 'function'
+              ? fontListModule.getFonts
+              : fontListModule.default?.getFonts ?? fontListModule.default;
+          if (typeof getFonts !== 'function') {
+            throw new Error('font-list module does not export getFonts function');
+          }
+          const allFonts = await getFonts();
+
+          // Clean up font names (font-list returns them with quotes)
+          const cleanedFonts = allFonts.map((font: string) => font.replace(/^["']|["']$/g, ''));
+
+          // Filter for monospace fonts by checking known patterns
+          const monoFonts = cleanedFonts
+            .filter(
+              (name: string) =>
+                /mono|code|consol|courier|terminal|fixed|hack|source.*pro|fira|jetbrains|sf.*mono|menlo|monaco|andale|iosevka|inconsolata|dejavu.*mono|liberation.*mono|ubuntu.*mono|droid.*mono|noto.*mono|roboto.*mono|cascadia|operator|input|pragmata|anonymous|hermit|envy/i.test(
+                  name,
+                ),
+            )
+            .sort((a: string, b: string) => a.localeCompare(b));
+
+          return { success: true, data: monoFonts };
+        } catch (error) {
+          logger.error('Failed to list fonts', { error });
+          return { success: false, error: 'Failed to enumerate system fonts' };
+        }
+      },
+      SYSTEM_CHANNELS.LIST_FONTS,
+    ),
+  );
+
   // Note: File operations (file:read, file:write, etc.) are handled in file.ipc.ts
 }

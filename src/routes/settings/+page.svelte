@@ -21,6 +21,8 @@
   import { notificationSettingsStore } from '$lib/stores/notification-settings.store.svelte';
   import { noteFontSettings } from '$lib/stores/note-font-settings.store.svelte';
   import { agentFontSettings } from '$lib/stores/agent-font-settings.store.svelte';
+  import { codeFontSettings } from '$lib/stores/code-font-settings.store.svelte';
+  import { Select } from '$lib/components/ui/select';
 
   import { isMacPlatform } from '$lib/utils/shortcuts';
   import type { Theme } from '$lib/utils/theme';
@@ -161,6 +163,10 @@
 
   function handleAgentFontChange(value: string | boolean) {
     agentFontSettings.fontStyle = value as 'sans' | 'monospace';
+  }
+
+  function handleCodeFontChange(value: string) {
+    codeFontSettings.fontFamily = value;
   }
 
   // App version from Electron
@@ -480,6 +486,37 @@
                   onChange={handleAgentFontChange}
                   size="sm"
                 />
+              </div>
+            </section>
+            <section class="px-6 py-5">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-medium text-foreground">Font</p>
+                  <p class="text-xs text-muted-foreground mt-0.5">
+                    The monospace font used in code editors, diffs, and syntax-highlighted blocks.
+                  </p>
+                </div>
+                <div class="w-[180px] flex-shrink-0">
+                  <Select.Root
+                    value={codeFontSettings.fontFamily}
+                    onchange={handleCodeFontChange}
+                  >
+                    <Select.Trigger>
+                      <span class="truncate" style:font-family={codeFontSettings.fontFamilyCSS}>
+                        {codeFontSettings.fontFamilyLabel}
+                      </span>
+                    </Select.Trigger>
+                    <Select.Content portal class="max-h-[300px] w-[180px]">
+                      {#each codeFontSettings.fontOptions as option}
+                        <Select.Item value={option.value}>
+                          <span class="truncate" style:font-family={option.fontFamily}>
+                            {option.label}
+                          </span>
+                        </Select.Item>
+                      {/each}
+                    </Select.Content>
+                  </Select.Root>
+                </div>
               </div>
             </section>
           </div>

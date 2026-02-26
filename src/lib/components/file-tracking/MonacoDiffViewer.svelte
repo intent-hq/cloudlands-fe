@@ -30,6 +30,7 @@
   import { toast } from '$lib/components/ui/toast';
   import * as Diff from 'diff';
   import { stripWorkspacePrefix } from '$lib/utils/file-utils';
+  import { codeFontSettings } from '$lib/stores/code-font-settings.store.svelte';
 
   // Content size limits to prevent freezes with massive files
   const MAX_CONTENT_SIZE_BYTES = 500 * 1024; // 500KB
@@ -491,6 +492,14 @@
     }
   });
 
+  // Update font when code font settings change
+  $effect(() => {
+    const fontFamily = codeFontSettings.fontFamilyCSS;
+    if (editor) {
+      editor.updateOptions({ fontFamily });
+    }
+  });
+
   // Update editor when foldUnchanged prop changes
   $effect(() => {
     const fold = foldUnchanged;
@@ -908,7 +917,7 @@
               overviewRuler: false,
               scrollBeyondLastLine: false,
               fontSize: 13,
-              fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+              fontFamily: codeFontSettings.fontFamilyCSS,
               // Use custom line numbers function when lineOffset is provided to show real file line numbers
               lineNumbers: lineOffset ? (n: number) => `${lineOffset + n - 1}` : 'on',
               lineNumbersMinChars: lineOffset ? 4 : 2,

@@ -34,6 +34,7 @@
   import DiffHeader from './DiffHeader.svelte';
   import { getDiffWorkerPool, getSafeDiffLanguage } from '$lib/utils/diff-highlighter-preloader';
   import { themeManager } from '$lib/utils/theme';
+  import { codeFontSettings } from '$lib/stores/code-font-settings.store.svelte';
   import Fa from 'svelte-fa';
   import {
     faSearch,
@@ -702,7 +703,7 @@
       style={maxHeight ? `max-height: calc(${maxHeight} - 40px);` : ''}
     >
       {#if diffData}
-        <div bind:this={containerRef} class="pure-diff-container"></div>
+        <div bind:this={containerRef} class="pure-diff-container" style:--diffs-font-family={codeFontSettings.fontFamilyCSS}></div>
       {:else}
         <div class="pure-diff-empty">
           <p class="text-muted-foreground text-sm">No diff content available</p>

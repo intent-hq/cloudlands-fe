@@ -14,6 +14,7 @@
   import { invoke } from '$lib/electron-bridge';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import { codeFontSettings } from '$lib/stores/code-font-settings.store.svelte';
 
   const logger = createLogger('CodeEditor');
 
@@ -259,6 +260,7 @@
             overviewRulerLanes: 0,
             scrollBeyondLastLine: false,
             fontSize: 13,
+            fontFamily: codeFontSettings.fontFamilyCSS,
             fontWeight: '500',
             fontLigatures: true,
             guides: { indentation: false }, // Disable indent guides to work around Monaco 0.54.0 crash
@@ -460,6 +462,14 @@
     }
   });
 
+  // Update font when code font settings change
+  $effect(() => {
+    const fontFamily = codeFontSettings.fontFamilyCSS;
+    if (editor) {
+      editor.updateOptions({ fontFamily });
+    }
+  });
+
   function getLanguageId(lang: string): string {
     const langMap: Record<string, string> = {
       js: 'javascript',
@@ -567,6 +577,7 @@
         overviewRulerLanes: 0,
         scrollBeyondLastLine: false,
         fontSize: 13,
+        fontFamily: codeFontSettings.fontFamilyCSS,
         fontWeight: '500',
         fontLigatures: true,
         guides: { indentation: false }, // Disable indent guides to work around Monaco 0.54.0 crash
@@ -639,6 +650,7 @@
           minimap: { enabled: false },
           automaticLayout: true,
           wordWrap: lineWrapping ? 'on' : 'off',
+          fontFamily: codeFontSettings.fontFamilyCSS,
           guides: { indentation: false }, // Disable indent guides to work around Monaco 0.54.0 crash
         });
 
@@ -940,7 +952,7 @@
   }
 
   :global(.monaco-editor) {
-    font-family: 'Fira Code', 'Courier New', monospace !important;
+    /* font-family is set dynamically via codeFontSettings in Monaco config */
     font-weight: 500 !important;
     font-size: 13px !important;
   }

@@ -5,8 +5,9 @@
   let {
     value = $bindable(''),
     open = $bindable(false),
+    onchange,
     children,
-  }: { value: string; open?: boolean; children?: Snippet } = $props();
+  }: { value: string; open?: boolean; onchange?: (value: string) => void; children?: Snippet } = $props();
 
   // Use the bound prop directly instead of internal state
   let selectId = crypto.randomUUID();
@@ -21,6 +22,7 @@
     },
     set value(v: string) {
       value = v;
+      onchange?.(v);
     },
     get isOpen() {
       return open ?? false;
