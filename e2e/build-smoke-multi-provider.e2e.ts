@@ -205,6 +205,7 @@ test.describe('multi-provider smoke tests', () => {
 
         const stopPermissionApprover = startPermissionAutoApprover(page);
 
+        try {
         const remainingTimeout = providerTimeout - (Date.now() - start);
         let tick = 0;
         const diagnosticInterval = setInterval(async () => {
@@ -222,7 +223,6 @@ test.describe('multi-provider smoke tests', () => {
           );
         } finally {
           clearInterval(diagnosticInterval);
-          stopPermissionApprover();
         }
 
         const agentTimeout = providerTimeout - (Date.now() - start);
@@ -264,6 +264,9 @@ test.describe('multi-provider smoke tests', () => {
               .soft(response, `${providerId} model response did not match ${expectedPattern}`)
               .toMatch(expectedPattern);
           }
+        }
+        } finally {
+          stopPermissionApprover();
         }
 
         const durationMs = Date.now() - start;
