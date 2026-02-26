@@ -44,6 +44,8 @@
     "upload:gcp-only:beta": "bash scripts/upload-release-gcp.sh beta",
     "upload:gcp-only:alpha": "bash scripts/upload-release-gcp.sh alpha",
     "promote:beta-to-stable": "bash scripts/promote-beta-to-stable.sh",
+    "reset-onboarding": "bash scripts/reset-onboarding.sh",
+    "reset-onboarding:restore": "bash scripts/reset-onboarding.sh restore",
     "test:diff-viewer": "tsx test/test-diff-viewer.ts",
     "test:diff-viewer:watch": "tsx watch test/test-diff-viewer.ts",
     "check": "svelte-check --tsconfig ./tsconfig.json --output human --threshold error",
