@@ -151,6 +151,7 @@
     "test:e2e:ci": "npm run build && npx playwright test --config=e2e/playwright.config.e2e.ts",
     "test:e2e:install": "npx playwright install chromium",
     "test:build-smoke": "npx playwright test --config=e2e/build-smoke.config.ts",
+    "test:build-smoke:providers": "npx playwright test --config=e2e/build-smoke.config.ts e2e/build-smoke-providers.e2e.ts",
     "test:remote": "REMOTE_ENV_PROFILE=${PROFILE:-standard} vitest run tests/remote-env/*.test.ts",
     "test:remote:standard": "REMOTE_ENV_PROFILE=standard vitest run tests/remote-env/*.test.ts",
     "test:remote:devpod": "REMOTE_ENV_PROFILE=devpod vitest run tests/remote-env/*.test.ts",

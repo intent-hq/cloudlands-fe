@@ -507,7 +507,8 @@ export async function sendFollowUpMessage(page: Page, message: string): Promise<
 
 /**
  * Like `waitForFileContent` but periodically sends a follow-up "nudge"
- * message if the file hasn't been written yet.
+ * message if the file hasn't been written yet AND the agent has been
+ * truly idle (no streaming, no new messages) for at least 60 seconds.
  *
  * Some providers (e.g. opencode) may pause waiting for user approval.
  * The nudge tells the agent to proceed.
@@ -520,12 +521,12 @@ export async function waitForFileContentWithNudge(
   nudgeMessage: string = 'go ahead, proceed with the plan',
 ): Promise<void> {
   const pollInterval = 2_000;
-  const nudgeInterval = 30_000; // Send a nudge every 30s
+  const nudgeInterval = 60_000; // Only nudge after 60s of true inactivity
   const deadline = Date.now() + timeout;
-  let lastNudge = Date.now(); // Don't nudge immediately — give the agent a chance
+  let lastActivityTime = Date.now(); // Track last detected UI activity
   let nudgeCount = 0;
   const MAX_NUDGES = 3;
-  let pollCount = 0;
+  let lastAssistantMessageId: string | null = null;
 
   while (Date.now() < deadline) {
     try {
@@ -539,14 +540,45 @@ export async function waitForFileContentWithNudge(
       // file may not exist yet — keep polling
     }
 
-    pollCount++;
+    // Check for UI activity before considering a nudge
+    let activityDetected = false;
 
-    // If enough time has passed without progress, send a nudge
-    if (nudgeCount < MAX_NUDGES && Date.now() - lastNudge >= nudgeInterval) {
+    // Check streaming indicators
+    const streaming = await page
+      .locator('[data-streaming="true"], .animate-pulse, [data-agent-status="streaming"]')
+      .first()
+      .isVisible({ timeout: 1_000 })
+      .catch(() => false);
+    if (streaming) {
+      activityDetected = true;
+    }
+
+    // Check if the last assistant message ID has changed
+    const currentMessageId = await page
+      .locator('[data-message-role="assistant"]')
+      .last()
+      .getAttribute('data-message-id')
+      .catch(() => null);
+    if (currentMessageId && currentMessageId !== lastAssistantMessageId) {
+      activityDetected = true;
+      lastAssistantMessageId = currentMessageId;
+    }
+
+    if (activityDetected) {
+      console.log('[file-nudge] Activity detected, resetting inactivity timer');
+      lastActivityTime = Date.now();
+    }
+
+    // Only nudge after 60s of complete inactivity
+    const inactivityDuration = Date.now() - lastActivityTime;
+    if (nudgeCount < MAX_NUDGES && inactivityDuration >= nudgeInterval) {
       try {
+        console.log(
+          `[file-nudge] No activity for ${(inactivityDuration / 1000).toFixed(0)}s, sending nudge ${nudgeCount + 1}/${MAX_NUDGES}`,
+        );
         await sendFollowUpMessage(page, nudgeMessage);
         nudgeCount++;
-        lastNudge = Date.now();
+        lastActivityTime = Date.now(); // Reset so we wait another 60s before next nudge
       } catch {
         // nudge is best-effort
       }
@@ -1061,10 +1093,10 @@ export function startPermissionAutoApprover(page: Page): () => void {
  * Reactively monitor the chat thread for the coordinator asking for approval.
  *
  * Unlike the fixed-timer nudge in `waitForFileContentWithNudge`, this runs as
- * a background poller (every 5 s) that actually inspects the last assistant
- * message.  When the agent has stopped streaming *and* the message text looks
- * like it is asking for permission / approval / confirmation, a follow-up
- * message is sent immediately.
+ * a background poller (every 10 s) that actually inspects the last assistant
+ * message.  When the agent has been idle for at least 60 seconds *and* the
+ * message text looks like it is asking for permission / approval / confirmation,
+ * a follow-up message is sent.
  *
  * Keeps a set of already-nudged message IDs so it never double-taps.
  *
@@ -1075,6 +1107,12 @@ export function startChatNudgeMonitor(
   nudgeMessage: string = 'Approved. I approve the plan. Proceed immediately without waiting for further approval.',
 ): () => void {
   const respondedTo = new Set<string>();
+  const MAX_NUDGES = 3;
+  let nudgeCount = 0;
+  let lastActivityTime = Date.now();
+  let lastSeenMessageId: string | null = null;
+  let lastSeenMessageCount = 0;
+  const INACTIVITY_THRESHOLD = 60_000; // 60 seconds of inactivity required
 
   const PERMISSION_KEYWORDS = [
     'approval',
@@ -1098,23 +1136,43 @@ export function startChatNudgeMonitor(
 
   const interval = setInterval(async () => {
     try {
-      // 1. Check if an agent is still actively streaming -- if so, leave it alone.
+      // 1. Check if an agent is still actively streaming -- if so, reset inactivity timer.
       const streaming = await page
         .locator('[data-streaming="true"], .animate-pulse, [data-agent-status="streaming"]')
         .first()
         .isVisible({ timeout: 1_000 })
         .catch(() => false);
-      if (streaming) return;
+      if (streaming) {
+        console.log('[nudge-monitor] Streaming detected, resetting inactivity timer');
+        lastActivityTime = Date.now();
+        return;
+      }
 
-      // 2. Grab the last assistant message element.
+      // 2. Check if message count or last message ID changed (indicates progress).
+      const messageCount = await page.locator('[data-message-role="assistant"]').count();
       const lastAssistant = page.locator('[data-message-role="assistant"]').last();
       const visible = await lastAssistant.isVisible({ timeout: 1_000 }).catch(() => false);
       if (!visible) return;
 
       const messageId = await lastAssistant.getAttribute('data-message-id').catch(() => null);
-      if (!messageId || respondedTo.has(messageId)) return;
 
-      // 3. Read the text and check for approval-seeking language.
+      if (messageCount !== lastSeenMessageCount || (messageId && messageId !== lastSeenMessageId)) {
+        console.log(
+          `[nudge-monitor] Activity detected (messages: ${lastSeenMessageCount}->${messageCount}, id: ${lastSeenMessageId}->${messageId}), resetting inactivity timer`,
+        );
+        lastActivityTime = Date.now();
+        lastSeenMessageCount = messageCount;
+        if (messageId) lastSeenMessageId = messageId;
+      }
+
+      // 3. Only proceed if we've been inactive for at least 60 seconds.
+      const inactivityDuration = Date.now() - lastActivityTime;
+      if (inactivityDuration < INACTIVITY_THRESHOLD) return;
+
+      if (!messageId || respondedTo.has(messageId)) return;
+      if (nudgeCount >= MAX_NUDGES) return;
+
+      // 4. Read the text and check for approval-seeking language.
       const text = await lastAssistant.innerText({ timeout: 2_000 }).catch(() => '');
       if (!text) return;
 
@@ -1122,16 +1180,18 @@ export function startChatNudgeMonitor(
       const isAskingForApproval = PERMISSION_KEYWORDS.some((kw) => lower.includes(kw));
       if (!isAskingForApproval) return;
 
-      // 4. Agent stopped streaming and is asking for approval -- nudge it.
+      // 5. Agent idle for 60s+ and is asking for approval -- nudge it.
       respondedTo.add(messageId);
+      nudgeCount++;
       console.log(
-        `[nudge-monitor] Coordinator appears to be waiting for approval (msg ${messageId}), sending nudge...`,
+        `[nudge-monitor] Agent idle for ${(inactivityDuration / 1000).toFixed(0)}s and asking for approval (msg ${messageId}), sending nudge ${nudgeCount}/${MAX_NUDGES}...`,
       );
       await sendFollowUpMessage(page, nudgeMessage);
+      lastActivityTime = Date.now(); // Reset so we wait another 60s before next nudge
     } catch {
       /* best-effort */
     }
-  }, 5_000);
+  }, 10_000);
 
   return () => clearInterval(interval);
 }
