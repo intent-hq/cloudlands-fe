@@ -1211,17 +1211,19 @@ export function startChatNudgeMonitor(
  * is always visible, unlike the "Threads" list in AgentsList which requires the
  * Threads tab to be active.
  *
- * Note: The source code defines these as `<button>` elements but the packaged
- * build may render them as `<div>` elements, so we use the attribute-only
- * selector `[data-agent-id]` instead of `button[data-agent-id]`.
+ * Note: The same agent ID may appear in multiple AgentCard instances (e.g. in
+ * the main thread list and as a delegated child). This function counts all
+ * `[data-agent-id]` elements to detect agents; `openAgentChat` uses `.first()`
+ * to avoid Playwright strict-mode violations from duplicate matches.
  *
  * Throws if no implementor agent is found.
  */
 export async function findImplementorAgent(
   page: Page,
 ): Promise<{ name: string; agentId: string }> {
-  // Agent entries in the AgentNavRail have data-agent-id attributes.
-  // This rail is always visible regardless of which sidebar tab is active.
+  // Agent cards have data-agent-id attributes. The same agent may appear
+  // multiple times (main list + delegated children), but nth(1) still gives
+  // us a valid implementor agent ID.
   const agentButtons = page.locator('[data-agent-id]');
 
   // Wait for at least 2 agents to appear (coordinator + implementor)
@@ -1261,7 +1263,10 @@ export async function findImplementorAgent(
  * the presence of a chat message or the chat input).
  */
 export async function openAgentChat(page: Page, agentId: string): Promise<void> {
-  const agentButton = page.locator(`[data-agent-id="${agentId}"]`);
+  // The same agent ID can appear in multiple AgentCard instances (main thread
+  // list + delegated children list), so use .first() to avoid Playwright
+  // strict-mode violations from duplicate matches.
+  const agentButton = page.locator(`[data-agent-id="${agentId}"]`).first();
 
   await agentButton.waitFor({ state: 'visible', timeout: 10_000 });
   await agentButton.click();
