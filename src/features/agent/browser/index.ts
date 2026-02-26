@@ -664,7 +664,45 @@ const agentProxiesLogger = createLogger('AgentProxies');
  * For agent ACTIVATION/DELETION, use agentIpcProxy from this file
  */
 export class AgentIpcProxy {
+  // Mutex for agent operations - prevents concurrent operations (create/activate) for the same agentId.
+  // Cross-type callers wait for the in-flight operation to finish, then proceed with their own logic
+  // to avoid returning the wrong type.
+  private agentOperationMutex = new Map<string, Promise<any>>();
+
   async createAgent(config: any) {
+    const agentId = config?.agentId || config?.id;
+
+    // If we have an agentId, check for in-flight operations and wait if needed
+    if (agentId) {
+      const pendingOperation = this.agentOperationMutex.get(agentId);
+      if (pendingOperation) {
+        agentProxiesLogger.warn('createAgent blocked by in-flight operation, waiting...', {
+          agentId,
+          workspaceId: config?.workspaceId,
+          codePath: 'AgentIpcProxy.createAgent',
+        });
+        await pendingOperation.catch(() => {}); // Wait for it to finish, ignore errors
+        // Now proceed normally — the agent may already exist
+      }
+
+      const createPromise = this._doCreateAgent(config);
+      this.agentOperationMutex.set(agentId, createPromise);
+
+      try {
+        return await createPromise;
+      } finally {
+        this.agentOperationMutex.delete(agentId);
+      }
+    }
+
+    // No agentId available (backend will generate one) - no mutex needed
+    return this._doCreateAgent(config);
+  }
+
+  /**
+   * Internal implementation of agent creation (called under mutex when agentId is known)
+   */
+  private async _doCreateAgent(config: any) {
     try {
       const response = (await invoke(AGENT_CHANNELS.CREATE, config)) as any;
 
@@ -737,6 +775,33 @@ export class AgentIpcProxy {
   }
 
   async activateAgent(agentId: string, workspace?: any) {
+    // Mutex: if an operation is already in progress for this agentId, wait for it then proceed
+    const pendingOperation = this.agentOperationMutex.get(agentId);
+    if (pendingOperation) {
+      agentProxiesLogger.warn('activateAgent blocked by in-flight operation, waiting...', {
+        agentId,
+        workspaceId: workspace?.id,
+        codePath: 'AgentIpcProxy.activateAgent',
+      });
+      await pendingOperation.catch(() => {}); // Wait for it to finish, ignore errors
+      // Now proceed normally — the agent may already exist
+    }
+
+    // Create the activation promise and store it in the mutex map
+    const activationPromise = this._doActivateAgent(agentId, workspace);
+    this.agentOperationMutex.set(agentId, activationPromise);
+
+    try {
+      return await activationPromise;
+    } finally {
+      this.agentOperationMutex.delete(agentId);
+    }
+  }
+
+  /**
+   * Internal implementation of agent activation (called under mutex)
+   */
+  private async _doActivateAgent(agentId: string, workspace?: any) {
     try {
       // The IPC handler expects sessionId, agentId, and workspaceId
       // Extract only the workspace ID from the workspace object

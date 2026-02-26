@@ -127,9 +127,17 @@ class RefactoredAgentService extends EventEmitter {
   // when multiple agent:created events arrive in quick succession
   private pendingStreamRegistrations = new Set<string>();
 
+  // Mutex for agent activation - prevents duplicate concurrent activations for the same agentId.
+  // When a second caller arrives while activation is in progress, it awaits the first caller's promise.
+  private activationMutex = new Map<string, Promise<AgentSession | null>>();
+
   // Deduplication for agent:created events - same agentId can arrive multiple times
   // from different IPC channels within milliseconds
   private recentAgentCreatedEvents = new Map<string, number>();
+
+  // Deduplication for createSession calls - prevents two concurrent createSession calls
+  // for the same agentId from both proceeding to agentFactory.createAgent()
+  private pendingSessionCreations = new Map<string, Promise<AgentSession>>();
   private readonly AGENT_CREATED_DEDUP_WINDOW = 500; // ms
 
   // Track the message count from disk for each agent session.
@@ -2485,9 +2493,6 @@ class RefactoredAgentService extends EventEmitter {
    * Activate a pending agent on the backend
    */
   async activateAgent(agentId: string, workspaceId: string): Promise<AgentSession | null> {
-    const maxRetries = 3;
-    let lastError: Error | null = null;
-
     // Get current session to check if already active
     const currentSession = sessionStore.getSession(agentId);
     if (currentSession?.backendSessionId && currentSession.status === 'active') {
@@ -2498,16 +2503,38 @@ class RefactoredAgentService extends EventEmitter {
       return currentSession;
     }
 
-    // Check if already activating to prevent duplicate activations
-    if (currentSession?.activationState === 'activating') {
-      logger.warn('Agent activation already in progress, waiting...', { agentId });
-      // Wait a bit and retry
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      const retrySession = sessionStore.getSession(agentId);
-      if (retrySession?.backendSessionId) {
-        return retrySession;
-      }
+    // Mutex: if activation is already in progress for this agentId, await the existing promise
+    const pendingActivation = this.activationMutex.get(agentId);
+    if (pendingActivation) {
+      logger.warn('Duplicate activateAgent call detected, awaiting existing activation promise', {
+        agentId,
+        workspaceId,
+        codePath: 'AgentService.activateAgent',
+      });
+      return pendingActivation;
     }
+
+    // Create the activation promise and store it in the mutex map
+    const activationPromise = this._doActivateAgent(agentId, workspaceId, currentSession);
+    this.activationMutex.set(agentId, activationPromise);
+
+    try {
+      return await activationPromise;
+    } finally {
+      this.activationMutex.delete(agentId);
+    }
+  }
+
+  /**
+   * Internal implementation of agent activation (called under mutex)
+   */
+  private async _doActivateAgent(
+    agentId: string,
+    workspaceId: string,
+    currentSession: AgentSession | undefined,
+  ): Promise<AgentSession | null> {
+    const maxRetries = 3;
+    let lastError: Error | null = null;
 
     // Mark as activating
     if (currentSession) {
@@ -2688,16 +2715,80 @@ class RefactoredAgentService extends EventEmitter {
           errorBoundaryKeys: errorBoundary ? Object.keys(errorBoundary) : null,
         });
 
-        if (!errorBoundary || typeof errorBoundary.wrap !== 'function') {
-          logger.error('errorBoundary.wrap is not available', {
-            errorBoundary,
-            type: typeof errorBoundary,
-          });
-          // Fallback to direct execution
-          return this.createSessionInternal(workspace, options);
+        // Deduplication guard: if an agentId is provided, check for existing session or in-flight creation
+        if (options.agentId) {
+          // Part 1: Check if a session already exists with a backendSessionId
+          const existingSession = sessionStore.getSession(options.agentId);
+          if (existingSession?.backendSessionId) {
+            logger.warn('createSession dedup: session already exists for agentId, returning existing', {
+              agentId: options.agentId,
+              workspaceId: workspace.id,
+              backendSessionId: existingSession.backendSessionId,
+            });
+            return existingSession;
+          }
+
+          // Part 2: Check if there's already a pending creation for this agentId
+          const pendingCreation = this.pendingSessionCreations.get(options.agentId);
+          if (pendingCreation) {
+            logger.warn('createSession dedup: creation already in progress for agentId, awaiting existing promise', {
+              agentId: options.agentId,
+              workspaceId: workspace.id,
+            });
+            return pendingCreation;
+          }
         }
 
-        return errorBoundary.wrap(
+        // If we have an agentId, wrap the actual creation in a deduplication promise
+        const creationPromise = this._executeCreateSession(workspace, options);
+
+        if (options.agentId) {
+          this.pendingSessionCreations.set(options.agentId, creationPromise);
+          creationPromise.finally(() => {
+            this.pendingSessionCreations.delete(options.agentId!);
+          });
+        }
+
+        return creationPromise;
+      },
+      {
+        memoize: false, // Don't memoize session creation
+        coalesce: false, // Don't coalesce session creation
+        priority: 'high',
+        // No timeout - agent creation can take a long time, especially for background agents
+        // that create PRs or perform other complex operations
+      },
+    );
+  }
+
+  /**
+   * Internal execution of createSession, separated for deduplication guard.
+   */
+  private async _executeCreateSession(
+    workspace: Workspace,
+    options: {
+      agentId?: string;
+      name?: string;
+      model?: string;
+      provider?: string;
+      agentType?: import('$shared/types/agent.types').AgentTypeId;
+      initialMessage?: string;
+      contextReferences?: any[];
+      behaviorPrompt?: string;
+      metadata?: any;
+      isPending?: boolean;
+    } = {},
+  ): Promise<AgentSession> {
+    if (!errorBoundary || typeof errorBoundary.wrap !== 'function') {
+      logger.error('errorBoundary.wrap is not available', {
+        errorBoundary,
+        type: typeof errorBoundary,
+      });
+      // Fallback to direct execution
+      return this.createSessionInternal(workspace, options);
+    }
+
+    return errorBoundary.wrap(
           async () => {
             // Skip initialization status tracking - user doesn't want the loader
 
@@ -2803,15 +2894,6 @@ class RefactoredAgentService extends EventEmitter {
             context: { workspace: workspace.id, options },
           },
         );
-      },
-      {
-        memoize: false, // Don't memoize session creation
-        coalesce: false, // Don't coalesce session creation
-        priority: 'high',
-        // No timeout - agent creation can take a long time, especially for background agents
-        // that create PRs or perform other complex operations
-      },
-    );
   }
 
   /**
