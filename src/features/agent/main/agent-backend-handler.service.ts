@@ -43,7 +43,7 @@ import { getWindowIdForWorkspace, getWindowIdsForWorkspace } from '../../system/
 
 const logger = new Logger('AgentBackendHandler');
 
-export interface CreateAgentRequest {
+interface CreateAgentRequest {
   workspaceId: string;
   workspacePath: string;
   name?: string;
@@ -76,7 +76,7 @@ export interface CreateAgentRequest {
   onBeforeStart?: (agentId: string) => Promise<void>;
 }
 
-export interface SendMessageRequest {
+interface SendMessageRequest {
   agentId: string;
   sessionId: string;
   streamId: string;
@@ -99,12 +99,12 @@ export interface SendMessageRequest {
  * - 'resumable': No provider but data exists on disk - can restore and then send
  * - 'not_found': No provider and no persisted data - need to create new agent
  */
-export type AgentResumabilityStatus = 'running' | 'resumable' | 'not_found';
+type AgentResumabilityStatus = 'running' | 'resumable' | 'not_found';
 
 /**
  * Result of checking agent resumability
  */
-export interface AgentResumabilityResult {
+interface AgentResumabilityResult {
   canWake: boolean;
   status: AgentResumabilityStatus;
   hasProvider: boolean;

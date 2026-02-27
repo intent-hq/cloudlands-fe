@@ -5,15 +5,12 @@
  * Provides specific error types with context and recovery suggestions.
  */
 
-import { Logger } from '../../../shared/logger';
 import {
   getUserFriendlyMessage,
   getHelpLink,
   formatErrorMessage,
   getRecoverySuggestions,
 } from '../../../shared/errors/index';
-
-const logger = new Logger('AgentErrors');
 
 export enum AgentErrorCode {
   // Creation errors
@@ -79,7 +76,7 @@ export enum AgentErrorCode {
   CONTEXT_OVERFLOW = 'CONTEXT_OVERFLOW',
 }
 
-export interface AgentErrorContext {
+interface AgentErrorContext {
   agentId?: string;
   sessionId?: string;
   workspaceId?: string;
@@ -98,7 +95,7 @@ export interface AgentErrorContext {
   [key: string]: any; // Allow additional properties
 }
 
-export interface RecoverySuggestion {
+interface RecoverySuggestion {
   action: string;
   description: string;
   automatic?: boolean;
@@ -195,107 +192,3 @@ export class AgentError extends Error {
   }
 }
 
-/**
- * Specific error classes for different scenarios
- */
-
-export class AgentCreationError extends AgentError {
-  constructor(message: string, context: AgentErrorContext, options?: any) {
-    super(message, AgentErrorCode.AGENT_CREATION_FAILED, context, options);
-    this.name = 'AgentCreationError';
-  }
-}
-
-export class AgentSessionError extends AgentError {
-  constructor(message: string, code: AgentErrorCode, context: AgentErrorContext, options?: any) {
-    super(message, code, context, options);
-    this.name = 'AgentSessionError';
-  }
-}
-
-export class AgentStreamingError extends AgentError {
-  constructor(message: string, code: AgentErrorCode, context: AgentErrorContext, options?: any) {
-    super(message, code, context, options);
-    this.name = 'AgentStreamingError';
-  }
-}
-
-export class AgentProviderError extends AgentError {
-  constructor(message: string, code: AgentErrorCode, context: AgentErrorContext, options?: any) {
-    super(message, code, context, options);
-    this.name = 'AgentProviderError';
-  }
-}
-
-export class AgentStorageError extends AgentError {
-  constructor(message: string, code: AgentErrorCode, context: AgentErrorContext, options?: any) {
-    super(message, code, context, options);
-    this.name = 'AgentStorageError';
-  }
-}
-
-export class AgentResourceError extends AgentError {
-  constructor(message: string, code: AgentErrorCode, context: AgentErrorContext, options?: any) {
-    super(message, code, context, options);
-    this.name = 'AgentResourceError';
-  }
-}
-
-/**
- * Error handler utility
- */
-export class AgentErrorHandler {
-  private static errorHistory: AgentError[] = [];
-  private static readonly MAX_ERROR_HISTORY = 100;
-
-  static handle(error: Error | AgentError): void {
-    if (error instanceof AgentError) {
-      this.errorHistory.push(error);
-      if (this.errorHistory.length > this.MAX_ERROR_HISTORY) {
-        this.errorHistory.shift();
-      }
-
-      // Log structured error
-      logger.error('AgentError', {
-        code: error.code,
-        message: error.message,
-        context: error.context,
-        recoverable: error.isRecoverable,
-      });
-
-      // Attempt automatic recovery if applicable
-      if (error.isRecoverable) {
-        const autoRecovery = error.recoverySuggestions.find((s) => s.automatic);
-        if (autoRecovery) {
-          logger.info(`Attempting automatic recovery: ${autoRecovery.description}`);
-          // Recovery logic would be implemented here
-        }
-      }
-    } else {
-      // Convert regular errors to AgentError
-      const agentError = new AgentError(
-        error.message,
-        AgentErrorCode.AGENT_CREATION_FAILED,
-        {},
-        { cause: error },
-      );
-      this.handle(agentError);
-    }
-  }
-
-  static getErrorHistory(): AgentError[] {
-    return [...this.errorHistory];
-  }
-
-  static clearErrorHistory(): void {
-    this.errorHistory = [];
-  }
-
-  static getErrorStats(): Record<AgentErrorCode, number> {
-    const stats: Partial<Record<AgentErrorCode, number>> = {};
-    for (const error of this.errorHistory) {
-      stats[error.code] = (stats[error.code] || 0) + 1;
-    }
-    return stats as Record<AgentErrorCode, number>;
-  }
-}

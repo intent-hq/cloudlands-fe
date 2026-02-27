@@ -30,7 +30,7 @@ import { LocalMetadataFS } from '../../metadata-fs/main/local-metadata-fs';
 
 const logger = new Logger('UnifiedPersistence');
 
-export interface PersistenceConfig {
+interface PersistenceConfig {
   basePath: string;
   backupEnabled: boolean;
   maxBackups: number;
@@ -42,7 +42,7 @@ export interface PersistenceConfig {
   retryDelay?: number; // ms
 }
 
-export interface SaveResult {
+interface SaveResult {
   success: boolean;
   path?: string;
   error?: string;
@@ -51,7 +51,7 @@ export interface SaveResult {
   checksum?: string;
 }
 
-export interface LoadResult<T> {
+interface LoadResult<T> {
   success: boolean;
   data?: T;
   error?: string;
@@ -60,21 +60,21 @@ export interface LoadResult<T> {
   checksum?: string;
 }
 
-export interface HealthCheckResult {
+interface HealthCheckResult {
   healthy: boolean;
   issues: HealthIssue[];
   metrics: HealthMetrics;
   timestamp: Date;
 }
 
-export interface HealthIssue {
+interface HealthIssue {
   type: 'corruption' | 'permission' | 'disk_space' | 'performance' | 'integrity';
   severity: 'low' | 'medium' | 'high' | 'critical';
   message: string;
   details?: any;
 }
 
-export interface HealthMetrics {
+interface HealthMetrics {
   totalFiles: number;
   corruptedFiles: number;
   totalSize: number;
@@ -85,7 +85,7 @@ export interface HealthMetrics {
   lastCheckTime?: Date;
 }
 
-export interface CorruptionRecoveryResult {
+interface CorruptionRecoveryResult {
   success: boolean;
   filesRecovered: number;
   filesLost: number;

@@ -129,17 +129,4 @@ export class DeepLinkHandler {
     }
   }
 
-  /**
-   * Generate example deep links for documentation
-   */
-  static getExampleLinks(): string[] {
-    return [
-      'intent://open?id=workspace_abc123',
-      'intent://create?title=New%20Feature&repo=https://github.com/user/repo&branch=main',
-      'intent://create?title=Bug%20Fix&repo=/Users/me/projects/myapp&branch=fix-123',
-      'intent://clone?repo=https://github.com/augmentcode/intent&branch=main&title=Intent%20Dev',
-      'intent://create?title=Remote%20Dev&repo=/home/user/project&env=remote&ssh_host=dev.example.com&ssh_user=developer',
-      'intent://create?spec=Fix%20the%20login%20bug%20and%20add%20password%20reset%20feature',
-    ];
-  }
 }

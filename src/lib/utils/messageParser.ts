@@ -10,8 +10,7 @@
  *    - ParsedContent[] with types: "text", "tool_use", "tool_result", "session_info", "error", "digest"
  *    - Filters out tool headers, markers, and system messages
  *    - Only emits clean, user-facing content
- * 3. toContentBlocks() converts ParsedContent to ContentBlock[] for UI rendering
- * 4. cleanAgentMessage() performs final whitespace normalization
+ * 3. cleanAgentMessage() performs final whitespace normalization
  *
  * KEY PRINCIPLE:
  * Tool artifacts (headers, parameters, markers) should be filtered by AuggieTextParser.

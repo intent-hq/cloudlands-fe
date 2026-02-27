@@ -590,4 +590,4 @@ export function getAgentBackendAdapter(): IAgentBackendService {
 /**
  * Export a singleton instance
  */
-export const agentBackendAdapter = new AgentBackendAdapter();
+const agentBackendAdapter = new AgentBackendAdapter();

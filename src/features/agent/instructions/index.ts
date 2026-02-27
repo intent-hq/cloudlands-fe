@@ -84,7 +84,7 @@ export const NON_INTERACTIVE_BACKGROUND_AGENTS = new Set([
  * Agent type metadata for UI display
  * This is the source of truth for agent types shown in the sandbox
  */
-export interface AgentTypeInfo {
+interface AgentTypeInfo {
   id: string;
   label: string;
   description: string;

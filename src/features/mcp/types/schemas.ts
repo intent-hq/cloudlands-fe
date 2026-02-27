@@ -6,13 +6,6 @@
  */
 
 import { z } from 'zod';
-import {
-  TestIPCSchema,
-  TestComponentSchema,
-  TestIntegrationSchema,
-  RunTestSuiteSchema,
-  GetTestReportSchema,
-} from '../../agent-testing/testing-tools';
 
 // ============================================================================
 // Common Schemas
@@ -353,13 +346,6 @@ export const TOOL_SCHEMAS = {
   'fs.delete': FsDeleteSchema,
   'fs.rename': FsRenameSchema,
   'fs.mkdir': FsMkdirSchema,
-
-  // Testing tools
-  'testing.ipc': TestIPCSchema,
-  'testing.component': TestComponentSchema,
-  'testing.integration': TestIntegrationSchema,
-  'testing.suite': RunTestSuiteSchema,
-  'testing.report': GetTestReportSchema,
 } as const;
 
 export type ToolName = keyof typeof TOOL_SCHEMAS;

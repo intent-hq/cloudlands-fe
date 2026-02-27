@@ -210,13 +210,6 @@ export class UnifiedWorkspaceWatcher {
   }
 
   /**
-   * Remove a cached instance (for testing or cleanup).
-   */
-  static removeInstance(workspaceId: string): void {
-    instances.delete(workspaceId);
-  }
-
-  /**
    * Register a subscriber that receives filtered watch events.
    * Returns an unsubscribe function.
    */

@@ -8,7 +8,7 @@
  * - Error messages
  */
 
-import type { ContentBlock, ToolUseBlock, ToolResultBlock } from '$shared/types';
+
 
 export interface ParsedContent {
   type: 'text' | 'tool_use' | 'tool_result' | 'session_info' | 'error' | 'digest';
@@ -873,54 +873,4 @@ export class AuggieTextParser {
     return null;
   }
 
-  /**
-   * Convert parsed content to ContentBlocks for the UI
-   */
-  static toContentBlocks(parsedContent: ParsedContent[]): ContentBlock[] {
-    const blocks: ContentBlock[] = [];
-    let currentTextBlock: string = '';
-
-    for (const item of parsedContent) {
-      if (item.type === 'text') {
-        // Accumulate text content
-        currentTextBlock += (currentTextBlock ? '\n' : '') + item.content;
-      } else {
-        // Flush any accumulated text
-        if (currentTextBlock) {
-          blocks.push({
-            type: 'text',
-            text: currentTextBlock,
-          } as ContentBlock);
-          currentTextBlock = '';
-        }
-
-        // Add tool blocks
-        if (item.type === 'tool_use' && item.metadata?.toolName) {
-          blocks.push({
-            type: 'tool_use',
-            id: item.metadata.toolId || `tool-${Date.now()}`,
-            name: item.metadata.toolName,
-            input: item.metadata.toolInput || { description: item.content },
-          } as ToolUseBlock);
-        } else if (item.type === 'tool_result') {
-          blocks.push({
-            type: 'tool_result',
-            tool_use_id: item.metadata?.toolId || '',
-            content: item.content,
-            is_error: item.metadata?.isError || false,
-          } as ToolResultBlock);
-        }
-      }
-    }
-
-    // Flush any remaining text
-    if (currentTextBlock) {
-      blocks.push({
-        type: 'text',
-        text: currentTextBlock,
-      } as ContentBlock);
-    }
-
-    return blocks;
-  }
 }

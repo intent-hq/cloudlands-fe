@@ -16,13 +16,6 @@ import { WorkspaceConfig } from '../../../../shared/main/config.js';
 import { createWorkspaceUpdatedEvent, type McpEvent, type McpActor } from '../../types/events';
 import type { ToolName } from '../../types/schemas';
 import { createHash } from 'crypto';
-import {
-  testIPC,
-  testComponent,
-  testIntegration,
-  runTestSuite,
-  getTestReport,
-} from '../../../agent-testing/testing-tools';
 import { emitAgentFileChange } from '../mcp/workspace-tools';
 import { remoteRPCManager } from '../../../../shared/main/remote-rpc-manager';
 import { RemoteRPCError } from '../../../../shared/main/remote-rpc-client';
@@ -196,23 +189,6 @@ export class McpBridge extends EventEmitter {
           break;
         case 'fs.mkdir':
           response = await this.handleFsMkdir(params, context);
-          break;
-
-        // Testing methods
-        case 'testing.ipc':
-          response = await this.handleTestingIpc(params, context);
-          break;
-        case 'testing.component':
-          response = await this.handleTestingComponent(params, context);
-          break;
-        case 'testing.integration':
-          response = await this.handleTestingIntegration(params, context);
-          break;
-        case 'testing.suite':
-          response = await this.handleTestingSuite(params, context);
-          break;
-        case 'testing.report':
-          response = await this.handleTestingReport(params, context);
           break;
 
         default:
@@ -1730,109 +1706,4 @@ export class McpBridge extends EventEmitter {
     return WorkspaceConfig.paths.workspace(workspaceId);
   }
 
-  // ============================================================================
-  // Testing Handlers
-  // ============================================================================
-
-  private async handleTestingIpc(params: any, context: BridgeCallContext): Promise<BridgeResponse> {
-    try {
-      const result = await testIPC(params);
-      return {
-        success: true,
-        data: result,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: {
-          code: 'TEST_FAILED',
-          message: (error as Error).message,
-        },
-      };
-    }
-  }
-
-  private async handleTestingComponent(
-    params: any,
-    context: BridgeCallContext,
-  ): Promise<BridgeResponse> {
-    try {
-      const result = await testComponent(params);
-      return {
-        success: true,
-        data: result,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: {
-          code: 'TEST_FAILED',
-          message: (error as Error).message,
-        },
-      };
-    }
-  }
-
-  private async handleTestingIntegration(
-    params: any,
-    context: BridgeCallContext,
-  ): Promise<BridgeResponse> {
-    try {
-      const result = await testIntegration(params);
-      return {
-        success: true,
-        data: result,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: {
-          code: 'TEST_FAILED',
-          message: (error as Error).message,
-        },
-      };
-    }
-  }
-
-  private async handleTestingSuite(
-    params: any,
-    context: BridgeCallContext,
-  ): Promise<BridgeResponse> {
-    try {
-      const result = await runTestSuite(params);
-      return {
-        success: true,
-        data: result,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: {
-          code: 'TEST_FAILED',
-          message: (error as Error).message,
-        },
-      };
-    }
-  }
-
-  private async handleTestingReport(
-    params: any,
-    context: BridgeCallContext,
-  ): Promise<BridgeResponse> {
-    try {
-      const result = await getTestReport(params);
-      return {
-        success: true,
-        data: result,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: {
-          code: 'REPORT_NOT_FOUND',
-          message: (error as Error).message,
-        },
-      };
-    }
-  }
 }

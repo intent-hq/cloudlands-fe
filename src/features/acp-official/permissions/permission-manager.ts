@@ -18,7 +18,7 @@ const isBrowser = typeof window !== 'undefined' && typeof window.localStorage !=
 // Storage key for permission rules
 const PERMISSION_RULES_KEY = 'acp_permission_rules';
 
-export interface PermissionRequest {
+interface PermissionRequest {
   id: string;
   sessionId: AgentId;
   title: string;
@@ -29,14 +29,14 @@ export interface PermissionRequest {
   riskLevel?: 'low' | 'medium' | 'high';
 }
 
-export interface PermissionDecision {
+interface PermissionDecision {
   requestId: string;
   outcome: RequestPermissionOutcome;
   timestamp: number;
   remember?: boolean;
 }
 
-export interface PermissionRule {
+interface PermissionRule {
   pattern: string;
   action: 'allow' | 'deny' | 'ask';
   scope?: 'session' | 'agent' | 'global';

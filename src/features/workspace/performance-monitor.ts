@@ -250,22 +250,4 @@ export class PerformanceMonitor {
     });
   }
 
-  /**
-   * Create a memory-efficient virtual list
-   */
-  static createVirtualList<T>(
-    items: T[],
-    visibleCount: number,
-    scrollOffset: number,
-    itemHeight: number,
-  ): { visible: T[]; startIndex: number; endIndex: number } {
-    const startIndex = Math.floor(scrollOffset / itemHeight);
-    const endIndex = Math.min(startIndex + visibleCount, items.length);
-
-    return {
-      visible: items.slice(startIndex, endIndex),
-      startIndex,
-      endIndex,
-    };
-  }
 }

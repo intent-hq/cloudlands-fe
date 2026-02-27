@@ -1302,17 +1302,6 @@ export class StreamManager extends EventEmitter implements IDisposable {
   }
 
   /**
-   * Generate large chunks for testing
-   */
-  static generateLargeChunks(count: number): string[] {
-    const chunks: string[] = [];
-    for (let i = 0; i < count; i++) {
-      chunks.push(`Chunk ${i}: ${Math.random().toString(36).substring(2, 15)}`);
-    }
-    return chunks;
-  }
-
-  /**
    * Save stream state to sessionStorage
    */
   private saveToSessionStorage(): void {

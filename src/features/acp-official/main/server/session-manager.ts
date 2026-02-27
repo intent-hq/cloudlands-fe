@@ -12,7 +12,7 @@ import { Logger } from '../../../../shared/logger';
 
 const logger = new Logger('ACPSessionManager');
 
-export interface ACPSession {
+interface ACPSession {
   id: AgentId;
   messages: Message[];
   metadata?: Record<string, unknown>;

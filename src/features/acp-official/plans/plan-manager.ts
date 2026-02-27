@@ -36,7 +36,7 @@ export interface SessionPlan {
   progress: number;
 }
 
-export class PlanManager extends EventEmitter {
+class PlanManager extends EventEmitter {
   private plans = new Map<SessionId, SessionPlan>();
   private entryCounter = 0;
 

@@ -134,7 +134,7 @@ def main():
         ("features/events/main/events.ipc.ts", "EVENTS_CHANNELS"),
         ("features/diffs/diffs.ipc.ts", "DIFFS_CHANNELS"),
         ("features/comments/main/comments.ipc.ts", "COMMENTS_CHANNELS"),
-        ("features/agent-testing/main/agent-testing.ipc.ts", "AGENT_TESTING_CHANNELS"),
+        ("features/testing/main/testing.ipc.ts", "TESTING_CHANNELS"),
         ("features/agent/main/persistence.ipc.ts", "PERSISTENCE_CHANNELS"),
         ("features/agent/main/init-unified-backend.ts", "WORKSPACE_CHANNELS"),
         ("features/agent/main/config.ipc.ts", "CONFIG_CHANNELS"),

@@ -42,7 +42,7 @@ const HANDLER_FILES = {
   'notes:': 'src/features/notes/main/notes.ipc.ts',
   'note:': 'src/features/notes/main/notes.ipc.ts',
   'config:': 'src/features/agent-config/main/agent-config.ipc.ts',
-  'testing:': 'src/features/agent-testing/agent-testing.ipc.ts',
+  'testing:': 'src/features/testing/main/testing.ipc.ts',
   'first-visit-state:': 'src/features/persistence/main/persistence.ipc.ts',
 };
 

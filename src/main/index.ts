@@ -341,7 +341,6 @@ setupIPCInterceptor();
 
 // Import new IPC setup functions
 import { registerAcceptChangesHandlers } from '../features/accept-changes/main/accept-changes.ipc';
-import { setupAgentTestingIPC } from '../features/agent-testing/main/agent-testing.ipc';
 import { registerAgentContextHandlers } from '../features/agent/agent-context.ipc';
 import { setupConfigIPC as setupAgentConfigIPC } from '../features/agent/main/config.ipc';
 import {
@@ -2233,7 +2232,6 @@ app.whenReady().then(async () => {
 
     // Setup development-only IPC handlers
     if (process.env.NODE_ENV === 'development') {
-      setupAgentTestingIPC();
       setupSandboxIPC();
 
       // Debug tools for testing backend-initiated flows

@@ -22,7 +22,7 @@ const logger = new Logger({ category: 'AgentCommitService' });
 /**
  * Parameters for committing agent changes
  */
-export interface CommitAgentChangesParams {
+interface CommitAgentChangesParams {
   /** Workspace ID */
   workspaceId: string;
   /** Agent ID - used to filter changes to only those made by this agent */
@@ -38,7 +38,7 @@ export interface CommitAgentChangesParams {
 /**
  * Result of a successful commit
  */
-export interface CommitResult {
+interface CommitResult {
   /** Git commit hash */
   hash: string;
   /** Files that were committed */

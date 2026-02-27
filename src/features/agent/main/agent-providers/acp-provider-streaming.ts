@@ -1983,9 +1983,4 @@ export class ACPProviderStreaming {
   }
 }
 
-/**
- * Create a new streaming handler for an agent
- */
-export function createStreamingHandler(agentId: string): ACPProviderStreaming {
-  return new ACPProviderStreaming(agentId);
-}
+

@@ -8648,13 +8648,6 @@ export class ACPProvider extends BaseAgentProvider {
     }
   }
 
-  // ============================================================================
-  // Static Factory Method
-  // ============================================================================
-
-  static create(config: AgentConfig): ACPProvider {
-    return new ACPProvider(config);
-  }
 }
 
 // ============================================================================
