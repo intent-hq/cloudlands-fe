@@ -72,7 +72,10 @@ export class GitignoreManager {
   isIgnored(filePath: string): boolean {
     // Handle both absolute and relative paths
     const isAbsolute = path.isAbsolute(filePath);
-    const relativePath = isAbsolute ? path.relative(this.rootPath, filePath) : filePath;
+    let relativePath = isAbsolute ? path.relative(this.rootPath, filePath) : filePath;
+    // Normalize backslashes to forward slashes for cross-platform compatibility
+    // (the 'ignore' library expects forward-slash paths)
+    relativePath = relativePath.replace(/\\/g, '/');
 
     // If the path is outside the root (starts with ..), it's not part of the project
     // and should not be processed by gitignore rules
@@ -138,7 +141,9 @@ export class GitignoreManager {
    * Check if a directory should be traversed
    */
   shouldTraverseDirectory(dirPath: string): boolean {
-    const relativePath = path.relative(this.rootPath, dirPath);
+    let relativePath = path.relative(this.rootPath, dirPath);
+    // Normalize backslashes to forward slashes for cross-platform compatibility
+    relativePath = relativePath.replace(/\\/g, '/');
 
     // Always skip .git directory
     if (relativePath === '.git' || relativePath.startsWith('.git/')) {

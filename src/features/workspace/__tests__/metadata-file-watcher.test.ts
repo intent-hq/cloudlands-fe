@@ -26,6 +26,7 @@ vi.mock('fs/promises', () => ({
   access: vi.fn(),
 }));
 
+
 /** Helper to simulate a watch event through the captured subscription */
 function simulateEvent(type: WatchEvent['type'], absolutePath: string, workspacePath: string) {
   if (!capturedSubscription) {

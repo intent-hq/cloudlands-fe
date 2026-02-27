@@ -121,15 +121,15 @@ describe('Workspace Isolation', () => {
       const testCases = [
         {
           input: 'src/./file.ts',
-          normalized: 'src/file.ts',
+          normalized: path.join('src', 'file.ts'),
         },
         {
           input: 'src//file.ts',
-          normalized: 'src/file.ts',
+          normalized: path.join('src', 'file.ts'),
         },
         {
           input: './src/file.ts',
-          normalized: 'src/file.ts',
+          normalized: path.join('src', 'file.ts'),
         },
       ];
 
@@ -365,7 +365,7 @@ describe('Workspace Isolation', () => {
       const filePath = 'src/file.ts';
 
       const result = sanitizeFilePath(filePath, workspacePath);
-      expect(result).toBe('src/file.ts');
+      expect(result).toBe(path.join('src', 'file.ts'));
     });
 
     it('should reject path traversal attempts', () => {
@@ -391,7 +391,7 @@ describe('Workspace Isolation', () => {
       const filePath = 'src/features/agent/main/file.ts';
 
       const result = sanitizeFilePath(filePath, workspacePath);
-      expect(result).toBe('src/features/agent/main/file.ts');
+      expect(result).toBe(path.join('src', 'features', 'agent', 'main', 'file.ts'));
     });
 
     it('should normalize paths with ./ references', () => {
@@ -399,7 +399,7 @@ describe('Workspace Isolation', () => {
       const filePath = './src/file.ts';
 
       const result = sanitizeFilePath(filePath, workspacePath);
-      expect(result).toBe('src/file.ts');
+      expect(result).toBe(path.join('src', 'file.ts'));
     });
 
     it('should reject mixed traversal patterns', () => {
@@ -448,7 +448,7 @@ describe('Workspace Isolation', () => {
       const workspacePath = '/home/user/intent/workspace-123';
       const metadataPath = path.join(workspacePath, '.workspace');
 
-      expect(metadataPath).toBe('/home/user/intent/workspace-123/.workspace');
+      expect(metadataPath).toBe(path.join('/home/user/intent/workspace-123', '.workspace'));
       expect(metadataPath.includes('.workspace')).toBe(true);
     });
 
@@ -465,7 +465,7 @@ describe('Workspace Isolation', () => {
       const workspacePath = '/home/user/intent/workspace-123';
       const notesPath = path.join(workspacePath, '.workspace', 'notes');
 
-      expect(notesPath).toBe('/home/user/intent/workspace-123/.workspace/notes');
+      expect(notesPath).toBe(path.join('/home/user/intent/workspace-123', '.workspace', 'notes'));
       expect(notesPath.includes('.workspace')).toBe(true);
     });
   });

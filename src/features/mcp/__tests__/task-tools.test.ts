@@ -50,9 +50,13 @@ vi.mock('../../agent/main/agent-backend-handler.service', () => ({
 vi.mock('electron', () => ({
   app: {
     on: vi.fn(),
-    getPath: vi.fn(() => '/tmp/test'),
+    off: vi.fn(),
+    emit: vi.fn(),
     getName: vi.fn(() => 'test-app'),
     getVersion: vi.fn(() => '1.0.0'),
+    getPath: vi.fn(() => '/tmp/test'),
+    getAppPath: vi.fn(() => '/tmp/test-app'),
+    isReady: vi.fn(() => true),
   },
   BrowserWindow: {
     getAllWindows: vi.fn(() => []),

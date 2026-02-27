@@ -6,10 +6,14 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-
-const { mockExistsSync } = vi.hoisted(() => ({
-  mockExistsSync: vi.fn<(p: string | Buffer) => boolean>(() => false),
-}));
+import * as path from 'path';
+const { mockExistsSync, toOsPath } = vi.hoisted(() => {
+  const pathModule = require('path');
+  return {
+    mockExistsSync: vi.fn<(p: string | Buffer) => boolean>(() => false),
+    toOsPath: (p: string): string => p.split('/').join(pathModule.sep),
+  };
+});
 
 vi.mock('fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs')>();
@@ -22,8 +26,8 @@ vi.mock('fs', async (importOriginal) => {
 
 // Mock getSafeHomeDir to return a predictable path
 vi.mock('../utils', () => ({
-  getSafeHomeDir: () => '/Users/testuser',
-  getWorkspacesPath: () => '/Users/testuser/intent',
+  getSafeHomeDir: () => toOsPath('/Users/testuser'),
+  getWorkspacesPath: () => toOsPath('/Users/testuser/intent'),
   isValidDirectory: () => true,
 }));
 
@@ -45,7 +49,7 @@ describe('WorkspaceConfig', () => {
 
   describe('WORKSPACE_ROOT', () => {
     it('should default to ~/intent', () => {
-      expect(WorkspaceConfig.WORKSPACE_ROOT).toBe('/Users/testuser/intent');
+      expect(WorkspaceConfig.WORKSPACE_ROOT).toBe(toOsPath('/Users/testuser/intent'));
     });
 
     it('should respect WORKSPACES_BASE_DIR env override', () => {
@@ -60,62 +64,62 @@ describe('WorkspaceConfig', () => {
 
     it('should ignore empty env overrides', () => {
       process.env.WORKSPACES_BASE_DIR = '   ';
-      expect(WorkspaceConfig.WORKSPACE_ROOT).toBe('/Users/testuser/intent');
+      expect(WorkspaceConfig.WORKSPACE_ROOT).toBe(toOsPath('/Users/testuser/intent'));
     });
   });
 
   describe('LEGACY_WORKSPACE_ROOT', () => {
     it('should return ~/.workspaces', () => {
-      expect(WorkspaceConfig.LEGACY_WORKSPACE_ROOT).toBe('/Users/testuser/.workspaces');
+      expect(WorkspaceConfig.LEGACY_WORKSPACE_ROOT).toBe(toOsPath('/Users/testuser/.workspaces'));
     });
   });
 
   describe('resolveWorkspaceRoot', () => {
     it('should return WORKSPACES_BASE when workspace exists in ~/intent/workspaces/', () => {
       mockExistsSync.mockImplementation((p: any) => {
-        return p === '/Users/testuser/intent/workspaces/my-workspace';
+        return p === toOsPath('/Users/testuser/intent/workspaces/my-workspace');
       });
 
       const root = WorkspaceConfig.resolveWorkspaceRoot('my-workspace');
-      expect(root).toBe('/Users/testuser/intent/workspaces');
+      expect(root).toBe(toOsPath('/Users/testuser/intent/workspaces'));
     });
 
     it('should return WORKSPACE_ROOT when workspace exists in ~/intent/ (older location)', () => {
       mockExistsSync.mockImplementation((p: any) => {
-        return p === '/Users/testuser/intent/my-workspace';
+        return p === toOsPath('/Users/testuser/intent/my-workspace');
       });
 
       const root = WorkspaceConfig.resolveWorkspaceRoot('my-workspace');
-      expect(root).toBe('/Users/testuser/intent');
+      expect(root).toBe(toOsPath('/Users/testuser/intent'));
     });
 
     it('should return LEGACY_WORKSPACE_ROOT when workspace exists only in legacy location', () => {
       mockExistsSync.mockImplementation((p: any) => {
-        return p === '/Users/testuser/.workspaces/old-workspace';
+        return p === toOsPath('/Users/testuser/.workspaces/old-workspace');
       });
 
       const root = WorkspaceConfig.resolveWorkspaceRoot('old-workspace');
-      expect(root).toBe('/Users/testuser/.workspaces');
+      expect(root).toBe(toOsPath('/Users/testuser/.workspaces'));
     });
 
     it('should prefer ~/intent/workspaces/ when workspace exists in multiple locations', () => {
       mockExistsSync.mockImplementation((p: any) => {
         return (
-          p === '/Users/testuser/intent/workspaces/dual-workspace' ||
-          p === '/Users/testuser/intent/dual-workspace' ||
-          p === '/Users/testuser/.workspaces/dual-workspace'
+          p === toOsPath('/Users/testuser/intent/workspaces/dual-workspace') ||
+          p === toOsPath('/Users/testuser/intent/dual-workspace') ||
+          p === toOsPath('/Users/testuser/.workspaces/dual-workspace')
         );
       });
 
       const root = WorkspaceConfig.resolveWorkspaceRoot('dual-workspace');
-      expect(root).toBe('/Users/testuser/intent/workspaces');
+      expect(root).toBe(toOsPath('/Users/testuser/intent/workspaces'));
     });
 
     it('should default to WORKSPACES_BASE for new/non-existent workspaces', () => {
       mockExistsSync.mockReturnValue(false);
 
       const root = WorkspaceConfig.resolveWorkspaceRoot('brand-new');
-      expect(root).toBe('/Users/testuser/intent/workspaces');
+      expect(root).toBe(toOsPath('/Users/testuser/intent/workspaces'));
     });
   });
 
@@ -124,25 +128,25 @@ describe('WorkspaceConfig', () => {
       mockExistsSync.mockReturnValue(false);
 
       expect(WorkspaceConfig.paths.workspace('ws-new')).toBe(
-        '/Users/testuser/intent/workspaces/ws-new',
+        toOsPath('/Users/testuser/intent/workspaces/ws-new'),
       );
     });
 
     it('should resolve to ~/intent/ for workspace that exists there', () => {
       mockExistsSync.mockImplementation((p: any) => {
-        return p === '/Users/testuser/intent/ws-1';
+        return p === toOsPath('/Users/testuser/intent/ws-1');
       });
 
-      expect(WorkspaceConfig.paths.workspace('ws-1')).toBe('/Users/testuser/intent/ws-1');
+      expect(WorkspaceConfig.paths.workspace('ws-1')).toBe(toOsPath('/Users/testuser/intent/ws-1'));
     });
 
     it('should resolve to legacy root for workspace in ~/.workspaces', () => {
       mockExistsSync.mockImplementation((p: any) => {
-        return p === '/Users/testuser/.workspaces/ws-legacy';
+        return p === toOsPath('/Users/testuser/.workspaces/ws-legacy');
       });
 
       expect(WorkspaceConfig.paths.workspace('ws-legacy')).toBe(
-        '/Users/testuser/.workspaces/ws-legacy',
+        toOsPath('/Users/testuser/.workspaces/ws-legacy'),
       );
     });
   });
@@ -152,25 +156,25 @@ describe('WorkspaceConfig', () => {
       mockExistsSync.mockReturnValue(false);
 
       expect(WorkspaceConfig.paths.metadata('ws-new')).toBe(
-        '/Users/testuser/intent/workspaces/ws-new/.workspace',
+        toOsPath('/Users/testuser/intent/workspaces/ws-new/.workspace'),
       );
     });
 
     it('should resolve to ~/intent/ for workspace that exists there', () => {
       mockExistsSync.mockImplementation((p: any) => {
-        return p === '/Users/testuser/intent/ws-1';
+        return p === toOsPath('/Users/testuser/intent/ws-1');
       });
 
-      expect(WorkspaceConfig.paths.metadata('ws-1')).toBe('/Users/testuser/intent/ws-1/.workspace');
+      expect(WorkspaceConfig.paths.metadata('ws-1')).toBe(toOsPath('/Users/testuser/intent/ws-1/.workspace'));
     });
 
     it('should resolve legacy workspace metadata correctly', () => {
       mockExistsSync.mockImplementation((p: any) => {
-        return p === '/Users/testuser/.workspaces/ws-old';
+        return p === toOsPath('/Users/testuser/.workspaces/ws-old');
       });
 
       expect(WorkspaceConfig.paths.metadata('ws-old')).toBe(
-        '/Users/testuser/.workspaces/ws-old/.workspace',
+        toOsPath('/Users/testuser/.workspaces/ws-old/.workspace'),
       );
     });
   });
@@ -179,65 +183,65 @@ describe('WorkspaceConfig', () => {
     beforeEach(() => {
       // Workspace exists in new root
       mockExistsSync.mockImplementation((p: any) => {
-        return String(p).startsWith('/Users/testuser/intent/ws-1');
+        return String(p).startsWith(toOsPath('/Users/testuser/intent/ws-1'));
       });
     });
 
     it('paths.agents should resolve under .workspace/agents', () => {
       expect(WorkspaceConfig.paths.agents('ws-1')).toBe(
-        '/Users/testuser/intent/ws-1/.workspace/agents',
+        toOsPath('/Users/testuser/intent/ws-1/.workspace/agents'),
       );
     });
 
     it('paths.notes should resolve under .workspace/notes', () => {
       expect(WorkspaceConfig.paths.notes('ws-1')).toBe(
-        '/Users/testuser/intent/ws-1/.workspace/notes',
+        toOsPath('/Users/testuser/intent/ws-1/.workspace/notes'),
       );
     });
 
     it('paths.diffs should resolve under .workspace/diffs', () => {
       expect(WorkspaceConfig.paths.diffs('ws-1')).toBe(
-        '/Users/testuser/intent/ws-1/.workspace/diffs',
+        toOsPath('/Users/testuser/intent/ws-1/.workspace/diffs'),
       );
     });
 
     it('paths.cache should resolve under .workspace/cache', () => {
       expect(WorkspaceConfig.paths.cache('ws-1')).toBe(
-        '/Users/testuser/intent/ws-1/.workspace/cache',
+        toOsPath('/Users/testuser/intent/ws-1/.workspace/cache'),
       );
     });
 
     it('paths.assets should resolve under .workspace/assets', () => {
       expect(WorkspaceConfig.paths.assets('ws-1')).toBe(
-        '/Users/testuser/intent/ws-1/.workspace/assets',
+        toOsPath('/Users/testuser/intent/ws-1/.workspace/assets'),
       );
     });
 
     it('paths.firstVisitState should resolve to first-visit-state.json', () => {
       expect(WorkspaceConfig.paths.firstVisitState('ws-1')).toBe(
-        '/Users/testuser/intent/ws-1/.workspace/first-visit-state.json',
+        toOsPath('/Users/testuser/intent/ws-1/.workspace/first-visit-state.json'),
       );
     });
 
     it('paths.workspaceMetadata should resolve to workspace.json', () => {
       expect(WorkspaceConfig.paths.workspaceMetadata('ws-1')).toBe(
-        '/Users/testuser/intent/ws-1/.workspace/workspace.json',
+        toOsPath('/Users/testuser/intent/ws-1/.workspace/workspace.json'),
       );
     });
 
     it('all derived paths should use legacy root for legacy workspaces', () => {
       mockExistsSync.mockImplementation((p: any) => {
-        return String(p).startsWith('/Users/testuser/.workspaces/ws-old');
+        return String(p).startsWith(toOsPath('/Users/testuser/.workspaces/ws-old'));
       });
 
       expect(WorkspaceConfig.paths.agents('ws-old')).toBe(
-        '/Users/testuser/.workspaces/ws-old/.workspace/agents',
+        toOsPath('/Users/testuser/.workspaces/ws-old/.workspace/agents'),
       );
       expect(WorkspaceConfig.paths.notes('ws-old')).toBe(
-        '/Users/testuser/.workspaces/ws-old/.workspace/notes',
+        toOsPath('/Users/testuser/.workspaces/ws-old/.workspace/notes'),
       );
       expect(WorkspaceConfig.paths.diffs('ws-old')).toBe(
-        '/Users/testuser/.workspaces/ws-old/.workspace/diffs',
+        toOsPath('/Users/testuser/.workspaces/ws-old/.workspace/diffs'),
       );
     });
   });
@@ -247,84 +251,84 @@ describe('WorkspaceConfig', () => {
       mockExistsSync.mockReturnValue(false);
 
       const wt = WorkspaceConfig.paths.worktree('ws-1', 'my-repo');
-      expect(wt).toBe('/Users/testuser/intent/workspaces/ws-1/my-repo');
+      expect(wt).toBe(toOsPath('/Users/testuser/intent/workspaces/ws-1/my-repo'));
     });
 
     it('should use "repo" as fallback folder name when no repo name given', () => {
       mockExistsSync.mockReturnValue(false);
 
       const wt = WorkspaceConfig.paths.worktree('ws-new');
-      expect(wt).toBe('/Users/testuser/intent/workspaces/ws-new/repo');
+      expect(wt).toBe(toOsPath('/Users/testuser/intent/workspaces/ws-new/repo'));
     });
 
     it('should use customBase when provided', () => {
       mockExistsSync.mockReturnValue(false);
 
       const wt = WorkspaceConfig.paths.worktree('ws-1', 'my-repo', undefined, '/custom/worktrees');
-      expect(wt).toBe('/custom/worktrees/ws-1/my-repo');
+      expect(wt).toBe(toOsPath('/custom/worktrees/ws-1/my-repo'));
     });
 
     it('should ignore empty customBase and use default', () => {
       mockExistsSync.mockReturnValue(false);
 
       const wt = WorkspaceConfig.paths.worktree('ws-1', 'my-repo', undefined, '');
-      expect(wt).toBe('/Users/testuser/intent/workspaces/ws-1/my-repo');
+      expect(wt).toBe(toOsPath('/Users/testuser/intent/workspaces/ws-1/my-repo'));
     });
   });
 
   describe('paths.legacyWorktree', () => {
     it('should resolve to ~/intent/{id}/{repo} for workspace in ~/intent/', () => {
       mockExistsSync.mockImplementation((p: any) => {
-        return p === '/Users/testuser/intent/ws-1';
+        return p === toOsPath('/Users/testuser/intent/ws-1');
       });
 
       const wt = WorkspaceConfig.paths.legacyWorktree('ws-1', 'my-repo');
-      expect(wt).toBe('/Users/testuser/intent/ws-1/my-repo');
+      expect(wt).toBe(toOsPath('/Users/testuser/intent/ws-1/my-repo'));
     });
 
     it('should resolve to ~/.workspaces/{id}/{repo} for legacy workspace', () => {
       mockExistsSync.mockImplementation((p: any) => {
-        return p === '/Users/testuser/.workspaces/ws-old';
+        return p === toOsPath('/Users/testuser/.workspaces/ws-old');
       });
 
       const wt = WorkspaceConfig.paths.legacyWorktree('ws-old', 'my-repo');
-      expect(wt).toBe('/Users/testuser/.workspaces/ws-old/my-repo');
+      expect(wt).toBe(toOsPath('/Users/testuser/.workspaces/ws-old/my-repo'));
     });
   });
 
   describe('extractWorkspaceId', () => {
     it('should extract ID from new-style path', () => {
-      expect(WorkspaceConfig.extractWorkspaceId('/Users/testuser/intent/abc-123/notes')).toBe(
+      expect(WorkspaceConfig.extractWorkspaceId(toOsPath('/Users/testuser/intent/abc-123/notes'))).toBe(
         'abc-123',
       );
     });
 
     it('should extract ID from legacy-style path', () => {
       expect(
-        WorkspaceConfig.extractWorkspaceId('/Users/testuser/.workspaces/abc-123/.workspace'),
+        WorkspaceConfig.extractWorkspaceId(toOsPath('/Users/testuser/.workspaces/abc-123/.workspace')),
       ).toBe('abc-123');
     });
 
     it('should prefer intent over .workspaces in ambiguous paths', () => {
       // intent appears first in the path
       expect(
-        WorkspaceConfig.extractWorkspaceId('/Users/testuser/intent/ws-1/.workspaces/something'),
+        WorkspaceConfig.extractWorkspaceId(toOsPath('/Users/testuser/intent/ws-1/.workspaces/something')),
       ).toBe('ws-1');
     });
 
     it('should return null for paths without workspace root', () => {
-      expect(WorkspaceConfig.extractWorkspaceId('/Users/testuser/projects/foo')).toBeNull();
+      expect(WorkspaceConfig.extractWorkspaceId(toOsPath('/Users/testuser/projects/foo'))).toBeNull();
     });
 
     it('should return null when workspace root is the last segment', () => {
-      expect(WorkspaceConfig.extractWorkspaceId('/Users/testuser/intent')).toBeNull();
+      expect(WorkspaceConfig.extractWorkspaceId(toOsPath('/Users/testuser/intent'))).toBeNull();
     });
 
     it('should extract ID from worktree path (skip WORKTREES_FOLDER)', () => {
       // Worktree paths: ~/intent/workspaces/{id}/{repo}
       expect(
         WorkspaceConfig.extractWorkspaceId(
-          '/Users/testuser/intent/workspaces/amber-forest/my-repo/src/file.ts',
+          toOsPath('/Users/testuser/intent/workspaces/amber-forest/my-repo/src/file.ts'),
         ),
       ).toBe('amber-forest');
     });
@@ -332,7 +336,7 @@ describe('WorkspaceConfig', () => {
     it('should extract ID from worktree path without trailing segments', () => {
       expect(
         WorkspaceConfig.extractWorkspaceId(
-          '/Users/testuser/intent/workspaces/amber-forest/my-repo',
+          toOsPath('/Users/testuser/intent/workspaces/amber-forest/my-repo'),
         ),
       ).toBe('amber-forest');
     });
@@ -340,7 +344,7 @@ describe('WorkspaceConfig', () => {
 
   describe('paths.base', () => {
     it('should return WORKSPACE_ROOT', () => {
-      expect(WorkspaceConfig.paths.base).toBe('/Users/testuser/intent');
+      expect(WorkspaceConfig.paths.base).toBe(toOsPath('/Users/testuser/intent'));
     });
   });
 });

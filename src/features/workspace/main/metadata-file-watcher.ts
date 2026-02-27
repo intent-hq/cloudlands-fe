@@ -263,9 +263,9 @@ export class MetadataFileWatcher extends EventEmitter {
     let noteId: string | undefined;
 
     // Determine file type and extract metadata
-    if (relativePath.startsWith('notes/')) {
+    if (relativePath.startsWith(`notes${path.sep}`)) {
       // Skip .meta directory files (except comments which we want to track)
-      if (relativePath.includes('.meta/')) {
+      if (relativePath.includes(`.meta${path.sep}`)) {
         if (fileName.endsWith('.comments.json')) {
           type = 'comment';
           fileType = 'comments';

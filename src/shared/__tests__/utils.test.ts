@@ -12,6 +12,7 @@
 import { describe, it, expect } from 'vitest';
 import { getSafeHomeDir } from '../main/utils';
 import { homedir, tmpdir } from 'os';
+import * as path from 'path';
 
 describe('getSafeHomeDir', () => {
   it('should return a non-empty path', () => {
@@ -27,7 +28,7 @@ describe('getSafeHomeDir', () => {
 
   it('should return an absolute path', () => {
     const result = getSafeHomeDir();
-    expect(result.startsWith('/')).toBe(true);
+    expect(path.isAbsolute(result)).toBe(true);
   });
 
   it('should return the actual home directory when valid', () => {
@@ -81,6 +82,6 @@ describe('isValidDirectory validation logic (contract tests)', () => {
 
     // The result should be a reasonable path
     expect(result.length).toBeGreaterThan(1);
-    expect(result.startsWith('/')).toBe(true);
+    expect(path.isAbsolute(result)).toBe(true);
   });
 });
