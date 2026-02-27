@@ -6,6 +6,7 @@
 
 import { createLogger } from '$lib/utils/client-logger';
 import { emit, listenSync } from '$lib/electron-bridge';
+import { pathsMatch } from '$lib/utils/file-utils';
 import type { Workspace } from '$shared/types';
 
 const logger = createLogger('WorkspaceContentEventHandlers');
@@ -51,13 +52,11 @@ export class WorkspaceContentEventHandlers {
         // Check if paths match (handle both absolute and relative paths)
         const eventPath = data.path || '';
         const eventRelativePath = data.relativePath || '';
-        const pathMatches =
-          eventPath === selectedFile ||
-          eventRelativePath === selectedFile ||
-          selectedFile.endsWith(`/${eventRelativePath}`) ||
-          eventPath.endsWith(`/${selectedFile.split('/').pop()}`);
+        const isMatch =
+          pathsMatch(eventPath, selectedFile) ||
+          pathsMatch(eventRelativePath, selectedFile);
 
-        if (pathMatches) {
+        if (isMatch) {
           // PERF: Changed from INFO to DEBUG - called for every file change
           logger.debug('[EventHandlers] File content changed:', {
             file: selectedFile,

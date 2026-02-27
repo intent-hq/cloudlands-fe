@@ -14,7 +14,7 @@
   import { WorkspaceId } from '$shared/types/branded-ids';
 	  import { invoke, listenSync } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
-  import { getLanguageFromPath } from '$lib/utils/file-utils';
+  import { getLanguageFromPath, pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
   import { parseHunksToLineChanges, type LineChange } from '$lib/utils/line-change-decorations';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
   import MarkdownFileEditor from '$lib/components/editor/MarkdownFileEditor.svelte';
@@ -90,22 +90,16 @@
     if (!filePath || !wsId) return;
 
     // Helper to check if paths match (handles absolute vs relative paths)
-    const pathsMatch = (changedPath: string | undefined): boolean => {
-      if (!changedPath || !filePath) return false;
-      if (changedPath === filePath) return true;
-      if (changedPath === absolutePath) return true;
-      if (changedPath.endsWith(filePath)) return true;
-      if (filePath.endsWith(changedPath)) return true;
-      if (absolutePath && changedPath.endsWith(absolutePath)) return true;
-      if (absolutePath && absolutePath.endsWith(changedPath)) return true;
-      return false;
+    const matchesOurFile = (changedPath: string | undefined): boolean => {
+      if (!changedPath) return false;
+      return filePathsMatch(changedPath, filePath) || filePathsMatch(changedPath, absolutePath);
     };
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     const handleFileChange = (data: any) => {
       const changedPath = data.path || data.relativePath || data.filePath;
-      if (!pathsMatch(changedPath)) return;
+      if (!matchesOurFile(changedPath)) return;
 
       // Skip if this change came from our own save
       if (isSavingFromEditor) {
@@ -115,16 +109,35 @@
         return;
       }
 
-      logger.info('[FileTabType] File change detected, scheduling reload', {
+      logger.info('[FileTabType] File change detected, updating content', {
         changedPath,
         filePath,
+        hasContent: data.content !== undefined,
       });
 
-      // Debounce rapid updates
+      // If content is provided in the event, update directly without re-reading.
+      // This avoids destroying/recreating the editor and is more efficient.
+      // Guard with typeof check to avoid setting fileContent to null (which would
+      // hide the editor, since the template checks `fileContent !== null`).
+      if (typeof data.content === 'string') {
+        const content = data.content; // capture value for the closure
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          debounceTimer = null;
+          if (isMounted && !isSavingFromEditor) {
+            fileContent = content;
+            originalFileContent = content;
+          }
+        }, 300);
+        return;
+      }
+
+      // No content in event - silently re-read the file without loading flash
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
+        debounceTimer = null;
         if (isMounted && !isSavingFromEditor && absolutePath) {
-          loadFileContent(absolutePath, wsId);
+          refreshFileContent(absolutePath, wsId);
         }
       }, 300);
     };
@@ -134,7 +147,7 @@
       if (data.workspaceId !== wsId) return;
 
       const changedPath = data.filePath || data.path;
-      if (!pathsMatch(changedPath)) return;
+      if (!matchesOurFile(changedPath)) return;
 
       // Skip if this change came from our own save
       if (isSavingFromEditor) {
@@ -145,16 +158,20 @@
         return;
       }
 
-      logger.info('[FileTabType] Agent file change detected, scheduling reload', {
+      // If a content update is already pending (e.g., from a file:content-changed event
+      // that arrived with inline content), don't override it with a slower re-read.
+      // Both events fire in sequence for agent writes; the first already has the content.
+      if (debounceTimer) return;
+
+      logger.info('[FileTabType] Agent file change detected, scheduling refresh', {
         changedPath,
         filePath,
       });
 
-      // Debounce rapid updates
-      if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
+        debounceTimer = null;
         if (isMounted && !isSavingFromEditor && absolutePath) {
-          loadFileContent(absolutePath, wsId);
+          refreshFileContent(absolutePath, wsId);
         }
       }, 300);
     };
@@ -293,6 +310,41 @@
         untrack(() => {
           fileLoading = false;
         });
+    }
+  }
+
+  /**
+   * Silently refresh file content without showing loading skeleton.
+   * Used when we know the file changed (e.g., agent edit) but want to
+   * keep the editor visible during the refresh.
+   */
+  async function refreshFileContent(absolutePath: string, wsId: string) {
+    try {
+      const result = await invoke<{
+        success: boolean;
+        data: { content: string; isBinary?: boolean };
+      }>('file:read', {
+        workspaceId: wsId,
+        path: absolutePath,
+      });
+      if (!isMounted) return;
+      const content = result?.data?.content ?? '';
+      const binary = result?.data?.isBinary ?? false;
+      fileContent = content;
+      originalFileContent = content;
+      fileError = null; // clear any stale error from a previous failed load
+      if (binary !== isFileBinary) {
+        isFileBinary = binary;
+      }
+    } catch (err) {
+      // If the file was deleted or is unreadable, fall back to full load
+      if (isMounted) {
+        logger.warn('[FileTabType] Silent refresh failed, falling back to full load', {
+          path: absolutePath,
+          error: err,
+        });
+        loadFileContent(absolutePath, wsId);
+      }
     }
   }
 

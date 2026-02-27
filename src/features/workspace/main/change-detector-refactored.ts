@@ -43,6 +43,7 @@ import { PerformanceMonitor } from '../../file-tracking/performance-monitor';
 // Import adaptive polling manager
 import { AdaptivePollingManager } from './change-detection/adaptive-polling-manager';
 import { isKeychainAccessSuppressed } from '../../../shared/git/keychain-suppression';
+import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
 
 const logger = new Logger('ChangeDetector');
 
@@ -846,10 +847,6 @@ export class ChangeDetectorRefactored extends EventEmitter {
         return;
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { sendToWorkspaceWindows } = require('../../system/main/system.ipc') as {
-        sendToWorkspaceWindows: (workspaceId: string | undefined, channel: string, data: unknown) => void;
-      };
       sendToWorkspaceWindows(this.workspaceId, `file:content-changed:${this.workspaceId}`, {
         path: absolutePath,
         relativePath,
@@ -864,7 +861,7 @@ export class ChangeDetectorRefactored extends EventEmitter {
       });
     } catch (error) {
       // Unexpected error (e.g., electron not available) - log and skip
-      logger.debug('Could not emit file:content-changed', {
+      logger.warn('Could not emit file:content-changed', {
         path: relativePath,
         error: (error as Error).message,
       });
@@ -877,10 +874,6 @@ export class ChangeDetectorRefactored extends EventEmitter {
    */
   private emitFileDeletedToRenderer(absolutePath: string, relativePath: string): void {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { sendToWorkspaceWindows } = require('../../system/main/system.ipc') as {
-        sendToWorkspaceWindows: (workspaceId: string | undefined, channel: string, data: unknown) => void;
-      };
       sendToWorkspaceWindows(this.workspaceId, `file:deleted:${this.workspaceId}`, {
         path: absolutePath,
         relativePath,
@@ -894,7 +887,7 @@ export class ChangeDetectorRefactored extends EventEmitter {
       });
     } catch (error) {
       // Unexpected error (e.g., electron not available) - log and skip
-      logger.debug('Could not emit file:deleted', {
+      logger.warn('Could not emit file:deleted', {
         path: relativePath,
         error: (error as Error).message,
       });

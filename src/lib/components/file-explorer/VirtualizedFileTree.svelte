@@ -18,6 +18,7 @@
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { invoke } from '$lib/electron-bridge';
+  import { pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
   import { deleteWithUndo } from '$lib/utils/reversible-actions';
   import { track, getFileExtension } from '$lib/services/analytics';
   import { getPanelLayoutManager, hasPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
@@ -985,12 +986,8 @@
 
   // Check if a path matches a node path (helper for scrollToPath)
   function pathMatches(nodePath: string, targetPath: string): boolean {
-    if (nodePath === targetPath) return true;
+    if (filePathsMatch(nodePath, targetPath)) return true;
     if (workspacePath && nodePath === `${workspacePath}/${targetPath}`) return true;
-    if (targetPath.startsWith('/') && nodePath.endsWith(targetPath)) return true;
-    if (nodePath.startsWith('/') && !targetPath.startsWith('/')) {
-      return nodePath.endsWith(`/${targetPath}`);
-    }
     return false;
   }
 

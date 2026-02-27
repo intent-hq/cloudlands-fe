@@ -236,7 +236,7 @@ export class AgentEventTools {
     const subscription = this.eventBus.subscribe<FileChangedEvent>({
       filters: new EventFilterBuilder().ofType('file:changed').matchingPattern(filePath).build(),
       callback: (event) => {
-        if (event.data.path === filePath || event.data.path.endsWith(filePath)) {
+        if (event.data.path === filePath || event.data.path.endsWith('/' + filePath)) {
           callback(event);
         }
       },

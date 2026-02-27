@@ -29,7 +29,7 @@
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
   import * as Diff from 'diff';
-  import { stripWorkspacePrefix } from '$lib/utils/file-utils';
+  import { stripWorkspacePrefix, pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
   import { codeFontSettings } from '$lib/stores/code-font-settings.store.svelte';
 
   // Content size limits to prevent freezes with massive files
@@ -575,32 +575,9 @@
     const filePath = change?.relativePath || change?.file;
     const wsId = workspaceId || workspaceStore.current?.id;
 
-    // Helper to check if paths match (handles absolute vs relative paths)
-    // Uses normalized path comparison to prevent false positives
-    const pathsMatch = (changedPath: string | undefined, ourFilePath: string): boolean => {
-      if (!changedPath || !ourFilePath) return false;
-
-      // Normalize paths: remove trailing slashes, handle Windows backslashes
-      const normalize = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '');
-      const normalizedChanged = normalize(changedPath);
-      const normalizedOur = normalize(ourFilePath);
-
-      // 1. Exact match after normalization
-      if (normalizedChanged === normalizedOur) return true;
-
-      // 2. Full path containment check (one must fully contain the other as a suffix)
-      // This handles absolute vs relative paths safely by ensuring the shorter path
-      // matches the FULL trailing portion of the longer path
-      // e.g., "src/foo/bar.js" should match "/home/user/project/src/foo/bar.js"
-      // but NOT "/home/user/project/other/bar.js"
-      if (normalizedChanged.endsWith('/' + normalizedOur)) return true;
-      if (normalizedOur.endsWith('/' + normalizedChanged)) return true;
-
-      // 3. For paths of the same depth (both relative or both absolute), require exact match
-      // which we already checked above, so return false
-      // This prevents "foo/bar.js" matching "baz/bar.js" just because they share a filename
-      return false;
-    };
+    // Use shared utility for path matching (handles absolute vs relative, normalization,
+    // and prevents false positives like "bar.js" matching "foobar.js")
+    const pathsMatch = filePathsMatch;
 
     const handleFileChange = (data: any) => {
       // Check if this change is for our file FIRST

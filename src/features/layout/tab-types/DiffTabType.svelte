@@ -15,6 +15,7 @@
   import { gitStore } from '$features/git/git.store.svelte';
   import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import { pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
   import MonacoDiffViewer from '$lib/components/file-tracking/MonacoDiffViewer.svelte';
   import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
@@ -89,12 +90,7 @@
         recentlySavedByDiffEditor.delete(savedPath);
         continue;
       }
-      // Check various path matching patterns
-      if (savedPath === path) return true;
-      if (savedPath.endsWith('/' + path)) return true;
-      if (path.endsWith('/' + savedPath)) return true;
-      if (savedPath.endsWith(path)) return true;
-      if (path.endsWith(savedPath)) return true;
+      if (filePathsMatch(savedPath, path)) return true;
     }
     return false;
   }

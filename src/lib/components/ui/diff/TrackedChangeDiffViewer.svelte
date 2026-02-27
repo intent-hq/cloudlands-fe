@@ -9,6 +9,7 @@
    */
   import { onMount, untrack } from 'svelte';
   import { invoke, listenSync } from '$lib/electron-bridge';
+  import { pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import type { TrackedChange } from '$features/file-tracking/types';
@@ -949,7 +950,7 @@
       unsubscribe = listenSync(`file:content-changed:${wsId}`, (event: any) => {
         const data = event.payload || event;
         const changedPath = data.path || data.relativePath;
-        if (changedPath === filePath || changedPath?.endsWith(filePath)) {
+        if (filePathsMatch(changedPath, filePath)) {
           logger.debug('[file:content-changed] File changed, scheduling reload', {
             instanceId,
             changedPath,

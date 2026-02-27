@@ -18,6 +18,7 @@ import { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';
 import * as Diff from 'diff';
 import { getWorkspaceEventService } from '../../../events/main';
 import { consumeMcpToolParams } from '../../../../shared/services/mcp-tool-params-cache';
+import { sendToWorkspaceWindows } from '../../../system/main/system.ipc';
 
 const logger = new Logger('ACPProviderStreaming');
 
@@ -1703,6 +1704,45 @@ export class ACPProviderStreaming {
             workspaceId: pendingEdit.workspaceId,
             contentLength: content.length,
           });
+
+          // Emit file:content-changed event to renderer so open editors refresh content
+          // This ensures files open in panels update immediately when agents edit them
+          if (pendingEdit.workspaceId) {
+            try {
+              sendToWorkspaceWindows(
+                pendingEdit.workspaceId,
+                `file:content-changed:${pendingEdit.workspaceId}`,
+                {
+                  path: fullPath,
+                  relativePath: pendingEdit.filePath,
+                  content,
+                  source: 'agent',
+                  workspaceId: pendingEdit.workspaceId,
+                },
+              );
+
+              // Also emit file-tracking:agent-file-changed for components that listen to that
+              sendToWorkspaceWindows(
+                pendingEdit.workspaceId,
+                'file-tracking:agent-file-changed',
+                {
+                  workspaceId: pendingEdit.workspaceId,
+                  filePath: pendingEdit.filePath,
+                  source: 'agent',
+                },
+              );
+
+              logger.debug('Emitted file content change events to renderer for agent edit', {
+                filePath: pendingEdit.filePath,
+                workspaceId: pendingEdit.workspaceId,
+              });
+            } catch (emitError) {
+              logger.warn('Failed to emit file content change events', {
+                error: emitError instanceof Error ? emitError.message : String(emitError),
+                filePath: pendingEdit.filePath,
+              });
+            }
+          }
 
           // Emit file:changed event to activity log with diff data
           if (pendingEdit.workspaceId) {

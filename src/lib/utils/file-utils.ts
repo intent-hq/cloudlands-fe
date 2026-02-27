@@ -276,3 +276,39 @@ export function isDirectory(path: string): boolean {
   // or end with a slash
   return path.endsWith('/') || !path.includes('.') || path.lastIndexOf('/') > path.lastIndexOf('.');
 }
+
+/**
+ * Normalize a file path for comparison: forward slashes, no trailing slash.
+ */
+function normalizePath(p: string): string {
+  return p.replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
+/**
+ * Check if two file paths refer to the same file.
+ *
+ * Handles absolute vs relative path comparisons safely by requiring a `/`
+ * boundary before suffix matches. This prevents false positives like
+ * `bar.js` matching `foobar.js`.
+ *
+ * @example
+ * pathsMatch('src/foo/bar.js', '/home/user/project/src/foo/bar.js') // true
+ * pathsMatch('bar.js', 'foobar.js') // false
+ * pathsMatch('src/bar.js', 'other/bar.js') // false
+ */
+export function pathsMatch(pathA: string | undefined | null, pathB: string | undefined | null): boolean {
+  if (!pathA || !pathB) return false;
+
+  const a = normalizePath(pathA);
+  const b = normalizePath(pathB);
+
+  // Exact match after normalization
+  if (a === b) return true;
+
+  // Full path containment: one must be a complete suffix of the other
+  // with a `/` boundary to prevent partial filename matches
+  if (a.endsWith('/' + b)) return true;
+  if (b.endsWith('/' + a)) return true;
+
+  return false;
+}

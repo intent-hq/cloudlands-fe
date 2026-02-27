@@ -59,7 +59,7 @@
   // Re-export types from types.ts for backward compatibility
   export type { ChangeCategory, LocalFileChange, DiffHunk } from './types';
   import type { ChangeCategory, LocalFileChange, DiffHunk } from './types';
-  import { getDirectoryPath, getFileName, stripWorkspacePrefix } from '$lib/utils/file-utils';
+  import { getDirectoryPath, getFileName, stripWorkspacePrefix, pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
   import { formatRelativeTime } from '$lib/utils/timeFormatting';
   import { sessionStore } from '$features/agent/browser';
 
@@ -274,14 +274,7 @@
     const now = Date.now();
     for (const [savedPath, savedTime] of diffEditorSavedFiles) {
       if (now - savedTime >= DIFF_EDITOR_SAVE_COOLDOWN) continue;
-      // Check exact match, or if one path ends with the other
-      if (
-        savedPath === pathToCheck ||
-        pathToCheck.endsWith(savedPath) ||
-        savedPath.endsWith(pathToCheck) ||
-        pathToCheck.endsWith('/' + savedPath) ||
-        savedPath.endsWith('/' + pathToCheck)
-      ) {
+      if (filePathsMatch(savedPath, pathToCheck)) {
         return true;
       }
     }
@@ -378,7 +371,7 @@
 
       // Check if this file is in our changes list and get the matching change
       const matchingChange = untrack(() =>
-        enrichedChanges.find((c) => c.filePath === changedPath || changedPath.endsWith(c.filePath)),
+        enrichedChanges.find((c) => filePathsMatch(changedPath, c.filePath)),
       );
       if (!matchingChange) return;
 

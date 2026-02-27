@@ -11,7 +11,7 @@ import { GitignoreManager } from '../../../../lib/utils/main/gitignore-manager';
 import { Logger } from '../../../../shared/logger';
 import { TRACKING_CONFIG } from '../../../file-tracking/tracking.config';
 import {
-  UnifiedWorkspaceWatcher,
+  getUnifiedWatcher,
   type WatchEvent,
 } from '../unified-workspace-watcher';
 
@@ -57,7 +57,7 @@ export class FileWatcher extends EventEmitter {
     try {
       await this.gitignoreManager.initialize();
 
-      const watcher = UnifiedWorkspaceWatcher.getInstance(this.workspaceId, this.workspacePath);
+      const watcher = await getUnifiedWatcher(this.workspaceId, this.workspacePath);
 
       this.unsubscribe = watcher.subscribe({
         id: `file-watcher:${this.workspaceId}`,
