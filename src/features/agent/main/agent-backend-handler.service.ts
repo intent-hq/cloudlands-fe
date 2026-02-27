@@ -1553,11 +1553,18 @@ export class AgentBackendHandler {
               existingMessageCount: loadResult.data.messages.length,
             });
           }
+        }
 
-          // CRITICAL FIX: Resume session in backend memory BEFORE streaming
-          // This ensures backend.getSession() returns the session during onComplete
-          // so the assistant response gets persisted to disk.
-          // Without this, switching agents during streaming causes message loss.
+        // CRITICAL FIX: Resume session in backend memory BEFORE streaming.
+        // This ensures backend.getSession() returns a session during onComplete/onError
+        // so messages get persisted to disk.
+        //
+        // NOTE: We resume even when messages are empty (e.g., freshly created workspace agent).
+        // The workspace service saves agent config with messages: [] before the first message
+        // is sent. Without resuming the session here, backend.getSession() returns null
+        // throughout the streaming lifecycle, and neither the user message nor the assistant
+        // response gets persisted to disk.
+        if (loadResult?.success && loadResult.data) {
           const backend = await this.getBackend();
           const { AgentStatus } = await import('../../../shared/types/agent.types.js');
           const agentSession: AgentSession = {
@@ -1691,10 +1698,13 @@ export class AgentBackendHandler {
                   messageCount: loadResult.data.messages?.length || 0,
                 });
 
-                // CRITICAL FIX: Resume session in backend memory when loaded from persistence
+                // CRITICAL FIX: Resume session in backend memory when loaded from persistence.
                 // This ensures backend.getSession() returns the session during onComplete
                 // so the assistant response gets persisted to disk.
-                if (backend && loadResult.data.messages && loadResult.data.messages.length > 0) {
+                // NOTE: We resume even when messages are empty — a freshly created workspace
+                // agent has messages: [] on disk, but we still need backend.getSession() to
+                // return a session so the user message and assistant response get persisted.
+                if (backend) {
                   const { AgentStatus } = await import('../../../shared/types/agent.types.js');
 
                   // Resolve model with provider-aware fallback (only for non-default providers)
@@ -1866,6 +1876,14 @@ export class AgentBackendHandler {
                 });
               }
             });
+          } else {
+            logger.warn(
+              'Backend: No backend session for edit/regenerate — truncated messages will NOT be persisted',
+              {
+                agentId: request.agentId,
+                messageCount: messages.length,
+              },
+            );
           }
         }
       }
@@ -2215,6 +2233,19 @@ export class AgentBackendHandler {
               });
             }
           });
+        } else {
+          // backendSession is null — the user message won't be persisted to disk.
+          // This should not happen after the resumeSession fix (which ensures the session
+          // is always resumed in memory when loaded from persistence). If this warning fires,
+          // it indicates a regression or a code path that skipped resumeSession.
+          logger.error(
+            'Backend: No backend session found — user message will NOT be persisted to disk. ' +
+            'This is a data-loss risk. The session should have been resumed during provider creation.',
+            {
+              agentId: request.agentId,
+              messageId: userMessage.id,
+            },
+          );
         }
       } else if (skipUserMessage) {
         logger.debug('Backend: Skipping user message addition (already in messages array)', {
@@ -2468,6 +2499,14 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
                 blocksCount: currentContentBlocks.length,
               });
             }
+          } else {
+            logger.warn(
+              'Backend: No backend session during streaming — streaming state will NOT be persisted',
+              {
+                agentId: request.agentId,
+                reason,
+              },
+            );
           }
         } catch (error) {
           logger.warn('Backend: Failed to persist streaming state', {

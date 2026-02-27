@@ -82,8 +82,6 @@ import type { WorkspaceRepository } from './workspace.repository';
 import { FileSystemWorkspaceRepository } from './workspace.repository';
 import { getBranchPrefix, getWorktreesLocation } from './app-settings.service';
 import { getRepoBranchPrefix, getRepoSetupScript } from './repo-config.service';
-import { fsyncFile } from '../../../shared/main/file-sync-utils';
-import { getMetadataFS } from '../../metadata-fs/main/metadata-fs-factory';
 import { sshManager, type SSHConnectionConfig } from '../../../shared/main/ssh-manager';
 
 const { WorkspaceNotFoundError, WorkspaceValidationError, GitWorktreeError } = Errors;
@@ -1504,12 +1502,9 @@ task:
           };
         }
 
-        const metadataFS = getMetadataFS(id);
-        const agentsDir = WorkspaceConfig.paths.agents(id);
-        const agentPath = path.join(agentsDir, `${agentId}.json`);
-
-        // Ensure directory exists
-        await metadataFS.mkdir(agentsDir, { recursive: true });
+        // Note: agentPersistence.saveAgent() handles directory creation and atomic writes
+        // (including remote workspace support via IMetadataFS), so we don't need to
+        // manually create the agents directory here.
 
         // Resolve specialist configuration if a specialist is specified
         // This allows the initial agent to inherit model and behavior from the specialist
@@ -1622,24 +1617,23 @@ task:
           contextReferences: (request.initialAgent as any).contextReferences,
         };
 
-        // Save in versioned format
-        const versionedData = {
-          version: 1,
-          data: agentSession,
-        };
-
-        await metadataFS.writeFile(agentPath, JSON.stringify(versionedData, null, 2), 'utf-8');
-
-        // Sync file to disk for durability (only needed for local workspaces;
-        // for remote workspaces the RPC round-trip already provides durability)
-        if (!isRemote) {
-          await fsyncFile(agentPath);
+        // Use agentPersistence for consistent save path (atomic writes, cache invalidation,
+        // deduplication, and remote workspace support via IMetadataFS). Previously used raw
+        // metadataFS.writeFile which bypassed agentPersistence's load cache, causing stale
+        // reads if the cache was populated before this write.
+        const saveResult = await agentPersistence.saveAgent(agentSession as any);
+        if (!saveResult.success) {
+          logger.warn('Failed to save initial agent config via agentPersistence', {
+            workspaceId: id,
+            agentId: request.initialAgent.agentId,
+            error: saveResult.error,
+          });
+        } else {
+          logger.info('Saved initial agent config', {
+            workspaceId: id,
+            agentId: request.initialAgent.agentId,
+          });
         }
-
-        logger.info('Saved initial agent config', {
-          workspaceId: id,
-          agentId: request.initialAgent.agentId,
-        });
       }
 
       // Emit event
