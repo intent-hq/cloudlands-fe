@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.12
+
+- Provider auth status now shown in Settings. See at a glance whether you're logged in to Claude, Codex, or OpenCode, with a link to how to sign in if not.
+- Redesigned changes panel with per-file grouping, "mark as viewed" checkboxes, and commit headers. Copy branch name from the changes panel or overview card.
+- Files open in the editor now auto-refresh when an agent edits them, no more manual reload.
+- Keyboard navigation in file search results. Cmd+O opens the workspace list as a sidebar panel instead of an overlay. Windows-specific editor and path handling.
+- Queued messages no longer get stuck when event delivery races with stream completion.
+- Fixes: spec panel not opening after background agent writes it, messages lost for navigated-to agents, directory clicks in file explorer, workspace switcher badge mismatches, transition crashes during workspace switching, and file:// URLs now work in the embedded browser.
+
 ## 0.2.11
 
 - Optimize home page and workspace loading for faster startup.
