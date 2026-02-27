@@ -681,7 +681,7 @@
 
     {@render skeleton('opencode')}
 
-    {#if !providerAvailability?.hiddenProviders?.includes('cortex')}
+    {#if providerAvailability && !providerAvailability.hiddenProviders?.includes('cortex')}
       {@render skeleton('cortex')}
     {/if}
   {:else if checkError}
