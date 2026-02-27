@@ -214,6 +214,42 @@ export async function shutdownOtherWatchers(keepWorkspaceId: string): Promise<vo
   );
 }
 
+/**
+ * Stop ALL native watcher subscriptions across every workspace.
+ * Called by the MemoryMonitor when memory pressure reaches critical levels.
+ * Native @parcel/watcher is the most likely addon to throw unrecoverable
+ * Napi::Error under memory pressure, so proactively stopping all instances
+ * prevents the process from being terminated by libc++abi.
+ *
+ * Like shutdownOtherWatchers, uses stop() to preserve subscribers so
+ * watchers can be restarted when the workspace is next opened.
+ */
+export async function stopAllWatchers(): Promise<void> {
+  const ids = [...instances.keys()];
+  if (ids.length === 0) return;
+
+  logger.warn('Stopping ALL native watchers due to memory pressure', {
+    count: ids.length,
+    workspaces: ids,
+  });
+
+  await Promise.all(
+    ids.map(async (id) => {
+      try {
+        const instance = instances.get(id);
+        if (instance && instance.getStats().isRunning) {
+          await instance.stop();
+        }
+      } catch (error) {
+        logger.warn('Failed to stop watcher during memory pressure cleanup', {
+          workspaceId: id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }),
+  );
+}
+
 // ============================================================================
 // UnifiedWorkspaceWatcher
 // ============================================================================
