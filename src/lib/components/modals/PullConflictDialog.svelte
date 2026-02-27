@@ -12,6 +12,7 @@
     faExclamationTriangle,
     faChevronDown,
     faArrowUpRightFromSquare,
+    faFolder,
   } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import {
@@ -23,7 +24,6 @@
 
   // Icon components for well-known editors
   import CursorCodeIcon from '$lib/components/shared/icons/CursorCodeIcon.svelte';
-  import FinderIcon from '$lib/components/shared/icons/FinderIcon.svelte';
   import GhosttyIcon from '$lib/components/shared/icons/GhosttyIcon.svelte';
   import JetBrainsIcon from '$lib/components/shared/icons/JetBrainsIcon.svelte';
   import TerminalIcon from '$lib/components/shared/icons/TerminalIcon.svelte';
@@ -34,8 +34,7 @@
   const logger = createLogger('PullConflictDialog');
 
   /** Icon mapping from editor ID to Svelte component */
-  const EDITOR_ICONS: Record<string, typeof FinderIcon> = {
-    finder: FinderIcon,
+  const EDITOR_ICONS: Record<string, typeof VSCodeIcon> = {
     vscode: VSCodeIcon,
     cursor: CursorCodeIcon,
     jetbrains: JetBrainsIcon,
@@ -254,6 +253,8 @@
                           <IconComponent size={16} />
                         {:else if editor.category === 'terminal'}
                           <Fa icon={faTerminal} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
+                        {:else if editor.category === 'finder'}
+                          <Fa icon={faFolder} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
                         {:else}
                           <Fa icon={faCode} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
                         {/if}

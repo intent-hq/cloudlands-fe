@@ -40,6 +40,8 @@ export interface EditorDefinition {
   priority: number;
   /** Optional: Whether this editor is macOS-only (e.g., Xcode) */
   macOSOnly?: boolean;
+  /** Optional: Whether this editor is Windows-only (e.g., PowerShell, Windows Terminal) */
+  win32Only?: boolean;
   /** Optional: Platform-specific detection data */
   platforms?: {
     linux?: {
@@ -51,6 +53,10 @@ export interface EditorDefinition {
     win32?: {
       /** Binary names to search for on PATH via `where` command (e.g. ['code', 'code.cmd']) */
       binaries?: string[];
+      /** Platform-specific display name (e.g., 'File Explorer' instead of 'Finder') */
+      name?: string;
+      /** Platform-specific short label (e.g., 'Explorer' instead of 'Finder') */
+      shortLabel?: string;
     };
   };
 }
@@ -77,6 +83,8 @@ export const EDITOR_REGISTRY: EditorDefinition[] = [
       },
       win32: {
         binaries: ['explorer'],
+        name: 'File Explorer',
+        shortLabel: 'Explorer',
       },
     },
   },
@@ -522,7 +530,56 @@ export const EDITOR_REGISTRY: EditorDefinition[] = [
         binaries: ['gnome-terminal', 'konsole', 'xfce4-terminal', 'xterm'],
       },
       win32: {
-        binaries: ['wt', 'cmd', 'powershell'],
+        binaries: ['cmd'],
+        name: 'Command Prompt',
+        shortLabel: 'CMD',
+      },
+    },
+  },
+
+  // Windows-only terminals
+  {
+    id: 'powershell',
+    name: 'PowerShell',
+    shortLabel: 'PowerShell',
+    appName: 'PowerShell',
+    category: 'terminal',
+    handlerType: 'generic',
+    priority: 96,
+    win32Only: true,
+    platforms: {
+      win32: {
+        binaries: ['pwsh', 'powershell'],
+      },
+    },
+  },
+  {
+    id: 'windows-terminal',
+    name: 'Windows Terminal',
+    shortLabel: 'Windows Terminal',
+    appName: 'Windows Terminal',
+    category: 'terminal',
+    handlerType: 'generic',
+    priority: 95,
+    win32Only: true,
+    platforms: {
+      win32: {
+        binaries: ['wt'],
+      },
+    },
+  },
+  {
+    id: 'git-bash',
+    name: 'Git Bash',
+    shortLabel: 'Git Bash',
+    appName: 'Git Bash',
+    category: 'terminal',
+    handlerType: 'generic',
+    priority: 97,
+    win32Only: true,
+    platforms: {
+      win32: {
+        binaries: ['git-bash'],
       },
     },
   },

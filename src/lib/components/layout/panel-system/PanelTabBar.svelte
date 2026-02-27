@@ -54,6 +54,17 @@
   import { permissionStore } from '$lib/stores/permission.store.svelte';
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import { stripWorkspacePrefix } from '$lib/utils/file-utils';
+  import { toNativePath } from '$lib/utils/path-utils';
+
+  // Detect platform for file manager labels
+  const isWindows =
+    typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
+  const isMac =
+    typeof navigator !== 'undefined' &&
+    // @ts-expect-error - userAgentData is not in all browsers
+    (navigator.userAgentData?.platform === 'macOS' ||
+      /Mac|iPhone|iPad|iPod/.test(navigator.userAgent));
+  const fileManagerName = isWindows ? 'Explorer' : isMac ? 'Finder' : 'File Manager';
 
   interface Props {
     tabs: PanelTab[];
@@ -307,7 +318,7 @@
     const relativePath = getTabPath(tab);
     if (!relativePath) return;
     try {
-      await navigator.clipboard.writeText(relativePath);
+      await navigator.clipboard.writeText(toNativePath(relativePath));
       toast.success('Path copied to clipboard');
     } catch {
       toast.error('Failed to copy path');
@@ -321,7 +332,7 @@
     const absolutePath = getTabAbsolutePath(tab);
     if (!absolutePath) return;
     try {
-      await navigator.clipboard.writeText(absolutePath);
+      await navigator.clipboard.writeText(toNativePath(absolutePath));
       toast.success('Absolute path copied to clipboard');
     } catch {
       toast.error('Failed to copy path');
@@ -334,7 +345,7 @@
   async function copyFileName(tab: PanelTab) {
     const path = tab.filePath ?? tab.diffPath;
     if (!path) return;
-    const fileName = path.split('/').pop() || path;
+    const fileName = path.split(/[/\\]/).pop() || path;
     try {
       await navigator.clipboard.writeText(fileName);
       toast.success('Filename copied to clipboard');
@@ -352,7 +363,7 @@
     try {
       await invoke('shell:showItemInFolder', { path: absolutePath });
     } catch {
-      toast.error('Failed to reveal in Finder');
+      toast.error(`Failed to reveal in ${fileManagerName}`);
     }
   }
 
@@ -383,7 +394,7 @@
   async function copyAgentRelativePath(tab: PanelTab) {
     const relativePath = `.workspace/agents/${tab.agentId}.json`;
     try {
-      await navigator.clipboard.writeText(relativePath);
+      await navigator.clipboard.writeText(toNativePath(relativePath));
       toast.success('Path copied to clipboard');
     } catch {
       toast.error('Failed to copy path');
@@ -400,7 +411,7 @@
       return;
     }
     try {
-      await navigator.clipboard.writeText(absolutePath);
+      await navigator.clipboard.writeText(toNativePath(absolutePath));
       toast.success('Absolute path copied to clipboard');
     } catch {
       toast.error('Failed to copy path');
@@ -432,7 +443,7 @@
     try {
       await invoke('shell:showItemInFolder', { path: absolutePath });
     } catch {
-      toast.error('Failed to reveal in Finder');
+      toast.error(`Failed to reveal in ${fileManagerName}`);
     }
   }
 
@@ -462,7 +473,7 @@
   async function copyNoteRelativePath(tab: PanelTab) {
     const relativePath = `.workspace/notes/${tab.noteId}.md`;
     try {
-      await navigator.clipboard.writeText(relativePath);
+      await navigator.clipboard.writeText(toNativePath(relativePath));
       toast.success('Path copied to clipboard');
     } catch {
       toast.error('Failed to copy path');
@@ -479,7 +490,7 @@
       return;
     }
     try {
-      await navigator.clipboard.writeText(absolutePath);
+      await navigator.clipboard.writeText(toNativePath(absolutePath));
       toast.success('Absolute path copied to clipboard');
     } catch {
       toast.error('Failed to copy path');
@@ -511,7 +522,7 @@
     try {
       await invoke('shell:showItemInFolder', { path: absolutePath });
     } catch {
-      toast.error('Failed to reveal in Finder');
+      toast.error(`Failed to reveal in ${fileManagerName}`);
     }
   }
 
@@ -1514,7 +1525,7 @@
           }}
         >
           <Fa icon={faFolderOpen} size="xs" class="text-muted-foreground" />
-          Reveal in Finder
+          Reveal in {fileManagerName}
         </button>
       {/if}
       <!-- Type-specific actions for browser tabs -->
@@ -1580,7 +1591,7 @@
           }}
         >
           <Fa icon={faFolderOpen} size="xs" class="text-muted-foreground" />
-          Reveal in Finder
+          Reveal in {fileManagerName}
         </button>
       {/if}
       <!-- Type-specific actions for note tabs -->
@@ -1623,7 +1634,7 @@
           }}
         >
           <Fa icon={faFolderOpen} size="xs" class="text-muted-foreground" />
-          Reveal in Finder
+          Reveal in {fileManagerName}
         </button>
       {/if}
       <!-- Type-specific actions for terminal tabs -->

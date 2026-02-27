@@ -186,21 +186,29 @@ async function isAppInstalledLinux(editorId: string): Promise<boolean> {
 }
 
 /**
- * Check if an app is installed on Windows by looking for binaries on PATH using `where`
+ * Find the first available Windows binary for an editor using `where`.
+ * Returns the binary name if found, null otherwise.
  */
-async function isAppInstalledWindows(editorId: string): Promise<boolean> {
+function findWindowsBinary(editorId: string): string | null {
   const editor = EDITOR_REGISTRY.find((e) => e.id === editorId);
-  if (!editor?.platforms?.win32?.binaries) return false;
+  if (!editor?.platforms?.win32?.binaries) return null;
 
   for (const binary of editor.platforms.win32.binaries) {
     try {
       execSync(`where ${binary}`, { stdio: 'ignore', windowsHide: true });
-      return true;
+      return binary;
     } catch {
       // Not found on PATH
     }
   }
-  return false;
+  return null;
+}
+
+/**
+ * Check if an app is installed on Windows by looking for binaries on PATH using `where`
+ */
+async function isAppInstalledWindows(editorId: string): Promise<boolean> {
+  return findWindowsBinary(editorId) !== null;
 }
 
 /**
@@ -299,6 +307,9 @@ async function detectInstalledEditors(forceRefresh = false): Promise<DetectedEdi
     if (editor.macOSOnly && !isMacOS) {
       return false;
     }
+    if (editor.win32Only && !isWindows) {
+      return false;
+    }
     return true;
   });
 
@@ -318,6 +329,11 @@ async function detectInstalledEditors(forceRefresh = false): Promise<DetectedEdi
         } else if (isLinux) {
           installed = await isAppInstalled(editor.appName, editor.id);
         }
+      } else if (editor.id === 'powershell') {
+        // PowerShell is always available on Windows
+        if (isWindows) {
+          installed = true;
+        }
       } else {
         installed = await isAppInstalled(editor.appName, editor.id);
       }
@@ -330,8 +346,14 @@ async function detectInstalledEditors(forceRefresh = false): Promise<DetectedEdi
         iconBase64 = await getAppIconBase64(editor.appName);
       }
 
+      // Apply platform-specific display name overrides on Windows
+      const name = (isWindows && editor.platforms?.win32?.name) ? editor.platforms.win32.name : editor.name;
+      const shortLabel = (isWindows && editor.platforms?.win32?.shortLabel) ? editor.platforms.win32.shortLabel : editor.shortLabel;
+
       return {
         ...editor,
+        name,
+        shortLabel,
         installed,
         iconBase64: iconBase64 || undefined,
       } as DetectedEditor;
@@ -477,18 +499,24 @@ export function registerExternalEditorsHandlers(): void {
               }
             }
           } else if (process.platform === 'win32') {
-            // Windows: find the binary from win32 platform data
-            const binary = editor.platforms?.win32?.binaries?.[0];
+            // Windows: find the first available binary via `where`
+            const binary = findWindowsBinary(editorId) ?? editor.platforms?.win32?.binaries?.[0];
             if (binary) {
               command = binary;
               if (editorId === 'terminal') {
-                // Windows Terminal / cmd / powershell: open in the target directory
-                if (binary === 'wt') {
-                  args = ['-d', path];
-                } else {
-                  // cmd and powershell: use /K cd to set working directory
-                  args = ['/K', `cd /d "${path}"`];
-                }
+                // cmd.exe: use /K cd to set working directory
+                args = ['/K', `cd /d "${path}"`];
+              } else if (editorId === 'powershell') {
+                // PowerShell: use -NoExit and Set-Location
+                // Escape single quotes by doubling them (PowerShell convention)
+                const escapedPath = path.replace(/'/g, "''");
+                args = ['-NoExit', '-Command', `Set-Location '${escapedPath}'`];
+              } else if (editorId === 'windows-terminal') {
+                // Windows Terminal: use -d flag
+                args = ['-d', path];
+              } else if (editorId === 'git-bash') {
+                // Git Bash: use --cd flag
+                args = [`--cd=${path}`];
               } else {
                 args = file ? [path, file] : [path];
               }

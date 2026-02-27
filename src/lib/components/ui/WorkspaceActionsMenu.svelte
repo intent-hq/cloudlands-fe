@@ -18,7 +18,6 @@
 
 <script lang="ts">
   import CursorCodeIcon from '$lib/components/shared/icons/CursorCodeIcon.svelte';
-  import FinderIcon from '$lib/components/shared/icons/FinderIcon.svelte';
   import GhosttyIcon from '$lib/components/shared/icons/GhosttyIcon.svelte';
   import JetBrainsIcon from '$lib/components/shared/icons/JetBrainsIcon.svelte';
   import TerminalIcon from '$lib/components/shared/icons/TerminalIcon.svelte';
@@ -28,6 +27,7 @@
   import { invoke } from '$lib/electron-bridge';
   import { installedEditorsStore } from '$lib/stores/installed-editors.store.svelte';
   import { createLogger } from '$lib/utils/client-logger';
+  import { toNativePath } from '$lib/utils/path-utils';
   import {
     faBoxArchive,
     faBoxOpen,
@@ -46,8 +46,7 @@
   import Button from './button/button.svelte';
 
   /** Icon mapping from editor ID to Svelte component */
-  const EDITOR_ICONS: Record<string, typeof FinderIcon> = {
-    finder: FinderIcon,
+  const EDITOR_ICONS: Record<string, typeof VSCodeIcon> = {
     vscode: VSCodeIcon,
     cursor: CursorCodeIcon,
     jetbrains: JetBrainsIcon,
@@ -435,7 +434,7 @@
   async function copyAbsolutePath() {
     if (!resolvedPath) return;
     try {
-      await navigator.clipboard.writeText(resolvedPath);
+      await navigator.clipboard.writeText(toNativePath(resolvedPath));
       onClose?.();
     } catch (error) {
       logger.error('Failed to copy path:', error);
@@ -460,7 +459,7 @@
         }
       }
 
-      await navigator.clipboard.writeText(pathToCopy);
+      await navigator.clipboard.writeText(toNativePath(pathToCopy));
       onClose?.();
     } catch (error) {
       logger.error('Failed to copy workspace path:', error);
@@ -470,7 +469,7 @@
   async function copyFileName() {
     if (!filePath) return;
     try {
-      const fileName = filePath.split('/').pop() || '';
+      const fileName = filePath.split(/[/\\]/).pop() || '';
       await navigator.clipboard.writeText(fileName);
       onClose?.();
     } catch (error) {
@@ -490,7 +489,7 @@
 
     isDeletingFile = true;
     try {
-      const fileName = filePath.split('/').pop() || 'file';
+      const fileName = filePath.split(/[/\\]/).pop() || 'file';
       const pathToDelete = resolvedPath;
 
       // Read file content before deleting so we can undo

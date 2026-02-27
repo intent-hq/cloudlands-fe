@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import CursorCodeIcon from '$lib/components/shared/icons/CursorCodeIcon.svelte';
-  import FinderIcon from '$lib/components/shared/icons/FinderIcon.svelte';
   import GhosttyIcon from '$lib/components/shared/icons/GhosttyIcon.svelte';
   import JetBrainsIcon from '$lib/components/shared/icons/JetBrainsIcon.svelte';
   import TerminalIcon from '$lib/components/shared/icons/TerminalIcon.svelte';
@@ -18,21 +17,24 @@
   } from '$lib/stores/installed-editors.store.svelte';
   import { openActionStore, type OpenAction } from '$lib/stores/open-action.store.svelte';
   import { createLogger } from '$lib/utils/client-logger';
+  import { toNativePath } from '$lib/utils/path-utils';
   import {
     faArrowUpRightFromSquare,
     faChevronDown,
+    faCode,
     faCodeBranch,
     faCopy,
     faEllipsisH,
+    faFolder,
     faFolderOpen,
+    faTerminal,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   const logger = createLogger('OpenComboButton');
 
   /** Icon mapping from editor ID to Svelte component */
-  const EDITOR_ICONS: Record<string, typeof FinderIcon> = {
-    finder: FinderIcon,
+  const EDITOR_ICONS: Record<string, typeof VSCodeIcon> = {
     vscode: VSCodeIcon,
     cursor: CursorCodeIcon,
     jetbrains: JetBrainsIcon,
@@ -46,7 +48,7 @@
     id: OpenAction;
     label: string;
     shortLabel: string;
-    icon: typeof FinderIcon | null;
+    icon: typeof VSCodeIcon | null;
     faIcon?: typeof faCopy;
     shortcut?: string;
     description?: string;
@@ -195,7 +197,7 @@
     try {
       // Handle special actions first
       if (actionId === 'copy') {
-        await navigator.clipboard.writeText(filePath);
+        await navigator.clipboard.writeText(toNativePath(filePath));
         toast.success('Path copied to clipboard');
         return;
       }
@@ -310,6 +312,12 @@
               <Icon size={14} />
             {:else if currentAction.faIcon}
               <Fa icon={currentAction.faIcon} class="w-3.5 h-3.5 opacity-60" />
+            {:else if currentAction.category === 'terminal'}
+              <Fa icon={faTerminal} class="w-3.5 h-3.5 opacity-60" />
+            {:else if currentAction.category === 'finder'}
+              <Fa icon={faFolder} class="w-3.5 h-3.5 opacity-60" />
+            {:else}
+              <Fa icon={faCode} class="w-3.5 h-3.5 opacity-60" />
             {/if}
             <span class="text-muted-foreground">Open</span>
           </button>
@@ -354,6 +362,12 @@
                 <Icon size={16} />
               {:else if action.faIcon}
                 <Fa icon={action.faIcon} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
+              {:else if action.category === 'terminal'}
+                <Fa icon={faTerminal} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
+              {:else if action.category === 'finder'}
+                <Fa icon={faFolder} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
+              {:else}
+                <Fa icon={faCode} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
               {/if}
               <span class="flex-1">{action.label}</span>
               {#if action.shortcut}

@@ -4,6 +4,7 @@
   import type { Workspace } from '$shared/types';
   import { WorkspaceStatusEnum } from '$shared/types';
   import { navigateAfterWorkspaceRemoval } from '$lib/utils/workspace-navigation';
+  import { toNativePath } from '$lib/utils/path-utils';
   import {
     faChevronDown,
     faCodeBranch,
@@ -158,7 +159,7 @@
             onClick: () => {
               const pathToCopy =
                 workspace.worktreePath || workspace.repositoryPath || workspace.path || '';
-              navigator.clipboard.writeText(pathToCopy);
+              navigator.clipboard.writeText(toNativePath(pathToCopy));
               handleClose();
             },
           },

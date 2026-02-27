@@ -80,3 +80,27 @@ export function basename(path: string): string {
 export function joinPath(...segments: string[]): string {
   return normalizePath(segments.join('/'));
 }
+
+/**
+ * Detect if running on Windows (renderer-safe).
+ * Uses navigator.platform which is available in the renderer process.
+ * @returns true if the current platform is Windows
+ */
+export function isWindowsPlatform(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return navigator.platform?.startsWith('Win') ?? false;
+}
+
+/**
+ * Convert a path to native OS format for clipboard/display purposes.
+ * On Windows, converts forward slashes to backslashes.
+ * On macOS/Linux, returns the path unchanged.
+ * @param p The path to convert
+ * @returns The path with native separators
+ */
+export function toNativePath(p: string): string {
+  if (isWindowsPlatform()) {
+    return p.replace(/\//g, '\\');
+  }
+  return p;
+}
