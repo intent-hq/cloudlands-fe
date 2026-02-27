@@ -172,9 +172,10 @@
               </div>
             {:else if store.rootNode}
               {#snippet FileTreeItem(node: FileNode, depth: number)}
+                {@const nodeExpanded = store.isExpanded(node.path)}
                 {@const Icon =
                   node.type === 'directory'
-                    ? node.isExpanded
+                    ? nodeExpanded
                       ? faFolderOpen
                       : faFolder
                     : getFileIcon(node.name) || faFileAlt}
@@ -188,11 +189,11 @@
                   >
                     {#if node.type === 'directory'}
                       <span class="w-4 h-4 flex items-center justify-center mr-1">
-                        {#if node.isLoading}
+                        {#if store.isPathLoading(node.path)}
                           <Fa icon={faSpinner} size="xs" class="w-3 h-3 animate-spin" />
                         {:else if node.children && node.children.length > 0}
                           <Fa
-                            icon={node.isExpanded ? faChevronDown : faChevronRight}
+                            icon={nodeExpanded ? faChevronDown : faChevronRight}
                             size="xs"
                             class="w-3 h-3"
                           />
@@ -211,7 +212,7 @@
                   </Sidebar.MenuButton>
                 </Sidebar.MenuItem>
 
-                {#if node.isExpanded && node.children}
+                {#if nodeExpanded && node.children}
                   {#each filterNodes(node.children, searchQuery) as child (child.path)}
                     {@render FileTreeItem(child, depth + 1)}
                   {/each}

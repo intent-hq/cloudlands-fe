@@ -23,6 +23,9 @@ export interface FlattenedFileNode {
   depth: number;
   // Compacted path prefix (for directories with single-child chains like "src/lib/components")
   displayPath?: string;
+  // UI state computed from path-keyed Sets during flattening
+  isExpanded: boolean;
+  isLoading: boolean;
 }
 
 export interface FileExplorerStoreOptions {
@@ -67,6 +70,11 @@ export function createFileExplorerStore(
   // Version counter to force reactivity on deep tree mutations
   // Increment this whenever the tree structure changes (expand/collapse, add/remove nodes)
   let treeVersion = $state(0);
+
+  // Path-keyed UI state (decoupled from FileNode objects so tree replacement doesn't lose state)
+  // Not reactive — use treeVersion to signal changes, same pattern as rootNode
+  let expandedPaths = new Set<string>();
+  let loadingPaths = new Set<string>();
 
   // Bulk operation state - used to signal UI to skip transitions
   let isBulkOperation = $state(false);
@@ -626,7 +634,6 @@ export function createFileExplorerStore(
           size: entry.size,
           modified: entry.modified,
           children: entry.isDirectory ? [] : undefined,
-          isExpanded: false,
           gitStatus: fileGitStatus,
         });
       }
@@ -703,7 +710,6 @@ export function createFileExplorerStore(
           size: entry.size,
           modified: modifiedStr,
           children: entry.isDirectory ? [] : undefined,
-          isExpanded: false,
           gitStatus: fileGitStatus,
         });
       }
@@ -881,12 +887,12 @@ export function createFileExplorerStore(
         path: workspacePath,
         type: 'directory' as const,
         children,
-        isExpanded: true,
       };
+      expandedPaths.add(workspacePath);
 
-      // Preserve expanded state from existing nodes if refreshing
-      if (rootNode && rootNode.children && newRootNode.children) {
-        await preserveExpandedState(newRootNode.children, rootNode.children);
+      // Reload children for directories that are in expandedPaths
+      if (newRootNode.children) {
+        await preserveExpandedState(newRootNode.children);
       }
 
       // Apply agent edits to the tree
@@ -912,37 +918,26 @@ export function createFileExplorerStore(
     }
   }
 
-  // Helper function to preserve expanded state when refreshing
-  async function preserveExpandedState(newNodes: FileNode[], oldNodes: FileNode[]) {
-    const oldNodeMap = new Map<string, FileNode>();
-    for (const oldNode of oldNodes) {
-      oldNodeMap.set(oldNode.path, oldNode);
-    }
-
+  // Helper function to reload children for expanded directories when tree is refreshed.
+  // Expanded state now lives in expandedPaths Set, so we only need to reload children
+  // for paths that are still expanded.
+  async function preserveExpandedState(newNodes: FileNode[]) {
     // Process nodes and collect promises for parallel loading
     const loadPromises: Promise<void>[] = [];
 
     for (const newNode of newNodes) {
-      const oldNode = oldNodeMap.get(newNode.path);
-      if (oldNode && oldNode.isExpanded) {
-        newNode.isExpanded = true;
-        if (oldNode.children && newNode.type === 'directory') {
-          // Don't copy old children directly - they need to be refreshed for git status
-          // The children will be reloaded when the directory is accessed
-          // Just mark that it should be expanded
-          newNode.children = [];
-          // Collect promise for parallel loading
-          const loadPromise = loadDirectory(newNode.path, newNode)
-            .then((children) => {
-              newNode.children = children;
-            })
-            .catch((err) => {
-              logger.error('Failed to reload directory children:', err);
-              // Keep empty children array on error
-              newNode.children = [];
-            });
-          loadPromises.push(loadPromise);
-        }
+      if (expandedPaths.has(newNode.path) && newNode.type === 'directory') {
+        // Reload children for expanded directories (git status may have changed)
+        newNode.children = [];
+        const loadPromise = loadDirectory(newNode.path, newNode)
+          .then((children) => {
+            newNode.children = children;
+          })
+          .catch((err) => {
+            logger.error('Failed to reload directory children:', err);
+            newNode.children = [];
+          });
+        loadPromises.push(loadPromise);
       }
     }
 
@@ -1030,19 +1025,26 @@ export function createFileExplorerStore(
       return;
     }
 
+    const wasExpanded = expandedPaths.has(node.path);
     logger.debug('[toggleDirectory] Called', {
       nodePath: node.path,
-      wasExpanded: node.isExpanded,
+      wasExpanded,
       hasChildren: !!node.children,
       usedFindByPath: node !== nodeArg,
     });
 
-    node.isExpanded = !node.isExpanded;
+    if (wasExpanded) {
+      expandedPaths.delete(node.path);
+    } else {
+      expandedPaths.add(node.path);
+    }
     // Increment version to force derived values to recompute
     treeVersion++;
 
+    const nowExpanded = !wasExpanded;
+
     // Load children if expanding and not loaded
-    if (node.isExpanded && (!node.children || node.children.length === 0)) {
+    if (nowExpanded && (!node.children || node.children.length === 0)) {
       // First, check if we have cached data - use it immediately without loading state
       const cached = directoryCache.get(node.path);
       if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
@@ -1060,7 +1062,7 @@ export function createFileExplorerStore(
 
       // No cache - need to load
       logger.debug('[toggleDirectory] Loading children from disk', { nodePath: node.path });
-      node.isLoading = true;
+      loadingPaths.add(node.path);
       treeVersion++; // Force update to show loading state
       try {
         const loadedChildren = await loadDirectory(node.path, node);
@@ -1088,18 +1090,15 @@ export function createFileExplorerStore(
         } else {
           currentNode.children = loadedChildren;
         }
-        currentNode.isLoading = false;
+        loadingPaths.delete(nodeArg.path);
         treeVersion++; // Force update after children loaded
         // loadDirectory already triggers preloading
       } catch (err) {
         logger.error('[toggleDirectory] Failed to load directory:', err);
-        // Re-find node for cleanup in case tree was replaced during the await
-        const currentNode = findNodeByPath(nodeArg.path);
-        if (currentNode) {
-          currentNode.isLoading = false;
-        }
+        loadingPaths.delete(nodeArg.path);
+        treeVersion++; // Force update to hide loading spinner
       }
-    } else if (node.isExpanded && node.children && node.children.length > 0) {
+    } else if (nowExpanded && node.children && node.children.length > 0) {
       logger.debug('[toggleDirectory] Already has children, refreshing agent edits', {
         nodePath: node.path,
         childrenCount: node.children.length,
@@ -1112,7 +1111,7 @@ export function createFileExplorerStore(
     } else {
       logger.debug('[toggleDirectory] Collapsing directory', {
         nodePath: node.path,
-        isExpanded: node.isExpanded,
+        isExpanded: nowExpanded,
       });
     }
   }
@@ -1163,8 +1162,8 @@ export function createFileExplorerStore(
       }
 
       // Expand this directory if not already expanded
-      if (!childNode.isExpanded) {
-        childNode.isExpanded = true;
+      if (!expandedPaths.has(childNode.path)) {
+        expandedPaths.add(childNode.path);
         // Increment version to force derived values to recompute
         treeVersion++;
 
@@ -1461,6 +1460,8 @@ export function createFileExplorerStore(
 
     // Clear existing data
     rootNode = null;
+    expandedPaths.clear();
+    loadingPaths.clear();
     treeVersion++;
     error = null;
 
@@ -1503,6 +1504,8 @@ export function createFileExplorerStore(
     // Mark store as inactive to abort any pending async operations
     isStoreActive = false;
     stopGitStatusRefresh();
+    expandedPaths.clear();
+    loadingPaths.clear();
     // Disconnect remote FS if connected
     if (isRemote()) {
       disconnectRemoteFS();
@@ -1520,6 +1523,9 @@ export function createFileExplorerStore(
     result: FlattenedFileNode[] = [],
   ): FlattenedFileNode[] {
     for (const node of nodes) {
+      const nodeExpanded = expandedPaths.has(node.path);
+      const nodeLoading = loadingPaths.has(node.path);
+
       // Handle directory compaction: if this is a directory with exactly one child
       // that is also a directory, compact the path display
       if (node.type === 'directory' && node.children?.length === 1) {
@@ -1528,7 +1534,7 @@ export function createFileExplorerStore(
           // Compact: recurse with accumulated path prefix
           const newPrefix = pathPrefix ? `${pathPrefix}/${node.name}` : node.name;
           // Pass through expansion state - use OR of both nodes
-          if (node.isExpanded || onlyChild.isExpanded) {
+          if (nodeExpanded || expandedPaths.has(onlyChild.path)) {
             flattenVisibleNodes([onlyChild], depth, newPrefix, result);
           } else {
             // Show the compacted directory as collapsed
@@ -1536,6 +1542,8 @@ export function createFileExplorerStore(
               node: onlyChild,
               depth,
               displayPath: `${newPrefix}/${onlyChild.name}`,
+              isExpanded: false,
+              isLoading: loadingPaths.has(onlyChild.path),
             });
           }
           continue;
@@ -1547,10 +1555,12 @@ export function createFileExplorerStore(
         node,
         depth,
         displayPath: pathPrefix ? `${pathPrefix}/${node.name}` : undefined,
+        isExpanded: nodeExpanded,
+        isLoading: nodeLoading,
       });
 
       // If directory is expanded, add children
-      if (node.type === 'directory' && node.isExpanded && node.children) {
+      if (node.type === 'directory' && nodeExpanded && node.children) {
         flattenVisibleNodes(node.children, depth + 1, '', result);
       }
     }
@@ -1594,13 +1604,19 @@ export function createFileExplorerStore(
       return isRemote();
     },
     get hasExpandedDirectories() {
-      return hasAnyExpandedDirectory(rootNode);
+      return hasAnyExpandedDirectory();
     },
     get isBulkOperation() {
       return isBulkOperation;
     },
     get flattenedNodes() {
       return flattenedNodes;
+    },
+    isExpanded(path: string): boolean {
+      return expandedPaths.has(path);
+    },
+    isPathLoading(path: string): boolean {
+      return loadingPaths.has(path);
     },
     setWorkspaceId(id: string) {
       currentWorkspaceId = id;
@@ -1652,7 +1668,7 @@ export function createFileExplorerStore(
             if (maxDepth !== undefined && depth > maxDepth) return;
 
             const nodePath = node.path;
-            node.isExpanded = true;
+            expandedPaths.add(nodePath);
 
             // Load children if not loaded
             if (!node.children || node.children.length === 0) {
@@ -1718,7 +1734,10 @@ export function createFileExplorerStore(
     isBulkOperation = true;
 
     try {
-      collapseNodeRecursively(rootNode);
+      // Clear all expanded paths except root
+      const rootPath = workspacePath;
+      expandedPaths.clear();
+      expandedPaths.add(rootPath);
       // Trigger reactivity via treeVersion
       treeVersion++;
     } finally {
@@ -1729,38 +1748,12 @@ export function createFileExplorerStore(
     }
   }
 
-  // Helper to collapse a node and all its children recursively
-  function collapseNodeRecursively(node: FileNode) {
-    if (node.type !== 'directory') return;
-
-    // Don't collapse the root node itself
-    if (node.path !== workspacePath) {
-      node.isExpanded = false;
-    }
-
-    // Collapse children recursively
-    if (node.children) {
-      for (const child of node.children) {
-        collapseNodeRecursively(child);
-      }
-    }
-  }
-
   // Check if any directory in the tree is expanded (excluding root)
-  function hasAnyExpandedDirectory(node: FileNode | null): boolean {
-    if (!node) return false;
-    if (node.type !== 'directory') return false;
-
-    // Check children (not the root itself)
-    if (node.children) {
-      for (const child of node.children) {
-        if (child.type === 'directory') {
-          if (child.isExpanded) return true;
-          if (hasAnyExpandedDirectory(child)) return true;
-        }
-      }
+  function hasAnyExpandedDirectory(): boolean {
+    // Any expanded path besides the root means there are expanded directories
+    for (const path of expandedPaths) {
+      if (path !== workspacePath) return true;
     }
-
     return false;
   }
 }

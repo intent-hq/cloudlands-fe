@@ -809,6 +809,7 @@
         {onSelectAgent}
         {getGitStatusColor}
         {isFileModified}
+        isExpanded={(path) => store.isExpanded(path)}
         {onExternalFilesDrop}
       />
     {:else}

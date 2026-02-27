@@ -38,6 +38,8 @@
     onSelectAgent?: (agentId: string) => void;
     getGitStatusColor?: (status?: string) => string;
     isFileModified?: (path: string) => boolean;
+    /** Check if a directory path is expanded (for non-flattened node lookups like drag-over) */
+    isExpanded?: (path: string) => boolean;
     itemHeight?: number;
     overscan?: number;
     /** Callback when external files are dropped onto the tree */
@@ -56,6 +58,7 @@
     onSelectAgent,
     getGitStatusColor = () => '',
     isFileModified = () => false,
+    isExpanded = () => false,
     itemHeight = 25, // Match ListItem sm size
     overscan = 5,
     onExternalFilesDrop,
@@ -197,7 +200,7 @@
     dropTargetPath = newDropTargetPath;
 
     // Auto-expand logic: start timer when hovering over a new collapsed directory
-    if (node.type === 'directory' && !node.isExpanded && onToggleDirectory) {
+    if (node.type === 'directory' && !isExpanded(node.path) && onToggleDirectory) {
       // Check if we're hovering over a new collapsed folder
       if (hoverExpandTargetPath !== node.path) {
         // Clear any existing timer for the previous folder
@@ -208,7 +211,7 @@
         hoverExpandTimeout = setTimeout(() => {
           // Find the node again in case flattenedNodes changed
           const targetNode = flattenedNodes.find((n) => n.node.path === hoverExpandTargetPath);
-          if (targetNode && targetNode.node.type === 'directory' && !targetNode.node.isExpanded) {
+          if (targetNode && targetNode.node.type === 'directory' && !targetNode.isExpanded) {
             onToggleDirectory(targetNode.node);
           }
           hoverExpandTimeout = null;
@@ -290,6 +293,8 @@
           type: 'file',
         },
         depth: 0,
+        isExpanded: false,
+        isLoading: false,
       };
       return [sentinelNode, ...flattenedNodes];
     }
@@ -302,6 +307,8 @@
         type: 'file',
       },
       depth: dirDepth + 1,
+      isExpanded: false,
+      isLoading: false,
     };
 
     // Insert right after the directory entry
@@ -433,7 +440,7 @@
         if (!focusedNode) break;
         const node = focusedNode.node;
         if (node.type === 'directory') {
-          if (!node.isExpanded) {
+          if (!focusedNode.isExpanded) {
             // Expand the directory
             onToggleDirectory?.(node);
           } else if (node.children && node.children.length > 0) {
@@ -452,7 +459,7 @@
         e.preventDefault();
         if (!focusedNode) break;
         const node = focusedNode.node;
-        if (node.type === 'directory' && node.isExpanded) {
+        if (node.type === 'directory' && focusedNode.isExpanded) {
           // Collapse the directory
           onToggleDirectory?.(node);
         } else {
@@ -624,7 +631,7 @@
     const dirNode = flattenedNodes.find(
       (n) => n.node.path === targetDir && n.node.type === 'directory',
     );
-    if (dirNode && !dirNode.node.isExpanded) {
+    if (dirNode && !dirNode.isExpanded) {
       onToggleDirectory?.(dirNode.node);
       // Wait for reactive update after expansion
       await tick();
@@ -776,7 +783,7 @@
     } else {
       items.push({
         id: 'toggle',
-        label: node.isExpanded ? 'Collapse' : 'Expand',
+        label: isExpanded(node.path) ? 'Collapse' : 'Expand',
         icon: faFolderOpen,
         onClick: () => {
           onToggleDirectory?.(node);
@@ -1122,7 +1129,7 @@
                   selected={isFocused}
                   tabindex={-1}
                   icon={faChevronDown}
-                  iconClass={`opacity-50 [&>svg]:w-2! [&>svg]:mr-1! ${gitColor} transition-transform duration-150 ${flatNode.node.isExpanded ? '' : '-rotate-90'}`}
+                  iconClass={`opacity-50 [&>svg]:w-2! [&>svg]:mr-1! ${gitColor} transition-transform duration-150 ${flatNode.isExpanded ? '' : '-rotate-90'}`}
                   title={displayName}
                   titleClass={gitColor}
                   onclick={() => handleItemClick(flatNode, absoluteIndex)}
@@ -1172,7 +1179,7 @@
                   class=" ml-2"
                 />
               {/if}
-              {#if node.agentEdits && node.agentEdits.length > 0 && (node.type === 'file' || !node.isExpanded)}
+              {#if node.agentEdits && node.agentEdits.length > 0 && (node.type === 'file' || !flatNode.isExpanded)}
                 <div class="flex items-center -space-x-1 mr-1 ml-2">
                   {#each node.agentEdits.slice(0, 3) as agentId (agentId)}
                     <button

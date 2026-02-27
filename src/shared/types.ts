@@ -1580,8 +1580,6 @@ export interface FileNode {
   path: string;
   type: 'file' | 'directory';
   children?: FileNode[];
-  isExpanded?: boolean;
-  isLoading?: boolean;
   size?: number;
   modified?: string;
   gitStatus?: FileGitStatus;
