@@ -496,6 +496,12 @@
   let branchInputRef: HTMLInputElement | null = $state(null);
   let isSavingBranch = $state(false);
 
+  // Branch copy state
+  let copiedWorkingBranch = $state(false);
+  let workingBranchTooltipOpen = $state(false);
+  let copiedTrunkBranch = $state(false);
+  let trunkBranchTooltipOpen = $state(false);
+
   // Initialize GitHub auth state on mount
   onMount(() => {
     githubAuthStore.initialize();
@@ -3763,7 +3769,7 @@
           class="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-muted-foreground text-xs mb-3 -ml-0.5"
         >
           <!-- Working branch -->
-          <div class="flex items-center gap-1 shrink-0">
+          <div class="flex items-center shrink-0">
             <GitBranchIcon size={12} class="shrink-0 text-muted-foreground/60" />
             {#if isEditingBranch}
               <input
@@ -3783,20 +3789,32 @@
               />
             {:else}
               <Tooltip
-                content="Working on the {workspace?.branch ||
-                  'no branch'} branch. Click to change name."
-                side="right"
+                side="top"
+                disableCloseOnTriggerClick
+                bind:open={workingBranchTooltipOpen}
               >
+                {#snippet content()}<span>Working on the {workspace?.branch || 'no branch'} branch. Click to change name.</span><br /><span class="text-muted-foreground">Shift+click to copy</span>{#if copiedWorkingBranch}<span class="text-green-500 ml-1.5 inline-flex items-center gap-1"><Fa icon={faCheck} size="xs" /></span>{/if}{/snippet}
                 <button
                   class="text-[0.82rem] text-muted-foreground bg-transparent
                          border-none px-1 py-0.5 rounded cursor-pointer text-left
                          max-w-full overflow-hidden text-ellipsis whitespace-nowrap
                          transition-all duration-150 leading-normal
                          hover:text-foreground hover:opacity-80
-                         focus-visible:outline focus-visible:outline-1
-                         focus-visible:outline-primary/50 focus-visible:outline-offset-[-1px]
+                         focus-visible:outline-none!
                          disabled:cursor-default disabled:opacity-50"
-                  onclick={startEditingBranch}
+                  onclick={(e) => {
+                    if (e.shiftKey && workspace?.branch) {
+                      navigator.clipboard.writeText(workspace.branch);
+                      copiedWorkingBranch = true;
+                      workingBranchTooltipOpen = true;
+                      setTimeout(() => {
+                        copiedWorkingBranch = false;
+                        workingBranchTooltipOpen = false;
+                      }, 1500);
+                    } else {
+                      startEditingBranch();
+                    }
+                  }}
                   disabled={!workspace || isSavingBranch}
                 >
                   {#if workspace}
@@ -3815,15 +3833,33 @@
           </div>
 
           <!-- Trunk branch picker -->
-          <div class="flex items-center gap-1 shrink-0 min-w-0 max-w-[min(100%,_10rem)]">
+          <div class="flex items-center shrink-0 min-w-0 max-w-[min(100%,_10rem)]">
             <Tooltip
               class="min-w-0 max-w-full"
-              content={canChangeTrunk
-                ? 'Trunk branch - click to change'
-                : 'Trunk branch (cannot change after pushing)'}
-              side="right"
+              side="top"
+              disableCloseOnTriggerClick
+              bind:open={trunkBranchTooltipOpen}
             >
-              <div class="flex items-center min-w-0 max-w-full">
+              {#snippet content()}{#if canChangeTrunk}<span>Trunk branch - click to change</span>{:else}<span>Trunk branch (cannot change after pushing)</span>{/if}<br /><span class="text-muted-foreground">Shift+click to copy</span>{#if copiedTrunkBranch}<span class="text-green-500 ml-1.5 inline-flex items-center gap-1"><Fa icon={faCheck} size="xs" /></span>{/if}{/snippet}
+              <div
+                class="flex items-center min-w-0 max-w-full"
+                role="button"
+                tabindex="-1"
+                onclick={(e) => {
+                  if (e.shiftKey) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(trunkBranch);
+                    copiedTrunkBranch = true;
+                    trunkBranchTooltipOpen = true;
+                    setTimeout(() => {
+                      copiedTrunkBranch = false;
+                      trunkBranchTooltipOpen = false;
+                    }, 1500);
+                  }
+                }}
+                onkeydown={() => {}}
+              >
                 <BranchSelector
                   variant="ghost"
                   value={trunkBranch}

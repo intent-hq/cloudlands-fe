@@ -11,6 +11,7 @@
   import Fa from 'svelte-fa';
   import {
     faArrowRight,
+    faCheck,
     faCodeBranch,
     faCodeCommit,
     faCodePullRequest,
@@ -26,6 +27,7 @@
   import { invoke } from '$lib/electron-bridge';
   import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
   import { faFolder } from '@fortawesome/free-solid-svg-icons';
+  import { Tooltip } from '$lib/components/ui/tooltip';
   import Header from '../ui/Header.svelte';
 
   interface OverviewAgent {
@@ -160,6 +162,12 @@
   // Changes
   let topFiles = $derived(changedFiles.slice(0, 12));
   let moreFilesCount = $derived(Math.max(0, changedFiles.length - 12));
+
+  // Branch copy state
+  let copiedWorkingBranch = $state(false);
+  let workingBranchTooltipOpen = $state(false);
+  let copiedTrunkBranch = $state(false);
+  let trunkBranchTooltipOpen = $state(false);
 
   // Convert OverviewChange to UIFileChange for FileRow component
   function toUIFileChange(change: OverviewChange): UIFileChange {
@@ -517,10 +525,50 @@
           {#if workspace?.branch}
             <div class="flex items-center gap-1 text-sm py-0.5">
               <Fa icon={faCodeBranch} size="xs" class="text-muted-foreground/30" />
-              <span class="text-muted-foreground/60 truncate text-xs">{workspace.branch}</span>
+              <Tooltip
+                side="top"
+                disableCloseOnTriggerClick
+                bind:open={workingBranchTooltipOpen}
+              >
+                {#snippet content()}<span>Click to copy</span>{#if copiedWorkingBranch}<span class="text-green-500 ml-1.5 inline-flex items-center gap-1"><Fa icon={faCheck} size="xs" /></span>{/if}{/snippet}
+                <button
+                  class="text-muted-foreground/60 truncate text-xs cursor-pointer hover:text-muted-foreground transition-colors bg-transparent border-none p-0 focus-visible:outline-none!"
+                  onclick={() => {
+                    navigator.clipboard.writeText(workspace.branch);
+                    copiedWorkingBranch = true;
+                    workingBranchTooltipOpen = true;
+                    setTimeout(() => {
+                      copiedWorkingBranch = false;
+                      workingBranchTooltipOpen = false;
+                    }, 1500);
+                  }}
+                >
+                  {workspace.branch}
+                </button>
+              </Tooltip>
               {#if workspace.baseRef}
                 <Fa icon={faArrowRight} size="xs" class="text-muted-foreground/30" />
-                <span class="text-muted-foreground/60 truncate text-xs">{workspace.baseRef}</span>
+                <Tooltip
+                  side="top"
+                  disableCloseOnTriggerClick
+                  bind:open={trunkBranchTooltipOpen}
+                >
+                  {#snippet content()}<span>Click to copy</span>{#if copiedTrunkBranch}<span class="text-green-500 ml-1.5 inline-flex items-center gap-1"><Fa icon={faCheck} size="xs" /></span>{/if}{/snippet}
+                  <button
+                    class="text-muted-foreground/60 truncate text-xs cursor-pointer hover:text-muted-foreground transition-colors bg-transparent border-none p-0 focus-visible:outline-none!"
+                    onclick={() => {
+                      navigator.clipboard.writeText(workspace.baseRef ?? '');
+                      copiedTrunkBranch = true;
+                      trunkBranchTooltipOpen = true;
+                      setTimeout(() => {
+                        copiedTrunkBranch = false;
+                        trunkBranchTooltipOpen = false;
+                      }, 1500);
+                    }}
+                  >
+                    {workspace.baseRef}
+                  </button>
+                </Tooltip>
               {/if}
             </div>
           {/if}
