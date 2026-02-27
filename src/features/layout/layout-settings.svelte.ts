@@ -29,16 +29,6 @@ export interface LayoutSettings {
    * Which side the workspace sidebar is on
    */
   sidebarSide: 'left' | 'right';
-
-  /**
-   * Width of the spaces overlay when sidebar is on the right (independent of sidebar width)
-   */
-  spacesOverlayWidth: number;
-
-  /**
-   * Whether the spaces overlay was open (persisted so it survives refresh when sidebar is on right)
-   */
-  spacesOverlayOpen: boolean;
 }
 
 const defaultSettings: LayoutSettings = {
@@ -46,8 +36,6 @@ const defaultSettings: LayoutSettings = {
   spacesSidebarCollapsed: false,
   tabbedSidebarPinned: true,
   sidebarSide: 'left',
-  spacesOverlayWidth: 350,
-  spacesOverlayOpen: false,
 };
 
 function loadSettings(): LayoutSettings {
@@ -75,34 +63,7 @@ function saveSettings(settings: LayoutSettings) {
 function createLayoutSettingsStore() {
   const settings = $state<LayoutSettings>(loadSettings());
 
-  // Transient (non-persisted) UI state shared across components
-  let _spacesOverlayResizing = $state(false);
-  let _spacesOverlayOpenTransient = $state(false);
-
   return {
-    /** Whether the spaces list overlay is currently open.
-     *  When sidebar is on the right, persisted to localStorage (survives refresh).
-     *  When sidebar is on the left, transient only (resets on refresh). */
-    get spacesOverlayOpen() {
-      return settings.sidebarSide === 'right' ? settings.spacesOverlayOpen : _spacesOverlayOpenTransient;
-    },
-    set spacesOverlayOpen(value: boolean) {
-      if (settings.sidebarSide === 'right') {
-        settings.spacesOverlayOpen = value;
-        saveSettings(settings);
-      } else {
-        _spacesOverlayOpenTransient = value;
-      }
-    },
-
-    /** Whether the spaces overlay is currently being resized (transient, not persisted) */
-    get spacesOverlayResizing() {
-      return _spacesOverlayResizing;
-    },
-    set spacesOverlayResizing(value: boolean) {
-      _spacesOverlayResizing = value;
-    },
-
     get spacesSidebarWidth() {
       return settings.spacesSidebarWidth;
     },
@@ -146,14 +107,6 @@ function createLayoutSettingsStore() {
 
     toggleSidebarSide() {
       this.sidebarSide = this.sidebarSide === 'left' ? 'right' : 'left';
-    },
-
-    get spacesOverlayWidth() {
-      return settings.spacesOverlayWidth;
-    },
-    set spacesOverlayWidth(value: number) {
-      settings.spacesOverlayWidth = value;
-      saveSettings(settings);
     },
 
     // Reset to defaults

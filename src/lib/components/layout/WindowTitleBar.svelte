@@ -9,7 +9,6 @@
    * - Counter-scaling to maintain fixed position relative to macOS traffic lights when zoomed
    */
 
-  import { beforeNavigate } from '$app/navigation';
   import { page } from '$app/state';
   import { faSearch } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -28,7 +27,6 @@
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { PanelLayoutControls } from '$lib/components/layout/panel-system';
   import type { LayoutPresetId } from '$lib/components/layout/panel-system/types';
-  import SpacesListOverlay from './SpacesListOverlay.svelte';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
   import { WorkspaceStatusEnum } from '$shared/types';
@@ -52,11 +50,6 @@
       /Mac|iPhone|iPad|iPod/.test(navigator.userAgent)
     );
   });
-
-  // Listen for global toggle event (from Cmd+O shortcut)
-  function handleToggleSpacesOverlay() {
-    layoutSettings.spacesOverlayOpen = !layoutSettings.spacesOverlayOpen;
-  }
 
   // Reactivity versions for subscriptions
   let activeStreamsVersion = $state(0);
@@ -144,16 +137,6 @@
       .slice(0, 5); // Limit to 5 items to not crowd the title bar
   });
 
-  // Close the spaces overlay when navigating away (but not on full refresh).
-  // When sidebar is on the right, leave spacesOverlayOpen alone — the mount
-  // condition already hides the overlay on non-workspace pages.
-  beforeNavigate((navigation) => {
-    if (navigation.type === 'leave') return;
-    if (layoutSettings.sidebarSide !== 'right') {
-      layoutSettings.spacesOverlayOpen = false;
-    }
-  });
-
   let hasMounted = false;
 
   onMount(() => {
@@ -167,9 +150,6 @@
       refreshLineStats(); // Refresh line stats when activity changes
     });
 
-    // Listen for global toggle event (from Cmd+O shortcut)
-    window.addEventListener('app:toggle-spaces-overlay', handleToggleSpacesOverlay);
-
     // Initial fetch
     refreshLineStats();
     hasMounted = true;
@@ -177,7 +157,6 @@
     return () => {
       unsubscribeStreams();
       unsubscribeUnread();
-      window.removeEventListener('app:toggle-spaces-overlay', handleToggleSpacesOverlay);
     };
   });
 
@@ -310,19 +289,6 @@
     </div>
   </div>
 </div>
-
-<!-- Spaces List Overlay
-     When sidebar is on the right the overlay is a persistent panel whose open
-     state is stored in localStorage. Always mount it in that mode so it stays
-     alive across page navigations and doesn't re-trigger its slide-in
-     transition every time the user moves between routes. -->
-{#if workspaceId || (layoutSettings.sidebarSide === 'right' && isWorkspacePage)}
-  <SpacesListOverlay
-    isOpen={layoutSettings.spacesOverlayOpen}
-    onClose={() => (layoutSettings.spacesOverlayOpen = false)}
-    skipIntro={layoutSettings.spacesOverlayOpen}
-  />
-{/if}
 
 <style>
   .window-title-bar-wrapper {

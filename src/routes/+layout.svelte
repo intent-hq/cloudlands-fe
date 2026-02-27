@@ -63,7 +63,7 @@
   import FeatureCodeDialog from '$lib/components/modals/FeatureCodeDialog.svelte';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import type { InitialRepoInfo } from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
-  import { SidebarNav, SidebarPanel } from '$lib/components/layout/sidebar-nav';
+  import { SidebarNav, sidebarNavStore, SidebarPanel } from '$lib/components/layout/sidebar-nav';
 
   const logger = createLogger('+layout');
 
@@ -1232,22 +1232,22 @@
         action: openCommandPalette,
       });
     }
-    // Cmd+O (Mac) / Ctrl+O (Win/Linux) -> toggle spaces overlay
-    const toggleSpacesOverlay = () => {
-      window.dispatchEvent(new CustomEvent('app:toggle-spaces-overlay'));
+    // Cmd+O (Mac) / Ctrl+O (Win/Linux) -> toggle all spaces sidebar panel
+    const toggleAllSpaces = () => {
+      sidebarNavStore.togglePanel('all-workspaces');
     };
     register({
       key: 'o',
       meta: true,
-      description: 'Toggle Spaces Overlay (Mac)',
-      action: toggleSpacesOverlay,
+      description: 'Toggle All Spaces (Mac)',
+      action: toggleAllSpaces,
     });
     if (!isMac) {
       register({
         key: 'o',
         ctrl: true,
-        description: 'Toggle Spaces Overlay (Win/Linux)',
-        action: toggleSpacesOverlay,
+        description: 'Toggle All Spaces (Win/Linux)',
+        action: toggleAllSpaces,
       });
     }
     // Cmd+T (Mac) / Ctrl+T (Win/Linux) - New Tab (creates new agent, like browser new tab)

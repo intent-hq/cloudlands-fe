@@ -29,6 +29,7 @@
   import { agentService } from '$features/agent/agent.service';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { layoutSettings } from '$features/layout/layout-settings.svelte';
+  import { sidebarWidthStore } from '$lib/stores/sidebar-width.store.svelte';
   import { notesStateManager } from '$features/notes/notes.store.svelte';
   import { NoteId } from '$shared/types/branded-ids';
   import { renameWithUndo } from '$lib/utils/reversible-actions';
@@ -1007,7 +1008,7 @@
 
 <div class="panel-layout h-full w-full flex flex-col">
   <!-- Main panel area -->
-  <div class="flex-1 min-h-0 overflow-hidden {layoutSettings.sidebarSide === 'left' ? 'p-3 pl-0' : 'p-3 pr-0'}">
+  <div class="flex-1 min-h-0 overflow-hidden {sidebarWidthStore.collapsed ? 'p-3' : layoutSettings.sidebarSide === 'left' ? 'p-3 pl-0' : 'p-3 pr-0'}">
     {#if layoutManager.layout}
       {@const currentFocusedPanelId = layoutManager.focusedPanelId}
       <PanelContainer

@@ -17,7 +17,6 @@
   import ResizablePanel from '$lib/components/layout/ResizablePanel.svelte';
   import ErrorBoundary from '$lib/components/ErrorBoundary.svelte';
   import { Logger } from '$shared/logger';
-  import { layoutSettings } from '$features/layout/layout-settings.svelte';
 
   // Props
   interface Props {
@@ -64,15 +63,6 @@
   }: Props = $props();
 
   const workspaceLogger = new Logger('WorkspaceLayout');
-
-  // When sidebar is on the right and the spaces overlay is open,
-  // push the workspace content to the right to make room.
-  // Use the overlay's own persisted width (resizable independently of the sidebar).
-  const spacesOverlayWidth = $derived(
-    sidebarSide === 'right' && layoutSettings.spacesOverlayOpen
-      ? layoutSettings.spacesOverlayWidth + 1
-      : 0,
-  );
 </script>
 
 <ErrorBoundary logger={workspaceLogger}>
@@ -81,11 +71,6 @@
     <!-- Upper Area: Sidebar + Content (shrinks when terminal is open) -->
     <div class="upper-area flex-1 flex min-h-0">
       {#if sidebarSide === 'right'}
-        <!-- Spacer that pushes content when spaces overlay is open -->
-        <div
-          class="flex-none overlay-spacer {layoutSettings.spacesOverlayResizing ? 'resizing' : ''}"
-          style="width: {spacesOverlayWidth}px;"
-        ></div>
         <!-- Main Content Area (Panel Layout) - rendered first when sidebar is on right -->
         <div class="main-content-area flex h-full min-w-0 z-10">
           {@render content()}
@@ -138,13 +123,6 @@
 
   .main-content-area {
     flex: 1;
-  }
-
-  .overlay-spacer {
-    transition: width 150ms ease-out;
-  }
-  .overlay-spacer.resizing {
-    transition: none;
   }
 
   /* Terminal Overlay - positioned at bottom, shrinks content above */
