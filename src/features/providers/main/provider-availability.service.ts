@@ -5,6 +5,7 @@
  * to determine if the user has any available provider at startup.
  */
 
+import { spawn } from 'child_process';
 import { ipcMain } from 'electron';
 import * as fs from 'fs/promises';
 import * as os from 'os';
@@ -38,6 +39,8 @@ const logger = new Logger('ProviderAvailability');
  */
 export interface ProviderStatus {
   available: boolean;
+  /** Whether the user is authenticated with this provider. undefined = unknown/not checked. */
+  authenticated?: boolean;
   error?: string;
 }
 
@@ -213,6 +216,88 @@ async function checkOpenCodeAvailability(): Promise<ProviderStatus> {
   }
 }
 
+/** Auth check timeout in ms */
+const AUTH_CHECK_TIMEOUT_MS = 5000;
+
+/**
+ * Check if a provider's CLI is authenticated by running its auth check command.
+ * Returns true if authenticated, false if not, undefined if check failed/timed out.
+ *
+ * @param requireNonEmptyOutput - If true, also requires non-empty stdout.
+ * @param validateOutput - Optional custom validator for stdout. Overrides requireNonEmptyOutput.
+ */
+async function checkProviderAuth(
+  cliPath: string | null,
+  authCheckArgs: string[],
+  requireNonEmptyOutput = false,
+  validateOutput?: (stdout: string) => boolean,
+): Promise<boolean | undefined> {
+  if (!cliPath || authCheckArgs.length === 0) {
+    return undefined;
+  }
+
+  return new Promise((resolve) => {
+    try {
+      let settled = false;
+      const settle = (value: boolean | undefined) => {
+        if (!settled) {
+          settled = true;
+          resolve(value);
+        }
+      };
+
+      const child = spawn(cliPath, authCheckArgs, {
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: AUTH_CHECK_TIMEOUT_MS,
+      });
+
+      let stdout = '';
+      child.stdout.on('data', (data: Buffer) => {
+        stdout += data.toString();
+      });
+      // Drain stderr to prevent backpressure from blocking the process
+      child.stderr.resume();
+
+      const timeoutId = setTimeout(() => {
+        try {
+          child.kill();
+        } catch {
+          // Process may have already exited
+        }
+        settle(undefined);
+      }, AUTH_CHECK_TIMEOUT_MS);
+
+      child.on('error', () => {
+        clearTimeout(timeoutId);
+        settle(undefined);
+      });
+
+      child.on('close', (code) => {
+        clearTimeout(timeoutId);
+        // code is null when terminated by signal — treat as unknown, not unauthenticated
+        if (code === null) {
+          settle(undefined);
+          return;
+        }
+        if (code !== 0) {
+          settle(false);
+          return;
+        }
+        if (validateOutput) {
+          settle(validateOutput(stdout));
+        } else if (requireNonEmptyOutput) {
+          settle(stdout.trim().length > 0);
+        } else {
+          settle(true);
+        }
+      });
+    } catch {
+      resolve(undefined);
+    }
+  });
+}
+
 /**
  * Get aggregated availability status for all providers
  */
@@ -257,6 +342,39 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       checkOpenCodeAvailability(),
     ]);
 
+  // Run auth checks in parallel for all available providers
+  if (claudeCodeResult.available || codexResult.available || opencodeResult.available) {
+    const [claudeCodePath, codexPath, opencodePath] = await Promise.all([
+      claudeCodeResult.available ? getClaudeCodePath() : Promise.resolve(null),
+      codexResult.available ? getCodexPath() : Promise.resolve(null),
+      opencodeResult.available ? getOpenCodePath() : Promise.resolve(null),
+    ]);
+
+    const [claudeAuth, codexAuth, opencodeAuth] = await Promise.all([
+      claudeCodeResult.available
+        ? checkProviderAuth(claudeCodePath, ACP_PROVIDERS['claude-code'].authCheckArgs ?? [])
+        : Promise.resolve(undefined),
+      codexResult.available
+        ? checkProviderAuth(codexPath, ACP_PROVIDERS.codex.authCheckArgs ?? [])
+        : Promise.resolve(undefined),
+      // `opencode auth list` always exits 0 — we parse stdout for "0 credentials"
+      // to distinguish logged-in from logged-out. This is brittle (depends on CLI
+      // output format) but best-effort; on failure we return undefined (no indicator).
+      opencodeResult.available
+        ? checkProviderAuth(
+            opencodePath,
+            ACP_PROVIDERS.opencode.authCheckArgs ?? [],
+            false,
+            (stdout) => !stdout.includes('0 credentials'),
+          )
+        : Promise.resolve(undefined),
+    ]);
+
+    claudeCodeResult.authenticated = claudeAuth;
+    codexResult.authenticated = codexAuth;
+    opencodeResult.authenticated = opencodeAuth;
+  }
+
   const result: ProviderAvailabilityResult = {
     hasAnyProvider:
       auggieResult.available ||
@@ -281,6 +399,9 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     codex: codexResult.available,
     cortex: cortexResult.available,
     opencode: opencodeResult.available,
+    claudeCodeAuth: claudeCodeResult.authenticated,
+    codexAuth: codexResult.authenticated,
+    opencodeAuth: opencodeResult.authenticated,
     hiddenProviders,
   });
 

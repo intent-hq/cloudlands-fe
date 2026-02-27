@@ -57,6 +57,10 @@ export interface ACPProviderConfig {
   requiresEnvVar?: string;
   /** If set, this provider is only visible when this feature code is activated */
   requiresFeatureCode?: string;
+  /** CLI args to check auth status (e.g., ['auth', 'status']). Exit 0 = authenticated. */
+  authCheckArgs?: string[];
+  /** URL to login/auth docs for this provider */
+  loginDocsUrl?: string;
 }
 
 /**
@@ -97,6 +101,8 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
     isDefault: false,
     canBeDisabled: true,
     ipcChannelPrefix: 'claude-code',
+    authCheckArgs: ['auth', 'status'],
+    loginDocsUrl: 'https://code.claude.com/docs/en/quickstart#step-2-log-in-to-your-account',
   },
   codex: {
     id: 'codex',
@@ -111,6 +117,8 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
     isDefault: false,
     canBeDisabled: true,
     ipcChannelPrefix: 'codex',
+    authCheckArgs: ['login', 'status'],
+    loginDocsUrl: 'https://developers.openai.com/codex/cli#cli-setup',
   },
 
   cortex: {
@@ -141,6 +149,8 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
     isDefault: false,
     canBeDisabled: true,
     ipcChannelPrefix: 'opencode',
+    authCheckArgs: ['auth', 'list'],
+    loginDocsUrl: 'https://opencode.ai/docs#configure',
   },
 };
 

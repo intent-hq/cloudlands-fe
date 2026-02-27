@@ -16,6 +16,8 @@ const logger = createLogger('ProviderAvailabilityClient');
  */
 export interface ProviderStatus {
   available: boolean;
+  /** Whether the user is authenticated with this provider. undefined = unknown/not checked. */
+  authenticated?: boolean;
   error?: string;
 }
 

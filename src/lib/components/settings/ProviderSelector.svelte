@@ -110,22 +110,33 @@
     },
   };
 
+  // Map provider IDs to keys used in ProviderAvailabilityResult
+  const providerKeyMap: Record<string, keyof ProviderAvailabilityResult['providers']> = {
+    auggie: 'auggie',
+    'claude-code': 'claudeCode',
+    codex: 'codex',
+    opencode: 'opencode',
+    cortex: 'cortex',
+  };
+
   // Helper to get provider availability from result (handles different key formats)
   function getProviderAvailable(providerId: string): boolean {
     if (!providerAvailability) return false;
-    // Map provider IDs to keys used in ProviderAvailabilityResult
-    const keyMap: Record<string, keyof typeof providerAvailability.providers> = {
-      auggie: 'auggie',
-      'claude-code': 'claudeCode',
-      codex: 'codex',
-      opencode: 'opencode',
-      cortex: 'cortex',
-    };
-    const key = keyMap[providerId];
+    const key = providerKeyMap[providerId];
     if (key && providerAvailability.providers[key]) {
       return providerAvailability.providers[key].available;
     }
     return false;
+  }
+
+  // Helper to get provider auth status
+  function getProviderAuthenticated(providerId: string): boolean | undefined {
+    if (!providerAvailability) return undefined;
+    const key = providerKeyMap[providerId];
+    if (key && providerAvailability.providers[key]) {
+      return providerAvailability.providers[key].authenticated;
+    }
+    return undefined;
   }
 
   // Provider options for display - dynamically generated from ACP_PROVIDERS
@@ -138,8 +149,10 @@
         name: provider.displayName,
         command: provider.command,
         available: getProviderAvailable(provider.id),
+        authenticated: getProviderAuthenticated(provider.id),
         requiresAuth: PROVIDER_METADATA[provider.id]?.requiresAuth ?? false,
         docsUrl: PROVIDER_METADATA[provider.id]?.docsUrl ?? '',
+        loginDocsUrl: provider.loginDocsUrl,
       })),
   );
 
@@ -147,25 +160,23 @@
     checkProviderAvailability();
     loadProviderPaths();
 
-    // Focus/visibility listener to check provider availability when app returns to focus
+    // Focus/visibility listener to silently recheck provider availability (including auth)
+    // when the app returns to focus, so status updates after the user logs in via CLI or browser.
     const handleFocus = () => {
       if (waitingForBrowserAuth) {
         checkAuthPollOnce();
       }
-      if (pendingFocusCheck) {
-        pendingFocusCheck = false;
-        checkProviderAvailability(false);
-      }
+      pendingFocusCheck = false;
+      silentRefreshProviderAvailability();
     };
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && waitingForBrowserAuth) {
+      if (document.visibilityState !== 'visible') return;
+      if (waitingForBrowserAuth) {
         checkAuthPollOnce();
       }
-      if (document.visibilityState === 'visible' && pendingFocusCheck) {
-        pendingFocusCheck = false;
-        checkProviderAvailability(false);
-      }
+      pendingFocusCheck = false;
+      silentRefreshProviderAvailability();
     };
 
     window.addEventListener('focus', handleFocus);
@@ -232,6 +243,28 @@
       loadProviderAvailability(refreshModels),
       loadMcpStatus(),
     ]);
+  }
+
+  /** Silent recheck — updates data without showing loading spinners */
+  async function silentRefreshProviderAvailability() {
+    try {
+      const providerResult = await invoke<{
+        success: boolean;
+        data?: ProviderAvailabilityResult;
+        error?: string;
+      }>(PROVIDERS_CHANNELS.GET_AVAILABILITY);
+
+      if (providerResult.success && providerResult.data) {
+        // Reconcile auggie status if already loaded
+        if (auggieStatus?.installed) {
+          providerResult.data.providers.auggie.available = true;
+          providerResult.data.hasAnyProvider = true;
+        }
+        providerAvailability = providerResult.data;
+      }
+    } catch (err) {
+      logger.error('Silent provider refresh failed', { error: err });
+    }
   }
 
   /** Track 1: Auggie install/auth status -- unblocks the auggie row */
@@ -995,6 +1028,22 @@
 
           <div class="flex items-center gap-5 text-xs">
             {#if provider.available}
+              <!-- Auth status -->
+              {#if provider.authenticated === true}
+                <span class="text-xs text-muted-foreground flex items-center gap-1">
+                  <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
+                  Logged in
+                </span>
+              {:else if provider.authenticated === false && provider.loginDocsUrl}
+                <button
+                  type="button"
+                  class="text-yellow-600 dark:text-yellow-500 hover:text-yellow-700 dark:hover:text-yellow-400 cursor-pointer transition-colors"
+                  onclick={() => openDocs(provider.loginDocsUrl!, true)}
+                >
+                  Log in
+                </button>
+              {/if}
+              <!-- Default / Set as default -->
               {#if isActive}
                 <span class="text-xs text-muted-foreground flex items-center gap-1"> Default </span>
               {:else}
