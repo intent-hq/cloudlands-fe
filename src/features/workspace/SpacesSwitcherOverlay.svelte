@@ -11,20 +11,16 @@
   import { onMount, tick } from 'svelte';
   import type { Workspace } from '$shared/types';
   import { PullRequestStatus } from '$shared/types';
-  import Fa from 'svelte-fa';
-  import { faFolder } from '@fortawesome/free-solid-svg-icons';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
   import { pendingAgentsStore } from '$features/agent/services/pending-agents.store.svelte';
-  import WorkspaceStatusIcon, {
-    type WorkspaceDisplayStatus,
-  } from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import { permissionStore } from '$lib/stores/permission.store.svelte';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
-  import TaskProgressBar from '$lib/components/workspace/TaskProgressBar.svelte';
+  import WorkspacePhaseIndicator from '$lib/components/workspace/WorkspacePhaseIndicator.svelte';
+  import { deriveWorkspacePhase } from '$lib/components/workspace/workspace-phase';
 
   interface Props {
     isOpen: boolean;
@@ -88,38 +84,16 @@
     return title || 'Untitled';
   }
 
-  // Compute workspace display status (matches WorkspaceTableRow logic)
-  function getWorkspaceDisplayStatus(
-    ws: Workspace,
-    agents: AgentDisplayInfo[],
-  ): WorkspaceDisplayStatus {
-    const pullRequests = ws.pullRequests || [];
-
-    const hasMergedPR =
-      ws.prStatus === PullRequestStatus.Merged ||
-      pullRequests.some((pr) => pr.status === PullRequestStatus.Merged);
-    if (hasMergedPR) return 'pr_merged';
-
-    const hasOpenPR =
-      ws.prStatus === PullRequestStatus.Open ||
-      ws.prStatus === PullRequestStatus.Draft ||
-      pullRequests.some(
-        (pr) => pr.status === PullRequestStatus.Open || pr.status === PullRequestStatus.Draft,
-      ) ||
-      ws.activePullRequest;
-    if (hasOpenPR) return 'pr_open';
-
-    const taskStats = ws.taskStats;
-    const total = taskStats?.total || 0;
-    const completed = taskStats?.completed || 0;
-
-    if (total > 0 && completed === total) return 'complete';
-
+  // Derive workspace phase info (matches WorkspaceListItem / WorkspaceTableRow logic)
+  function getPhaseInfo(ws: Workspace, agents: AgentDisplayInfo[]) {
     const hasActiveAgents = agents.some((a) => a.isActive);
-    const hasProgress = completed > 0 || (taskStats?.inProgress || 0) > 0;
-    if (hasActiveAgents || hasProgress) return 'in_progress';
+    return deriveWorkspacePhase(ws, { hasActiveAgents });
+  }
 
-    return 'not_started';
+  function getBuildProgress(ws: Workspace): number {
+    const t = ws.taskStats?.total ?? 0;
+    if (t === 0) return 0;
+    return (ws.taskStats?.completed ?? 0) / t;
   }
 
   // Get agent display info for a workspace
@@ -210,113 +184,97 @@
           {@const isSelected = index === selectedIndex}
           {@const isCurrent = workspace.id === currentWorkspaceId}
           {@const agents = getWorkspaceAgentInfo(workspace)}
-          {@const workspaceStatus = getWorkspaceDisplayStatus(workspace, agents)}
+          {@const phaseInfo = getPhaseInfo(workspace, agents)}
+          {@const progress = getBuildProgress(workspace)}
           {@const wsPrStatus = getPrStatus(workspace)}
           {@const wsPrNumber = getPrNumber(workspace)}
+          {@const isRunning = agents.some((a) => a.isActive)}
+          {@const isUnread = agents.some((a) => a.isUnread)}
           <button
             type="button"
             data-switcher-item
             onmousedown={() => handleWorkspaceClick(workspace)}
-            class="relative w-full flex items-center gap-2 pl-3 pr-5 py-2 text-left transition-colors duration-75 cursor-pointer
+            class="relative w-full flex items-start gap-2 px-3 py-2 text-left transition-colors duration-75 cursor-pointer
               {isSelected ? 'bg-muted' : 'hover:bg-muted/30'}"
           >
-            <!-- Org avatar -->
-            {#if workspace.repositoryOwner}
-              <img
-                src={`https://github.com/${workspace.repositoryOwner}.png?size=32`}
-                alt={workspace.repositoryOwner}
-                class="w-5 h-5 rounded-full shrink-0"
-                loading="lazy"
-                onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
-              />
-            {:else}
-              <span class="text-muted-foreground/50 shrink-0 w-5 flex justify-center">
-                <Fa icon={faFolder} size="sm" />
-              </span>
-            {/if}
-
-            <!-- Status indicator -->
-            <div class="shrink-0 ml-0.5 mr-1">
-              <WorkspaceStatusIcon status={workspaceStatus} size={12} />
-            </div>
-
-            <!-- Title -->
-            <div class="flex-1 min-w-0 pr-2">
-              <span
-                class="text-[13px] text-foreground truncate block
-                  {!workspace.title ? 'text-muted-foreground/70' : ''}
-                  {isCurrent ? 'font-medium' : ''}"
-              >
-                {getDisplayTitle(workspace)}
-              </span>
-            </div>
-
-            <!-- PR status pill -->
-            {#if wsPrStatus}
-              {@const statusColor =
-                wsPrStatus === PullRequestStatus.Merged
-                  ? 'bg-purple-500/10 text-purple-500'
-                  : wsPrStatus === PullRequestStatus.Open
-                    ? 'bg-emerald-500/10 text-emerald-500'
-                    : wsPrStatus === PullRequestStatus.Draft
-                      ? 'bg-muted-foreground/10 text-muted-foreground/60'
-                      : 'bg-red-500/10 text-red-500'}
-              <span class="text-[9px] font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}">
-                PR{wsPrNumber ? ` #${wsPrNumber}` : ''}
-              </span>
-            {/if}
-
-            <!-- Task progress -->
-            {#if workspace.taskStats && workspace.taskStats.total > 0}
-              <TaskProgressBar
-                stats={{
-                  total: workspace.taskStats.total,
-                  completed: workspace.taskStats.completed,
-                  inProgress: workspace.taskStats.inProgress,
-                  notStarted: Math.max(
-                    0,
-                    workspace.taskStats.total -
-                      workspace.taskStats.completed -
-                      workspace.taskStats.inProgress,
-                  ),
-                }}
-                tasks={workspace.taskStats.tasks?.map((t) => ({
-                  title: t.title,
-                  status: t.status,
-                })) ?? []}
-                maxBars={12}
-                barWidth="2px"
-                barHeight="10px"
-                class="shrink-0"
-              />
-            {/if}
-
-            <!-- Agent avatars -->
-            {#if agents.length > 0}
-              <div class="flex items-center -space-x-1.5 shrink-0">
-                {#each agents.slice(0, 4) as agent (agent.id)}
-                  <AugieAvatarWithState
-                    agentId={agent.id}
-                    state={agent.isUnread ? 'unread' : agent.state}
-                    size={16}
-                    specialist={agent.specialist}
-                  />
-                {/each}
-                {#if agents.length > 4}
-                  <div class="ml-1.5 text-[10px] text-muted-foreground font-medium">
-                    +{agents.length - 4}
-                  </div>
+            <!-- Left column: phase indicator -->
+            <div class="flex items-center shrink-0 mt-[3px]">
+              <div class="shrink-0 relative">
+                <WorkspacePhaseIndicator phase={phaseInfo.phase} {progress} size={14} />
+                {#if isRunning}
+                  <div
+                    class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-green-500 animate-pulse"
+                  ></div>
+                {:else if isUnread}
+                  <div class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-blue-500"></div>
                 {/if}
               </div>
-            {/if}
+            </div>
 
-            <!-- Activity time -->
-            <div class="shrink-0 w-8 text-right">
-              <RelativeTime
-                date={workspace.lastActivity || workspace.createdAt}
-                class="text-[0.82rem] text-muted-foreground/70 whitespace-nowrap"
-                compact
-              />
+            <!-- Content: two rows -->
+            <div class="flex-1 min-w-0 flex flex-col gap-0.5">
+              <!-- Row 1: title + agents + PR + time -->
+              <div class="flex items-center gap-1.5">
+                <span
+                  class="truncate text-[13px] flex-1 min-w-0
+                    {isCurrent
+                    ? 'font-medium text-foreground'
+                    : workspace.title
+                      ? 'text-foreground'
+                      : 'text-muted-foreground/70'}"
+                >
+                  {getDisplayTitle(workspace)}
+                </span>
+
+                <!-- Agent avatars -->
+                {#if agents.length > 0}
+                  <div class="flex items-center -space-x-1.5 shrink-0">
+                    {#each agents.slice(0, 3) as agent (agent.id)}
+                      <AugieAvatarWithState
+                        agentId={agent.id}
+                        state={agent.isUnread ? 'unread' : agent.state}
+                        size={14}
+                        specialist={agent.specialist}
+                      />
+                    {/each}
+                    {#if agents.length > 3}
+                      <div class="ml-1 text-[10px] text-muted-foreground/50 font-medium">
+                        +{agents.length - 3}
+                      </div>
+                    {/if}
+                  </div>
+                {/if}
+
+                <!-- PR status pill -->
+                {#if wsPrStatus}
+                  {@const statusColor =
+                    wsPrStatus === PullRequestStatus.Merged
+                      ? 'bg-purple-500/10 text-purple-500'
+                      : wsPrStatus === PullRequestStatus.Open
+                        ? 'bg-emerald-500/10 text-emerald-500'
+                        : wsPrStatus === PullRequestStatus.Draft
+                          ? 'bg-muted-foreground/10 text-muted-foreground/60'
+                          : 'bg-red-500/10 text-red-500'}
+                  <span
+                    class="text-[9px] font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}"
+                  >
+                    PR{wsPrNumber ? ` #${wsPrNumber}` : ''}
+                  </span>
+                {/if}
+
+                <RelativeTime
+                  date={workspace.lastActivity || workspace.updatedAt}
+                  class="text-[11px] text-muted-foreground/50 whitespace-nowrap shrink-0"
+                  compact
+                />
+              </div>
+
+              <!-- Row 2: repo info -->
+              {#if workspace.repositoryOwner && workspace.repositoryName}
+                <div class="truncate text-[11px] text-muted-foreground/70">
+                  {workspace.repositoryOwner}/{workspace.repositoryName}
+                </div>
+              {/if}
             </div>
           </button>
         {/each}
