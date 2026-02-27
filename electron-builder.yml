@@ -31,6 +31,8 @@ asarUnpack:
   - node_modules/mime-db/**/*
   - node_modules/@parcel/watcher/**/*
   - node_modules/@parcel/watcher-*/**/*
+  - node_modules/better-sqlite3/**/*
+  - node_modules/node-pty/**/*
 
 # Skip native module rebuild to avoid hanging on cpu-features
 buildDependenciesFromSource: false

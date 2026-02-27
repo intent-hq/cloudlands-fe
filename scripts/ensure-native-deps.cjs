@@ -132,6 +132,25 @@ function main() {
   }
 
   console.log(`\n✅ Done. ${installed} package(s) installed.\n`);
+
+  // Rebuild better-sqlite3 for Electron.
+  // npmRebuild is disabled in electron-builder.yml (it hangs on cpu-features),
+  // so we must rebuild better-sqlite3 explicitly here. Without this, the
+  // packaged app ships a .node binary compiled for Node.js (wrong ABI) and
+  // crashes on startup with "libc++abi: terminating due to uncaught exception
+  // of type Napi::Error".
+  console.log('🔨 Rebuilding better-sqlite3 for Electron...');
+  try {
+    execSync('npx @electron/rebuild -f -o better-sqlite3', {
+      cwd: ROOT,
+      stdio: 'inherit',
+      timeout: 300000,
+    });
+    console.log('✅ better-sqlite3 rebuilt for Electron');
+  } catch (err) {
+    console.error(`❌ Failed to rebuild better-sqlite3: ${err.message}`);
+    process.exit(1);
+  }
 }
 
 function copyDirSync(src, dest) {
