@@ -11,6 +11,7 @@
  */
 
 import * as parcelWatcher from '@parcel/watcher';
+import { existsSync } from 'fs';
 import { relative, sep } from 'path';
 import { Logger } from '$shared/logger';
 
@@ -174,6 +175,45 @@ export async function shutdownUnifiedWatcher(workspaceId: string): Promise<void>
   }
 }
 
+/**
+ * Shut down unified watchers for all workspaces EXCEPT the given one.
+ * Called during workspace:open to ensure only one native @parcel/watcher
+ * subscription is active at a time.  Under high memory pressure, multiple
+ * concurrent subscriptions can cause the native addon's C++ layer to throw
+ * an unrecoverable Napi::Error (libc++abi termination).
+ *
+ * Uses stop() (not dispose()) so the instance and its JS-level subscribers
+ * are preserved.  When the user switches back to a previously-open workspace,
+ * getUnifiedWatcher() finds the existing stopped instance, restarts the native
+ * subscription, and events flow to the existing ChangeDetector /
+ * MetadataFileWatcher subscribers without them having to re-register.
+ */
+export async function shutdownOtherWatchers(keepWorkspaceId: string): Promise<void> {
+  const otherIds = [...instances.keys()].filter((id) => id !== keepWorkspaceId);
+  if (otherIds.length === 0) return;
+
+  logger.info('Stopping native watchers for inactive workspaces', {
+    keepWorkspaceId,
+    stopping: otherIds,
+  });
+
+  await Promise.all(
+    otherIds.map(async (id) => {
+      try {
+        const instance = instances.get(id);
+        if (instance && instance.getStats().isRunning) {
+          await instance.stop();
+        }
+      } catch (error) {
+        logger.warn('Failed to stop watcher for inactive workspace', {
+          workspaceId: id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }),
+  );
+}
+
 // ============================================================================
 // UnifiedWorkspaceWatcher
 // ============================================================================
@@ -257,6 +297,30 @@ export class UnifiedWorkspaceWatcher {
       workspaceId: this.workspaceId,
       worktreePath: this.worktreePath,
     });
+
+    // Guard: verify the path exists before calling into the native @parcel/watcher addon.
+    // If the directory doesn't exist (e.g. workspace still being created), the native C++
+    // layer can throw an unrecoverable Napi::Error that bypasses JS try/catch and aborts
+    // the entire process via libc++abi / std::terminate().
+    if (!existsSync(this.worktreePath)) {
+      const msg = `Cannot start watcher: worktree path does not exist: ${this.worktreePath}`;
+      logger.error(msg, new Error(msg), { workspaceId: this.workspaceId });
+      throw new Error(msg);
+    }
+
+    // Guard: skip native watcher under high memory pressure.
+    // @parcel/watcher allocates native memory for FSEvents subscriptions.
+    // Under heavy heap usage the native C++ layer is more likely to throw
+    // an unrecoverable Napi::Error.  Defer the watcher start — callers
+    // (getUnifiedWatcher → workspace:open) treat this as non-fatal, and the
+    // watcher will be started on the next workspace open when memory is lower.
+    const heapUsedMB = process.memoryUsage().heapUsed / (1024 * 1024);
+    const MEMORY_PRESSURE_THRESHOLD_MB = 768;
+    if (heapUsedMB > MEMORY_PRESSURE_THRESHOLD_MB) {
+      const msg = `Deferring watcher start: heap ${heapUsedMB.toFixed(0)}MB exceeds ${MEMORY_PRESSURE_THRESHOLD_MB}MB threshold`;
+      logger.warn(msg, { workspaceId: this.workspaceId, heapUsedMB: heapUsedMB.toFixed(0) });
+      throw new Error(msg);
+    }
 
     try {
       this.subscription = await parcelWatcher.subscribe(

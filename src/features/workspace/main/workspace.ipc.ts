@@ -27,7 +27,7 @@ import { getNotificationService } from '../../notifications/main/notification.se
 import { GitService } from '../../git/main/git.service';
 import { getWorkspaceGitInfo, getRemoteGitManager } from '../../git/main/git-router';
 import { cleanupWorkspaceTerminals } from '../../terminal/main/terminal.ipc';
-import { getUnifiedWatcher, shutdownUnifiedWatcher } from './unified-workspace-watcher';
+import { getUnifiedWatcher, shutdownUnifiedWatcher, shutdownOtherWatchers } from './unified-workspace-watcher';
 import { initRepoRegistry, getAllRepos, addRepo, syncRepos, clearRepos } from './repo-registry';
 import { sshManager, type SSHConnectionConfig } from '../../../shared/main/ssh-manager';
 import { getIntentServerPath, escapeShellArg } from '../../agent/main/agent-providers/acp-provider';
@@ -667,6 +667,20 @@ export function setupWorkspaceIPC(): void {
         const id = validated.id;
         const startTime = Date.now();
         logger.info('[WorkspaceIPC] Opening workspace', { workspaceId: id });
+
+        // Shut down native @parcel/watcher subscriptions for any previously-open
+        // workspace BEFORE we do anything else.  Under high memory pressure, multiple
+        // concurrent native watcher subscriptions can cause @parcel/watcher's C++ layer
+        // to throw an unrecoverable Napi::Error (libc++abi termination) that kills the
+        // entire process.  Doing this first frees native resources and greatly reduces
+        // the chance of a native crash during the rest of the open flow.
+        try {
+          await shutdownOtherWatchers(id);
+        } catch (error) {
+          logger.warn('[WorkspaceIPC] Failed to shut down other watchers', error as Error, {
+            workspaceId: id,
+          });
+        }
 
         // Get workspace - protocol adapter now returns data directly for MCP compatibility
         const getWorkspaceStart = Date.now();
