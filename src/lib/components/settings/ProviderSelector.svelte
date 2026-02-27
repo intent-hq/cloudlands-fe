@@ -104,7 +104,10 @@
     'claude-code': { docsUrl: 'https://code.claude.com/docs/en/quickstart', requiresAuth: false },
     codex: { docsUrl: 'https://developers.openai.com/codex/cli/', requiresAuth: false },
     opencode: { docsUrl: 'https://opencode.ai/docs', requiresAuth: false },
-    cortex: { docsUrl: 'https://docs.snowflake.com/en/developer-guide/cortex', requiresAuth: false },
+    cortex: {
+      docsUrl: 'https://docs.snowflake.com/en/developer-guide/cortex',
+      requiresAuth: false,
+    },
   };
 
   // Helper to get provider availability from result (handles different key formats)
@@ -293,15 +296,19 @@
       const hidden = providerAvailability?.hiddenProviders ?? [];
       const isCortexHidden = hidden.includes('cortex');
 
-      const [checkMcpClaudeCodeResult, checkMcpCodexResult, checkMcpOpenCodeResult, checkMcpCortexResult] =
-        await Promise.all([
-          invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_CLAUDE_CODE),
-          invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_CODEX),
-          invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_OPENCODE),
-          isCortexHidden
-            ? Promise.resolve({ success: true, configured: false })
-            : invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_CORTEX),
-        ]);
+      const [
+        checkMcpClaudeCodeResult,
+        checkMcpCodexResult,
+        checkMcpOpenCodeResult,
+        checkMcpCortexResult,
+      ] = await Promise.all([
+        invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_CLAUDE_CODE),
+        invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_CODEX),
+        invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_OPENCODE),
+        isCortexHidden
+          ? Promise.resolve({ success: true, configured: false })
+          : invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_CORTEX),
+      ]);
 
       mcpConfigured = {
         'claude-code': checkMcpClaudeCodeResult?.configured ?? false,
@@ -690,319 +697,330 @@
     </div>
   {/if}
 
-  <!-- Auggie provider row -->
-  {#if auggieLoading}
-    {@render skeleton('auggie', true)}
-  {:else}
-    {@const auggieProvider = providerOptions.find((p) => p.id === 'auggie')}
-    {@const isAuggieActive = activeProviderStore.activeProviderId === 'auggie'}
-    {#if auggieProvider}
-      <div class="flex items-start justify-between gap-4">
-        <div class="space-y-1">
-          <div class="flex items-center gap-2 h-7">
-            {@render providerIcon('auggie')}
-            <span class="text-sm text-foreground">{auggieProvider.name}</span>
-            <div class="-my-1">
-              <!-- Path configuration -->
-              <ProviderPathConfig
-                providerId="auggie"
-                providerName={auggieProvider.name}
-                cliCommand={auggieProvider.command}
-                configuredPath={providerPaths['auggie']}
-                resolvedPath={resolvedPaths['auggie']}
-                isInstalled={auggieStatus?.installed}
-                onPathChange={(path) => handlePathChange('auggie', path)}
-              />
+  {#if !loading || hasLoadedOnce}
+    <!-- Auggie provider row -->
+    {#if auggieLoading}
+      {@render skeleton('auggie', true)}
+    {:else}
+      {@const auggieProvider = providerOptions.find((p) => p.id === 'auggie')}
+      {@const isAuggieActive = activeProviderStore.activeProviderId === 'auggie'}
+      {#if auggieProvider}
+        <div class="flex items-start justify-between gap-4">
+          <div class="space-y-1">
+            <div class="flex items-center gap-2 h-7">
+              {@render providerIcon('auggie')}
+              <span class="text-sm text-foreground">{auggieProvider.name}</span>
+              <div class="-my-1">
+                <!-- Path configuration -->
+                <ProviderPathConfig
+                  providerId="auggie"
+                  providerName={auggieProvider.name}
+                  cliCommand={auggieProvider.command}
+                  configuredPath={providerPaths['auggie']}
+                  resolvedPath={resolvedPaths['auggie']}
+                  isInstalled={auggieStatus?.installed}
+                  onPathChange={(path) => handlePathChange('auggie', path)}
+                />
+              </div>
+              {#if auggieStatus?.installed && auggieStatus?.authenticated}
+                <span class="text-xs text-muted-foreground flex items-center gap-1">
+                  <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
+                  {isAuggieActive ? 'Active' : 'Installed'}
+                </span>
+              {/if}
             </div>
-            {#if auggieStatus?.installed && auggieStatus?.authenticated}
-              <span class="text-xs text-muted-foreground flex items-center gap-1">
-                <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
-                {isAuggieActive ? 'Active' : 'Installed'}
-              </span>
+            <ul class="list-disc pl-12 text-xs text-muted-foreground">
+              <li>
+                <p>Real-time codebase understanding with Context Engine</p>
+              </li>
+              <li>
+                <p>Github, Linear, and Sentry workflow integration</p>
+              </li>
+              <li>
+                <p>Multiple AI model provider selection & use</p>
+              </li>
+            </ul>
+            {#if needsUpdate}
+              <p class="text-xs text-amber-500">
+                v{auggieStatus?.version} installed (needs {MINIMUM_AUGGIE_VERSION}+)
+              </p>
             {/if}
           </div>
-          <ul class="list-disc pl-12 text-xs text-muted-foreground">
-            <li>
-              <p>Real-time codebase understanding with Context Engine</p>
-            </li>
-            <li>
-              <p>Github, Linear, and Sentry workflow integration</p>
-            </li>
-            <li>
-              <p>Multiple AI model provider selection & use</p>
-            </li>
-          </ul>
-          {#if needsUpdate}
-            <p class="text-xs text-amber-500">
-              v{auggieStatus?.version} installed (needs {MINIMUM_AUGGIE_VERSION}+)
-            </p>
-          {/if}
-        </div>
 
-        <div class="flex items-center gap-2 text-xs">
-          {#if !auggieStatus?.installed}
-            {#if actionInProgress}
-              <span class="text-muted-foreground">Installing...</span>
-            {:else}
+          <div class="flex items-center gap-2 text-xs">
+            {#if !auggieStatus?.installed}
+              {#if actionInProgress}
+                <span class="text-muted-foreground">Installing...</span>
+              {:else}
+                <button
+                  type="button"
+                  class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+                  onclick={installAuggie}
+                >
+                  Install
+                </button>
+              {/if}
+            {:else if needsUpdate}
+              {#if actionInProgress}
+                <span class="text-muted-foreground">Updating...</span>
+              {:else}
+                <button
+                  type="button"
+                  class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+                  onclick={installAuggie}
+                >
+                  Update
+                </button>
+              {/if}
+            {:else if !auggieStatus?.authenticated}
+              {#if authInProgress || waitingForBrowserAuth}
+                <span class="text-muted-foreground">Waiting for authorization...</span>
+              {:else}
+                <button
+                  type="button"
+                  class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+                  onclick={startAuth}
+                >
+                  Login
+                </button>
+              {/if}
+            {:else if !isAuggieActive}
               <button
                 type="button"
                 class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
-                onclick={installAuggie}
+                onclick={() => handleSelectProvider('auggie')}
+                disabled={selectingProviderId !== null}
+              >
+                {selectingProviderId === 'auggie' ? 'Switching...' : 'Set as default'}
+              </button>
+            {:else if isAuggieActive}
+              <span class="text-xs text-muted-foreground flex items-center gap-1"> Default </span>
+            {/if}
+          </div>
+        </div>
+
+        <!-- Waiting for browser auth (localhost OAuth flow) -->
+        {#if waitingForBrowserAuth}
+          <div
+            class="flex flex-col gap-2 p-3 bg-muted/50 rounded-lg ml-0"
+            transition:slide={{ axis: 'y', duration: 200 }}
+          >
+            <p class="text-xs text-muted-foreground">Waiting for browser authentication...</p>
+            {#if authUrl}
+              <button
+                type="button"
+                class="text-xs text-muted-foreground hover:text-foreground text-left bg-transparent border-none p-0 cursor-pointer transition-colors"
+                onclick={() => authUrl && shell.open(authUrl)}
+              >
+                Browser didn't open? <span class="underline">Click here</span>
+              </button>
+            {/if}
+            <div class="flex gap-2 text-xs">
+              <button
+                type="button"
+                class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium disabled:opacity-50"
+                onclick={() => checkAuthPollOnce()}
+                disabled={authPollCheckInFlight}
+              >
+                {authPollCheckInFlight ? 'Checking...' : 'Check now'}
+              </button>
+              <button
+                type="button"
+                class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+                onclick={() => {
+                  stopAuthPolling();
+                  waitingForBrowserAuth = false;
+                  showAuthInput = true;
+                }}
+              >
+                Paste code manually instead
+              </button>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Auth input (for Auggie) -->
+        {#if showAuthInput}
+          <div
+            class="flex flex-col gap-2 p-3 bg-muted/50 rounded-lg ml-0"
+            transition:slide={{ axis: 'y', duration: 200 }}
+          >
+            {#if authError}
+              <p class="text-xs text-destructive-foreground">{authError}</p>
+            {/if}
+            <textarea
+              bind:value={authInput}
+              placeholder={'e.g. {"code":"...","state":"...","tenant_url":"..."}'}
+              class="w-full h-16 p-2 bg-background border border-border rounded font-mono text-xs resize-none outline-none focus:border-primary/50 transition-colors"
+            ></textarea>
+            {#if authUrl}
+              <button
+                type="button"
+                class="text-xs text-muted-foreground hover:text-foreground text-left bg-transparent border-none p-0 cursor-pointer transition-colors"
+                onclick={() => authUrl && shell.open(authUrl)}
+              >
+                Browser didn't open? <span class="underline">Click here</span>
+              </button>
+            {/if}
+            <div class="flex gap-2 text-xs">
+              <button
+                type="button"
+                class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium disabled:opacity-50"
+                onclick={completeAuth}
+                disabled={authInProgress || !authInput.trim()}
+              >
+                {authInProgress ? 'Completing...' : 'Complete Login'}
+              </button>
+              <span class="text-muted-foreground/30">·</span>
+              <button
+                type="button"
+                class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+                onclick={() => {
+                  showAuthInput = false;
+                  authInput = '';
+                  authError = null;
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Manual install fallback -->
+        {#if showManualInstall && installError}
+          <div
+            class="flex flex-col gap-2 p-3 bg-destructive/5 border border-destructive/20 rounded-lg"
+            transition:slide={{ axis: 'y', duration: 200 }}
+          >
+            <p class="text-xs text-destructive-foreground">{installError}</p>
+            {#if installErrorType === 'permission'}
+              <p class="text-xs text-muted-foreground">
+                Try running with sudo or fix npm permissions.
+              </p>
+            {:else if installErrorType === 'missing_npm'}
+              <p class="text-xs text-muted-foreground">
+                Install <a
+                  href="https://nodejs.org"
+                  class="underline text-primary"
+                  onclick={(e) => {
+                    e.preventDefault();
+                    const wsId = workspaceStore.current?.id;
+                    if (wsId)
+                      handleLink('https://nodejs.org', {
+                        workspaceId: wsId as WorkspaceId,
+                        event: e,
+                      });
+                  }}>Node.js</a
+                > first.
+              </p>
+            {/if}
+            <button
+              type="button"
+              class="flex items-center gap-1.5 px-2 py-1 bg-muted border border-border rounded text-xs text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-colors w-fit cursor-pointer"
+              onclick={() => copyCommand(INSTALL_COMMAND)}
+            >
+              <code class="font-mono">{INSTALL_COMMAND}</code>
+              <Fa icon={faPaste} size="xs" />
+            </button>
+          </div>
+        {/if}
+      {/if}
+    {/if}
+
+    <!-- Other providers -->
+    {#each providerOptions.filter((p) => p.id !== 'auggie') as provider (provider.id)}
+      {@const isActive = activeProviderStore.activeProviderId === provider.id}
+      <div>
+        <div class="flex items-start justify-between gap-4">
+          <div class="space-y-1">
+            <div class="flex items-center gap-2 h-7">
+              {@render providerIcon(provider.id)}
+              <span class="text-sm text-foreground">{provider.name}</span>
+              <!-- Path configuration -->
+              <div class="-my-1">
+                <ProviderPathConfig
+                  providerId={provider.id}
+                  providerName={provider.name}
+                  cliCommand={provider.command}
+                  configuredPath={providerPaths[provider.id]}
+                  resolvedPath={resolvedPaths[provider.id]}
+                  isInstalled={provider.available}
+                  onPathChange={(path) => handlePathChange(provider.id, path)}
+                />
+              </div>
+              {#if provider.available && (auggieLoading || mcpLoading)}
+                <div class="h-3 w-16 bg-muted/50 rounded animate-pulse"></div>
+              {:else if provider.available && auggieStatus?.installed && auggieStatus?.authenticated}
+                <!-- MCP button for auggie-enabled providers -->
+                {#if setupInProgress[provider.id]}
+                  <Button size="xs" variant="ghost" class="flex items-center gap-1">
+                    <Fa icon={faCircleNotch} class="w-3 h-3 text-muted-foreground animate-spin" />
+                    <span class="text-xs text-muted-foreground">Setting up...</span>
+                  </Button>
+                {:else if uninstallInProgress[provider.id]}
+                  <Button size="xs" variant="ghost" class="flex items-center gap-1">
+                    <Fa icon={faCircleNotch} class="w-3 h-3 text-muted-foreground animate-spin" />
+                    <span class="text-xs text-muted-foreground">Removing...</span>
+                  </Button>
+                {:else if mcpConfigured[provider.id]}
+                  <Button
+                    onclick={() => handleUninstallMcp(provider.id)}
+                    title="Remove Auggie Context Engine MCP from {provider.name}"
+                    size="xs"
+                    variant="ghost"
+                    class="group"
+                  >
+                    <Logo width={11} />
+                    <span>Context Engine</span>
+                    <Fa
+                      icon={faXmark}
+                      class="w-2.5 h-2.5 text-destructive-foreground hidden group-hover:inline"
+                    />
+                  </Button>
+                {:else}
+                  <Button
+                    onclick={() => handleSetupMcp(provider.id)}
+                    size="xs"
+                    variant="outline"
+                    title="Add Auggie Context Engine MCP to {provider.name}"
+                  >
+                    <Logo width={11} class="group-hover:hidden" />
+                    <span>Enable Context Engine</span>
+                  </Button>
+                {/if}
+              {/if}
+            </div>
+          </div>
+
+          <div class="flex items-center gap-5 text-xs">
+            {#if provider.available}
+              {#if isActive}
+                <span class="text-xs text-muted-foreground flex items-center gap-1"> Default </span>
+              {:else}
+                <button
+                  type="button"
+                  class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+                  onclick={() => handleSelectProvider(provider.id)}
+                  disabled={selectingProviderId !== null}
+                >
+                  {selectingProviderId === provider.id ? 'Switching...' : 'Set as default'}
+                </button>
+              {/if}
+            {:else}
+              <button
+                type="button"
+                class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+                onclick={() => openDocs(provider.docsUrl, true)}
               >
                 Install
               </button>
             {/if}
-          {:else if needsUpdate}
-            {#if actionInProgress}
-              <span class="text-muted-foreground">Updating...</span>
-            {:else}
-              <button
-                type="button"
-                class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
-                onclick={installAuggie}
-              >
-                Update
-              </button>
-            {/if}
-          {:else if !auggieStatus?.authenticated}
-            {#if authInProgress || waitingForBrowserAuth}
-              <span class="text-muted-foreground">Waiting for authorization...</span>
-            {:else}
-              <button
-                type="button"
-                class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
-                onclick={startAuth}
-              >
-                Login
-              </button>
-            {/if}
-          {:else if !isAuggieActive}
-            <button
-              type="button"
-              class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
-              onclick={() => handleSelectProvider('auggie')}
-              disabled={selectingProviderId !== null}
-            >
-              {selectingProviderId === 'auggie' ? 'Switching...' : 'Set as default'}
-            </button>
-          {:else if isAuggieActive}
-            <span class="text-xs text-muted-foreground flex items-center gap-1"> Default </span>
-          {/if}
+          </div>
         </div>
       </div>
-
-      <!-- Waiting for browser auth (localhost OAuth flow) -->
-      {#if waitingForBrowserAuth}
-        <div
-          class="flex flex-col gap-2 p-3 bg-muted/50 rounded-lg ml-0"
-          transition:slide={{ axis: 'y', duration: 200 }}
-        >
-          <p class="text-xs text-muted-foreground">Waiting for browser authentication...</p>
-          {#if authUrl}
-            <button
-              type="button"
-              class="text-xs text-muted-foreground hover:text-foreground text-left bg-transparent border-none p-0 cursor-pointer transition-colors"
-              onclick={() => authUrl && shell.open(authUrl)}
-            >
-              Browser didn't open? <span class="underline">Click here</span>
-            </button>
-          {/if}
-          <div class="flex gap-2 text-xs">
-            <button
-              type="button"
-              class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium disabled:opacity-50"
-              onclick={() => checkAuthPollOnce()}
-              disabled={authPollCheckInFlight}
-            >
-              {authPollCheckInFlight ? 'Checking...' : 'Check now'}
-            </button>
-            <button
-              type="button"
-              class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
-              onclick={() => {
-                stopAuthPolling();
-                waitingForBrowserAuth = false;
-                showAuthInput = true;
-              }}
-            >
-              Paste code manually instead
-            </button>
-          </div>
-        </div>
-      {/if}
-
-      <!-- Auth input (for Auggie) -->
-      {#if showAuthInput}
-        <div
-          class="flex flex-col gap-2 p-3 bg-muted/50 rounded-lg ml-0"
-          transition:slide={{ axis: 'y', duration: 200 }}
-        >
-          {#if authError}
-            <p class="text-xs text-destructive-foreground">{authError}</p>
-          {/if}
-          <textarea
-            bind:value={authInput}
-            placeholder={'e.g. {"code":"...","state":"...","tenant_url":"..."}'}
-            class="w-full h-16 p-2 bg-background border border-border rounded font-mono text-xs resize-none outline-none focus:border-primary/50 transition-colors"
-          ></textarea>
-          {#if authUrl}
-            <button
-              type="button"
-              class="text-xs text-muted-foreground hover:text-foreground text-left bg-transparent border-none p-0 cursor-pointer transition-colors"
-              onclick={() => authUrl && shell.open(authUrl)}
-            >
-              Browser didn't open? <span class="underline">Click here</span>
-            </button>
-          {/if}
-          <div class="flex gap-2 text-xs">
-            <button
-              type="button"
-              class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium disabled:opacity-50"
-              onclick={completeAuth}
-              disabled={authInProgress || !authInput.trim()}
-            >
-              {authInProgress ? 'Completing...' : 'Complete Login'}
-            </button>
-            <span class="text-muted-foreground/30">·</span>
-            <button
-              type="button"
-              class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
-              onclick={() => {
-                showAuthInput = false;
-                authInput = '';
-                authError = null;
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      {/if}
-
-      <!-- Manual install fallback -->
-      {#if showManualInstall && installError}
-        <div
-          class="flex flex-col gap-2 p-3 bg-destructive/5 border border-destructive/20 rounded-lg"
-          transition:slide={{ axis: 'y', duration: 200 }}
-        >
-          <p class="text-xs text-destructive-foreground">{installError}</p>
-          {#if installErrorType === 'permission'}
-            <p class="text-xs text-muted-foreground">
-              Try running with sudo or fix npm permissions.
-            </p>
-          {:else if installErrorType === 'missing_npm'}
-            <p class="text-xs text-muted-foreground">
-              Install <a href="https://nodejs.org" class="underline text-primary"
-                onclick={(e) => { e.preventDefault(); const wsId = workspaceStore.current?.id; if (wsId) handleLink('https://nodejs.org', { workspaceId: wsId as WorkspaceId, event: e }); }}
-                >Node.js</a
-              > first.
-            </p>
-          {/if}
-          <button
-            type="button"
-            class="flex items-center gap-1.5 px-2 py-1 bg-muted border border-border rounded text-xs text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-colors w-fit cursor-pointer"
-            onclick={() => copyCommand(INSTALL_COMMAND)}
-          >
-            <code class="font-mono">{INSTALL_COMMAND}</code>
-            <Fa icon={faPaste} size="xs" />
-          </button>
-        </div>
-      {/if}
-    {/if}
+    {/each}
   {/if}
-
-  <!-- Other providers -->
-  {#each providerOptions.filter((p) => p.id !== 'auggie') as provider (provider.id)}
-    {@const isActive = activeProviderStore.activeProviderId === provider.id}
-    <div>
-      <div class="flex items-start justify-between gap-4">
-        <div class="space-y-1">
-          <div class="flex items-center gap-2 h-7">
-            {@render providerIcon(provider.id)}
-            <span class="text-sm text-foreground">{provider.name}</span>
-            <!-- Path configuration -->
-            <div class="-my-1">
-              <ProviderPathConfig
-                providerId={provider.id}
-                providerName={provider.name}
-                cliCommand={provider.command}
-                configuredPath={providerPaths[provider.id]}
-                resolvedPath={resolvedPaths[provider.id]}
-                isInstalled={provider.available}
-                onPathChange={(path) => handlePathChange(provider.id, path)}
-              />
-            </div>
-            {#if provider.available && (auggieLoading || mcpLoading)}
-              <div class="h-3 w-16 bg-muted/50 rounded animate-pulse"></div>
-            {:else if provider.available && auggieStatus?.installed && auggieStatus?.authenticated}
-              <!-- MCP button for auggie-enabled providers -->
-              {#if setupInProgress[provider.id]}
-                <Button size="xs" variant="ghost" class="flex items-center gap-1">
-                  <Fa icon={faCircleNotch} class="w-3 h-3 text-muted-foreground animate-spin" />
-                  <span class="text-xs text-muted-foreground">Setting up...</span>
-                </Button>
-              {:else if uninstallInProgress[provider.id]}
-                <Button size="xs" variant="ghost" class="flex items-center gap-1">
-                  <Fa icon={faCircleNotch} class="w-3 h-3 text-muted-foreground animate-spin" />
-                  <span class="text-xs text-muted-foreground">Removing...</span>
-                </Button>
-              {:else if mcpConfigured[provider.id]}
-                <Button
-                  onclick={() => handleUninstallMcp(provider.id)}
-                  title="Remove Auggie Context Engine MCP from {provider.name}"
-                  size="xs"
-                  variant="ghost"
-                  class="group"
-                >
-                  <Logo width={11} />
-                  <span>Context Engine</span>
-                  <Fa
-                    icon={faXmark}
-                    class="w-2.5 h-2.5 text-destructive-foreground hidden group-hover:inline"
-                  />
-                </Button>
-              {:else}
-                <Button
-                  onclick={() => handleSetupMcp(provider.id)}
-                  size="xs"
-                  variant="outline"
-                  title="Add Auggie Context Engine MCP to {provider.name}"
-                >
-                  <Logo width={11} class="group-hover:hidden" />
-                  <span>Enable Context Engine</span>
-                </Button>
-              {/if}
-            {/if}
-          </div>
-        </div>
-
-        <div class="flex items-center gap-5 text-xs">
-          {#if provider.available}
-            {#if isActive}
-              <span class="text-xs text-muted-foreground flex items-center gap-1"> Default </span>
-            {:else}
-              <button
-                type="button"
-                class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
-                onclick={() => handleSelectProvider(provider.id)}
-                disabled={selectingProviderId !== null}
-              >
-                {selectingProviderId === provider.id ? 'Switching...' : 'Set as default'}
-              </button>
-            {/if}
-          {:else}
-            <button
-              type="button"
-              class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
-              onclick={() => openDocs(provider.docsUrl, true)}
-            >
-              Install
-            </button>
-          {/if}
-        </div>
-      </div>
-    </div>
-  {/each}
 </div>
 
 {#snippet providerIcon(providerId: string)}
@@ -1055,11 +1073,24 @@
         ></svg
       >
     {:else if providerId === 'cortex'}
-      <svg class="size-5" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 2L13.09 4.26L15.5 3.5L14.74 5.91L17 7L14.74 8.09L15.5 10.5L13.09 9.74L12 12L10.91 9.74L8.5 10.5L9.26 8.09L7 7L9.26 5.91L8.5 3.5L10.91 4.26L12 2Z" />
-        <path d="M12 12L13.09 14.26L15.5 13.5L14.74 15.91L17 17L14.74 18.09L15.5 20.5L13.09 19.74L12 22L10.91 19.74L8.5 20.5L9.26 18.09L7 17L9.26 15.91L8.5 13.5L10.91 14.26L12 12Z" />
-        <path d="M2 12L4.26 13.09L3.5 15.5L5.91 14.74L7 17L8.09 14.74L10.5 15.5L9.74 13.09L12 12L9.74 10.91L10.5 8.5L8.09 9.26L7 7L5.91 9.26L3.5 8.5L4.26 10.91L2 12Z" />
-        <path d="M12 12L14.26 13.09L13.5 15.5L15.91 14.74L17 17L18.09 14.74L20.5 15.5L19.74 13.09L22 12L19.74 10.91L20.5 8.5L18.09 9.26L17 7L15.91 9.26L13.5 8.5L14.26 10.91L12 12Z" />
+      <svg
+        class="size-5"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="M12 2L13.09 4.26L15.5 3.5L14.74 5.91L17 7L14.74 8.09L15.5 10.5L13.09 9.74L12 12L10.91 9.74L8.5 10.5L9.26 8.09L7 7L9.26 5.91L8.5 3.5L10.91 4.26L12 2Z"
+        />
+        <path
+          d="M12 12L13.09 14.26L15.5 13.5L14.74 15.91L17 17L14.74 18.09L15.5 20.5L13.09 19.74L12 22L10.91 19.74L8.5 20.5L9.26 18.09L7 17L9.26 15.91L8.5 13.5L10.91 14.26L12 12Z"
+        />
+        <path
+          d="M2 12L4.26 13.09L3.5 15.5L5.91 14.74L7 17L8.09 14.74L10.5 15.5L9.74 13.09L12 12L9.74 10.91L10.5 8.5L8.09 9.26L7 7L5.91 9.26L3.5 8.5L4.26 10.91L2 12Z"
+        />
+        <path
+          d="M12 12L14.26 13.09L13.5 15.5L15.91 14.74L17 17L18.09 14.74L20.5 15.5L19.74 13.09L22 12L19.74 10.91L20.5 8.5L18.09 9.26L17 7L15.91 9.26L13.5 8.5L14.26 10.91L12 12Z"
+        />
       </svg>
     {:else}
       <!-- Fallback for unknown providers -->
