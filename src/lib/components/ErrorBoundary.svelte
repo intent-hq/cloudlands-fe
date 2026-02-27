@@ -162,6 +162,15 @@
           return;
         }
 
+        // Skip Svelte transition reset errors - benign race condition when {#each} blocks
+        // reconcile while crossfade transitions are in-flight (e.g., during workspace switching)
+        if (
+          errorMessage.includes("Cannot read properties of undefined (reading 'reset')") &&
+          event.error?.stack?.includes('transitions')
+        ) {
+          return;
+        }
+
         // Only handle errors from this component tree
         if (event.error && !hasError) {
           handleError(event.error);
@@ -380,6 +389,8 @@
   const err = error instanceof Error ? error : new Error(String(error));
   // Skip Monaco "Canceled" errors - benign cancellations during editor disposal/navigation
   if (err.message === 'Canceled' || err.name === 'Canceled') return;
+  // Skip Svelte transition reset errors - benign race condition during {#each} reconciliation
+  if (err.message?.includes("Cannot read properties of undefined (reading 'reset')") && err.stack?.includes('transitions')) return;
   logger.error(`[ErrorBoundary] Render error in ${componentName}:`, err);
   if (onError) onError(err);
 }}>

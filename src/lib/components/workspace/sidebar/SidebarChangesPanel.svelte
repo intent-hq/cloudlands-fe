@@ -4049,8 +4049,8 @@
                             {#each group.files as file (file.path)}
                               <div
                                 data-file-key="unstaged:{file.path}"
-                                in:receive|global={{ key: file.path }}
-                                out:send|global={{ key: file.path }}
+                                in:receive={{ key: file.path }}
+                                out:send={{ key: file.path }}
                               >
                                 <FileRow
                                   {file}
@@ -4082,8 +4082,8 @@
                     {#each unstagedChanges as change (change.id)}
                       <div
                         data-file-key="unstaged:{change.relativePath}"
-                        in:receive|global={{ key: change.relativePath }}
-                        out:send|global={{ key: change.relativePath }}
+                        in:receive={{ key: change.relativePath }}
+                        out:send={{ key: change.relativePath }}
                         animate:flip={{ duration: isWorkspaceSwitching ? 0 : 100 }}
                       >
                         <FileRow
@@ -4267,8 +4267,8 @@
                             {#each group.files as file (file.path)}
                               <div
                                 data-file-key="staged:{file.path}"
-                                in:receive|global={{ key: file.path }}
-                                out:send|global={{ key: file.path }}
+                                in:receive={{ key: file.path }}
+                                out:send={{ key: file.path }}
                               >
                                 <FileRow
                                   {file}
@@ -4298,8 +4298,8 @@
                     {#each stagedChanges as change (change.id)}
                       <div
                         data-file-key="staged:{change.relativePath}"
-                        in:receive|global={{ key: change.relativePath }}
-                        out:send|global={{ key: change.relativePath }}
+                        in:receive={{ key: change.relativePath }}
+                        out:send={{ key: change.relativePath }}
                       >
                         <FileRow
                           file={toUIFileChange(change, true)}
