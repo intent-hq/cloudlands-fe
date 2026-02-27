@@ -5797,9 +5797,8 @@
           <!-- areAllPRsMerged is gated by hasResetToTrunk to allow creating new PRs after reset -->
           {#if (isMergedToTrunk || isWorkspaceCompleted || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) && (!mergeHeadSha || mergeHeadSha === allCommits[0]?.hash)}
             <div class="mt-4 pt-4 border-t border-border/50 ml-4 space-y-3">
-              <!-- Reset and continue button - hidden when already at trunk HEAD, when there are uncommitted changes,
-                   or when we can't confirm no new commits were made since merge (prevents data loss) -->
-              {#if aheadOfTrunk != null && aheadOfTrunk !== 0 && !hasStaged && !hasUnstaged && (mergeHeadSha ? mergeHeadSha === allCommits[0]?.hash : isContentMergedToTrunk)}
+              <!-- Reset and continue button - hidden when there are uncommitted changes or unpushed commits -->
+              {#if !hasStaged && !hasUnstaged && !hasUnpushedCommits}
                 <div>
                   <Button
                     variant="outline"
