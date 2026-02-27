@@ -17,9 +17,9 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { defineMonacoThemes, getActiveMonacoThemeName } from '$lib/utils/monaco-theme';
   import { themeManager } from '$lib/utils/theme';
+  import { Skeleton } from '$lib/components/ui/skeleton';
   import Fa from 'svelte-fa';
   import {
-    faSpinner,
     faExclamationTriangle,
     faEye,
     faExternalLinkAlt,
@@ -2772,10 +2772,25 @@
   style:height={compact && compactHeight ? `${compactHeight}px` : undefined}
 >
   {#if loading}
-    <div class="flex items-center justify-center h-full">
-      <div class="text-muted-foreground">
-        <Fa icon={faSpinner} spin class="mr-2" />
-        Loading diff...
+    <!-- Skeleton loader that mimics diff appearance -->
+    <div class="diff-skeleton">
+      <!-- Header skeleton -->
+      <div class="diff-skeleton-header">
+        <Skeleton class="h-4 w-48" />
+        <Skeleton class="h-4 w-24" />
+      </div>
+      <!-- Code lines skeleton -->
+      <div class="diff-skeleton-content">
+        {#each Array(16) as _, i}
+          <div
+            class="diff-skeleton-line"
+            class:diff-skeleton-line--added={i % 5 === 2}
+            class:diff-skeleton-line--removed={i % 7 === 3}
+          >
+            <Skeleton class="h-3 w-6 shrink-0" />
+            <Skeleton class="h-3" style="width: {40 + ((i * 17) % 50)}%" />
+          </div>
+        {/each}
       </div>
     </div>
   {:else if contentTooLarge}
@@ -3083,5 +3098,44 @@
 
   :global(.dark .diff-editor-container .monaco-editor .diff-hidden-lines .center) {
     color: #6b7280 !important;
+  }
+
+  /* Diff skeleton loader styles */
+  .diff-skeleton {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: hsl(var(--background));
+  }
+
+  .diff-skeleton-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid hsl(var(--border));
+    background: hsl(var(--muted) / 0.3);
+  }
+
+  .diff-skeleton-content {
+    flex: 1;
+    padding: 0.5rem 0;
+    overflow: hidden;
+  }
+
+  .diff-skeleton-line {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.25rem 1rem;
+    height: 1.5rem;
+  }
+
+  .diff-skeleton-line--added {
+    background: hsl(var(--success) / 0.08);
+  }
+
+  .diff-skeleton-line--removed {
+    background: hsl(var(--destructive) / 0.08);
   }
 </style>
