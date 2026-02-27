@@ -702,9 +702,11 @@
                 bind:this={fileSearchInputRef}
                 bind:value={fileSearchQuery}
                 type="text"
-                class="bg-transparent text-[0.82rem]! border-0 pl-5 focus:ring-0! focus:outline-none! empty:cursor-pointer h-5 w-full"
+                noFocusStyle
+                class="bg-transparent text-[0.82rem]! border-0 pl-5 empty:cursor-pointer h-5 w-full"
                 onfocus={() => (isSearchInputFocused = true)}
                 onblur={() => (isSearchInputFocused = false)}
+                onkeydown={(e: KeyboardEvent) => filesPanelRef?.handleSearchKeyDown(e)}
               />
               {#if fileSearchQuery}
                 <button

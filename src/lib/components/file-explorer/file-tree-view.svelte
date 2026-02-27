@@ -1,7 +1,7 @@
 <script lang="ts">
   import { logger } from '$lib/utils/client-logger';
 
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
 
   // Constants
   const GIT_STATUS_REFRESH_DELAY = 300; // ms to wait for git to detect changes
@@ -90,6 +90,78 @@
   let searchResults = $state<SearchResult[]>([]);
   let isSearching = $state(false);
   let searchAbortController: AbortController | null = null;
+
+  // Search keyboard navigation state
+  let searchSelectedIndex = $state(-1);
+  let searchResultsContainerRef: HTMLElement | null = $state(null);
+
+  // Reset selected index when search results change — auto-select first item
+  $effect(() => {
+    searchSelectedIndex = searchResults.length > 0 ? 0 : -1;
+  });
+
+  function scrollSearchSelectedIntoView() {
+    if (!searchResultsContainerRef || searchSelectedIndex < 0) return;
+    const items = searchResultsContainerRef.querySelectorAll('[data-search-result-index]');
+    const selectedItem = items[searchSelectedIndex] as HTMLElement | undefined;
+    selectedItem?.scrollIntoView({ block: 'nearest' });
+  }
+
+  /**
+   * Handle keyboard navigation from the search input.
+   * When there are search results, navigates the results list.
+   * When search is empty, forwards navigation keys to the file tree.
+   */
+  export function handleSearchKeyDown(e: KeyboardEvent) {
+    const hasQuery = searchQuery && searchQuery.trim();
+
+    // When search is active and has results, navigate the search results
+    if (hasQuery && searchResults.length > 0) {
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault();
+          searchSelectedIndex = Math.min(searchSelectedIndex + 1, searchResults.length - 1);
+          tick().then(scrollSearchSelectedIntoView);
+          return;
+        case 'ArrowUp':
+          e.preventDefault();
+          searchSelectedIndex = Math.max(searchSelectedIndex - 1, 0);
+          tick().then(scrollSearchSelectedIntoView);
+          return;
+        case 'Enter':
+          e.preventDefault();
+          if (searchSelectedIndex >= 0 && searchResults[searchSelectedIndex]) {
+            const result = searchResults[searchSelectedIndex];
+            selectedFile = result.path;
+            onFileSelect?.(result.path);
+          }
+          return;
+      }
+    }
+
+    // When search is empty, forward vertical navigation to the file tree.
+    // Only ArrowUp/ArrowDown/Enter are safe to intercept — other keys like
+    // ArrowLeft/Right, Home, End, Space have standard text-input roles
+    // (cursor movement, typing) and must not be captured.
+    if (!hasQuery && virtualizedTreeRef) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        virtualizedTreeRef.handleKeydown(e);
+        return;
+      }
+      if (e.key === 'Enter') {
+        // VirtualizedFileTree's Enter triggers rename; we want open/toggle instead,
+        // which matches its Space-key behaviour.
+        e.preventDefault();
+        const spaceEvent = new KeyboardEvent('keydown', {
+          key: ' ',
+          bubbles: true,
+          cancelable: true,
+        });
+        virtualizedTreeRef.handleKeydown(spaceEvent);
+        return;
+      }
+    }
+  }
 
   // Debounced search effect - queries all files when there's a search query
   $effect(() => {
@@ -767,28 +839,31 @@
         <div class="text-xs text-muted-foreground py-4 text-center">No files found</div>
       {:else}
         <ScrollArea class="h-full">
-          <ListContainer spacing="compact">
-            {#each searchResults as result (result.path)}
-              <div data-file-path={result.path}>
-                <ListItem
-                  active={selectedFile === result.path}
-                  title={result.name}
-                  subtitle={result.relativePath}
-                  onclick={() => {
-                    selectedFile = result.path;
-                    onFileSelect?.(result.path);
-                  }}
-                  size="sm"
-                >
-                  {#snippet iconSnippet()}
-                    <span class="w-4 h-4 [&>svg]:w-full [&>svg]:h-full">
-                      {@html getFileTypeIconSvg(result.name)}
-                    </span>
-                  {/snippet}
-                </ListItem>
-              </div>
-            {/each}
-          </ListContainer>
+          <div bind:this={searchResultsContainerRef}>
+            <ListContainer spacing="compact">
+              {#each searchResults as result, i (result.path)}
+                <div data-file-path={result.path} data-search-result-index={i}>
+                  <ListItem
+                    active={selectedFile === result.path}
+                    selected={searchSelectedIndex === i}
+                    title={result.name}
+                    subtitle={result.relativePath}
+                    onclick={() => {
+                      selectedFile = result.path;
+                      onFileSelect?.(result.path);
+                    }}
+                    size="sm"
+                  >
+                    {#snippet iconSnippet()}
+                      <span class="w-4 h-4 [&>svg]:w-full [&>svg]:h-full">
+                        {@html getFileTypeIconSvg(result.name)}
+                      </span>
+                    {/snippet}
+                  </ListItem>
+                </div>
+              {/each}
+            </ListContainer>
+          </div>
         </ScrollArea>
       {/if}
     {:else if store.rootNode}
@@ -809,7 +884,6 @@
         {onSelectAgent}
         {getGitStatusColor}
         {isFileModified}
-        isExpanded={(path) => store.isExpanded(path)}
         {onExternalFilesDrop}
       />
     {:else}

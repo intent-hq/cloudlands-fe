@@ -376,6 +376,11 @@
   export function startCreatingFile(dirPath?: string) {
     fileTreeRef?.startCreatingFile(dirPath);
   }
+
+  // Export search keyboard navigation for parent components
+  export function handleSearchKeyDown(e: KeyboardEvent) {
+    fileTreeRef?.handleSearchKeyDown(e);
+  }
 </script>
 
 <div class={cn('pb-3', className)}>

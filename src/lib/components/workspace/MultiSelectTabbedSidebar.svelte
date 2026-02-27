@@ -1173,6 +1173,8 @@
                         type="text"
                         placeholder="Search files..."
                         class="h-7 pl-7 pr-6 text-xs bg-transparent! border-0 placeholder:text-muted-foreground/50!"
+                        noFocusStyle
+                        onkeydown={(e: KeyboardEvent) => filesPanelRef?.handleSearchKeyDown(e)}
                       />
                       {#if fileSearchQuery}
                         <button
