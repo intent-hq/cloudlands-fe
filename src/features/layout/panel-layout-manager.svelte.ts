@@ -376,6 +376,24 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
     state.root = JSON.parse(JSON.stringify(snapshot.root));
     state.panels = JSON.parse(JSON.stringify(snapshot.panels));
     state.focusedPanelId = snapshot.focusedPanelId;
+
+    // If spec-tab deferral is active, strip any spec tabs that were in the snapshot.
+    // Without this, undo/redo could restore spec tabs that the deferral mechanism
+    // intentionally removed, breaking the slide-in animation flow.
+    if (deferSpecTab) {
+      for (const panel of Object.values(state.panels)) {
+        const before = panel.tabs.length;
+        panel.tabs = panel.tabs.filter(
+          (t) => !(t.type === 'note' && t.noteId === 'spec'),
+        );
+        if (panel.tabs.length < before && panel.activeTabId) {
+          if (!panel.tabs.find((t) => t.id === panel.activeTabId)) {
+            panel.activeTabId = panel.tabs[0]?.id ?? null;
+          }
+        }
+      }
+    }
+
     persistState();
   }
 

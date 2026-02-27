@@ -2339,7 +2339,11 @@
       // Check if the spec actually has content now.
       // Prefer event payload content (available from domain events), but always
       // fall back to the notes store (the canonical source of truth).
-      const eventContent = payload.content || payload.data?.content || payload.changes?.content;
+      const eventContent =
+        payload.content ||
+        payload.data?.content ||
+        payload.changes?.content ||
+        payload.metadata?.changes?.content;
       const specNote = notesStateManager.spec;
       const specContent = eventContent || specNote?.content || '';
 
@@ -2357,31 +2361,54 @@
       }
     });
 
-    // Delayed fallback: if after 8 seconds the spec hasn't been opened via
+    // Delayed fallback: if after N seconds the spec hasn't been opened via
     // note:updated (i.e. the agent isn't actively writing), check if the spec
-    // already has content. If so, this is a returning visit with stale
-    // sessionStorage keys — open the spec normally without animation.
-    // If the spec is still empty, the note:updated listener will handle it later.
-    // Only relevant when deferring — otherwise the spec was already handled at load time.
+    // already has content and open it.
     //
-    // NOTE: This timeout MUST be longer than the backend's NOTE_UPDATE_DEBOUNCE_MS
-    // (currently 5 seconds in workspace-event-service.ts). The backend debounces
-    // rapid note:updated events, so we need to wait for the debounce to flush
-    // before concluding that no event is coming. Using 8s to provide a safe margin.
-    const FALLBACK_TIMER_MS = 8000;
-    const fallbackTimer = isDeferring
-      ? setTimeout(() => {
-          if (hasOpened) return;
-          const specNote = notesStateManager.spec;
-          if (specNote?.content && specNote.content.trim().length > 0) {
-            logger.info('[WorkspacePage] Fallback: spec has content but no note:updated received — opening normally', {
+    // When deferring (new workspace): 8s delay to exceed the backend's
+    // NOTE_UPDATE_DEBOUNCE_MS (5s). Handles returning visits with stale
+    // sessionStorage keys.
+    //
+    // When NOT deferring (existing workspace): 2s delay. Handles the case
+    // where a coordinator/background agent wrote the spec while the user was
+    // away (on a different workspace or with the app closed). The spec has
+    // content but the spec tab was never persisted in the layout.
+    // To avoid reopening the spec when the user deliberately closed it, we
+    // only trigger this when a background agent exists in the workspace
+    // (indicating an automated process wrote the spec).
+    const FALLBACK_TIMER_MS = isDeferring ? 8000 : 2000;
+    const fallbackTimer = setTimeout(() => {
+        if (hasOpened) return;
+        const specNote = notesStateManager.spec;
+        if (!specNote?.content || specNote.content.trim().length === 0) return;
+
+        if (!isDeferring) {
+          // Only auto-open if a background agent (coordinator/PR reviewer) exists
+          // in this workspace — this indicates the spec was written by an automated
+          // process, not manually by the user. Without this guard, we'd reopen the
+          // spec on every visit even if the user deliberately closed the tab.
+          const workspaceAgents = unifiedStateStore.getAgentsForWorkspace(
+            WorkspaceId(capturedWorkspaceId),
+          );
+          const hasBackgroundAgent = workspaceAgents.some(
+            (a: AgentSession) => a.isBackground || a.metadata?.isBackground,
+          );
+          if (!hasBackgroundAgent) {
+            logger.info('[WorkspacePage] Fallback: spec has content but no background agents — skipping auto-open', {
               workspaceId: capturedWorkspaceId,
-              contentLength: specNote.content.trim().length,
+              agentCount: workspaceAgents.length,
             });
-            openSpecNormally();
+            return;
           }
-        }, FALLBACK_TIMER_MS)
-      : null;
+        }
+
+        logger.info('[WorkspacePage] Fallback: spec has content but no spec tab open — opening normally', {
+          workspaceId: capturedWorkspaceId,
+          contentLength: specNote.content.trim().length,
+          isDeferring,
+        });
+        openSpecNormally();
+      }, FALLBACK_TIMER_MS);
 
     // Agent idle fallback: when the spec-writer agent finishes streaming
     // without ever writing to the spec note, the note:updated event never
