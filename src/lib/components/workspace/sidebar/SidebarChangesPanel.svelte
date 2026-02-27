@@ -545,14 +545,26 @@
       // Reset form state that is workspace-specific to prevent leaking between workspaces
       targetBranch = '';
       exportPath = '';
-      // Reset merge/reset state to prevent stale flags from enabling destructive actions on wrong workspace
-      hasResetToTrunk = false;
-      isMergedToTrunk = false;
-      mergeHeadSha = null;
-      isContentMergedToTrunk = false;
-      aheadOfTrunk = null;
+      // Restore cached post-merge state for the new workspace (instant button display)
+      // Use getTransientUIStore directly since cachedTransientStore still points to old workspace
+      const newWsTransientStore = workspaceId ? getTransientUIStore(workspaceId) : null;
+      const cachedPostMerge = newWsTransientStore?.sidebarChanges.postMergeState;
+      if (cachedPostMerge) {
+        hasResetToTrunk = cachedPostMerge.hasResetToTrunk;
+        isMergedToTrunk = cachedPostMerge.isMergedToTrunk;
+        mergeHeadSha = cachedPostMerge.mergeHeadSha;
+        isContentMergedToTrunk = cachedPostMerge.isContentMergedToTrunk;
+        aheadOfTrunk = cachedPostMerge.aheadOfTrunk;
+        hasRemote = cachedPostMerge.hasRemote;
+      } else {
+        hasResetToTrunk = false;
+        isMergedToTrunk = false;
+        mergeHeadSha = null;
+        isContentMergedToTrunk = false;
+        aheadOfTrunk = null;
+        hasRemote = true;
+      }
       isResettingToTrunk = false;
-      hasRemote = true;
       // Only reset to false if the new workspace isn't already loaded
       // This prevents a brief flash when accordion is first opened for an already-loaded workspace
       if (storeLoading || storeWsId !== workspaceId) {
@@ -1239,6 +1251,31 @@
         // This prevents the reconnect logic from finding stale state on next mount
         transientStore.setSidebarPRExecutorState(null);
       }
+    });
+  });
+
+  // Sync post-merge state to transient store for instant restore on workspace switch
+  $effect(() => {
+    // Track all the post-merge signals
+    const currentAheadOfTrunk = aheadOfTrunk;
+    const currentIsContentMergedToTrunk = isContentMergedToTrunk;
+    const currentHasRemote = hasRemote;
+    const currentIsMergedToTrunk = isMergedToTrunk;
+    const currentMergeHeadSha = mergeHeadSha;
+    const currentHasResetToTrunk = hasResetToTrunk;
+
+    const transientStore = untrack(() => getTransientStore());
+    if (!transientStore) return;
+
+    untrack(() => {
+      transientStore.setPostMergeState({
+        aheadOfTrunk: currentAheadOfTrunk,
+        isContentMergedToTrunk: currentIsContentMergedToTrunk,
+        hasRemote: currentHasRemote,
+        isMergedToTrunk: currentIsMergedToTrunk,
+        mergeHeadSha: currentMergeHeadSha,
+        hasResetToTrunk: currentHasResetToTrunk,
+      });
     });
   });
 

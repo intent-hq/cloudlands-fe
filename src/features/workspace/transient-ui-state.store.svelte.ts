@@ -89,9 +89,19 @@ export type SidebarTabId =
  * Persists the createPRWhenReady flag and PR executor state so that
  * navigating away from the workspace doesn't lose pending auto-PR.
  */
+export interface PostMergeState {
+  aheadOfTrunk: number | null;
+  isContentMergedToTrunk: boolean;
+  hasRemote: boolean;
+  isMergedToTrunk: boolean;
+  mergeHeadSha: string | null;
+  hasResetToTrunk: boolean;
+}
+
 export interface SidebarChangesState {
   createPRWhenReady: boolean;
   prDescriptionExecutor: ExecutorState | null;
+  postMergeState: PostMergeState | null;
 }
 
 export interface TransientUIState {
@@ -127,6 +137,7 @@ function createDefaultSidebarChangesState(): SidebarChangesState {
   return {
     createPRWhenReady: false,
     prDescriptionExecutor: null,
+    postMergeState: null,
   };
 }
 
@@ -316,6 +327,11 @@ function createTransientUIStore(workspaceId: string) {
     clearSidebarExecutorStates() {
       state.sidebarChanges.createPRWhenReady = false;
       state.sidebarChanges.prDescriptionExecutor = null;
+      saveState();
+    },
+
+    setPostMergeState(postMergeState: PostMergeState | null) {
+      state.sidebarChanges.postMergeState = postMergeState;
       saveState();
     },
 
