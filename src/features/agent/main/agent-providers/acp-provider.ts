@@ -2290,6 +2290,15 @@ export class ACPProvider extends BaseAgentProvider {
       }
     }
 
+    // Codex: bypass approval prompts and sandbox restrictions so the agent
+    // doesn't stall on "Read file?" / "Run command?" permission dialogs.
+    // Values are TOML-quoted to match the convention used by upsertCodexConfigArgs.
+    if (caps.id === 'codex') {
+      args.push('-c', 'approval_policy="never"');
+      args.push('-c', 'sandbox_mode="danger-full-access"');
+      logger.info('Added Codex approval/sandbox overrides to bypass permission prompts');
+    }
+
     // Log comprehensive agent startup configuration for debugging
     logger.info('Agent configuration', {
       providerId: caps.id,
