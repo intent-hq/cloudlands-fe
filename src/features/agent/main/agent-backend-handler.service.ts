@@ -2960,6 +2960,7 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
           // Emit agent:idle event for agent-to-agent coordination
           // Use the agentName from the outer scope (loaded from persistence at line 643)
           // Pass assistantMessage to ensure lastResponseSummary includes the final message
+          //
           this.emitAgentIdleEvent(
             request.agentId,
             request.workspaceId,

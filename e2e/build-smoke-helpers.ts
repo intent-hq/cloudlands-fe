@@ -480,8 +480,12 @@ export async function waitForFileContent(
  * Send a follow-up message in the active workspace chat.
  *
  * Locates the TipTap rich-text input, types the message, and presses
- * Cmd+Enter to send.  Best-effort — swallows errors so it can be used
+ * Enter to send.  Best-effort — swallows errors so it can be used
  * as a non-critical "nudge" to unblock stuck agents.
+ *
+ * NOTE: We intentionally use plain Enter (normal submit) rather than
+ * Cmd+Enter (force-submit) because force-submit calls stopChat() first,
+ * which can wake sleeping agents via event subscriptions and cause races.
  */
 export async function sendFollowUpMessage(page: Page, message: string): Promise<void> {
   // The chat input is a TipTap/ProseMirror editor with class .tiptap-editor
@@ -496,8 +500,8 @@ export async function sendFollowUpMessage(page: Page, message: string): Promise<
   await editable.click();
   await page.waitForTimeout(200);
   await page.keyboard.type(message, { delay: 5 });
-  // Cmd+Enter to send (macOS)
-  await page.keyboard.press('Meta+Enter');
+  // Enter to send (normal submit, not force-submit)
+  await page.keyboard.press('Enter');
   console.log(`💬 Sent follow-up nudge: "${message}"`);
 }
 

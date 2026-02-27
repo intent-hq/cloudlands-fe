@@ -229,6 +229,9 @@ test.describe('multi-provider smoke tests', () => {
         await waitForAgentCompletion(page, workspaceId, Math.max(agentTimeout, 10_000));
         await takeScreenshot(page, `mp-${providerId}-agents-complete`);
 
+        // Allow time for coordinator to finish status updates and persistence
+        await page.waitForTimeout(2000);
+
         // --- Phase 2: Find implementor, ask about model ---
         console.log(`🔍 Finding implementor agent for ${providerId}...`);
         const impl = await findImplementorAgent(page);
@@ -265,9 +268,12 @@ test.describe('multi-provider smoke tests', () => {
               .toMatch(expectedPattern);
           }
         }
-        } finally {
-          stopPermissionApprover();
-        }
+
+        // Wait for agents to settle after Phase 2 — the implementor's response
+        // to "What model are you?" triggers the coordinator to wake via event
+        // subscription. We must let that complete before archiving.
+        const settleTimeout = providerTimeout - (Date.now() - start);
+        await waitForAgentCompletion(page, workspaceId, Math.max(settleTimeout, 15_000));
 
         const durationMs = Date.now() - start;
         await takeScreenshot(page, `mp-${providerId}-pass`);
@@ -283,6 +289,9 @@ test.describe('multi-provider smoke tests', () => {
 
         if (providerId === 'auggie') {
           expect(true).toBe(true);
+        }
+        } finally {
+          stopPermissionApprover();
         }
       } catch (error) {
         const durationMs = Date.now() - start;
