@@ -27,26 +27,18 @@
   import { WorkspaceStatusEnum } from '$shared/types';
   import { onMount } from 'svelte';
 
-  // Reactivity versions
-  let activeStreamsVersion = $state(0);
-  let unreadVersion = $state(0);
-
+  // Initialize shared subscriptions (idempotent — safe to call from multiple components)
   onMount(() => {
-    activeStreamsTracker.startPolling(2000);
-    const unsubStreams = activeStreamsTracker.subscribe(() => activeStreamsVersion++);
-    const unsubUnread = unreadTrackingService.subscribe(() => unreadVersion++);
-    return () => {
-      unsubStreams();
-      unsubUnread();
-    };
+    sidebarNavStore.initSubscriptions();
   });
 
   // Count unread workspaces only (within 24h)
   const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
   const unreadCount = $derived.by(() => {
-    void activeStreamsVersion;
-    void unreadVersion;
+    // Read shared version counters so this re-runs when streams/unread state changes
+    void sidebarNavStore.activeStreamsVersion;
+    void sidebarNavStore.unreadVersion;
     const now = Date.now();
     let count = 0;
     for (const ws of workspaceStore.items) {

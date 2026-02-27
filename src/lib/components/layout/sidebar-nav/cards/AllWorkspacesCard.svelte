@@ -38,9 +38,6 @@
     highlightedIndex = filteredWorkspaces.length > 0 ? 0 : -1;
   });
 
-  let activeStreamsVersion = $state(0);
-  let unreadVersion = $state(0);
-
   // Auto-focus search when expanded
   $effect(() => {
     if (expanded && searchInputEl) {
@@ -48,14 +45,11 @@
     }
   });
 
+  // Use the shared store's version counters (initialised by SidebarNav)
   onMount(() => {
-    activeStreamsTracker.startPolling(2000);
-    const unsubStreams = activeStreamsTracker.subscribe(() => activeStreamsVersion++);
-    const unsubUnread = unreadTrackingService.subscribe(() => unreadVersion++);
-    return () => {
-      unsubStreams();
-      unsubUnread();
-    };
+    sidebarNavStore.initSubscriptions();
+    // Always fetch fresh stream state when the card mounts so data is up-to-date
+    activeStreamsTracker.fetchActiveStreams();
   });
 
   const allWorkspaces = $derived.by(() => {
@@ -142,22 +136,22 @@
   });
 
   function isRunning(ws: Workspace): boolean {
-    void activeStreamsVersion;
+    void sidebarNavStore.activeStreamsVersion;
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id).length > 0;
   }
 
   function getStreamingIds(ws: Workspace): string[] {
-    void activeStreamsVersion;
+    void sidebarNavStore.activeStreamsVersion;
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
   }
 
   function getUnreadAgentIds(ws: Workspace): string[] {
-    void unreadVersion;
+    void sidebarNavStore.unreadVersion;
     return unreadTrackingService.getUnreadAgentIdsForWorkspace(ws.id);
   }
 
   function isUnread(ws: Workspace): boolean {
-    void activeStreamsVersion;
+    void sidebarNavStore.activeStreamsVersion;
     const streamingIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
     if (streamingIds.length > 0) return false;
     return getUnreadAgentIds(ws).length > 0;

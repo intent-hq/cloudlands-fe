@@ -26,24 +26,18 @@
 
   let { expanded = false }: Props = $props();
 
-  let activeStreamsVersion = $state(0);
-  let unreadVersion = $state(0);
-
+  // Use the shared store's version counters (initialised by SidebarNav)
   onMount(() => {
-    activeStreamsTracker.startPolling(2000);
-    const unsubStreams = activeStreamsTracker.subscribe(() => activeStreamsVersion++);
-    const unsubUnread = unreadTrackingService.subscribe(() => unreadVersion++);
-    return () => {
-      unsubStreams();
-      unsubUnread();
-    };
+    sidebarNavStore.initSubscriptions();
+    // Always fetch fresh stream state when the card mounts so data is up-to-date
+    activeStreamsTracker.fetchActiveStreams();
   });
 
   const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
   // Running workspaces (streaming agents)
   const runningWorkspaces = $derived.by(() => {
-    void activeStreamsVersion;
+    void sidebarNavStore.activeStreamsVersion;
     return workspaceStore.items
       .filter((w) => {
         if (w.status === WorkspaceStatusEnum.Archived || w.status === WorkspaceStatusEnum.Deleted)
@@ -62,8 +56,8 @@
 
   // Unread workspaces (not streaming, has unread, updated within last day)
   const unreadWorkspaces = $derived.by(() => {
-    void activeStreamsVersion;
-    void unreadVersion;
+    void sidebarNavStore.activeStreamsVersion;
+    void sidebarNavStore.unreadVersion;
     const now = Date.now();
     return workspaceStore.items
       .filter((w) => {
@@ -89,8 +83,8 @@
 
   // Pinned workspaces (not already in running or unread)
   const pinnedWorkspaces = $derived.by(() => {
-    void activeStreamsVersion;
-    void unreadVersion;
+    void sidebarNavStore.activeStreamsVersion;
+    void sidebarNavStore.unreadVersion;
     const runningIds = new Set(runningWorkspaces.map((r) => r.workspace.id));
     const unreadIds = new Set(unreadWorkspaces.map((u) => u.workspace.id));
     return sidebarNavStore.pinnedIds

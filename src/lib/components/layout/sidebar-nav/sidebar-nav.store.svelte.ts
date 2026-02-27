@@ -4,7 +4,13 @@
  * Manages state for the global sidebar navigation rail.
  * Tracks which item is hovered, which card is open, which panel is open,
  * pinned workspaces, and preserves draft content for the "New Workspace" card.
+ *
+ * Also centralizes reactive tracking for active streams and unread state
+ * so that the badge count and hover card always derive from the same source.
  */
+
+import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
+import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
 
 export type SidebarNavItem = 'home' | 'new-workspace' | 'active' | 'all-workspaces' | 'settings';
 export type AllSpacesViewMode = 'recent' | 'repo' | 'status';
@@ -36,6 +42,32 @@ function savePinnedWorkspaces(ids: string[]) {
 }
 
 class SidebarNavStore {
+  // ── Reactive tracking for active streams & unread state ──
+  // Centralized here so that the badge count and hover card always
+  // derive from the same version counters (no mount-timing drift).
+
+  /** Bumped whenever active-streams data changes */
+  activeStreamsVersion = $state(0);
+
+  /** Bumped whenever unread-tracking data changes */
+  unreadVersion = $state(0);
+
+  /** Whether subscriptions have been initialised */
+  #subscriptionsInitialized = false;
+
+  /**
+   * Idempotent — call from any component that needs reactive stream/unread
+   * data.  Sets up listeners on the first call and is a no-op thereafter.
+   */
+  initSubscriptions(): void {
+    if (this.#subscriptionsInitialized) return;
+    this.#subscriptionsInitialized = true;
+
+    activeStreamsTracker.startPolling(2000);
+    activeStreamsTracker.subscribe(() => this.activeStreamsVersion++);
+    unreadTrackingService.subscribe(() => this.unreadVersion++);
+  }
+
   /** Currently hovered nav item (shows hover card) */
   hoveredItem = $state<SidebarNavItem | null>(null);
 

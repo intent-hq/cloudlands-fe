@@ -6,6 +6,7 @@
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
+  import { onMount } from 'svelte';
 
   interface Props {
     workspace: Workspace | null;
@@ -15,17 +16,33 @@
 
   let { workspace, lineStats, isLoading = false }: Props = $props();
 
+  // Reactive version counters — bumped by service subscriptions so that
+  // $derived blocks re-evaluate when streaming / unread state changes.
+  let activeStreamsVersion = $state(0);
+  let unreadVersion = $state(0);
+
+  onMount(() => {
+    const unsubStreams = activeStreamsTracker.subscribe(() => activeStreamsVersion++);
+    const unsubUnread = unreadTrackingService.subscribe(() => unreadVersion++);
+    return () => {
+      unsubStreams();
+      unsubUnread();
+    };
+  });
+
   // Check if there are line changes
   let hasChanges = $derived(lineStats && (lineStats.additions > 0 || lineStats.deletions > 0));
 
   // Get streaming and unread agent IDs for this workspace
-  let streamingAgentIds = $derived(
-    workspace ? activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspace.id) : [],
-  );
+  let streamingAgentIds = $derived.by(() => {
+    void activeStreamsVersion;
+    return workspace ? activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspace.id) : [];
+  });
 
-  let unreadAgentIds = $derived(
-    workspace ? unreadTrackingService.getUnreadAgentIdsForWorkspace(workspace.id) : [],
-  );
+  let unreadAgentIds = $derived.by(() => {
+    void unreadVersion;
+    return workspace ? unreadTrackingService.getUnreadAgentIdsForWorkspace(workspace.id) : [];
+  });
 
   // Filter out streaming agents from unread list
   let unreadOnlyAgentIds = $derived(unreadAgentIds.filter((id) => !streamingAgentIds.includes(id)));
