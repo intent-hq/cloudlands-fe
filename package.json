@@ -343,7 +343,7 @@
     "mime-types": "^3.0.0",
     "monaco-editor": "^0.54.0",
     "nanoid": "^5.1.5",
-    "node-pty": "^1.1.0-beta37",
+    "node-pty": "1.1.0-beta9",
     "openai": "^6.2.0",
     "rimraf": "^6.0.1",
     "sharp": "^0.34.4",
