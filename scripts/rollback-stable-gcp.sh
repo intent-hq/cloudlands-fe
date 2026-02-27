@@ -80,7 +80,7 @@ X64_DMG="${PRODUCT_NAME}-${VERSION}.dmg"
 
 MISSING=0
 for file in "$ARM64_ZIP" "$X64_ZIP" "$ARM64_DMG" "$X64_DMG"; do
-  if gcloud storage stat "gs://$GCS_BUCKET/$CHANNEL/$file" &>/dev/null; then
+  if gcloud storage ls "gs://$GCS_BUCKET/$CHANNEL/$file" &>/dev/null; then
     echo "   ✓ $file"
   else
     echo "   ✗ $file NOT FOUND"
