@@ -2374,15 +2374,16 @@ app.whenReady().then(async () => {
         logger.warn('Memory pressure detected, triggering cleanup', { level });
         performMemoryCleanup(`memory-pressure-${level}`, { forceGC: level === 'critical' });
       }
-      // CRITICAL: Stop all native @parcel/watcher subscriptions when memory is critical.
+      // Stop all native @parcel/watcher subscriptions on ANY memory pressure.
       // Under high memory pressure the native C++ layer can throw an unrecoverable
       // Napi::Error that terminates the entire process via libc++abi / std::terminate().
-      // Stopping the watchers proactively prevents this crash regardless of which
-      // code path (workspace:open, workspace:create, etc.) is running.
-      if (level === 'critical') {
+      // The crash in 0.2.12 happened at 952MB (between warning=512MB and critical=1024MB),
+      // so we must stop watchers at warning level too, not just critical.
+      // Watchers restart on next workspace:open when memory is lower.
+      if (level === 'warning' || level === 'critical') {
         import('../features/workspace/main/unified-workspace-watcher')
           .then(({ stopAllWatchers }) => stopAllWatchers())
-          .catch((err) => logger.warn('Failed to stop watchers on critical memory pressure', err));
+          .catch((err) => logger.warn('Failed to stop watchers on memory pressure', err));
       }
     });
   });

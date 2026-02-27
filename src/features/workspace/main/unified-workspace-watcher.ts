@@ -350,11 +350,19 @@ export class UnifiedWorkspaceWatcher {
     // an unrecoverable Napi::Error.  Defer the watcher start — callers
     // (getUnifiedWatcher → workspace:open) treat this as non-fatal, and the
     // watcher will be started on the next workspace open when memory is lower.
-    const heapUsedMB = process.memoryUsage().heapUsed / (1024 * 1024);
-    const MEMORY_PRESSURE_THRESHOLD_MB = 768;
-    if (heapUsedMB > MEMORY_PRESSURE_THRESHOLD_MB) {
-      const msg = `Deferring watcher start: heap ${heapUsedMB.toFixed(0)}MB exceeds ${MEMORY_PRESSURE_THRESHOLD_MB}MB threshold`;
-      logger.warn(msg, { workspaceId: this.workspaceId, heapUsedMB: heapUsedMB.toFixed(0) });
+    //
+    // We check BOTH heapUsed and RSS.  heapUsed only measures the V8 JS heap;
+    // native addons like @parcel/watcher, better-sqlite3, and ssh2 allocate
+    // outside the heap, so RSS (resident set size) is a better indicator of
+    // total process memory and native-layer crash risk.
+    const mem = process.memoryUsage();
+    const heapUsedMB = mem.heapUsed / (1024 * 1024);
+    const rssMB = mem.rss / (1024 * 1024);
+    const HEAP_PRESSURE_THRESHOLD_MB = 512;
+    const RSS_PRESSURE_THRESHOLD_MB = 1024;
+    if (heapUsedMB > HEAP_PRESSURE_THRESHOLD_MB || rssMB > RSS_PRESSURE_THRESHOLD_MB) {
+      const msg = `Deferring watcher start: heap ${heapUsedMB.toFixed(0)}MB / RSS ${rssMB.toFixed(0)}MB exceeds threshold (heap>${HEAP_PRESSURE_THRESHOLD_MB}MB or RSS>${RSS_PRESSURE_THRESHOLD_MB}MB)`;
+      logger.warn(msg, { workspaceId: this.workspaceId, heapUsedMB: heapUsedMB.toFixed(0), rssMB: rssMB.toFixed(0) });
       throw new Error(msg);
     }
 
