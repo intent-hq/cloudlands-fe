@@ -1194,9 +1194,10 @@ app.whenReady().then(async () => {
     const inWorkspace = isFocusedWindowInWorkspace();
     const recentWorkspacesSubmenu: Electron.MenuItemConstructorOptions[] = [];
 
-    // Load recent workspaces
+    // Load recent workspaces (lite mode — only need titles for the menu,
+    // not git diffs/summaries which spawn 4 git subprocesses per workspace)
     try {
-      const result = await protocolAdapter.listAllWorkspaces();
+      const result = await protocolAdapter.listAllWorkspaces({ lite: true });
       if (result.ok && result.data) {
         // Sort by updatedAt descending and take top 5
         type WorkspaceItem = {
@@ -1423,7 +1424,7 @@ app.whenReady().then(async () => {
       type WorkspaceItem = { status?: string; title?: string; name?: string; id: string };
       const workspaceTitles = new Map<string, string>();
       try {
-        const result = await protocolAdapter.listAllWorkspaces();
+        const result = await protocolAdapter.listAllWorkspaces({ lite: true });
         if (result.ok && result.data) {
           for (const ws of result.data as WorkspaceItem[]) {
             const displayName = ws.title || ws.name || ws.id;

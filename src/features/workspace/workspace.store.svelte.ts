@@ -110,9 +110,12 @@ class WorkspaceStore {
     }
 
     try {
-      // PERF: Use lite mode if another operation is pending (like create/duplicate)
-      // This prevents heavy computations from blocking the event loop
-      const useLiteMode = this.#isCreating;
+      // PERF: Use lite mode on initial load and when another operation is pending.
+      // Full mode runs 4 git subprocesses per workspace (diffSummary, agentSummary,
+      // taskStats, gitSummary) — with 30+ workspaces that's 120+ concurrent git
+      // processes which spikes memory to 1GB+ and can cause native addon crashes.
+      // The first load shows workspace cards quickly; enrichment happens on demand.
+      const useLiteMode = !this.#hasLoaded || this.#isCreating;
       const result = await workspaceClient.list({ lite: useLiteMode });
       if (result.ok) {
         // Deduplicate workspaces by ID to prevent duplicate key errors
