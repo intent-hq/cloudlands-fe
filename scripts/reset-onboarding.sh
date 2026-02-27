@@ -5,6 +5,11 @@
 #   ./scripts/reset-onboarding.sh restore  # restore from backup
 set -euo pipefail
 
+if [ "$(uname)" != "Darwin" ]; then
+  echo "Error: this script only supports macOS (detected: $(uname))" >&2
+  exit 1
+fi
+
 WORKSPACE_DIR="$HOME/intent/workspaces"
 LEGACY_DIR="$HOME/.workspaces"
 APP_SUPPORT="$HOME/Library/Application Support/intent"
@@ -32,7 +37,7 @@ restore_move() {
     for item in "$src"/* "$src"/.*; do
       [ -e "$item" ] || continue
       local base="$(basename "$item")"
-      [ "$base" = "." ] || [ "$base" = ".." ] && continue
+      case "$base" in .|..) continue;; esac
       mv -f "$item" "$dest/"
     done
     rmdir "$src" 2>/dev/null || true
