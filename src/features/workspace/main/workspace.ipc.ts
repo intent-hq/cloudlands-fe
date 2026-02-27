@@ -719,21 +719,13 @@ export function setupWorkspaceIPC(): void {
           const isRemote = !!workspace.isRemote && !!workspace.environmentConfig?.ssh;
           const worktreePath = workspace.worktreePath || workspace.repositoryPath;
           if (worktreePath && !isRemote) {
-            try {
-              const unifiedWatcher = await getUnifiedWatcher(id, worktreePath);
-              const stats = unifiedWatcher.getStats();
-              logger.info('[WorkspaceIPC] Unified workspace watcher ready', {
-                workspaceId: id,
-                mode: stats.mode,
-                subscribers: stats.subscribers,
-                isRunning: stats.isRunning,
-              });
-            } catch (error) {
-              logger.error('[WorkspaceIPC] Failed to start unified workspace watcher', error as Error, {
-                workspaceId: id,
-              });
-              // Non-fatal: file watching will be unavailable for this workspace
-            }
+            // Native @parcel/watcher is disabled — its C++ layer throws an
+            // unrecoverable Napi::Error (libc++abi termination) in packaged
+            // builds.  Change detection uses git polling instead (see
+            // gitPollingOnly in tracking.config.ts).
+            logger.info('[WorkspaceIPC] Skipping native file watcher (git polling mode)', {
+              workspaceId: id,
+            });
           } else if (isRemote) {
             logger.info('[WorkspaceIPC] Skipping UnifiedWorkspaceWatcher for remote workspace (RemoteChangeDetector handles file watching)', {
               workspaceId: id,

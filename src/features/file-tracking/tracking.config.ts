@@ -35,8 +35,8 @@ export const TRACKING_CONFIG = {
     largeRepoThreshold: 1000,
 
     // File watching
-    disableFileWatcher: false, // Re-enabled with proper resource management
-    gitPollingOnly: false, // Use both file watching and git polling for better detection
+    disableFileWatcher: false,
+    gitPollingOnly: true, // Native @parcel/watcher crashes the process (libc++abi Napi::Error)
 
     // Ignored patterns (in addition to .gitignore)
     additionalIgnorePatterns: ['.workspace-notes/**', '.workspace-notes.backup/**'],
