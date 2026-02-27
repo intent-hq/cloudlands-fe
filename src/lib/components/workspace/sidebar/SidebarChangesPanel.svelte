@@ -3614,48 +3614,73 @@
   let isWorkspaceSwitching = $state(false);
   let workspaceSwitchTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  // Detect workspace switches and temporarily disable animations
-  $effect(() => {
+  // Create a crossfade instance - extracted so we can recreate it on workspace switch
+  // to clear stale internal transition maps that cause |global crashes
+  function makeCrossfade() {
+    return crossfade({
+      duration: 200,
+
+      fallback(node) {
+        // Guard against 0-dimension elements that cause NaN/Infinity
+        const rect = node.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) {
+          return {
+            duration: 0,
+            css: () => '',
+          };
+        }
+
+        return slide(node, { duration: 200, easing: quintOut, delay: 0, axis: 'y' });
+      },
+    });
+  }
+
+  // The raw crossfade pair — recreated on workspace switch to clear stale maps.
+  // We never expose these directly; the `send`/`receive` wrappers below add safety.
+  let currentCrossfade = makeCrossfade();
+
+  // Wrapper transition functions that bypass the crossfade during workspace switches.
+  //
+  // Why: crossfade always returns a *deferred* transition (a function that returns a config).
+  // Svelte creates a facade for deferred transitions where `reset()` calls `a.reset()`,
+  // but `a` is assigned in a microtask. If `reset()` is called before the microtask runs
+  // (which happens during {#each} reconciliation with |global), it crashes:
+  //   "Cannot read properties of undefined (reading 'reset')"
+  //
+  // By returning a plain `{ duration: 0 }` config (not a function) during workspace switches,
+  // Svelte takes the non-deferred path which returns safe no-op handlers.
+  function send(node: Element, params: { key: any }) {
+    if (isWorkspaceSwitching) return { duration: 0 };
+    return currentCrossfade[0](node, params);
+  }
+
+  function receive(node: Element, params: { key: any }) {
+    if (isWorkspaceSwitching) return { duration: 0 };
+    return currentCrossfade[1](node, params);
+  }
+
+  // Detect workspace switches and temporarily disable animations.
+  // Uses $effect.pre so the flag is set BEFORE DOM updates — this ensures
+  // send/receive see isWorkspaceSwitching=true and return plain configs
+  // instead of deferred functions, avoiding the Svelte transition facade bug.
+  $effect.pre(() => {
     // Read workspaceId to create dependency
     void workspaceId;
 
-    // When workspace changes, set switching flag and clear after a short delay
+    // When workspace changes, set switching flag and recreate crossfade
     untrack(() => {
       if (workspaceSwitchTimeout) {
         clearTimeout(workspaceSwitchTimeout);
       }
       isWorkspaceSwitching = true;
+      // Recreate crossfade to clear stale internal maps from previous workspace —
+      // prevents old send entries from pairing with new receive entries across workspaces
+      currentCrossfade = makeCrossfade();
       workspaceSwitchTimeout = setTimeout(() => {
         isWorkspaceSwitching = false;
         workspaceSwitchTimeout = null;
       }, 300); // Disable animations for 300ms during workspace switch
     });
-  });
-
-  // Safe crossfade that guards against NaN/Infinity values during workspace switches
-  export const [send, receive] = crossfade({
-    duration: () => (isWorkspaceSwitching ? 0 : 200),
-
-    fallback(node) {
-      // During workspace switches, skip animations entirely
-      if (isWorkspaceSwitching) {
-        return {
-          duration: 0,
-          css: () => '',
-        };
-      }
-
-      // Guard against 0-dimension elements that cause NaN/Infinity
-      const rect = node.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) {
-        return {
-          duration: 0,
-          css: () => '',
-        };
-      }
-
-      return slide(node, { duration: 200, easing: quintOut, delay: 0, axis: 'y' });
-    },
   });
 </script>
 
@@ -4049,8 +4074,8 @@
                             {#each group.files as file (file.path)}
                               <div
                                 data-file-key="unstaged:{file.path}"
-                                in:receive={{ key: file.path }}
-                                out:send={{ key: file.path }}
+                                in:receive|global={{ key: file.path }}
+                                out:send|global={{ key: file.path }}
                               >
                                 <FileRow
                                   {file}
@@ -4082,8 +4107,8 @@
                     {#each unstagedChanges as change (change.id)}
                       <div
                         data-file-key="unstaged:{change.relativePath}"
-                        in:receive={{ key: change.relativePath }}
-                        out:send={{ key: change.relativePath }}
+                        in:receive|global={{ key: change.relativePath }}
+                        out:send|global={{ key: change.relativePath }}
                         animate:flip={{ duration: isWorkspaceSwitching ? 0 : 100 }}
                       >
                         <FileRow
@@ -4267,8 +4292,8 @@
                             {#each group.files as file (file.path)}
                               <div
                                 data-file-key="staged:{file.path}"
-                                in:receive={{ key: file.path }}
-                                out:send={{ key: file.path }}
+                                in:receive|global={{ key: file.path }}
+                                out:send|global={{ key: file.path }}
                               >
                                 <FileRow
                                   {file}
@@ -4298,8 +4323,8 @@
                     {#each stagedChanges as change (change.id)}
                       <div
                         data-file-key="staged:{change.relativePath}"
-                        in:receive={{ key: change.relativePath }}
-                        out:send={{ key: change.relativePath }}
+                        in:receive|global={{ key: change.relativePath }}
+                        out:send|global={{ key: change.relativePath }}
                       >
                         <FileRow
                           file={toUIFileChange(change, true)}
