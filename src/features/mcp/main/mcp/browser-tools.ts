@@ -36,12 +36,19 @@ Actions are executed as a sequence of declarative operations.
 - \`{ action: "captureStep", sessionId, stepName, reload?, waitFor? }\` - Capture a named step
 - \`{ action: "startTrace", sessionId, traceName }\` / \`{ action: "stopTrace", sessionId, traceName }\` - Performance traces
 
+## Navigation
+- \`{ action: "navigate", url, tabId? }\` - Navigate an existing tab to a new URL
+
 ## Recovery
 - \`{ action: "resetTab", tabId? }\` - Force reset CDP connection (use if you get "already attached" errors)
 
 ## UI Control
-- \`{ action: "openTab", url, position? }\` - Open a browser tab in the UI
+- \`{ action: "openTab", url, position? }\` - Open a new browser tab in the UI
   - position: 'adjacent' (default), 'replace', or 'same'
+
+## Supported Protocols
+The embedded browser supports http://, https://, and file:// URLs.
+You can open local HTML files directly: \`{ action: "openTab", url: "file:///path/to/index.html" }\`
 
 Use \`browser_docs\` with topic="capture" or topic="examples" for detailed usage.`,
 
@@ -149,6 +156,26 @@ Both snapshot and captureStep support wait conditions:
 \`\`\``,
 
   examples: `# Browser API Examples
+
+## Opening Local HTML Files
+
+You can open local files directly using file:// URLs:
+
+\`\`\`json
+// Open a local HTML file
+{
+  "actions": [
+    { "action": "openTab", "url": "file:///Users/me/project/index.html" }
+  ]
+}
+
+// Navigate an existing tab to a different local file
+{
+  "actions": [
+    { "action": "navigate", "url": "file:///Users/me/project/other.html" }
+  ]
+}
+\`\`\`
 
 ## Debugging a Page Load
 
@@ -403,9 +430,12 @@ Each action is an object with an "action" field and action-specific parameters:
 - \`{ action: "startTrace", sessionId: string, traceName: string }\` - Start perf trace
 - \`{ action: "stopTrace", sessionId: string, traceName: string }\` - Stop perf trace
 - \`{ action: "endSession", sessionId: string }\` - End session and save artifacts
+- \`{ action: "navigate", url: string, tabId?: string }\` - Navigate existing tab to URL
 - \`{ action: "resetTab", tabId?: string }\` - Reset CDP connection
 - \`{ action: "getSummary", captureDir: string }\` - Read capture summary
-- \`{ action: "openTab", url: string, position?: "adjacent" | "replace" | "same" }\`
+- \`{ action: "openTab", url: string, position?: "adjacent" | "replace" | "same" }\` - Open new tab
+
+Supports http://, https://, and file:// URLs. You can open local HTML files directly.
 
 ## WaitForOptions
 

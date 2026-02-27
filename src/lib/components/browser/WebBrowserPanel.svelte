@@ -19,6 +19,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Button from '../ui/button/button.svelte';
+  import { BROWSER_PROTOCOLS } from '../../../shared/constants';
   import { TooltipShortcut } from '../ui/tooltip';
   import { toast } from '../ui/toast';
 
@@ -107,8 +108,8 @@
       // Validate URL
       const urlObj = new URL(targetUrl);
 
-      // Only allow http(s) protocols
-      if (!['http:', 'https:'].includes(urlObj.protocol)) {
+      // Only allow protocols from the shared constant
+      if (!BROWSER_PROTOCOLS.NAVIGATION_ALLOWED.includes(urlObj.protocol)) {
         throw new Error(`Invalid protocol: ${urlObj.protocol}`);
       }
 
@@ -181,7 +182,7 @@
 
       // Only prepend a protocol if the input doesn't already have one (scheme://...).
       // This avoids turning "file:///path" into "https://file:///path" (ERR_NAME_NOT_RESOLVED).
-      // navigateTo() will reject non-http(s) protocols with a clear error message.
+      // navigateTo() will reject disallowed protocols with a clear error message.
       if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(urlToNavigate)) {
         urlToNavigate = `https://${urlToNavigate}`;
       }

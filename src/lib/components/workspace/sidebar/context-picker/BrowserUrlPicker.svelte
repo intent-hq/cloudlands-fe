@@ -26,9 +26,12 @@
     let url = input.trim();
     if (!url) return null;
 
-    // Add protocol if missing
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      url = 'https://' + url;
+    // Only prepend a protocol if the input doesn't already have one (scheme://...).
+    // This avoids turning "file:///path" into "https://file:///path".
+    if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) {
+      const isLocalhost =
+        url.includes('localhost') || url.includes('127.0.0.1') || url.includes('0.0.0.0');
+      url = (isLocalhost ? 'http://' : 'https://') + url;
     }
 
     try {
@@ -42,6 +45,11 @@
   function getDisplayTitle(url: string): string {
     try {
       const urlObj = new URL(url);
+      // file:// URLs have no hostname — show the filename instead
+      if (urlObj.protocol === 'file:') {
+        const path = urlObj.pathname;
+        return path.split('/').pop() || path;
+      }
       return urlObj.hostname;
     } catch {
       return url;

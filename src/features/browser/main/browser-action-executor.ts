@@ -10,6 +10,7 @@
  */
 
 import { z } from 'zod';
+import { BROWSER_PROTOCOLS } from '../../../shared/constants';
 import { Logger } from '../../../shared/logger';
 import { embeddedBrowserCdp } from './embedded-browser-cdp-service';
 import { browserCapture } from './browser-capture-service';
@@ -120,6 +121,12 @@ const OpenTabActionSchema = z.object({
   position: z.enum(['adjacent', 'replace', 'same']).optional(),
 });
 
+const NavigateActionSchema = z.object({
+  action: z.literal('navigate'),
+  url: z.string(),
+  tabId: z.string().optional(),
+});
+
 // Union of all action schemas
 const BrowserActionSchema = z.discriminatedUnion('action', [
   ListTabsActionSchema,
@@ -138,9 +145,27 @@ const BrowserActionSchema = z.discriminatedUnion('action', [
   ResetTabActionSchema,
   GetSummaryActionSchema,
   OpenTabActionSchema,
+  NavigateActionSchema,
 ]);
 
 export type BrowserAction = z.infer<typeof BrowserActionSchema>;
+
+/**
+ * Validate that a URL is safe to load in the embedded browser.
+ * Uses shared protocol constants from src/shared/constants.ts.
+ * Returns an error message if invalid, or null if valid.
+ */
+function validateBrowserUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (!BROWSER_PROTOCOLS.NAVIGATION_ALLOWED.includes(parsed.protocol)) {
+      return `Protocol "${parsed.protocol}" is not allowed. Supported protocols: ${BROWSER_PROTOCOLS.NAVIGATION_ALLOWED.join(', ')}`;
+    }
+    return null;
+  } catch {
+    return `Invalid URL: "${url}". Please provide a valid URL with one of these protocols: ${BROWSER_PROTOCOLS.NAVIGATION_ALLOWED.join(', ')}`;
+  }
+}
 
 // Schema for the full action sequence
 const ActionSequenceSchema = z.object({
@@ -286,6 +311,12 @@ async function executeAction(
       }
 
       case 'openTab': {
+        // Validate URL protocol before attempting to open
+        const openTabUrlError = validateBrowserUrl(action.url);
+        if (openTabUrlError) {
+          return { action: 'openTab', success: false, error: openTabUrlError };
+        }
+
         // When called by an agent, try to reuse an idle browser tab instead of opening a new one
         if (agentId) {
           const idleTabId = embeddedBrowserCdp.findIdleTab(agentId);
@@ -295,15 +326,11 @@ async function executeAction(
               url: action.url,
               agentId,
             });
-            // Navigate the existing tab to the new URL
-            // Note: findIdleTab already claimed the lease atomically, so no
-            // concurrent agent can grab the same tab across the await below.
             try {
               await embeddedBrowserCdp.evaluate(
                 idleTabId,
                 `window.location.href = ${JSON.stringify(action.url)}`,
               );
-              // Focus the tab so the user can see it
               embeddedBrowserCdp.focusTab(idleTabId, workspaceId);
               return {
                 action: 'openTab',
@@ -315,9 +342,7 @@ async function executeAction(
                 tabId: idleTabId,
                 error: (err as Error).message,
               });
-              // Release the lease we claimed since we couldn't use this tab
               embeddedBrowserCdp.releaseLease(idleTabId);
-              // Fall through to open a new tab
             }
           }
         }
@@ -331,6 +356,30 @@ async function executeAction(
         }
         const result = openTabFn(action.url, action.position);
         return { action: 'openTab', success: result.success, result };
+      }
+
+      case 'navigate': {
+        // Validate URL protocol before attempting to navigate
+        const navUrlError = validateBrowserUrl(action.url);
+        if (navUrlError) {
+          return { action: 'navigate', success: false, error: navUrlError };
+        }
+
+        // Resolve the target tab: explicit tabId > sequence-level default > first available tab
+        const resolvedTabId = tabId ?? embeddedBrowserCdp.getFirstTab()?.tabId;
+        if (!resolvedTabId) {
+          return {
+            action: 'navigate',
+            success: false,
+            error: 'No browser tabs available. Use { action: "openTab", url: "..." } to open a tab first.',
+          };
+        }
+
+        await embeddedBrowserCdp.evaluate(
+          resolvedTabId,
+          `window.location.href = ${JSON.stringify(action.url)}`,
+        );
+        return { action: 'navigate', success: true, result: { tabId: resolvedTabId, url: action.url } };
       }
 
       default: {

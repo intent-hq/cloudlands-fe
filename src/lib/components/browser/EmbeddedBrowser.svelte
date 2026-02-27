@@ -11,6 +11,7 @@
   import { onMount, tick } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { Button } from '$lib/components/ui/button';
+  import { BROWSER_PROTOCOLS } from '../../../shared/constants';
   import { browserStore } from '$features/browser/browser.store.svelte';
   import Fa from 'svelte-fa';
   import {
@@ -27,11 +28,11 @@
 
   const logger = createLogger('EmbeddedBrowser');
 
-  // Allowed protocols for navigation (security)
-  const ALLOWED_PROTOCOLS = ['http:', 'https:'];
+  // Use shared protocol constants — single source of truth in src/shared/constants.ts
+  const ALLOWED_PROTOCOLS = BROWSER_PROTOCOLS.NAVIGATION_ALLOWED;
 
   // Check if URL is valid and safe to load
-  // - Must use http: or https: protocol (blocks file:, javascript:, data:, etc.)
+  // - Must use an allowed protocol (see BROWSER_PROTOCOLS.NAVIGATION_ALLOWED)
   // - Must not be the app's own URL
   // Defined early so it can be used during state initialization
   function isValidBrowserUrl(targetUrl: string): boolean {
@@ -534,8 +535,8 @@
       try {
         const parsed = new URL(targetUrl);
         if (!ALLOWED_PROTOCOLS.includes(parsed.protocol)) {
-          errorMessage = `Protocol "${parsed.protocol}" is not allowed. Use http:// or https://`;
-          logger.warn('Blocked dangerous protocol in webview', {
+          errorMessage = `Protocol "${parsed.protocol}" is not allowed. Supported: ${ALLOWED_PROTOCOLS.join(', ')}`;
+          logger.warn('Blocked disallowed protocol in webview', {
             url: targetUrl,
             protocol: parsed.protocol,
           });
@@ -632,7 +633,7 @@
       let urlToLoad = displayUrl.trim();
       // Only prepend a protocol if the input doesn't already have one (scheme://...).
       // This avoids turning "file:///path" into "https://file:///path" (ERR_NAME_NOT_RESOLVED).
-      // loadUrl() will reject non-http(s) protocols with a clear error message.
+      // loadUrl() will reject disallowed protocols with a clear error message.
       if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(urlToLoad)) {
         const isLocalhost =
           urlToLoad.includes('localhost') ||
@@ -777,7 +778,7 @@
           <div class="text-4xl mb-3 opacity-50">⚠️</div>
           <p class="text-lg font-medium mb-1">Cannot load this URL</p>
           <p class="text-sm">
-            {#if url.startsWith('file:') || url.startsWith('javascript:') || url.startsWith('data:')}
+            {#if url.startsWith('javascript:') || url.startsWith('data:')}
               This protocol is not allowed for security reasons
             {:else}
               The app cannot load itself in the browser panel

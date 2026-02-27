@@ -9,6 +9,7 @@
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
+import { BROWSER_PROTOCOLS } from '../../../shared/constants';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { Logger } from '../../../shared/logger';
 import {
@@ -23,6 +24,7 @@ const logger = new Logger('BrowserIPC');
 
 /**
  * Open a browser tab in the renderer.
+ * Validates the URL protocol before sending to the renderer.
  * When workspaceId is provided, sends only to the window displaying that workspace.
  * Falls back to broadcasting to all windows if no workspaceId or no matching window found.
  */
@@ -31,6 +33,20 @@ function openBrowserTab(
   position: 'adjacent' | 'replace' | 'same' = 'adjacent',
   workspaceId?: string,
 ): { success: boolean; message: string } {
+  // Validate URL before sending to renderer
+  try {
+    const parsed = new URL(url);
+    if (!BROWSER_PROTOCOLS.NAVIGATION_ALLOWED.includes(parsed.protocol)) {
+      const msg = `Protocol "${parsed.protocol}" is not allowed. Supported: ${BROWSER_PROTOCOLS.NAVIGATION_ALLOWED.join(', ')}`;
+      logger.warn('Rejected browser:open-tab with disallowed protocol', { url, protocol: parsed.protocol });
+      return { success: false, message: msg };
+    }
+  } catch {
+    const msg = `Invalid URL: "${url}"`;
+    logger.warn('Rejected browser:open-tab with invalid URL', { url });
+    return { success: false, message: msg };
+  }
+
   // Send to workspace windows (falls back to all windows if no workspaceId)
   sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.OPEN_TAB, { url, position });
   logger.info('Sent browser:open-tab', { url, position, workspaceId });

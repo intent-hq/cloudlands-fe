@@ -300,6 +300,42 @@ export const FILE_EXTENSIONS = {
 } as const;
 
 // ============================================================================
+// BROWSER PROTOCOLS
+// ============================================================================
+// Single source of truth for URL protocol validation across the app.
+// If you need to change which protocols are allowed, update ONLY this section.
+
+export const BROWSER_PROTOCOLS = {
+  /**
+   * Protocols allowed in the embedded browser (webview).
+   * - http/https: standard web pages
+   * - file: local HTML files for dev/testing (safe because nodeIntegration is disabled)
+   */
+  WEBVIEW_ALLOWED: ['http:', 'https:', 'about:', 'file:'] as readonly string[],
+
+  /**
+   * Protocols allowed for user-facing browser navigation (URL bar, openTab, navigate).
+   * Subset of WEBVIEW_ALLOWED — excludes about: since users don't type that.
+   */
+  NAVIGATION_ALLOWED: ['http:', 'https:', 'file:'] as readonly string[],
+
+  /**
+   * Protocols that are always blocked — these enable code injection.
+   */
+  BLOCKED: ['javascript:', 'data:', 'vbscript:', 'blob:'] as readonly string[],
+
+  /**
+   * Protocols for external URL opening (system browser, shell:openExternal).
+   */
+  EXTERNAL: ['http:', 'https:'] as readonly string[],
+
+  /**
+   * Internal app protocols (not user-facing).
+   */
+  INTERNAL: ['app:', 'workspace-asset:'] as readonly string[],
+} as const;
+
+// ============================================================================
 // PATTERNS & VALIDATION
 // ============================================================================
 

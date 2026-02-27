@@ -1362,7 +1362,8 @@ function parseNoteListResult(
  * - listTabs: Array<{ tabId, url, title, mounted }>
  * - getAccessibilityTree: string (YAML)
  * - evaluate: any (raw JS value)
- * - openTab: { success: boolean, message: string }
+ * - openTab: { success: boolean, message: string } | { reused: boolean, tabId: string, url: string }
+ * - navigate: { url: string, tabId?: string }
  * - focusTab: boolean
  */
 function parseBrowserResult(

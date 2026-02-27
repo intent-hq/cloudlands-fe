@@ -3,14 +3,18 @@
  *
  * This module sets up security handlers for Electron webviews to prevent:
  * - Node.js integration in webviews (RCE attacks)
- * - Dangerous protocol navigation (file://, javascript:, data:)
+ * - Dangerous protocol navigation (javascript:, data:, vbscript:, blob:)
  * - Uncontrolled popup windows
  * - Unauthorized permission requests (camera, mic, geolocation)
+ *
+ * Allowed protocols are defined in src/shared/constants.ts (BROWSER_PROTOCOLS)
+ * to ensure consistency across the codebase.
  */
 
 import { app, session, shell } from 'electron';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { BROWSER_PROTOCOLS } from '../shared/constants';
 import { Logger } from '../shared/logger';
 
 const logger = new Logger('WebviewSecurity');
@@ -18,34 +22,25 @@ const logger = new Logger('WebviewSecurity');
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Allowed protocols for webview navigation
-const WEBVIEW_ALLOWED_PROTOCOLS = ['http:', 'https:', 'about:'];
-
-// Dangerous protocols that should never be allowed
-const BLOCKED_PROTOCOLS = ['file:', 'javascript:', 'data:', 'vbscript:', 'blob:'];
-
-const INTERNAL_PROTOCOLS = ['app:', 'workspace-asset:'];
-const EXTERNAL_PROTOCOLS = ['http:', 'https:'];
-
 /**
- * Check if a URL uses an allowed protocol
+ * Check if a URL uses a protocol allowed in webviews
  */
 function isWebviewAllowedUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
-    return WEBVIEW_ALLOWED_PROTOCOLS.includes(parsed.protocol);
+    return BROWSER_PROTOCOLS.WEBVIEW_ALLOWED.includes(parsed.protocol);
   } catch {
     return false;
   }
 }
 
 /**
- * Check if a URL uses a blocked protocol
+ * Check if a URL uses a dangerous protocol that should always be blocked
  */
 function isBlockedProtocol(url: string): boolean {
   try {
     const parsed = new URL(url);
-    return BLOCKED_PROTOCOLS.includes(parsed.protocol);
+    return BROWSER_PROTOCOLS.BLOCKED.includes(parsed.protocol);
   } catch {
     return false;
   }
@@ -60,7 +55,7 @@ function isDevServerUrl(parsed: URL): boolean {
   const hostAllowed = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
   const port = parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
 
-  return hostAllowed && port === devPort && EXTERNAL_PROTOCOLS.includes(parsed.protocol);
+  return hostAllowed && port === devPort && BROWSER_PROTOCOLS.EXTERNAL.includes(parsed.protocol);
 }
 
 function isInternalUrl(parsed: URL): boolean {
@@ -68,7 +63,7 @@ function isInternalUrl(parsed: URL): boolean {
     return true;
   }
 
-  if (INTERNAL_PROTOCOLS.includes(parsed.protocol)) {
+  if (BROWSER_PROTOCOLS.INTERNAL.includes(parsed.protocol)) {
     return true;
   }
 
@@ -76,7 +71,7 @@ function isInternalUrl(parsed: URL): boolean {
 }
 
 function isExternalHttpUrl(parsed: URL): boolean {
-  return EXTERNAL_PROTOCOLS.includes(parsed.protocol);
+  return BROWSER_PROTOCOLS.EXTERNAL.includes(parsed.protocol);
 }
 
 function getSecureWindowPreferences(): Electron.BrowserWindowConstructorOptions {
@@ -143,7 +138,7 @@ export function setupWebviewSecurity(): void {
 
       if (contents.getType() === 'webview') {
         if (!isWebviewAllowedUrl(url)) {
-          logger.warn('Blocked non-http(s) navigation in webview', { url: url.substring(0, 100) });
+          logger.warn('Blocked disallowed protocol navigation in webview', { url: url.substring(0, 100) });
           event.preventDefault();
         }
         return;
@@ -190,10 +185,21 @@ export function setupWebviewSecurity(): void {
           return { action: 'deny' };
         }
 
-        if (isWebviewAllowedUrl(url)) {
-          shell.openExternal(url).catch((err: Error) => {
-            logger.error('Failed to open URL in external browser', { url, error: err.message });
-          });
+        // Only open http(s) URLs in the system browser.
+        // file:// is allowed for webview *navigation* (rendering local HTML)
+        // but must NOT be passed to shell.openExternal (could execute local files).
+        try {
+          if (isExternalHttpUrl(new URL(url))) {
+            shell.openExternal(url).catch((err: Error) => {
+              logger.error('Failed to open URL in external browser', { url, error: err.message });
+            });
+          } else {
+            logger.warn('Blocked webview popup with non-http protocol', {
+              url: url.substring(0, 100),
+            });
+          }
+        } catch {
+          logger.warn('Blocked webview popup with invalid URL', { url: url.substring(0, 100) });
         }
 
         return { action: 'deny' };
