@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "description": "Intent by Augment",
   "type": "module",
   "main": "dist/main/index.js",
