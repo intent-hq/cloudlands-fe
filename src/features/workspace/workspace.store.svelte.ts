@@ -155,13 +155,41 @@ class WorkspaceStore {
         const newItems = Array.from(uniqueWorkspaces.values());
         const itemsChanged =
           newItems.length !== this.#items.length ||
-          newItems.some((w, i) => w.id !== this.#items[i]?.id || w.updatedAt !== this.#items[i]?.updatedAt);
+          newItems.some((w, i) => {
+            const existing = this.#items[i];
+            if (!existing) return true;
+            if (w.id !== existing.id || w.updatedAt !== existing.updatedAt) return true;
+            // Detect enrichment data changes (e.g. lite → full mode transition)
+            const hadStats = existing.taskStats !== undefined;
+            const hasStats = w.taskStats !== undefined;
+            if (hadStats !== hasStats) return true;
+            if (hasStats && hadStats && (
+              w.taskStats!.total !== existing.taskStats!.total ||
+              w.taskStats!.completed !== existing.taskStats!.completed ||
+              w.taskStats!.inProgress !== existing.taskStats!.inProgress
+            )) return true;
+            const hadDiff = existing.diffSummary !== undefined;
+            const hasDiff = w.diffSummary !== undefined;
+            if (hadDiff !== hasDiff) return true;
+            const hadAgent = existing.agentSummary !== undefined;
+            const hasAgent = w.agentSummary !== undefined;
+            if (hadAgent !== hasAgent) return true;
+            return false;
+          });
         if (itemsChanged) {
           this.#items = newItems;
         }
         this.#error = null; // Clear any previous errors on success
+        const wasFirstLoad = !this.#hasLoaded;
         this.#hasLoaded = true; // Mark that initial load has completed
         logger.info('Workspaces loaded successfully', { count: this.#items.length });
+
+        // PERF: After the initial lite-mode load, schedule a follow-up full load
+        // to populate taskStats, diffSummary, agentSummary, and gitSummary.
+        // This ensures progress indicators show correctly without blocking the initial render.
+        if (wasFirstLoad && useLiteMode) {
+          setTimeout(() => this.load(), 500);
+        }
       } else {
         // Handle error response
         if (retryCount < MAX_RETRIES) {
