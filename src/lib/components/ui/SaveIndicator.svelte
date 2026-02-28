@@ -56,6 +56,7 @@
           class: 'text-yellow-500',
         };
       case 'saved':
+      default:
         return {
           icon: faCheck,
           tooltip: 'All changes saved',
@@ -75,14 +76,14 @@
   const isClickable = $derived.by(() => state === 'unsaved' && !disabled && !!onSave);
 </script>
 
-<Tooltip content={iconConfig.tooltip} side="bottom" delayDuration={500}>
+<Tooltip content={iconConfig?.tooltip} side="bottom" delayDuration={500}>
   <Button
     variant="ghost"
     size="icon"
     class={`relative transition-all duration-200 p-0 min-w-0 hover:bg-muted disabled:opacity-100 disabled:cursor-default ${config.button} ${className}`}
     onclick={isClickable ? onSave : undefined}
     disabled={!isClickable}
-    aria-label={iconConfig.tooltip}
+    aria-label={iconConfig?.tooltip}
   >
     <div class="relative flex items-center justify-center w-full h-full">
       {#key state}
@@ -101,7 +102,7 @@
             </div>
           {:else}
             <!-- Other states: Show the icon -->
-            <Fa icon={iconConfig.icon} class="{config.icon} {iconConfig.class}" />
+            <Fa icon={iconConfig?.icon} class="{config.icon} {iconConfig?.class}" />
           {/if}
         </div>
       {/key}
