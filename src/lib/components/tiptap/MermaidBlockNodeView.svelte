@@ -65,7 +65,15 @@
   let fullscreenDialogElement: HTMLDivElement | undefined = $state();
   let diagramContainerEl: HTMLDivElement | undefined = $state();
 
-  function openFullscreen() {
+  function openFullscreen(e: MouseEvent) {
+    // Prevent the click from propagating to ProseMirror selection handling
+    e.stopPropagation();
+    e.preventDefault();
+    // Blur any focused element (including TipTap editor) to avoid RangeError
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+
     // Grab the rendered SVG from the diagram container
     const svgEl = diagramContainerEl?.querySelector('.mermaid-svg svg, .mermaid-renderer svg');
     if (svgEl) {
@@ -194,7 +202,11 @@
   // Auto-focus fullscreen dialog for accessibility
   $effect(() => {
     if (isFullscreen && fullscreenDialogElement) {
-      fullscreenDialogElement.focus();
+      try {
+        fullscreenDialogElement.focus();
+      } catch {
+        // Defensive: ignore focus errors from ProseMirror selection reconciliation
+      }
     }
   });
 </script>

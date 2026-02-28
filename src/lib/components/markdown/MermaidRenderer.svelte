@@ -158,7 +158,15 @@
     }
   }
 
-  function openFullscreen() {
+  function openFullscreen(e: MouseEvent) {
+    // Prevent event propagation to avoid editor selection issues
+    e.stopPropagation();
+    e.preventDefault();
+    // Blur any focused element to avoid RangeError from ProseMirror
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+
     fullscreenSvg = renderedSvg;
     isFullscreen = true;
   }
@@ -212,7 +220,11 @@
   // Auto-focus the fullscreen dialog when it opens for accessibility
   $effect(() => {
     if (isFullscreen && fullscreenDialogElement) {
-      fullscreenDialogElement.focus();
+      try {
+        fullscreenDialogElement.focus();
+      } catch {
+        // Defensive: ignore focus errors from ProseMirror selection reconciliation
+      }
     }
   });
 
