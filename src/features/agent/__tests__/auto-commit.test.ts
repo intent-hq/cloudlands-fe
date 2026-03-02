@@ -374,6 +374,57 @@ describe('Auto-Commit Service', () => {
     });
   });
 
+  describe('agent:idle auto-commit - git status refresh before change check', () => {
+    afterEach(() => {
+      // Clean up global.gitIntegrations to avoid test pollution
+      delete (global as any).gitIntegrations;
+    });
+
+    it('should call syncCurrentState(true) before checking for changes', async () => {
+      const mockSyncCurrentState = vi.fn().mockResolvedValue(undefined);
+      (global as any).gitIntegrations = new Map([
+        ['workspace-1', { syncCurrentState: mockSyncCurrentState }],
+      ]);
+
+      const event = createAgentIdleEvent();
+      await handleAgentIdleAutoCommit(event);
+
+      expect(mockSyncCurrentState).toHaveBeenCalledWith(true);
+      expect(mockCommitAgentChanges).toHaveBeenCalled();
+    });
+
+    it('should proceed with commit when syncCurrentState fails', async () => {
+      const mockSyncCurrentState = vi.fn().mockRejectedValue(new Error('sync failed'));
+      (global as any).gitIntegrations = new Map([
+        ['workspace-1', { syncCurrentState: mockSyncCurrentState }],
+      ]);
+
+      const event = createAgentIdleEvent();
+      await handleAgentIdleAutoCommit(event);
+
+      expect(mockSyncCurrentState).toHaveBeenCalledWith(true);
+      expect(mockCommitAgentChanges).toHaveBeenCalled();
+    });
+
+    it('should proceed with commit when gitIntegrations map does not have workspace entry', async () => {
+      (global as any).gitIntegrations = new Map();
+
+      const event = createAgentIdleEvent();
+      await handleAgentIdleAutoCommit(event);
+
+      expect(mockCommitAgentChanges).toHaveBeenCalled();
+    });
+
+    it('should proceed with commit when global.gitIntegrations is undefined', async () => {
+      (global as any).gitIntegrations = undefined;
+
+      const event = createAgentIdleEvent();
+      await handleAgentIdleAutoCommit(event);
+
+      expect(mockCommitAgentChanges).toHaveBeenCalled();
+    });
+  });
+
   // =========================================================================
   // AI Commit Message Generation
   // =========================================================================

@@ -450,6 +450,31 @@ export const handleAgentIdleAutoCommit: EventHandler<AgentIdleEvent> = async (ev
     return;
   }
 
+  // Force a git status refresh so that all agent file writes are reflected
+  // in the tracking state before we check for changes.
+  try {
+    const gitIntegration = global.gitIntegrations?.get(workspaceId);
+    if (gitIntegration) {
+      await gitIntegration.syncCurrentState(true);
+      logger.debug('[AUTO-COMMIT] Forced git status sync before change check', {
+        workspaceId,
+        agentId,
+      });
+    } else {
+      logger.debug('[AUTO-COMMIT] No git integration found, proceeding without sync', {
+        workspaceId,
+        agentId,
+      });
+    }
+  } catch (error) {
+    // If sync fails, fall through — the commit may still work if tracking is already up to date
+    logger.warn('[AUTO-COMMIT] Git status sync failed, proceeding with existing state', {
+      workspaceId,
+      agentId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
   // Early check: does this agent have any unstaged changes?
   // This is a cheap in-memory filter that avoids the more expensive agent persistence
   // load and full commit flow for agents that only chatted without making file changes.
