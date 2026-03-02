@@ -38,5 +38,8 @@ jobs:
           npm run check
           npm run type-check
 
+      - name: Accessibility lint
+        run: bash scripts/check-accessibility.sh
+
       - name: Unit tests
         run: npm run test:unit
