@@ -116,7 +116,7 @@
           <div class="h-4 flex-1" style="background-color: {color}"></div>
         {/each}
       </div>
-      <span class="text-[11px] leading-tight text-foreground truncate w-full">Default</span>
+      <span class="text-[11px] leading-tight text-foreground truncate w-full {!hasCustom ? 'font-semibold' : ''}">Default</span>
     </button>
 
     <!-- Presets -->
@@ -138,7 +138,7 @@
             ></div>
           {/each}
         </div>
-        <span class="text-[11px] leading-tight text-foreground truncate w-full">{preset.label}</span>
+        <span class="text-[11px] leading-tight text-foreground truncate w-full {isActive ? 'font-semibold' : ''}">{preset.label}</span>
       </button>
     {/each}
   </div>
