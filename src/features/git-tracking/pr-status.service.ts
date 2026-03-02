@@ -83,6 +83,35 @@ function normalizePullRequestInfo(
   const createdAt = pr?.created_at ?? pr?.createdAt ?? existing?.createdAt ?? new Date().toISOString();
   const updatedAt = pr?.updated_at ?? pr?.updatedAt ?? existing?.updatedAt ?? new Date().toISOString();
 
+  // Extract mergeability fields from raw PR data
+  // The raw response contains mergeable (boolean | null), mergeable_state (string), review_comments (number)
+  const mergeable = pr?.mergeable ?? existing?.mergeable;
+  const mergeableState = pr?.mergeable_state ?? pr?.mergeableState ?? existing?.mergeableState;
+  // mergeConflicts is true when mergeableState is 'dirty' (actual merge conflicts)
+  // Note: mergeable === false is too broad as it includes other states like blocked/behind
+  // When we have a known mergeableState, derive directly from it; only fall back to existing when undefined
+  const mergeConflicts = mergeableState !== undefined ? mergeableState === 'dirty' : (existing?.mergeConflicts ?? false);
+
+  // Extract comment counts
+  const reviewComments = pr?.review_comments ?? pr?.reviewComments ?? existing?.reviewComments;
+  const comments = pr?.comments ?? existing?.comments;
+
+  // Extract review decision (from GraphQL responses, may not always be present)
+  const reviewDecision = pr?.review_decision ?? pr?.reviewDecision ?? existing?.reviewDecision;
+
+  // Extract additional fields
+  const additions = pr?.additions ?? existing?.additions;
+  const deletions = pr?.deletions ?? existing?.deletions;
+  const changedFiles = pr?.changed_files ?? pr?.changedFiles ?? existing?.changedFiles;
+  const baseRef = pr?.base_ref ?? pr?.baseRef ?? pr?.base?.ref ?? existing?.baseRef;
+  const headRef = pr?.head_ref ?? pr?.headRef ?? pr?.head?.ref ?? existing?.headRef;
+
+  // Extract headSha for CI status fetching
+  const headSha = pr?.head_sha ?? pr?.headSha ?? pr?.head?.sha ?? existing?.headSha;
+
+  // Preserve existing ciStatus if not provided in pr
+  const ciStatus = pr?.ciStatus ?? existing?.ciStatus;
+
   // Don't spread the raw pr object as it may have a different 'url' field
   // that would overwrite our computed url
   return {
@@ -97,6 +126,24 @@ function normalizePullRequestInfo(
     mergedAt: pr?.merged_at ?? pr?.mergedAt ?? existing?.mergedAt,
     closedAt: pr?.closed_at ?? pr?.closedAt ?? existing?.closedAt,
     isDraft: pr?.draft ?? pr?.isDraft ?? existing?.isDraft,
+    // Mergeability fields
+    mergeable,
+    mergeableState,
+    mergeConflicts,
+    // Comment counts
+    reviewComments,
+    comments,
+    // Review decision
+    reviewDecision,
+    // Additional fields
+    additions,
+    deletions,
+    changedFiles,
+    baseRef,
+    headRef,
+    // CI and git ref fields
+    headSha,
+    ciStatus,
   };
 }
 
@@ -325,7 +372,77 @@ export async function refreshPRStatus(
     const mergedPRs = mergePullRequestArrays(refreshedExistingPRs, discoveredWithRefreshed);
 
     // Step 5: Determine the active PR (most recent open PR, or null)
-    const newActivePR = findMostRecentOpenPR(mergedPRs);
+    let newActivePR = findMostRecentOpenPR(mergedPRs);
+
+    // Step 5.5: Fetch CI status and review status for the active PR (if open)
+    if (newActivePR && (newActivePR.status === PullRequestStatus.Open || newActivePR.status === PullRequestStatus.Draft)) {
+      try {
+        // Get the headSha from the active PR (preserved during normalization)
+        const headSha = newActivePR.headSha;
+
+        // Fetch CI status and reviews in parallel
+        const [ciStatusResult, reviewsResult] = await Promise.all([
+          // Only fetch CI status if we have a headSha
+          headSha
+            ? invoke('git-tracking:get-check-runs', {
+                owner: workspace.repositoryOwner,
+                repo: workspace.repositoryName,
+                commitSha: headSha,
+              }) as Promise<{ success?: boolean; data?: { total: number; passed: number; failed: number; pending: number }; error?: string }>
+            : Promise.resolve({ success: true, data: undefined }),
+          // Fetch reviews for the active PR
+          invoke('git-tracking:get-pr-reviews', {
+            owner: workspace.repositoryOwner,
+            repo: workspace.repositoryName,
+            number: newActivePR.number,
+          }) as Promise<{ success?: boolean; data?: { reviewDecision: string | null; approvalCount: number; changesRequestedCount: number; approvedBy: string[] }; error?: string }>,
+        ]);
+
+        // Enrich the active PR with CI status and review data
+        if (ciStatusResult.success && ciStatusResult.data) {
+          newActivePR = {
+            ...newActivePR,
+            ciStatus: ciStatusResult.data,
+          };
+          logger.debug('[PRStatusService] Added CI status to active PR', {
+            workspaceId,
+            prNumber: newActivePR.number,
+            ciStatus: ciStatusResult.data,
+          });
+        }
+
+        if (reviewsResult.success && reviewsResult.data) {
+          // Use fresh data directly (even if null, meaning no actionable reviews)
+          // Don't fall back to old value when we have a successful fresh result
+          newActivePR = {
+            ...newActivePR,
+            reviewDecision: reviewsResult.data.reviewDecision ?? null,
+            approvedBy: reviewsResult.data.approvedBy,
+            approvalCount: reviewsResult.data.approvalCount,
+          };
+          logger.debug('[PRStatusService] Added review status to active PR', {
+            workspaceId,
+            prNumber: newActivePR.number,
+            reviewDecision: reviewsResult.data.reviewDecision,
+            approvedBy: reviewsResult.data.approvedBy,
+            approvalCount: reviewsResult.data.approvalCount,
+          });
+        }
+
+        // Also update this PR in the mergedPRs array
+        const prIndex = mergedPRs.findIndex(pr => pr.number === newActivePR!.number);
+        if (prIndex !== -1) {
+          mergedPRs[prIndex] = newActivePR;
+        }
+      } catch (err) {
+        // Log but don't fail the refresh if CI/review fetch fails
+        logger.warn('[PRStatusService] Failed to fetch CI/review status', {
+          workspaceId,
+          prNumber: newActivePR.number,
+          error: err instanceof Error ? err.message : 'Unknown error',
+        });
+      }
+    }
 
     // Compute legacy fields from active PR
     const prStatus = newActivePR?.status ?? null;

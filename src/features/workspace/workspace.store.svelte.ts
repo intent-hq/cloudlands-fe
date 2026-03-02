@@ -178,6 +178,32 @@ class WorkspaceStore {
             const hadAgent = existing.agentSummary !== undefined;
             const hasAgent = w.agentSummary !== undefined;
             if (hadAgent !== hasAgent) return true;
+            // Detect activePullRequest enrichment changes (ciStatus, reviewDecision, approvedBy)
+            const hadPR = existing.activePullRequest != null;
+            const hasPR = w.activePullRequest != null;
+            if (hadPR !== hasPR) return true;
+            if (hadPR && hasPR) {
+              const oldPR = existing.activePullRequest!;
+              const newPR = w.activePullRequest!;
+              if (oldPR.status !== newPR.status) return true;
+              const hadCI = oldPR.ciStatus != null;
+              const hasCI = newPR.ciStatus != null;
+              if (hadCI !== hasCI) return true;
+              if (hadCI && hasCI) {
+                if (oldPR.ciStatus!.failed !== newPR.ciStatus!.failed ||
+                    oldPR.ciStatus!.pending !== newPR.ciStatus!.pending ||
+                    oldPR.ciStatus!.passed !== newPR.ciStatus!.passed ||
+                    oldPR.ciStatus!.total !== newPR.ciStatus!.total) return true;
+              }
+              if (oldPR.reviewDecision !== newPR.reviewDecision) return true;
+              if (oldPR.mergeable !== newPR.mergeable) return true;
+              if (oldPR.mergeableState !== newPR.mergeableState) return true;
+              if (oldPR.approvalCount !== newPR.approvalCount) return true;
+              // Compare approvedBy arrays by joining to string (order matters for display)
+              const oldApprovedBy = oldPR.approvedBy?.join(',') ?? '';
+              const newApprovedBy = newPR.approvedBy?.join(',') ?? '';
+              if (oldApprovedBy !== newApprovedBy) return true;
+            }
             return false;
           });
         if (itemsChanged) {
@@ -1007,4 +1033,23 @@ if (typeof window !== 'undefined') {
   window.addEventListener('beforeunload', () => {
     workspaceStore.flushPendingDeletions();
   });
+
+  // Listen for background enrichment updates from main process
+  // This ensures the workspace list shows correct PR status after enrichment completes
+  if (window.electronAPI?.on) {
+    window.electronAPI.on(
+      'workspace:background-enrichment-complete',
+      (data: { workspaceId: string; activePullRequest: any }) => {
+        if (data.workspaceId && data.activePullRequest) {
+          logger.debug('Received background enrichment update', {
+            workspaceId: data.workspaceId,
+            prNumber: data.activePullRequest?.number,
+          });
+          workspaceStore.updateLocalWorkspace(data.workspaceId as WorkspaceId, {
+            activePullRequest: data.activePullRequest,
+          });
+        }
+      },
+    );
+  }
 }

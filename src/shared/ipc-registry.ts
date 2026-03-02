@@ -851,6 +851,8 @@ export const IPC_CHANNELS = {
     GET_GITHUB_ISSUES: 'git-tracking:get-github-issues',
     SEARCH_GITHUB_ISSUES: 'git-tracking:search-github-issues',
     GET_REMOTE_URL: 'git-tracking:get-remote-url',
+    GET_CHECK_RUNS: 'git-tracking:get-check-runs',
+    GET_PR_REVIEWS: 'git-tracking:get-pr-reviews',
   },
 
   // GitHub Auth (via Augment API OAuth)
@@ -1109,6 +1111,7 @@ export const EVENT_CHANNELS = [
   'workspace:changes',
   'workspace:file-changes',
   'workspace:metadata-changed',
+  'workspace:background-enrichment-complete',
   'file:changed',
   'file:created',
   'file:deleted',

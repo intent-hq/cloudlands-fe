@@ -147,6 +147,7 @@ export class GitHubService {
         additions: pr.additions || 0,
         deletions: pr.deletions || 0,
         changedFiles: pr.changed_files || 0,
+        headSha: pr.head_sha || undefined,
       }));
 
       this.setCache(cacheKey, pullRequests);
@@ -224,6 +225,7 @@ export class GitHubService {
         additions: pr.additions || 0,
         deletions: pr.deletions || 0,
         changedFiles: pr.changed_files || 0,
+        headSha: pr.head_sha || undefined,
       }));
 
       this.setCache(cacheKey, pullRequests);
@@ -552,6 +554,213 @@ export class GitHubService {
     } catch (error) {
       logger.error('Failed to search issues', error as Error, { owner, repo });
       return [];
+    }
+  }
+
+  /**
+   * Get CI check runs for a commit
+   * Uses the github-api remote tool to call GET /repos/{owner}/{repo}/commits/{sha}/check-runs
+   */
+  async getCheckRuns(
+    owner: string,
+    repo: string,
+    commitSha: string,
+  ): Promise<{ total: number; passed: number; failed: number; pending: number }> {
+    const isAuth = await this.isAuthenticated();
+    if (!isAuth) {
+      logger.debug('Not authenticated, returning empty check runs');
+      return { total: 0, passed: 0, failed: 0, pending: 0 };
+    }
+
+    const cacheKey = `check-runs:${owner}/${repo}/${commitSha}`;
+    const cached = this.getFromCache<{ total: number; passed: number; failed: number; pending: number }>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    try {
+      const path = `/repos/${owner}/${repo}/commits/${commitSha}/check-runs`;
+      const toolInput = {
+        path,
+        method: 'GET',
+        details: true,
+      };
+
+      const response = await augmentApiClient.callEndpoint<{
+        tool_output: string;
+        tool_result_message: string;
+        status: number;
+      }>('agents/run-remote-tool', {
+        tool_name: 'github-api',
+        tool_input_json: JSON.stringify(toolInput),
+        tool_id: 8, // GITHUB_TOOL_ID
+      });
+
+      // Status 1 = TOOL_EXECUTION_OK
+      if (response.status !== 1) {
+        logger.warn('Failed to fetch check runs', { error: response.tool_output || response.tool_result_message });
+        return { total: 0, passed: 0, failed: 0, pending: 0 };
+      }
+
+      if (!response.tool_output || response.tool_output.trim() === '') {
+        return { total: 0, passed: 0, failed: 0, pending: 0 };
+      }
+
+      // Parse YAML response - use dynamic import to avoid bundling issues
+      const yaml = await import('js-yaml');
+      const parsed = yaml.load(response.tool_output) as { check_runs?: Array<{
+        name: string;
+        status: string;
+        conclusion: string | null;
+      }>, total_count?: number };
+
+      if (!parsed || !parsed.check_runs) {
+        return { total: 0, passed: 0, failed: 0, pending: 0 };
+      }
+
+      const checkRuns = parsed.check_runs;
+      const total = checkRuns.length;
+      let passed = 0;
+      let failed = 0;
+      let pending = 0;
+
+      for (const cr of checkRuns) {
+        if (cr.status !== 'completed') {
+          pending++;
+        } else if (cr.conclusion === 'success' || cr.conclusion === 'neutral' || cr.conclusion === 'skipped') {
+          passed++;
+        } else {
+          // failure, cancelled, timed_out, action_required
+          failed++;
+        }
+      }
+
+      const result = { total, passed, failed, pending };
+      this.setCache(cacheKey, result);
+      logger.info('Fetched check runs successfully', { owner, repo, commitSha, ...result });
+      return result;
+    } catch (error) {
+      logger.error('Failed to get check runs', error as Error, { owner, repo, commitSha });
+      return { total: 0, passed: 0, failed: 0, pending: 0 };
+    }
+  }
+
+  /**
+   * Get PR reviews to determine review decision
+   * Uses the github-api remote tool to call GET /repos/{owner}/{repo}/pulls/{number}/reviews
+   */
+  async getReviews(
+    owner: string,
+    repo: string,
+    prNumber: number,
+  ): Promise<{ reviewDecision: string | null; approvalCount: number; changesRequestedCount: number; approvedBy: string[] }> {
+    const isAuth = await this.isAuthenticated();
+    if (!isAuth) {
+      logger.debug('Not authenticated, returning empty reviews');
+      return { reviewDecision: null, approvalCount: 0, changesRequestedCount: 0, approvedBy: [] };
+    }
+
+    const cacheKey = `reviews:${owner}/${repo}/${prNumber}`;
+    const cached = this.getFromCache<{ reviewDecision: string | null; approvalCount: number; changesRequestedCount: number; approvedBy: string[] }>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    try {
+      const path = `/repos/${owner}/${repo}/pulls/${prNumber}/reviews`;
+      const toolInput = {
+        path,
+        method: 'GET',
+        data: { per_page: 100 },
+      };
+
+      const response = await augmentApiClient.callEndpoint<{
+        tool_output: string;
+        tool_result_message: string;
+        status: number;
+      }>('agents/run-remote-tool', {
+        tool_name: 'github-api',
+        tool_input_json: JSON.stringify(toolInput),
+        tool_id: 8, // GITHUB_TOOL_ID
+      });
+
+      // Status 1 = TOOL_EXECUTION_OK
+      if (response.status !== 1) {
+        logger.warn('Failed to fetch reviews', { error: response.tool_output || response.tool_result_message });
+        return { reviewDecision: null, approvalCount: 0, changesRequestedCount: 0, approvedBy: [] };
+      }
+
+      if (!response.tool_output || response.tool_output.trim() === '') {
+        return { reviewDecision: null, approvalCount: 0, changesRequestedCount: 0, approvedBy: [] };
+      }
+
+      // Parse YAML response
+      const yaml = await import('js-yaml');
+      const parsed = yaml.load(response.tool_output) as Array<{
+        state: string;
+        user?: { login: string };
+        submitted_at?: string;
+      }>;
+
+      if (!Array.isArray(parsed)) {
+        return { reviewDecision: null, approvalCount: 0, changesRequestedCount: 0, approvedBy: [] };
+      }
+
+      // Track latest ACTIONABLE review per user (APPROVED, CHANGES_REQUESTED, or DISMISSED)
+      // COMMENTED and PENDING states should not override an earlier approval/rejection
+      // DISMISSED clears any prior actionable review for that user
+      const latestReviewByUser = new Map<string, { state: string; submittedAt: string }>();
+      for (const review of parsed) {
+        const login = review.user?.login || 'unknown';
+        const submittedAt = review.submitted_at || '';
+        // DISMISSED overrides any prior actionable review for this user
+        if (review.state === 'DISMISSED') {
+          const existing = latestReviewByUser.get(login);
+          if (!existing || submittedAt > existing.submittedAt) {
+            latestReviewByUser.delete(login);
+          }
+          continue;
+        }
+        // Only consider actionable review states
+        if (review.state !== 'APPROVED' && review.state !== 'CHANGES_REQUESTED') {
+          continue;
+        }
+        const existing = latestReviewByUser.get(login);
+        if (!existing || submittedAt > existing.submittedAt) {
+          latestReviewByUser.set(login, { state: review.state, submittedAt });
+        }
+      }
+
+      // Count approvals and changes requested from latest reviews, and collect approved usernames
+      let approvalCount = 0;
+      let changesRequestedCount = 0;
+      const approvedBy: string[] = [];
+      for (const [login, review] of latestReviewByUser.entries()) {
+        if (review.state === 'APPROVED') {
+          approvalCount++;
+          approvedBy.push(login);
+        } else if (review.state === 'CHANGES_REQUESTED') {
+          changesRequestedCount++;
+        }
+      }
+
+      // Determine overall decision
+      let reviewDecision: string | null = null;
+      if (changesRequestedCount > 0) {
+        reviewDecision = 'CHANGES_REQUESTED';
+      } else if (approvalCount > 0) {
+        reviewDecision = 'APPROVED';
+      }
+      // If no actionable reviews exist, leave as null
+      // (we can't determine REVIEW_REQUIRED without GraphQL access to branch protection rules)
+
+      const result = { reviewDecision, approvalCount, changesRequestedCount, approvedBy };
+      this.setCache(cacheKey, result);
+      logger.info('Fetched reviews successfully', { owner, repo, prNumber, ...result });
+      return result;
+    } catch (error) {
+      logger.error('Failed to get reviews', error as Error, { owner, repo, prNumber });
+      return { reviewDecision: null, approvalCount: 0, changesRequestedCount: 0, approvedBy: [] };
     }
   }
 

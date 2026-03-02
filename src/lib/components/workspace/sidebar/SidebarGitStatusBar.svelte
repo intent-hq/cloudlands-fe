@@ -13,6 +13,7 @@
     faExclamationTriangle,
   } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
+  import { Tooltip } from '$lib/components/ui/tooltip';
   import { gitStore } from '$features/git/git.store.svelte';
   import { gitClient } from '$features/git/git.client';
   import { gitCache } from '$features/git/git-cache';
@@ -27,6 +28,7 @@
   import GitHubAuthModal from '$lib/components/GitHubAuthModal.svelte';
   import { terminalOverlayStore } from '$lib/stores/terminal-overlay.store.svelte';
   import { logger } from '$lib/utils/client-logger';
+  import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
   import DividerButton from './DividerButton.svelte';
   import DividerPanel from './DividerPanel.svelte';
 
@@ -70,6 +72,12 @@
   const isPRMerged = $derived(pullRequests.length > 0 && pullRequests[0].status === 'merged');
   const isPRClosed = $derived(pullRequests.length > 0 && pullRequests[0].status === 'closed');
   const isPRFinished = $derived(isPRMerged || isPRClosed);
+
+  // Check if open PR is mergeable (optimistic: default green, only yellow for KNOWN issues)
+  const isPRMergeable = $derived.by(() => checkPRMergeable(workspace?.activePullRequest));
+
+  // Build tooltip content for PR status
+  const prTooltipContent = $derived.by(() => getPRTooltipContent(workspace?.activePullRequest));
 
   // Only show unpushed commits if PR is not finished
   const hasCommits = $derived(unpushedCount > 0 && !isPRFinished);
@@ -314,7 +322,9 @@
         {@const prStatus = pullRequests[0].status}
         {@const prColor =
           prStatus === 'open'
-            ? 'text-emerald-500/70'
+            ? isPRMergeable
+              ? 'text-emerald-500/70'
+              : 'text-yellow-500/70'
             : prStatus === 'merged'
               ? 'text-purple-500'
               : prStatus === 'closed'
@@ -322,11 +332,14 @@
                 : 'text-muted-foreground'}
         {@const prLabel =
           prStatus === 'merged' ? 'Merged' : prStatus === 'closed' ? 'Closed' : 'PR'}
+        {@const tooltipText = prTooltipContent}
         <div class="flex items-center gap-2">
-          <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Fa icon={faCodePullRequest} size="xs" class={prColor} />
-            <span class={prColor}>{prLabel}</span>
-          </div>
+          <Tooltip content={tooltipText} side="bottom" sideOffset={4} disabled={!tooltipText}>
+            <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Fa icon={faCodePullRequest} size="xs" class={prColor} />
+              <span class={prColor}>{prLabel}</span>
+            </div>
+          </Tooltip>
           <button
             type="button"
             class="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"

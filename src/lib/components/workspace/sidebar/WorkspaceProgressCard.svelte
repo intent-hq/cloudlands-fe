@@ -72,15 +72,25 @@
   async function loadGitStatus() {
     if (!workspaceId) return;
 
+    const capturedWorkspaceId = workspaceId; // Capture for async guard
     gitStatusLoading = true;
+    gitStatus = null; // Clear stale data from previous workspace immediately
 
     try {
-      gitStatus = await AcceptChangesClient.getStatus(WorkspaceId(workspaceId));
+      const result = await AcceptChangesClient.getStatus(WorkspaceId(capturedWorkspaceId));
+      // Guard: only apply if workspace hasn't changed during async call
+      if (workspaceId === capturedWorkspaceId) {
+        gitStatus = result;
+      }
     } catch {
       // Silently handle errors - git status is optional
-      gitStatus = null;
+      if (workspaceId === capturedWorkspaceId) {
+        gitStatus = null;
+      }
     } finally {
-      gitStatusLoading = false;
+      if (workspaceId === capturedWorkspaceId) {
+        gitStatusLoading = false;
+      }
     }
   }
 
@@ -752,9 +762,16 @@
 
   // Determine current workflow stage based on git status and task progress
   const workflowStage = $derived.by<WorkflowStage>(() => {
-    // Still loading git status
+    // Still loading git status - only show loading if we have no cached data to display
     if (gitStatusLoading && !gitStatus) {
-      return 'loading';
+      const activePR = workspace?.activePullRequest;
+      const hasCachedPRData = activePR && (activePR.status === 'Open' || activePR.status === 'Draft' || activePR.status === 'Merged' || activePR.status === 'Closed');
+      const hasTasks = taskStats.total > 0;
+
+      if (!hasCachedPRData && !hasTasks) {
+        return 'loading';
+      }
+      // Otherwise fall through - use cached data while git status loads
     }
 
     // Check for agent working first - this takes priority
@@ -769,7 +786,10 @@
       (gitStatus?.localCommits?.filter((c) => !c.isPushed).length ?? 0) > 0;
     const existingPR = gitStatus?.existingPR;
 
-    // Check PR state first (highest priority for git workflow)
+    // Check PR state - use workspace.activePullRequest as primary signal (available from cache immediately)
+    // Fall back to gitStatus.existingPR for merged/closed detection
+    const activePR = workspace?.activePullRequest;
+
     if (existingPR) {
       if (existingPR.state === 'merged') {
         // PR was merged - the workspace is complete
@@ -786,10 +806,19 @@
         // PR was closed without merging - still show as done for now
         return 'all-done';
       } else if (existingPR.state === 'open') {
-        // For now, treat all open PRs as awaiting review
-        // In the future we could check for approvals via GitHub API
+        // Check review status from activePullRequest (enriched with GitHub data)
+        if (activePR?.reviewDecision === 'APPROVED') {
+          return 'pr-approved';
+        }
         return 'pr-open';
       }
+    } else if (activePR && (activePR.status === 'Open' || activePR.status === 'Draft')) {
+      // gitStatus not loaded yet, but we have cached activePullRequest - use it
+      // This prevents "Ready to start" flash when switching workspaces with an open PR
+      if (activePR.reviewDecision === 'APPROVED') {
+        return 'pr-approved';
+      }
+      return 'pr-open';
     }
 
     // Tasks exist but none started (must have tasks to be "tasks-ready")
@@ -939,41 +968,83 @@
             : undefined,
         };
 
-      case 'pr-open':
+      case 'pr-open': {
+        const activePR = workspace?.activePullRequest;
+        const parts: string[] = [];
+        // Review status
+        if (activePR?.reviewDecision === 'CHANGES_REQUESTED') {
+          parts.push('changes requested');
+        } else {
+          parts.push('awaiting review');
+        }
+        // CI status
+        if (activePR?.ciStatus && activePR.ciStatus.total > 0) {
+          if (activePR.ciStatus.failed > 0) {
+            let ciPart = `${activePR.ciStatus.failed}/${activePR.ciStatus.total} checks failing`;
+            if (activePR.ciStatus.pending > 0) ciPart += ` (${activePR.ciStatus.pending} running)`;
+            parts.push(ciPart);
+          } else if (activePR.ciStatus.pending > 0) {
+            parts.push(`${activePR.ciStatus.pending}/${activePR.ciStatus.total} checks running`);
+          } else {
+            parts.push(`${activePR.ciStatus.passed}/${activePR.ciStatus.total} checks passing`);
+          }
+        }
+        const statusDetails = parts.join(', ');
+        const prNumber = activePR?.number ?? existingPR?.number;
+        const prUrl = activePR?.url ?? existingPR?.htmlUrl;
         return {
-          headline: `PR #${existingPR?.number} open, awaiting review.`,
+          headline: `PR #${prNumber} open, ${statusDetails}.`,
           subtext: '',
-          action: existingPR?.htmlUrl
+          action: prUrl
             ? {
                 label: 'View PR',
                 icon: faCodeBranch,
                 onClick: () => {
                   if (workspaceId) {
-                    handleLink(existingPR.htmlUrl, { workspaceId: WorkspaceId(workspaceId) });
+                    handleLink(prUrl, { workspaceId: WorkspaceId(workspaceId) });
                   }
                 },
                 tooltip: 'Opens the pull request on GitHub in your browser.',
               }
             : undefined,
         };
+      }
 
-      case 'pr-approved':
+      case 'pr-approved': {
+        const activePR = workspace?.activePullRequest;
+        let approvedBy = '';
+        if (activePR?.approvedBy && activePR.approvedBy.length > 0) {
+          approvedBy = ` by ${activePR.approvedBy.join(', ')}`;
+        }
+        let ciInfo = '';
+        if (activePR?.ciStatus && activePR.ciStatus.total > 0) {
+          if (activePR.ciStatus.failed > 0) {
+            ciInfo = `, ${activePR.ciStatus.failed}/${activePR.ciStatus.total} checks failing`;
+          } else if (activePR.ciStatus.pending > 0) {
+            ciInfo = `, ${activePR.ciStatus.pending}/${activePR.ciStatus.total} checks pending`;
+          } else {
+            ciInfo = `, ${activePR.ciStatus.passed}/${activePR.ciStatus.total} checks passing`;
+          }
+        }
+        const prNumber = activePR?.number ?? existingPR?.number;
+        const prUrl = activePR?.url ?? existingPR?.htmlUrl;
         return {
-          headline: `PR #${existingPR?.number} approved, ready to merge.`,
+          headline: `PR #${prNumber} approved${approvedBy}, ready to merge${ciInfo}.`,
           subtext: '',
-          action: existingPR?.htmlUrl
+          action: prUrl
             ? {
                 label: 'Merge PR',
                 icon: faCodeBranch,
                 onClick: () => {
                   if (workspaceId) {
-                    handleLink(existingPR.htmlUrl, { workspaceId: WorkspaceId(workspaceId) });
+                    handleLink(prUrl, { workspaceId: WorkspaceId(workspaceId) });
                   }
                 },
                 tooltip: 'Opens the pull request on GitHub to merge.',
               }
             : undefined,
         };
+      }
 
       case 'pr-merged':
       case 'all-done':

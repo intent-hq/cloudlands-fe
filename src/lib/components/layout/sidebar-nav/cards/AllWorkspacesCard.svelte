@@ -11,6 +11,7 @@
   import type { WorkspaceDisplayStatus } from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
   import WorkspaceListItem from '../WorkspaceListItem.svelte';
   import { onMount } from 'svelte';
+  import { isPRMergeable as checkPRMergeable } from '$lib/utils/pr-status';
 
   function getGitHubAvatarUrl(owner: string, size: number = 24): string {
     return `https://github.com/${owner}.png?size=${size}`;
@@ -74,7 +75,13 @@
         (pr) => pr.status === PullRequestStatus.Open || pr.status === PullRequestStatus.Draft,
       ) ||
       ws.activePullRequest;
-    if (hasOpenPR) return 'pr_open';
+    if (hasOpenPR) {
+      const activePR = ws.activePullRequest;
+      if (activePR && activePR.status === PullRequestStatus.Open) {
+        if (checkPRMergeable(activePR)) return 'pr_ready';
+      }
+      return 'pr_open';
+    }
     const taskStats = ws.taskStats;
     if (taskStats) {
       if (taskStats.completed > 0 && taskStats.completed === taskStats.total) return 'complete';
@@ -111,12 +118,14 @@
     not_started: 'No Code Changes',
     in_progress: 'In Progress',
     complete: 'Complete',
+    pr_ready: 'PR Mergeable',
     pr_open: 'PR Open',
     pr_merged: 'PR Merged',
   };
 
   const statusOrder: WorkspaceDisplayStatus[] = [
     'in_progress',
+    'pr_ready',
     'pr_open',
     'not_started',
     'complete',

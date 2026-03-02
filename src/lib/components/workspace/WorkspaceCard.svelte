@@ -1,8 +1,9 @@
 <script lang="ts">
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import type { Note, Workspace } from '$shared/types';
-  import { WorkspaceStatusEnum } from '$shared/types';
+  import { WorkspaceStatusEnum, PullRequestStatus } from '$shared/types';
   import { getWorkspaceStage } from '$lib/utils/workspace-utils';
+  import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
   import { isSpecNote } from '$shared/constants/notes';
   import {
     faFileCode,
@@ -129,6 +130,26 @@
 
     return gatherFilesFromWorkspace().slice(0, 6);
   });
+
+  // PR status
+  const prStatus = $derived.by(() => {
+    const active = workspace.activePullRequest;
+    if (active) return active.status;
+    if (workspace.prStatus) return workspace.prStatus;
+    const prs = workspace.pullRequests ?? [];
+    if (prs.length > 0) return prs[0].status;
+    return null;
+  });
+
+  const prNumber = $derived(
+    workspace.activePullRequest?.number ??
+      workspace.prNumber ??
+      workspace.pullRequests?.[0]?.number,
+  );
+
+  const isPRMergeable = $derived.by(() => checkPRMergeable(workspace.activePullRequest));
+
+  const prTooltipContent = $derived.by(() => getPRTooltipContent(workspace.activePullRequest));
 
   let totalFileCount = $derived.by(() => {
     if (workspace.diffSummary) {
@@ -263,6 +284,24 @@
             <Fa icon={faServer} size="xs" />
             <span class="text-[10px]">Remote</span>
           </div>
+        {/if}
+        {#if prStatus}
+          {@const statusColor =
+            prStatus === PullRequestStatus.Merged
+              ? 'bg-purple-500/10 text-purple-500'
+              : prStatus === PullRequestStatus.Open
+                ? isPRMergeable
+                  ? 'bg-emerald-500/10 text-emerald-500'
+                  : 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
+                : prStatus === PullRequestStatus.Draft
+                  ? 'bg-muted-foreground/10 text-muted-foreground/60'
+                  : 'bg-red-500/10 text-red-500'}
+          {@const tooltipText = prTooltipContent}
+          <Tooltip content={tooltipText} side="bottom" sideOffset={4} disabled={!tooltipText}>
+            <span class="text-[9px] font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}">
+              PR{prNumber ? ` #${prNumber}` : ''}
+            </span>
+          </Tooltip>
         {/if}
       </div>
     </div>

@@ -27,6 +27,8 @@ import {
   GitTrackingGetGithubIssuesSchema,
   GitTrackingSearchGithubIssuesSchema,
   GitTrackingGetRemoteUrlSchema,
+  GitTrackingGetCheckRunsSchema,
+  GitTrackingGetPRReviewsSchema,
 } from '../../../main/ipc-schemas';
 import { execAsync } from '../../../shared/git/git-env';
 
@@ -385,6 +387,48 @@ export function setupGitTrackingIPC(): void {
         }
       },
       GIT_TRACKING_CHANNELS.GET_REMOTE_URL,
+    ),
+  );
+
+  // Get check runs for a commit
+  ipcMain.handle(
+    GIT_TRACKING_CHANNELS.GET_CHECK_RUNS,
+    createSafeValidatedHandler(
+      GitTrackingGetCheckRunsSchema,
+      async (_, { owner, repo, commitSha }) => {
+        try {
+          const checkRuns = await githubService.getCheckRuns(owner, repo, commitSha);
+          return { success: true, data: checkRuns };
+        } catch (error) {
+          logger.error('Failed to get check runs', error as Error);
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
+      },
+      GIT_TRACKING_CHANNELS.GET_CHECK_RUNS,
+    ),
+  );
+
+  // Get PR reviews
+  ipcMain.handle(
+    GIT_TRACKING_CHANNELS.GET_PR_REVIEWS,
+    createSafeValidatedHandler(
+      GitTrackingGetPRReviewsSchema,
+      async (_, { owner, repo, number }) => {
+        try {
+          const reviews = await githubService.getReviews(owner, repo, number);
+          return { success: true, data: reviews };
+        } catch (error) {
+          logger.error('Failed to get PR reviews', error as Error);
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
+      },
+      GIT_TRACKING_CHANNELS.GET_PR_REVIEWS,
     ),
   );
 

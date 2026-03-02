@@ -21,6 +21,7 @@
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import WorkspacePhaseIndicator from '$lib/components/workspace/WorkspacePhaseIndicator.svelte';
   import { deriveWorkspacePhase } from '$lib/components/workspace/workspace-phase';
+  import { isPRMergeable as checkPRMergeable } from '$lib/utils/pr-status';
 
   interface Props {
     isOpen: boolean;
@@ -188,6 +189,7 @@
           {@const progress = getBuildProgress(workspace)}
           {@const wsPrStatus = getPrStatus(workspace)}
           {@const wsPrNumber = getPrNumber(workspace)}
+          {@const isMergeable = checkPRMergeable(workspace.activePullRequest)}
           {@const isRunning = agents.some((a) => a.isActive)}
           {@const isUnread = agents.some((a) => a.isUnread)}
           <button
@@ -251,7 +253,9 @@
                     wsPrStatus === PullRequestStatus.Merged
                       ? 'bg-purple-500/10 text-purple-500'
                       : wsPrStatus === PullRequestStatus.Open
-                        ? 'bg-emerald-500/10 text-emerald-500'
+                        ? isMergeable
+                          ? 'bg-emerald-500/10 text-emerald-500'
+                          : 'bg-yellow-500/10 text-yellow-500'
                         : wsPrStatus === PullRequestStatus.Draft
                           ? 'bg-muted-foreground/10 text-muted-foreground/60'
                           : 'bg-red-500/10 text-red-500'}

@@ -15,6 +15,7 @@
     | 'not_started'
     | 'in_progress'
     | 'complete'
+    | 'pr_ready'
     | 'pr_open'
     | 'pr_merged';
 
@@ -36,6 +37,7 @@
     not_started: { stroke: '#99999966', fill: 'transparent', innerCircleRPercentage: 0 },
     in_progress: { stroke: '#00BCFF', fill: '#00BCFF', innerCircleRPercentage: 55 },
     complete: { stroke: '#22c55e', fill: '#00BD7D', innerCircleRPercentage: 100 },
+    pr_ready: { stroke: '#22c55e', fill: '#22c55e', innerCircleRPercentage: 100 },
     pr_open: { stroke: 'transparent', fill: 'transparent', innerCircleRPercentage: 100 },
     pr_merged: { stroke: 'transparent', fill: 'transparent', innerCircleRPercentage: 100 },
   };
@@ -44,6 +46,7 @@
     not_started: 'Not started',
     in_progress: 'In progress',
     complete: 'Complete',
+    pr_ready: 'PR Mergeable',
     pr_open: 'PR open',
     pr_merged: 'PR merged',
   };

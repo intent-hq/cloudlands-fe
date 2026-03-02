@@ -1084,6 +1084,18 @@ export const GitTrackingCreatePullRequestSchema = z.object({
   options: z.any(),
 });
 
+export const GitTrackingGetCheckRunsSchema = z.object({
+  owner: z.string().min(1, 'Owner is required'),
+  repo: z.string().min(1, 'Repository is required'),
+  commitSha: z.string().min(1, 'Commit SHA is required'),
+});
+
+export const GitTrackingGetPRReviewsSchema = z.object({
+  owner: z.string().min(1, 'Owner is required'),
+  repo: z.string().min(1, 'Repository is required'),
+  number: z.number().int().positive('Pull request number must be positive'),
+});
+
 export const GitTrackingGetGithubIssuesSchema = z.object({
   owner: z.string().min(1, 'Owner is required'),
   repo: z.string().min(1, 'Repository is required'),

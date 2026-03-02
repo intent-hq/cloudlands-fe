@@ -2,6 +2,7 @@
   import { page } from '$app/state';
   import { faCheck, faThumbtack } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { Tooltip } from '$lib/components/ui/tooltip';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import WorkspacePhaseIndicator from '$lib/components/workspace/WorkspacePhaseIndicator.svelte';
   import { deriveWorkspacePhase } from '$lib/components/workspace/workspace-phase';
@@ -9,6 +10,7 @@
   import type { Workspace } from '$shared/types';
   import { PullRequestStatus } from '$shared/types';
   import { cn } from '$lib/utils';
+  import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
 
   interface Props {
     workspace: Workspace;
@@ -71,6 +73,12 @@
       workspace.prNumber ??
       workspace.pullRequests?.[0]?.number,
   );
+
+  // PR mergeability (optimistic: default green, only yellow for KNOWN issues)
+  const isPRMergeable = $derived.by(() => checkPRMergeable(workspace.activePullRequest));
+
+  // PR tooltip content for mergeability details
+  const prTooltipContent = $derived.by(() => getPRTooltipContent(workspace.activePullRequest));
   // Agent info — only show unread and in-progress agents
   const activeAgentStatuses = new Set(['streaming', 'processing', 'busy', 'responding']);
   const agentInfos = $derived.by(() => {
@@ -165,13 +173,18 @@
           prStatus === PullRequestStatus.Merged
             ? 'bg-purple-500/10 text-purple-500'
             : prStatus === PullRequestStatus.Open
-              ? 'bg-emerald-500/10 text-emerald-500'
+              ? isPRMergeable
+                ? 'bg-emerald-500/10 text-emerald-500'
+                : 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
               : prStatus === PullRequestStatus.Draft
                 ? 'bg-muted-foreground/10 text-muted-foreground/60'
                 : 'bg-red-500/10 text-red-500'}
-        <span class="text-[9px] font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}">
-          PR{prNumber ? ` #${prNumber}` : ''}
-        </span>
+        {@const tooltipText = prTooltipContent}
+        <Tooltip content={tooltipText} side="bottom" sideOffset={4} disabled={!tooltipText}>
+          <span class="text-[9px] font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}">
+            PR{prNumber ? ` #${prNumber}` : ''}
+          </span>
+        </Tooltip>
       {/if}
 
       <span

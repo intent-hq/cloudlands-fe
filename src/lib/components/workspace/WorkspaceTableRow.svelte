@@ -7,6 +7,7 @@
   import { cn } from '$lib/utils';
   import type { Workspace } from '$shared/types';
   import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
+  import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
   import { faBoxArchive, faBoxOpen, faTrash } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Button from '../ui/button/button.svelte';
@@ -14,6 +15,7 @@
   import AgentCard from '$lib/components/chat/AgentCard.svelte';
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
+  import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { deriveWorkspacePhase } from './workspace-phase';
   import WorkspacePhaseIndicator from './WorkspacePhaseIndicator.svelte';
 
@@ -78,6 +80,10 @@
   const prDisplayNumber = $derived(
     ws.activePullRequest?.number ?? ws.prNumber ?? ws.pullRequests?.[0]?.number,
   );
+
+  const isPRMergeable = $derived.by(() => checkPRMergeable(ws.activePullRequest));
+
+  const prTooltipContent = $derived.by(() => getPRTooltipContent(ws.activePullRequest));
 
   // Hover state for agent cards
   let hoveredAgentId: string | null = $state(null);
@@ -175,13 +181,20 @@
               prDisplayStatus === PullRequestStatus.Merged
                 ? 'bg-purple-500/10 text-purple-500'
                 : prDisplayStatus === PullRequestStatus.Open
-                  ? 'bg-emerald-500/10 text-emerald-500'
+                  ? isPRMergeable
+                    ? 'bg-emerald-500/10 text-emerald-500'
+                    : 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
                   : prDisplayStatus === PullRequestStatus.Draft
                     ? 'bg-muted-foreground/10 text-muted-foreground/60'
                     : 'bg-red-500/10 text-red-500'}
-            <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 {statusColor}">
-              PR{prDisplayNumber ? ` #${prDisplayNumber}` : ''}
-            </span>
+            {@const tooltipText = prTooltipContent}
+            <Tooltip content={tooltipText} side="bottom" sideOffset={4} disabled={!tooltipText}>
+              <span
+                class="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 {statusColor}"
+              >
+                PR{prDisplayNumber ? ` #${prDisplayNumber}` : ''}
+              </span>
+            </Tooltip>
           {/if}
 
           <!-- Activity time -->

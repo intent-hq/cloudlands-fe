@@ -373,6 +373,20 @@ export interface PullRequestInfo {
   labels?: string[];
   mergeable?: boolean;
   closedAt?: string;
+  /** GitHub mergeability state: 'clean', 'dirty', 'blocked', 'behind', 'unstable', 'unknown' */
+  mergeableState?: string;
+  /** Number of review comments on the PR */
+  reviewComments?: number;
+  /** CI status summary */
+  ciStatus?: { total: number; passed: number; failed: number; pending: number };
+  /** Review decision: 'APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED', or null (no actionable reviews) */
+  reviewDecision?: string | null;
+  /** SHA of the head commit (for fetching CI status) */
+  headSha?: string;
+  /** List of usernames who approved the PR */
+  approvedBy?: string[];
+  /** Number of approvals */
+  approvalCount?: number;
 }
 
 export enum PullRequestStatus {

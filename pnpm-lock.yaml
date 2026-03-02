@@ -319,7 +319,7 @@ importers:
         specifier: ^5.1.5
         version: 5.1.6
       node-pty:
-        specifier: ^1.1.0-beta37
+        specifier: 1.1.0-beta9
         version: 1.1.0-beta9
       openai:
         specifier: ^6.2.0
