@@ -74,7 +74,7 @@ export class GitIntegrationService extends EventEmitter {
     super();
     this.workspaceId = workspaceId;
     this.workspacePath = workspacePath;
-    this.isGitRepo = isGitRepository(workspacePath);
+    this.isGitRepo = false; // Updated async in initializeGitCheck()
     this.fileTrackingService = fileTrackingService;
     this.gitService = gitService;
     this.isRemote = !!isRemote;
@@ -138,6 +138,9 @@ export class GitIntegrationService extends EventEmitter {
       logger.debug('Already listening to git changes', { workspaceId: this.workspaceId });
       return;
     }
+
+    // Resolve git repo status before starting (non-blocking initialization)
+    this.isGitRepo = await isGitRepository(this.workspacePath);
 
     this.changeDetector = changeDetector;
     this.isListening = true;

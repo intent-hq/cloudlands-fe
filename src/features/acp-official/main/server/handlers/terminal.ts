@@ -170,7 +170,7 @@ export class TerminalHandler {
     if (!terminal.exitStatus) {
       // Use killChildProcessTree because terminals are spawned with shell: true,
       // so child.kill() only kills the shell, not the actual command underneath
-      killChildProcessTree(terminal.process);
+      await killChildProcessTree(terminal.process);
       logger.info('Terminal killed', { terminalId });
     }
   }
@@ -216,7 +216,7 @@ export class TerminalHandler {
 
     // Kill if still running
     if (!terminal.exitStatus) {
-      killChildProcessTree(terminal.process);
+      await killChildProcessTree(terminal.process);
     }
 
     // Remove from map
@@ -240,7 +240,7 @@ export class TerminalHandler {
     // Kill all running terminals and their process trees
     for (const [terminalId, terminal] of this.terminals.entries()) {
       if (!terminal.exitStatus) {
-        killChildProcessTree(terminal.process);
+        await killChildProcessTree(terminal.process);
         logger.debug('Killed terminal on dispose', { terminalId });
       }
     }

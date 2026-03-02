@@ -9,8 +9,11 @@
  * (or similar) adapter, leading to massive memory leaks (80GB+ observed).
  */
 
-import { ChildProcess, execSync } from 'child_process';
+import { ChildProcess, exec } from 'child_process';
+import { promisify } from 'util';
 import { Logger } from '../logger';
+
+const execAsync = promisify(exec);
 
 const logger = new Logger('ProcessTreeKill');
 
@@ -23,7 +26,10 @@ const logger = new Logger('ProcessTreeKill');
  * @param pid - The root process ID to kill
  * @param signal - Signal to send (default: SIGTERM)
  */
-export function killProcessTree(pid: number, signal: 'SIGTERM' | 'SIGKILL' = 'SIGTERM'): void {
+export async function killProcessTree(
+  pid: number,
+  signal: 'SIGTERM' | 'SIGKILL' = 'SIGTERM',
+): Promise<void> {
   if (!pid || pid <= 0) {
     logger.warn('Invalid PID for process tree kill', { pid });
     return;
@@ -32,12 +38,12 @@ export function killProcessTree(pid: number, signal: 'SIGTERM' | 'SIGKILL' = 'SI
   try {
     if (process.platform === 'win32') {
       // Windows: use taskkill /T to kill the process tree
-      execSync(`taskkill /pid ${pid} /T /F`, { stdio: 'ignore', timeout: 5000, windowsHide: true });
+      await execAsync(`taskkill /pid ${pid} /T /F`, { timeout: 5000, windowsHide: true });
     } else {
       // macOS/Linux: find all descendant PIDs and kill them bottom-up
       try {
         // pgrep -P finds direct children; we recurse to get the full tree
-        const descendants = getDescendantPids(pid);
+        const descendants = await getDescendantPids(pid);
 
         // Kill descendants first (bottom-up: children before parents)
         for (const childPid of descendants.reverse()) {
@@ -85,15 +91,15 @@ export function killProcessTree(pid: number, signal: 'SIGTERM' | 'SIGKILL' = 'SI
  * Get all descendant PIDs of a given process (recursive).
  * Uses pgrep -P to find children at each level.
  */
-function getDescendantPids(pid: number): number[] {
+async function getDescendantPids(pid: number): Promise<number[]> {
   const descendants: number[] = [];
   try {
-    const output = execSync(`pgrep -P ${pid}`, {
+    const { stdout } = await execAsync(`pgrep -P ${pid}`, {
       encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'ignore'],
       timeout: 3000,
       windowsHide: true,
-    }).trim();
+    });
+    const output = stdout.trim();
 
     if (output) {
       const childPids = output
@@ -103,7 +109,7 @@ function getDescendantPids(pid: number): number[] {
 
       for (const childPid of childPids) {
         // Recurse to get grandchildren etc.
-        descendants.push(...getDescendantPids(childPid));
+        descendants.push(...(await getDescendantPids(childPid)));
         descendants.push(childPid);
       }
     }
@@ -120,15 +126,15 @@ function getDescendantPids(pid: number): number[] {
  * @param child - The ChildProcess to kill
  * @param signal - Signal to send (default: SIGTERM)
  */
-export function killChildProcessTree(
+export async function killChildProcessTree(
   child: ChildProcess,
   signal: 'SIGTERM' | 'SIGKILL' = 'SIGTERM',
-): void {
+): Promise<void> {
   if (!child) return;
 
   const pid = child.pid;
   if (pid) {
-    killProcessTree(pid, signal);
+    await killProcessTree(pid, signal);
   } else {
     // No PID available, try basic kill
     try {

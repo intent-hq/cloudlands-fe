@@ -495,7 +495,7 @@ async function gracefulShutdown() {
     // Kill any active note terminal processes (exec() spawns via shell,
     // so these need tree-kill to avoid orphaning the child command)
     try {
-      cleanupNoteTerminals();
+      await cleanupNoteTerminals();
       logger.info('Note terminals cleaned up');
     } catch (error) {
       logger.error(

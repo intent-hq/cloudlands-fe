@@ -4,5 +4,5 @@
  */
 import { vi } from 'vitest';
 
-export const killProcessTree = vi.fn();
-export const killChildProcessTree = vi.fn();
+export const killProcessTree = vi.fn().mockResolvedValue(undefined);
+export const killChildProcessTree = vi.fn().mockResolvedValue(undefined);

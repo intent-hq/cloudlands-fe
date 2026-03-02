@@ -27,10 +27,13 @@
  */
 
 const net = require('net');
-const { spawn } = require('child_process');
+const { spawn, exec } = require('child_process');
+const { promisify } = require('util');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+
+const execAsync = promisify(exec);
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -432,9 +435,7 @@ function rpcListDir(params) {
  * search — Search for text in files using ripgrep (preferred) or grep (fallback).
  * params: { query: string, path: string, options?: { caseSensitive?: boolean, regex?: boolean, maxResults?: number, includePattern?: string, excludePattern?: string, contextLines?: number } }
  */
-function rpcSearch(params) {
-  const { execSync } = require('child_process');
-
+async function rpcSearch(params) {
   if (!params || typeof params.query !== 'string' || !params.query) {
     return { error: { code: -32602, message: 'Invalid params: "query" (non-empty string) is required' } };
   }
@@ -482,15 +483,15 @@ function rpcSearch(params) {
     const rgCmd = 'rg ' + rgArgs.join(' ');
     let stdout;
     try {
-      stdout = execSync(rgCmd, {
+      const result = await execAsync(rgCmd, {
         encoding: 'utf8',
         timeout: 30000,
         maxBuffer: 10 * 1024 * 1024,
-        stdio: ['pipe', 'pipe', 'pipe'],
       });
+      stdout = result.stdout;
     } catch (execErr) {
       // Exit code 1 = no matches (not an error)
-      if (execErr.status === 1 && execErr.stdout !== undefined) {
+      if (execErr.code === 1 && execErr.stdout !== undefined) {
         return { result: { results: [], truncated: false } };
       }
       // ENOENT or command not found — fall through to grep
@@ -572,15 +573,15 @@ function rpcSearch(params) {
     const grepCmd = 'grep ' + grepArgs.join(' ');
     let stdout;
     try {
-      stdout = execSync(grepCmd, {
+      const result = await execAsync(grepCmd, {
         encoding: 'utf8',
         timeout: 30000,
         maxBuffer: 10 * 1024 * 1024,
-        stdio: ['pipe', 'pipe', 'pipe'],
       });
+      stdout = result.stdout;
     } catch (execErr) {
       // Exit code 1 = no matches
-      if (execErr.status === 1) {
+      if (execErr.code === 1) {
         return { result: { results: [], truncated: false } };
       }
       throw execErr;
@@ -674,7 +675,7 @@ async function handleRpcRequest(request) {
       response = rpcListDir(params);
       break;
     case 'search':
-      response = rpcSearch(params);
+      response = await rpcSearch(params);
       break;
     case 'watchSubscribe':
       response = rpcWatchSubscribe(params);
@@ -686,10 +687,10 @@ async function handleRpcRequest(request) {
       response = rpcWatchDirectoryUnsubscribe(params);
       break;
     case 'gitStatus':
-      response = rpcGitStatus(params);
+      response = await rpcGitStatus(params);
       break;
     case 'gitDiff':
-      response = rpcGitDiff(params);
+      response = await rpcGitDiff(params);
       break;
     case 'initialize':
       response = rpcInitialize();
@@ -717,7 +718,6 @@ function rpcWatchSubscribe(params) {
     return { error: { code: -32602, message: 'Missing required param: basePath' } };
   }
 
-  const { execSync } = require('child_process');
   const basePath = params.basePath.startsWith('~')
     ? params.basePath.replace(/^~/, os.homedir())
     : path.resolve(params.basePath);
@@ -758,14 +758,14 @@ function rpcWatchSubscribe(params) {
     }
   }
 
-  function gitExec(args) {
+  async function gitExec(args) {
     try {
-      return execSync(`git ${args}`, {
+      const { stdout } = await execAsync(`git ${args}`, {
         cwd: basePath,
         encoding: 'utf8',
         timeout: 10000,
-        stdio: ['pipe', 'pipe', 'pipe'],
       });
+      return stdout;
     } catch {
       return null;
     }
@@ -803,8 +803,8 @@ function rpcWatchSubscribe(params) {
     }
   }
 
-  function emitChanges() {
-    const porcelain = gitExec('status --porcelain');
+  async function emitChanges() {
+    const porcelain = await gitExec('status --porcelain');
     if (porcelain == null) return;
     if (porcelain.trim() === '') return;
 
@@ -838,8 +838,8 @@ function rpcWatchSubscribe(params) {
 
     if (fileEntries.length === 0) return;
 
-    const unstagedNumstat = parseNumstat(gitExec('diff --numstat'));
-    const stagedNumstat = parseNumstat(gitExec('diff --numstat --cached'));
+    const unstagedNumstat = parseNumstat(await gitExec('diff --numstat'));
+    const stagedNumstat = parseNumstat(await gitExec('diff --numstat --cached'));
 
     const files = [];
     let totalAdditions = 0;
@@ -885,7 +885,7 @@ function rpcWatchSubscribe(params) {
   let debounceTimer = null;
   function scheduleEmit() {
     if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => { debounceTimer = null; emitChanges(); }, 300);
+    debounceTimer = setTimeout(() => { debounceTimer = null; emitChanges().catch(err => log(`[rpcWatch] emitChanges error: ${err.message}`)); }, 300);
   }
 
   // Try fs.watch with recursive option; fall back to polling
@@ -911,11 +911,18 @@ function rpcWatchSubscribe(params) {
 
   function startPolling() {
     let lastStatus = '';
-    pollInterval = setInterval(() => {
-      const currentStatus = gitExec('status --porcelain');
-      if (currentStatus != null && currentStatus !== lastStatus) {
-        lastStatus = currentStatus;
-        emitChanges();
+    let polling = false;
+    pollInterval = setInterval(async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        const currentStatus = await gitExec('status --porcelain');
+        if (currentStatus != null && currentStatus !== lastStatus) {
+          lastStatus = currentStatus;
+          await emitChanges();
+        }
+      } finally {
+        polling = false;
       }
     }, 2000);
   }
@@ -935,7 +942,7 @@ function rpcWatchSubscribe(params) {
   watchSubscriptions.set(subscriptionId, { cleanup });
 
   // Emit initial state
-  emitChanges();
+  emitChanges().catch(err => log(`[rpcWatch] Initial emitChanges error: ${err.message}`));
 
   return { result: { subscriptionId } };
 }
@@ -1118,31 +1125,30 @@ function rpcWatchDirectoryUnsubscribe(params) {
 // RPC: gitStatus — structured git status
 // ---------------------------------------------------------------------------
 
-function rpcGitStatus(params) {
+async function rpcGitStatus(params) {
   if (!params || typeof params.cwd !== 'string') {
     return { error: { code: -32602, message: 'Missing required param: cwd' } };
   }
 
-  const { execSync } = require('child_process');
   const cwd = params.cwd.startsWith('~')
     ? params.cwd.replace(/^~/, os.homedir())
     : path.resolve(params.cwd);
 
-  function gitExec(args) {
+  async function gitExec(args) {
     try {
-      return execSync(`git ${args}`, {
+      const { stdout } = await execAsync(`git ${args}`, {
         cwd,
         encoding: 'utf8',
         timeout: 10000,
-        stdio: ['pipe', 'pipe', 'pipe'],
       });
+      return stdout;
     } catch {
       return null;
     }
   }
 
   // Parse branch + tracking info from `git status --porcelain -b`
-  const raw = gitExec('status --porcelain -b');
+  const raw = await gitExec('status --porcelain -b');
   if (raw == null) {
     return { error: { code: -32603, message: 'git status failed' } };
   }
@@ -1187,12 +1193,11 @@ function rpcGitStatus(params) {
 // RPC: gitDiff — structured git diff --numstat
 // ---------------------------------------------------------------------------
 
-function rpcGitDiff(params) {
+async function rpcGitDiff(params) {
   if (!params || typeof params.cwd !== 'string') {
     return { error: { code: -32602, message: 'Missing required param: cwd' } };
   }
 
-  const { execSync } = require('child_process');
   const cwd = params.cwd.startsWith('~')
     ? params.cwd.replace(/^~/, os.homedir())
     : path.resolve(params.cwd);
@@ -1203,12 +1208,12 @@ function rpcGitDiff(params) {
 
   let output;
   try {
-    output = execSync(`git ${args}`, {
+    const result = await execAsync(`git ${args}`, {
       cwd,
       encoding: 'utf8',
       timeout: 10000,
-      stdio: ['pipe', 'pipe', 'pipe'],
     });
+    output = result.stdout;
   } catch {
     return { error: { code: -32603, message: 'git diff failed' } };
   }
@@ -1318,7 +1323,7 @@ function createRpcServer(rpcSock) {
 // COMMAND: start
 // ---------------------------------------------------------------------------
 
-function cmdStart(workspaceId, opts) {
+async function cmdStart(workspaceId, opts) {
   const command = opts.command;
   if (!command) {
     process.stderr.write('Error: --command is required for start\n');
@@ -1412,8 +1417,7 @@ function cmdStart(workspaceId, opts) {
     // Wait up to 5 seconds for serve daemon to exit
     const deadline = Date.now() + 5000;
     while (Date.now() < deadline && isProcessAlive(existingServePid)) {
-      const { execSync } = require('child_process');
-      try { execSync('sleep 0.1', { stdio: 'ignore' }); } catch { /* ignore */ }
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
     if (isProcessAlive(existingServePid)) {
       log(`Force-killing serve daemon (pid ${existingServePid})`);
@@ -1982,7 +1986,7 @@ function cmdStop(workspaceId) {
 //
 // Prints JSON to stdout: { ok: true, auggiePath } or { ok: false, error }
 // Caches the discovered path in ~/.intent-server/config.json.
-function cmdDiscover() {
+async function cmdDiscover() {
   const configPath = path.join(BASE_DIR, 'config.json');
   const homeDir = os.homedir();
 
@@ -2006,14 +2010,12 @@ function cmdDiscover() {
   // --- Step 1: Try `command -v auggie` via user's login shell ---
   let auggiePath = null;
   try {
-    const { execSync } = require('child_process');
     const shell = process.env.SHELL || '/bin/sh';
-    const result = execSync(`${shell} -l -c "command -v auggie"`, {
+    const { stdout } = await execAsync(`${shell} -l -c "command -v auggie"`, {
       encoding: 'utf8',
       timeout: 10000,
-      stdio: ['pipe', 'pipe', 'pipe'],
     });
-    const candidate = result.trim().split('\n').pop().trim();
+    const candidate = stdout.trim().split('\n').pop().trim();
     if (candidate && isExecutable(candidate)) {
       auggiePath = candidate;
       log(`[discover] Found auggie via login shell (${shell}): ${auggiePath}`);
@@ -2152,8 +2154,6 @@ function isExecutable(filePath) {
  *   {"type":"changes","files":[...],"summary":{...},"timestamp":"..."}
  */
 function cmdWatch(workspaceId, opts) {
-  const { execSync } = require('child_process');
-
   const basePath = opts['base-path'] || process.cwd();
   const resolvedBase = basePath.startsWith('~')
     ? basePath.replace(/^~/, os.homedir())
@@ -2198,14 +2198,14 @@ function cmdWatch(workspaceId, opts) {
   }
 
   // Run a git command and return stdout, or null on error
-  function gitExec(args) {
+  async function gitExec(args) {
     try {
-      return execSync(`git ${args}`, {
+      const { stdout } = await execAsync(`git ${args}`, {
         cwd: resolvedBase,
         encoding: 'utf8',
         timeout: 10000,
-        stdio: ['pipe', 'pipe', 'pipe'],
       });
+      return stdout;
     } catch {
       return null;
     }
@@ -2248,8 +2248,8 @@ function cmdWatch(workspaceId, opts) {
   }
 
   // Collect changes from git and emit a JSON event
-  function emitChanges() {
-    const porcelain = gitExec('status --porcelain');
+  async function emitChanges() {
+    const porcelain = await gitExec('status --porcelain');
     if (porcelain == null) {
       log('[watch] git status failed');
       return;
@@ -2297,8 +2297,8 @@ function cmdWatch(workspaceId, opts) {
     if (fileEntries.length === 0) return;
 
     // Get numstat for unstaged and staged diffs
-    const unstagedNumstat = parseNumstat(gitExec('diff --numstat'));
-    const stagedNumstat = parseNumstat(gitExec('diff --numstat --cached'));
+    const unstagedNumstat = parseNumstat(await gitExec('diff --numstat'));
+    const stagedNumstat = parseNumstat(await gitExec('diff --numstat --cached'));
 
     // Build file change objects
     const files = [];
@@ -2368,7 +2368,7 @@ function cmdWatch(workspaceId, opts) {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debounceTimer = null;
-      emitChanges();
+      emitChanges().catch(err => log(`[watch] emitChanges error: ${err.message}`));
     }, 300);
   }
 
@@ -2400,11 +2400,18 @@ function cmdWatch(workspaceId, opts) {
   function startPolling() {
     log('[watch] Using polling fallback (every 2s)');
     let lastStatus = '';
-    pollInterval = setInterval(() => {
-      const currentStatus = gitExec('status --porcelain');
-      if (currentStatus != null && currentStatus !== lastStatus) {
-        lastStatus = currentStatus;
-        emitChanges();
+    let polling = false;
+    pollInterval = setInterval(async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        const currentStatus = await gitExec('status --porcelain');
+        if (currentStatus != null && currentStatus !== lastStatus) {
+          lastStatus = currentStatus;
+          await emitChanges();
+        }
+      } finally {
+        polling = false;
       }
     }, 2000);
   }
@@ -2432,14 +2439,14 @@ function cmdWatch(workspaceId, opts) {
   process.stdout.write(JSON.stringify({ type: 'ready' }) + '\n');
 
   // Emit initial state
-  emitChanges();
+  emitChanges().catch(err => log(`[watch] Initial emitChanges error: ${err.message}`));
 }
 
 // ---------------------------------------------------------------------------
 // Main entry point
 // ---------------------------------------------------------------------------
 
-function main() {
+async function main() {
   const argv = process.argv.slice(2);
   const command = argv[0];
   const opts = parseArgs(argv.slice(1));
@@ -2453,7 +2460,7 @@ function main() {
 
   // 'discover' does not require --workspace
   if (command === 'discover') {
-    cmdDiscover();
+    await cmdDiscover();
     return;
   }
 
@@ -2472,7 +2479,7 @@ function main() {
 
   switch (command) {
     case 'start':
-      cmdStart(workspaceId, opts);
+      await cmdStart(workspaceId, opts);
       break;
     case 'serve':
       cmdServe(workspaceId, opts);
@@ -2496,4 +2503,7 @@ function main() {
   }
 }
 
-main();
+main().catch((err) => {
+  process.stderr.write(`Fatal error: ${err.message}\n`);
+  process.exit(1);
+});

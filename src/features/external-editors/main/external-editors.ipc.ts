@@ -7,7 +7,7 @@
 import { Logger } from '$lib/utils/logger';
 import { EDITOR_REGISTRY, type EditorDefinition } from '$shared/editors/editor-registry';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { execSync, spawn } from 'child_process';
+import { spawn } from 'child_process';
 import os from 'os';
 import { ipcMain } from 'electron';
 import { constants } from 'fs';
@@ -189,13 +189,13 @@ async function isAppInstalledLinux(editorId: string): Promise<boolean> {
  * Find the first available Windows binary for an editor using `where`.
  * Returns the binary name if found, null otherwise.
  */
-function findWindowsBinary(editorId: string): string | null {
+async function findWindowsBinary(editorId: string): Promise<string | null> {
   const editor = EDITOR_REGISTRY.find((e) => e.id === editorId);
   if (!editor?.platforms?.win32?.binaries) return null;
 
   for (const binary of editor.platforms.win32.binaries) {
     try {
-      execSync(`where ${binary}`, { stdio: 'ignore', windowsHide: true });
+      await execAsync(`where ${binary}`, { timeout: 5000 });
       return binary;
     } catch {
       // Not found on PATH
@@ -208,7 +208,7 @@ function findWindowsBinary(editorId: string): string | null {
  * Check if an app is installed on Windows by looking for binaries on PATH using `where`
  */
 async function isAppInstalledWindows(editorId: string): Promise<boolean> {
-  return findWindowsBinary(editorId) !== null;
+  return (await findWindowsBinary(editorId)) !== null;
 }
 
 /**
@@ -500,7 +500,7 @@ export function registerExternalEditorsHandlers(): void {
             }
           } else if (process.platform === 'win32') {
             // Windows: find the first available binary via `where`
-            const binary = findWindowsBinary(editorId) ?? editor.platforms?.win32?.binaries?.[0];
+            const binary = (await findWindowsBinary(editorId)) ?? editor.platforms?.win32?.binaries?.[0];
             if (binary) {
               command = binary;
               if (editorId === 'terminal') {

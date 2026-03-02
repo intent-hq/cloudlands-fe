@@ -144,14 +144,14 @@ export class ServerManager extends EventEmitter {
 
     // Kill the process tree
     if (!server.process.killed) {
-      killChildProcessTree(server.process);
+      await killChildProcessTree(server.process);
 
       // Give it time to shutdown gracefully
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
       // Force kill if still running
       if (!server.process.killed) {
-        killChildProcessTree(server.process, 'SIGKILL');
+        await killChildProcessTree(server.process, 'SIGKILL');
       }
     }
 

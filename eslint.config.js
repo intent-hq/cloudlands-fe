@@ -161,6 +161,27 @@ export default [
       'prefer-arrow-callback': 'off',
     },
   },
+  // Ban synchronous child_process calls in Electron main process code.
+  // execSync/spawnSync block the main thread and can freeze the entire UI
+  // if the spawned process hangs (see: hang report 2026-02-28).
+  // Use execAsync (promisified exec) or spawn instead.
+  {
+    files: [
+      'src/main/**/*.ts',
+      'src/features/*/main/**/*.ts',
+      'src/shared/main/**/*.ts',
+      'src/shared/git/**/*.ts',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [{
+          name: 'child_process',
+          importNames: ['execSync', 'spawnSync', 'execFileSync'],
+          message: 'Synchronous child_process calls block the Electron main thread. Use exec/spawn with util.promisify or the execAsync helper instead.',
+        }],
+      }],
+    },
+  },
   {
     files: ['**/*.svelte'],
     languageOptions: {

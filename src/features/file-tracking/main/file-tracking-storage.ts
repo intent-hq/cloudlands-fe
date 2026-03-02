@@ -139,9 +139,9 @@ export class FileTrackingStorage {
    * Set the workspace path (repo root) for git blob resolution.
    * Must be called before loadTrackedChanges() can resolve SHAs.
    */
-  setWorkspacePath(workspacePath: string): void {
+  async setWorkspacePath(workspacePath: string): Promise<void> {
     this.workspacePath = workspacePath;
-    this.isGitRepo = isGitRepository(workspacePath);
+    this.isGitRepo = await isGitRepository(workspacePath);
   }
 
   /**

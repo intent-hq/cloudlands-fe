@@ -7,23 +7,25 @@
  * All operations fail silently (return null) for graceful fallback.
  */
 
-import { execSync, spawn } from 'child_process';
+import { exec, spawn } from 'child_process';
+import { promisify } from 'util';
 import { createGitEnv } from './git-env';
+
+const execAsync = promisify(exec);
 
 /**
  * Check if a directory is inside a git repository.
- * Uses synchronous execution for one-time startup checks.
  *
  * @param dir - Directory path to check
  * @returns true if dir is inside a git repository, false otherwise
  */
-export function isGitRepository(dir: string): boolean {
+export async function isGitRepository(dir: string): Promise<boolean> {
   try {
-    execSync('git rev-parse --git-dir', {
+    await execAsync('git rev-parse --git-dir', {
       cwd: dir,
-      stdio: 'pipe',
       encoding: 'utf-8',
       env: createGitEnv(),
+      timeout: 5000,
       windowsHide: true,
     });
     return true;

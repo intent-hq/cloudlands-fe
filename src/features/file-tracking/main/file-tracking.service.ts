@@ -117,7 +117,8 @@ export class FileTrackingService {
     this.workspaceId = workspaceId;
     this.workspacePath = workspacePath;
     this.storage = FileTrackingStorage.getInstance(workspaceId);
-    this.storage.setWorkspacePath(workspacePath);
+    // Fire-and-forget: isGitRepo defaults to false and is updated async
+    void this.storage.setWorkspacePath(workspacePath);
     this.isRemote = !!isRemote;
 
     // Start periodic cleanup

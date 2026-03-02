@@ -325,7 +325,7 @@ export function setupNotesPrimitivesIPC() {
     if (terminal) {
       // exec() uses a shell, so child.kill() only kills the shell, not the command.
       // Use killChildProcessTree to kill the actual command underneath.
-      killChildProcessTree(terminal.process);
+      await killChildProcessTree(terminal.process);
       activeTerminals.delete(terminalId);
       return { ok: true };
     }
@@ -675,10 +675,10 @@ export function setupNotesPrimitivesIPC() {
  * Cleanup all active terminal processes.
  * Should be called on app shutdown to prevent orphaned processes.
  */
-export function cleanupNoteTerminals(): void {
+export async function cleanupNoteTerminals(): Promise<void> {
   for (const [terminalId, terminal] of activeTerminals.entries()) {
     try {
-      killChildProcessTree(terminal.process);
+      await killChildProcessTree(terminal.process);
       logger.debug('Killed note terminal on cleanup', { terminalId });
     } catch {
       // Process may already be dead

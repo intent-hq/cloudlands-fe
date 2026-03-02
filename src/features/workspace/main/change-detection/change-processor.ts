@@ -75,7 +75,6 @@ export class ChangeProcessor extends EventEmitter {
     this.workspacePath = workspacePath;
     this.workspaceId = workspaceId;
     this.gitignoreManager = new GitignoreManager(workspacePath);
-    this.isGitRepo = isGitRepository(workspacePath); // Check once at construction
 
     // Start periodic cleanup to prevent memory leaks
     this.startPeriodicCleanup();
@@ -86,6 +85,7 @@ export class ChangeProcessor extends EventEmitter {
    */
   async initialize(): Promise<void> {
     try {
+      this.isGitRepo = await isGitRepository(this.workspacePath);
       await this.gitignoreManager.initialize();
       logger.info('Change processor initialized', { workspaceId: this.workspaceId });
     } catch (error) {

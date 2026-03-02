@@ -5355,7 +5355,7 @@ export class ACPProvider extends BaseAgentProvider {
       this.agentProcess.stdout?.removeAllListeners();
       this.agentProcess.stderr?.removeAllListeners();
       this.agentProcess.stdin?.removeAllListeners();
-      killChildProcessTree(this.agentProcess);
+      await killChildProcessTree(this.agentProcess);
       this.agentProcess = undefined;
       logger.info('Agent process tree killed');
     }
@@ -5440,7 +5440,7 @@ export class ACPProvider extends BaseAgentProvider {
       this.agentProcess.stdout?.removeAllListeners();
       this.agentProcess.stderr?.removeAllListeners();
       this.agentProcess.stdin?.removeAllListeners();
-      killChildProcessTree(this.agentProcess);
+      await killChildProcessTree(this.agentProcess);
       // Wait a bit for process tree to fully terminate
       await new Promise((resolve) => setTimeout(resolve, 200));
       this.agentProcess = undefined;
@@ -6132,7 +6132,7 @@ export class ACPProvider extends BaseAgentProvider {
       this.agentProcess.stdout?.removeAllListeners();
       this.agentProcess.stderr?.removeAllListeners();
       this.agentProcess.stdin?.removeAllListeners();
-      killChildProcessTree(this.agentProcess);
+      await killChildProcessTree(this.agentProcess);
       this.agentProcess = undefined;
     }
     this.sessionId = undefined;
