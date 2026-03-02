@@ -1298,12 +1298,15 @@ export class AugmentApiClient {
     owner: string,
     repo: string,
     number: number,
+    options?: { force?: boolean },
   ): Promise<GithubPullRequest | null> {
-    // Check cache first to avoid redundant API calls
-    const cached = getCachedPRDetails(owner, repo, number);
-    if (cached) {
-      logger.debug('Returning cached PR details', { owner, repo, number });
-      return cached;
+    // Check cache first to avoid redundant API calls (unless force is true)
+    if (!options?.force) {
+      const cached = getCachedPRDetails(owner, repo, number);
+      if (cached) {
+        logger.debug('Returning cached PR details', { owner, repo, number });
+        return cached;
+      }
     }
 
     const path = `/repos/${owner}/${repo}/pulls/${number}`;

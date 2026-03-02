@@ -261,7 +261,9 @@ export class GitHubService {
     }
 
     try {
-      const pr = await augmentApiClient.getGitHubPullRequest(owner, repo, number);
+      const pr = await augmentApiClient.getGitHubPullRequest(owner, repo, number, {
+        force: options.force,
+      });
       if (!pr) {
         return null;
       }
