@@ -762,7 +762,7 @@
                 {@html getFileTypeIconSvg(entry.name)}
               </span>
             {/if}
-            <span class="truncate text-foreground/80">{entry.name}</span>
+            <span class="truncate text-muted-foreground">{entry.name}</span>
           </button>
         {/each}
 

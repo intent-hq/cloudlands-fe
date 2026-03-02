@@ -294,11 +294,11 @@
                   ? 'bg-emerald-500/10 text-emerald-500'
                   : 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
                 : prStatus === PullRequestStatus.Draft
-                  ? 'bg-muted-foreground/10 text-muted-foreground/60'
+                  ? 'bg-muted-foreground/10 text-muted-foreground'
                   : 'bg-red-500/10 text-red-500'}
           {@const tooltipText = prTooltipContent}
           <Tooltip content={tooltipText} side="bottom" sideOffset={4} disabled={!tooltipText}>
-            <span class="text-[9px] font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}">
+            <span class="text-ui-sm font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}">
               PR{prNumber ? ` #${prNumber}` : ''}
             </span>
           </Tooltip>
