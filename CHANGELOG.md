@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.17
+
+- PR mergeability tracking with visual status indicators. PR status now always visible in the overview changes tab, including closed PRs.
+- Pagination for PR review comments and threads.
+- Guardrails to prevent runaway agent spawn loops and token burn. Premature parent agent wake-ups in delegation chains are fixed.
+- Hardened agent event subscriptions to prevent duplicate coordinator creation. MCP server setup for agents audited and tightened.
+- Up arrow now edits queued messages instead of pulling from history.
+- Hide empty repos on home page with a remove option. Overview agents card filters out delegated/background agents to match the agents tab.
+- Node 22 requirement surfaced to users before Auggie install.
+- Improved contrast and typography with semantic tokens. Bold selected theme name in color theme settings.
+- Auto-approve permissions when the provider doesn't support bypassPermissions mode. Force git status refresh before auto-commit to detect agent changes.
+- Fixes: diff rendering for committed agent file changes, OS notification workspace navigation, stale workspace enrichment data across surfaces, phantom polling for deleted workspaces, PR cache bypass on sidebar refresh, PR auto-discovery when pushed commit count changes, null toolName in tool-classifier, webviewReady guards on Electron webview calls, workspace-scoped state cleanup on deletion, Settings menu navigating to wrong window on macOS, toast notification for direct create-pr actions, sync calls blocking the main process.
+
+
 ## 0.2.12
 
 - Provider auth status now shown in Settings. See at a glance whether you're logged in to Claude, Codex, or OpenCode, with a link to how to sign in if not.
