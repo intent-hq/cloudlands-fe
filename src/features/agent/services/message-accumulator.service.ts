@@ -487,6 +487,58 @@ export class MessageAccumulatorService extends EventEmitter implements IDisposab
   }
 
   /**
+   * Update an existing content block by ID.
+   * Replaces the block in both orderedItems and contentBlocks arrays.
+   * Used when a skeleton tool_use block needs to be replaced with the
+   * follow-up that has real input parameters.
+   *
+   * @param sessionId - The session ID
+   * @param block - The updated content block (must have an id field)
+   * @returns true if the block was found and updated, false otherwise
+   */
+  updateContentBlock(sessionId: string, block: ContentBlock): boolean {
+    if (this.disposed) return false;
+
+    const accumulator = this.accumulators.get(sessionId);
+    if (!accumulator || !block.id) return false;
+
+    let found = false;
+
+    // Update in orderedItems
+    for (const item of accumulator.orderedItems) {
+      if (item.type === 'block') {
+        const existingBlock = item.content as ContentBlock;
+        if (existingBlock.id === block.id) {
+          item.content = block;
+          item.timestamp = new Date();
+          found = true;
+          break;
+        }
+      }
+    }
+
+    // Update in contentBlocks (backward compatibility array)
+    for (let i = 0; i < accumulator.contentBlocks.length; i++) {
+      if (accumulator.contentBlocks[i].id === block.id) {
+        accumulator.contentBlocks[i] = block;
+        break;
+      }
+    }
+
+    if (found) {
+      accumulator.lastUpdateTime = new Date();
+      logger.debug('Updated content block in accumulator', {
+        sessionId,
+        blockId: block.id,
+        blockType: block.type,
+      });
+      this.emit('block:added', { sessionId, block });
+    }
+
+    return found;
+  }
+
+  /**
    * Complete accumulation and return the final message
    *
    * Flushes any remaining text buffer and builds final content blocks.

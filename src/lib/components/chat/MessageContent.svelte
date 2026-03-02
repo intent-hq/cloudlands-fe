@@ -36,14 +36,37 @@
 
   let { content, isStreaming = false }: Props = $props();
 
-  // Filter out empty text blocks - computed once when content changes
+  // Filter out empty text blocks and deduplicate tool_use blocks by ID.
+  // Deduplication: when a skeleton tool_use (vague label) and its follow-up
+  // (descriptive label) both exist with the same ID, keep only the last one.
   // Also strip suggested prompts before checking - they're rendered separately in ChatPanel
   const blocks = $derived.by(() => {
-    return (content || []).filter((block) => {
+    const filtered = (content || []).filter((block) => {
       if (block.type === 'text') {
         const text = block.text || '';
         const { cleanedContent } = parseSuggestedPrompts(text);
         return cleanedContent.trim().length > 0;
+      }
+      return true;
+    });
+
+    // Deduplicate tool_use blocks: if multiple blocks share the same ID,
+    // keep only the last occurrence (which has the real input parameters).
+    const toolUseLastIndex = new Map<string, number>();
+    for (let i = 0; i < filtered.length; i++) {
+      const block = filtered[i];
+      if (block.type === 'tool_use' && block.id) {
+        toolUseLastIndex.set(block.id, i);
+      }
+    }
+
+    // Only filter if there are actual duplicates
+    if (toolUseLastIndex.size === 0) return filtered;
+
+    return filtered.filter((block, index) => {
+      if (block.type === 'tool_use' && block.id) {
+        // Keep only the last occurrence of each tool_use ID
+        return toolUseLastIndex.get(block.id) === index;
       }
       return true;
     });

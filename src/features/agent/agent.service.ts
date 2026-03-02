@@ -1243,6 +1243,9 @@ class RefactoredAgentService extends EventEmitter {
                   content: newBlock,
                   sequence: orderedItems.length,
                 });
+              } else {
+                // Update existing block with follow-up data (skeleton → descriptive)
+                existingBlock.content = newBlock;
               }
             } else if (newBlock.type === 'tool_result') {
               // For tool_result blocks, check by 'tool_use_id' field
@@ -3839,7 +3842,12 @@ class RefactoredAgentService extends EventEmitter {
                                     sequence: orderedItems.length,
                                   });
                                 } else {
-                                  logger.debug('Skipping duplicate tool_use block', {
+                                  // Update the existing block with the new data.
+                                  // This handles the case where a skeleton was emitted first
+                                  // (with vague labels) and the follow-up arrives later with
+                                  // real input parameters for descriptive labels.
+                                  existingToolBlock.content = newBlock;
+                                  logger.debug('Updated existing tool_use block with follow-up data', {
                                     id: newBlock.id,
                                   });
                                 }

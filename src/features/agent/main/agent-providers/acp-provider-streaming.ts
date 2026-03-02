@@ -413,6 +413,54 @@ class BackendStreamManager extends EventEmitter {
     }
   }
 
+  /**
+   * Update an existing content block by ID (e.g., replace a skeleton with a follow-up).
+   * If no block with the matching ID is found, falls back to addContentBlock.
+   */
+  updateContentBlock(id: string, block: ContentBlock): void {
+    const session = this.getSession(id);
+    if (session) {
+      const accumulatorId = session.agentId || id;
+      try {
+        if (!messageAccumulator.getAccumulated(accumulatorId)) {
+          // No accumulator — fall back to add
+          this.addContentBlock(id, block);
+          return;
+        }
+        const updated = messageAccumulator.updateContentBlock(accumulatorId, block);
+        if (!updated) {
+          // Block not found — fall back to add
+          this.addContentBlock(id, block);
+          return;
+        }
+      } catch (error) {
+        logger.error('[BackendStreamManager] Error updating content block in accumulator', {
+          accumulatorId,
+          blockType: block.type,
+          blockId: block.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        // Fall back to add
+        this.addContentBlock(id, block);
+        return;
+      }
+
+      // Get callbacks - use agentId as the canonical key
+      const callbacks = this.callbacks.get(session.agentId);
+
+      logger.info('[BackendStreamManager] updateContentBlock', {
+        id,
+        blockType: block.type,
+        blockId: block.id,
+      });
+
+      if (callbacks?.onContentBlocks) {
+        // Send the updated block — the frontend will need to replace the existing one
+        callbacks.onContentBlocks([block]);
+      }
+    }
+  }
+
   completeStream(id: string, message?: any): void {
     const session = this.getSession(id);
     if (session) {
@@ -587,6 +635,12 @@ export class ACPProviderStreaming {
   private pendingSkeletonTimer?: ReturnType<typeof setTimeout>;
   private pendingSkeletonSession?: any;
 
+  // Track skeleton tool IDs that were emitted via timeout (before follow-up arrived).
+  // When the follow-up arrives later, we update the existing block instead of creating
+  // a duplicate. This prevents vague "Search", "Read file" labels from persisting
+  // alongside the descriptive follow-up block.
+  private emittedSkeletonToolId?: string;
+
   constructor(agentId: string) {
     this.agentId = agentId;
   }
@@ -648,6 +702,9 @@ export class ACPProviderStreaming {
 
     // Track as pending so we can auto-complete when the next tool_call or stream completion arrives
     this.lastPendingToolId = skeleton.toolId;
+
+    // Track that this skeleton was emitted so the follow-up can update it
+    this.emittedSkeletonToolId = skeleton.toolId;
 
     logger.info(
       `[ACPProviderStreaming] Emitted deferred skeleton (no follow-up within timeout): "${skeleton.toolName}" id=${skeleton.toolId} enriched=${!!mcpParams}${mcpParams ? ` keys=[${Object.keys(mcpParams).join(',')}]` : ''} noteTitle=${enrichedInput._noteTitle || 'none'}`,
@@ -957,6 +1014,7 @@ export class ACPProviderStreaming {
 
     // If we have a pending skeleton, this is the follow-up with real input.
     // Discard the skeleton and proceed to create a single block with full input.
+    let isFollowUpForEmittedSkeleton = false;
     if (this.pendingSkeleton) {
       this.clearSkeletonTimer();
       logger.info(
@@ -965,6 +1023,35 @@ export class ACPProviderStreaming {
       this.pendingSkeleton = undefined;
       this.pendingSkeletonSession = undefined;
       // No auto-complete needed — the skeleton was never created as a block
+    } else if (this.emittedSkeletonToolId) {
+      // The skeleton was already emitted via timeout before this follow-up arrived.
+      // We need to UPDATE the existing skeleton block instead of creating a duplicate.
+      const followUpToolId = update?.toolCallId || update?.id;
+      if (followUpToolId === this.emittedSkeletonToolId) {
+        isFollowUpForEmittedSkeleton = true;
+        this.emittedSkeletonToolId = undefined;
+        logger.info(
+          `[ACPProviderStreaming] Follow-up arrived for already-emitted skeleton: id=${followUpToolId} follow-up="${update?.title || update?.name}"`,
+        );
+      } else {
+        // Different tool ID — this is a new tool, not a follow-up
+        this.emittedSkeletonToolId = undefined;
+        // Normal tool_call — auto-complete previous tool
+        if (this.lastPendingToolId) {
+          const syntheticResult: ContentBlock = {
+            type: 'tool_result',
+            tool_use_id: this.lastPendingToolId,
+            content: '',
+            is_error: false,
+          };
+          streamSessionManager.addContentBlock(session.agentId, syntheticResult);
+          logger.debug('[ACPProviderStreaming] Auto-completed previous tool on new tool_call', {
+            previousToolId: this.lastPendingToolId,
+            agentId: session.agentId,
+          });
+          this.lastPendingToolId = undefined;
+        }
+      }
     } else {
       // Normal tool_call (not a follow-up) — auto-complete previous tool
       if (this.lastPendingToolId) {
@@ -1368,8 +1455,14 @@ export class ACPProviderStreaming {
       }
     }
 
-    // Use agentId as the canonical key
-    streamSessionManager.addContentBlock(session.agentId, toolBlock);
+    // Use agentId as the canonical key.
+    // If this is a follow-up for an already-emitted skeleton, update the existing block
+    // instead of creating a duplicate. This prevents vague skeleton labels from persisting.
+    if (isFollowUpForEmittedSkeleton) {
+      streamSessionManager.updateContentBlock(session.agentId, toolBlock);
+    } else {
+      streamSessionManager.addContentBlock(session.agentId, toolBlock);
+    }
 
     // Check if this tool_call already has a terminal status (some ACP providers send
     // a single tool_call event with status:"completed" instead of a separate tool_call_update)

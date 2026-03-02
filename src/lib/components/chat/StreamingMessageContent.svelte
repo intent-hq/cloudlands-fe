@@ -80,10 +80,11 @@
       }
     }
 
+    let filtered: ContentBlock[];
     if (!isStreaming) {
       // Not streaming - do full processing
       // Filter out malformed tool_result blocks, empty text blocks, and optionally tool_use blocks
-      return rawBlocks.filter((block) => {
+      filtered = rawBlocks.filter((block) => {
         // Filter out tool_use blocks if hideToolCalls is true
         if (hideToolCalls && block.type === 'tool_use') {
           return false;
@@ -117,7 +118,7 @@
       });
     } else {
       // Streaming with content blocks - filter empty text blocks and optionally tool calls
-      return rawBlocks.filter((block) => {
+      filtered = rawBlocks.filter((block) => {
         // Filter out tool calls if requested
         if (hideToolCalls && (block.type === 'tool_use' || block.type === 'tool_result')) {
           return false;
@@ -134,6 +135,23 @@
         return true;
       });
     }
+
+    // Deduplicate tool_use blocks: if skeleton + follow-up both exist with same ID,
+    // keep only the last one (which has descriptive input parameters).
+    const toolUseLastIndex = new Map<string, number>();
+    for (let i = 0; i < filtered.length; i++) {
+      const block = filtered[i];
+      if (block.type === 'tool_use' && block.id) {
+        toolUseLastIndex.set(block.id, i);
+      }
+    }
+    if (toolUseLastIndex.size === 0) return filtered;
+    return filtered.filter((block, index) => {
+      if (block.type === 'tool_use' && block.id) {
+        return toolUseLastIndex.get(block.id) === index;
+      }
+      return true;
+    });
   });
 
   // Group content blocks by <group:Name> tags at the ContentBlock level

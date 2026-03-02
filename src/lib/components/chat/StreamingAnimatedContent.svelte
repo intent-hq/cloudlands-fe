@@ -90,7 +90,7 @@
           ? ([{ type: 'text', text: content }] as ContentBlock[])
           : content;
 
-      blocks = rawBlocks.filter((block) => {
+      const filtered = rawBlocks.filter((block) => {
         if (hideToolCalls && (block.type === 'tool_use' || block.type === 'tool_result')) {
           return false;
         }
@@ -102,6 +102,20 @@
               return false;
             }
           }
+        }
+        return true;
+      });
+
+      // Deduplicate tool_use blocks by ID (keep last occurrence with real input)
+      const toolUseLastIndex = new Map<string, number>();
+      for (let i = 0; i < filtered.length; i++) {
+        if (filtered[i].type === 'tool_use' && filtered[i].id) {
+          toolUseLastIndex.set(filtered[i].id!, i);
+        }
+      }
+      blocks = filtered.filter((block, index) => {
+        if (block.type === 'tool_use' && block.id) {
+          return toolUseLastIndex.get(block.id) === index;
         }
         return true;
       });
