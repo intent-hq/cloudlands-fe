@@ -1931,7 +1931,8 @@ export class AcceptChangesService {
             logger.warn('Failed to save workspace with PR info', { error: saveError });
           }
 
-          if (prOperationId) backgroundGitOpsService.completeOperation(prOperationId, { prNumber: existingPR.number, prUrl: existingPR.htmlUrl });
+          const existingPrOpId = prOperationId || operationId;
+          if (existingPrOpId) backgroundGitOpsService.completeOperation(existingPrOpId, { prNumber: existingPR.number, prUrl: existingPR.htmlUrl });
           return {
             success: true,
             steps,
@@ -2005,8 +2006,9 @@ export class AcceptChangesService {
             }
 
             // Mark operation as completed with PR info
-            if (prOperationId) {
-              backgroundGitOpsService.completeOperation(prOperationId, {
+            const newPrOpId = prOperationId || operationId;
+            if (newPrOpId) {
+              backgroundGitOpsService.completeOperation(newPrOpId, {
                 prNumber: pr.number,
                 prUrl: pr.htmlUrl,
               });
@@ -2074,7 +2076,8 @@ export class AcceptChangesService {
             userError = `GitHub validation failed: ${errorMessage}`;
           }
 
-          if (prOperationId) backgroundGitOpsService.failOperation(prOperationId, userError);
+          const failOpId = prOperationId || operationId;
+          if (failOpId) backgroundGitOpsService.failOperation(failOpId, userError);
           return { success: false, steps, error: userError };
         }
       }
