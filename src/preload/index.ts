@@ -61,6 +61,7 @@ const ALLOWED_CHANNELS = [
   "workspace:get-recent-repositories",
   "workspace:add-recent-repository",
   "workspace:clear-recent-repositories",
+  "workspace:remove-recent-repository",
   "workspace:update_git_info",
   "workspace:getSettings",
   "workspace:updateSettings",

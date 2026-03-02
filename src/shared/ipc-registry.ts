@@ -51,6 +51,7 @@ export const IPC_CHANNELS = {
     GET_RECENT_REPOSITORIES: 'workspace:get-recent-repositories',
     ADD_RECENT_REPOSITORY: 'workspace:add-recent-repository',
     CLEAR_RECENT_REPOSITORIES: 'workspace:clear-recent-repositories',
+    REMOVE_RECENT_REPOSITORY: 'workspace:remove-recent-repository',
     UPDATE_GIT_INFO: 'workspace:update_git_info',
     GET_SETTINGS_ALT: 'workspace:getSettings',
     UPDATE_SETTINGS_ALT: 'workspace:updateSettings',

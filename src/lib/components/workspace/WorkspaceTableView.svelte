@@ -47,6 +47,7 @@
     onCreateForRepo?: (repo: RepoInfo) => void;
     onBulkArchive?: (repoKey: string) => void;
     onBulkDeleteArchived?: (repoKey: string) => void;
+    onRemoveRepo?: (repoPath: string) => void;
   }
 
   let {
@@ -62,6 +63,7 @@
     onCreateForRepo,
     onBulkArchive,
     onBulkDeleteArchived,
+    onRemoveRepo,
   }: Props = $props();
 
   // Track streaming and unread state for reactivity
@@ -457,7 +459,12 @@
                 <div class="overflow-hidden" transition:slide={{ axis: 'y', duration: 150 }}>
                   {#if group.workspaces.length === 0}
                     <div class="px-3 py-3 text-xs text-subtle text-center">
-                      No active spaces
+                      No active spaces.{#if onRemoveRepo && group.repoPath && !workspaces.some((ws) => ws.repositoryPath === group.repoPath || (ws.repositoryOwner && ws.repositoryName && `${ws.repositoryOwner}/${ws.repositoryName}` === group.key))}
+                        {' '}<button
+                          class="text-muted-foreground/70 hover:text-destructive underline cursor-pointer"
+                          onclick={() => onRemoveRepo?.(group.repoPath!)}
+                        >Remove</button>.
+                      {/if}
                     </div>
                   {:else}
                     {#each group.workspaces as ws, wsIndex (ws.id)}

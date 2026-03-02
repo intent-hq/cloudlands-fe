@@ -248,6 +248,10 @@ export const WorkspaceAddRecentRepositorySchema = z.object({
 
 export const WorkspaceClearRecentRepositoriesSchema = z.object({});
 
+export const WorkspaceRemoveRecentRepositorySchema = z.object({
+  repository: z.string().min(1, 'Repository path is required'),
+});
+
 export const WorkspaceUpdateGitInfoSchema = z.object({
   id: WorkspaceIdSchema,
   gitInfo: z.record(z.any()),

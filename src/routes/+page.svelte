@@ -58,6 +58,10 @@
   let showBulkDeleteWarningConfirm = $state(false);
   let bulkDeleteWorkspaceCount = $state(0);
 
+  // Remove repo dialog state
+  let showRemoveRepoConfirm = $state(false);
+  let pendingRemoveRepoPath = $state<string | null>(null);
+
   // Handler for creating a workspace for a specific repo (from table group + button)
   function handleCreateForRepo(repo: RepoInfo) {
     initialRepoForCreate = repo;
@@ -748,6 +752,10 @@
                 pendingBulkRepoKey = repoKey;
                 showBulkDeleteArchivedConfirm = true;
               }}
+              onRemoveRepo={(repoPath) => {
+                pendingRemoveRepoPath = repoPath;
+                showRemoveRepoConfirm = true;
+              }}
             />
           {/if}
         </div>
@@ -810,6 +818,33 @@
   }}
   onCancel={() => {
     pendingBulkDeleteRepoKey = null;
+  }}
+/>
+
+<!-- Remove Repo Confirmation Dialog -->
+<BulkActionConfirmDialog
+  bind:open={showRemoveRepoConfirm}
+  title="Remove Repository"
+  description={`Remove "${pendingRemoveRepoPath ?? 'this repository'}" from the home page? This won't delete any files or spaces.`}
+  confirmText="Remove"
+  variant="destructive"
+  onConfirm={async () => {
+    const repoPath = pendingRemoveRepoPath;
+    showRemoveRepoConfirm = false;
+    pendingRemoveRepoPath = null;
+    if (repoPath) {
+      try {
+        const result = await invoke<{ success: boolean; data?: { removed: boolean } }>(IPC_CHANNELS.WORKSPACE.REMOVE_RECENT_REPOSITORY, { repository: repoPath });
+        if (result?.data?.removed) {
+          knownRepos = knownRepos.filter((r) => r.path !== repoPath);
+        }
+      } catch {
+        // Silently ignore - best effort
+      }
+    }
+  }}
+  onCancel={() => {
+    pendingRemoveRepoPath = null;
   }}
 />
 

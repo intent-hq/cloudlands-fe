@@ -28,7 +28,7 @@ import { GitService } from '../../git/main/git.service';
 import { getWorkspaceGitInfo, getRemoteGitManager } from '../../git/main/git-router';
 import { cleanupWorkspaceTerminals } from '../../terminal/main/terminal.ipc';
 import { getUnifiedWatcher, shutdownUnifiedWatcher, shutdownOtherWatchers } from './unified-workspace-watcher';
-import { initRepoRegistry, getAllRepos, addRepo, syncRepos, clearRepos } from './repo-registry';
+import { initRepoRegistry, getAllRepos, addRepo, removeRepo, syncRepos, clearRepos } from './repo-registry';
 import { sshManager, type SSHConnectionConfig } from '../../../shared/main/ssh-manager';
 import { getIntentServerPath, escapeShellArg } from '../../agent/main/agent-providers/acp-provider';
 import { MetadataSyncService } from '../../metadata-fs/main/metadata-sync-service';
@@ -86,6 +86,7 @@ import {
   WorkspaceGetRecentRepositoriesSchema,
   WorkspaceAddRecentRepositorySchema,
   WorkspaceClearRecentRepositoriesSchema,
+  WorkspaceRemoveRecentRepositorySchema,
   WorkspaceUpdateGitInfoSchema,
   WorkspaceGetSettingsAltSchema,
   WorkspaceUpdateSettingsAltSchema,
@@ -285,6 +286,10 @@ export function setupWorkspaceIPC(): void {
   registerValidationSchema(
     WORKSPACE_CHANNELS.CLEAR_RECENT_REPOSITORIES,
     WorkspaceClearRecentRepositoriesSchema,
+  );
+  registerValidationSchema(
+    WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY,
+    WorkspaceRemoveRecentRepositorySchema,
   );
   registerValidationSchema(WORKSPACE_CHANNELS.UPDATE_GIT_INFO, WorkspaceUpdateGitInfoSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.GET_SETTINGS_ALT, WorkspaceGetSettingsAltSchema);
@@ -2090,6 +2095,19 @@ export function setupWorkspaceIPC(): void {
         return { success: true };
       },
       WORKSPACE_CHANNELS.CLEAR_RECENT_REPOSITORIES,
+    ),
+  );
+
+  // Remove a single recent repository (persistent repo registry)
+  ipcMain.handle(
+    WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY,
+    createSafeValidatedHandler(
+      WorkspaceRemoveRecentRepositorySchema,
+      async (_, validated) => {
+        const removed = removeRepo(validated.repository);
+        return { success: true, data: { removed } };
+      },
+      WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY,
     ),
   );
 
