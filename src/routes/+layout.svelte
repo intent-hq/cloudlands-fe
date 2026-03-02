@@ -953,6 +953,22 @@
 
     setupNotificationSoundListener();
 
+    // Listen for notification:navigate events to navigate to the correct workspace on click
+    const setupNotificationNavigateListener = () => {
+      if (typeof window !== 'undefined' && window.electronAPI) {
+        window.electronAPI.on(
+          'notification:navigate',
+          (data: { workspaceId: string }) => {
+            if (data?.workspaceId) {
+              goto(`/workspace/${data.workspaceId}`);
+            }
+          },
+        );
+      }
+    };
+
+    setupNotificationNavigateListener();
+
     // Listen for "up to date" notifications from auto-update (manual check)
     const setupAutoUpdateListener = () => {
       if (typeof window !== 'undefined' && window.electronAPI) {

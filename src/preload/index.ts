@@ -991,6 +991,7 @@ const EVENT_CHANNELS = [
   "agent:remote-error",
   "agent:plan-required",
   "notification:show",
+  "notification:navigate",
   "auto-update:status-changed",
   "auto-update:progress",
   "auto-update:error",

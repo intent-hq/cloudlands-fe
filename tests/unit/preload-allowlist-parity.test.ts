@@ -194,5 +194,37 @@ describe('Preload IPC Allowlist Parity', () => {
       });
     }
   });
+
+  // Notification channels that must be present for click-to-navigate behavior.
+  // If notification:navigate is missing from preload allowlists, clicking an OS
+  // notification will not navigate to the correct workspace.
+  const REQUIRED_NOTIFICATION_CHANNELS = ['notification:navigate'] as const;
+
+  describe('Required notification channels present in EVENT_CHANNELS', () => {
+    for (const channel of REQUIRED_NOTIFICATION_CHANNELS) {
+      it(`index.ts EVENT_CHANNELS includes "${channel}"`, () => {
+        expect(indexEvents).toContain(channel);
+      });
+
+      it(`index.template.ts EVENT_CHANNELS includes "${channel}"`, () => {
+        expect(templateEvents).toContain(channel);
+      });
+    }
+  });
+
+  describe('Required notification channels in ipc-registry.ts', () => {
+    const registryPath = path.resolve(__dirname, '../../src/shared/ipc-registry.ts');
+    const registryContent = fs.readFileSync(registryPath, 'utf-8');
+    const registryEvents = extractArrayEntries(registryContent, 'EVENT_CHANNELS');
+
+    for (const channel of REQUIRED_NOTIFICATION_CHANNELS) {
+      it(`ipc-registry.ts EVENT_CHANNELS includes "${channel}"`, () => {
+        expect(
+          registryEvents,
+          `Source registry EVENT_CHANNELS missing "${channel}" — notification click navigation will break`,
+        ).toContain(channel);
+      });
+    }
+  });
 });
 

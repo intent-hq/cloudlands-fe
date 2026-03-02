@@ -170,7 +170,7 @@ export class NotificationService {
 
       // Show notification — pick first workspace window for click-to-focus
       const focusWindow = workspaceWindows[0] ?? BrowserWindow.getAllWindows()[0];
-      this.showNotification(content, focusWindow);
+      this.showNotification(content, focusWindow, this.workspaceId);
     } catch (error) {
       logger.error('Failed to handle agent:idle event', error as Error);
     }
@@ -224,7 +224,7 @@ export class NotificationService {
   /**
    * Show a desktop notification
    */
-  private showNotification(content: NotificationContent, mainWindow?: BrowserWindow): void {
+  private showNotification(content: NotificationContent, mainWindow?: BrowserWindow, workspaceId?: string): void {
     try {
       // Check if notifications are supported
       if (!Notification.isSupported()) {
@@ -243,13 +243,19 @@ export class NotificationService {
         body: content.body,
       });
 
-      // Focus workspace window on click
+      // Focus workspace window on click and navigate to the correct workspace
       notification.on('click', () => {
         if (mainWindow) {
+          if (mainWindow.isDestroyed()) {
+            return;
+          }
           if (mainWindow.isMinimized()) {
             mainWindow.restore();
           }
           mainWindow.focus();
+          if (workspaceId && !mainWindow.webContents.isDestroyed()) {
+            mainWindow.webContents.send('notification:navigate', { workspaceId });
+          }
         }
       });
 

@@ -1204,6 +1204,7 @@ export const EVENT_CHANNELS = [
   'agent:remote-error', // Agent remote environment error notification
   'agent:plan-required', // Agent plan upgrade required notification (enterprise users without Intent access)
   'notification:show', // Notification shown event for sound playback in renderer
+  'notification:navigate', // Notification click navigates to workspace
   // Auto-update events
   'auto-update:status-changed',
   'auto-update:progress',

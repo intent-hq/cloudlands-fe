@@ -741,6 +741,7 @@ const EVENT_CHANNELS = [
   'setup-scripts:stream-chunk',
   'setup-scripts:stream-complete',
   'setup-scripts:stream-error',
+  'notification:navigate',
 ];
 
 /**
