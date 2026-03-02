@@ -21,8 +21,8 @@ export interface SpacesSwitcherState {
   isOpen: boolean;
   /** Index of the currently selected workspace in the full sorted list */
   selectedIndex: number;
-  /** Sorted list of ALL workspaces (by lastViewedAt, excluding current) */
-  workspaces: Workspace[];
+  /** Sorted workspace IDs (ordering snapshot — live data resolved by overlay) */
+  workspaceIds: WorkspaceId[];
   /** The currently active workspace ID (to exclude from selection) */
   currentWorkspaceId: WorkspaceId | null;
   /** Whether selection was already handled (via click, Escape, etc.) - ignore Ctrl release */
@@ -35,7 +35,7 @@ export interface SpacesSwitcherCallbacks {
   /** Get all workspaces sorted by most recently viewed */
   getWorkspacesSortedByLastViewed: () => Workspace[];
   /** Called when a workspace is selected (on Meta keyup) */
-  onSelectWorkspace: (workspace: Workspace) => void;
+  onSelectWorkspaceId: (workspaceId: WorkspaceId) => void;
   /** Called when the overlay opens */
   onOpen?: () => void;
   /** Called when the overlay closes (without selection, e.g., Escape) */
@@ -46,7 +46,7 @@ export function createSpacesSwitcherKeyboard(callbacks: SpacesSwitcherCallbacks)
   let state = $state<SpacesSwitcherState>({
     isOpen: false,
     selectedIndex: 0,
-    workspaces: [],
+    workspaceIds: [],
     currentWorkspaceId: null,
     selectionHandled: false,
   });
@@ -71,16 +71,17 @@ export function createSpacesSwitcherKeyboard(callbacks: SpacesSwitcherCallbacks)
     }
 
     // Put current workspace first, then others sorted by recency
-    const workspaces = currentWorkspace ? [currentWorkspace, ...otherWorkspaces] : otherWorkspaces;
+    // Store only IDs — the overlay resolves live data from the store.
+    const ordered = currentWorkspace ? [currentWorkspace, ...otherWorkspaces] : otherWorkspaces;
 
     state.isOpen = true;
     state.selectedIndex = 1; // Start with the second item (first non-current workspace)
-    state.workspaces = workspaces;
+    state.workspaceIds = ordered.map((w) => w.id);
     state.currentWorkspaceId = currentId;
     state.selectionHandled = false;
 
     logger.debug('Spaces switcher opened', {
-      workspaceCount: workspaces.length,
+      workspaceCount: ordered.length,
       selectedIndex: 1,
     });
 
@@ -93,7 +94,7 @@ export function createSpacesSwitcherKeyboard(callbacks: SpacesSwitcherCallbacks)
   function resetState() {
     state.isOpen = false;
     state.selectedIndex = 0;
-    state.workspaces = [];
+    state.workspaceIds = [];
   }
 
   /**
@@ -109,17 +110,14 @@ export function createSpacesSwitcherKeyboard(callbacks: SpacesSwitcherCallbacks)
   }
 
   /**
-   * Select a specific workspace (e.g., via click) and close
+   * Select a specific workspace by ID (e.g., via click) and close
    */
-  function selectWorkspace(workspace: Workspace) {
+  function selectWorkspaceById(workspaceId: WorkspaceId) {
     if (!state.isOpen) return;
 
-    if (workspace.id !== state.currentWorkspaceId) {
-      logger.debug('Selecting workspace via click', {
-        workspaceId: workspace.id,
-        workspaceTitle: workspace.title,
-      });
-      callbacks.onSelectWorkspace(workspace);
+    if (workspaceId !== state.currentWorkspaceId) {
+      logger.debug('Selecting workspace', { workspaceId });
+      callbacks.onSelectWorkspaceId(workspaceId);
     } else {
       logger.debug('Clicked current workspace, dismissing overlay');
     }
@@ -132,9 +130,9 @@ export function createSpacesSwitcherKeyboard(callbacks: SpacesSwitcherCallbacks)
    * Cycle to the next workspace in the list
    */
   function cycleNext() {
-    if (!state.isOpen || state.workspaces.length === 0) return;
+    if (!state.isOpen || state.workspaceIds.length === 0) return;
 
-    state.selectedIndex = (state.selectedIndex + 1) % state.workspaces.length;
+    state.selectedIndex = (state.selectedIndex + 1) % state.workspaceIds.length;
     logger.debug('Cycled to next workspace', {
       selectedIndex: state.selectedIndex,
     });
@@ -144,10 +142,10 @@ export function createSpacesSwitcherKeyboard(callbacks: SpacesSwitcherCallbacks)
    * Cycle to the previous workspace in the list (Shift+L)
    */
   function cyclePrevious() {
-    if (!state.isOpen || state.workspaces.length === 0) return;
+    if (!state.isOpen || state.workspaceIds.length === 0) return;
 
     state.selectedIndex =
-      (state.selectedIndex - 1 + state.workspaces.length) % state.workspaces.length;
+      (state.selectedIndex - 1 + state.workspaceIds.length) % state.workspaceIds.length;
     logger.debug('Cycled to previous workspace', {
       selectedIndex: state.selectedIndex,
     });
@@ -157,11 +155,11 @@ export function createSpacesSwitcherKeyboard(callbacks: SpacesSwitcherCallbacks)
    * Confirm the current selection (via Ctrl release) and close
    */
   function confirmSelection() {
-    if (!state.isOpen || state.workspaces.length === 0) return;
+    if (!state.isOpen || state.workspaceIds.length === 0) return;
 
-    const selectedWorkspace = state.workspaces[state.selectedIndex];
-    if (selectedWorkspace) {
-      selectWorkspace(selectedWorkspace);
+    const selectedId = state.workspaceIds[state.selectedIndex];
+    if (selectedId) {
+      selectWorkspaceById(selectedId);
     } else {
       resetState();
     }
@@ -233,8 +231,8 @@ export function createSpacesSwitcherKeyboard(callbacks: SpacesSwitcherCallbacks)
         }
         case 'End': {
           e.preventDefault();
-          if (state.workspaces.length > 0) {
-            state.selectedIndex = state.workspaces.length - 1;
+          if (state.workspaceIds.length > 0) {
+            state.selectedIndex = state.workspaceIds.length - 1;
           }
           return true;
         }
@@ -272,8 +270,8 @@ export function createSpacesSwitcherKeyboard(callbacks: SpacesSwitcherCallbacks)
   /**
    * Handle workspace selection from overlay click (via custom event)
    */
-  function handleSelectEvent(e: CustomEvent<{ workspace: Workspace }>) {
-    selectWorkspace(e.detail.workspace);
+  function handleSelectEvent(e: CustomEvent<{ workspaceId: WorkspaceId }>) {
+    selectWorkspaceById(e.detail.workspaceId);
   }
 
   /**
@@ -293,21 +291,21 @@ export function createSpacesSwitcherKeyboard(callbacks: SpacesSwitcherCallbacks)
     get selectedIndex() {
       return state.selectedIndex;
     },
-    get workspaces() {
-      return state.workspaces;
+    get workspaceIds() {
+      return state.workspaceIds;
     },
-    get selectedWorkspace() {
-      return state.workspaces[state.selectedIndex] ?? null;
+    get selectedWorkspaceId() {
+      return state.workspaceIds[state.selectedIndex] ?? null;
     },
     /** Total number of workspaces */
     get totalCount() {
-      return state.workspaces.length;
+      return state.workspaceIds.length;
     },
 
     // Actions
     open,
     close,
-    selectWorkspace,
+    selectWorkspaceById,
     cycleNext,
     cyclePrevious,
     confirmSelection,

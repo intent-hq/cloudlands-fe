@@ -153,6 +153,44 @@ class WorkspaceStore {
           }
         }
 
+        // FIX: Preserve existing enrichment data (taskStats, diffSummary, agentSummary,
+        // gitSummary) when the incoming response has undefined for those fields.
+        // This can happen when:
+        //  - The frontend explicitly requests lite mode (!hasLoaded || isCreating)
+        //  - The backend independently forces lite mode (creationInProgressCount > 0)
+        //  - Individual buildListWorkspace calls fail for specific workspaces
+        // Without this, phase indicators show "not started" even for 10/10 complete tasks.
+        if (this.#items.length > 0) {
+          const existingById = new Map<string, Workspace>(this.#items.map((w) => [w.id, w]));
+          for (const [id, workspace] of uniqueWorkspaces) {
+            const existing = existingById.get(id);
+            if (existing) {
+              const taskStats = workspace.taskStats ?? existing.taskStats;
+              const diffSummary = workspace.diffSummary ?? existing.diffSummary;
+              const agentSummary = workspace.agentSummary ?? existing.agentSummary;
+              const gitSummary = workspace.gitSummary ?? existing.gitSummary;
+              const activePullRequest = workspace.activePullRequest ?? existing.activePullRequest;
+              // Only create new object if something was actually preserved
+              if (
+                taskStats !== workspace.taskStats ||
+                diffSummary !== workspace.diffSummary ||
+                agentSummary !== workspace.agentSummary ||
+                gitSummary !== workspace.gitSummary ||
+                activePullRequest !== workspace.activePullRequest
+              ) {
+                uniqueWorkspaces.set(id, {
+                  ...workspace,
+                  taskStats,
+                  diffSummary,
+                  agentSummary,
+                  gitSummary,
+                  activePullRequest,
+                });
+              }
+            }
+          }
+        }
+
         // PERF: Only update #items if the workspace list actually changed.
         // Assigning a new array to $state triggers a full Svelte reactive flush
         // (147ms for 156 workspaces). Skip if the list is unchanged.
@@ -178,6 +216,9 @@ class WorkspaceStore {
             const hadAgent = existing.agentSummary !== undefined;
             const hasAgent = w.agentSummary !== undefined;
             if (hadAgent !== hasAgent) return true;
+            const hadGit = existing.gitSummary !== undefined;
+            const hasGit = w.gitSummary !== undefined;
+            if (hadGit !== hasGit) return true;
             // Detect activePullRequest enrichment changes (ciStatus, reviewDecision, approvedBy)
             const hadPR = existing.activePullRequest != null;
             const hasPR = w.activePullRequest != null;
@@ -410,7 +451,18 @@ class WorkspaceStore {
     try {
       const result = await workspaceClient.open(id);
       if (result.ok) {
-        this.#current = result.data;
+        // Preserve enrichment data from items array if available
+        const existing = this.#items.find((w) => w.id === id);
+        this.#current = existing
+          ? {
+              ...result.data,
+              taskStats: result.data.taskStats ?? existing.taskStats,
+              diffSummary: result.data.diffSummary ?? existing.diffSummary,
+              agentSummary: result.data.agentSummary ?? existing.agentSummary,
+              gitSummary: result.data.gitSummary ?? existing.gitSummary,
+              activePullRequest: result.data.activePullRequest ?? existing.activePullRequest,
+            }
+          : result.data;
       } else {
         this.#error = result.error;
       }
@@ -431,16 +483,38 @@ class WorkspaceStore {
         // Update in items array - create new array for reactivity
         const index = this.#items.findIndex((w) => w.id === id);
         if (index !== -1) {
+          const existing = this.#items[index];
+          // Preserve enrichment data that the update response doesn't include
+          const merged = {
+            ...result.data,
+            taskStats: result.data.taskStats ?? existing.taskStats,
+            diffSummary: result.data.diffSummary ?? existing.diffSummary,
+            agentSummary: result.data.agentSummary ?? existing.agentSummary,
+            gitSummary: result.data.gitSummary ?? existing.gitSummary,
+            activePullRequest: result.data.activePullRequest ?? existing.activePullRequest,
+          };
           this.#items = [
             ...this.#items.slice(0, index),
-            result.data,
+            merged,
             ...this.#items.slice(index + 1),
           ];
         }
 
-        // Update current if it's the same workspace
+        // Update current if it's the same workspace — use merged data to
+        // keep #current consistent with #items (both have enrichment data)
         if (this.#current?.id === id) {
-          this.#current = result.data;
+          if (index !== -1) {
+            this.#current = this.#items[index];
+          } else {
+            // Workspace not in #items but is #current — preserve enrichment from #current
+            this.#current = {
+              ...result.data,
+              taskStats: result.data.taskStats ?? this.#current.taskStats,
+              diffSummary: result.data.diffSummary ?? this.#current.diffSummary,
+              agentSummary: result.data.agentSummary ?? this.#current.agentSummary,
+              gitSummary: result.data.gitSummary ?? this.#current.gitSummary,
+            };
+          }
         }
       }
       return result;
@@ -769,14 +843,25 @@ class WorkspaceStore {
     } else {
       // Handle workspace object case (used for preloaded data)
       workspaceId = idOrWorkspace.id;
-      this.#current = idOrWorkspace;
       // Also update in items array if present, or add it if not
       const index = this.#items.findIndex((w) => w.id === idOrWorkspace.id);
       if (index !== -1) {
-        this.#items[index] = idOrWorkspace;
+        // Preserve enrichment data when setting current workspace
+        const existing = this.#items[index];
+        const merged = {
+          ...idOrWorkspace,
+          taskStats: idOrWorkspace.taskStats ?? existing.taskStats,
+          diffSummary: idOrWorkspace.diffSummary ?? existing.diffSummary,
+          agentSummary: idOrWorkspace.agentSummary ?? existing.agentSummary,
+          gitSummary: idOrWorkspace.gitSummary ?? existing.gitSummary,
+          activePullRequest: idOrWorkspace.activePullRequest ?? existing.activePullRequest,
+        };
+        this.#items[index] = merged;
+        this.#current = merged; // Use merged data so #current stays consistent with #items
       } else {
         // Add to items array if not present
         this.#items = [...this.#items, idOrWorkspace];
+        this.#current = idOrWorkspace;
       }
     }
 
@@ -813,10 +898,19 @@ class WorkspaceStore {
   private addOrUpdateWorkspace(workspace: Workspace): void {
     const existingIndex = this.#items.findIndex((w) => w.id === workspace.id);
     if (existingIndex >= 0) {
-      // Replace existing workspace
+      // Preserve enrichment data if the incoming workspace doesn't have it
+      const existing = this.#items[existingIndex];
+      const merged = {
+        ...workspace,
+        taskStats: workspace.taskStats ?? existing.taskStats,
+        diffSummary: workspace.diffSummary ?? existing.diffSummary,
+        agentSummary: workspace.agentSummary ?? existing.agentSummary,
+        gitSummary: workspace.gitSummary ?? existing.gitSummary,
+        activePullRequest: workspace.activePullRequest ?? existing.activePullRequest,
+      };
       this.#items = [
         ...this.#items.slice(0, existingIndex),
-        workspace,
+        merged,
         ...this.#items.slice(existingIndex + 1),
       ];
     } else {
@@ -832,15 +926,25 @@ class WorkspaceStore {
    * Ensure no duplicate workspace IDs exist in the items array
    */
   private deduplicateItems(): void {
-    const seen = new Set<string>();
+    const seen = new Map<string, number>(); // id → index in deduplicated
     const deduplicated: Workspace[] = [];
 
     for (const workspace of this.#items) {
-      if (!seen.has(workspace.id)) {
-        seen.add(workspace.id);
+      const existingIndex = seen.get(workspace.id);
+      if (existingIndex === undefined) {
+        seen.set(workspace.id, deduplicated.length);
         deduplicated.push(workspace);
       } else {
-        logger.warn('[WorkspaceStore] Duplicate workspace ID detected and removed:', workspace.id);
+        // Merge enrichment data from the duplicate into the kept entry
+        const kept = deduplicated[existingIndex];
+        deduplicated[existingIndex] = {
+          ...kept,
+          taskStats: kept.taskStats ?? workspace.taskStats,
+          diffSummary: kept.diffSummary ?? workspace.diffSummary,
+          agentSummary: kept.agentSummary ?? workspace.agentSummary,
+          gitSummary: kept.gitSummary ?? workspace.gitSummary,
+        };
+        logger.warn('[WorkspaceStore] Duplicate workspace ID detected and merged:', workspace.id);
       }
     }
 

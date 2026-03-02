@@ -26,11 +26,16 @@ vi.mock('$features/agent/browser', () => ({
   subscribeToAgent: vi.fn(),
 }));
 
-vi.mock('$features/workspace/workspace.store.svelte', () => ({
-  workspaceStore: {
-    current: { id: 'test-workspace', name: 'Test Workspace' },
-  },
-}));
+vi.mock('$features/workspace/workspace.store.svelte', () => {
+  const testWorkspace = { id: 'test-workspace', name: 'Test Workspace' };
+  return {
+    workspaceStore: {
+      current: testWorkspace,
+      items: [testWorkspace],
+      findById: (id: string) => (id === 'test-workspace' ? testWorkspace : undefined),
+    },
+  };
+});
 
 import { agentService } from '$features/agent/agent.service';
 import { sessionStore, subscribeToAgent } from '$features/agent/browser';

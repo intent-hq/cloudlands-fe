@@ -76,7 +76,9 @@
 
   /** Dispatch selection event - keyboard manager listens for this */
   function handleWorkspaceClick(workspace: Workspace) {
-    window.dispatchEvent(new CustomEvent('spaces-switcher:select', { detail: { workspace } }));
+    window.dispatchEvent(
+      new CustomEvent('spaces-switcher:select', { detail: { workspaceId: workspace.id } }),
+    );
   }
 
   // Get display title (show "Untitled" for empty titles)
@@ -266,11 +268,15 @@
                   </span>
                 {/if}
 
-                <RelativeTime
-                  date={workspace.lastActivity || workspace.updatedAt}
-                  class="text-ui text-subtle whitespace-nowrap shrink-0"
-                  compact
-                />
+                {#if isRunning}
+                  <span class="text-ui text-green-500/70 whitespace-nowrap shrink-0">Active</span>
+                {:else}
+                  <RelativeTime
+                    date={workspace.lastActivity || workspace.updatedAt}
+                    class="text-ui text-subtle whitespace-nowrap shrink-0"
+                    compact
+                  />
+                {/if}
               </div>
 
               <!-- Row 2: repo info -->

@@ -545,6 +545,8 @@
   const allCommits = $derived(storeHasCorrectWorkspace ? (fileTrackingStore.commits ?? []) : []);
 
   // Agent subscription
+  // NOTE: agentStateTick is written but not read — the subscribe callback below
+  // increments it, but no $derived or template expression consumes it. Kept as a hook point.
   let agentStateTick = $state(0);
   const agentSubscription = useAllAgentsSubscription(() => workspaceId);
   const workspaceAgents = $derived.by(() => {
@@ -693,7 +695,6 @@
 
   onMount(() => {
     const unsubscribeAgent = sessionStore.getStore().subscribe(() => {
-      const allSessions = agentService.getAllSessions();
       const workspaceSessions = agentService.getSessionsForWorkspace(workspaceId);
       let hasRelevantChange = false;
 
@@ -702,7 +703,10 @@
         previousAgentCount = workspaceSessions.length;
       }
 
-      for (const session of allSessions) {
+      // Only track streaming state for agents in THIS workspace
+      // Previously this iterated allSessions, causing cross-workspace
+      // streaming changes to trigger unnecessary re-renders.
+      for (const session of workspaceSessions) {
         const isRunning = session.isStreaming || session.isResponding || session.isProcessing;
         const wasRunning = previousStreamingState.get(session.id) ?? false;
         if (isRunning !== wasRunning) {

@@ -222,7 +222,7 @@
               <div
                 class="text-subtle font-normal text-xs text-left flex justify-start items-start w-full"
               >
-                {formatDate(workspace.lastActivity || workspace.createdAt)}
+                {formatDate(workspace.lastActivity || workspace.updatedAt)}
               </div>
             </Button>
           </div>

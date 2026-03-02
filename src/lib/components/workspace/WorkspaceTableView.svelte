@@ -208,7 +208,7 @@
   function getGroupMostRecentActivity(workspaces: Workspace[]): number {
     if (workspaces.length === 0) return 0;
     return Math.max(
-      ...workspaces.map((ws) => new Date(ws.lastActivity || ws.createdAt || 0).getTime()),
+      ...workspaces.map((ws) => new Date(ws.lastActivity || ws.updatedAt || 0).getTime()),
     );
   }
 
@@ -227,8 +227,8 @@
 
   let groupedWorkspaces = $derived.by((): GroupedWorkspaces => {
     const sorted = [...filteredWorkspaces].sort((a, b) => {
-      const dateA = new Date(a.lastActivity || a.createdAt || 0).getTime();
-      const dateB = new Date(b.lastActivity || b.createdAt || 0).getTime();
+      const dateA = new Date(a.lastActivity || a.updatedAt || 0).getTime();
+      const dateB = new Date(b.lastActivity || b.updatedAt || 0).getTime();
       return dateB - dateA;
     });
 

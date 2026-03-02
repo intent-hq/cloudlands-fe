@@ -93,8 +93,8 @@
   let allItems = $derived.by((): GridItem[] => {
     // Sort all workspaces by activity (within groups, most recent first)
     const sorted = [...filteredWorkspaces].sort((a, b) => {
-      const dateA = new Date(a.lastActivity || a.createdAt || 0).getTime();
-      const dateB = new Date(b.lastActivity || b.createdAt || 0).getTime();
+      const dateA = new Date(a.lastActivity || a.updatedAt || 0).getTime();
+      const dateB = new Date(b.lastActivity || b.updatedAt || 0).getTime();
       return dateB - dateA;
     });
 
@@ -137,8 +137,8 @@
       orderedKeys = currentKeys.sort((a, b) => {
         const mostRecentA = groups[a].workspaces[0];
         const mostRecentB = groups[b].workspaces[0];
-        const dateA = new Date(mostRecentA?.lastActivity || mostRecentA?.createdAt || 0).getTime();
-        const dateB = new Date(mostRecentB?.lastActivity || mostRecentB?.createdAt || 0).getTime();
+        const dateA = new Date(mostRecentA?.lastActivity || mostRecentA?.updatedAt || 0).getTime();
+        const dateB = new Date(mostRecentB?.lastActivity || mostRecentB?.updatedAt || 0).getTime();
         return dateB - dateA;
       });
       // Update stable order (closure state, not reactive)

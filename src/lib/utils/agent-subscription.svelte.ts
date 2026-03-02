@@ -286,9 +286,16 @@ export function useAllAgentsSubscription(workspaceId?: WorkspaceIdSource) {
     // Early exit if no workspace ID provided
     if (!resolvedWorkspaceId) return;
 
-    // CRITICAL: Read workspace here to make it a dependency of the effect
-    // This ensures the effect re-runs when workspace becomes available
-    const workspace = workspaceStore.current;
+    // Look up the workspace by its resolved ID rather than using
+    // workspaceStore.current. workspaceStore.current points to whichever
+    // workspace the user is actively viewing, which may differ from the
+    // workspace this subscription was created for (e.g. when multiple
+    // workspace tabs are open). Using findById ensures we pass the correct
+    // workspace object to restoreSessionWithoutBackend below.
+    // Reading workspaceStore.items keeps this as a reactive dependency so
+    // the effect re-runs when the items list changes (e.g. after load).
+    const _items = workspaceStore.items; // reactive dependency
+    const workspace = workspaceStore.findById(resolvedWorkspaceId as any);
     if (!workspace) {
       logger.debug('Workspace not ready, will retry when available', { resolvedWorkspaceId });
       return;

@@ -500,7 +500,7 @@
       total++;
       if (status === 'complete') {
         completed++;
-      } else if (status === 'in_progress') {
+      } else if (status === 'in_progress' || status === 'review_required') {
         inProgress++;
       }
     }

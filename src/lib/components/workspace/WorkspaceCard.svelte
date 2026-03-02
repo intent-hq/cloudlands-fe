@@ -75,9 +75,23 @@
   );
 
   // Task progress stats from notes
+  // Matches backend getWorkspaceTaskStats and WorkspaceProgressCard logic:
+  // - Only count task notes that are direct children of the spec note
+  // - Exclude cancelled tasks (they don't contribute to progress)
   let taskStats = $derived.by(() => {
-    // Filter to task notes (exclude spec notes)
-    const taskNotes = notes.filter((n) => n.metadata?.task && !isSpecNote(n.id));
+    const seenIds = new Set<string>();
+    const taskNotes = notes.filter((n) => {
+      if (!n.metadata?.task || isSpecNote(n.id)) return false;
+      // Only count tasks that are direct children of the spec note
+      if (!isSpecNote(n.parentId as string)) return false;
+      // Skip cancelled tasks
+      if (n.metadata.task.status === 'cancelled') return false;
+      // Deduplicate
+      const noteId = n.id as string;
+      if (seenIds.has(noteId)) return false;
+      seenIds.add(noteId);
+      return true;
+    });
 
     if (taskNotes.length === 0) {
       return null;
@@ -196,7 +210,7 @@
     return `${diffMonths}mo ago`;
   }
 
-  let lastEditedTime = $derived(formatRelativeTime(workspace.lastActivity || workspace.createdAt));
+  let lastEditedTime = $derived(formatRelativeTime(workspace.lastActivity || workspace.updatedAt));
 
   function handleClick() {
     onClick(workspace);

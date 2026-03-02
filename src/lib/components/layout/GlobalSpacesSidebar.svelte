@@ -56,11 +56,11 @@
       (w) => w.status !== WorkspaceStatusEnum.Archived,
     );
 
-    // Sort by updatedAt timestamp (most recent first)
+    // Sort by most recent activity (most recent first)
     return [...allWorkspaces].sort((a, b) => {
-      const aUpdated = new Date(a.updatedAt).getTime();
-      const bUpdated = new Date(b.updatedAt).getTime();
-      return bUpdated - aUpdated;
+      const aTime = new Date(a.lastActivity || a.updatedAt).getTime();
+      const bTime = new Date(b.lastActivity || b.updatedAt).getTime();
+      return bTime - aTime;
     });
   });
 
@@ -287,7 +287,7 @@
               class="flex items-center w-full justify-between gap-1.5 text-xs text-subtle"
             >
               <span class="truncate">{workspace.repositoryName}</span>
-              <span class="shrink-0">{formatRelativeTime(workspace.updatedAt)}</span>
+              <span class="shrink-0">{streaming ? 'Active' : formatRelativeTime(workspace.lastActivity || workspace.updatedAt)}</span>
             </div>
           </div>
         </button>

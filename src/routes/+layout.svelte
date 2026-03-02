@@ -264,6 +264,18 @@
   // Spaces switcher (Cmd+L to cycle through workspaces like Cmd+Tab)
   let spacesSwitcher: SpacesSwitcherKeyboard | null = $state(null);
 
+  // Resolve the switcher's workspace ID ordering to live store data so that
+  // titles, taskStats, agentSummary, PR status, etc. stay current.
+  // The keyboard manager stores only IDs; we look up live objects here.
+  const switcherLiveWorkspaces = $derived.by(() => {
+    if (!spacesSwitcher) return [];
+    const storeItems = workspaceStore.items;
+    const byId = new Map(storeItems.map((w) => [w.id, w]));
+    return spacesSwitcher.workspaceIds
+      .map((id) => byId.get(id))
+      .filter((w): w is Workspace => w != null);
+  });
+
   let showGitHubAuthModal = $state(false);
   let pendingGitHubAuth = $state<GitHubAuthRequiredEvent | null>(null);
   let githubAuthModalKey = $state(0);
@@ -1469,12 +1481,9 @@
         );
         return workspaceRecencyStore.sortByRecency(activeWorkspaces);
       },
-      onSelectWorkspace: (workspace) => {
-        logger.info('[+layout] Spaces switcher selected workspace', {
-          workspaceId: workspace.id,
-          workspaceTitle: workspace.title,
-        });
-        goto(`/workspace/${workspace.id}`);
+      onSelectWorkspaceId: (workspaceId) => {
+        logger.info('[+layout] Spaces switcher selected workspace', { workspaceId });
+        goto(`/workspace/${workspaceId}`);
       },
       onOpen: () => {
         logger.debug('[+layout] Spaces switcher opened');
@@ -1852,7 +1861,7 @@
   {#if spacesSwitcher}
     <SpacesSwitcherOverlay
       isOpen={spacesSwitcher.isOpen}
-      workspaces={spacesSwitcher.workspaces}
+      workspaces={switcherLiveWorkspaces}
       selectedIndex={spacesSwitcher.selectedIndex}
       currentWorkspaceId={workspaceStore.current?.id ?? null}
     />

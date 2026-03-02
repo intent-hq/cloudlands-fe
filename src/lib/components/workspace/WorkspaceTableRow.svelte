@@ -198,11 +198,15 @@
           {/if}
 
           <!-- Activity time -->
-          <RelativeTime
-            date={ws.lastActivity || ws.createdAt}
-            class="text-ui text-subtle whitespace-nowrap"
-            compact
-          />
+          {#if agents.some((a) => a.isActive)}
+            <span class="text-ui text-green-500/70 whitespace-nowrap">Active</span>
+          {:else}
+            <RelativeTime
+              date={ws.lastActivity || ws.updatedAt}
+              class="text-ui text-subtle whitespace-nowrap"
+              compact
+            />
+          {/if}
         </div>
 
         <!-- Row 2: repo info (hidden when grouped by repo) -->

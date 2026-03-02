@@ -49,7 +49,7 @@
     suppressHover = false,
   }: Props = $props();
 
-  const phaseInfo = $derived(deriveWorkspacePhase(workspace));
+  const phaseInfo = $derived(deriveWorkspacePhase(workspace, { hasActiveAgents: isRunning }));
   let isCurrent = $derived(page.url.pathname === `/workspace/${workspace.id}`);
 
   // Task progress for building phase pie chart (0–1)
@@ -196,11 +196,15 @@
               : 'group-hover:opacity-0'
           : ''}"
       >
-        <RelativeTime
-          date={workspace.lastActivity || workspace.updatedAt}
-          class="text-ui text-subtle whitespace-nowrap"
-          compact
-        />
+        {#if isRunning}
+          <span class="text-ui text-green-500/70 whitespace-nowrap">Active</span>
+        {:else}
+          <RelativeTime
+            date={workspace.lastActivity || workspace.updatedAt}
+            class="text-ui text-subtle whitespace-nowrap"
+            compact
+          />
+        {/if}
       </span>
     </div>
 

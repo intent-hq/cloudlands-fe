@@ -311,7 +311,9 @@
       ),
   );
 
-  // Reactive trigger for agent state changes - declared early so it can be used in derived
+  // Reactive trigger for agent state changes
+  // NOTE: Currently written but not read — the subscribe callback below increments it,
+  // but no $derived or template expression consumes it. Kept as a hook point if needed.
   let agentStateTick = $state(0);
 
   // Subscribe to all agents for this workspace (including background agents).
@@ -454,14 +456,12 @@
     return filesPanelRef?.getHasExpandedDirectories() ?? false;
   });
 
-  // agentStateTick is declared earlier to be used in workspaceAgents $derived
   let previousStreamingState = new Map<string, boolean>();
 
   // Subscribe to agent service changes to detect when agents change (added, removed, or streaming state)
   let previousAgentCount = 0;
   onMount(() => {
     const unsubscribeAgent = sessionStore.getStore().subscribe(() => {
-      const allSessions = agentService.getAllSessions();
       const workspaceSessions = agentService.getSessionsForWorkspace(workspaceId);
       let hasRelevantChange = false;
 
@@ -471,8 +471,10 @@
         previousAgentCount = workspaceSessions.length;
       }
 
-      // Check for streaming state changes
-      for (const session of allSessions) {
+      // Only track streaming state for agents in THIS workspace
+      // Previously this iterated allSessions, causing cross-workspace
+      // streaming changes to trigger unnecessary re-renders.
+      for (const session of workspaceSessions) {
         const isRunning = session.isStreaming || session.isResponding || session.isProcessing;
         const wasRunning = previousStreamingState.get(session.id) ?? false;
 

@@ -42,8 +42,10 @@ src/lib/components/workspace/DockItemCard.svelte:96
 src/lib/components/workspace/initializer/LinearIssuePicker.svelte:815
 src/lib/components/workspace/initializer/SentryIssuePicker.svelte:789
 src/lib/components/workspace/NoteCodeChangesCard.svelte:210
-src/lib/components/workspace/OverviewTimelinePanel.svelte:722
+src/lib/components/workspace/OverviewTimelinePanel.svelte:765
 src/lib/components/workspace/SpacesPicker.svelte:203
+src/lib/components/workspace/WorkspaceCard.svelte:311
+src/lib/components/workspace/WorkspaceCard.svelte:315
 src/routes/observability/+page.svelte:702
 src/routes/workspace/[id]/terminal-test/+page.svelte:36
 src/routes/workspace/[id]/terminal-test/+page.svelte:43

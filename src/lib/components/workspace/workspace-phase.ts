@@ -6,6 +6,23 @@
  * 2. Building - Agents implement tasks from the spec
  * 3. Reviewing - Work is done, review and ship changes
  * 4. Shipped - All changes merged, workspace complete
+ *
+ * ## Data Flow & Consistency Notes
+ *
+ * Workspace objects come from workspaceStore.items which loads in two passes:
+ *  - **Lite mode**: taskStats, diffSummary, agentSummary, gitSummary are undefined.
+ *  - **Full mode** (500ms later): enrichment fields are populated.
+ *
+ * All callers MUST pass `{ hasActiveAgents }` from activeStreamsTracker when
+ * the calling component has access to agent streaming state. Without it, the
+ * phase will show "planning" even when agents are actively working but no
+ * tasks have transitioned to in_progress yet.
+ *
+ * The canonical timestamp for workspace recency is `lastActivity || updatedAt`.
+ * - `updatedAt`: set by explicit backend update() calls (rename, archive, etc.)
+ * - `lastActivity`: set locally in the store on meaningful event-driven changes.
+ * - When agents are streaming, display components should show "Active" instead
+ *   of a stale relative timestamp.
  */
 
 import type { Workspace } from '$shared/types';
