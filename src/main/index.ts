@@ -1316,8 +1316,9 @@ app.whenReady().then(async () => {
         label: 'Settings...',
         accelerator: 'CmdOrCtrl+,',
         click: () => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('navigate', '/settings');
+          const focusedWindow = BrowserWindow.getFocusedWindow();
+          if (focusedWindow && !focusedWindow.isDestroyed()) {
+            focusedWindow.webContents.send('navigate', '/settings');
           }
         },
       });
@@ -1659,8 +1660,9 @@ app.whenReady().then(async () => {
             label: 'Settings...',
             accelerator: 'CmdOrCtrl+,',
             click: () => {
-              if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('navigate', '/settings');
+              const focusedWindow = BrowserWindow.getFocusedWindow();
+              if (focusedWindow && !focusedWindow.isDestroyed()) {
+                focusedWindow.webContents.send('navigate', '/settings');
               }
             },
           },
