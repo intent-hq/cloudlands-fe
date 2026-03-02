@@ -1080,7 +1080,7 @@ export class ACPProviderStreaming {
     // We only override for specific, unambiguous input patterns to avoid false positives.
     // The classifier (tool-classifier.ts) also uses input parameters as a fallback,
     // so we focus on the most critical cases here.
-    if (input.command === 'str_replace' || input.command === 'insert') {
+    if (input.command === 'str_replace' || input.command === 'insert' || input.command === 'create') {
       // str-replace-editor is the only tool with command='str_replace' or 'insert'
       actualToolName = 'str-replace-editor';
     } else if (

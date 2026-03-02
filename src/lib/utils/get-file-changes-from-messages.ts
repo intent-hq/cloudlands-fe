@@ -403,6 +403,24 @@ function extractFromStrReplace(
   }
   if (!path) return null;
 
+  // Handle 'create' command: creates a new file with file_text content
+  if (input.command === 'create') {
+    const rawContent = input.file_text ?? '';
+    const content = unescapeContent(rawContent);
+    const lines = content ? content.split('\n') : [];
+
+    return {
+      filePath: path,
+      action: 'create' as const,
+      additions: lines.length,
+      deletions: 0,
+      toolName,
+      toolCallId: id,
+      oldContent: '',
+      newContent: content,
+    };
+  }
+
   let additions = 0;
   let deletions = 0;
   const oldParts: string[] = [];
@@ -533,6 +551,7 @@ function extractFromSaveFile(
     input.file_content ??
     input.fileContent ??
     input.content ??
+    input.file_text ??
     input.text ??
     input.code ??
     input.body ??

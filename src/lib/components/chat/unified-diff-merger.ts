@@ -100,6 +100,39 @@ function computeLineNumbers(
 }
 
 /**
+ * Build synthetic DiffHunk entries from oldContent/newContent strings.
+ * Used when a change part has content but no pre-computed chunks (e.g., committed chat changes).
+ */
+export function buildSyntheticChunks(oldContent: string, newContent: string): DiffHunk[] {
+  const oldLines = oldContent ? oldContent.split('\n') : [];
+  const newLines = newContent ? newContent.split('\n') : [];
+
+  if (oldLines.length === 0 && newLines.length === 0) return [];
+
+  const lines: DiffLine[] = [];
+
+  // All old lines as deletions
+  for (const line of oldLines) {
+    lines.push({ type: 'Deletion', content: line });
+  }
+
+  // All new lines as additions
+  for (const line of newLines) {
+    lines.push({ type: 'Addition', content: line });
+  }
+
+  return [
+    {
+      oldStart: 1,
+      oldLines: oldLines.length,
+      newStart: 1,
+      newLines: newLines.length,
+      lines,
+    },
+  ];
+}
+
+/**
  * Merge multiple change parts into a unified diff view.
  *
  * @param parts - The change parts to merge (staged, unstaged, committed)
@@ -118,7 +151,13 @@ export function mergeChangeParts(parts: ChangePart[]): MergedHunk[] {
   }> = [];
 
   for (const part of parts) {
-    const chunks = part.change.chunks || [];
+    let chunks = part.change.chunks || [];
+
+    // If no chunks but we have oldContent/newContent, generate synthetic chunks
+    if (chunks.length === 0 && (part.change.oldContent != null || part.change.newContent != null)) {
+      chunks = buildSyntheticChunks(part.change.oldContent ?? '', part.change.newContent ?? '');
+    }
+
     chunks.forEach((hunk, hunkIndex) => {
       allHunks.push({ hunk, stage: part.category, part, hunkIndex });
     });
