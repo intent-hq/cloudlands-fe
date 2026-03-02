@@ -84,7 +84,10 @@ export const CATEGORY_ICONS: Record<ToolCategory, IconDefinition> = {
 };
 
 // Helper functions
-function cleanToolName(name: string): string {
+function cleanToolName(name: string | undefined | null): string {
+  // Handle undefined or null values gracefully
+  if (!name) return '';
+
   // Handle MCP URL formats
   const mcpMatch = name.match(/(?:\/\/local\/mcp\/|workspaces\.augmentcode\.com\/mcp\/)(.+)$/);
   if (mcpMatch) name = mcpMatch[1];
@@ -204,7 +207,8 @@ const CONTEXT_ENGINE_TOOLS = [
 /**
  * Check if a tool is powered by Augment's Context Engine
  */
-export function isContextEngineTool(toolName: string): boolean {
+export function isContextEngineTool(toolName: string | undefined | null): boolean {
+  if (!toolName) return false;
   const cleanName = cleanToolName(toolName).toLowerCase();
   return CONTEXT_ENGINE_TOOLS.some(
     (tool) => cleanName === tool || cleanName.includes(tool.replace(/-/g, '_')),
@@ -214,7 +218,8 @@ export function isContextEngineTool(toolName: string): boolean {
 /**
  * Get the retrieval source label for a context engine tool
  */
-export function getContextEngineSource(toolName: string): string {
+export function getContextEngineSource(toolName: string | undefined | null): string {
+  if (!toolName) return 'Codebase';
   const cleanName = cleanToolName(toolName).toLowerCase();
   if (cleanName.includes('git') || cleanName.includes('commit')) {
     return 'Commit History';
@@ -436,10 +441,13 @@ function extractResultMetadata(result: any): ResultMetadata | null {
  * Classify a tool and extract display information
  */
 export function classifyTool(
-  toolName: string,
+  toolName: string | undefined | null,
   input: Record<string, any>,
   result?: any,
 ): ToolDisplay {
+  // Guard against null/undefined tool names (can happen with malformed content blocks)
+  toolName = toolName || '';
+
   // Extract metadata from result for enhanced display
   const resultMetadata = extractResultMetadata(result);
 
