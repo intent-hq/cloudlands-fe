@@ -84,7 +84,7 @@
         <Button
           variant="ghost-light"
           size="icon-xs"
-          class="text-muted-foreground/50 hover:text-foreground"
+          class="text-muted-foreground hover:text-foreground"
           onclick={close}
         >
           <Fa icon={faXmark} />

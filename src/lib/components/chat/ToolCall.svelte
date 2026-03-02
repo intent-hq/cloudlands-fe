@@ -133,7 +133,7 @@
     {/if}
     <div class="flex items-center w-full min-w-0 gap-2 px-1 py-0.5 relative min-h-6">
       <!-- Category icon -->
-      <Fa icon={toolDisplay.icon} size="xs" class="w-4 text-muted-foreground/60 shrink-0" />
+      <Fa icon={toolDisplay.icon} size="xs" class="w-4 text-ghost shrink-0" />
 
       <!-- Clickable text area for expand/collapse -->
       <button
@@ -146,7 +146,7 @@
       >
         {#if isAgentMessage && parsedResult?.toAgentId}
           <!-- Agent message: show avatar + name + message preview -->
-          <span class="text-muted-foreground/80 whitespace-nowrap shrink-0">Message</span>
+          <span class="text-subtle whitespace-nowrap shrink-0">Message</span>
           <AuggieAvatar seed={parsedResult.toAgentId} size={16} class="shrink-0" />
           <span
             class="text-foreground/90 font-medium whitespace-nowrap shrink-0 max-w-[120px] truncate"
@@ -154,7 +154,7 @@
             {targetAgentName}
           </span>
           {#if parsedResult.messageContent}
-            <span class="text-muted-foreground/60 whitespace-nowrap truncate min-w-0">
+            <span class="text-subtle whitespace-nowrap truncate min-w-0">
               "{parsedResult.messageContent.slice(0, 30)}{parsedResult.messageContent.length > 30
                 ? '...'
                 : ''}"
@@ -163,13 +163,13 @@
         {:else}
           <!-- Standard tool display -->
           <!-- Verb (never truncates) -->
-          <span class="text-muted-foreground/80 whitespace-nowrap shrink-0">
+          <span class="text-subtle whitespace-nowrap shrink-0">
             {toolDisplay.verb}
           </span>
 
           <!-- Subject (truncates) - separate from button if it's a note link or file link -->
           {#if toolDisplay.subject && !toolDisplay.noteId && !toolDisplay.filePath}
-            <span class="text-foreground/70 whitespace-nowrap truncate min-w-0">
+            <span class="text-subtle whitespace-nowrap truncate min-w-0">
               {toolDisplay.subject}
             </span>
           {/if}
@@ -180,7 +180,7 @@
       {#if toolDisplay.subject && toolDisplay.noteId}
         <a
           href={noteUrl(toolDisplay.noteId)}
-          class="text-foreground/70 whitespace-nowrap truncate min-w-0 hover:text-foreground hover:underline"
+          class="text-muted-foreground whitespace-nowrap truncate min-w-0 hover:text-foreground hover:underline"
           onclick={async (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -210,11 +210,11 @@
       {#if toolDisplay.subject && toolDisplay.filePath && !toolDisplay.noteId}
         {#if toolDisplay.isDirectory}
           <span class="flex items-baseline gap-[0.5ch] shrink min-w-0 overflow-hidden text-left">
-            <span class="text-foreground/70 truncate" style="flex: 0 0.01 auto;">
+            <span class="text-subtle truncate" style="flex: 0 0.01 auto;">
               {toolDisplay.subject}
             </span>
             {#if toolDisplay.path}
-              <span class="flex-1 text-muted-foreground/40 truncate min-w-0 text-sm -mb-px pl-1">
+              <span class="flex-1 text-subtle truncate min-w-0 text-sm -mb-px pl-1">
                 {toolDisplay.path}
               </span>
             {/if}
@@ -241,12 +241,12 @@
             }}
           >
             <span
-              class="text-foreground/70 truncate group-hover/button:underline" style="flex: 0 0.01 auto;"
+              class="text-subtle truncate group-hover/button:underline" style="flex: 0 0.01 auto;"
             >
               {toolDisplay.subject}
             </span>
             {#if toolDisplay.path}
-              <span class="flex-1 text-muted-foreground/40 truncate min-w-0 text-sm -mb-px pl-1">
+              <span class="flex-1 text-subtle truncate min-w-0 text-sm -mb-px pl-1">
                 {toolDisplay.path}
               </span>
             {/if}
@@ -256,7 +256,7 @@
 
       <!-- Path (muted, truncated, takes remaining space) - only when NOT a file link -->
       {#if toolDisplay.path && !toolDisplay.filePath}
-        <span class="flex-1 text-muted-foreground/40 truncate min-w-0 text-sm -mb-px pl-1">
+        <span class="flex-1 text-subtle truncate min-w-0 text-sm -mb-px pl-1">
           {toolDisplay.path}
         </span>
       {/if}
@@ -264,7 +264,7 @@
       <!-- Status indicator and chevron -->
       <div class="ml-auto flex items-center gap-2 shrink-0">
         {#if toolState === 'running'}
-          <Fa icon={faSpinner} size="xs" class="text-muted-foreground/50 animate-spin" />
+          <Fa icon={faSpinner} size="xs" class="text-ghost animate-spin" />
         {:else if toolState === 'completed' && expanded}
           <Fa icon={faCheckCircle} size="xs" class="text-emerald-500 opacity-60" />
         {:else if toolState === 'error'}
@@ -275,7 +275,7 @@
           <Fa
             icon={faChevronDown}
             size={10}
-            class="text-muted-foreground/50 transition-transform duration-150 {expanded
+            class="text-subtle transition-transform duration-150 {expanded
               ? ''
               : '-rotate-90'}"
           />

@@ -813,7 +813,7 @@
       ></webview>
     {:else if url && !isRecreatingWebview}
       <!-- URL is invalid or blocked - show error with details -->
-      <div class="flex items-center justify-center h-full text-muted-foreground">
+      <div class="flex items-center justify-center h-full text-subtle">
         <div class="text-center">
           <div class="text-4xl mb-3 opacity-50">⚠️</div>
           <p class="text-lg font-medium mb-1">Cannot load this URL</p>
@@ -828,7 +828,7 @@
         </div>
       </div>
     {:else}
-      <div class="flex items-center justify-center h-full text-muted-foreground">
+      <div class="flex items-center justify-center h-full text-subtle">
         <div class="text-center">
           <div class="text-4xl mb-3 opacity-50">🌐</div>
           <p class="text-lg font-medium mb-1">No URL specified</p>

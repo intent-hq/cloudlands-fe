@@ -193,23 +193,23 @@
 
         <!-- Git Commits Section -->
         {#if loading}
-          <div class="flex flex-col items-center gap-1 py-6 px-4 text-muted-foreground text-sm">
+          <div class="flex flex-col items-center gap-1 py-6 px-4 text-subtle text-sm">
             <span>Loading history...</span>
           </div>
         {:else if error}
-          <div class="flex flex-col items-center gap-1 py-6 px-4 text-muted-foreground text-sm">
+          <div class="flex flex-col items-center gap-1 py-6 px-4 text-subtle text-sm">
             <span>Failed to load history</span>
             <span class="text-xs opacity-70">{error}</span>
           </div>
         {:else if commits.length === 0}
-          <div class="flex flex-col items-center gap-1 py-6 px-4 text-muted-foreground text-sm">
+          <div class="flex flex-col items-center gap-1 py-6 px-4 text-subtle text-sm">
             <span>No history</span>
             <span class="text-xs opacity-70">File has no commits</span>
           </div>
         {:else}
           <!-- Working copy entry (if there are local changes) -->
           {#if hasLocalChanges}
-            <div class="flex items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground border-b border-border bg-muted/30">
+            <div class="flex items-center gap-2 px-3 py-2 text-xs font-medium text-subtle border-b border-border bg-muted/30">
               <span class="w-2 h-2 rounded-full bg-yellow-500"></span>
               <span>Working copy</span>
             </div>
@@ -221,15 +221,15 @@
             >
               <div class="flex items-center gap-2 w-full">
                 <span class="text-xs font-medium text-foreground">Uncommitted changes</span>
-                <span class="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 ml-auto">Modified</span>
+                <span class="text-ui px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 ml-auto">Modified</span>
               </div>
-              <div class="text-xs text-muted-foreground pl-0">
+              <div class="text-xs text-subtle pl-0">
                 View diff against last commit
               </div>
             </button>
           {/if}
 
-          <div class="flex items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground border-b border-border bg-muted/30">
+          <div class="flex items-center gap-2 px-3 py-2 text-xs font-medium text-subtle border-b border-border bg-muted/30">
             <Fa icon={faClockRotateLeft} class="w-3 h-3" />
             <span>Git commits</span>
           </div>
@@ -248,21 +248,21 @@
                 <!-- Avatar -->
                 <div class="shrink-0">
                   <div class="w-5 h-5 rounded-full bg-muted flex items-center justify-center">
-                    <Fa icon={faUser} class="w-2.5 h-2.5 text-muted-foreground/50" />
+                    <Fa icon={faUser} class="w-2.5 h-2.5 text-ghost" />
                   </div>
                 </div>
 
                 <!-- Author & Time -->
                 <span class="text-xs font-medium text-foreground">{commit.author}</span>
-                <span class="text-xs text-muted-foreground">{formatRelativeTime(commit.date)}</span>
+                <span class="text-xs text-subtle">{formatRelativeTime(commit.date)}</span>
 
                 {#if isCurrent}
-                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary ml-auto">Latest</span>
+                  <span class="text-ui px-1.5 py-0.5 rounded bg-primary/20 text-primary ml-auto">Latest</span>
                 {/if}
               </div>
 
               <!-- Commit message -->
-              <div class="text-xs text-muted-foreground truncate pl-7">
+              <div class="text-xs text-subtle truncate pl-7">
                 {truncateMessage(commit.message)}
               </div>
             </button>

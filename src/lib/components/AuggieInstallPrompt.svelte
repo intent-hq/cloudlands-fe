@@ -115,14 +115,14 @@
         <div class="flex-1 space-y-3">
           <div>
             <h3 class="font-semibold text-foreground">No Agent Provider Found</h3>
-            <p class="text-sm text-muted-foreground mt-1">
+            <p class="text-sm text-subtle mt-1">
               An agent provider is required to create and interact with agents. Install Auggie or
               another compatible CLI.
             </p>
           </div>
 
           <div class="space-y-2">
-            <div class="text-sm text-muted-foreground">
+            <div class="text-sm text-subtle">
               <p class="font-medium mb-1">Install using npm:</p>
               <code class="bg-muted px-2 py-1 rounded text-xs"
                 >npm install -g @augmentcode/auggie</code

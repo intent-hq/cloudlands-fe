@@ -641,7 +641,7 @@
           }),
           Placeholder.configure({
             placeholder,
-            emptyEditorClass: 'is-editor-empty text-muted-foreground',
+            emptyEditorClass: 'is-editor-empty text-subtle',
           }),
           Image.configure({
             inline: false,

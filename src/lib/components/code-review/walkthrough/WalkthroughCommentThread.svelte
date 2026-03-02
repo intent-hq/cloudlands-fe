@@ -255,7 +255,7 @@
           Cancel
         </button>
       </div>
-      <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Enter to send · Esc to cancel</p>
+      <p class="text-ui text-slate-400 dark:text-slate-500 mt-1">Enter to send · Esc to cancel</p>
     {:else}
       <button
         type="button"

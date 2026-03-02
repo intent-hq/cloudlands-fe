@@ -228,10 +228,10 @@
           <div class="relative size-7 flex items-center justify-center shrink-0">
             <!-- Initials -->
             <div
-              class="mt-2 size-7 rounded-md flex items-center justify-center text-[10px] font-semibold
+              class="mt-2 size-7 rounded-md flex items-center justify-center text-ui font-semibold
                      {isActive
                 ? 'bg-muted-foreground/20 text-foreground'
-                : 'bg-muted-foreground/10 text-muted-foreground/50 group-hover:text-foreground'}"
+                : 'bg-muted-foreground/10 text-muted-foreground group-hover:text-foreground'}"
             >
               {initials}
             </div>
@@ -284,7 +284,7 @@
 
             <!-- org/repo + last updated -->
             <div
-              class="flex items-center w-full justify-between gap-1.5 text-xs text-muted-foreground/50"
+              class="flex items-center w-full justify-between gap-1.5 text-xs text-subtle"
             >
               <span class="truncate">{workspace.repositoryName}</span>
               <span class="shrink-0">{formatRelativeTime(workspace.updatedAt)}</span>

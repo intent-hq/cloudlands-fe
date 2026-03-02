@@ -163,8 +163,8 @@
     {#if repoName !== 'No Repository'}
       <div class="space-y-px">
         <div class="pl-5 py-1 mt-2 flex items-center gap-1.5 group">
-          <Fa icon={faCodeBranch} size="xs" class="text-muted-foreground flex-none" />
-          <span class="text-xs font-medium text-muted-foreground whitespace-nowrap truncate flex-1">
+          <Fa icon={faCodeBranch} size="xs" class="text-ghost flex-none" />
+          <span class="text-xs font-medium text-subtle whitespace-nowrap truncate flex-1">
             {repoName}
           </span>
           <Button
@@ -201,7 +201,7 @@
                       {workspace.title}
                     </span>
                   {:else}
-                    <span class="truncate text-muted-foreground"> Untitled </span>
+                    <span class="truncate text-subtle"> Untitled </span>
                   {/if}
                 </span>
                 {#if stats.additions > 0 || stats.deletions > 0}
@@ -220,7 +220,7 @@
                 {/if}
               </div>
               <div
-                class="text-muted-foreground font-normal text-xs text-left flex justify-start items-start w-full"
+                class="text-subtle font-normal text-xs text-left flex justify-start items-start w-full"
               >
                 {formatDate(workspace.lastActivity || workspace.createdAt)}
               </div>
@@ -235,7 +235,7 @@
   {#if workspacesByRepo['No Repository']}
     <div class="space-y-px">
       <div class="px-5 py-1 mt-2">
-        <span class="text-xs font-medium text-muted-foreground">Other</span>
+        <span class="text-xs font-medium text-subtle">Other</span>
       </div>
       {#each workspacesByRepo['No Repository'] as workspace (workspace.id)}
         {@const isActive = isWorkspaceActive(workspace.id)}
@@ -258,7 +258,7 @@
                   {workspace.title}
                 </span>
               {:else}
-                <span class="truncate text-muted-foreground"> Untitled </span>
+                <span class="truncate text-subtle"> Untitled </span>
               {/if}
             </span>
             {#if stats.additions > 0 || stats.deletions > 0}
@@ -296,7 +296,7 @@
             : 'hover:bg-accent'}"
           title={workspace.title || 'Untitled'}
         >
-          <Fa icon={faFile} size="lg" class="text-muted-foreground" />
+          <Fa icon={faFile} size="lg" class="text-subtle" />
         </Button>
       </a>
     </div>

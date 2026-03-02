@@ -49,7 +49,7 @@
         type="button"
         class={cn(
           'flex items-center justify-between px-2 py-0 mb-1 group',
-          'text-xs font-medium text-muted-foreground',
+          'text-xs font-medium text-subtle',
           'cursor-pointer hover:text-foreground',
           titleClass,
         )}
@@ -60,7 +60,7 @@
             icon={icon || 'chevron-right'}
             size="14"
             class={cn(
-              'text-muted-foreground/50 transition-transform duration-200',
+              'text-subtle transition-transform duration-200',
               !collapsed && 'rotate-90',
             )}
           />
@@ -90,13 +90,13 @@
       <div
         class={cn(
           'flex items-center justify-between px-2 py-0 mb-1 group',
-          'text-xs font-medium text-muted-foreground',
+          'text-xs font-medium text-subtle',
           titleClass,
         )}
       >
         <div class="flex items-center gap-1.5">
           {#if icon}
-            <Fa {icon} size="14" class="text-muted-foreground/50" />
+            <Fa {icon} size="14" class="text-ghost" />
           {/if}
           <span>{title}</span>
         </div>

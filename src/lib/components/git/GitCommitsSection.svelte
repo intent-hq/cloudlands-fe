@@ -130,7 +130,7 @@
       case 'renamed':
         return 'text-yellow-500';
       default:
-        return 'text-muted-foreground';
+        return 'text-subtle';
     }
   }
 
@@ -166,7 +166,7 @@
 {#if commits.length > 0}
   <div class="space-y-px">
     <div class="flex items-center justify-between mb-1">
-      <div class="text-xs font-medium text-muted-foreground">
+      <div class="text-xs font-medium text-subtle">
         {title}
       </div>
       <Badge variant="secondary" class="text-xs">
@@ -184,9 +184,9 @@
           >
             <div class="shrink-0 mt-0.5">
               {#if expandedCommits.has(commit.hash)}
-                <Fa icon={faChevronDown} size="sm" class="text-muted-foreground" />
+                <Fa icon={faChevronDown} size="sm" class="text-ghost" />
               {:else}
-                <Fa icon={faChevronRight} size="sm" class="text-muted-foreground" />
+                <Fa icon={faChevronRight} size="sm" class="text-ghost" />
               {/if}
             </div>
 
@@ -194,7 +194,7 @@
               <div class="flex items-start justify-between gap-2">
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2">
-                    <Fa icon={faCodeCommit} size="xs" class="text-muted-foreground shrink-0" />
+                    <Fa icon={faCodeCommit} size="xs" class="text-ghost shrink-0" />
                     {#if editingCommitHash === commit.hash}
                       <!-- Inline edit mode -->
                       <input
@@ -216,7 +216,7 @@
                       </span>
                     {/if}
                   </div>
-                  <div class="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                  <div class="flex items-center gap-3 mt-1 text-xs text-subtle">
                     <span>{commit.authorName}</span>
                     <span>•</span>
                     <span>{formatCommitDate(commit.date)}</span>
@@ -245,7 +245,7 @@
               <!-- Full commit message if truncated -->
               {#if commit.message.length > 50}
                 <div class="px-4 py-2 border-b border-border">
-                  <p class="text-sm text-muted-foreground whitespace-pre-wrap">
+                  <p class="text-sm text-subtle whitespace-pre-wrap">
                     {commit.message}
                   </p>
                 </div>
@@ -261,7 +261,7 @@
                     <span class={`font-mono text-xs ${getFileStatusColor(file.status)}`}>
                       {getFileStatusIcon(file.status)}
                     </span>
-                    <Fa icon={faFileLines} size="xs" class="text-muted-foreground shrink-0" />
+                    <Fa icon={faFileLines} size="xs" class="text-ghost shrink-0" />
                     <span class="text-xs truncate flex-1">{file.path}</span>
                     <LineChangesBadge
                       additions={file.additions}

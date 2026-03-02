@@ -109,7 +109,7 @@
         ? 'text-green-500'
         : agent.status === AgentStatus.Error
           ? 'text-red-500'
-          : 'text-muted-foreground',
+          : 'text-subtle',
   );
 
   // Handle keyboard navigation
@@ -157,19 +157,19 @@
               {agent.name}
             </h3>
             {#if isBackground}
-              <span class="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+              <span class="text-xs px-1.5 py-0.5 rounded bg-muted text-subtle">
                 Background
               </span>
             {/if}
             {#if triggerType}
-              <span class="text-xs text-muted-foreground">
+              <span class="text-xs text-subtle">
                 <Fa icon={faGear} size="xs" class="mr-1" />
                 {triggerType}
               </span>
             {/if}
           </div>
           {#if variant !== 'minimal'}
-            <div class="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
+            <div class="flex items-center gap-3 mt-0.5 text-xs text-subtle">
               <span>{agent.model}</span>
               <span>•</span>
               <span class="flex items-center gap-1">
@@ -196,7 +196,7 @@
       {#if variant === 'expanded' && lastMessage}
         <div class="mt-2 p-2 rounded bg-muted/50 text-xs">
           <div class="flex items-start gap-2">
-            <span class="font-medium text-muted-foreground">
+            <span class="font-medium text-subtle">
               {lastMessage.type === 'user' ? 'User:' : 'Agent:'}
             </span>
             <span class="flex-1 line-clamp-2">
@@ -210,7 +210,7 @@
       {#if variant !== 'minimal'}
         <div class="flex items-center gap-3 mt-2 text-xs">
           {#if messageCount > 0}
-            <div class="flex items-center gap-1 text-muted-foreground">
+            <div class="flex items-center gap-1 text-subtle">
               <Fa icon={faMessage} size="xs" />
               <span>{messageCount} message{messageCount !== 1 ? 's' : ''}</span>
             </div>
@@ -218,7 +218,7 @@
 
           {#if showFileChanges && fileChanges && (fileChanges.additions > 0 || fileChanges.deletions > 0)}
             <div class="flex items-center gap-2">
-              <div class="flex items-center gap-1 text-muted-foreground">
+              <div class="flex items-center gap-1 text-subtle">
                 <Fa icon={faFile} size="xs" />
                 <span
                   >{fileChanges.filesChanged} file{fileChanges.filesChanged !== 1 ? 's' : ''}</span

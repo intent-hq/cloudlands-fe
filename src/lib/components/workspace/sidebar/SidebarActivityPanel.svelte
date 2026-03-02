@@ -351,7 +351,7 @@
 
     // Error states
     if (type === 'agent:failed') return 'text-red-400/70';
-    if (type === 'agent:deleted') return 'text-muted-foreground/30';
+    if (type === 'agent:deleted') return 'text-subtle';
 
     // Active/running states
     if (type === 'agent:started' || type === 'agent:created') return 'text-blue-400/70';
@@ -361,7 +361,7 @@
     if (type === 'agent:message:sent' || type === 'agent:message:received')
       return 'text-purple-400/70';
 
-    return 'text-muted-foreground/40';
+    return 'text-subtle';
   }
 
   // Get event label using the centralized activity label generator
@@ -498,9 +498,9 @@
     </div>
   {:else if dedupedEvents.length === 0}
     <!-- Empty state -->
-    <div class="flex-1 flex flex-col items-center justify-center text-muted-foreground/50 py-8">
+    <div class="flex-1 flex flex-col items-center justify-center text-subtle py-8">
       <Fa icon={faFile} class="text-2xl mb-2 opacity-40" />
-      <p class="text-[0.82rem]">No activity yet</p>
+      <p class="text-ui">No activity yet</p>
     </div>
   {:else}
     <!-- Timeline -->
@@ -542,7 +542,7 @@
                 </div>
               {:else}
                 <div class="flex items-center justify-center w-3 rounded-sm bg-sidebar">
-                  <Fa {icon} class="text-[10px] {statusColor}" />
+                  <Fa {icon} class="text-ui {statusColor}" />
                 </div>
               {/if}
             </div>
@@ -550,7 +550,7 @@
             <!-- Content -->
             <div class="flex-1 min-w-0 flex items-baseline gap-1">
               <span
-                class="text-[0.82rem] leading-[1.2rem] truncate text-muted-foreground {clickable
+                class="text-ui leading-[1.2rem] truncate text-subtle {clickable
                   ? 'group-hover:text-foreground'
                   : ''} transition-colors"
               >
@@ -569,7 +569,7 @@
 
             <!-- Timestamp -->
             {#if showTimestamp}
-              <span class="text-[10px] text-muted-foreground/40 shrink-0">
+              <span class="text-ui text-subtle shrink-0">
                 <RelativeTime date={new Date(event.timestamp)} compact />
               </span>
             {/if}

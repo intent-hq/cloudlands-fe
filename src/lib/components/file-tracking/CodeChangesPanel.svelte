@@ -332,7 +332,7 @@
         onclick={handleOpenAcceptChanges}
       >
         <div class="flex-1 text-left pl-1">{acceptButtonText}</div>
-        <Fa icon={faArrowRight} size="sm" class="text-muted-foreground/50" />
+        <Fa icon={faArrowRight} size="sm" class="text-ghost" />
       </Button>
     </div>
   {/if}
@@ -355,7 +355,7 @@
               class="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse"
             ></span>
           </div>
-          <span class="text-[10px]">
+          <span class="text-ui">
             {#if backgroundOperation.type === 'commit'}
               Committing
             {:else if backgroundOperation.type === 'add-to-pr'}
@@ -436,7 +436,7 @@
       <div class="w-full flex flex-col">
         <!-- Auto-commit notice -->
         {#if autoCommitEnabled && (workingChanges.staged.length > 0 || workingChanges.unstaged.length > 0)}
-          <div class="px-2 py-1.5 mb-2 text-xs text-muted-foreground bg-muted/50 rounded">
+          <div class="px-2 py-1.5 mb-2 text-xs text-subtle bg-muted/50 rounded">
             Auto-commit is on. Agent changes will be committed automatically.
           </div>
         {/if}
@@ -554,7 +554,7 @@
                   {:else if commit.stage === 'pushed'}
                     <Fa icon={faCloudArrowUp} size="xs" class="text-green-600" />
                   {:else}
-                    <Fa icon={faCodeCommit} size="xs" class="text-muted-foreground" />
+                    <Fa icon={faCodeCommit} size="xs" class="text-ghost" />
                   {/if}
                 </div>
 
@@ -564,7 +564,7 @@
                   </div>
                 </div>
 
-                <div class="shrink-0 text-xs text-muted-foreground">
+                <div class="shrink-0 text-xs text-subtle">
                   {commit.filesChanged || commit.files?.length || 0}
                 </div>
               </button>
@@ -601,11 +601,11 @@
 
                 <div class="flex-1 min-w-0">
                   <div class="text-xs truncate">{pr.title}</div>
-                  <div class="text-[10px] text-muted-foreground">#{pr.number}</div>
+                  <div class="text-ui text-subtle">#{pr.number}</div>
                 </div>
 
                 <div class="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Fa icon={faExternalLinkAlt} size="xs" class="text-muted-foreground" />
+                  <Fa icon={faExternalLinkAlt} size="xs" class="text-ghost" />
                 </div>
               </a>
             {/each}

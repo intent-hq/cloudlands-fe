@@ -164,7 +164,7 @@
           <Sidebar.Menu>
             {#if store.isLoading}
               <div class="flex items-center justify-center py-8">
-                <Fa icon={faSpinner} size="lg" class="w-6 h-6 animate-spin text-muted-foreground" />
+                <Fa icon={faSpinner} size="lg" class="w-6 h-6 animate-spin text-subtle" />
               </div>
             {:else if store.error}
               <div class="px-4 py-2 text-sm text-destructive-foreground">
@@ -206,7 +206,7 @@
                       size="1x"
                       class="w-4 h-4 {node.type === 'directory'
                         ? 'text-blue-500'
-                        : 'text-muted-foreground'}"
+                        : 'text-subtle'}"
                     />
                     <span class="truncate">{node.name}</span>
                   </Sidebar.MenuButton>
@@ -223,7 +223,7 @@
                 {@render FileTreeItem(node, 0)}
               {/each}
             {:else}
-              <!-- <div class="px-4 py-2 text-sm text-muted-foreground">
+              <!-- <div class="px-4 py-2 text-sm text-subtle">
                 No files found
               </div> -->
             {/if}
@@ -234,7 +234,7 @@
   </Sidebar.Content>
 
   <Sidebar.Footer>
-    <div class="px-2 py-1 text-xs text-muted-foreground">
+    <div class="px-2 py-1 text-xs text-subtle">
       {#if store.fileCount > 0}
         {store.fileCount} files
       {/if}

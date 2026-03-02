@@ -94,7 +94,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class={cn(
-    'panel-minimap relative pr-0.75 cursor-pointer rounded transition-all duration-150 text-muted-foreground opacity-50 z-10',
+    'panel-minimap relative pr-0.75 cursor-pointer rounded transition-all duration-150 text-subtle opacity-50 z-10',
     className,
   )}
   role="button"

@@ -109,7 +109,7 @@
     <button
       type="button"
       onclick={toggle}
-      class="p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 rounded transition-colors cursor-pointer"
+      class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors cursor-pointer"
       title="Configure {providerName} path"
     >
       <Fa icon={faFolder} size={11} />
@@ -121,11 +121,11 @@
       <!-- Header with helpful copy -->
       <div class="space-y-1">
         <p class="text-sm font-medium text-foreground">{providerName} CLI Path</p>
-        <p class="text-xs text-muted-foreground">
+        <p class="text-xs text-subtle">
           {#if isInstalled}
             Override the auto-detected path if needed.
           {:else}
-            Specify the path to the <code class="px-1 py-0.5 bg-muted rounded text-[11px]"
+            Specify the path to the <code class="px-1 py-0.5 bg-muted rounded text-ui"
               >{cliCommand}</code
             > executable.
           {/if}
@@ -151,7 +151,7 @@
 
       <!-- Status indicator -->
       {#if resolvedPath && !configuredPath}
-        <p class="text-[11px] text-muted-foreground/70 flex items-center gap-1 min-w-0">
+        <p class="text-ui text-subtle flex items-center gap-1 min-w-0">
           <Fa icon={faCheck} class="text-green-500/70 shrink-0" size="xs" />
           <span class="shrink-0">Auto-detected at</span>
           <code class="px-1 py-0.5 bg-muted/50 rounded truncate min-w-0" title={resolvedPath}

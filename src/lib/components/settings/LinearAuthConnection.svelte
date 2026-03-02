@@ -85,16 +85,16 @@
   <div class="flex items-start justify-between gap-4">
     <div class="space-y-1">
       <div class="flex items-center gap-2">
-        <LinearIcon size={14} class="text-muted-foreground" />
+        <LinearIcon size={14} class="text-ghost" />
         <span class="text-sm text-foreground">Linear</span>
         {#if linearAuthStore.state.isAuthenticated}
-          <span class="text-xs text-muted-foreground flex items-center gap-1">
+          <span class="text-xs text-subtle flex items-center gap-1">
             <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
             Connected
           </span>
         {/if}
       </div>
-      <p class="text-xs text-muted-foreground pl-6">
+      <p class="text-xs text-subtle pl-6">
         Create workspaces tasks directly from tickets.
       </p>
       {#if linearAuthStore.state.error}
@@ -104,7 +104,7 @@
 
     <div class="flex items-center gap-2 text-xs">
       {#if linearAuthStore.state.isAuthenticating}
-        <span class="text-muted-foreground">Waiting for authorization...</span>
+        <span class="text-subtle">Waiting for authorization...</span>
       {:else if linearAuthStore.state.isAuthenticated}
         <button
           type="button"
@@ -113,7 +113,7 @@
         >
           Reconnect
         </button>
-        <span class="text-muted-foreground/30">·</span>
+        <span class="text-ghost">·</span>
         <button
           type="button"
           class="text-muted-foreground hover:text-destructive-foreground cursor-pointer transition-colors"
@@ -131,14 +131,14 @@
           Connect
         </button>
       {:else}
-        <span class="text-xs text-muted-foreground">Requires Augment authentication</span>
+        <span class="text-xs text-subtle">Requires Augment authentication</span>
       {/if}
     </div>
   </div>
 
   {#if linearAuthStore.state.isAuthenticated}
     <div class="pl-6 flex items-center gap-3">
-      <span class="text-xs text-muted-foreground shrink-0">Show issues:</span>
+      <span class="text-xs text-subtle shrink-0">Show issues:</span>
       <Select.Root bind:value={issueFilter}>
         <Select.Trigger class="h-7 text-xs w-[180px]">
           {LINEAR_ISSUE_FILTER_OPTIONS.find((o) => o.value === issueFilter)?.label || 'Select...'}

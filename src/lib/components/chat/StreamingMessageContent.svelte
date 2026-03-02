@@ -410,7 +410,7 @@
       <ChatDiffViewer diff={parsedBlock.content} filePath={parsedBlock.metadata?.path} />
     {:else if parsedBlock.type === 'commit_message'}
       <div class="commit-message-block p-3 my-2 rounded-md bg-background border border-border">
-        <div class="text-xs font-medium text-muted-foreground mb-1.5">Generated Commit Message</div>
+        <div class="text-xs font-medium text-subtle mb-1.5">Generated Commit Message</div>
         <div class="font-mono text-sm whitespace-pre-wrap text-foreground">
           {parsedBlock.content}
         </div>
@@ -440,10 +440,10 @@
       {@const refFileName = refData.filePath?.split('/').pop() || refData.semanticId || 'Reference'}
       <div class="my-2 rounded-lg border border-border overflow-hidden bg-background">
         <div class="flex items-center gap-2 px-3 py-1.5">
-          <Fa icon={faCode} size="xs" class="flex-none text-muted-foreground/50" />
+          <Fa icon={faCode} size="xs" class="flex-none text-ghost" />
           <span class="text-sm font-medium truncate">{refFileName}</span>
           {#if refData.filePath && refData.filePath !== refFileName}
-            <span class="text-sm text-muted-foreground truncate flex-1 min-w-0">
+            <span class="text-sm text-subtle truncate flex-1 min-w-0">
               {refData.filePath}
             </span>
           {/if}
@@ -463,16 +463,16 @@
     {:else if parsedBlock.type === 'cli' && parsedBlock.metadata?.cliData}
       {@const cliData = parsedBlock.metadata.cliData}
       <div class="my-1.5 flex items-center gap-2">
-        <Fa icon={faTerminal} size="sm" class="text-muted-foreground flex-none" />
-        <code class="font-mono text-sm text-muted-foreground flex-1 min-w-0 truncate">
+        <Fa icon={faTerminal} size="sm" class="text-ghost flex-none" />
+        <code class="font-mono text-sm text-subtle flex-1 min-w-0 truncate">
           {cliData.command}
         </code>
       </div>
     {:else if parsedBlock.type === 'agent_action' && parsedBlock.metadata?.agentActionData}
       {@const actionData = parsedBlock.metadata.agentActionData}
       <div class="my-1.5 flex items-center gap-2">
-        <Fa icon={faRobot} size="sm" class="text-muted-foreground flex-none" />
-        <span class="text-sm text-muted-foreground flex-1 min-w-0 truncate">
+        <Fa icon={faRobot} size="sm" class="text-ghost flex-none" />
+        <span class="text-sm text-subtle flex-1 min-w-0 truncate">
           {actionData.goal}
         </span>
       </div>

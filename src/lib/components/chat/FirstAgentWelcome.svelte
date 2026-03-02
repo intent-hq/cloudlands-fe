@@ -17,21 +17,21 @@
   </div>
 
   <p class="text-foreground font-medium text-[15px] mb-1.5">What would you like to build?</p>
-  <p class="text-muted-foreground/70 text-sm mb-5 leading-relaxed">
+  <p class="text-subtle text-sm mb-5 leading-relaxed">
     Describe a feature, bug fix, or refactor. I'll create a plan, write the code, and run tests.
   </p>
 
   <!-- Capability hints -->
   <div class="flex flex-col gap-2" in:fade={{ duration: 300, delay: 200 }}>
-    <div class="flex items-center gap-2.5 text-xs text-muted-foreground/50">
+    <div class="flex items-center gap-2.5 text-xs text-subtle">
       <Fa icon={faFileCode} class="w-3 shrink-0" />
       <span>I can read and write files across your repo</span>
     </div>
-    <div class="flex items-center gap-2.5 text-xs text-muted-foreground/50">
+    <div class="flex items-center gap-2.5 text-xs text-subtle">
       <Fa icon={faTerminal} class="w-3 shrink-0" />
       <span>I can run commands, tests, and build tools</span>
     </div>
-    <div class="flex items-center gap-2.5 text-xs text-muted-foreground/50">
+    <div class="flex items-center gap-2.5 text-xs text-subtle">
       <Fa icon={faCodeBranch} class="w-3 shrink-0" />
       <span>All changes are on an isolated branch</span>
     </div>

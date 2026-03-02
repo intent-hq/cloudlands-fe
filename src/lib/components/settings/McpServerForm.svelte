@@ -110,13 +110,13 @@
   <div class="grid grid-cols-2 gap-4">
     <!-- Server Name -->
     <div>
-      <label class="block text-xs font-medium text-muted-foreground mb-1">Server Name</label>
+      <label class="block text-xs font-medium text-subtle mb-1">Server Name</label>
       <Input bind:value={name} placeholder="my-server" class="h-8 text-sm" />
     </div>
 
     <!-- Transport Type -->
     <div>
-      <label class="block text-xs font-medium text-muted-foreground mb-1">Transport</label>
+      <label class="block text-xs font-medium text-subtle mb-1">Transport</label>
       <Select.Root bind:value={transport}>
         <Select.Trigger class="h-8 text-sm">
           <Select.Value placeholder="Select transport" />
@@ -133,18 +133,18 @@
   {#if transport === 'stdio'}
     <!-- Stdio fields -->
     <div>
-      <label class="block text-xs font-medium text-muted-foreground mb-1">Command</label>
+      <label class="block text-xs font-medium text-subtle mb-1">Command</label>
       <Input bind:value={command} placeholder="npx" class="h-8 text-sm" />
     </div>
     <div>
-      <label class="block text-xs font-medium text-muted-foreground mb-1">Arguments</label>
+      <label class="block text-xs font-medium text-subtle mb-1">Arguments</label>
       <Input bind:value={args} placeholder="-y @upstash/context7-mcp@latest" class="h-8 text-sm" />
     </div>
 
     <!-- Environment Variables -->
     <div>
       <div class="flex items-center justify-between mb-1">
-        <label class="text-xs font-medium text-muted-foreground">Environment Variables</label>
+        <label class="text-xs font-medium text-subtle">Environment Variables</label>
         <button type="button" onclick={addEnvPair} class="text-xs text-primary hover:underline">
           <Fa icon={faPlus} class="inline mr-1" />Add
         </button>
@@ -162,14 +162,14 @@
   {:else}
     <!-- HTTP/SSE fields -->
     <div>
-      <label class="block text-xs font-medium text-muted-foreground mb-1">URL</label>
+      <label class="block text-xs font-medium text-subtle mb-1">URL</label>
       <Input bind:value={url} placeholder="https://mcp.example.com/v1" class="h-8 text-sm" />
     </div>
 
     <!-- Headers -->
     <div>
       <div class="flex items-center justify-between mb-1">
-        <label class="text-xs font-medium text-muted-foreground">Headers</label>
+        <label class="text-xs font-medium text-subtle">Headers</label>
         <button type="button" onclick={addHeaderPair} class="text-xs text-primary hover:underline">
           <Fa icon={faPlus} class="inline mr-1" />Add
         </button>

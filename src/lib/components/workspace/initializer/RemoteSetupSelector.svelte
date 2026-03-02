@@ -197,7 +197,7 @@
 <div class="relative">
   {#if variant === 'ghost'}
     <!-- Minimal inline variant with "Work in" + pill pattern -->
-    <div class="flex items-center gap-1 text-sm text-muted-foreground/75 whitespace-nowrap">
+    <div class="flex items-center gap-1 text-sm text-subtle whitespace-nowrap">
       <span>Work in</span>
       <Select.Root bind:value={selectedSetupId}>
         <Select.Trigger
@@ -209,14 +209,14 @@
         <Select.Content wrapperClass="py-0!" class="max-w-[400px] min-w-[300px]" portal>
         <div class="px-4 pt-2 pb-3">
           <h2 class="text-base font-semibold text-foreground">Where should agents run?</h2>
-          <p class="text-sm text-muted-foreground mt-1">
+          <p class="text-sm text-subtle mt-1">
             Run locally by default, or connect a remote machine for agents to work in directly.
           </p>
         </div>
         <Select.Item class="rounded-b-none! cursor-pointer" value="">
           <div class="flex items-center gap-2">
             <Fa icon={faLaptop} size="sm" />
-            <span class="text-muted-foreground">Local environment</span>
+            <span class="text-subtle">Local environment</span>
           </div>
         </Select.Item>
         {#each applicableSetups as setup (setup.id)}
@@ -225,7 +225,7 @@
               <ServerIcon size={14} />
               <div class="flex-1 min-w-0">
                 <div class="text-sm">{setup.name}</div>
-                <div class="text-xs text-muted-foreground">
+                <div class="text-xs text-subtle">
                   {setup.transport === 'websocket'
                     ? setup.wsUrl
                     : `${setup.username}@${setup.host}:${setup.port}`}
@@ -287,30 +287,30 @@
       <Select.Root bind:value={selectedSetupId}>
         <Select.Trigger class="w-full">
           <div class="flex items-center gap-2">
-            <ServerIcon size={16} class="text-muted-foreground" />
+            <ServerIcon size={16} class="text-ghost" />
             <Select.Value placeholder={selectedSetup ? selectedSetup.name : 'No remote setup'} />
           </div>
         </Select.Trigger>
         <Select.Content>
           <div class="px-2 py-2">
-            <p class="text-xs text-muted-foreground mb-2">
+            <p class="text-xs text-subtle mb-2">
               Connect to a remote development environment
             </p>
           </div>
 
           {#if applicableSetups.length > 0}
             <div class="border-t pt-1">
-              <div class="px-2 py-1 text-xs text-muted-foreground">Recent setups for this repo</div>
+              <div class="px-2 py-1 text-xs text-subtle">Recent setups for this repo</div>
               {#each applicableSetups as setup (setup.id)}
                 <button
                   onclick={() => selectSetup(setup)}
                   class="w-full text-left px-2 py-1.5 hover:bg-accent rounded-sm flex items-center gap-2 text-sm"
                   class:bg-accent={selectedSetup?.id === setup.id}
                 >
-                  <ServerIcon size={14} class="text-muted-foreground" />
+                  <ServerIcon size={14} class="text-ghost" />
                   <div class="flex-1">
                     <div>{setup.name}</div>
-                    <div class="text-xs text-muted-foreground">
+                    <div class="text-xs text-subtle">
                       {setup.transport === 'websocket'
                         ? setup.wsUrl
                         : `${setup.username}@${setup.host}`}
@@ -347,7 +347,7 @@
 
           {#if otherSetups.length > 0}
             <div class="border-t pt-1">
-              <div class="px-2 py-1 text-xs text-muted-foreground">
+              <div class="px-2 py-1 text-xs text-subtle">
                 Other setups (different repos)
               </div>
               {#each otherSetups as setup (setup.id)}
@@ -355,10 +355,10 @@
                   disabled
                   class="w-full text-left px-2 py-1.5 opacity-50 flex items-center gap-2 text-sm"
                 >
-                  <ServerIcon size={14} class="text-muted-foreground" />
+                  <ServerIcon size={14} class="text-ghost" />
                   <div class="flex-1">
                     <div>{setup.name}</div>
-                    <div class="text-xs text-muted-foreground">
+                    <div class="text-xs text-subtle">
                       {setup.transport === 'websocket'
                         ? setup.wsUrl
                         : `${setup.username}@${setup.host}`}

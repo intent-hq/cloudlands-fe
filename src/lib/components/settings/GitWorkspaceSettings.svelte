@@ -171,7 +171,7 @@
         <label for="sshKeyPath" class="text-sm font-medium text-foreground">
           SSH Key Path
         </label>
-        <p class="text-xs text-muted-foreground">
+        <p class="text-xs text-subtle">
           SSH key for git operations (e.g., <code class="bg-muted px-1 rounded">~/.ssh/id_ed25519</code>)
         </p>
       </div>
@@ -220,7 +220,7 @@
         <label for="branchPrefix" class="text-sm font-medium text-foreground">
           Branch Prefix
         </label>
-        <p class="text-xs text-muted-foreground">
+        <p class="text-xs text-subtle">
           Prefix for new workspace branches (e.g., <code class="bg-muted px-1 rounded"
             >feature/</code
           >)

@@ -94,18 +94,18 @@
           </div>
           {#if item.description}
             <div
-              class="text-[11px] text-muted-foreground overflow-hidden text-ellipsis whitespace-nowrap mt-0.5"
+              class="text-ui text-subtle overflow-hidden text-ellipsis whitespace-nowrap mt-0.5"
             >
               {item.description}
             </div>
           {/if}
         </div>
-        <span class="shrink-0 text-[11px] text-muted-foreground px-1.5 py-0.5 bg-background"
+        <span class="shrink-0 text-ui text-subtle px-1.5 py-0.5 bg-background"
           >{item.type}</span
         >
       </button>
     {/each}
   </div>
 {:else}
-  <div class="p-3 text-center text-muted-foreground text-[13px]">No results found</div>
+  <div class="p-3 text-center text-subtle text-[13px]">No results found</div>
 {/if}

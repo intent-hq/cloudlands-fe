@@ -36,26 +36,26 @@
 {#if status}
   <div class="w-full">
     <div
-      class="w-full flex items-center gap-2 px-2 py-1.5 text-muted-foreground/80 rounded-lg min-w-0"
+      class="w-full flex items-center gap-2 px-2 py-1.5 text-subtle rounded-lg min-w-0"
     >
       <div class="flex items-center gap-2 flex-1 min-w-0">
         {#if status.state === 'committing'}
           <Fa icon={faSpinner} class="opacity-30 animate-spin" size="xs" />
-          <span class="truncate min-w-0 text-left flex-1 text-muted-foreground/60">
+          <span class="truncate min-w-0 text-left flex-1 text-subtle">
             Auto-committing…
           </span>
         {:else if status.state === 'committed'}
-          <Fa icon={faCodeCommit} class="text-muted-foreground/40" size="xs" />
+          <Fa icon={faCodeCommit} class="text-ghost" size="xs" />
           <span class="truncate min-w-0 text-left flex-1">
             Auto-committed
             <button
               onclick={handleOpenCommitChangeset}
-              class="text-muted-foreground/70 hover:text-foreground transition-colors cursor-pointer"
+              class="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               title={status.message}
             >
               {status.message}
             </button>
-            <span class="text-muted-foreground/50">
+            <span class="text-subtle">
               · {status.fileCount} file{status.fileCount !== 1 ? 's' : ''}
             </span>
           </span>
@@ -64,10 +64,10 @@
           <span class="truncate min-w-0 text-left flex-1">
             {#if status.status === 'waking-agent'}
               <span class="text-amber-500/70">Pre-commit hooks failed</span>
-              <span class="text-muted-foreground/50">· fixing (attempt {status.retryCount})</span>
+              <span class="text-subtle">· fixing (attempt {status.retryCount})</span>
             {:else}
               <span class="text-red-500/70">Auto-commit failed</span>
-              <span class="text-muted-foreground/50">· hooks failed after {status.retryCount} attempts</span>
+              <span class="text-subtle">· hooks failed after {status.retryCount} attempts</span>
             {/if}
           </span>
         {/if}

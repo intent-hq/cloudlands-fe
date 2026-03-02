@@ -172,12 +172,12 @@
         <Fa
           icon={expanded ? faChevronDown : faChevronRight}
           size="10"
-          class="text-muted-foreground"
+          class="text-subtle"
         />
       </div>
       <ListItem
         icon={expanded ? faFolderOpen : faFolder}
-        iconClass="text-muted-foreground"
+        iconClass="text-ghost"
         title={displayName}
         onclick={() => (expanded = !expanded)}
         size="sm"
@@ -218,7 +218,7 @@
   <!-- File node -->
   <ListItem
     icon={faFileCode}
-    iconClass="text-muted-foreground"
+    iconClass="text-ghost"
     title={node.name}
     active={selectedChangeId === node.change?.id}
     onclick={() => onFileClick?.(node.change)}

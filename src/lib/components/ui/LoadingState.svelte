@@ -34,13 +34,13 @@
   </div>
 {:else if type === 'spinner'}
   <div class="flex flex-col items-center justify-center py-8 {className}">
-    <Fa icon={faCircleNotch} size="1x" class="text-muted-foreground animate-spin mb-3" />
+    <Fa icon={faCircleNotch} size="1x" class="text-subtle animate-spin mb-3" />
     {#if message}
-      <p class="text-sm text-muted-foreground">{message}</p>
+      <p class="text-sm text-subtle">{message}</p>
     {/if}
   </div>
 {:else}
-  <div class="p-8 text-center text-muted-foreground text-sm {className}">
+  <div class="p-8 text-center text-subtle text-sm {className}">
     {message}
   </div>
 {/if}

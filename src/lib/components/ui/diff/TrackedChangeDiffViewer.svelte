@@ -1132,11 +1132,11 @@
   {:else if contentTooLarge}
     <div class="error-state">
       <Fa icon={faExclamationTriangle} class="text-warning" />
-      <span class="text-muted-foreground text-sm ml-2">File too large to display diff</span>
+      <span class="text-subtle text-sm ml-2">File too large to display diff</span>
     </div>
   {:else if noChangesAtStage}
     <div class="empty-state">
-      <span class="text-muted-foreground text-sm">
+      <span class="text-subtle text-sm">
         {#if change.stage === 'committed'}
           Unable to load diff for this commit
         {:else}

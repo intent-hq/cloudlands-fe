@@ -221,10 +221,10 @@
         <Tooltip side="bottom" delayDuration={300}>
           {#snippet content()}
             <span>Sidebar</span>
-            <span class="text-muted-foreground ml-1.5">⌘B</span>
+            <span class="text-subtle ml-1.5">⌘B</span>
           {/snippet}
           <button
-            class="p-2 rounded hover:bg-muted/50 transition-colors text-muted-foreground/50 hover:text-foreground cursor-pointer"
+            class="p-2 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground cursor-pointer"
             onclick={() => sidebarWidthStore.toggle()}
             aria-label="Toggle sidebar"
           >
@@ -241,15 +241,15 @@
         <!-- Search bar -->
         <button class="search-bar" onclick={handleSearchClick} type="button">
           <!-- Search icon -->
-          <Fa icon={faSearch} size="sm" class="text-muted-foreground/50 shrink-0" />
+          <Fa icon={faSearch} size="sm" class="text-ghost shrink-0" />
 
           <!-- Display text -->
-          <span class="text-sm text-muted-foreground truncate flex-1 px-2">
+          <span class="text-sm text-subtle truncate flex-1 px-2">
             {displayText || 'Search...'}
           </span>
 
           <!-- Shortcut hint -->
-          <span class="text-[11px] text-muted-foreground/50 font-medium shrink-0"
+          <span class="text-ui text-subtle font-medium shrink-0"
             >{isMac ? '⌘' : 'Ctrl+'}K</span
           >
         </button>
@@ -275,10 +275,10 @@
         <Tooltip side="bottom" delayDuration={300}>
           {#snippet content()}
             <span>Sidebar</span>
-            <span class="text-muted-foreground ml-1.5">⌘B</span>
+            <span class="text-subtle ml-1.5">⌘B</span>
           {/snippet}
           <button
-            class="p-2 rounded hover:bg-muted/50 transition-colors text-muted-foreground/50 hover:text-foreground cursor-pointer"
+            class="p-2 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground cursor-pointer"
             onclick={() => sidebarWidthStore.toggle()}
             aria-label="Toggle sidebar"
           >

@@ -372,7 +372,7 @@
         <Button
           variant="ghost"
           size="sm"
-          class="w-full justify-start text-muted-foreground"
+          class="w-full justify-start text-subtle"
           onclick={() => {
             const newScript = setupScriptStore.save({
               name: 'Untitled script',
@@ -399,8 +399,8 @@
 
       <!-- Auto-generate -->
       <div class="mb-4">
-        <h4 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-1.5 px-2">Generate</h4>
-        <p class="text-xs text-muted-foreground/60 px-2 mb-2">Analyze your repo and create a setup script automatically.</p>
+        <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">Generate</h4>
+        <p class="text-xs text-subtle px-2 mb-2">Analyze your repo and create a setup script automatically.</p>
         {#if showAgentPanel && repoPath}
           <div transition:slide={{ duration: 200 }}>
             <SetupScriptAgent
@@ -428,7 +428,7 @@
           <Button
             variant="ghost"
             size="sm"
-            class="w-full justify-start text-muted-foreground"
+            class="w-full justify-start text-subtle"
             onclick={() => (showAgentPanel = true)}
             disabled={!repoPath}
           >
@@ -441,7 +441,7 @@
       <!-- Saved scripts for this repo -->
       {#if repoScripts.length > 0}
         <div class="mb-4">
-          <h4 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-1.5 px-2">Saved</h4>
+          <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">Saved</h4>
           {#each repoScripts as script (script.id)}
             <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
             <div
@@ -467,7 +467,7 @@
                   >{script.name}</span>
                 {/if}
                 {#if script.repoPath}
-                  <span class="text-[11px] text-muted-foreground/50 truncate block">{script.repoPath.split('/').pop()}</span>
+                  <span class="text-ui text-subtle truncate block">{script.repoPath.split('/').pop()}</span>
                 {/if}
               </div>
               <div class="flex items-center shrink-0">
@@ -475,7 +475,7 @@
                 <span
                   role="button"
                   tabindex="0"
-                  class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground/50 hover:text-foreground rounded transition-all cursor-pointer"
+                  class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-foreground rounded transition-all cursor-pointer"
                   onclick={(e) => { e.stopPropagation(); startEditingName(script.id, script.name); }}
                   title="Rename"
                 >
@@ -485,7 +485,7 @@
                 <span
                   role="button"
                   tabindex="0"
-                  class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground/50 hover:text-destructive-foreground rounded transition-all cursor-pointer"
+                  class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive-foreground rounded transition-all cursor-pointer"
                   onclick={(e) => { e.stopPropagation(); handleDeleteSavedScript(script.id, script.name); }}
                   title="Delete"
                 >
@@ -500,7 +500,7 @@
       <!-- Other saved scripts -->
       {#if otherSavedScripts.length > 0}
         <div class="mb-4">
-          <h4 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-1.5 px-2">Other saved</h4>
+          <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">Other saved</h4>
           {#each otherSavedScripts as script (script.id)}
             <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
             <div
@@ -526,7 +526,7 @@
                   >{script.name}</span>
                 {/if}
                 {#if script.repoPath}
-                  <span class="text-[11px] text-muted-foreground/50 truncate block">{script.repoPath.split('/').pop()}</span>
+                  <span class="text-ui text-subtle truncate block">{script.repoPath.split('/').pop()}</span>
                 {/if}
               </div>
               <div class="flex items-center shrink-0">
@@ -534,7 +534,7 @@
                 <span
                   role="button"
                   tabindex="0"
-                  class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground/50 hover:text-foreground rounded transition-all cursor-pointer"
+                  class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-foreground rounded transition-all cursor-pointer"
                   onclick={(e) => { e.stopPropagation(); startEditingName(script.id, script.name); }}
                   title="Rename"
                 >
@@ -544,7 +544,7 @@
                 <span
                   role="button"
                   tabindex="0"
-                  class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground/50 hover:text-destructive-foreground rounded transition-all cursor-pointer"
+                  class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive-foreground rounded transition-all cursor-pointer"
                   onclick={(e) => { e.stopPropagation(); handleDeleteSavedScript(script.id, script.name); }}
                   title="Delete"
                 >
@@ -558,7 +558,7 @@
 
       <!-- Templates -->
       <div class="mb-4">
-        <h4 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-1.5 px-2">Templates</h4>
+        <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">Templates</h4>
         {#each SETUP_SCRIPT_TEMPLATES as template (template.id)}
           <button
             class="w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors {selectedScriptId === `template-${template.id}` ? 'bg-background text-foreground ring-1 ring-border' : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'}"
@@ -567,10 +567,10 @@
             <div class="flex items-center gap-2">
               <span class="text-sm">{template.name}</span>
               {#if template.projectType === projectType}
-                <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium shrink-0">recommended</span>
+                <span class="text-ui px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium shrink-0">recommended</span>
               {/if}
             </div>
-            <p class="text-xs text-muted-foreground/60 mt-0.5 line-clamp-1">{template.description}</p>
+            <p class="text-xs text-subtle mt-0.5 line-clamp-1">{template.description}</p>
           </button>
         {/each}
       </div>
@@ -593,26 +593,26 @@
       </div>
       <!-- Bottom bar -->
       <div class="flex items-center gap-3 px-3 py-1.5 bg-muted/30 shrink-0">
-        <span class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60 shrink-0">Variables</span>
+        <span class="text-ui font-medium uppercase tracking-wider text-muted-foreground shrink-0">Variables</span>
         <div class="flex flex-wrap gap-1.5">
           {#each SETUP_SCRIPT_VARIABLES as variable (variable.name)}
             <Tooltip.Provider delayDuration={100}>
               <Tooltip.Root delayDuration={100}>
                 <Tooltip.Trigger>
-                  <code class="text-[11px] px-1.5 py-0.5 rounded bg-background/80 text-muted-foreground font-mono cursor-pointer hover:bg-background hover:text-foreground transition-colors">
+                  <code class="text-ui px-1.5 py-0.5 rounded bg-background/80 text-muted-foreground font-mono cursor-pointer hover:bg-background hover:text-foreground transition-colors">
                     ${variable.name}
                   </code>
                 </Tooltip.Trigger>
                 <Tooltip.Content side="bottom" class="max-w-xs z-[200]">
                   <p class="text-xs">{variable.description}</p>
-                  <p class="text-xs opacity-50 mt-1">e.g. <code class="text-[11px]">{variable.example}</code></p>
+                  <p class="text-xs opacity-50 mt-1">e.g. <code class="text-ui">{variable.example}</code></p>
                 </Tooltip.Content>
               </Tooltip.Root>
             </Tooltip.Provider>
           {/each}
         </div>
         {#if value.trim()}
-          <Button variant="ghost" size="sm" onclick={handleClear} class="ml-auto text-muted-foreground/60 hover:text-foreground text-xs">
+          <Button variant="ghost" size="sm" onclick={handleClear} class="ml-auto text-muted-foreground hover:text-foreground text-xs">
             Clear
           </Button>
         {/if}
@@ -638,8 +638,8 @@
       onclick={() => (expanded = !expanded)}
     >
       <Fa icon={faTerminal} size="xs" />
-      <span class="text-sm font-normal text-muted-foreground">Setup script</span>
-      <span class="text-muted-foreground/60 font-normal">{displayLabel}</span>
+      <span class="text-sm font-normal text-subtle">Setup script</span>
+      <span class="text-subtle font-normal">{displayLabel}</span>
     </Button>
 
     <!-- Expanded Content (non-compact mode renders inside, compact mode renders via slot) -->

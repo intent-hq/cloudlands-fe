@@ -82,7 +82,7 @@
       >
         <Fa icon={suggestion.icon} class="w-3.5 h-3.5" />
       </div>
-      <span class="text-[0.8125rem] font-medium text-foreground">{suggestion.label}</span>
+      <span class="text-xs font-medium text-foreground">{suggestion.label}</span>
     </button>
   {/each}
 </div>

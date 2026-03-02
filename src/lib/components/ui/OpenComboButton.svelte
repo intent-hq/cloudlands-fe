@@ -319,14 +319,14 @@
             {:else}
               <Fa icon={faCode} class="w-3.5 h-3.5 opacity-60" />
             {/if}
-            <span class="text-muted-foreground">Open</span>
+            <span class="text-subtle">Open</span>
           </button>
           <button
             type="button"
             class="flex items-center h-full min-h-full px-1.5 py-2 {bgClass} border-lx border-border transition-colors cursor-pointer"
             onclick={toggle}
           >
-            <Fa icon={faChevronDown} class="w-2! h-2! text-muted-foreground" />
+            <Fa icon={faChevronDown} class="w-2! h-2! text-ghost" />
           </button>
         </div>
       {/if}
@@ -335,7 +335,7 @@
     {#snippet content()}
       <div class="max-w-60">
         {#if headerText}
-          <div class="px-2 py-1.5 text-sm text-muted-foreground">
+          <div class="px-2 py-1.5 text-sm text-subtle">
             {headerText}
           </div>
         {/if}
@@ -371,12 +371,12 @@
               {/if}
               <span class="flex-1">{action.label}</span>
               {#if action.shortcut}
-                <span class="text-xs text-muted-foreground">{action.shortcut}</span>
+                <span class="text-xs text-subtle">{action.shortcut}</span>
               {/if}
             </div>
             {#if action.description}
               <div
-                class="w-full pt-2 pb-1.5 px-0.5 font-mxono whitespace-break-spaces break-words text-xs text-muted-foreground truncate"
+                class="w-full pt-2 pb-1.5 px-0.5 font-mxono whitespace-break-spaces break-words text-xs text-subtle truncate"
                 title={action.description}
               >
                 {action.description}

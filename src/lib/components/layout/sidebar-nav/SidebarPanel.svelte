@@ -63,7 +63,7 @@
       <div class="flex items-center justify-between px-3 pt-3 pb-2 shrink-0">
         <div class="min-w-0">
           <h2 class="text-base font-semibold text-foreground">{panelMeta.title}</h2>
-          <p class="text-xs text-muted-foreground/60 mt-0.5">{panelMeta.description}</p>
+          <p class="text-xs text-subtle mt-0.5">{panelMeta.description}</p>
         </div>
         <button
           class="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer shrink-0"

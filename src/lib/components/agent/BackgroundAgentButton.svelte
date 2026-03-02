@@ -222,13 +222,13 @@
             style="width: {executor.progress}%"
           ></div>
         </div>
-        <span class="text-xs text-muted-foreground min-w-[3ch]">
+        <span class="text-xs text-subtle min-w-[3ch]">
           {executor.progress}%
         </span>
       </div>
 
       {#if executor.latestMessage}
-        <div class="mt-1 text-xs text-muted-foreground truncate">
+        <div class="mt-1 text-xs text-subtle truncate">
           Processing: {executor.messages.length} message{executor.messages.length !== 1 ? 's' : ''}
         </div>
       {/if}
@@ -241,7 +241,7 @@
       class="p-3 bg-muted/50 rounded-md border border-border"
     >
       <div class="flex items-start justify-between gap-2 mb-2">
-        <span class="text-xs font-medium text-muted-foreground">Generated {getTypeName(type)}:</span
+        <span class="text-xs font-medium text-subtle">Generated {getTypeName(type)}:</span
         >
         <Button
           variant="ghost"

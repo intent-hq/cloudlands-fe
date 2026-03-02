@@ -3382,7 +3382,7 @@
       class="absolute top-2 right-4 z-50 flex items-center gap-2 bg-background border border-border rounded-lg shadow-lg px-3 py-2"
       transition:fade={{ duration: 150 }}
     >
-      <Fa icon={faSearch} class="w-3.5 h-3.5 text-muted-foreground/50" />
+      <Fa icon={faSearch} class="w-3.5 h-3.5 text-ghost" />
       <input
         bind:this={searchInputRef}
         bind:value={searchQuery}
@@ -3393,7 +3393,7 @@
         oninput={handleSearchInput}
       />
       {#if searchMatchCount > 0}
-        <span class="text-xs text-muted-foreground whitespace-nowrap">
+        <span class="text-xs text-subtle whitespace-nowrap">
           {currentSearchIndex + 1} / {searchMatchCount}
         </span>
         <button
@@ -3413,7 +3413,7 @@
           <Fa icon={faChevronDown} class="w-3 h-3" />
         </button>
       {:else if searchQuery}
-        <span class="text-xs text-muted-foreground/60">No matches</span>
+        <span class="text-xs text-subtle">No matches</span>
       {/if}
       <button
         type="button"
@@ -3456,8 +3456,8 @@
           class="flex items-center gap-1.5 px-2.5 py-1 mt-2 text-xs rounded-full border border-border bg-background hover:bg-muted transition-colors w-fit cursor-pointer no-underline mb-2"
           onclick={(e) => handleTaskPillClick(e, task)}
         >
-          <Fa icon={faSquareCheck} class="text-muted-foreground opacity-50" size="w-3 h-3" />
-          <span class="text-muted-foreground truncate max-w-[200px]">
+          <Fa icon={faSquareCheck} class="text-ghost opacity-50" size="w-3 h-3" />
+          <span class="text-subtle truncate max-w-[200px]">
             {task.taskText || 'Assigned task'}
           </span>
         </a>
@@ -3742,7 +3742,7 @@
                               />
                             {/each}
                             {#if agentEventsForCards.length > 5}
-                              <div class="text-[10px] text-muted-foreground/50 text-center py-1">
+                              <div class="text-ui text-subtle text-center py-1">
                                 +{agentEventsForCards.length - 5} more agents
                               </div>
                             {/if}
@@ -3762,7 +3762,7 @@
                       {#if shouldEnableSticky && turn.userMessage && !isEventNotification}
                         <div class="sticky -top-px w-full z-10 cursor-pointer h-0 overflow-visible">
                           <div
-                            class="h-fit min-w-0 px-2 pt-2 pb-2 text-muted-foreground whitespace-nowrap text-ellipsis leading-normal bg-sidebar rounded-xs w-full max-w-full truncate"
+                            class="h-fit min-w-0 px-2 pt-2 pb-2 text-subtle whitespace-nowrap text-ellipsis leading-normal bg-sidebar rounded-xs w-full max-w-full truncate"
                           >
                             {formatMessageForStickyHeader(turn.userMessage)}
                           </div>
@@ -3950,7 +3950,7 @@
             isScrollUnlocked = false;
           }
         }}
-        class="absolute bottom-2 right-2 text-muted-foreground/50 bg-sidebar rounded-sm transition-all opacity-0 group-hover/panel:opacity-100 active:scale-95 {showLock
+        class="absolute bottom-2 right-2 text-muted-foreground bg-sidebar rounded-sm transition-all opacity-0 group-hover/panel:opacity-100 active:scale-95 {showLock
           ? 'opacity-0!'
           : ''}"
         title={showLock
@@ -3991,7 +3991,7 @@
 
     {#if isProviderMismatch && matchedProviders}
       <div
-        class="absolute z-50 w-4/5 inset-x-0 mx-auto top-1/2 -translate-y-1/2 px-3 py-2.5 text-sm text-muted-foreground bg-muted/50 border border-border rounded-lg flex items-center justify-between gap-2"
+        class="absolute z-50 w-4/5 inset-x-0 mx-auto top-1/2 -translate-y-1/2 px-3 py-2.5 text-sm text-subtle bg-muted/50 border border-border rounded-lg flex items-center justify-between gap-2"
       >
         <p class="text-balance">
           {#if isAgentProviderHidden}

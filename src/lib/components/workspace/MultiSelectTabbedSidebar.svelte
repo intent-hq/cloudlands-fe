@@ -871,7 +871,7 @@
             {/if}
             {#if tab.id === 'changes' && changedFilesCount > 0}
               <div
-                class="tab-badge min-w-4 h-4 px-1 rounded-full bg-background text-muted-foreground text-[9px] font-semibold flex items-center justify-center z-10 shrink-0"
+                class="tab-badge min-w-4 h-4 px-1 rounded-full bg-background text-subtle text-ui font-semibold flex items-center justify-center z-10 shrink-0"
               >
                 <AnimatedNumber value={changedFilesCount} />
               </div>
@@ -958,11 +958,11 @@
                   {/if}
                 </h6>
                 <p
-                  class="text-[11px] text-muted-foreground/60 mt-0.5 leading-snug transition-all duration-200"
+                  class="text-ui text-subtle mt-0.5 leading-snug transition-all duration-200"
                 >
                   {#if tabId === 'context' && workspace?.isRemote}
                     {getTabDescription(tab.id, tab.description)} Your notes live on
-                    <span class="font-mono text-muted-foreground/80"
+                    <span class="font-mono text-subtle"
                       >{workspace.environmentConfig?.ssh?.host
                         ? `${workspace.environmentConfig.ssh.host}:`
                         : ''}{workspace.id}/.workspace</span
@@ -1165,7 +1165,7 @@
                     <div class="flex-1 relative">
                       <Fa
                         icon={faSearch}
-                        class="absolute left-2.5 top-1/2 -translate-y-1/2 w-2.5 h-2.5 text-muted-foreground/40"
+                        class="absolute left-2.5 top-1/2 -translate-y-1/2 w-2.5 h-2.5 text-ghost"
                       />
                       <Input
                         bind:this={fileSearchInputRef}
@@ -1179,7 +1179,7 @@
                       {#if fileSearchQuery}
                         <button
                           type="button"
-                          class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground cursor-pointer"
+                          class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-muted-foreground cursor-pointer"
                           onclick={() => {
                             fileSearchQuery = '';
                             fileSearchInputRef?.focus();
@@ -1192,7 +1192,7 @@
                     <Button
                       variant="ghost"
                       size="icon-xs"
-                      class="shrink-0 text-muted-foreground/50"
+                      class="shrink-0 text-subtle"
                       tooltip="New file"
                       onclick={() => filesPanelRef?.startCreatingFile()}
                     >
@@ -1203,7 +1203,7 @@
                       size="icon-xs"
                       class="shrink-0 {showOnlyChangedFiles
                         ? 'text-primary'
-                        : 'text-muted-foreground/50'}"
+                        : 'text-subtle'}"
                       tooltip={showOnlyChangedFiles ? 'Show all files' : 'Show only changed files'}
                       onclick={() => (showOnlyChangedFiles = !showOnlyChangedFiles)}
                     >
@@ -1212,7 +1212,7 @@
                     <Button
                       variant="ghost"
                       size="icon-xs"
-                      class="shrink-0 text-muted-foreground/50"
+                      class="shrink-0 text-subtle"
                       tooltip={hasExpandedDirectories ? 'Collapse all' : 'Expand all'}
                       onclick={async () => {
                         if (hasExpandedDirectories) {

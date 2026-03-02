@@ -432,7 +432,7 @@
     right: -2px;
     background: var(--primary);
     color: white;
-    font-size: 10px;
+    font-size: 11px;
     min-width: 16px;
     height: 16px;
     display: flex;
@@ -563,7 +563,7 @@
     align-items: center;
     gap: 4px;
     margin-top: 4px;
-    font-size: 10px;
+    font-size: 11px;
     color: var(--muted-foreground);
   }
 
@@ -607,7 +607,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: bold;
   }
 

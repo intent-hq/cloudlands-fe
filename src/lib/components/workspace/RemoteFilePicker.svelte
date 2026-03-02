@@ -121,7 +121,7 @@
   <div class="flex-1 overflow-y-auto p-2">
     {#if loading}
       <div class="flex items-center justify-center h-full">
-        <Fa icon={faSpinner} size="2x" class="animate-spin text-muted-foreground" />
+        <Fa icon={faSpinner} size="2x" class="animate-spin text-subtle" />
       </div>
     {:else if error}
       <div class="flex flex-col items-center justify-center h-full gap-2">
@@ -132,7 +132,7 @@
       </div>
     {:else if items.length === 0}
       <div class="flex items-center justify-center h-full">
-        <p class="text-sm text-muted-foreground">Empty directory</p>
+        <p class="text-sm text-subtle">Empty directory</p>
       </div>
     {:else}
       <div class="space-y-1">
@@ -157,11 +157,11 @@
             {#if item.type === 'directory'}
               <Fa icon={faFolder} size="sm" class="text-blue-500" />
             {:else}
-              <Fa icon={faFile} size="sm" class="text-muted-foreground" />
+              <Fa icon={faFile} size="sm" class="text-ghost" />
             {/if}
             <span class="flex-1 text-sm truncate">{item.name}</span>
             {#if item.type === 'directory'}
-              <Fa icon={faChevronRight} size="sm" class="text-muted-foreground" />
+              <Fa icon={faChevronRight} size="sm" class="text-ghost" />
             {/if}
           </button>
         {/each}
@@ -171,7 +171,7 @@
 
   <!-- Footer -->
   <div class="flex items-center justify-between p-3 border-t border-border bg-muted/50">
-    <div class="text-sm text-muted-foreground">
+    <div class="text-sm text-subtle">
       {#if selectedPath}
         Selected: <span class="font-mono">{selectedPath}</span>
       {:else}

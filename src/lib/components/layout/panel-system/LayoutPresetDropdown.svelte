@@ -187,14 +187,14 @@
               'relative flex-1 px-3 justify-start',
               canGoBack
                 ? 'text-muted-foreground hover:text-foreground'
-                : 'text-muted-foreground/30',
+                : 'text-ghost',
             )}
             onclick={onGoBack}
             disabled={!canGoBack}
           >
             <ArrowLeftIcon class="size-3" />
             <span
-              class="absolute top-1/2 right-2 transform -translate-y-1/2 text-[10px] text-muted-foreground/60"
+              class="absolute top-1/2 right-2 transform -translate-y-1/2 text-ui text-subtle"
               >⌘[</span
             >
           </Button>
@@ -206,14 +206,14 @@
               'relative flex-1 px-3 justify-end',
               canGoForward
                 ? 'text-muted-foreground hover:text-foreground'
-                : 'text-muted-foreground/30',
+                : 'text-ghost',
             )}
             onclick={onGoForward}
             disabled={!canGoForward}
           >
             <ArrowLeftIcon class="size-3 rotate-180" />
             <span
-              class="absolute top-1/2 left-2 transform -translate-y-1/2 text-[10px] text-muted-foreground/60"
+              class="absolute top-1/2 left-2 transform -translate-y-1/2 text-ui text-subtle"
               >⌘]</span
             >
           </Button>
@@ -229,11 +229,11 @@
           >
             <Fa
               icon={preset.icon}
-              class={cn('size-2.5 text-muted-foreground/50', preset.iconClass || '')}
+              class={cn('size-2.5 text-ghost', preset.iconClass || '')}
             />
             <div class="flex-1 min-w-0">
               <div class="text-xs font-medium truncate">{preset.label}</div>
-              <div class="text-[10px] text-muted-foreground/70 truncate">{preset.description}</div>
+              <div class="text-xs text-subtle truncate">{preset.description}</div>
             </div>
             {#if currentPreset === preset.id}
               <Fa icon={faCheck} size="xs" class="text-primary shrink-0" />

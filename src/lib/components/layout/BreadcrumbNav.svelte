@@ -279,7 +279,7 @@
       <button
         type="button"
         onclick={(e) => onCreateWorkspace?.(e)}
-        class="flex-1 flex items-center gap-2 px-2 py-1 cursor-pointer text-sm text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/50 rounded-md transition-colors"
+        class="flex-1 flex items-center gap-2 px-2 py-1 cursor-pointer text-sm text-muted-foreground hover:text-muted-foreground hover:bg-muted/50 rounded-md transition-colors"
       >
         <Fa icon={faPlus} class="w-3 h-3 opacity-50" />
         <span>New Workspace</span>
@@ -288,7 +288,7 @@
         <button
           type="button"
           onclick={handleSelectLastOpened}
-          class="flex-1 flex items-center gap-2 px-2 py-1 cursor-pointer text-sm text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/50 rounded-md transition-colors"
+          class="flex-1 flex items-center gap-2 px-2 py-1 cursor-pointer text-sm text-muted-foreground hover:text-muted-foreground hover:bg-muted/50 rounded-md transition-colors"
         >
           <Fa icon={faHistory} class="w-3 h-3 opacity-50" />
           <span class="truncate">Last opened: {lastOpenedWorkspace.title || 'Untitled'}</span>
@@ -303,7 +303,7 @@
     <button
       type="button"
       onclick={(e) => handleCreateForRepo(group, e)}
-      class="px-1.5 py-1 text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 rounded transition-colors cursor-pointer"
+      class="px-1.5 py-1 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors cursor-pointer"
       title="New space for {group.label}"
     >
       <Fa icon={faPlus} class="w-2.5 h-2.5" />
@@ -312,7 +312,7 @@
 {/snippet}
 
 {#snippet workspaceFooter()}
-  <div class="flex items-center gap-2 text-xs text-muted-foreground">
+  <div class="flex items-center gap-2 text-xs text-subtle">
     <div class="flex items-center gap-0.5">
       <Kbd size="xs">⌘</Kbd>
       <Kbd size="xs">Click</Kbd>
@@ -322,10 +322,10 @@
 {/snippet}
 
 {#snippet workspaceOptionDescription(option: GroupedOption)}
-  <div class="flex items-center justify-between gap-3 text-xs text-muted-foreground mt-0.5">
+  <div class="flex items-center justify-between gap-3 text-xs text-subtle mt-0.5">
     <div class="flex items-center gap-3">
       <!-- {#if option.data?.notesCount !== undefined}
-        <span class="flex items-center gap-1 text-muted-foreground">
+        <span class="flex items-center gap-1 text-subtle">
           <Fa icon={faStickyNote} class="w-3 h-3 opacity-50" />
           <span>{option.data.notesCount}</span>
         </span>
@@ -340,7 +340,7 @@
       {/if}
     </div>
     {#if option.data?.lastUpdated}
-      <span class="text-muted-foreground/70 ml-auto font-normal">{option.data.lastUpdated}</span>
+      <span class="text-subtle ml-auto font-normal">{option.data.lastUpdated}</span>
     {/if}
   </div>
 {/snippet}

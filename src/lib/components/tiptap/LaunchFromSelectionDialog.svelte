@@ -180,7 +180,7 @@
 
   .launch-hint {
     margin-top: 6px;
-    font-size: 10px;
+    font-size: 11px;
     color: hsl(var(--muted-foreground) / 0.5);
     text-align: center;
   }
@@ -188,7 +188,7 @@
   .launch-hint kbd {
     display: inline-block;
     padding: 1px 4px;
-    font-size: 9px;
+    font-size: 11px;
     font-family: inherit;
     background-color: hsl(var(--muted) / 0.5);
     border-radius: 3px;

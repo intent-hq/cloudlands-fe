@@ -117,7 +117,7 @@
         {#if crumb.onClick}
           <button
             onclick={crumb.onClick}
-            class="flex items-center gap-1.5 text-[11px] font-medium tracking-wide uppercase text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            class="flex items-center gap-1.5 text-ui font-medium tracking-wide uppercase text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           >
             {#if crumb.icon}
               <Fa icon={crumb.icon} class="w-3 h-3 opacity-50" />
@@ -126,7 +126,7 @@
           </button>
         {:else}
           <span
-            class="flex items-center gap-1.5 text-[11px] font-medium tracking-wide uppercase text-muted-foreground"
+            class="flex items-center gap-1.5 text-ui font-medium tracking-wide uppercase text-muted-foreground"
           >
             {#if crumb.icon}
               <Fa icon={crumb.icon} class="w-3 h-3 opacity-50" />
@@ -134,16 +134,16 @@
             <span class="truncate max-w-24">{crumb.label}</span>
           </span>
         {/if}
-        <div class="mx-0.5 font-medium text-xs text-muted-foreground opacity-30">/</div>
+        <div class="mx-0.5 font-medium text-xs text-subtle opacity-30">/</div>
       {/each}
 
       {#if icon && breadcrumbs.length === 0}
-        <Fa {icon} class="w-3.5 h-3.5 text-muted-foreground opacity-50 shrink-0" />
+        <Fa {icon} class="w-3.5 h-3.5 text-ghost opacity-50 shrink-0" />
       {/if}
 
       <!-- Title -->
       <div class="flex items-center gap-1.5 min-w-0">
-        <!-- <Fa icon={faChevronLeft} class="w-2.5! h-2.5! text-muted-foreground opacity-50 shrink-0" /> -->
+        <!-- <Fa icon={faChevronLeft} class="w-2.5! h-2.5! text-ghost opacity-50 shrink-0" /> -->
         {#if isEditingTitle}
           <input
             bind:this={titleInputRef}
@@ -167,7 +167,7 @@
           </button>
         {/if}
         {#if subtitle}
-          <span class="text-xs text-muted-foreground truncate">{subtitle}</span>
+          <span class="text-xs text-subtle truncate">{subtitle}</span>
         {/if}
       </div>
     </div>

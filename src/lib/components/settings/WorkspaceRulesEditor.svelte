@@ -256,7 +256,7 @@
   <div class="flex items-start justify-between">
     <div class="flex-1">
       <h3 class="text-lg font-semibold text-foreground">Space Rules</h3>
-      <p class="text-xs text-muted-foreground mt-1">
+      <p class="text-xs text-subtle mt-1">
         Define rules that guide how agents work within your spaces. These rules are included in
         every agent's system prompt.
       </p>
@@ -266,7 +266,7 @@
   </div>
 
   {#if loading}
-    <div class="text-center py-8 text-muted-foreground">Loading rules...</div>
+    <div class="text-center py-8 text-subtle">Loading rules...</div>
   {:else}
     <div class="space-y-3">
       <!-- Character limit warning/error callout -->
@@ -328,7 +328,7 @@
         <div
           class="flex items-center justify-between p-3 bg-primary/5 border border-primary/20 rounded-md"
         >
-          <span class="text-sm text-muted-foreground">You have unsaved changes</span>
+          <span class="text-sm text-subtle">You have unsaved changes</span>
           <div class="flex items-center gap-2">
             <Button
               variant="ghost"

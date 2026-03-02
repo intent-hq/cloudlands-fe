@@ -185,7 +185,7 @@
                   ? ''
                   : heading.level === 2 && heading.id === activeHeadingId
                     ? ''
-                    : 'text-muted-foreground'} {heading.id === activeHeadingId
+                    : 'text-subtle'} {heading.id === activeHeadingId
                 ? 'bg-primary/10'
                 : ''} {heading.level === 2 ? 'pl-6' : ''}"
               onclick={() => handleHeadingClick(heading)}

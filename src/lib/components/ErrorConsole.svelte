@@ -120,7 +120,7 @@
       case 'info':
         return 'text-blue-500 bg-blue-500/10';
       default:
-        return 'text-muted-foreground bg-muted/10';
+        return 'text-subtle bg-muted/10';
     }
   }
 

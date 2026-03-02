@@ -59,7 +59,7 @@
   {onclick}
 >
   <!-- Icon -->
-  <span class="text-muted-foreground/50 shrink-0 mt-0.5">
+  <span class="text-subtle shrink-0 mt-0.5">
     <Fa icon={fileIcon} size="sm" />
   </span>
 
@@ -71,7 +71,7 @@
     </p>
     <!-- Parent directory -->
     {#if parentDir}
-      <p class="text-xs text-muted-foreground truncate">
+      <p class="text-xs text-subtle truncate">
         {parentDir}
       </p>
     {/if}

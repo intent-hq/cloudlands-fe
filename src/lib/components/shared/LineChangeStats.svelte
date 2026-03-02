@@ -35,7 +35,7 @@
   let sizeClasses = $derived.by(() => {
     switch (size) {
       case 'xs':
-        return 'text-[10px] gap-1';
+        return 'text-ui gap-1';
       case 'sm':
         return 'text-xs gap-1.5';
       case 'md':
@@ -69,7 +69,7 @@
     )}
   >
     {#if loading}
-      <span class="text-muted-foreground animate-pulse"> Calculating... </span>
+      <span class="text-subtle animate-pulse"> Calculating... </span>
     {:else}
       {#if additions > 0 || showZero}
         <span class="text-green-600 dark:text-green-400 flex items-center gap-0.5">
@@ -86,7 +86,7 @@
       {/if}
 
       {#if !additions && !deletions && !showZero}
-        <span class="text-muted-foreground"> No changes </span>
+        <span class="text-subtle"> No changes </span>
       {/if}
     {/if}
   </div>

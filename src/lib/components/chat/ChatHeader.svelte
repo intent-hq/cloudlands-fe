@@ -126,7 +126,7 @@
 <div class="flex justify-between items-center p-4 border-b border-border bg-muted/50">
   <div class="flex items-center gap-4">
     <div class="flex items-center gap-3">
-      <Fa icon={faRobot} class="text-2xl text-muted-foreground" />
+      <Fa icon={faRobot} class="text-2xl text-subtle" />
       <div class="flex flex-col">
         <div class="flex items-center gap-2">
           <h3 class="text-base font-semibold m-0 text-foreground">{getAgentTitle()}</h3>
@@ -142,8 +142,8 @@
                 <Tooltip.Content>
                   <div class="space-y-1 max-w-xs">
                     <div class="font-semibold">{specialistInfo.name}</div>
-                    <div class="text-xs text-muted-foreground">{specialistInfo.description}</div>
-                    <div class="text-xs text-muted-foreground mt-1">
+                    <div class="text-xs text-subtle">{specialistInfo.description}</div>
+                    <div class="text-xs text-subtle mt-1">
                       Model: <span class="font-mono">{specialistEffectiveModel}</span>
                     </div>
                   </div>

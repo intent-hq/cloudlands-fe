@@ -228,7 +228,7 @@
               {#if isRecovering}
                 <Fa icon={faSpinner} class="w-10 h-10 text-warning" spin />
               {:else}
-                <Fa icon={faTriangleExclamation} class="w-10 h-10 text-muted-foreground/50" />
+                <Fa icon={faTriangleExclamation} class="w-10 h-10 text-subtle" />
               {/if}
             </div>
 
@@ -241,7 +241,7 @@
                   Something went wrong
                 {/if}
               </h3>
-              <p class="text-base text-foreground/70 leading-relaxed max-w-sm mx-auto">
+              <p class="text-base text-subtle leading-relaxed max-w-sm mx-auto">
                 {#if isRecovering}
                   Trying to recover automatically (attempt {recoveryAttempts}/3)
                 {:else}
@@ -299,7 +299,7 @@
               {#if showDetails && errorInfo}
                 <div class="w-full pt-6 border-t border-border" transition:slide={{ axis: 'y' }}>
                   <div class="bg-muted/60 rounded-lg p-4 border border-border/50">
-                    <pre class="text-xs font-mono text-foreground/70 leading-relaxed overflow-x-auto max-h-64 text-left whitespace-pre-wrap break-all">{errorInfo}</pre>
+                    <pre class="text-xs font-mono text-subtle leading-relaxed overflow-x-auto max-h-64 text-left whitespace-pre-wrap break-all">{errorInfo}</pre>
                   </div>
                 </div>
               {/if}

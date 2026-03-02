@@ -19,7 +19,7 @@
       1: 'text-2xl font-semibold leading-tight tracking-tight antialiased',
       2: 'text-xl font-semibold leading-tight tracking-tight antialiased',
       3: 'text-xs uppercase tracking-wider font-medium text-muted-foreground antialiased',
-      4: 'text-xs font-medium text-muted-foreground antialiased',
+      4: 'text-xs font-medium text-subtle antialiased',
       5: 'text-sm font-medium leading-normal antialiased',
       6: 'text-[0.66rem] uppercase tracking-wider font-medium text-muted-foreground antialiased',
     }[size] || 'text-base antialiased',

@@ -120,7 +120,7 @@
   </button>
 {:else}
   <div
-    class="group/button flex items-center gap-1.5 px-2 py-0.5 bg-muted/70 text-muted-foreground rounded text-xs whitespace-nowrap shrink-0"
+    class="group/button flex items-center gap-1.5 px-2 py-0.5 bg-muted/70 text-subtle rounded text-xs whitespace-nowrap shrink-0"
     title={tooltip ?? label}
   >
     <Fa icon={displayIcon} size="15" class="opacity-30" />

@@ -1045,7 +1045,7 @@
                   : 'text-foreground bg-[color-mix(in_srgb,_var(--color-background)_50%,_var(--color-muted)_50%)] dark:bg-[color-mix(in_srgb,_var(--color-background)_95%,_var(--color-muted-foreground)_5%)]'
                 : isFocused
                   ? 'text-muted-foreground hover:text-foreground'
-                  : 'text-muted-foreground/30',
+                  : 'text-ghost',
               draggedTabId === tab.id && 'opacity-50',
             )}
             onclick={() => handleTabClick(tab.id)}
@@ -1089,7 +1089,7 @@
             {/if}
             <div
               class={cn(
-                'flex items-center gap-1.5 pl-2.5 pr-2 py-1 h-9 text-[0.82rem] whitespace-nowrap',
+                'flex items-center gap-1.5 pl-2.5 pr-2 py-1 h-9 text-ui whitespace-nowrap',
               )}
             >
               {#if tab.type === 'agent' && tab.agentId}
@@ -1130,7 +1130,7 @@
 
               {#if isBackgroundAgent(tab)}
                 <span
-                  class="text-[9px] font-medium text-muted-foreground/70 bg-muted px-1 py-0.5 rounded uppercase tracking-wider"
+                  class="text-ui font-medium text-muted-foreground bg-muted px-1 py-0.5 rounded uppercase tracking-wider"
                   >BG</span
                 >
               {/if}
@@ -1196,7 +1196,7 @@
                       close();
                     }}
                   >
-                    <Fa icon={faRobot} size="xs" class="text-muted-foreground" />
+                    <Fa icon={faRobot} size="xs" class="text-ghost" />
                     <span>New Agent</span>
                   </button>
                 {/if}
@@ -1208,7 +1208,7 @@
                       close();
                     }}
                   >
-                    <Fa icon={faNote} size="xs" class="text-muted-foreground" />
+                    <Fa icon={faNote} size="xs" class="text-ghost" />
                     <span>New Note</span>
                   </button>
                 {/if}
@@ -1220,7 +1220,7 @@
                       close();
                     }}
                   >
-                    <Fa icon={faTerminal} size="xs" class="text-muted-foreground" />
+                    <Fa icon={faTerminal} size="xs" class="text-ghost" />
                     <span>New Terminal</span>
                   </button>
                 {/if}
@@ -1232,7 +1232,7 @@
                       close();
                     }}
                   >
-                    <Fa icon={faGlobe} size="xs" class="text-muted-foreground" />
+                    <Fa icon={faGlobe} size="xs" class="text-ghost" />
                     <span>New Browser</span>
                   </button>
                 {/if}
@@ -1257,7 +1257,7 @@
             aria-label="Split panel right"
           >
             <svg
-              class="text-muted-foreground overflow-visible w-2.5!"
+              class="text-subtle overflow-visible w-2.5!"
               viewBox="0 0 1 1"
               fill="none"
               stroke="currentColor"
@@ -1289,7 +1289,7 @@
             aria-label="Split panel down"
           >
             <svg
-              class="text-muted-foreground overflow-visible w-2.5!"
+              class="text-subtle overflow-visible w-2.5!"
               viewBox="0 0 1 1"
               fill="none"
               stroke="currentColor"
@@ -1347,14 +1347,14 @@
         <div class="flex items-center gap-1.5 min-w-0 flex-1">
           <!-- Category (muted, uppercase) -->
           <span
-            class="flex items-center gap-2 text-[10px] font-medium tracking-wider uppercase shrink-0 {isFocused
+            class="flex items-center gap-2 text-ui font-medium tracking-wider uppercase shrink-0 {isFocused
               ? 'text-muted-foreground'
-              : 'text-muted-foreground/50'}"
+              : 'text-subtle'}"
           >
             <!-- <Fa icon={categoryIcon} class="opacity-50" size={16} /> -->
             <span>{categoryLabel}</span>
           </span>
-          <span class="text-muted-foreground/40 text-xs">/</span>
+          <span class="text-ghost text-xs">/</span>
 
           <div class="flex items-baseline gap-2 min-w-0 shrink">
             <!-- Title - editable for notes, agents, and files -->
@@ -1364,7 +1364,7 @@
                 onSave={(newName) => handleTabRename(activeTab, newName)}
                 textClass="text-sm shrink font-medium {isFocused
                   ? 'text-foreground'
-                  : 'text-muted-foreground/50'}"
+                  : 'text-subtle'}"
                 title="Click to rename"
                 maxWidth={200}
               />
@@ -1372,7 +1372,7 @@
               <span
                 class="text-sm truncate shrink {isFocused
                   ? 'text-foreground'
-                  : 'text-muted-foreground/50'}"
+                  : 'text-subtle'}"
               >
                 {getTabTitle(activeTab)}
               </span>
@@ -1385,8 +1385,8 @@
               {#if specialist || delegatedBy}
                 <span
                   class="text-xs shrink-5 truncate whitespace-nowrap {isFocused
-                    ? 'text-muted-foreground/60'
-                    : 'text-muted-foreground/30'}"
+                    ? 'text-subtle'
+                    : 'text-ghost'}"
                 >
                   {#if specialist && delegatedBy}
                     {specialist} · Delegated by {delegatedBy}
@@ -1407,8 +1407,8 @@
             {#if dirPath}
               <span
                 class="text-xs truncate {isFocused
-                  ? 'text-muted-foreground'
-                  : 'text-muted-foreground/30'}"
+                  ? 'text-subtle'
+                  : 'text-ghost'}"
               >
                 {dirPath}
               </span>
@@ -1421,8 +1421,8 @@
             {#if change?.commitHash}
               <span
                 class="text-xs font-mono {isFocused
-                  ? 'text-muted-foreground/70'
-                  : 'text-muted-foreground/30'}"
+                  ? 'text-subtle'
+                  : 'text-ghost'}"
               >
                 @ {change.commitHash.substring(0, 7)}
               </span>
@@ -1481,7 +1481,7 @@
             closeContextMenu();
           }}
         >
-          <Fa icon={faCrosshairs} size="xs" class="text-muted-foreground" />
+          <Fa icon={faCrosshairs} size="xs" class="text-ghost" />
           Reveal in Sidebar
         </button>
       {/if}
@@ -1494,7 +1494,7 @@
             closeContextMenu();
           }}
         >
-          <Fa icon={faCopy} size="xs" class="text-muted-foreground" />
+          <Fa icon={faCopy} size="xs" class="text-ghost" />
           Copy Relative Path
         </button>
         <button
@@ -1504,7 +1504,7 @@
             closeContextMenu();
           }}
         >
-          <Fa icon={faCopy} size="xs" class="text-muted-foreground" />
+          <Fa icon={faCopy} size="xs" class="text-ghost" />
           Copy Absolute Path
         </button>
         <button
@@ -1514,7 +1514,7 @@
             closeContextMenu();
           }}
         >
-          <Fa icon={faCopy} size="xs" class="text-muted-foreground" />
+          <Fa icon={faCopy} size="xs" class="text-ghost" />
           Copy Filename
         </button>
         <button
@@ -1524,7 +1524,7 @@
             closeContextMenu();
           }}
         >
-          <Fa icon={faFolderOpen} size="xs" class="text-muted-foreground" />
+          <Fa icon={faFolderOpen} size="xs" class="text-ghost" />
           Reveal in {fileManagerName}
         </button>
       {/if}
@@ -1537,7 +1537,7 @@
             closeContextMenu();
           }}
         >
-          <Fa icon={faCopy} size="xs" class="text-muted-foreground" />
+          <Fa icon={faCopy} size="xs" class="text-ghost" />
           Copy URL
         </button>
         <button
@@ -1547,7 +1547,7 @@
             closeContextMenu();
           }}
         >
-          <Fa icon={faArrowUpRightFromSquare} size="xs" class="text-muted-foreground" />
+          <Fa icon={faArrowUpRightFromSquare} size="xs" class="text-ghost" />
           Open in Browser
         </button>
       {/if}
@@ -1560,7 +1560,7 @@
             closeContextMenu();
           }}
         >
-          <Fa icon={faCopy} size="xs" class="text-muted-foreground" />
+          <Fa icon={faCopy} size="xs" class="text-ghost" />
           Copy Relative Path
         </button>
         <button
@@ -1570,7 +1570,7 @@
             closeContextMenu();
           }}
         >
-          <Fa icon={faCopy} size="xs" class="text-muted-foreground" />
+          <Fa icon={faCopy} size="xs" class="text-ghost" />
           Copy Absolute Path
         </button>
         <button
@@ -1580,7 +1580,7 @@
             closeContextMenu();
           }}
         >
-          <Fa icon={faCopy} size="xs" class="text-muted-foreground" />
+          <Fa icon={faCopy} size="xs" class="text-ghost" />
           Copy Filename
         </button>
         <button
@@ -1590,7 +1590,7 @@
             closeContextMenu();
           }}
         >
-          <Fa icon={faFolderOpen} size="xs" class="text-muted-foreground" />
+          <Fa icon={faFolderOpen} size="xs" class="text-ghost" />
           Reveal in {fileManagerName}
         </button>
       {/if}
@@ -1603,7 +1603,7 @@
             closeContextMenu();
           }}
         >
-          <Fa icon={faCopy} size="xs" class="text-muted-foreground" />
+          <Fa icon={faCopy} size="xs" class="text-ghost" />
           Copy Relative Path
         </button>
         <button
@@ -1613,7 +1613,7 @@
             closeContextMenu();
           }}
         >
-          <Fa icon={faCopy} size="xs" class="text-muted-foreground" />
+          <Fa icon={faCopy} size="xs" class="text-ghost" />
           Copy Absolute Path
         </button>
         <button
@@ -1623,7 +1623,7 @@
             closeContextMenu();
           }}
         >
-          <Fa icon={faCopy} size="xs" class="text-muted-foreground" />
+          <Fa icon={faCopy} size="xs" class="text-ghost" />
           Copy Filename
         </button>
         <button
@@ -1633,7 +1633,7 @@
             closeContextMenu();
           }}
         >
-          <Fa icon={faFolderOpen} size="xs" class="text-muted-foreground" />
+          <Fa icon={faFolderOpen} size="xs" class="text-ghost" />
           Reveal in {fileManagerName}
         </button>
       {/if}
@@ -1646,7 +1646,7 @@
             closeContextMenu();
           }}
         >
-          <Fa icon={faCopy} size="xs" class="text-muted-foreground" />
+          <Fa icon={faCopy} size="xs" class="text-ghost" />
           Copy Terminal Name
         </button>
       {/if}
@@ -1660,7 +1660,7 @@
         }}
       >
         {isZoomed ? 'Unzoom Panel' : 'Zoom Panel'}
-        <span class="text-muted-foreground text-xs">⇧⌘↵</span>
+        <span class="text-subtle text-xs">⇧⌘↵</span>
       </button>
       <div class="border-t border-border"></div>
       <!-- Split options -->
@@ -1673,7 +1673,7 @@
       >
         <span class="flex items-center gap-2">
           <svg
-            class="text-muted-foreground overflow-visible w-2.5!"
+            class="text-subtle overflow-visible w-2.5!"
             viewBox="0 0 1 1"
             fill="none"
             stroke="currentColor"
@@ -1697,7 +1697,7 @@
           </svg>
           Split right
         </span>
-        <span class="text-muted-foreground text-xs">⌘\</span>
+        <span class="text-subtle text-xs">⌘\</span>
       </button>
       <button
         class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"
@@ -1708,7 +1708,7 @@
       >
         <span class="flex items-center gap-2">
           <svg
-            class="text-muted-foreground overflow-visible w-2.5! transform rotate-90"
+            class="text-subtle overflow-visible w-2.5! transform rotate-90"
             viewBox="0 0 1 1"
             fill="none"
             stroke="currentColor"
@@ -1732,7 +1732,7 @@
           </svg>
           Split down
         </span>
-        <span class="text-muted-foreground text-xs">⇧⌘\</span>
+        <span class="text-subtle text-xs">⇧⌘\</span>
       </button>
       <div class="border-t border-border"></div>
       <button
@@ -1743,7 +1743,7 @@
         }}
       >
         Close
-        <span class="text-muted-foreground text-xs">⌘W</span>
+        <span class="text-subtle text-xs">⌘W</span>
       </button>
       <button
         class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"
@@ -1753,7 +1753,7 @@
         }}
       >
         Close other tabs in panel
-        <span class="text-muted-foreground text-xs"></span>
+        <span class="text-subtle text-xs"></span>
       </button>
       <button
         class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"
@@ -1763,7 +1763,7 @@
         }}
       >
         Close tabs to the right
-        <span class="text-muted-foreground text-xs"></span>
+        <span class="text-subtle text-xs"></span>
       </button>
       <button
         class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"
@@ -1773,7 +1773,7 @@
         }}
       >
         Close panel
-        <span class="text-muted-foreground text-xs"></span>
+        <span class="text-subtle text-xs"></span>
       </button>
       <button
         class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"
@@ -1783,7 +1783,7 @@
         }}
       >
         Close all others
-        <span class="text-muted-foreground text-xs"></span>
+        <span class="text-subtle text-xs"></span>
       </button>
     </div>
   </div>

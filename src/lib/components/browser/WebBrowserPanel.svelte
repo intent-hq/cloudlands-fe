@@ -243,7 +243,7 @@
       {#if isSecure}
         <Fa icon={faLock} class="text-green-500 mr-2" title="Secure connection" />
       {:else}
-        <Fa icon={faShield} class="text-muted-foreground mr-2" title="Not secure" />
+        <Fa icon={faShield} class="text-ghost mr-2" title="Not secure" />
       {/if}
 
       <input
@@ -295,7 +295,7 @@
         <div class="text-center">
           <div class="text-4xl mb-3 opacity-50">🌐</div>
           <p class="text-lg font-medium mb-2">No URL specified</p>
-          <p class="text-sm text-muted-foreground">Enter a URL in the address bar above</p>
+          <p class="text-sm text-subtle">Enter a URL in the address bar above</p>
         </div>
       </div>
     {/if}

@@ -19,10 +19,10 @@
 
     <div class="space-y-2">
       <h2 class="text-2xl font-semibold text-foreground">Creating Space</h2>
-      <p class="text-muted-foreground">Setting up your space environment...</p>
+      <p class="text-subtle">Setting up your space environment...</p>
     </div>
 
-    <div class="space-y-2 text-sm text-muted-foreground">
+    <div class="space-y-2 text-sm text-subtle">
       <div class="flex items-center justify-center gap-2">
         <div class="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
         <span>Initializing repository</span>

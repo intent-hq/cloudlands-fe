@@ -265,16 +265,16 @@
         {#if workspace.title}
           <span class="text-foreground">{workspace.title}</span>
         {:else}
-          <span class="text-muted-foreground">Untitled</span>
+          <span class="text-subtle">Untitled</span>
         {/if}
       </h3>
       <div class="flex items-center gap-2">
         {#if isArchived}
           <div
-            class="flex items-center gap-0.5 px-1.5 py-0.5 bg-background text-muted-foreground rounded text-xs"
+            class="flex items-center gap-0.5 px-1.5 py-0.5 bg-background text-subtle rounded text-xs"
           >
             <Fa icon={faBoxArchive} size="xs" />
-            <span class="text-[10px]">Archived</span>
+            <span class="text-ui">Archived</span>
           </div>
         {/if}
         {#if workspace.environmentConfig && workspace.environmentConfig.type === 'remote'}
@@ -282,7 +282,7 @@
             class="flex items-center gap-1 px-1.5 py-0.5 bg-blue-500/10 text-blue-500 rounded text-xs"
           >
             <Fa icon={faServer} size="xs" />
-            <span class="text-[10px]">Remote</span>
+            <span class="text-ui">Remote</span>
           </div>
         {/if}
         {#if prStatus}
@@ -307,12 +307,12 @@
     </div>
 
     {#if repoInfo && showRepo}
-      <div class="flex items-center gap-2 text-xs text-muted-foreground whitespace-nowrap">
+      <div class="flex items-center gap-2 text-xs text-subtle whitespace-nowrap">
         {repoInfo}
       </div>
     {/if}
     {#if lastEditedTime}
-      <div class="flex items-center gap-2 text-xs text-muted-foreground whitespace-nowrap">
+      <div class="flex items-center gap-2 text-xs text-subtle whitespace-nowrap">
         {lastEditedTime}
       </div>
     {/if}
@@ -326,7 +326,7 @@
             style="width: {taskStats.percentage}%"
           ></div>
         </div>
-        <span class="text-[10px] text-muted-foreground whitespace-nowrap">
+        <span class="text-ui text-subtle whitespace-nowrap">
           {taskStats.completed}/{taskStats.total}
         </span>
       </div>
@@ -346,7 +346,7 @@
             {/each}
             {#if agentIds.length > 3}
               <div
-                class="flex items-center justify-center w-6 h-6 rounded-full bg-muted text-muted-foreground text-[0.65rem] font-semibold -ml-1 border-2 border-white dark:border-card"
+                class="flex items-center justify-center w-6 h-6 rounded-full bg-muted text-subtle text-[0.65rem] font-semibold -ml-1 border-2 border-white dark:border-card"
               >
                 +{agentIds.length - 3}
               </div>
@@ -360,13 +360,13 @@
           <div class="flex items-center gap-1">
             {#each filePaths as path (path)}
               <Tooltip content={path.split('/').pop()}>
-                <Fa icon={faFileCode} class="text-muted-foreground/30" size="sm" />
+                <Fa icon={faFileCode} class="text-ghost" size="sm" />
               </Tooltip>
             {/each}
             {#if filePaths.length === 6}
               {@const totalFiles = totalFileCount}
               {#if totalFiles > 6}
-                <span class="text-[0.7rem] text-muted-foreground ml-1 font-medium"
+                <span class="text-[0.7rem] text-subtle ml-1 font-medium"
                   >+{totalFiles - 6}</span
                 >
               {/if}

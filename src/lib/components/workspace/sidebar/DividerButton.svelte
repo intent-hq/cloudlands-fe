@@ -39,7 +39,7 @@
   const buttonClass = $derived(
     cn(
       'relative z-20 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer flex items-center gap-1.5 py-1.5 px-3 rounded-md border border-border hover:border-border bg-background -mb-px',
-      'disabled:bg-sidebar disabled:cursor-default disabled:hover:text-muted-foreground/50 disabled:text-muted-foreground/50',
+      'disabled:bg-sidebar disabled:cursor-default disabled:hover:text-muted-foreground/50 disabled:text-muted-foreground',
     ),
   );
 </script>
@@ -49,21 +49,21 @@
     <Fa icon={faSpinner} size="xs" class="animate-spin" />
   {:else}
     {#if arrowUp && showArrow}
-      <Fa icon={faArrowDown} size="xs" class="text-muted-foreground/50 rotate-180" />
+      <Fa icon={faArrowDown} size="xs" class="text-ghost rotate-180" />
     {/if}
     {#if icon}
-      <Fa {icon} size="xs" class="text-muted-foreground/50" />
+      <Fa {icon} size="xs" class="text-ghost" />
     {/if}
     {#if children}
       {@render children()}
     {/if}
     {#if !arrowUp && showArrow}
       {#if expanded}
-        <Fa icon={faXmark} size="xs" class="text-muted-foreground/50" />
+        <Fa icon={faXmark} size="xs" class="text-ghost" />
       {:else if arrowRight}
-        <Fa icon={faArrowRight} size="xs" class="text-muted-foreground/50" />
+        <Fa icon={faArrowRight} size="xs" class="text-ghost" />
       {:else}
-        <Fa icon={faArrowDown} size="xs" class="text-muted-foreground/50" />
+        <Fa icon={faArrowDown} size="xs" class="text-ghost" />
       {/if}
     {/if}
   {/if}

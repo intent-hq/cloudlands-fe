@@ -329,7 +329,7 @@
     <Fa icon={faAt} size="sm" />
     {#if checkedCount > 0}
       <span
-        class="absolute -top-1 -right-1 min-w-3.5 h-3.5 px-1 text-[10px] font-medium
+        class="absolute -top-1 -right-1 min-w-3.5 h-3.5 px-1 text-ui font-medium
                rounded-full bg-primary text-primary-foreground flex items-center justify-center"
       >
         {checkedCount}
@@ -353,7 +353,7 @@
       <!-- Header -->
       <div class="px-3 py-2">
         <div class="font-medium">Context</div>
-        <div class="text-xs text-muted-foreground">
+        <div class="text-xs text-subtle">
           Select files and notes to include in your message
         </div>
       </div>
@@ -363,7 +363,7 @@
         <div class="relative">
           <Fa
             icon={faSearch}
-            class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground/50"
+            class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-subtle"
           />
           <Input
             bind:this={searchInputRef}
@@ -377,7 +377,7 @@
           {#if isSearching}
             <Fa
               icon={faSpinner}
-              class="absolute right-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground/50 animate-spin"
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-subtle animate-spin"
             />
           {/if}
         </div>
@@ -401,7 +401,7 @@
               {/each}
             </div>
           {:else if searchResults.length === 0}
-            <div class="px-3 py-4 text-center text-sm text-muted-foreground">No results found</div>
+            <div class="px-3 py-4 text-center text-sm text-subtle">No results found</div>
           {:else}
             <div class="py-1">
               {#each searchResults as result (result.id)}
@@ -413,12 +413,12 @@
                 >
                   <Fa
                     icon={getIconForType(result.type)}
-                    class="h-3.5 w-3.5 text-muted-foreground/50"
+                    class="h-3.5 w-3.5 text-subtle"
                   />
                   <div class="flex-1 min-w-0">
                     <div class="truncate font-medium">{result.label}</div>
                     {#if result.subtitle || result.description}
-                      <div class="truncate text-xs text-muted-foreground">
+                      <div class="truncate text-xs text-subtle">
                         {result.subtitle || result.description}
                       </div>
                     {/if}
@@ -461,13 +461,13 @@
                     />
                     <Fa
                       icon={getIconForType(panel.type)}
-                      class="h-3.5 w-3.5 text-muted-foreground/50"
+                      class="h-3.5 w-3.5 text-subtle"
                     />
                     <span class="flex-1 truncate text-left">{panel.label}</span>
                     {#if isCurrentAgent}
-                      <span class="text-[10px] text-muted-foreground/70 uppercase">You</span>
+                      <span class="text-ui text-muted-foreground uppercase">You</span>
                     {:else if panel.isActive}
-                      <span class="text-[10px] text-muted-foreground/70 uppercase">Active</span>
+                      <span class="text-ui text-muted-foreground uppercase">Active</span>
                     {/if}
                   </button>
                 {/each}
@@ -485,14 +485,14 @@
                       size="sm"
                       onCheckedChange={() => handleToggleSelectionItem(selection.id)}
                     />
-                    <Fa icon={faQuoteLeft} class="h-3.5 w-3.5 text-muted-foreground/50" />
+                    <Fa icon={faQuoteLeft} class="h-3.5 w-3.5 text-ghost" />
                     <span class="flex-1 truncate text-left">{truncateText(selection.text)}</span>
                   </button>
                 {/each}
               {/each}
             </div>
           {:else}
-            <div class="px-3 py-4 text-center text-sm text-muted-foreground">
+            <div class="px-3 py-4 text-center text-sm text-subtle">
               No other panels open. Search above to find files, notes, and more.
             </div>
           {/if}

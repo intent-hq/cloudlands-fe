@@ -472,6 +472,56 @@ function buildCSSVariables(colors: Record<string, string>): Record<string, strin
     if (borderSource) {
       result['--border'] = deriveBorderColor(borderSource, bg, isDark);
     }
+
+    // Derive --text-subtle and --text-ghost from the theme's fg/bg.
+    // --text-subtle: readable secondary text between muted-foreground and foreground (≥4.5:1 contrast).
+    // --text-ghost: decorative/faint text between muted-foreground and background.
+    const fgRGB = hexToRGB(fg);
+    const bgRGB = hexToRGB(bg);
+
+    // --text-subtle: blend 40% from fg toward bg, then nudge toward fg until contrast ≥ 4.5:1
+    {
+      const subtleBlend: [number, number, number] = [
+        fgRGB[0] * 0.6 + bgRGB[0] * 0.4,
+        fgRGB[1] * 0.6 + bgRGB[1] * 0.4,
+        fgRGB[2] * 0.6 + bgRGB[2] * 0.4,
+      ];
+      let candidate: [number, number, number] = [...subtleBlend];
+      const MIN_CONTRAST = 4.5;
+      const MAX_STEPS = 20;
+      for (let step = 0; step < MAX_STEPS; step++) {
+        if (contrastRatio(candidate, bgRGB) >= MIN_CONTRAST) break;
+        const t = (step + 1) / MAX_STEPS;
+        candidate = [
+          subtleBlend[0] * (1 - t) + fgRGB[0] * t,
+          subtleBlend[1] * (1 - t) + fgRGB[1] * t,
+          subtleBlend[2] * (1 - t) + fgRGB[2] * t,
+        ];
+      }
+      result['--text-subtle'] = hexToHSL(rgbToHex(...candidate));
+    }
+
+    // --text-ghost: blend 65% from bg toward fg (faint), ensure ≥ 2:1 contrast for minimal visibility
+    {
+      const ghostBlend: [number, number, number] = [
+        bgRGB[0] * 0.65 + fgRGB[0] * 0.35,
+        bgRGB[1] * 0.65 + fgRGB[1] * 0.35,
+        bgRGB[2] * 0.65 + fgRGB[2] * 0.35,
+      ];
+      let candidate: [number, number, number] = [...ghostBlend];
+      const MIN_CONTRAST = 2.0;
+      const MAX_STEPS = 15;
+      for (let step = 0; step < MAX_STEPS; step++) {
+        if (contrastRatio(candidate, bgRGB) >= MIN_CONTRAST) break;
+        const t = (step + 1) / MAX_STEPS;
+        candidate = [
+          ghostBlend[0] * (1 - t) + fgRGB[0] * t,
+          ghostBlend[1] * (1 - t) + fgRGB[1] * t,
+          ghostBlend[2] * (1 - t) + fgRGB[2] * t,
+        ];
+      }
+      result['--text-ghost'] = hexToHSL(rgbToHex(...candidate));
+    }
   } else if (colors['descriptionForeground']) {
     result['--muted-foreground'] = hexToHSL(colors['descriptionForeground']);
   }

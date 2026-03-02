@@ -133,10 +133,10 @@
   <!-- Header -->
   <div class="flex items-center justify-between p-4 border-b">
     <div class="flex items-center gap-2">
-      <Fa icon={faLayerGroup} class="text-muted-foreground" />
+      <Fa icon={faLayerGroup} class="text-ghost" />
       <h2 class="font-medium">Aggregate Changes</h2>
       {#if !isLoading}
-        <span class="text-sm text-muted-foreground">
+        <span class="text-sm text-subtle">
           ({totalFiles} file{totalFiles !== 1 ? 's' : ''})
         </span>
       {/if}
@@ -173,7 +173,7 @@
   <div class="flex-1 overflow-y-auto">
     {#if isLoading}
       <div class="flex items-center justify-center h-32">
-        <span class="text-muted-foreground">Loading changes...</span>
+        <span class="text-subtle">Loading changes...</span>
       </div>
     {:else if error}
       <div class="flex flex-col items-center justify-center h-32 gap-2">
@@ -182,7 +182,7 @@
       </div>
     {:else if groupedChanges.length === 0}
       <div class="flex items-center justify-center h-32">
-        <span class="text-muted-foreground">No changes found</span>
+        <span class="text-subtle">No changes found</span>
       </div>
     {:else}
       <div class="divide-y">
@@ -206,7 +206,7 @@
                 <div class="flex items-center gap-2 min-w-0">
                   <Fa icon={isExpanded ? faChevronDown : faChevronRight} size="xs" />
                   <span class="font-medium text-sm truncate">{group.label}</span>
-                  <span class="text-xs text-muted-foreground">({group.changes.length})</span>
+                  <span class="text-xs text-subtle">({group.changes.length})</span>
                 </div>
                 <LineChangesBadge additions={groupAdditions} deletions={groupDeletions} size="xs" />
               </button>
@@ -220,7 +220,7 @@
                     onclick={() => onShowDiff?.(change)}
                   >
                     <div class="flex items-center gap-2 min-w-0 flex-1">
-                      <Fa icon={faPencil} size="xs" class="text-muted-foreground shrink-0" />
+                      <Fa icon={faPencil} size="xs" class="text-ghost shrink-0" />
                       <span class="text-sm font-mono truncate">
                         {change.file.split('/').pop() || change.file}
                       </span>

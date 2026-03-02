@@ -95,7 +95,7 @@
           <span class="text-xs font-semibold text-foreground">
             {stats.completed}/{stats.total} tasks
           </span>
-          <div class="flex items-center gap-3 text-[10px] text-muted-foreground">
+          <div class="flex items-center gap-3 text-ui text-subtle">
             {#if stats.completed > 0}
               <span class="flex items-center gap-1">
                 <span class="size-1.5 rounded-full" style:background-color="#22c55e"></span>
@@ -136,7 +136,7 @@
                       specialist={task.agentSpecialist}
                     />
                     {#if task.agentName}
-                      <span class="text-[10px] text-muted-foreground truncate"
+                      <span class="text-ui text-subtle truncate"
                         >{task.agentName}</span
                       >
                     {/if}
@@ -163,7 +163,7 @@
                       specialist={task.agentSpecialist}
                     />
                     {#if task.agentName}
-                      <span class="text-[10px] text-muted-foreground truncate"
+                      <span class="text-ui text-subtle truncate"
                         >{task.agentName}</span
                       >
                     {/if}
@@ -181,13 +181,13 @@
                   <div class="shrink-0">
                     <TaskStatusIcon status="complete" size={12} />
                   </div>
-                  <span class="text-[11px] text-muted-foreground/50 truncate line-through"
+                  <span class="text-ui text-subtle truncate line-through"
                     >{task.title}</span
                   >
                 </div>
               {/each}
               {#if completedTasks.length > 3}
-                <span class="text-[10px] text-muted-foreground/40 pl-4"
+                <span class="text-ui text-subtle pl-4"
                   >+{completedTasks.length - 3} more completed</span
                 >
               {/if}
@@ -196,7 +196,7 @@
 
           <!-- Cancelled tasks -->
           {#if cancelledTasks.length > 0}
-            <div class="text-[10px] text-muted-foreground/40">
+            <div class="text-ui text-subtle">
               {cancelledTasks.length} cancelled
             </div>
           {/if}

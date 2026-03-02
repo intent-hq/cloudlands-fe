@@ -252,7 +252,7 @@
             {@const inProgressOffset = circumference * (1 - inProgressPctNorm)}
             <ListItem
               active={selectedNoteId === note.id}
-              iconClass="text-muted-foreground/50"
+              iconClass="text-ghost"
               title={getNoteTitle(note)}
               onclick={() => onOpenNote(note.id)}
               size="sm"
@@ -285,7 +285,7 @@
                         fill="none"
                         stroke="currentColor"
                         stroke-width={strokeWidth}
-                        class="text-muted-foreground/20"
+                        class="text-ghost"
                       />
                       <!-- In progress arc -->
                       {#if taskStats.inProgress > 0}
@@ -328,7 +328,7 @@
             <ListItem
               active={selectedNoteId === note.id}
               icon={getNoteIcon(note)}
-              iconClass="text-muted-foreground/50"
+              iconClass="text-ghost"
               title={getNoteTitle(note)}
               onclick={() => onOpenNote(note.id)}
               size="sm"
@@ -341,7 +341,7 @@
         {#if sourcesLoading}
           <div class="mt-2 pt-2 border-t border-border/50">
             <!-- <div class="px-2 pb-1">
-            <span class="text-xs text-muted-foreground font-medium">External Sources</span>
+            <span class="text-xs text-subtle font-medium">External Sources</span>
           </div> -->
             <div class="px-2 py-2">
               <Skeleton class="h-3 w-full mb-1" />
@@ -351,14 +351,14 @@
         {:else if thirdPartySources.length > 0}
           <div class="mt-2 pt-2 border-t border-border/50">
             <!-- <div class="px-2 pb-1 flex items-center justify-between">
-            <span class="text-xs text-muted-foreground font-medium">External Sources</span>
-            <span class="text-xs text-muted-foreground">({thirdPartySources.length})</span>
+            <span class="text-xs text-subtle font-medium">External Sources</span>
+            <span class="text-xs text-subtle">({thirdPartySources.length})</span>
           </div> -->
             {#each thirdPartySources as source (source.id)}
               <ListItem
                 active={selectedSourceId === source.id}
                 icon={getSourceIcon(source.type)}
-                iconClass="text-muted-foreground/50"
+                iconClass="text-ghost"
                 title={source.title || 'External Source'}
                 onclick={() => onOpenSource(source.id)}
                 size="sm"

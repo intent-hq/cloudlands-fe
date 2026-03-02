@@ -198,7 +198,7 @@
       class="absolute z-50 w-full mt-2 bg-popover border border-border rounded-lg shadow-lg overflow-hidden"
     >
       {#if isSearching}
-        <div class="px-4 py-3 text-sm text-muted-foreground">Searching repositories...</div>
+        <div class="px-4 py-3 text-sm text-subtle">Searching repositories...</div>
       {:else if searchResults.length > 0}
         <div class="py-2">
           <div
@@ -218,25 +218,25 @@
                 {#if repo.isLocal}
                   <Fa icon={faFolder} class="h-4 w-4 text-blue-500" />
                 {:else}
-                  <Fa icon={faGithub} class="h-4 w-4 text-muted-foreground" />
+                  <Fa icon={faGithub} class="h-4 w-4 text-ghost" />
                 {/if}
               </div>
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
                   <span class="font-medium text-sm">
-                    <span class="text-muted-foreground">{repo.owner} / </span>
+                    <span class="text-subtle">{repo.owner} / </span>
                     <span class="text-foreground">{repo.name}</span>
                   </span>
                 </div>
                 {#if repo.description}
-                  <div class="text-xs text-muted-foreground mt-0.5 truncate">
+                  <div class="text-xs text-subtle mt-0.5 truncate">
                     {repo.description}
                   </div>
                 {/if}
                 {#if repo.defaultBranch}
                   <div class="flex items-center gap-1 mt-1">
-                    <Fa icon={faCodeBranch} class="h-3 w-3 text-muted-foreground" />
-                    <span class="text-xs text-muted-foreground">
+                    <Fa icon={faCodeBranch} class="h-3 w-3 text-ghost" />
+                    <span class="text-xs text-subtle">
                       branched off <span class="underline">{repo.defaultBranch}</span>
                     </span>
                   </div>

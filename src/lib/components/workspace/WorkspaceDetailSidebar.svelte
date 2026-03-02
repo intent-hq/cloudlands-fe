@@ -185,7 +185,7 @@
     >
       <div class="shrink-0 px-4 pt-2 relative z-10 flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <span class="text-[11px] uppercase tracking-wider font-medium text-muted-foreground">
+          <span class="text-ui uppercase tracking-wider font-medium text-muted-foreground">
             Notes
           </span>
         </div>
@@ -220,13 +220,13 @@
           class="w-full flex items-center justify-between px-4 py-2 cursor-pointer"
           onclick={() => (browserCollapsed = !browserCollapsed)}
         >
-          <span class="text-[11px] uppercase tracking-wider font-medium text-muted-foreground">
+          <span class="text-ui uppercase tracking-wider font-medium text-muted-foreground">
             Browser
           </span>
           <Fa
             icon={faChevronDown}
             size="9"
-            class="text-muted-foreground/50 transition-transform duration-200 {browserCollapsed
+            class="text-subtle transition-transform duration-200 {browserCollapsed
               ? 'rotate-90'
               : ''}"
           />
@@ -257,7 +257,7 @@
                 size="icon-xs"
                 class="p-0.5 rounded transition-colors cursor-pointer {showOnlyChangedFiles
                   ? 'text-primary'
-                  : 'text-muted-foreground/50 hover:text-muted-foreground'}"
+                  : 'text-muted-foreground hover:text-muted-foreground'}"
                 tooltip={showOnlyChangedFiles ? 'Show all files' : 'Show only changed files'}
                 onclick={() => (showOnlyChangedFiles = !showOnlyChangedFiles)}
                 title={showOnlyChangedFiles ? 'Show all files' : 'Show only changed files'}
@@ -266,7 +266,7 @@
               </Button>
               <button
                 type="button"
-                class="text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
+                class="text-ui text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                 onclick={() => paletteStore.open()}
                 >Search <span class="font-mono tracking-wider font-medium">⌘P</span></button
               >
@@ -290,7 +290,7 @@
               <Button
                 variant="ghost-light"
                 size="sm"
-                class="w-full bg-backgroundx flex-col h-auto! py-2 items-start text-muted-foreground/80 border border-muted-foreground/20 {isAcceptChangesOpen
+                class="w-full bg-backgroundx flex-col h-auto! py-2 items-start text-subtle border border-muted-foreground/20 {isAcceptChangesOpen
                   ? 'bg-background'
                   : ''}"
                 onclick={() => onAcceptChanges?.()}
@@ -316,7 +316,7 @@
                             ? 'text-emerald-500'
                             : changeType === 'deleted'
                               ? 'text-red-500'
-                              : 'text-muted-foreground/50'}
+                              : 'text-subtle'}
                         <!-- svelte-ignore a11y_no_static_element_interactions -->
                         <span
                           class="px-0.5 transition-transform duration-150 hover:scale-110 {colorClass}"
@@ -329,7 +329,7 @@
                         </span>
                       {/each}
                       {#if totalChanges > 6}
-                        <span class="text-[10px] text-muted-foreground/50 self-center pl-0.5"
+                        <span class="text-ui text-subtle self-center pl-0.5"
                           >+{totalChanges - 6}</span
                         >
                       {/if}
@@ -370,7 +370,7 @@
                 isLoading={isChangesLoading}
               />
             {:else}
-              <!-- <div class="px-4 py-3 text-sm text-muted-foreground">No code changes</div> -->
+              <!-- <div class="px-4 py-3 text-sm text-subtle">No code changes</div> -->
             {/if}
           {/if}
         {/snippet}
@@ -400,7 +400,7 @@
           {fileName}
         </div>
         {#if dirPath}
-          <div class="text-xs text-muted-foreground truncate">
+          <div class="text-xs text-subtle truncate">
             {dirPath}
           </div>
         {/if}

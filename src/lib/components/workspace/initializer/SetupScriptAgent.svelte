@@ -202,7 +202,7 @@
         onSetupScriptGenerated={handleUseScript}
       />
     {:else if isStreaming}
-      <div class="flex items-center gap-2 text-muted-foreground">
+      <div class="flex items-center gap-2 text-subtle">
         <div
           class="w-4 h-4 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin"
         ></div>
@@ -228,7 +228,7 @@
           Create Script
         </Button>
       </div>
-      <p class="text-xs text-muted-foreground mb-2">{generatedScript.description}</p>
+      <p class="text-xs text-subtle mb-2">{generatedScript.description}</p>
       <div class="h-32 rounded border border-border overflow-hidden">
         <CodeEditor
           value={generatedScript.content}

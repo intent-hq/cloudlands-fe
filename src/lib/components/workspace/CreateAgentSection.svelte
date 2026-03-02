@@ -146,13 +146,13 @@
         <AuggieAvatar faceSeed="blank" colorSeed="blank" size={22} class="-mt-1" />
         <div class="flex-1 min-w-0">
           <div class="text-sm font-medium">Blank Agent</div>
-          <div class="text-sm text-muted-foreground">Start fresh, no custom prompt</div>
+          <div class="text-sm text-subtle">Start fresh, no custom prompt</div>
         </div>
       </button>
 
       <!-- Specialist Explanation -->
       <div class="px-3 pt-2">
-        <p class="text-sm text-muted-foreground">
+        <p class="text-sm text-subtle">
           <span class="text-foreground font-medium">Specialists</span> are pre-configured agent types.
         </p>
       </div>
@@ -173,11 +173,11 @@
             />
             <div class="flex-1 min-w-0">
               <div class="text-sm font-medium">{specialist.name}</div>
-              <div class="text-sm text-muted-foreground line-clamp-2">
+              <div class="text-sm text-subtle line-clamp-2">
                 {specialist.description}
               </div>
               {#if specialist.id === 'spec-writer'}
-                <div class="text-[10px] text-muted-foreground/50 mt-0.5">
+                <div class="text-xs text-subtle mt-0.5">
                   Default for agent orchestration
                 </div>
               {/if}

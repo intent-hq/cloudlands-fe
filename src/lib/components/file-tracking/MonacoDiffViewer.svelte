@@ -2795,11 +2795,11 @@
     </div>
   {:else if contentTooLarge}
     <div class="flex flex-col items-center justify-center h-full gap-4 p-6">
-      <div class="text-muted-foreground text-center">
+      <div class="text-subtle text-center">
         <!-- <Fa icon={faExclamationTriangle} class="mr-2 text-yellow-500" /> -->
         File too large to display diff ({formatFileSize(contentSize)})
       </div>
-      <p class="text-sm text-muted-foreground text-center max-w-md">
+      <p class="text-sm text-subtle text-center max-w-md">
         This file exceeds the {formatFileSize(MAX_CONTENT_SIZE_BYTES)} limit for inline diff viewing.
         You can open it in an external editor instead.
       </p>
@@ -2816,11 +2816,11 @@
     </div>
   {:else if loadTimedOut}
     <div class="flex flex-col items-center justify-center h-full gap-4 p-6">
-      <div class="text-muted-foreground text-center">
+      <div class="text-subtle text-center">
         <Fa icon={faExclamationTriangle} class="mr-2 text-yellow-500" />
         Diff loading timed out
       </div>
-      <p class="text-sm text-muted-foreground text-center max-w-md">
+      <p class="text-sm text-subtle text-center max-w-md">
         The diff took too long to load. This may happen with very large files or slow git
         operations. You can open the file in an external editor instead.
       </p>
@@ -2837,8 +2837,8 @@
     </div>
   {:else if isBinaryFile}
     <div class="flex flex-col items-center justify-center h-full gap-4 p-6">
-      <div class="text-muted-foreground text-center">Binary file cannot be displayed</div>
-      <p class="text-sm text-muted-foreground text-center max-w-md">
+      <div class="text-subtle text-center">Binary file cannot be displayed</div>
+      <p class="text-sm text-subtle text-center max-w-md">
         This file is binary and cannot be shown as a text diff. You can open it in an external
         editor instead.
       </p>
@@ -2872,10 +2872,10 @@
     </div>
   {:else if noChangesAtStage}
     <div class="flex flex-col items-center justify-center h-full gap-3 p-6">
-      <div class="text-muted-foreground text-center">
+      <div class="text-subtle text-center">
         No {change.stage === 'staged' ? 'staged' : 'unstaged'} changes
       </div>
-      <p class="text-sm text-muted-foreground text-center max-w-md">
+      <p class="text-sm text-subtle text-center max-w-md">
         This file has no {change.stage === 'staged' ? 'staged' : 'unstaged'} changes.
         {#if change.stage === 'unstaged'}
           All changes may have been staged.
@@ -2910,7 +2910,7 @@
         </div>
       {:else if foldingStatus === 'folded'}
         <div
-          class="absolute top-2 right-2 z-10 px-2 py-1 bg-muted text-muted-foreground text-xs rounded"
+          class="absolute top-2 right-2 z-10 px-2 py-1 bg-muted text-subtle text-xs rounded"
         >
           <Fa icon={faEye} size="sm" class="mr-1" />
           Unchanged regions folded

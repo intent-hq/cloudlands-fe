@@ -180,7 +180,7 @@
               onmouseleave={() => handleItemHover(null)}
             >
               <!-- Terminal Icon -->
-              <Fa icon={faTerminal} size="sm" class="text-muted-foreground" />
+              <Fa icon={faTerminal} size="sm" class="text-ghost" />
 
               <!-- Status indicator -->
               {#if item.hasRunningProcess}
@@ -238,7 +238,7 @@
               class={cn(
                 hoveredItem.hasRunningProcess
                   ? 'text-green-500 animate-pulse'
-                  : 'text-muted-foreground',
+                  : 'text-subtle',
               )}
             />
           </div>
@@ -247,7 +247,7 @@
               <div class="font-medium text-sm truncate">{hoveredItem.name}</div>
               {#if hoveredItem.hasRunningProcess}
                 <span
-                  class="px-1 py-0.5 text-[8px] font-bold bg-green-500/20 text-green-600 dark:text-green-400 rounded"
+                  class="px-1 py-0.5 text-ui font-bold bg-green-500/20 text-green-600 dark:text-green-400 rounded"
                 >
                   RUNNING
                 </span>
@@ -257,14 +257,14 @@
         </div>
 
         <!-- Created at time -->
-        <div class="px-3 text-xs text-muted-foreground">
+        <div class="px-3 text-xs text-subtle">
           Created {formatRelativeTime(hoveredItem.createdAt)}
         </div>
 
         <!-- Last Command (if available) -->
         {#if hoveredItem.lastCommand}
           <div class="px-3 whitespace-break-spaces wrap-break-word">
-            <div class="text-xs text-muted-foreground font-medium line-clamp-3">
+            <div class="text-xs text-subtle font-medium line-clamp-3">
               $ {hoveredItem.lastCommand}
             </div>
           </div>
@@ -281,7 +281,7 @@
 
         <!-- No activity state -->
         {#if !hoveredItem.lastCommand && !hoveredItem.lastOutput}
-          <div class="pb-3 px-3 text-xs text-muted-foreground italic">
+          <div class="pb-3 px-3 text-xs text-subtle italic">
             {#if hoveredItem.hasRunningProcess}
               Process running...
             {:else}

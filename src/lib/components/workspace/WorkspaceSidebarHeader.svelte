@@ -312,7 +312,7 @@
     {/if}
 
     <!-- repo -->
-    <div class="text-muted-foreground text-xs truncate pl-1.5 -mt-1">
+    <div class="text-subtle text-xs truncate pl-1.5 -mt-1">
       {#if workspace?.repositoryOwner && workspace?.repositoryName}
         {workspace.repositoryOwner}/{workspace.repositoryName}
       {:else if workspace?.repositoryPath}
@@ -321,7 +321,7 @@
     </div>
 
     <!-- branch -->
-    <div class="flex items-center gap-1.5 text-muted-foreground text-xs pl-1.5 -mt-1">
+    <div class="flex items-center gap-1.5 text-subtle text-xs pl-1.5 -mt-1">
       <GitBranchIcon size={12} class="flex-shrink-0" />
       {#if isEditingBranch}
         <input
@@ -341,7 +341,7 @@
         />
       {:else}
         <button
-          class="text-xs text-muted-foreground bg-transparent
+          class="text-xs text-subtle bg-transparent
                  border-none px-1 py-0.5 rounded cursor-pointer text-left
                  max-w-full overflow-hidden text-ellipsis whitespace-nowrap
                  transition-all duration-150 leading-normal

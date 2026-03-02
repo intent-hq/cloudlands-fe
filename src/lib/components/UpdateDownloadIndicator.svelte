@@ -29,7 +29,7 @@
     <div
       class={cn(
         'flex items-center justify-center w-6 h-6 rounded-md',
-        'text-muted-foreground/60',
+        'text-subtle',
         className,
       )}
     >

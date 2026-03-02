@@ -31,7 +31,7 @@
     classes: {
       toast:
         'group toast group-[.toaster]:bg-card group-[.toaster]:text-foreground group-[.toaster]:border group-[.toaster]:border-border group-[.toaster]:shadow-lg',
-      description: 'group-[.toast]:text-muted-foreground text-sm',
+      description: 'group-[.toast]:text-subtle text-sm',
       actionButton:
         'group-[.toast]:bg-transparent group-[.toast]:text-foreground group-[.toast]:border group-[.toast]:border-border group-[.toast]:hover:bg-muted group-[.toast]:px-4 group-[.toast]:py-2 group-[.toast]:text-sm group-[.toast]:font-semibold group-[.toast]:transition-colors',
       cancelButton:

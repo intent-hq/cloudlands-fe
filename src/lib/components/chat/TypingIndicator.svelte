@@ -64,6 +64,6 @@
   <Spinner {seed} size={sizeConfig.spinner} />
 
   {#if message}
-    <span class="{sizeConfig.text} text-muted-foreground pr-1">{message}</span>
+    <span class="{sizeConfig.text} text-subtle pr-1">{message}</span>
   {/if}
 </div>

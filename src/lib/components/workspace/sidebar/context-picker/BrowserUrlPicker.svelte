@@ -108,7 +108,7 @@
     <label for="url-input" class="text-sm font-medium">Enter URL</label>
     <div class="flex gap-2">
       <div class="flex-1 relative">
-        <Fa icon={faGlobe} class="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50" size="sm" />
+        <Fa icon={faGlobe} class="absolute left-3 top-1/2 -translate-y-1/2 text-ghost" size="sm" />
         <Input
           bind:value={urlInput}
           placeholder="https://example.com"
@@ -131,7 +131,7 @@
   <!-- Recent URLs -->
   {#if browserStore.recentUrls.length > 0}
     <div class="mt-6">
-      <div class="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+      <div class="flex items-center gap-2 text-sm text-subtle mb-2">
         <Fa icon={faHistory} size="sm" />
         <span>Recent URLs</span>
       </div>
@@ -142,10 +142,10 @@
             class="w-full text-left px-3 py-2 rounded hover:bg-muted/50 transition-colors cursor-pointer flex items-center gap-2"
             onclick={() => handleRecentClick(entry)}
           >
-            <Fa icon={faGlobe} size="sm" class="text-muted-foreground/50 shrink-0" />
+            <Fa icon={faGlobe} size="sm" class="text-ghost shrink-0" />
             <div class="flex-1 min-w-0">
               <p class="text-sm truncate">{entry.title || getDisplayTitle(entry.url)}</p>
-              <p class="text-xs text-muted-foreground truncate">{entry.url}</p>
+              <p class="text-xs text-subtle truncate">{entry.url}</p>
             </div>
           </button>
         {/each}

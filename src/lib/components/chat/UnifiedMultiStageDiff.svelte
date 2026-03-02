@@ -89,7 +89,7 @@
 </script>
 
 {#if mergedHunks.length === 0}
-  <div class="flex items-center justify-center py-8 text-muted-foreground text-sm">
+  <div class="flex items-center justify-center py-8 text-subtle text-sm">
     No changes to display
   </div>
 {:else if workspaceId}
@@ -109,7 +109,7 @@
     />
   </div>
 {:else}
-  <div class="flex items-center justify-center h-24 text-muted-foreground">
+  <div class="flex items-center justify-center h-24 text-subtle">
     No workspace available
   </div>
 {/if}

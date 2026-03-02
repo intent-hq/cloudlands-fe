@@ -792,7 +792,7 @@
     <div class="relative flex-1">
       <Fa
         icon={faSearch}
-        class="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground"
+        class="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-subtle"
       />
       <Input
         bind:value={searchQuery}
@@ -836,7 +836,7 @@
           {/each}
         </div>
       {:else if searchResults.length === 0}
-        <div class="text-xs text-muted-foreground py-4 text-center">No files found</div>
+        <div class="text-xs text-subtle py-4 text-center">No files found</div>
       {:else}
         <ScrollArea class="h-full">
           <div bind:this={searchResultsContainerRef}>
@@ -887,7 +887,7 @@
         {onExternalFilesDrop}
       />
     {:else}
-      <!-- <div class="text-xs text-muted-foreground py-2 text-center">No files found</div> -->
+      <!-- <div class="text-xs text-subtle py-2 text-center">No files found</div> -->
     {/if}
   </div>
 </div>

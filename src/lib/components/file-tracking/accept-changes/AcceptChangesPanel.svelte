@@ -2101,7 +2101,7 @@
         <div class="flex-1">
           <p class="text-sm font-medium">{executionResult.success ? 'Success' : 'Failed'}</p>
           {#if executionResult.error}
-            <p class="text-xs text-muted-foreground">{executionResult.error}</p>
+            <p class="text-xs text-subtle">{executionResult.error}</p>
           {/if}
         </div>
       </div>

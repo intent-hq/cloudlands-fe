@@ -598,7 +598,7 @@
       <Button
         variant="ghost"
         onclick={openWithOther}
-        class="w-full justify-start text-muted-foreground"
+        class="w-full justify-start text-subtle"
         size="sm"
       >
         <Fa icon={faUpRightFromSquare} size="12" class="ml-1.25 mr-2 opacity-50" />

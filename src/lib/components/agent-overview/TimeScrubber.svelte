@@ -98,7 +98,7 @@
 
   <!-- Slider container -->
   <div class="flex-1 flex items-center gap-2 min-w-0">
-    <span class="shrink-0 text-[10px] text-muted-foreground/70 font-mono tabular-nums">
+    <span class="shrink-0 text-ui text-subtle font-mono tabular-nums">
       {formatTime(minTime)}
     </span>
 
@@ -132,14 +132,14 @@
       ></div>
     </div>
 
-    <span class="shrink-0 text-[10px] text-muted-foreground/70 font-mono tabular-nums">
+    <span class="shrink-0 text-ui text-subtle font-mono tabular-nums">
       {formatTime(maxTime)}
     </span>
   </div>
 
   <!-- Current time -->
   <div
-    class="shrink-0 text-[11px] text-muted-foreground font-mono tabular-nums bg-muted/50 px-2 py-0.5 rounded"
+    class="shrink-0 text-ui text-subtle font-mono tabular-nums bg-muted/50 px-2 py-0.5 rounded"
   >
     {formatTime(currentTime)}
   </div>

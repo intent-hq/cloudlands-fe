@@ -38,7 +38,7 @@
     open: 'bg-green-500/10 text-green-600 border-green-500/20',
     merged: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
     closed: 'bg-red-500/10 text-red-600 border-red-500/20',
-    draft: 'bg-muted text-muted-foreground border-border',
+    draft: 'bg-muted text-subtle border-border',
   };
 
   const commitCount = $derived(pr.commits?.length ?? 0);
@@ -58,13 +58,13 @@
         onclick={() => (expanded = !expanded)}
       >
         <div class="flex items-baseline gap-2 min-w-0 flex-1">
-          <Fa icon={faCodePullRequest} class="h-3 w-3 text-muted-foreground/50 shrink-0" />
+          <Fa icon={faCodePullRequest} class="h-3 w-3 text-ghost shrink-0" />
           <span class="text-sm truncate">{pr.title}</span>
           {#if pr.number}
-            <span class="text-xs text-muted-foreground shrink-0">#{pr.number}</span>
+            <span class="text-xs text-subtle shrink-0">#{pr.number}</span>
           {/if}
           {#if commitCount > 0}
-            <span class="text-xs text-muted-foreground shrink-0 ml-auto">
+            <span class="text-xs text-subtle shrink-0 ml-auto">
               {commitCount} commit{commitCount === 1 ? '' : 's'}
             </span>
           {/if}

@@ -47,7 +47,7 @@
 <div class="code-walkthrough {className}">
   {#if loading}
     <!-- Loading state -->
-    <div class="flex items-center justify-center py-12 text-muted-foreground">
+    <div class="flex items-center justify-center py-12 text-subtle">
       <Fa icon={faSpinner} class="h-5 w-5 animate-spin mr-2" />
       <span>Generating walkthrough...</span>
     </div>
@@ -71,13 +71,13 @@
         <div class="flex-1 min-w-0">
           <h2 class="text-lg font-semibold">Code Walkthrough</h2>
           {#if walkthrough.summary}
-            <p class="text-sm text-muted-foreground mt-1">{walkthrough.summary}</p>
+            <p class="text-sm text-subtle mt-1">{walkthrough.summary}</p>
           {/if}
         </div>
       </div>
 
       <!-- Stats bar -->
-      <div class="flex items-center gap-4 text-xs text-muted-foreground px-1">
+      <div class="flex items-center gap-4 text-xs text-subtle px-1">
         <span>{walkthrough.sections?.length || 0} sections</span>
         <span>•</span>
         <span>{fileDiffs.size} files</span>
@@ -116,7 +116,7 @@
     </div>
   {:else}
     <!-- Empty state -->
-    <div class="flex flex-col items-center justify-center py-12 text-muted-foreground">
+    <div class="flex flex-col items-center justify-center py-12 text-subtle">
       <Fa icon={faBook} class="h-8 w-8 mb-3 opacity-50" />
       <p class="text-sm">No walkthrough available</p>
       <p class="text-xs mt-1">Stage some changes to generate a walkthrough</p>

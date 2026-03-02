@@ -363,7 +363,7 @@
       <!-- Header -->
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-lg font-semibold flex items-center gap-2">
-          <Fa icon={faServer} class="text-muted-foreground" />
+          <Fa icon={faServer} class="text-ghost" />
           Add Remote Setup
         </h2>
         <Button onclick={handleClose} variant="ghost" size="icon">
@@ -378,7 +378,7 @@
           <div>
             <Label for="configHost">Import from SSH Config</Label>
             {#if isLoadingConfig}
-              <div class="mt-1 text-sm text-muted-foreground">Loading SSH config...</div>
+              <div class="mt-1 text-sm text-subtle">Loading SSH config...</div>
             {:else if sshConfigHosts.length > 0}
               <select
                 id="configHost"
@@ -394,7 +394,7 @@
                 {/each}
               </select>
             {:else}
-              <div class="mt-1 text-xs text-muted-foreground">
+              <div class="mt-1 text-xs text-subtle">
                 No hosts found in ~/.ssh/config. Enter details manually below.
               </div>
             {/if}
@@ -553,7 +553,7 @@
                 />
                 <div class="flex-1">
                   <div class="flex items-center gap-2">
-                    <Fa icon={faKey} class="text-muted-foreground text-xs" />
+                    <Fa icon={faKey} class="text-ghost text-xs" />
                     <span class="text-sm font-medium">SSH Agent</span>
                     {#if agentStatus.available}
                       <span class="text-xs text-green-600 bg-green-100 dark:bg-green-900/30 px-1.5 py-0.5 rounded">
@@ -566,7 +566,7 @@
                     {/if}
                   </div>
                   {#if authMode === 'agent' && agentStatus.identities.length > 0}
-                    <div class="mt-1 text-xs text-muted-foreground space-y-0.5">
+                    <div class="mt-1 text-xs text-subtle space-y-0.5">
                       {#each agentStatus.identities.slice(0, 3) as identity}
                         <div class="truncate">
                           {identity.comment || identity.fingerprint.slice(0, 20)}... ({identity.type})
@@ -678,7 +678,7 @@
           </div>
         {:else}
           <!-- WebSocket info - no SSH auth needed -->
-          <div class="text-sm text-muted-foreground bg-muted/50 px-3 py-2 rounded-md">
+          <div class="text-sm text-subtle bg-muted/50 px-3 py-2 rounded-md">
             <p>
               WebSocket connections use the authentication configured on the remote server.
               No SSH credentials are required.
@@ -696,7 +696,7 @@
             class="mt-1"
             oninput={() => markFieldEdited('workspacePath')}
           />
-          <p class="text-xs text-muted-foreground mt-1">
+          <p class="text-xs text-subtle mt-1">
             Path to the git repository on the remote server
           </p>
         </div>
@@ -711,7 +711,7 @@
             class="mt-1"
             oninput={() => markFieldEdited('branch')}
           />
-          <p class="text-xs text-muted-foreground mt-1">
+          <p class="text-xs text-subtle mt-1">
             Branch to check out on the remote server (defaults to main)
           </p>
         </div>
@@ -752,7 +752,7 @@
           {/if}
 
           {#if testStatus === 'untested'}
-            <div class="text-xs text-muted-foreground bg-muted/50 px-3 py-2 rounded">
+            <div class="text-xs text-subtle bg-muted/50 px-3 py-2 rounded">
               Test connection to verify the remote host is ready for use.
             </div>
           {/if}
@@ -765,10 +765,10 @@
                   <Fa icon={getCheckIcon(check.passed)} class={getCheckColor(check.passed)} />
                   <span class="capitalize">{name}</span>
                   {#if 'version' in check && check.version}
-                    <span class="text-xs text-muted-foreground">({check.version})</span>
+                    <span class="text-xs text-subtle">({check.version})</span>
                   {/if}
                   {#if 'path' in check && check.path}
-                    <span class="text-xs text-muted-foreground truncate max-w-[150px]">({check.path})</span>
+                    <span class="text-xs text-subtle truncate max-w-[150px]">({check.path})</span>
                   {/if}
                   {#if !check.passed && check.error}
                     <span class="text-xs text-destructive truncate flex-1">{check.error}</span>

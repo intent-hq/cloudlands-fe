@@ -97,12 +97,12 @@
       <div>
         <div class="text-sm font-medium text-foreground">{display.question}</div>
         {#if request.agentName}
-          <div class="text-xs text-muted-foreground">from {request.agentName}</div>
+          <div class="text-xs text-subtle">from {request.agentName}</div>
         {/if}
       </div>
     </div>
     {#if pendingCount > 1}
-      <span class="px-2 py-0.5 text-xs bg-muted rounded-full text-muted-foreground">
+      <span class="px-2 py-0.5 text-xs bg-muted rounded-full text-subtle">
         {pendingCount} pending
       </span>
     {/if}
@@ -113,7 +113,7 @@
     <!-- Details (command, path, etc.) -->
     {#if display.details}
       <div
-        class="text-xs text-muted-foreground mb-3 font-mono bg-muted/50 p-2 rounded overflow-x-auto"
+        class="text-xs text-subtle mb-3 font-mono bg-muted/50 p-2 rounded overflow-x-auto"
       >
         {display.details}
       </div>
@@ -123,16 +123,16 @@
     {#if request.description}
       <button
         type="button"
-        class="flex items-center gap-1 text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors mb-3"
+        class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-3"
         onclick={() => (showDetails = !showDetails)}
       >
-        <Fa icon={showDetails ? faChevronUp : faChevronDown} class="text-[10px]" />
+        <Fa icon={showDetails ? faChevronUp : faChevronDown} class="text-ui" />
         {showDetails ? 'Hide' : 'Show'} raw details
       </button>
 
       {#if showDetails}
         <div
-          class="text-xs text-muted-foreground mb-3 p-2 bg-muted/30 rounded font-mono overflow-x-auto max-h-32 overflow-y-auto"
+          class="text-xs text-subtle mb-3 p-2 bg-muted/30 rounded font-mono overflow-x-auto max-h-32 overflow-y-auto"
         >
           {request.description}
         </div>
@@ -168,7 +168,7 @@
     </div>
 
     <!-- Keyboard hint -->
-    <div class="mt-2 text-[10px] text-muted-foreground/50 text-center">
+    <div class="mt-2 text-xs text-subtle text-center">
       Press number key to select • Esc to cancel
     </div>
   </div>

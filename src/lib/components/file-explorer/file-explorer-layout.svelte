@@ -269,12 +269,12 @@
         <div class="flex items-center justify-center h-full">
           <div class="flex flex-col items-center gap-4 text-center">
             <Fa icon={faExclamationCircle} size="2x" class="w-12 h-12 text-destructive-foreground" />
-            <p class="text-sm text-muted-foreground">{error}</p>
+            <p class="text-sm text-subtle">{error}</p>
           </div>
         </div>
       {:else if isLoading}
         <div class="flex items-center justify-center h-full">
-          <Fa icon={faSpinner} size="lg" class="w-8 h-8 animate-spin text-muted-foreground" />
+          <Fa icon={faSpinner} size="lg" class="w-8 h-8 animate-spin text-subtle" />
         </div>
       {:else if selectedFile}
         <CodeEditor
@@ -287,8 +287,8 @@
       {:else}
         <div class="flex items-center justify-center h-full">
           <div class="text-center">
-            <Fa icon={faFileAlt} size="2x" class="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-            <p class="text-sm text-muted-foreground">
+            <Fa icon={faFileAlt} size="2x" class="w-12 h-12 mx-auto mb-4 text-subtle" />
+            <p class="text-sm text-subtle">
               Select a file from the sidebar to start editing
             </p>
           </div>

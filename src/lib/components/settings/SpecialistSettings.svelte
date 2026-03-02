@@ -251,7 +251,7 @@
   <div class="flex items-start justify-between">
     <div>
       <h3 class="text-lg font-semibold text-foreground">Specialists</h3>
-      <p class="text-sm text-muted-foreground mt-1">
+      <p class="text-sm text-subtle mt-1">
         Customize AI specialists with specific models and behavior prompts.
       </p>
     </div>
@@ -335,7 +335,7 @@
                 <span class="inline-flex items-center justify-between w-full">
                   <span class="truncate">{getModelLabel(getEffectiveModel(specialist))}</span>
                   {#if isBuiltIn && hasModelOverride(specialist)}
-                    <span class="text-[10px] text-primary font-medium ml-2">Custom</span>
+                    <span class="text-ui text-primary font-medium ml-2">Custom</span>
                   {/if}
                 </span>
               {/snippet}
@@ -362,7 +362,7 @@
               {#if isFileBased}
                 <!-- File-based specialist: show file path and delete option -->
                 {@const fileSpec = specialistsStore.getFileSpecialist(specialist.id)}
-                <span class="text-xs text-muted-foreground flex items-center gap-1">
+                <span class="text-xs text-subtle flex items-center gap-1">
                   <Fa icon={faFile} class="w-3 h-3" />
                   {fileSpec?.filePath ? fileSpec.filePath.split('/').pop() : 'File-based'}
                 </span>

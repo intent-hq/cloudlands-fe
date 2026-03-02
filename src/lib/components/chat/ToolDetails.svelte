@@ -113,8 +113,8 @@
         <div class="px-3 py-2 flex flex-col gap-1 bg-muted/30">
           {#each inputEntries as { key, value }}
             <div class="text-xs">
-              <span class="text-muted-foreground/50">{key}</span>
-              <span class="text-foreground/70 ml-1.5">{value}</span>
+              <span class="text-subtle">{key}</span>
+              <span class="text-subtle ml-1.5">{value}</span>
             </div>
           {/each}
         </div>
@@ -131,7 +131,7 @@
       {:else if !inputEntries}
         <div class="px-3 py-2 flex items-start gap-2">
           <Fa icon={faExclamationTriangle} size="xs" class="text-red-500/70 mt-0.5 shrink-0" />
-          <span class="text-xs text-muted-foreground">No error details available</span>
+          <span class="text-xs text-subtle">No error details available</span>
         </div>
       {/if}
     </div>
@@ -141,7 +141,7 @@
       <div class="p-2 bg-muted/30 relative group/details">
         <!-- Featured input (query/request) shown at top with border below -->
         {#if featuredInput}
-          <div class="pb-2 mb-2 border-b border-border text-muted-foreground italic">
+          <div class="pb-2 mb-2 border-b border-border text-subtle italic">
             "{featuredInput}"
           </div>
         {/if}
@@ -206,15 +206,15 @@
                     );
                   }}
                 >
-                  <Fa icon={faFile} size="xs" class="text-muted-foreground/60" />
+                  <Fa icon={faFile} size="xs" class="text-ghost" />
                   <span>{parsedResult.fileName}</span>
                   {#if parsedResult.lineRange}
-                    <span class="text-muted-foreground/60"
+                    <span class="text-subtle"
                       >:{parsedResult.lineRange[0]}-{parsedResult.lineRange[1]}</span
                     >
                   {/if}
                   {#if parsedResult.editSummary}
-                    <span class="text-muted-foreground/60">{parsedResult.editSummary}</span>
+                    <span class="text-subtle">{parsedResult.editSummary}</span>
                   {/if}
                 </button>
               {/if}
@@ -249,10 +249,10 @@
                   );
                 }}
               >
-                <Fa icon={faFile} size="xs" class="text-muted-foreground/60" />
+                <Fa icon={faFile} size="xs" class="text-ghost" />
                 <span>{parsedResult.fileName}</span>
                 {#if parsedResult.editSummary}
-                  <span class="text-muted-foreground/60">{parsedResult.editSummary}</span>
+                  <span class="text-subtle">{parsedResult.editSummary}</span>
                 {/if}
               </button>
               {#if parsedResult.content}
@@ -282,18 +282,18 @@
                   >
                     <span class="font-mono text-xs font-medium text-foreground/80">{fileName}</span>
                     {#if snippet.lineStart}
-                      <span class="text-xs text-muted-foreground/60">:{snippet.lineStart}</span>
+                      <span class="text-xs text-subtle">:{snippet.lineStart}</span>
                     {/if}
                     {#if dirPath}
                       <span
-                        class="text-xs text-muted-foreground/40 truncate ml-auto"
+                        class="text-xs text-subtle truncate ml-auto"
                         title={snippet.path}>{dirPath}</span
                       >
                     {/if}
                   </div>
                   <!-- Code preview -->
                   <pre
-                    class="m-0 px-2 py-1.5 font-mono text-xs leading-relaxed overflow-x-auto max-h-24 overflow-y-auto text-foreground/70 bg-background/50">{getPreviewContent(
+                    class="m-0 px-2 py-1.5 font-mono text-xs leading-relaxed overflow-x-auto max-h-24 overflow-y-auto text-subtle bg-background/50">{getPreviewContent(
                       snippet.content,
                       5,
                     )}</pre>
@@ -301,7 +301,7 @@
               {/each}
               {#if parsedResult.snippets.length > 8}
                 <div
-                  class="text-center text-xs text-muted-foreground/60 py-1 border-t border-border/30 mt-1"
+                  class="text-center text-xs text-subtle py-1 border-t border-border/30 mt-1"
                 >
                   +{parsedResult.snippets.length - 8} more result{parsedResult.snippets.length -
                     8 ===
@@ -313,7 +313,7 @@
             </div>
           {:else if parsedResult.type === 'code-search'}
             <!-- Search results with no snippets - show "No results" message -->
-            <div class="text-center py-2 text-muted-foreground/60 text-sm">
+            <div class="text-center py-2 text-subtle text-sm">
               No results
             </div>
             {#if parsedResult.content}
@@ -334,7 +334,7 @@
                   <span class="text-[#7aa2f7] font-mono text-xs">$</span>
                   <span class="font-mono text-xs text-[#a9b1d6]/90 truncate flex-1">{parsedResult.command}</span>
                   {#if parsedResult.exitCode !== undefined}
-                    <span class="text-[10px] font-mono px-1.5 py-0.5 rounded {parsedResult.exitCode === 0 ? 'bg-[#9ece6a]/20 text-[#9ece6a]' : 'bg-[#f7768e]/20 text-[#f7768e]'}">
+                    <span class="text-ui font-mono px-1.5 py-0.5 rounded {parsedResult.exitCode === 0 ? 'bg-[#9ece6a]/20 text-[#9ece6a]' : 'bg-[#f7768e]/20 text-[#f7768e]'}">
                       exit {parsedResult.exitCode}
                     </span>
                   {/if}
@@ -373,10 +373,10 @@
                     );
                   }}
                 >
-                  <Fa icon={faFile} size="xs" class="text-muted-foreground/60" />
+                  <Fa icon={faFile} size="xs" class="text-ghost" />
                   <span>{parsedResult.fileName}</span>
                   {#if parsedResult.lineRange}
-                    <span class="text-muted-foreground/60"
+                    <span class="text-subtle"
                       >:{parsedResult.lineRange[0]}-{parsedResult.lineRange[1]}</span
                     >
                   {/if}
@@ -405,7 +405,7 @@
             <!-- Delegate task - show task name and agent card -->
             <div class="flex flex-col gap-2">
               {#if parsedResult.delegatedTaskName}
-                <div class="text-sm text-muted-foreground">
+                <div class="text-sm text-subtle">
                   Task: <span class="text-foreground font-medium"
                     >{parsedResult.delegatedTaskName}</span
                   >
@@ -414,7 +414,7 @@
               {#if parsedResult.agentId}
                 <AgentCard agentId={parsedResult.agentId} />
               {:else}
-                <div class="text-xs text-muted-foreground/60 italic">Agent spawned</div>
+                <div class="text-xs text-subtle italic">Agent spawned</div>
               {/if}
             </div>
           {:else if parsedResult.type === 'agent-list' && parsedResult.agents?.length}
@@ -425,10 +425,10 @@
                   agent.status === 'responding' || agent.status === 'running'
                     ? 'text-emerald-500'
                     : agent.status === 'idle' || agent.status === 'completed'
-                      ? 'text-muted-foreground/60'
+                      ? 'text-muted-foreground'
                       : agent.status === 'error'
                         ? 'text-red-500'
-                        : 'text-muted-foreground/50'}
+                        : 'text-subtle'}
                 <button
                   type="button"
                   class="flex items-center gap-2 p-2 rounded bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer text-left w-full"
@@ -447,7 +447,7 @@
                   {/if}
                 </button>
               {/each}
-              <div class="text-xs text-muted-foreground/60 pt-1 border-t border-border/30 mt-1">
+              <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1">
                 {parsedResult.agents.length} agent{parsedResult.agents.length === 1 ? '' : 's'}
               </div>
             </div>
@@ -462,9 +462,9 @@
                   <Fa
                     icon={isDirectory ? faFolder : faFile}
                     size="xs"
-                    class={isDirectory ? 'text-amber-500/70' : 'text-muted-foreground/50'}
+                    class={isDirectory ? 'text-amber-500/70' : 'text-subtle'}
                   />
-                  <span class={isDirectory ? 'text-foreground/90' : 'text-foreground/70'}>
+                  <span class={isDirectory ? 'text-foreground/90' : 'text-subtle'}>
                     {file}
                   </span>
                 </div>
@@ -477,7 +477,7 @@
                 <div class="flex items-center gap-2">
                   <span class="font-medium text-foreground/90">{parsedResult.taskTitle}</span>
                   {#if parsedResult.taskStatus}
-                    <span class="px-1.5 py-0.5 text-xs rounded bg-muted text-muted-foreground"
+                    <span class="px-1.5 py-0.5 text-xs rounded bg-muted text-subtle"
                       >{parsedResult.taskStatus}</span
                     >
                   {/if}
@@ -510,7 +510,7 @@
                 <span>Updated</span>
                 <span class="font-medium text-foreground">{parsedResult.taskTitle}</span>
               {:else}
-                <span class="text-muted-foreground">Task updated</span>
+                <span class="text-subtle">Task updated</span>
               {/if}
             </div>
           {:else if parsedResult.type === 'agent-report'}
@@ -519,7 +519,7 @@
               {#if parsedResult.reportMessage}
                 <p class="m-0 leading-relaxed">{parsedResult.reportMessage}</p>
               {:else}
-                <span class="text-muted-foreground">Report sent to parent agent</span>
+                <span class="text-subtle">Report sent to parent agent</span>
               {/if}
             </div>
           {:else if parsedResult.type === 'agent-message' && parsedResult.messageContent}
@@ -535,7 +535,7 @@
             <div class="flex flex-col gap-1">
               <!-- Sent message to [agent] line -->
               <div class="flex items-center gap-1.5">
-                <span class="text-muted-foreground">Sent message to</span>
+                <span class="text-subtle">Sent message to</span>
                 {#if agentId}
                   <button
                     type="button"
@@ -556,12 +556,12 @@
                 {/if}
               </div>
               <!-- Message content -->
-              <p class="m-0 leading-relaxed whitespace-pre-wrap text-muted-foreground">
+              <p class="m-0 leading-relaxed whitespace-pre-wrap text-subtle">
                 {parsedResult.messageContent}
               </p>
               {#if parsedResult.messagePriority === 'high'}
                 <span
-                  class="inline-flex self-start px-1.5 py-0.5 text-[10px] font-semibold rounded-full bg-amber-500/30 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                  class="inline-flex self-start px-1.5 py-0.5 text-ui font-semibold rounded-full bg-amber-500/30 text-amber-600 dark:text-amber-400 border border-amber-500/30"
                 >
                   High Priority
                 </span>
@@ -576,7 +576,7 @@
                 <span>Comment added on</span>
                 <span class="font-medium text-foreground">"{parsedResult.commentAnchorText}"</span>
               {:else}
-                <span class="text-muted-foreground">Comment added</span>
+                <span class="text-subtle">Comment added</span>
               {/if}
             </div>
           {:else if parsedResult.type === 'comment-list'}
@@ -591,7 +591,7 @@
                       {thread.commentCount}
                       {thread.commentCount === 1 ? 'comment' : 'comments'}
                     </span>
-                    <span class="text-sm text-muted-foreground truncate flex-1">
+                    <span class="text-sm text-subtle truncate flex-1">
                       {#if thread.targetedText}
                         on "{thread.targetedText}"
                       {:else}
@@ -599,14 +599,14 @@
                       {/if}
                     </span>
                     <span
-                      class="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0"
+                      class="text-xs px-1.5 py-0.5 rounded bg-muted text-subtle shrink-0"
                     >
                       {thread.status}
                     </span>
                   </div>
                 {/each}
                 {#if parsedResult.totalComments}
-                  <div class="text-xs text-muted-foreground/60 pt-1 border-t border-border/30 mt-1">
+                  <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1">
                     {parsedResult.totalComments} total comment{parsedResult.totalComments === 1
                       ? ''
                       : 's'} in {parsedResult.commentThreads.length} thread{parsedResult
@@ -616,7 +616,7 @@
                   </div>
                 {/if}
               {:else}
-                <span class="text-sm text-muted-foreground p-2">No comments found</span>
+                <span class="text-sm text-subtle p-2">No comments found</span>
               {/if}
             </div>
           {:else if parsedResult.type === 'note-list'}
@@ -639,19 +639,19 @@
                       );
                     }}
                   >
-                    <Fa icon={faFile} size="xs" class="text-muted-foreground/50 shrink-0" />
+                    <Fa icon={faFile} size="xs" class="text-ghost shrink-0" />
                     <span class="text-sm font-medium text-foreground truncate flex-1"
                       >{note.title}</span
                     >
                     {#if note.tags && note.tags.length > 0}
                       <div class="flex gap-1 shrink-0">
                         {#each note.tags.slice(0, 2) as tag}
-                          <span class="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground"
+                          <span class="text-xs px-1.5 py-0.5 rounded bg-muted text-subtle"
                             >{tag}</span
                           >
                         {/each}
                         {#if note.tags.length > 2}
-                          <span class="text-xs text-muted-foreground/60"
+                          <span class="text-xs text-subtle"
                             >+{note.tags.length - 2}</span
                           >
                         {/if}
@@ -659,11 +659,11 @@
                     {/if}
                   </button>
                 {/each}
-                <div class="text-xs text-muted-foreground/60 pt-1 border-t border-border/30 mt-1">
+                <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1">
                   {parsedResult.notes.length} note{parsedResult.notes.length === 1 ? '' : 's'}
                 </div>
               {:else}
-                <span class="text-sm text-muted-foreground p-2">No notes found</span>
+                <span class="text-sm text-subtle p-2">No notes found</span>
               {/if}
             </div>
           {:else if parsedResult.type === 'browser'}
@@ -679,7 +679,7 @@
                     style={parsedResult.screenshotWidth ? `max-width: ${Math.min(parsedResult.screenshotWidth, 600)}px` : ''}
                   />
                   {#if parsedResult.screenshotWidth && parsedResult.screenshotHeight}
-                    <div class="px-2 py-1 text-[10px] text-muted-foreground/50 border-t border-border/30">
+                    <div class="px-2 py-1 text-ui text-subtle border-t border-border/30">
                       {parsedResult.screenshotWidth} × {parsedResult.screenshotHeight}
                     </div>
                   {/if}
@@ -703,13 +703,13 @@
                         {tab.title || tab.url || tab.tabId}
                       </span>
                       {#if tab.url}
-                        <span class="text-xs text-muted-foreground/50 truncate max-w-[200px]" title={tab.url}>
+                        <span class="text-xs text-subtle truncate max-w-[200px]" title={tab.url}>
                           {tab.url}
                         </span>
                       {/if}
                     </button>
                   {/each}
-                  <div class="text-xs text-muted-foreground/60 pt-1 border-t border-border/30 mt-1">
+                  <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1">
                     {parsedResult.browserTabs.length} tab{parsedResult.browserTabs.length === 1 ? '' : 's'}
                   </div>
                 </div>
@@ -774,15 +774,15 @@
             <div class="flex flex-col gap-1 pb-2 mb-2 border-b border-border/50">
               {#each inputEntries as { key, value }}
                 <div class="text-xs">
-                  <span class="text-muted-foreground/50">{key}</span>
-                  <span class="text-foreground/70 ml-1.5 break-all">{value}</span>
+                  <span class="text-subtle">{key}</span>
+                  <span class="text-subtle ml-1.5 break-all">{value}</span>
                 </div>
               {/each}
             </div>
           {/if}
           <div class="overflow-hidden rounded">
             <pre
-              class="m-0 p-2 font-mono text-sm leading-relaxed overflow-x-auto max-h-72 overflow-y-auto text-muted-foreground">{typeof result ===
+              class="m-0 p-2 font-mono text-sm leading-relaxed overflow-x-auto max-h-72 overflow-y-auto text-subtle">{typeof result ===
               'string'
                 ? result
                 : JSON.stringify(result, null, 2)}</pre>
@@ -797,18 +797,18 @@
         <div class="flex flex-col gap-1">
           {#each inputEntries as { key, value }}
             <div class="text-xs">
-              <span class="text-muted-foreground/50">{key}</span>
-              <span class="text-foreground/70 ml-1.5 break-all">{value}</span>
+              <span class="text-subtle">{key}</span>
+              <span class="text-subtle ml-1.5 break-all">{value}</span>
             </div>
           {/each}
         </div>
-        <div class="text-xs text-muted-foreground/40 mt-2 italic">Completed</div>
+        <div class="text-xs text-subtle mt-2 italic">Completed</div>
       </div>
     </div>
   {:else}
     <!-- No result and no input details — tool completed with no output -->
     <div class="p-2 bg-muted/30">
-      <span class="text-xs text-muted-foreground/40 italic"
+      <span class="text-xs text-subtle italic"
         >{isError ? 'No details available' : 'Completed'}</span
       >
     </div>

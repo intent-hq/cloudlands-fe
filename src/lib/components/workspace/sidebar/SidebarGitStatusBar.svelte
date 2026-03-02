@@ -296,14 +296,14 @@
       <!-- Commits -->
       {#if hasCommits}
         <div class="flex items-center gap-2">
-          <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <div class="flex items-center gap-1.5 text-xs text-subtle">
             <Fa icon={faCodeCommit} size="xs" class="opacity-50" />
             <span>{unpushedCount} commit{unpushedCount === 1 ? '' : 's'}</span>
           </div>
           <Button
             variant="ghost"
             size="xs"
-            class="h-5 px-2 text-[10px]"
+            class="h-5 px-2 text-ui"
             onclick={handlePush}
             disabled={isPushing}
           >
@@ -329,13 +329,13 @@
               ? 'text-purple-500'
               : prStatus === 'closed'
                 ? 'text-red-500'
-                : 'text-muted-foreground'}
+                : 'text-subtle'}
         {@const prLabel =
           prStatus === 'merged' ? 'Merged' : prStatus === 'closed' ? 'Closed' : 'PR'}
         {@const tooltipText = prTooltipContent}
         <div class="flex items-center gap-2">
           <Tooltip content={tooltipText} side="bottom" sideOffset={4} disabled={!tooltipText}>
-            <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <div class="flex items-center gap-1.5 text-xs text-subtle">
               <Fa icon={faCodePullRequest} size="xs" class={prColor} />
               <span class={prColor}>{prLabel}</span>
             </div>
@@ -349,7 +349,7 @@
           >
             <Fa
               icon={faArrowsRotate}
-              class="opacity-50 text-[8px] {isRefreshingPR ? 'animate-spin' : ''}"
+              class="opacity-50 text-ui {isRefreshingPR ? 'animate-spin' : ''}"
             />
           </button>
         </div>
@@ -377,7 +377,7 @@
               force push?
             </p>
           </div>
-          <p class="text-xs text-muted-foreground mb-3">
+          <p class="text-xs text-subtle mb-3">
             Your local branch has diverged from the remote. Force pushing will replace the remote
             history with your local history.
           </p>

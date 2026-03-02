@@ -34,10 +34,10 @@ hello();`;
   </div>
 
   <div class="mt-4">
-    <p class="text-sm text-muted-foreground">
+    <p class="text-sm text-subtle">
       Status: {isLoaded ? '✅ Editor loaded' : '⏳ Loading...'}
     </p>
-    <p class="text-sm text-muted-foreground mt-2">
+    <p class="text-sm text-subtle mt-2">
       Current value length: {editorValue.length} characters
     </p>
   </div>

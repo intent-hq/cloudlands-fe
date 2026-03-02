@@ -184,6 +184,6 @@
   contentClass="min-w-[200px]"
 >
   {#snippet trigger(_triggerProps)}
-    <Fa icon={faEllipsisVertical} class="h-3.5 w-3.5 text-muted-foreground" />
+    <Fa icon={faEllipsisVertical} class="h-3.5 w-3.5 text-ghost" />
   {/snippet}
 </Dropdown>

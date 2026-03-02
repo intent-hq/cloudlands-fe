@@ -616,7 +616,7 @@
         <div class={cn('pt-3 pb-3 min-h-full flex flex-col', activeTab !== 'notes' && 'hidden')}>
           <!-- Context panel description -->
           {#if !isVeryNarrow}
-            <p class="text-xs text-muted-foreground/60 {isNarrow ? 'px-3' : 'px-6'} pb-3 leading-snug">
+            <p class="text-xs text-subtle {isNarrow ? 'px-3' : 'px-6'} pb-3 leading-snug">
               Context about the task, shared with all agents in this space.
             </p>
           {/if}
@@ -666,7 +666,7 @@
             <div class="{isNarrow ? 'px-3 pr-10' : 'px-6 pr-13'} flex items-start gap-1">
               <!-- Description (fades out when search is expanded, but keeps width) -->
               <p
-                class="flex-1 text-xs text-muted-foreground/60 leading-snug transition-opacity duration-150 pr-12 {fileSearchQuery ||
+                class="flex-1 text-xs text-subtle leading-snug transition-opacity duration-150 pr-12 {fileSearchQuery ||
                 isSearchInputFocused
                   ? 'opacity-0'
                   : 'opacity-100'} {isVeryNarrow ? 'hidden' : ''}"
@@ -681,7 +681,7 @@
                     variant="ghost"
                     size="xs"
                     label={workspacePath.split(/[/\\]/).pop() || 'repo'}
-                    class="inline-flex underline underline-offset-2 decoration-muted-foreground/20 text-muted-foreground/60 -ml-1 font-normal!"
+                    class="inline-flex underline underline-offset-2 decoration-muted-foreground/20 text-subtle -ml-1 font-normal!"
                   />
                 {:else}.
                 {/if}
@@ -696,14 +696,14 @@
             >
               <Fa
                 icon={faSearch}
-                class="absolute left-0 w-2.75 h-2.75 text-muted-foreground/40 pointer-events-none"
+                class="absolute left-0 w-2.75 h-2.75 text-ghost pointer-events-none"
               />
               <Input
                 bind:this={fileSearchInputRef}
                 bind:value={fileSearchQuery}
                 type="text"
                 noFocusStyle
-                class="bg-transparent text-[0.82rem]! border-0 pl-5 empty:cursor-pointer h-5 w-full"
+                class="bg-transparent text-ui! border-0 pl-5 empty:cursor-pointer h-5 w-full"
                 onfocus={() => (isSearchInputFocused = true)}
                 onblur={() => (isSearchInputFocused = false)}
                 onkeydown={(e: KeyboardEvent) => filesPanelRef?.handleSearchKeyDown(e)}
@@ -711,7 +711,7 @@
               {#if fileSearchQuery}
                 <button
                   type="button"
-                  class="absolute right-0 p-0.5 text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
+                  class="absolute right-0 p-0.5 text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
                   onclick={() => {
                     fileSearchQuery = '';
                     fileSearchInputRef?.focus();
@@ -728,7 +728,7 @@
                 size="icon-xs"
                 class="p-1 rounded transition-colors cursor-pointer shrink-0 {showOnlyChangedFiles
                   ? 'text-muted-foreground'
-                  : 'text-muted-foreground/50 hover:text-muted-foreground'}"
+                  : 'text-muted-foreground hover:text-muted-foreground'}"
                 tooltip={showOnlyChangedFiles ? 'Show all files' : 'Show only changed files'}
                 onclick={() => (showOnlyChangedFiles = !showOnlyChangedFiles)}
               >
@@ -737,7 +737,7 @@
               <Button
                 variant="ghost-light"
                 size="icon-xs"
-                class="p-1 rounded transition-colors cursor-pointer shrink-0 text-muted-foreground/50 hover:text-muted-foreground"
+                class="p-1 rounded transition-colors cursor-pointer shrink-0 text-muted-foreground hover:text-muted-foreground"
                 tooltip={hasExpandedDirectories ? 'Collapse all folders' : 'Expand all folders'}
                 onclick={async () => {
                   if (hasExpandedDirectories) {
@@ -770,7 +770,7 @@
         <div class={cn('pt-3 pb-3 min-h-full flex flex-col', activeTab !== 'agents' && 'hidden')}>
           <!-- Agents panel description -->
           {#if !isVeryNarrow}
-            <p class="text-xs text-muted-foreground/60 {isNarrow ? 'px-3' : 'px-6'} pb-2 leading-snug">
+            <p class="text-xs text-subtle {isNarrow ? 'px-3' : 'px-6'} pb-2 leading-snug">
               {#if isTeamMode}
                 A coordinator agent writes a spec and manages the work of different agents.
               {:else}
@@ -793,7 +793,7 @@
         >
           <!-- Terminals panel description -->
           {#if !isVeryNarrow}
-            <p class="text-xs text-muted-foreground/60 {isNarrow ? 'px-3' : 'px-6'} pb-2 leading-snug">
+            <p class="text-xs text-subtle {isNarrow ? 'px-3' : 'px-6'} pb-2 leading-snug">
               Terminal sessions in this space.
             </p>
           {/if}
@@ -815,7 +815,7 @@
         <div class={cn('pt-3 pb-3 min-h-full flex flex-col', activeTab !== 'browser' && 'hidden')}>
           <!-- Browser panel description -->
           {#if !isVeryNarrow}
-            <p class="text-xs text-muted-foreground/60 {isNarrow ? 'px-3' : 'px-6'} pb-2 leading-snug">
+            <p class="text-xs text-subtle {isNarrow ? 'px-3' : 'px-6'} pb-2 leading-snug">
               Browse websites and view recent URLs.
             </p>
           {/if}

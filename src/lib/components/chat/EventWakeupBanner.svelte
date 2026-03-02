@@ -285,14 +285,14 @@
         <Tooltip.Provider delayDuration={0}>
           <Tooltip.Root delayDuration={0}>
             <Tooltip.Trigger class="shrink-0 min-w-0 flex-1">
-              <div class="w-full min-w-0 flex items-center gap-2 px-3 py-1 text-muted-foreground">
-                <Fa icon={faBell} size="xs" class="text-muted-foreground/40" />
+              <div class="w-full min-w-0 flex items-center gap-2 px-3 py-1 text-subtle">
+                <Fa icon={faBell} size="xs" class="text-ghost" />
                 <span class=" flex-1 min-w-0 truncate text-left">{friendlySummary}</span>
               </div>
             </Tooltip.Trigger>
             <Tooltip.Content side="top" class="">
               <p class="font-medium">Subscription wakeup</p>
-              <p class="text-muted-foreground mt-0.5">
+              <p class="text-subtle mt-0.5">
                 {metadata?.eventCount ?? 0}
                 {(metadata?.eventCount ?? 0) === 1 ? 'event' : 'events'} triggered this response
               </p>
@@ -333,7 +333,7 @@
           />
         {/each}
         {#if agentEvents.length > 5}
-          <div class="text-[10px] text-muted-foreground/50 text-center py-1">
+          <div class="text-ui text-subtle text-center py-1">
             +{agentEvents.length - 5} more agents
           </div>
         {/if}
@@ -343,7 +343,7 @@
 {:else}
   <!-- Inline style - compact banner inside message -->
   <div
-    class="event-wakeup-banner flex items-center gap-1.5 px-2 py-0.5 mb-1 rounded text-xs text-muted-foreground/50"
+    class="event-wakeup-banner flex items-center gap-1.5 px-2 py-0.5 mb-1 rounded text-xs text-subtle"
   >
     <Fa icon={faRotate} class="w-2 h-2" />
     <span>{friendlySummary}</span>

@@ -114,7 +114,7 @@
 
   // Badge variant styles
   const badgeVariantStyles = {
-    default: 'bg-muted text-muted-foreground',
+    default: 'bg-muted text-subtle',
     success: 'bg-green-500/20 text-green-600 dark:text-green-400',
     warning: 'bg-yellow-500/20 text-yellow-600 dark:text-yellow-400',
     error: 'bg-red-500/20 text-red-600 dark:text-red-400',
@@ -128,7 +128,7 @@
   class={cn(
     // Base styles
     'relative w-full min-w-0 flex items-center text-left transition-colors duration-100',
-    'border border-transparent bg-transparent text-muted-foreground cursor-pointer font-inherit',
+    'border border-transparent bg-transparent text-subtle cursor-pointer font-inherit',
     'group',
 
     // Size styles
@@ -190,7 +190,7 @@
         <div
           class={cn(
             config.subtitleSize,
-            'flex-1 text-muted-foreground truncate opacity-60',
+            'flex-1 text-subtle truncate opacity-60',
             subtitleClass,
           )}
         >
@@ -248,7 +248,7 @@
       <div
         class={cn(
           'shrink-0',
-          'text-[10px] px-1.5 py-0.5 rounded',
+          'text-ui px-1.5 py-0.5 rounded',
           badgeVariantStyles[badgeVariant],
           badgeVariant === 'default' && 'group-hover:bg-background',
           badgeClass,

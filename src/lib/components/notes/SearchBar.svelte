@@ -26,7 +26,7 @@
 <div class="search-bar relative">
   <Fa
     icon={faSearch}
-    class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none"
+    class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-subtle pointer-events-none"
   />
   <input
     bind:this={inputElement}

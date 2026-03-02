@@ -109,9 +109,9 @@
     class="w-full flex items-center gap-2 px-3 py-2 bg-muted/50 border-b border-border hover:bg-muted/70 transition-colors text-left"
     onclick={toggleCollapsed}
   >
-    <Fa icon={collapsed ? faChevronRight : faChevronDown} class="h-3 w-3 text-muted-foreground" />
+    <Fa icon={collapsed ? faChevronRight : faChevronDown} class="h-3 w-3 text-ghost" />
     <span class="text-sm font-mono truncate flex-1">{fileName}</span>
-    <span class="text-xs text-muted-foreground">
+    <span class="text-xs text-subtle">
       {annotations.length} annotation{annotations.length === 1 ? '' : 's'}
     </span>
   </button>
@@ -129,7 +129,7 @@
                 <div class="w-1 shrink-0 {getIndicatorClasses(line)}"></div>
 
                 <!-- Line numbers -->
-                <div class="w-16 shrink-0 px-2 text-right text-muted-foreground/60 select-none border-r border-border/50">
+                <div class="w-16 shrink-0 px-2 text-right text-subtle select-none border-r border-border/50">
                   <span class="inline-block w-6">{line.oldNum ?? ''}</span>
                   <span class="inline-block w-6">{line.newNum ?? ''}</span>
                 </div>

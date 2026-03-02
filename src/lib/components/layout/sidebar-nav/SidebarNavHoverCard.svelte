@@ -103,7 +103,7 @@
           <h3 class="{isExpanded ? 'text-base' : 'text-sm'} font-semibold text-foreground">
             {meta.title}
           </h3>
-          <p class="{isExpanded ? 'text-xs' : 'text-[11px]'} text-muted-foreground/60 mt-0.5">
+          <p class="{isExpanded ? 'text-xs' : 'text-ui'} text-subtle mt-0.5">
             {meta.description}
           </p>
         </div>

@@ -341,7 +341,7 @@
           >
             <Fa icon={faChevronLeft} class="h-3 w-3" />
           </Button>
-          <span class="text-xs text-muted-foreground min-w-15 text-center">
+          <span class="text-xs text-subtle min-w-15 text-center">
             {currentVersionLabel}
           </span>
           <Button
@@ -405,10 +405,10 @@
         class="w-12 h-12 rounded-full bg-muted/50 flex items-center justify-center mb-4"
         transition:fly={{ y: 8, duration: 200 }}
       >
-        <Fa icon={faWandMagicSparkles} class="h-5 w-5 text-muted-foreground" />
+        <Fa icon={faWandMagicSparkles} class="h-5 w-5 text-subtle" />
       </div>
       <h3 class="text-sm font-medium text-foreground mb-2">No review yet</h3>
-      <p class="text-xs text-muted-foreground mb-4 max-w-60">
+      <p class="text-xs text-subtle mb-4 max-w-60">
         Run a code review to get AI-powered feedback on your staged changes.
       </p>
       {#if onTriggerReview}
@@ -442,7 +442,7 @@
           </div>
           {#if streamingPreview}
             <div
-              class="text-xs text-muted-foreground whitespace-pre-wrap line-clamp-3 overflow-hidden"
+              class="text-xs text-subtle whitespace-pre-wrap line-clamp-3 overflow-hidden"
             >
               {streamingPreview}
               <span
@@ -450,7 +450,7 @@
               ></span>
             </div>
           {:else}
-            <div class="text-xs text-muted-foreground">Analyzing staged changes...</div>
+            <div class="text-xs text-subtle">Analyzing staged changes...</div>
           {/if}
         </div>
       </div>
@@ -522,7 +522,7 @@
     <!-- Summary Card (shows when complete) -->
     {#if !isRunning && !hasError && displaySummary}
       <div class="pt-5 px-5">
-        <div class="text-sm text-muted-foreground" transition:fly={{ y: 4, duration: 200 }}>
+        <div class="text-sm text-subtle" transition:fly={{ y: 4, duration: 200 }}>
           <MarkdownViewer content={displaySummary} className="prose-sm" />
         </div>
       </div>

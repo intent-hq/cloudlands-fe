@@ -72,7 +72,7 @@
     >
       <h2 class="text-lg font-semibold text-foreground mb-4">Create New Agent</h2>
 
-      <p class="text-sm text-muted-foreground mb-4">
+      <p class="text-sm text-subtle mb-4">
         A new agent will be created for this workspace. The agent will automatically name itself
         based on your conversation.
       </p>

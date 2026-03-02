@@ -388,17 +388,17 @@
       class="w-full flex items-center gap-2 px-4 py-3 hover:bg-muted/30 transition-colors text-left group"
       onclick={toggleFileCollapsed}
     >
-      <Fa icon={isFileCollapsed ? faChevronRight : faChevronDown} class="h-3 w-3 text-muted-foreground shrink-0" />
+      <Fa icon={isFileCollapsed ? faChevronRight : faChevronDown} class="h-3 w-3 text-ghost shrink-0" />
 
       <!-- File icon -->
-      <svg class="h-4 w-4 text-muted-foreground shrink-0" viewBox="0 0 16 16" fill="currentColor">
+      <svg class="h-4 w-4 text-ghost shrink-0" viewBox="0 0 16 16" fill="currentColor">
         <path d="M3.5 1.5A1.5 1.5 0 0 1 5 0h6a1.5 1.5 0 0 1 1.5 1.5v12A1.5 1.5 0 0 1 11 15H5a1.5 1.5 0 0 1-1.5-1.5v-12zm2 0v12h6v-12H5.5z"/>
       </svg>
 
       <!-- File name and path -->
       <div class="flex items-baseline gap-2 flex-1 min-w-0">
         <span class="text-sm font-medium text-foreground truncate">{shortFileName()}</span>
-        <span class="text-xs text-muted-foreground truncate hidden sm:inline">{getFilePath()}</span>
+        <span class="text-xs text-subtle truncate hidden sm:inline">{getFilePath()}</span>
       </div>
 
       <!-- Stats (additions only for cleaner look) -->
@@ -412,7 +412,7 @@
     <!-- File description (if provided) -->
     {#if fileDescription}
       <div class="px-4 pb-3 -mt-1">
-        <p class="text-sm text-muted-foreground">{fileDescription}</p>
+        <p class="text-sm text-subtle">{fileDescription}</p>
       </div>
     {/if}
   </div>
@@ -424,7 +424,7 @@
         {#each previewLines as { line, hunkIndex, lineIndex } (`preview-${hunkIndex}-${lineIndex}`)}
           <div class="flex {getLineBgClass(line)}">
             <div class="w-12 shrink-0 flex select-none {getGutterClass(line)} border-r border-border/30">
-              <span class="w-12 px-2 text-right text-[11px] text-muted-foreground/40 tabular-nums">{line.newNum ?? line.oldNum ?? ''}</span>
+              <span class="w-12 px-2 text-right text-ui text-subtle tabular-nums">{line.newNum ?? line.oldNum ?? ''}</span>
             </div>
             <span class="w-5 shrink-0 text-center select-none {getPrefixClass(line)}">{getPrefix(line)}</span>
             <pre class="flex-1 px-1 whitespace-pre overflow-hidden text-ellipsis"><code class="hljs">{@html getHighlightedContent(line)}</code></pre>
@@ -457,7 +457,7 @@
             Expand all
           </button>
           {#if expandedRanges.size > 0}
-            <span class="text-muted-foreground/50">·</span>
+            <span class="text-subtle">·</span>
             <button
               type="button"
               class="text-muted-foreground hover:text-foreground transition-colors"
@@ -500,8 +500,8 @@
                 <div class="group flex {getLineBgClass(line)} hover:bg-accent/30 transition-colors">
                   <!-- Line numbers gutter -->
                   <div class="w-20 shrink-0 flex select-none {getGutterClass(line)} border-r border-border/30">
-                    <span class="w-10 px-2 text-right text-[11px] text-muted-foreground/60 tabular-nums">{line.oldNum ?? ''}</span>
-                    <span class="w-10 px-2 text-right text-[11px] text-muted-foreground/60 tabular-nums">{line.newNum ?? ''}</span>
+                    <span class="w-10 px-2 text-right text-ui text-subtle tabular-nums">{line.oldNum ?? ''}</span>
+                    <span class="w-10 px-2 text-right text-ui text-subtle tabular-nums">{line.newNum ?? ''}</span>
                   </div>
 
                   <!-- +/- prefix -->

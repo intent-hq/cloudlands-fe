@@ -168,7 +168,7 @@
     <div class="w-full max-w-[var(--content-max-width,60rem)] px-[var(--content-gutter-left)] pt-12 mb-6 flex flex-col">
       <!-- Status row -->
       <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
-        <div class="text-muted-foreground/70 pt-0.5">Status</div>
+        <div class="text-subtle pt-0.5">Status</div>
         <div class="flex items-center min-h-6 -mt-0.5">
           <TaskStatusIndicator
             {workspaceId}
@@ -181,12 +181,12 @@
 
       <!-- Assignee row -->
       <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
-        <div class="text-muted-foreground/70 pt-0.5">Assignee</div>
+        <div class="text-subtle pt-0.5">Assignee</div>
         <div class="flex flex-col gap-1.5 min-h-6 min-w-0 overflow-hidden">
           {#if assignedAgents.length === 0}
             <button
               onclick={handleRunAgent}
-              class="inline-flex items-center justify-center h-6 w-4 rounded text-muted-foreground/70 hover:text-muted-foreground transition-colors cursor-pointer"
+              class="inline-flex items-center justify-center h-6 w-4 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
               title="Run agent"
             >
               <Fa icon={faPlay} class="text-xs" />
@@ -199,14 +199,14 @@
                   class="inline-flex items-center gap-1 min-w-0 py-0.5 pl-0.5 pr-2 rounded bg-muted/30 px-2 cursor-pointer"
                 >
                   <AuggieAvatar size={22} colorSeed={agentId} faceSeed={agentId} />
-                  <span class="truncate font-medium text-muted-foreground -mt-0.5"
+                  <span class="truncate font-medium text-subtle -mt-0.5"
                     >{getAgentName(agentId) || 'Agent'}</span
                   >
                 </button>
               {/each}
               <button
                 onclick={handleRunAgent}
-                class="inline-flex items-center justify-center h-6 w-4 rounded text-muted-foreground/70 hover:text-muted-foreground transition-colors cursor-pointer"
+                class="inline-flex items-center justify-center h-6 w-4 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
                 title="Run agent"
               >
                 <Fa icon={faPlay} class="text-xs" />
@@ -214,7 +214,7 @@
             </div>
             <!-- <button
               onclick={handleViewAllChanges}
-              class= text-muted-foreground/70 hover:text-muted-foreground transition-colors cursor-pointer text-left"
+              class= text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer text-left"
             >
               View all changes
             </button> -->

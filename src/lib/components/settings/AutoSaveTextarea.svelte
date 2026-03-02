@@ -138,7 +138,7 @@
   {/if}
 
   {#if description}
-    <p class="text-xs text-muted-foreground shrink-0">{description}</p>
+    <p class="text-xs text-subtle shrink-0">{description}</p>
   {/if}
 
   <div class="relative grow min-h-0 flex flex-col">

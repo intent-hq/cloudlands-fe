@@ -423,24 +423,24 @@
           {/if}
           <!-- {#if specialist}
             <span
-              class="specialist-icon shrink-0 text-muted-foreground/60 dark:text-background ml-1.5 mr-0.5"
+              class="specialist-icon shrink-0 text-subtle dark:text-background ml-1.5 mr-0.5"
             >
               <SpecialistToolIcon {specialist} size={12} muted />
             </span>
-            <span class="specialist-text text-[10px] text-muted-foreground/60 shrink-0">
+            <span class="specialist-text text-ui text-subtle shrink-0">
               {specialistDisplayName}
             </span>
           {/if} -->
           {#if delegatedByName}
             <span
-              class="shrink-3 delegated-by-text truncate text-[10px] text-muted-foreground/50 whitespace-nowrap ml-1"
+              class="shrink-3 delegated-by-text truncate text-ui text-subtle whitespace-nowrap ml-1"
             >
               · Delegated by {delegatedByName}
             </span>
           {/if}
           {#if isBackground}
             <div
-              class="ml-auto px-1 py-0.5 text-[8px] font-bold bg-muted text-muted-foreground rounded mr-1"
+              class="ml-auto px-1 py-0.5 text-ui font-bold bg-muted text-subtle rounded mr-1"
             >
               BG
             </div>
@@ -456,7 +456,7 @@
             />
           {/if}
           {#if updatedAt}
-            <RelativeTime date={updatedAt} compact class="text-[10px] text-muted-foreground/40" />
+            <RelativeTime date={updatedAt} compact class="text-ui text-subtle" />
           {/if}
         </div>
       </div>
@@ -465,7 +465,7 @@
       {#if !hidePreview}
         {#if effectiveCompletionReport}
           <div class="mt-0.5">
-            <p class="text-sm text-foreground/70 truncate">
+            <p class="text-sm text-subtle truncate">
               {effectiveCompletionReport}
             </p>
           </div>
@@ -473,13 +473,13 @@
           <div class="space-y-0.5">
             {#if lastResponse}
               <p
-                class="text-sm text-muted-foreground/60 truncate"
+                class="text-sm text-subtle truncate"
                 transition:slide={{ axis: 'y', duration: 150 }}
               >
                 {lastResponse}
               </p>
             {:else if lastUserMsg}
-              <p class="text-sm text-muted-foreground truncate">
+              <p class="text-sm text-subtle truncate">
                 {lastUserMsg}
               </p>
             {/if}

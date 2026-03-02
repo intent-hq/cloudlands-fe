@@ -220,12 +220,12 @@
             <!-- Local changes: comparing HEAD to working copy -->
             <span class="w-2 h-2 rounded-full bg-yellow-500"></span>
             <span class="font-medium text-yellow-600 dark:text-yellow-400">Uncommitted changes</span>
-            <span class="text-muted-foreground">— Last commit → Working copy</span>
+            <span class="text-subtle">— Last commit → Working copy</span>
           {:else}
             <!-- Historical version: comparing old commit to current -->
-            <span class="text-muted-foreground">Comparing</span>
+            <span class="text-subtle">Comparing</span>
             <span class="font-medium">{formatDistanceToNow(selectedVersion.commit.date)}</span>
-            <span class="text-muted-foreground">by {selectedVersion.commit.author}</span>
+            <span class="text-subtle">by {selectedVersion.commit.author}</span>
           {/if}
 
           <div class="flex items-center gap-1 ml-auto">

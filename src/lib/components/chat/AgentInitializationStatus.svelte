@@ -41,7 +41,7 @@
 
 {#if showAnimation && displayedMessage}
   <div class="relative overflow-hidden">
-    <p class="text-xs text-muted-foreground animate-fade-in">
+    <p class="text-xs text-subtle animate-fade-in">
       {displayedMessage}
     </p>
     {#if step !== 'complete' && step !== 'error'}

@@ -552,19 +552,19 @@
         {/if}
         <button
           type="button"
-          class="flex items-center gap-1.5 text-muted-foreground/50 transition-colors flex-1 min-w-0 cursor-pointer"
+          class="flex items-center gap-1.5 text-subtle transition-colors flex-1 min-w-0 cursor-pointer"
           onclick={toggleExpanded}
         >
           <Fa
             icon={faChevronDown}
             size="sm"
-            class="flex-none text-muted-foreground/30 transition-transform {expanded
+            class="flex-none text-ghost transition-transform {expanded
               ? ''
               : '-rotate-90'}"
           />
           <span class="text-sm truncate">{displayName}</span>
           {#if primitive.states && primitive.states.length > 0}
-            <span class="text-xs text-muted-foreground">
+            <span class="text-xs text-subtle">
               ({primitive.states.length} states)
             </span>
           {/if}
@@ -576,7 +576,7 @@
             <Tooltip content="Copy diagram" side="top" delayDuration={300}>
               <button
                 type="button"
-                class="flex-none p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground/50 hover:text-muted-foreground cursor-pointer"
+                class="flex-none p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-muted-foreground cursor-pointer"
                 onclick={(e) => {
                   e.stopPropagation();
                   toggle();
@@ -600,7 +600,7 @@
                   close();
                 }}
               >
-                <Fa icon={faCode} size="xs" class="text-muted-foreground" />
+                <Fa icon={faCode} size="xs" class="text-ghost" />
                 Copy as SVG
               </button>
               <button
@@ -611,7 +611,7 @@
                   close();
                 }}
               >
-                <Fa icon={faImage} size="xs" class="text-muted-foreground" />
+                <Fa icon={faImage} size="xs" class="text-ghost" />
                 Copy as PNG
               </button>
             </div>
@@ -624,7 +624,7 @@
             <Tooltip content="Save to codebase" side="top" delayDuration={300}>
               <button
                 type="button"
-                class="flex-none p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground/50 hover:text-muted-foreground cursor-pointer"
+                class="flex-none p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-muted-foreground cursor-pointer"
                 onclick={(e) => {
                   e.stopPropagation();
                   toggle();
@@ -648,7 +648,7 @@
                   close();
                 }}
               >
-                <Fa icon={faCode} size="xs" class="text-muted-foreground" />
+                <Fa icon={faCode} size="xs" class="text-ghost" />
                 Save as SVG
               </button>
               <button
@@ -659,7 +659,7 @@
                   close();
                 }}
               >
-                <Fa icon={faImage} size="xs" class="text-muted-foreground" />
+                <Fa icon={faImage} size="xs" class="text-ghost" />
                 Save as PNG
               </button>
             </div>
@@ -680,6 +680,6 @@
       {/if}
     </div>
   {:else}
-    <div class="my-2 text-sm text-muted-foreground">Invalid diagram block</div>
+    <div class="my-2 text-sm text-subtle">Invalid diagram block</div>
   {/if}
 </NodeViewWrapper>

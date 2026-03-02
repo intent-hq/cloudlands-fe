@@ -559,7 +559,7 @@
                       fill="none"
                       stroke="currentColor"
                       stroke-width={strokeWidth}
-                      class="text-muted-foreground/20"
+                      class="text-ghost"
                     />
                     {#if taskStats.completed > 0}
                       <circle
@@ -595,13 +595,13 @@
               {@const specStatusLabel = getSpecStatusLabel(note)}
               <div class="relative flex-1 w-full flex items-center gap-1">
                 <ListItem
-                  iconClass="text-muted-foreground/50"
+                  iconClass="text-ghost"
                   title={getNoteTitle(note)}
                   active={selectedNoteId === note.id}
                   indent={depth}
                   {indentSize}
                   badge={isCollapsed && hasChildren ? childNotes.length : undefined}
-                  badgeClass="text-[9px] px-1 py-0"
+                  badgeClass="text-ui px-1 py-0"
                   onclick={() => onOpenNote?.(note.id)}
                   class="cursor-pointer flex-1"
                 >
@@ -621,7 +621,7 @@
 
                 <!-- Show spec status label when coordinator is working -->
                 {#if specStatusLabel}
-                  <span class="shrink-0 text-[10px] text-blue-400 animate-pulse pr-0.5">
+                  <span class="shrink-0 text-ui text-blue-400 animate-pulse pr-0.5">
                     {specStatusLabel}
                   </span>
                 {/if}
@@ -640,7 +640,7 @@
                       </button>
                     {/each}
                     {#if activeAgents.length > 3}
-                      <div class="text-[9px] text-muted-foreground/60 ml-1">
+                      <div class="text-ui text-subtle ml-1">
                         +{activeAgents.length - 3}
                       </div>
                     {/if}
@@ -659,13 +659,13 @@
               {@const inProgressOffset = circumference * (1 - inProgressPctNorm)}
               <div class="relative flex-1 w-full flex">
                 <ListItem
-                  iconClass="text-muted-foreground/50"
+                  iconClass="text-ghost"
                   title={getNoteTitle(note)}
                   active={selectedNoteId === note.id}
                   indent={depth}
                   {indentSize}
                   badge={isCollapsed && hasChildren ? childNotes.length : undefined}
-                  badgeClass="text-[9px] px-1 py-0"
+                  badgeClass="text-ui px-1 py-0"
                   onclick={() => onOpenNote?.(note.id)}
                   class="cursor-pointer"
                 >
@@ -685,7 +685,7 @@
                           fill="none"
                           stroke="currentColor"
                           stroke-width={strokeWidth}
-                          class="text-muted-foreground/20"
+                          class="text-ghost"
                         />
                         <!-- In progress arc -->
                         {#if taskStats.inProgress > 0}
@@ -742,7 +742,7 @@
                   indent={depth}
                   {indentSize}
                   badge={isCollapsed && hasChildren ? childNotes.length : undefined}
-                  badgeClass="text-[9px] px-1 py-0"
+                  badgeClass="text-ui px-1 py-0"
                   onclick={() => onOpenNote?.(note.id)}
                   class="cursor-pointer flex-1"
                 >
@@ -756,7 +756,7 @@
 
                 <!-- Show spec status label when coordinator is working -->
                 {#if specStatusLabel}
-                  <span class="shrink-0 text-[10px] text-blue-400 animate-pulse pr-0.5">
+                  <span class="shrink-0 text-ui text-blue-400 animate-pulse pr-0.5">
                     {specStatusLabel}
                   </span>
                 {/if}
@@ -775,7 +775,7 @@
                       </button>
                     {/each}
                     {#if activeAgents.length > 3}
-                      <div class="text-[9px] text-muted-foreground/60 ml-1">
+                      <div class="text-ui text-subtle ml-1">
                         +{activeAgents.length - 3}
                       </div>
                     {/if}
@@ -786,7 +786,7 @@
             {#if hasChildren}
               <button
                 type="button"
-                class="shrink-0 p-1 mr-1 text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer opacity-0 group-hover/note:opacity-100"
+                class="shrink-0 p-1 mr-1 text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer opacity-0 group-hover/note:opacity-100"
                 onclick={(e) => toggleCollapse(note.id as string, e)}
                 aria-label={isCollapsed ? 'Expand' : 'Collapse'}
               >

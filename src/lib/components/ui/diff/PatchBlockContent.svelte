@@ -105,7 +105,7 @@
         onclick={toggleExpanded}
       >
         {#if !linkedAgentId}
-          <Fa icon={faPlusMinus} size={10} class="text-muted-foreground/50" />
+          <Fa icon={faPlusMinus} size={10} class="text-ghost" />
         {/if}
         <span class="text-base truncate flex-1 text-left">{label}</span>
         <span class="text-xs font-mono">
@@ -120,7 +120,7 @@
         <Button
           variant="ghost-light"
           size="sm"
-          class="h-6 px-2 text-xs text-muted-foreground gap-1 flex-none"
+          class="h-6 px-2 text-xs text-subtle gap-1 flex-none"
           onclick={handleAction}
           disabled={applying}
         >
@@ -164,5 +164,5 @@
     {/if}
   </div>
 {:else}
-  <div class="my-1.5 text-sm text-muted-foreground">Invalid patch block</div>
+  <div class="my-1.5 text-sm text-subtle">Invalid patch block</div>
 {/if}

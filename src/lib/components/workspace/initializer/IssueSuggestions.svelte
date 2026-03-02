@@ -1033,7 +1033,7 @@
     <button
       type="button"
       onclick={togglePanel}
-      class="inline-flex items-center gap-2.5 px-2 py-1 text-sm text-muted-foreground/70 hover:text-foreground transition-colors cursor-pointer"
+      class="inline-flex items-center gap-2.5 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
     >
       <Fa
         icon={faPlus}
@@ -1060,7 +1060,7 @@
     >
       <!-- Search + filter bar -->
       <div class="flex items-center gap-2 px-3 py-2 border-b border-border/30">
-        <Fa icon={faSearch} class="w-3 h-3 text-muted-foreground/50 opacity-50" />
+        <Fa icon={faSearch} class="w-3 h-3 text-ghost opacity-50" />
         <!-- svelte-ignore a11y_autofocus -->
         <input
           type="text"
@@ -1071,7 +1071,7 @@
         />
         <!-- Refreshing indicator -->
         {#if isRefreshing}
-          <Fa icon={faSync} class="w-2.5 h-2.5 mr-1 text-muted-foreground/40 animate-spin" />
+          <Fa icon={faSync} class="w-2.5 h-2.5 mr-1 text-ghost animate-spin" />
         {/if}
         <!-- Source tabs with issue count -->
         <div class="flex items-center gap-1 ml-auto">
@@ -1087,7 +1087,7 @@
             >
               {source.label}
               {#if count > 0}
-                <span class="text-muted-foreground/50">{count}</span>
+                <span class="text-subtle">{count}</span>
               {/if}
             </button>
           {/each}
@@ -1124,7 +1124,7 @@
 
       {#if activeSource === 'linear' && linearTeams.length > 1}
         <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border/20 bg-muted/20">
-          <span class="text-xs text-muted-foreground/60">Team:</span>
+          <span class="text-xs text-subtle">Team:</span>
           <select
             bind:value={selectedLinearTeam}
             class="text-xs bg-transparent border-none text-muted-foreground hover:text-foreground cursor-pointer outline-none py-0.5 pr-4 appearance-none"
@@ -1239,7 +1239,7 @@
             {/each}
           </div>
         {:else if !hasVisibleIssues && !isFilteredByUnauthenticatedSource()}
-          <div class="px-3 py-3 text-sm text-muted-foreground/60 text-center">
+          <div class="px-3 py-3 text-sm text-subtle text-center">
             {#if searchQuery}
               No issues match "{searchQuery}"
             {:else if activeSource === 'github-issues'}
@@ -1298,8 +1298,8 @@
                       onclick={() => handleLinearIssueClick(issue)}
                       class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
                     >
-                      <LinearIcon class="w-3.5 h-3.5 text-muted-foreground shrink-0 opacity-50" />
-                      <span class="text-xs font-medium text-muted-foreground shrink-0"
+                      <LinearIcon class="w-3.5 h-3.5 text-ghost shrink-0 opacity-50" />
+                      <span class="text-xs font-medium text-subtle shrink-0"
                         >{issue.identifier}</span
                       >
                       <span
@@ -1307,7 +1307,7 @@
                         >{issue.title}</span
                       >
                       {#if issue.updatedAt || issue.createdAt}
-                        <span class="text-xs text-muted-foreground/40 shrink-0"
+                        <span class="text-xs text-subtle shrink-0"
                           >{formatRelativeTime(issue.updatedAt || issue.createdAt)}</span
                         >
                       {/if}
@@ -1316,25 +1316,25 @@
                   {#snippet content()}
                     <div class="space-y-2">
                       <div class="flex items-center gap-2">
-                        <LinearIcon class="w-4 h-4 text-muted-foreground shrink-0" />
-                        <span class="text-xs font-medium text-muted-foreground"
+                        <LinearIcon class="w-4 h-4 text-ghost shrink-0" />
+                        <span class="text-xs font-medium text-subtle"
                           >{issue.identifier}</span
                         >
                         {#if issue.state}
                           <span
-                            class="text-xs px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground"
+                            class="text-xs px-1.5 py-0.5 rounded bg-muted/60 text-subtle"
                             >{issue.state}</span
                           >
                         {/if}
                       </div>
                       <div class="text-sm font-medium">{issue.title}</div>
                       {#if issue.description}
-                        <div class="text-sm text-muted-foreground line-clamp-3">
+                        <div class="text-sm text-subtle line-clamp-3">
                           {issue.description}
                         </div>
                       {/if}
                       <div
-                        class="flex items-center gap-2 text-xs text-muted-foreground/60 pt-1"
+                        class="flex items-center gap-2 text-xs text-subtle pt-1"
                       >
                         {#if issue.assignee}
                           <span>Assignee: {issue.assignee}</span>
@@ -1372,8 +1372,8 @@
                       onclick={() => handleLinearIssueClick(issue)}
                       class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
                     >
-                      <LinearIcon class="w-3.5 h-3.5 text-muted-foreground shrink-0 opacity-50" />
-                      <span class="text-xs font-medium text-muted-foreground shrink-0"
+                      <LinearIcon class="w-3.5 h-3.5 text-ghost shrink-0 opacity-50" />
+                      <span class="text-xs font-medium text-subtle shrink-0"
                         >{issue.identifier}</span
                       >
                       <span
@@ -1381,7 +1381,7 @@
                         >{issue.title}</span
                       >
                       {#if issue.updatedAt || issue.createdAt}
-                        <span class="text-xs text-muted-foreground/40 shrink-0"
+                        <span class="text-xs text-subtle shrink-0"
                           >{formatRelativeTime(issue.updatedAt || issue.createdAt)}</span
                         >
                       {/if}
@@ -1390,25 +1390,25 @@
                   {#snippet content()}
                     <div class="space-y-2">
                       <div class="flex items-center gap-2">
-                        <LinearIcon class="w-4 h-4 text-muted-foreground shrink-0" />
-                        <span class="text-xs font-medium text-muted-foreground"
+                        <LinearIcon class="w-4 h-4 text-ghost shrink-0" />
+                        <span class="text-xs font-medium text-subtle"
                           >{issue.identifier}</span
                         >
                         {#if issue.state}
                           <span
-                            class="text-xs px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground"
+                            class="text-xs px-1.5 py-0.5 rounded bg-muted/60 text-subtle"
                             >{issue.state}</span
                           >
                         {/if}
                       </div>
                       <div class="text-sm font-medium">{issue.title}</div>
                       {#if issue.description}
-                        <div class="text-sm text-muted-foreground line-clamp-3">
+                        <div class="text-sm text-subtle line-clamp-3">
                           {issue.description}
                         </div>
                       {/if}
                       <div
-                        class="flex items-center gap-2 text-xs text-muted-foreground/60 pt-1"
+                        class="flex items-center gap-2 text-xs text-subtle pt-1"
                       >
                         {#if issue.assignee}
                           <span>Assignee: {issue.assignee}</span>
@@ -1432,17 +1432,17 @@
               class="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
               transition:slide={{ duration: 150 }}
             >
-              <SentryIcon class="w-3.5 h-3.5 text-muted-foreground shrink-0 opacity-50" />
+              <SentryIcon class="w-3.5 h-3.5 text-ghost shrink-0 opacity-50" />
               <span class="text-sm truncate flex-1 text-foreground/80 group-hover:text-foreground"
                 >{issue.title}</span
               >
               {#if sentryProjects.length > 1 && !selectedSentryProject}
-                <span class="text-xs text-muted-foreground/40 shrink-0"
+                <span class="text-xs text-subtle shrink-0"
                   >{issue.projectName}</span
                 >
               {/if}
               {#if issue.lastSeen}
-                <span class="text-xs text-muted-foreground/40 shrink-0"
+                <span class="text-xs text-subtle shrink-0"
                   >{formatRelativeTime(issue.lastSeen)}</span
                 >
               {/if}
@@ -1466,8 +1466,8 @@
                   onclick={() => handleGitHubIssueClick(issue)}
                   class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
                 >
-                  <GitHubIcon class="w-3.5 h-3.5 text-muted-foreground shrink-0 opacity-50" />
-                  <span class="text-xs font-medium text-muted-foreground shrink-0"
+                  <GitHubIcon class="w-3.5 h-3.5 text-ghost shrink-0 opacity-50" />
+                  <span class="text-xs font-medium text-subtle shrink-0"
                     >#{issue.number}</span
                   >
                   <span
@@ -1475,7 +1475,7 @@
                     >{issue.title}</span
                   >
                   {#if issue.updatedAt || issue.createdAt}
-                    <span class="text-xs text-muted-foreground/40 shrink-0"
+                    <span class="text-xs text-subtle shrink-0"
                       >{formatRelativeTime(issue.updatedAt || issue.createdAt)}</span
                     >
                   {/if}
@@ -1484,8 +1484,8 @@
               {#snippet content()}
                 <div class="space-y-2">
                   <div class="flex items-center gap-2">
-                    <GitHubIcon class="w-4 h-4 text-muted-foreground shrink-0" />
-                    <span class="text-xs font-medium text-muted-foreground"
+                    <GitHubIcon class="w-4 h-4 text-ghost shrink-0" />
+                    <span class="text-xs font-medium text-subtle"
                       >#{issue.number}</span
                     >
                     {#if issue.state}
@@ -1498,9 +1498,9 @@
                   </div>
                   <div class="text-sm font-medium">{issue.title}</div>
                   {#if issue.body}
-                    <div class="text-sm text-muted-foreground line-clamp-3">{issue.body}</div>
+                    <div class="text-sm text-subtle line-clamp-3">{issue.body}</div>
                   {/if}
-                  <div class="flex items-center gap-2 text-xs text-muted-foreground/60 pt-1">
+                  <div class="flex items-center gap-2 text-xs text-subtle pt-1">
                     {#if issue.assignee}
                       <span>Assignee: {issue.assignee}</span>
                     {/if}
@@ -1530,8 +1530,8 @@
                   onclick={() => handleGitHubPRClick(pr)}
                   class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
                 >
-                  <GitHubIcon class="w-3.5 h-3.5 text-muted-foreground shrink-0 opacity-50" />
-                  <span class="text-xs font-medium text-muted-foreground shrink-0"
+                  <GitHubIcon class="w-3.5 h-3.5 text-ghost shrink-0 opacity-50" />
+                  <span class="text-xs font-medium text-subtle shrink-0"
                     >#{pr.number}</span
                   >
                   <span
@@ -1539,10 +1539,10 @@
                     >{pr.title}</span
                   >
                   {#if pr.state === 'draft'}
-                    <span class="text-xs text-muted-foreground/50 shrink-0">draft</span>
+                    <span class="text-xs text-subtle shrink-0">draft</span>
                   {/if}
                   {#if pr.updatedAt || pr.createdAt}
-                    <span class="text-xs text-muted-foreground/40 shrink-0"
+                    <span class="text-xs text-subtle shrink-0"
                       >{formatRelativeTime(pr.updatedAt || pr.createdAt)}</span
                     >
                   {/if}
@@ -1551,8 +1551,8 @@
               {#snippet content()}
                 <div class="space-y-2">
                   <div class="flex items-center gap-2">
-                    <GitHubIcon class="w-4 h-4 text-muted-foreground shrink-0" />
-                    <span class="text-xs font-medium text-muted-foreground">#{pr.number}</span>
+                    <GitHubIcon class="w-4 h-4 text-ghost shrink-0" />
+                    <span class="text-xs font-medium text-subtle">#{pr.number}</span>
                     {#if pr.state}
                       <span
                         class="text-xs px-1.5 py-0.5 rounded {pr.state === 'open'
@@ -1567,14 +1567,14 @@
                   </div>
                   <div class="text-sm font-medium">{pr.title}</div>
                   {#if pr.sourceBranch && pr.targetBranch}
-                    <div class="text-xs text-muted-foreground/70 font-mono">
+                    <div class="text-xs text-subtle font-mono">
                       {pr.sourceBranch} → {pr.targetBranch}
                     </div>
                   {/if}
                   {#if pr.body}
-                    <div class="text-sm text-muted-foreground line-clamp-3">{pr.body}</div>
+                    <div class="text-sm text-subtle line-clamp-3">{pr.body}</div>
                   {/if}
-                  <div class="flex items-center gap-2 text-xs text-muted-foreground/60 pt-1">
+                  <div class="flex items-center gap-2 text-xs text-subtle pt-1">
                     {#if pr.authorLogin}
                       <span>Author: {pr.authorName || pr.authorLogin}</span>
                     {/if}
@@ -1598,8 +1598,8 @@
             transition:slide={{ duration: 150 }}
           >
             <div class="flex items-center gap-2">
-              <LinearIcon class="w-3.5 h-3.5 text-muted-foreground" />
-              <span class="text-muted-foreground/70">Connect Linear to see your issues</span>
+              <LinearIcon class="w-3.5 h-3.5 text-ghost" />
+              <span class="text-subtle">Connect Linear to see your issues</span>
             </div>
             <button
               type="button"
@@ -1618,8 +1618,8 @@
             transition:slide={{ duration: 150 }}
           >
             <div class="flex items-center gap-2">
-              <GitHubIcon class="w-3.5 h-3.5 text-muted-foreground" />
-              <span class="text-muted-foreground/70"
+              <GitHubIcon class="w-3.5 h-3.5 text-ghost" />
+              <span class="text-subtle"
                 >Connect GitHub to see your {activeSource === 'github-prs'
                   ? 'pull requests'
                   : 'issues'}</span
@@ -1636,7 +1636,7 @@
         {/if}
         <!-- Show repository hint when authenticated but no repo selected -->
         {#if (activeSource === 'github-issues' || activeSource === 'github-prs') && !isLoading && isGitHubAuthenticated && !repositoryOwner}
-          <div class="px-3 py-1.5 text-xs text-muted-foreground/60 bg-muted/20">
+          <div class="px-3 py-1.5 text-xs text-subtle bg-muted/20">
             Select a GitHub repository to see {activeSource === 'github-prs'
               ? 'pull requests'
               : 'issues'}
@@ -1650,8 +1650,8 @@
             transition:slide={{ duration: 150 }}
           >
             <div class="flex items-center gap-2">
-              <SentryIcon class="w-3.5 h-3.5 text-muted-foreground" />
-              <span class="text-muted-foreground/70">Connect Sentry to see your issues</span>
+              <SentryIcon class="w-3.5 h-3.5 text-ghost" />
+              <span class="text-subtle">Connect Sentry to see your issues</span>
             </div>
             <button
               type="button"

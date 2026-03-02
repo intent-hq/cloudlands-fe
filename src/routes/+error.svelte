@@ -39,9 +39,9 @@
           Something went wrong
         </h2>
         {#if status && status !== 500}
-          <p class="text-sm text-muted-foreground/60">Error {status}</p>
+          <p class="text-sm text-subtle">Error {status}</p>
         {/if}
-        <p class="text-base text-muted-foreground/80 leading-relaxed break-words">
+        <p class="text-base text-subtle leading-relaxed break-words">
           {error?.message || 'An unexpected error occurred'}
         </p>
       </div>
@@ -60,7 +60,7 @@
       {#if error?.message}
         <div class="w-full flex flex-col items-center">
           <button
-            class="text-sm text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+            class="text-sm text-muted-foreground hover:text-muted-foreground transition-colors"
             onclick={() => (showDetails = !showDetails)}
           >
             {showDetails ? 'Hide' : 'Show'} Technical Details
@@ -70,7 +70,7 @@
           {#if showDetails}
             <div class="relative w-full pt-3" transition:slide={{ axis: 'y' }}>
               <div class="p-4 border border-border/50 rounded bg-muted/30">
-                <pre class="text-xs font-mono text-foreground/70 leading-relaxed overflow-x-auto max-h-64 text-left whitespace-pre-wrap break-all">Status: {status}
+                <pre class="text-xs font-mono text-subtle leading-relaxed overflow-x-auto max-h-64 text-left whitespace-pre-wrap break-all">Status: {status}
 Message: {error?.message}</pre>
               </div>
             </div>

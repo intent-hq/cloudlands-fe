@@ -287,7 +287,7 @@
             <AuggieAvatar faceSeed={linkedAgentId} colorSeed={linkedAgentId} size={16} />
           </button>
         {:else}
-          <Fa icon={faCode} size="xs" class="flex-none text-muted-foreground/50" />
+          <Fa icon={faCode} size="xs" class="flex-none text-ghost" />
         {/if}
         <!-- Clickable area to toggle expansion -->
         <button
@@ -297,12 +297,12 @@
         >
           <span class="text-inherit font-medium truncate">{fileName}</span>
           {#if filePath && filePath !== fileName}
-            <span class="text-sm text-muted-foreground truncate flex-1 min-w-0">
+            <span class="text-sm text-subtle truncate flex-1 min-w-0">
               {filePath}
             </span>
           {/if}
           {#if lineRangeDisplay()}
-            <span class="text-xs text-muted-foreground font-mono flex-none">
+            <span class="text-xs text-subtle font-mono flex-none">
               {lineRangeDisplay()}
             </span>
           {/if}
@@ -310,7 +310,7 @@
         <Button
           variant="ghost-light"
           size="sm"
-          class="h-6 px-2 text-xs text-muted-foreground gap-1 flex-none"
+          class="h-6 px-2 text-xs text-subtle gap-1 flex-none"
           onclick={openInApp}
           title="Go to file"
         >
@@ -327,7 +327,7 @@
               <Skeleton class="h-16 w-full rounded" />
             </div>
           {:else if error && !resolvedCode && !primitive.snapshot}
-            <div class="p-3 text-sm text-muted-foreground">{error}</div>
+            <div class="p-3 text-sm text-subtle">{error}</div>
           {:else if codeContent}
             <CodeBlock
               code={codeContent}
@@ -338,13 +338,13 @@
               noMargin={true}
             />
           {:else}
-            <div class="p-3 text-sm text-muted-foreground italic">No code content</div>
+            <div class="p-3 text-sm text-subtle italic">No code content</div>
           {/if}
         </div>
         </div>
       {/if}
     </div>
   {:else}
-    <div class="my-1.5 text-sm text-muted-foreground">Invalid reference block</div>
+    <div class="my-1.5 text-sm text-subtle">Invalid reference block</div>
   {/if}
 </NodeViewWrapper>

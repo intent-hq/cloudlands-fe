@@ -1274,7 +1274,7 @@
 >
   <!-- Breadcrumb navigation (above canvas, like repo-visualizer) -->
   {#if zoomedPath}
-    <div class="flex items-center gap-1 px-2 py-1.5 text-xs text-muted-foreground overflow-x-auto">
+    <div class="flex items-center gap-1 px-2 py-1.5 text-xs text-subtle overflow-x-auto">
       {#each breadcrumbs as crumb, i (`crumb-${i}-${crumb.path}`)}
         {#if i > 0}
           <span class="opacity-40">/</span>
@@ -1320,19 +1320,19 @@
           <i
             class="fa fa-{hoveredNode.isFolder
               ? 'folder-o'
-              : 'file-o'} text-muted-foreground/30 mt-0.5 shrink-0"
+              : 'file-o'} text-ghost mt-0.5 shrink-0"
           ></i>
           <div class="min-w-0">
             <div class="font-medium text-foreground break-words">{hoveredNode.name}</div>
             {#if hoveredNode.path}
-              <div class="text-muted-foreground text-[10px] break-words line-clamp-3">
+              <div class="text-subtle text-ui break-words line-clamp-3">
                 {hoveredNode.path}
               </div>
             {/if}
           </div>
         </div>
         {#if hoveredNode.size > 0 && !hoveredNode.isFolder}
-          <div class="mt-1 pt-1 border-t border-border/50 text-muted-foreground">
+          <div class="mt-1 pt-1 border-t border-border/50 text-subtle">
             {(hoveredNode.size / 1024).toFixed(1)} KB
           </div>
         {/if}
@@ -1349,7 +1349,7 @@
         >
           <div class="flex items-center gap-2 px-3 py-2 border-b border-border">
             <svg
-              class="w-3 h-3 text-muted-foreground shrink-0"
+              class="w-3 h-3 text-subtle shrink-0"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -1402,7 +1402,7 @@
                         ></span>
                       {/if}
                     </div>
-                    <div class="text-[10px] text-muted-foreground truncate">
+                    <div class="text-ui text-subtle truncate">
                       {result.path}
                     </div>
                   </div>
@@ -1410,7 +1410,7 @@
               {/each}
             </div>
           {:else if searchQuery}
-            <div class="px-3 py-4 text-center text-sm text-muted-foreground">
+            <div class="px-3 py-4 text-center text-sm text-subtle">
               No results for "{searchQuery}"
             </div>
           {/if}
@@ -1431,7 +1431,7 @@
             <path d="m21 21-4.35-4.35"></path>
           </svg>
           <span>Search</span>
-          <kbd class="text-[10px] px-1 py-0.5 rounded bg-muted ml-1">/</kbd>
+          <kbd class="text-ui px-1 py-0.5 rounded bg-muted ml-1">/</kbd>
         </button>
       {/if}
     </div>

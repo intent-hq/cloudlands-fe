@@ -224,7 +224,7 @@
         transition:fade={{ duration: 150 }}
       >
         <div
-          class="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-muted-foreground shadow-lg"
+          class="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-subtle shadow-lg"
         >
           <Fa icon={faArrowPointer} class="w-3 h-3" />
           Click to scroll the code
@@ -232,7 +232,7 @@
       </div>
     {/if}
   {:else}
-    <div class="flex items-center justify-center h-24 text-muted-foreground">
+    <div class="flex items-center justify-center h-24 text-subtle">
       No workspace available
     </div>
   {/if}

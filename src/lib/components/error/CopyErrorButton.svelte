@@ -158,7 +158,7 @@
 <!-- Vercel-style minimal copy button -->
 <button
   onclick={handleCopy}
-  class="text-[11px] font-medium transition-all duration-200 flex items-center gap-1.5 {className}
+  class="text-ui font-medium transition-all duration-200 flex items-center gap-1.5 {className}
     {isCopied ? 'text-emerald-400' : 'text-neutral-400 hover:text-neutral-100'}"
 >
   {#if isCopied}

@@ -1012,7 +1012,7 @@
             </h2>
             {#if isBackgroundAgent}
               <div
-                class="px-1 py-0.5 text-[8px] font-bold bg-muted text-muted-foreground rounded mr-1"
+                class="px-1 py-0.5 text-ui font-bold bg-muted text-subtle rounded mr-1"
               >
                 BG
               </div>
@@ -1048,7 +1048,7 @@
               </Button> -->
 
               <!-- Message counter -->
-              <!-- <div class="text-xs text-muted-foreground px-1">
+              <!-- <div class="text-xs text-subtle px-1">
             {navigationState.currentMessageIndex + 1} / {navigationState.userMessageCount}
           </div> -->
 
@@ -1093,7 +1093,7 @@
               ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400'
               : agentStatus === 'error'
                 ? 'bg-red-500/20 text-red-600 dark:text-red-400'
-                : 'bg-muted text-muted-foreground'}"
+                : 'bg-muted text-subtle'}"
         >
           {agentStatus}
         </span>
@@ -1339,7 +1339,7 @@
         {:else}
           <!-- Fallback for when no content is available in non-new spaces -->
           <!-- <div class="flex-1 flex items-center justify-center">
-            <div class="text-muted-foreground">No space selected</div>
+            <div class="text-subtle">No space selected</div>
           </div> -->
         {/if}
       </div>
@@ -1367,7 +1367,7 @@
         <!-- Timeline context header (if viewing from timeline) -->
         {#if localContent?.timelineContext}
           <div class="px-6 py-3 border-b border-border bg-muted/20 flex-none">
-            <div class="flex items-center gap-3 text-xs text-muted-foreground">
+            <div class="flex items-center gap-3 text-xs text-subtle">
               {#if localContent.timelineContext.terminalName || localContent.timelineContext.sessionId}
                 <div class="flex items-center gap-1">
                   <Fa icon={faTerminal} class="text-xs" />
@@ -1421,7 +1421,7 @@
         <!-- Timeline context header -->
         {#if localContent?.timelineContext}
           <div class="px-6 py-3 border-b border-border bg-muted/20 flex-none">
-            <div class="flex items-center gap-3 text-xs text-muted-foreground">
+            <div class="flex items-center gap-3 text-xs text-subtle">
               {#if localContent.timelineContext.terminalName || localContent.timelineContext.sessionId}
                 <div class="flex items-center gap-1">
                   <Fa icon={faTerminal} class="text-xs" />
@@ -1502,7 +1502,7 @@
         {#if localContent?.notes && localContent.notes.length > 0}
           {#each localContent.notes as note, noteIndex (`note-${noteIndex}-${note.id || note.timestamp || noteIndex}`)}
             <div class="rounded-lg border border-border bg-muted/30 p-4">
-              <div class="text-xs text-muted-foreground mb-2">
+              <div class="text-xs text-subtle mb-2">
                 {note.timestamp || new Date().toLocaleString()}
               </div>
               <div class="text-sm whitespace-pre-wrap">
@@ -1511,7 +1511,7 @@
             </div>
           {/each}
         {:else}
-          <div class="text-center text-muted-foreground py-8">No notes yet</div>
+          <div class="text-center text-subtle py-8">No notes yet</div>
         {/if}
       </div>
     {:else if contentType === 'note' && localContent}
@@ -1523,7 +1523,7 @@
               <h2 class="text-xl font-semibold text-foreground">
                 {localContent?.title || 'Untitled Note'}
               </h2>
-              <div class="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+              <div class="flex items-center gap-4 mt-2 text-xs text-subtle">
                 {#if localContent?.author}
                   <span class="flex items-center gap-1">
                     <Fa icon={faCommentDots} class="w-3 h-3" />
@@ -1542,7 +1542,7 @@
                 <div class="text-yellow-500">📌</div>
               {/if}
               {#if localContent?.is_archived}
-                <div class="text-muted-foreground">📦</div>
+                <div class="text-subtle">📦</div>
               {/if}
             </div>
           </div>
@@ -1567,7 +1567,7 @@
 
           <!-- Note metadata footer -->
           {#if localContent?.metadata}
-            <div class="pt-4 border-t border-border text-xs text-muted-foreground">
+            <div class="pt-4 border-t border-border text-xs text-subtle">
               {#if localContent.metadata.word_count}
                 <span>{localContent.metadata.word_count} words</span>
                 <span class="mx-2">•</span>
@@ -1588,7 +1588,7 @@
             .reduce((a: number, c: string) => a + c.charCodeAt(0), 0)}`)}
             <div>
               {#if block.description}
-                <div class="text-sm text-muted-foreground mb-2">
+                <div class="text-sm text-subtle mb-2">
                   {block.description}
                 </div>
               {/if}
@@ -1601,11 +1601,11 @@
             </div>
           {/each}
         {:else}
-          <div class="text-center text-muted-foreground py-8">No code history yet</div>
+          <div class="text-center text-subtle py-8">No code history yet</div>
         {/if}
       </div>
     {:else}
-      <div class="p-6 text-center text-muted-foreground">No content available</div>
+      <div class="p-6 text-center text-subtle">No content available</div>
     {/if}
   </div>
 </div>

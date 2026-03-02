@@ -222,7 +222,7 @@
             <Fa icon={faDesktop} size="sm" />
             Local Machine
           </div>
-          <p class="text-sm text-muted-foreground mt-1">Run space on this computer</p>
+          <p class="text-sm text-subtle mt-1">Run space on this computer</p>
         </div>
       </label>
 
@@ -235,7 +235,7 @@
             <Fa icon={faServer} size="sm" />
             Remote Machine (SSH)
           </div>
-          <p class="text-sm text-muted-foreground mt-1">
+          <p class="text-sm text-subtle mt-1">
             Connect to a remote server or dev deployment
           </p>
         </div>
@@ -267,7 +267,7 @@
       <CardContent class="space-y-4">
         {#if showSavedConfigs && savedConfigs.length > 0}
           <div class="mb-4 p-2 border border-border rounded-md bg-background">
-            <div class="text-xs text-muted-foreground mb-2">Recent SSH Connections:</div>
+            <div class="text-xs text-subtle mb-2">Recent SSH Connections:</div>
             <div class="space-y-1">
               {#each savedConfigs as config (config.name)}
                 <button
@@ -276,7 +276,7 @@
                   class="w-full text-left px-2 py-1 text-sm hover:bg-accent rounded transition-colors"
                 >
                   {config.name}
-                  <span class="text-xs text-muted-foreground ml-2">
+                  <span class="text-xs text-subtle ml-2">
                     {new Date(config.savedAt).toLocaleDateString()}
                   </span>
                 </button>
@@ -311,7 +311,7 @@
         <div>
           <Label for="password">
             Password
-            <span class="text-xs text-muted-foreground ml-1">(optional if using SSH key)</span>
+            <span class="text-xs text-subtle ml-1">(optional if using SSH key)</span>
           </Label>
           <Input
             id="password"
@@ -330,7 +330,7 @@
             placeholder="/home/user/workspace"
             class="mt-1"
           />
-          <p class="text-xs text-muted-foreground mt-1">
+          <p class="text-xs text-subtle mt-1">
             Path on the remote machine where the space will be located
           </p>
         </div>

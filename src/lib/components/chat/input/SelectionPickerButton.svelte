@@ -129,7 +129,7 @@
       <Fa icon={faQuoteLeft} size="sm" />
       {#if checkedCount > 0}
         <span
-          class="absolute -top-1 -right-1 min-w-3.5 h-3.5 px-1 text-[10px] font-medium
+          class="absolute -top-1 -right-1 min-w-3.5 h-3.5 px-1 text-ui font-medium
                  rounded-full bg-accent text-accent-foreground flex items-center justify-center"
         >
           {checkedCount}
@@ -152,7 +152,7 @@
       >
         <!-- Header -->
         <div class="px-3 py-2 border-b border-border bg-muted/30">
-          <div class="text-xs font-medium text-muted-foreground">
+          <div class="text-xs font-medium text-subtle">
             Selected text ({selections.length})
           </div>
         </div>
@@ -176,7 +176,7 @@
               />
               <div class="flex-1 min-w-0">
                 <!-- Source label -->
-                <div class="flex items-center gap-1.5 text-xs text-muted-foreground mb-0.5">
+                <div class="flex items-center gap-1.5 text-xs text-subtle mb-0.5">
                   <Fa icon={getSourceIcon(selection.sourceType)} class="h-3 w-3" />
                   <span class="truncate">{selection.sourceLabel}</span>
                 </div>

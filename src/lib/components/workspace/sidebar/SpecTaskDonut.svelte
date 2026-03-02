@@ -32,7 +32,7 @@
         fill="none"
         stroke="currentColor"
         stroke-width={strokeWidth}
-        class="text-muted-foreground/20"
+        class="text-ghost"
       />
       <!-- In progress arc (primary) -->
       {#if taskStats.inProgress > 0}
@@ -69,11 +69,11 @@
     <span
       class={taskStats.completed === taskStats.total
         ? 'text-emerald-600 dark:text-emerald-400'
-        : 'text-muted-foreground'}
+        : 'text-subtle'}
     >
       {taskStats.completed} / {taskStats.total} tasks
     </span>
   </div>
 {:else}
-  <span class="text-muted-foreground">No tasks</span>
+  <span class="text-subtle">No tasks</span>
 {/if}

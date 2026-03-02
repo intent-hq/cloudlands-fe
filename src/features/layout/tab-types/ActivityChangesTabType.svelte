@@ -191,7 +191,7 @@
       ? 'Wrapping lines. Click to disable.'
       : 'Click to wrap lines'}
     tooltipSide="bottom"
-    class={editorSettings.lineWrapping ? 'text-foreground' : 'text-muted-foreground/50'}
+    class={editorSettings.lineWrapping ? 'text-foreground' : 'text-muted-foreground'}
   >
     <Fa icon={faTextWidth} size="xs" />
   </Button>
@@ -203,7 +203,7 @@
       ? 'Folding unchanged lines. Click to disable.'
       : 'Click to fold unchanged lines'}
     tooltipSide="bottom"
-    class={editorSettings.foldUnchanged ? 'text-foreground' : 'text-muted-foreground/50'}
+    class={editorSettings.foldUnchanged ? 'text-foreground' : 'text-muted-foreground'}
   >
     <Fa icon={faMap} size="xs" />
   </Button>
@@ -215,7 +215,7 @@
       ? 'Click to show unified view'
       : 'Click to show split view'}
     tooltipSide="bottom"
-    class={editorSettings.diffSideBySide ? 'text-foreground' : 'text-muted-foreground/50'}
+    class={editorSettings.diffSideBySide ? 'text-foreground' : 'text-muted-foreground'}
   >
     <Fa icon={faColumns} size="xs" />
   </Button>
@@ -232,7 +232,7 @@
 {#if filePath && diffContents}
   <div class="flex flex-col h-full">
     {#if isPartialDiff}
-      <div class="flex items-center gap-1.5 px-3 py-1.5 text-xs text-muted-foreground bg-muted/50 border-b border-border">
+      <div class="flex items-center gap-1.5 px-3 py-1.5 text-xs text-subtle bg-muted/50 border-b border-border">
         <span>Showing partial diff starting at line {lineOffset}</span>
       </div>
     {/if}
@@ -252,12 +252,12 @@
   </div>
 {:else if filePath}
   <!-- No diff content available -->
-  <div class="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
+  <div class="flex flex-col items-center justify-center h-full text-subtle gap-4">
     <p class="text-sm">No diff stored for this event</p>
     <p class="text-xs opacity-70">The file change was recorded but the diff was not captured</p>
   </div>
 {:else}
-  <div class="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
+  <div class="flex flex-col items-center justify-center h-full text-subtle gap-4">
     <p class="text-sm">No changes found in this event</p>
     {#if activityEvent}
       <p class="text-xs opacity-70">Event type: {activityEvent.type}</p>

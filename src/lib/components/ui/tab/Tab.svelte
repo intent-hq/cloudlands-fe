@@ -153,7 +153,7 @@
             {/each}
             {#if runningAgents.length > 2}
               <div
-                class="flex items-center justify-center w-3.5 h-3.5 text-[8px] font-medium text-muted-foreground"
+                class="flex items-center justify-center w-3.5 h-3.5 text-ui font-medium text-subtle"
               >
                 +{runningAgents.length - 2}
               </div>

@@ -573,7 +573,7 @@
                 }}
                 variant="ghost-light"
                 size="icon-xs"
-                class="text-muted-foreground/60 hover:text-foreground"
+                class="text-muted-foreground hover:text-foreground"
                 tooltip="Close formㅤESC"
               >
                 <Fa icon={faXmark} />

@@ -484,7 +484,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
       <button
         class={cn(
           'p-1.5 rounded hover:bg-muted transition-colors',
-          canGoBack ? 'text-foreground' : 'text-muted-foreground/40 cursor-not-allowed',
+          canGoBack ? 'text-foreground' : 'text-ghost cursor-not-allowed',
         )}
         onclick={onGoBack}
         disabled={!canGoBack}
@@ -497,7 +497,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
       <button
         class={cn(
           'p-1.5 rounded hover:bg-muted transition-colors',
-          canGoForward ? 'text-foreground' : 'text-muted-foreground/40 cursor-not-allowed',
+          canGoForward ? 'text-foreground' : 'text-ghost cursor-not-allowed',
         )}
         onclick={onGoForward}
         disabled={!canGoForward}
@@ -563,10 +563,10 @@ Only respond with the <layout> tag and valid JSON inside it.`;
             class="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted transition-colors"
             onclick={() => handleContentPreset(preset.id)}
           >
-            <Fa icon={preset.icon} class="w-4 h-4 text-muted-foreground" />
+            <Fa icon={preset.icon} class="w-4 h-4 text-ghost" />
             <div class="flex-1 min-w-0">
               <div class="font-medium">{preset.label}</div>
-              <div class="text-xs text-muted-foreground truncate">{preset.description}</div>
+              <div class="text-xs text-subtle truncate">{preset.description}</div>
             </div>
           </button>
         {/each}
@@ -612,7 +612,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
           'p-1 rounded transition-colors',
           promptValue.trim() && !isGenerating
             ? 'text-primary hover:bg-primary/10'
-            : 'text-muted-foreground/40 cursor-not-allowed',
+            : 'text-ghost cursor-not-allowed',
         )}
         onclick={handleGenerateLayout}
         disabled={!promptValue.trim() || isGenerating}

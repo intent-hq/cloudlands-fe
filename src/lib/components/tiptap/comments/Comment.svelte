@@ -176,7 +176,7 @@
 
   const isCompact = $derived(size === 'compact');
   const authorSize = $derived(isCollapsed || isCompact ? 'text-[13px]' : 'text-sm');
-  const timestampSize = $derived(isCollapsed || isCompact ? 'text-[12px]' : 'text-xs');
+  const timestampSize = $derived(isCollapsed || isCompact ? 'text-xs' : 'text-xs');
   const contentSize = $derived(isCompact ? 'text-[14px]' : 'text-sm');
 </script>
 
@@ -203,14 +203,14 @@
         >
         {#if comment.createdAt}
           <span
-            class="text-muted-foreground whitespace-nowrap {timestampSize}"
+            class="text-subtle whitespace-nowrap {timestampSize}"
             title={new Date(comment.createdAt).toLocaleString()}
             >{formatTimestamp(comment.createdAt)}</span
           >
         {/if}
         {#if showType && comment.type && comment.type !== 'comment'}
           <span
-            class="comment-type-badge px-1.5 py-0.5 text-[10px] font-mono bg-muted/50 text-muted-foreground"
+            class="comment-type-badge px-1.5 py-0.5 text-ui font-mono bg-muted/50 text-subtle"
             title="Comment type"
           >
             {comment.type}
@@ -316,7 +316,7 @@
       </div>
     {:else}
       <div
-        class="comment-content {contentSize} leading-snug text-muted-foreground whitespace-pre-wrap wrap-break-word"
+        class="comment-content {contentSize} leading-snug text-subtle whitespace-pre-wrap wrap-break-word"
         class:leading-relaxed={isCompact}
         class:text-gray-700={isCompact}
       >

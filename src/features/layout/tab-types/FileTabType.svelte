@@ -527,7 +527,7 @@
         onclick={() => (markdownPreview = !markdownPreview)}
         tooltip={markdownPreview ? 'Switch to code editor' : 'Switch to rich text preview'}
         tooltipSide="bottom"
-        class={markdownPreview ? 'text-foreground' : 'text-muted-foreground/50'}
+        class={markdownPreview ? 'text-foreground' : 'text-muted-foreground'}
       >
         <Fa icon={markdownPreview ? faCode : faEye} size="xs" />
       </Button>
@@ -550,7 +550,7 @@
         onclick={() => editorSettings.toggleDiffIndicators()}
         tooltip={editorSettings.diffIndicators ? 'Hide diff indicators' : 'Show diff indicators'}
         tooltipSide="bottom"
-        class={editorSettings.diffIndicators ? 'text-foreground' : 'text-muted-foreground/50'}
+        class={editorSettings.diffIndicators ? 'text-foreground' : 'text-muted-foreground'}
       >
         <Fa icon={faPaintbrush} size="xs" />
       </Button>
@@ -562,7 +562,7 @@
           ? 'Wrapping lines. Click to disable.'
           : 'Click to wrap lines'}
         tooltipSide="bottom"
-        class={editorSettings.lineWrapping ? 'text-foreground' : 'text-muted-foreground/50'}
+        class={editorSettings.lineWrapping ? 'text-foreground' : 'text-muted-foreground'}
       >
         <Fa icon={faTextWidth} size="xs" />
       </Button>
@@ -573,7 +573,7 @@
       onclick={handleDeleteFile}
       tooltip="Delete file"
       tooltipSide="bottom"
-      class="text-muted-foreground/50 hover:text-destructive-foreground"
+      class="text-muted-foreground hover:text-destructive-foreground"
     >
       <Fa icon={faTrash} size="xs" />
     </Button>
@@ -600,7 +600,7 @@
         </div>
       </div>
     {:else if fileError}
-      <div class="flex flex-col items-center justify-center h-full text-muted-foreground gap-2">
+      <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
         <p class="text-destructive-foreground">Error loading file</p>
         <p class="text-xs">{fileError}</p>
       </div>
@@ -630,7 +630,7 @@
         />
       {/if}
     {:else}
-      <div class="flex items-center justify-center h-full text-muted-foreground">
+      <div class="flex items-center justify-center h-full text-subtle">
         <p>Preparing to load file...</p>
       </div>
     {/if}

@@ -91,8 +91,8 @@
               <ul class="mt-1.25 space-y-1.25">
                 {#each data.shortcuts as shortcut}
                   <li class="flex items-center justify-between gap-4 text-sm">
-                    <span class="text-muted-foreground truncate">{shortcut.label}</span>
-                    <span class="text-muted-foreground text-xs whitespace-nowrap">
+                    <span class="text-subtle truncate">{shortcut.label}</span>
+                    <span class="text-subtle text-xs whitespace-nowrap">
                       {formatShortcut(shortcut.key)}
                     </span>
                   </li>

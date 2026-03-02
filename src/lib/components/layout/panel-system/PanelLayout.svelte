@@ -1039,7 +1039,7 @@
         {onOpenBrowser}
       />
     {:else}
-      <div class="flex items-center justify-center h-full text-muted-foreground">
+      <div class="flex items-center justify-center h-full text-subtle">
         <p>Loading layout...</p>
       </div>
     {/if}
@@ -1057,7 +1057,7 @@
         <span class="text-primary">Press 1-9</span> to jump to panel
       {:else}
         <span class="text-primary">⌘K</span> activated — press a key
-        <span class="text-muted-foreground ml-2">
+        <span class="text-subtle ml-2">
           h/j/k/l navigate • z zoom • % split • x close
         </span>
       {/if}

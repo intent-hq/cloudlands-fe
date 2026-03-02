@@ -81,7 +81,7 @@
 
 <div class={cn('flex flex-col', className)}>
   {#if showStats && stats.total > 0}
-    <div class="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
+    <div class="flex items-center gap-2 px-2 py-1 text-xs text-subtle">
       <span>{stats.total} {stats.total === 1 ? 'file' : 'files'}</span>
       {#if stats.created > 0}
         <span class="text-green-600">+{stats.created}</span>
@@ -108,12 +108,12 @@
         onclick={() => onFileClick?.(change)}
         ondblclick={() => onFileDoubleClick?.(change)}
       >
-        <Fa icon={getFileIcon(change)} class="text-muted-foreground flex-shrink-0" size="sm" />
+        <Fa icon={getFileIcon(change)} class="text-ghost flex-shrink-0" size="sm" />
 
         <div class="flex-1 min-w-0">
           <div class={cn('truncate', compact ? 'text-xs' : 'text-sm')}>{fileName}</div>
           {#if !compact && directory}
-            <div class="text-xs text-muted-foreground truncate">{directory}</div>
+            <div class="text-xs text-subtle truncate">{directory}</div>
           {/if}
         </div>
 
@@ -134,7 +134,7 @@
     {/each}
 
     {#if remainingCount > 0}
-      <div class="px-2 py-1 text-xs text-muted-foreground">
+      <div class="px-2 py-1 text-xs text-subtle">
         ...and {remainingCount} more
       </div>
     {/if}

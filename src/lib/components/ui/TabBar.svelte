@@ -81,7 +81,7 @@
         class={cn(
           'relative flex items-center justify-center gap-1.5 h-7 py-1.5 px-2.5 -mx-0.5 text-xs font-medium transition-all duration-150 cursor-pointer shrink-0',
           tab.class || '',
-          isActive ? '' : 'text-muted-foreground/80 hover:text-foreground',
+          isActive ? '' : 'text-muted-foreground hover:text-foreground',
           isFocused && 'ring-1 ring-primary/40 rounded',
         )}
         onclick={() => handleTabClick(tab.id)}

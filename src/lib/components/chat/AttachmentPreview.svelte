@@ -85,7 +85,7 @@
 </script>
 
 <div
-  class="flex items-center gap-1.5 px-2 py-0.5 bg-muted/70 text-muted-foreground rounded text-xs whitespace-nowrap group shrink-0 {className}"
+  class="flex items-center gap-1.5 px-2 py-0.5 bg-muted/70 text-subtle rounded text-xs whitespace-nowrap group shrink-0 {className}"
   in:scale={{ duration: 200, start: 0.9, easing: cubicOut }}
   out:fade={{ duration: 150 }}
 >

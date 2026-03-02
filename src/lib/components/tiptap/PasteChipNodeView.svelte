@@ -74,13 +74,13 @@
         <div class="space-y-1.5 max-w-96 min-w-48">
           <div class="flex items-center gap-1.5">
             <Fa icon={faClipboard} size="xs" class="opacity-40" />
-            <span class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide"
+            <span class="text-ui font-medium text-muted-foreground uppercase tracking-wide"
               >Pasted text</span
             >
-            <span class="text-[10px] text-muted-foreground/60">· {lineCount} lines</span>
+            <span class="text-ui text-subtle">· {lineCount} lines</span>
           </div>
           <div
-            class="text-xs text-muted-foreground whitespace-pre-wrap break-words leading-relaxed line-clamp-[12]"
+            class="text-xs text-subtle whitespace-pre-wrap break-words leading-relaxed line-clamp-[12]"
           >
             {previewText}
           </div>
@@ -94,7 +94,7 @@
       variant="ghost-light"
       size="icon-xs"
       onclick={handleExpand}
-      class="expand-btn px-0.5! w-auto! hover:z-20 text-muted-foreground/50 hover:text-foreground!
+      class="expand-btn px-0.5! w-auto! hover:z-20 text-muted-foreground hover:text-foreground!
         {selected ? '' : ''}"
       aria-label="Expand to raw text"
       tooltip="Expand to raw text"
@@ -107,7 +107,7 @@
       variant="ghost-light"
       size="icon-xs"
       onclick={handleDelete}
-      class="delete-btn px-0.5! -ml-px w-auto! hover:z-20 text-muted-foreground/70 hover:text-foreground!
+      class="delete-btn px-0.5! -ml-px w-auto! hover:z-20 text-muted-foreground hover:text-foreground!
         {selected ? '' : ''}"
       aria-label="Remove pasted text"
     >

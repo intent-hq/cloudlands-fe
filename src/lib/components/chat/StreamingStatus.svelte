@@ -152,7 +152,7 @@
       {#if status === 'model-unavailable' && modelUnavailable}
         <Fa icon={faExclamationTriangle} class="text-amber-500/70 shrink-0" />
         <span class="text-amber-600 dark:text-amber-400 text-sm">
-          Model <code class="px-1 py-0.5 bg-muted rounded text-[10px]"
+          Model <code class="px-1 py-0.5 bg-muted rounded text-ui"
             >{modelUnavailable.failedModel}</code
           > is not available
         </span>
@@ -174,7 +174,7 @@
       {:else}
         <!-- Normal / slow - show spinner -->
         <Spinner size={4} {seed} />
-        <span class="text-muted-foreground/80 text-sm font-family-child">{statusMessage}</span>
+        <span class="text-subtle text-sm font-family-child">{statusMessage}</span>
       {/if}
     </div>
 

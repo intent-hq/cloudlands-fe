@@ -185,7 +185,7 @@
         <div class="relative">
           <Fa
             icon={faSearch}
-            class="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
+            class="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-subtle"
           />
           <input
             bind:this={searchInput}
@@ -214,9 +214,9 @@
 
       <div class="max-h-60 overflow-auto p-1">
         {#if isSearching}
-          <div class="px-2 py-4 text-sm text-muted-foreground text-center">Searching...</div>
+          <div class="px-2 py-4 text-sm text-subtle text-center">Searching...</div>
         {:else if filteredOptions.length === 0}
-          <div class="px-2 py-4 text-sm text-muted-foreground text-center">
+          <div class="px-2 py-4 text-sm text-subtle text-center">
             {searchQuery ? 'No results found' : 'No options available'}
             {#if allowCustom && searchQuery}
               <button
@@ -244,7 +244,7 @@
               <div class="flex-1 min-w-0">
                 <div class="truncate">{option.label}</div>
                 {#if option.description}
-                  <div class="text-xs text-muted-foreground truncate">
+                  <div class="text-xs text-subtle truncate">
                     {option.description}
                   </div>
                 {/if}

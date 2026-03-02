@@ -93,16 +93,16 @@
 <div class={className}>
   <button
     type="button"
-    class="flex items-center gap-2.5 w-full py-1 px-1 border-none cursor-pointer text-left text-muted-foreground text-base transition-colors duration-150 rounded-md"
+    class="flex items-center gap-2.5 w-full py-1 px-1 border-none cursor-pointer text-left text-subtle text-base transition-colors duration-150 rounded-md"
     onclick={toggle}
     aria-expanded={isExpanded}
   >
     <div class="flex items-center justify-center shrink-0 {isStreaming ? 'animate-pulse' : ''}">
-      <Fa icon={faRectangleList} size={12} class="text-muted-foreground/50" />
+      <Fa icon={faRectangleList} size={12} class="text-ghost" />
     </div>
     <span class="font-semibold text-foreground/80 shrink-0">{name}</span>
     {#if !isExpanded && textSnippet}
-      <span class="text-sm text-muted-foreground/50 truncate min-w-0">{textSnippet}</span>
+      <span class="text-sm text-subtle truncate min-w-0">{textSnippet}</span>
     {/if}
     {#if stats.icons.length > 0}
       <div class="flex items-center gap-1.5 ml-0.75 opacity-40">
@@ -116,7 +116,7 @@
         ? 'rotate-90'
         : 'rotate-180'}"
     >
-      <Fa icon={faChevronRight} size={9} class="text-muted-foreground/50" />
+      <Fa icon={faChevronRight} size={9} class="text-ghost" />
     </div> -->
   </button>
 

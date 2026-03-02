@@ -354,11 +354,11 @@
     <div class="text-sm font-medium text-foreground">Agent orchestration</div>
     <div class="flex items-center gap-1 py-1.5">
       <AuggieAvatar faceSeed="blank" colorSeed="blank" size={22} specialist="spec-writer" />
-      <span class="text-muted-foreground text-xs mx-0.5">→</span>
+      <span class="text-subtle text-xs mx-0.5">→</span>
       <AuggieAvatar faceSeed="blank" colorSeed="blank" size={22} specialist="implementor" />
       <AuggieAvatar faceSeed="blank" colorSeed="blank" size={22} specialist="verifier" />
     </div>
-    <div class="text-sm text-muted-foreground leading-snug">
+    <div class="text-sm text-subtle leading-snug">
       A coordinator agent will write a spec for your task and manage the work for you across
       different agents.
     </div>
@@ -366,14 +366,14 @@
       class="model-picker-row {isTeamMode ? '' : 'opacity-0 pointer-events-none'}"
       inert={!isTeamMode}
     >
-      <span class="text-sm text-muted-foreground">using</span>
+      <span class="text-sm text-subtle">using</span>
       {#key teamModeModel}
         <ModelPicker
           {selectedModel}
           onModelChange={handleModelChange}
           variant="ghost-light"
           size="xs"
-          triggerClass="inline-flex items-center bg-sidebar px-1.5 py-0.5 cursor-pointer text-sm font-medium text-muted-foreground/75 rounded-none"
+          triggerClass="inline-flex items-center bg-sidebar px-1.5 py-0.5 cursor-pointer text-sm font-medium text-subtle rounded-none"
           showManageLink={true}
           defaultModelId={teamModeModel}
           updateGlobalStore
@@ -432,11 +432,11 @@
               <span class="font-medium text-foreground text-sm leading-tight"
                 >{specialistDisplayLabel}</span
               >
-              <span class="text-xs text-muted-foreground leading-tight truncate"
+              <span class="text-xs text-subtle leading-tight truncate"
                 >{specialistDisplayDescription}</span
               >
             </div>
-            <Fa icon={faChevronDown} class="text-muted-foreground/50 h-2.5! w-2.5! shrink-0" />
+            <Fa icon={faChevronDown} class="text-ghost h-2.5! w-2.5! shrink-0" />
           </button>
         {/snippet}
 
@@ -454,7 +454,7 @@
               <AuggieAvatar faceSeed="blank" colorSeed="blank" size={20} />
               <div class="flex flex-col min-w-0">
                 <span class="font-medium text-foreground text-sm">General</span>
-                <span class="text-xs text-muted-foreground">No specialized behavior</span>
+                <span class="text-xs text-subtle">No specialized behavior</span>
               </div>
             </button>
 
@@ -477,7 +477,7 @@
                   />
                   <div class="flex flex-col min-w-0">
                     <span class="font-medium text-foreground text-sm">{specialist.name}</span>
-                    <span class="text-xs text-muted-foreground truncate"
+                    <span class="text-xs text-subtle truncate"
                       >{specialist.description}</span
                     >
                   </div>
@@ -488,7 +488,7 @@
             <!-- Create new specialist link -->
             <button
               type="button"
-              class="sticky bottom-0 border-t border-border bg-background px-4 gap-3 py-1 z-10 w-full flex items-center text-muted-foreground cursor-pointer"
+              class="sticky bottom-0 border-t border-border bg-background px-4 gap-3 py-1 z-10 w-full flex items-center text-subtle cursor-pointer"
               onclick={openSpecialistSettings}
             >
               <Fa icon={faPlus} class="ml-0.5 mr-0.5 opacity-60" size={10} />
@@ -499,7 +499,7 @@
       </DropdownMenu>
     </div>
 
-    <p class="text-sm text-muted-foreground leading-snug">
+    <p class="text-sm text-subtle leading-snug">
       Work on specific tasks with an agent of your choosing.
     </p>
 
@@ -507,14 +507,14 @@
       class="model-picker-row {!isTeamMode ? '' : 'opacity-0 pointer-events-none'}"
       inert={isTeamMode}
     >
-      <span class="text-sm text-muted-foreground">using</span>
+      <span class="text-sm text-subtle">using</span>
       {#key singleAgentModel}
         <ModelPicker
           {selectedModel}
           onModelChange={handleModelChange}
           variant="ghost-light"
           size="xs"
-          triggerClass="inline-flex items-center bg-sidebar px-1.5 py-0.5 cursor-pointer text-sm font-medium text-muted-foreground/75 rounded-none"
+          triggerClass="inline-flex items-center bg-sidebar px-1.5 py-0.5 cursor-pointer text-sm font-medium text-subtle rounded-none"
           showManageLink={true}
           defaultModelId={singleAgentModel}
           updateGlobalStore

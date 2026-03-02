@@ -39,7 +39,7 @@
     <!-- Page Header -->
     <div class="mb-12">
       <h1 class="text-4xl font-bold text-foreground mb-2">Error Boundary Test Page</h1>
-      <p class="text-lg text-foreground/70">
+      <p class="text-lg text-subtle">
         Demonstrate both error boundary components with different error types
       </p>
     </div>
@@ -52,7 +52,7 @@
           <h2 class="text-2xl font-semibold text-foreground">Basic Error Boundary</h2>
         </div>
 
-        <p class="text-sm text-foreground/70 mb-4">
+        <p class="text-sm text-subtle mb-4">
           Tests the standard ErrorBoundary component with manual retry functionality.
         </p>
 
@@ -61,19 +61,19 @@
             <Button variant="destructive" onclick={triggerBasicError} class="w-full">
               Trigger Simple Error
             </Button>
-            <p class="text-xs text-foreground/60">
+            <p class="text-xs text-subtle">
               Throws a basic Error with a custom message
             </p>
 
             <Button variant="destructive" onclick={triggerBasicTypeError} class="w-full">
               Trigger TypeError
             </Button>
-            <p class="text-xs text-foreground/60">
+            <p class="text-xs text-subtle">
               Attempts to call a method on null (TypeError)
             </p>
 
             <div class="bg-card border border-border rounded-lg p-4 mt-4">
-              <p class="text-sm text-foreground/70">
+              <p class="text-sm text-subtle">
                 ✓ Click buttons to trigger errors<br />
                 ✓ Error boundary will catch and display them<br />
                 ✓ Use "Try Again" to retry<br />
@@ -91,7 +91,7 @@
           <h2 class="text-2xl font-semibold text-foreground">Enhanced Error Boundary</h2>
         </div>
 
-        <p class="text-sm text-foreground/70 mb-4">
+        <p class="text-sm text-subtle mb-4">
           Tests the EnhancedErrorBoundary with automatic recovery attempts (3 retries, 2s delay).
         </p>
 
@@ -104,19 +104,19 @@
             <Button variant="destructive" onclick={triggerEnhancedError} class="w-full">
               Trigger Error (Auto-Recover)
             </Button>
-            <p class="text-xs text-foreground/60">
+            <p class="text-xs text-subtle">
               Throws an error that will auto-retry up to 3 times
             </p>
 
             <Button variant="destructive" onclick={triggerEnhancedTypeError} class="w-full">
               Trigger TypeError (Auto-Recover)
             </Button>
-            <p class="text-xs text-foreground/60">
+            <p class="text-xs text-subtle">
               Throws a TypeError with automatic recovery
             </p>
 
             <div class="bg-card border border-border rounded-lg p-4 mt-4">
-              <p class="text-sm text-foreground/70">
+              <p class="text-sm text-subtle">
                 ✓ Click buttons to trigger errors<br />
                 ✓ Watch the spinner during recovery<br />
                 ✓ Auto-recovery attempts 3 times<br />
@@ -131,7 +131,7 @@
     <!-- Footer Info -->
     <div class="mt-12 p-6 bg-card border border-border rounded-lg">
       <h3 class="text-lg font-semibold text-foreground mb-3">Test Instructions</h3>
-      <ul class="space-y-2 text-sm text-foreground/70">
+      <ul class="space-y-2 text-sm text-subtle">
         <li>• Click any button to trigger an error in that section</li>
         <li>• The error boundary will catch the error and display it</li>
         <li>• Basic boundary requires manual retry via "Try Again" button</li>

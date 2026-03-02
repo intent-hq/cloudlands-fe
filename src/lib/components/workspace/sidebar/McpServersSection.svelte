@@ -101,13 +101,13 @@
     <!-- Section Header -->
     <button
       type="button"
-      class="w-full flex items-center gap-2 px-1.5 py-1 text-xs font-medium text-muted-foreground/70 hover:text-foreground transition-colors cursor-pointer"
+      class="w-full flex items-center gap-2 px-1.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
       onclick={() => (isExpanded = !isExpanded)}
     >
       <Fa icon={faChevronDown} size="xs" class="opacity-50 transition-transform duration-200 {isExpanded ? '' : '-rotate-90'}" />
       <!-- <Fa icon={faPlug} size="xs" class="opacity-70" /> -->
       <span>MCP Servers</span>
-      <span class="ml-auto text-[10px] opacity-60">{servers.filter((s) => mcpServersStore.isServerEnabled(s.name)).length} enabled</span>
+      <span class="ml-auto text-ui opacity-60">{servers.filter((s) => mcpServersStore.isServerEnabled(s.name)).length} enabled</span>
     </button>
 
     {#if isExpanded}
@@ -130,7 +130,7 @@
                 <Fa
                   icon={server.type === 'command' ? faTerminal : faPlug}
                   size="xs"
-                  class={isEnabled ? 'text-primary' : 'text-muted-foreground/50'}
+                  class={isEnabled ? 'text-primary' : 'text-muted-foreground'}
                 />
               {:else if faviconUrl}
                 <img
@@ -148,7 +148,7 @@
                 <span
                   class="text-sm truncate {isEnabled
                     ? 'text-foreground'
-                    : 'text-muted-foreground'}"
+                    : 'text-subtle'}"
                 >
                   {server.name}
                 </span>
@@ -160,13 +160,13 @@
               </div>
               <!-- {#if server.url}
                 <Tooltip content={server.url} side="bottom" delayDuration={500}>
-                  <p class="text-[10px] text-muted-foreground/60 truncate max-w-[180px]">
+                  <p class="text-xs text-subtle truncate max-w-[180px]">
                     {server.url}
                   </p>
                 </Tooltip>
               {:else if server.command}
                 <Tooltip content={server.command} side="bottom" delayDuration={500}>
-                  <p class="text-[10px] text-muted-foreground/60 truncate max-w-[180px]">
+                  <p class="text-xs text-subtle truncate max-w-[180px]">
                     {server.command}
                   </p>
                 </Tooltip>
@@ -186,7 +186,7 @@
         <!-- Manage Servers Button -->
         <button
           type="button"
-          class="w-full flex items-center gap-1.5 px-2 py-1.5 mt-1 text-sm text-muted-foreground/70 hover:text-muted-foreground transition-colors cursor-pointer"
+          class="w-full flex items-center gap-1.5 px-2 py-1.5 mt-1 text-sm text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
           onclick={() => navigateToSettings({ hash: 'mcp-servers' })}
         >
           <Fa icon={faGear} size={13} class="opacity-50 mx-[2px]" />

@@ -512,7 +512,7 @@
         <!-- Not Authenticated -->
         <div class="w-[280px] bg-popover border border-border rounded-lg shadow-xl overflow-hidden">
           <div class="px-3 py-2 border-b border-border/50">
-            <span class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+            <span class="text-ui font-medium text-muted-foreground uppercase tracking-wide">
               Sentry
             </span>
           </div>
@@ -520,7 +520,7 @@
             {#if configFormOpen}
               <div class="space-y-3">
                 <div class="space-y-1.5">
-                  <label for="sentry-org-picker" class="text-xs text-muted-foreground"
+                  <label for="sentry-org-picker" class="text-xs text-subtle"
                     >Organization</label
                   >
                   <input
@@ -532,7 +532,7 @@
                   />
                 </div>
                 <div class="space-y-1.5">
-                  <label for="sentry-token-picker" class="text-xs text-muted-foreground"
+                  <label for="sentry-token-picker" class="text-xs text-subtle"
                     >API Token</label
                   >
                   <input
@@ -566,12 +566,12 @@
               </div>
             {:else}
               <div class="text-center">
-                <SentryIcon size={24} class="mx-auto text-muted-foreground/50 mb-3" />
+                <SentryIcon size={24} class="mx-auto text-subtle mb-3" />
                 <p class="text-sm text-foreground mb-1">Connect to Sentry</p>
-                <p class="text-xs text-muted-foreground mb-3">
+                <p class="text-xs text-subtle mb-3">
                   Link error issues to your workspace
                 </p>
-                <p class="text-xs text-muted-foreground/80 mb-4">
+                <p class="text-xs text-subtle mb-4">
                   Create a token at{' '}
                   <button
                     type="button"
@@ -588,7 +588,7 @@
                     sentry.io/.../auth-tokens
                   </button>
                   {' '}with scopes:
-                  <span class="font-mono text-foreground/70"
+                  <span class="font-mono text-subtle"
                     >org:read, project:read, event:read</span
                   >
                 </p>
@@ -613,7 +613,7 @@
           >
             <div class="px-2.5 py-1.5 border-b border-border/50 shrink-0">
               <div class="flex items-center justify-between">
-                <span class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                <span class="text-ui font-medium text-muted-foreground uppercase tracking-wide">
                   Link Sentry Issue
                 </span>
                 {#if selectedIssue}
@@ -667,14 +667,14 @@
                       <div
                         class="w-4 h-4 rounded bg-muted/80 flex items-center justify-center shrink-0"
                       >
-                        <Fa icon={faFolder} class="w-2 h-2 text-muted-foreground" />
+                        <Fa icon={faFolder} class="w-2 h-2 text-ghost" />
                       </div>
                       <span class="flex-1 text-xs font-medium truncate">{group.label}</span>
-                      <span class="text-[10px] text-muted-foreground tabular-nums"
+                      <span class="text-ui text-subtle tabular-nums"
                         >{group.options.length}</span
                       >
                       <svg
-                        class="w-3.5 h-3.5 text-muted-foreground transition-transform duration-150
+                        class="w-3.5 h-3.5 text-subtle transition-transform duration-150
                                {isActive || isKeyboardFocused ? 'translate-x-0.5' : ''}"
                         fill="none"
                         stroke="currentColor"
@@ -692,14 +692,14 @@
                 </div>
               {:else if sentryIssueSearchValue && !isLoadingSentryIssues}
                 <div class="px-2.5 py-6 text-center">
-                  <p class="text-xs text-muted-foreground">
+                  <p class="text-xs text-subtle">
                     No issues match "{sentryIssueSearchValue}"
                   </p>
                 </div>
               {:else if !isLoadingSentryIssues}
                 <div class="px-2.5 py-6 text-center">
-                  <SentryIcon size={20} class="mx-auto opacity-50 text-muted-foreground mb-1.5" />
-                  <p class="text-xs text-muted-foreground">No issues found</p>
+                  <SentryIcon size={20} class="mx-auto opacity-50 text-subtle mb-1.5" />
+                  <p class="text-xs text-subtle">No issues found</p>
                 </div>
               {/if}
             </div>
@@ -709,10 +709,10 @@
               <div
                 class="px-2.5 py-1 border-t border-border/50 shrink-0 flex items-center justify-between"
               >
-                <span class="text-[9px] text-muted-foreground/60">
+                <span class="text-ui text-subtle">
                   {sentryIssueSearchValue ? 'Type to filter' : 'Hover or ↑↓ to browse'}
                 </span>
-                <span class="text-[9px] text-muted-foreground/60"> → to select </span>
+                <span class="text-ui text-subtle"> → to select </span>
               </div>
             {/if}
           </div>
@@ -740,12 +740,12 @@
                   class="px-2.5 py-1.5 border-b border-border/50 shrink-0 flex items-center justify-between"
                 >
                   <span
-                    class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide"
+                    class="text-ui font-medium text-muted-foreground uppercase tracking-wide"
                   >
                     {activeGroup.label}
                   </span>
                   {#if focusPanel === 'issues'}
-                    <span class="text-[9px] text-muted-foreground/60">← back</span>
+                    <span class="text-ui text-subtle">← back</span>
                   {/if}
                 </div>
                 <div class="overflow-y-auto flex-1 py-0.5 overscroll-contain" role="listbox">
@@ -774,12 +774,12 @@
                         {#if isSelected}
                           <Fa icon={faCheck} class="w-2 h-2 text-primary" />
                         {:else}
-                          <SentryIcon size={10} class="text-muted-foreground" />
+                          <SentryIcon size={10} class="text-ghost" />
                         {/if}
                       </div>
                       <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-1 mb-0.5">
-                          <span class="text-[10px] font-mono text-muted-foreground"
+                          <span class="text-ui font-mono text-subtle"
                             >{option.description}</span
                           >
                         </div>

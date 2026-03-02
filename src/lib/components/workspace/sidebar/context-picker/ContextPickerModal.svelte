@@ -72,7 +72,7 @@
           class="p-1.5 rounded hover:bg-muted transition-colors cursor-pointer"
           onclick={onClose}
         >
-          <Fa icon={faTimes} size="sm" class="text-muted-foreground" />
+          <Fa icon={faTimes} size="sm" class="text-ghost" />
         </button>
       </div>
 
@@ -85,12 +85,12 @@
         {:else if provider === 'browser'}
           <BrowserUrlPicker {workspaceId} {onSelect} {onClose} />
         {:else if provider === 'github'}
-          <div class="p-8 text-center text-muted-foreground">
+          <div class="p-8 text-center text-subtle">
             <p class="text-sm">GitHub issues coming soon...</p>
             <p class="text-xs mt-2">Use browser URLs to link to GitHub issues for now.</p>
           </div>
         {:else}
-          <div class="p-8 text-center text-muted-foreground">
+          <div class="p-8 text-center text-subtle">
             <p class="text-sm">Select a different provider</p>
           </div>
         {/if}

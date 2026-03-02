@@ -98,7 +98,7 @@
     <Button
       variant="plain"
       size="xs"
-      class={`flex-1 h-full flex items-center gap-1.5 rounded-none text-left text-muted-foreground ${headerClass}`}
+      class={`flex-1 h-full flex items-center gap-1.5 rounded-none text-left text-subtle ${headerClass}`}
       onclick={toggleCollapsed}
       disabled={!collapsible}
       type="button"
@@ -106,13 +106,13 @@
       aria-controls={contentId}
     >
       {#if icon}
-        <div class="flex items-center justify-center shrink-0 text-muted-foreground/60">
+        <div class="flex items-center justify-center shrink-0 text-subtle">
           <Fa {icon} size="14" />
         </div>
       {/if}
 
       <span
-        class="flex-1 text-[11px] font-semibold tracking-wide uppercase overflow-hidden text-ellipsis whitespace-nowrap group-hover/panel-header:text-foreground"
+        class="flex-1 text-ui font-semibold tracking-wide uppercase overflow-hidden text-ellipsis whitespace-nowrap group-hover/panel-header:text-foreground"
       >
         {title}
       </span>
@@ -144,7 +144,7 @@
         onclick={toggleCollapsed}
         type="button"
         aria-label={collapsed ? 'Expand panel' : 'Collapse panel'}
-        class="h-full px-2 text-muted-foreground"
+        class="h-full px-2 text-subtle"
       >
         <div
           class="flex items-center justify-center shrink-0 transition-transform duration-150 ease-linear opacity-0 group-hover/panel-header:opacity-60"

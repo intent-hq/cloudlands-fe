@@ -100,9 +100,9 @@
   >
     <!-- Header -->
     <div class="flex items-baseline gap-2 mb-2">
-      <Fa icon={typeInfo.icon} size="sm" class="text-muted-foreground shrink-0" />
+      <Fa icon={typeInfo.icon} size="sm" class="text-ghost shrink-0" />
       <span class="font-semibold text-sm">{typeInfo.label}</span>
-      <span class="text-xs text-muted-foreground">
+      <span class="text-xs text-subtle">
         {formatDistanceToNow(new Date(createdAt), { addSuffix: true })}
       </span>
       {#if isResolved}
@@ -111,7 +111,7 @@
     </div>
 
     <!-- Author -->
-    <div class="text-xs text-muted-foreground mb-2">
+    <div class="text-xs text-subtle mb-2">
       {author}
     </div>
 

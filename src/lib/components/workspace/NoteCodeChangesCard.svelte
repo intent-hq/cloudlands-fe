@@ -205,7 +205,7 @@
         >
           <div class="flex items-center gap-2.5">
             <!-- <div class="flex items-center justify-center w-5 h-5 rounded bg-muted/50">
-              <Fa icon={faCode} class="text-muted-foreground/70" size="xs" />
+              <Fa icon={faCode} class="text-ghost" size="xs" />
             </div> -->
             <span class="text-sm font-medium text-foreground/90">
               {#if isLoading}
@@ -220,7 +220,7 @@
           </div>
           <Fa
             icon={isExpanded ? faChevronDown : faChevronRight}
-            class="text-muted-foreground/50"
+            class="text-subtle"
             size="xs"
           />
         </button>
@@ -234,14 +234,14 @@
                   onclick={() => handleFileClick(change)}
                   class="w-full flex items-center gap-3 px-4 py-2 transition-colors cursor-pointer text-left group"
                 >
-                  <Fa icon={faFile} class="text-muted-foreground/40 shrink-0" size="xs" />
+                  <Fa icon={faFile} class="text-ghost shrink-0" size="xs" />
                   <div class="flex-1 min-w-0 flex items-baseline gap-2">
                     <span class="text-sm truncate text-foreground">
                       {getFileName(change.filePath)}
                     </span>
                     {#if getDirectory(change.filePath)}
                       <span
-                        class="flex-1 text-xs text-muted-foreground/50 truncate hidden sm:inline"
+                        class="flex-1 text-xs text-subtle truncate hidden sm:inline"
                       >
                         {getDirectory(change.filePath)}
                       </span>
@@ -259,7 +259,7 @@
             <!-- Footer -->
             {#if hasMoreFiles && !isExpanded}
               <div class="px-4 py-2 border-t border-border/30">
-                <span class="text-xs text-muted-foreground/60">
+                <span class="text-xs text-subtle">
                   +{changes.length - MAX_VISIBLE_FILES} more files
                 </span>
               </div>
@@ -269,7 +269,7 @@
             <div class="px-4 pt-0.5 pb-1 bg-muted/30">
               <button
                 onclick={handleViewAllClick}
-                class="text-xs text-muted-foreground transition-colors cursor-pointer"
+                class="text-xs text-subtle transition-colors cursor-pointer"
               >
                 View all changes →
               </button>

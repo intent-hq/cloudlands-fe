@@ -53,11 +53,11 @@
         loading="lazy"
       />
     {:else}
-      <span class="text-muted-foreground/50">
+      <span class="text-subtle">
         <Fa icon={faFolder} size="sm" />
       </span>
     {/if}
-    <span class="flex-1 text-[13px] font-medium text-muted-foreground/75">{label}</span>
+    <span class="flex-1 text-[13px] font-medium text-subtle">{label}</span>
   </button>
   <div class="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-0">
     {#if isDev}

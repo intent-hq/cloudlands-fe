@@ -163,7 +163,7 @@
     ></span>
     <!-- Label -->
     <span
-      class="transition-colors uppercase tracking-wider text-[10px] text-muted-foreground/80 font-semibold"
+      class="transition-colors uppercase tracking-wider text-ui text-muted-foreground font-semibold"
       >{pressed ? onLabel : offLabel}</span
     >
   </button>

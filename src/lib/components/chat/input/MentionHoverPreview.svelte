@@ -135,7 +135,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 8px;
+    font-size: 11px;
     color: hsl(var(--muted-foreground));
     opacity: 0.2;
   }

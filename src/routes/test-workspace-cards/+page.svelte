@@ -283,7 +283,7 @@
 
 <div class="p-8 max-w-5xl mx-auto">
   <h1 class="text-2xl font-bold mb-1">Workspace Status Cards</h1>
-  <p class="text-muted-foreground mb-10 text-sm">
+  <p class="text-subtle mb-10 text-sm">
     Visual sandbox — all variants, phases, and edge cases
   </p>
 
@@ -303,7 +303,7 @@
       </button>
       <!-- Step info -->
       <div class="flex flex-col gap-3">
-        <div class="text-xs text-muted-foreground font-medium">
+        <div class="text-xs text-subtle font-medium">
           Step {interactiveStep + 1} / {interactiveSteps.length}
         </div>
         <!-- Phase timeline -->
@@ -321,10 +321,10 @@
                 ? 'font-semibold text-foreground'
                 : isPast
                   ? 'text-muted-foreground'
-                  : 'text-muted-foreground/40'}">{PHASE_META[p].label}</span
+                  : 'text-subtle'}">{PHASE_META[p].label}</span
             >
             {#if isCurrentPhase}
-              <span class="text-[10px] text-muted-foreground ml-auto"
+              <span class="text-ui text-subtle ml-auto"
                 >{currentInteractive.phase.subtitle}</span
               >
             {/if}
@@ -344,14 +344,14 @@
     <h2 class="text-lg font-semibold mb-4">Phase Indicators</h2>
     <div class="bg-card rounded-xl border border-border p-6">
       <div class="grid grid-cols-5 gap-y-4 items-center">
-        <div class="text-xs text-muted-foreground font-medium">Size</div>
+        <div class="text-xs text-subtle font-medium">Size</div>
         {#each allPhases as p}
-          <div class="text-xs text-muted-foreground font-medium text-center">
+          <div class="text-xs text-subtle font-medium text-center">
             {PHASE_META[p].label}
           </div>
         {/each}
         {#each indicatorSizes as sz}
-          <div class="text-xs text-muted-foreground tabular-nums">{sz}px</div>
+          <div class="text-xs text-subtle tabular-nums">{sz}px</div>
           {#each allPhases as p}
             <div class="flex justify-center">
               <WorkspacePhaseIndicator phase={p} size={sz} />
@@ -376,7 +376,7 @@
           </div>
           <div class="pt-0.5">
             <div class="text-sm font-semibold">{PHASE_META[p].label}</div>
-            <div class="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+            <div class="text-xs text-subtle mt-0.5 leading-relaxed">
               {phaseFlowDescriptions[p]}
             </div>
           </div>
@@ -408,7 +408,7 @@
     <div class="grid grid-cols-3 gap-4">
       {#each edgeCases as item}
         <div>
-          <div class="text-xs text-muted-foreground mb-1.5 font-medium">{item.label}</div>
+          <div class="text-xs text-subtle mb-1.5 font-medium">{item.label}</div>
           <WorkspaceStatusCard
             phase={item.phase}
             stats={item.stats}
@@ -456,7 +456,7 @@
   <section class="mb-12">
     <h2 class="text-lg font-semibold mb-4">Home Page Preview (2-column grid)</h2>
     <div class="bg-sidebar border border-border rounded-2xl p-6">
-      <div class="text-sm font-semibold mb-3 text-muted-foreground">Your Workspaces</div>
+      <div class="text-sm font-semibold mb-3 text-subtle">Your Workspaces</div>
       <div class="grid grid-cols-2 gap-4">
         {#each [...mainCards, ...edgeCases.slice(1, 3)] as item}
           <WorkspaceStatusCard

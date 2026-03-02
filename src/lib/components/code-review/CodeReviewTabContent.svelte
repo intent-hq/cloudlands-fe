@@ -157,10 +157,10 @@
           class="w-12 h-12 rounded-full bg-muted/50 flex items-center justify-center mb-4"
           transition:fly={{ y: 8, duration: 200 }}
         >
-          <Fa icon={faWandMagicSparkles} class="h-5 w-5 text-muted-foreground" />
+          <Fa icon={faWandMagicSparkles} class="h-5 w-5 text-subtle" />
         </div>
         <h3 class="text-sm font-medium text-foreground mb-2">Review Your Changes</h3>
-        <p class="text-xs text-muted-foreground mb-4 max-w-60">
+        <p class="text-xs text-subtle mb-4 max-w-60">
           {#if hasChanges}
             Get AI-powered feedback on your {stagedFiles.length} staged file{stagedFiles.length ===
             1
@@ -191,7 +191,7 @@
           </Button>
         </div>
         {#if streamingText}
-          <div class="text-sm text-muted-foreground">
+          <div class="text-sm text-subtle">
             <MarkdownViewer content={streamingText} isStreaming />
           </div>
         {:else}

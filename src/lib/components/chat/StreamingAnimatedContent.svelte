@@ -450,7 +450,7 @@
       </div>
     {:else if block.type === 'thinking'}
       <details class="thinking-block" open={isStreaming} in:fly={{ y: 10, duration: 200 }}>
-        <summary class="cursor-pointer text-sm text-muted-foreground">
+        <summary class="cursor-pointer text-sm text-subtle">
           <span class="thinking-icon">🤔</span>
           Thinking...
         </summary>
@@ -519,7 +519,7 @@
   .cursor {
     display: inline-block;
     animation: blink 1s infinite;
-    color: var(--text-muted-foreground, #6b7280);
+    color: var(--text-subtle, #6b7280);
     margin-left: 2px;
     font-weight: 300;
   }

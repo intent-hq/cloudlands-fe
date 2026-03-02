@@ -187,15 +187,15 @@
           <AuggieAvatar faceSeed={linkedAgentId} colorSeed={linkedAgentId} size={16} />
         </button>
       {:else}
-        <Fa icon={faRobot} size="sm" class="text-muted-foreground flex-none" />
+        <Fa icon={faRobot} size="sm" class="text-ghost flex-none" />
       {/if}
-      <span class="text-sm text-muted-foreground flex-1 min-w-0 truncate">
+      <span class="text-sm text-subtle flex-1 min-w-0 truncate">
         {primitive.goal}
       </span>
       <Button
         variant="ghost-light"
         size="sm"
-        class="h-6 px-2 text-xs text-muted-foreground gap-1 flex-none"
+        class="h-6 px-2 text-xs text-subtle gap-1 flex-none"
         onclick={handleButtonClick}
         disabled={running}
       >
@@ -204,6 +204,6 @@
       </Button>
     </div>
   {:else}
-    <div class="my-1.5 text-sm text-muted-foreground">Invalid agent action block</div>
+    <div class="my-1.5 text-sm text-subtle">Invalid agent action block</div>
   {/if}
 </NodeViewWrapper>

@@ -176,7 +176,7 @@
     {#each groupedColumns as group, groupIndex (`group-${groupIndex}-${group.label || 'unlabeled'}`)}
       <div class="flex flex-col gap-1">
         {#if group.label}
-          <div class="text-[10px] text-muted-foreground font-medium px-1">{group.label}</div>
+          <div class="text-ui text-subtle font-medium px-1">{group.label}</div>
         {/if}
         <div class="flex items-start gap-1">
           {#each group.columns as column, i (column.id + '-' + i)}
@@ -218,5 +218,5 @@
     </Portal>
   {/if}
 {:else}
-  <div class="px-4 py-3 text-xs text-muted-foreground">No file changes to visualize</div>
+  <div class="px-4 py-3 text-xs text-subtle">No file changes to visualize</div>
 {/if}

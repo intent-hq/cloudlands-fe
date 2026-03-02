@@ -84,7 +84,7 @@
     <!-- Category info -->
     <div class="flex-1 min-w-0 -mt-0.5">
       <h3 class="text-base font-semibold text-foreground">{category.title}</h3>
-      <p class="text-sm text-muted-foreground mt-1">{category.description}</p>
+      <p class="text-sm text-subtle mt-1">{category.description}</p>
     </div>
   </div>
 
@@ -118,13 +118,13 @@
             <!-- File without patch (just show name) -->
             <div class="rounded-lg border border-border/50 bg-card p-4">
               <div class="flex items-center gap-2">
-                <svg class="h-4 w-4 text-muted-foreground" viewBox="0 0 16 16" fill="currentColor">
+                <svg class="h-4 w-4 text-ghost" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M3.5 1.5A1.5 1.5 0 0 1 5 0h6a1.5 1.5 0 0 1 1.5 1.5v12A1.5 1.5 0 0 1 11 15H5a1.5 1.5 0 0 1-1.5-1.5v-12z"/>
                 </svg>
                 <span class="text-sm font-medium text-foreground">{file.path}</span>
               </div>
               {#if file.summary}
-                <p class="text-sm text-muted-foreground mt-2">{file.summary}</p>
+                <p class="text-sm text-subtle mt-2">{file.summary}</p>
               {/if}
             </div>
           {/if}

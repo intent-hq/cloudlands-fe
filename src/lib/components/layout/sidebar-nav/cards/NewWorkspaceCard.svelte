@@ -101,12 +101,12 @@
       onclick={openWithDraft}
     >
       <div class="flex items-center gap-2 mb-1">
-        <span class="text-[10px] font-semibold uppercase tracking-wider text-primary/70">Draft</span
+        <span class="text-ui font-semibold uppercase tracking-wider text-primary/70">Draft</span
         >
       </div>
       <p class="text-sm text-foreground/80 line-clamp-2">{sidebarNavStore.draftPrompt.trim()}</p>
       <span
-        class="text-[11px] text-muted-foreground/50 mt-1 flex items-center gap-1 group-hover:text-foreground/60 transition-colors"
+        class="text-ui text-muted-foreground mt-1 flex items-center gap-1 group-hover:text-foreground/60 transition-colors"
       >
         Continue editing <Fa icon={faArrowRight} size="xs" />
       </span>
@@ -132,7 +132,7 @@
                 onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
               />
             {:else}
-              <span class="text-muted-foreground/40 shrink-0"><Fa icon={faFolder} size="xs" /></span
+              <span class="text-ghost shrink-0"><Fa icon={faFolder} size="xs" /></span
               >
             {/if}
             <span class="text-sm text-foreground/80 truncate font-medium flex-1">{repo.name}</span>

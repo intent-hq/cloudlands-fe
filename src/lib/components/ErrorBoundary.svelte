@@ -316,7 +316,7 @@
           <div
             class="animate-in fade-in zoom-in duration-300 mt-5"
           >
-            <Fa icon={faTriangleExclamation} size={40} class="text-muted-foreground/50" />
+            <Fa icon={faTriangleExclamation} size={40} class="text-subtle" />
           </div>
 
           <!-- Error Message - Centered -->
@@ -324,7 +324,7 @@
             <h3 class="text-2xl font-semibold text-foreground">
               Something went wrong
             </h3>
-            <p class="text-base text-foreground/70 leading-relaxed max-w-sm mx-auto break-words">
+            <p class="text-base text-subtle leading-relaxed max-w-sm mx-auto break-words">
               {errMsg || fallback}
             </p>
           </div>
@@ -373,7 +373,7 @@
 
 
               <div class="p-4 border border-border/50">
-                <pre class="text-xs font-mono text-foreground/70 leading-relaxed overflow-x-auto max-h-64 text-left whitespace-pre-wrap break-all">{errStack}</pre>
+                <pre class="text-xs font-mono text-subtle leading-relaxed overflow-x-auto max-h-64 text-left whitespace-pre-wrap break-all">{errStack}</pre>
               </div>
             </div>
           {/if}

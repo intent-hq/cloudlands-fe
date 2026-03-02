@@ -61,7 +61,7 @@
           </div>
           <div>
             <h2 class="text-lg font-semibold">What's New</h2>
-            <p class="text-sm text-muted-foreground">Version {releaseNotes.version}</p>
+            <p class="text-sm text-subtle">Version {releaseNotes.version}</p>
           </div>
         </div>
         <Button variant="ghost" size="icon" onclick={close}>
@@ -85,7 +85,7 @@
             {/each}
           </ul>
         {:else}
-          <p class="text-sm text-muted-foreground">Bug fixes and performance improvements.</p>
+          <p class="text-sm text-subtle">Bug fixes and performance improvements.</p>
         {/if}
       </div>
 

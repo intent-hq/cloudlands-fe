@@ -154,10 +154,10 @@
       <!-- Active Features -->
       {#if featureCodesStore.activeFeatures.size > 0}
         <div class="px-6 pb-4">
-          <p class="text-xs text-muted-foreground mb-2">Active Features</p>
+          <p class="text-xs text-subtle mb-2">Active Features</p>
           <ul class="space-y-1">
             {#each [...featureCodesStore.activeFeatures] as featureId}
-              <li class="flex items-center justify-between text-sm text-muted-foreground bg-muted/50 rounded px-2 py-1">
+              <li class="flex items-center justify-between text-sm text-subtle bg-muted/50 rounded px-2 py-1">
                 <span>{featureId}</span>
                 <button
                   class="ml-2 text-muted-foreground hover:text-foreground transition-colors"

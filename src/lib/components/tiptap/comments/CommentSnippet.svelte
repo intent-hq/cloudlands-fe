@@ -45,7 +45,7 @@
         <span class="text-[13px] font-medium text-foreground">{comment.author || 'Unknown'}</span>
         {#if comment.createdAt}
           <span
-            class="text-[12px] text-muted-foreground"
+            class="text-xs text-subtle"
             title={new Date(comment.createdAt).toLocaleString()}
           >
             {(() => {
@@ -64,7 +64,7 @@
       </p>
       {#if repliesCount > 0}
         <button
-          class="text-[11px] text-muted-foreground hover:text-foreground mt-1"
+          class="text-ui text-muted-foreground hover:text-foreground mt-1"
           onclick={(e) => {
             e.stopPropagation();
             onShow?.();

@@ -256,7 +256,7 @@
           </span>
         {/if}
       </div>
-      <p class="text-xs text-muted-foreground mt-1">{currentSpecialist.description}</p>
+      <p class="text-xs text-subtle mt-1">{currentSpecialist.description}</p>
     </div>
 
     <!-- Model Picker -->
@@ -326,7 +326,7 @@
     <!-- Metadata -->
     <div class="mb-6">
       <h2 class="text-sm font-medium text-foreground">Create Specialist</h2>
-      <p class="text-xs text-muted-foreground mt-1">
+      <p class="text-xs text-subtle mt-1">
         Create a custom specialist with specific behavior and model settings.
       </p>
     </div>

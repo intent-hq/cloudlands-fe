@@ -278,7 +278,7 @@
         <span>Finding ready tasks...</span>
       </div>
     {:else if readyTasks.length > 0 && currentReadyTask}
-      <div class="ready-tasks-header text-muted-foreground">
+      <div class="ready-tasks-header text-subtle">
         <span class="ready-tasks-label"> Ready Task{readyTasks.length > 1 ? 's:' : ''}</span>
         {#if readyTasks.length > 1}
           <span class="ready-tasks-pagination">
@@ -639,7 +639,7 @@
     border-radius: 3px;
     background: var(--background);
     color: var(--muted-foreground);
-    font-size: 9px;
+    font-size: 11px;
     cursor: pointer;
     transition: background-color 0.15s ease;
   }

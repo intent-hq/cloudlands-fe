@@ -154,7 +154,7 @@
     </svg>
   {:else if error}
     <div class="flex items-center justify-center" style="width: {width}px; height: {height}px">
-      <div class="text-muted-foreground text-xs text-center px-4">
+      <div class="text-subtle text-xs text-center px-4">
         <p class="mb-1">Unable to load visualization</p>
         <p class="opacity-60">{error}</p>
       </div>
@@ -174,7 +174,7 @@
     />
   {:else}
     <div class="flex items-center justify-center" style="width: {width}px; height: {height}px">
-      <div class="text-muted-foreground text-sm">No data available</div>
+      <div class="text-subtle text-sm">No data available</div>
     </div>
   {/if}
 </div>

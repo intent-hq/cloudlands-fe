@@ -171,7 +171,7 @@
           <span class="text-sm">Copy message</span>
         </div>
         {#if requestId}
-          <div class="text-muted-foreground text-sm">
+          <div class="text-subtle text-sm">
             Hold Shift to copy request ID
           </div>
         {/if}

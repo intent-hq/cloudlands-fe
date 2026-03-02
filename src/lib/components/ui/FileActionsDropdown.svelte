@@ -100,7 +100,7 @@
         title={isCompact ? label : undefined}
       >
         {#if isCompact}
-          <Fa icon={faArrowUpRightFromSquare} class="h-2.5! w-2.5! text-muted-foreground/50" />
+          <Fa icon={faArrowUpRightFromSquare} class="h-2.5! w-2.5! text-ghost" />
         {:else}
           <span>{label}</span>
           <Fa icon={faChevronDown} class="h-2 w-2" />
@@ -135,14 +135,14 @@
       size={buttonSize}
       disabled
       class="inline-flex items-center justify-center rounded-md font-medium transition-colors
-           text-muted-foreground/50
+           text-subtle
            focus-visible:outline-none
            disabled:pointer-events-none disabled:opacity-50 cursor-not-allowed
            {sizeClasses[size]} {variantClasses[variant]} {className}"
       title={isCompact ? label : undefined}
     >
       {#if isCompact}
-        <Fa icon={faArrowUpRightFromSquare} class="h-2.5 w-2.5 text-muted-foreground/50" />
+        <Fa icon={faArrowUpRightFromSquare} class="h-2.5 w-2.5 text-ghost" />
       {:else}
         <span>{label}</span>
         <Fa icon={faChevronDown} class="ml-2 h-3 w-3" />

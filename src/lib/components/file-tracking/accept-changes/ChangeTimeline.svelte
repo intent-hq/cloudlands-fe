@@ -594,13 +594,13 @@
   })()}
   <div class="space-y-3">
     {#if parts.length > 0}
-      <p class="text-xs text-muted-foreground">
+      <p class="text-xs text-subtle">
         {parts.join(', ')} will be included in this PR.
       </p>
     {/if}
     <div>
       {#if !isStreamingPR}
-        <span class="text-xs text-muted-foreground mb-1 block">Title</span>
+        <span class="text-xs text-subtle mb-1 block">Title</span>
         <Input
           value={prTitle}
           oninput={handlePRTitleInput}
@@ -610,7 +610,7 @@
       {/if}
     </div>
     <div>
-      <span class="text-xs text-muted-foreground mb-1 block">Description</span>
+      <span class="text-xs text-subtle mb-1 block">Description</span>
       <div class="relative">
         <Textarea
           value={isStreamingPR ? generatingPRPreview || '' : prDescription}
@@ -626,7 +626,7 @@
         />
         {#if isStreamingPR || prDescriptionAgentId}
           <!-- Subtle streaming indicator / thought process button -->
-          <div class="absolute bottom-2 right-2 flex items-center gap-3 text-muted-foreground">
+          <div class="absolute bottom-2 right-2 flex items-center gap-3 text-subtle">
             {#if isStreamingPR}
               <div class="flex gap-1">
                 <span
@@ -674,7 +674,7 @@
       </div>
     </div>
     <div>
-      <span class="text-xs text-muted-foreground mb-1 block">Target Branch</span>
+      <span class="text-xs text-subtle mb-1 block">Target Branch</span>
       {#if canEditTargetBranch}
         <select
           class="w-full h-8 px-2 text-sm bg-background border border-input rounded-md"
@@ -687,7 +687,7 @@
         </select>
       {:else}
         <div
-          class="h-8 px-2 text-sm bg-muted/50 border border-input rounded-md flex items-center text-muted-foreground"
+          class="h-8 px-2 text-sm bg-muted/50 border border-input rounded-md flex items-center text-subtle"
         >
           {targetBranch}
         </div>
@@ -749,7 +749,7 @@
 
 <div class="w-full p-6">
   {#if !hasAnyContent}
-    <div class="text-center py-8 text-sm text-muted-foreground">No changes to show</div>
+    <div class="text-center py-8 text-sm text-subtle">No changes to show</div>
   {:else}
     <div class="relative">
       <!-- Timeline vertical line -->
@@ -805,15 +805,15 @@
                   <!-- Second line: Streaming preview and stop button -->
                   <div class="flex items-center gap-2">
                     {#if (isAutofillAndCreatingPR || backgroundOperation?.type === 'create-pr') && generatingPRPreview}
-                      <span class="flex-1 text-xs text-muted-foreground/70 truncate">
+                      <span class="flex-1 text-xs text-subtle truncate">
                         {generatingPRPreview.split('\n').pop()?.slice(0, 80) || ''}
                       </span>
                     {:else if !isAutofillAndCreatingPR && backgroundOperation?.type !== 'create-pr' && generatingMessagePreview}
-                      <span class="flex-1 text-xs text-muted-foreground/70 truncate">
+                      <span class="flex-1 text-xs text-subtle truncate">
                         {generatingMessagePreview.split('\n').pop()?.slice(0, 80) || ''}
                       </span>
                     {:else}
-                      <span class="flex-1 text-xs text-muted-foreground/50 italic">
+                      <span class="flex-1 text-xs text-subtle italic">
                         Waiting for response...
                       </span>
                     {/if}
@@ -847,7 +847,7 @@
 
           <!-- Section Header -->
           <div class="pl-10 pr-3 pt-0.5 pb-2 flex items-center justify-between">
-            <span class="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wide">
+            <span class="text-ui font-medium text-muted-foreground uppercase tracking-wide">
               Local changes
             </span>
             <div class="flex items-center gap-1">
@@ -961,7 +961,7 @@
                               >
                                 <Fa
                                   icon={faChevronRight}
-                                  class="h-2.5! w-2.5! text-muted-foreground/50 group-hover/row:text-muted-foreground shrink-0 transition-transform {!isCollapsed &&
+                                  class="h-2.5! w-2.5! text-muted-foreground group-hover/row:text-muted-foreground shrink-0 transition-transform {!isCollapsed &&
                                     'rotate-90'}"
                                 />
                                 {#if group.agentId}
@@ -974,7 +974,7 @@
                                 {:else}
                                   <Fa
                                     icon={faUser}
-                                    class="h-3 w-3 text-muted-foreground/30 ml-0.5 mr-0.5"
+                                    class="h-3 w-3 text-ghost ml-0.5 mr-0.5"
                                   />
                                 {/if}
                                 <span class="text-xs font-medium truncate">
@@ -1068,7 +1068,7 @@
                     onclick={() => (unstagedExpanded = !unstagedExpanded)}
                   >
                     <div class="flex items-center gap-2">
-                      <span class="text-xs text-muted-foreground py-1"
+                      <span class="text-xs text-subtle py-1"
                         >{unstagedFiles.length ? unstagedFiles.length : 'No'} unstaged file{unstagedFiles.length ===
                         1
                           ? ''
@@ -1124,7 +1124,7 @@
                               >
                                 <Fa
                                   icon={faChevronRight}
-                                  class="h-2.5! w-2.5! text-muted-foreground/50 group-hover/row:text-muted-foreground shrink-0 transition-transform {!isCollapsed &&
+                                  class="h-2.5! w-2.5! text-muted-foreground group-hover/row:text-muted-foreground shrink-0 transition-transform {!isCollapsed &&
                                     'rotate-90'}"
                                 />
                                 {#if group.agentId}
@@ -1135,7 +1135,7 @@
                                     size={18}
                                   />
                                 {:else}
-                                  <Fa icon={faUser} class="h-3 w-3 text-muted-foreground" />
+                                  <Fa icon={faUser} class="h-3 w-3 text-ghost" />
                                 {/if}
                                 <span class="text-xs font-medium truncate">
                                   {getAgentDisplayName(group)}
@@ -1257,9 +1257,9 @@
                           <!-- Generating phase: show spinner -->
                           <Fa
                             icon={faSpinner}
-                            class="h-3 w-3 animate-spin text-muted-foreground shrink-0"
+                            class="h-3 w-3 animate-spin text-subtle shrink-0"
                           />
-                          <span class="text-muted-foreground truncate flex-1">
+                          <span class="text-subtle truncate flex-1">
                             {#if isAutofillAndCreatingPR || backgroundOperation?.type === 'create-pr'}
                               {generatingPRStatus || 'Generating PR description...'}
                             {:else}
@@ -1275,15 +1275,15 @@
                         <!-- Second line: Streaming preview and stop button -->
                         <div class="flex items-center gap-2 flex-1">
                           {#if (isAutofillAndCreatingPR || backgroundOperation?.type === 'create-pr') && generatingPRPreview}
-                            <span class="flex-1 text-xs text-muted-foreground/70 truncate">
+                            <span class="flex-1 text-xs text-subtle truncate">
                               {generatingPRPreview.split('\n').pop()?.slice(0, 60) || ''}
                             </span>
                           {:else if !isAutofillAndCreatingPR && backgroundOperation?.type !== 'create-pr' && generatingMessagePreview}
-                            <span class="flex-1 text-xs text-muted-foreground/70 truncate">
+                            <span class="flex-1 text-xs text-subtle truncate">
                               {generatingMessagePreview.split('\n').pop()?.slice(0, 60) || ''}
                             </span>
                           {:else}
-                            <span class="flex-1 text-xs text-muted-foreground/50 italic">
+                            <span class="flex-1 text-xs text-subtle italic">
                               Waiting for response...
                             </span>
                           {/if}
@@ -1360,7 +1360,7 @@
                       <span>Merge to trunk</span>
                     </Button>
                   {:else}
-                    <p class="text-xs text-muted-foreground pt-[0.3rem]">
+                    <p class="text-xs text-subtle pt-[0.3rem]">
                       <button class="underline cursor-pointer" onclick={onStageAll}
                         >Stage files</button
                       > to commit and create a pull request
@@ -1398,7 +1398,7 @@
                       {#if isStreamingCommit || commitMessageAgentId}
                         <!-- Subtle streaming indicator / thought process button -->
                         <div
-                          class="absolute bottom-2 right-2 flex items-center gap-3 text-muted-foreground"
+                          class="absolute bottom-2 right-2 flex items-center gap-3 text-subtle"
                         >
                           {#if isStreamingCommit}
                             <div class="flex gap-1">
@@ -1505,7 +1505,7 @@
                         transition:slide={{ duration: 150 }}
                       >
                         <div class="flex items-center justify-between mb-2">
-                          <div class="flex items-center gap-2 text-xs text-muted-foreground">
+                          <div class="flex items-center gap-2 text-xs text-subtle">
                             <Fa icon={faSpinner} class="h-3 w-3 animate-spin" />
                             <span>{generatingMessageStatus || 'Generating commit message...'}</span>
                           </div>
@@ -1605,11 +1605,11 @@
                         if (path) exportFolderPath = path;
                       }}
                     >
-                      <Fa icon={faFolderOpen} class="h-3 w-3 text-muted-foreground shrink-0" />
+                      <Fa icon={faFolderOpen} class="h-3 w-3 text-ghost shrink-0" />
                       <span
                         class="text-sm truncate flex-1 {exportFolderPath
                           ? ''
-                          : 'text-muted-foreground'}"
+                          : 'text-subtle'}"
                       >
                         {exportFolderPath || 'Choose folder...'}
                       </span>
@@ -1651,7 +1651,7 @@
                   {@const totalExistingCommits = localCommits.length + remoteCommits.length}
                   {@const totalAfterCommit = totalExistingCommits + (hasStaged ? 1 : 0)}
                   <div class="p-3" transition:slide={{ duration: 150 }}>
-                    <p class="text-xs text-muted-foreground mb-3">
+                    <p class="text-xs text-subtle mb-3">
                       {#if hasStaged && totalExistingCommits === 0}
                         Commit staged files and merge directly into <span class="font-medium"
                           >{targetBranch}</span
@@ -1725,7 +1725,7 @@
 
           <!-- Section Header -->
           <div
-            class="pl-10 pr-3 py-2 text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wide flex items-center"
+            class="pl-10 pr-3 py-2 text-ui font-medium text-muted-foreground uppercase tracking-wide flex items-center"
           >
             <div class="flex-1">On local branch</div>
             <span class="font-normal ml-1">{branch}</span>
@@ -1771,9 +1771,9 @@
                             {:else}
                               <Fa
                                 icon={faSpinner}
-                                class="h-3 w-3 animate-spin text-muted-foreground"
+                                class="h-3 w-3 animate-spin text-subtle"
                               />
-                              <span class="flex-1 text-left text-muted-foreground">
+                              <span class="flex-1 text-left text-subtle">
                                 {#if isAutofillAndCreatingPR || backgroundOperation?.type === 'create-pr'}
                                   {generatingPRStatus || 'Generating PR description...'}
                                 {:else}
@@ -1786,19 +1786,19 @@
                             <div class="flex-1 flex items-center gap-2">
                               {#if (isAutofillAndCreatingPR || backgroundOperation?.type === 'create-pr') && generatingPRPreview}
                                 <span
-                                  class="flex-1 text-left text-xs text-muted-foreground/70 truncate"
+                                  class="flex-1 text-left text-xs text-subtle truncate"
                                 >
                                   {generatingPRPreview.split('\n').pop()?.slice(0, 60) || ''}
                                 </span>
                               {:else if !isAutofillAndCreatingPR && backgroundOperation?.type !== 'create-pr' && generatingMessagePreview}
                                 <span
-                                  class="flex-1 text-left text-xs text-muted-foreground/70 truncate"
+                                  class="flex-1 text-left text-xs text-subtle truncate"
                                 >
                                   {generatingMessagePreview.split('\n').pop()?.slice(0, 60) || ''}
                                 </span>
                               {:else}
                                 <span
-                                  class="flex-1 text-left text-xs text-muted-foreground/50 italic"
+                                  class="flex-1 text-left text-xs text-subtle italic"
                                 >
                                   Waiting for response...
                                 </span>
@@ -1883,7 +1883,7 @@
                     <!-- Push/Add to PR drawer for this commit (only when remote exists) -->
                     {#if hasRemote && isSelectedForAction && pushDrawerOpen}
                       <div class="p-3" transition:slide={{ duration: 150 }}>
-                        <p class="text-xs text-muted-foreground mb-2">
+                        <p class="text-xs text-subtle mb-2">
                           {#if hasPRs}
                             Add {commitsFromHere} commit{commitsFromHere > 1 ? 's' : ''} to the open PR
                           {:else}
@@ -1919,7 +1919,7 @@
                     {#if isSelectedForAction && mergeDrawerOpen}
                       {@const totalCommitsToMerge = commitsFromHere + remoteCommits.length}
                       <div class="p-3" transition:slide={{ duration: 150 }}>
-                        <p class="text-xs text-muted-foreground mb-3">
+                        <p class="text-xs text-subtle mb-3">
                           Merge {commitsFromHere} commit{commitsFromHere > 1
                             ? 's'
                             : ''}{remoteCommits.length > 0
@@ -1981,7 +1981,7 @@
 
           <!-- Section Header -->
           <div
-            class="pl-10 pr-3 py-2 text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wide flex items-center"
+            class="pl-10 pr-3 py-2 text-ui font-medium text-muted-foreground uppercase tracking-wide flex items-center"
           >
             <div class="flex-1">Pushed to remote branch</div>
             <span class="font-normal ml-1">origin/{branch}</span>
@@ -2008,7 +2008,7 @@
 
                 {#if mergeDrawerOpen && selectedCommitIndex === -1}
                   <div class="p-3" transition:slide={{ duration: 150 }}>
-                    <p class="text-xs text-muted-foreground mb-2">
+                    <p class="text-xs text-subtle mb-2">
                       Merge {totalBranchCommits} commit{totalBranchCommits > 1 ? 's' : ''} directly into
                       <span class="font-medium">{targetBranch}</span>.
                       {#if hasPRs}
@@ -2120,20 +2120,20 @@
 
           <!-- Section Header -->
           <div
-            class="pl-10 pr-3 py-2 text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wide flex items-center"
+            class="pl-10 pr-3 py-2 text-ui font-medium text-muted-foreground uppercase tracking-wide flex items-center"
           >
             <div class="flex-1">Connect remote</div>
           </div>
 
           <div class="pl-10 pr-3 pb-3">
             <div class="border border-border rounded-md overflow-hidden shadow-xs bg-background p-3 space-y-3">
-              <p class="text-xs text-muted-foreground">
+              <p class="text-xs text-subtle">
                 Add a git remote to enable pushing and pull requests.
               </p>
               {#if connectRemoteOpen}
                 <div transition:slide={{ duration: 150 }} class="space-y-3">
                   <div>
-                    <span class="text-xs text-muted-foreground mb-1 block">Remote URL</span>
+                    <span class="text-xs text-subtle mb-1 block">Remote URL</span>
                     <input
                       type="text"
                       class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/50"
@@ -2170,7 +2170,7 @@
                       Cancel
                     </Button>
                   </div>
-                  <p class="text-xs text-muted-foreground">
+                  <p class="text-xs text-subtle">
                     Don't have a repo?
                     <a
                       href="https://github.com/new"
@@ -2209,7 +2209,7 @@
 
           <!-- Section Header -->
           <div
-            class="pl-10 pr-3 py-2 text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wide flex items-center"
+            class="pl-10 pr-3 py-2 text-ui font-medium text-muted-foreground uppercase tracking-wide flex items-center"
           >
             <div class="flex-1">{isAllDone ? 'Merged to trunk' : 'Pushed to trunk'}</div>
             <span class="font-normal ml-1">{targetBranch}</span>
@@ -2227,7 +2227,7 @@
                   </div>
                   <div class="flex-1 min-w-0">
                     <h3 class="text-sm font-medium text-foreground">All done!</h3>
-                    <p class="text-xs text-muted-foreground mt-0.5">
+                    <p class="text-xs text-subtle mt-0.5">
                       Your changes have been merged into {targetBranch}. Ready to start something
                       new?
                     </p>
@@ -2243,7 +2243,7 @@
                 </div>
               </div>
             {:else}
-              <p class="text-xs text-muted-foreground">
+              <p class="text-xs text-subtle">
                 Changes have been merged into {targetBranch}
               </p>
             {/if}

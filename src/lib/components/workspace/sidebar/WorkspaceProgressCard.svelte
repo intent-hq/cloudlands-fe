@@ -1076,7 +1076,7 @@
       <div class="text-sm font-semibold text-foreground truncate">
         {workspace?.title || 'Untitled'}
       </div>
-      <div class="text-sm text-muted-foreground truncate mt-0.5 flex items-center gap-1">
+      <div class="text-sm text-subtle truncate mt-0.5 flex items-center gap-1">
         <Tooltip
           side="bottom"
           align="start"
@@ -1099,7 +1099,7 @@
                 >
                 folder.
               {/if}
-              <br /><span class="text-muted-foreground"
+              <br /><span class="text-subtle"
                 >Click to copy the path, or open in an app from the <Fa
                   icon={faEllipsisV}
                   class="inline mx-0.5"
@@ -1147,7 +1147,7 @@
     {/if}
 
     <!-- Summary message (compact) -->
-    <div class="text-xs text-muted-foreground mt-2 leading-tight">
+    <div class="text-xs text-subtle mt-2 leading-tight">
       {summaryMessage.headline}
     </div>
   </button>
@@ -1266,7 +1266,7 @@
                 >
                 folder.
               {/if}
-              <br /><span class="text-muted-foreground"
+              <br /><span class="text-subtle"
                 >Click to copy the path, or open in an app from the <Fa
                   icon={faEllipsisV}
                   class="inline mx-0.5"
@@ -1314,7 +1314,7 @@
             <div class="group w-full p-0 bg-transparent border-none text-left">
               <div class="w-full flex flex-1">
                 <div
-                  class="text-xs text-muted-foreground leading-tight transition-colors duration-150"
+                  class="text-xs text-subtle leading-tight transition-colors duration-150"
                 >
                   {summaryMessage.headline}
                 </div>
@@ -1402,7 +1402,7 @@
       <!-- Ready Tasks Section (excludes spec from display) -->
       <!-- {#if isLoadingReadyTasks}
     <div
-      class="w-full px-4x pb-3 flex items-center gap-2 text-xs text-muted-foreground"
+      class="w-full px-4x pb-3 flex items-center gap-2 text-xs text-subtle"
       transition:slide={{ axis: 'y', duration: 200 }}
     >
       <Fa icon={faSpinner} spin size="xs" />
@@ -1410,12 +1410,12 @@
     </div>
   {:else if displayReadyTasks.length > 0 && currentDisplayReadyTask}
     <div class="w-full px-4x pb-3" transition:slide={{ axis: 'y', duration: 200 }}>
-      <div class="flex items-center justify-between text-xs text-muted-foreground">
+      <div class="flex items-center justify-between text-xs text-subtle">
         <span>{displayReadyTasks.length} ready task{displayReadyTasks.length > 1 ? 's' : ''}:</span>
         {#if displayReadyTasks.length > 1}
           <span class="flex items-center gap-1">
             <button
-              class="p-0.5 hover:bg-muted rounded transition-colors text-muted-foreground/30 cursor-pointer"
+              class="p-0.5 hover:bg-muted rounded transition-colors text-ghost cursor-pointer"
               onclick={navigatePrev}
               disabled={displayReadyTasks.length <= 1}
               title="Previous ready task"
@@ -1423,7 +1423,7 @@
               <Fa icon={faChevronLeft} size="xs" />
             </button>
             <button
-              class="p-0.5 hover:bg-muted rounded transition-colors text-muted-foreground/30 cursor-pointer"
+              class="p-0.5 hover:bg-muted rounded transition-colors text-ghost cursor-pointer"
               onclick={navigateNext}
               disabled={displayReadyTasks.length <= 1}
               title="Next ready task"
@@ -1434,13 +1434,13 @@
         {/if}
       </div>
       <button
-        class="flex items-center gap-2 w-full text-left text-sm text-muted-foreground transition-colors py-1 rounded cursor-pointer"
+        class="flex items-center gap-2 w-full text-left text-sm text-subtle transition-colors py-1 rounded cursor-pointer"
         onclick={() => onOpenNote?.(currentDisplayReadyTask.id as string)}
         onmouseenter={() => (highlightedNoteId = currentDisplayReadyTask.id as string)}
         onmouseleave={() => (highlightedNoteId = null)}
       >
         <span class="flex-1 truncate text-xs">{currentDisplayReadyTask.title}</span>
-        <Fa icon={faArrowRight} size="xs" class="text-muted-foreground/30" />
+        <Fa icon={faArrowRight} size="xs" class="text-ghost" />
       </button>
     </div>
   {:else if readyTasksError}

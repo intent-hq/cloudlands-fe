@@ -668,7 +668,7 @@
       <CardTitle id="create-workspace-title" class="text-3xl font-bold"
         >Create a Space</CardTitle
       >
-      <p class="text-base text-muted-foreground mt-2">
+      <p class="text-base text-subtle mt-2">
         Create an isolated clone of a repo, ready to plan and tackle any task.
       </p>
     </CardHeader>
@@ -773,7 +773,7 @@
             </div>
           </div>
 
-          <p class="text-xs text-muted-foreground italic">Connection will test automatically...</p>
+          <p class="text-xs text-subtle italic">Connection will test automatically...</p>
         </div>
       {/if}
 
@@ -784,7 +784,7 @@
           <!-- GitHub URL Input -->
           <div class="relative flex-1">
             <div class="absolute left-3 top-1/2 -translate-y-1/2 z-10">
-              <Fa icon={faGithub} class="h-5 w-5 text-muted-foreground" />
+              <Fa icon={faGithub} class="h-5 w-5 text-ghost" />
             </div>
             <Input
               bind:value={searchQuery}
@@ -814,7 +814,7 @@
           </div>
 
           <!-- Or divider -->
-          <span class="text-sm text-muted-foreground">or</span>
+          <span class="text-sm text-subtle">or</span>
 
           <!-- Local folder button/display -->
           {#if repoPath}
@@ -851,7 +851,7 @@
               class="flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition-colors border-border hover:bg-accent/10"
             >
               <div class="relative flex items-center justify-center w-6 h-6">
-                <Fa icon={faFolder} class="h-5 w-5 text-muted-foreground" />
+                <Fa icon={faFolder} class="h-5 w-5 text-ghost" />
               </div>
               <span class="text-sm font-medium whitespace-nowrap"> Clone a local folder </span>
             </button>
@@ -866,7 +866,7 @@
       <!-- Recent Repos - Always visible -->
       {#if recentRepos.length > 0}
         <div class="space-y-3">
-          <p class="text-sm font-medium text-muted-foreground">Recent repos</p>
+          <p class="text-sm font-medium text-subtle">Recent repos</p>
           <div class="space-y-px">
             {#each recentRepos as repo (repo.path || repo.name)}
               <Button
@@ -874,16 +874,16 @@
                 class="w-full"
                 variant={selectedRepo === repo ? 'secondary' : 'ghost'}
               >
-                <Fa icon={faFolder} class="h-4 w-4 text-muted-foreground" />
+                <Fa icon={faFolder} class="h-4 w-4 text-ghost" />
                 <div class="flex-1 min-w-0 justify-start text-left">
                   <div class="text-sm">
                     {#if repo.owner}
-                      <span class="text-muted-foreground">{repo.owner} / </span>
+                      <span class="text-subtle">{repo.owner} / </span>
                     {/if}
                     <span class="font-medium">{repo.name}</span>
                   </div>
                   {#if repo.remote}
-                    <div class="text-xs text-muted-foreground mt-0.5">
+                    <div class="text-xs text-subtle mt-0.5">
                       <Fa icon={faCloud} class="inline h-3 w-3 mr-1" />
                       {repo.remote}
                     </div>
@@ -913,13 +913,13 @@
                 {/if}
               </div>
               {#if repoInfo.remoteUrl}
-                <div class="text-sm text-muted-foreground mt-1">
+                <div class="text-sm text-subtle mt-1">
                   <Fa icon={faCodeBranch} class="inline h-3 w-3 mr-1" />
                   {repoInfo.currentBranch || branch}
                 </div>
               {/if}
               {#if repoSource === 'local' && repoPath}
-                <div class="text-xs text-muted-foreground mt-1 font-mono">
+                <div class="text-xs text-subtle mt-1 font-mono">
                   {repoPath}
                 </div>
               {/if}
@@ -954,7 +954,7 @@
             <Select.Trigger
               class="border-0 bg-transparent hover:bg-none text-muted-foreground h-8 px-2 transition-colors"
             >
-              <div class="flex items-center gap-1.5 truncate text-muted-foreground">
+              <div class="flex items-center gap-1.5 truncate text-subtle">
                 <Fa icon={faServer} class="h-3 w-3" />
                 <span class="flex-1 text-left truncate text-xs">
                   {selectedRemote}
@@ -966,7 +966,7 @@
                 <Select.Item value={remote.name}>
                   <div class="flex flex-col gap-0.5">
                     <span class="font-medium">{remote.name}</span>
-                    <span class="text-xs text-muted-foreground truncate max-w-[250px]">
+                    <span class="text-xs text-subtle truncate max-w-[250px]">
                       {remote.fetchUrl}
                     </span>
                   </div>
@@ -988,8 +988,8 @@
               <Select.Trigger
                 class="border-0 bg-transparent hover:bg-none text-muted-foreground h-8 px-2 transition-colors"
               >
-                <div class="flex items-center gap-1.5 truncate text-muted-foreground">
-                  <LinearIcon size={14} class="text-muted-foreground" />
+                <div class="flex items-center gap-1.5 truncate text-subtle">
+                  <LinearIcon size={14} class="text-ghost" />
                   <span class="flex-1 text-left truncate">
                     {#if selectedLinearIssue}
                       <span>{selectedLinearIssue.identifier}</span>
@@ -1002,14 +1002,14 @@
                     {/if}
                   </span>
                   {#if isLoadingLinearIssues && !selectedLinearIssue}
-                    <Fa icon={faSpinner} class="ml-auto animate-spin text-muted-foreground" size="sm" />
+                    <Fa icon={faSpinner} class="ml-auto animate-spin text-subtle" size="sm" />
                   {/if}
                 </div>
               </Select.Trigger>
               <Select.Content
                 class="max-w-[400px] min-w-[400px] max-h-[600px] overflow-hidden flex flex-col"
               >
-                <div class="w-full text-sm px-3 py-2 mb-2 -mt-1 bg-muted/50 text-muted-foreground">
+                <div class="w-full text-sm px-3 py-2 mb-2 -mt-1 bg-muted/50 text-subtle">
                   Link a Linear issue to this workspace (optional)
                 </div>
                 <div class="-mt-1 px-2 pb-1 pt-1 sticky -top-1 bg-background z-10">
@@ -1041,7 +1041,7 @@
                           onclick={() => handleLinearIssueSelect(issue.identifier)}
                           class="w-full justify-start text-left"
                         >
-                          <LinearIcon size={14} class="text-muted-foreground shrink-0" />
+                          <LinearIcon size={14} class="text-ghost shrink-0" />
                           <div class="flex-1 min-w-0">
                             <div class="flex items-center gap-1">
                               <span class="text-sm font-medium">{issue.identifier}</span>
@@ -1049,15 +1049,15 @@
                                 <Fa icon={faCheck} class="text-primary" size="sm" />
                               {/if}
                             </div>
-                            <span class="text-xs text-muted-foreground truncate block">{issue.title}</span>
+                            <span class="text-xs text-subtle truncate block">{issue.title}</span>
                           </div>
                         </Button>
                       {/each}
                     </div>
                   {:else if linearIssueSearchValue && !isLoadingLinearIssues}
-                    <div class="px-2 py-2 text-sm text-muted-foreground">No issues match your search</div>
+                    <div class="px-2 py-2 text-sm text-subtle">No issues match your search</div>
                   {:else if !isLoadingLinearIssues}
-                    <div class="px-2 py-2 text-sm text-muted-foreground">No issues found</div>
+                    <div class="px-2 py-2 text-sm text-subtle">No issues found</div>
                   {/if}
                 </div>
               </Select.Content>
@@ -1118,7 +1118,7 @@
     >
       <div class="mb-4">
         <h3 class="text-xl font-semibold">Browse Remote Filesystem</h3>
-        <p class="text-sm text-muted-foreground mt-1">
+        <p class="text-sm text-subtle mt-1">
           Select a directory on <strong>{sshConfig.host}</strong>
         </p>
       </div>

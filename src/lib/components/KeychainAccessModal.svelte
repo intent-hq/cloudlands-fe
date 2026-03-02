@@ -118,11 +118,11 @@
             <Fa icon={faCircleInfo} class="text-blue-500" />
             Why does this happen?
           </h3>
-          <p class="text-sm text-muted-foreground m-0">
+          <p class="text-sm text-subtle m-0">
             Your git credentials are stored in the macOS keychain.
           </p>
           {#if warningData?.credentialHelper}
-            <p class="text-xs text-muted-foreground mt-2 m-0">
+            <p class="text-xs text-subtle mt-2 m-0">
               Credential helper: <code class="bg-muted px-1 rounded"
                 >{warningData.credentialHelper}</code
               >
@@ -133,7 +133,7 @@
         <!-- Tip about SSH -->
         <div class="flex items-start gap-3">
           <Fa icon={faKey} class="text-green-500 mt-0.5" />
-          <p class="text-sm text-muted-foreground m-0">
+          <p class="text-sm text-subtle m-0">
             <strong>Tip:</strong> Switch to SSH keys to avoid keychain prompts entirely. SSH keys are
             stored separately and don't trigger these dialogs.
           </p>
@@ -146,7 +146,7 @@
             bind:checked={rememberChoice}
             class="w-4 h-4 rounded border-border"
           />
-          <span class="text-sm text-muted-foreground"> Remember my choice </span>
+          <span class="text-sm text-subtle"> Remember my choice </span>
         </label>
       </div>
 

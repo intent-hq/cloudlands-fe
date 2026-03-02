@@ -143,13 +143,13 @@
       class:selected={selectedVersionIndex === null}
       onclick={() => (selectedVersionIndex = null)}
     >
-      <span class="text-[11px] font-mono font-medium">Current</span>
+      <span class="text-ui font-mono font-medium">Current</span>
     </button>
 
     {#if loading}
-      <div class="px-2.5 py-1.5 text-[11px] text-muted-foreground">Loading…</div>
+      <div class="px-2.5 py-1.5 text-ui text-subtle">Loading…</div>
     {:else if error}
-      <div class="px-2.5 py-1.5 text-[11px] text-destructive-foreground">Error</div>
+      <div class="px-2.5 py-1.5 text-ui text-destructive-foreground">Error</div>
     {:else}
       {#each versions as version, index (version.versionId)}
         <button
@@ -158,8 +158,8 @@
           onclick={() => (selectedVersionIndex = index)}
         >
           <span class="size-[5px] rounded-full shrink-0 {getAuthorDotColor(version)}"></span>
-          <span class="text-[11px] font-mono font-medium">V{version.versionNumber}</span>
-          <span class="text-[10px] text-muted-foreground ml-auto">{formatRelativeTime(version.createdAt)}</span>
+          <span class="text-ui font-mono font-medium">V{version.versionNumber}</span>
+          <span class="text-ui text-subtle ml-auto">{formatRelativeTime(version.createdAt)}</span>
         </button>
       {/each}
     {/if}
@@ -169,7 +169,7 @@
   <div class="flex flex-col flex-1 min-w-0">
     {#if selectedVersionIndex !== null}
       <div class="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border shrink-0">
-        <div class="flex items-center gap-1.5 text-[11px] text-muted-foreground min-w-0">
+        <div class="flex items-center gap-1.5 text-ui text-subtle min-w-0">
           <span class="font-medium text-foreground">V{versions[selectedVersionIndex].versionNumber}</span>
           <span>·</span>
           <span>{formatRelativeTime(versions[selectedVersionIndex].createdAt)}</span>
@@ -179,7 +179,7 @@
           {/if}
         </div>
         <Button variant="ghost-light" size="xs" onclick={handleRestore}>
-          <Fa icon={faRotateLeft} class="text-muted-foreground/50" size="10" />
+          <Fa icon={faRotateLeft} class="text-ghost" size="10" />
           Restore
         </Button>
       </div>

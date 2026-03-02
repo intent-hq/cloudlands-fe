@@ -281,7 +281,7 @@
       {#if isCollapsed && replies.length > 0}
         <div class="ml-8">
           <button
-            class="text-[11px] text-muted-foreground hover:text-foreground mt-1"
+            class="text-ui text-muted-foreground hover:text-foreground mt-1"
             onclick={(e) => {
               e.stopPropagation();
               onShow?.();
@@ -352,7 +352,7 @@
             />
           </div>
           <Button variant="ghost-light" size="icon-sm" tooltip="Attach">
-            <Fa icon={faPaperclip} size="sm" class="text-muted-foreground" />
+            <Fa icon={faPaperclip} size="sm" class="text-ghost" />
           </Button>
           <Button
             variant="ghost-light"
@@ -360,7 +360,7 @@
             tooltip="Mention"
             onclick={() => replyEditor?.insertAtSymbol?.()}
           >
-            <Fa icon={faAt} size="sm" class="text-muted-foreground" />
+            <Fa icon={faAt} size="sm" class="text-ghost" />
           </Button>
           <Button
             variant="ghost-light"

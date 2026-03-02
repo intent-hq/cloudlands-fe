@@ -92,9 +92,9 @@
     <!-- Icon and Title section -->
     <div class="flex items-center gap-2 min-w-0 px-2">
       {#if Icon}
-        <Icon class="w-4 h-4 text-muted-foreground opacity-50 shrink-0" />
+        <Icon class="w-4 h-4 text-ghost opacity-50 shrink-0" />
       {:else if faIcon}
-        <Fa icon={faIcon} class="w-4 h-4 text-muted-foreground opacity-50 shrink-0" />
+        <Fa icon={faIcon} class="w-4 h-4 text-ghost opacity-50 shrink-0" />
       {/if}
       <div class="flex items-center gap-1.5 min-w-0">
         {#if isEditingTitle}
@@ -120,7 +120,7 @@
           </button>
         {/if}
         {#if subtitle}
-          <span class="text-xs text-muted-foreground truncate">{subtitle}</span>
+          <span class="text-xs text-subtle truncate">{subtitle}</span>
         {/if}
       </div>
     </div>

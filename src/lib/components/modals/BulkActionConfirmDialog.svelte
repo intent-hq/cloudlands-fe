@@ -94,7 +94,7 @@
 
       <!-- Content -->
       <div class="p-6">
-        <p id="bulk-dialog-description" class="text-sm text-muted-foreground">{description}</p>
+        <p id="bulk-dialog-description" class="text-sm text-subtle">{description}</p>
       </div>
 
       <!-- Footer -->

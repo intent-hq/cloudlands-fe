@@ -256,7 +256,7 @@
         {/each}
       </div>
     {:else if events.length === 0}
-      <div class="flex flex-col items-center justify-center h-full text-muted-foreground/60 py-8">
+      <div class="flex flex-col items-center justify-center h-full text-subtle py-8">
         <Fa icon={faFile} class="text-2xl mb-2 opacity-40" />
         <p class="text-sm">No activity yet</p>
       </div>
@@ -280,7 +280,7 @@
               ? 'text-emerald-500/80 dark:text-emerald-400/70'
               : status === 'error'
                 ? 'text-red-400/80 dark:text-red-400/70'
-                : 'text-muted-foreground/30'}
+                : 'text-ghost'}
           {@const prevEvent = index > 0 ? dedupedEvents[index - 1] : null}
           {@const thisTime = new Date(event.timestamp).getTime()}
           {@const prevTime = prevEvent ? new Date(prevEvent.timestamp).getTime() : 0}
@@ -330,16 +330,16 @@
               }}
             >
               <!-- Main label with timestamp on right -->
-              <div class="flex items-center gap-1.5 leading-relaxed text-sm text-muted-foreground">
+              <div class="flex items-center gap-1.5 leading-relaxed text-sm text-subtle">
                 <div class="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
                   {#each label.parts as part, partIndex (`part-${partIndex}-${typeof part === 'string' ? 'text' : part.type}-${typeof part === 'string' ? part.slice(0, 20) : part.value}`)}
                     {#if typeof part === 'string'}
-                      <span class="text-muted-foreground">{part}</span>
+                      <span class="text-subtle">{part}</span>
                     {:else}
                       <EntityChip
                         type={part.type}
                         label={part.displayValue}
-                        iconClass="text-muted-foreground/50"
+                        iconClass="text-ghost"
                         sublabel={part.fullPath}
                         variant="outline"
                         onClick={part.type !== 'text'
@@ -356,7 +356,7 @@
 
                 <!-- Timestamp on the right (only show if different from previous) -->
                 {#if showThisTimestamp}
-                  <span class="shrink-0 text-[10px] text-muted-foreground/40 ml-2">
+                  <span class="shrink-0 text-ui text-subtle ml-2">
                     <RelativeTime date={new Date(event.timestamp)} />
                   </span>
                 {/if}
@@ -365,7 +365,7 @@
               <!-- Expanded details -->
               {#if isExpanded}
                 <div
-                  class="mt-2 p-2 rounded-md bg-muted/40 text-xs font-mono text-muted-foreground overflow-auto max-h-[40em] border border-border/50"
+                  class="mt-2 p-2 rounded-md bg-muted/40 text-xs font-mono text-subtle overflow-auto max-h-[40em] border border-border/50"
                   transition:slide={{ duration: 150 }}
                 >
                   <pre>{JSON.stringify(event, null, 2)}</pre>

@@ -447,7 +447,7 @@
                   />
                   {#if item.isBackground || item.metadata?.isBackground}
                     <div
-                      class="absolute -top-1 -right-1 px-1 py-0.5 text-[8px] font-bold bg-muted text-muted-foreground rounded"
+                      class="absolute -top-1 -right-1 px-1 py-0.5 text-ui font-bold bg-muted text-subtle rounded"
                     >
                       BG
                     </div>
@@ -498,7 +498,7 @@
               <div class="font-medium text-sm truncate">{hoveredItem.name}</div>
               {#if hoveredItem.isBackground || hoveredItem.metadata?.isBackground}
                 <span
-                  class="px-1 py-0.5 text-[8px] font-bold bg-muted text-muted-foreground rounded"
+                  class="px-1 py-0.5 text-ui font-bold bg-muted text-subtle rounded"
                 >
                   BG
                 </span>
@@ -513,14 +513,14 @@
                   size="xs"
                   showZero={false}
                 />
-                <span class="text-[10px] text-muted-foreground">lines</span>
+                <span class="text-ui text-subtle">lines</span>
               </div>
             {/if}
           </div>
         </div>
 
         <!-- Created at time -->
-        <div class="px-3 text-xs text-muted-foreground">
+        <div class="px-3 text-xs text-subtle">
           {#if hoveredItem.createdAt}
             Created {formatRelativeTime(hoveredItem.createdAt)}
           {:else}
@@ -530,7 +530,7 @@
 
         {#if hoveredItem.lastUserMessage}
           <div class="px-3 whitespace-break-spaces wrap-break-word">
-            <div class="text-xs text-muted-foreground font-medium line-clamp-3">
+            <div class="text-xs text-subtle font-medium line-clamp-3">
               {hoveredItem.lastUserMessage}
             </div>
           </div>
@@ -550,7 +550,7 @@
             return '[No content]';
           })()}
           <div class="px-3 whitespace-break-spaces wrap-break-word">
-            <div class="text-xs text-muted-foreground font-medium line-clamp-3">
+            <div class="text-xs text-subtle font-medium line-clamp-3">
               {lastMsg.role}: {msgText}
             </div>
           </div>
@@ -599,12 +599,12 @@
 
         {#if !hoveredItem.lastUserMessage && !hoveredItem.lastResponse && (!hoveredItem.fileChanges || hoveredItem.fileChanges.length === 0)}
           {#if hoveredItem.messages && hoveredItem.messages.length > 0}
-            <div class="pb-3 px-2 text-xs text-muted-foreground">
+            <div class="pb-3 px-2 text-xs text-subtle">
               {hoveredItem.messages.length}
               {hoveredItem.messages.length === 1 ? 'message' : 'messages'}
             </div>
           {:else}
-            <div class="pb-3 px-2 text-xs text-muted-foreground italic">No activity yet</div>
+            <div class="pb-3 px-2 text-xs text-subtle italic">No activity yet</div>
           {/if}
         {/if}
       </div>

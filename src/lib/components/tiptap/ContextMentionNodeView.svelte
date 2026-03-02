@@ -142,7 +142,7 @@
 
   // Get state color class
   function getStateColor(state: string | undefined): string {
-    if (!state) return 'bg-muted text-muted-foreground';
+    if (!state) return 'bg-muted text-subtle';
     const s = state.toLowerCase();
     // Open/active states
     if (s.includes('progress') || s.includes('active') || s.includes('open')) {
@@ -159,13 +159,13 @@
     }
     // Backlog/todo
     if (s.includes('backlog') || s.includes('todo') || s.includes('triage')) {
-      return 'bg-muted text-muted-foreground';
+      return 'bg-muted text-subtle';
     }
     // Blocked/error states
     if (s.includes('block') || s.includes('error') || s.includes('cancel')) {
       return 'bg-red-500/15 text-red-500';
     }
-    return 'bg-muted text-muted-foreground';
+    return 'bg-muted text-subtle';
   }
 
   // Get priority color/indicator
@@ -187,7 +187,7 @@
     const l = level.toLowerCase();
     if (l === 'error' || l === 'fatal') return 'text-red-500';
     if (l === 'warning') return 'text-yellow-500';
-    return 'text-muted-foreground';
+    return 'text-subtle';
   }
 
   // Display text - show title with identifier prefix for issues
@@ -251,7 +251,7 @@
         >
           <ProviderIcon {provider} size={12} class="shrink-0 opacity-30" />
           {#if identifier && itemType !== 'browser-url'}
-            <span class="text-muted-foreground/70 shrink-0">{identifier}</span>
+            <span class="text-subtle shrink-0">{identifier}</span>
           {/if}
           <span class="max-w-[180px] truncate">{displayText()}</span>
         </span>
@@ -264,12 +264,12 @@
           <!-- Header row: provider + identifier -->
           <div class="flex items-center gap-1.5">
             <ProviderIcon {provider} size={10} class="opacity-40" />
-            <span class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide"
+            <span class="text-ui font-medium text-muted-foreground uppercase tracking-wide"
               >{providerName()}</span
             >
             {#if identifier && itemType !== 'browser-url'}
-              <span class="text-[10px] font-medium text-muted-foreground/60">·</span>
-              <span class="text-[10px] font-medium text-muted-foreground/60">{identifier}</span>
+              <span class="text-ui font-medium text-subtle">·</span>
+              <span class="text-ui font-medium text-subtle">{identifier}</span>
             {/if}
           </div>
 
@@ -284,7 +284,7 @@
               <!-- State badge -->
               {#if meta.state}
                 <span
-                  class="px-1.5 py-0.5 rounded text-[10px] font-medium {getStateColor(meta.state)}"
+                  class="px-1.5 py-0.5 rounded text-ui font-medium {getStateColor(meta.state)}"
                 >
                   {meta.state}
                 </span>
@@ -292,19 +292,19 @@
 
               <!-- Priority indicator -->
               {#if priorityInfo}
-                <span class="text-[10px]">{priorityInfo.label}</span>
+                <span class="text-ui">{priorityInfo.label}</span>
               {/if}
 
               <!-- Sentry level (for Sentry issues) -->
               {#if meta.level && provider === 'sentry'}
-                <span class="text-[10px] font-medium uppercase {getLevelColor(meta.level)}"
+                <span class="text-ui font-medium uppercase {getLevelColor(meta.level)}"
                   >{meta.level}</span
                 >
               {/if}
 
               <!-- Assignee -->
               {#if meta.assignee}
-                <span class="text-[10px] text-muted-foreground">→ {meta.assignee}</span>
+                <span class="text-ui text-subtle">→ {meta.assignee}</span>
               {/if}
             </div>
           {/if}
@@ -318,12 +318,12 @@
                 .filter(Boolean)
                 .slice(0, 5) as label}
                 <span
-                  class="px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-muted/50 text-muted-foreground"
+                  class="px-1.5 py-0.5 rounded-full text-ui font-medium bg-muted/50 text-subtle"
                   >{label}</span
                 >
               {/each}
               {#if meta.labels.split(',').length > 5}
-                <span class="text-[9px] text-muted-foreground/50"
+                <span class="text-ui text-subtle"
                   >+{meta.labels.split(',').length - 5}</span
                 >
               {/if}
@@ -332,7 +332,7 @@
 
           <!-- Sentry stats (events/users) -->
           {#if meta && provider === 'sentry' && (meta.count || meta.userCount)}
-            <div class="flex items-center gap-3 text-[10px] text-muted-foreground">
+            <div class="flex items-center gap-3 text-ui text-subtle">
               {#if meta.count}
                 <span>{meta.count} events</span>
               {/if}
@@ -344,20 +344,20 @@
 
           <!-- Description/body text -->
           {#if description}
-            <div class="text-xs text-muted-foreground line-clamp-6">{description}</div>
+            <div class="text-xs text-subtle line-clamp-6">{description}</div>
           {/if}
 
           <!-- Footer: project + timestamps -->
           {#if meta && (meta.project || meta.createdAt || meta.author)}
             <div class="flex items-center gap-2 pt-1 border-t border-border/30">
               {#if meta.project}
-                <span class="text-[10px] text-muted-foreground/60">{meta.project}</span>
+                <span class="text-ui text-subtle">{meta.project}</span>
               {/if}
               {#if meta.author}
-                <span class="text-[10px] text-muted-foreground/50">by {meta.author}</span>
+                <span class="text-ui text-subtle">by {meta.author}</span>
               {/if}
               {#if meta.createdAt}
-                <span class="text-[10px] text-muted-foreground/40 ml-auto"
+                <span class="text-ui text-subtle ml-auto"
                   >{formatRelativeTime(meta.createdAt)}</span
                 >
               {/if}
@@ -380,7 +380,7 @@
         xmlns="http://www.w3.org/2000/svg"
         viewBox="0 0 20 20"
         fill="currentColor"
-        class="w-3 h-3 text-muted-foreground/70 hover:text-foreground"
+        class="w-3 h-3 text-muted-foreground hover:text-foreground"
       >
         <path
           d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"

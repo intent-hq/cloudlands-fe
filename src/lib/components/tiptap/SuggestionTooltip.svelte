@@ -42,7 +42,7 @@
 
 <div class="suggestion-tooltip" style="left: {x}px; top: {y}px;">
   <div class="flex justify-between items-center mb-2">
-    <span class="font-semibold text-[0.8125rem] uppercase tracking-wide"
+    <span class="font-semibold text-xs uppercase tracking-wide"
       >{getTypeLabel(suggestion.type)}</span
     >
     {#if suggestion.author}

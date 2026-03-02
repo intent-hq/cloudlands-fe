@@ -402,6 +402,6 @@
       />
     </div>
   {:else}
-    <div class="px-4 py-3 text-sm text-muted-foreground">No space folder linked</div>
+    <div class="px-4 py-3 text-sm text-subtle">No space folder linked</div>
   {/if}
 </div>

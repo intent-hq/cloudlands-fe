@@ -105,7 +105,7 @@
   });
 
   const phasePillStyles: Record<WorkspacePhase, string> = {
-    planning: 'bg-muted/20 text-muted-foreground',
+    planning: 'bg-muted/20 text-subtle',
     building: 'bg-sky-500/15 text-sky-600 dark:text-sky-400',
     reviewing: 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400',
     shipped: 'bg-foreground/10 text-foreground',
@@ -132,8 +132,8 @@
       class="shrink-0"
     />
     <span class="font-medium truncate">{phase.label}</span>
-    <span class="text-muted-foreground/40 shrink-0">·</span>
-    <span class="text-muted-foreground/60 truncate text-xs">{subtitle}</span>
+    <span class="text-ghost shrink-0">·</span>
+    <span class="text-subtle truncate text-xs">{subtitle}</span>
   </button>
 {:else if variant === 'header'}
   <!-- Header: phase + stats inline, for sidebar top -->
@@ -142,9 +142,9 @@
       <div class="text-sm font-semibold truncate">{_title}</div>
     {/if}
     {#if _repoName || _branch}
-      <div class="flex items-center gap-1 text-xs text-muted-foreground/60 truncate">
+      <div class="flex items-center gap-1 text-xs text-subtle truncate">
         {#if _repoName}<span class="truncate">{_repoName}</span>{/if}
-        {#if _repoName && _branch}<span class="text-muted-foreground/30">·</span>{/if}
+        {#if _repoName && _branch}<span class="text-ghost">·</span>{/if}
         {#if _branch}<span class="truncate">{_branch}</span>{/if}
       </div>
     {/if}
@@ -155,10 +155,10 @@
         size={12}
         class="shrink-0"
       />
-      <span class="text-muted-foreground/60 truncate">{subtitle}</span>
+      <span class="text-subtle truncate">{subtitle}</span>
       <span
         class={cn(
-          'inline-flex items-center px-1.5 py-px rounded-full text-[10px] font-medium shrink-0 ml-auto',
+          'inline-flex items-center px-1.5 py-px rounded-full text-ui font-medium shrink-0 ml-auto',
           phasePillStyles[phase.phase],
         )}>{phase.label}</span
       >
@@ -187,7 +187,7 @@
       />
       <div class="flex-1 min-w-0">
         <div class="text-sm font-medium">{phase.label}</div>
-        <div class="text-xs text-muted-foreground/60 mt-0.5 leading-snug line-clamp-2">
+        <div class="text-xs text-subtle mt-0.5 leading-snug line-clamp-2">
           {subtitle}
         </div>
       </div>
@@ -199,14 +199,14 @@
         {#if stats.tasks.total > 0}
           <div class="flex items-center gap-2">
             <TaskProgressBar stats={stats.tasks} barWidth="3px" barHeight="14px" class="flex-1" />
-            <span class="text-[11px] text-muted-foreground/50 shrink-0 tabular-nums">
+            <span class="text-ui text-subtle shrink-0 tabular-nums">
               {stats.tasks.completed}/{stats.tasks.total}
             </span>
           </div>
         {/if}
         {#if stats.files.changed > 0}
-          <div class="flex items-center justify-between text-[11px]">
-            <span class="text-muted-foreground/50">{stats.files.changed} files</span>
+          <div class="flex items-center justify-between text-ui">
+            <span class="text-subtle">{stats.files.changed} files</span>
             <span class="tabular-nums">
               <span class="text-green-500/70">+{stats.files.additions}</span>
               <span class="text-red-500/70 ml-1">-{stats.files.deletions}</span>
@@ -214,12 +214,12 @@
           </div>
         {/if}
         {#if stats.commits.total > 0}
-          <div class="flex items-center justify-between text-[11px]">
-            <span class="text-muted-foreground/50">{stats.commits.total} commits</span>
+          <div class="flex items-center justify-between text-ui">
+            <span class="text-subtle">{stats.commits.total} commits</span>
           </div>
         {/if}
         {#if prLabel}
-          <div class="flex items-center text-[11px]">
+          <div class="flex items-center text-ui">
             <span
               class={cn(
                 'inline-flex items-center gap-1',
@@ -244,7 +244,7 @@
           }}>{actions.primary.label}</Button
         >
         <Button
-          class="h-7 text-xs text-muted-foreground/60"
+          class="h-7 text-xs text-subtle"
           variant="ghost"
           size="sm"
           onclick={(e) => {

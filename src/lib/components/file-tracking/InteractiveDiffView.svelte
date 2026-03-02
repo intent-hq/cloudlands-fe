@@ -163,11 +163,11 @@
   <!-- Toolbar -->
   <div class="flex items-center justify-between px-4 py-2 border-b border-border bg-muted/30">
     <div class="flex items-center gap-3">
-      <Fa icon={faFileCode} size="sm" class="text-muted-foreground" />
+      <Fa icon={faFileCode} size="sm" class="text-ghost" />
       <div class="flex items-center gap-2">
         <span class="text-sm font-medium">{pathInfo.filename}</span>
         {#if pathInfo.directory}
-          <span class="text-xs text-muted-foreground">• {pathInfo.directory}</span>
+          <span class="text-xs text-subtle">• {pathInfo.directory}</span>
         {/if}
       </div>
 
@@ -176,7 +176,7 @@
           <Fa icon={faRobot} class="text-primary" size="sm" />
           <span>{change.attribution.agent.agentName}</span>
           {#if change.attribution.agent.turnNumber}
-            <span class="text-muted-foreground">Turn {change.attribution.agent.turnNumber}</span>
+            <span class="text-subtle">Turn {change.attribution.agent.turnNumber}</span>
           {/if}
         </div>
       {/if}
@@ -229,7 +229,7 @@
   {#if isContentUnavailable}
     <div class="flex-1 flex items-center justify-center p-8">
       <div class="text-center space-y-4 max-w-md">
-        <div class="text-muted-foreground">
+        <div class="text-subtle">
           <svg
             class="w-16 h-16 mx-auto mb-4 opacity-50"
             fill="none"
@@ -281,7 +281,7 @@
   {:else}
     <div class="flex-1 flex items-center justify-center p-8">
       <div class="text-center space-y-4 max-w-md">
-        <div class="text-muted-foreground">
+        <div class="text-subtle">
           <svg
             class="w-16 h-16 mx-auto mb-4 opacity-50"
             fill="none"

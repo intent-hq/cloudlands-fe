@@ -49,7 +49,7 @@
           <span class="flex-1">{prompt}</span>
           {#if index < 3}
             <span
-              class="shrink-0 text-[0.82rem] font-medium text-muted-foreground/40 group-hover:text-muted-foreground/60 transition-colors duration-150"
+              class="shrink-0 text-ui font-medium text-ghost group-hover:text-muted-foreground/60 transition-colors duration-150"
             >
               {modifierSymbol}{index + 1}
             </span>

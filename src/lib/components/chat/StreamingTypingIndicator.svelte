@@ -30,7 +30,7 @@
 
 {#if visible}
   <div
-    class="flex items-center gap-2 text-muted-foreground py-1 pl-2 {className}"
+    class="flex items-center gap-2 text-subtle py-1 pl-2 {className}"
     in:fade={{ duration: 200, easing: cubicOut }}
     out:fade={{ duration: 150, easing: cubicOut }}
   >
@@ -38,7 +38,7 @@
 
     <!-- Message text -->
     {#if !compact && message}
-      <span class="text-xs text-muted-foreground/80 font-medium">{message}</span>
+      <span class="text-xs text-subtle font-medium">{message}</span>
     {/if}
   </div>
 {/if}

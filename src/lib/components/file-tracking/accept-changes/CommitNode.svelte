@@ -82,7 +82,7 @@
       onclick={() => (expanded = !expanded)}
     >
       <div class="flex items-center gap-2 min-w-0 flex-1">
-        <Fa icon={faCodeCommit} class="h-3 w-3 text-muted-foreground/50 shrink-0" />
+        <Fa icon={faCodeCommit} class="h-3 w-3 text-ghost shrink-0" />
         <div class="text-sm truncate flex-1">{commit.message}</div>
         <Button
           variant="ghost-light"

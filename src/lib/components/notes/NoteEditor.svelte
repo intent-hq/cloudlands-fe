@@ -225,7 +225,7 @@
           </span>
         {/each}
         <div class="flex items-center gap-1">
-          <Fa icon={faHashtag} size="lg" class="text-muted-foreground" />
+          <Fa icon={faHashtag} size="lg" class="text-ghost" />
           <input
             type="text"
             bind:value={tagInput}

@@ -211,7 +211,7 @@
         >
           <Fa icon={faSearchMinus} size="sm" />
         </Button>
-        <span class="text-xs text-muted-foreground min-w-[50px] text-center">{imageZoom}%</span>
+        <span class="text-xs text-subtle min-w-[50px] text-center">{imageZoom}%</span>
         <Button size="icon" variant="ghost" class="h-7 w-7" onclick={handleZoomIn} title="Zoom in">
           <Fa icon={faSearchPlus} size="sm" />
         </Button>
@@ -242,7 +242,7 @@
         >
           <Fa icon={faDownload} size="sm" />
         </Button>
-        <div class="ml-auto text-xs text-muted-foreground">
+        <div class="ml-auto text-xs text-subtle">
           {fileName}
         </div>
       </div>
@@ -271,7 +271,7 @@
         >
           <Fa icon={faDownload} size="sm" />
         </Button>
-        <div class="ml-auto text-xs text-muted-foreground">
+        <div class="ml-auto text-xs text-subtle">
           {fileName}
         </div>
       </div>
@@ -291,7 +291,7 @@
   {:else if fileType === 'audio'}
     <!-- Audio Player -->
     <div class="flex-1 flex flex-col items-center justify-center p-8">
-      <div class="text-muted-foreground mb-4">
+      <div class="text-subtle mb-4">
         <svg class="w-24 h-24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
             stroke-linecap="round"
@@ -301,7 +301,7 @@
           />
         </svg>
       </div>
-      <div class="text-sm text-muted-foreground mb-4">{fileName}</div>
+      <div class="text-sm text-subtle mb-4">{fileName}</div>
       <audio controls class="w-full max-w-md">
         <source src={getImageSrc()} />
         Your browser does not support the audio tag.
@@ -310,7 +310,7 @@
   {:else if fileType === 'pdf'}
     <!-- PDF Notice -->
     <div class="flex-1 flex flex-col items-center justify-center p-8">
-      <div class="text-muted-foreground mb-4">
+      <div class="text-subtle mb-4">
         <svg class="w-24 h-24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
             stroke-linecap="round"
@@ -320,7 +320,7 @@
           />
         </svg>
       </div>
-      <p class="text-sm text-muted-foreground mb-4">PDF Preview not available</p>
+      <p class="text-sm text-subtle mb-4">PDF Preview not available</p>
       <Button size="sm" variant="secondary" onclick={handleDownload}>
         <Fa icon={faDownload} size="sm" class="mr-2" />
         Download PDF
@@ -365,7 +365,7 @@
   {:else if fileType === 'archive'}
     <!-- Archive Info -->
     <div class="flex-1 flex flex-col items-center justify-center p-8">
-      <div class="text-muted-foreground mb-4">
+      <div class="text-subtle mb-4">
         <svg class="w-24 h-24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
             stroke-linecap="round"
@@ -375,13 +375,13 @@
           />
         </svg>
       </div>
-      <p class="text-sm text-muted-foreground mb-2">{fileName}</p>
-      <p class="text-xs text-muted-foreground">Archive file - extract to view contents</p>
+      <p class="text-sm text-subtle mb-2">{fileName}</p>
+      <p class="text-xs text-subtle">Archive file - extract to view contents</p>
     </div>
   {:else if fileType === 'binary'}
     <!-- Binary File Notice -->
     <div class="flex-1 flex flex-col items-center justify-center p-8">
-      <div class="text-muted-foreground mb-4">
+      <div class="text-subtle mb-4">
         <svg class="w-24 h-24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
             stroke-linecap="round"
@@ -391,8 +391,8 @@
           />
         </svg>
       </div>
-      <p class="text-sm text-muted-foreground mb-2">{fileName}</p>
-      <p class="text-xs text-muted-foreground">Binary file - cannot be displayed</p>
+      <p class="text-sm text-subtle mb-2">{fileName}</p>
+      <p class="text-xs text-subtle">Binary file - cannot be displayed</p>
     </div>
   {:else}
     <!-- Default: Code Editor -->

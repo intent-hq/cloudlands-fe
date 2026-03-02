@@ -25,7 +25,7 @@
 
 <div class="flex flex-col items-center justify-center py-12 px-4 text-center {className}">
   {#if Icon}
-    <Icon size={iconSize} class="text-muted-foreground/50 mb-4" />
+    <Icon size={iconSize} class="text-subtle mb-4" />
   {/if}
 
   {#if title}
@@ -33,7 +33,7 @@
   {/if}
 
   {#if description}
-    <p class="text-sm text-muted-foreground mb-4 max-w-md">
+    <p class="text-sm text-subtle mb-4 max-w-md">
       {description}
     </p>
   {/if}

@@ -110,7 +110,7 @@
     }}
     tooltip={changesAllExpanded ? 'Collapse all files' : 'Expand all files'}
     tooltipSide="bottom"
-    class={changesAllExpanded ? 'text-foreground' : 'text-muted-foreground/50'}
+    class={changesAllExpanded ? 'text-foreground' : 'text-muted-foreground'}
   >
     <Fa icon={faCompressAlt} size="xs" class={changesAllExpanded ? '' : 'rotate-180'} />
   </Button>
@@ -122,7 +122,7 @@
       ? 'Wrapping lines. Click to disable.'
       : 'Click to wrap lines'}
     tooltipSide="bottom"
-    class={editorSettings.lineWrapping ? 'text-foreground' : 'text-muted-foreground/50'}
+    class={editorSettings.lineWrapping ? 'text-foreground' : 'text-muted-foreground'}
   >
     <Fa icon={faTextWidth} size="xs" />
   </Button>
@@ -134,7 +134,7 @@
       ? 'Folding unchanged lines. Click to disable.'
       : 'Click to fold unchanged lines'}
     tooltipSide="bottom"
-    class={editorSettings.foldUnchanged ? 'text-foreground' : 'text-muted-foreground/50'}
+    class={editorSettings.foldUnchanged ? 'text-foreground' : 'text-muted-foreground'}
   >
     <Fa icon={faMap} size="xs" />
   </Button>
@@ -146,7 +146,7 @@
       ? 'Click to show unified view'
       : 'Click to show split view'}
     tooltipSide="bottom"
-    class={editorSettings.diffSideBySide ? 'text-foreground' : 'text-muted-foreground/50'}
+    class={editorSettings.diffSideBySide ? 'text-foreground' : 'text-muted-foreground'}
   >
     <Fa icon={faColumns} size="xs" />
   </Button>

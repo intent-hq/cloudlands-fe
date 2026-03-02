@@ -707,7 +707,7 @@
           ></path>
         </svg>
       </div>
-      <p class="text-muted-foreground">
+      <p class="text-subtle">
         An experimental workspace for parallel agents, from <em> Augment Code</em>.
       </p>
     </section>
@@ -716,16 +716,16 @@
     {#if loading}
       <section class="providers-section">
         <div class="loading-spinner">
-          <Fa icon={faCircleNotch} size="2x" class="animate-spin text-muted-foreground" />
+          <Fa icon={faCircleNotch} size="2x" class="animate-spin text-subtle" />
         </div>
-        <p class="text-muted-foreground text-center">Checking available providers...</p>
+        <p class="text-subtle text-center">Checking available providers...</p>
       </section>
 
       <!-- Error State -->
     {:else if providerCheckError}
       <section class="providers-section">
         <h2>Something went wrong</h2>
-        <p class="text-muted-foreground">We couldn't check for available agent providers.</p>
+        <p class="text-subtle">We couldn't check for available agent providers.</p>
         <div class="error-message">
           {providerCheckError}
         </div>
@@ -746,7 +746,7 @@
     {:else}
       <section class="providers-section">
         <h2>Install an Agent Provider</h2>
-        <p class="text-muted-foreground mb-4">
+        <p class="text-subtle mb-4">
           Intent needs an ACP-compatible agent to run. Install one of the following:
         </p>
 
@@ -843,7 +843,7 @@
           <!-- Waiting for browser authentication (localhost OAuth flow) -->
           {#if waitingForBrowserAuth}
             <div class="manual-auth-section" in:fade>
-              <p class="text-sm text-muted-foreground mb-3">
+              <p class="text-sm text-subtle mb-3">
                 <Fa icon={faCircleNotch} class="animate-spin mr-2" />
                 Waiting for you to authenticate in the browser...
               </p>

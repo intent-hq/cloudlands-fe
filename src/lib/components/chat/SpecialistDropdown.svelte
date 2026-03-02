@@ -54,8 +54,8 @@
       )}
     >
       <AuggieAvatar faceSeed="blank" colorSeed="blank" size={16} specialist={value} />
-      <span class="text-muted-foreground">{displayLabel}</span>
-      <Fa icon={faChevronDown} class="text-muted-foreground/50 h-2.5 w-2.5" />
+      <span class="text-subtle">{displayLabel}</span>
+      <Fa icon={faChevronDown} class="text-ghost h-2.5 w-2.5" />
     </button>
   {/snippet}
 
@@ -74,7 +74,7 @@
         <AuggieAvatar faceSeed="blank" colorSeed="blank" size={20} specialist={null} />
         <div class="flex flex-col">
           <span class="font-medium text-foreground">General</span>
-          <span class="text-xs text-muted-foreground">No specialized behavior</span>
+          <span class="text-xs text-subtle">No specialized behavior</span>
         </div>
       </button>
 
@@ -94,7 +94,7 @@
           <AuggieAvatar faceSeed="blank" colorSeed="blank" size={20} specialist={specialist.id} />
           <div class="flex flex-col min-w-0">
             <span class="font-medium text-foreground">{specialist.name}</span>
-            <span class="text-xs text-muted-foreground truncate">{specialist.description}</span>
+            <span class="text-xs text-subtle truncate">{specialist.description}</span>
           </div>
         </button>
       {/each}

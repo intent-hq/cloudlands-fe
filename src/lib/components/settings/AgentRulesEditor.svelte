@@ -194,7 +194,7 @@
       <Header size={3}>
         Agent Instructions
       </Header>
-      <p class="text-muted-foreground/60 mt-2">
+      <p class="text-subtle mt-2">
         Custom instructions that will be included for all agents.
       </p>
     </div>
@@ -240,7 +240,7 @@
 
   {#if loading}
     <div
-      class="flex items-center justify-center py-16 text-muted-foreground border border-border rounded-lg bg-muted/20 grow"
+      class="flex items-center justify-center py-16 text-subtle border border-border rounded-lg bg-muted/20 grow"
     >
       <Fa icon={faCircleNotch} class="w-4 h-4 animate-spin mr-2" />
       Loading...

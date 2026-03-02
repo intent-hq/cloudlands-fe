@@ -497,7 +497,7 @@
       ></div>
       <!-- Avatar for agent-authored blocks (shown on hover) -->
       <div
-        class="flex flex-col gap-0.5 leading-none absolute right-0 top-0 text-right pr-4 pl-0.5 rounded-md text-xs whitespace-nowrap text-muted-foreground/50 opacity-0 group-hover/indicator:opacity-100 transition-opacity duration-200"
+        class="flex flex-col gap-0.5 leading-none absolute right-0 top-0 text-right pr-4 pl-0.5 rounded-md text-xs whitespace-nowrap text-muted-foreground opacity-0 group-hover/indicator:opacity-100 transition-opacity duration-200"
       >
         <div>{formatTimestamp(indicator.timestamp)}</div>
         <div>

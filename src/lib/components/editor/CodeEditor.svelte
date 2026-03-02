@@ -881,7 +881,7 @@
   {#if contentTooLarge}
     <div class="content-too-large">
       <div class="text-center space-y-4 max-w-md">
-        <div class="text-muted-foreground">
+        <div class="text-subtle">
           <svg
             class="w-16 h-16 mx-auto mb-4 opacity-50"
             fill="none"
@@ -926,7 +926,7 @@
     <div bind:this={container} class="w-full h-full"></div>
     {#if placeholder && !value}
       <div class="placeholder-overlay">
-        <span class="text-muted-foreground/50 text-sm italic">{placeholder}</span>
+        <span class="text-subtle text-sm italic">{placeholder}</span>
       </div>
     {/if}
   {/if}

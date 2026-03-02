@@ -612,7 +612,7 @@
               <div class="text-xs font-medium text-foreground">
                 {warningMessage.title}
               </div>
-              <div class="text-[11px] text-muted-foreground mt-0.5">
+              <div class="text-ui text-subtle mt-0.5">
                 {warningMessage.description}
               </div>
             </div>
@@ -645,11 +645,11 @@
               {option.label}
             </div>
             {#if option.description}
-              <div class="text-[10px] text-muted-foreground truncate">{option.description}</div>
+              <div class="text-xs text-subtle truncate">{option.description}</div>
             {/if}
           </div>
           {#if selected}
-            <Fa icon={faCheck} class="text-xs text-muted-foreground shrink-0" />
+            <Fa icon={faCheck} class="text-xs text-ghost shrink-0" />
           {/if}
         </div>
       {/if}
@@ -710,7 +710,7 @@
             </button>
           </div>
         {:else}
-          <div class="flex flex-col items-center gap-2 text-muted-foreground">
+          <div class="flex flex-col items-center gap-2 text-subtle">
             <span class="text-xs">No models available</span>
             <button
               type="button"

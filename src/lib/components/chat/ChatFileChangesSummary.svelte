@@ -84,7 +84,7 @@
   <div class="w-full {isAggregate ? 'mb-1' : ''}">
     <button
       onclick={handleClick}
-      class="w-full flex items-center gap-2 px-2 py-1.5 text-muted-foreground/80 hover:text-foreground rounded-lg transition-colors group cursor-pointer min-w-0"
+      class="w-full flex items-center gap-2 px-2 py-1.5 text-muted-foreground hover:text-foreground rounded-lg transition-colors group cursor-pointer min-w-0"
     >
       <div class="flex items-center gap-2 flex-1 min-w-0">
         <Fa icon={faFile} class="opacity-30" size="xs" />

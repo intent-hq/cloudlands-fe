@@ -161,7 +161,7 @@
 
   :global(.node-label) {
     fill: hsl(var(--foreground));
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 500;
     pointer-events: none;
   }
@@ -189,7 +189,7 @@
     fill: hsl(var(--muted-foreground) / 0.6);
     font-family:
       -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 400;
     letter-spacing: 0.02em;
     text-transform: uppercase;

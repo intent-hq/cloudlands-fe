@@ -67,13 +67,13 @@
     >
       Spaces
     </a>
-    <span class="text-muted-foreground text-sm">›</span>
+    <span class="text-subtle text-sm">›</span>
     <h1 class="text-sm font-medium m-0">
       {#if ctx.workspace}
         {#if ctx.workspace.title}
           <span class="text-foreground">{ctx.workspace.title}</span>
         {:else}
-          <span class="text-muted-foreground">Untitled</span>
+          <span class="text-subtle">Untitled</span>
         {/if}
       {:else}
         <span class="text-foreground">Loading...</span>
@@ -105,11 +105,11 @@
 
   <div class="flex gap-2 items-center">
     {#if ctx.workspace?.repositoryOwner && ctx.workspace?.repositoryName}
-      <div class="text-xs text-muted-foreground">
+      <div class="text-xs text-subtle">
         {ctx.workspace.repositoryOwner}/{ctx.workspace.repositoryName}
       </div>
     {:else if ctx.workspace?.repositoryPath}
-      <div class="text-xs text-muted-foreground">
+      <div class="text-xs text-subtle">
         {ctx.workspace.repositoryPath.split('/').pop()}
       </div>
     {/if}

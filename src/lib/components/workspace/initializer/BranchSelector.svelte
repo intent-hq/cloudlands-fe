@@ -1256,9 +1256,9 @@
 
 {#if disabled}
   <!-- Disabled state: show non-interactive display -->
-  <div class="flex items-center gap-2 text-muted-foreground/60 text-sm py-1">
+  <div class="flex items-center gap-2 text-subtle text-sm py-1">
     {#if hasTriggerIcon}
-      <GitBranchIcon size={12} class="text-muted-foreground" />
+      <GitBranchIcon size={12} class="text-ghost" />
     {/if}
     <span class="truncate">{selectedBranch || value || 'No branch selected'}</span>
   </div>
@@ -1273,7 +1273,7 @@
           {#if githubAuthNeeded === 'not-authenticated'}
             <Fa icon={faExclamationTriangle} class="text-orange-500" size="xs" />
           {:else if hasTriggerIcon}
-            <GitBranchIcon size={12} class={'text-muted-foreground'} />
+            <GitBranchIcon size={12} class={'text-ghost'} />
           {/if}
           <span class="flex-1 text-left truncate min-w-0">
             {#if githubAuthNeeded === 'not-authenticated'}
@@ -1313,7 +1313,7 @@
         <!-- Header -->
         <div class="px-4 pt-2 pb-3">
           <h2 class="text-base font-semibold text-foreground">What branch should we start from?</h2>
-          <p class="text-sm text-muted-foreground mt-1">
+          <p class="text-sm text-subtle mt-1">
             {description ||
               'Choose a branch for the Space to start from. We\'ll treat this branch as the "trunk" to merge back to.'}
           </p>
@@ -1328,7 +1328,7 @@
           >
             <GitBranchIcon size={14} class="text-primary shrink-0" />
             <span class="flex-1 min-w-0">
-              <span class="text-muted-foreground">Use PR branch</span>
+              <span class="text-subtle">Use PR branch</span>
               <strong class="text-foreground ml-1 truncate">{suggestedBranch}</strong>
             </span>
           </button>
@@ -1360,7 +1360,7 @@
         <!-- Branch status info -->
         {#if selectedBranch && repoType === 'local' && (branchStatusBehind > 0 || (showUncommittedIndicator && branchStatusHasUncommittedChanges && isCurrentBranch))}
           <div
-            class="mx-2 mb-1 px-3 py-2 text-sm text-muted-foreground"
+            class="mx-2 mb-1 px-3 py-2 text-sm text-subtle"
             transition:slide={{ axis: 'y', duration: 150 }}
           >
             {#if branchStatusBehind > 0}
@@ -1384,23 +1384,23 @@
               class="w-full px-3 py-3 flex items-center gap-3 hover:bg-muted/50 transition-colors cursor-pointer text-left border-l-2 border-primary bg-primary/5"
               onclick={handleConnectGitHub}
             >
-              <svg class="w-5 h-5 text-muted-foreground" viewBox="0 0 24 24" fill="currentColor">
+              <svg class="w-5 h-5 text-ghost" viewBox="0 0 24 24" fill="currentColor">
                 <path
                   d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"
                 />
               </svg>
               <div class="flex-1 min-w-0">
                 <p class="text-sm font-medium text-foreground">Connect with GitHub</p>
-                <p class="text-sm text-muted-foreground">Required to access private repositories</p>
+                <p class="text-sm text-subtle">Required to access private repositories</p>
               </div>
             </button>
           {:else if isConnectingGitHub}
             <!-- Connecting to GitHub -->
             <div class="px-3 py-3 flex items-center gap-3 border-l-2 border-primary bg-primary/5">
-              <Fa icon={faSpinner} class="w-5 h-5 text-muted-foreground animate-spin" />
+              <Fa icon={faSpinner} class="w-5 h-5 text-ghost animate-spin" />
               <div class="flex-1 min-w-0">
                 <p class="text-sm font-medium text-foreground">Connecting to GitHub...</p>
-                <p class="text-sm text-muted-foreground">Complete authorization in your browser</p>
+                <p class="text-sm text-subtle">Complete authorization in your browser</p>
               </div>
             </div>
           {:else if githubAuthNeeded === 'no-access'}
@@ -1409,7 +1409,7 @@
               <div class="text-sm text-destructive-foreground">
                 You don't have access to this repository.
               </div>
-              <div class="text-sm text-muted-foreground mt-1">
+              <div class="text-sm text-subtle mt-1">
                 Make sure you have permission to view this repo, or check if the URL is correct.
               </div>
             </div>
@@ -1417,7 +1417,7 @@
             <div class="px-2 py-2 border-l-2 border-destructive bg-destructive/10">
               <div class="text-sm text-destructive-foreground">{error}</div>
               {#if repoType === 'github'}
-                <div class="text-sm text-muted-foreground mt-1">
+                <div class="text-sm text-subtle mt-1">
                   You can still type a branch name manually above.
                 </div>
               {/if}
@@ -1439,7 +1439,7 @@
             <div class="px-2 pb-1">
               <!-- Regular branches -->
               {#if regularBranches.length > 0}
-                <!-- <div class="text-sm text-muted-foreground mb-1 ml-2">
+                <!-- <div class="text-sm text-subtle mb-1 ml-2">
               Available branches
               {#if regularBranches.length > 0}
                 ({regularBranches.length})
@@ -1452,14 +1452,14 @@
                     onclick={() => selectBranch(branch)}
                     class="w-full justify-start text-left"
                   >
-                    <GitBranchIcon size={14} class="text-muted-foreground shrink-0" />
+                    <GitBranchIcon size={14} class="text-ghost shrink-0" />
                     <span class="text-sm truncate flex-1">{branch}</span>
                     <div class="flex items-center gap-1 ml-2 shrink-0">
                       {#if branch === currentBranch && branch !== defaultBranch}
-                        <span class="text-sm text-muted-foreground">current</span>
+                        <span class="text-sm text-subtle">current</span>
                       {/if}
                       {#if branch === defaultBranch}
-                        <span class="text-sm text-muted-foreground">default</span>
+                        <span class="text-sm text-subtle">default</span>
                       {/if}
                       {#if branch === selectedBranch}
                         <Fa icon={faCheck} class="text-primary" size="sm" />
@@ -1493,7 +1493,7 @@
                           onclick={() => selectBranch(branch)}
                           class="w-full justify-start text-left opacity-75 hover:opacity-100"
                         >
-                          <GitBranchIcon size={14} class="text-muted-foreground shrink-0" />
+                          <GitBranchIcon size={14} class="text-ghost shrink-0" />
                           <span class="text-sm truncate flex-1"
                             >{branch.replace('dependabot/', '')}</span
                           >
@@ -1524,7 +1524,7 @@
                     />
                     Workspace branches
                     {#if workspaceBranches.length > 0}
-                      <span class="ml-auto text-sm text-muted-foreground/50">
+                      <span class="ml-auto text-sm text-subtle">
                         {workspaceBranches.length}
                       </span>
                     {/if}
@@ -1538,7 +1538,7 @@
                           onclick={() => selectBranch(branch)}
                           class="w-full justify-start text-left opacity-75 hover:opacity-100"
                         >
-                          <GitBranchIcon size={14} class="text-muted-foreground shrink-0" />
+                          <GitBranchIcon size={14} class="text-ghost shrink-0" />
                           <span class="text-sm truncate flex-1">{branch}</span>
                           {#if branch === selectedBranch}
                             <Fa icon={faCheck} class="text-primary" size="sm" />
@@ -1592,7 +1592,7 @@
                             onclick={() => selectBranch(branch)}
                             class="w-full justify-start text-left opacity-75 hover:opacity-100"
                           >
-                            <GitBranchIcon size={14} class="text-muted-foreground shrink-0" />
+                            <GitBranchIcon size={14} class="text-ghost shrink-0" />
                             <!-- Display without origin/ prefix for cleaner UI, but keep full name in value -->
                             <span class="text-sm truncate flex-1"
                               >{branch.replace(/^origin\//, '')}</span
@@ -1603,7 +1603,7 @@
                           </Button>
                         {/each}
                       {:else}
-                        <div class="px-3 text-sm text-muted-foreground/50">
+                        <div class="px-3 text-sm text-subtle">
                           No additional remote branches found.
                         </div>
                       {/if}
@@ -1619,12 +1619,12 @@
                 onclick={() => selectBranch(searchValue)}
                 class="w-full justify-start"
               >
-                <GitBranchIcon size={14} class="text-muted-foreground" />
+                <GitBranchIcon size={14} class="text-ghost" />
                 <span class="text-sm">Use branch: <strong>{searchValue}</strong></span>
               </Button>
             </div>
           {:else if !isLoading && !error}
-            <div class="px-2 py-2 text-sm text-muted-foreground">
+            <div class="px-2 py-2 text-sm text-subtle">
               No branches found. Either you don't have access to this repository, or it doesn't
               exist.
             </div>
@@ -1666,13 +1666,13 @@
                   isOpen = false;
                 }}
               />
-              <div class="items-start flex-1 min-w-0 text-[0.85rem] font-medium -mt-0.25">
+              <div class="items-start flex-1 min-w-0 text-ui font-medium -mt-0.25">
                 Work directly in your folder on the <span class="font-semibold"
                   >{currentBranch}</span
                 > branch
               </div>
             </button>
-            <div class="ml-9 text-sm text-muted-foreground/80">
+            <div class="ml-9 text-sm text-subtle">
               Stay in your working directory (no git worktree). Make sure to stay on one branch
               while agents are running.
             </div>

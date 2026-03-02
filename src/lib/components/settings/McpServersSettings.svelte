@@ -335,14 +335,14 @@
     <div class="flex items-center justify-between">
       <div>
         <p class="text-sm font-medium text-foreground">Enable MCP Servers</p>
-        <p class="text-xs text-muted-foreground">
+        <p class="text-xs text-subtle">
           Connect to Model Context Protocol servers for extended functionality
         </p>
       </div>
       <Switch checked={enabled} onCheckedChange={handleToggleEnabled} size="md" />
     </div>
     {#if !isAuggieProvider}
-      <p class="text-xs text-muted-foreground mt-2">
+      <p class="text-xs text-subtle mt-2">
         MCP server configuration applies to the Augment CLI only and does not affect the currently selected provider.
       </p>
     {/if}
@@ -356,7 +356,7 @@
         <div class="flex items-center justify-between px-6 py-4 border-b border-border">
           <div>
             <p class="text-sm font-medium text-foreground">MCP Servers</p>
-            <p class="text-xs text-muted-foreground">
+            <p class="text-xs text-subtle">
               {servers.length} server{servers.length !== 1 ? 's' : ''} configured
             </p>
           </div>
@@ -464,7 +464,7 @@
           {:else if error}
             <p class="text-sm text-destructive-foreground py-4">{error}</p>
           {:else if servers.length === 0}
-            <p class="text-xs text-muted-foreground mb-4">No servers configured yet</p>
+            <p class="text-xs text-subtle mb-4">No servers configured yet</p>
           {:else}
             <div class="mb-6">
               {#each servers as server (server.name)}
@@ -503,7 +503,7 @@
                         {@const inputKey =
                           input.envVarName || input.correspondingArg || input.label}
                         <div class="mb-2">
-                          <span class="block text-xs text-muted-foreground mb-1">
+                          <span class="block text-xs text-subtle mb-1">
                             {input.label}
                           </span>
                           <Input
@@ -512,7 +512,7 @@
                             class="h-8 text-sm"
                           />
                           {#if input.description}
-                            <p class="text-xs text-muted-foreground mt-0.5">{input.description}</p>
+                            <p class="text-xs text-subtle mt-0.5">{input.description}</p>
                           {/if}
                         </div>
                       {/each}
@@ -544,13 +544,13 @@
                         <div class="flex items-center gap-2">
                           <span class="text-sm font-medium truncate">{option.label}</span>
                           {#if installed}
-                            <span class="text-[10px] text-green-600 font-medium"> Installed </span>
+                            <span class="text-ui text-green-600 font-medium"> Installed </span>
                           {/if}
                         </div>
-                        <p class="text-xs text-muted-foreground truncate">{option.description}</p>
+                        <p class="text-xs text-subtle truncate">{option.description}</p>
                       </div>
 
-                      <div class="shrink-0 text-muted-foreground/50">
+                      <div class="shrink-0 text-subtle">
                         {#if installing}
                           <div
                             class="w-4 h-4 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin"
@@ -579,14 +579,14 @@
         >
           <div class="text-left">
             <p class="text-sm font-medium text-foreground">Advanced: Edit Settings File</p>
-            <p class="text-xs text-muted-foreground">
+            <p class="text-xs text-subtle">
               Directly edit <code class="bg-muted px-1 py-0.5 rounded text-xs"
                 >{userMcpSettingsPath || '~/.augment/settings.json'}</code
               >
             </p>
           </div>
           <span
-            class="text-muted-foreground text-xs transition-transform {showAdvanced
+            class="text-subtle text-xs transition-transform {showAdvanced
               ? 'rotate-90'
               : ''}">▶</span
           >
@@ -610,7 +610,7 @@
                 {:else if userMcpSaveStatus === 'error'}
                   <span class="text-xs text-destructive-foreground">✗ {userMcpSaveError}</span>
                 {:else if userMcpSaveStatus === 'saving'}
-                  <span class="text-xs text-muted-foreground">Saving...</span>
+                  <span class="text-xs text-subtle">Saving...</span>
                 {/if}
               </div>
               <div class="flex items-center gap-3">

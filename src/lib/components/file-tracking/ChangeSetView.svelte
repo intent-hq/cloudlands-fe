@@ -302,7 +302,7 @@
       {/if}
 
       {#if allChanges.length === 0}
-        <div class="flex items-center justify-center h-full text-muted-foreground">
+        <div class="flex items-center justify-center h-full text-subtle">
           <p>No changes to commit</p>
         </div>
       {/if}

@@ -124,16 +124,16 @@
             <Fa icon={faKey} class="text-green-500" />
             Option 1: SSH Keys (Recommended)
           </h3>
-          <p class="text-sm text-muted-foreground mb-3">
+          <p class="text-sm text-subtle mb-3">
             SSH keys are secure and don't require entering passwords.
           </p>
           <div class="bg-muted rounded p-3 font-mono text-xs space-y-1">
             <p class="m-0">
-              <span class="text-muted-foreground"># Generate a new SSH key</span>
+              <span class="text-subtle"># Generate a new SSH key</span>
             </p>
             <p class="m-0">ssh-keygen -t ed25519 -C "your_email@example.com"</p>
             <p class="m-0 mt-2">
-              <span class="text-muted-foreground"># Add to SSH agent</span>
+              <span class="text-subtle"># Add to SSH agent</span>
             </p>
             <p class="m-0">eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_ed25519</p>
           </div>
@@ -152,16 +152,16 @@
             <Fa icon={faTerminal} class="text-purple-500" />
             Option 2: Git Credential Manager
           </h3>
-          <p class="text-sm text-muted-foreground mb-3">
+          <p class="text-sm text-subtle mb-3">
             Stores HTTPS credentials securely in your system keychain.
           </p>
           <div class="bg-muted rounded p-3 font-mono text-xs space-y-1">
             <p class="m-0">
-              <span class="text-muted-foreground"># Install on macOS</span>
+              <span class="text-subtle"># Install on macOS</span>
             </p>
             <p class="m-0">brew install git-credential-manager</p>
             <p class="m-0 mt-2">
-              <span class="text-muted-foreground"># Configure git to use it</span>
+              <span class="text-subtle"># Configure git to use it</span>
             </p>
             <p class="m-0">git credential-manager configure</p>
           </div>
@@ -176,8 +176,8 @@
 
         <!-- Note about GitHub auth -->
         <div class="flex items-start gap-3">
-          <Fa icon={faGithub} class="text-muted-foreground mt-0.5" />
-          <p class="text-sm text-muted-foreground m-0">
+          <Fa icon={faGithub} class="text-ghost mt-0.5" />
+          <p class="text-sm text-subtle m-0">
             <strong>Note:</strong> Connecting GitHub through Augment enables API features like creating
             pull requests and listing repositories, but git push/pull still requires local credentials.
           </p>

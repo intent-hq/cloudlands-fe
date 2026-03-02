@@ -404,7 +404,7 @@
                 <div
                   class="px-3 {groupIndex === 0
                     ? ''
-                    : 'pt-3 border-t border-border'} py-1.5 text-xs font-medium text-muted-foreground/70 uppercase tracking-wider"
+                    : 'pt-3 border-t border-border'} py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider"
                 >
                   {#if group.icon}
                     <Fa icon={group.icon} class="inline-block mr-1.5 h-3 w-3" />
@@ -430,7 +430,7 @@
           {#if empty}
             {@render empty()}
           {:else}
-            <div class="px-2 py-4 text-center text-sm text-muted-foreground">No results found</div>
+            <div class="px-2 py-4 text-center text-sm text-subtle">No results found</div>
           {/if}
         {/if}
       </div>
@@ -495,7 +495,7 @@
                 <div
                   class="px-3 {groupIndex === 0
                     ? ''
-                    : 'pt-3 border-t border-border'} py-1.5 text-xs font-medium text-muted-foreground/70 uppercase tracking-wider"
+                    : 'pt-3 border-t border-border'} py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider"
                 >
                   {#if group.icon}
                     <Fa icon={group.icon} class="inline-block mr-1.5 h-3 w-3" />
@@ -521,7 +521,7 @@
           {#if empty}
             {@render empty()}
           {:else}
-            <div class="px-2 py-4 text-center text-sm text-muted-foreground">No results found</div>
+            <div class="px-2 py-4 text-center text-sm text-subtle">No results found</div>
           {/if}
         {/if}
       </div>
@@ -601,30 +601,30 @@
 
           <!-- Icon -->
           {#if option.icon}
-            <Fa icon={option.icon} class="h-4 w-4 shrink-0 text-muted-foreground" />
+            <Fa icon={option.icon} class="h-4 w-4 shrink-0 text-ghost" />
           {/if}
 
           <!-- Label & Description (inline) -->
           <div class="flex-1 min-w-0 truncate">
             <span>{option.label}</span>
             {#if option.description}
-              <span class="text-muted-foreground"> · {option.description}</span>
+              <span class="text-subtle"> · {option.description}</span>
             {/if}
           </div>
 
           <!-- End label (like "default") -->
           {#if option.endLabel}
-            <span class="text-[10px] text-muted-foreground/60">{option.endLabel}</span>
+            <span class="text-ui text-subtle">{option.endLabel}</span>
           {/if}
 
           <!-- Shortcut -->
           {#if option.shortcut}
-            <span class="text-xs text-muted-foreground/60">{option.shortcut}</span>
+            <span class="text-xs text-subtle">{option.shortcut}</span>
           {/if}
 
           <!-- Submenu arrow -->
           {#if option.type === 'submenu'}
-            <Fa icon={faChevronRight} class="h-3 w-3 shrink-0 text-muted-foreground" />
+            <Fa icon={faChevronRight} class="h-3 w-3 shrink-0 text-ghost" />
           {:else if !multiple && !option.type && isSelected(option.value)}
             <!-- Checkmark for single select -->
             <Fa icon={faCheck} class="h-4 w-4 shrink-0 text-foreground" />

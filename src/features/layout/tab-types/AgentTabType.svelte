@@ -214,7 +214,7 @@
       </div>
     {/key}
   {:else}
-    <div class="flex items-center justify-center h-full text-muted-foreground">
+    <div class="flex items-center justify-center h-full text-subtle">
       <p>Loading space...</p>
     </div>
   {/if}

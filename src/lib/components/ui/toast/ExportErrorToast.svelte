@@ -29,7 +29,7 @@
   <!-- Message -->
   <div class="flex-1 min-w-0">
     <p class="text-sm font-medium text-foreground">Export failed</p>
-    <p class="text-xs text-muted-foreground mt-0.5">{message}</p>
+    <p class="text-xs text-subtle mt-0.5">{message}</p>
   </div>
 
   <!-- Open Combo Button -->

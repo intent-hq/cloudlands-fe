@@ -56,19 +56,19 @@
           {filePath.split('/').pop()}
         </span>
         {#if lineRange}
-          <span class="text-muted-foreground/40">:{lineRange}</span>
+          <span class="text-subtle">:{lineRange}</span>
         {/if}
         <!-- <Fa
           icon={faFile}
           size="xs"
-          class="text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+          class="text-ghost opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
         /> -->
       </button>
     </div>
 
     {#if mode && mode !== 'EXCERPT'}
       <span
-        class="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground bg-muted px-2 py-0.5 rounded"
+        class="text-ui uppercase tracking-wider font-semibold text-muted-foreground bg-muted px-2 py-0.5 rounded"
       >
         {mode}
       </span>

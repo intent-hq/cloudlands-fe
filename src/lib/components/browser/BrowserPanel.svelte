@@ -169,10 +169,10 @@
   <!-- Recent URLs -->
   {#if browserStore.recentUrls.length > 0}
     <div class="flex items-center justify-between px-4 py-1">
-      <span class="text-[10px] uppercase tracking-wider text-muted-foreground/70">Recent</span>
+      <span class="text-ui uppercase tracking-wider text-muted-foreground">Recent</span>
       <button
         type="button"
-        class="text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
+        class="text-ui text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
         onclick={handleClearAll}
         title="Clear all"
       >
@@ -184,7 +184,7 @@
         <div class="group/url relative">
           <ListItem
             icon={faGlobe}
-            iconClass="text-muted-foreground/50"
+            iconClass="text-ghost"
             title={getDisplayTitle(entry)}
             onclick={() => handleUrlClick(entry.url)}
             class="cursor-pointer pr-6"
@@ -193,7 +193,7 @@
           />
           <button
             type="button"
-            class="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/url:opacity-100 p-1 text-muted-foreground/50 hover:text-destructive-foreground transition-all cursor-pointer"
+            class="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/url:opacity-100 p-1 text-muted-foreground hover:text-destructive-foreground transition-all cursor-pointer"
             onclick={(e) => handleDeleteUrl(e, entry.url)}
             title="Remove"
           >

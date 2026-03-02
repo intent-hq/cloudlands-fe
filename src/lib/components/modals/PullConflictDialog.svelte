@@ -190,7 +190,7 @@
             <div>
               <h2 class="text-lg font-semibold">Pull Failed</h2>
               {#if branchName}
-                <p class="text-sm text-muted-foreground mt-0.5">Branch: {branchName}</p>
+                <p class="text-sm text-subtle mt-0.5">Branch: {branchName}</p>
               {/if}
             </div>
           </div>
@@ -201,7 +201,7 @@
 
         <!-- Content -->
         <div class="p-6">
-          <p class="text-sm text-muted-foreground mb-4">
+          <p class="text-sm text-subtle mb-4">
             Unable to pull changes from the remote branch. This usually happens when there are local
             changes that conflict with remote changes.
           </p>

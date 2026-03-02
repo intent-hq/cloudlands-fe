@@ -598,10 +598,10 @@
   {#if showHeader}
     <div class="flex items-center justify-between px-4 py-3 border-b border-border bg-surface">
       <div class="flex items-center gap-3">
-        <Fa {icon} class="text-muted-foreground" />
+        <Fa {icon} class="text-ghost" />
         <h2 class="text-md font-semibold">{displayTitle}</h2>
 
-        <span class="text-sm text-muted-foreground">
+        <span class="text-sm text-subtle">
           ({filteredChanges.length}
           {filteredChanges.length === 1 ? 'file' : 'files'})
         </span>
@@ -757,7 +757,7 @@
         </div>
 
         <div class="flex items-center justify-between">
-          <div class="text-sm text-muted-foreground">
+          <div class="text-sm text-subtle">
             {#if changes.length === 0}
               No changes to commit
             {:else}
@@ -798,7 +798,7 @@
       <!-- Show loading spinner overlay when refreshing with existing data -->
       {#if fileTrackingStore.loading && viewType === 'change-set' && changes.length > 0}
         <div class="absolute top-2 right-2 z-10">
-          <Fa icon={faSpinner} class="animate-spin text-muted-foreground" size="sm" />
+          <Fa icon={faSpinner} class="animate-spin text-ghost" size="sm" />
         </div>
       {/if}
 
@@ -829,7 +829,7 @@
                       class="transition-transform"
                     />
                     <span class="font-medium text-sm">{group.label}</span>
-                    <span class="text-xs text-muted-foreground">({group.changes.length})</span>
+                    <span class="text-xs text-subtle">({group.changes.length})</span>
                   </div>
                   <LineChangesBadge
                     additions={groupAdditions}
@@ -868,7 +868,7 @@
                 <div class="p-4 pb-2">
                   <div class="flex items-center justify-between mb-2">
                     <h3 class="text-sm font-medium text-foreground">Staged Changes</h3>
-                    <span class="text-xs text-muted-foreground">({filteredChanges.length})</span>
+                    <span class="text-xs text-subtle">({filteredChanges.length})</span>
                   </div>
                   <div class="space-y-1">
                     {#each filteredChanges as change (change.id)}
@@ -909,8 +909,8 @@
               {#if unstagedChanges.length > 0}
                 <div class="p-4 pt-2 border-t border-border/50">
                   <div class="flex items-center justify-between mb-2">
-                    <h3 class="text-sm font-medium text-muted-foreground">Unstaged Changes</h3>
-                    <span class="text-xs text-muted-foreground">({unstagedChanges.length})</span>
+                    <h3 class="text-sm font-medium text-subtle">Unstaged Changes</h3>
+                    <span class="text-xs text-subtle">({unstagedChanges.length})</span>
                   </div>
                   <div class="space-y-1 opacity-60">
                     {#each unstagedChanges as change (change.id)}
@@ -992,11 +992,11 @@
           <h3 class="text-lg font-medium">Turn Summary</h3>
           <div class="grid grid-cols-2 gap-4">
             <div class="p-4 rounded-lg border bg-card">
-              <p class="text-sm text-muted-foreground mb-1">Files Changed</p>
+              <p class="text-sm text-subtle mb-1">Files Changed</p>
               <p class="text-2xl font-bold">{filteredChanges.length}</p>
             </div>
             <div class="p-4 rounded-lg border bg-card">
-              <p class="text-sm text-muted-foreground mb-1">Lines Modified</p>
+              <p class="text-sm text-subtle mb-1">Lines Modified</p>
               <div class="flex items-center gap-2">
                 <span class="text-green-500 font-bold">+{totalAdditions}</span>
                 <span class="text-red-500 font-bold">-{totalDeletions}</span>

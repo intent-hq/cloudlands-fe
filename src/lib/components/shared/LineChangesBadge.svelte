@@ -30,8 +30,8 @@
 
   // Size classes
   const sizeClasses = {
-    xxs: 'text-[10px]',
-    xs: 'text-[10px]',
+    xxs: 'text-ui',
+    xs: 'text-ui',
     sm: 'text-sm',
     md: 'text-base',
   };

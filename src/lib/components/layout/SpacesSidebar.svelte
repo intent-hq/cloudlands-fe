@@ -369,7 +369,7 @@
       delayDuration={300}
     >
       <button
-        class="view-toggle p-1 rounded transition-all cursor-pointer text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/50"
+        class="view-toggle p-1 rounded transition-all cursor-pointer text-muted-foreground hover:text-muted-foreground hover:bg-muted/50"
         onclick={toggleViewMode}
       >
         <Fa icon={viewMode === 'recent' ? faLayerGroup : faClock} class="w-3 h-3" />
@@ -430,7 +430,7 @@
                         size="xs"
                         class={workspace.environmentConfig?.type === 'remote'
                           ? 'text-blue-500'
-                          : 'text-muted-foreground/50'}
+                          : 'text-subtle'}
                       />
                     </span>
                   {/if}
@@ -438,12 +438,12 @@
                 </div>
                 <!-- Repo name (when not grouped) -->
                 {#if repoName}
-                  <div class="text-[10px] text-muted-foreground/60 truncate">
+                  <div class="text-ui text-subtle truncate">
                     {repoName}
                   </div>
                 {/if}
                 <!-- Stats row: line changes, agents -->
-                <div class="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                <div class="flex items-center gap-1.5 text-ui text-subtle">
                   <LineChangesBadge
                     additions={lineChanges.additions}
                     deletions={lineChanges.deletions}
@@ -460,7 +460,7 @@
                         />
                       {/each}
                       {#if agents.length > 3}
-                        <span class="ml-1 text-[9px] text-muted-foreground font-medium">
+                        <span class="ml-1 text-ui text-subtle font-medium">
                           +{agents.length - 3}
                         </span>
                       {/if}
@@ -477,7 +477,7 @@
       {#each groupedWorkspaces as group, groupIndex (group.repoKey)}
         <!-- Group header with spacing (no top spacing for first group) -->
         <div class="group-header px-2 pb-1 flex items-center gap-1.5" class:mt-4={groupIndex > 0}>
-          <span class="group-label text-[10px] font-medium text-muted-foreground/60 truncate">
+          <span class="group-label text-ui font-medium text-subtle truncate">
             {group.displayName}
           </span>
         </div>
@@ -533,14 +533,14 @@
                           size="xs"
                           class={workspace.environmentConfig?.type === 'remote'
                             ? 'text-blue-500'
-                            : 'text-muted-foreground/50'}
+                            : 'text-subtle'}
                         />
                       </span>
                     {/if}
                     {workspace.title}
                   </div>
                   <!-- Stats row: line changes, agents -->
-                  <div class="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <div class="flex items-center gap-1.5 text-ui text-subtle">
                     <LineChangesBadge
                       additions={lineChanges.additions}
                       deletions={lineChanges.deletions}
@@ -557,7 +557,7 @@
                           />
                         {/each}
                         {#if agents.length > 3}
-                          <span class="ml-1 text-[9px] text-muted-foreground font-medium">
+                          <span class="ml-1 text-ui text-subtle font-medium">
                             +{agents.length - 3}
                           </span>
                         {/if}

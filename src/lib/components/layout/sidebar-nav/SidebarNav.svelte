@@ -124,7 +124,7 @@
         class="sidebar-nav-btn relative flex flex-col items-center gap-1 cursor-pointer transition-all duration-150
           {active || isHovered
           ? 'text-foreground'
-          : 'text-muted-foreground/60 hover:text-foreground'}"
+          : 'text-muted-foreground hover:text-foreground'}"
         onclick={(e) => handleClick(item.id, e)}
         onmouseenter={() => sidebarNavStore.handleMouseEnter(item.id)}
         onmouseleave={() => sidebarNavStore.handleMouseLeave()}
@@ -138,7 +138,8 @@
           <Fa icon={item.icon} size={16} />
           {#if badgeCount > 0}
             <span
-              class="absolute -top-0.25 -right-0.25 min-w-3 h-3 flex items-center justify-center rounded-full bg-blue-500 text-app-background text-[8px] font-bold px-0.5"
+              class="absolute -top-0.25 -right-0.25 min-w-3 h-3 flex items-center justify-center rounded-full bg-blue-500 text-app-background text-ui font-bold px-0.5"
+
             >
               {badgeCount}
             </span>
@@ -158,7 +159,7 @@
       <button
         bind:this={iconRefs[item.id]}
         class="sidebar-nav-btn relative flex flex-col items-center gap-1 cursor-pointer transition-all duration-150
-          {active ? 'text-foreground' : 'text-muted-foreground/60 hover:text-foreground'}"
+          {active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
         onclick={(e) => handleClick(item.id, e)}
         onmouseenter={() => sidebarNavStore.handleMouseEnter(item.id)}
         onmouseleave={() => sidebarNavStore.handleMouseLeave()}

@@ -822,7 +822,7 @@
 
 {#if !message}
   <!-- Guard against null message prop -->
-  <div class="text-muted-foreground text-sm p-2">Loading...</div>
+  <div class="text-subtle text-sm p-2">Loading...</div>
 {:else}
   <div
     bind:this={messageElement}
@@ -875,7 +875,7 @@
 
           <!-- Message content - line-clamp-6 -->
           <div
-            class="leading-normal text-muted-foreground whitespace-pre-wrap select-text line-clamp-6 {onEditSubmit
+            class="leading-normal text-subtle whitespace-pre-wrap select-text line-clamp-6 {onEditSubmit
               ? 'cursor-pointer'
               : 'cursor-text'}"
             onclick={(e) => {
@@ -962,7 +962,7 @@
                     <Fa icon={segment.icon} size="12" class="opacity-30" />
                   {/if}
                   {#if segment.identifier}
-                    <span class="text-muted-foreground/70 shrink-0">{segment.identifier}</span>
+                    <span class="text-subtle shrink-0">{segment.identifier}</span>
                   {/if}
                   <span class="max-w-[180px] truncate" title={segment.label}>{segment.label}</span>
                 </button>
@@ -1020,12 +1020,12 @@
       {/if}
     {:else if role === 'assistant'}
       <!-- Assistant Message -->
-      <div class="text-[0.875rem] leading-relaxed text-foreground">
+      <div class="text-sm leading-relaxed text-foreground">
         <StreamingMessageContent content={combinedContent} {isStreaming} {hideToolCalls} />
 
         <!-- Stopped indicator for interrupted messages -->
         {#if message?.metadata?.interrupted && !isStreaming}
-          <div class="flex items-center gap-2 text-muted-foreground/70 font-medium text-sm mt-5">
+          <div class="flex items-center gap-2 text-subtle font-medium text-sm mt-5">
             <Fa icon={faSquare} class="size-2.5 opacity-50 mt-px" />
             <span>Stopped</span>
           </div>
@@ -1033,7 +1033,7 @@
 
         <!-- Response metadata (duration, model, tokens) - shown below completed messages -->
         {#if !isStreaming && metadataInfo}
-          <div class="text-xs text-muted-foreground mt-3 pt-2 border-t border-border/30">
+          <div class="text-xs text-subtle mt-3 pt-2 border-t border-border/30">
             {#each metadataInfo as part, i}
               {#if i > 0}
                 <span class="mx-1">·</span>

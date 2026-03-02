@@ -313,7 +313,7 @@
               <button
                 type="button"
                 onclick={() => toggleGroup(group.key)}
-                class="flex items-center gap-2 w-full px-3 py-2 text-sm text-muted-foreground cursor-pointer group/header"
+                class="flex items-center gap-2 w-full px-3 py-2 text-sm text-subtle cursor-pointer group/header"
               >
                 {#if group.icon}
                   <Fa icon={group.icon} class="w-3 h-3" />
@@ -338,7 +338,7 @@
 
                 <Fa
                   icon={faChevronLeft}
-                  class="w-2.5! h-2.5! text-muted-foreground/50 transition-transform {collapsedGroups.has(
+                  class="w-2.5! h-2.5! text-subtle transition-transform {collapsedGroups.has(
                     group.key,
                   ) && !searchQuery
                     ? ''

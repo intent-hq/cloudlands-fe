@@ -202,17 +202,17 @@
     <!-- File info -->
     <div class="flex-1 min-w-0 flex items-center gap-1.5">
       {#if doShowIcon}
-        <Fa icon={faFileAlt} class="h-3! w-3! text-muted-foreground/30 shrink-0" />
+        <Fa icon={faFileAlt} class="h-3! w-3! text-ghost shrink-0" />
       {/if}
       <span
-        class="text-[0.82rem] max-w-full shrink-0 truncate {muted
+        class="text-ui max-w-full shrink-0 truncate {muted
           ? 'text-muted-foreground'
           : 'text-foreground'} {changeType === 'deleted' ? 'file-deleted' : ''}"
       >
         {fileName}
       </span>
       {#if dirPath}
-        <span class="text-[0.82rem] text-muted-foreground/60 truncate">{dirPath}</span>
+        <span class="text-ui text-subtle truncate">{dirPath}</span>
       {/if}
     </div>
   </button>

@@ -111,8 +111,8 @@
 
 {#if !isAuthenticated}
   <div class="p-6 flex flex-col items-center gap-4">
-    <SentryIcon size={48} class="text-muted-foreground/50" />
-    <p class="text-sm text-muted-foreground text-center">Connect to Sentry to see your issues</p>
+    <SentryIcon size={48} class="text-subtle" />
+    <p class="text-sm text-subtle text-center">Connect to Sentry to see your issues</p>
 
     {#if showConfigForm}
       <div class="w-full space-y-3">
@@ -147,13 +147,13 @@
   </div>
 {:else if isLoading}
   <div class="p-8 flex justify-center">
-    <Fa icon={faSpinner} class="animate-spin text-muted-foreground" size="lg" />
+    <Fa icon={faSpinner} class="animate-spin text-subtle" size="lg" />
   </div>
 {:else}
   <!-- Search -->
   <div class="p-3 border-b border-border">
     <div class="relative">
-      <Fa icon={faSearch} class="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50" size="sm" />
+      <Fa icon={faSearch} class="absolute left-3 top-1/2 -translate-y-1/2 text-ghost" size="sm" />
       <Input
         bind:value={searchQuery}
         placeholder="Search issues..."
@@ -166,7 +166,7 @@
   <!-- Issues list continues in next chunk due to line limit -->
   <div class="max-h-80 overflow-y-auto">
     {#if filteredIssues.length === 0}
-      <div class="p-8 text-center text-muted-foreground text-sm">
+      <div class="p-8 text-center text-subtle text-sm">
         {searchQuery ? 'No matching issues found' : 'No issues found'}
       </div>
     {:else}
@@ -177,13 +177,13 @@
           onclick={() => handleSelect(issue)}
         >
           <div class="shrink-0 mt-0.5">
-            <SentryIcon size={14} class="text-muted-foreground" />
+            <SentryIcon size={14} class="text-ghost" />
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
-              <span class="text-xs font-mono text-muted-foreground">{issue.shortId}</span>
+              <span class="text-xs font-mono text-subtle">{issue.shortId}</span>
               {#if issue.projectName}
-                <span class="text-xs text-muted-foreground/50">• {issue.projectName}</span>
+                <span class="text-xs text-subtle">• {issue.projectName}</span>
               {/if}
             </div>
             <p class="text-sm truncate mt-0.5">{issue.title}</p>

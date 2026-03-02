@@ -116,7 +116,7 @@
             <p class="text-foreground">
               Please authenticate with Augment first to enable GitHub integration.
             </p>
-            <p class="text-muted-foreground text-sm mt-2">
+            <p class="text-subtle text-sm mt-2">
               Run <code class="bg-muted px-2 py-1 rounded">auggie login</code> in your terminal.
             </p>
           </div>
@@ -130,7 +130,7 @@
               <p class="text-foreground">
                 Complete the authorization in your browser, then return here.
               </p>
-              <p class="text-muted-foreground text-sm mt-2">Waiting for authorization...</p>
+              <p class="text-subtle text-sm mt-2">Waiting for authorization...</p>
             {:else}
               <p class="text-foreground">Click below to open GitHub authorization.</p>
               <button
@@ -154,7 +154,7 @@
             <p class="text-foreground">
               Connect your GitHub account to create pull requests and list repositories.
             </p>
-            <p class="text-muted-foreground text-sm mt-2">
+            <p class="text-subtle text-sm mt-2">
               Git push/pull uses your local git credentials (SSH keys or credential manager).
             </p>
             <button

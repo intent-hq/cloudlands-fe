@@ -80,7 +80,7 @@
         <div>
           <h2 class="text-lg font-semibold">{title}</h2>
           {#if description}
-            <p class="text-sm text-muted-foreground mt-0.5">{description}</p>
+            <p class="text-sm text-subtle mt-0.5">{description}</p>
           {/if}
         </div>
         <Button variant="ghost" size="icon" onclick={close}>

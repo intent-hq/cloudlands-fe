@@ -12,6 +12,6 @@
 <SheetPrimitive.Description
   bind:ref
   data-slot="sheet-description"
-  class={cn('text-muted-foreground text-sm', className)}
+  class={cn('text-subtle text-sm', className)}
   {...restProps}
 />

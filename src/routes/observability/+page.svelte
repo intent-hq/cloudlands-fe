@@ -449,7 +449,7 @@
                 onclick={() => (selectedEvent = event)}
               >
                 <td
-                  class="px-2 py-1 text-xs text-muted-foreground whitespace-nowrap"
+                  class="px-2 py-1 text-xs text-subtle whitespace-nowrap"
                   title={new Date(event.timestamp).toLocaleString()}
                 >
                   {formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}
@@ -463,7 +463,7 @@
                   </div>
                 </td>
                 <td
-                  class="px-2 py-1 text-xs font-mono text-muted-foreground truncate max-w-[100px]"
+                  class="px-2 py-1 text-xs font-mono text-subtle truncate max-w-[100px]"
                   title={event?.workspaceId || '-'}
                 >
                   {event?.workspaceId ? event.workspaceId.substring(0, 12) + '...' : '-'}
@@ -480,7 +480,7 @@
                       </div>
                     {/if}
                     <span
-                      class="text-muted-foreground truncate max-w-[80px]"
+                      class="text-subtle truncate max-w-[80px]"
                       title={event.actor?.name || event.actor?.id || 'System'}
                     >
                       {event.actor?.name || event.actor?.id || 'System'}
@@ -493,12 +493,12 @@
                       class="font-mono text-primary truncate max-w-[250px] block"
                       title={event.data.command}
                     >
-                      <span class="text-muted-foreground">$</span>
+                      <span class="text-subtle">$</span>
                       {event.data.command}
                     </span>
                   {:else if event.data?.messagePreview}
                     <span
-                      class="text-muted-foreground truncate max-w-[250px] block"
+                      class="text-subtle truncate max-w-[250px] block"
                       title={event.data.messagePreview}
                     >
                       {event.data.messagePreview.substring(0, 50)}{event.data.messagePreview
@@ -518,7 +518,7 @@
                         : ''}
                     </span>
                   {:else}
-                    <span class="text-muted-foreground">-</span>
+                    <span class="text-subtle">-</span>
                   {/if}
                 </td>
               </tr>
@@ -532,11 +532,11 @@
       {#if selectedEvent}
         <div class="p-4 space-y-4">
           <div class="space-y-1">
-            <div class="text-xs font-medium text-muted-foreground">Event ID</div>
+            <div class="text-xs font-medium text-subtle">Event ID</div>
             <p class="text-sm font-mono">{selectedEvent.id}</p>
           </div>
           <div class="space-y-1">
-            <div class="text-xs font-medium text-muted-foreground">Type</div>
+            <div class="text-xs font-medium text-subtle">Type</div>
             <div class="flex items-center gap-2">
               <span class={getEventIconClass(selectedEvent.type)}>
                 <Fa icon={getEventIcon(selectedEvent.type)} size="sm" />
@@ -545,15 +545,15 @@
             </div>
           </div>
           <div class="space-y-1">
-            <div class="text-xs font-medium text-muted-foreground">Timestamp</div>
+            <div class="text-xs font-medium text-subtle">Timestamp</div>
             <p class="text-sm">{new Date(selectedEvent.timestamp).toLocaleString()}</p>
           </div>
           <div class="space-y-1">
-            <div class="text-xs font-medium text-muted-foreground">Session ID</div>
+            <div class="text-xs font-medium text-subtle">Session ID</div>
             <p class="text-sm font-mono">{selectedEvent.sessionId}</p>
           </div>
           <div class="space-y-1">
-            <div class="text-xs font-medium text-muted-foreground">Agent ID</div>
+            <div class="text-xs font-medium text-subtle">Agent ID</div>
             <div class="flex items-center gap-2">
               {#if selectedEvent.agentId}
                 <AuggieAvatar
@@ -578,12 +578,12 @@
           </div>
           {#if selectedEvent.correlationId}
             <div class="space-y-1">
-              <div class="text-xs font-medium text-muted-foreground">Correlation ID</div>
+              <div class="text-xs font-medium text-subtle">Correlation ID</div>
               <p class="text-sm font-mono">{selectedEvent.correlationId}</p>
             </div>
           {/if}
           <div class="space-y-1">
-            <div class="text-xs font-medium text-muted-foreground">Actor</div>
+            <div class="text-xs font-medium text-subtle">Actor</div>
             <pre class="text-xs bg-muted p-2 rounded overflow-x-auto">{JSON.stringify(
                 selectedEvent.actor,
                 null,
@@ -591,7 +591,7 @@
               )}</pre>
           </div>
           <div class="space-y-1">
-            <div class="text-xs font-medium text-muted-foreground">Data</div>
+            <div class="text-xs font-medium text-subtle">Data</div>
             <pre class="text-xs bg-muted p-2 rounded overflow-x-auto">{JSON.stringify(
                 selectedEvent.data,
                 null,
@@ -600,7 +600,7 @@
           </div>
           {#if selectedEvent.type === AgentEventType.AGENT_STARTED && selectedEvent.data?.hasRules}
             <div class="space-y-1">
-              <div class="text-xs font-medium text-muted-foreground">
+              <div class="text-xs font-medium text-subtle">
                 Agent Rules
                 <span class="text-green-500 ml-1">✓ Applied</span>
               </div>
@@ -609,7 +609,7 @@
                   <div class="font-mono whitespace-pre-wrap">
                     {selectedEvent.data.instructionPreview}...
                   </div>
-                  <div class="text-muted-foreground mt-2">
+                  <div class="text-subtle mt-2">
                     (Full rules applied to agent system prompt)
                   </div>
                 </div>
@@ -618,7 +618,7 @@
           {/if}
           {#if selectedEvent.metadata}
             <div class="space-y-1">
-              <div class="text-xs font-medium text-muted-foreground">Metadata</div>
+              <div class="text-xs font-medium text-subtle">Metadata</div>
               <pre class="text-xs bg-muted p-2 rounded overflow-x-auto">{JSON.stringify(
                   selectedEvent.metadata,
                   null,
@@ -628,7 +628,7 @@
           {/if}
         </div>
       {:else}
-        <div class="flex items-center justify-center h-full text-muted-foreground text-sm">
+        <div class="flex items-center justify-center h-full text-subtle text-sm">
           Select an event to view details
         </div>
       {/if}

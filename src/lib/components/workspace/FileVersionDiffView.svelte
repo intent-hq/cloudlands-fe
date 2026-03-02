@@ -176,7 +176,7 @@
           <AuggieAvatar size={24} />
         {:else}
           <div class="w-6 h-6 rounded-full bg-muted flex items-center justify-center">
-            <Fa icon={localChange ? faPencil : faUser} class="w-3 h-3 text-muted-foreground" />
+            <Fa icon={localChange ? faPencil : faUser} class="w-3 h-3 text-ghost" />
           </div>
         {/if}
       </div>
@@ -185,16 +185,16 @@
       <div class="flex items-center gap-1.5 text-sm flex-wrap min-w-0">
         {#if localChange}
           <span class="text-foreground">Local changes</span>
-          <span class="text-muted-foreground">•</span>
+          <span class="text-subtle">•</span>
           <span class="font-medium text-foreground">{formatRelativeTime(localChange.attribution.timestamp)} ago</span>
-          <span class="text-muted-foreground">by {authorName}</span>
-          <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary">{localChangeLabel}</span>
+          <span class="text-subtle">by {authorName}</span>
+          <span class="text-ui px-1.5 py-0.5 rounded bg-primary/20 text-primary">{localChangeLabel}</span>
         {:else if commit}
           <span class="text-foreground">Commit</span>
-          <span class="text-muted-foreground">•</span>
+          <span class="text-subtle">•</span>
           <span class="font-medium text-foreground">{formatRelativeTime(commit.date)} ago</span>
-          <span class="text-muted-foreground">by {commit.author}</span>
-          <span class="text-muted-foreground truncate">— {commit.message}</span>
+          <span class="text-subtle">by {commit.author}</span>
+          <span class="text-subtle truncate">— {commit.message}</span>
         {/if}
       </div>
     </div>
@@ -210,7 +210,7 @@
   <!-- Diff Content -->
   <div class="flex-1 overflow-auto p-4">
     {#if loading}
-      <div class="flex items-center justify-center h-full text-muted-foreground text-sm">
+      <div class="flex items-center justify-center h-full text-subtle text-sm">
         Loading diff...
       </div>
     {:else if error}

@@ -223,7 +223,7 @@
                     ? 'font-medium text-foreground'
                     : workspace.title
                       ? 'text-foreground'
-                      : 'text-muted-foreground/70'}"
+                      : 'text-subtle'}"
                 >
                   {getDisplayTitle(workspace)}
                 </span>
@@ -240,7 +240,7 @@
                       />
                     {/each}
                     {#if agents.length > 3}
-                      <div class="ml-1 text-[10px] text-muted-foreground/50 font-medium">
+                      <div class="ml-1 text-ui text-subtle font-medium">
                         +{agents.length - 3}
                       </div>
                     {/if}
@@ -257,10 +257,10 @@
                           ? 'bg-emerald-500/10 text-emerald-500'
                           : 'bg-yellow-500/10 text-yellow-500'
                         : wsPrStatus === PullRequestStatus.Draft
-                          ? 'bg-muted-foreground/10 text-muted-foreground/60'
+                          ? 'bg-muted-foreground/10 text-muted-foreground'
                           : 'bg-red-500/10 text-red-500'}
                   <span
-                    class="text-[9px] font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}"
+                    class="text-ui font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}"
                   >
                     PR{wsPrNumber ? ` #${wsPrNumber}` : ''}
                   </span>
@@ -268,14 +268,14 @@
 
                 <RelativeTime
                   date={workspace.lastActivity || workspace.updatedAt}
-                  class="text-[11px] text-muted-foreground/50 whitespace-nowrap shrink-0"
+                  class="text-ui text-subtle whitespace-nowrap shrink-0"
                   compact
                 />
               </div>
 
               <!-- Row 2: repo info -->
               {#if workspace.repositoryOwner && workspace.repositoryName}
-                <div class="truncate text-[11px] text-muted-foreground/70">
+                <div class="truncate text-ui text-subtle">
                   {workspace.repositoryOwner}/{workspace.repositoryName}
                 </div>
               {/if}

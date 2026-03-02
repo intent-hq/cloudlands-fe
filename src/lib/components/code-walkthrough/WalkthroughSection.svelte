@@ -65,19 +65,19 @@
     class="w-full flex items-center gap-3 px-4 py-3 bg-muted/30 hover:bg-muted/50 transition-colors text-left"
     onclick={toggleExpanded}
   >
-    <Fa icon={expanded ? faChevronDown : faChevronRight} class="h-3.5 w-3.5 text-muted-foreground" />
+    <Fa icon={expanded ? faChevronDown : faChevronRight} class="h-3.5 w-3.5 text-ghost" />
 
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-2">
-        <span class="text-xs font-medium text-muted-foreground">Section {index + 1}</span>
+        <span class="text-xs font-medium text-subtle">Section {index + 1}</span>
         <span class="text-sm font-medium truncate">{section.title}</span>
       </div>
       {#if section.description}
-        <p class="text-xs text-muted-foreground mt-0.5 truncate">{section.description}</p>
+        <p class="text-xs text-subtle mt-0.5 truncate">{section.description}</p>
       {/if}
     </div>
 
-    <div class="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
+    <div class="flex items-center gap-3 text-xs text-subtle shrink-0">
       <span class="flex items-center gap-1">
         <Fa icon={faFile} class="h-3 w-3" />
         {section.files.length}
@@ -103,7 +103,7 @@
         {:else}
           <!-- File without diff (maybe new or deleted) -->
           <div class="rounded-lg border border-border p-4 bg-muted/20">
-            <div class="flex items-center gap-2 text-sm text-muted-foreground">
+            <div class="flex items-center gap-2 text-sm text-subtle">
               <Fa icon={faFile} class="h-4 w-4" />
               <span class="font-mono">{filePath}</span>
               <span class="text-xs">(no diff available)</span>

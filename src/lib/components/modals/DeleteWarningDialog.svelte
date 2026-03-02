@@ -57,7 +57,7 @@
           </div>
           <div>
             <h2 class="text-lg font-semibold">Delete Space?</h2>
-            <p class="text-sm text-muted-foreground mt-0.5">Agents are currently running</p>
+            <p class="text-sm text-subtle mt-0.5">Agents are currently running</p>
           </div>
         </div>
         <Button variant="ghost" size="icon" onclick={close}>
@@ -73,14 +73,14 @@
         {#if agentNames.length > 0}
           <ul class="space-y-2">
             {#each agentNames as name}
-              <li class="text-sm text-muted-foreground flex items-center gap-2">
+              <li class="text-sm text-subtle flex items-center gap-2">
                 <span class="w-2 h-2 bg-red-600 dark:bg-red-500 rounded-full"></span>
                 {name}
               </li>
             {/each}
           </ul>
         {/if}
-        <p class="text-sm text-muted-foreground">
+        <p class="text-sm text-subtle">
           Deleting will permanently remove this space from disk and stop these agents. This cannot be undone.
         </p>
       </div>

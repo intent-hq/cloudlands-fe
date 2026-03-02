@@ -2251,7 +2251,7 @@
   <!-- First-time user hint -->
   {#if showFirstTimeHints && !isExpanded}
     <p
-      class="mt-3 text-xs text-muted-foreground/50 leading-relaxed"
+      class="mt-3 text-xs text-subtle leading-relaxed"
       transition:fade={{ duration: 200 }}
     >
       Describe a feature, bug fix, or refactor — the agent will create a branch and start coding.
@@ -2271,7 +2271,7 @@
             <Fa icon={faExclamationTriangle} class="text-destructive-foreground mt-0.5 shrink-0" />
             <div>
               <p class="font-medium text-destructive-foreground">Git is not installed</p>
-              <p class="text-muted-foreground mt-1">
+              <p class="text-subtle mt-1">
                 Git is required to create workspaces. Please install Git and restart the app.
               </p>
               <button
@@ -2355,7 +2355,7 @@
       <!-- Validation hint -->
       {#if isExpanded && !isValid && !isCreating && !error}
         <div
-          class="mt-2 px-4.5 text-sm text-muted-foreground/70"
+          class="mt-2 px-4.5 text-sm text-subtle"
           transition:slide={{ axis: 'y', duration: 200 }}
         >
           {#if gitAvailable === false}
@@ -2411,18 +2411,18 @@
             <!-- Left: setup script button -->
             <button
               type="button"
-              class="flex items-center gap-1 whitespace-nowrap text-sm text-muted-foreground/75 hover:text-foreground transition-colors cursor-pointer"
+              class="flex items-center gap-1 whitespace-nowrap text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               onclick={() => (showSetupScript = !showSetupScript)}
             >
               <span>Set up dev environment with</span>
               <div class="bg-background px-2 py-0.5 font-medium">{setupScriptName}</div>
-              <p class="text-sm text-muted-foreground/75">script</p>
+              <p class="text-sm text-subtle">script</p>
             </button>
             <!-- Right: rapid fire -->
             <Tooltip content="Stay on this page after creating a space" side="top" size="sm">
               <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
               <div
-                class="flex whitespace-nowrap items-center gap-2 text-sm text-muted-foreground/75 hover:text-muted-foreground transition-colors cursor-pointer select-none ml-auto"
+                class="flex whitespace-nowrap items-center gap-2 text-sm text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer select-none ml-auto"
                 onclick={() => (stayOnHomePage = !stayOnHomePage)}
               >
                 <Checkbox checked={stayOnHomePage} size="sm" />

@@ -80,18 +80,18 @@
     {#if !imageLoaded}
       <!-- Show initial while loading -->
       <span
-        class="absolute text-muted-foreground font-medium"
+        class="absolute text-subtle font-medium"
         style="font-size: {size * 0.45}px;"
       >
         {label.charAt(0)}
       </span>
     {/if}
   {:else if faIconMap[iconName.toLowerCase()]}
-    <Fa icon={faIcon} class="text-muted-foreground opacity-60" style="font-size: {size * 0.7}px;" />
+    <Fa icon={faIcon} class="text-ghost opacity-60" style="font-size: {size * 0.7}px;" />
   {:else}
     <!-- Fallback to initial -->
     <span
-      class="text-muted-foreground font-medium"
+      class="text-subtle font-medium"
       style="font-size: {size * 0.45}px;"
     >
       {label.charAt(0)}

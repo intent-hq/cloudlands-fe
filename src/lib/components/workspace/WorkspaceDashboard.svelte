@@ -355,7 +355,7 @@
         {workspace.title || 'Untitled'}
       </h1>
       <!-- repo -->
-      <div class="flex items-center gap-1.5 ml-0.5 text-sm text-muted-foreground/80">
+      <div class="flex items-center gap-1.5 ml-0.5 text-sm text-subtle">
         <Fa icon={faGitRepo} size="15" class="w-3 opacity-50" />
         <button
           class="no-decoration hover:underline cursor-pointer"
@@ -366,7 +366,7 @@
         >
       </div>
       {#if currentBranch}
-        <div class="flex items-center gap-1.5 ml-0.5 text-sm text-muted-foreground/80">
+        <div class="flex items-center gap-1.5 ml-0.5 text-sm text-subtle">
           <Fa icon={faCodeBranch} size="12" class="w-3 opacity-50" />
           <span>{currentBranch}</span>
           <Fa icon={faArrowRight} size="xs" class="opacity-50" />
@@ -421,7 +421,7 @@
               />
             {/if}
           </div>
-          <p class="text-sm text-muted-foreground">{nextAction.description}</p>
+          <p class="text-sm text-subtle">{nextAction.description}</p>
         </div>
         {#if currentStage === 'merged'}
           <div class="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center">
@@ -504,7 +504,7 @@
                   </div>
                   <!-- Task title -->
                   <span
-                    class="flex-1 text-[0.82rem] {task.completed
+                    class="flex-1 text-ui {task.completed
                       ? 'text-muted-foreground'
                       : 'text-foreground'} truncate break-all"
                   >
@@ -516,7 +516,7 @@
                     <span
                       role="button"
                       tabindex="0"
-                      class="shrink-0 p-1 -mt-0.5 rounded transition-colors cursor-pointer hover:bg-muted/80 text-muted-foreground/30 hover:text-muted-foreground/70"
+                      class="shrink-0 p-1 -mt-0.5 rounded transition-colors cursor-pointer hover:bg-muted/80 text-ghost hover:text-muted-foreground/70"
                       onclick={(e) => handleStickyNoteClick(e, task)}
                       onkeydown={(e) =>
                         e.key === 'Enter' &&
@@ -580,7 +580,7 @@
                     {/if}
                   </div>
                   <span
-                    class="flex-1 text-[0.82rem] {task.completed
+                    class="flex-1 text-ui {task.completed
                       ? 'text-muted-foreground'
                       : 'text-foreground'} truncate break-all"
                   >
@@ -635,7 +635,7 @@
             <span
               class={taskStats.completed === taskStats.total
                 ? 'text-emerald-600 dark:text-emerald-400'
-                : 'text-muted-foreground'}
+                : 'text-subtle'}
             >
               {taskStats.completed}/{taskStats.total} done
             </span>
@@ -725,7 +725,7 @@
             </div>
           {/if}
         {:else}
-          <p class="text-xs text-muted-foreground py-4 text-center">No pending changes</p>
+          <p class="text-xs text-subtle py-4 text-center">No pending changes</p>
         {/if}
 
         <!-- PR Status Card (if exists) -->
@@ -742,7 +742,7 @@
                 </div>
                 <div>
                   <div class="text-sm font-medium text-foreground">PR #{activePR.number}</div>
-                  <div class="text-xs text-muted-foreground truncate max-w-[300px]">
+                  <div class="text-xs text-subtle truncate max-w-[300px]">
                     {activePR.title}
                   </div>
                 </div>
@@ -752,7 +752,7 @@
                   class="px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-500"
                   >Open</span
                 >
-                <Fa icon={faExternalLink} class="text-muted-foreground" size="xs" />
+                <Fa icon={faExternalLink} class="text-ghost" size="xs" />
               </div>
             </div>
           </button>
@@ -772,7 +772,7 @@
                 <Fa icon={faCodeBranch} class="text-amber-500" size="xs" />
               </div>
               <span class="text-sm font-medium text-foreground">Local Commits</span>
-              <span class="text-xs text-muted-foreground">
+              <span class="text-xs text-subtle">
                 {localCommits.length || unpushedCount} ready to push
               </span>
             </div>
@@ -785,7 +785,7 @@
       <div class="p-4 rounded-xl bg-muted/20 border border-border">
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-2">
-            <Fa icon={faRobot} class="text-muted-foreground" size="sm" />
+            <Fa icon={faRobot} class="text-ghost" size="sm" />
             <h3 class="text-sm font-medium text-foreground">Agents</h3>
           </div>
         </div>
@@ -809,7 +809,7 @@
                 <div class="flex items-center gap-2">
                   <span class="text-sm font-medium text-foreground truncate">{agent.name}</span>
                   {#if fileStats.files > 0}
-                    <span class="text-xs text-muted-foreground"
+                    <span class="text-xs text-subtle"
                       >{fileStats.files} file{fileStats.files !== 1 ? 's' : ''}</span
                     >
                   {/if}
@@ -835,13 +835,13 @@
                 <div class="flex items-center gap-2">
                   <span class="text-sm font-medium text-foreground truncate">{agent.name}</span>
                   {#if fileStats.files > 0}
-                    <span class="text-xs text-muted-foreground"
+                    <span class="text-xs text-subtle"
                       >{fileStats.files} file{fileStats.files !== 1 ? 's' : ''}</span
                     >
                   {/if}
                 </div>
                 {#if preview.response}
-                  <div class="text-xs text-muted-foreground truncate mt-0.5">
+                  <div class="text-xs text-subtle truncate mt-0.5">
                     {truncate(preview.response, 60)}
                   </div>
                 {/if}
@@ -850,7 +850,7 @@
           {/each}
 
           {#if agents.length > 6}
-            <div class="text-center text-xs text-muted-foreground pt-1">
+            <div class="text-center text-xs text-subtle pt-1">
               +{agents.length - 6} more agents
             </div>
           {/if}
@@ -863,7 +863,7 @@
         <div class="p-4 rounded-xl bg-muted/20 border border-border">
           <div class="flex items-center justify-between mb-3">
             <div class="flex items-center gap-2">
-              <Fa icon={faTerminal} class="text-muted-foreground" size="sm" />
+              <Fa icon={faTerminal} class="text-ghost" size="sm" />
               <h3 class="text-sm font-medium text-foreground">Terminals</h3>
             </div>
             {#if onCreateTerminal}
@@ -886,7 +886,7 @@
                 onclick={() => onOpenTerminal?.(terminal.id)}
               >
                 <div class="shrink-0 w-6 h-6 rounded bg-muted flex items-center justify-center">
-                  <Fa icon={faTerminal} size="xs" class="text-muted-foreground" />
+                  <Fa icon={faTerminal} size="xs" class="text-ghost" />
                 </div>
                 <span class="flex-1 text-sm text-foreground truncate"
                   >{terminal.title || 'Terminal'}</span

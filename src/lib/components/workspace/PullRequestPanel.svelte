@@ -462,7 +462,7 @@
               >
                 <Fa
                   icon={faArrowsRotate}
-                  class="opacity-50 text-[10px] {isRefreshingPR ? 'animate-spin' : ''}"
+                  class="opacity-50 text-ui {isRefreshingPR ? 'animate-spin' : ''}"
                 />
               </Button>
               <Button
@@ -528,7 +528,7 @@
           {/if}
 
           <!-- PR Stats -->
-          <div class="flex items-center gap-4 text-xs text-muted-foreground">
+          <div class="flex items-center gap-4 text-xs text-subtle">
             {#if ctx.workspace.activePullRequest.additions}
               <span class="text-green-600">
                 +{ctx.workspace.activePullRequest.additions}
@@ -565,7 +565,7 @@
                       class={getPRStatusColor(pr.status)}
                     />
                     <span>#{pr.number}</span>
-                    <span class="text-muted-foreground truncate max-w-[150px]">
+                    <span class="text-subtle truncate max-w-[150px]">
                       {pr.title}
                     </span>
                   </div>

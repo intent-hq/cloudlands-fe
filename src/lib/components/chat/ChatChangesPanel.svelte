@@ -2000,7 +2000,7 @@
         {/each}
       </div>
     {:else if mergedChanges.length === 0}
-      <div class="flex items-center justify-center h-full text-muted-foreground py-6">
+      <div class="flex items-center justify-center h-full text-subtle py-6">
         No changes to display
       </div>
     {:else}
@@ -2011,7 +2011,7 @@
         <div class="flex items-center justify-between py-2 bg-background/95 backdrop-blur-sm border-b border-border">
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <span
-            class="text-xs font-medium text-muted-foreground whitespace-nowrap"
+            class="text-xs font-medium text-subtle whitespace-nowrap"
             onmouseenter={handleSummaryBarMouseEnter}
             onmouseleave={handleSummaryBarMouseLeave}
           >
@@ -2020,7 +2020,7 @@
               , {commitCount} commit{commitCount === 1 ? '' : 's'}
             {/if}
             {#if viewedCount > 0}
-              <span class="text-muted-foreground/50">·</span>
+              <span class="text-subtle">·</span>
               <span>{viewedCount} viewed</span>
             {/if}
           </span>
@@ -2062,16 +2062,16 @@
                 {#if group.hash}
                   <button
                     type="button"
-                    class="w-full flex items-center gap-1.5 px-2 py-1 text-left text-[11px] text-muted-foreground/70 font-medium mt-1 first:mt-0 cursor-pointer hover:text-foreground transition-colors"
+                    class="w-full flex items-center gap-1.5 px-2 py-1 text-left text-ui text-muted-foreground font-medium mt-1 first:mt-0 cursor-pointer hover:text-foreground transition-colors"
                     onclick={() => scrollToCommitGroup(group.hash)}
                     title="Scroll to commit"
                   >
                     <span class="truncate">{group.message.split('\n')[0]}</span>
-                    <span class="shrink-0 text-muted-foreground/40">·</span>
+                    <span class="shrink-0 text-ghost">·</span>
                     <span class="shrink-0">{group.changes.length} file{group.changes.length === 1 ? '' : 's'}</span>
                   </button>
                 {:else}
-                  <div class="px-2 py-1 text-[11px] text-muted-foreground/70 font-medium mt-1 first:mt-0">
+                  <div class="px-2 py-1 text-ui text-subtle font-medium mt-1 first:mt-0">
                     Working changes
                   </div>
                 {/if}
@@ -2087,7 +2087,7 @@
                     <span class="truncate flex-1 min-w-0">
                       <span class="font-medium">{getFileName(displayPath)}</span>
                       {#if getDirectoryPath(displayPath)}
-                        <span class="text-muted-foreground/50 ml-1">{getDirectoryPath(displayPath)}</span>
+                        <span class="text-subtle ml-1">{getDirectoryPath(displayPath)}</span>
                       {/if}
                     </span>
                     <LineChangesBadge additions={change.additions} deletions={change.deletions} size="xs" />
@@ -2108,7 +2108,7 @@
                   <span class="truncate flex-1 min-w-0">
                     <span class="font-medium">{getFileName(displayPath)}</span>
                     {#if getDirectoryPath(displayPath)}
-                      <span class="text-muted-foreground/50 ml-1">{getDirectoryPath(displayPath)}</span>
+                      <span class="text-subtle ml-1">{getDirectoryPath(displayPath)}</span>
                     {/if}
                   </span>
                   <LineChangesBadge additions={change.additions} deletions={change.deletions} size="xs" />
@@ -2134,11 +2134,11 @@
                     >
                       <Fa
                         icon={expandedCommits.has(group.hash) ? faChevronDown : faChevronRight}
-                        class="text-muted-foreground/50 w-2.5! h-2.5! shrink-0"
+                        class="text-subtle w-2.5! h-2.5! shrink-0"
                       />
                       <!-- Author avatar -->
                       <div
-                        class="shrink-0 w-5 h-5 rounded-full bg-muted-foreground/15 flex items-center justify-center text-[8px] font-medium text-muted-foreground select-none overflow-hidden"
+                        class="shrink-0 w-5 h-5 rounded-full bg-muted-foreground/15 flex items-center justify-center text-ui font-medium text-subtle select-none overflow-hidden"
                         title={group.author || ''}
                       >
                         {#if getGitHubAvatarUrl(group.authorEmail, 20)}
@@ -2162,16 +2162,16 @@
                         {group.message.split('\n')[0]}
                       </span>
                     </button>
-                    <span class="text-[11px] text-muted-foreground/60 shrink-0 flex items-center gap-1.5">
+                    <span class="text-ui text-subtle shrink-0 flex items-center gap-1.5">
                       {#if group.date}
                         <span>{formatRelativeTime(group.date)}</span>
-                        <span class="text-muted-foreground/30">·</span>
+                        <span class="text-ghost">·</span>
                       {/if}
                       <span>{group.changes.length} file{group.changes.length === 1 ? '' : 's'}</span>
                     </span>
                     <button
                       type="button"
-                      class="text-[11px] text-muted-foreground/50 hover:text-foreground transition-colors cursor-pointer shrink-0"
+                      class="text-ui text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
                       onclick={() => handleOpenCommit(group.hash)}
                       title="Open commit"
                     >
@@ -2210,7 +2210,7 @@
     <div class="flex items-start gap-2.5 py-2">
       <!-- Author avatar (GitHub image with initials fallback) -->
       <div
-        class="shrink-0 mt-0.5 w-7 h-7 rounded-full bg-muted-foreground/15 flex items-center justify-center text-[10px] font-medium text-muted-foreground select-none overflow-hidden"
+        class="shrink-0 mt-0.5 w-7 h-7 rounded-full bg-muted-foreground/15 flex items-center justify-center text-ui font-medium text-subtle select-none overflow-hidden"
         title={commitInfo?.author || ''}
       >
         {#if getGitHubAvatarUrl(commitInfo?.authorEmail)}
@@ -2250,16 +2250,16 @@
         {/if}
 
         <!-- Meta line: author · relative date · sha -->
-        <div class="flex items-center gap-1.5 text-[11px] text-muted-foreground/70 flex-wrap">
+        <div class="flex items-center gap-1.5 text-ui text-subtle flex-wrap">
           {#if commitInfo?.author}
             <span>{commitInfo.author}</span>
           {/if}
           {#if commitInfo?.date}
-            <span class="text-muted-foreground/30">·</span>
+            <span class="text-ghost">·</span>
             <span title={commitInfo.date}>{formatRelativeTime(commitInfo.date)}</span>
           {/if}
           {#if commitInfo?.hash}
-            <span class="text-muted-foreground/30">·</span>
+            <span class="text-ghost">·</span>
             <button
               type="button"
               class="inline-flex items-center gap-0.5 font-mono hover:text-foreground transition-colors"
@@ -2276,7 +2276,7 @@
         {#if commitInfo?.message && commitInfo.message.includes('\n')}
           {@const body = commitInfo.message.split('\n').slice(1).join('\n').trim()}
           {#if body}
-            <p class="text-xs text-muted-foreground/60 whitespace-pre-wrap leading-relaxed pt-0.5">
+            <p class="text-xs text-subtle whitespace-pre-wrap leading-relaxed pt-0.5">
               {body}
             </p>
           {/if}
@@ -2296,7 +2296,7 @@
                   : 'Agent'}
               <button
                 type="button"
-                class="flex items-center gap-1 text-[11px] text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer min-w-0"
+                class="flex items-center gap-1 text-ui text-muted-foreground hover:text-foreground transition-colors cursor-pointer min-w-0"
                 onclick={(e) => handleOpenAgentFromCommit(e)}
                 title="Open agent"
               >
@@ -2315,7 +2315,7 @@
               {@const noteName = linkedNote?.title || 'Note'}
               <button
                 type="button"
-                class="flex items-center gap-1 text-[11px] text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer min-w-0"
+                class="flex items-center gap-1 text-ui text-muted-foreground hover:text-foreground transition-colors cursor-pointer min-w-0"
                 onclick={(e) => onOpenNote?.(commitInfo?.linkedNoteId!, e)}
                 title="Open linked note"
               >
@@ -2348,21 +2348,21 @@
       >
         <Fa
           icon={expandedFiles.has(expandKey) ? faChevronDown : faChevronRight}
-          class="text-muted-foreground/50 w-2.5! h-2.5! shrink-0"
+          class="text-subtle w-2.5! h-2.5! shrink-0"
         />
 
         <span class="text-sm truncate shrink-0 max-w-full" title={displayPath}>
           {getFileName(displayPath)}
         </span>
         {#if getDirectoryPath(displayPath)}
-          <span class="text-xs text-muted-foreground/50 truncate hidden sm:inline shrink-6">
+          <span class="text-xs text-subtle truncate hidden sm:inline shrink-6">
             {getDirectoryPath(displayPath)}
           </span>
         {/if}
         <LineChangesBadge additions={change.additions} deletions={change.deletions} size="xs" />
         <!-- Loading indicator when file is being refreshed -->
         {#if refreshingFiles.has(change.filePath)}
-          <Fa icon={faSpinner} class="w-3 h-3 text-muted-foreground animate-spin shrink-0" />
+          <Fa icon={faSpinner} class="w-3 h-3 text-ghost animate-spin shrink-0" />
         {/if}
       </button>
 
@@ -2494,7 +2494,7 @@
               <Fa icon={faCheck} class="w-2! h-2! text-primary-foreground" />
             {/if}
           </span>
-          <span class="text-xs text-muted-foreground">Viewed</span>
+          <span class="text-xs text-subtle">Viewed</span>
         </label>
       </div>
 
@@ -2541,7 +2541,7 @@
           {/if}
         {:else}
           <!-- Placeholder while waiting for visibility -->
-          <div class="flex items-center justify-center h-[300px] text-muted-foreground">
+          <div class="flex items-center justify-center h-[300px] text-subtle">
             <Fa icon={faSpinner} class="animate-spin mr-2" />
             Loading diff...
           </div>

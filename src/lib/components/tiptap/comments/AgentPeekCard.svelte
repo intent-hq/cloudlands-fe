@@ -158,12 +158,12 @@
         />
         <div class="flex-1 min-w-0">
           {#if isCollapsed}
-            <div class="font-medium truncate-end text-muted-foreground">
+            <div class="font-medium truncate-end text-subtle">
               <span class="text-xs italic">{truncatedOneLine}</span>
             </div>
           {:else}
             <div class="font-medium text-sm truncate">
-              {agentData.name}<span class="text-xs text-muted-foreground"
+              {agentData.name}<span class="text-xs text-subtle"
                 >{agentData.isActive ? 'Active' : 'Idle'}</span
               >
             </div>
@@ -202,7 +202,7 @@
                 size="xs"
                 showZero={false}
               />
-              <span class="text-[10px] text-muted-foreground">lines</span>
+              <span class="text-ui text-subtle">lines</span>
             </div>
           {/if}
 
@@ -215,7 +215,7 @@
 
           <!-- File changes -->
           {#if agentData.fileChanges && agentData.fileChanges.length > 0}
-            <div class="text-xs text-muted-foreground">
+            <div class="text-xs text-subtle">
               {agentData.fileChanges.length} file{agentData.fileChanges.length === 1 ? '' : 's'} changed
             </div>
           {/if}
@@ -227,10 +227,10 @@
         {#if isRecentComment}
           <!-- Waiting for agent to register (comment is recent) -->
           <div class="flex items-center gap-2">
-            <Fa icon={faSpinner} class="h-4 w-4 animate-spin text-muted-foreground" />
+            <Fa icon={faSpinner} class="h-4 w-4 animate-spin text-ghost" />
             <div class="flex-1">
               <div class="text-sm font-medium">Waiting for Agent to Launch</div>
-              <div class="text-xs text-muted-foreground mt-0.5">
+              <div class="text-xs text-subtle mt-0.5">
                 Agent will appear here once ready...
               </div>
             </div>
@@ -245,7 +245,7 @@
                   Assigned{/if} Agent Not Found
               </div>
               <div
-                class="text-xs text-muted-foreground mt-0.5"
+                class="text-xs text-subtle mt-0.5"
                 class:hidden={displayMode !== 'full'}
               >
                 The agent working on this area may have been deleted or failed to launch.

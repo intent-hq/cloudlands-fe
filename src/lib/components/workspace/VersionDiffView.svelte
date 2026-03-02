@@ -39,16 +39,16 @@
   <!-- Version Info Banner -->
   <div class="flex items-center justify-between gap-3 px-3 py-2 bg-sidebar border-b border-border shrink-0">
     <div class="flex items-center gap-1.5 flex-1 min-w-0 text-xs">
-      <span class="text-muted-foreground">Viewing version from</span>
+      <span class="text-subtle">Viewing version from</span>
       <span class="font-medium text-foreground">{formatRelativeTime(version.createdAt)}</span>
-      <span class="text-muted-foreground">by {authorName}</span>
+      <span class="text-subtle">by {authorName}</span>
       {#if version.changeSummary}
-        <span class="text-muted-foreground truncate">— {version.changeSummary}</span>
+        <span class="text-subtle truncate">— {version.changeSummary}</span>
       {/if}
     </div>
     <div class="flex items-center gap-2 shrink-0">
       <Button variant="ghost-light" size="xs" onclick={onRestore}>
-        <Fa icon={faRotateLeft} class="text-muted-foreground/50" size="10" />
+        <Fa icon={faRotateLeft} class="text-ghost" size="10" />
         Restore
       </Button>
       <Button variant="ghost-light" size="icon-xs" onclick={onClose}>

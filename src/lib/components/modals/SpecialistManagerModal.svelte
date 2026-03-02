@@ -42,7 +42,7 @@
       <div class="px-6 py-4 border-b border-border flex items-center justify-between">
         <div>
           <h2 class="text-lg font-semibold">Manage Specialists</h2>
-          <p class="text-sm text-muted-foreground mt-0.5">
+          <p class="text-sm text-subtle mt-0.5">
             Customize AI specialists or create your own.
           </p>
         </div>

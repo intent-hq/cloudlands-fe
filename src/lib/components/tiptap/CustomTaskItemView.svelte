@@ -197,7 +197,7 @@
       title="Delegate to agent"
       aria-label="Delegate to agent"
     >
-      <Fa icon={faPlay} class="w-3.5 h-3.5 text-muted-foreground" />
+      <Fa icon={faPlay} class="w-3.5 h-3.5 text-ghost" />
     </button>
 
     <button
@@ -206,7 +206,7 @@
       title="Split into subtasks"
       aria-label="Split into subtasks"
     >
-      <Fa icon={faList} class="w-3.5 h-3.5 text-muted-foreground" />
+      <Fa icon={faList} class="w-3.5 h-3.5 text-ghost" />
     </button>
   </div>
 </NodeViewWrapper>

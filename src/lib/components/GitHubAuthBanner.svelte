@@ -173,8 +173,8 @@
   {:else if requiresAugmentAuth}
     <!-- Augment auth required state -->
     <div class="py-2 px-2 space-y-1" transition:slide={{ axis: 'y', duration: 200 }}>
-      <p class="text-xs text-muted-foreground">Please authenticate with Augment first.</p>
-      <p class="text-xs text-muted-foreground/70">
+      <p class="text-xs text-subtle">Please authenticate with Augment first.</p>
+      <p class="text-xs text-subtle">
         Run <code class="bg-muted px-1 rounded">auggie login</code> in your terminal.
       </p>
     </div>
@@ -182,12 +182,12 @@
     <!-- OAuth redirect state -->
     <div class="py-1.5 px-3 space-y-1" transition:slide={{ axis: 'y', duration: 200 }}>
       <div class="flex items-center justify-between gap-2">
-        <p class="text-xs text-muted-foreground">Complete authorization in your browser</p>
+        <p class="text-xs text-subtle">Complete authorization in your browser</p>
         <Button variant="ghost-light" size="icon-xs -mt-2 -mr-2" onclick={handleCancel}>
           <Fa icon={faXmark} size="xs" />
         </Button>
       </div>
-      <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <div class="flex items-center gap-1.5 text-xs text-subtle">
         {#if isCheckingAuth}
           <Fa icon={faSpinner} size="xs" class="animate-spin" />
           <span>Checking...</span>
@@ -207,7 +207,7 @@
   {:else if isAuthenticating}
     <!-- Starting auth state -->
     <div
-      class="py-2 px-2 flex items-center gap-2 text-xs text-muted-foreground"
+      class="py-2 px-2 flex items-center gap-2 text-xs text-subtle"
       transition:slide={{ axis: 'y', duration: 200 }}
     >
       <Fa icon={faSpinner} size="xs" class="animate-spin" />
@@ -222,11 +222,11 @@
       transition:slide={{ axis: 'y', duration: 200 }}
     >
       <div class="flex items-center justify-center">
-        <GitHubIcon size={16} class="text-muted-foreground/30" />
+        <GitHubIcon size={16} class="text-ghost" />
       </div>
       <div class="flex-1 min-w-0">
-        <p class="text-xs font-medium text-muted-foreground">{message}</p>
-        <p class="text-[10px] text-muted-foreground/60">Enables PRs, repo listing, and more</p>
+        <p class="text-xs font-medium text-subtle">{message}</p>
+        <p class="text-xs text-subtle">Enables PRs, repo listing, and more</p>
       </div>
     </button>
   {/if}

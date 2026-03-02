@@ -314,7 +314,7 @@
             {/if}
           </button>
 
-          <p class="text-[10px] text-muted-foreground leading-tight">
+          <p class="text-xs text-subtle leading-tight">
             {#if isSimulatingCreation}
               Currently viewing simulated workspace. Click to return.
             {:else}
@@ -373,7 +373,7 @@
 
         <!-- UI Behavior -->
         <div class="space-y-3">
-          <h4 class="text-sm font-medium text-muted-foreground">UI Behavior</h4>
+          <h4 class="text-sm font-medium text-subtle">UI Behavior</h4>
 
           <div class="flex items-center justify-between">
             <Label for="performance-metrics" class="text-sm">Performance Metrics</Label>
@@ -396,7 +396,7 @@
 
         <!-- Features -->
         <div class="space-y-3">
-          <h4 class="text-sm font-medium text-muted-foreground">Features</h4>
+          <h4 class="text-sm font-medium text-subtle">Features</h4>
 
           <div class="flex items-center justify-between">
             <Label for="autofocus" class="text-sm">Enable Autofocus</Label>
@@ -428,7 +428,7 @@
 
         <!-- Testing Helpers -->
         <div class="space-y-3">
-          <h4 class="text-sm font-medium text-muted-foreground">Testing</h4>
+          <h4 class="text-sm font-medium text-subtle">Testing</h4>
 
           <div class="flex items-center justify-between">
             <Label for="slow-network" class="text-sm">Simulate Slow Network</Label>
@@ -466,12 +466,12 @@
 
         <!-- Backend Resume Test -->
         <div class="space-y-3">
-          <h4 class="text-sm font-medium text-muted-foreground flex items-center gap-2">
+          <h4 class="text-sm font-medium text-subtle flex items-center gap-2">
             <Fa icon={faWaveSquare} size="xs" />
             Backend Resume Test
           </h4>
 
-          <p class="text-xs text-muted-foreground">
+          <p class="text-xs text-subtle">
             Test backend-initiated agent resume with frontend handshake.
           </p>
 
@@ -504,7 +504,7 @@
                 {/if}
               </Button>
             {:else}
-              <p class="text-xs text-muted-foreground italic">
+              <p class="text-xs text-subtle italic">
                 Click "Load Agents" to see available agents
               </p>
             {/if}
@@ -519,7 +519,7 @@
 
         <!-- Keyboard Shortcut Info -->
         <div class="pt-3 border-t border-border">
-          <p class="text-xs text-muted-foreground">
+          <p class="text-xs text-subtle">
             Press <kbd class="px-1 py-0.5 bg-muted rounded text-xs">{isMac ? 'Cmd' : 'Ctrl'}</kbd> +
             <kbd class="px-1 py-0.5 bg-muted rounded text-xs">Shift</kbd> +
             <kbd class="px-1 py-0.5 bg-muted rounded text-xs">D</kbd> to toggle
@@ -540,7 +540,7 @@
         <h3 class="font-medium text-sm">Debug Panel</h3>
         <Fa
           icon={isCollapsed ? faChevronUp : faChevronDown}
-          class="text-muted-foreground"
+          class="text-subtle"
           size="xs"
         />
       </div>

@@ -50,8 +50,8 @@
 
     // Apply highlighting
     highlighted = highlighted
-      .replace(patterns.blockComment, '<span class="text-muted-foreground/60">$&</span>')
-      .replace(patterns.comment, '<span class="text-muted-foreground/60">$&</span>')
+      .replace(patterns.blockComment, '<span class="text-subtle">$&</span>')
+      .replace(patterns.comment, '<span class="text-subtle">$&</span>')
       .replace(patterns.string, '<span class="text-green-600 dark:text-green-400">$&</span>')
       .replace(
         patterns.keyword,
@@ -85,7 +85,7 @@
     {#if lineNumbers}
       <div class="select-none border-r bg-muted/50 px-3 py-3 text-right">
         {#each lineNumbersArray as lineNum (lineNum)}
-          <div class="text-xs text-muted-foreground/60 leading-6">
+          <div class="text-xs text-subtle leading-6">
             {lineNum}
           </div>
         {/each}

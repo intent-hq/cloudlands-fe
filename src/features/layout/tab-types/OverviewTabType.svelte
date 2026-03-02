@@ -10,10 +10,10 @@
   let { tab }: TabTypeComponentProps = $props();
 </script>
 
-<div class="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
+<div class="flex flex-col items-center justify-center h-full text-subtle gap-4">
   <div class="text-center">
     <p class="text-lg font-medium text-foreground">{tab.title}</p>
     <p class="text-sm">Type: {tab.type}</p>
-    <p class="text-xs mt-4 text-muted-foreground/60">Overview panel not yet implemented</p>
+    <p class="text-xs mt-4 text-subtle">Overview panel not yet implemented</p>
   </div>
 </div>

@@ -257,7 +257,7 @@
     <section class="bg-background/50 rounded-lg overflow-hidden">
       <div class="px-4 pt-3 pb-1">
         <h3 class="text-sm font-semibold text-foreground">Agents</h3>
-        <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight mb-2">
+        <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
           Agents working on your task in this space.
         </p>
       </div>
@@ -281,9 +281,9 @@
           onclick={() => onSwitchTab?.('agents')}
         >
           <h3 class="text-sm font-semibold text-foreground hover:underline">Agent orchestration</h3>
-          <Fa icon={faArrowRight} size="xs" class="ml-auto text-muted-foreground/40 shrink-0" />
+          <Fa icon={faArrowRight} size="xs" class="ml-auto text-ghost shrink-0" />
         </button>
-        <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight mb-2">
+        <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
           A coordinator agent breaks down your task into a spec, then delegates work to specialist
           agents that run in parallel.
         </p>
@@ -316,7 +316,7 @@
                   />
                 {/each}
               </div>
-              <span class="text-muted-foreground/60 text-xs">
+              <span class="text-subtle text-xs">
                 {delegatedCount} delegated agent{delegatedCount !== 1 ? 's' : ''}
                 {#if runningOtherCount > 0}
                   <span class="text-emerald-500 font-medium">· {runningOtherCount} working</span>
@@ -330,7 +330,7 @@
         {#if otherAgents.length > 0}
           <div class="pt-2 pb-0.5 px-2">
             <Header size={6}>Your Agents</Header>
-            <p class="text-xs text-muted-foreground/75 mt-0.5">
+            <p class="text-xs text-subtle mt-0.5">
               The Coordinator can delegate and verify tasks for these agents
             </p>
           </div>
@@ -345,7 +345,7 @@
             {/each}
             {#if otherAgents.length > 3}
               <button
-                class="text-[11px] text-muted-foreground/40 text-left px-2 py-0.5 hover:text-muted-foreground transition-colors cursor-pointer"
+                class="text-ui text-ghost text-left px-2 py-0.5 hover:text-muted-foreground transition-colors cursor-pointer"
                 onclick={() => onSwitchTab?.('agents')}
               >
                 <Fa icon={faPlus} size="xs" class="ml-0.75 -mt-px mr-0.75" />
@@ -364,9 +364,9 @@
           onclick={() => onSwitchTab?.('agents')}
         >
           <h3 class="text-sm font-semibold text-foreground hover:underline">Agents</h3>
-          <Fa icon={faArrowRight} size="xs" class="ml-auto text-muted-foreground/40 shrink-0" />
+          <Fa icon={faArrowRight} size="xs" class="ml-auto text-ghost shrink-0" />
         </button>
-        <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight mb-2">
+        <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
           Agents working on your task in this space.
         </p>
       </div>
@@ -381,7 +381,7 @@
         {/each}
         {#if topLevelAgents.length > 4}
           <button
-            class="text-[11px] text-muted-foreground/60 text-left px-2 py-0.5 flex items-center cursor-pointer"
+            class="text-ui text-subtle text-left px-2 py-0.5 flex items-center cursor-pointer"
             onclick={() => onSwitchTab?.('agents')}
           >
             See all...
@@ -398,7 +398,7 @@
     <section class="bg-background/50 rounded-lg overflow-hidden">
       <div class="px-4 pt-3 pb-1">
         <h3 class="text-sm font-semibold text-foreground">Context</h3>
-        <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight mb-2">
+        <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
           Notes about the task, shared with all agents in this space.
         </p>
       </div>
@@ -425,9 +425,9 @@
           onclick={() => onSwitchTab?.('context')}
         >
           <h3 class="text-sm font-semibold text-foreground hover:underline">Context</h3>
-          <Fa icon={faArrowRight} size="xs" class="ml-auto text-muted-foreground/40 shrink-0" />
+          <Fa icon={faArrowRight} size="xs" class="ml-auto text-ghost shrink-0" />
         </button>
-        <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight mb-2">
+        <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
           Notes about the task, shared with all agents in this space.
         </p>
       </div>
@@ -454,7 +454,7 @@
           {@const depth = getNoteDepth(task, notes)}
           <ListItem
             title={task.title || 'Untitled task'}
-            titleClass={taskStatus === 'complete' ? 'text-muted-foreground/50' : ''}
+            titleClass={taskStatus === 'complete' ? 'text-muted-foreground' : ''}
             indent={depth}
             variant="subtle"
             active={selectedNoteId === task.id}
@@ -485,7 +485,7 @@
         <!-- +N more link -->
         {#if moreContextCount > 0}
           <button
-            class="text-[11px] text-muted-foreground/60 text-left px-2 py-0.5 flex items-center cursor-pointer"
+            class="text-ui text-subtle text-left px-2 py-0.5 flex items-center cursor-pointer"
             onclick={() => onSwitchTab?.('context')}
           >
             <Fa icon={faPlus} size="xs" class="ml-0.75 -mt-px mr-0.75" />
@@ -503,7 +503,7 @@
     <section class="bg-background/50 rounded-lg overflow-hidden">
       <div class="px-4 pt-3 pb-1">
         <h3 class="text-sm font-semibold text-foreground">Changes</h3>
-        <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight mb-2">
+        <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
           Files changed by agents working in this space.
         </p>
       </div>
@@ -533,9 +533,9 @@
           onclick={() => onSwitchTab?.('changes')}
         >
           <h3 class="text-sm font-semibold text-foreground hover:underline">Changes</h3>
-          <Fa icon={faArrowRight} size="xs" class="ml-auto text-muted-foreground/40 shrink-0" />
+          <Fa icon={faArrowRight} size="xs" class="ml-auto text-ghost shrink-0" />
         </button>
-        <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight mb-2">
+        <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
           Files changed by agents working in this space.
         </p>
       </div>
@@ -544,7 +544,7 @@
         <div class="px-4 pb-2 flex flex-col gap-0.5">
           {#if workspace?.branch}
             <div class="flex items-center gap-1 text-sm py-0.5">
-              <Fa icon={faCodeBranch} size="xs" class="text-muted-foreground/30" />
+              <Fa icon={faCodeBranch} size="xs" class="text-ghost" />
               <Tooltip
                 side="top"
                 disableCloseOnTriggerClick
@@ -552,7 +552,7 @@
               >
                 {#snippet content()}<span>Click to copy</span>{#if copiedWorkingBranch}<span class="text-green-500 ml-1.5 inline-flex items-center gap-1"><Fa icon={faCheck} size="xs" /></span>{/if}{/snippet}
                 <button
-                  class="text-muted-foreground/60 truncate text-xs cursor-pointer hover:text-muted-foreground transition-colors bg-transparent border-none p-0 focus-visible:outline-none!"
+                  class="text-muted-foreground truncate text-xs cursor-pointer hover:text-muted-foreground transition-colors bg-transparent border-none p-0 focus-visible:outline-none!"
                   onclick={() => {
                     navigator.clipboard.writeText(workspace.branch);
                     copiedWorkingBranch = true;
@@ -567,7 +567,7 @@
                 </button>
               </Tooltip>
               {#if workspace.baseRef}
-                <Fa icon={faArrowRight} size="xs" class="text-muted-foreground/30" />
+                <Fa icon={faArrowRight} size="xs" class="text-ghost" />
                 <Tooltip
                   side="top"
                   disableCloseOnTriggerClick
@@ -575,7 +575,7 @@
                 >
                   {#snippet content()}<span>Click to copy</span>{#if copiedTrunkBranch}<span class="text-green-500 ml-1.5 inline-flex items-center gap-1"><Fa icon={faCheck} size="xs" /></span>{/if}{/snippet}
                   <button
-                    class="text-muted-foreground/60 truncate text-xs cursor-pointer hover:text-muted-foreground transition-colors bg-transparent border-none p-0 focus-visible:outline-none!"
+                    class="text-muted-foreground truncate text-xs cursor-pointer hover:text-muted-foreground transition-colors bg-transparent border-none p-0 focus-visible:outline-none!"
                     onclick={() => {
                       navigator.clipboard.writeText(workspace.baseRef ?? '');
                       copiedTrunkBranch = true;
@@ -610,7 +610,7 @@
 
           {#if moreFilesCount > 0}
             <button
-              class="mt-1 flex items-center text-xs text-muted-foreground/60 text-left py-0.5 transition-colors cursor-pointer px-2"
+              class="mt-1 flex items-center text-xs text-subtle text-left py-0.5 transition-colors cursor-pointer px-2"
               onclick={(e) => {
                 e.stopPropagation();
                 onSwitchTab?.('changes');
@@ -628,18 +628,18 @@
             <div class="flex flex-col gap-0.5">
               {#each commits.slice(0, 6) as commit}
                 <button
-                  class="flex items-center gap-2 text-[11px] py-0.5 w-full text-left cursor-pointer hover:bg-muted/30 rounded transition-colors"
+                  class="flex items-center gap-2 text-ui py-0.5 w-full text-left cursor-pointer hover:bg-muted/30 rounded transition-colors"
                   onclick={(e) => {
                     e.stopPropagation();
                     onOpenCommit?.(commit.hash);
                   }}
                 >
-                  <Fa icon={faCodeCommit} size="xs" class="text-muted-foreground/20 shrink-0" />
-                  <span class="text-muted-foreground/50 truncate">{commit.message}</span>
+                  <Fa icon={faCodeCommit} size="xs" class="text-ghost shrink-0" />
+                  <span class="text-subtle truncate">{commit.message}</span>
                 </button>
               {/each}
               {#if commits.length > 6}
-                <span class="text-[10px] text-muted-foreground/40 pl-5"
+                <span class="text-ui text-subtle pl-5"
                   >+{commits.length - 6} more</span
                 >
               {/if}
@@ -666,9 +666,9 @@
                   ? 'text-emerald-500/70'
                   : stats.pr.hasClosed
                     ? 'text-red-500/70'
-                    : 'text-muted-foreground/30'}
+                    : 'text-ghost'}
             />
-            <span class="text-[11px] text-muted-foreground/60 truncate">
+            <span class="text-ui text-subtle truncate">
               {#if stats.pr.number}
                 PR #{stats.pr.number}
               {:else}
@@ -677,7 +677,7 @@
             </span>
             {#if stats.pr.hasOpen || stats.pr.hasMerged || stats.pr.hasClosed}
               <span
-                class="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0
+                class="text-ui font-medium px-1.5 py-0.5 rounded-full shrink-0
                   {stats.pr.hasMerged
                     ? 'text-purple-500 bg-purple-500/10'
                     : stats.pr.hasOpen
@@ -693,7 +693,7 @@
         <!-- View all changes button -->
         <div class="px-4 pb-2">
           <button
-            class="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer"
+            class="text-xs text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
             onclick={() => onOpenAllChanges?.()}
           >
             View all changes
@@ -725,10 +725,10 @@
           class="flex items-center gap-1 text-left cursor-pointer ml-2"
           onclick={() => onSwitchTab?.('files')}
         >
-          <Fa icon={faArrowRight} size="xs" class="ml-auto text-muted-foreground/40 shrink-0" />
+          <Fa icon={faArrowRight} size="xs" class="ml-auto text-ghost shrink-0" />
         </button>
       </div>
-      <p class="text-[11px] text-muted-foreground/60 mt-0.5 leading-tight text-pretty">
+      <p class="text-ui text-subtle mt-0.5 leading-tight text-pretty">
         The agents in this space are working off a copy of your files.
       </p>
     </div>
@@ -746,7 +746,7 @@
       {:else}
         {#each rootFiles as entry (entry.path)}
           <button
-            class="flex items-center gap-1.5 w-full px-2 py-0.75 text-left text-[0.82rem] hover:bg-muted/50 transition-colors border cursor-pointer truncate {activeFilePath ===
+            class="flex items-center gap-1.5 w-full px-2 py-0.75 text-left text-ui hover:bg-muted/50 transition-colors border cursor-pointer truncate {activeFilePath ===
               entry.path || selectedFilePath === entry.path
               ? 'bg-background border-border shadow-xs'
               : 'border-transparent'}"
@@ -756,7 +756,7 @@
             }}
           >
             {#if entry.isDirectory}
-              <Fa icon={faFolder} size="xs" class="text-muted-foreground/50 shrink-0 w-4" />
+              <Fa icon={faFolder} size="xs" class="text-ghost shrink-0 w-4" />
             {:else}
               <span class="w-4 h-4 shrink-0 [&>svg]:w-full [&>svg]:h-full">
                 {@html getFileTypeIconSvg(entry.name)}
@@ -768,7 +768,7 @@
 
         {#if rootFilesTotal > MAX_ROOT_FILES}
           <button
-            class="mt-1 flex items-center text-xs text-muted-foreground/60 text-left py-0.5 transition-colors cursor-pointer px-2 hover:text-muted-foreground"
+            class="mt-1 flex items-center text-xs text-muted-foreground text-left py-0.5 transition-colors cursor-pointer px-2 hover:text-muted-foreground"
             onclick={() => onSwitchTab?.('files')}
           >
             <Fa icon={faPlus} size="xs" class="ml-0.75 -mt-px mr-0.75" />

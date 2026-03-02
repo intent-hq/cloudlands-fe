@@ -20,6 +20,6 @@
     <h3 class="text-sm font-semibold mb-2">{narrative.title}</h3>
   {/if}
   {#if narrative.text}
-    <p class="text-xs text-muted-foreground">{narrative.text}</p>
+    <p class="text-xs text-subtle">{narrative.text}</p>
   {/if}
 </div>

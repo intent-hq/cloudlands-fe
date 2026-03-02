@@ -52,7 +52,7 @@
             class="whitespace-pre-wrap font-mono text-xs bg-muted/50 p-4 rounded-md">{rules}</pre>
         </div>
       {:else}
-        <p class="text-muted-foreground">No custom rules were applied to this agent.</p>
+        <p class="text-subtle">No custom rules were applied to this agent.</p>
       {/if}
     </div>
   </div>

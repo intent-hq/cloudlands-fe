@@ -949,16 +949,16 @@
 {#if wokenUpInfo && !showSubscriptionRow}
   <!-- Standalone woken-up indicator: shown only when no subscription row is active -->
   <div
-    class="flex items-end gap-2 px-4.5 py-1.5 text-[11px] text-muted-foreground/60 font-family-child"
+    class="flex items-end gap-2 px-4.5 py-1.5 text-ui text-subtle font-family-child"
     transition:fade={{ duration: 200 }}
   >
     <Tooltip.Provider delayDuration={0}>
       <Tooltip.Root delayDuration={0}>
         <Tooltip.Trigger>
-          <div class="shrink-0 flex items-center pb-1 gap-2 text-muted-foreground/60">
+          <div class="shrink-0 flex items-center pb-1 gap-2 text-subtle">
             <Fa icon={faBell} size="xs" />
             <span>Woken up</span>
-            <span class="text-muted-foreground/40">
+            <span class="text-subtle">
               ({wokenUpInfo.eventCount}
               {wokenUpInfo.eventCount === 1 ? 'event' : 'events'})
             </span>
@@ -966,7 +966,7 @@
         </Tooltip.Trigger>
         <Tooltip.Content side="top" class="text-xs">
           <p>Agent was woken by subscription events:</p>
-          <ul class="mt-1 text-muted-foreground/80">
+          <ul class="mt-1 text-subtle">
             {#each wokenUpInfo.eventTypes as eventType, i (`eventType-${i}-${eventType}`)}
               <li>• {eventType}</li>
             {/each}
@@ -979,7 +979,7 @@
 
 {#if showSubscriptionRow}
   <div class="w-full font-family-child">
-    <div class="flex items-center gap-2 px-3 py-1.5 text-sm text-muted-foreground/60">
+    <div class="flex items-center gap-2 px-3 py-1.5 text-sm text-subtle">
       <!-- Collapse/expand toggle with wait mode indicator -->
       <button
         type="button"
@@ -999,7 +999,7 @@
           <Fa icon={faHourglass} size="13" />
           Waiting for all
           {#if completionStatus.total > 0}
-            <span class="text-muted-foreground/40">
+            <span class="text-subtle">
               ({completionStatus.completed}/{completionStatus.total})
             </span>
           {/if}
@@ -1020,7 +1020,7 @@
           <Tooltip.Root delayDuration={0}>
             <Tooltip.Trigger>
               <span
-                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] text-muted-foreground/70 bg-muted/50"
+                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-ui text-subtle bg-muted/50"
                 transition:fade={{ duration: 200 }}
               >
                 <Fa icon={faBell} size="xs" />
@@ -1029,7 +1029,7 @@
             </Tooltip.Trigger>
             <Tooltip.Content side="top" class="text-xs">
               <p>Agent was woken by {wokenUpInfo.eventCount} {wokenUpInfo.eventCount === 1 ? 'event' : 'events'}:</p>
-              <ul class="mt-1 text-muted-foreground/80">
+              <ul class="mt-1 text-subtle">
                 {#each wokenUpInfo.eventTypes as eventType, i (`eventType-${i}-${eventType}`)}
                   <li>• {eventType}</li>
                 {/each}
@@ -1046,7 +1046,7 @@
             <InlineAgentAvatar agentId={watchedAgentId} />
           {/each}
           {#if watchedAgentIds.length > 5}
-            <span class="text-[10px] text-muted-foreground/50 pl-2">
+            <span class="text-ui text-subtle pl-2">
               +{watchedAgentIds.length - 5}
             </span>
           {/if}
@@ -1063,7 +1063,7 @@
               variant="ghost-light"
               size="icon-xs"
               onclick={stopAllAgents}
-              class="text-muted-foreground/40 hover:text-muted-foreground/70"
+              class="text-ghost hover:text-muted-foreground/70"
             >
               <Fa icon={faStop} class="w-2.5! h-2.5!" />
             </Button>
@@ -1081,7 +1081,7 @@
               variant="ghost-light"
               size="icon-xs"
               onclick={cancelSubscriptions}
-              class="text-muted-foreground/40 hover:text-muted-foreground/70"
+              class="text-ghost hover:text-muted-foreground/70"
             >
               <Fa icon={faXmark} class="w-2.5! h-2.5!" />
             </Button>
@@ -1101,7 +1101,7 @@
         <AgentCard agentId={watchedAgentId} />
       {/each}
       {#if watchedAgentIds.length > 5}
-        <div class="text-[10px] text-muted-foreground/50 text-center py-1">
+        <div class="text-ui text-subtle text-center py-1">
           +{watchedAgentIds.length - 5} more agents
         </div>
       {/if}

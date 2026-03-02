@@ -76,10 +76,10 @@
 <div class="flex items-start justify-between gap-4">
   <div class="space-y-1">
     <div class="flex items-center gap-1">
-      <SentryIcon size={17} class="text-muted-foreground" />
+      <SentryIcon size={17} class="text-ghost" />
       <span class="text-sm text-foreground">Sentry</span>
       {#if sentryAuthStore.state.isAuthenticated}
-        <span class="text-xs text-muted-foreground flex items-center gap-1">
+        <span class="text-xs text-subtle flex items-center gap-1">
           <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
           {#if sentryAuthStore.state.organization}
             {sentryAuthStore.state.organization}
@@ -89,7 +89,7 @@
         </span>
       {/if}
     </div>
-    <p class="text-xs text-muted-foreground pl-6">Create spaces directly from issues.</p>
+    <p class="text-xs text-subtle pl-6">Create spaces directly from issues.</p>
     {#if sentryAuthStore.state.error}
       <p class="text-xs text-destructive-foreground pl-6">{sentryAuthStore.state.error}</p>
     {/if}
@@ -97,7 +97,7 @@
 
   <div class="flex items-center gap-2 text-xs">
     {#if sentryAuthStore.state.isConnecting || isConnecting}
-      <span class="text-muted-foreground">Connecting...</span>
+      <span class="text-subtle">Connecting...</span>
     {:else if sentryAuthStore.state.isAuthenticated}
       <button
         type="button"
@@ -106,7 +106,7 @@
       >
         Reconnect
       </button>
-      <span class="text-muted-foreground/30">·</span>
+      <span class="text-ghost">·</span>
       <button
         type="button"
         class="text-muted-foreground hover:text-destructive-foreground cursor-pointer transition-colors"
@@ -140,7 +140,7 @@
         disabled={isConnecting}
         class="text-sm"
       />
-      <p class="text-[10px] text-muted-foreground">
+      <p class="text-xs text-subtle">
         Your Sentry organization slug (found in your Sentry URL)
       </p>
     </div>
@@ -157,7 +157,7 @@
         disabled={isConnecting}
         class="text-sm"
       />
-      <p class="text-[10px] text-muted-foreground">
+      <p class="text-xs text-subtle">
         Create a token at{' '}
         <button
           type="button"
@@ -174,7 +174,7 @@
           sentry.io/settings/account/api/auth-tokens/
         </button>
         {' '}with scopes:
-        <span class="font-mono text-foreground/70">org:read, project:read, event:read</span>
+        <span class="font-mono text-subtle">org:read, project:read, event:read</span>
       </p>
     </div>
 

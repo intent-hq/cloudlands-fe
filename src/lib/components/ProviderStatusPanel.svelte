@@ -570,7 +570,7 @@
     />
     <div>
       <h1 class="text-2xl font-semibold mb-2">Choose your agent</h1>
-      <p class="text-muted-foreground/80">
+      <p class="text-subtle">
         Intent is powered by your own CLI agent.<br />
         Choose one to get started, you can always switch in settings.
       </p>
@@ -661,7 +661,7 @@
             {/if}
           </div>
         </div>
-        <ul class="flex flex-col gap-1.5 text-muted-foreground/80 text-sm">
+        <ul class="flex flex-col gap-1.5 text-subtle text-sm">
           <li class="flex items-center gap-3">
             <Fa icon={faArrowRight} size={12} class="opacity-50" />
             <span>Real-time codebase understanding with Context Engine</span>
@@ -685,11 +685,11 @@
         >
           <p class="text-xs text-destructive-foreground">{installError}</p>
           {#if installErrorType === 'permission'}
-            <p class="text-xs text-muted-foreground">
+            <p class="text-xs text-subtle">
               Try running with sudo or fix npm permissions.
             </p>
           {:else if installErrorType === 'missing_npm'}
-            <p class="text-xs text-muted-foreground">
+            <p class="text-xs text-subtle">
               Install <a href="https://nodejs.org" class="underline text-primary"
                 onclick={(e) => { e.preventDefault(); const wsId = workspaceStore.current?.id; if (wsId) handleLink('https://nodejs.org', { workspaceId: wsId as WorkspaceId, event: e }); }}
                 >Node.js</a
@@ -712,7 +712,7 @@
           class="flex flex-col gap-2 p-3 bg-muted/50 rounded-lg"
           transition:slide={{ axis: 'y', duration: 200 }}
         >
-          <p class="text-xs text-muted-foreground">Waiting for browser authentication...</p>
+          <p class="text-xs text-subtle">Waiting for browser authentication...</p>
           {#if authUrl}
             <button
               class="text-xs text-muted-foreground hover:text-foreground text-left bg-transparent border-none p-0 cursor-pointer transition-colors"
@@ -795,7 +795,7 @@
       <!-- Separator and secondary providers -->
       <div class="flex flex-col pt-5">
         <p
-          class="text-muted-foreground/80 text-sm mb-5"
+          class="text-subtle text-sm mb-5"
           in:fly|global={{ y: 30, duration: 400, delay: 440 }}
         >
           You can also use Intent with fewer features powered by:
@@ -807,7 +807,7 @@
             class="flex justify-between items-center py-2"
             in:fly|global={{ y: 30, duration: 400, delay: index * 90 + 440 }}
           >
-            <span class="text-[0.91rem] font-medium">{provider.name}</span>
+            <span class="text-sm font-medium">{provider.name}</span>
             <div class="flex items-center gap-4">
               {#if isInitialLoad}
                 <Skeleton class="h-8 w-20 rounded-md" />

@@ -38,7 +38,7 @@
     showStagingControls={true}
   />
 {:else}
-  <div class="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
+  <div class="flex flex-col items-center justify-center h-full text-subtle gap-4">
     <p class="text-sm">No changes found</p>
   </div>
 {/if}

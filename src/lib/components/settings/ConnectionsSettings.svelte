@@ -40,17 +40,17 @@
         <div class="space-y-1">
           <div class="flex items-center gap-2">
             {#if integration.icon === 'github'}
-              <Fa icon={faGithub} class="w-4 h-4 text-muted-foreground" />
+              <Fa icon={faGithub} class="w-4 h-4 text-ghost" />
             {:else if integration.icon === 'linear'}
-              <LinearIcon size={14} class="text-muted-foreground" />
+              <LinearIcon size={14} class="text-ghost" />
             {:else if integration.icon === 'sentry'}
-              <SentryIcon size={17} class="text-muted-foreground" />
+              <SentryIcon size={17} class="text-ghost" />
             {/if}
             <span class="text-sm text-foreground">{integration.name}</span>
             <!-- Status skeleton -->
             <div class="h-3 w-16 bg-muted/50 rounded animate-pulse"></div>
           </div>
-          <p class="text-xs text-muted-foreground pl-6">{integration.description}</p>
+          <p class="text-xs text-subtle pl-6">{integration.description}</p>
         </div>
         <!-- Action button skeleton -->
         <div class="h-4 w-14 bg-muted/50 rounded animate-pulse"></div>

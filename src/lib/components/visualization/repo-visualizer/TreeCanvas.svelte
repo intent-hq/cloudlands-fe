@@ -1348,7 +1348,7 @@
 >
   <!-- Breadcrumb navigation -->
   {#if zoomedPath}
-    <div class="flex items-center gap-1 px-2 py-1.5 text-xs text-muted-foreground overflow-x-auto">
+    <div class="flex items-center gap-1 px-2 py-1.5 text-xs text-subtle overflow-x-auto">
       {#each breadcrumbs as crumb, i (`crumb-${i}-${crumb.path}`)}
         {#if i > 0}
           <span class="opacity-40">/</span>
@@ -1391,31 +1391,31 @@
           <i
             class="fa fa-{hoveredItemInfo.isFile
               ? 'file-o'
-              : 'folder-o'} text-muted-foreground/30 mt-0.5 shrink-0"
+              : 'folder-o'} text-ghost mt-0.5 shrink-0"
           ></i>
           <div class="min-w-0">
             <div class="font-medium text-foreground break-words">{hoveredItemInfo.name}</div>
             {#if hoveredItemInfo.dir}
-              <div class="text-muted-foreground text-[10px] break-words line-clamp-3">
+              <div class="text-subtle text-ui break-words line-clamp-3">
                 {hoveredItemInfo.dir}
               </div>
             {/if}
           </div>
         </div>
         {#if !hoveredItemInfo.isFile && hoveredFolderChildrenInfo.items.length > 0}
-          <div class="mt-1.5 pt-1.5 border-t border-border/50 text-muted-foreground space-y-0.5">
+          <div class="mt-1.5 pt-1.5 border-t border-border/50 text-subtle space-y-0.5">
             {#each hoveredFolderChildrenInfo.items as child, childIdx (`child-${childIdx}-${child.name}`)}
               <div class="flex items-center gap-1.5 truncate">
                 <i
                   class="fa fa-{child.isFolder
                     ? 'folder-o'
-                    : 'file-o'} text-[10px] shrink-0 opacity-30"
+                    : 'file-o'} text-ui shrink-0 opacity-30"
                 ></i>
                 <span class="truncate">{child.name}</span>
               </div>
             {/each}
             {#if hoveredFolderChildrenInfo.moreCount > 0}
-              <div class="text-[10px] opacity-60">+ {hoveredFolderChildrenInfo.moreCount} more</div>
+              <div class="text-ui opacity-60">+ {hoveredFolderChildrenInfo.moreCount} more</div>
             {/if}
           </div>
         {/if}
@@ -1431,7 +1431,7 @@
           onkeydown={handleSearchKeyDown}
         >
           <div class="flex items-center gap-2 px-3 py-2 border-b border-border">
-            <Fa icon={faSearch} class="text-muted-foreground w-3 h-3" />
+            <Fa icon={faSearch} class="text-ghost w-3 h-3" />
             <input
               bind:this={searchInputRef}
               bind:value={searchQuery}
@@ -1481,7 +1481,7 @@
                         ></span>
                       {/if}
                     </div>
-                    <div class="text-[10px] text-muted-foreground truncate">
+                    <div class="text-ui text-subtle truncate">
                       {item.data.path}
                     </div>
                   </div>
@@ -1496,7 +1496,7 @@
               {/each}
             </div>
           {:else if searchQuery}
-            <div class="px-3 py-4 text-center text-sm text-muted-foreground">
+            <div class="px-3 py-4 text-center text-sm text-subtle">
               No results for "{searchQuery}"
             </div>
           {/if}
@@ -1508,7 +1508,7 @@
         >
           <Fa icon={faSearch} class="w-3 h-3" />
           <span>Search</span>
-          <kbd class="text-[10px] px-1 py-0.5 rounded bg-muted ml-1">/</kbd>
+          <kbd class="text-ui px-1 py-0.5 rounded bg-muted ml-1">/</kbd>
         </button>
       {/if}
     </div>
@@ -1518,7 +1518,7 @@
       <!-- File type legend when not highlighting changes -->
       {#if !showChangesMode && computedFileTypes.length > 0}
         <div
-          class="flex items-center gap-2 px-2.5 py-1.5 rounded text-xs bg-background/70 text-muted-foreground"
+          class="flex items-center gap-2 px-2.5 py-1.5 rounded text-xs bg-background/70 text-subtle"
         >
           {#each computedFileTypes.slice(0, 8) as ext (ext)}
             <span class="flex items-center gap-1">

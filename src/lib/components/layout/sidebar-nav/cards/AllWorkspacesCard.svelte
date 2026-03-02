@@ -287,7 +287,7 @@
   {/if}
 
   {#if allWorkspaces.length === 0}
-    <div class="px-3 pb-3 text-xs text-muted-foreground/60">No workspaces yet</div>
+    <div class="px-3 pb-3 text-xs text-subtle">No workspaces yet</div>
   {:else}
     <div class="overflow-y-auto flex-1 min-h-0 pb-2">
       {#if viewMode === 'recent'}

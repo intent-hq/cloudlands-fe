@@ -242,7 +242,7 @@
 <div class="flex flex-col">
   {#if changes.length === 0}
     <!-- No changes message -->
-    <div class="p-8 text-center text-muted-foreground">
+    <div class="p-8 text-center text-subtle">
       <p class="text-sm">No changes to display</p>
     </div>
   {:else if showTreeView && treeData}
@@ -270,7 +270,7 @@
         {@const pathInfo = parseFilePath(change.relativePath || change.file)}
         <ListItem
           icon={getFileIcon(change.relativePath || change.file)}
-          iconClass="text-muted-foreground/50"
+          iconClass="text-ghost"
           title={pathInfo.filename}
           titleClass="max-w-[calc(100%_-_2rem)]"
           subtitle={pathInfo.directory}
@@ -292,7 +292,7 @@
                         e.stopPropagation();
                         onRevertClick(change);
                       },
-                      className: 'text-muted-foreground',
+                      className: 'text-subtle',
                     }
                   : null,
                 // Stage/Unstage action
@@ -304,7 +304,7 @@
                         e.stopPropagation();
                         onStageClick(change);
                       },
-                      className: 'text-muted-foreground',
+                      className: 'text-subtle',
                     }
                   : change.stage === ChangeStage.Staged && onUnstageClick
                     ? {
@@ -314,7 +314,7 @@
                           e.stopPropagation();
                           onUnstageClick(change);
                         },
-                        className: 'text-muted-foreground',
+                        className: 'text-subtle',
                       }
                     : null,
               ].filter(Boolean) as any[])

@@ -148,7 +148,7 @@ More content here for testing purposes.`;
       >
         Add Comment
       </button>
-      <div class="text-sm text-muted-foreground">
+      <div class="text-sm text-subtle">
         Comments: {commentsStoreV2.comments.length} | Selected: {commentsStoreV2.selectedComment
           ?.id || 'none'}
       </div>
@@ -164,7 +164,7 @@ More content here for testing purposes.`;
         <h2 class="text-lg font-semibold">
           Comments ({commentsStoreV2.comments.length})
         </h2>
-        <div class="text-xs text-muted-foreground">
+        <div class="text-xs text-subtle">
           Editor: {!!editor} | Comments: {JSON.stringify(commentsStoreV2.comments.map((c) => c.id))}
         </div>
       </div>
@@ -179,7 +179,7 @@ More content here for testing purposes.`;
         <div class="text-xs mt-2">After CommentsSidebar</div>
       </div>
     {:else}
-      <div class="p-4 text-muted-foreground">Loading editor...</div>
+      <div class="p-4 text-subtle">Loading editor...</div>
     {/if}
   </div>
 </div>

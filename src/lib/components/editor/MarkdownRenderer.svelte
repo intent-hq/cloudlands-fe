@@ -123,7 +123,7 @@
     }
 
     blockquote({ text }: Tokens.Blockquote) {
-      return `<blockquote class="border-l-4 border-primary/40 pl-4 py-2.5 my-4 text-muted-foreground italic bg-muted/30 rounded-r">${text}</blockquote>`;
+      return `<blockquote class="border-l-4 border-primary/40 pl-4 py-2.5 my-4 text-subtle italic bg-muted/30 rounded-r">${text}</blockquote>`;
     }
 
     list(token: Tokens.List) {

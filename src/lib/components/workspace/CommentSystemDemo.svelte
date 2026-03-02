@@ -183,7 +183,7 @@
 <div class="comment-demo-container">
   <div class="demo-header">
     <h1>New Comment System Demo</h1>
-    <p class="text-muted-foreground">Anchor-based comments that survive markdown round-trips</p>
+    <p class="text-subtle">Anchor-based comments that survive markdown round-trips</p>
   </div>
 
   <div class="demo-layout">
@@ -252,7 +252,7 @@
         {#if comments.length === 0}
           <div class="no-comments">
             <p>No comments yet</p>
-            <p class="text-muted-foreground">Select text and click "Add Comment" to start</p>
+            <p class="text-subtle">Select text and click "Add Comment" to start</p>
           </div>
         {/if}
       </div>

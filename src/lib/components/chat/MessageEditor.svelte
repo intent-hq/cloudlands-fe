@@ -77,7 +77,7 @@
   ></textarea>
 
   <div class="flex justify-end gap-2">
-    <Button variant="ghost" size="sm" onclick={onCancel} class="text-muted-foreground">
+    <Button variant="ghost" size="sm" onclick={onCancel} class="text-subtle">
       <Fa icon={faXmark} class="mr-1.5" />
       Cancel
     </Button>
@@ -87,17 +87,17 @@
     </Button>
   </div>
 
-  <p class="text-[11px] text-muted-foreground text-right">
+  <p class="text-ui text-subtle text-right">
     Press <kbd
-      class="inline-flex items-center justify-center min-w-5 px-1 py-0.5 text-[10px] font-medium bg-muted border border-border rounded mx-0.5"
+      class="inline-flex items-center justify-center min-w-5 px-1 py-0.5 text-ui font-medium bg-muted border border-border rounded mx-0.5"
       >⌘</kbd
     ><kbd
-      class="inline-flex items-center justify-center min-w-5 px-1 py-0.5 text-[10px] font-medium bg-muted border border-border rounded mx-0.5"
+      class="inline-flex items-center justify-center min-w-5 px-1 py-0.5 text-ui font-medium bg-muted border border-border rounded mx-0.5"
       >↵</kbd
     >
     to send,
     <kbd
-      class="inline-flex items-center justify-center min-w-5 px-1 py-0.5 text-[10px] font-medium bg-muted border border-border rounded mx-0.5"
+      class="inline-flex items-center justify-center min-w-5 px-1 py-0.5 text-ui font-medium bg-muted border border-border rounded mx-0.5"
       >Esc</kbd
     > to cancel
   </p>

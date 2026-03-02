@@ -20,6 +20,8 @@
   --color-secondary-foreground: hsl(var(--secondary-foreground));
   --color-muted: hsl(var(--muted));
   --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-ghost: hsl(var(--text-ghost));
+  --color-subtle: hsl(var(--text-subtle));
   --color-accent: hsl(var(--accent));
   --color-accent-foreground: hsl(var(--accent-foreground));
   --color-destructive: hsl(var(--destructive));
@@ -57,12 +59,14 @@
   --secondary: 0 0% 96%;
   --secondary-foreground: 0 0% 9%;
   --muted: 0 0% 91%;
-  --muted-foreground: 0 0% 35%;
+  --muted-foreground: 0 0% 28%;
+  --text-ghost: 0 0% 68%;
+  --text-subtle: 0 0% 46%;
   --accent: 158 100% 30%;
   --accent-foreground: 212 100% 48%;
   --destructive: 0 84% 95%;
   --destructive-foreground: 0 92% 30%;
-  --border: 0 0% 90%;
+  --border: 0 0% 85%;
   --input: 0 0% 90%;
   --ring: 212 100% 48%;
   --radius: 0.375rem;
@@ -73,8 +77,8 @@
 
   /* Text color variables for compatibility */
   --text-primary: hsl(0 0% 9%);
-  --text-secondary: hsl(0 0% 55%);
-  --text-tertiary: hsl(0 0% 64%);
+  --text-secondary: hsl(0 0% 38%);
+  --text-tertiary: hsl(0 0% 44%);
   --danger-color: hsl(0 84% 60%);
 
   /* Additional variables for components */
@@ -119,19 +123,21 @@
   --secondary: 0 0% 11%;
   --secondary-foreground: 0 0% 97%;
   --muted: 239 13% 0%;
-  --muted-foreground: 257 9% 65%;
+  --muted-foreground: 257 9% 72%;
+  --text-ghost: 240 5% 40%;
+  --text-subtle: 240 5% 58%;
   --accent: 158 100% 30%;
   --accent-foreground: 201 98% 80%;
   --destructive: 0 62.8% 13%;
   --destructive-foreground: 0 80% 60%;
-  --border: 256 6% 25%;
+  --border: 256 6% 30%;
   --input: 239 13% 0%;
   --ring: 212 100% 48%;
 
   /* Text color variables for dark mode */
   --text-primary: hsl(0 0% 98%);
-  --text-secondary: hsl(257 9% 52%);
-  --text-tertiary: hsl(0 0% 55%);
+  --text-secondary: hsl(257 9% 68%);
+  --text-tertiary: hsl(0 0% 65%);
   --danger-color: hsl(0 62.8% 30.6%);
 
   /* Additional variables for dark mode */
@@ -171,19 +177,21 @@
   --secondary: 0 0% 96%;
   --secondary-foreground: 0 0% 9%;
   --muted: 0 0% 91%;
-  --muted-foreground: 0 0% 35%;
+  --muted-foreground: 0 0% 28%;
+  --text-ghost: 0 0% 68%;
+  --text-subtle: 0 0% 46%;
   --accent: 158 100% 30%;
   --accent-foreground: 212 100% 48%;
   --destructive: 0 84% 95%;
   --destructive-foreground: 0 92% 30%;
-  --border: 0 0% 90%;
+  --border: 0 0% 85%;
   --input: 0 0% 90%;
   --ring: 212 100% 48%;
 
   /* Text color variables for light mode */
   --text-primary: hsl(0 0% 9%);
-  --text-secondary: hsl(0 0% 55%);
-  --text-tertiary: hsl(0 0% 64%);
+  --text-secondary: hsl(0 0% 38%);
+  --text-tertiary: hsl(0 0% 44%);
   --danger-color: hsl(0 84% 60%);
 
   /* Additional variables for light mode */
@@ -224,19 +232,21 @@
     --secondary: 0 0% 11%;
     --secondary-foreground: 0 0% 97%;
     --muted: 239 13% 0%;
-    --muted-foreground: 257 9% 65%;
+    --muted-foreground: 257 9% 72%;
+    --text-ghost: 240 5% 40%;
+    --text-subtle: 240 5% 58%;
     --accent: 158 100% 30%;
     --accent-foreground: 201 98% 80%;
     --destructive: 0 62.8% 13%;
     --destructive-foreground: 0 80% 60%;
-    --border: 256 6% 25%;
+    --border: 256 6% 30%;
     --input: 239 13% 0%;
     --ring: 212 100% 48%;
 
     /* Text color variables for compatibility */
     --text-primary: hsl(0 0% 98%);
-    --text-secondary: hsl(257 9% 52%);
-    --text-tertiary: hsl(0 0% 55%);
+    --text-secondary: hsl(257 9% 68%);
+    --text-tertiary: hsl(0 0% 65%);
     --danger-color: hsl(0 62.8% 30.6%);
 
     /* Additional variables for components */
@@ -270,6 +280,11 @@ body {
   --footer-height: 1.75rem;
   --panel-header-height: 3rem;
 }
+
+/* Bump text-xs from 12px to 13px for better readability of description text */
+.text-xs { font-size: 0.8125rem; /* 13px */ }
+.text-ui { font-size: 0.85rem; /* ~13.6px */ line-height: 1.4; }
+.text-ui-sm { font-size: 0.75rem; /* 12px */ line-height: 1.4; }
 
 /* Vercel-style typography */
 /* h1, h2, h3, h4, h5, h6 {

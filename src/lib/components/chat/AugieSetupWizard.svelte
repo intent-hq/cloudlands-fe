@@ -219,7 +219,7 @@
       <div class="flex items-start justify-between gap-6">
         <div class="flex-1">
           <h2 class="text-xl font-semibold tracking-tight">Install Agent CLI</h2>
-          <p class="text-sm text-muted-foreground mt-1.5 leading-relaxed">
+          <p class="text-sm text-subtle mt-1.5 leading-relaxed">
             {#if workspace.environmentConfig?.type === 'remote'}
               Install an agent CLI on your remote server to enable AI agents for this workspace.
             {:else}
@@ -230,12 +230,12 @@
         {#if augieInstalled !== null}
           <div class="flex-shrink-0 mt-0.5">
             {#if augieInstalled === true}
-              <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <div class="flex items-center gap-1.5 text-xs text-subtle">
                 <Fa icon={faCheckCircle} size="xs" />
                 <span>Installed</span>
               </div>
             {:else}
-              <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <div class="flex items-center gap-1.5 text-xs text-subtle">
                 <Fa icon={faExclamationCircle} size="xs" />
                 <span>Not installed</span>
               </div>
@@ -265,12 +265,12 @@
               </div>
               <div class="flex-1 min-w-0">
                 <div class="text-sm font-medium">Install npm</div>
-                <div class="text-xs text-muted-foreground mt-0.5 font-mono truncate">
+                <div class="text-xs text-subtle mt-0.5 font-mono truncate">
                   apt-get install npm
                 </div>
               </div>
             </div>
-            <div class="flex items-start gap-1.5 text-xs text-muted-foreground pl-10.5">
+            <div class="flex items-start gap-1.5 text-xs text-subtle pl-10.5">
               <Fa icon={faExclamationCircle} size="xs" class="flex-shrink-0 mt-0.5" />
               <span>Required to install agent CLI</span>
             </div>
@@ -292,13 +292,13 @@
                 </div>
                 <div class="flex-1 min-w-0">
                   <div class="text-sm font-medium">Install with {method.name}</div>
-                  <div class="text-xs text-muted-foreground mt-0.5 font-mono truncate">
+                  <div class="text-xs text-subtle mt-0.5 font-mono truncate">
                     {method.command}
                   </div>
                 </div>
               </div>
               {#if needsPMInstall}
-                <div class="flex items-start gap-1.5 text-xs text-muted-foreground pl-10.5">
+                <div class="flex items-start gap-1.5 text-xs text-subtle pl-10.5">
                   <Fa icon={faExclamationCircle} size="xs" class="flex-shrink-0 mt-0.5" />
                   <span>Will install {method.name} first</span>
                 </div>
@@ -309,7 +309,7 @@
 
         <!-- Loading state -->
         {#if checkingPM}
-          <div class="flex items-center gap-2 px-4 py-3.5 text-sm text-muted-foreground">
+          <div class="flex items-center gap-2 px-4 py-3.5 text-sm text-subtle">
             <div
               class="animate-spin h-4 w-4 border-2 border-muted-foreground/20 border-t-muted-foreground rounded-full"
             ></div>
@@ -343,7 +343,7 @@
             <Fa icon={faCheckCircle} size="2x" class="text-foreground" />
           </div>
           <h3 class="text-xl font-semibold mb-2">Installation Complete</h3>
-          <p class="text-sm text-muted-foreground mb-6">
+          <p class="text-sm text-subtle mb-6">
             Agent CLI is ready to use with this workspace
           </p>
           <button

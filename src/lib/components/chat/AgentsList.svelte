@@ -139,7 +139,7 @@
 {#if !collapsed}
   <div class="py-7 overflow-hidden">
     <div class="px-5 mb-1.5 flex justify-between items-center">
-      <h4 class="text-xs font-medium text-muted-foreground">Threads</h4>
+      <h4 class="text-xs font-medium text-subtle">Threads</h4>
     </div>
 
     {#if visibleAgents.length > 0}
@@ -171,13 +171,13 @@
                   {getAgentDisplayName(agent)}
                 </div>
                 <!-- {#if lastMessage}
-										<div class="truncate text-xs text-muted-foreground mt-0.5">
+										<div class="truncate text-xs text-subtle mt-0.5">
 											{lastMessage}
 										</div>
 									{/if} -->
               </div>
               {#if timestamp}
-                <span class="text-xs text-muted-foreground shrink-0">
+                <span class="text-xs text-subtle shrink-0">
                   <RelativeTime date={timestamp} compact={true} />
                 </span>
               {/if}
@@ -186,7 +186,7 @@
         </div>
       {/each}
     {:else}
-      <div class="px-4 py-2 text-sm text-muted-foreground">No threads yet</div>
+      <div class="px-4 py-2 text-sm text-subtle">No threads yet</div>
     {/if}
   </div>
 {:else}

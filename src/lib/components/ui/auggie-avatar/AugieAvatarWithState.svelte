@@ -79,7 +79,7 @@
   {:else if state === 'waiting'}
     <!-- Waiting indicator - hourglass -->
     <span
-      class="absolute -top-0.5 -right-0.75 p-0.5 bg-sidebar rounded-full flex items-center justify-center text-muted-foreground/60"
+      class="absolute -top-0.5 -right-0.75 p-0.5 bg-sidebar rounded-full flex items-center justify-center text-subtle"
       style="font-size: {Math.max(8, size * 0.35)}px; line-height: 1;"
     >
       <Fa icon={faHourglass} />

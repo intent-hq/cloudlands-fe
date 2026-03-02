@@ -56,12 +56,12 @@
 <div class="rounded-lg border border-border bg-muted overflow-hidden {className}">
   <button
     type="button"
-    class="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none cursor-pointer text-left text-muted-foreground text-[0.8125rem] transition-colors duration-150 hover:bg-muted"
+    class="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none cursor-pointer text-left text-muted-foreground text-xs transition-colors duration-150 hover:bg-muted"
     onclick={toggle}
     aria-expanded={isExpanded}
   >
     <div
-      class="flex items-center justify-center text-muted-foreground {isStreaming
+      class="flex items-center justify-center text-subtle {isStreaming
         ? 'animate-pulse'
         : ''}"
     >
@@ -86,7 +86,7 @@
 
   {#if isExpanded}
     <div
-      class="px-3 pb-3 text-[0.8125rem] leading-relaxed text-muted-foreground [&_p]:my-2 [&_p:first-child]:mt-0"
+      class="px-3 pb-3 text-xs leading-relaxed text-subtle [&_p]:my-2 [&_p:first-child]:mt-0"
       transition:slide={{ duration: 200, easing: cubicOut }}
     >
       <MarkdownViewer {content} {isStreaming} />

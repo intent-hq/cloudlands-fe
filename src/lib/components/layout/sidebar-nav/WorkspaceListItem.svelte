@@ -130,7 +130,7 @@
           ? 'font-medium text-foreground'
           : workspace.title
             ? 'text-foreground'
-            : 'text-muted-foreground/70'}"
+            : 'text-subtle'}"
       >
         {workspace.title || 'Untitled'}
       </span>
@@ -142,7 +142,7 @@
             <AugieAvatarWithState {agentId} size={14} state="running" />
           {/each}
           {#if streamingAgentIds.length > 3}
-            <div class="ml-1 text-[10px] text-muted-foreground font-medium">
+            <div class="ml-1 text-ui text-subtle font-medium">
               +{streamingAgentIds.length - 3}
             </div>
           {/if}
@@ -160,7 +160,7 @@
             />
           {/each}
           {#if agentInfos.length > 3}
-            <div class="ml-1 text-[10px] text-muted-foreground/50 font-medium">
+            <div class="ml-1 text-ui text-subtle font-medium">
               +{agentInfos.length - 3}
             </div>
           {/if}
@@ -177,11 +177,11 @@
                 ? 'bg-emerald-500/10 text-emerald-500'
                 : 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
               : prStatus === PullRequestStatus.Draft
-                ? 'bg-muted-foreground/10 text-muted-foreground/60'
+                ? 'bg-muted-foreground/10 text-muted-foreground'
                 : 'bg-red-500/10 text-red-500'}
         {@const tooltipText = prTooltipContent}
         <Tooltip content={tooltipText} side="bottom" sideOffset={4} disabled={!tooltipText}>
-          <span class="text-[9px] font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}">
+          <span class="text-ui font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}">
             PR{prNumber ? ` #${prNumber}` : ''}
           </span>
         </Tooltip>
@@ -198,7 +198,7 @@
       >
         <RelativeTime
           date={workspace.lastActivity || workspace.updatedAt}
-          class="text-[11px] text-muted-foreground/50 whitespace-nowrap"
+          class="text-ui text-subtle whitespace-nowrap"
           compact
         />
       </span>
@@ -206,7 +206,7 @@
 
     <!-- Row 2: repo info -->
     {#if !hideRepoAvatar && workspace.repositoryOwner && workspace.repositoryName}
-      <div class="truncate text-[11px] text-muted-foreground/70">
+      <div class="truncate text-ui text-subtle">
         {workspace.repositoryOwner}/{workspace.repositoryName}
       </div>
     {/if}
@@ -224,7 +224,7 @@
     >
       {#if isUnread && onMarkAsRead}
         <button
-          class="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-muted-foreground/40 transition-all hover:bg-muted/50 hover:text-foreground"
+          class="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-ghost transition-all hover:bg-muted/50 hover:text-foreground"
           onclick={onMarkAsRead}
           aria-label="Mark as read"
           title="Mark as read"
@@ -235,7 +235,7 @@
       {#if onTogglePin}
         <button
           class="flex h-5 w-5 -my-1 cursor-pointer items-center justify-center rounded transition-all hover:bg-muted/50 hover:text-foreground
-            {isPinned ? 'text-primary/60' : 'text-muted-foreground/40'}"
+            {isPinned ? 'text-primary/60' : 'text-ghost'}"
           onclick={onTogglePin}
           aria-label={isPinned ? 'Unpin' : 'Pin'}
           title={isPinned ? 'Unpin from Active list' : 'Pin to Active list'}

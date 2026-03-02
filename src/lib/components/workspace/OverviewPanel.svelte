@@ -121,11 +121,11 @@
     <section>
       <div class="flex items-center justify-between mb-1.5 px-0.5">
         <div class="flex items-center gap-2">
-          <h2 class="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wide">
+          <h2 class="text-ui font-medium text-muted-foreground uppercase tracking-wide">
             Agents
           </h2>
           {#if activeAgentCount > 0}
-            <span class="text-[10px] text-blue-500">
+            <span class="text-ui text-blue-500">
               {activeAgentCount} working
             </span>
           {/if}
@@ -149,10 +149,10 @@
           onclick={onCreateAgent}
         >
           <div
-            class="flex flex-col items-center gap-1.5 text-muted-foreground/50 group-hover:text-muted-foreground"
+            class="flex flex-col items-center gap-1.5 text-muted-foreground group-hover:text-muted-foreground"
           >
             <Fa icon={faPlus} size="xs" />
-            <span class="text-[11px]">New agent</span>
+            <span class="text-ui">New agent</span>
           </div>
         </button>
       {:else}
@@ -160,7 +160,7 @@
           {#each reactiveAgents as agent, i (agent.id)}
             {#if hasCoordinator && isCoordinatorAgent(agent) && i === 0}
               <div class="pt-0.5 pb-0.5">
-                <span class="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider"
+                <span class="text-ui font-medium text-muted-foreground uppercase tracking-wider"
                   >Coordinator</span
                 >
               </div>
@@ -169,10 +169,10 @@
               {@const isFirstNonCoordinator = reactiveAgents.slice(0, i).every(isCoordinatorAgent)}
               {#if isFirstNonCoordinator}
                 <div class="pt-2 pb-0.5">
-                  <span class="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider"
+                  <span class="text-ui font-medium text-muted-foreground uppercase tracking-wider"
                     >Your Agents</span
                   >
-                  <p class="text-[10px] text-muted-foreground/75 mt-0.5">
+                  <p class="text-xs text-subtle mt-0.5">
                     The Coordinator can delegate and verify tasks for these agents
                   </p>
                 </div>
@@ -192,7 +192,7 @@
     <!-- Terminals Section -->
     <section>
       <div class="flex items-center justify-between mb-1.5 px-0.5">
-        <h2 class="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wide">
+        <h2 class="text-ui font-medium text-muted-foreground uppercase tracking-wide">
           Terminals
         </h2>
         {#if onCreateTerminal}
@@ -214,10 +214,10 @@
           onclick={onCreateTerminal}
         >
           <div
-            class="flex flex-col items-center gap-1.5 text-muted-foreground/50 group-hover:text-muted-foreground"
+            class="flex flex-col items-center gap-1.5 text-muted-foreground group-hover:text-muted-foreground"
           >
             <span class="font-mono text-xs">$</span>
-            <span class="text-[11px]">New terminal</span>
+            <span class="text-ui">New terminal</span>
           </div>
         </button>
       {:else}
@@ -236,7 +236,7 @@
               <div class="flex items-center gap-2.5">
                 <!-- Terminal icon -->
                 <div
-                  class="shrink-0 w-6 h-6 rounded flex items-center justify-center font-mono text-xs text-muted-foreground/60"
+                  class="shrink-0 w-6 h-6 rounded flex items-center justify-center font-mono text-xs text-subtle"
                 >
                   {#if isExecuting}
                     <span class="relative flex h-2 w-2">
@@ -255,14 +255,14 @@
                     {terminal.name || `Terminal ${index + 1}`}
                   </h3>
                   {#if lastCommand}
-                    <p class="text-[11px] font-mono text-muted-foreground/50 truncate">
+                    <p class="text-ui font-mono text-subtle truncate">
                       {lastCommand}
                     </p>
                   {/if}
                 </div>
 
                 {#if isExecuting}
-                  <span class="text-[10px] text-emerald-500 shrink-0">Running</span>
+                  <span class="text-ui text-emerald-500 shrink-0">Running</span>
                 {/if}
               </div>
             </button>

@@ -93,7 +93,7 @@
               <div class="text-sm font-medium">{narrative.title}</div>
             {/if}
             {#if narrative?.text}
-              <div class="text-xs text-muted-foreground">{narrative.text}</div>
+              <div class="text-xs text-subtle">{narrative.text}</div>
             {/if}
           </div>
         {/key}
@@ -125,7 +125,7 @@
                   <div class="text-xs font-medium mb-0.5">{stateNarrative.title}</div>
                 {/if}
                 {#if stateNarrative.text}
-                  <div class="text-[11px] text-muted-foreground leading-snug">
+                  <div class="text-ui text-subtle leading-snug">
                     {stateNarrative.text}
                   </div>
                 {/if}
@@ -143,7 +143,7 @@
           class="h-5 w-5 p-0 opacity-60 hover:opacity-100"
           onclick={goToPrevState}
         >
-          <Fa icon={faChevronLeft} class="text-[10px]" />
+          <Fa icon={faChevronLeft} class="text-ui" />
         </Button>
         <Button
           variant="ghost"
@@ -151,7 +151,7 @@
           class="h-5 w-5 p-0 opacity-60 hover:opacity-100"
           onclick={goToNextState}
         >
-          <Fa icon={faChevronRight} class="text-[10px]" />
+          <Fa icon={faChevronRight} class="text-ui" />
         </Button>
       </div>
     </div>

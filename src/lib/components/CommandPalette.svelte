@@ -1073,7 +1073,7 @@
         </div>
 
         <kbd
-          class="text-[11px] px-1.5 py-1 rounded-[5px] bg-foreground/6 text-foreground/40 font-medium border border-foreground/6"
+          class="text-ui px-1.5 py-1 rounded-[5px] bg-foreground/6 text-subtle font-medium border border-foreground/6"
         >
           ESC
         </kbd>
@@ -1101,8 +1101,8 @@
                              transition-colors duration-100"
                       onclick={() => selectItem(action)}
                     >
-                      <Fa icon={faPlus} class="text-[11px] text-foreground/40" />
-                      <span class="text-[13px] font-medium text-foreground/70">
+                      <Fa icon={faPlus} class="text-ui text-subtle" />
+                      <span class="text-[13px] font-medium text-subtle">
                         {action.label.replace('New ', '')}
                       </span>
                     </button>
@@ -1117,8 +1117,8 @@
                            transition-colors duration-100"
                     onclick={() => selectItem(wsAction)}
                   >
-                    <Fa icon={faPlus} class="text-[11px] text-foreground/40" />
-                    <span class="text-[13px] font-medium text-foreground/70">
+                    <Fa icon={faPlus} class="text-ui text-subtle" />
+                    <span class="text-[13px] font-medium text-subtle">
                       {wsAction.label.replace('New ', '')}
                     </span>
                   </button>
@@ -1128,12 +1128,12 @@
               <!-- Group Label with shortcut key -->
               <div class="px-3 pt-2 pb-1 {index > 0 ? 'mt-0.5' : ''}">
                 <div
-                  class="flex items-center justify-between text-[11px] font-semibold text-foreground/40 uppercase tracking-wide"
+                  class="flex items-center justify-between text-ui font-semibold text-muted-foreground uppercase tracking-wide"
                 >
                   <span>{item._groupLabel}</span>
                   {#if item._shortcutKey}
                     <kbd
-                      class="text-[10px] px-1.5 py-0.5 rounded bg-foreground/[0.04] text-foreground/30 font-mono normal-case"
+                      class="text-ui px-1.5 py-0.5 rounded bg-foreground/[0.04] text-foreground/30 font-mono normal-case"
                     >
                       {item._shortcutKey}
                     </kbd>
@@ -1147,7 +1147,7 @@
                        hover:bg-foreground/[0.03]"
                 onclick={() => selectItem(item)}
               >
-                <span class="text-[13px] text-foreground/40">
+                <span class="text-[13px] text-subtle">
                   Show {item._count} more {item._itemType}s...
                 </span>
               </button>
@@ -1177,7 +1177,7 @@
                       >{item.label}</span
                     >
                     {#if item._time}
-                      <span class="text-[11px] text-foreground/30 flex-none ml-auto"
+                      <span class="text-ui text-subtle flex-none ml-auto"
                         >{item._time}</span
                       >
                     {/if}
@@ -1185,11 +1185,11 @@
 
                   <!-- Second line: description or breadcrumbs -->
                   {#if item.description || item.breadcrumbs || item.path}
-                    <div class="text-[12px] text-foreground/40 truncate">
+                    <div class="text-xs text-subtle truncate">
                       {#if item.type === 'note' && item.breadcrumbs}
                         {item.breadcrumbs}
                       {:else if item.type === 'change' || item.type === 'file'}
-                        <span class="text-foreground/35">{item.path || item.description}</span>
+                        <span class="text-subtle">{item.path || item.description}</span>
                       {:else}
                         {item.description}
                       {/if}
@@ -1199,14 +1199,14 @@
 
                 {#if item.shortcut}
                   <kbd
-                    class="text-[11px] px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.05] text-foreground/35 font-medium"
+                    class="text-ui px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.05] text-foreground/35 font-medium"
                   >
                     {item.shortcut}
                   </kbd>
                 {/if}
 
                 {#if selectedIndex === index && !item._groupLabel}
-                  <span class="text-foreground/25 text-[13px]">↵</span>
+                  <span class="text-subtle text-[13px]">↵</span>
                 {/if}
               </button>
             {/if}
@@ -1224,34 +1224,34 @@
         </div>
       {:else if searchQuery && !isLoadingFiles}
         <div class="px-3 py-6 text-center">
-          <p class="text-[13px] text-foreground/35">No results found for "{searchQuery}"</p>
+          <p class="text-[13px] text-subtle">No results found for "{searchQuery}"</p>
         </div>
       {:else if !searchQuery}
         <div class="px-3 py-6 text-center">
-          <p class="text-[13px] text-foreground/30">Start typing to search...</p>
+          <p class="text-[13px] text-subtle">Start typing to search...</p>
         </div>
       {/if}
 
       <!-- Footer -->
       <div class="h-px bg-foreground/[0.05]"></div>
-      <div class="px-3 h-[30px] flex items-center gap-5 text-[11px] text-foreground/35">
+      <div class="px-3 h-[30px] flex items-center gap-5 text-ui text-subtle">
         <span class="flex items-center gap-1.5">
           <kbd
-            class="px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.04] text-foreground/40 font-medium"
+            class="px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.04] text-subtle font-medium"
             >↑↓</kbd
           >
           <span>Navigate</span>
         </span>
         <span class="flex items-center gap-1.5">
           <kbd
-            class="px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.04] text-foreground/40 font-medium"
+            class="px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.04] text-subtle font-medium"
             >↵</kbd
           >
           <span>Select</span>
         </span>
         <span class="flex items-center gap-1.5">
           <kbd
-            class="px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.04] text-foreground/40 font-medium"
+            class="px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.04] text-subtle font-medium"
             >ESC</kbd
           >
           <span>Close</span>

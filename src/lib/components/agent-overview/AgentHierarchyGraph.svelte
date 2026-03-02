@@ -517,7 +517,7 @@
 >
   {#if hierarchy.length === 0}
     <div class="absolute inset-0 flex items-center justify-center">
-      <div class="text-center text-muted-foreground">
+      <div class="text-center text-subtle">
         <p class="text-lg font-medium">No agents yet</p>
         <p class="text-sm mt-1">Agent hierarchy will appear here</p>
       </div>
@@ -534,7 +534,7 @@
           <div class="utility-corrals flex flex-col gap-4">
             {#each utilityAgentGroups as group (group.id)}
               <div class="utility-corral border border-dashed border-border/50 rounded-lg p-3 min-w-20">
-                <div class="corral-label text-xs text-muted-foreground font-medium mb-2 text-center">
+                <div class="corral-label text-xs text-subtle font-medium mb-2 text-center">
                   {group.label}
                 </div>
                 <div class="corral-agents flex flex-col items-center gap-2">
@@ -580,18 +580,18 @@
               <div class="flex-1 min-w-0">
                 <div class="font-medium text-sm truncate">{hoveredAgent.name}</div>
                 {#if hoveredAgent.specialist}
-                  <div class="text-xs text-muted-foreground capitalize">{hoveredAgent.specialist.replace('-', ' ')}</div>
+                  <div class="text-xs text-subtle capitalize">{hoveredAgent.specialist.replace('-', ' ')}</div>
                 {/if}
               </div>
               {#if hoveredAgent.isBackground}
-                <span class="px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground rounded">
+                <span class="px-1.5 py-0.5 text-ui font-medium bg-muted text-subtle rounded">
                   BG
                 </span>
               {/if}
             </div>
 
             <!-- Status -->
-            <div class="text-xs text-muted-foreground">
+            <div class="text-xs text-subtle">
               {#if hoveredAgent.status === 'responding'}
                 <span class="text-primary">● Responding</span>
               {:else if hoveredAgent.status === 'waiting'}
@@ -606,20 +606,20 @@
             </div>
 
             <!-- Created time -->
-            <div class="text-xs text-muted-foreground">
+            <div class="text-xs text-subtle">
               Created {formatRelativeTime(hoveredAgent.createdAt)}
             </div>
 
             <!-- Last response preview -->
             {#if hoveredAgent.lastResponse}
-              <div class="text-xs text-muted-foreground/80 line-clamp-3 border-t border-border pt-2 mt-2">
+              <div class="text-xs text-subtle line-clamp-3 border-t border-border pt-2 mt-2">
                 {hoveredAgent.lastResponse}
               </div>
             {/if}
 
             <!-- Active tool -->
             {#if hoveredAgent.activeToolName}
-              <div class="text-xs text-muted-foreground flex items-center gap-1">
+              <div class="text-xs text-subtle flex items-center gap-1">
                 <Fa icon={faGear} size="xs" class="animate-spin" />
                 <span>Using: {hoveredAgent.activeToolName}</span>
               </div>
@@ -678,7 +678,7 @@
     </div>
 
     <!-- Pan hint -->
-    <div class="absolute bottom-4 left-4 text-xs text-muted-foreground/50">
+    <div class="absolute bottom-4 left-4 text-xs text-subtle">
       Scroll to pan • Pinch to zoom
     </div>
   {/if}

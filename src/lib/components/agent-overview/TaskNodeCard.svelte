@@ -54,9 +54,9 @@
       case 'in_progress':
         return 'text-blue-500';
       case 'cancelled':
-        return 'text-muted-foreground/50';
+        return 'text-subtle';
       default:
-        return 'text-muted-foreground/70';
+        return 'text-subtle';
     }
   });
 

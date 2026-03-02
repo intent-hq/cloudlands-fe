@@ -36,7 +36,7 @@
       case 'warning':
         return 'bg-amber-500/10 text-amber-600 dark:text-amber-400';
       default:
-        return 'bg-muted text-muted-foreground';
+        return 'bg-muted text-subtle';
     }
   }
 </script>
@@ -54,7 +54,7 @@
   >
     <!-- Icon -->
     {#if icon}
-      <div class="shrink-0 flex flex-col mt-0.75 h-auto text-muted-foreground">
+      <div class="shrink-0 flex flex-col mt-0.75 h-auto text-subtle">
         {@render icon()}
       </div>
     {/if}
@@ -65,7 +65,7 @@
         <span class="font-medium text-foreground">{title}</span>
         {#each badges as badge}
           <span
-            class="inline-flex items-center text-[11px] px-2 py-0.5 rounded-full font-medium {getBadgeClass(
+            class="inline-flex items-center text-ui px-2 py-0.5 rounded-full font-medium {getBadgeClass(
               badge.variant,
             )}"
           >
@@ -74,14 +74,14 @@
         {/each}
       </div>
       {#if description}
-        <p class="text-sm text-muted-foreground mt-0.5 line-clamp-1">{description}</p>
+        <p class="text-sm text-subtle mt-0.5 line-clamp-1">{description}</p>
       {/if}
     </div>
 
     <!-- Preview (visible when collapsed) -->
     {#if !expanded && preview}
       <div
-        class="hidden pt-0.75 sm:flex flex-col items-center gap-2 text-xs text-muted-foreground"
+        class="hidden pt-0.75 sm:flex flex-col items-center gap-2 text-xs text-subtle"
         transition:slide={{ axis: 'y', duration: 200 }}
       >
         {@render preview()}
@@ -90,7 +90,7 @@
 
     <!-- Chevron -->
     <div
-      class="shrink-0 mt-1.25 origin-center h-fit text-muted-foreground/50 transition-transform duration-200 {expanded
+      class="shrink-0 mt-1.25 origin-center h-fit text-subtle transition-transform duration-200 {expanded
         ? 'rotate-90'
         : ''}"
     >

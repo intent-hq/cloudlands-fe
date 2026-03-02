@@ -56,7 +56,7 @@
       <span class="text-xs font-mono text-muted-foreground group-hover:text-primary truncate">
         {shortFilename()}
       </span>
-      <span class="rounded bg-muted px-1.5 py-0.5 text-xs font-mono text-muted-foreground">
+      <span class="rounded bg-muted px-1.5 py-0.5 text-xs font-mono text-subtle">
         {lineDisplay}
       </span>
       {#if onClick}
@@ -78,7 +78,7 @@
               <div class="flex hover:bg-muted/50">
                 <!-- Line number -->
                 <div
-                  class="w-10 shrink-0 select-none border-r border-border/50 px-2 text-right text-muted-foreground/60"
+                  class="w-10 shrink-0 select-none border-r border-border/50 px-2 text-right text-subtle"
                 >
                   {annotation.line + i}
                 </div>

@@ -72,7 +72,7 @@
       </button>
     </div>
 
-    <div class="text-sm text-muted-foreground">
+    <div class="text-sm text-subtle">
       <p>Current Model: {selectedModel}</p>
       <p>Value length: {value.length}</p>
       <p>Context items: {contextItems.length}</p>

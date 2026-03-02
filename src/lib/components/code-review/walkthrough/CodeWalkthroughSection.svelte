@@ -247,12 +247,12 @@
   >
     <Fa
       icon={isExpanded ? faChevronDown : faChevronRight}
-      class="h-3 w-3 text-muted-foreground"
+      class="h-3 w-3 text-subtle"
     />
     <Fa icon={faWandMagicSparkles} class="h-4 w-4 text-purple-500" />
     <span class="text-sm font-medium">Code Walkthrough</span>
     {#if isRunning}
-      <Fa icon={faSpinner} class="h-3 w-3 animate-spin text-muted-foreground ml-auto" />
+      <Fa icon={faSpinner} class="h-3 w-3 animate-spin text-ghost ml-auto" />
     {/if}
   </button>
 
@@ -260,7 +260,7 @@
     <div class="px-4 pb-4" transition:slide={{ duration: 200 }}>
       <!-- Running state: Show loading -->
       {#if isRunning}
-        <div class="flex items-center gap-2 text-sm text-muted-foreground py-2">
+        <div class="flex items-center gap-2 text-sm text-subtle py-2">
           <Fa icon={faSpinner} class="h-3 w-3 animate-spin" />
           <span>Generating...</span>
         </div>
@@ -292,7 +292,7 @@
           <!-- Overview - simple italic text -->
           {#if walkthrough.overview}
             <p
-              class="text-sm text-muted-foreground italic"
+              class="text-sm text-subtle italic"
               transition:fly={{ y: 4, duration: 200 }}
             >
               {walkthrough.overview}
@@ -339,10 +339,10 @@
               >
                 <Fa
                   icon={isOtherFilesExpanded ? faChevronDown : faChevronRight}
-                  class="h-3 w-3 text-muted-foreground"
+                  class="h-3 w-3 text-subtle"
                 />
-                <Fa icon={faFolderOpen} class="h-3 w-3 text-muted-foreground" />
-                <span class="text-sm font-medium text-muted-foreground">
+                <Fa icon={faFolderOpen} class="h-3 w-3 text-ghost" />
+                <span class="text-sm font-medium text-subtle">
                   Other Changes ({otherFiles.length})
                 </span>
               </button>

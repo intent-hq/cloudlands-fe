@@ -209,7 +209,7 @@
       <!-- Context Engine label -->
       <div class="w-full flex mb-1">
         <!-- Augment Logo -->
-        <!-- <div class="shrink-0 pt-1.25 pr-1.5 text-muted-foreground/60">
+        <!-- <div class="shrink-0 pt-1.25 pr-1.5 text-subtle">
           <Fa icon={faMagnifyingGlass} size={12} />
         </div> -->
         <span class="shrink-0 text-primary/80">
@@ -227,7 +227,7 @@
           {#if ['running', 'error'].includes(toolState)}
             <div class="flex items-center gap-2 shrink-0">
               {#if toolState === 'running'}
-                <Fa icon={faSpinner} size="xs" class="text-muted-foreground/50 animate-spin" />
+                <Fa icon={faSpinner} size="xs" class="text-ghost animate-spin" />
                 <!-- {:else if toolState === 'completed'}
                 <Fa icon={faCheckCircle} size="xs" class="text-emerald-500/60" /> -->
               {:else if toolState === 'error'}
@@ -236,7 +236,7 @@
 
               {#if expanded}
                 <!-- <div
-              class="p-0.5 bg-transparent border-0 cursor-pointer text-muted-foreground/50"
+              class="p-0.5 bg-transparent border-0 cursor-pointer text-subtle"
               aria-label={expanded ? 'Collapse details' : 'Expand details'}
             >
               <Fa icon={faChevronDown} size="xs" />
@@ -256,7 +256,7 @@
           if (hasResults) expanded = !expanded;
         }}
       >
-        <span class="text-foreground/70 text-sm line-clamp-2 block leading-tight">
+        <span class="text-subtle text-sm line-clamp-2 block leading-tight">
           {query.slice(0, 600)}
         </span>
       </button>
@@ -295,7 +295,7 @@
                   <div class="flex items-baseline gap-1.5 mb-1 whitespace-nowrap">
                     <span class="text-sm text-foreground">{fileName}{lineInfo}</span>
                     {#if dirPath}
-                      <span class="text-xs text-muted-foreground truncate">{dirPath}</span>
+                      <span class="text-xs text-subtle truncate">{dirPath}</span>
                     {/if}
                   </div>
                   {#if previewLines}
@@ -342,7 +342,7 @@
       {#if toolState !== 'error' && snippetCount > 0}
         <div class="py-2">
           <!-- <div class="flex items-center gap-2 mb-2">
-          <span class="text-xs text-muted-foreground/60 uppercase tracking-wide">Retrieved</span>
+          <span class="text-xs text-muted-foreground uppercase tracking-wide">Retrieved</span>
           <span class="text-xs px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
             {snippetCount} {snippetCount === 1 ? 'file' : 'files'}
           </span>
@@ -356,12 +356,12 @@
                 <!-- File header -->
                 <div class="flex items-center gap-1.5 py-1">
                   <!-- <Fa icon={faFile} size="xs" class="text-primary/60" /> -->
-                  <span class="text-sm text-muted-foreground/80">{fileName}</span>
+                  <span class="text-sm text-subtle">{fileName}</span>
                   {#if snippet.lineStart}
-                    <span class="text-sm text-muted-foreground/50">:{snippet.lineStart}</span>
+                    <span class="text-sm text-subtle">:{snippet.lineStart}</span>
                   {/if}
                   {#if dirPath}
-                    <span class="text-sm text-muted-foreground/40 truncate" title={snippet.path}
+                    <span class="text-sm text-subtle truncate" title={snippet.path}
                       >{dirPath}</span
                     >
                   {/if}
@@ -379,7 +379,7 @@
 
             {#if snippetCount > 6}
               <div
-                class="text-center text-xs text-muted-foreground/50 py-1.5 border-t border-border/20 mt-1"
+                class="text-center text-xs text-subtle py-1.5 border-t border-border/20 mt-1"
               >
                 +{snippetCount - 6} more {snippetCount - 6 === 1 ? 'file' : 'files'}
               </div>

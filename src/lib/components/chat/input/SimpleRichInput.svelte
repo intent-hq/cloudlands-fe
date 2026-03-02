@@ -971,10 +971,10 @@
             >
               <div class="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-full">
                 <span
-                  class="text-[0.66rem] leading-none whitespace-nowrap text-muted-foreground flex flex-col"
+                  class="text-[0.66rem] leading-none whitespace-nowrap text-subtle flex flex-col"
                   >Queue</span
                 >
-                <div class="text-muted-foreground/50 text-[0.6rem]">↵</div>
+                <div class="text-subtle text-[0.6rem]">↵</div>
               </div>
 
               <Fa icon={faLayerGroup} size="12" />
@@ -991,10 +991,10 @@
             >
               <div class="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-full">
                 <span
-                  class="text-[0.66rem] leading-none whitespace-nowrap text-muted-foreground flex flex-col"
+                  class="text-[0.66rem] leading-none whitespace-nowrap text-subtle flex flex-col"
                   >Send</span
                 >
-                <div class="text-muted-foreground/50 text-[0.6rem]">⌘↵</div>
+                <div class="text-subtle text-[0.6rem]">⌘↵</div>
               </div>
               <Fa icon={faPaperPlane} size="11" />
             </button>
@@ -1009,7 +1009,7 @@
                 variant="ghost"
                 size="xs"
                 onclick={() => oncancel?.()}
-                class="text-muted-foreground"
+                class="text-subtle"
               >
                 <Fa icon={faXmark} class="mr-1" size="sm" />
               </Button>
@@ -1019,7 +1019,7 @@
             <Button
               variant="ghost"
               size="icon-sm"
-              class="text-primary disabled:text-muted-foreground"
+              class="text-primary disabled:text-subtle"
               onclick={handleSubmit}
               disabled={disabled || !canSend}
             >
@@ -1032,7 +1032,7 @@
           <Button
             variant="ghost"
             size="icon-sm"
-            class="text-primary disabled:text-muted-foreground"
+            class="text-primary disabled:text-subtle"
             onclick={handleSubmit}
             disabled={disabled || !canSend}
             aria-label="Send message"

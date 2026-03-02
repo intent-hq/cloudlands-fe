@@ -40,7 +40,7 @@
   {onclick}
 >
   <!-- Icon -->
-  <span class="text-muted-foreground/50 shrink-0">
+  <span class="text-subtle shrink-0">
     <Fa icon={faNote} size="sm" />
   </span>
 

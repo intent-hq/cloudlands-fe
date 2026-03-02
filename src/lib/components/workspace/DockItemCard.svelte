@@ -73,7 +73,7 @@
       onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleChevronClick(e); }}
       aria-label="Back to overview"
     >
-      <Fa icon={faChevronDown} size="xs" class="text-muted-foreground rotate-180" />
+      <Fa icon={faChevronDown} size="xs" class="text-ghost rotate-180" />
     </div>
   {/if}
 
@@ -93,13 +93,13 @@
         <div class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-blue-500 rounded-full border-2 border-background"></div>
       {/if}
       {#if isBackground}
-        <div class="absolute -top-1 -right-1 px-1 py-0.5 text-[7px] font-bold bg-muted text-muted-foreground rounded">
+        <div class="absolute -top-1 -right-1 px-1 py-0.5 text-[7px] font-bold bg-muted text-subtle rounded">
           BG
         </div>
       {/if}
     {:else}
       <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-muted">
-        <Fa icon={faTerminal} size="sm" class="text-muted-foreground" />
+        <Fa icon={faTerminal} size="sm" class="text-ghost" />
       </div>
     {/if}
   </div>
@@ -108,13 +108,13 @@
   <div class="flex-1 min-w-0">
     <div class="font-medium text-sm truncate">{name}</div>
     {#if subtitle}
-      <div class="text-xs text-muted-foreground truncate">{subtitle}</div>
+      <div class="text-xs text-subtle truncate">{subtitle}</div>
     {/if}
   </div>
 
   <!-- Timestamp -->
   {#if createdAt}
-    <div class="flex-none text-xs text-muted-foreground">
+    <div class="flex-none text-xs text-subtle">
       {formatRelativeTime(createdAt)}
     </div>
   {/if}

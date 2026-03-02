@@ -34,11 +34,11 @@
     <TabComponent {tab} {workspaceId} {isActive} {isPanelFocused} {onFocus} />
   {:else}
     <!-- Fallback for unsupported types -->
-    <div class="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
+    <div class="flex flex-col items-center justify-center h-full text-subtle gap-4">
       <div class="text-center">
         <p class="text-lg font-medium text-foreground">{tab.title}</p>
         <p class="text-sm">Type: {tab.type}</p>
-        <p class="text-xs mt-4 text-muted-foreground/60">Content type not yet implemented</p>
+        <p class="text-xs mt-4 text-subtle">Content type not yet implemented</p>
       </div>
     </div>
   {/if}

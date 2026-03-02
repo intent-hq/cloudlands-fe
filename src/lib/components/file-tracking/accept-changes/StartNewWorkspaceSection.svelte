@@ -90,11 +90,11 @@
   >
     <Fa
       icon={faChevronRight}
-      class="h-2 w-2 text-muted-foreground/50 transition-transform duration-150 {isExpanded
+      class="h-2 w-2 text-subtle transition-transform duration-150 {isExpanded
         ? 'rotate-90'
         : ''}"
     />
-    <span class="text-sm text-muted-foreground/70">Archive and start new Space</span>
+    <span class="text-sm text-subtle">Archive and start new Space</span>
   </button>
 
   <!-- Expanded Content - styled like WorkspaceInitializer -->
@@ -113,26 +113,26 @@
       />
 
       <!-- Configuration Row - non-interactive display -->
-      <div class="flex items-center gap-1 text-xs text-muted-foreground/50 pb-3">
+      <div class="flex items-center gap-1 text-xs text-subtle pb-3">
         <!-- Repository -->
         <div class="flex items-center gap-1.5 px-2 py-1" title={workspace?.repositoryPath}>
-          <GitRepoIcon size={12} class="text-muted-foreground/50" />
+          <GitRepoIcon size={12} class="text-ghost" />
           <span class="truncate max-w-[120px]">{repoName}</span>
         </div>
 
-        <span class="text-muted-foreground/30">/</span>
+        <span class="text-ghost">/</span>
 
         <!-- Branch -->
         <div class="flex items-center gap-1.5 px-2 py-1" title={branchName}>
-          <Fa icon={faCodeBranch} class="h-3 w-3 text-muted-foreground/50" />
+          <Fa icon={faCodeBranch} class="h-3 w-3 text-ghost" />
           <span class="truncate max-w-[100px]">{branchName}</span>
         </div>
 
         <!-- Remote Environment (if applicable) -->
         {#if hasRemoteEnv}
-          <span class="text-muted-foreground/30 ml-auto">@</span>
+          <span class="text-ghost ml-auto">@</span>
           <div class="flex items-center gap-1.5 px-2 py-1" title={remoteHost}>
-            <Fa icon={faServer} class="h-3 w-3 text-muted-foreground/50" />
+            <Fa icon={faServer} class="h-3 w-3 text-ghost" />
             <span class="truncate max-w-[100px]">{remoteHost}</span>
           </div>
         {/if}
@@ -142,7 +142,7 @@
       <Button
         onclick={handleSubmit}
         disabled={!promptValue.trim() || isCreating}
-        class="w-full cursor-pointer disabled:bg-muted disabled:text-muted-foreground group"
+        class="w-full cursor-pointer disabled:bg-muted disabled:text-subtle group"
         size="lg"
       >
         {#if isCreating}

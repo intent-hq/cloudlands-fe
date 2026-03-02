@@ -62,7 +62,7 @@
   {/snippet}
 
   {#snippet content({ close }: { close: () => void })}
-  <div class="w-full text-xs text-muted-foreground px-2 pt-2 pb-1">
+  <div class="w-full text-xs text-subtle px-2 pt-2 pb-1">
     View options
   </div>
       {#if showFold}

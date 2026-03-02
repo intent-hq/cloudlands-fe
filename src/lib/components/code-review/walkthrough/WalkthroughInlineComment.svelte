@@ -86,4 +86,4 @@
     Cancel
   </button>
 </div>
-<p class="text-[10px] text-muted-foreground/60 mt-1">Enter to send · Esc to cancel</p>
+<p class="text-ui text-subtle mt-1">Enter to send · Esc to cancel</p>

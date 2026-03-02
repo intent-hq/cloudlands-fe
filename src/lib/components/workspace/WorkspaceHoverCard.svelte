@@ -87,7 +87,7 @@
       <div class="text-sm font-semibold text-foreground truncate">
         {workspace?.title || 'Untitled'}
       </div>
-      <div class="text-sm text-muted-foreground truncate mt-0.5">
+      <div class="text-sm text-subtle truncate mt-0.5">
         {repoDisplayName}
       </div>
     {/if}
@@ -118,7 +118,7 @@
 
       <!-- Last activity if no other status -->
       {#if !hasChanges && streamingAgentIds.length === 0 && unreadOnlyAgentIds.length === 0}
-        <span class="text-xs text-muted-foreground">{lastActivityText}</span>
+        <span class="text-xs text-subtle">{lastActivityText}</span>
       {/if}
     </div>
   {:else if isLoading}

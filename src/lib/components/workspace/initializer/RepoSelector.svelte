@@ -1222,21 +1222,21 @@
 
 <div class="relative">
   <Select.Root bind:value={selectedValue} bind:open={isOpen}>
-    <Select.Trigger {variant} class={`w-full text-muted-foreground ${triggerClass}`}>
+    <Select.Trigger {variant} class={`w-full text-subtle ${triggerClass}`}>
       <div class="flex items-center gap-0.75 truncate">
         <!-- {#if isNewRepo}
-          <Fa icon={faPlus} size="sm" class="text-muted-foreground" />
+          <Fa icon={faPlus} size="sm" class="text-ghost" />
         {:else}
-          <GitRepoIcon size={12} class="text-muted-foreground -mb-0.25" />
+          <GitRepoIcon size={12} class="text-ghost -mb-0.25" />
         {/if} -->
         {#if showEmptyIcon && !selectedValue}
-          <GitRepoIcon size={12} class="text-muted-foreground -mb-0.25 mr-1" />
+          <GitRepoIcon size={12} class="text-ghost -mb-0.25 mr-1" />
         {/if}
         <span class="flex-1 text-left truncate">
           {#if selectedValue}
             <span class="">{formatDisplayValue()}</span>
             {#if isNewRepo}
-              <span class="text-sm text-muted-foreground/70 ml-1">(new)</span>
+              <span class="text-sm text-subtle ml-1">(new)</span>
             {/if}
           {:else}
             <span>{emptyLabel}</span>
@@ -1251,7 +1251,7 @@
       <!-- Header -->
       <div class="px-4 pt-2 pb-3">
         <h2 class="text-base font-semibold text-foreground">What repo should we work on?</h2>
-        <p class="text-sm text-muted-foreground mt-1">
+        <p class="text-sm text-subtle mt-1">
           Select an existing codebase or make a new one. We'll create an isolated space to work in.
         </p>
       </div>
@@ -1286,7 +1286,7 @@
             >
               {inputValue || 'Select a folder...'}
             </span>
-            <Fa icon={faFolder} class="text-muted-foreground opacity-50" />
+            <Fa icon={faFolder} class="text-ghost opacity-50" />
           </button>
         {:else if activeTab === 'github'}
           <!-- GitHub: URL input with prefix -->
@@ -1319,21 +1319,21 @@
             class="w-full min-w-0 flex items-center gap-3 mt-2 text-left cursor-pointer"
             onclick={handleSelectGitHubCloneParent}
           >
-            <span class="text-sm text-muted-foreground shrink-0 w-24 pl-1">Clone into</span>
+            <span class="text-sm text-subtle shrink-0 w-24 pl-1">Clone into</span>
             <span
               class="flex-1 text-sm px-3 py-2.5 bg-sidebar rounded-lg flex items-center shrink justify-between {githubCloneParentPath
                 ? 'text-foreground'
-                : 'text-muted-foreground'} truncate"
+                : 'text-subtle'} truncate"
             >
               <div class="truncate">
                 {githubCloneParentPath || 'Select folder...'}
               </div>
-              <Fa icon={faFolder} class="text-muted-foreground shrink-0 opacity-50" />
+              <Fa icon={faFolder} class="text-ghost shrink-0 opacity-50" />
             </span>
           </button>
           <!-- Folder name -->
           <div class="flex items-center gap-3 mt-2">
-            <span class="text-sm text-muted-foreground shrink-0 w-24 pl-1">Folder name</span>
+            <span class="text-sm text-subtle shrink-0 w-24 pl-1">Folder name</span>
             <Input
               type="text"
               bind:value={githubCloneFolderName}
@@ -1355,12 +1355,12 @@
           {#if detectedGitHub}
             <div class="flex items-center justify-between gap-2 mt-2 px-1">
               {#if githubCloneFullPath}
-                <span class="text-sm text-muted-foreground truncate flex-1">
+                <span class="text-sm text-subtle truncate flex-1">
                   {githubCloneFullPath}
                 </span>
                 <Button size="sm" onclick={handleConfirmGitHubClone} class="shrink-0">Clone</Button>
               {:else}
-                <span class="text-sm text-muted-foreground/60 truncate flex-1">
+                <span class="text-sm text-subtle truncate flex-1">
                   {#if !githubCloneParentPath}
                     Select a folder to clone into
                   {:else if !githubCloneFolderName}
@@ -1378,20 +1378,20 @@
             class="w-full flex items-center gap-3 mb-2 text-left cursor-pointer"
             onclick={handleSelectNewRepoParent}
           >
-            <span class="text-sm text-muted-foreground shrink-0 w-24 pl-1">Parent folder</span>
+            <span class="text-sm text-subtle shrink-0 w-24 pl-1">Parent folder</span>
             <span
               class="flex-1 text-sm px-3 py-2.5 bg-sidebar rounded-lg flex items-center justify-between {newRepoParentPath
                 ? 'text-foreground'
-                : 'text-muted-foreground'} truncate"
+                : 'text-subtle'} truncate"
             >
               <div class="truncate">
                 {newRepoParentPath || 'Select...'}
               </div>
-              <Fa icon={faFolder} class="text-muted-foreground shrink-0 opacity-50" />
+              <Fa icon={faFolder} class="text-ghost shrink-0 opacity-50" />
             </span>
           </button>
           <div class="flex items-center gap-3">
-            <span class="text-sm text-muted-foreground shrink-0 w-24 pl-1">Folder name</span>
+            <span class="text-sm text-subtle shrink-0 w-24 pl-1">Folder name</span>
             <Input
               type="text"
               bind:value={newRepoProjectName}
@@ -1411,19 +1411,19 @@
           {#if newRepoFullPath}
             <div class="mt-2 px-1">
               <!-- Path preview -->
-              <div class="text-sm text-muted-foreground truncate mb-2">
+              <div class="text-sm text-subtle truncate mb-2">
                 {newRepoFullPath}
               </div>
               <!-- Status message and action -->
               {#if isCheckingNewRepoPath}
-                <div class="flex items-center gap-2 text-sm text-muted-foreground">
+                <div class="flex items-center gap-2 text-sm text-subtle">
                   <Fa icon={faSpinner} class="animate-spin" size="sm" />
                   <span>Checking...</span>
                 </div>
               {:else if newRepoPathStatus?.exists && newRepoPathStatus?.isGitRepo}
                 <!-- Existing git repo - will create worktree -->
                 <div class="flex items-center justify-between gap-2">
-                  <span class="text-sm text-muted-foreground">
+                  <span class="text-sm text-subtle">
                     Repo exists — we'll create a worktree off it
                   </span>
                   <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0">Select</Button>
@@ -1439,7 +1439,7 @@
               {:else}
                 <!-- New folder - will create -->
                 <div class="flex items-center justify-between gap-2">
-                  <span class="text-sm text-muted-foreground">New repo will be created</span>
+                  <span class="text-sm text-subtle">New repo will be created</span>
                   <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0">Create</Button>
                 </div>
               {/if}
@@ -1461,10 +1461,10 @@
                   }
                 }}
               >
-                <ServerIcon size={14} class="text-muted-foreground shrink-0" />
+                <ServerIcon size={14} class="text-ghost shrink-0" />
                 <div class="flex-1 min-w-0">
                   <div class="text-sm">{setup.name}</div>
-                  <div class="text-xs text-muted-foreground">
+                  <div class="text-xs text-subtle">
                     {setup.transport === 'websocket'
                       ? setup.wsUrl
                       : `${setup.username}@${setup.host}:${setup.port}`}
@@ -1485,7 +1485,7 @@
               </div>
             {/each}
             {#if remoteSetups.length === 0}
-              <div class="text-sm text-muted-foreground px-3 py-2">
+              <div class="text-sm text-subtle px-3 py-2">
                 No remote setups configured yet.
               </div>
             {/if}
@@ -1505,12 +1505,12 @@
       {#if showNonGitFolderPrompt && nonGitFolderPath}
         <div class="mx-3 mb-3 p-3 bg-sidebar rounded-lg">
           <div class="flex items-start gap-3">
-            <Fa icon={faFolder} class="text-muted-foreground shrink-0 mt-0.5" />
+            <Fa icon={faFolder} class="text-ghost shrink-0 mt-0.5" />
             <div class="flex-1 min-w-0">
               <div class="text-sm font-medium truncate mb-1" title={nonGitFolderPath}>
                 {nonGitFolderPath.split('/').pop() || nonGitFolderPath}
               </div>
-              <div class="text-sm text-muted-foreground mb-2">
+              <div class="text-sm text-subtle mb-2">
                 This folder is not a Git repository.
               </div>
               <div class="flex gap-2">
@@ -1562,7 +1562,7 @@
                   {:else}
                     <Fa
                       icon={repo.type === 'github' ? faGithub : faFolder}
-                      class="text-muted-foreground shrink-0 opacity-50"
+                      class="text-subtle shrink-0 opacity-50"
                       size={12}
                     />
                   {/if}

@@ -87,7 +87,7 @@
       case 'high':
         return 'font-medium';
       case 'low':
-        return 'text-muted-foreground';
+        return 'text-subtle';
       default:
         return '';
     }
@@ -111,7 +111,7 @@
     <div class="flex-1 min-w-0">
       <p class="text-sm leading-relaxed {importanceStyles}">{message}</p>
       {#if lineLabel}
-        <span class="text-xs text-muted-foreground mt-1 block">{lineLabel}</span>
+        <span class="text-xs text-subtle mt-1 block">{lineLabel}</span>
       {/if}
     </div>
   </div>

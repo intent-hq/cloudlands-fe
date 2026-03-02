@@ -100,7 +100,7 @@
           {displayTitle}
         </div>
         {#if !isExpanded}
-          <div class="text-xs text-foreground/70 truncate">
+          <div class="text-xs text-subtle truncate">
             {errorMessage}
           </div>
         {/if}
@@ -108,7 +108,7 @@
       <Fa
         icon={isExpanded ? faChevronDown : faChevronRight}
         size="sm"
-        class="text-muted-foreground flex-shrink-0 mt-1"
+        class="text-subtle flex-shrink-0 mt-1"
       />
     </button>
 
@@ -172,7 +172,7 @@
               Stack Trace
             </summary>
             <pre
-              class="mt-2 text-xs font-mono text-foreground/70 bg-background/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-words max-h-64">{errorStack}</pre>
+              class="mt-2 text-xs font-mono text-subtle bg-background/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-words max-h-64">{errorStack}</pre>
           </details>
         {/if}
       </div>
@@ -194,7 +194,7 @@
               Stack Trace
             </summary>
             <pre
-              class="mt-2 text-xs font-mono text-foreground/70 bg-background/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-words max-h-64">{errorStack}</pre>
+              class="mt-2 text-xs font-mono text-subtle bg-background/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-words max-h-64">{errorStack}</pre>
           </details>
         {/if}
       </div>

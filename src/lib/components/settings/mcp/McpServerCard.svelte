@@ -106,10 +106,10 @@
         <div class="flex items-center gap-2">
           <span class="font-medium text-sm truncate">{server.name}</span>
           {#if server.toolCount > 0}
-            <span class="text-xs text-muted-foreground">({server.toolCount}) tools</span>
+            <span class="text-xs text-subtle">({server.toolCount}) tools</span>
           {/if}
         </div>
-        <p class="text-xs text-muted-foreground truncate">{displayCommand()}</p>
+        <p class="text-xs text-subtle truncate">{displayCommand()}</p>
 
         <!-- Error message (shown inline when server failed to start) -->
         {#if server.status === 'error' && server.errorMessage}
@@ -163,7 +163,7 @@
         triggerClass="w-8 h-8 p-0! flex items-center justify-center"
       >
         {#snippet trigger()}
-          <Fa icon={faEllipsisV} class="text-muted-foreground" />
+          <Fa icon={faEllipsisV} class="text-ghost" />
         {/snippet}
         {#snippet item({ option })}
           <div class="flex items-center gap-2 w-full {option.class || ''}">
@@ -187,7 +187,7 @@
             <div class="min-w-0 flex-1">
               <span class="text-sm font-medium">{tool.name}</span>
               {#if tool.description}
-                <p class="text-xs text-muted-foreground line-clamp-2">{tool.description}</p>
+                <p class="text-xs text-subtle line-clamp-2">{tool.description}</p>
               {/if}
             </div>
           </div>

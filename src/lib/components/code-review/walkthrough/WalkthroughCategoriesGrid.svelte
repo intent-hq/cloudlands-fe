@@ -51,7 +51,7 @@
 
 <div class="walkthrough-categories-grid {className}">
   <div class="mb-4">
-    <h3 class="text-sm font-medium text-muted-foreground">What code has changed?</h3>
+    <h3 class="text-sm font-medium text-subtle">What code has changed?</h3>
   </div>
 
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -72,10 +72,10 @@
 
           <div class="flex-1 min-w-0">
             <h4 class="text-sm font-medium text-foreground line-clamp-2">{category.title}</h4>
-            <p class="text-xs text-muted-foreground mt-1 line-clamp-2">{category.description}</p>
+            <p class="text-xs text-subtle mt-1 line-clamp-2">{category.description}</p>
 
             <!-- File count -->
-            <div class="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
+            <div class="flex items-center gap-1 mt-2 text-xs text-subtle">
               <svg class="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor">
                 <path d="M3.5 1.5A1.5 1.5 0 0 1 5 0h6a1.5 1.5 0 0 1 1.5 1.5v12A1.5 1.5 0 0 1 11 15H5a1.5 1.5 0 0 1-1.5-1.5v-12z"/>
               </svg>

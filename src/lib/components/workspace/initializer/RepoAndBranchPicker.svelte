@@ -108,7 +108,7 @@
 <div class="flex items-center flex-wrap gap-y-1">
   {#if !hasRepo}
     <!-- No repo selected: show repo selector pill -->
-    <span class="text-sm text-muted-foreground whitespace-nowrap shrink-0">Work on</span>
+    <span class="text-sm text-subtle whitespace-nowrap shrink-0">Work on</span>
     <RepoSelector
       bind:this={repoSelector}
       variant="ghost"
@@ -119,7 +119,7 @@
   {:else if isNewRepo}
     <!-- New repo mode: show create with repo selector -->
     <Fa icon={faPlus} size="sm" class="ml-0.75 mr-2 shrink-0" />
-    <span class="text-sm text-muted-foreground whitespace-nowrap shrink-0">Create new repo</span>
+    <span class="text-sm text-subtle whitespace-nowrap shrink-0">Create new repo</span>
     <RepoSelector
       variant="ghost"
       value={repoPath}
@@ -129,14 +129,14 @@
   {:else if repoType === 'github' && githubUrl}
     <!-- GitHub clone flow -->
     <GitRepoIcon size={16} class="ml-0.75 -mb-px mr-2 shrink-0" />
-    <span class="text-sm text-muted-foreground whitespace-nowrap shrink-0">Clone</span>
+    <span class="text-sm text-subtle whitespace-nowrap shrink-0">Clone</span>
     <RepoSelector
       variant="ghost"
       value={repoPath}
       onchange={handleRepoChange}
       triggerClass="pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none ml-1"
     />
-    <span class="text-sm text-muted-foreground whitespace-nowrap shrink-0 ml-1"
+    <span class="text-sm text-subtle whitespace-nowrap shrink-0 ml-1"
       >and create worktree off</span
     >
     <BranchSelector
@@ -158,8 +158,8 @@
     />
   {:else if repoType === 'remote' && remoteSetup}
     <!-- Remote server flow -->
-    <ServerIcon size={16} class="text-muted-foreground ml-0.75 -mb-px mr-2 shrink-0" />
-    <span class="text-sm text-muted-foreground whitespace-nowrap shrink-0">Work on</span>
+    <ServerIcon size={16} class="text-ghost ml-0.75 -mb-px mr-2 shrink-0" />
+    <span class="text-sm text-subtle whitespace-nowrap shrink-0">Work on</span>
     <RepoSelector
       variant="ghost"
       value={remoteSetup.name}
@@ -167,15 +167,15 @@
       triggerClass="pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none ml-1"
     />
     <span
-      class="text-xs text-muted-foreground/70 whitespace-nowrap shrink-0 ml-1 font-mono truncate max-w-60"
+      class="text-xs text-subtle whitespace-nowrap shrink-0 ml-1 font-mono truncate max-w-60"
       title={remoteDisplayPath}
     >
       {remoteDisplayPath}
     </span>
     {#if skipWorktree}
-      <span class="text-sm text-muted-foreground whitespace-nowrap shrink-0 mx-1 ml-2">on</span>
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2">on</span>
     {:else}
-      <span class="text-sm text-muted-foreground whitespace-nowrap shrink-0 mx-1 ml-2">off</span>
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2">off</span>
     {/if}
     <span class="text-sm font-medium whitespace-nowrap shrink-0 font-mono">{remoteSetup.branch || 'main'}</span>
     <!-- Skip worktree toggle for remote -->
@@ -186,7 +186,7 @@
         class="flex items-center gap-1.5 ml-3 shrink-0 cursor-pointer"
       >
         <Checkbox checked={skipWorktree} class="-mb-0.5" onCheckedChange={(value) => onSkipWorktreeChange?.(value)} />
-        <span class="text-[0.8rem] text-muted-foreground whitespace-nowrap">
+        <span class="text-ui text-subtle whitespace-nowrap">
           Work directly in your folder
         </span>
       </button>
@@ -194,14 +194,14 @@
   {:else}
     <!-- Local repo flow -->
     <GitRepoIcon size={16} class="ml-0.75 -mb-px mr-2 shrink-0" />
-    <span class="text-sm text-muted-foreground whitespace-nowrap shrink-0">Work on</span>
+    <span class="text-sm text-subtle whitespace-nowrap shrink-0">Work on</span>
     <RepoSelector
       variant="ghost"
       value={repoPath}
       onchange={handleRepoChange}
       triggerClass="pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none ml-1"
     />
-    <span class="text-sm text-muted-foreground whitespace-nowrap shrink-0 mx-1 ml-2">off</span>
+    <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2">off</span>
     <BranchSelector
       variant="ghost"
       triggerClass="pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none overflow-hidden"

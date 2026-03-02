@@ -455,7 +455,7 @@
     padding: 3px 8px;
     background: hsl(var(--muted) / 0.3);
     border-bottom: 1px solid hsl(var(--border));
-    font-size: 10px;
+    font-size: 11px;
     gap: 3px;
   }
 
@@ -472,7 +472,7 @@
     display: flex;
     align-items: center;
     gap: 3px;
-    font-size: 10px;
+    font-size: 11px;
   }
 
   .breadcrumb-item:hover {
@@ -482,7 +482,7 @@
 
   .breadcrumb-separator {
     color: hsl(var(--muted-foreground) / 0.4);
-    font-size: 10px;
+    font-size: 11px;
   }
 
   .breadcrumb-icon {

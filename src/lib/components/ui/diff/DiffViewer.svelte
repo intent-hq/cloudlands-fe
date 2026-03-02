@@ -706,7 +706,7 @@
         <div bind:this={containerRef} class="pure-diff-container" style:--diffs-font-family={codeFontSettings.fontFamilyCSS}></div>
       {:else}
         <div class="pure-diff-empty">
-          <p class="text-muted-foreground text-sm">No diff content available</p>
+          <p class="text-subtle text-sm">No diff content available</p>
         </div>
       {/if}
     </div>

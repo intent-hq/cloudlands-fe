@@ -57,10 +57,10 @@
       <button
         type="button"
         class={cn(
-          'text-[11px] uppercase tracking-wider font-medium transition-colors cursor-pointer whitespace-nowrap',
+          'text-ui uppercase tracking-wider font-medium transition-colors cursor-pointer whitespace-nowrap',
           activeTab === tab.id
             ? 'text-muted-foreground'
-            : 'text-muted-foreground/50 hover:text-foreground',
+            : 'text-muted-foreground hover:text-foreground',
         )}
         onclick={() => handleTabClick(tab.id)}
       >

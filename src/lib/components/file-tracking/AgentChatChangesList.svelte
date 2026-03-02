@@ -67,9 +67,9 @@
       <!-- Header with filter toggle -->
       <div class="flex items-center justify-between mb-2">
         <div class="flex items-center gap-2">
-          <Fa icon={faPen} size="xs" class="text-muted-foreground" />
+          <Fa icon={faPen} size="xs" class="text-ghost" />
           <span class="text-sm font-medium">Code Changes</span>
-          <span class="text-xs text-muted-foreground">
+          <span class="text-xs text-subtle">
             ({agentChanges.length}
             {agentChanges.length === 1 ? 'file' : 'files'})
           </span>
@@ -153,7 +153,7 @@
                       class="fa fa-chevron-{expandedTurns.has(turn) ? 'down' : 'right'} text-xs w-3"
                     ></i>
                     <span class="text-sm">Turn {turn}</span>
-                    <span class="text-xs text-muted-foreground">
+                    <span class="text-xs text-subtle">
                       ({changes.length}
                       {changes.length === 1 ? 'file' : 'files'})
                     </span>

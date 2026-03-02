@@ -60,7 +60,7 @@
   <!-- Left activity pill (file) -->
   {#if activeFile && isActive}
     <div
-      class="activity-pill shrink-0 text-xs px-3 py-1.5 bg-muted/60 border border-border rounded-lg text-muted-foreground max-w-32 truncate"
+      class="activity-pill shrink-0 text-xs px-3 py-1.5 bg-muted/60 border border-border rounded-lg text-subtle max-w-32 truncate"
     >
       <Fa icon={faFile} size="xs" class="inline" /> {activeFile}
     </div>
@@ -92,7 +92,7 @@
       {agent.name}
     </span>
     <!-- {#if agent.specialist}
-      <span class="text-sm text-muted-foreground mt-0.5 capitalize">{agent.specialist.replace('-', ' ')}</span>
+      <span class="text-sm text-subtle mt-0.5 capitalize">{agent.specialist.replace('-', ' ')}</span>
     {/if} -->
 
     <!-- Status footer - shows current activity or last response -->
@@ -110,26 +110,26 @@
           <div class="flex items-center justify-center gap-1.5">
             <Spinner seed={agent.agentId} size={4} />
             {#if toolDisplay && toolDisplay.subject}
-              <span class="status-pill text-xs px-1.5 py-0.5 bg-muted/80 rounded-md text-muted-foreground truncate max-w-[130px]">
+              <span class="status-pill text-xs px-1.5 py-0.5 bg-muted/80 rounded-md text-subtle truncate max-w-[130px]">
                 {toolDisplay.verb} {toolDisplay.subject}
               </span>
             {:else if toolDisplay}
-              <span class="text-xs text-muted-foreground">{toolDisplay.verb}...</span>
+              <span class="text-xs text-subtle">{toolDisplay.verb}...</span>
             {:else if agent.isThinking}
-              <span class="text-xs text-muted-foreground">Thinking...</span>
+              <span class="text-xs text-subtle">Thinking...</span>
             {:else}
-              <span class="text-xs text-muted-foreground">Responding...</span>
+              <span class="text-xs text-subtle">Responding...</span>
             {/if}
           </div>
           {#if !toolDisplay && (agent.streamingText || agent.lastResponse)}
-            <div class="text-[11px] text-muted-foreground/60 truncate w-full px-1 leading-tight">
+            <div class="text-ui text-subtle truncate w-full px-1 leading-tight">
               {agent.streamingText || agent.lastResponse}
             </div>
           {/if}
         </div>
       {:else if agent.lastResponse}
         <!-- Last response (when idle) -->
-        <div class="text-sm text-muted-foreground/70 line-clamp-3 leading-tight">
+        <div class="text-sm text-subtle line-clamp-3 leading-tight">
           {agent.lastResponse}
         </div>
       {/if}
@@ -139,7 +139,7 @@
   <!-- Right activity pill (note) -->
   {#if activeNote && isActive}
     <div
-      class="activity-pill shrink-0 text-xs px-3 py-1.5 bg-muted/60 border border-border rounded-lg text-muted-foreground max-w-32 truncate"
+      class="activity-pill shrink-0 text-xs px-3 py-1.5 bg-muted/60 border border-border rounded-lg text-subtle max-w-32 truncate"
     >
       <Fa icon={faStickyNote} size="xs" class="inline" /> Note
     </div>

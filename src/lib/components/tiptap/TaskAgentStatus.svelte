@@ -685,7 +685,7 @@
     <div class="status-content">
       {#if agentDigest}
         <!-- Show digest prominently when available -->
-        <span class="line-clamp-3 break-all text-muted-foreground">{agentDigest}</span>
+        <span class="line-clamp-3 break-all text-subtle">{agentDigest}</span>
       {:else if !agent && !agentFound}
         <span class="status-text loading-text">Spinning up...</span>
       {:else if !agent}

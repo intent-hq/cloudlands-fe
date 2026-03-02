@@ -119,7 +119,7 @@
         {/if}
 
         {#if sortedVersions.length === 0}
-          <div class="flex flex-col items-center gap-1 py-6 px-4 text-muted-foreground text-sm">
+          <div class="flex flex-col items-center gap-1 py-6 px-4 text-subtle text-sm">
             <span>No previous versions yet</span>
             <span class="text-xs opacity-70">Versions are created automatically as you edit</span>
           </div>
@@ -145,19 +145,19 @@
                   <AuggieAvatar size={16} />
                 {:else}
                   <div class="w-4 h-4 rounded-full bg-muted flex items-center justify-center">
-                    <Fa icon={faUser} class="w-2 h-2 text-muted-foreground/50" />
+                    <Fa icon={faUser} class="w-2 h-2 text-ghost" />
                   </div>
                 {/if}
               </div>
 
               <!-- Time -->
-              <span class="text-xs text-muted-foreground"
+              <span class="text-xs text-subtle"
                 >{formatRelativeTime(version.createdAt)}</span
               >
 
               <!-- Diff stats -->
               {#if diffStats}
-                <div class="flex gap-1 ml-auto text-[10px] font-mono">
+                <div class="flex gap-1 ml-auto text-ui font-mono">
                   <span class="text-green-600 dark:text-green-400">+{diffStats.added}</span>
                   <span class="text-red-600 dark:text-red-400">-{diffStats.removed}</span>
                 </div>
@@ -166,7 +166,7 @@
 
             <!-- Content preview -->
             {#if preview}
-              <div class="text-xs text-foreground/70 truncate pl-6">
+              <div class="text-xs text-subtle truncate pl-6">
                 {preview}
               </div>
             {/if}

@@ -30,7 +30,7 @@
       Back to Workspace
     </Button>
     {#if workspace}
-      <span class="text-sm text-muted-foreground">
+      <span class="text-sm text-subtle">
         {workspace.name} - File Explorer
       </span>
     {/if}

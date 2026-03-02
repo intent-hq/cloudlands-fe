@@ -72,7 +72,7 @@
              bg-background focus:outline-none focus:ring-2 focus:ring-primary/30
              focus:border-primary resize-none"
     ></textarea>
-    <p class="text-xs text-muted-foreground mt-1">
+    <p class="text-xs text-subtle mt-1">
       Supports MCP server JSON format from Claude Desktop, VS Code, etc.
     </p>
   </div>

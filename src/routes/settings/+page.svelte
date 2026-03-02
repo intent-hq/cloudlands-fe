@@ -295,7 +295,7 @@
         <Fa icon={faArrowLeft} class="text-xs opacity-50 mr-1" />
         <span>{backLabel}</span>
         <kbd
-          class="ml-2 px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground border border-border rounded opacity-60 group-hover:opacity-100 transition-opacity"
+          class="ml-2 px-1.5 py-0.5 text-ui font-medium bg-muted text-muted-foreground border border-border rounded opacity-60 group-hover:opacity-100 transition-opacity"
         >
           {isMac ? '⌘' : 'Ctrl'},
         </kbd>
@@ -337,7 +337,7 @@
               <ProviderSelector />
             </section>
           </div>
-          <p class="text-xs text-muted-foreground mt-2">
+          <p class="text-xs text-subtle mt-2">
             You can sign in or switch accounts using your model provider in the terminal.
           </p>
         </div>
@@ -451,7 +451,7 @@
                 <div>
                   <p class="text-sm font-medium text-foreground">Notes</p>
                   <p
-                    class="text-xs text-muted-foreground mt-0.5 transition-all duration-200"
+                    class="text-xs text-subtle mt-0.5 transition-all duration-200"
                     class:font-mono={noteFontSettings.fontStyle === 'monospace'}
                   >
                     The typeface used for your notes, specs, and documents. Monospace can feel more
@@ -472,7 +472,7 @@
                 <div>
                   <p class="text-sm font-medium text-foreground">Agent Chat</p>
                   <p
-                    class="text-xs text-muted-foreground mt-0.5 transition-all duration-200"
+                    class="text-xs text-subtle mt-0.5 transition-all duration-200"
                     class:font-mono={agentFontSettings.fontStyle === 'monospace'}
                   >
                     The typeface used for agent conversation messages, including code references and
@@ -492,7 +492,7 @@
               <div class="flex items-center justify-between">
                 <div>
                   <p class="text-sm font-medium text-foreground">Font</p>
-                  <p class="text-xs text-muted-foreground mt-0.5">
+                  <p class="text-xs text-subtle mt-0.5">
                     The monospace font used in code editors, diffs, and syntax-highlighted blocks.
                   </p>
                 </div>
@@ -535,7 +535,7 @@
               <div class="flex items-center justify-between">
                 <div>
                   <p class="text-sm font-medium text-foreground">Reset Settings</p>
-                  <p class="text-xs text-muted-foreground">
+                  <p class="text-xs text-subtle">
                     Restore theme, notifications, git settings, and update preferences to defaults
                   </p>
                 </div>
@@ -560,7 +560,7 @@
                     Test Sentry Error
                   </Button>
                   {#if sentryTestStatus}
-                    <span class="text-sm text-muted-foreground">{sentryTestStatus}</span>
+                    <span class="text-sm text-subtle">{sentryTestStatus}</span>
                   {/if}
                 </div>
               </section>
@@ -602,7 +602,7 @@
   <!-- Global Footer -->
   <div class="px-6 py-4 border-t border-border bg-sidebar">
     <div class="max-w-5xl mx-auto px-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-      <div class="text-sm text-muted-foreground">
+      <div class="text-sm text-subtle">
         <strong class="text-foreground">Intent by Augment</strong>
         <span class="ml-2">
           v{appVersion || '...'}
@@ -616,7 +616,7 @@
             </button>
           {:else if autoUpdateStore.status === 'not-available' || autoUpdateStore.status === 'idle'}
             <span class="mx-2">·</span>
-            <span class="text-muted-foreground/70">Up to date</span>
+            <span class="text-subtle">Up to date</span>
           {/if}
         </span>
       </div>

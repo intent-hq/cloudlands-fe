@@ -76,7 +76,7 @@
   type="button"
   class="inline-flex items-center gap-1.5 rounded-md transition-colors hover:bg-accent/50 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring
     {size === 'xs'
-    ? 'px-1 py-0.5 text-[10px]'
+    ? 'px-1 py-0.5 text-ui'
     : size === 'sm'
       ? 'px-1.5 py-0.5 text-xs'
       : 'px-2 py-1 text-sm'}
@@ -85,7 +85,7 @@
   title="View agent turn #{attribution.turnNumber}"
 >
   {#if !compact}
-    <span class="text-muted-foreground">edited by</span>
+    <span class="text-subtle">edited by</span>
   {/if}
   <AuggieAvatar faceSeed={attribution.agentId} colorSeed={attribution.agentId} size={avatarSize} />
   {#if !compact}

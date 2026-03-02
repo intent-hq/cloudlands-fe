@@ -45,7 +45,7 @@
   <div class="flex justify-between">
     <div>
       <p class="text-sm font-medium text-foreground">Desktop notifications</p>
-      <p class="text-xs text-muted-foreground">Show system notifications when tasks complete</p>
+      <p class="text-xs text-subtle">Show system notifications when tasks complete</p>
     </div>
     <Toggle
       pressed={notificationSettingsStore.enabled}
@@ -60,7 +60,7 @@
   <div class="flex justify-between">
     <div>
       <p class="text-sm font-medium text-foreground">Sound</p>
-      <p class="text-xs text-muted-foreground">Play a sound when notifications arrive</p>
+      <p class="text-xs text-subtle">Play a sound when notifications arrive</p>
     </div>
     <Toggle
       pressed={notificationSettingsStore.soundEnabled}
@@ -76,7 +76,7 @@
   <div class="flex justify-between">
     <div>
       <p class="text-sm font-medium text-foreground">Only when unfocused</p>
-      <p class="text-xs text-muted-foreground">Only play sounds when the app is in the background</p>
+      <p class="text-xs text-subtle">Only play sounds when the app is in the background</p>
     </div>
     <Toggle
       pressed={notificationSettingsStore.soundOnlyWhenUnfocused}
@@ -94,7 +94,7 @@
   <div class="flex justify-between">
     <div>
       <p class="text-sm font-medium text-foreground">Volume</p>
-      <p class="text-xs text-muted-foreground">Notification sound volume</p>
+      <p class="text-xs text-subtle">Notification sound volume</p>
     </div>
     <div class="flex items-center gap-3">
       <Button
@@ -113,7 +113,7 @@
         oninput={handleVolumeChange}
         class="w-24 h-1.5 bg-muted rounded-full appearance-none cursor-pointer accent-primary"
       />
-      <span class="text-xs text-muted-foreground w-8 text-right">{volumePercentage}%</span>
+      <span class="text-xs text-subtle w-8 text-right">{volumePercentage}%</span>
     </div>
   </div>
 </div>

@@ -178,7 +178,7 @@
           </div>
           <div class="flex-1 min-w-0">
             <div class="text-sm font-medium">Note</div>
-            <div class="text-xs text-muted-foreground">Add a new note</div>
+            <div class="text-xs text-subtle">Add a new note</div>
           </div>
         </button>
 
@@ -195,7 +195,7 @@
           </div>
           <div class="flex-1 min-w-0">
             <div class="text-sm font-medium">Integrations</div>
-            <div class="text-xs text-muted-foreground">Linear, GitHub, Sentry</div>
+            <div class="text-xs text-subtle">Linear, GitHub, Sentry</div>
           </div>
         </button> -->
 
@@ -209,7 +209,7 @@
           </div>
           <div class="flex-1 min-w-0">
             <div class="text-sm font-medium">Browser</div>
-            <div class="text-xs text-muted-foreground">Open browser panel</div>
+            <div class="text-xs text-subtle">Open browser panel</div>
           </div>
         </button>
       </div>

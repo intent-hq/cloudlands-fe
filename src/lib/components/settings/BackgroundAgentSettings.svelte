@@ -98,10 +98,10 @@
         <div class="flex items-center gap-2">
           <span class="text-sm font-medium text-foreground">{BACKGROUND_AGENT_TYPE_INFO.commit.label}</span>
           {#if backgroundAgentSettingsStore.hasOverride('commit')}
-            <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium">Custom</span>
+            <span class="text-ui px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium">Custom</span>
           {/if}
         </div>
-        <p class="text-xs text-muted-foreground mt-0.5">{BACKGROUND_AGENT_TYPE_INFO.commit.description}</p>
+        <p class="text-xs text-subtle mt-0.5">{BACKGROUND_AGENT_TYPE_INFO.commit.description}</p>
       </div>
       <div class="shrink-0 w-72">
         <Dropdown
@@ -126,10 +126,10 @@
         <div class="flex items-center gap-2">
           <span class="text-sm font-medium text-foreground">{BACKGROUND_AGENT_TYPE_INFO.pr.label}</span>
           {#if backgroundAgentSettingsStore.hasOverride('pr')}
-            <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium">Custom</span>
+            <span class="text-ui px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium">Custom</span>
           {/if}
         </div>
-        <p class="text-xs text-muted-foreground mt-0.5">{BACKGROUND_AGENT_TYPE_INFO.pr.description}</p>
+        <p class="text-xs text-subtle mt-0.5">{BACKGROUND_AGENT_TYPE_INFO.pr.description}</p>
       </div>
       <div class="shrink-0 w-72">
         <Dropdown
@@ -154,10 +154,10 @@
         <div class="flex items-center gap-2">
           <span class="text-sm font-medium text-foreground">{BACKGROUND_AGENT_TYPE_INFO.fast.label}</span>
           {#if backgroundAgentSettingsStore.hasOverride('fast')}
-            <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium">Custom</span>
+            <span class="text-ui px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium">Custom</span>
           {/if}
         </div>
-        <p class="text-xs text-muted-foreground mt-0.5">{BACKGROUND_AGENT_TYPE_INFO.fast.description}</p>
+        <p class="text-xs text-subtle mt-0.5">{BACKGROUND_AGENT_TYPE_INFO.fast.description}</p>
       </div>
       <div class="shrink-0 w-72">
         <Dropdown

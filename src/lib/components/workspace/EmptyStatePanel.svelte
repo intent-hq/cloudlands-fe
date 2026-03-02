@@ -47,15 +47,15 @@
     </div>
   {:else}
     <div class="text-center space-y-4 max-w-md">
-      <div class="text-muted-foreground">
+      <div class="text-subtle">
         <Fa icon={faFileAlt} class="mx-auto opacity-20 text-4xl" />
       </div>
-      <p class="text-sm text-muted-foreground">Select a note, file, or code change to view</p>
+      <p class="text-sm text-subtle">Select a note, file, or code change to view</p>
 
       {#if recentItems && recentItems.length > 0}
         <div class="mt-6">
           <h3
-            class="text-xs font-medium text-muted-foreground mb-3 flex items-center justify-center gap-2"
+            class="text-xs font-medium text-subtle mb-3 flex items-center justify-center gap-2"
           >
             <Fa icon={faClock} size="xs" />
             Recent Items ({recentItems.length})
@@ -67,11 +67,11 @@
                 onclick={() => onNavigateToItem?.(item)}
               >
                 {#if item.type === 'file'}
-                  <Fa icon={faFile} class="h-3 w-3 text-muted-foreground" />
+                  <Fa icon={faFile} class="h-3 w-3 text-ghost" />
                 {:else if item.type === 'note'}
-                  <Fa icon={faNote} class="h-3 w-3 text-muted-foreground" />
+                  <Fa icon={faNote} class="h-3 w-3 text-ghost" />
                 {:else}
-                  <Fa icon={faCodeBranch} class="h-3 w-3 text-muted-foreground" />
+                  <Fa icon={faCodeBranch} class="h-3 w-3 text-ghost" />
                 {/if}
                 <span class="text-sm truncate flex-1">{item.title}</span>
                 <Fa

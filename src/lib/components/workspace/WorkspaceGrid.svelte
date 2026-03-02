@@ -197,11 +197,11 @@
           <div class="flex items-center gap-2">
             <Fa
               icon={item.isGithub ? faGithub : faFolder}
-              class="text-muted-foreground"
+              class="text-subtle"
               size="sm"
             />
             <h3 class="text-sm font-medium text-foreground">{item.groupLabel}</h3>
-            <span class="text-xs text-muted-foreground">({item.groupCount})</span>
+            <span class="text-xs text-subtle">({item.groupCount})</span>
           </div>
           <button
             onclick={() => handleNewInRepo(item.repoPath)}
@@ -227,7 +227,7 @@
 </div>
 
 {#if filteredWorkspaces.length === 0}
-  <div class="text-center py-16 text-muted-foreground">
+  <div class="text-center py-16 text-subtle">
     {#if searchQuery}
       <p>No spaces match "{searchQuery}"</p>
     {:else if showArchived}

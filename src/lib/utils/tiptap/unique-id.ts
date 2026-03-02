@@ -28,10 +28,11 @@
  * ```
  */
 export function generateUniqueId(prefix: string, length: number = 9): string {
-  const randomSuffix = Math.random()
-    .toString(36)
-    .substring(2, 2 + length);
-  return `${prefix}-${randomSuffix}`;
+  let randomSuffix = '';
+  while (randomSuffix.length < length) {
+    randomSuffix += Math.random().toString(36).substring(2);
+  }
+  return `${prefix}-${randomSuffix.substring(0, length)}`;
 }
 
 /**
@@ -59,8 +60,10 @@ export function generateUniqueId(prefix: string, length: number = 9): string {
  * ```
  */
 export function generateUniqueIds(prefixes: string[], length: number = 9): Record<string, string> {
-  const suffix = Math.random()
-    .toString(36)
-    .substring(2, 2 + length);
+  let suffix = '';
+  while (suffix.length < length) {
+    suffix += Math.random().toString(36).substring(2);
+  }
+  suffix = suffix.substring(0, length);
   return Object.fromEntries(prefixes.map((prefix) => [prefix, `${prefix}-${suffix}`]));
 }

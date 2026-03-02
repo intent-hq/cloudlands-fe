@@ -699,7 +699,7 @@
           <span class="text-sm text-foreground">{ACP_PROVIDERS.auggie.displayName}</span>
           <div class="h-3 w-16 bg-muted/50 rounded animate-pulse"></div>
         </div>
-        <ul class="list-disc pl-12 text-xs text-muted-foreground">
+        <ul class="list-disc pl-12 text-xs text-subtle">
           <li><p>Real-time codebase understanding with Context Engine</p></li>
           <li><p>Github, Linear, and Sentry workflow integration</p></li>
           <li><p>Multiple AI model provider selection & use</p></li>
@@ -756,13 +756,13 @@
                 />
               </div>
               {#if auggieStatus?.installed && auggieStatus?.authenticated}
-                <span class="text-xs text-muted-foreground flex items-center gap-1">
+                <span class="text-xs text-subtle flex items-center gap-1">
                   <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
                   {isAuggieActive ? 'Active' : 'Installed'}
                 </span>
               {/if}
             </div>
-            <ul class="list-disc pl-12 text-xs text-muted-foreground">
+            <ul class="list-disc pl-12 text-xs text-subtle">
               <li>
                 <p>Real-time codebase understanding with Context Engine</p>
               </li>
@@ -783,7 +783,7 @@
           <div class="flex items-center gap-2 text-xs">
             {#if !auggieStatus?.installed}
               {#if actionInProgress}
-                <span class="text-muted-foreground">Installing...</span>
+                <span class="text-subtle">Installing...</span>
               {:else}
                 <button
                   type="button"
@@ -795,7 +795,7 @@
               {/if}
             {:else if needsUpdate}
               {#if actionInProgress}
-                <span class="text-muted-foreground">Updating...</span>
+                <span class="text-subtle">Updating...</span>
               {:else}
                 <button
                   type="button"
@@ -807,7 +807,7 @@
               {/if}
             {:else if !auggieStatus?.authenticated}
               {#if authInProgress || waitingForBrowserAuth}
-                <span class="text-muted-foreground">Waiting for authorization...</span>
+                <span class="text-subtle">Waiting for authorization...</span>
               {:else}
                 <button
                   type="button"
@@ -827,7 +827,7 @@
                 {selectingProviderId === 'auggie' ? 'Switching...' : 'Set as default'}
               </button>
             {:else if isAuggieActive}
-              <span class="text-xs text-muted-foreground flex items-center gap-1"> Default </span>
+              <span class="text-xs text-subtle flex items-center gap-1"> Default </span>
             {/if}
           </div>
         </div>
@@ -838,7 +838,7 @@
             class="flex flex-col gap-2 p-3 bg-muted/50 rounded-lg ml-0"
             transition:slide={{ axis: 'y', duration: 200 }}
           >
-            <p class="text-xs text-muted-foreground">Waiting for browser authentication...</p>
+            <p class="text-xs text-subtle">Waiting for browser authentication...</p>
             {#if authUrl}
               <button
                 type="button"
@@ -904,7 +904,7 @@
               >
                 {authInProgress ? 'Completing...' : 'Complete Login'}
               </button>
-              <span class="text-muted-foreground/30">·</span>
+              <span class="text-ghost">·</span>
               <button
                 type="button"
                 class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
@@ -928,11 +928,11 @@
           >
             <p class="text-xs text-destructive-foreground">{installError}</p>
             {#if installErrorType === 'permission'}
-              <p class="text-xs text-muted-foreground">
+              <p class="text-xs text-subtle">
                 Try running with sudo or fix npm permissions.
               </p>
             {:else if installErrorType === 'missing_npm'}
-              <p class="text-xs text-muted-foreground">
+              <p class="text-xs text-subtle">
                 Install <a
                   href="https://nodejs.org"
                   class="underline text-primary"
@@ -988,13 +988,13 @@
                 <!-- MCP button for auggie-enabled providers -->
                 {#if setupInProgress[provider.id]}
                   <Button size="xs" variant="ghost" class="flex items-center gap-1">
-                    <Fa icon={faCircleNotch} class="w-3 h-3 text-muted-foreground animate-spin" />
-                    <span class="text-xs text-muted-foreground">Setting up...</span>
+                    <Fa icon={faCircleNotch} class="w-3 h-3 text-ghost animate-spin" />
+                    <span class="text-xs text-subtle">Setting up...</span>
                   </Button>
                 {:else if uninstallInProgress[provider.id]}
                   <Button size="xs" variant="ghost" class="flex items-center gap-1">
-                    <Fa icon={faCircleNotch} class="w-3 h-3 text-muted-foreground animate-spin" />
-                    <span class="text-xs text-muted-foreground">Removing...</span>
+                    <Fa icon={faCircleNotch} class="w-3 h-3 text-ghost animate-spin" />
+                    <span class="text-xs text-subtle">Removing...</span>
                   </Button>
                 {:else if mcpConfigured[provider.id]}
                   <Button
@@ -1030,7 +1030,7 @@
             {#if provider.available}
               <!-- Auth status -->
               {#if provider.authenticated === true}
-                <span class="text-xs text-muted-foreground flex items-center gap-1">
+                <span class="text-xs text-subtle flex items-center gap-1">
                   <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
                   Logged in
                 </span>
@@ -1045,7 +1045,7 @@
               {/if}
               <!-- Default / Set as default -->
               {#if isActive}
-                <span class="text-xs text-muted-foreground flex items-center gap-1"> Default </span>
+                <span class="text-xs text-subtle flex items-center gap-1"> Default </span>
               {:else}
                 <button
                   type="button"
@@ -1073,7 +1073,7 @@
 </div>
 
 {#snippet providerIcon(providerId: string)}
-  <span class="w-7 text-muted-foreground">
+  <span class="w-7 text-subtle">
     {#if providerId === 'auggie'}
       <Logo width={22} />
     {:else if providerId === 'claude-code'}
@@ -1157,7 +1157,7 @@
         <div class="h-3 w-16 bg-muted/50 rounded animate-pulse"></div>
       </div>
       {#if showDescription && providerid === 'auggie'}
-        <ul class="list-disc pl-12 text-xs text-muted-foreground">
+        <ul class="list-disc pl-12 text-xs text-subtle">
           <li><p>Real-time codebase understanding with Context Engine</p></li>
           <li><p>Github, Linear, and Sentry workflow integration</p></li>
           <li><p>Multiple AI model provider selection & use</p></li>

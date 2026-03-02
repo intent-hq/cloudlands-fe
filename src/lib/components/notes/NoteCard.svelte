@@ -90,11 +90,11 @@
           <h3 class="font-medium truncate">{note.title}</h3>
         </div>
 
-        <p class="text-sm text-muted-foreground mb-2 line-clamp-2">
+        <p class="text-sm text-subtle mb-2 line-clamp-2">
           {truncateContent(note.content, 150)}
         </p>
 
-        <div class="flex items-center gap-3 text-xs text-muted-foreground">
+        <div class="flex items-center gap-3 text-xs text-subtle">
           <span class="flex items-center gap-1">
             <Fa icon={faUser} size="xs" />
             {note.author.name}
@@ -161,7 +161,7 @@
           </span>
         {/each}
         {#if note.tags.length > 3}
-          <span class="text-xs text-muted-foreground">
+          <span class="text-xs text-subtle">
             +{note.tags.length - 3}
           </span>
         {/if}
@@ -184,11 +184,11 @@
       {/if}
     </div>
 
-    <p class="text-sm text-muted-foreground flex-1 overflow-hidden mb-2 line-clamp-4">
+    <p class="text-sm text-subtle flex-1 overflow-hidden mb-2 line-clamp-4">
       {truncateContent(note.content, 200)}
     </p>
 
-    <div class="flex items-center justify-between text-xs text-muted-foreground">
+    <div class="flex items-center justify-between text-xs text-subtle">
       <span>{formatDate(note.updatedAt)}</span>
       {#if note.tags.length > 0}
         <span class="flex items-center gap-1">
@@ -214,12 +214,12 @@
           <Fa icon={faThumbtack} size="xs" class="text-primary" />
         {/if}
         <h3 class="font-medium">{note.title}</h3>
-        <span class="text-xs text-muted-foreground">
+        <span class="text-xs text-subtle">
           {formatDate(note.updatedAt)}
         </span>
       </div>
 
-      <p class="text-sm text-muted-foreground line-clamp-2">
+      <p class="text-sm text-subtle line-clamp-2">
         {truncateContent(note.content, 200)}
       </p>
 

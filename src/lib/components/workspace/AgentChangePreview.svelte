@@ -63,7 +63,7 @@
             transition:slide={{ duration: 200, easing: quintOut }}
           >
             <div class="flex items-center gap-2 mb-1">
-              <span class="font-mono text-muted-foreground">
+              <span class="font-mono text-subtle">
                 {change.file}:{change.line}
               </span>
               {#if change.type === 'add'}
@@ -75,7 +75,7 @@
               {/if}
             </div>
 
-            <div class="font-mono text-[10px] text-muted-foreground/80 truncate">
+            <div class="font-mono text-ui text-subtle truncate">
               {change.content}
             </div>
           </div>

@@ -106,7 +106,7 @@
 
   <!-- Description -->
   {#if comment.description}
-    <div class="px-4 pb-3 text-sm text-muted-foreground leading-relaxed">
+    <div class="px-4 pb-3 text-sm text-subtle leading-relaxed">
       <MarkdownViewer content={comment.description} className="prose-sm" />
     </div>
   {/if}
@@ -141,7 +141,7 @@
     {#if isCodeExpanded}
       <div class="px-4 pb-3" transition:slide={{ duration: 100 }}>
         {#if isLoadingSnippet}
-          <div class="text-xs text-muted-foreground italic py-2">Loading...</div>
+          <div class="text-xs text-subtle italic py-2">Loading...</div>
         {:else if snippetError}
           <div class="text-xs text-red-500 py-2">{snippetError}</div>
         {:else if codeSnippet}

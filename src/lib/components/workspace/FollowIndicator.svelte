@@ -32,14 +32,14 @@
 
       <!-- Current Activity -->
       {#if currentFile}
-        <div class="text-xs text-muted-foreground mb-1">
+        <div class="text-xs text-subtle mb-1">
           Editing: <span class="font-mono">{currentFile.split('/').pop()}</span>
         </div>
       {/if}
 
       <!-- Animation Queue Status -->
       {#if animationQueue.length > 0}
-        <div class="flex items-center gap-1 text-xs text-muted-foreground">
+        <div class="flex items-center gap-1 text-xs text-subtle">
           <svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
             <circle
               cx="12"

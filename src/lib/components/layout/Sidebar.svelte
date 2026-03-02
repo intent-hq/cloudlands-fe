@@ -96,7 +96,7 @@
       class="w-full justify-start text-left px-3"
       onclick={() => navigateToSettings()}
     >
-      <Fa icon={faCog} size="xs" class="text-muted-foreground" />
+      <Fa icon={faCog} size="xs" class="text-ghost" />
     </Button>
   </div>
 </div>

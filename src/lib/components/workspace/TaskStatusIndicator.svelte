@@ -123,7 +123,7 @@
           if (!open) handleMenuOpen();
           toggle();
         }}
-        class="inline-flex font-mediumx text-muted-foregroundx items-center cursor-pointer {compact
+        class="inline-flex font-mediumx text-subtlex items-center cursor-pointer {compact
           ? 'py-0.5 text-sm gap-1.5'
           : 'py-1 text-sm gap-2'}"
       >

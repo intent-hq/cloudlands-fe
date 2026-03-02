@@ -93,14 +93,14 @@
         disabled={!onClick}
       >
         {#if displayIcon}
-          <Fa icon={displayIcon} class="text-[10px] opacity-60 {iconClass}" />
+          <Fa icon={displayIcon} class="text-ui opacity-60 {iconClass}" />
         {/if}
         <span class="truncate max-w-[120px]">{label}</span>
       </button>
     </Tooltip.Trigger>
     {#if sublabel}
       <Tooltip.Content side="top" class="text-xs">
-        <p class="font-mono text-muted-foreground">{sublabel}</p>
+        <p class="font-mono text-subtle">{sublabel}</p>
       </Tooltip.Content>
     {/if}
   </Tooltip.Root>

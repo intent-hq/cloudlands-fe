@@ -238,7 +238,7 @@
     <ChatDiffViewer diff={parsedBlock.content} filePath={parsedBlock.metadata?.path} />
   {:else if parsedBlock.type === 'commit_message'}
     <div class="commit-message-block p-3 my-2 rounded-md bg-background border border-border">
-      <div class="text-xs font-medium text-muted-foreground mb-1.5">Generated Commit Message</div>
+      <div class="text-xs font-medium text-subtle mb-1.5">Generated Commit Message</div>
       <div class="font-mono text-sm whitespace-pre-wrap text-foreground">
         {parsedBlock.content}
       </div>
@@ -314,7 +314,7 @@
   {:else if block.type === 'tool_result'}
     <div class="border border-border rounded-md" in:fly={{ y: 10, duration: 200 }}>
       <div class="px-3 py-2 bg-muted/50 border-b border-border">
-        <span class="text-xs text-muted-foreground">Tool Result</span>
+        <span class="text-xs text-subtle">Tool Result</span>
       </div>
       <div class="p-3">
         {#if typeof block.content === 'string'}
@@ -346,7 +346,7 @@
     </div>
   {:else if block.type === 'thinking'}
     <details class="p-2 bg-muted/50 rounded-md">
-      <summary class="cursor-pointer text-sm text-muted-foreground"> 💭 Thinking... </summary>
+      <summary class="cursor-pointer text-sm text-subtle"> 💭 Thinking... </summary>
       <div class="pl-4 mt-2 text-sm opacity-75">
         <MarkdownViewer content={block.content || 'Processing...'} />
       </div>

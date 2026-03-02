@@ -16,7 +16,7 @@
         ghost: 'text-foreground/70 hover:bg-muted/50 hover:text-foreground',
         'ghost-light': 'text-muted-foreground hover:text-foreground/80 hover:bg-muted/30',
         underline:
-          'text-muted-foreground underline underline-offset-3 decoration-muted-foreground/20',
+          'text-subtle underline underline-offset-3 decoration-muted-foreground/20',
         plain: 'shadow-none !px-0 !py-0 font-inherit',
         link: 'text-primary underline-offset-4 hover:underline',
         neumorphic:

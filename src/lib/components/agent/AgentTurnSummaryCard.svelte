@@ -96,7 +96,7 @@
         ? 'text-blue-500'
         : status === 'failed'
           ? 'text-red-500'
-          : 'text-muted-foreground',
+          : 'text-subtle',
   );
 
   // Handle keyboard navigation
@@ -125,9 +125,9 @@
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-2">
           <h3 class="font-medium text-sm">Turn #{turnNumber}</h3>
-          <span class="text-xs text-muted-foreground">• {agentName}</span>
+          <span class="text-xs text-subtle">• {agentName}</span>
         </div>
-        <p class="text-xs text-muted-foreground mt-0.5">{timeAgo}</p>
+        <p class="text-xs text-subtle mt-0.5">{timeAgo}</p>
       </div>
     </div>
 
@@ -138,14 +138,14 @@
         size="sm"
       />
       {#if duration}
-        <span class="text-xs text-muted-foreground">{(duration / 1000).toFixed(1)}s</span>
+        <span class="text-xs text-subtle">{(duration / 1000).toFixed(1)}s</span>
       {/if}
     </div>
   </div>
 
   <!-- Message preview -->
   {#if message}
-    <p class="text-sm text-muted-foreground mb-3 line-clamp-2">{message}</p>
+    <p class="text-sm text-subtle mb-3 line-clamp-2">{message}</p>
   {/if}
 
   <!-- Stats Grid -->
@@ -153,9 +153,9 @@
     <!-- Files Changed -->
     {#if filesChanged > 0}
       <div class="flex items-center gap-2 text-xs">
-        <Fa icon={faFile} class="text-muted-foreground" size="xs" />
+        <Fa icon={faFile} class="text-ghost" size="xs" />
         <span class="font-medium">{filesChanged}</span>
-        <span class="text-muted-foreground">file{filesChanged !== 1 ? 's' : ''}</span>
+        <span class="text-subtle">file{filesChanged !== 1 ? 's' : ''}</span>
       </div>
     {/if}
 
@@ -169,9 +169,9 @@
     <!-- Tools Used -->
     {#if toolsUsed > 0}
       <div class="flex items-center gap-2 text-xs">
-        <Fa icon={faWrench} class="text-muted-foreground" size="xs" />
+        <Fa icon={faWrench} class="text-ghost" size="xs" />
         <span class="font-medium">{toolsUsed}</span>
-        <span class="text-muted-foreground">tool{toolsUsed !== 1 ? 's' : ''}</span>
+        <span class="text-subtle">tool{toolsUsed !== 1 ? 's' : ''}</span>
       </div>
     {/if}
   </div>
@@ -179,7 +179,7 @@
   <!-- Expanded Details -->
   {#if isExpanded && fileChanges.length > 0}
     <div class="mt-3 pt-3 border-t space-y-1">
-      <p class="text-xs font-medium text-muted-foreground mb-2">Files Changed:</p>
+      <p class="text-xs font-medium text-subtle mb-2">Files Changed:</p>
       {#each fileChanges.slice(0, 5) as file (file.path)}
         <div class="flex items-center justify-between text-xs pl-2">
           <span class="truncate flex-1 font-mono">{file.path.split('/').pop()}</span>
@@ -187,7 +187,7 @@
         </div>
       {/each}
       {#if fileChanges.length > 5}
-        <p class="text-xs text-muted-foreground pl-2">...and {fileChanges.length - 5} more</p>
+        <p class="text-xs text-subtle pl-2">...and {fileChanges.length - 5} more</p>
       {/if}
     </div>
   {/if}

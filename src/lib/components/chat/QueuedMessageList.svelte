@@ -116,7 +116,7 @@
 
 {#if messages.length > 0}
   <div class="relative border-t border-border/50 pt-3 pb-2 px-2 z-20" transition:slide={{ duration: 200 }}>
-    <div class="flex items-center gap-1.5 text-xs text-muted-foreground/60 mb-2 px-2.5">
+    <div class="flex items-center gap-1.5 text-xs text-subtle mb-2 px-2.5">
         <Fa icon={faListOl} class="w-3 h-3" />
         <span>Queued messages ({messages.length})</span>
       </div>
@@ -124,7 +124,7 @@
       <div class="space-y-px">
         {#each messages as message (message.id)}
           <div
-            class="group flex items-start gap-2 px-2.5 py-1 text-muted-foreground/70 text-sm grid"
+            class="group flex items-start gap-2 px-2.5 py-1 text-subtle text-sm grid"
             transition:fly={{ y: 10, duration: 200 }}
           >
             {#if editingId === message.id}

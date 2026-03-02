@@ -29,7 +29,7 @@
 <div class="flex flex-col gap-2 px-4 py-3 bg-muted/30 border border-border rounded-lg my-4">
   <div class="flex items-center justify-between gap-2">
     <div class="flex items-center gap-2">
-      <div class="shrink-0 text-muted-foreground">
+      <div class="shrink-0 text-subtle">
         <Fa icon={faTerminal} size="sm" />
       </div>
       <div class="font-medium text-sm">{name}</div>
@@ -46,7 +46,7 @@
       {/if}
     </div>
   </div>
-  <div class="text-xs text-muted-foreground">{description}</div>
+  <div class="text-xs text-subtle">{description}</div>
   <pre
     class="text-xs bg-background/50 rounded p-2 overflow-x-auto max-h-40 overflow-y-auto font-mono">{content}</pre>
 </div>

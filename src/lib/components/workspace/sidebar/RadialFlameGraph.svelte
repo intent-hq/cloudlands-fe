@@ -245,7 +245,7 @@
     <div class="text-2xl font-light leading-none text-foreground">
       {percentDone}<span class="opacity-30 text-lg ml-0.5">%</span>
     </div>
-    <div class="text-xs text-muted-foreground mt-0.5">{progressText}</div>
+    <div class="text-xs text-subtle mt-0.5">{progressText}</div>
   </div>
 </div>
 

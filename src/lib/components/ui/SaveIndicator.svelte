@@ -47,7 +47,7 @@
         return {
           icon: faCloudArrowUp,
           tooltip: 'Auto-saving...',
-          class: 'text-muted-foreground/30 animate-pulse',
+          class: 'text-ghost animate-pulse',
         };
       case 'unsaved':
         return {

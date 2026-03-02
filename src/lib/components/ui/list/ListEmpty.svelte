@@ -16,7 +16,7 @@
 <div
   class={cn(
     'flex flex-col items-center justify-center py-8 px-4',
-    'text-xs text-muted-foreground text-center',
+    'text-xs text-subtle text-center',
     className,
   )}
   {...restProps}

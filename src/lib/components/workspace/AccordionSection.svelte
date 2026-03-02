@@ -255,14 +255,14 @@
 
   <button type="button" class="sticky-header w-full cursor-pointer bg-sidebar" onclick={onToggle}>
     <div class="w-full flex items-center gap-2.5 px-3 py-1.5 transition-colors">
-      <Fa {icon} size={12} class="text-muted-foreground/60" />
+      <Fa {icon} size={12} class="text-ghost" />
       <span class="text-sm font-medium flex-1 text-left">{label}</span>
       {#if badge}
         {@render badge()}
       {/if}
       <Fa
         icon={faChevronDown}
-        class="text-muted-foreground/50 transition-transform duration-200 {expanded
+        class="text-subtle transition-transform duration-200 {expanded
           ? ''
           : '-rotate-90'}"
         size={8}
@@ -273,7 +273,7 @@
     <div class="relative" transition:slide={{ duration: 150 }}>
       {#if description}
         <p
-          class="description text-[0.82rem] text-muted-foreground/80 px-3 pt-2.5 pb-2 pl-9 leading-snug"
+          class="description text-ui text-subtle px-3 pt-2.5 pb-2 pl-9 leading-snug"
         >
           {description}
         </p>

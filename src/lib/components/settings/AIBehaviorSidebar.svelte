@@ -61,7 +61,7 @@
   <!-- Specialists section - scrollable with max height -->
   <div class="specialist-section mt-4 overflow-y-auto border-b-accent-foreground">
     <div
-      class="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider"
+      class="px-3 py-1.5 text-ui font-semibold text-muted-foreground uppercase tracking-wider"
     >
       Specialists
     </div>
@@ -93,14 +93,14 @@
             <span class="text-sm truncate">{specialist.name}</span>
             {#if isCustomized}
               <span
-                class="text-[9px] px-1 py-0.5 rounded bg-primary/15 text-primary font-medium shrink-0"
+                class="text-ui px-1 py-0.5 rounded bg-primary/15 text-primary font-medium shrink-0"
               >
                 Modified
               </span>
             {/if}
             {#if !isBuiltIn}
               <span
-                class="text-[9px] px-1 py-0.5 rounded bg-warning/15 text-warning font-medium shrink-0"
+                class="text-ui px-1 py-0.5 rounded bg-warning/15 text-warning font-medium shrink-0"
               >
                 Custom
               </span>

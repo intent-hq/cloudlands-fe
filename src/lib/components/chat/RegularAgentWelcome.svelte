@@ -64,7 +64,7 @@
   );
 </script>
 
-<div class="flex flex-col flex-1 text-muted-foreground py-6 pt-4 px-4">
+<div class="flex flex-col flex-1 text-subtle py-6 pt-4 px-4">
   <!-- Specialist Picker Dropdown -->
   {#if onSpecialistChange}
     <div class="mb-4">
@@ -80,7 +80,7 @@
           >
             <AuggieAvatar faceSeed="blank" colorSeed="blank" size={18} specialist={specialistInfo?.id ?? null} />
             <span class="text-foreground font-medium">{displayLabel}</span>
-            <Fa icon={faChevronDown} class="text-muted-foreground/50" size={10} />
+            <Fa icon={faChevronDown} class="text-ghost" size={10} />
           </button>
         {/snippet}
 
@@ -99,7 +99,7 @@
               <AuggieAvatar faceSeed="blank" colorSeed="blank" size={20} />
               <div class="flex flex-col min-w-0">
                 <span class="font-medium text-foreground">General</span>
-                <span class="text-xs text-muted-foreground">No specialized behavior</span>
+                <span class="text-xs text-subtle">No specialized behavior</span>
               </div>
             </button>
 
@@ -121,7 +121,7 @@
                 <AuggieAvatar faceSeed="blank" colorSeed="blank" size={20} specialist={specialist.id} />
                 <div class="flex flex-col min-w-0">
                   <span class="font-medium text-foreground">{specialist.name}</span>
-                  <span class="text-xs text-muted-foreground truncate">{specialist.description}</span>
+                  <span class="text-xs text-subtle truncate">{specialist.description}</span>
                 </div>
               </button>
             {/each}
@@ -145,7 +145,7 @@
   <!-- Behavior Prompt / Description -->
   <div class="bg-muted/20 px-4 py-2.5 mb-3">
     <p
-      class="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap {specialistInfo && !showFullPrompt
+      class="text-sm text-subtle leading-relaxed whitespace-pre-wrap {specialistInfo && !showFullPrompt
         ? 'line-clamp-6'
         : ''}"
     >

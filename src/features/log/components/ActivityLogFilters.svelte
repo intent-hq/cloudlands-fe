@@ -171,7 +171,7 @@
     />
     {#if filters.searchQuery}
       <button
-        class="absolute right-2 top-1/2 -translate-y-1/2 bg-transparent border-none text-muted-foreground cursor-pointer text-xl p-1"
+        class="absolute right-2 top-1/2 -translate-y-1/2 bg-transparent border-none text-subtle cursor-pointer text-xl p-1"
         onclick={() => (filters.searchQuery = '')}
       >
         ×
@@ -233,7 +233,7 @@
                   {preset.name}
                 </button>
                 <button
-                  class="bg-transparent border-none text-muted-foreground cursor-pointer text-base p-1"
+                  class="bg-transparent border-none text-subtle cursor-pointer text-base p-1"
                   onclick={() => deletePreset(i)}
                 >
                   ×
@@ -242,7 +242,7 @@
             {/each}
           </div>
         {:else}
-          <div class="text-sm text-muted-foreground text-center p-2">No saved presets</div>
+          <div class="text-sm text-subtle text-center p-2">No saved presets</div>
         {/if}
       </div>
 

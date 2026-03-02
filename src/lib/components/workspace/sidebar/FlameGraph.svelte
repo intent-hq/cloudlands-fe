@@ -196,7 +196,7 @@
     <Tooltip content={tooltipContent()} side="bottom" align="start" sideOffset={4} showArrow>
       <button
         type="button"
-        class="shrink-0 p-0.5 text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer"
+        class="shrink-0 p-0.5 text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
         onclick={() => onSpecClick?.()}
         aria-label="Open spec"
       >

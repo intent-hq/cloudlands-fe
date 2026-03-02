@@ -115,10 +115,10 @@
 
 <!-- Debug Panel Visibility Controls -->
 <div class="my-1 h-px bg-border"></div>
-<div class="px-2 py-1 text-xs text-muted-foreground font-medium">Debug Panel Controls</div>
+<div class="px-2 py-1 text-xs text-subtle font-medium">Debug Panel Controls</div>
 
 <!-- ContentNavigationRail Controls -->
-<div class="px-2 py-1 text-xs text-muted-foreground font-medium">Navigation Rail</div>
+<div class="px-2 py-1 text-xs text-subtle font-medium">Navigation Rail</div>
 <div class="grid grid-cols-2 gap-1">
   <Button variant="ghost" onclick={showNotesPanel} class="justify-start text-xs" size="sm">
     <Fa icon={faEye} size="xs" class="mr-1 opacity-50" />
@@ -167,7 +167,7 @@
 </div>
 
 <!-- WorkspaceDock Controls -->
-<div class="px-2 py-1 text-xs text-muted-foreground font-medium mt-2">Space Dock</div>
+<div class="px-2 py-1 text-xs text-subtle font-medium mt-2">Space Dock</div>
 <div class="grid grid-cols-2 gap-1">
   <Button variant="ghost" onclick={showWorkspaceDock} class="justify-start text-xs" size="sm">
     <Fa icon={faEye} size="xs" class="mr-1 opacity-50" />
@@ -198,7 +198,7 @@
 </div>
 
 <!-- Chat Focused Mode Controls -->
-<div class="px-2 py-1 text-xs text-muted-foreground font-medium mt-2">Chat Focused Mode</div>
+<div class="px-2 py-1 text-xs text-subtle font-medium mt-2">Chat Focused Mode</div>
 <div class="grid grid-cols-2 gap-1">
   <Button variant="ghost" onclick={enableChatFocusedMode} class="justify-start text-xs" size="sm">
     <Fa icon={faEye} size="xs" class="mr-1 opacity-50" />
@@ -211,7 +211,7 @@
 </div>
 
 <!-- Main Content Controls -->
-<div class="px-2 py-1 text-xs text-muted-foreground font-medium mt-2">Main Content</div>
+<div class="px-2 py-1 text-xs text-subtle font-medium mt-2">Main Content</div>
 <div class="grid grid-cols-2 gap-1">
   <Button variant="ghost" onclick={showMainContent} class="justify-start text-xs" size="sm">
     <Fa icon={faEye} size="xs" class="mr-1 opacity-50" />
@@ -224,7 +224,7 @@
 </div>
 
 <!-- Chat Header Controls -->
-<div class="px-2 py-1 text-xs text-muted-foreground font-medium mt-2">Chat Header</div>
+<div class="px-2 py-1 text-xs text-subtle font-medium mt-2">Chat Header</div>
 <div class="grid grid-cols-2 gap-1">
   <Button variant="ghost" onclick={showChatHeader} class="justify-start text-xs" size="sm">
     <Fa icon={faEye} size="xs" class="mr-1 opacity-50" />

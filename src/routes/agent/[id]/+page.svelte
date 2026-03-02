@@ -265,12 +265,12 @@
     <h1 class="text-2xl font-semibold text-foreground">
       {agent?.agentInfo?.name || 'Agent Thread'}
     </h1>
-    <span class="text-sm text-muted-foreground font-mono">ID: {agentId}</span>
+    <span class="text-sm text-subtle font-mono">ID: {agentId}</span>
   </div>
 
   <div class="flex-1 flex flex-col bg-card border border-border rounded-lg overflow-hidden">
     {#if loading}
-      <div class="flex-1 flex items-center justify-center text-muted-foreground">Loading...</div>
+      <div class="flex-1 flex items-center justify-center text-subtle">Loading...</div>
     {:else}
       <div
         bind:this={scrollContainer}
@@ -299,7 +299,7 @@
                 {message.role === 'user' ? 'You' : 'Assistant'}
               </span>
               {#if message.timestamp}
-                <span class="text-xs text-muted-foreground"
+                <span class="text-xs text-subtle"
                   >{formatTimestamp(message.timestamp)}</span
                 >
               {/if}

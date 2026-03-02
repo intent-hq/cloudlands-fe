@@ -135,10 +135,10 @@
   <div class="sticky top-0 z-10 bg-popover border-b px-4 py-3">
     <div class="flex items-center justify-between mb-3">
       <h3 class="font-semibold text-sm flex items-center gap-2">
-        <Fa icon={faRobot} class="text-muted-foreground" />
+        <Fa icon={faRobot} class="text-ghost" />
         Background Agents
       </h3>
-      <span class="text-xs text-muted-foreground">
+      <span class="text-xs text-subtle">
         {filteredAgents.length} agent{filteredAgents.length !== 1 ? 's' : ''}
       </span>
     </div>
@@ -148,7 +148,7 @@
       <div class="flex-1 relative">
         <Fa
           icon={faSearch}
-          class="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+          class="absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle"
           size="xs"
         />
         <input
@@ -177,11 +177,11 @@
   <div class="overflow-y-auto max-h-[400px] p-2">
     {#if filteredAgents.length === 0}
       <div class="py-8 text-center">
-        <Fa icon={faRobot} class="text-muted-foreground mb-3" size="2x" />
-        <p class="text-sm text-muted-foreground mb-1">
+        <Fa icon={faRobot} class="text-subtle mb-3" size="2x" />
+        <p class="text-sm text-subtle mb-1">
           {searchQuery ? 'No agents found' : 'No background agents yet'}
         </p>
-        <p class="text-xs text-muted-foreground mb-4">
+        <p class="text-xs text-subtle mb-4">
           Background agents run automatically for specific tasks
         </p>
       </div>
@@ -209,7 +209,7 @@
 
   <!-- Footer with Create Options -->
   <div class="sticky bottom-0 bg-popover border-t px-4 py-3">
-    <div class="text-xs text-muted-foreground mb-2">Create Background Agent</div>
+    <div class="text-xs text-subtle mb-2">Create Background Agent</div>
     <div class="grid grid-cols-3 gap-2">
       {#each backgroundAgentTypes as type (type.id)}
         <Button

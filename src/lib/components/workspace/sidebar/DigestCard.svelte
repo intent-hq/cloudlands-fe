@@ -45,7 +45,7 @@
     <SpecTaskDonut {taskStats} />
 
     <!-- Status indicator -->
-    <div class="flex items-center gap-2 ml-auto text-muted-foreground mr-1">
+    <div class="flex items-center gap-2 ml-auto text-subtle mr-1">
       {#if hasPRs}
         {@const pr = pullRequests[0]}
         <Fa icon={faCodePullRequest} size="xs" />

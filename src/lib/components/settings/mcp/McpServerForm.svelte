@@ -116,7 +116,7 @@
       placeholder="e.g., my-mcp-server"
       disabled={editMode}
     />
-    <p class="text-xs text-muted-foreground mt-1">A unique identifier for this MCP server</p>
+    <p class="text-xs text-subtle mt-1">A unique identifier for this MCP server</p>
   </div>
 
   <!-- Connection Type -->
@@ -138,7 +138,7 @@
         </button>
       {/each}
     </div>
-    <p class="text-xs text-muted-foreground mt-1.5">
+    <p class="text-xs text-subtle mt-1.5">
       {#if form.type === 'stdio'}
         Local servers run as a command on your machine
       {:else if form.type === 'http'}
@@ -157,13 +157,13 @@
           Command <span class="text-destructive-foreground">*</span>
         </span>
         <Input bind:value={form.command} placeholder="npx -y @some/mcp-server" />
-        <p class="text-xs text-muted-foreground mt-1">e.g., npx, node, python</p>
+        <p class="text-xs text-subtle mt-1">e.g., npx, node, python</p>
       </div>
 
       <div>
         <span class="block text-sm font-medium mb-1.5">Arguments</span>
         <Input bind:value={form.args} placeholder="--port 3000 --verbose" />
-        <p class="text-xs text-muted-foreground mt-1">Space-separated</p>
+        <p class="text-xs text-subtle mt-1">Space-separated</p>
       </div>
     </div>
 
@@ -176,15 +176,15 @@
           Add
         </Button>
       </div>
-      <p class="text-xs text-muted-foreground mb-2">Pass secrets or configuration to the server process</p>
+      <p class="text-xs text-subtle mb-2">Pass secrets or configuration to the server process</p>
       {#if form.envPairs.length === 0}
-        <p class="text-xs text-muted-foreground/60 italic">No environment variables set</p>
+        <p class="text-xs text-subtle italic">No environment variables set</p>
       {:else}
         <div class="space-y-2">
           {#each form.envPairs as pair (pair.id)}
             <div class="flex gap-2 items-center">
               <Input bind:value={pair.key} placeholder="KEY" class="flex-1" />
-              <span class="text-muted-foreground">=</span>
+              <span class="text-subtle">=</span>
               <Input bind:value={pair.value} placeholder="value" class="flex-1" />
               <Button size="sm" variant="ghost" onclick={() => removeEnvVar(pair.id)}>
                 <Fa icon={faTrash} size="xs" class="text-destructive-foreground" />
@@ -201,7 +201,7 @@
         URL <span class="text-destructive-foreground">*</span>
       </span>
       <Input bind:value={form.url} placeholder="https://example.com/mcp" />
-      <p class="text-xs text-muted-foreground mt-1">The full URL of the MCP server endpoint</p>
+      <p class="text-xs text-subtle mt-1">The full URL of the MCP server endpoint</p>
     </div>
 
     <!-- Auth Type -->
@@ -221,7 +221,7 @@
           </button>
         {/each}
       </div>
-      <p class="text-xs text-muted-foreground mt-1.5">
+      <p class="text-xs text-subtle mt-1.5">
         {#if form.authType === 'none'}
           No authentication required for this server
         {:else if form.authType === 'oauth'}
@@ -242,15 +242,15 @@
             Add
           </Button>
         </div>
-        <p class="text-xs text-muted-foreground mb-2">Add headers like Authorization, X-API-Key, etc.</p>
+        <p class="text-xs text-subtle mb-2">Add headers like Authorization, X-API-Key, etc.</p>
         {#if form.headerPairs.length === 0}
-          <p class="text-xs text-muted-foreground/60 italic">No headers set</p>
+          <p class="text-xs text-subtle italic">No headers set</p>
         {:else}
           <div class="space-y-2">
             {#each form.headerPairs as pair (pair.id)}
               <div class="flex gap-2 items-center">
                 <Input bind:value={pair.key} placeholder="Header-Name" class="flex-1" />
-                <span class="text-muted-foreground">:</span>
+                <span class="text-subtle">:</span>
                 <Input bind:value={pair.value} placeholder="value" class="flex-1" />
                 <Button size="sm" variant="ghost" onclick={() => removeHeader(pair.id)}>
                   <Fa icon={faTrash} size="xs" class="text-destructive-foreground" />
@@ -264,7 +264,7 @@
 
     {#if form.authType === 'oauth'}
       <div class="p-3 bg-muted/30 rounded-md border border-border">
-        <p class="text-sm text-muted-foreground">
+        <p class="text-sm text-subtle">
           You'll be prompted to authenticate via OAuth when you first connect to this server. The server will handle the authentication flow.
         </p>
       </div>

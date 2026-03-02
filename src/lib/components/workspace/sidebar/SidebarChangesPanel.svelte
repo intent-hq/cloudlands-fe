@@ -3633,19 +3633,19 @@
         onkeydown={handleChangesKeydown}
       >
         <div class="branch-labels w-full flex justify-between mb-1 mt-1">
-          <p class="text-muted-foreground/80 leading-snug text-[0.82rem]">Your code lives in:</p>
-          <p class="text-muted-foreground/80 leading-snug text-[0.82rem]">
+          <p class="text-subtle leading-snug text-ui">Your code lives in:</p>
+          <p class="text-subtle leading-snug text-ui">
             and will be merged into:
           </p>
         </div>
 
         <!-- Branch display/edit with trunk branch picker -->
         <div
-          class="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-muted-foreground text-xs mb-3 -ml-0.5"
+          class="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-subtle text-xs mb-3 -ml-0.5"
         >
           <!-- Working branch -->
           <div class="flex items-center shrink-0">
-            <GitBranchIcon size={12} class="shrink-0 text-muted-foreground/60" />
+            <GitBranchIcon size={12} class="shrink-0 text-ghost" />
             {#if isEditingBranch}
               <input
                 bind:this={branchInputRef}
@@ -3654,7 +3654,7 @@
                 onblur={saveBranch}
                 onkeydown={handleBranchKeydown}
                 disabled={isSavingBranch}
-                class="text-[0.82rem] text-foreground bg-none
+                class="text-ui text-foreground bg-none
                        px-1 py-0.5 rounded
                        outline-none min-w-[60px] max-w-[150px] leading-normal
                        focus:ring-none! focus:outline-none!
@@ -3668,9 +3668,9 @@
                 disableCloseOnTriggerClick
                 bind:open={workingBranchTooltipOpen}
               >
-                {#snippet content()}<span>Working on the {workspace?.branch || 'no branch'} branch. Click to change name.</span><br /><span class="text-muted-foreground">Shift+click to copy</span>{#if copiedWorkingBranch}<span class="text-green-500 ml-1.5 inline-flex items-center gap-1"><Fa icon={faCheck} size="xs" /></span>{/if}{/snippet}
+                {#snippet content()}<span>Working on the {workspace?.branch || 'no branch'} branch. Click to change name.</span><br /><span class="text-ghost">Shift+click to copy</span>{#if copiedWorkingBranch}<span class="text-green-500 ml-1.5 inline-flex items-center gap-1"><Fa icon={faCheck} size="xs" /></span>{/if}{/snippet}
                 <button
-                  class="text-[0.82rem] text-muted-foreground bg-transparent
+                  class="text-ui text-subtle bg-transparent
                          border-none px-1 py-0.5 rounded cursor-pointer text-left
                          max-w-full overflow-hidden text-ellipsis whitespace-nowrap
                          transition-all duration-150 leading-normal
@@ -3700,9 +3700,9 @@
             {/if}
           </div>
 
-          <!-- <span class="text-muted-foreground/40 mx-auto">→</span> -->
+          <!-- <span class="text-ghost mx-auto">→</span> -->
           <div
-            class="relative flex-1 ml-0.5 mr-1.5 bg-muted-foreground/70 text-muted-foreground h-px flex items-end opacity-30"
+            class="relative flex-1 ml-0.5 mr-1.5 bg-muted-foreground/70 text-subtle h-px flex items-end opacity-30"
           >
             <span class="absolute -right-0.5 top-1/2 transform -translate-y-1/2">→</span>
           </div>
@@ -3715,7 +3715,7 @@
               disableCloseOnTriggerClick
               bind:open={trunkBranchTooltipOpen}
             >
-              {#snippet content()}{#if canChangeTrunk}<span>Trunk branch - click to change</span>{:else}<span>Trunk branch (cannot change after pushing)</span>{/if}<br /><span class="text-muted-foreground">Shift+click to copy</span>{#if copiedTrunkBranch}<span class="text-green-500 ml-1.5 inline-flex items-center gap-1"><Fa icon={faCheck} size="xs" /></span>{/if}{/snippet}
+              {#snippet content()}{#if canChangeTrunk}<span>Trunk branch - click to change</span>{:else}<span>Trunk branch (cannot change after pushing)</span>{/if}<br /><span class="text-ghost">Shift+click to copy</span>{#if copiedTrunkBranch}<span class="text-green-500 ml-1.5 inline-flex items-center gap-1"><Fa icon={faCheck} size="xs" /></span>{/if}{/snippet}
               <div
                 class="flex items-center min-w-0 max-w-full"
                 role="button"
@@ -3743,7 +3743,7 @@
                   disabled={!canChangeTrunk}
                   dropUp={false}
                   portal={true}
-                  triggerClass="pl-0 pr-0 h-6 text-[0.82rem]"
+                  triggerClass="pl-0 pr-0 h-6 text-ui"
                   hasTriggerIcon={false}
                   onchange={async (e) => {
                     try {
@@ -3774,7 +3774,7 @@
           >
             <Fa
               icon={faArrowsRotate}
-              class="text-muted-foreground/60 {isRefreshingGitStatus ? 'animate-spin' : ''}"
+              class="text-subtle {isRefreshingGitStatus ? 'animate-spin' : ''}"
               size={10}
             />
           </button>
@@ -3784,14 +3784,14 @@
             {@const isActive = isAllChangesViewActive}
             <button
               onclick={handleOpenAllChanges}
-              class="flex flex-1 items-center border gap-2 pr-2 py-1.5 text-muted-foreground rounded-sm transition-colors group cursor-pointer min-w-0 {isActive
+              class="flex flex-1 items-center border gap-2 pr-2 py-1.5 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0 {isActive
                 ? 'bg-background text-foreground border-border shadow-xs pl-2'
                 : 'border-transparent'}
                 "
             >
               <div class="flex items-center gap-1.5 flex-1 min-w-0">
                 <!-- <Fa icon={faFolderOpen} class="opacity-30" size="xs" /> -->
-                <span class="text-[0.82rem] truncate min-w-0 text-left flex-1">
+                <span class="text-ui truncate min-w-0 text-left flex-1">
                   {totalFilesChanged} file{totalFilesChanged !== 1 ? 's' : ''} changed in Space
                 </span>
                 <!-- <LineChangesBadge additions={totalAdditions} deletions={totalDeletions} size="xs" /> -->
@@ -3799,9 +3799,9 @@
             </button>
           {:else}
             <div
-              class="flex flex-1 items-center gap-2 pr-2 py-1.5 text-muted-foreground rounded-sm transition-colors group cursor-pointer min-w-0"
+              class="flex flex-1 items-center gap-2 pr-2 py-1.5 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0"
             >
-              <span class="text-[0.82rem] truncate min-w-0 text-left flex-1">No changes yet</span>
+              <span class="text-ui truncate min-w-0 text-left flex-1">No changes yet</span>
             </div>
           {/if}
 
@@ -3866,7 +3866,7 @@
                       onLabel="Auto-commit"
                       offLabel="Auto-commit"
                       pressed={autoCommitEnabled}
-                      class="font-normal text-muted-foreground/50 flex-row-reverse -mr-1 whitespace-nowrap"
+                      class="font-normal text-subtle flex-row-reverse -mr-1 whitespace-nowrap"
                       onclick={() => {
                         if (workspaceSettings) {
                           // Toggle is about to flip pressed, so we set the opposite of current
@@ -3905,13 +3905,13 @@
                               >
                                 <Fa
                                   icon={faLock}
-                                  class="text-muted-foreground/50 shrink-0"
+                                  class="text-subtle shrink-0"
                                   size={10}
                                 />
                               </Tooltip>
                             {/if}
                             <span
-                              class="text-[0.82rem] opacity-50 truncate flex-1 {isLocked
+                              class="text-ui opacity-50 truncate flex-1 {isLocked
                                 ? 'opacity-40'
                                 : ''}"
                             >
@@ -3930,7 +3930,7 @@
                             {:else}
                               <Fa
                                 icon={faUser}
-                                class="h-2.5 w-2.5 text-muted-foreground/30 {!isLocked
+                                class="h-2.5 w-2.5 text-ghost {!isLocked
                                   ? 'group-hover/agent-header:opacity-0'
                                   : ''}"
                               />
@@ -3995,7 +3995,7 @@
                                     cancelGroupCommit(group, 'unstaged');
                                   }}
                                 >
-                                  <span class="text-[9px] font-semibold text-primary leading-none"
+                                  <span class="text-ui font-semibold text-primary leading-none"
                                     >{queuePos}</span
                                   >
                                 </Button>
@@ -4131,7 +4131,7 @@
                             class="group/row flex items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded px-1 -mx-1"
                             onclick={() => toggleAgentGroup(group.agentId)}
                           >
-                            <span class="text-[0.82rem] opacity-50 truncate flex-1">
+                            <span class="text-ui opacity-50 truncate flex-1">
                               {getAgentDisplayName(group)}
                             </span>
 
@@ -4148,7 +4148,7 @@
                             {:else}
                               <Fa
                                 icon={faUser}
-                                class="h-2.5 w-2.5 ml-1 mr-1 text-muted-foreground/30 {!isLocked
+                                class="h-2.5 w-2.5 ml-1 mr-1 text-ghost {!isLocked
                                   ? 'group-hover/agent-header:opacity-0'
                                   : ''}"
                               />
@@ -4213,7 +4213,7 @@
                                     cancelGroupCommit(group, 'staged');
                                   }}
                                 >
-                                  <span class="text-[9px] font-semibold text-primary leading-none"
+                                  <span class="text-ui font-semibold text-primary leading-none"
                                     >{queuePos}</span
                                   >
                                 </Button>
@@ -4325,7 +4325,7 @@
             </div>
             <DividerPanel open={commitDrawerOpen}>
               {#if hasStaged}
-                <p class="text-xs text-muted-foreground">
+                <p class="text-xs text-subtle">
                   {stagedChanges.length} staged file{stagedChanges.length === 1 ? '' : 's'} will be committed.
                 </p>
               {/if}
@@ -4446,18 +4446,18 @@
               {@const commitText =
                 commitCount > 0 ? `${commitCount} commit${commitCount === 1 ? '' : 's'}` : ''}
               {@const parts = [unstagedText, stagedText, commitText].filter(Boolean)}
-              <p class="text-xs text-muted-foreground">
+              <p class="text-xs text-subtle">
                 Export files to a folder outside this workspace. This copies files while preserving
                 directory structure, allowing you to use them in another project or share
                 externally.
               </p>
               {#if parts.length > 0}
-                <p class="text-xs text-muted-foreground/70 mt-1">
+                <p class="text-xs text-subtle mt-1">
                   {parts.join(' and ')} will be exported.
                 </p>
               {/if}
               <div class="mt-2">
-                <span class="text-xs text-muted-foreground mb-1 block">Destination Folder</span>
+                <span class="text-xs text-subtle mb-1 block">Destination Folder</span>
                 <div class="relative">
                   <input
                     type="text"
@@ -4502,7 +4502,7 @@
                   {#if hasRemote && commit.isPushed && index > 0 && !allCommits[index - 1].isPushed && commits.length > 0}
                     <div class="flex items-center gap-2 px-1 py-1.5">
                       <div class="flex-1 h-px bg-border"></div>
-                      <span class="text-xs text-muted-foreground">Pushed to remote</span>
+                      <span class="text-xs text-subtle">Pushed to remote</span>
                       <div class="flex-1 h-px bg-border"></div>
                     </div>
                   {/if}
@@ -4536,7 +4536,7 @@
                           <Fa
                             icon={faChevronDown}
                             size={12}
-                            class="text-muted-foreground/60 shrink-0 transition-transform {isExpanded
+                            class="text-subtle shrink-0 transition-transform {isExpanded
                               ? 'rotate-0'
                               : '-rotate-90'}"
                           />
@@ -4564,7 +4564,7 @@
                         <Fa
                           icon={faCodeCommit}
                           size="xs"
-                          class="text-muted-foreground/40 shrink-0"
+                          class="text-ghost shrink-0"
                         />
                       {/if}
                       {#if editingCommitHash === commit.hash}
@@ -4575,7 +4575,7 @@
                           bind:value={editingCommitValue}
                           onblur={saveCommitEdit}
                           onkeydown={handleCommitEditKeydown}
-                          class="flex-1 text-[0.82rem] text-muted-foreground bg-transparent border-none outline-none! ring-0! focus:ring-0! focus:outline-none! focus-visible:ring-0! focus-visible:outline-none! min-w-0"
+                          class="flex-1 text-ui text-subtle bg-transparent border-none outline-none! ring-0! focus:ring-0! focus:outline-none! focus-visible:ring-0! focus-visible:outline-none! min-w-0"
                           onclick={(e) => e.stopPropagation()}
                         />
                       {:else}
@@ -4589,7 +4589,7 @@
                           ondblclick={(e) => handleCommitMessageDoubleClick(e, commit, index)}
                         >
                           <span
-                            class="text-[0.82rem] text-muted-foreground truncate flex-1 {canAmendCommit(
+                            class="text-ui text-subtle truncate flex-1 {canAmendCommit(
                               index,
                             )
                               ? ''
@@ -4606,7 +4606,7 @@
                         <span
                           class="absolute right-0 shrink-0 group-hover:opacity-0 transition-opacity"
                         >
-                          <Fa icon={faCloud} class="text-muted-foreground/30 p-0.5" size={15} />
+                          <Fa icon={faCloud} class="text-ghost p-0.5" size={15} />
                         </span>
                       {/if}
 
@@ -4629,7 +4629,7 @@
                             <Fa
                               icon={faArrowUpRightFromSquare}
                               size="xs"
-                              class="text-muted-foreground"
+                              class="text-subtle"
                             />
                           </Button>
                           <!-- Undo push button - absolutely positioned to overlap cloud icon -->
@@ -4649,10 +4649,10 @@
                                 <Fa
                                   icon={faSpinner}
                                   size="xs"
-                                  class="animate-spin text-muted-foreground"
+                                  class="animate-spin text-subtle"
                                 />
                               {:else}
-                                <Fa icon={faRotateLeft} size="xs" class="text-muted-foreground" />
+                                <Fa icon={faRotateLeft} size="xs" class="text-ghost" />
                               {/if}
                             </Button>
                           </div>
@@ -4672,10 +4672,10 @@
                               <Fa
                                 icon={faSpinner}
                                 size="xs"
-                                class="animate-spin text-muted-foreground"
+                                class="animate-spin text-subtle"
                               />
                             {:else}
-                              <Fa icon={faRotateLeft} size="xs" class="text-muted-foreground" />
+                              <Fa icon={faRotateLeft} size="xs" class="text-ghost" />
                             {/if}
                           </Button>
                           <!-- Push button for unpushed commits (only when remote exists) -->
@@ -4694,13 +4694,13 @@
                                 <Fa
                                   icon={faSpinner}
                                   size="xs"
-                                  class="animate-spin text-muted-foreground"
+                                  class="animate-spin text-subtle"
                                 />
                               {:else}
                                 <Fa
                                   icon={faArrowUpFromBracket}
                                   size="xs"
-                                  class="text-muted-foreground"
+                                  class="text-subtle"
                                 />
                               {/if}
                             </Button>
@@ -4760,7 +4760,7 @@
                     : 'opacity-0'}"
                 >
                   <span
-                    class="flex items-center gap-1.5 text-[11px] text-muted-foreground bg-sidebar select-none"
+                    class="flex items-center gap-1.5 text-ui text-subtle bg-sidebar select-none"
                   >
                     Workspace start
                     {#if loadingOlderCommits}
@@ -4810,7 +4810,7 @@
                           <Fa
                             icon={faChevronDown}
                             size={12}
-                            class="text-muted-foreground/60 shrink-0 transition-transform {isExpanded
+                            class="text-subtle shrink-0 transition-transform {isExpanded
                               ? 'rotate-0'
                               : '-rotate-90'}"
                           />
@@ -4822,14 +4822,14 @@
                         </Button>
                       {/if}
 
-                      <Fa icon={faCodeCommit} size="xs" class="text-muted-foreground/40 shrink-0" />
+                      <Fa icon={faCodeCommit} size="xs" class="text-ghost shrink-0" />
                       <button
                         type="button"
                         class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
                         onclick={() => handleOpenCommitChangeset(commit.hash, commit.message)}
                       >
                         <span
-                          class="text-[0.82rem] text-muted-foreground truncate flex-1"
+                          class="text-ui text-subtle truncate flex-1"
                           title={commit.message}
                         >
                           {commit.message}
@@ -4865,7 +4865,7 @@
             <!-- Load more previous commits -->
             {#if olderCommits.length > 0}
               <button
-                class="w-full text-[11px] text-muted-foreground/40 hover:text-muted-foreground py-1 transition-colors cursor-pointer"
+                class="w-full text-ui text-ghost hover:text-muted-foreground py-1 transition-colors cursor-pointer"
                 disabled={loadingOlderCommits}
                 onclick={() => {
                   const lastOlder = olderCommits[olderCommits.length - 1];
@@ -4909,7 +4909,7 @@
                 (pr) => pr.status === 'open' || pr.status === 'draft',
               )}
               {#if openPR}
-                <p class="text-xs text-muted-foreground">
+                <p class="text-xs text-subtle">
                   PR #{openPR.number} will be merged on GitHub into
                   <span class="font-medium text-foreground"
                     >{targetBranch || trunkBranch || 'main'}</span
@@ -4935,7 +4935,7 @@
                       />
                       <label
                         for="squash-merge-github-toggle"
-                        class="text-xs text-muted-foreground cursor-pointer select-none"
+                        class="text-xs text-subtle cursor-pointer select-none"
                       >
                         Squash commits
                       </label>
@@ -4979,7 +4979,7 @@
                 : ''}
               {@const mergeParts = [mergeStaged, mergeCommits].filter(Boolean)}
               {#if mergeParts.length > 0}
-                <p class="text-xs text-muted-foreground">
+                <p class="text-xs text-subtle">
                   {mergeParts.join(' and ')} will be merged into
                   <span class="font-medium text-foreground"
                     >{targetBranch || trunkBranch || 'trunk'}</span
@@ -4990,7 +4990,7 @@
               <!-- Commit message for staged changes -->
               {#if hasStaged}
                 <div>
-                  <span class="text-xs text-muted-foreground mb-1 block">Commit Message</span>
+                  <span class="text-xs text-subtle mb-1 block">Commit Message</span>
                   <div class="relative">
                     <Textarea
                       value={commitMessage}
@@ -5014,7 +5014,7 @@
 
               <!-- Target Branch -->
               <div>
-                <span class="text-xs text-muted-foreground mb-1 block">Target Branch</span>
+                <span class="text-xs text-subtle mb-1 block">Target Branch</span>
                 <BranchSelector
                   variant="default"
                   value={targetBranch}
@@ -5046,7 +5046,7 @@
                       />
                       <label
                         for="squash-merge-toggle"
-                        class="text-xs text-muted-foreground cursor-pointer select-none"
+                        class="text-xs text-subtle cursor-pointer select-none"
                       >
                         Squash commits
                       </label>
@@ -5071,7 +5071,7 @@
                       />
                       <label
                         for="push-after-merge-toggle"
-                        class="text-xs text-muted-foreground cursor-pointer select-none"
+                        class="text-xs text-subtle cursor-pointer select-none"
                       >
                         Push to remote
                       </label>
@@ -5238,7 +5238,7 @@
                       : ''}
                     {@const prParts = [stagedDescription, commitDescription].filter(Boolean)}
                     {#if prParts.length > 0}
-                      <p class="text-xs text-muted-foreground">
+                      <p class="text-xs text-subtle">
                         {prParts.join(' and ')} will be included in this PR.
                       </p>
                     {/if}
@@ -5246,7 +5246,7 @@
                     <!-- Title -->
                     {#if !isGeneratingPR}
                       <div>
-                        <span class="text-xs text-muted-foreground mb-1 block">Title</span>
+                        <span class="text-xs text-subtle mb-1 block">Title</span>
                         <input
                           type="text"
                           class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/50"
@@ -5258,7 +5258,7 @@
 
                     <!-- Description -->
                     <div>
-                      <span class="text-xs text-muted-foreground mb-1 block">Description</span>
+                      <span class="text-xs text-subtle mb-1 block">Description</span>
                       <div class="relative">
                         <Textarea
                           value={prDescription}
@@ -5275,7 +5275,7 @@
 
                     <!-- Target Branch -->
                     <div>
-                      <span class="text-xs text-muted-foreground mb-1 block">Target Branch</span>
+                      <span class="text-xs text-subtle mb-1 block">Target Branch</span>
                       <BranchSelector
                         variant="default"
                         value={targetBranch}
@@ -5386,12 +5386,12 @@
                   showArrow={false}
                 >
                   Pull {behindCount} Commit{behindCount === 1 ? '' : 's'}
-                  <Fa icon={faArrowDown} size="xs" class="text-muted-foreground/50 rotate-180" />
+                  <Fa icon={faArrowDown} size="xs" class="text-ghost rotate-180" />
                 </DividerButton>
               {:else if !isDiverged && !isBehind}
                 <!-- Synced - only when truly synced -->
                 <span
-                  class="relative z-20 text-xs text-muted-foreground/60 flex items-center gap-1 py-1.5 px-3 rounded-md bg-background"
+                  class="relative z-20 text-xs text-subtle flex items-center gap-1 py-1.5 px-3 rounded-md bg-background"
                 >
                   <Fa icon={faCheck} size="xs" />
                   <span>Synced</span>
@@ -5410,7 +5410,7 @@
                   Force Push
                 </DividerButton>
                 <DividerPanel open={forcePushDrawerOpen}>
-                  <p class="text-xs text-muted-foreground">
+                  <p class="text-xs text-subtle">
                     Your local <span class="font-medium">{workspace?.branch || 'branch'}</span> is {gitStore.ahead}
                     commit{gitStore.ahead === 1 ? '' : 's'} ahead and {gitStore.behind} commit{gitStore.behind ===
                     1
@@ -5472,7 +5472,7 @@
                       >
                         <Fa
                           icon={faArrowsRotate}
-                          class="opacity-50 text-[8px] {isRefreshingPR ? 'animate-spin' : ''}"
+                          class="opacity-50 text-ui {isRefreshingPR ? 'animate-spin' : ''}"
                         />
                       </button>
                     {/if}
@@ -5496,7 +5496,7 @@
                               ? 'text-purple-500'
                               : pr.status === 'closed'
                                 ? 'text-red-500'
-                                : 'text-muted-foreground'}
+                                : 'text-subtle'}
                         {@const statusIcon =
                           pr.status === 'merged' ? faCodeMerge : faCodePullRequest}
                         {@const isPRExpanded = expandedPRs.has(pr.number)}
@@ -5520,7 +5520,7 @@
                                 <Fa
                                   icon={faChevronDown}
                                   size={12}
-                                  class="text-muted-foreground/60 shrink-0 transition-transform {isPRExpanded
+                                  class="text-subtle shrink-0 transition-transform {isPRExpanded
                                     ? 'rotate-0'
                                     : '-rotate-90'}"
                                 />
@@ -5538,14 +5538,14 @@
                               class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
                               onclick={onOpenFullPanel}
                             >
-                              <span class="text-[0.82rem] text-muted-foreground truncate flex-1"
+                              <span class="text-ui text-subtle truncate flex-1"
                                 >{pr.title}</span
                               >
-                              <span class="text-[10px] text-muted-foreground/40">#{pr.number}</span>
+                              <span class="text-ui text-subtle">#{pr.number}</span>
                               {#if pr.status === 'merged'}
-                                <span class="text-[10px] text-purple-500 font-medium">Merged</span>
+                                <span class="text-ui text-purple-500 font-medium">Merged</span>
                               {:else if pr.status === 'closed'}
-                                <span class="text-[10px] text-red-500 font-medium">Closed</span>
+                                <span class="text-ui text-red-500 font-medium">Closed</span>
                               {/if}
                             </button>
 
@@ -5644,11 +5644,11 @@
                 </DividerButton>
               {/if}
               <DividerPanel open={connectRemoteDrawerOpen}>
-                <p class="text-xs text-muted-foreground">
+                <p class="text-xs text-subtle">
                   Add a git remote to enable pushing and pull requests.
                 </p>
                 <div>
-                  <span class="text-xs text-muted-foreground mb-1 block">Remote URL</span>
+                  <span class="text-xs text-subtle mb-1 block">Remote URL</span>
                   <input
                     type="text"
                     class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/50"
@@ -5678,7 +5678,7 @@
                     {/if}
                   </Button>
                 </div>
-                <p class="text-xs text-muted-foreground">
+                <p class="text-xs text-subtle">
                   Don't have a repo?
                   <a
                     href="https://github.com/new"
@@ -5719,14 +5719,14 @@
                     disabled={isResettingToTrunk}
                   >
                     {#if isResettingToTrunk}
-                      <Fa icon={faSpinner} size="sm" class="animate-spin text-muted-foreground" />
+                      <Fa icon={faSpinner} size="sm" class="animate-spin text-ghost" />
                       <span>Resetting...</span>
                     {:else}
                       <Fa icon={faRotateLeft} size="sm" class="text-primary" />
                       <span>Reset and continue working</span>
                     {/if}
                   </Button>
-                  <p class="text-xs text-muted-foreground text-center mt-2">
+                  <p class="text-xs text-subtle text-center mt-2">
                     Reset branch to {trunkBranch} and keep working
                   </p>
                 </div>
@@ -5742,7 +5742,7 @@
                   <Fa icon={faRocket} size="sm" class="text-primary" />
                   <span>Archive and start new space</span>
                 </Button>
-                <p class="text-xs text-muted-foreground text-center mt-2">
+                <p class="text-xs text-subtle text-center mt-2">
                   Continue working on this repo in a fresh workspace
                 </p>
               </div>

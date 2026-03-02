@@ -31,9 +31,9 @@
     transition:fade={{ duration: 200 }}
   >
     <div class="flex flex-col items-center gap-3">
-      <Fa icon={faSpinner} class="text-2xl text-muted-foreground animate-spin" />
+      <Fa icon={faSpinner} class="text-2xl text-subtle animate-spin" />
       {#if message && !subtle}
-        <p class="text-sm text-muted-foreground">
+        <p class="text-sm text-subtle">
           {message}
         </p>
       {/if}

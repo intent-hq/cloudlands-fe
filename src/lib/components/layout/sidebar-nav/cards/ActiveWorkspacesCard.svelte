@@ -242,8 +242,8 @@
 >
   {#if totalCount === 0}
     <div class="px-3 py-4">
-      <p class="text-sm text-muted-foreground/60">No active workspaces</p>
-      <p class="text-sm text-muted-foreground/40 mt-1 leading-tight">
+      <p class="text-sm text-subtle">No active workspaces</p>
+      <p class="text-sm text-subtle mt-1 leading-tight">
         Pin workspaces from All Spaces for quick access
       </p>
     </div>
@@ -286,7 +286,7 @@
       {@const unreadOffset = filteredUnread.length}
       <div class="px-3 pt-2 pb-1 flex items-center gap-1.5">
         <Header size={3}>Running</Header>
-        <span class="text-[10px] text-muted-foreground/30">{runningWorkspaces.length}</span>
+        <span class="text-ui text-subtle">{runningWorkspaces.length}</span>
       </div>
       {#each filteredRunning as { workspace, streamingIds }, i (workspace.id)}
         <WorkspaceListItem

@@ -724,7 +724,7 @@
   {:else if contentTooLarge}
     <div class="content-too-large" style="height: {height}">
       <div class="text-center space-y-4 max-w-md">
-        <div class="text-muted-foreground">
+        <div class="text-subtle">
           <svg
             class="w-16 h-16 mx-auto mb-4 opacity-50"
             fill="none"

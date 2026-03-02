@@ -232,7 +232,7 @@
     <div class="w-full max-w-[var(--content-max-width,60rem)] pl-14 pt-12 pr-4 mb-6 flex flex-col">
       <!-- Status row -->
       <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
-        <div class="text-muted-foreground/70 text-sm pt-0.5">Status</div>
+        <div class="text-subtle text-sm pt-0.5">Status</div>
         <div class="flex items-center min-h-6">
           <TaskStatusIndicator
             {workspaceId}
@@ -245,12 +245,12 @@
 
       <!-- Assignee row -->
       <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
-        <div class="text-muted-foreground/70 text-sm pt-0.5">Assignee</div>
+        <div class="text-subtle text-sm pt-0.5">Assignee</div>
         <div class="flex flex-col gap-1.5 min-h-6 min-w-0 overflow-hidden">
           {#if assignedAgents.length === 0}
             <button
               onclick={handleRunAgent}
-              class="inline-flex min-w-0 items-center justify-center size-6 rounded bg-muted/30 text-muted-foreground/70 truncate min-w-0 hover:bg-muted/50 hover:text-muted-foreground transition-colors cursor-pointer"
+              class="inline-flex min-w-0 items-center justify-center size-6 rounded bg-muted/30 text-muted-foreground truncate min-w-0 hover:bg-muted/50 hover:text-muted-foreground transition-colors cursor-pointer"
               title="Run agent"
             >
               <Fa icon={faPlay} class="text-xs" />
@@ -268,7 +268,7 @@
                     faceSeed={agentId}
                     class="mt-[-0.3rem]"
                   />
-                  <span class="truncate text-sm text-muted-foreground"
+                  <span class="truncate text-sm text-subtle"
                     >{getAgentName(agentId) || 'Agent'}</span
                   >
                 </button>
@@ -276,7 +276,7 @@
               <!-- Run agent button -->
               <button
                 onclick={handleRunAgent}
-                class="inline-flex items-center justify-center size-6 rounded text-muted-foreground/70 hover:text-muted-foreground transition-colors cursor-pointer"
+                class="inline-flex items-center justify-center size-6 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
                 title="Run agent"
               >
                 <Fa icon={faPlay} class="text-xs" />
@@ -285,7 +285,7 @@
             <!-- View all changes button -->
             <!-- <button
               onclick={handleViewAllChanges}
-              class="text-sm text-muted-foreground/70 hover:text-muted-foreground transition-colors cursor-pointer text-left"
+              class="text-sm text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer text-left"
             >
               View all changes
             </button> -->
@@ -295,7 +295,7 @@
 
       <!-- Subtasks row -->
       <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
-        <div class="text-muted-foreground/70 text-sm pt-0.5">Subtasks</div>
+        <div class="text-subtle text-sm pt-0.5">Subtasks</div>
         <div class="flex items-center gap-2 min-h-6 flex-wrap">
           {#if childTasks.length === 0}
             <span class="text-white/35 text-sm">None</span>

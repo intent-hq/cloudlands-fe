@@ -137,9 +137,9 @@
 <div class="flex flex-col" style="width: {mergedConfig.columnWidth}px;">
   <!-- File name and path (shown above column) -->
   <div class="mb-1 px-0.5 min-w-0" title={fileColumn.filePath}>
-    <div class="text-[9px] truncate">{pathInfo.fileName}</div>
+    <div class="text-ui truncate">{pathInfo.fileName}</div>
     <!-- {#if pathInfo.directory}
-      <div class="text-[8px] text-muted-foreground truncate">{pathInfo.directory}</div>
+      <div class="text-ui text-subtle truncate">{pathInfo.directory}</div>
     {/if} -->
   </div>
   <div

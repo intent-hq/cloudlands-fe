@@ -95,7 +95,7 @@
           class="flex items-center justify-center my-2 relative before:content-[''] before:absolute before:left-0 before:right-0 before:h-px before:bg-border before:z-0"
         >
           <span
-            class="relative px-3 py-1 bg-background text-muted-foreground text-xs rounded-full z-10"
+            class="relative px-3 py-1 bg-background text-subtle text-xs rounded-full z-10"
             >{formatChatTime(message.timestamp)}</span
           >
         </div>

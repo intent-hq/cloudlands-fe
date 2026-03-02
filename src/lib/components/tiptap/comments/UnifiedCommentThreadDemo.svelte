@@ -54,7 +54,7 @@
   <div class="max-w-4xl mx-auto space-y-8">
     <div>
       <h1 class="text-2xl font-bold mb-4">Unified Comment Thread Demo</h1>
-      <p class="text-muted-foreground mb-6">
+      <p class="text-subtle mb-6">
         Click the comment or the "Show replies" button to expand. The same first message structure
         is used in both states for smooth animation.
       </p>
@@ -68,7 +68,7 @@
         >
           {isCollapsed ? 'Expand' : 'Collapse'} Comment
         </button>
-        <span class="text-sm text-muted-foreground">
+        <span class="text-sm text-subtle">
           Current state: {isCollapsed ? 'Collapsed' : 'Expanded'}
         </span>
       </div>
@@ -106,7 +106,7 @@
 
     <div class="mt-8 p-4 bg-muted rounded-lg">
       <h3 class="font-semibold mb-2">Key Features:</h3>
-      <ul class="space-y-1 text-sm text-muted-foreground">
+      <ul class="space-y-1 text-sm text-subtle">
         <li>• Same message structure in both collapsed and expanded states</li>
         <li>• Smooth transitions between states</li>
         <li>• Consistent avatar and header positioning</li>

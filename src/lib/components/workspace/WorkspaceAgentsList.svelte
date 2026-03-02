@@ -257,7 +257,7 @@
       {#if isFirstNonCoordinator}
         <div class="pt-2.5 pb-0.5">
           <Header size={6}>Your Agents</Header>
-          <p class="text-xs text-muted-foreground/75 mt-0.5">
+          <p class="text-xs text-subtle mt-0.5">
             The Coordinator can delegate and verify tasks for these agents
           </p>
         </div>
@@ -281,7 +281,7 @@
         <button
           type="button"
           class="delegation-toggle container w-full flex items-center gap-2 py-1 pl-1.75 pr-3
-            text-sm text-muted-foreground/75 hover:text-muted-foreground/80 transition-colors cursor-pointer"
+            text-sm text-muted-foreground hover:text-muted-foreground/80 transition-colors cursor-pointer"
           onclick={(e: MouseEvent) => {
             e.stopPropagation();
             toggleDelegation(agent.id);

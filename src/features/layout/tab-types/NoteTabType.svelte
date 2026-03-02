@@ -252,7 +252,7 @@
     onclick={() => (showVersionHistory = !showVersionHistory)}
     tooltip={showVersionHistory ? 'Hide version history' : 'Show version history'}
     tooltipSide="bottom"
-    class={showVersionHistory ? 'text-foreground' : 'text-muted-foreground/50'}
+    class={showVersionHistory ? 'text-foreground' : 'text-muted-foreground'}
   >
     <Fa icon={faClockRotateLeft} size="xs" />
   </Button> -->
@@ -263,7 +263,7 @@
     onclick={() => noteSpellcheckSettings.toggle()}
     tooltip={noteSpellcheckSettings.enabled ? 'Spellcheck: On' : 'Spellcheck: Off'}
     tooltipSide="bottom"
-    class={noteSpellcheckSettings.enabled ? 'text-foreground' : 'text-muted-foreground/50'}
+    class={noteSpellcheckSettings.enabled ? 'text-foreground' : 'text-muted-foreground'}
   >
     <Fa icon={faSpellCheck} size="xs" />
   </Button>
@@ -316,7 +316,7 @@
     />
   {/if}
 {:else}
-  <div class="flex flex-col items-center justify-center h-full text-muted-foreground gap-2">
+  <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
     <Fa icon={faNote} class="text-4xl opacity-50" />
     <p>No note selected</p>
   </div>

@@ -171,7 +171,7 @@
   <!-- Content -->
   <div class="flex-1 flex items-baseline gap-1.5 min-w-0">
     <div class="w-full min-w-0 flex items-center gap-1.5">
-      <span class="text-[0.82rem] truncate {isSelected ? 'text-primary' : ''}"
+      <span class="text-ui truncate {isSelected ? 'text-primary' : ''}"
         >{displayTitle()}</span
       >
       {#if item.type === 'note' && item.isSpec}
@@ -181,7 +181,7 @@
       {/if}
     </div>
     {#if subtitle()}
-      <div class="text-xs text-muted-foreground truncate">{subtitle()}</div>
+      <div class="text-xs text-subtle truncate">{subtitle()}</div>
     {/if}
   </div>
 
@@ -196,7 +196,7 @@
           class="p-1 rounded hover:bg-muted transition-colors cursor-pointer"
           onclick={handleExternalClick}
         >
-          <Fa icon={faExternalLink} size="xs" class="text-muted-foreground" />
+          <Fa icon={faExternalLink} size="xs" class="text-ghost" />
         </button>
       </Tooltip>
     {/if}
@@ -207,7 +207,7 @@
           class="p-1 rounded hover:bg-destructive/10 transition-colors cursor-pointer"
           onclick={handleDeleteClick}
         >
-          <Fa icon={faTrash} size="xs" class="text-muted-foreground hover:text-destructive-foreground" />
+          <Fa icon={faTrash} size="xs" class="text-ghost hover:text-destructive-foreground" />
         </button>
       </Tooltip>
     {/if} -->
@@ -216,7 +216,7 @@
     <Fa
       icon={faChevronRight}
       size="xs"
-      class="text-muted-foreground/50 opacity-0 group-hover:opacity-100 transition-opacity"
+      class="text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
     />
   {/if}
 </div>

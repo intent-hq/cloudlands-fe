@@ -113,8 +113,8 @@
             class={cn(
               'inline-flex items-center justify-center',
               'min-w-[20px] px-1.5 py-0.5',
-              'text-[10px] font-medium',
-              'bg-muted text-muted-foreground',
+              'text-ui font-medium',
+              'bg-muted text-subtle',
               'border border-border',
               'rounded-sm shadow-sm',
               isMac && 'font-mono',
@@ -123,7 +123,7 @@
             {key}
           </kbd>
           {#if i < formattedShortcut.length - 1}
-            <span class="text-[10px] text-muted-foreground mx-0.5">+</span>
+            <span class="text-ui text-subtle mx-0.5">+</span>
           {/if}
         {/each}
       </div>

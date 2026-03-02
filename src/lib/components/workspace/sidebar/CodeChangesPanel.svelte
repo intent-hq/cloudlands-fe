@@ -123,7 +123,7 @@
     <!-- Staged Changes -->
     {#if stagedChanges.length > 0}
       <div class="mt-2">
-        <p class="text-[10px] uppercase tracking-wider text-muted-foreground px-2 mb-1">Staged</p>
+        <p class="text-ui uppercase tracking-wider text-muted-foreground px-2 mb-1">Staged</p>
         <FileChangesList
           changes={stagedChanges}
           {viewMode}
@@ -158,7 +158,7 @@
                 <Fa
                   icon={faCodeCommit}
                   size="xs"
-                  class="text-muted-foreground/50 shrink-0 opacity-50"
+                  class="text-subtle shrink-0 opacity-50"
                 />
                 <span class="text-xs truncate flex-1">{commit.message}</span>
                 {#if commit.files && commit.files.length > 0}
@@ -234,7 +234,7 @@
               <Fa
                 icon={faArrowRight}
                 size="xs"
-                class="text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity"
+                class="text-ghost opacity-0 group-hover:opacity-100 transition-opacity"
               />
             </button>
 
@@ -267,7 +267,7 @@
               ? 'text-green-500'
               : pr.status === 'merged'
                 ? 'text-purple-500'
-                : 'text-muted-foreground'}
+                : 'text-subtle'}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <div
@@ -276,7 +276,7 @@
           >
             <Fa icon={faCodePullRequest} size="xs" class="shrink-0 opacity-50 {statusColor}" />
             <span class="text-xs truncate flex-1">{pr.title}</span>
-            <span class="text-[10px] text-muted-foreground/60">#{pr.number}</span>
+            <span class="text-ui text-subtle">#{pr.number}</span>
             <button
               type="button"
               class="opacity-0 group-hover:opacity-30 transition-opacity hover:opacity-100 cursor-pointer"
@@ -285,7 +285,7 @@
                 onOpenPR?.(pr.htmlUrl);
               }}
             >
-              <Fa icon={faExternalLink} size="xs" class="text-muted-foreground" />
+              <Fa icon={faExternalLink} size="xs" class="text-ghost" />
             </button>
           </div>
         {/each}

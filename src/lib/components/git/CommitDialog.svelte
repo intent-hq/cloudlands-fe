@@ -114,7 +114,7 @@
       </div>
 
       <div class="mb-4">
-        <div class="text-sm text-muted-foreground mb-2">
+        <div class="text-sm text-subtle mb-2">
           {stagedCount} file{stagedCount !== 1 ? 's' : ''} staged
         </div>
         <textarea
@@ -126,7 +126,7 @@
             : 'Enter commit message...'}
           class="w-full h-32 px-3 py-2 bg-background border border-border rounded text-foreground resize-none focus:outline-none focus:border-primary"
         ></textarea>
-        <div class="text-xs text-muted-foreground mt-2">
+        <div class="text-xs text-subtle mt-2">
           Press <kbd class="px-1.5 py-0.5 bg-muted border border-border rounded text-xs"
             >⌘/Ctrl+Enter</kbd
           > to commit

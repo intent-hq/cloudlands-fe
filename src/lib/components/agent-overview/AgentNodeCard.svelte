@@ -68,11 +68,11 @@
 
   <!-- Name -->
   <div class="text-center max-w-[80px]">
-    <p class="text-[10px] font-medium text-foreground/90 truncate">{node.name}</p>
+    <p class="text-ui font-medium text-foreground/90 truncate">{node.name}</p>
     <!-- {#if specialist}
       <div class="flex items-center justify-center gap-0.5 mt-0.5">
         <SpecialistToolIcon {specialist} size={8} muted />
-        <span class="text-[8px] text-muted-foreground/70 capitalize">
+        <span class="text-ui text-subtle capitalize">
           {specialist === 'spec-writer' ? 'Coordinator' : specialist}
         </span>
       </div>

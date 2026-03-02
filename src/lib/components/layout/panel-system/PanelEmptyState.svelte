@@ -148,7 +148,7 @@
           >
             <Fa icon={getTabIcon(item.tab.type)} class="w-3 h-3 flex-shrink-0 opacity-60" />
             <span class="truncate flex-1">{item.tab.title}</span>
-            <span class="text-[10px] text-muted-foreground/40 flex-shrink-0"
+            <span class="text-ui text-subtle flex-shrink-0"
               >{formatTime(item.closedAt)}</span
             >
           </button>
@@ -166,9 +166,9 @@
           onclick={shortcut.action}
           title={shortcut.label}
         >
-          <span class="text-muted-foreground/70 truncate">{shortcut.label}</span>
+          <span class="text-subtle truncate">{shortcut.label}</span>
           <div
-            class="shortcut-key flex-shrink-0 px-1.5 py-0.5 rounded bg-muted/50 text-[10px] text-muted-foreground/80"
+            class="shortcut-key flex-shrink-0 px-1.5 py-0.5 rounded bg-muted/50 text-ui text-subtle"
           >
             {formatShortcut(shortcut.key)}
           </div>

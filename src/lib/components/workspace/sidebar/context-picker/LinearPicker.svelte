@@ -101,8 +101,8 @@
 
 {#if !isAuthenticated}
   <div class="p-8 flex flex-col items-center gap-4">
-    <LinearIcon size={48} class="text-muted-foreground/50" />
-    <p class="text-sm text-muted-foreground text-center">Connect to Linear to see your issues</p>
+    <LinearIcon size={48} class="text-subtle" />
+    <p class="text-sm text-subtle text-center">Connect to Linear to see your issues</p>
     <Button onclick={handleConnect} disabled={isConnecting}>
       {#if isConnecting}
         <Fa icon={faSpinner} class="animate-spin mr-2" />
@@ -112,13 +112,13 @@
   </div>
 {:else if isLoading}
   <div class="p-8 flex justify-center">
-    <Fa icon={faSpinner} class="animate-spin text-muted-foreground" size="lg" />
+    <Fa icon={faSpinner} class="animate-spin text-subtle" size="lg" />
   </div>
 {:else}
   <!-- Search -->
   <div class="p-3 border-b border-border">
     <div class="relative">
-      <Fa icon={faSearch} class="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50" size="sm" />
+      <Fa icon={faSearch} class="absolute left-3 top-1/2 -translate-y-1/2 text-ghost" size="sm" />
       <Input
         bind:value={searchQuery}
         placeholder="Search issues..."
@@ -131,7 +131,7 @@
   <!-- Issues list -->
   <div class="max-h-80 overflow-y-auto">
     {#if filteredIssues.length === 0}
-      <div class="p-8 text-center text-muted-foreground text-sm">
+      <div class="p-8 text-center text-subtle text-sm">
         {searchQuery ? 'No matching issues found' : 'No issues found'}
       </div>
     {:else}
@@ -142,13 +142,13 @@
           onclick={() => handleSelect(issue)}
         >
           <div class="shrink-0 mt-0.5">
-            <LinearIcon size={14} class="text-muted-foreground" />
+            <LinearIcon size={14} class="text-ghost" />
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
-              <span class="text-xs font-mono text-muted-foreground">{issue.identifier}</span>
+              <span class="text-xs font-mono text-subtle">{issue.identifier}</span>
               {#if issue.teamName}
-                <span class="text-xs text-muted-foreground/50">• {issue.teamName}</span>
+                <span class="text-xs text-subtle">• {issue.teamName}</span>
               {/if}
             </div>
             <p class="text-sm truncate mt-0.5">{issue.title}</p>

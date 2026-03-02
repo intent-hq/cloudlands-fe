@@ -141,7 +141,7 @@
           <span
             class={cn(
               'text-base font-medium truncate flex-1 min-w-0',
-              ws.archived || !ws.title ? 'text-muted-foreground/70' : 'text-foreground',
+              ws.archived || !ws.title ? 'text-muted-foreground' : 'text-foreground',
             )}
             title={ws.title || 'Untitled'}>{ws.title || 'Untitled'}</span
           >
@@ -167,7 +167,7 @@
               {/each}
               {#if agents.length > 4}
                 <div
-                  class="ml-1.5 flex items-center justify-center text-[10px] text-muted-foreground/60 font-medium"
+                  class="ml-1.5 flex items-center justify-center text-ui text-subtle font-medium"
                 >
                   +{agents.length - 4}
                 </div>
@@ -185,12 +185,12 @@
                     ? 'bg-emerald-500/10 text-emerald-500'
                     : 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
                   : prDisplayStatus === PullRequestStatus.Draft
-                    ? 'bg-muted-foreground/10 text-muted-foreground/60'
+                    ? 'bg-muted-foreground/10 text-muted-foreground'
                     : 'bg-red-500/10 text-red-500'}
             {@const tooltipText = prTooltipContent}
             <Tooltip content={tooltipText} side="bottom" sideOffset={4} disabled={!tooltipText}>
               <span
-                class="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 {statusColor}"
+                class="text-ui font-medium px-1.5 py-0.5 rounded-full shrink-0 {statusColor}"
               >
                 PR{prDisplayNumber ? ` #${prDisplayNumber}` : ''}
               </span>
@@ -200,14 +200,14 @@
           <!-- Activity time -->
           <RelativeTime
             date={ws.lastActivity || ws.createdAt}
-            class="text-[0.82rem] text-muted-foreground/70 whitespace-nowrap"
+            class="text-ui text-subtle whitespace-nowrap"
             compact
           />
         </div>
 
         <!-- Row 2: repo info (hidden when grouped by repo) -->
         {#if !groupByRepo && ws.repositoryOwner && ws.repositoryName}
-          <div class="truncate text-[12px] text-muted-foreground/50">
+          <div class="truncate text-xs text-subtle">
             {ws.repositoryOwner}/{ws.repositoryName}
           </div>
         {/if}

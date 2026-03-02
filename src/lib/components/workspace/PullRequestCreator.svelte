@@ -263,7 +263,7 @@
   <!-- Footer -->
   {#if !success}
     <div class="flex items-center justify-between px-6 py-4 border-t border-border">
-      <div class="text-xs text-muted-foreground">
+      <div class="text-xs text-subtle">
         {#if generatingContent && autoCreatePending}
           Generating and creating PR...
         {:else if generatingContent}

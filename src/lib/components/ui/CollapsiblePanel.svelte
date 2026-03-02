@@ -64,11 +64,11 @@
     <div class="relative flex items-center gap-2 flex-1">
       <div class="flex-1 flex items-center gap-2">
         {#if icon}
-          <Fa {icon} size="sm" class="text-muted-foreground opacity-30" />
+          <Fa {icon} size="sm" class="text-ghost opacity-30" />
         {/if}
         <h3 class="m-0 text-sm font-medium">{title}</h3>
         <div
-          class="transition-all mt-[2px] duration-200 text-muted-foreground {!hovering &&
+          class="transition-all mt-[2px] duration-200 text-subtle {!hovering &&
           showChevronOnHover
             ? 'opacity-0'
             : 'opacity-100'} {collapsed ? '-rotate-90' : ''}"

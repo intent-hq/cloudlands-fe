@@ -11,14 +11,14 @@
   let { children, class: className = '', variant = 'default', size = 'sm' }: Props = $props();
 
   const sizeClasses = {
-    xs: 'px-1.5 py-0.5 text-[10px] min-w-[16px] tracking-wider',
+    xs: 'px-1.5 py-0.5 text-ui-sm min-w-[16px] tracking-wider',
     sm: 'px-1.5 py-0.5 text-xs min-w-[20px] tracking-wide',
     md: 'px-2 py-1 text-sm min-w-[24px] tracking-wide',
   };
 
   const variantClasses = {
-    default: 'bg-muted text-muted-foreground',
-    outline: 'border border-border text-muted-foreground',
+    default: 'bg-muted text-subtle',
+    outline: 'border border-border text-subtle',
   };
 </script>
 

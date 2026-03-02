@@ -78,7 +78,7 @@
       case 'remove':
         return 'text-red-600 bg-red-500/20';
       default:
-        return 'text-muted-foreground bg-muted/50';
+        return 'text-subtle bg-muted/50';
     }
   }
 
@@ -101,8 +101,8 @@
   <!-- Header -->
   <div class="px-3 py-1.5 border-b border-border bg-background flex items-center gap-2">
     <span class="text-xs font-medium truncate">{fileColumn.fileName}</span>
-    <span class="text-[10px] text-muted-foreground truncate flex-1">{fileColumn.filePath}</span>
-    <span class="text-[10px] text-muted-foreground">
+    <span class="text-ui text-subtle truncate flex-1">{fileColumn.filePath}</span>
+    <span class="text-ui text-subtle">
       <span class="text-green-600">+{fileColumn.additions}</span>
       <span class="mx-1">/</span>
       <span class="text-red-600">-{fileColumn.deletions}</span>
@@ -120,7 +120,7 @@
           <div
             class={`w-10 shrink-0 text-right pr-2 py-0.5 select-none ${getGutterClass(displayLine.type)}`}
           >
-            <span class="text-[10px]">
+            <span class="text-ui">
               {displayLine.newLineNumber || displayLine.oldLineNumber || ''}
             </span>
           </div>
@@ -129,7 +129,7 @@
           <div
             class={`w-4 shrink-0 text-center py-0.5 select-none ${getGutterClass(displayLine.type)}`}
           >
-            <span class="text-[10px]">{getLineSymbol(displayLine.type)}</span>
+            <span class="text-ui">{getLineSymbol(displayLine.type)}</span>
           </div>
 
           <!-- Code content -->

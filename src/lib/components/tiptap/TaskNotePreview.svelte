@@ -54,7 +54,7 @@
 <div class="w-72 bg-popover border border-border shadow {className}" role="tooltip">
   <div class="pt-3.5 px-5">
     {#if !note}
-      <div class="flex items-center gap-2 text-muted-foreground text-sm">
+      <div class="flex items-center gap-2 text-subtle text-sm">
         <Fa icon={faSpinner} class="animate-spin" />
         <span>Loading...</span>
       </div>
@@ -64,7 +64,7 @@
         <div class="max-w-full overflow-hidden flex flex-col">
           <div
             class="relative prose prose-sm max-w-none text-xs flex flex-col max-h-[12rem] overflow-hidden
-                   **:text-muted-foreground
+                   **:text-subtle
                    [&_h1]:text-sm [&_h1]:text-foreground [&_h1]:font-semibold [&_h1]:mb-1 [&_h1]:mt-0
                    [&_h2]:text-sm [&_h2]:text-foreground [&_h2]:font-semibold [&_h2]:mb-0.5 [&_h2]:mt-1
                    [&_h3]:text-xs [&_h3]:text-foreground [&_h3]:font-medium [&_h3]:mb-0.5 [&_h3]:mt-1
@@ -86,12 +86,12 @@
           </div>
         </div>
       {:else}
-        <div class="text-sm text-muted-foreground/60 italic">No content</div>
+        <div class="text-sm text-subtle italic">No content</div>
       {/if}
     {/if}
   </div>
 
-  <div class="text-muted-foreground text-xs w-full bg-sidebar/50 py-2 px-5">
+  <div class="text-subtle text-xs w-full bg-sidebar/50 py-2 px-5">
     Click to open.
     <br />
     ⌘ + click to open in adjacent panel

@@ -421,7 +421,7 @@
   <div class="flex gap-9" bind:clientWidth>
     {#if filteredWorkspaces.length === 0 && masonryOrderedColumns.flat().length === 0}
       <div
-        class="w-full pt-8 text-center text-muted-foreground/50 text-sm"
+        class="w-full pt-8 text-center text-subtle text-sm"
         transition:slide={{ axis: 'y', duration: 150 }}
       >
         {#if searchQuery}
@@ -456,7 +456,7 @@
               {#if !isCollapsed}
                 <div class="overflow-hidden" transition:slide={{ axis: 'y', duration: 150 }}>
                   {#if group.workspaces.length === 0}
-                    <div class="px-3 py-3 text-xs text-muted-foreground/50 text-center">
+                    <div class="px-3 py-3 text-xs text-subtle text-center">
                       No active spaces
                     </div>
                   {:else}
@@ -512,7 +512,7 @@
     {/each}
 
     {#if filteredWorkspaces.length === 0}
-      <div class="py-16 text-center text-muted-foreground/50">
+      <div class="py-16 text-center text-subtle">
         {#if searchQuery}
           <p class="text-[13px]">No spaces match "{searchQuery}"</p>
         {:else}

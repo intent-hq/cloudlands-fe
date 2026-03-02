@@ -84,7 +84,7 @@
     {#if statusIcon}
       <Fa icon={statusIcon} class={cn('text-sm', statusColors[status])} />
     {:else}
-      <Fa {icon} class="text-sm text-muted-foreground/50" />
+      <Fa {icon} class="text-sm text-ghost" />
     {/if}
   </div>
 
@@ -96,12 +96,12 @@
   >
     <!-- Main text with inline children -->
     <div
-      class="flex flex-wrap items-baseline gap-x-1 gap-y-0.5 text-sm text-muted-foreground leading-relaxed"
+      class="flex flex-wrap items-baseline gap-x-1 gap-y-0.5 text-sm text-subtle leading-relaxed"
     >
       {@render children()}
 
       <!-- Timestamp -->
-      <span class="text-xs text-muted-foreground/50 ml-1">
+      <span class="text-xs text-subtle ml-1">
         · <RelativeTime date={timestamp} compact />
       </span>
     </div>

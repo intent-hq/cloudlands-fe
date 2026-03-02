@@ -258,16 +258,16 @@
   <!-- Horizontal banner bar at bottom of terminal -->
   <div bind:this={bannerEl} class="setup-script-banner border-t border-border bg-muted/30 shrink-0">
     <div class="flex items-center gap-3 px-4 py-2">
-      <div class="flex items-center gap-2 text-muted-foreground">
+      <div class="flex items-center gap-2 text-subtle">
         <Fa icon={faWandMagicSparkles} class="w-3.5 h-3.5 text-primary/70" />
       </div>
-      <p class="text-sm text-muted-foreground flex-1">
+      <p class="text-sm text-subtle flex-1">
         <span class="text-foreground/80 font-medium">Speed up future workspaces</span>
         — save your setup commands as a reusable script
       </p>
       <button
         type="button"
-        class="text-xs text-muted-foreground/40 hover:text-muted-foreground transition-colors cursor-pointer"
+        class="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
         onclick={dismiss}
       >
         Don't show again
@@ -285,7 +285,7 @@
       {/if}
       <button
         type="button"
-        class="p-1 text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
+        class="p-1 text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
         onclick={close}
         aria-label="Close"
       >
@@ -316,7 +316,7 @@
         <!-- <Fa icon={faWandMagicSparkles} class="w-3.5 h-3.5 text-primary/70 mt-1" /> -->
         <div class="flex flex-col">
           <span class="text-sm font-medium text-foreground/80">Create setup script</span>
-          <p class="text-xs text-muted-foreground">
+          <p class="text-xs text-subtle">
             Runs automatically when you create new workspaces for this repo
           </p>
         </div>
@@ -329,7 +329,7 @@
         </Button>
         <button
           type="button"
-          class="p-1 text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
+          class="p-1 text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
           onclick={() => (isExpanded = false)}
           aria-label="Close editor"
         >
@@ -340,7 +340,7 @@
 
     <!-- Script name -->
     <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border/30">
-      <span class="text-xs text-muted-foreground">Name:</span>
+      <span class="text-xs text-subtle">Name:</span>
       <input
         type="text"
         bind:value={scriptName}

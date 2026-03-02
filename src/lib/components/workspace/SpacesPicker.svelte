@@ -134,7 +134,7 @@
       'transition-all duration-150',
       page.url.pathname === '/'
         ? 'bg-muted/80 text-foreground'
-        : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted/50',
+        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
     )}
     aria-label="Go to home"
   >
@@ -157,14 +157,14 @@
   >
     {#snippet header()}
       <div class="flex items-center justify-between px-3 py-2">
-        <span class="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wider">
+        <span class="text-ui font-medium text-muted-foreground uppercase tracking-wider">
           Spaces
         </span>
         <button
           onclick={createNewWorkspace}
           class={cn(
             'flex items-center justify-center w-5 h-5 rounded cursor-pointer',
-            'text-muted-foreground/60 hover:text-foreground hover:bg-muted/50',
+            'text-muted-foreground hover:text-foreground hover:bg-muted/50',
             'transition-colors duration-150',
           )}
           aria-label="New space"
@@ -181,7 +181,7 @@
           'transition-all duration-150',
           open
             ? 'bg-muted/80 text-foreground'
-            : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted/50',
+            : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
         )}
         aria-label="Switch space"
       >
@@ -214,7 +214,7 @@
             {/if}
           </div>
           {#if !isHome && workspace?.branch}
-            <div class="flex items-center gap-1 text-[11px] text-muted-foreground/70">
+            <div class="flex items-center gap-1 text-ui text-subtle">
               <!-- <Fa icon={faCodeBranch} class="w-2 h-2" /> -->
               <span class="truncate">{workspace.repositoryOwner}/{workspace.repositoryName}</span>
             </div>
@@ -229,7 +229,7 @@
     {/snippet}
 
     {#snippet footer()}
-      <div class="px-3 py-1 text-[11px] text-muted-foreground bg-sidebar">
+      <div class="px-3 py-1 text-ui text-subtle bg-sidebar">
         <span class="font-medium">⌘+click</span> to open in new window
       </div>
     {/snippet}

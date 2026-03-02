@@ -94,7 +94,7 @@
 >
   <!-- Search Header -->
   <div class="flex items-center gap-2 p-3 border-b border-border">
-    <Fa icon={faSearch} class="text-muted-foreground" />
+    <Fa icon={faSearch} class="text-ghost" />
     <input
       bind:this={searchInput}
       bind:value={searchQuery}
@@ -106,7 +106,7 @@
 
     <!-- Results Counter -->
     {#if resultCount > 0}
-      <div class="flex items-center gap-1 text-xs text-muted-foreground">
+      <div class="flex items-center gap-1 text-xs text-subtle">
         <span>{currentResult + 1}/{resultCount}</span>
         <button
           onclick={() => onNavigateResult('prev')}
@@ -131,7 +131,7 @@
       class="p-1.5 hover:bg-muted rounded transition-colors {showFilters ? 'bg-muted' : ''}"
       title="Toggle filters"
     >
-      <Fa icon={faFilter} size="xs" class="text-muted-foreground" />
+      <Fa icon={faFilter} size="xs" class="text-ghost" />
     </button>
 
     <!-- Close Button -->
@@ -140,7 +140,7 @@
       class="p-1.5 hover:bg-muted rounded transition-colors"
       title="Close search (Esc)"
     >
-      <Fa icon={faXmark} size="xs" class="text-muted-foreground" />
+      <Fa icon={faXmark} size="xs" class="text-ghost" />
     </button>
   </div>
 
@@ -152,7 +152,7 @@
     >
       <!-- Role Filter -->
       <div class="flex items-center gap-2">
-        <span class="text-xs text-muted-foreground w-20">Filter by:</span>
+        <span class="text-xs text-subtle w-20">Filter by:</span>
         <div class="flex gap-1">
           <button
             onclick={() => toggleFilter('role', 'all')}
@@ -190,7 +190,7 @@
             onchange={handleSearch}
             class="w-3 h-3"
           />
-          <span class="text-xs text-muted-foreground">Case sensitive</span>
+          <span class="text-xs text-subtle">Case sensitive</span>
         </label>
         <label class="flex items-center gap-2 cursor-pointer">
           <input
@@ -199,14 +199,14 @@
             onchange={handleSearch}
             class="w-3 h-3"
           />
-          <span class="text-xs text-muted-foreground">Use regex</span>
+          <span class="text-xs text-subtle">Use regex</span>
         </label>
       </div>
     </div>
   {/if}
 
   <!-- Keyboard Shortcuts Help -->
-  <div class="px-3 py-2 text-xs text-muted-foreground/60 bg-muted/30">
+  <div class="px-3 py-2 text-xs text-subtle bg-muted/30">
     <div class="flex gap-4">
       <span>Enter: Next</span>
       <span>Shift+Enter: Previous</span>

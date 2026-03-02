@@ -107,7 +107,7 @@
         </div>
       {/each}
     </div>
-    <div class="text-xs text-muted-foreground ml-2">
+    <div class="text-xs text-subtle ml-2">
       {items.length}
       {items.length === 1 ? 'item' : 'items'}
     </div>
