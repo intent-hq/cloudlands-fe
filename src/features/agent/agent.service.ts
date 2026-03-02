@@ -140,6 +140,11 @@ class RefactoredAgentService extends EventEmitter {
   private pendingSessionCreations = new Map<string, Promise<AgentSession>>();
   private readonly AGENT_CREATED_DEDUP_WINDOW = 500; // ms
 
+  // Lock for initial agent activation - prevents duplicate coordinator creation
+  // when multiple code paths (restoreSession, resumeSession, createSession) race
+  // during workspace creation. Key: `${workspaceId}:${agentId}`
+  private initialAgentActivationLocks = new Map<string, Promise<AgentSession | null>>();
+
   // Track the message count from disk for each agent session.
   // This prevents beforeunload from overwriting a complete session on disk
   // with a stale in-memory session that has fewer messages.
@@ -2487,6 +2492,53 @@ class RefactoredAgentService extends EventEmitter {
     if (!workspace) return false;
     const agent = workspace.agents.get(agentId as any);
     return !!agent;
+  }
+
+  /**
+   * Lock-based deduplication for initial agent activation.
+   * Multiple code paths (restoreSession, resumeSession, createSession) can race
+   * during workspace creation. This ensures only one activation proceeds;
+   * subsequent callers await the first caller's promise.
+   */
+  async activateInitialAgent(
+    agentId: string,
+    workspace: Workspace,
+    createFn: () => Promise<AgentSession | null>,
+  ): Promise<AgentSession | null> {
+    const key = `${workspace.id}:${agentId}`;
+
+    // If already activated, return existing session
+    const existing = sessionStore.getSession(agentId);
+    if (existing?.backendSessionId) {
+      logger.info('activateInitialAgent: already activated', { agentId, workspaceId: workspace.id });
+      return existing;
+    }
+
+    // If activation in progress, await it
+    const pending = this.initialAgentActivationLocks.get(key);
+    if (pending) {
+      logger.info('activateInitialAgent: awaiting existing activation', { agentId, workspaceId: workspace.id });
+      return pending;
+    }
+
+    // Start activation with timeout guard
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const promise = Promise.race([
+      createFn(),
+      new Promise<null>((resolve) => {
+        timeoutId = setTimeout(() => {
+          logger.warn('activateInitialAgent: timeout after 60s, releasing lock', { key });
+          resolve(null);
+        }, 60_000);
+      }),
+    ]).finally(() => {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
+      this.initialAgentActivationLocks.delete(key);
+    });
+    this.initialAgentActivationLocks.set(key, promise);
+    return promise;
   }
 
   /**
@@ -5524,6 +5576,13 @@ class RefactoredAgentService extends EventEmitter {
 
     // Clear analytics tracking state
     agentAnalyticsState.clear();
+
+    // Clear activation and deduplication maps
+    this.initialAgentActivationLocks.clear();
+    this.pendingSessionCreations.clear();
+    this.activationMutex.clear();
+    this.recentAgentCreatedEvents.clear();
+    this.diskMessageCounts.clear();
 
     // Only clear initialization status as it's temporary state
     this.initializationStatus.clear();

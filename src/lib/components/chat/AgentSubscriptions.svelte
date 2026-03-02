@@ -80,12 +80,11 @@
   let lastLoadAgentId: string | null = null;
   let lastLoadWorkspaceId: string | null = null;
   let discoveryStartTime: number = 0; // Track when discovery window started
-	  let discoveryMaxLifetimeReached: boolean = false; // Stops discovery polling only (never blocks snapshot fetch)
-	  let isStreamingAfterWake: boolean = false; // Blocks loadSubscriptions only while agent is actively streaming post-wake
-  let wakeVersion: number = 0; // Version from last agent:woken-by-subscription event (for stale response detection)
-	  let lastSnapshotVersion: number = 0; // Version from last applied snapshot (for stale response detection)
-	  let lastDiscoveryRestartAt: number = 0; // Throttle restart storms from bursts of agent:created
-	  let wakeFailsafeTimeout: ReturnType<typeof setTimeout> | null = null; // Failsafe: clears isStreamingAfterWake if no clearing event arrives
+  let discoveryMaxLifetimeReached: boolean = false; // Stops discovery polling only (never blocks snapshot fetch)
+  let isStreamingAfterWake: boolean = false; // Blocks loadSubscriptions only while agent is actively streaming post-wake
+
+  let lastDiscoveryRestartAt: number = 0; // Throttle restart storms from bursts of agent:created
+  let wakeFailsafeTimeout: ReturnType<typeof setTimeout> | null = null; // Failsafe: clears isStreamingAfterWake if no clearing event arrives
 
   /**
    * Clear all pending timers (debounce, retry, wokenUp, wakeFailsafe).
@@ -209,20 +208,20 @@
       && !(waitMode === 'all' && completionStatus.total > 0 && completionStatus.completed >= completionStatus.total);
   });
 
-	  /**
-	   * Debounced wrapper: coalesces rapid-fire hint events into a single IPC call.
-	   */
+  /**
+   * Debounced wrapper: coalesces rapid-fire hint events into a single IPC call.
+   */
   function requestLoadSubscriptions() {
-	    if (isDestroyed) return;
-	    // Don't fetch snapshots while the agent is actively streaming after wake.
-	    // We'll refetch once it returns to idle.
-	    if (isStreamingAfterWake) return;
+    if (isDestroyed) return;
+    // Don't fetch snapshots while the agent is actively streaming after wake.
+    // We'll refetch once it returns to idle.
+    if (isStreamingAfterWake) return;
 
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debounceTimer = null;
       loadSubscriptions();
-	    }, 350);
+    }, 350);
   }
 
   async function loadSubscriptions(retryCount = 0) {
@@ -230,7 +229,7 @@
     // Don't load subscriptions while agent is actively streaming after wake.
     // This prevents pending timers (debounce, double-tap, retry) from
     // re-populating subscriptions and re-showing the "Waiting for" UI.
-	    if (isStreamingAfterWake) return;
+    if (isStreamingAfterWake) return;
 
     // Capture prop values safely - they may throw if parent component's workspace is null
     let wsId: string | undefined;
@@ -264,7 +263,7 @@
           // If the agent was woken or agentId changed during the await, discard the stale response.
           // This prevents the exact bug where a wake event fires mid-IPC and clears subscriptions,
           // but the in-flight response then writes them back.
-	          if (isStreamingAfterWake) {
+          if (isStreamingAfterWake) {
             logger.debug('Discarding stale IPC response — agent woken during fetch', { agentId: aId });
             return;
           }
@@ -285,41 +284,14 @@
 
           // VERSION GUARD: Discard responses from before the last wake event.
           // When an agent is woken, the subscription state changes (unsubscribe/cleanup).
-          // Any IPC response with a version <= the wake version contains pre-wake data
-          // that would incorrectly re-populate the "Waiting for" UI.
-          const responseVersion = result.version as number | undefined;
-	          // Discard responses from *before* the last wake event.
-	          // Strictly < (not <=) so the first post-wake snapshot at the same version isn't dropped.
-	          if (responseVersion !== undefined && wakeVersion > 0 && responseVersion < wakeVersion) {
-	            logger.debug('Discarding stale IPC response — version predates wake', {
-              responseVersion,
-              wakeVersion,
-              agentId: aId,
-            });
-            return;
-          }
-
-	          // Discard responses older than the last snapshot we applied.
-	          if (responseVersion !== undefined && lastSnapshotVersion > 0 && responseVersion < lastSnapshotVersion) {
-	            logger.debug('Discarding stale IPC response — older than last applied snapshot', {
-	              responseVersion,
-	              lastSnapshotVersion,
-	              agentId: aId,
-	            });
-	            return;
-	          }
-
           const newSubscriptions = result.data || [];
           const newDelegationGroups = result.delegationGroups || [];
           const prevCount = subscriptions.length;
           subscriptions = newSubscriptions;
           delegationGroups = newDelegationGroups;
-	          if (responseVersion !== undefined) {
-	            lastSnapshotVersion = responseVersion;
-	          }
 
-	          if (newSubscriptions.length > 0 || prevCount > 0) {
-	            logger.debug('loadSubscriptions snapshot applied', {
+          if (newSubscriptions.length > 0 || prevCount > 0) {
+            logger.debug('loadSubscriptions snapshot applied', {
               agentId: aId,
               subscriptionCount: newSubscriptions.length,
               delegationGroupCount: newDelegationGroups.length,
@@ -348,14 +320,14 @@
             retryTimeout = setTimeout(() => loadSubscriptions(retryCount + 1), delay);
           }
         } else {
-	          logger.warn('loadSubscriptions failed - backend returned failure', {
+          logger.warn('loadSubscriptions failed - backend returned failure', {
             result,
             agentId: aId,
           });
         }
       }
     } catch (error) {
-	      logger.warn('loadSubscriptions error', { error, agentId: aId, retryCount });
+      logger.warn('loadSubscriptions error', { error, agentId: aId, retryCount });
     }
   }
 
@@ -393,8 +365,8 @@
    */
   function startDiscoveryPolling() {
     if (discoveryInterval) return;
-	    if (discoveryMaxLifetimeReached) return;
-	    if (isStreamingAfterWake) return;
+    if (discoveryMaxLifetimeReached) return;
+    if (isStreamingAfterWake) return;
 
     discoveryStartTime = Date.now();
     const DISCOVERY_WINDOW = 30000; // 30s window per discovery session
@@ -406,16 +378,16 @@
 
       // Check max lifetime (5 minutes from mount)
       if (elapsedSinceStart > MAX_LIFETIME) {
-	        logger.warn('Discovery max lifetime reached (5m), stopping discovery polling', { agentId });
+        logger.warn('Discovery max lifetime reached (5m), stopping discovery polling', { agentId });
         stopDiscoveryPolling();
-	        discoveryMaxLifetimeReached = true;
+        discoveryMaxLifetimeReached = true;
         return;
       }
 
       // Check current window (30s from window start)
       if (elapsedSinceWindowStart > DISCOVERY_WINDOW) {
         // Current discovery window expired
-	        logger.debug('Discovery window ended (30s), no subscriptions found', { agentId });
+        logger.debug('Discovery window ended (30s), no subscriptions found', { agentId });
         stopDiscoveryPolling();
         return;
       }
@@ -442,19 +414,19 @@
    * Called when agent:created is received for a child agent.
    */
   function restartDiscoveryPolling() {
-	    if (discoveryMaxLifetimeReached) {
-	      logger.debug('Discovery max lifetime reached, not restarting discovery', { agentId });
-	      return;
-	    }
-	    if (isStreamingAfterWake) {
-	      logger.debug('Agent is streaming after wake, not restarting discovery', { agentId });
+    if (discoveryMaxLifetimeReached) {
+      logger.debug('Discovery max lifetime reached, not restarting discovery', { agentId });
+      return;
+    }
+    if (isStreamingAfterWake) {
+      logger.debug('Agent is streaming after wake, not restarting discovery', { agentId });
       return;
     }
 
-	    // Throttle restart storms from bursts of agent:created
-	    const now = Date.now();
-	    if (now - lastDiscoveryRestartAt < 2000) return;
-	    lastDiscoveryRestartAt = now;
+    // Throttle restart storms from bursts of agent:created
+    const now = Date.now();
+    if (now - lastDiscoveryRestartAt < 2000) return;
+    lastDiscoveryRestartAt = now;
 
     const elapsedSinceStart = Date.now() - mountTime;
     const MAX_LIFETIME = 5 * 60 * 1000; // 5 minutes max total
@@ -465,14 +437,14 @@
       return;
     }
 
-	    logger.debug('Restarting discovery polling for new 30s window', { agentId });
+    logger.debug('Restarting discovery polling for new 30s window', { agentId });
     stopDiscoveryPolling();
     startDiscoveryPolling();
   }
 
   onMount(() => {
     mountTime = Date.now();
-	    logger.debug('Mounted', { agentId, workspaceId });
+    logger.debug('Mounted', { agentId, workspaceId });
 
     // Initial load
     loadSubscriptions();
@@ -502,7 +474,7 @@
       // Note: We always reload when eventAgentId === agentId because new subscriptions
       // won't be in watchedAgentIds() yet (they're added after reload)
       const eventAgentId = extractEventData<string>(event, 'agentId');
-	      logger.debug('agent:subscribed received', { eventAgentId, agentId, match: eventAgentId === agentId });
+      logger.debug('agent:subscribed received', { eventAgentId, agentId, match: eventAgentId === agentId });
       if (eventAgentId === agentId) {
         requestLoadSubscriptions();
       } else if (watchedAgentIds.includes(eventAgentId)) {
@@ -521,7 +493,7 @@
 
       const eventAgentId = extractEventData<string>(event, 'agentId');
       if (eventAgentId === agentId) {
-	        requestLoadSubscriptions();
+        requestLoadSubscriptions();
       } else if (watchedAgentIds.includes(eventAgentId)) {
         requestLoadSubscriptions();
       }
@@ -613,14 +585,14 @@
           payload?.data?.createdByAgentId === agentId ? 'data.createdByAgentId' :
           payload?.agent?.metadata?.parentAgentId === agentId ? 'agent.metadata.parentAgentId' :
           payload?.data?.parentAgentId === agentId ? 'data.parentAgentId' : 'unknown';
-	        logger.debug('Matched child agent via field', { matchedField });
+        logger.debug('Matched child agent via field', { matchedField });
       }
 
-	      if (creatorAgentId === agentId && !isStreamingAfterWake) {
+      if (creatorAgentId === agentId && !isStreamingAfterWake) {
         // This is a direct child - restart discovery polling for a new 30s window
         // to catch subscriptions that may be set up by the child agent
-	        // Skip if agent is streaming after wake
-	        logger.debug('Child agent created, restarting discovery polling', { agentId, childAgentId: payload?.agent?.id || payload?.data?.agentId });
+        // Skip if agent is streaming after wake
+        logger.debug('Child agent created, restarting discovery polling', { agentId, childAgentId: payload?.agent?.id || payload?.data?.agentId });
         restartDiscoveryPolling();
         requestLoadSubscriptions();
       } else if (subscriptions.length > 0 || delegationGroups.length > 0) {
@@ -629,17 +601,17 @@
       }
     });
 
-	    // Single invalidation/hint event: always treat as snapshot refetch hint.
-	    const unsubSubscriptionsChanged = listenSync('agent:subscriptions-changed', (event: any) => {
-	      const eventWorkspaceId = extractEventData<string>(event, 'workspaceId')
-	        || event?.payload?.workspaceId;
-	      if (eventWorkspaceId && eventWorkspaceId !== workspaceId) return;
+    // Single invalidation/hint event: always treat as snapshot refetch hint.
+    const unsubSubscriptionsChanged = listenSync('agent:subscriptions-changed', (event: any) => {
+      const eventWorkspaceId = extractEventData<string>(event, 'workspaceId')
+        || event?.payload?.workspaceId;
+      if (eventWorkspaceId && eventWorkspaceId !== workspaceId) return;
 
-	      const changedAgentId = extractEventData<string>(event, 'agentId');
-	      if (changedAgentId === agentId || watchedAgentIds.includes(changedAgentId)) {
-	        requestLoadSubscriptions();
-	      }
-	    });
+      const changedAgentId = extractEventData<string>(event, 'agentId');
+      if (changedAgentId === agentId || watchedAgentIds.includes(changedAgentId)) {
+        requestLoadSubscriptions();
+      }
+    });
 
     // NOTE: We intentionally do NOT listen to agent:stream:${agentId} for content-blocks events.
     // Stream events have format { type: 'content-blocks', data: blocks, streamId, sessionId }
@@ -659,7 +631,7 @@
       }
 
       const eventAgentId = extractEventData<string>(event, 'agentId');
-	      logger.debug('agent:woken-by-subscription received', {
+      logger.debug('agent:woken-by-subscription received', {
         eventAgentId,
         agentId,
         match: eventAgentId === agentId,
@@ -690,14 +662,7 @@
         }
 
         const eventData = extractEventData(event) || {};
-        // Record the subscription version at wake time for stale response detection
-        if (eventData.subscriptionVersion !== undefined) {
-          wakeVersion = eventData.subscriptionVersion as number;
-          // Keep lastSnapshotVersion in sync with wakeVersion so older in-flight
-          // responses are rejected once streaming ends.
-          lastSnapshotVersion = Math.max(lastSnapshotVersion, wakeVersion);
-        }
-        logger.info('Showing woken up indicator', { eventData, wakeVersion, currentlyStreaming });
+        logger.info('Showing woken up indicator', { eventData, currentlyStreaming });
         // Show the woken up indicator
         wokenUpInfo = {
           eventCount: eventData.eventCount || 1,
@@ -727,11 +692,8 @@
           }, 30_000);
         }
 
-        // If agent is not streaming, schedule a snapshot refresh so the UI converges
-        // to the correct state (subscriptions may have been cleaned up during the wake).
-        if (!currentlyStreaming) {
-          requestLoadSubscriptions();
-        }
+        // No-op when not streaming: resetWaitingState() already cleared the UI.
+        // Backend events (agent:subscriptions-changed) will trigger refresh when ready.
       } else {
         logger.info('Ignoring agent:woken-by-subscription event - not for this agent', {
           eventAgentId,
@@ -751,7 +713,7 @@
       }
 
       const targetAgentId = extractEventData<string>(event, 'targetAgentId');
-	      logger.debug('agent:event-delivery-failed received', {
+      logger.debug('agent:event-delivery-failed received', {
         targetAgentId,
         agentId,
         match: targetAgentId === agentId,
@@ -766,7 +728,7 @@
 
     // Listen for agent:event-delivery-timeout events to clear the woken-up banner
     // Timeout means delivery status is unknown — NOT a hard failure.
-	    // Do NOT reset isStreamingAfterWake (timeout is ambiguous).
+    // Do NOT reset isStreamingAfterWake (timeout is ambiguous).
     // Do NOT call loadSubscriptions() — we don't know if the agent actually woke up.
     const unsubDeliveryTimeout = listenSync('agent:event-delivery-timeout', (event: any) => {
       // Workspace-scoped filtering: skip events from other workspaces
@@ -778,14 +740,14 @@
       }
 
       const targetAgentId = extractEventData<string>(event, 'targetAgentId');
-	      logger.debug('agent:event-delivery-timeout received', {
+      logger.debug('agent:event-delivery-timeout received', {
         targetAgentId,
         agentId,
         match: targetAgentId === agentId,
       });
       if (targetAgentId === agentId) {
         // Delivery timed out for this agent - clear the woken-up banner if shown
-	        // but do NOT reset isStreamingAfterWake or reload subscriptions.
+        // but do NOT reset isStreamingAfterWake or reload subscriptions.
         // Timeout is ambiguous: the agent may or may not have received the events.
         logger.info('Clearing woken-up banner due to delivery timeout', { targetAgentId });
         wokenUpInfo = null;
@@ -808,14 +770,14 @@
 
       const eventData = extractEventData(event) || {};
       const restoredAgentIds = eventData.agentIds || [];
-	      logger.debug('agent:subscriptions-restored received', {
+      logger.debug('agent:subscriptions-restored received', {
         count: eventData.count,
         restoredAgentIds,
         agentId,
         isRelevant: restoredAgentIds.includes(agentId),
       });
 
-	      // Reload subscriptions if this agent or any watched agents had subscriptions restored
+      // Reload subscriptions if this agent or any watched agents had subscriptions restored
       if (restoredAgentIds.includes(agentId) || restoredAgentIds.some((id: string) => watchedAgentIds.includes(id))) {
         requestLoadSubscriptions();
       }
@@ -825,17 +787,17 @@
 
     // Return cleanup function for onMount
     return () => {
-	      // CRITICAL: Set destruction flag FIRST, before any other cleanup.
-	      // This prevents in-flight async IPC responses from mutating $state after unmount.
-	      isDestroyed = true;
-	      logger.debug('Unmounting', { agentId, workspaceId });
+      // CRITICAL: Set destruction flag FIRST, before any other cleanup.
+      // This prevents in-flight async IPC responses from mutating $state after unmount.
+      isDestroyed = true;
+      logger.debug('Unmounting', { agentId, workspaceId });
       unsubSubscribed();
       unsubUnsubscribed();
       unsubIdle();
       unsubStatusChanged();
       unsubStopped();
       unsubCreated();
-	      unsubSubscriptionsChanged();
+      unsubSubscriptionsChanged();
       unsubWoken();
       unsubDeliveryFailed();
       unsubDeliveryTimeout();
@@ -851,10 +813,7 @@
     if (agentId && lastLoadAgentId !== null && agentId !== lastLoadAgentId) {
       logger.debug('agentId changed, reloading', { from: lastLoadAgentId, to: agentId });
       resetWaitingState();
-      // Reset version tracking for new agent
       discoveryMaxLifetimeReached = false;
-      wakeVersion = 0;
-      lastSnapshotVersion = 0;
       lastDiscoveryRestartAt = 0;
       mountTime = Date.now();
       startDiscoveryPolling();
@@ -868,10 +827,7 @@
     if (workspaceId && lastLoadWorkspaceId !== null && workspaceId !== lastLoadWorkspaceId) {
       logger.debug('workspaceId changed, clearing stale state', { from: lastLoadWorkspaceId, to: workspaceId });
       resetWaitingState();
-      // Reset version tracking for new workspace
       discoveryMaxLifetimeReached = false;
-      wakeVersion = 0;
-      lastSnapshotVersion = 0;
       lastDiscoveryRestartAt = 0;
       mountTime = Date.now();
       startDiscoveryPolling();
@@ -879,26 +835,6 @@
     }
     lastLoadWorkspaceId = workspaceId;
   });
-
-  /**
-   * Scroll to the message where this agent subscribed (tool call that created the subscription)
-   */
-  function scrollToSubscriptionSource() {
-    // Dispatch event that ChatPanel will handle
-    // We pass the subscription info so ChatPanel can find the right message
-    window.dispatchEvent(
-      new CustomEvent('agent:scroll-to-subscription', {
-        detail: {
-          agentId,
-          subscriptions: subscriptions.map((s) => ({
-            id: s.id,
-            eventTypes: s.eventTypes,
-            createdAt: s.createdAt,
-          })),
-        },
-      }),
-    );
-  }
 
   async function cancelSubscriptions() {
     if (!workspaceId || !agentId) return;
@@ -916,6 +852,7 @@
       }
     } catch (error) {
       logger.error('Failed to cancel subscriptions', { error });
+      resetWaitingState(); // Still clear UI even if backend fails
     }
   }
 

@@ -961,7 +961,11 @@
                 });
 
                 agentService
-                  .restoreSession(agentId as string, capturedWorkspace)
+                  .activateInitialAgent(
+                    agentId as string,
+                    capturedWorkspace,
+                    () => agentService.restoreSession(agentId as string, capturedWorkspace),
+                  )
                   .then((session) => {
                     if (session) {
                       logger.info('[WorkspacePage] Initial agent restored successfully', {
@@ -1257,17 +1261,19 @@
             const hasAgentInState = agentService.hasAgent(initialAgentId);
 
             if (!isAlreadyActive && !hasAgentInState) {
+              const capturedAgentId = initialAgentId;
               logger.info('[WorkspacePage] Found initial agent on disk, restoring with priority', {
                 agentId: initialAgentId,
                 name: initialAgentOnDisk.name,
               });
 
               try {
-                // Restore the initial agent session with backend registration
-                // Use resumeSession instead of restoreSessionWithoutBackend to ensure backend registration
-                const restored = await agentService.resumeSession(
+                // Use activateInitialAgent lock to prevent duplicate activation
+                // when multiple code paths race during workspace creation
+                const restored = await agentService.activateInitialAgent(
                   initialAgentId,
                   capturedWorkspace,
+                  () => agentService.resumeSession(capturedAgentId, capturedWorkspace),
                 );
                 if (restored) {
                   // Add to recently created agents to prevent drawer from closing
@@ -1312,23 +1318,28 @@
             const config = agentConfigData ? JSON.parse(agentConfigData) : {};
 
             try {
-              const newSession = await agentService.createSession(capturedWorkspace, {
-                agentId: initialAgentId,
-                name: config.name || 'Agent',
-                model: config.model,
-                provider: config.provider, // Pass provider from CompactWorkspaceInitializer
-                agentType: config.agentType,
-                initialMessage: config.prompt, // Pass the initial prompt from CompactWorkspaceInitializer
-                contextReferences: config.contextReferences, // Pass file/issue context references for stdinContext
-                behaviorPrompt: config.behaviorPrompt, // Pass specialist behavior instructions
-                metadata: {
-                  ...config.metadata, // Preserve all metadata including specialist
-                  isInitialAgent: config.isInitialAgent,
-                  isFirstWorkspaceAgent: config.isFirstWorkspaceAgent,
-                  specialist: config.specialist || config.metadata?.specialist, // Ensure specialist is included
-                },
-                isPending: false,
-              });
+              // Use activateInitialAgent lock to prevent duplicate creation
+              const newSession = await agentService.activateInitialAgent(
+                initialAgentId,
+                capturedWorkspace,
+                () => agentService.createSession(capturedWorkspace, {
+                  agentId: initialAgentId,
+                  name: config.name || 'Agent',
+                  model: config.model,
+                  provider: config.provider, // Pass provider from CompactWorkspaceInitializer
+                  agentType: config.agentType,
+                  initialMessage: config.prompt, // Pass the initial prompt from CompactWorkspaceInitializer
+                  contextReferences: config.contextReferences, // Pass file/issue context references for stdinContext
+                  behaviorPrompt: config.behaviorPrompt, // Pass specialist behavior instructions
+                  metadata: {
+                    ...config.metadata, // Preserve all metadata including specialist
+                    isInitialAgent: config.isInitialAgent,
+                    isFirstWorkspaceAgent: config.isFirstWorkspaceAgent,
+                    specialist: config.specialist || config.metadata?.specialist, // Ensure specialist is included
+                  },
+                  isPending: false,
+                }),
+              );
 
               if (newSession) {
                 markAgentRecentlyCreated(initialAgentId);

@@ -9,7 +9,7 @@
  */
 
 import * as path from 'path';
-import { promises as fsPromises, readFileSync } from 'fs';
+import { promises as fsPromises, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../../../shared/logger';
 import { WorkspaceEvent, WorkspaceEventType, createWorkspaceEvent } from '../types';
@@ -160,6 +160,8 @@ export class AgentEventSubscriptionService {
    * within LOOP_DETECTION_WINDOW_MS, further deliveries are suppressed.
    */
   private recentDeliveries: Map<string, number[]> = new Map();
+  /** Set to true once dispose() is called to prevent post-dispose work */
+  private disposed = false;
   private static readonly LOOP_DETECTION_WINDOW_MS = 30_000; // 30 seconds
   private static readonly MAX_DELIVERIES_IN_WINDOW = 15;
 
@@ -185,6 +187,15 @@ export class AgentEventSubscriptionService {
   private healthReportInterval: NodeJS.Timeout | null = null;
   /** Timer for debounced persistence writes */
   private persistDebounceTimer: NodeJS.Timeout | null = null;
+
+  /**
+   * Tracks recently deleted agents to prevent re-subscription and event delivery
+   * after deletion. Maps agentId → deletedAt timestamp (Date.now()).
+   * Entries older than DELETED_AGENT_EVICTION_MS are evicted on each markAgentDeleted call.
+   */
+  private deletedAgents: Map<string, number> = new Map();
+  private static readonly DELETED_AGENT_EVICTION_MS = 60 * 60 * 1000; // 1 hour
+  private static readonly MAX_DELETED_AGENTS = 1000; // Hard cap to prevent unbounded growth
 
   constructor(
     private eventBus: WorkspaceEventBus,
@@ -384,37 +395,68 @@ export class AgentEventSubscriptionService {
 
     // Restore delegation groups before subscriptions
     // so that event handlers find the existing trackers
+    let skippedCorrupted = 0;
     if (Array.isArray(data.delegationGroups)) {
       for (const g of data.delegationGroups as Record<string, unknown>[]) {
-        this.delegationGroups.set(g.groupId as string, {
-          groupId: g.groupId as string,
-          parentAgentId: g.parentAgentId as string,
-          parentAgentName: g.parentAgentName as string,
-          awaitMode: g.awaitMode as 'any' | 'all',
-          expectedAgentIds: new Set(g.expectedAgentIds as string[]),
-          completedAgentIds: new Set(g.completedAgentIds as string[]),
-          deletedAgentIds: new Set(g.deletedAgentIds as string[] || []),
-          events: Array.isArray(g.events) ? g.events : [],
-          subscriptionId: g.subscriptionId as string,
-          delivered: !!(g.delivered),
-        });
+        try {
+          this.delegationGroups.set(g.groupId as string, {
+            groupId: g.groupId as string,
+            parentAgentId: g.parentAgentId as string,
+            parentAgentName: g.parentAgentName as string,
+            awaitMode: g.awaitMode as 'any' | 'all',
+            expectedAgentIds: new Set(g.expectedAgentIds as string[]),
+            completedAgentIds: new Set(g.completedAgentIds as string[]),
+            deletedAgentIds: new Set(g.deletedAgentIds as string[] || []),
+            events: Array.isArray(g.events) ? g.events : [],
+            subscriptionId: g.subscriptionId as string,
+            delivered: !!(g.delivered),
+          });
+        } catch (err) {
+          logger.warn('Skipping corrupted delegation group entry during restore', { error: String(err), groupId: g?.groupId });
+          skippedCorrupted++;
+        }
       }
     }
 
     // Restore subscriptions
     let restored = 0;
+    let skippedDeleted = 0;
     if (Array.isArray(data.subscriptions)) {
       for (const subData of data.subscriptions as Record<string, unknown>[]) {
-        const filter = subData.filter as AgentEventFilter | undefined;
-        if (filter?.oneShot && this.firedOneShotSubscriptions.has(subData.id as string)) {
-          continue;
+        try {
+          const filter = subData.filter as AgentEventFilter | undefined;
+          if (filter?.oneShot && this.firedOneShotSubscriptions.has(subData.id as string)) {
+            continue;
+          }
+          // Skip subscriptions for agents known to be deleted in this session
+          const agentId = subData.agentId as string;
+          if (agentId && this.deletedAgents.has(agentId)) {
+            skippedDeleted++;
+            logger.warn('Skipping restore of subscription for deleted agent', {
+              subscriptionId: subData.id,
+              agentId,
+              agentName: subData.agentName,
+            });
+            continue;
+          }
+          this.restoreSubscriptionInternal(subData as {
+            id: string; agentId: string; agentName: string;
+            workspaceId: string; filter: AgentEventFilter; createdAt: string;
+          });
+          restored++;
+        } catch (err) {
+          logger.warn('Skipping corrupted subscription entry during restore', { error: String(err), subscriptionId: subData?.id });
+          skippedCorrupted++;
         }
-        this.restoreSubscriptionInternal(subData as {
-          id: string; agentId: string; agentName: string;
-          workspaceId: string; filter: AgentEventFilter; createdAt: string;
-        });
-        restored++;
       }
+    }
+
+    if (skippedDeleted > 0 || skippedCorrupted > 0) {
+      logger.info('Skipped entries during restore', {
+        skippedDeleted,
+        skippedCorrupted,
+        restored,
+      });
     }
 
     // Clean up already-completed delegation groups that were persisted before
@@ -558,6 +600,83 @@ export class AgentEventSubscriptionService {
     }
   }
 
+  /**
+   * Async post-validation pass: checks if agents with restored subscriptions
+   * still exist in persistence. Removes subscriptions for non-existent agents.
+   *
+   * Called after restoreSubscriptionsSync() to clean up stale subscriptions
+   * from agents that were deleted while the app was not running (e.g., crash
+   * between deletion and subscription persist).
+   *
+   * The brief window between sync restore and this validation is safe because
+   * the deletedAgents guard in sendBackendInitiatedMessage (Fix 2) catches
+   * any delivery attempts to deleted agents during this window.
+   */
+  async validateRestoredSubscriptions(): Promise<void> {
+    if (this.disposed) return;
+    // Collect unique agent IDs from all current subscriptions
+    const agentIds = new Set<string>();
+    for (const sub of this.subscriptions.values()) {
+      agentIds.add(sub.agentId);
+    }
+
+    if (agentIds.size === 0) {
+      return;
+    }
+
+    logger.info('Starting async validation of restored subscriptions', {
+      uniqueAgentIds: agentIds.size,
+      totalSubscriptions: this.subscriptions.size,
+    });
+
+    // Check each agent's existence via persistence
+    let removedCount = 0;
+    try {
+      const { agentPersistence } = await import('../../agent/main/agent-persistence');
+      const existingAgentIds = await agentPersistence.listAgents(this.workspaceId);
+      const existingSet = new Set(existingAgentIds);
+
+      for (const agentId of agentIds) {
+        // Skip agents already known to be deleted (handled during sync restore)
+        if (this.deletedAgents.has(agentId)) {
+          continue;
+        }
+
+        if (!existingSet.has(agentId)) {
+          logger.warn('Removing stale subscriptions for non-existent agent', {
+            agentId,
+            workspaceId: this.workspaceId,
+          });
+          // Mark as deleted (with eviction) to prevent re-subscription during the cleanup window
+          const beforeCount = this.subscriptions.size;
+          this.markAgentDeleted(agentId);
+          removedCount += beforeCount - this.subscriptions.size;
+        }
+      }
+    } catch (err) {
+      logger.warn('Failed to validate restored subscriptions', {
+        error: String(err),
+        workspaceId: this.workspaceId,
+      });
+      return;
+    }
+
+    if (removedCount > 0) {
+      logger.info('Async validation removed stale subscriptions', {
+        removedSubscriptions: removedCount,
+        remainingSubscriptions: this.subscriptions.size,
+        workspaceId: this.workspaceId,
+      });
+      // Persist the cleaned-up state
+      if (this.disposed) return;
+      this.schedulePersist();
+    } else {
+      logger.info('Async validation complete — no stale subscriptions found', {
+        workspaceId: this.workspaceId,
+      });
+    }
+  }
+
   /** Re-create a subscription from persisted data (no agent:subscribed event emitted). */
   private restoreSubscriptionInternal(subData: {
     id: string; agentId: string; agentName: string;
@@ -593,6 +712,17 @@ export class AgentEventSubscriptionService {
    * Subscribe an agent to workspace events
    */
   subscribe(agentId: string, agentName: string, filter: AgentEventFilter): string {
+    // Guard: reject subscriptions for deleted agents
+    if (this.deletedAgents.has(agentId)) {
+      logger.warn('Rejecting subscription for deleted agent', {
+        agentId,
+        agentName,
+        eventTypes: filter.eventTypes,
+      });
+      // Return empty string to indicate rejection — callers should handle gracefully
+      return '';
+    }
+
     const subscriptionId = uuidv4();
 
     const subscription: AgentSubscription = {
@@ -793,6 +923,7 @@ export class AgentEventSubscriptionService {
     awaitMode: 'any' | 'all';
     expectedAgentIds: string[];
     completedAgentIds: string[];
+    deletedAgentIds: string[];
     agentStatuses: Record<string, AgentStatus>;
   }> {
     const result: Array<{
@@ -800,6 +931,7 @@ export class AgentEventSubscriptionService {
       awaitMode: 'any' | 'all';
       expectedAgentIds: string[];
       completedAgentIds: string[];
+      deletedAgentIds: string[];
       agentStatuses: Record<string, AgentStatus>;
     }> = [];
 
@@ -828,6 +960,7 @@ export class AgentEventSubscriptionService {
           awaitMode: tracker.awaitMode,
           expectedAgentIds: Array.from(tracker.expectedAgentIds),
           completedAgentIds: Array.from(tracker.completedAgentIds),
+          deletedAgentIds: Array.from(tracker.deletedAgentIds),
           agentStatuses,
         });
       }
@@ -932,6 +1065,63 @@ export class AgentEventSubscriptionService {
   }
 
   /**
+   * Mark an agent as deleted. This:
+   * 1. Adds the agent to the deletedAgents set (prevents re-subscription and event delivery)
+   * 2. Calls unsubscribeAll to remove all existing subscriptions
+   * 3. Evicts stale entries from the deletedAgents set
+   *
+   * Must be called BEFORE emitAgentDeletedEvent to close the race window.
+   */
+  markAgentDeleted(agentId: string): void {
+    // Evict stale entries first
+    this.evictStaleDeletedAgents();
+
+    this.deletedAgents.set(agentId, Date.now());
+
+    logger.info('Agent marked as deleted in subscription service', {
+      agentId,
+      deletedAgentsCount: this.deletedAgents.size,
+    });
+
+    // Remove all subscriptions for this agent
+    const removedCount = this.unsubscribeAll(agentId);
+
+    logger.info('Cleaned up subscriptions for deleted agent', {
+      agentId,
+      removedSubscriptions: removedCount,
+    });
+  }
+
+  /**
+   * Check if an agent has been marked as deleted.
+   */
+  isAgentDeleted(agentId: string): boolean {
+    return this.deletedAgents.has(agentId);
+  }
+
+  /**
+   * Evict entries from deletedAgents that are older than DELETED_AGENT_EVICTION_MS.
+   * Also enforces MAX_DELETED_AGENTS hard cap by removing oldest entries.
+   */
+  private evictStaleDeletedAgents(): void {
+    const now = Date.now();
+    for (const [id, deletedAt] of this.deletedAgents) {
+      if (now - deletedAt > AgentEventSubscriptionService.DELETED_AGENT_EVICTION_MS) {
+        this.deletedAgents.delete(id);
+      }
+    }
+
+    // Hard cap: if still over limit, remove oldest entries
+    if (this.deletedAgents.size > AgentEventSubscriptionService.MAX_DELETED_AGENTS) {
+      const entries = [...this.deletedAgents.entries()].sort((a, b) => a[1] - b[1]);
+      const toRemove = entries.slice(0, entries.length - AgentEventSubscriptionService.MAX_DELETED_AGENTS);
+      for (const [id] of toRemove) {
+        this.deletedAgents.delete(id);
+      }
+    }
+  }
+
+  /**
    * Update agent status (called when agent starts/stops responding)
    */
   setAgentStatus(agentId: string, status: AgentStatus): void {
@@ -1003,7 +1193,11 @@ export class AgentEventSubscriptionService {
    * Get all subscriptions for an agent
    */
   getAgentSubscriptions(agentId: string): AgentSubscription[] {
-    return Array.from(this.subscriptions.values()).filter((sub) => sub.agentId === agentId);
+    return Array.from(this.subscriptions.values()).filter(
+      (sub) =>
+        sub.agentId === agentId &&
+        !(sub.filter.oneShot && this.firedOneShotSubscriptions.has(sub.id))
+    );
   }
 
   /**
@@ -1024,6 +1218,19 @@ export class AgentEventSubscriptionService {
    * The actor for these events is often 'subscription-service' (system), not the
    * agent itself, so excludeActorIds doesn't catch them.
    */
+  /**
+   * Agent lifecycle events that should only be delivered from DIRECT children
+   * when using broad subscriptions (no actorIds filter). Without this guard,
+   * a Coordinator subscribed to "agent:*" would wake up when a grandchild
+   * (e.g., Implementor in a Coord→Shepherd→Implementor chain) goes idle.
+   */
+  private static readonly AGENT_LIFECYCLE_EVENTS = new Set([
+    'agent:idle',
+    'agent:failed',
+    'agent:deleted',
+    'agent:completed',
+  ]);
+
   private static readonly SELF_REFERENTIAL_EVENT_TYPES = new Set([
     'agent:woken-by-subscription',
     'agent:status-changed',
@@ -1039,8 +1246,21 @@ export class AgentEventSubscriptionService {
    * Handle an incoming event for a subscription
    */
   private handleEvent(subscription: AgentSubscription, event: WorkspaceEvent): void {
+    if (this.disposed) return;
+
     const { agentId, filter } = subscription;
     const isOneShot = filter.oneShot === true;
+
+    // Guard: skip events for deleted agents.
+    // This catches the race window between agent deletion and event bus unsubscription.
+    if (this.deletedAgents.has(agentId)) {
+      logger.warn('Skipping event delivery for deleted agent', {
+        subscriptionId: subscription.id,
+        agentId,
+        eventType: event.type,
+      });
+      return;
+    }
 
     // Guard: skip oneShot subscriptions that have already fired.
     // This prevents double-delivery when the event bus callback fires
@@ -1084,6 +1304,30 @@ export class AgentEventSubscriptionService {
     // Check if event matches additional filters
     if (!this.matchesFilter(event, filter)) {
       return;
+    }
+
+    // SCOPING: For broad subscriptions (no actorIds filter, not oneShot), only deliver
+    // agent lifecycle events from DIRECT children of the subscribing agent.
+    // Without this, a Coordinator subscribed to "agent:*" would wake up
+    // when a grandchild (Implementor) goes idle in a Coord→Shepherd→Implementor chain.
+    if (
+      AgentEventSubscriptionService.AGENT_LIFECYCLE_EVENTS.has(event.type) &&
+      (!filter.actorIds || filter.actorIds.length === 0) &&
+      !isOneShot
+    ) {
+      const eventParentAgentId = (event.data as Record<string, unknown>)?.parentAgentId;
+      // If the event has a parentAgentId and it's NOT the subscribing agent, skip it.
+      // Events without parentAgentId (e.g., user-created agents) are still delivered.
+      if (eventParentAgentId && eventParentAgentId !== agentId) {
+        logger.debug('Skipping grandchild agent lifecycle event for broad subscription', {
+          subscriptionId: subscription.id,
+          agentId,
+          eventActorId: event.actor.id,
+          eventParentAgentId,
+          eventType: event.type,
+        });
+        return;
+      }
     }
 
     const priority = filter.priority || 'normal';
@@ -1206,9 +1450,6 @@ export class AgentEventSubscriptionService {
 
       tracker.events.push(event);
       this.schedulePersist();
-
-      // Group progress changed (completion count, deleted count, etc.)
-      this.bumpVersionAndEmit(agentId, 'delegation-progress');
 
       logger.info('Delegation group: agent completed', {
         groupId: group.groupId,
@@ -1419,6 +1660,7 @@ export class AgentEventSubscriptionService {
     const batchWindow = filter.batchWindow || 500;
     if (batchWindow > 0 && !this.batchTimers.has(agentId)) {
       const timer = setTimeout(() => {
+        if (this.disposed) return;
         this.batchTimers.delete(agentId);
         const status = this.getAgentStatus(agentId);
         if (status === 'idle') {
@@ -1467,6 +1709,10 @@ export class AgentEventSubscriptionService {
       let attempts = 0;
 
       const checkAndDeliver = () => {
+        if (this.disposed) {
+          resolve({ status: 'failed', error: 'Service disposed' });
+          return;
+        }
         attempts++;
 
         // SAFETY NET: Check if we've exceeded the polling budget.
@@ -1526,7 +1772,7 @@ export class AgentEventSubscriptionService {
           }
         } else {
           // Still busy, check again soon
-          setTimeout(checkAndDeliver, 100);
+          setTimeout(checkAndDeliver, 500); // Reduced from 100ms — agent status is event-driven
         }
       };
 
@@ -1542,8 +1788,14 @@ export class AgentEventSubscriptionService {
    * are not lost.
    */
   private deliverQueuedEvents(agentId: string): Promise<DeliveryResult> | undefined {
+    if (this.disposed) return undefined;
     const queue = this.agentQueues.get(agentId);
     if (!queue || queue.length === 0) {
+      return undefined;
+    }
+
+    if (this.deletedAgents.has(agentId)) {
+      this.agentQueues.delete(agentId);
       return undefined;
     }
 
@@ -1582,6 +1834,7 @@ export class AgentEventSubscriptionService {
     // Build a result promise that resolves only after delivery is confirmed.
     // On failure, re-queue the events so they are not lost.
     const requeue = () => {
+      if (this.disposed) return;
       const currentQueue = this.agentQueues.get(agentId) || [];
       // Prepend the failed events so they are retried first
       this.agentQueues.set(agentId, [...snapshot, ...currentQueue]);
@@ -1682,6 +1935,7 @@ export class AgentEventSubscriptionService {
    * Deliver events to an agent
    */
   private async deliverEvents(agentId: string, events: WorkspaceEvent[]): Promise<DeliveryResult> {
+    if (this.disposed) return { status: 'no-callback' };
     if (events.length === 0) return { status: 'success' };
 
     // Bump version for delivery attempt so renderer can converge even if it missed
@@ -2014,6 +2268,8 @@ export class AgentEventSubscriptionService {
    * Clean up resources
    */
   dispose(): void {
+    this.disposed = true;
+
     // Flush any pending persist BEFORE clearing data.
     // Without this, subscription changes queued by schedulePersist()
     // but not yet written to disk are lost when dispose() clears the maps.
@@ -2026,9 +2282,8 @@ export class AgentEventSubscriptionService {
       if (this.subscriptions.size > 0 || this.delegationGroups.size > 0) {
         const data = this.serializeState();
         const filePath = this.getSubscriptionsFilePath();
-        const { mkdirSync, writeFileSync: writeFileSyncFs } = require('fs');
         mkdirSync(path.dirname(filePath), { recursive: true });
-        writeFileSyncFs(filePath, JSON.stringify(data, null, 2), 'utf-8');
+        writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
         logger.info('Flushed subscriptions to disk on dispose', {
           subscriptionCount: data.subscriptions.length,
           delegationGroupCount: data.delegationGroups.length,
@@ -2069,6 +2324,7 @@ export class AgentEventSubscriptionService {
     this.delegationGroups.clear();
     this.firedOneShotSubscriptions.clear();
     this.recentDeliveries.clear();
+    this.deletedAgents.clear();
 
     logger.info('AgentEventSubscriptionService disposed');
   }
@@ -2104,6 +2360,18 @@ export function getAgentEventSubscriptionService(
     // version had a race window where events emitted during restoration
     // would be silently missed by persisted subscriptions.
     service.restoreSubscriptionsSync();
+
+    // Schedule async validation to remove subscriptions for agents that
+    // no longer exist in persistence (e.g., deleted while app was closed).
+    // The brief window between sync restore and validation is safe because
+    // the deletedAgents guard in sendBackendInitiatedMessage catches any
+    // delivery attempts to deleted agents during this window.
+    service.validateRestoredSubscriptions().catch((err) => {
+      logger.warn('Async subscription validation failed', {
+        workspaceId,
+        error: String(err),
+      });
+    });
   }
   return service;
 }
@@ -2183,7 +2451,7 @@ function createEventDeliveryCallback(
         });
 
         let timeoutTimer: NodeJS.Timeout;
-        const timeoutPromise = new Promise<{ success: false; error: string }>((resolve) => {
+        const timeoutPromise = new Promise<{ success: false; error: string; errorCode?: string }>((resolve) => {
           timeoutTimer = setTimeout(
             () => resolve({ success: false, error: `Delivery timed out after ${DELIVERY_TIMEOUT_MS}ms` }),
             DELIVERY_TIMEOUT_MS,
@@ -2243,6 +2511,22 @@ function createEventDeliveryCallback(
               timeoutMs: DELIVERY_TIMEOUT_MS,
             };
           }
+
+          // AGENT_DELETED: The agent was deleted — bail immediately without retrying.
+          // Retrying would just hit the same guard. Also clean up any remaining
+          // subscriptions that triggered this delivery.
+          if (result.errorCode === 'AGENT_DELETED') {
+            logger.warn('Delivery aborted: agent has been deleted', {
+              agentId,
+              workspaceId,
+              eventCount: events.length,
+              attempt,
+            });
+            service.unsubscribeAll(agentId);
+            service.recordDeliveryFailure(agentId, events.length, 'Agent has been deleted');
+            return { status: 'failed', error: 'Agent has been deleted' };
+          }
+
           throw new Error(result.error || 'sendBackendInitiatedMessage returned success=false');
         }
 

@@ -1673,22 +1673,26 @@
             behaviorPromptLength: resolvedBehaviorPrompt?.length || 0,
           });
 
-          await agentService.createSession(workspace, {
-            agentId: initialAgent.agentId,
-            name: agentName,
-            model: initialAgent.model,
-            provider: selectedProvider, // ACP provider ID (auggie, claude-code, codex)
-            agentType: initialAgent.agentType,
-            initialMessage: initialAgent.prompt, // This sends the initial message
-            contextReferences: initialAgent.contextReferences, // Pass file/issue context references for stdinContext
-            behaviorPrompt: resolvedBehaviorPrompt, // Pass team coordinator or specialist behavior instructions for system prompt
-            metadata: {
-              ...initialAgent.metadata,
-              isInitialAgent: true,
-              isFirstWorkspaceAgent: true,
-            },
-            isPending: false,
-          });
+          await agentService.activateInitialAgent(
+            initialAgent.agentId,
+            workspace,
+            () => agentService.createSession(workspace, {
+              agentId: initialAgent.agentId,
+              name: agentName,
+              model: initialAgent.model,
+              provider: selectedProvider, // ACP provider ID (auggie, claude-code, codex)
+              agentType: initialAgent.agentType,
+              initialMessage: initialAgent.prompt, // This sends the initial message
+              contextReferences: initialAgent.contextReferences, // Pass file/issue context references for stdinContext
+              behaviorPrompt: resolvedBehaviorPrompt, // Pass team coordinator or specialist behavior instructions for system prompt
+              metadata: {
+                ...initialAgent.metadata,
+                isInitialAgent: true,
+                isFirstWorkspaceAgent: true,
+              },
+              isPending: false,
+            }),
+          );
 
           // Mark the message as already sent in sessionStorage to prevent ChatPanel from sending it again
           // We keep the prompt for optimistic UI display, but set messageSent=true so ChatPanel knows not to send

@@ -47,6 +47,15 @@ export const handleAgentMessageSent: EventHandler<AgentMessageSentEvent> = async
       return;
     }
 
+    // Guard: check if agent was recently deleted (prevents resurrection from persistence backup)
+    if (handler.isAgentDeleted(toAgentId)) {
+      logger.warn('[MESSAGE-DELIVERY] Target agent has been deleted', {
+        toAgentId,
+        fromAgentId,
+      });
+      return;
+    }
+
     // Format the message with context about the sender
     const formattedMessage = `**Message from agent "${fromAgentName}"${priority === 'high' ? ' (HIGH PRIORITY)' : ''}:**\n\n${message}`;
 
@@ -109,13 +118,13 @@ export const handleAgentMessageSent: EventHandler<AgentMessageSentEvent> = async
           toAgentId,
           fromAgentId,
         });
-      } else if ((sendResult as any).errorCode === 'QUEUE_PENDING' || (sendResult as any).errorCode === 'ALREADY_STREAMING') {
+      } else if (sendResult.errorCode === 'QUEUE_PENDING' || sendResult.errorCode === 'ALREADY_STREAMING') {
         // Agent has queued messages being processed or is streaming — fall back to queuing
         // so the message is delivered after the current stream completes.
         logger.info('[MESSAGE-DELIVERY] Agent busy (queue pending or streaming), falling back to queue', {
           toAgentId,
           fromAgentId,
-          errorCode: (sendResult as any).errorCode,
+          errorCode: sendResult.errorCode,
         });
         const queueResult = await handler.handleQueueMessage(null, {
           agentId: toAgentId,

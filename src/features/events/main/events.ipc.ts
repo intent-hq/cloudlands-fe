@@ -338,6 +338,7 @@ export function setupEventsIPC(): void {
             awaitMode: group.awaitMode,
             expectedAgentIds: group.expectedAgentIds,
             completedAgentIds: group.completedAgentIds,
+            deletedAgentIds: group.deletedAgentIds,
             agentStatuses: group.agentStatuses,
           })),
           // Include real-time status for all watched agents (for 'any' mode subscriptions)

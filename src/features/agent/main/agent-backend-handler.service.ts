@@ -172,6 +172,15 @@ export class AgentBackendHandler {
   private lastPongTimes = new Map<string, number>();
   /** @property {Map<string, number>} lastPingSentTimes - Track when last ping was sent to check for missed pongs */
   private lastPingSentTimes = new Map<string, number>();
+  /**
+   * Secondary guard: tracks recently deleted agent IDs to prevent resurrection
+   * in sendBackendInitiatedMessage. Maps agentId → deletedAt timestamp.
+   * Primary guard is in AgentEventSubscriptionService.deletedAgents.
+   * Entries older than 1 hour are evicted on each addition.
+   */
+  private deletedAgentIds: Map<string, number> = new Map();
+  private static readonly DELETED_AGENT_EVICTION_MS = 60 * 60 * 1000; // 1 hour
+  private static readonly MAX_DELETED_AGENTS = 1000; // Hard cap to prevent unbounded growth
 
   /** @property {Map<string, number>} emptyResponseRetries - Track consecutive empty end_turn responses per agent for auto-continue */
   private emptyResponseRetries = new Map<string, number>();
@@ -3540,6 +3549,12 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
         // Ignore - use fallback name
       }
 
+      // CRITICAL: Mark agent as deleted in subscription service FIRST, before any cleanup.
+      // This closes the race window where events could be delivered to the agent between
+      // cleanup and the emitAgentDeletedEvent call. Also adds to local deletedAgentIds
+      // to guard sendBackendInitiatedMessage against resurrection.
+      await this.markAgentAsDeleted(agentId, workspaceId);
+
       // Clean up the ACP provider and its session
       // This is the proper place to clean up the provider (not in cleanupStreamResources)
       if (this.providers.has(agentId)) {
@@ -5010,6 +5025,71 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
   }
 
   /**
+   * Check if an agent has been marked as deleted.
+   * Also runs eviction to keep the set bounded.
+   */
+  public isAgentDeleted(agentId: string): boolean {
+    this.evictStaleDeletedAgents();
+    return this.deletedAgentIds.has(agentId);
+  }
+
+  /**
+   * Evict entries from deletedAgentIds that are older than DELETED_AGENT_EVICTION_MS.
+   * Also enforces MAX_DELETED_AGENTS hard cap by removing oldest entries.
+   */
+  private evictStaleDeletedAgents(): void {
+    const now = Date.now();
+    for (const [id, deletedAt] of this.deletedAgentIds) {
+      if (now - deletedAt > AgentBackendHandler.DELETED_AGENT_EVICTION_MS) {
+        this.deletedAgentIds.delete(id);
+      }
+    }
+
+    // Hard cap: if still over limit, remove oldest entries
+    if (this.deletedAgentIds.size > AgentBackendHandler.MAX_DELETED_AGENTS) {
+      const entries = [...this.deletedAgentIds.entries()].sort((a, b) => a[1] - b[1]);
+      const toRemove = entries.slice(0, entries.length - AgentBackendHandler.MAX_DELETED_AGENTS);
+      for (const [id] of toRemove) {
+        this.deletedAgentIds.delete(id);
+      }
+    }
+  }
+
+  /**
+   * Mark an agent as deleted in both the local guard set and the subscription service.
+   * Called at the very start of handleDeleteAgent to close race windows.
+   */
+  private async markAgentAsDeleted(agentId: string, workspaceId?: string): Promise<void> {
+    // Evict stale entries from local set
+    this.evictStaleDeletedAgents();
+
+    // Add to local guard set
+    this.deletedAgentIds.set(agentId, Date.now());
+
+    // Mark in subscription service (removes all subscriptions + prevents new ones)
+    if (workspaceId) {
+      try {
+        const { getAgentEventSubscriptionService } =
+          await import('../../events/main/agent-event-subscription.service');
+        const subscriptionService = getAgentEventSubscriptionService(workspaceId);
+        subscriptionService.markAgentDeleted(agentId);
+      } catch (err) {
+        logger.error('[AgentBackendHandler] Failed to mark agent as deleted in subscription service', {
+          agentId,
+          workspaceId,
+          error: err,
+        });
+      }
+    }
+
+    logger.info('[AgentBackendHandler] Agent marked as deleted', {
+      agentId,
+      workspaceId,
+      deletedAgentIdsCount: this.deletedAgentIds.size,
+    });
+  }
+
+  /**
    * Delete an agent
    */
   public async deleteAgent(sessionId: string, workspaceId?: string): Promise<void> {
@@ -5074,6 +5154,22 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
     [key: string]: any;
   }): Promise<{ success: boolean; error?: string; errorCode?: string }> {
     const { sessionId, message, workspaceId, messageMetadata, ...otherParams } = params;
+
+    // CRITICAL GUARD: Reject messages for deleted agents FIRST, before any other checks.
+    // This prevents resurrection of deleted agents from persistence backup.
+    // Must be checked before provider health, streaming, and queue checks — a dead
+    // provider for a deleted agent should not trigger cleanup or resurrection logic.
+    if (this.isAgentDeleted(sessionId)) {
+      logger.warn('Backend-initiated message: agent has been deleted, rejecting delivery', {
+        agentId: sessionId,
+        workspaceId,
+      });
+      return {
+        success: false,
+        error: 'Agent has been deleted',
+        errorCode: 'AGENT_DELETED',
+      };
+    }
 
     logger.info('Backend-initiated message: checking if frontend handshake needed', {
       agentId: sessionId,
