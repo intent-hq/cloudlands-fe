@@ -794,6 +794,8 @@
   // Queued messages
   let queuedMessages = $state<QueuedMessage[]>([]);
   let queueListenerCleanup: (() => void) | null = null;
+  // Reference to QueuedMessageList for programmatic editing via Up arrow
+  let queuedMessageListRef: QueuedMessageList | undefined = $state();
 
 
 
@@ -2558,6 +2560,17 @@
 
   // Input history navigation callbacks (terminal-like up/down arrow)
   function handleHistoryPrev(): string | null {
+    // If there are queued messages and we're not already navigating history,
+    // edit the last queued message instead of cycling through sent history
+    if (queuedMessages.length > 0 && historyIndex === -1 && !inputValue.trim()) {
+      const editStarted = queuedMessageListRef?.editLastMessage?.();
+      if (editStarted) {
+        // Return null so TipTapEditor doesn't change the input content
+        // Focus will move to QueuedMessageList's inline edit textarea
+        return null;
+      }
+    }
+
     if (inputHistory.length === 0) {
       return null;
     }
@@ -3954,10 +3967,12 @@
   <!-- Queued Messages -->
   {#if queuedMessages.length > 0}
     <QueuedMessageList
+      bind:this={queuedMessageListRef}
       messages={queuedMessages}
       onedit={handleEditQueuedMessage}
       onremove={handleRemoveQueuedMessage}
       onsendnow={handleSendQueuedMessageNow}
+      ondone={() => inputComponent?.focus?.()}
     />
   {/if}
 

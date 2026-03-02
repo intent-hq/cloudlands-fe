@@ -25,13 +25,15 @@
     onedit?: (messageId: string, content: string) => void;
     onremove?: (messageId: string) => void;
     onsendnow?: (messageId: string) => void;
+    ondone?: () => void;
   }
 
-  let { messages = [], disabled = false, onedit, onremove, onsendnow }: Props = $props();
+  let { messages = [], disabled = false, onedit, onremove, onsendnow, ondone }: Props = $props();
 
   // Track which message is being edited
   let editingId = $state<string | null>(null);
   let editContent = $state('');
+  let editStartedProgrammatically = $state(false);
 
   // Auto-resize textarea to fit content
   function autoResize(node: HTMLTextAreaElement) {
@@ -59,20 +61,29 @@
   }
 
   function startEdit(message: QueuedMessage) {
+    editStartedProgrammatically = false;
     editingId = message.id;
     editContent = message.content;
   }
 
   function cancelEdit() {
+    const wasProgrammatic = editStartedProgrammatically;
     editingId = null;
     editContent = '';
+    editStartedProgrammatically = false;
+    if (wasProgrammatic) ondone?.();
   }
 
   function saveEdit() {
     if (editingId && editContent.trim()) {
+      const wasProgrammatic = editStartedProgrammatically;
       onedit?.(editingId, editContent.trim());
       editingId = null;
       editContent = '';
+      editStartedProgrammatically = false;
+      if (wasProgrammatic) ondone?.();
+    } else if (editingId) {
+      cancelEdit();
     }
   }
 
@@ -87,6 +98,19 @@
     } else if (e.key === 'Escape') {
       cancelEdit();
     }
+  }
+
+  /**
+   * Exposed function for parent components to programmatically start editing
+   * the last queued message (e.g., when user presses Up arrow in chat input).
+   * Returns true if editing was started, false if no messages to edit.
+   */
+  export function editLastMessage(): boolean {
+    if (messages.length === 0) return false;
+    const lastMessage = messages[messages.length - 1];
+    startEdit(lastMessage);
+    editStartedProgrammatically = true;
+    return true;
   }
 </script>
 
