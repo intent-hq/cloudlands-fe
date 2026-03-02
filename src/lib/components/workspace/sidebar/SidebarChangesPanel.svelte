@@ -96,6 +96,24 @@
   import { crossfade, slide } from 'svelte/transition';
   import DividerButton from './DividerButton.svelte';
   import DividerPanel from './DividerPanel.svelte';
+  import {
+    getBranchNameValidationError,
+    constructPrUrl as constructPrUrlUtil,
+    toPRDisplayStatus,
+    getGroupKey,
+    getCommitsToPushCount,
+    getCommitsToUndoCount,
+    getLocalCommitsToUndoCount,
+    getPushTooltip as getPushTooltipUtil,
+    getUndoTooltip as getUndoTooltipUtil,
+    getUndoCommitTooltip as getUndoCommitTooltipUtil,
+    canAmendCommit as canAmendCommitUtil,
+    isFileActive as isFileActiveUtil,
+    isFileSelected as isFileSelectedUtil,
+    isFileFocused as isFileFocusedUtil,
+    isAgentGroupCollapsed as isAgentGroupCollapsedUtil,
+    toUIFileChange,
+  } from './sidebar-changes-utils';
   import TimelineDivider from './TimelineDivider.svelte';
   import TimelineSection from './TimelineSection.svelte';
 
@@ -156,12 +174,7 @@
    * between the same file appearing in both lists
    */
   function isFileActive(filePath: string, isStaged: boolean): boolean {
-    if (!activeFilePath) return false;
-    // If activeFileStaged is explicitly false (not null), match both path and staged status
-    // If activeFileStaged is null, don't highlight anything (for committed changes)
-    if (activeFileStaged === null) return false;
-    // Otherwise, match both path and staged status
-    return filePath === activeFilePath && isStaged === activeFileStaged;
+    return isFileActiveUtil(filePath, isStaged, activeFilePath, activeFileStaged);
   }
 
   // Helper to get linked note for an agent
@@ -314,19 +327,7 @@
   // Construct the correct PR URL from repository info and PR number
   // This is more reliable than using the stored URL which may be incorrect
   const constructPrUrl = (prNumber: number, fallbackUrl?: string): string => {
-    if (workspace?.repositoryOwner && workspace?.repositoryName) {
-      return `https://github.com/${workspace.repositoryOwner}/${workspace.repositoryName}/pull/${prNumber}`;
-    }
-    // Fallback to stored URL if we don't have repo info
-    return fallbackUrl || '';
-  };
-
-  // Helper to convert PullRequestStatus enum to PRDisplayStatus
-  const toPRDisplayStatus = (status: string): 'open' | 'merged' | 'closed' | 'draft' => {
-    if (status === 'Open') return 'open';
-    if (status === 'Merged') return 'merged';
-    if (status === 'Draft') return 'draft';
-    return 'closed';
+    return constructPrUrlUtil(prNumber, workspace?.repositoryOwner, workspace?.repositoryName, fallbackUrl);
   };
 
   const pullRequests = $derived.by<PRInfo[]>(() => {
@@ -900,62 +901,7 @@
     }
   }
 
-  /**
-   * Validate a git branch name according to git-check-ref-format rules.
-   * Returns an error message if invalid, undefined if valid.
-   */
-  function getBranchNameValidationError(name: string): string | undefined {
-    if (!name || name.trim().length === 0) {
-      return 'Branch name cannot be empty';
-    }
-
-    // Cannot contain spaces
-    if (name.includes(' ')) {
-      return 'Branch name cannot contain spaces';
-    }
-
-    // Cannot contain certain special characters
-    if (/[~^:\\?*\[@{]/.test(name)) {
-      return 'Branch name contains invalid characters';
-    }
-
-    // Cannot start with a dot
-    if (name.startsWith('.')) {
-      return "Branch name cannot start with '.'";
-    }
-
-    // Cannot end with .lock
-    if (name.endsWith('.lock')) {
-      return "Branch name cannot end with '.lock'";
-    }
-
-    // Cannot contain consecutive dots
-    if (name.includes('..')) {
-      return "Branch name cannot contain '..'";
-    }
-
-    // Cannot start or end with a slash
-    if (name.startsWith('/') || name.endsWith('/')) {
-      return 'Branch name cannot start or end with /';
-    }
-
-    // Cannot contain consecutive slashes
-    if (name.includes('//')) {
-      return 'Branch name cannot contain consecutive slashes';
-    }
-
-    // Cannot start with a dash
-    if (name.startsWith('-')) {
-      return "Branch name cannot start with '-'";
-    }
-
-    // Maximum length
-    if (name.length > 250) {
-      return 'Branch name is too long (max 250 characters)';
-    }
-
-    return undefined;
-  }
+  // getBranchNameValidationError is imported from sidebar-changes-utils
 
   function handleBranchClickOutside(e: MouseEvent) {
     if (isEditingBranch && branchInputRef && !branchInputRef.contains(e.target as Node)) {
@@ -1464,25 +1410,7 @@
     }
   }
 
-  // Convert TrackedChange to UIFileChange for FileRow component
-  function toUIFileChange(change: TrackedChange, staged: boolean): UIFileChange {
-    return {
-      path: change.relativePath,
-      additions: change.stats.additions,
-      deletions: change.stats.deletions,
-      staged,
-      status: change.status as 'added' | 'modified' | 'deleted' | 'renamed' | undefined,
-      attribution: change.attribution?.agent
-        ? {
-            agentId: change.attribution.agent.agentId,
-            agentName: change.attribution.agent.agentName,
-            sessionId: change.attribution.agent.sessionId,
-            turnNumber: change.attribution.agent.turnNumber,
-            timestamp: change.attribution.timestamp,
-          }
-        : undefined,
-    };
-  }
+  // toUIFileChange is imported from sidebar-changes-utils
 
   // Group files by agent
   const unstagedByAgent = $derived<AgentChangeGroup[]>(
@@ -1524,9 +1452,7 @@
   let groupCommitQueue = $state<GroupCommitQueueEntry[]>([]);
   let groupCommitActive = $state<string | null>(null); // groupKey currently being committed
 
-  function getGroupKey(group: AgentChangeGroup, section: 'unstaged' | 'staged'): string {
-    return `${section}:${group.agentId ?? 'manual'}`;
-  }
+  // getGroupKey is imported from sidebar-changes-utils
 
   function getGroupCommitState(
     group: AgentChangeGroup,
@@ -1651,7 +1577,7 @@
   }
 
   function isAgentGroupCollapsed(agentId: string | null): boolean {
-    return collapsedAgentGroups.has(agentId ?? 'manual');
+    return isAgentGroupCollapsedUtil(agentId, collapsedAgentGroups);
   }
 
   // Multi-select state for bulk staging/unstaging
@@ -1725,8 +1651,7 @@
 
   /** Check if a file is selected */
   function isFileSelected(path: string, staged: boolean): boolean {
-    const key = `${staged ? 'staged' : 'unstaged'}:${path}`;
-    return selectedFiles.has(key);
+    return isFileSelectedUtil(path, staged, selectedFiles);
   }
 
   /** Clear all selections */
@@ -1996,7 +1921,7 @@
 
   // Check if a file is focused (for keyboard navigation highlight)
   function isFileFocused(path: string, staged: boolean): boolean {
-    return focusedFile?.path === path && focusedFile?.staged === staged;
+    return isFileFocusedUtil(path, staged, focusedFile);
   }
 
   // Helper to get the display name for an agent
@@ -2999,8 +2924,7 @@
 
   // Check if commit can have its message amended (only the most recent/HEAD commit)
   function canAmendCommit(index: number): boolean {
-    // Only the first commit (HEAD) can be amended with git commit --amend
-    return index === 0 && allCommits.length > 0;
+    return canAmendCommitUtil(allCommits, index);
   }
 
   // Start editing a commit message
@@ -3212,57 +3136,21 @@
   // For push: push from the clicked commit to the oldest unpushed (index goes UP in array)
   // For undo: undo from the newest (index 0) to the clicked commit (inclusive)
 
-  // Get the number of unpushed commits from this index to the end (older commits)
-  function getCommitsToPushCount(commitIndex: number): number {
-    let count = 0;
-    for (let i = commitIndex; i < allCommits.length; i++) {
-      if (!allCommits[i].isPushed) {
-        count++;
-      }
-    }
-    return count;
+  // Thin wrappers delegating to sidebar-changes-utils (closing over component state)
+  function getCommitsToPushCount_(commitIndex: number): number {
+    return getCommitsToPushCount(allCommits, commitIndex);
   }
 
-  // Get the number of pushed commits from index 0 to this index (inclusive) that would be undone
-  function getCommitsToUndoCount(commitIndex: number): number {
-    let count = 0;
-    for (let i = 0; i <= commitIndex; i++) {
-      if (allCommits[i].isPushed) {
-        count++;
-      }
-    }
-    return count;
+  function getCommitsToUndoCount_(commitIndex: number): number {
+    return getCommitsToUndoCount(allCommits, commitIndex);
   }
 
-  // Get tooltip for push button
   function getPushTooltip(commitIndex: number): string {
-    const hasPR = pullRequests.length > 0;
-    const count = getCommitsToPushCount(commitIndex);
-    const branchName = workspace?.branch;
-    const branchSuffix = branchName ? ` (origin/${branchName})` : '';
-    const commitWord = count === 1 ? 'commit' : 'commits';
-
-    if (hasPR) {
-      return count === 1
-        ? `Add commit to PR${branchSuffix}`
-        : `Add ${count} ${commitWord} to PR${branchSuffix}`;
-    } else {
-      return count === 1
-        ? `Push commit to remote${branchSuffix}`
-        : `Push ${count} ${commitWord} to remote${branchSuffix}`;
-    }
+    return getPushTooltipUtil(allCommits, commitIndex, pullRequests.length > 0, workspace?.branch);
   }
 
-  // Get tooltip for undo push button
   function getUndoTooltip(commitIndex: number): string {
-    const count = getCommitsToUndoCount(commitIndex);
-    const branchName = workspace?.branch;
-    const branchSuffix = branchName ? ` (origin/${branchName})` : '';
-    const commitWord = count === 1 ? 'commit' : 'commits';
-
-    return count === 1
-      ? `Undo push from remote${branchSuffix}`
-      : `Undo ${count} ${commitWord} from remote${branchSuffix}`;
+    return getUndoTooltipUtil(allCommits, commitIndex, workspace?.branch);
   }
 
   async function handlePushCommits(commitIndex: number) {
@@ -3278,7 +3166,7 @@
         upToCommitHash: commit.hash,
       });
 
-      const commitCount = getCommitsToPushCount(commitIndex);
+      const commitCount = getCommitsToPushCount_(commitIndex);
 
       // Track analytics event for both success and failure
       track('Pushed Changes', {
@@ -3394,7 +3282,7 @@
     if (!workspaceId) return;
 
     const commit = allCommits[commitIndex];
-    const commitCount = getCommitsToUndoCount(commitIndex);
+    const commitCount = getCommitsToUndoCount_(commitIndex);
 
     // Find the commit hash to reset to (the one after this commit in the array = older commit)
     // Since commits are newest-first, the "next" index is the older commit we want to keep
@@ -3446,32 +3334,19 @@
     }
   }
 
-  // Get the number of unpushed commits from index 0 to this index (inclusive) that would be undone
-  function getLocalCommitsToUndoCount(commitIndex: number): number {
-    let count = 0;
-    for (let i = 0; i <= commitIndex; i++) {
-      if (!allCommits[i].isPushed) {
-        count++;
-      }
-    }
-    return count;
+  function getLocalCommitsToUndoCount_(commitIndex: number): number {
+    return getLocalCommitsToUndoCount(allCommits, commitIndex);
   }
 
-  // Get tooltip for undo commit button (local commits)
   function getUndoCommitTooltip(commitIndex: number): string {
-    const count = getLocalCommitsToUndoCount(commitIndex);
-    const commitWord = count === 1 ? 'commit' : 'commits';
-
-    return count === 1
-      ? 'Undo commit (bring changes back to staging)'
-      : `Undo ${count} ${commitWord} (bring changes back to staging)`;
+    return getUndoCommitTooltipUtil(allCommits, commitIndex);
   }
 
   async function handleUndoCommit(commitIndex: number) {
     if (!workspaceId) return;
 
     const commit = allCommits[commitIndex];
-    const commitCount = getLocalCommitsToUndoCount(commitIndex);
+    const commitCount = getLocalCommitsToUndoCount_(commitIndex);
 
     // Find the commit hash to reset to (the one after this commit in the array = older commit)
     // Since commits are newest-first, the "next" index is the older commit we want to keep
