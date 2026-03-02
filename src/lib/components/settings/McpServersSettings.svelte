@@ -235,8 +235,11 @@
         }
       }
 
+      // Convert label to a valid server name (replace spaces with hyphens, lowercase)
+      const serverName = option.label.toLowerCase().replace(/\s+/g, '-');
+
       const config: McpServerConfig = {
-        name: option.label,
+        name: serverName,
         type: 'stdio',
         command: option.command,
         args: args.length > 0 ? args : undefined,
@@ -334,28 +337,39 @@
   <section class="bg-card rounded-xl px-6 py-5">
     <div class="flex items-center justify-between">
       <div>
-        <p class="text-sm font-medium text-foreground">Enable MCP Servers</p>
+        <p class="text-sm font-medium text-foreground">Custom MCP Servers</p>
         <p class="text-xs text-subtle">
-          Connect to Model Context Protocol servers for extended functionality
+          Connect external tools and services to your Auggie agents via the Model Context Protocol.
+          <button
+            type="button"
+            class="text-primary hover:underline cursor-pointer"
+            onclick={(e) => { const wsId = workspaceStore.current?.id; if (wsId) handleLink('https://docs.augmentcode.com/windsurf/mcp', { workspaceId: wsId as WorkspaceId, event: e }); }}
+          >Learn more ↗</button>
         </p>
       </div>
       <Switch checked={enabled} onCheckedChange={handleToggleEnabled} size="md" />
     </div>
     {#if !isAuggieProvider}
       <p class="text-xs text-subtle mt-2">
-        MCP server configuration applies to the Augment CLI only and does not affect the currently selected provider.
+        MCP servers are used by Auggie agents. Switch to Auggie as your provider to use custom MCP servers.
       </p>
     {/if}
   </section>
 
   {#if enabled}
     <div transition:slide={{ duration: 200 }} class="space-y-6">
+      <div class="mx-0 px-3 py-2 bg-muted/50 rounded-md border border-border/50">
+        <p class="text-xs text-subtle">
+          Changes take effect for new agents only. Running agents keep their current MCP setup.
+        </p>
+      </div>
+
       <!-- Combined MCP Servers Section -->
       <section class="bg-card rounded-xl overflow-hidden">
         <!-- Header with Add button -->
         <div class="flex items-center justify-between px-6 py-4 border-b border-border">
           <div>
-            <p class="text-sm font-medium text-foreground">MCP Servers</p>
+            <p class="text-sm font-medium text-foreground">MCP Servers for Auggie</p>
             <p class="text-xs text-subtle">
               {servers.length} server{servers.length !== 1 ? 's' : ''} configured
             </p>
@@ -400,7 +414,7 @@
               </div>
 
               {#if addMode === 'form'}
-                <McpServerForm onSubmit={handleAddServer} onCancel={handleCancelAdd} />
+                <McpServerForm onSubmit={handleAddServer} onCancel={handleCancelAdd} existingServerNames={servers.map(s => s.name)} />
               {:else}
                 <McpJsonImport onImport={handleImportJson} onCancel={handleCancelAdd} />
               {/if}
@@ -464,7 +478,16 @@
           {:else if error}
             <p class="text-sm text-destructive-foreground py-4">{error}</p>
           {:else if servers.length === 0}
-            <p class="text-xs text-subtle mb-4">No servers configured yet</p>
+            <div class="text-xs text-subtle mb-4">
+              <p>No custom MCP servers configured yet.</p>
+              <p class="mt-1">Add servers to give Auggie agents access to external tools and data.
+                <button
+                  type="button"
+                  class="text-primary hover:underline cursor-pointer"
+                  onclick={(e) => { const wsId = workspaceStore.current?.id; if (wsId) handleLink('https://docs.augmentcode.com/windsurf/mcp', { workspaceId: wsId as WorkspaceId, event: e }); }}
+                >Learn how ↗</button>
+              </p>
+            </div>
           {:else}
             <div class="mb-6">
               {#each servers as server (server.name)}
@@ -600,6 +623,7 @@
             <textarea
               class="w-full h-64 px-3 py-2 bg-background border border-border rounded-md text-sm font-mono text-foreground resize-y focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
               placeholder={'{"mcpServers": {}}'}
+              aria-label="MCP server configuration JSON"
               bind:value={userMcpSettingsContent}
             ></textarea>
 

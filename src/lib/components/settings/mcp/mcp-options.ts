@@ -85,25 +85,27 @@ export const mcpOptions: McpInstallOption[] = [
     ],
   },
   {
-    label: 'Heroku',
-    description: 'Interact with the Heroku Platform.',
-    iconName: 'heroku',
-    command: 'heroku',
-    args: ['mcp:start'],
+    label: 'Vercel',
+    description: 'Manage deployments, projects, and search docs.',
+    iconName: 'vercel',
+    command: 'npx',
+    args: ['-y', 'mcp-remote', 'https://mcp.vercel.com'],
     userInput: [],
   },
   {
     label: 'Railway',
     description: 'Simplifies infrastructure from servers to observability.',
     iconName: 'railway',
-    command: 'npx -y @railway/mcp-server',
+    command: 'npx',
+    args: ['-y', '@railway/mcp-server'],
     userInput: [],
   },
   {
     label: 'Convex',
     description: 'The backend platform that keeps your app in sync.',
     iconName: 'convex',
-    command: 'npx -y convex@latest mcp start',
+    command: 'npx',
+    args: ['-y', 'convex@latest', 'mcp', 'start'],
     userInput: [],
   },
   {
@@ -126,28 +128,37 @@ export const mcpOptions: McpInstallOption[] = [
     label: 'Context7',
     description: 'Package documentation lookup.',
     iconName: 'context7',
-    command: 'npx -y @upstash/context7-mcp@latest',
+    command: 'npx',
+    args: ['-y', '@upstash/context7-mcp@latest'],
     userInput: [],
   },
   {
     label: 'Playwright',
     description: 'Browser automation and testing.',
     iconName: 'playwright',
-    command: 'npx -y @playwright/mcp@latest',
+    command: 'npx',
+    args: ['-y', '@playwright/mcp@latest'],
     userInput: [],
   },
   {
     label: 'Sequential Thinking',
     description: 'Think through complex problems step-by-step.',
     iconName: 'brain',
-    command: 'npx -y @modelcontextprotocol/server-sequential-thinking',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-sequential-thinking'],
     userInput: [],
   },
 ];
+
+/** Normalize a label or server name for comparison (lowercase, spaces → hyphens) */
+function normalizeServerName(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, '-');
+}
 
 /**
  * Check if a server with this label already exists
  */
 export function isServerInstalled(label: string, installedServers: { name: string }[]): boolean {
-  return installedServers.some((s) => s.name.toLowerCase() === label.toLowerCase());
+  const normalized = normalizeServerName(label);
+  return installedServers.some((s) => normalizeServerName(s.name) === normalized);
 }

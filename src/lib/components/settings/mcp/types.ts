@@ -11,7 +11,7 @@ export type McpTransportType = 'stdio' | 'http' | 'sse';
 export type McpAuthType = 'oauth' | 'header' | 'none';
 
 /** Server connection status */
-export type McpServerStatus = 'connected' | 'disconnected' | 'error' | 'auth_required' | 'disabled';
+export type McpServerStatus = 'connected' | 'configured' | 'disconnected' | 'error' | 'auth_required' | 'disabled';
 
 /** Card mode for add/edit/view states */
 export type McpCardMode = 'view' | 'edit' | 'add' | 'addRemote' | 'addJson';

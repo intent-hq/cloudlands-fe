@@ -916,6 +916,8 @@ export class ACPProvider extends BaseAgentProvider {
   // These files are needed by auggie for the lifetime of the process
   private tempRulesFilePath?: string;
   private tempMcpConfigPath?: string;
+  private hasSentFirstMessage = false;
+  private hasRemoteMcpServers = false;
   // Mapping from command/URL to server name, used to match MCP startup errors to server names
   private mcpServerCommandMap: Map<string, string> = new Map();
   // MCP servers to pass via the ACP session/new mcpServers field.
@@ -1575,7 +1577,21 @@ export class ACPProvider extends BaseAgentProvider {
     return [...SUBAGENT_TOOLS, ...CONFLICTING_BUILTIN_TOOLS];
   }
 
+  private detectRemoteMcpServers(servers: Record<string, unknown>): void {
+    for (const [name, config] of Object.entries(servers)) {
+      if (name === 'workspace-mcp') continue;
+      const serverConfig = config as any;
+      if (serverConfig.type === 'http' || serverConfig.url ||
+          serverConfig.command?.includes('mcp-remote') ||
+          serverConfig.args?.some((a: string) => a.includes('mcp-remote'))) {
+        this.hasRemoteMcpServers = true;
+        return;
+      }
+    }
+  }
+
   private async launchAgent(): Promise<void> {
+    this.hasRemoteMcpServers = false;
     if (!this.config.command) {
       throw new Error('No agent command specified');
     }
@@ -1853,7 +1869,7 @@ export class ACPProvider extends BaseAgentProvider {
             // Use dynamic import since we're in ESM context
             const ElectronStore = (await import('electron-store')).default;
             const settingsStore = new ElectronStore({ name: 'settings' });
-            const enableUserMcpServers = settingsStore.get('enableUserMcpServers', false);
+            const enableUserMcpServers = settingsStore.get('enableUserMcpServers', true);
 
             logger.info('User MCP servers feature flag value', { enableUserMcpServers });
 
@@ -1911,7 +1927,12 @@ export class ACPProvider extends BaseAgentProvider {
               error: userMcpError instanceof Error ? userMcpError.message : String(userMcpError),
               stack: userMcpError instanceof Error ? userMcpError.stack : undefined,
             });
+            // Surface the error to the user via IPC
+            this.surfaceMcpLoadErrorToRenderer(userMcpError);
           }
+
+          // Detect remote MCP servers that need longer initialization
+          this.detectRemoteMcpServers(finalMcpServers);
 
           const mcpConfig = { mcpServers: finalMcpServers };
           workspaceMcpServers = finalMcpServers;
@@ -2188,7 +2209,7 @@ export class ACPProvider extends BaseAgentProvider {
         try {
           const ElectronStore = (await import('electron-store')).default;
           const settingsStore = new ElectronStore({ name: 'settings' });
-          const enableUserMcpServers = settingsStore.get('enableUserMcpServers', false);
+          const enableUserMcpServers = settingsStore.get('enableUserMcpServers', true);
 
           if (enableUserMcpServers) {
             const userServers = await readUserMcpServers();
@@ -2209,8 +2230,13 @@ export class ACPProvider extends BaseAgentProvider {
           logger.warn('Failed to load user MCP servers for provider MCP translation', {
             error: userMcpError instanceof Error ? userMcpError.message : String(userMcpError),
           });
+          // Surface the error to the user via IPC
+          this.surfaceMcpLoadErrorToRenderer(userMcpError);
         }
         } // end of !simpleRequest block
+
+        // Detect remote MCP servers that need longer initialization
+        this.detectRemoteMcpServers(finalMcpServers);
 
         workspaceMcpServers = finalMcpServers;
       } catch (error) {
@@ -4296,7 +4322,26 @@ export class ACPProvider extends BaseAgentProvider {
     }
   }
 
+  /**
+   * Wait for MCP servers to initialize before sending the first message.
+   * Auggie doesn't wait for MCP init in ACP mode, so we add a delay.
+   * Only waits once per session, and only if MCP servers are configured.
+   */
+  private async waitForMcpInitIfNeeded(): Promise<void> {
+    if (!this.hasSentFirstMessage && this.tempMcpConfigPath) {
+      const MCP_INIT_WAIT_MS = this.hasRemoteMcpServers ? 15000 : 5000;
+      logger.info('Waiting for MCP servers to initialize before first message', {
+        waitMs: MCP_INIT_WAIT_MS,
+        hasRemoteMcpServers: this.hasRemoteMcpServers,
+        mcpConfigPath: this.tempMcpConfigPath,
+      });
+      await new Promise((resolve) => setTimeout(resolve, MCP_INIT_WAIT_MS));
+    }
+    this.hasSentFirstMessage = true;
+  }
+
   private async createSession(): Promise<void> {
+    this.hasSentFirstMessage = false;
     if (!this.sessionCreationParams) {
       throw new Error('Session creation params not initialized');
     }
@@ -4884,6 +4929,8 @@ export class ACPProvider extends BaseAgentProvider {
 
     // Claude Code: ensure selected model is actually applied to the current session.
     await this.ensureClaudeCodeModelApplied();
+
+    await this.waitForMcpInitIfNeeded();
 
     // Send prompt request - auggie expects an array of content blocks
     const promptRequest = {
@@ -5865,6 +5912,9 @@ export class ACPProvider extends BaseAgentProvider {
       await this.restartWithModel(nextModel);
     }
 
+    // Wait for MCP servers before first prompt
+    await this.waitForMcpInitIfNeeded();
+
     // Send the prompt request
     // Claude Code: ensure selected model is actually applied to the current session before prompting.
     await this.ensureClaudeCodeModelApplied();
@@ -6745,6 +6795,9 @@ export class ACPProvider extends BaseAgentProvider {
             }
           }),
         });
+
+        // Wait for MCP servers before first prompt
+        await this.waitForMcpInitIfNeeded();
 
         // Send prompt request to agent - auggie expects an array of content blocks
         // Claude Code: ensure selected model is actually applied to the current session before prompting.
@@ -8256,9 +8309,22 @@ export class ACPProvider extends BaseAgentProvider {
     );
     parts.push('- **Activity**: read_timeline (view recent workspace activities)');
 
-    // Note: User MCP servers are configured via --mcp-config flag passed to auggie.
-    // The agent discovers MCP tools directly from the tool list (like VS Code extension does).
-    // No system prompt text needed - auggie registers tools with namespaced names like "whoami_Sentry".
+    // Add configured user MCP server names so the agent knows what to expect,
+    // even before tools finish loading.
+    const userMcpServerNames = new Set<string>();
+    for (const serverName of this.mcpServerCommandMap.values()) {
+      if (serverName !== 'workspace-mcp') {
+        userMcpServerNames.add(serverName);
+      }
+    }
+    if (userMcpServerNames.size > 0) {
+      const serverList = Array.from(userMcpServerNames)
+        .map((name) => `- ${name}`)
+        .join('\n');
+      parts.push(
+        `\n## Configured MCP Servers\n\nThe following MCP servers are configured and their tools should be available (suffixed with the server name, e.g. \`toolName_${Array.from(userMcpServerNames)[0]}\`):\n${serverList}\n\nNote: If tools from a configured server are not yet visible, the server may still be initializing (especially remote/OAuth servers which can take 15-30 seconds). Let the user know the server is configured but may need a moment, rather than saying the tool doesn't exist.`,
+      );
+    }
 
     parts.push(
       '\nThese tools are automatically available to you. Use them as needed to interact with the workspace.',
@@ -8703,6 +8769,25 @@ export class ACPProvider extends BaseAgentProvider {
 
       // Emit exit event
       this.emit('process:exit', { code, signal, restartFailed: true });
+    }
+  }
+
+  /**
+   * Surface MCP server load errors to the renderer via IPC.
+   * Used in catch blocks to notify the user when custom MCP servers fail to load.
+   */
+  private surfaceMcpLoadErrorToRenderer(error: unknown): void {
+    try {
+      const mainWindow = BrowserWindow.getAllWindows()[0];
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('mcp:server-error', {
+          serverName: null,
+          command: null,
+          errorMessage: `Failed to load your custom MCP servers: ${error instanceof Error ? error.message : String(error)}. Check your ~/.augment/settings.json file or MCP server settings.`,
+        });
+      }
+    } catch {
+      // Ignore IPC errors — don't let error reporting break agent startup
     }
   }
 

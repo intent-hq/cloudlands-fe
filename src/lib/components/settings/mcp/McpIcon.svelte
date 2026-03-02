@@ -22,7 +22,7 @@
     redis: 'redis',
     mongodb: 'mongodb',
     circleci: 'circleci',
-    heroku: 'heroku',
+    vercel: 'vercel',
     railway: 'railway',
     convex: 'convex',
     snowflake: 'snowflake',

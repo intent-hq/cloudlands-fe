@@ -5,19 +5,24 @@
   import Input from '$lib/components/ui/input/input.svelte';
   import { faPlus, faTrash } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { RESERVED_MCP_SERVER_NAMES, MCP_SERVER_NAME_REGEX, MCP_SERVER_NAME_MAX_LENGTH } from '$shared/config/mcp-constants';
 
   interface Props {
     /** Initial form values (for edit mode) */
     initialValues?: McpServerFormState;
     /** Whether this is for editing an existing server */
     editMode?: boolean;
+    /** Names of existing servers (for duplicate checking) */
+    existingServerNames?: string[];
     /** Called when form is submitted */
-    onSubmit: (config: ReturnType<typeof formStateToServer>) => void;
+    onSubmit: (config: ReturnType<typeof formStateToServer>) => void | Promise<void>;
     /** Called when form is cancelled */
     onCancel: () => void;
   }
 
-  let { initialValues, editMode = false, onSubmit, onCancel }: Props = $props();
+  let { initialValues, editMode = false, existingServerNames = [], onSubmit, onCancel }: Props = $props();
+
+
 
   // Form state - initialize once from props
   function getInitialForm(): McpServerFormState {
@@ -26,6 +31,7 @@
 
   let form = $state<McpServerFormState>(getInitialForm());
   let error = $state('');
+  let isSubmitting = $state(false);
 
   // Transport type options
   const transportTypes: { value: McpTransportType; label: string }[] = [
@@ -69,13 +75,38 @@
     }
   }
 
+  // Validate server name and return error message, or empty string if valid
+  function validateName(name: string): string {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return 'Server name is required';
+    }
+    if (trimmed.length > MCP_SERVER_NAME_MAX_LENGTH) {
+      return `Server name must be ${MCP_SERVER_NAME_MAX_LENGTH} characters or less`;
+    }
+    if (!MCP_SERVER_NAME_REGEX.test(trimmed)) {
+      return 'Server name can only contain letters, numbers, hyphens, underscores, and dots';
+    }
+    if ((RESERVED_MCP_SERVER_NAMES as readonly string[]).includes(trimmed)) {
+      return `"${trimmed}" is a reserved name and cannot be used`;
+    }
+    if (!editMode && existingServerNames.includes(trimmed)) {
+      return `A server named "${trimmed}" already exists`;
+    }
+    return '';
+  }
+
+  // Reactive name error for inline display
+  let nameError = $derived(form.name ? validateName(form.name) : '');
+
   // Validate and submit
-  function handleSubmit() {
+  async function handleSubmit() {
     error = '';
 
     // Validate name
-    if (!form.name.trim()) {
-      error = 'Server name is required';
+    const nameValidationError = validateName(form.name);
+    if (nameValidationError) {
+      error = nameValidationError;
       return;
     }
 
@@ -100,7 +131,12 @@
     }
 
     const config = formStateToServer(form);
-    onSubmit(config);
+    isSubmitting = true;
+    try {
+      await onSubmit(config);
+    } finally {
+      isSubmitting = false;
+    }
   }
 </script>
 
@@ -115,8 +151,13 @@
       bind:value={form.name}
       placeholder="e.g., my-mcp-server"
       disabled={editMode}
+      maxlength={MCP_SERVER_NAME_MAX_LENGTH}
     />
-    <p class="text-xs text-subtle mt-1">A unique identifier for this MCP server</p>
+    {#if nameError && !editMode}
+      <p class="text-xs text-destructive-foreground mt-1">{nameError}</p>
+    {:else}
+      <p class="text-xs text-subtle mt-1">A unique identifier for this MCP server (letters, numbers, hyphens, underscores, dots)</p>
+    {/if}
   </div>
 
   <!-- Connection Type -->
@@ -278,9 +319,13 @@
 
   <!-- Actions -->
   <div class="flex gap-2 pt-2">
-    <Button variant="outline" onclick={onCancel} class="flex-1">Cancel</Button>
-    <Button onclick={handleSubmit} class="flex-1">
-      {editMode ? 'Update Server' : 'Add Server'}
+    <Button variant="outline" onclick={onCancel} class="flex-1" disabled={isSubmitting}>Cancel</Button>
+    <Button onclick={handleSubmit} class="flex-1" disabled={isSubmitting}>
+      {#if isSubmitting}
+        Adding...
+      {:else}
+        {editMode ? 'Update Server' : 'Add Server'}
+      {/if}
     </Button>
   </div>
 </div>

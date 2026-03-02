@@ -7,6 +7,7 @@
 
 import { createLogger } from '$lib/utils/client-logger';
 import type { McpServerConfig, McpServerStatus, McpServerWithStatus, McpTool } from './types';
+import { MCP_SERVER_NAME_REGEX, MCP_SERVER_NAME_MAX_LENGTH, RESERVED_MCP_SERVER_NAMES } from '$shared/config/mcp-constants';
 
 const logger = createLogger('McpSettingsStore');
 
@@ -189,7 +190,11 @@ class McpSettingsStore {
 
   /** Load servers from main process */
   async loadServers(): Promise<void> {
-    this.#loading = true;
+    // Only show loading skeleton on first load (no servers yet)
+    const isFirstLoad = this.#servers.length === 0 && !this.#error;
+    if (isFirstLoad) {
+      this.#loading = true;
+    }
     this.#error = null;
 
     try {
@@ -197,12 +202,20 @@ class McpSettingsStore {
       const settingsResult = await window.electronAPI?.invoke('settings:get', {
         key: 'enableUserMcpServers',
       });
-      this.#enabled = settingsResult?.success && settingsResult.data === true;
+      this.#enabled = settingsResult?.success ? settingsResult.data !== false : true;
 
       if (!this.#enabled) {
         this.#servers = [];
         logger.debug('User MCP servers feature is disabled');
         return;
+      }
+
+      // Load disabled servers from settings
+      const disabledResult = await window.electronAPI?.invoke('settings:get', {
+        key: 'disabledMcpServers',
+      });
+      if (disabledResult?.success && Array.isArray(disabledResult.data)) {
+        this.#disabledServers = new Set(disabledResult.data);
       }
 
       // Load servers - try CLI first, fall back to direct settings.json read
@@ -267,16 +280,18 @@ class McpSettingsStore {
 
         logger.info('Loaded MCP servers:', { count: this.#servers.length });
 
-        // Set initial status to connected for non-disabled servers.
-        // Error events from the main process will override this for servers that fail to start.
+        // Set initial status for non-disabled servers.
+        // HTTP/SSE servers are set to 'connected' (error events from main process will override for failures).
+        // Stdio servers are set to 'configured' since they can't be tested from settings —
+        // they're only spawned when an agent starts.
         // Clear previous errors — new errors will arrive via IPC if servers still fail.
         this.#errorMessages = {};
         for (const server of this.#servers) {
           if (!this.#disabledServers.has(server.name)) {
-            // Only set to connected if not already in error state
+            // Only update if not already in error state
             // (error events may arrive before loadServers completes)
             if (this.#statusMap[server.name] !== 'error') {
-              this.#statusMap[server.name] = 'connected';
+              this.#statusMap[server.name] = server.type === 'stdio' ? 'configured' : 'connected';
             }
           }
         }
@@ -323,6 +338,25 @@ class McpSettingsStore {
     providerDisplayName?: string;
     authHint?: string;
   } | void> {
+    // Validate server name
+    const trimmedName = config.name?.trim();
+    if (!trimmedName) {
+      throw new Error('Server name is required');
+    }
+    if (!MCP_SERVER_NAME_REGEX.test(trimmedName)) {
+      throw new Error('Server name can only contain letters, numbers, hyphens, underscores, and dots');
+    }
+    if (trimmedName.length > MCP_SERVER_NAME_MAX_LENGTH) {
+      throw new Error(`Server name must be ${MCP_SERVER_NAME_MAX_LENGTH} characters or less`);
+    }
+    if ((RESERVED_MCP_SERVER_NAMES as readonly string[]).includes(trimmedName)) {
+      logger.warn('Attempted to add server with reserved name:', trimmedName);
+      return;
+    }
+    if (this.#servers.some((s) => s.name === trimmedName)) {
+      throw new Error(`A server named "${trimmedName}" already exists`);
+    }
+
     try {
       // Check auth requirements for HTTP/SSE servers
       let authInfo:
@@ -364,6 +398,11 @@ class McpSettingsStore {
       if (result?.success) {
         await this.loadServers();
         logger.info('Added MCP server:', config.name);
+
+        // Auto-enable feature when first server is added
+        if (!this.#enabled) {
+          await this.setEnabled(true);
+        }
 
         // Test connection for HTTP/SSE servers to detect auth requirements
         if (config.type !== 'stdio' && config.url) {
@@ -495,8 +534,14 @@ class McpSettingsStore {
 
   /** Persist disabled servers to settings */
   private async persistDisabledServers(): Promise<void> {
-    // This could be saved to settings if needed
-    // For now, we just keep it in memory
+    try {
+      await window.electronAPI?.invoke('settings:set', {
+        key: 'disabledMcpServers',
+        value: Array.from(this.#disabledServers),
+      });
+    } catch (error) {
+      logger.error('Failed to persist disabled MCP servers:', error);
+    }
   }
 }
 

@@ -48,6 +48,7 @@ import {
   XcodeOpenSchema,
 } from '../../../main/ipc-schemas';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
+import type { McpServerConfig } from '../../mcp/main/user-mcp-settings';
 import { execAsync } from '../../../shared/git/git-env';
 import {
   APP_CHANNELS,
@@ -2373,8 +2374,49 @@ export function setupSystemIPC() {
         try {
           const { findAuggieAsync } = await import('../../../shared/main/async-utils');
           const auggiePath = await findAuggieAsync();
+
+          // Fallback: write directly to ~/.augment/settings.json when CLI is unavailable
           if (!auggiePath) {
-            return { success: false, error: 'Auggie CLI not found' };
+            try {
+              const { readUserMcpServers, writeUserMcpServers } = await import(
+                '../../mcp/main/user-mcp-settings'
+              );
+              const servers = (await readUserMcpServers()) ?? {};
+
+              // Build the server config from validated params
+              let serverConfig: Record<string, unknown>;
+              if (validated.transport === 'stdio') {
+                serverConfig = {
+                  command: validated.command ?? '',
+                  ...(validated.args
+                    ? { args: validated.args.split(/\s+/).filter(Boolean) }
+                    : {}),
+                  ...(validated.env ? { env: validated.env } : {}),
+                };
+              } else {
+                // http or sse
+                serverConfig = {
+                  type: validated.transport,
+                  url: validated.url ?? '',
+                  ...(validated.headers ? { headers: validated.headers } : {}),
+                  ...(validated.authType && validated.authType !== 'none'
+                    ? { authType: validated.authType }
+                    : {}),
+                };
+              }
+
+              servers[validated.name] = serverConfig as unknown as McpServerConfig;
+              const result = await writeUserMcpServers(servers);
+              if (!result.success) {
+                return { success: false, error: result.error ?? 'Failed to write settings' };
+              }
+              return { success: true, data: { message: 'Server added (direct write)' } };
+            } catch (directWriteError) {
+              return {
+                success: false,
+                error: `CLI not found and direct write failed: ${String(directWriteError)}`,
+              };
+            }
           }
 
           const { spawn } = require('child_process');
@@ -2469,8 +2511,26 @@ export function setupSystemIPC() {
         try {
           const { findAuggieAsync } = await import('../../../shared/main/async-utils');
           const auggiePath = await findAuggieAsync();
+
+          // Fallback: write directly to ~/.augment/settings.json when CLI is unavailable
           if (!auggiePath) {
-            return { success: false, error: 'Auggie CLI not found' };
+            try {
+              const { readUserMcpServers, writeUserMcpServers } = await import(
+                '../../mcp/main/user-mcp-settings'
+              );
+              const servers = (await readUserMcpServers()) ?? {};
+              delete servers[validated.name];
+              const result = await writeUserMcpServers(servers);
+              if (!result.success) {
+                return { success: false, error: result.error ?? 'Failed to write settings' };
+              }
+              return { success: true, data: { message: 'Server removed (direct write)' } };
+            } catch (directWriteError) {
+              return {
+                success: false,
+                error: `CLI not found and direct write failed: ${String(directWriteError)}`,
+              };
+            }
           }
 
           const { spawn } = require('child_process');

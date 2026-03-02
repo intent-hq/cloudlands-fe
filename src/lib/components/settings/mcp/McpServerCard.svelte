@@ -25,6 +25,7 @@
   // Status color mapping
   const statusColors: Record<string, string> = {
     connected: 'bg-green-500',
+    configured: 'bg-blue-400',
     disconnected: 'bg-gray-400',
     error: 'bg-red-500',
     auth_required: 'bg-yellow-500',
@@ -34,6 +35,7 @@
   // Status tooltip text
   const statusTooltips = $derived<Record<string, string>>({
     connected: 'Connected',
+    configured: 'Configured — starts when an agent runs',
     disconnected: 'Disconnected',
     error: server.errorMessage || 'Connection error',
     auth_required: 'Authentication required',
@@ -98,15 +100,15 @@
     <div class="flex items-start gap-3 min-w-0 flex-1">
       <!-- Status indicator with tooltip -->
       <Tooltip content={statusTooltips[server.status]} side="right">
-        <div class="w-2.5 h-2.5 rounded-full shrink-0 mt-1.5 {statusColors[server.status]}"></div>
+        <div class="w-2.5 h-2.5 rounded-full shrink-0 mt-1.5 {statusColors[server.status]}" role="status" aria-label="Server status: {statusTooltips[server.status]}"></div>
       </Tooltip>
 
       <!-- Server info -->
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-2">
-          <span class="font-medium text-sm truncate">{server.name}</span>
+          <span class="font-medium text-sm truncate" title={server.name}>{server.name}</span>
           {#if server.toolCount > 0}
-            <span class="text-xs text-subtle">({server.toolCount}) tools</span>
+            <span class="text-xs text-subtle">{server.toolCount} {server.toolCount === 1 ? 'tool' : 'tools'}</span>
           {/if}
         </div>
         <p class="text-xs text-subtle truncate">{displayCommand()}</p>

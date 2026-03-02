@@ -11,6 +11,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { Logger } from '../../../shared/logger';
 import { injectMcpAuth } from './mcp-auth-providers';
+import { RESERVED_MCP_SERVER_NAMES } from '../../../shared/config/mcp-constants';
 
 const logger = new Logger('UserMcpSettings');
 
@@ -214,9 +215,10 @@ export async function writeAugmentSettingsFile(content: string): Promise<{ succe
 }
 
 /**
- * Reserved MCP server names that cannot be overridden by user config
+ * Reserved MCP server names that cannot be overridden by user config.
+ * Imported from shared constants as RESERVED_MCP_SERVER_NAMES.
  */
-const RESERVED_SERVER_NAMES = ['workspace-mcp'];
+const RESERVED_SERVER_NAMES: readonly string[] = RESERVED_MCP_SERVER_NAMES;
 
 /**
  * Merge user MCP servers with built-in servers

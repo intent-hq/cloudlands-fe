@@ -201,7 +201,7 @@ class McpServersStore {
       const settingsResult = await window.electronAPI?.invoke('settings:get', {
         key: 'enableUserMcpServers',
       });
-      const featureEnabled = settingsResult?.success && settingsResult.data === true;
+      const featureEnabled = settingsResult?.success ? settingsResult.data !== false : true;
 
       if (!featureEnabled) {
         // Feature is disabled, don't show any servers

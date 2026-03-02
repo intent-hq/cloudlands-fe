@@ -151,7 +151,7 @@ function injectMcpServers(servers: AcpMcpServer[]): void {
   }
 
   for (const server of servers) {
-    const key = MCP_KEY_PREFIX;
+    const key = `${MCP_KEY_PREFIX}-${server.name}`;
     if (server.command) {
       const entry: McpServerEntry = { command: server.command, args: server.args };
       if (server.env && server.env.length > 0) {
