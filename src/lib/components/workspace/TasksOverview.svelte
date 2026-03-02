@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Note, TaskStatus, Workspace } from '$shared/types';
   import { isSpecNote } from '$shared/constants/notes';
+  import { extractSpecTaskIds, EXCLUDED_STATUSES } from '$shared/utils/task-stats';
   import { noteReadTrackingStore } from '$lib/stores/note-read-tracking.store.svelte';
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import TaskStatusIndicator from '$lib/components/workspace/TaskStatusIndicator.svelte';
@@ -54,10 +55,22 @@
   }
 
   // Build task tree from notes using parentId
-  // Excludes spec note; treats tasks with no parent or spec as parent as roots
+  // Excludes spec note and cancelled tasks; treats tasks with no parent or spec as parent as roots
+  // Only includes tasks that are referenced in the spec content
   function buildTaskTree(notes: Note[]): TaskTreeNode[] {
-    // Filter to only task notes, excluding the spec note
-    const taskNotes = notes.filter((n) => n.metadata?.task && !isSpecNote(n.id as string));
+    // Get spec note to determine which tasks are referenced
+    // If spec has no task links, fall back to showing all tasks
+    const specNote = notes.find((n) => isSpecNote(n.id as string));
+    const specTaskIds = extractSpecTaskIds(specNote?.content);
+    const hasSpecLinks = specTaskIds.size > 0;
+
+    // Filter to only task notes, excluding the spec note and cancelled tasks
+    const taskNotes = notes.filter(
+      (n) =>
+        n.metadata?.task &&
+        !isSpecNote(n.id as string) &&
+        !EXCLUDED_STATUSES.has(n.metadata.task.status),
+    );
 
     // Build parent -> children map
     // Treat spec as parent === no parent (root level)
@@ -92,11 +105,12 @@
     }
 
     // Get root tasks (no parent, or parent is spec, or parent is not a task)
+    // Only include roots that are referenced in the spec content (if spec has links)
     const taskIds = new Set(taskNotes.map((n) => n.id as string));
     const roots = taskNotes.filter((n) => {
       const parentId = n.parentId as string | undefined;
-      // Root if: no parent, parent is spec, or parent is not a task note
-      return !parentId || isSpecNote(parentId) || !taskIds.has(parentId);
+      const isRoot = !parentId || isSpecNote(parentId) || !taskIds.has(parentId);
+      return isRoot && (!hasSpecLinks || specTaskIds.has(n.id as string));
     });
 
     return roots.map(buildNode).sort(sortByCreatedAt);

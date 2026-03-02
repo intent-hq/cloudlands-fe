@@ -846,18 +846,26 @@ class WorkspaceStore {
       // Also update in items array if present, or add it if not
       const index = this.#items.findIndex((w) => w.id === idOrWorkspace.id);
       if (index !== -1) {
-        // Preserve enrichment data when setting current workspace
+        // FIX: Merge incoming workspace data with existing item to preserve
+        // enrichment fields (taskStats, agentSummary, gitSummary, diffSummary)
+        // that are only computed during listWorkspaces (buildListWorkspace).
+        // The open/get endpoints don't compute these fields, so a naive
+        // replacement would wipe them, causing the homepage to show stale data
+        // (e.g., "planning" phase instead of correct progress) after navigating
+        // to a workspace and back.
         const existing = this.#items[index];
         const merged = {
+          ...existing,
           ...idOrWorkspace,
+          // Preserve enrichment fields if the incoming workspace doesn't have them
           taskStats: idOrWorkspace.taskStats ?? existing.taskStats,
-          diffSummary: idOrWorkspace.diffSummary ?? existing.diffSummary,
           agentSummary: idOrWorkspace.agentSummary ?? existing.agentSummary,
           gitSummary: idOrWorkspace.gitSummary ?? existing.gitSummary,
+          diffSummary: idOrWorkspace.diffSummary ?? existing.diffSummary,
           activePullRequest: idOrWorkspace.activePullRequest ?? existing.activePullRequest,
         };
         this.#items[index] = merged;
-        this.#current = merged; // Use merged data so #current stays consistent with #items
+        this.#current = merged;
       } else {
         // Add to items array if not present
         this.#items = [...this.#items, idOrWorkspace];

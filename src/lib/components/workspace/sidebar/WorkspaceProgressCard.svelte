@@ -3,7 +3,11 @@
   import type { Note, Workspace } from '$shared/types';
   import { WorkspaceStatusEnum } from '$shared/types';
   import { isSpecNote } from '$shared/constants/notes';
-  import { TASK_LINK_REGEX_FLEXIBLE } from '$shared/constants/intent-links';
+  import {
+    computeTaskStats,
+    extractOrderedSpecTaskIds,
+    extractSpecTaskIds,
+  } from '$shared/utils/task-stats';
   import { noteReadTrackingStore } from '$lib/stores/note-read-tracking.store.svelte';
   import Fa from 'svelte-fa';
   import {
@@ -470,43 +474,10 @@
   // Get spec note
   const specNote = $derived(notes.find((n) => n.id === 'spec' || n.isDefault));
 
-  // Compute task stats from tasks within the spec note only
-  // Only counts direct children of the spec note (parentId === 'spec')
-  // Note: Excludes cancelled tasks from total (they're abandoned, not contributing to progress)
-  const taskStats = $derived.by(() => {
-    // Filter to only task notes that are direct children of the spec note
-    // Deduplicate by note ID to prevent double-counting
-    const seenIds = new Set<string>();
-    const taskNotes = notes.filter((n) => {
-      if (!n.metadata?.task || isSpecNote(n.id as string)) return false;
-      // Only count tasks that are direct children of the spec note
-      if (!isSpecNote(n.parentId as string)) return false;
-      const noteId = n.id as string;
-      if (seenIds.has(noteId)) return false;
-      seenIds.add(noteId);
-      return true;
-    });
-
-    let total = 0;
-    let completed = 0;
-    let inProgress = 0;
-
-    for (const note of taskNotes) {
-      const status = note.metadata?.task?.status;
-      // Skip cancelled tasks - they're abandoned and shouldn't count toward progress
-      if (status === 'cancelled') {
-        continue;
-      }
-      total++;
-      if (status === 'complete') {
-        completed++;
-      } else if (status === 'in_progress' || status === 'review_required') {
-        inProgress++;
-      }
-    }
-
-    return { completed, inProgress, total };
-  });
+  // Compute task stats using the shared canonical logic.
+  // See $shared/utils/task-stats.ts for the single source of truth on
+  // which tasks are counted and how statuses map to progress categories.
+  const taskStats = $derived(computeTaskStats(notes));
 
   // Tree node with computed weight (leaf count)
   interface TaskTreeNode {
@@ -516,25 +487,9 @@
     isLeaf: boolean;
   }
 
-  // Extract ordered task IDs from note content (order they appear in the markdown)
-  function extractTaskOrderFromContent(content: string | undefined): string[] {
-    if (!content) return [];
-    const taskIds: string[] = [];
-    // Use fresh regex instance to avoid lastIndex issues
-    const taskLinkRegex = new RegExp(TASK_LINK_REGEX_FLEXIBLE.source, 'g');
-    const matches = content.matchAll(taskLinkRegex);
-    for (const match of matches) {
-      const noteId = match[2];
-      if (noteId && !taskIds.includes(noteId)) {
-        taskIds.push(noteId);
-      }
-    }
-    return taskIds;
-  }
-
   // Sort notes by their order in the parent's content, falling back to peerOrder/createdAt
   function sortByContentOrder(notesToSort: Note[], parentContent: string | undefined): Note[] {
-    const orderFromContent = extractTaskOrderFromContent(parentContent);
+    const orderFromContent = extractOrderedSpecTaskIds(parentContent);
     const orderMap = new Map(orderFromContent.map((id, index) => [id, index]));
 
     return [...notesToSort].sort((a, b) => {
@@ -645,7 +600,14 @@
     }
 
     // Get root tasks (direct children of spec - their parentId is 'spec')
-    const roots = taskNotes.filter((n) => isSpecNote(n.parentId as string));
+    // Only include tasks that are actually referenced in the spec note content
+    // If spec has no task links, fall back to all direct children of spec
+    const specTaskIds = extractSpecTaskIds(specNote?.content);
+    const hasSpecLinks = specTaskIds.size > 0;
+    const roots = taskNotes.filter(
+      (n) =>
+        isSpecNote(n.parentId as string) && (!hasSpecLinks || specTaskIds.has(n.id as string)),
+    );
 
     // Sort roots by their order in the spec note content
     const sortedRoots = sortByContentOrder(roots, specNote?.content);

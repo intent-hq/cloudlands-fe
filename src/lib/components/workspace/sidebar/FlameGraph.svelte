@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Note, TaskStatus } from '$shared/types';
   import { isSpecNote } from '$shared/constants/notes';
-  import { TASK_LINK_REGEX_FLEXIBLE } from '$shared/constants/intent-links';
+  import { extractOrderedSpecTaskIds, extractSpecTaskIds } from '$shared/utils/task-stats';
   import Fa from 'svelte-fa';
   import { faFileAlt } from '@fortawesome/free-solid-svg-icons';
   import { Tooltip } from '$lib/components/ui/tooltip';
@@ -37,25 +37,9 @@
     colspan: number;
   }
 
-  // Extract ordered task IDs from note content (order they appear in the markdown)
-  function extractTaskOrderFromContent(content: string | undefined): string[] {
-    if (!content) return [];
-    const taskIds: string[] = [];
-    // Use fresh regex instance to avoid lastIndex issues
-    const taskLinkRegex = new RegExp(TASK_LINK_REGEX_FLEXIBLE.source, 'g');
-    const matches = content.matchAll(taskLinkRegex);
-    for (const match of matches) {
-      const noteId = match[2];
-      if (noteId && !taskIds.includes(noteId)) {
-        taskIds.push(noteId);
-      }
-    }
-    return taskIds;
-  }
-
   // Sort notes by their order in the parent's content, falling back to peerOrder/createdAt
   function sortByContentOrder(notesToSort: Note[], parentContent: string | undefined): Note[] {
-    const orderFromContent = extractTaskOrderFromContent(parentContent);
+    const orderFromContent = extractOrderedSpecTaskIds(parentContent);
     const orderMap = new Map(orderFromContent.map((id, index) => [id, index]));
 
     return [...notesToSort].sort((a, b) => {
@@ -140,7 +124,14 @@
     }
 
     // Get root tasks (direct children of spec - their parentId is 'spec')
-    const roots = taskNotes.filter((n) => isSpecNote(n.parentId as string));
+    // Only include tasks that are actually referenced in the spec note content
+    // If spec has no task links, fall back to all direct children of spec
+    const specTaskIds = extractSpecTaskIds(specNote?.content);
+    const hasSpecLinks = specTaskIds.size > 0;
+    const roots = taskNotes.filter(
+      (n) =>
+        isSpecNote(n.parentId as string) && (!hasSpecLinks || specTaskIds.has(n.id as string)),
+    );
 
     // Sort roots by their order in the spec note content
     const sortedRoots = sortByContentOrder(roots, specNote?.content);

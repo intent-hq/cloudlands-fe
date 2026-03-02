@@ -20,7 +20,11 @@ import {
   getDefaultProviderId,
   PROVIDER_MODEL_TIERS,
 } from '../../../shared/config/provider-config';
-import { isSpecNote } from '../../../shared/constants/notes';
+import {
+  getSpecTaskNotes,
+  EXCLUDED_STATUSES,
+  IN_PROGRESS_STATUSES,
+} from '../../../shared/utils/task-stats';
 import * as Errors from '../../../shared/errors';
 import {
   execAsync,
@@ -1936,21 +1940,9 @@ task:
 
       const notes = result.data.notes;
 
-      // Filter to task notes (exclude spec note)
-      // Only count direct children of the spec note to match WorkspaceProgressCard logic
-      const seenIds = new Set<string>();
-      const taskNotes = notes.filter((n) => {
-        if (!n.metadata?.task) return false;
-        // Skip spec note itself
-        if (isSpecNote(n.id as string)) return false;
-        // Only count tasks that are direct children of spec
-        if (!isSpecNote(n.parentId as string)) return false;
-        // Deduplicate
-        const noteId = n.id as string;
-        if (seenIds.has(noteId)) return false;
-        seenIds.add(noteId);
-        return true;
-      });
+      // Use the shared canonical filter (see $shared/utils/task-stats.ts).
+      // This keeps the server in sync with every client-side progress indicator.
+      const taskNotes = getSpecTaskNotes(notes);
 
       if (taskNotes.length === 0) {
         return undefined;
@@ -1965,10 +1957,7 @@ task:
 
       for (const note of taskNotes) {
         const status = note.metadata?.task?.status;
-        // Skip cancelled tasks
-        if (status === 'cancelled') {
-          continue;
-        }
+        if (status && EXCLUDED_STATUSES.has(status)) continue;
         total++;
         const taskInfo: WorkspaceTaskInfo = {
           title: note.title || 'Untitled task',
@@ -1977,7 +1966,7 @@ task:
         if (status === 'complete') {
           completed++;
           completedTasks.push(taskInfo);
-        } else if (status === 'in_progress' || status === 'review_required') {
+        } else if (status && IN_PROGRESS_STATUSES.has(status)) {
           inProgress++;
           inProgressTasks.push(taskInfo);
         } else {

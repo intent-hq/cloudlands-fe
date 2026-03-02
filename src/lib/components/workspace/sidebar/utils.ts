@@ -4,6 +4,11 @@ import { getActivityLabel } from '$features/events/activity-labels';
 import { isSpecNote } from '$shared/constants/notes';
 import { TASK_LINK_REGEX_FLEXIBLE } from '$shared/constants/intent-links';
 import {
+  EXCLUDED_STATUSES,
+  IN_PROGRESS_STATUSES,
+  type TaskStats,
+} from '$shared/utils/task-stats';
+import {
   faFile,
   faFileCirclePlus,
   faFileCircleXmark,
@@ -295,15 +300,15 @@ export function getChildNotes(parentNote: Note, allNotes: Note[]): Note[] {
 // Task stats utilities
 // ============================================================================
 
-export interface TaskStats {
-  completed: number;
-  inProgress: number;
-  total: number;
-}
+// Re-export TaskStats from the canonical shared utility
+export type { TaskStats } from '$shared/utils/task-stats';
 
 /**
  * Parse task statistics from note content (linked Task Notes).
  * Counts linked tasks and uses the linked note's task status for completion tracking.
+ *
+ * Status classification uses the shared constants from `$shared/utils/task-stats`
+ * to stay consistent with all other progress indicators in the app.
  */
 export function parseTaskStats(content: string | undefined, notes?: Note[]): TaskStats {
   if (!content) return { completed: 0, total: 0, inProgress: 0 };
@@ -320,18 +325,19 @@ export function parseTaskStats(content: string | undefined, notes?: Note[]): Tas
   const matches = content.matchAll(taskLinkRegex);
 
   for (const match of matches) {
-    total++;
     const noteId = match[2] as Note['id'];
     const linkedNote = noteMap.get(noteId);
     const taskStatus = linkedNote?.metadata?.task?.status;
 
-    if (linkedNote && taskStatus) {
-      if (taskStatus === 'complete') {
-        completed++;
-      } else if (taskStatus === 'in_progress') {
-        inProgress++;
-      }
-      // Other statuses (not_started, waiting, review_required) don't increment anything
+    // Skip cancelled tasks — they don't count toward progress
+    if (taskStatus && EXCLUDED_STATUSES.has(taskStatus)) continue;
+
+    total++;
+
+    if (taskStatus === 'complete') {
+      completed++;
+    } else if (taskStatus && IN_PROGRESS_STATUSES.has(taskStatus)) {
+      inProgress++;
     }
   }
 

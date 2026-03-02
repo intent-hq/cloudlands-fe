@@ -2,6 +2,11 @@
   import { arc as d3Arc } from 'd3';
   import type { Note, TaskStatus } from '$shared/types';
   import { isSpecNote } from '$shared/constants/notes';
+  import {
+    computeTaskStats,
+    extractSpecTaskIds,
+    EXCLUDED_STATUSES,
+  } from '$shared/utils/task-stats';
 
   interface Props {
     notes: Note[];
@@ -37,11 +42,15 @@
     depth: number;
   }
 
+
+
   // Build task tree from notes (same logic as WorkspaceProgressCard)
   function buildTaskTree(notesList: Note[]): TaskTreeNode[] {
+    const specNote = notesList.find((n) => isSpecNote(n.id as string));
+
     const seenIds = new Set<string>();
     const allTaskNotes = notesList.filter((n) => {
-      if (!n.metadata?.task || isSpecNote(n.id as string) || n.metadata.task.status === 'cancelled')
+      if (!n.metadata?.task || isSpecNote(n.id as string) || EXCLUDED_STATUSES.has(n.metadata.task.status))
         return false;
       const noteId = n.id as string;
       if (seenIds.has(noteId)) return false;
@@ -84,7 +93,14 @@
       return { note, children, weight, isLeaf };
     }
 
-    const roots = taskNotes.filter((n) => isSpecNote(n.parentId as string));
+    // Only include roots that are referenced in the spec note content
+    // If spec has no task links, fall back to all direct children of spec
+    const specTaskIds = extractSpecTaskIds(specNote?.content);
+    const hasSpecLinks = specTaskIds.size > 0;
+    const roots = taskNotes.filter(
+      (n) =>
+        isSpecNote(n.parentId as string) && (!hasSpecLinks || specTaskIds.has(n.id as string)),
+    );
     return roots.map(buildNode);
   }
 
@@ -148,22 +164,7 @@
     }
   }
 
-  const taskStats = $derived.by(() => {
-    const seenIds = new Set<string>();
-    let total = 0,
-      completed = 0;
-    for (const note of notes) {
-      if (!note.metadata?.task || isSpecNote(note.id as string)) continue;
-      if (!isSpecNote(note.parentId as string)) continue;
-      const noteId = note.id as string;
-      if (seenIds.has(noteId)) continue;
-      seenIds.add(noteId);
-      if (note.metadata.task.status === 'cancelled') continue;
-      total++;
-      if (note.metadata.task.status === 'complete') completed++;
-    }
-    return { completed, total };
-  });
+  const taskStats = $derived(computeTaskStats(notes));
 
   const taskTree = $derived(buildTaskTree(notes));
   const radius = $derived(size / 2);

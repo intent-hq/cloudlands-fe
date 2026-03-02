@@ -4,7 +4,7 @@
   import { WorkspaceStatusEnum, PullRequestStatus } from '$shared/types';
   import { getWorkspaceStage } from '$lib/utils/workspace-utils';
   import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
-  import { isSpecNote } from '$shared/constants/notes';
+  import { computeTaskStats } from '$shared/utils/task-stats';
   import {
     faFileCode,
     faServer,
@@ -74,39 +74,13 @@
       : null,
   );
 
-  // Task progress stats from notes
-  // Matches backend getWorkspaceTaskStats and WorkspaceProgressCard logic:
-  // - Only count task notes that are direct children of the spec note
-  // - Exclude cancelled tasks (they don't contribute to progress)
+  // Task progress stats — delegates to the shared canonical utility.
+  // See $shared/utils/task-stats.ts for the single source of truth.
   let taskStats = $derived.by(() => {
-    const seenIds = new Set<string>();
-    const taskNotes = notes.filter((n) => {
-      if (!n.metadata?.task || isSpecNote(n.id)) return false;
-      // Only count tasks that are direct children of the spec note
-      if (!isSpecNote(n.parentId as string)) return false;
-      // Skip cancelled tasks
-      if (n.metadata.task.status === 'cancelled') return false;
-      // Deduplicate
-      const noteId = n.id as string;
-      if (seenIds.has(noteId)) return false;
-      seenIds.add(noteId);
-      return true;
-    });
-
-    if (taskNotes.length === 0) {
-      return null;
-    }
-
-    const completed = taskNotes.filter((n) => n.metadata?.task?.status === 'complete').length;
-    const inProgress = taskNotes.filter(
-      (n) =>
-        n.metadata?.task?.status === 'in_progress' ||
-        n.metadata?.task?.status === 'review_required',
-    ).length;
-    const total = taskNotes.length;
-    const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
-
-    return { completed, inProgress, total, percentage };
+    const stats = computeTaskStats(notes);
+    if (stats.total === 0) return null;
+    const percentage = Math.round((stats.completed / stats.total) * 100);
+    return { ...stats, percentage };
   });
 
   const gatherFilesFromWorkspace = () => {
