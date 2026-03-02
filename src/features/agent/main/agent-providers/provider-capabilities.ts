@@ -81,9 +81,11 @@ export function resolveProviderCapabilities(config: AgentConfig): ProviderCapabi
   const providerId = getProviderId(config);
   const defaultAgent = resolveDefaultAgent(config, providerConfig);
 
-  // Use provider config values with sensible defaults
+  // Use provider config values with sensible defaults.
+  // Most capabilities default to false — providers must explicitly opt in.
+  // supportsAuthenticate defaults to true for backwards compatibility.
   const supportsAuthenticate = providerConfig?.supportsAuthenticate ?? true;
-  const supportsSetMode = providerConfig?.supportsSetMode ?? true;
+  const supportsSetMode = providerConfig?.supportsSetMode ?? false;
   const supportsMcpConfig = providerConfig?.supportsMcpConfig ?? false;
   const supportsRulesFile = providerConfig?.supportsRulesFile ?? false;
 

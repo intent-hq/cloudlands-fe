@@ -933,6 +933,10 @@ export class ACPProvider extends BaseAgentProvider {
   // For providers without a first-class rules file flag, inject our rules content once
   // as part of the first prompt to make providers hot-swappable.
   private injectedRuntimeRulesIntoPrompt: boolean = false;
+  // Track whether bypassPermissions mode was successfully set on the provider.
+  // When false for non-auggie providers, incoming permission requests are auto-approved
+  // instead of blocking on a user dialog (since the intent was to bypass permissions).
+  private bypassPermissionsActive: boolean = false;
   private cachedRuntimeRulesContent: string | null = null;
   // Buffer of recent stderr error messages for inclusion in error messages shown to the user.
   // When a stream fails with no content, we include the most recent stderr error to give
@@ -3903,6 +3907,44 @@ export class ACPProvider extends BaseAgentProvider {
       // - ACP Standard: { title, description, options: [{ id, label }] }
       // We use IPC to send permission request to renderer and show dialog to user
       if (message.method === 'session/request_permission' && message.id !== undefined) {
+        const caps = this.providerCapabilities;
+
+        // If bypassPermissions was intended but failed to set on the provider (or the
+        // provider doesn't support set_mode at all), auto-approve the permission request
+        // instead of blocking on a user dialog. This prevents the agent from stalling
+        // (and returning an empty response) when the provider sends permission requests
+        // that we intended to bypass.
+        if (caps.id !== 'auggie' && !this.bypassPermissionsActive) {
+          const title =
+            message.params?.toolCall?.title || message.params?.title || 'Permission Request';
+          logger.info('Auto-approving permission request (bypassPermissions fallback)', {
+            id: message.id,
+            title,
+            provider: caps.id,
+          });
+
+          // Find the "allow" option from the request, or use a sensible default
+          const allowOption = (message.params?.options || []).find(
+            (opt: any) =>
+              (opt.optionId || opt.id) === 'allow_once' ||
+              (opt.kind && opt.kind !== 'reject_once' && opt.kind !== 'reject_always'),
+          );
+          const optionId = allowOption?.optionId || allowOption?.id || 'allow_once';
+
+          const response = {
+            jsonrpc: '2.0',
+            id: message.id,
+            result: {
+              outcome: { outcome: 'selected', optionId },
+            },
+          };
+
+          if (!this.writeToAgent(`${JSON.stringify(response)}\n`)) {
+            logger.warn('Cannot send auto-approved permission response to agent - agent not available');
+          }
+          return;
+        }
+
         logger.info('Handling permission request from agent via IPC - BLOCKING', {
           id: message.id,
           toolCallId: message.params?.toolCall?.toolCallId,
@@ -4366,11 +4408,13 @@ export class ACPProvider extends BaseAgentProvider {
       // auto-approves all tool use without stalling on permission prompts.
       // This is critical for providers like OpenCode that send session/request_permission
       // messages which would otherwise block waiting for user interaction.
-      // The request is best-effort — if a provider doesn't support session/set_mode,
-      // the error is caught and logged without affecting the session.
-      // We use sendRequestInternal (no retries) to avoid blocking session setup for
-      // up to 15s if a provider silently ignores the unknown method.
-      if (caps.id !== 'auggie') {
+      //
+      // We check supportsSetMode first to avoid a pointless round-trip (and the 5-second
+      // timeout that comes with it) for providers that are known not to support the method.
+      // If the provider doesn't support it, we skip the call and rely on local auto-approval
+      // of permission requests in handleAgentMessage().
+      this.bypassPermissionsActive = false; // Reset on every new session
+      if (caps.id !== 'auggie' && caps.supportsSetMode) {
         try {
           const setModeRequest = {
             jsonrpc: '2.0' as const,
@@ -4383,19 +4427,24 @@ export class ACPProvider extends BaseAgentProvider {
           };
           const setModeResponse = await this.sendRequestInternal(setModeRequest, 5000);
           if (setModeResponse?.error) {
-            logger.warn(`Failed to set ${caps.id} bypassPermissions mode`, {
+            logger.warn(`Failed to set ${caps.id} bypassPermissions mode; will auto-approve permissions locally`, {
               error: setModeResponse.error,
             });
           } else {
+            this.bypassPermissionsActive = true;
             logger.info(`${caps.id} session set to bypassPermissions mode`, {
               sessionId: this.sessionId,
             });
           }
         } catch (e) {
-          logger.warn(`Error setting ${caps.id} bypassPermissions mode`, {
+          logger.warn(`Error setting ${caps.id} bypassPermissions mode; will auto-approve permissions locally`, {
             error: (e as Error).message,
           });
         }
+      } else if (caps.id !== 'auggie') {
+        logger.info(`Skipping session/set_mode for ${caps.id} (supportsSetMode=false); will auto-approve permissions locally`, {
+          sessionId: this.sessionId,
+        });
       }
 
       // Claude Code: defer applying the model until after the adapter has emitted its
