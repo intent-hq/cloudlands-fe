@@ -1201,6 +1201,33 @@ export class AgentEventSubscriptionService {
   }
 
   /**
+   * Check if an agent has active delegation subscriptions — i.e., it is waiting
+   * for one or more child agents to complete.  This is used to suppress premature
+   * `agent:idle` wake-ups: when Agent B goes idle after delegating to Agent C,
+   * Agent A (B's parent) should NOT be woken because B is not truly done yet.
+   *
+   * Only delegation-related subscriptions count (those watching for agent:idle,
+   * agent:failed, agent:deleted, or agent:completed on other agents).
+   */
+  private hasActiveDelegationSubscriptions(agentId: string): boolean {
+    const subs = this.getAgentSubscriptions(agentId);
+    return subs.some((sub) => {
+      // Delegation group subscriptions are always delegation-related
+      if (sub.filter.delegationGroup) {
+        return true;
+      }
+      // Subscriptions watching for agent completion events on specific actors
+      // (i.e., actorIds is set and eventTypes include delegation-completion signals)
+      const types = sub.filter.eventTypes;
+      if (types && sub.filter.actorIds?.length) {
+        const delegationEventTypes = ['agent:idle', 'agent:completed', 'agent:failed', 'agent:deleted'];
+        return types.some((t) => delegationEventTypes.includes(t));
+      }
+      return false;
+    });
+  }
+
+  /**
    * Get all active subscriptions
    */
   getAllSubscriptions(): AgentSubscription[] {
@@ -1330,6 +1357,21 @@ export class AgentEventSubscriptionService {
       }
     }
 
+    // Suppress agent:idle events when the idle agent still has active delegation
+    // subscriptions (i.e., it delegated to sub-agents and is waiting for them).
+    // The parent should not be woken until the child is truly done.
+    // agent:failed and agent:deleted are terminal — always deliver those immediately.
+    if (event.type === 'agent:idle' && event.actor.id) {
+      if (this.hasActiveDelegationSubscriptions(event.actor.id)) {
+        logger.info('Suppressing agent:idle event — idle agent has active delegation subscriptions', {
+          subscriptionId: subscription.id,
+          parentAgentId: agentId,
+          idleAgentId: event.actor.id,
+        });
+        return;
+      }
+    }
+
     const priority = filter.priority || 'normal';
     const status = this.getAgentStatus(agentId);
 
@@ -1441,6 +1483,18 @@ export class AgentEventSubscriptionService {
     // Mark the event's actor as completed
     const completedAgentId = event.actor.id;
     if (completedAgentId && tracker.expectedAgentIds.has(completedAgentId)) {
+      // Suppress agent:idle when the idle agent still has active delegation
+      // subscriptions (it delegated to sub-agents and is waiting for them).
+      // agent:failed and agent:deleted are terminal — always count those.
+      if (event.type === 'agent:idle' && this.hasActiveDelegationSubscriptions(completedAgentId)) {
+        logger.info('Delegation group: suppressing agent:idle — agent has active delegation subscriptions', {
+          groupId: group.groupId,
+          parentAgentId: agentId,
+          idleAgentId: completedAgentId,
+        });
+        return;
+      }
+
       tracker.completedAgentIds.add(completedAgentId);
 
       // Track if this agent was deleted (vs normally completed)

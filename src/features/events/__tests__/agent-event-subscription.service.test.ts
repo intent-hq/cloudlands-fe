@@ -2393,4 +2393,342 @@ describe('AgentEventSubscriptionService', () => {
       });
     });
   });
+
+  describe('Wake chain suppression (agent:idle with active delegation subscriptions)', () => {
+    it('should suppress agent:idle when idle agent has active oneShot completion subscriptions', async () => {
+      // Agent A subscribes to Agent B's idle.
+      // Agent B subscribes to Agent C's idle (oneShot, with actorIds).
+      // When Agent B goes idle, Agent A should NOT be notified because Agent B
+      // has active delegation subscriptions (watching Agent C).
+      let deliveredEvents: WorkspaceEvent[] = [];
+      service.setDeliveryCallback((_agentId, events) => {
+        deliveredEvents = deliveredEvents.concat(events);
+        return { status: 'success' as const };
+      });
+
+      service.setAgentStatus('agent-a', 'idle');
+      service.setAgentStatus('agent-b', 'idle');
+
+      // Agent A subscribes to Agent B's idle (high priority for immediate delivery)
+      service.subscribe('agent-a', 'Agent A', {
+        eventTypes: ['agent:idle'],
+        actorIds: ['agent-b'],
+        priority: 'high',
+        oneShot: true,
+      });
+
+      // Agent B subscribes to Agent C's idle (oneShot with actorIds — delegation pattern)
+      service.subscribe('agent-b', 'Agent B', {
+        eventTypes: ['agent:idle'],
+        actorIds: ['agent-c'],
+        priority: 'high',
+        oneShot: true,
+      });
+
+      // Agent B goes idle — but it has an active delegation subscription watching Agent C
+      const idleEvent: WorkspaceEvent = {
+        id: 'wake-chain-1',
+        workspaceId,
+        timestamp: new Date().toISOString(),
+        type: 'agent:idle',
+        actor: { type: 'agent', id: 'agent-b', name: 'Agent B' },
+        data: { agentId: 'agent-b' },
+      };
+
+      eventBus.emitEvent(idleEvent);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Agent A should NOT have been notified — Agent B is still waiting for Agent C
+      expect(deliveredEvents.length).toBe(0);
+    });
+
+    it('should suppress agent:idle when idle agent has active delegation group subscriptions', async () => {
+      // Same as above but Agent B uses a delegation group subscription
+      let deliveredEvents: WorkspaceEvent[] = [];
+      service.setDeliveryCallback((_agentId, events) => {
+        deliveredEvents = deliveredEvents.concat(events);
+        return { status: 'success' as const };
+      });
+
+      service.setAgentStatus('agent-a', 'idle');
+      service.setAgentStatus('agent-b', 'idle');
+
+      // Agent A subscribes to Agent B's idle
+      service.subscribe('agent-a', 'Agent A', {
+        eventTypes: ['agent:idle'],
+        actorIds: ['agent-b'],
+        priority: 'high',
+        oneShot: true,
+      });
+
+      // Agent B subscribes via delegation group (watching Agent C)
+      service.subscribe('agent-b', 'Agent B', {
+        eventTypes: ['agent:idle', 'agent:deleted'],
+        delegationGroup: {
+          groupId: 'group-wake-chain',
+          awaitMode: 'all',
+          expectedAgentIds: ['agent-c'],
+        },
+      });
+
+      // Agent B goes idle — but it has an active delegation group subscription
+      const idleEvent: WorkspaceEvent = {
+        id: 'wake-chain-2',
+        workspaceId,
+        timestamp: new Date().toISOString(),
+        type: 'agent:idle',
+        actor: { type: 'agent', id: 'agent-b', name: 'Agent B' },
+        data: { agentId: 'agent-b' },
+      };
+
+      eventBus.emitEvent(idleEvent);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Agent A should NOT have been notified
+      expect(deliveredEvents.length).toBe(0);
+    });
+
+    it('should deliver agent:idle when idle agent has NO active delegation subscriptions', async () => {
+      // Agent A subscribes to Agent B's idle.
+      // Agent B has no subscriptions of its own.
+      // When Agent B goes idle, Agent A SHOULD be notified.
+      let deliveredEvents: WorkspaceEvent[] = [];
+      service.setDeliveryCallback((_agentId, events) => {
+        deliveredEvents = deliveredEvents.concat(events);
+        return { status: 'success' as const };
+      });
+
+      service.setAgentStatus('agent-a', 'idle');
+
+      // Agent A subscribes to Agent B's idle
+      service.subscribe('agent-a', 'Agent A', {
+        eventTypes: ['agent:idle'],
+        actorIds: ['agent-b'],
+        priority: 'high',
+        oneShot: true,
+      });
+
+      // Agent B goes idle — no delegation subscriptions
+      const idleEvent: WorkspaceEvent = {
+        id: 'wake-chain-3',
+        workspaceId,
+        timestamp: new Date().toISOString(),
+        type: 'agent:idle',
+        actor: { type: 'agent', id: 'agent-b', name: 'Agent B' },
+        data: { agentId: 'agent-b' },
+      };
+
+      eventBus.emitEvent(idleEvent);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Agent A SHOULD be notified
+      expect(deliveredEvents.length).toBe(1);
+      expect(deliveredEvents[0].type).toBe('agent:idle');
+    });
+
+    it('should always deliver agent:failed regardless of active delegation subscriptions', async () => {
+      // Agent A subscribes to Agent B's completion events.
+      // Agent B has active delegation subscriptions.
+      // When Agent B emits agent:failed, Agent A should still be notified.
+      let deliveredEvents: WorkspaceEvent[] = [];
+      service.setDeliveryCallback((_agentId, events) => {
+        deliveredEvents = deliveredEvents.concat(events);
+        return { status: 'success' as const };
+      });
+
+      service.setAgentStatus('agent-a', 'idle');
+
+      // Agent A subscribes to Agent B's events
+      service.subscribe('agent-a', 'Agent A', {
+        eventTypes: ['agent:idle', 'agent:failed'],
+        actorIds: ['agent-b'],
+        priority: 'high',
+        oneShot: true,
+      });
+
+      // Agent B has an active delegation subscription (watching Agent C)
+      service.subscribe('agent-b', 'Agent B', {
+        eventTypes: ['agent:idle'],
+        actorIds: ['agent-c'],
+        priority: 'high',
+        oneShot: true,
+      });
+
+      // Agent B fails — this is terminal, should always be delivered
+      const failedEvent: WorkspaceEvent = {
+        id: 'wake-chain-4',
+        workspaceId,
+        timestamp: new Date().toISOString(),
+        type: 'agent:failed',
+        actor: { type: 'agent', id: 'agent-b', name: 'Agent B' },
+        data: { agentId: 'agent-b', error: 'Something went wrong' },
+      };
+
+      eventBus.emitEvent(failedEvent);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Agent A SHOULD be notified — agent:failed is terminal
+      expect(deliveredEvents.length).toBe(1);
+      expect(deliveredEvents[0].type).toBe('agent:failed');
+    });
+
+    it('should always deliver agent:deleted regardless of active delegation subscriptions', async () => {
+      // Same as above but with agent:deleted
+      let deliveredEvents: WorkspaceEvent[] = [];
+      service.setDeliveryCallback((_agentId, events) => {
+        deliveredEvents = deliveredEvents.concat(events);
+        return { status: 'success' as const };
+      });
+
+      service.setAgentStatus('agent-a', 'idle');
+
+      // Agent A subscribes to Agent B's events
+      service.subscribe('agent-a', 'Agent A', {
+        eventTypes: ['agent:idle', 'agent:deleted'],
+        actorIds: ['agent-b'],
+        priority: 'high',
+        oneShot: true,
+      });
+
+      // Agent B has an active delegation subscription (watching Agent C)
+      service.subscribe('agent-b', 'Agent B', {
+        eventTypes: ['agent:idle'],
+        actorIds: ['agent-c'],
+        priority: 'high',
+        oneShot: true,
+      });
+
+      // Agent B is deleted — this is terminal, should always be delivered
+      const deletedEvent: WorkspaceEvent = {
+        id: 'wake-chain-5',
+        workspaceId,
+        timestamp: new Date().toISOString(),
+        type: 'agent:deleted',
+        actor: { type: 'agent', id: 'agent-b', name: 'Agent B' },
+        data: { agentId: 'agent-b' },
+      };
+
+      eventBus.emitEvent(deletedEvent);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Agent A SHOULD be notified — agent:deleted is terminal
+      expect(deliveredEvents.length).toBe(1);
+      expect(deliveredEvents[0].type).toBe('agent:deleted');
+    });
+
+    it('should deliver agent:idle after child subscriptions are cleaned up', async () => {
+      // Agent B subscribes to Agent C. Agent C completes and Agent B's subscription
+      // is cleaned up. Now Agent B goes idle — Agent A should be notified because
+      // Agent B no longer has active delegation subscriptions.
+      let deliveredEvents: WorkspaceEvent[] = [];
+      service.setDeliveryCallback((_agentId, events) => {
+        deliveredEvents = deliveredEvents.concat(events);
+        return { status: 'success' as const };
+      });
+
+      service.setAgentStatus('agent-a', 'idle');
+      service.setAgentStatus('agent-b', 'idle');
+
+      // Agent A subscribes to Agent B's idle
+      service.subscribe('agent-a', 'Agent A', {
+        eventTypes: ['agent:idle'],
+        actorIds: ['agent-b'],
+        priority: 'high',
+        oneShot: true,
+      });
+
+      // Agent B subscribes to Agent C's idle (oneShot)
+      const bSubId = service.subscribe('agent-b', 'Agent B', {
+        eventTypes: ['agent:idle'],
+        actorIds: ['agent-c'],
+        priority: 'high',
+        oneShot: true,
+      });
+
+      // First, Agent B goes idle while still watching Agent C — should be suppressed
+      const idleEvent1: WorkspaceEvent = {
+        id: 'wake-chain-6a',
+        workspaceId,
+        timestamp: new Date().toISOString(),
+        type: 'agent:idle',
+        actor: { type: 'agent', id: 'agent-b', name: 'Agent B' },
+        data: { agentId: 'agent-b' },
+      };
+
+      eventBus.emitEvent(idleEvent1);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(deliveredEvents.length).toBe(0); // Suppressed
+
+      // Now clean up Agent B's subscription (simulating Agent C completed)
+      service.unsubscribe(bSubId, 'oneshot-fired');
+
+      // Agent B goes idle again — no more delegation subscriptions
+      const idleEvent2: WorkspaceEvent = {
+        id: 'wake-chain-6b',
+        workspaceId,
+        timestamp: new Date().toISOString(),
+        type: 'agent:idle',
+        actor: { type: 'agent', id: 'agent-b', name: 'Agent B' },
+        data: { agentId: 'agent-b' },
+      };
+
+      eventBus.emitEvent(idleEvent2);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Agent A SHOULD now be notified
+      expect(deliveredEvents.length).toBe(1);
+      expect(deliveredEvents[0].type).toBe('agent:idle');
+    });
+
+    it('should suppress agent:idle in delegation group path when group member has active delegation subscriptions', async () => {
+      // Agent A uses a delegation group watching Agent B.
+      // Agent B has its own delegation subscription watching Agent C.
+      // When Agent B goes idle, the delegation group should NOT count it as completed.
+      service.setDeliveryCallback((_agentId, _events) => {
+        return { status: 'success' as const };
+      });
+
+      service.setAgentStatus('agent-a', 'responding');
+
+      const groupId = 'group-wake-chain-deleg';
+
+      // Agent A subscribes via delegation group watching Agent B
+      service.subscribe('agent-a', 'Agent A', {
+        eventTypes: ['agent:idle', 'agent:deleted'],
+        delegationGroup: {
+          groupId,
+          awaitMode: 'all',
+          expectedAgentIds: ['agent-b'],
+        },
+      });
+
+      // Agent B has an active delegation subscription (watching Agent C)
+      service.subscribe('agent-b', 'Agent B', {
+        eventTypes: ['agent:idle'],
+        actorIds: ['agent-c'],
+        priority: 'high',
+        oneShot: true,
+      });
+
+      // Agent B goes idle — but it has active delegation subscriptions
+      const idleEvent: WorkspaceEvent = {
+        id: 'wake-chain-7',
+        workspaceId,
+        timestamp: new Date().toISOString(),
+        type: 'agent:idle',
+        actor: { type: 'agent', id: 'agent-b', name: 'Agent B' },
+        data: { agentId: 'agent-b' },
+      };
+
+      eventBus.emitEvent(idleEvent);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // The delegation group should NOT have counted Agent B as completed
+      const groupStatus = service.getDelegationGroupStatus(groupId);
+      expect(groupStatus).not.toBeNull();
+      expect(groupStatus?.completed).toBe(0);
+      expect(groupStatus?.isComplete).toBe(false);
+    });
+  });
+
 });
