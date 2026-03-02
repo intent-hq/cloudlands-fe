@@ -224,6 +224,22 @@ export class ChangeDetectorManager extends EventEmitter {
       this.emit('detector-error', { workspaceId: workspace.id, error });
     });
 
+    // Auto-cleanup when the detector discovers its workspace directory was deleted
+    detector.on('workspace-deleted', () => {
+      logger.info(
+        `[ChangeDetectorManager] Workspace directory deleted, cleaning up detector for ${workspace.id}`,
+      );
+      this.detectors.delete(workspace.id);
+      this.pendingDetectors.delete(workspace.id);
+      this.unloadHistory(workspace.id);
+      const timer = this.changeDebounceTimers.get(workspace.id);
+      if (timer) {
+        clearTimeout(timer);
+        this.changeDebounceTimers.delete(workspace.id);
+      }
+      this.emit('detector-removed', { workspaceId: workspace.id, reason: 'directory-deleted' });
+    });
+
     // Add detector to map BEFORE starting to prevent race conditions
     // This ensures that if startMonitoring is called again before start() completes,
     // the second call will see the detector in the map and return early

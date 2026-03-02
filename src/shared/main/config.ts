@@ -35,12 +35,34 @@ export class WorkspaceConfig extends WorkspaceConfigConstants {
   }
 
   /**
+   * Virtual workspace IDs that don't correspond to real directories on disk.
+   * These are used by background services (e.g. background-request, http-bridge-workspace)
+   * and should skip filesystem lookups to avoid unnecessary sync I/O and log spam.
+   */
+  private static readonly VIRTUAL_WORKSPACE_IDS = new Set([
+    'background-request',
+    'http-bridge-workspace',
+  ]);
+
+  /**
+   * Check whether a workspace ID is virtual (not backed by a real directory).
+   */
+  static isVirtualWorkspace(id: string): boolean {
+    return WorkspaceConfig.VIRTUAL_WORKSPACE_IDS.has(id);
+  }
+
+  /**
    * Resolve which workspace root a given workspace ID lives in.
    * Checks ~/intent/workspaces/{id} first, then ~/intent/{id}, then ~/.workspaces/{id}.
    * Defaults to WORKSPACES_BASE for new / not-yet-created workspaces.
    */
   static resolveWorkspaceRoot(id: string): string {
+    // Fast path: virtual workspace IDs skip all disk lookups
     const workspacesBase = WorkspaceConfig.WORKSPACES_BASE;
+    if (WorkspaceConfig.isVirtualWorkspace(id)) {
+      return workspacesBase;
+    }
+
     const currentRoot = WorkspaceConfig.WORKSPACE_ROOT;
     const legacyRoot = WorkspaceConfig.LEGACY_WORKSPACE_ROOT;
     const workspacesPath = path.join(workspacesBase, id);

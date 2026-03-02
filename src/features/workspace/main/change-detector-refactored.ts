@@ -451,6 +451,25 @@ export class ChangeDetectorRefactored extends EventEmitter {
     this.isPollingGitStatus = true;
 
     try {
+      // Auto-stop if workspace directory has been deleted.
+      // This prevents orphaned detectors from polling forever after a workspace
+      // is removed outside the normal delete flow (e.g. manual rm, crash).
+      const fs = await import('fs');
+      if (!fs.existsSync(this.workspacePath)) {
+        logger.warn('Workspace directory no longer exists, auto-stopping change detector', {
+          workspaceId: this.workspaceId,
+          workspacePath: this.workspacePath,
+        });
+        // Clear pending-poll flag so the finally block doesn't schedule another poll
+        // after we've stopped the detector.
+        this.pollRequestedWhilePolling = false;
+        // Release the polling guard before stopping so stop() can clean up
+        this.isPollingGitStatus = false;
+        await this.stop();
+        this.emit('workspace-deleted', { workspaceId: this.workspaceId });
+        return;
+      }
+
       // Use workspace-specific timer key to avoid conflicts
       const timerKey = `gitPoll-${this.workspaceId}`;
 

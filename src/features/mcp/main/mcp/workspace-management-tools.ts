@@ -31,17 +31,12 @@ export class RenameWorkspaceTool extends BaseMCPTool {
   constructor(protocolAdapter: ProtocolAdapter, workspaceId: string, eventEmitter?: any) {
     super(
       'set_workspace_title',
-      'Set or update the workspace title. Keep titles short (1-5 words) and descriptive of the main task or goal. Will skip if workspace already has a custom title unless force=true.',
+      'Set the workspace title when it doesn\'t have one yet. Keep titles short (1-5 words) and descriptive of the main task or goal. Will skip if workspace already has a custom title.',
       createInputSchema(
         {
           title: stringProperty(
             "The new title for the workspace. Should be 1-5 words, descriptive of the main task. Examples: 'Fix Login Bug', 'Add Search Feature', 'Refactor Database', 'Update Documentation'",
           ),
-          force: {
-            type: 'boolean',
-            description:
-              'Set to true to override an existing custom workspace title. Defaults to false, which will skip renaming if a custom title already exists.',
-          },
         },
         ['title'],
       ),
@@ -53,7 +48,7 @@ export class RenameWorkspaceTool extends BaseMCPTool {
 
   async execute(call: ToolCall): Promise<ToolResult> {
     try {
-      const { title, force = false } = call.arguments;
+      const { title } = call.arguments;
 
       if (!title || typeof title !== 'string') {
         return this.error('Title is required and must be a string');
@@ -70,13 +65,13 @@ export class RenameWorkspaceTool extends BaseMCPTool {
       const workspace = await this.protocolAdapter.getWorkspace(this.workspaceId);
 
       // Check if workspace already has a custom title (not empty, not a slug)
-      // Only proceed if force=true or workspace needs a title
-      if (!force && workspace?.title) {
+      // Never allow overriding an existing custom title
+      if (workspace?.title) {
         const currentTitle = workspace.title.trim();
         const hasCustomTitle = currentTitle !== '' && !isWorkspaceSlug(currentTitle);
         if (hasCustomTitle) {
           return this.success(
-            `Workspace already has a custom title: "${currentTitle}". Skipping rename. Use force=true to override.`,
+            `Workspace already has a custom title: "${currentTitle}". Skipping rename.`,
             {
               workspaceId: this.workspaceId,
               currentTitle,
