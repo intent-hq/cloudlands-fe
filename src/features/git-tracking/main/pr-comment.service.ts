@@ -61,6 +61,20 @@ export interface ReviewThread {
   comments: ReviewThreadComment[];
 }
 
+export interface PaginatedReviewThreads {
+  threads: ReviewThread[];
+  totalCount: number | null;
+  pagesFetched: number;
+  hasMore: boolean;
+}
+
+export interface PaginatedReviewComments {
+  comments: ReviewComment[];
+  totalFetched: number;
+  pagesFetched: number;
+  hasMore: boolean;
+}
+
 // ============================================================================
 // Helper functions
 // ============================================================================
@@ -118,26 +132,68 @@ export class PRCommentService {
   /**
    * List review comments on a pull request
    */
-  async listReviewComments(owner: string, repo: string, prNumber: number): Promise<ReviewComment[]> {
-    const path = `/repos/${owner}/${repo}/pulls/${prNumber}/comments?per_page=100&sort=created&direction=desc`;
-
-    const toolInput = {
-      summary: `List review comments for PR #${prNumber} in ${owner}/${repo}`,
-      method: 'GET',
-      path,
-    };
+  async listReviewComments(owner: string, repo: string, prNumber: number): Promise<PaginatedReviewComments> {
+    const allComments: ReviewComment[] = [];
+    const perPage = 100;
+    const maxPages = 10;
+    let pagesFetched = 0;
+    let lastPageCount = 0;
+    let earlyBreak = false;
 
     logger.info('Listing review comments', { owner, repo, prNumber });
 
     try {
-      const response = await callGitHubApi(toolInput);
-      const parsed = parseYamlResponse<unknown[]>(response.tool_output);
+      for (let page = 1; page <= maxPages; page++) {
+        const path = `/repos/${owner}/${repo}/pulls/${prNumber}/comments?per_page=${perPage}&page=${page}&sort=created&direction=desc`;
 
-      if (!Array.isArray(parsed)) {
-        return [];
+        const toolInput = {
+          summary: `List review comments for PR #${prNumber} in ${owner}/${repo} (page ${page})`,
+          method: 'GET',
+          path,
+          details: true, // Required to get all fields including in_reply_to_id for thread grouping
+        };
+
+        const response = await callGitHubApi(toolInput);
+        const parsed = parseYamlResponse<unknown[]>(response.tool_output);
+
+        if (!Array.isArray(parsed)) {
+          logger.warn('Unexpected non-array response from review comments API', { owner, repo, prNumber, page });
+          earlyBreak = true;
+          break;
+        }
+
+        pagesFetched++;
+        lastPageCount = parsed.length;
+
+        const comments = parsed.map((item: unknown) => this.mapToReviewComment(item as Record<string, unknown>));
+        allComments.push(...comments);
+
+        // Stop if we got fewer than per_page results (last page)
+        if (parsed.length < perPage) {
+          break;
+        }
       }
 
-      return parsed.map((item: unknown) => this.mapToReviewComment(item as Record<string, unknown>));
+      // hasMore is true if we hit maxPages AND the last page was full, OR if we broke early due to an error
+      const hasMore = (pagesFetched >= maxPages && lastPageCount >= perPage) || earlyBreak;
+
+      if (hasMore) {
+        logger.warn('Review comments pagination hit maxPages cap, results may be truncated', {
+          owner,
+          repo,
+          prNumber,
+          pagesFetched,
+          totalFetched: allComments.length,
+          maxPages,
+        });
+      }
+
+      return {
+        comments: allComments,
+        totalFetched: allComments.length,
+        pagesFetched,
+        hasMore,
+      };
     } catch (error) {
       logger.error('Failed to list review comments', error as Error);
       throw error;
@@ -250,12 +306,17 @@ export class PRCommentService {
   /**
    * Get review threads for a pull request using GraphQL
    */
-  async getReviewThreads(owner: string, repo: string, prNumber: number): Promise<ReviewThread[]> {
+  async getReviewThreads(owner: string, repo: string, prNumber: number): Promise<PaginatedReviewThreads> {
     const query = `
-      query GetReviewThreads($owner: String!, $repo: String!, $prNumber: Int!) {
+      query GetReviewThreads($owner: String!, $repo: String!, $prNumber: Int!, $cursor: String) {
         repository(owner: $owner, name: $repo) {
           pullRequest(number: $prNumber) {
-            reviewThreads(first: 100) {
+            reviewThreads(first: 100, after: $cursor) {
+              totalCount
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
               nodes {
                 id
                 isResolved
@@ -278,37 +339,101 @@ export class PRCommentService {
       }
     `;
 
-    const toolInput = {
-      summary: `Get review threads for PR #${prNumber} in ${owner}/${repo}`,
-      method: 'POST',
-      path: '/graphql',
-      data: {
-        query,
-        variables: { owner, repo, prNumber },
-      },
-    };
-
     logger.info('Getting review threads', { owner, repo, prNumber });
 
+    const allThreads: ReviewThread[] = [];
+    const maxGraphQLPages = 20;
+    let cursor: string | null = null;
+    let previousCursor: string | null = null;
+    let hasNextPage = true;
+    let pagesFetched = 0;
+    let totalCount: number | null = null;
+
     try {
-      const response = await callGitHubApi(toolInput);
-      const parsed = parseYamlResponse<Record<string, unknown>>(response.tool_output);
-      validateGraphQLResponse(parsed);
+      while (hasNextPage && pagesFetched < maxGraphQLPages) {
+        const toolInput = {
+          summary: `Get review threads for PR #${prNumber} in ${owner}/${repo}${cursor ? ' (paginated)' : ''}`,
+          method: 'POST',
+          path: '/graphql',
+          data: {
+            query,
+            variables: { owner, repo, prNumber, cursor },
+          },
+        };
 
-      // Navigate the GraphQL response structure
-      const data = parsed.data as Record<string, unknown> | undefined;
-      const repository = data?.repository as Record<string, unknown> | undefined;
-      const pullRequest = repository?.pullRequest as Record<string, unknown> | undefined;
-      const reviewThreads = pullRequest?.reviewThreads as Record<string, unknown> | undefined;
-      const nodes = reviewThreads?.nodes as unknown[] | undefined;
+        const response = await callGitHubApi(toolInput);
+        const parsed = parseYamlResponse<Record<string, unknown>>(response.tool_output);
+        validateGraphQLResponse(parsed);
 
-      if (!nodes || !Array.isArray(nodes)) {
-        return [];
+        pagesFetched++;
+
+        // Navigate the GraphQL response structure
+        const data = parsed.data as Record<string, unknown> | undefined;
+        const repository = data?.repository as Record<string, unknown> | undefined;
+        const pullRequest = repository?.pullRequest as Record<string, unknown> | undefined;
+        const reviewThreads = pullRequest?.reviewThreads as Record<string, unknown> | undefined;
+        const pageInfo = reviewThreads?.pageInfo as Record<string, unknown> | undefined;
+        const nodes = reviewThreads?.nodes as unknown[] | undefined;
+
+        // Extract totalCount from the first page response
+        if (pagesFetched === 1 && reviewThreads?.totalCount !== undefined) {
+          totalCount = reviewThreads.totalCount as number;
+        }
+
+        if (nodes && Array.isArray(nodes)) {
+          const threads = nodes
+            .filter((node): node is Record<string, unknown> => node != null && typeof node === 'object')
+            .map((node) => this.mapToReviewThread(node));
+          allThreads.push(...threads);
+        }
+
+        // Check pagination
+        hasNextPage = (pageInfo?.hasNextPage as boolean) ?? false;
+        cursor = (pageInfo?.endCursor as string) ?? null;
+
+        // Safety: stop if cursor did not advance (prevents infinite loop on bad response)
+        if (cursor === previousCursor) {
+          logger.warn('GraphQL pagination: cursor did not advance, stopping', {
+            owner,
+            repo,
+            prNumber,
+            pagesFetched,
+            cursor,
+          });
+          break;
+        }
+        previousCursor = cursor;
+
+        // Safety: stop if no cursor even though hasNextPage is true
+        if (hasNextPage && !cursor) {
+          logger.warn('GraphQL pagination: hasNextPage is true but endCursor is missing, stopping pagination', {
+            owner,
+            repo,
+            prNumber,
+            pagesFetched,
+          });
+          break;
+        }
       }
 
-      return nodes
-        .filter((node): node is Record<string, unknown> => node != null && typeof node === 'object')
-        .map((node) => this.mapToReviewThread(node));
+      // Log warning if we hit the max pages cap while more data exists
+      if (hasNextPage) {
+        logger.warn('GraphQL pagination hit maxPages cap, results may be truncated', {
+          owner,
+          repo,
+          prNumber,
+          pagesFetched,
+          maxGraphQLPages,
+          totalThreadsFetched: allThreads.length,
+        });
+      }
+
+      return {
+        threads: allThreads,
+        totalCount,
+        pagesFetched,
+        hasMore: hasNextPage, // true if we stopped before fetching all pages (cap hit, missing cursor, etc.)
+      };
     } catch (error) {
       logger.error('Failed to get review threads', error as Error);
       throw error;

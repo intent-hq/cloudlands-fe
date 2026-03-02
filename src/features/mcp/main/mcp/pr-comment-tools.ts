@@ -7,7 +7,12 @@
 import { BaseMCPTool, createInputSchema, stringProperty, numberProperty } from './tool';
 import { ToolCall, ToolResult } from './protocol';
 import { Logger } from '../../../../shared/logger';
-import { prCommentService, ReviewThread } from '../../../git-tracking/main/pr-comment.service';
+import {
+  prCommentService,
+  ReviewThread,
+  PaginatedReviewThreads,
+  PaginatedReviewComments,
+} from '../../../git-tracking/main/pr-comment.service';
 
 const logger = new Logger('PRCommentTools');
 
@@ -66,14 +71,28 @@ export class ListPRReviewCommentsTool extends BaseMCPTool {
       // Try GraphQL first (has resolved status)
       let threads: ReviewThread[];
       let usingFallback = false;
+      let paginationInfo: { totalCount: number | null; pagesFetched: number; hasMore: boolean } | null = null;
+      let restPaginationInfo: { totalFetched: number; pagesFetched: number; hasMore: boolean } | null = null;
 
       try {
-        threads = await prCommentService.getReviewThreads(owner, repo, prNumber);
+        const result: PaginatedReviewThreads = await prCommentService.getReviewThreads(owner, repo, prNumber);
+        threads = result.threads;
+        paginationInfo = {
+          totalCount: result.totalCount,
+          pagesFetched: result.pagesFetched,
+          hasMore: result.hasMore,
+        };
       } catch (graphqlError) {
         // Fall back to REST API
         logger.warn('GraphQL failed, falling back to REST API', graphqlError as Error);
         usingFallback = true;
-        const restComments = await prCommentService.listReviewComments(owner, repo, prNumber);
+        const restResult: PaginatedReviewComments = await prCommentService.listReviewComments(owner, repo, prNumber);
+        const restComments = restResult.comments;
+        restPaginationInfo = {
+          totalFetched: restResult.totalFetched,
+          pagesFetched: restResult.pagesFetched,
+          hasMore: restResult.hasMore,
+        };
 
         // Sort ascending by ID to ensure root comments are processed before their replies
         restComments.sort((a, b) => a.id - b.id);
@@ -155,7 +174,25 @@ export class ListPRReviewCommentsTool extends BaseMCPTool {
       if (usingFallback) {
         lines.push(`⚠️ Note: Using REST API fallback. Resolved status is unavailable${status !== 'all' ? ' — showing all threads regardless of status filter' : ''}.\n`);
       }
-      lines.push(`Found ${threads.length} review thread(s):\n`);
+      lines.push(`Found ${threads.length} review thread(s):`);
+
+      // Add pagination context
+      if (!usingFallback && paginationInfo) {
+        if (paginationInfo.totalCount !== null) {
+          lines.push(`(total: ${paginationInfo.totalCount}, fetched in ${paginationInfo.pagesFetched} page(s))`);
+        } else {
+          lines.push(`(fetched in ${paginationInfo.pagesFetched} page(s))`);
+        }
+        if (paginationInfo.hasMore) {
+          lines.push(`⚠️ Results may be truncated — more data available beyond pagination limit.`);
+        }
+      } else if (usingFallback && restPaginationInfo) {
+        lines.push(`(fetched ${restPaginationInfo.totalFetched} comments in ${restPaginationInfo.pagesFetched} page(s))`);
+        if (restPaginationInfo.hasMore) {
+          lines.push(`⚠️ Results may be truncated — more data available beyond pagination limit.`);
+        }
+      }
+      lines.push('');
 
       for (const thread of threads) {
         const firstComment = thread.comments[0];
