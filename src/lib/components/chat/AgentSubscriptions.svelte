@@ -10,7 +10,14 @@
   import { onMount } from 'svelte';
   import { fade, slide } from 'svelte/transition';
   import * as Tooltip from '$lib/components/ui/tooltip';
-  import { faHourglass, faBell, faXmark, faChevronDown, faChevronRight, faStop } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faHourglass,
+    faBell,
+    faXmark,
+    faChevronDown,
+    faChevronRight,
+    faStop,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { createLogger } from '$lib/utils/client-logger';
   import { listenSync, extractEventData } from '$lib/electron-bridge';
@@ -92,10 +99,22 @@
    * stop-all, agentId change, and unmount.
    */
   function clearAllPendingTimers() {
-    if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
-    if (retryTimeout) { clearTimeout(retryTimeout); retryTimeout = null; }
-    if (wokenUpTimeout) { clearTimeout(wokenUpTimeout); wokenUpTimeout = null; }
-    if (wakeFailsafeTimeout) { clearTimeout(wakeFailsafeTimeout); wakeFailsafeTimeout = null; }
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+    if (retryTimeout) {
+      clearTimeout(retryTimeout);
+      retryTimeout = null;
+    }
+    if (wokenUpTimeout) {
+      clearTimeout(wokenUpTimeout);
+      wokenUpTimeout = null;
+    }
+    if (wakeFailsafeTimeout) {
+      clearTimeout(wakeFailsafeTimeout);
+      wakeFailsafeTimeout = null;
+    }
   }
 
   /**
@@ -107,10 +126,16 @@
     if (isStreamingAfterWake) {
       isStreamingAfterWake = false;
     }
-    if (wakeFailsafeTimeout) { clearTimeout(wakeFailsafeTimeout); wakeFailsafeTimeout = null; }
+    if (wakeFailsafeTimeout) {
+      clearTimeout(wakeFailsafeTimeout);
+      wakeFailsafeTimeout = null;
+    }
     if (wokenUpInfo) {
       wokenUpInfo = null;
-      if (wokenUpTimeout) { clearTimeout(wokenUpTimeout); wokenUpTimeout = null; }
+      if (wokenUpTimeout) {
+        clearTimeout(wokenUpTimeout);
+        wokenUpTimeout = null;
+      }
     }
   }
 
@@ -202,10 +227,16 @@
 
   // Whether the subscription row should be visible (independent of wokenUpInfo).
   const showSubscriptionRow = $derived.by(() => {
-    return subscriptions.length > 0
-      && (waitMode === 'all' || watchedAgentIds.length > 0)
-      && !(waitMode === 'all' && delegationGroups.length === 0)
-      && !(waitMode === 'all' && completionStatus.total > 0 && completionStatus.completed >= completionStatus.total);
+    return (
+      subscriptions.length > 0 &&
+      (waitMode === 'all' || watchedAgentIds.length > 0) &&
+      !(waitMode === 'all' && delegationGroups.length === 0) &&
+      !(
+        waitMode === 'all' &&
+        completionStatus.total > 0 &&
+        completionStatus.completed >= completionStatus.total
+      )
+    );
   });
 
   /**
@@ -255,7 +286,9 @@
           // DESTRUCTION GUARD: If the component was destroyed (e.g., {#key} remount on workspace switch)
           // while the IPC call was in flight, bail out to prevent writing to dead $state variables.
           if (isDestroyed) {
-            logger.debug('Discarding IPC response — component destroyed during fetch', { agentId: aId });
+            logger.debug('Discarding IPC response — component destroyed during fetch', {
+              agentId: aId,
+            });
             return;
           }
 
@@ -264,7 +297,9 @@
           // This prevents the exact bug where a wake event fires mid-IPC and clears subscriptions,
           // but the in-flight response then writes them back.
           if (isStreamingAfterWake) {
-            logger.debug('Discarding stale IPC response — agent woken during fetch', { agentId: aId });
+            logger.debug('Discarding stale IPC response — agent woken during fetch', {
+              agentId: aId,
+            });
             return;
           }
           if (wsId !== workspaceId) {
@@ -315,7 +350,11 @@
             // Still empty - retry with increasing delay to handle timing issues
             // after Vite reloads or race conditions during initial delegation
             const delay = Math.min(1000 * Math.pow(2, retryCount), 4000);
-            logger.debug('Subscriptions empty, scheduling retry', { retryCount, delay, agentId: aId });
+            logger.debug('Subscriptions empty, scheduling retry', {
+              retryCount,
+              delay,
+              agentId: aId,
+            });
             if (retryTimeout) clearTimeout(retryTimeout);
             retryTimeout = setTimeout(() => loadSubscriptions(retryCount + 1), delay);
           }
@@ -463,8 +502,8 @@
     // Uses extractEventData to handle both WorkspaceEvent (wrapped) and flat IPC formats
     const unsubSubscribed = listenSync('agent:subscribed', (event: any) => {
       // Workspace-scoped filtering: skip events from other workspaces
-      const eventWorkspaceId = extractEventData<string>(event, 'workspaceId')
-        || event?.payload?.workspaceId;
+      const eventWorkspaceId =
+        extractEventData<string>(event, 'workspaceId') || event?.payload?.workspaceId;
       if (eventWorkspaceId && eventWorkspaceId !== workspaceId) {
         // Event is from a different workspace - skip it
         return;
@@ -474,7 +513,11 @@
       // Note: We always reload when eventAgentId === agentId because new subscriptions
       // won't be in watchedAgentIds() yet (they're added after reload)
       const eventAgentId = extractEventData<string>(event, 'agentId');
-      logger.debug('agent:subscribed received', { eventAgentId, agentId, match: eventAgentId === agentId });
+      logger.debug('agent:subscribed received', {
+        eventAgentId,
+        agentId,
+        match: eventAgentId === agentId,
+      });
       if (eventAgentId === agentId) {
         requestLoadSubscriptions();
       } else if (watchedAgentIds.includes(eventAgentId)) {
@@ -484,8 +527,8 @@
 
     const unsubUnsubscribed = listenSync('agent:unsubscribed', (event: any) => {
       // Workspace-scoped filtering: skip events from other workspaces
-      const eventWorkspaceId = extractEventData<string>(event, 'workspaceId')
-        || event?.payload?.workspaceId;
+      const eventWorkspaceId =
+        extractEventData<string>(event, 'workspaceId') || event?.payload?.workspaceId;
       if (eventWorkspaceId && eventWorkspaceId !== workspaceId) {
         // Event is from a different workspace - skip it
         return;
@@ -502,8 +545,8 @@
     // Listen for agent:idle events (when agents go idle/waiting)
     const unsubIdle = listenSync('agent:idle', (event: any) => {
       // Workspace-scoped filtering: skip events from other workspaces
-      const eventWorkspaceId = extractEventData<string>(event, 'workspaceId')
-        || event?.payload?.workspaceId;
+      const eventWorkspaceId =
+        extractEventData<string>(event, 'workspaceId') || event?.payload?.workspaceId;
       if (eventWorkspaceId && eventWorkspaceId !== workspaceId) {
         // Event is from a different workspace - skip it
         return;
@@ -521,8 +564,8 @@
     // Listen for agent:status-changed events (when agents change status: idle -> responding, etc.)
     const unsubStatusChanged = listenSync('agent:status-changed', (event: any) => {
       // Workspace-scoped filtering: skip events from other workspaces
-      const eventWorkspaceId = extractEventData<string>(event, 'workspaceId')
-        || event?.payload?.workspaceId;
+      const eventWorkspaceId =
+        extractEventData<string>(event, 'workspaceId') || event?.payload?.workspaceId;
       if (eventWorkspaceId && eventWorkspaceId !== workspaceId) {
         // Event is from a different workspace - skip it
         return;
@@ -530,7 +573,10 @@
 
       const eventAgentId = extractEventData<string>(event, 'agentId');
       const status = extractEventData<string>(event, 'status');
-      if (eventAgentId === agentId && (status === 'idle' || status === 'failed' || status === 'completed')) {
+      if (
+        eventAgentId === agentId &&
+        (status === 'idle' || status === 'failed' || status === 'completed')
+      ) {
         clearStreamingAndWakeState();
         requestLoadSubscriptions();
       } else if (watchedAgentIds.includes(eventAgentId)) {
@@ -550,7 +596,10 @@
       // It is broadcast to all windows, so we filter by agentId only.
       const eventAgentId = extractEventData<string>(event, 'agentId');
       if (eventAgentId === agentId) {
-        logger.info('agent:stopped received for this agent — clearing streaming state and refreshing', { agentId });
+        logger.info(
+          'agent:stopped received for this agent — clearing streaming state and refreshing',
+          { agentId },
+        );
         clearStreamingAndWakeState();
         requestLoadSubscriptions();
       }
@@ -559,8 +608,8 @@
     // Listen for agent:created events (when new delegated agents are created)
     const unsubCreated = listenSync('agent:created', (event: any) => {
       // Workspace-scoped filtering: skip events from other workspaces
-      const eventWorkspaceId = extractEventData<string>(event, 'workspaceId')
-        || event?.payload?.workspaceId;
+      const eventWorkspaceId =
+        extractEventData<string>(event, 'workspaceId') || event?.payload?.workspaceId;
       if (eventWorkspaceId && eventWorkspaceId !== workspaceId) {
         // Event is from a different workspace - skip it
         return;
@@ -581,10 +630,15 @@
       // Debug log: which field matched (aids future diagnosis)
       if (creatorAgentId === agentId) {
         const matchedField =
-          payload?.agent?.metadata?.createdByAgentId === agentId ? 'agent.metadata.createdByAgentId' :
-          payload?.data?.createdByAgentId === agentId ? 'data.createdByAgentId' :
-          payload?.agent?.metadata?.parentAgentId === agentId ? 'agent.metadata.parentAgentId' :
-          payload?.data?.parentAgentId === agentId ? 'data.parentAgentId' : 'unknown';
+          payload?.agent?.metadata?.createdByAgentId === agentId
+            ? 'agent.metadata.createdByAgentId'
+            : payload?.data?.createdByAgentId === agentId
+              ? 'data.createdByAgentId'
+              : payload?.agent?.metadata?.parentAgentId === agentId
+                ? 'agent.metadata.parentAgentId'
+                : payload?.data?.parentAgentId === agentId
+                  ? 'data.parentAgentId'
+                  : 'unknown';
         logger.debug('Matched child agent via field', { matchedField });
       }
 
@@ -592,7 +646,10 @@
         // This is a direct child - restart discovery polling for a new 30s window
         // to catch subscriptions that may be set up by the child agent
         // Skip if agent is streaming after wake
-        logger.debug('Child agent created, restarting discovery polling', { agentId, childAgentId: payload?.agent?.id || payload?.data?.agentId });
+        logger.debug('Child agent created, restarting discovery polling', {
+          agentId,
+          childAgentId: payload?.agent?.id || payload?.data?.agentId,
+        });
         restartDiscoveryPolling();
         requestLoadSubscriptions();
       } else if (subscriptions.length > 0 || delegationGroups.length > 0) {
@@ -603,8 +660,8 @@
 
     // Single invalidation/hint event: always treat as snapshot refetch hint.
     const unsubSubscriptionsChanged = listenSync('agent:subscriptions-changed', (event: any) => {
-      const eventWorkspaceId = extractEventData<string>(event, 'workspaceId')
-        || event?.payload?.workspaceId;
+      const eventWorkspaceId =
+        extractEventData<string>(event, 'workspaceId') || event?.payload?.workspaceId;
       if (eventWorkspaceId && eventWorkspaceId !== workspaceId) return;
 
       const changedAgentId = extractEventData<string>(event, 'agentId');
@@ -623,8 +680,8 @@
     // Listen for agent:woken-by-subscription events to show a brief indicator
     const unsubWoken = listenSync('agent:woken-by-subscription', (event: any) => {
       // Workspace-scoped filtering: skip events from other workspaces
-      const eventWorkspaceId = extractEventData<string>(event, 'workspaceId')
-        || event?.payload?.workspaceId;
+      const eventWorkspaceId =
+        extractEventData<string>(event, 'workspaceId') || event?.payload?.workspaceId;
       if (eventWorkspaceId && eventWorkspaceId !== workspaceId) {
         // Event is from a different workspace - skip it
         return;
@@ -656,9 +713,12 @@
         if (currentlyStreaming) {
           isStreamingAfterWake = true;
         } else {
-          logger.info('agent:woken-by-subscription arrived but agent is not streaming — skipping isStreamingAfterWake', {
-            agentId,
-          });
+          logger.info(
+            'agent:woken-by-subscription arrived but agent is not streaming — skipping isStreamingAfterWake',
+            {
+              agentId,
+            },
+          );
         }
 
         const eventData = extractEventData(event) || {};
@@ -683,9 +743,12 @@
           wakeFailsafeTimeout = setTimeout(() => {
             wakeFailsafeTimeout = null;
             if (isStreamingAfterWake && !isDestroyed) {
-              logger.warn('Failsafe: clearing isStreamingAfterWake after 30s timeout — clearing event was missed', {
-                agentId,
-              });
+              logger.warn(
+                'Failsafe: clearing isStreamingAfterWake after 30s timeout — clearing event was missed',
+                {
+                  agentId,
+                },
+              );
               isStreamingAfterWake = false;
               requestLoadSubscriptions();
             }
@@ -705,8 +768,8 @@
     // Listen for agent:event-delivery-failed events to retract the woken-up banner
     const unsubDeliveryFailed = listenSync('agent:event-delivery-failed', (event: any) => {
       // Workspace-scoped filtering: skip events from other workspaces
-      const eventWorkspaceId = extractEventData<string>(event, 'workspaceId')
-        || event?.payload?.workspaceId;
+      const eventWorkspaceId =
+        extractEventData<string>(event, 'workspaceId') || event?.payload?.workspaceId;
       if (eventWorkspaceId && eventWorkspaceId !== workspaceId) {
         // Event is from a different workspace - skip it
         return;
@@ -732,8 +795,8 @@
     // Do NOT call loadSubscriptions() — we don't know if the agent actually woke up.
     const unsubDeliveryTimeout = listenSync('agent:event-delivery-timeout', (event: any) => {
       // Workspace-scoped filtering: skip events from other workspaces
-      const eventWorkspaceId = extractEventData<string>(event, 'workspaceId')
-        || event?.payload?.workspaceId;
+      const eventWorkspaceId =
+        extractEventData<string>(event, 'workspaceId') || event?.payload?.workspaceId;
       if (eventWorkspaceId && eventWorkspaceId !== workspaceId) {
         // Event is from a different workspace - skip it
         return;
@@ -761,8 +824,8 @@
     // Listen for agent:subscriptions-restored events (batch restoration on startup)
     const unsubSubscriptionsRestored = listenSync('agent:subscriptions-restored', (event: any) => {
       // Workspace-scoped filtering: skip events from other workspaces
-      const eventWorkspaceId = extractEventData<string>(event, 'workspaceId')
-        || event?.payload?.workspaceId;
+      const eventWorkspaceId =
+        extractEventData<string>(event, 'workspaceId') || event?.payload?.workspaceId;
       if (eventWorkspaceId && eventWorkspaceId !== workspaceId) {
         // Event is from a different workspace - skip it
         return;
@@ -778,7 +841,10 @@
       });
 
       // Reload subscriptions if this agent or any watched agents had subscriptions restored
-      if (restoredAgentIds.includes(agentId) || restoredAgentIds.some((id: string) => watchedAgentIds.includes(id))) {
+      if (
+        restoredAgentIds.includes(agentId) ||
+        restoredAgentIds.some((id: string) => watchedAgentIds.includes(id))
+      ) {
         requestLoadSubscriptions();
       }
     });
@@ -825,7 +891,10 @@
   // Reset when workspaceId changes (prevents stale state from previous workspace)
   $effect(() => {
     if (workspaceId && lastLoadWorkspaceId !== null && workspaceId !== lastLoadWorkspaceId) {
-      logger.debug('workspaceId changed, clearing stale state', { from: lastLoadWorkspaceId, to: workspaceId });
+      logger.debug('workspaceId changed, clearing stale state', {
+        from: lastLoadWorkspaceId,
+        to: workspaceId,
+      });
       resetWaitingState();
       discoveryMaxLifetimeReached = false;
       lastDiscoveryRestartAt = 0;
@@ -887,7 +956,7 @@
   <!-- Standalone woken-up indicator: shown only when no subscription row is active -->
   <div
     class="flex items-end gap-2 px-4.5 py-1.5 text-ui text-subtle font-family-child"
-    transition:fade={{ duration: 200 }}
+    transition:slide={{ axis: 'y', duration: 200 }}
   >
     <Tooltip.Provider delayDuration={0}>
       <Tooltip.Root delayDuration={0}>
@@ -965,7 +1034,10 @@
               </span>
             </Tooltip.Trigger>
             <Tooltip.Content side="top" class="text-xs">
-              <p>Agent was woken by {wokenUpInfo.eventCount} {wokenUpInfo.eventCount === 1 ? 'event' : 'events'}:</p>
+              <p>
+                Agent was woken by {wokenUpInfo.eventCount}
+                {wokenUpInfo.eventCount === 1 ? 'event' : 'events'}:
+              </p>
               <ul class="mt-1 text-subtle">
                 {#each wokenUpInfo.eventTypes as eventType, i (`eventType-${i}-${eventType}`)}
                   <li>• {eventType}</li>
@@ -1033,9 +1105,14 @@
 
   <!-- Agent cards with streaming last message - shown when expanded -->
   {#if !isCollapsed}
-    <div class="flex flex-col gap-0.5 w-full pl-4.5 pr-2 font-family-child" transition:slide={{ duration: 150 }}>
+    <div
+      class="flex flex-col gap-0.5 w-full pl-4.5 pr-2 font-family-child"
+      transition:slide={{ duration: 150 }}
+    >
       {#each watchedAgentIds.slice(0, 5) as watchedAgentId (watchedAgentId)}
-        <AgentCard agentId={watchedAgentId} />
+        <div class="w-full" transition:slide={{ axis: 'y', duration: 200 }}>
+          <AgentCard agentId={watchedAgentId} />
+        </div>
       {/each}
       {#if watchedAgentIds.length > 5}
         <div class="text-ui text-subtle text-center py-1">

@@ -78,7 +78,7 @@
    */
   import { faBell, faRotate, faArrowUp } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { fade } from 'svelte/transition';
+  import { fade, slide } from 'svelte/transition';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import Button from '$lib/components/ui/button/button.svelte';
   import AgentCard from './AgentCard.svelte';
@@ -277,7 +277,10 @@
 
 {#if asDivider}
   <!-- Divider style - can show summary, agent cards, or both -->
-  <div class="event-wakeup-banner group/banner w-full min-w-0" transition:fade={{ duration: 200 }}>
+  <div
+    class="event-wakeup-banner group/banner w-full min-w-0"
+    transition:slide={{ axis: 'y', duration: 200 }}
+  >
     <!-- Summary row -->
     {#if showSummary}
       <div class="flex items-center w-full min-w-0 py-1 bg-sidebar">
@@ -344,6 +347,7 @@
   <!-- Inline style - compact banner inside message -->
   <div
     class="event-wakeup-banner flex items-center gap-1.5 px-2 py-0.5 mb-1 rounded text-xs text-subtle"
+    transition:slide={{ axis: 'y', duration: 200 }}
   >
     <Fa icon={faRotate} class="w-2 h-2" />
     <span>{friendlySummary}</span>

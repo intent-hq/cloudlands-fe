@@ -35,7 +35,11 @@
    */
 
   import { onMount, onDestroy, untrack, tick } from 'svelte';
-  import { ChatService, getChatService, type ChatState } from '$features/agent/services/chat.service';
+  import {
+    ChatService,
+    getChatService,
+    type ChatState,
+  } from '$features/agent/services/chat.service';
   import { agentService, type AgentMessage } from '$features/agent/agent.service';
   import { sessionStore } from '$features/agent/browser';
   import { browser } from '$app/environment';
@@ -88,7 +92,7 @@
     faChevronUp,
     faChevronDown,
   } from '@fortawesome/free-solid-svg-icons';
-  import { fade } from 'svelte/transition';
+  import { fade, slide } from 'svelte/transition';
   import { navigateToTask, navigateToSettings } from '$lib/utils/workspace-navigation';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
@@ -225,7 +229,8 @@
 
   // Synchronously check if agent is actively streaming so first render shows "Thinking"
   const _isAgentStreaming = workspace?.id
-    ? (unifiedStateStore.getWorkspace(workspace.id)?.agents.get(agentId)?.streaming?.active ?? false)
+    ? (unifiedStateStore.getWorkspace(workspace.id)?.agents.get(agentId)?.streaming?.active ??
+      false)
     : false;
 
   // Local state (real state from service, or base for sandbox mode)
@@ -797,8 +802,6 @@
   // Reference to QueuedMessageList for programmatic editing via Up arrow
   let queuedMessageListRef: QueuedMessageList | undefined = $state();
 
-
-
   // Derive current main panel context from workspace state
   // This shows what's currently open in the main panel (file, note, diff, etc.)
   type MainPanelContext = {
@@ -1363,13 +1366,10 @@
 
   // Listen for real-time auto-commit events (3 listeners total, not per-turn)
   $effect(() => {
-    const cleanupStarted = listenSync<{ agentId: string }>(
-      'git:auto-commit-started',
-      (event) => {
-        const data = event.payload || event;
-        if (data.agentId === agentId) refreshAutoCommitStatuses();
-      },
-    );
+    const cleanupStarted = listenSync<{ agentId: string }>('git:auto-commit-started', (event) => {
+      const data = event.payload || event;
+      if (data.agentId === agentId) refreshAutoCommitStatuses();
+    });
     const cleanupSucceeded = listenSync<{ agentId: string }>(
       'git:auto-commit-succeeded',
       (event) => {
@@ -1501,9 +1501,11 @@
 
     // Trigger provider availability check to correct stale active provider
     // (e.g., if cortex was selected but its feature code is no longer active)
-    getProviderAvailability().then(result => {
-      hiddenProviders = result.hiddenProviders ?? [];
-    }).catch(() => {});
+    getProviderAvailability()
+      .then((result) => {
+        hiddenProviders = result.hiddenProviders ?? [];
+      })
+      .catch(() => {});
 
     // Skip service initialization in sandbox mode
     if (sandboxMode) {
@@ -3363,8 +3365,8 @@
         const promptIndex = num - 1;
         const isMac = navigator.platform.toUpperCase().includes('MAC');
         const hasModifier = isMac
-          ? e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey   // Ctrl on Mac
-          : e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey;  // Alt on Win/Linux
+          ? e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey // Ctrl on Mac
+          : e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey; // Alt on Win/Linux
         if (hasModifier) {
           e.preventDefault();
           const prompt = visibleSuggestedPrompts[promptIndex];
@@ -3711,6 +3713,7 @@
                           class="message-nav-target z-10"
                           class:sticky={shouldEnableSticky}
                           class:-top-px={shouldEnableSticky}
+                          transition:slide={{ axis: 'y', duration: 200 }}
                         >
                           <EventWakeupBanner
                             metadata={message.metadata as {
@@ -3867,7 +3870,9 @@
                         </div>
                         <!-- Show auto-commit status after the last assistant message of each turn -->
                         {#if isLastAssistant}
-                          <AutoCommitStatus status={autoCommitStatuses[globalTurnIndexMap.get(turnKey) ?? 0]} />
+                          <AutoCommitStatus
+                            status={autoCommitStatuses[globalTurnIndexMap.get(turnKey) ?? 0]}
+                          />
                         {/if}
                       {/each}
                     {/snippet}
@@ -3919,7 +3924,7 @@
            preventing stale "Waiting for N agents" UI from leaking across switches -->
       {#if workspace?.id}
         {#key `${workspace.id}::${agentId}`}
-          <div class="w-full pb-6">
+          <div class="w-full pb-6" transition:slide={{ axis: 'y', duration: 200 }}>
             <AgentSubscriptions workspaceId={workspace.id} {agentId} />
           </div>
         {/key}
@@ -3995,7 +4000,8 @@
       >
         <p class="text-balance">
           {#if isAgentProviderHidden}
-            <span class="text-foreground">{matchedProviders.agentProviderName}</span> is no longer available.
+            <span class="text-foreground">{matchedProviders.agentProviderName}</span> is no longer
+            available.
             <button
               class="underline cursor-pointer"
               onclick={() =>
@@ -4003,27 +4009,31 @@
                   new CustomEvent('app:new-agent', {
                     detail: { agentType: chatState.session?.metadata?.agentType },
                   }),
-                )}
-            >Create a new agent</button> to continue.
+                )}>Create a new agent</button
+            > to continue.
           {:else}
-            This agent was started with <span class="text-foreground">{matchedProviders.agentProviderName}</span>.
+            This agent was started with <span class="text-foreground"
+              >{matchedProviders.agentProviderName}</span
+            >.
             <br />
-            To use <span class="text-foreground">{matchedProviders.activeProviderName}</span>, <button
+            To use <span class="text-foreground">{matchedProviders.activeProviderName}</span>,
+            <button
               class="underline cursor-pointer"
               onclick={() =>
                 window.dispatchEvent(
                   new CustomEvent('app:new-agent', {
                     detail: { agentType: chatState.session?.metadata?.agentType },
                   }),
-                )}
-            >create a new agent</button>
-            or <button
+                )}>create a new agent</button
+            >
+            or
+            <button
               class="underline cursor-pointer"
               onclick={async () => {
                 activeProviderStore.setActiveProvider(matchedProviders.agentProviderId);
                 await modelStore.reloadModelsForProvider();
-              }}
-            >switch back</button> <span class="text-xs opacity-60 italic whitespace-nowrap">(applies globally).</span>
+              }}>switch back</button
+            > <span class="text-xs opacity-60 italic whitespace-nowrap">(applies globally).</span>
           {/if}
         </p>
       </div>
