@@ -459,6 +459,11 @@
   // Track ahead of trunk for detecting merged commits
   let aheadOfTrunk = $state<number | null>(null);
 
+  // Track behind trunk for rebase-onto-trunk button
+  let behindTrunk = $state<number>(0);
+  let hasConflicts = $state(false);
+  let isRebasing = $state(false);
+
   // Track whether the repo has a remote configured (used to adapt UI for local-only repos)
   let hasRemote = $state(true);
 
@@ -569,6 +574,8 @@
         mergeHeadSha = null;
         isContentMergedToTrunk = false;
         aheadOfTrunk = null;
+        behindTrunk = 0;
+        hasConflicts = false;
         hasRemote = true;
       }
       isResettingToTrunk = false;
@@ -770,6 +777,8 @@
           AcceptChangesClient.getStatus(workspaceId as WorkspaceId).then((status) => {
             if (workspaceId !== refreshWsId) return; // workspace changed, discard stale update
             aheadOfTrunk = status.aheadOfTrunk;
+            behindTrunk = status.behindTrunk;
+            hasConflicts = status.hasConflicts;
             hasRemote = status.hasRemote;
             isContentMergedToTrunk = status.isContentMergedToTrunk ?? false;
           }),
@@ -804,6 +813,8 @@
     const wsId = workspaceId;
     if (!wsId) {
       aheadOfTrunk = null;
+      behindTrunk = 0;
+      hasConflicts = false;
       isContentMergedToTrunk = false;
       return;
     }
@@ -816,12 +827,16 @@
       .then((status) => {
         if (workspaceId !== wsId) return; // workspace changed, discard stale update
         aheadOfTrunk = status.aheadOfTrunk;
+        behindTrunk = status.behindTrunk;
+        hasConflicts = status.hasConflicts;
         hasRemote = status.hasRemote;
         isContentMergedToTrunk = status.isContentMergedToTrunk ?? false;
       })
       .catch((error) => {
         logger.warn('[SidebarChangesPanel] Failed to fetch aheadOfTrunk:', error);
         aheadOfTrunk = null;
+        behindTrunk = 0;
+        hasConflicts = false;
         isContentMergedToTrunk = false;
       });
   });
@@ -2470,6 +2485,8 @@
       );
       hasRemote = status.hasRemote;
       aheadOfTrunk = status.aheadOfTrunk;
+      behindTrunk = status.behindTrunk;
+      hasConflicts = status.hasConflicts;
       isContentMergedToTrunk = status.isContentMergedToTrunk ?? false;
       connectRemoteDrawerOpen = false;
       remoteUrl = '';
@@ -3264,6 +3281,77 @@
   }
 
   /**
+   * Rebase the current branch onto trunk when behind.
+   * Only available when behindTrunk > 0 and no conflicts detected.
+   */
+  async function handleRebaseOntoTrunk() {
+    if (!workspaceId) return;
+    const capturedWsId = workspaceId;
+    isRebasing = true;
+    try {
+      const result = await AcceptChangesClient.execute(capturedWsId as WorkspaceId, 'rebase-onto-trunk');
+
+      // If workspace changed during the async call, discard stale updates
+      if (workspaceId !== capturedWsId) return;
+
+      if (result.success) {
+        // Clear older commits pagination cache which may reference commits from old history
+        // Done outside inner try since rebases rewrite history regardless of SHA update success
+        fileTrackingStore.clearOlderCommits();
+
+        // Update baseCommitSha if a new base SHA was returned (same pattern as auto-rebase during merge)
+        if (result.result?.newBaseSha) {
+          try {
+            await workspaceStore.update(capturedWsId as WorkspaceId, {
+              baseCommitSha: result.result.newBaseSha,
+            });
+          } catch (err) {
+            console.error('Failed to update baseCommitSha after rebase onto trunk');
+            // Non-fatal - rebase succeeded, sidebar may show stale commits until next refresh
+          }
+        }
+
+        // Refresh stores to update UI
+        gitCache.invalidate(`git-status-${capturedWsId}`);
+        await Promise.all([
+          gitStore.loadStatus(capturedWsId as WorkspaceId, true),
+          fileTrackingStore.refresh(),
+        ]);
+
+        // Re-fetch accept-changes status
+        AcceptChangesClient.getStatus(capturedWsId as WorkspaceId)
+          .then((s) => {
+            if (workspaceId !== capturedWsId) return;
+            aheadOfTrunk = s.aheadOfTrunk;
+            behindTrunk = s.behindTrunk;
+            hasConflicts = s.hasConflicts;
+            hasRemote = s.hasRemote;
+            isContentMergedToTrunk = s.isContentMergedToTrunk ?? false;
+          })
+          .catch((err) => {
+            console.error('Failed to refresh accept-changes status after rebase:', err);
+          });
+
+        toast.success(`Rebased onto ${trunkBranch}`);
+      } else {
+        // Build detailed error message including step-level errors
+        const mainError = result.error || 'Rebase failed';
+        const stepErrors = result.steps
+          ?.filter((s) => s.status === 'failed' && s.error && s.error !== mainError)
+          .map((s) => s.error);
+        const detailError =
+          stepErrors?.length ? `${mainError}\n${stepErrors.join('\n')}` : mainError;
+        toast.error(detailError);
+      }
+    } catch (error) {
+      logger.error('Rebase onto trunk failed', error as Error);
+      toast.error(`Rebase failed: ${(error as Error).message}`);
+    } finally {
+      isRebasing = false;
+    }
+  }
+
+  /**
    * Pull remote commits when local is behind.
    */
   async function handlePull() {
@@ -3490,6 +3578,8 @@
             .then((s) => {
               if (workspaceId !== resetWsId) return; // workspace changed, discard stale update
               aheadOfTrunk = s.aheadOfTrunk;
+              behindTrunk = s.behindTrunk;
+              hasConflicts = s.hasConflicts;
               hasRemote = s.hasRemote;
               isContentMergedToTrunk = s.isContentMergedToTrunk ?? false;
             })
@@ -5403,6 +5493,19 @@
                   <Fa icon={faCheck} size="xs" />
                   <span>Synced</span>
                 </span>
+              {/if}
+
+              <!-- Rebase onto trunk - shown when trunk is ahead and no conflicts -->
+              {#if behindTrunk > 0 && !hasConflicts && aheadOfTrunk !== null}
+                <DividerButton
+                  onclick={handleRebaseOntoTrunk}
+                  disabled={isRebasing}
+                  loading={isRebasing}
+                  showArrow={false}
+                >
+                  Rebase onto {trunkBranch}
+                  <Fa icon={faArrowsRotate} size="xs" class="text-muted-foreground/50" />
+                </DividerButton>
               {/if}
 
               <!-- Force Push Section - shown when branches have diverged -->

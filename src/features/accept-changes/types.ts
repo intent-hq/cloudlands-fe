@@ -15,7 +15,8 @@ export type AcceptAction =
   | 'export'
   | 'undo-push'
   | 'undo-commit'
-  | 'reset-to-trunk';
+  | 'reset-to-trunk'
+  | 'rebase-onto-trunk';
 
 /** Merge strategies when merging into trunk */
 export type MergeStrategy = 'merge' | 'squash' | 'rebase';

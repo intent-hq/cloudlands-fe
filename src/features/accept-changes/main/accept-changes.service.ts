@@ -1840,6 +1840,116 @@ export class AcceptChangesService {
         }
       }
 
+      // Step: Rebase onto trunk (standalone, outside merge flow)
+      if (request.action === 'rebase-onto-trunk') {
+        logger.info('Starting rebase-onto-trunk step', {
+          branch: status.branch,
+          trunkBranch: status.trunkBranch,
+        });
+        steps.push({ id: 'rebase-onto-trunk', name: 'Rebase onto trunk', status: 'running' });
+
+        // Validate branch names to prevent shell injection
+        if (!SAFE_REF_PATTERN.test(status.trunkBranch)) {
+          steps[steps.length - 1].status = 'failed';
+          steps[steps.length - 1].error = 'Invalid trunk branch name';
+          return { success: false, steps, error: `Invalid trunk branch name: ${status.trunkBranch}` };
+        }
+        if (!SAFE_REF_PATTERN.test(status.branch)) {
+          steps[steps.length - 1].status = 'failed';
+          steps[steps.length - 1].error = 'Invalid branch name';
+          return { success: false, steps, error: `Invalid branch name: ${status.branch}` };
+        }
+
+        const trunkRef = status.hasRemote
+          ? `origin/${status.trunkBranch}`
+          : status.trunkBranch;
+
+        // Fetch latest trunk
+        if (status.hasRemote && !isKeychainAccessSuppressed(request.workspaceId as string)) {
+          try {
+            await this.execGitCommand(
+              request.workspaceId,
+              `git fetch origin ${status.trunkBranch}`,
+              worktreePath,
+            );
+          } catch (fetchError) {
+            logger.warn('Failed to fetch origin before rebase-onto-trunk, continuing with cached ref', {
+              error: (fetchError as Error).message,
+            });
+          }
+        }
+
+        // Check for conflicts via detectMergeConflicts — abort early if conflicts
+        const hasConflicts = await this.detectMergeConflicts(
+          request.workspaceId,
+          worktreePath,
+          status.branch,
+          trunkRef,
+        );
+        if (hasConflicts) {
+          logger.warn('Rebase-onto-trunk aborted: conflicts detected');
+          steps[steps.length - 1].status = 'failed';
+          steps[steps.length - 1].error = 'Conflicts detected. Please rebase manually.';
+          return {
+            success: false,
+            steps,
+            error: 'Conflicts detected. Please rebase manually.',
+          };
+        }
+
+        // Capture trunk tip SHA before rebase
+        let capturedTrunkSha: string | undefined;
+        try {
+          const { stdout: trunkTipOut } = await this.execGitCommand(
+            request.workspaceId,
+            `git rev-parse ${trunkRef}`,
+            worktreePath,
+          );
+          capturedTrunkSha = trunkTipOut.trim();
+        } catch {
+          logger.warn('Failed to resolve trunk tip SHA for rebase-onto-trunk');
+        }
+
+        // Perform the rebase
+        const rebaseResult = await this.rebaseWithAutoStash(
+          request.workspaceId,
+          trunkRef,
+          worktreePath,
+        );
+        if (!rebaseResult.success) {
+          const errorMessage = rebaseResult.error || 'Rebase onto trunk failed. Please try rebasing manually.';
+          steps[steps.length - 1].status = 'failed';
+          steps[steps.length - 1].error = errorMessage;
+          return {
+            success: false,
+            steps,
+            error: errorMessage,
+          };
+        }
+
+        // Clear git caches so subsequent queries get fresh data
+        this.clearGitStatusCache(request.workspaceId);
+        gitService.clearStatusCache(request.workspaceId);
+
+        // Invalidate committed changes cache since rebase rewrites history
+        const gitIntegration = global.gitIntegrations?.get(request.workspaceId);
+        if (gitIntegration?.invalidateCommittedChangesCache) {
+          gitIntegration.invalidateCommittedChangesCache();
+        }
+
+        // Refresh git state after successful rebase
+        changeDetectorManager.triggerImmediateCheck(request.workspaceId, 'post-rebase-onto-trunk');
+
+        steps[steps.length - 1].status = 'completed';
+        logger.info('Rebase-onto-trunk completed successfully');
+
+        return {
+          success: true,
+          steps,
+          result: { autoRebased: true, newBaseSha: capturedTrunkSha },
+        };
+      }
+
       // Step 4: Create PR if requested
       if (request.action === 'create-pr' || request.options?.createPRAfterPush) {
         // When createPRAfterPush is true and push succeeded, we need to:

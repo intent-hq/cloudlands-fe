@@ -21,7 +21,7 @@ const GetStatusSchema = z.object({
 
 const PrepareSchema = z.object({
   workspaceId: z.string(),
-  action: z.enum(['commit', 'push', 'create-pr', 'merge', 'export', 'undo-push', 'undo-commit', 'reset-to-trunk']),
+  action: z.enum(['commit', 'push', 'create-pr', 'merge', 'export', 'undo-push', 'undo-commit', 'reset-to-trunk', 'rebase-onto-trunk']),
   files: z.array(z.string()).optional(),
 });
 
@@ -35,7 +35,7 @@ const UndoCommitMetadataSchema = z.object({
 
 const ExecuteSchema = z.object({
   workspaceId: z.string(),
-  action: z.enum(['commit', 'push', 'create-pr', 'merge', 'export', 'undo-push', 'undo-commit', 'reset-to-trunk']),
+  action: z.enum(['commit', 'push', 'create-pr', 'merge', 'export', 'undo-push', 'undo-commit', 'reset-to-trunk', 'rebase-onto-trunk']),
   files: z.array(z.string()).optional(),
   commitMessage: z.string().optional(),
   prTitle: z.string().optional(),
