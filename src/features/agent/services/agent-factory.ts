@@ -18,9 +18,7 @@ import { typedInvoke } from '$shared/ipc/typed-invoke';
 import { agentValidator } from './agent-validator';
 import type { AgentIpc } from '$shared/ipc/contracts';
 import { AGENT_CHANNELS, AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
-import {
-  generateAgentNameFromText,
-} from '$lib/utils/agent-name-generator';
+import { generateAgentNameFromText } from '$lib/utils/agent-name-generator';
 import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
 import { track } from '$lib/services/analytics';
 import {
@@ -244,6 +242,61 @@ export class UnifiedAgentFactory {
         };
       }
 
+      // Step 1.5: Circuit breaker check - prevent runaway agent spawn loops
+      try {
+        const { agentCircuitBreaker } = await import('$shared/services/agent-circuit-breaker');
+        const circuitCheck = agentCircuitBreaker.canProceed(workspace.id);
+        if (!circuitCheck.allowed) {
+          logger.error('Agent creation blocked by circuit breaker', {
+            workspaceId: workspace.id,
+            reason: circuitCheck.reason,
+            status: circuitCheck.status,
+          });
+          return {
+            success: false,
+            error: `Agent creation blocked: ${circuitCheck.reason}`,
+          };
+        }
+        // Record the agent start
+        agentCircuitBreaker.recordAgentStart(workspace.id, config.id || 'pending');
+      } catch (e) {
+        // Circuit breaker failure should not block agent creation
+        logger.warn('Circuit breaker check failed, proceeding with agent creation', { error: e });
+      }
+
+      // Step 1.6: Enforce agent spawn caps
+      if (!isBackend) {
+        try {
+          const { unifiedStateStore } = await import('./unified-state-store');
+          const workspaceState = unifiedStateStore.getWorkspace(workspace.id as any);
+          if (workspaceState) {
+            const { AgentStatus } = await import('$shared/types');
+            const activeAgentCount = Array.from(workspaceState.agents.values()).filter(
+              (a) =>
+                a.session.status === AgentStatus.Active ||
+                a.session.status === AgentStatus.Processing ||
+                a.streaming.active,
+            ).length;
+
+            const { AGENT_LIMITS } = await import('$shared/constants/agent-services');
+            if (activeAgentCount >= AGENT_LIMITS.MAX_ACTIVE_AGENTS) {
+              logger.error('Agent spawn cap reached', {
+                workspaceId: workspace.id,
+                activeAgentCount,
+                maxActiveAgents: AGENT_LIMITS.MAX_ACTIVE_AGENTS,
+              });
+              return {
+                success: false,
+                error: `Maximum active agents (${AGENT_LIMITS.MAX_ACTIVE_AGENTS}) reached for this workspace. Please wait for existing agents to complete.`,
+              };
+            }
+          }
+        } catch (e) {
+          // Spawn cap check failure should not block agent creation
+          logger.warn('Agent spawn cap check failed, proceeding', { error: e });
+        }
+      }
+
       // Step 2: Validate configuration BEFORE normalization to catch invalid characters
       // First validate the raw config to check for invalid characters
       const preValidation = agentValidator.validateConfig(config);
@@ -292,9 +345,8 @@ export class UnifiedAgentFactory {
           // the home page (before the workspace page is loaded). If we initialize the layout
           // here, it may load stale data from localStorage, causing duplicate tabs.
           try {
-            const { getPanelLayoutManager, hasPanelLayoutManager } = await import(
-              '$features/layout/panel-layout-manager.svelte'
-            );
+            const { getPanelLayoutManager, hasPanelLayoutManager } =
+              await import('$features/layout/panel-layout-manager.svelte');
             // Only access panel layout if the workspace page has already initialized it
             if (hasPanelLayoutManager(workspace.id)) {
               const layoutManager = getPanelLayoutManager(workspace.id);
@@ -452,8 +504,7 @@ export class UnifiedAgentFactory {
           if (provider in PROVIDER_MODEL_TIERS) {
             const baseModel = getDefaultModelForProvider(provider, 'balanced');
             const defaultProviderId = getDefaultProviderId();
-            resolvedModel =
-              provider !== defaultProviderId ? `${provider}:${baseModel}` : baseModel;
+            resolvedModel = provider !== defaultProviderId ? `${provider}:${baseModel}` : baseModel;
             logger.debug('Re-resolved model to provider default', { resolvedModel });
           }
           // If provider has no tier mappings (e.g., opencode), keep resolvedModel as-is.

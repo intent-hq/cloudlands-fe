@@ -109,8 +109,8 @@ export const AGENT_RETRY_CONFIG = {
 
   /**
    * Patterns that should NOT trigger retry, checked case-insensitively against error messages.
-   * Includes Node.js system error codes, generic fatal indicators, and
-   * Intent-specific error strings from acp-provider.ts.
+   * Includes Node.js system error codes, generic fatal indicators,
+   * Intent-specific error strings from acp-provider.ts, and rate-limit errors.
    */
   NON_RETRYABLE_ERRORS: [
     'EACCES',
@@ -123,6 +123,11 @@ export const AGENT_RETRY_CONFIG = {
     'process died',
     'not available on your current plan',
     'agent binary',
+    'rate limit',
+    'too many requests',
+    'hit your limit',
+    "you've hit your limit",
+    'quota exceeded',
   ],
 } as const;
 

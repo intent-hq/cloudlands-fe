@@ -79,6 +79,10 @@ const MAX_HISTORY_CHARS = 200_000;
 // chat backend does with _replace_tool_result_content in chat_history_builder.py.
 const MAX_TOOL_CONTENT_CHARS = 4_000;
 
+// Maximum characters for tool names. The Anthropic API rejects tool names exceeding 200 characters
+// with error: "messages.1.content.1.tool_use.name: String should have at most 200 characters"
+const MAX_TOOL_NAME_CHARS = 200;
+
 /**
  * Common text file extensions used to determine if a file attachment
  * should be inlined as text or referenced as binary.
@@ -297,7 +301,17 @@ export function formatHistoryAsXml(
         const thinking = block.text || block.content || '';
         xml += `${indent}<thinking>${escapeXml(thinking)}</thinking>\n`;
       } else if (block.type === 'tool_use') {
-        const toolName = escapeXml(block.name || block.toolName || '');
+        const rawToolName = block.name || block.toolName || '';
+        const toolName = escapeXml(
+          rawToolName.length > MAX_TOOL_NAME_CHARS
+            ? (logger.warn('Truncating tool name exceeding max length', {
+                originalLength: rawToolName.length,
+                maxLength: MAX_TOOL_NAME_CHARS,
+                toolName: rawToolName.substring(0, 50) + '...',
+              }),
+              rawToolName.substring(0, MAX_TOOL_NAME_CHARS - 3) + '...')
+            : rawToolName,
+        );
         const toolUseId = escapeXml(block.tool_use_id || block.id || '');
         const rawInput = safeStringify(block.input || {});
         const inputStr = escapeXml(truncateMiddleContent(rawInput, MAX_TOOL_CONTENT_CHARS));
@@ -738,6 +752,7 @@ function createUserFriendlyErrorMessage(
   currentModel?: string,
   providerId?: string,
   errorData?: { errorDetails?: { code?: number }; httpStatus?: number },
+  workspaceId?: string,
 ): string {
   const errorLower = rawError.toLowerCase();
 
@@ -787,7 +802,10 @@ function createUserFriendlyErrorMessage(
       return 'The agent session encountered an error.';
     }
     // Strip the "Internal error: " prefix if present, surface the rest as-is
-    return rawError.replace(/^internal error:\s*/i, '').trim() || 'The agent encountered an internal error.';
+    return (
+      rawError.replace(/^internal error:\s*/i, '').trim() ||
+      'The agent encountered an internal error.'
+    );
   }
 
   // Model-specific errors - only blame the model if the error explicitly mentions it
@@ -828,8 +846,20 @@ function createUserFriendlyErrorMessage(
   if (
     errorCode === 429 ||
     errorLower.includes('rate limit') ||
-    errorLower.includes('too many requests')
+    errorLower.includes('too many requests') ||
+    errorLower.includes('hit your limit') ||
+    errorLower.includes('quota exceeded')
   ) {
+    // Record in circuit breaker to prevent runaway token burn
+    if (workspaceId) {
+      import('$shared/services/agent-circuit-breaker')
+        .then(({ agentCircuitBreaker }) => {
+          agentCircuitBreaker.recordRateLimitError(workspaceId);
+        })
+        .catch(() => {
+          // Circuit breaker not available — non-critical
+        });
+    }
     return 'Rate limit reached. Please wait a moment and try again.';
   }
 
@@ -1220,7 +1250,9 @@ export class ACPProvider extends BaseAgentProvider {
         });
         return workspacePath;
       } catch (error) {
-        logger.error('Failed to create remote agent directory, falling back to temp dir', { error });
+        logger.error('Failed to create remote agent directory, falling back to temp dir', {
+          error,
+        });
         return os.tmpdir();
       }
     }
@@ -1865,62 +1897,62 @@ export class ACPProvider extends BaseAgentProvider {
             if (this.config.simpleRequest) {
               logger.info('Skipping user MCP servers for simple/background request');
             } else {
-            // Check if user MCP servers feature is enabled in settings
-            // Use dynamic import since we're in ESM context
-            const ElectronStore = (await import('electron-store')).default;
-            const settingsStore = new ElectronStore({ name: 'settings' });
-            const enableUserMcpServers = settingsStore.get('enableUserMcpServers', true);
+              // Check if user MCP servers feature is enabled in settings
+              // Use dynamic import since we're in ESM context
+              const ElectronStore = (await import('electron-store')).default;
+              const settingsStore = new ElectronStore({ name: 'settings' });
+              const enableUserMcpServers = settingsStore.get('enableUserMcpServers', true);
 
-            logger.info('User MCP servers feature flag value', { enableUserMcpServers });
+              logger.info('User MCP servers feature flag value', { enableUserMcpServers });
 
-            if (enableUserMcpServers) {
-              logger.info('User MCP servers feature is enabled, loading user servers');
-              const userServers = await readUserMcpServers();
+              if (enableUserMcpServers) {
+                logger.info('User MCP servers feature is enabled, loading user servers');
+                const userServers = await readUserMcpServers();
 
-              logger.info('Read user MCP servers result', {
-                hasServers: !!userServers,
-                serverCount: userServers ? Object.keys(userServers).length : 0,
-                serverNames: userServers ? Object.keys(userServers) : [],
-              });
-
-              if (userServers) {
-                // Get list of disabled servers for this workspace
-                const { getWorkspaceDisabledMcpServers } =
-                  await import('../../../mcp/main/user-mcp-settings');
-                const disabledServers = this.config.workspaceId
-                  ? await getWorkspaceDisabledMcpServers(this.config.workspaceId)
-                  : [];
-
-                // Filter out disabled servers before merging
-                const filteredUserServers = Object.fromEntries(
-                  Object.entries(userServers).filter(([name]) => !disabledServers.includes(name)),
-                );
-
-                // Use the auth-injecting version to automatically add credentials for known services
-                const { servers, conflicts } = await mergeUserMcpServersWithAuth(
-                  mcpServers,
-                  filteredUserServers,
-                );
-                finalMcpServers = servers as Record<string, any>;
-
-                if (conflicts.length > 0) {
-                  logger.warn('MCP server conflicts detected', { conflicts });
-                }
-
-                logger.info('Merged user MCP servers', {
-                  builtInCount: Object.keys(mcpServers).length,
-                  userCount: Object.keys(userServers).length,
-                  disabledCount: disabledServers.length,
-                  disabledServers,
-                  finalCount: Object.keys(finalMcpServers).length,
-                  userServerNames: Object.keys(filteredUserServers),
+                logger.info('Read user MCP servers result', {
+                  hasServers: !!userServers,
+                  serverCount: userServers ? Object.keys(userServers).length : 0,
+                  serverNames: userServers ? Object.keys(userServers) : [],
                 });
+
+                if (userServers) {
+                  // Get list of disabled servers for this workspace
+                  const { getWorkspaceDisabledMcpServers } =
+                    await import('../../../mcp/main/user-mcp-settings');
+                  const disabledServers = this.config.workspaceId
+                    ? await getWorkspaceDisabledMcpServers(this.config.workspaceId)
+                    : [];
+
+                  // Filter out disabled servers before merging
+                  const filteredUserServers = Object.fromEntries(
+                    Object.entries(userServers).filter(([name]) => !disabledServers.includes(name)),
+                  );
+
+                  // Use the auth-injecting version to automatically add credentials for known services
+                  const { servers, conflicts } = await mergeUserMcpServersWithAuth(
+                    mcpServers,
+                    filteredUserServers,
+                  );
+                  finalMcpServers = servers as Record<string, any>;
+
+                  if (conflicts.length > 0) {
+                    logger.warn('MCP server conflicts detected', { conflicts });
+                  }
+
+                  logger.info('Merged user MCP servers', {
+                    builtInCount: Object.keys(mcpServers).length,
+                    userCount: Object.keys(userServers).length,
+                    disabledCount: disabledServers.length,
+                    disabledServers,
+                    finalCount: Object.keys(finalMcpServers).length,
+                    userServerNames: Object.keys(filteredUserServers),
+                  });
+                } else {
+                  logger.warn('readUserMcpServers returned null/undefined');
+                }
               } else {
-                logger.warn('readUserMcpServers returned null/undefined');
+                logger.info('User MCP servers feature is disabled (enableUserMcpServers=false)');
               }
-            } else {
-              logger.info('User MCP servers feature is disabled (enableUserMcpServers=false)');
-            }
             } // end of !simpleRequest block
           } catch (userMcpError) {
             logger.error('Failed to load user MCP servers, using built-in only', {
@@ -2206,33 +2238,33 @@ export class ACPProvider extends BaseAgentProvider {
         let finalMcpServers: Record<string, McpServerConfig> = baseServers;
         // Skip user MCP servers for simple/background requests
         if (!this.config.simpleRequest) {
-        try {
-          const ElectronStore = (await import('electron-store')).default;
-          const settingsStore = new ElectronStore({ name: 'settings' });
-          const enableUserMcpServers = settingsStore.get('enableUserMcpServers', true);
+          try {
+            const ElectronStore = (await import('electron-store')).default;
+            const settingsStore = new ElectronStore({ name: 'settings' });
+            const enableUserMcpServers = settingsStore.get('enableUserMcpServers', true);
 
-          if (enableUserMcpServers) {
-            const userServers = await readUserMcpServers();
-            if (userServers) {
-              const { getWorkspaceDisabledMcpServers } =
-                await import('../../../mcp/main/user-mcp-settings');
-              const disabledServers = this.config.workspaceId
-                ? await getWorkspaceDisabledMcpServers(this.config.workspaceId)
-                : [];
-              const filteredUserServers = Object.fromEntries(
-                Object.entries(userServers).filter(([name]) => !disabledServers.includes(name)),
-              );
-              const { servers } = mergeUserMcpServers(baseServers, filteredUserServers);
-              finalMcpServers = servers as Record<string, McpServerConfig>;
+            if (enableUserMcpServers) {
+              const userServers = await readUserMcpServers();
+              if (userServers) {
+                const { getWorkspaceDisabledMcpServers } =
+                  await import('../../../mcp/main/user-mcp-settings');
+                const disabledServers = this.config.workspaceId
+                  ? await getWorkspaceDisabledMcpServers(this.config.workspaceId)
+                  : [];
+                const filteredUserServers = Object.fromEntries(
+                  Object.entries(userServers).filter(([name]) => !disabledServers.includes(name)),
+                );
+                const { servers } = mergeUserMcpServers(baseServers, filteredUserServers);
+                finalMcpServers = servers as Record<string, McpServerConfig>;
+              }
             }
+          } catch (userMcpError) {
+            logger.warn('Failed to load user MCP servers for provider MCP translation', {
+              error: userMcpError instanceof Error ? userMcpError.message : String(userMcpError),
+            });
+            // Surface the error to the user via IPC
+            this.surfaceMcpLoadErrorToRenderer(userMcpError);
           }
-        } catch (userMcpError) {
-          logger.warn('Failed to load user MCP servers for provider MCP translation', {
-            error: userMcpError instanceof Error ? userMcpError.message : String(userMcpError),
-          });
-          // Surface the error to the user via IPC
-          this.surfaceMcpLoadErrorToRenderer(userMcpError);
-        }
         } // end of !simpleRequest block
 
         // Detect remote MCP servers that need longer initialization
@@ -2715,7 +2747,9 @@ export class ACPProvider extends BaseAgentProvider {
               const callbacks = this.streamingCallbacks.get(completionSessionId);
               if (callbacks?.onError) {
                 callbacks.onError(
-                  new Error('Agent encountered a message parsing error. Please retry your message.'),
+                  new Error(
+                    'Agent encountered a message parsing error. Please retry your message.',
+                  ),
                 );
               }
             }
@@ -2873,7 +2907,10 @@ export class ACPProvider extends BaseAgentProvider {
       // Resolve ~ in remotePath to absolute path (escapeShellArg prevents tilde expansion)
       let resolvedRemotePath = remotePath;
       if (remotePath.startsWith('~')) {
-        const homeResult = await sshManager.executeCommand(this.sshConnectionId!, 'echo $HOME', { timeout: 5000, rawCommand: true });
+        const homeResult = await sshManager.executeCommand(this.sshConnectionId!, 'echo $HOME', {
+          timeout: 5000,
+          rawCommand: true,
+        });
         const homeDir = homeResult.stdout.trim();
         if (homeDir) {
           resolvedRemotePath = remotePath.replace(/^~/, homeDir);
@@ -2882,10 +2919,7 @@ export class ACPProvider extends BaseAgentProvider {
 
       // Step 2: Deploy intent-server to remote host
       const localBundlePath = getIntentServerPath();
-      const deployed = await sshManager.deployIntentServer(
-        this.sshConnectionId,
-        localBundlePath,
-      );
+      const deployed = await sshManager.deployIntentServer(this.sshConnectionId, localBundlePath);
       logger.info('Intent server deployment result', {
         deployed,
         localBundlePath,
@@ -2962,9 +2996,13 @@ export class ACPProvider extends BaseAgentProvider {
         remoteMcpConfigPath = `${remoteTmpDir}/mcp-config-${Date.now()}.json`;
 
         // Create tmp directory and write config on remote
-        await sshManager.executeCommand(this.sshConnectionId!, `mkdir -p ${escapeShellArg(remoteTmpDir)}`, {
-          timeout: 10000,
-        });
+        await sshManager.executeCommand(
+          this.sshConnectionId!,
+          `mkdir -p ${escapeShellArg(remoteTmpDir)}`,
+          {
+            timeout: 10000,
+          },
+        );
         await sshManager.executeCommand(
           this.sshConnectionId!,
           `cat > ${escapeShellArg(remoteMcpConfigPath)} << 'EOF'\n${JSON.stringify(mcpConfig, null, 2)}\nEOF`,
@@ -3015,11 +3053,17 @@ export class ACPProvider extends BaseAgentProvider {
       // Step 8: Start auggie via intent-server if not already running
       if (!isAlreadyRunning) {
         const startArgs = [
-          'node', '~/.intent-server/server.js', 'start',
-          '--workspace', escapeShellArg(workspaceId),
-          '--command', escapeShellArg(auggiePath),
-          '--args', escapeShellArg(JSON.stringify(args)),
-          '--cwd', escapeShellArg(resolvedRemotePath),
+          'node',
+          '~/.intent-server/server.js',
+          'start',
+          '--workspace',
+          escapeShellArg(workspaceId),
+          '--command',
+          escapeShellArg(auggiePath),
+          '--args',
+          escapeShellArg(JSON.stringify(args)),
+          '--cwd',
+          escapeShellArg(resolvedRemotePath),
         ];
 
         const startCommand = startArgs.join(' ');
@@ -3031,11 +3075,9 @@ export class ACPProvider extends BaseAgentProvider {
           startCommand,
         });
 
-        const startResult = await sshManager.executeCommand(
-          this.sshConnectionId!,
-          startCommand,
-          { timeout: 30000 },
-        );
+        const startResult = await sshManager.executeCommand(this.sshConnectionId!, startCommand, {
+          timeout: 30000,
+        });
 
         if (startResult.exitCode !== 0) {
           throw new Error(
@@ -3068,7 +3110,10 @@ export class ACPProvider extends BaseAgentProvider {
       // Resolve $HOME for the socket path (connectToRemoteSocket needs an absolute path)
       let remoteHomeDir: string | undefined;
       try {
-        const homeResult = await sshManager.executeCommand(this.sshConnectionId!, 'echo $HOME', { timeout: 5000, rawCommand: true });
+        const homeResult = await sshManager.executeCommand(this.sshConnectionId!, 'echo $HOME', {
+          timeout: 5000,
+          rawCommand: true,
+        });
         remoteHomeDir = homeResult.stdout.trim();
       } catch {
         logger.warn('Could not resolve remote $HOME for socket path');
@@ -3134,10 +3179,13 @@ export class ACPProvider extends BaseAgentProvider {
           this.sshConnectionId &&
           !sshManager.isConnected(this.sshConnectionId)
         ) {
-          logger.info('SSH connection lost — entering reconnection flow (auggie still running on remote)', {
-            connectionId: this.sshConnectionId,
-            workspaceId: this.config.workspaceId,
-          });
+          logger.info(
+            'SSH connection lost — entering reconnection flow (auggie still running on remote)',
+            {
+              connectionId: this.sshConnectionId,
+              workspaceId: this.config.workspaceId,
+            },
+          );
 
           this.isReconnecting = true;
           this.reconnectRemoteAgent()
@@ -3240,7 +3288,11 @@ export class ACPProvider extends BaseAgentProvider {
               // Write stderr to workspace log file
               this.writeStderrToLog(stderr);
 
-              if (stderr.includes('error') || stderr.includes('Error') || stderr.includes('ERROR')) {
+              if (
+                stderr.includes('error') ||
+                stderr.includes('Error') ||
+                stderr.includes('ERROR')
+              ) {
                 logger.error('Remote agent stderr error', { stderr });
 
                 // CRITICAL: Detect OpenCode's "agent.name undefined" error
@@ -3436,11 +3488,17 @@ export class ACPProvider extends BaseAgentProvider {
         // Resolve ~ in remotePath to absolute path (escapeShellArg prevents tilde expansion)
         let resolvedRemotePath: string;
         if (remotePath && remotePath.startsWith('~')) {
-          const homeResult = await sshManager.executeCommand(this.sshConnectionId!, 'echo $HOME', { timeout: 5000, rawCommand: true });
+          const homeResult = await sshManager.executeCommand(this.sshConnectionId!, 'echo $HOME', {
+            timeout: 5000,
+            rawCommand: true,
+          });
           const homeDir = homeResult.stdout.trim();
           resolvedRemotePath = homeDir ? remotePath.replace(/^~/, homeDir) : remotePath;
         } else if (!remotePath) {
-          const homeResult = await sshManager.executeCommand(this.sshConnectionId!, 'echo $HOME', { timeout: 5000, rawCommand: true });
+          const homeResult = await sshManager.executeCommand(this.sshConnectionId!, 'echo $HOME', {
+            timeout: 5000,
+            rawCommand: true,
+          });
           resolvedRemotePath = homeResult.stdout.trim() || '/root';
         } else {
           resolvedRemotePath = remotePath;
@@ -3520,11 +3578,17 @@ export class ACPProvider extends BaseAgentProvider {
           }
 
           const startArgs = [
-            'node', '~/.intent-server/server.js', 'start',
-            '--workspace', escapeShellArg(workspaceId),
-            '--command', escapeShellArg(auggiePath),
-            '--args', escapeShellArg(JSON.stringify(args)),
-            '--cwd', escapeShellArg(resolvedRemotePath),
+            'node',
+            '~/.intent-server/server.js',
+            'start',
+            '--workspace',
+            escapeShellArg(workspaceId),
+            '--command',
+            escapeShellArg(auggiePath),
+            '--args',
+            escapeShellArg(JSON.stringify(args)),
+            '--cwd',
+            escapeShellArg(resolvedRemotePath),
           ];
 
           const startResult = await sshManager.executeCommand(
@@ -3548,7 +3612,10 @@ export class ACPProvider extends BaseAgentProvider {
         // Resolve $HOME for the socket path
         let reconnectHomeDir: string | undefined;
         try {
-          const homeResult = await sshManager.executeCommand(this.sshConnectionId!, 'echo $HOME', { timeout: 5000, rawCommand: true });
+          const homeResult = await sshManager.executeCommand(this.sshConnectionId!, 'echo $HOME', {
+            timeout: 5000,
+            rawCommand: true,
+          });
           reconnectHomeDir = homeResult.stdout.trim();
         } catch {
           logger.warn('Could not resolve remote $HOME for socket path during reconnection');
@@ -3581,9 +3648,12 @@ export class ACPProvider extends BaseAgentProvider {
             try {
               this.remotePortForwarding.close();
             } catch (err) {
-              logger.warn('Failed to close port forwarding after reconnection (client likely disconnected)', {
-                error: err instanceof Error ? err.message : String(err),
-              });
+              logger.warn(
+                'Failed to close port forwarding after reconnection (client likely disconnected)',
+                {
+                  error: err instanceof Error ? err.message : String(err),
+                },
+              );
             }
             this.remotePortForwarding = undefined;
           }
@@ -3666,7 +3736,11 @@ export class ACPProvider extends BaseAgentProvider {
                 const stderr = data.trim();
                 if (!stderr) return;
                 this.writeStderrToLog(stderr);
-                if (stderr.includes('error') || stderr.includes('Error') || stderr.includes('ERROR')) {
+                if (
+                  stderr.includes('error') ||
+                  stderr.includes('Error') ||
+                  stderr.includes('ERROR')
+                ) {
                   logger.error('Remote agent stderr error (after reconnection)', { stderr });
                 } else {
                   logger.debug('Remote agent stderr output (after reconnection)', { stderr });
@@ -3689,9 +3763,12 @@ export class ACPProvider extends BaseAgentProvider {
         }
         this.sshDisconnectHandler = (connectionId: string) => {
           if (connectionId === this.sshConnectionId && !this.isReconnecting) {
-            logger.info('SSH connection lost (detected via event), connection will close and trigger reconnection', {
-              connectionType: reconnectUseStreamLocal ? 'StreamLocal' : 'relay',
-            });
+            logger.info(
+              'SSH connection lost (detected via event), connection will close and trigger reconnection',
+              {
+                connectionType: reconnectUseStreamLocal ? 'StreamLocal' : 'relay',
+              },
+            );
           }
         };
         sshManager.on('disconnected', this.sshDisconnectHandler);
@@ -3739,7 +3816,6 @@ export class ACPProvider extends BaseAgentProvider {
       }
     }
   }
-
 
   /**
    * Process a message sequentially by chaining onto the previous processing promise.
@@ -3966,7 +4042,9 @@ export class ACPProvider extends BaseAgentProvider {
           };
 
           if (!this.writeToAgent(`${JSON.stringify(response)}\n`)) {
-            logger.warn('Cannot send auto-approved permission response to agent - agent not available');
+            logger.warn(
+              'Cannot send auto-approved permission response to agent - agent not available',
+            );
           }
           return;
         }
@@ -4472,9 +4550,12 @@ export class ACPProvider extends BaseAgentProvider {
           };
           const setModeResponse = await this.sendRequestInternal(setModeRequest, 5000);
           if (setModeResponse?.error) {
-            logger.warn(`Failed to set ${caps.id} bypassPermissions mode; will auto-approve permissions locally`, {
-              error: setModeResponse.error,
-            });
+            logger.warn(
+              `Failed to set ${caps.id} bypassPermissions mode; will auto-approve permissions locally`,
+              {
+                error: setModeResponse.error,
+              },
+            );
           } else {
             this.bypassPermissionsActive = true;
             logger.info(`${caps.id} session set to bypassPermissions mode`, {
@@ -4482,14 +4563,20 @@ export class ACPProvider extends BaseAgentProvider {
             });
           }
         } catch (e) {
-          logger.warn(`Error setting ${caps.id} bypassPermissions mode; will auto-approve permissions locally`, {
-            error: (e as Error).message,
-          });
+          logger.warn(
+            `Error setting ${caps.id} bypassPermissions mode; will auto-approve permissions locally`,
+            {
+              error: (e as Error).message,
+            },
+          );
         }
       } else if (caps.id !== 'auggie') {
-        logger.info(`Skipping session/set_mode for ${caps.id} (supportsSetMode=false); will auto-approve permissions locally`, {
-          sessionId: this.sessionId,
-        });
+        logger.info(
+          `Skipping session/set_mode for ${caps.id} (supportsSetMode=false); will auto-approve permissions locally`,
+          {
+            sessionId: this.sessionId,
+          },
+        );
       }
 
       // Claude Code: defer applying the model until after the adapter has emitted its
@@ -4521,11 +4608,14 @@ export class ACPProvider extends BaseAgentProvider {
                 modelId: rawModelId,
               });
             } else {
-              logger.warn('Failed to set OpenCode model via ACP; relying on OPENCODE_CONFIG_CONTENT', {
-                sessionId: this.sessionId,
-                modelId: rawModelId,
-                error: setModelResult.error,
-              });
+              logger.warn(
+                'Failed to set OpenCode model via ACP; relying on OPENCODE_CONFIG_CONTENT',
+                {
+                  sessionId: this.sessionId,
+                  modelId: rawModelId,
+                  error: setModelResult.error,
+                },
+              );
             }
           } catch (e) {
             logger.warn('Error setting OpenCode model via ACP session/set_model', {
@@ -4544,7 +4634,13 @@ export class ACPProvider extends BaseAgentProvider {
         providerId: caps.id,
         configModel: this.config.model,
         envModel: this.config.env?.OPENCODE_CONFIG_CONTENT
-          ? (() => { try { return JSON.parse(this.config.env.OPENCODE_CONFIG_CONTENT).model; } catch { return 'parse-error'; } })()
+          ? (() => {
+              try {
+                return JSON.parse(this.config.env.OPENCODE_CONFIG_CONTENT).model;
+              } catch {
+                return 'parse-error';
+              }
+            })()
           : undefined,
         modelAppliedVia: caps.modelFlag
           ? `CLI flag (${caps.modelFlag})`
@@ -5025,9 +5121,8 @@ export class ACPProvider extends BaseAgentProvider {
           // that parseCompoundModelId in createSession() resolves the correct provider.
           // modelId here is the raw slug — re-compose the compound form.
           const defaultProvider = getDefaultProviderId();
-          this.config.model = caps.id !== defaultProvider
-            ? createCompoundModelId(caps.id, modelId)
-            : modelId;
+          this.config.model =
+            caps.id !== defaultProvider ? createCompoundModelId(caps.id, modelId) : modelId;
           const providerEnv = buildProviderEnv(caps.id, modelId);
           if (Object.keys(providerEnv).length > 0) {
             this.config.env = { ...(this.config.env || {}), ...providerEnv };
@@ -6033,6 +6128,7 @@ export class ACPProvider extends BaseAgentProvider {
             this.config.model,
             this.providerCapabilities.id,
             errorData,
+            this.config.workspaceId,
           );
           const sid = this.frontendSessionId || callbackSessionId;
           const cb = this.streamingCallbacks.get(sid);
@@ -6957,14 +7053,18 @@ export class ACPProvider extends BaseAgentProvider {
               resolve();
             } else {
               // No streaming activity at all — agent is stuck, reject to trigger error handling
-              logger.error('Prompt response timeout with no streaming activity - agent appears stuck', {
-                requestId: request.id,
-                callbackSessionId,
-                timeoutMs,
-                lastActivityTime: callbacks?.lastActivityTime,
-              });
+              logger.error(
+                'Prompt response timeout with no streaming activity - agent appears stuck',
+                {
+                  requestId: request.id,
+                  callbackSessionId,
+                  timeoutMs,
+                  lastActivityTime: callbacks?.lastActivityTime,
+                },
+              );
 
-              const errorMessage = 'Agent did not respond within the expected time. The connection may have been lost.';
+              const errorMessage =
+                'Agent did not respond within the expected time. The connection may have been lost.';
               if (callbacks?.onError) {
                 callbacks.onError(new Error(errorMessage));
               }
@@ -7129,11 +7229,14 @@ export class ACPProvider extends BaseAgentProvider {
 
                         if (isBackground) {
                           // AUTO-RETRY: For background agents, retry automatically instead of requiring manual resend
-                          logger.info('Auto-retrying message after session-loss recovery (background agent)', {
-                            newSessionId: this.sessionId,
-                            messageCount: messages.length,
-                            hasOptions: !!options,
-                          });
+                          logger.info(
+                            'Auto-retrying message after session-loss recovery (background agent)',
+                            {
+                              newSessionId: this.sessionId,
+                              messageCount: messages.length,
+                              hasOptions: !!options,
+                            },
+                          );
 
                           // Clear pendingRetry to prevent double-retry from stderr handler
                           this.pendingRetry = undefined;
@@ -7171,6 +7274,7 @@ export class ACPProvider extends BaseAgentProvider {
                           this.config.model,
                           this.providerCapabilities.id,
                           errorData,
+                          this.config.workspaceId,
                         );
                         const completionSessionId = this.frontendSessionId || callbackSessionId;
                         const callbacks = this.streamingCallbacks.get(completionSessionId);
@@ -7188,6 +7292,7 @@ export class ACPProvider extends BaseAgentProvider {
                         this.config.model,
                         this.providerCapabilities.id,
                         errorData,
+                        this.config.workspaceId,
                       );
                       const completionSessionId = this.frontendSessionId || callbackSessionId;
                       const callbacks = this.streamingCallbacks.get(completionSessionId);
@@ -7249,13 +7354,16 @@ export class ACPProvider extends BaseAgentProvider {
 
                         if (isBackground) {
                           // AUTO-RETRY: For background agents, retry automatically with truncated history
-                          logger.info('Auto-retrying message after 413 recovery (background agent)', {
-                            newSessionId: this.sessionId,
-                            nextHistoryBudget,
-                            contextRecoveryCount: this.contextTooLargeRecoveryCount,
-                            messageCount: messages.length,
-                            hasOptions: !!options,
-                          });
+                          logger.info(
+                            'Auto-retrying message after 413 recovery (background agent)',
+                            {
+                              newSessionId: this.sessionId,
+                              nextHistoryBudget,
+                              contextRecoveryCount: this.contextTooLargeRecoveryCount,
+                              messageCount: messages.length,
+                              hasOptions: !!options,
+                            },
+                          );
 
                           // Clear pendingRetry to prevent double-retry from stderr handler
                           this.pendingRetry = undefined;
@@ -7286,7 +7394,9 @@ export class ACPProvider extends BaseAgentProvider {
                             );
                           }
                           reject(
-                            new Error('Conversation was too large. Please send your message again.'),
+                            new Error(
+                              'Conversation was too large. Please send your message again.',
+                            ),
                           );
                         }
                       } else {
@@ -7297,6 +7407,7 @@ export class ACPProvider extends BaseAgentProvider {
                           this.config.model,
                           this.providerCapabilities.id,
                           errorData,
+                          this.config.workspaceId,
                         );
                         const completionSessionId = this.frontendSessionId || callbackSessionId;
                         const callbacks = this.streamingCallbacks.get(completionSessionId);
@@ -7316,6 +7427,7 @@ export class ACPProvider extends BaseAgentProvider {
                         this.config.model,
                         this.providerCapabilities.id,
                         errorData,
+                        this.config.workspaceId,
                       );
                       const completionSessionId = this.frontendSessionId || callbackSessionId;
                       const callbacks = this.streamingCallbacks.get(completionSessionId);
@@ -7331,7 +7443,10 @@ export class ACPProvider extends BaseAgentProvider {
                 // For background agents, auto-retry with exponential backoff
                 // For interactive agents, show a user-friendly error message
                 if (
-                  isTransientPromptError(rawErrorMessage, errorData as { apiStatus?: string; httpStatus?: number } | undefined) &&
+                  isTransientPromptError(
+                    rawErrorMessage,
+                    errorData as { apiStatus?: string; httpStatus?: number } | undefined,
+                  ) &&
                   this.transientRetryAttempts < this.MAX_TRANSIENT_RETRY_ATTEMPTS
                 ) {
                   this.transientRetryAttempts++;
@@ -7373,10 +7488,13 @@ export class ACPProvider extends BaseAgentProvider {
                         resolveStream();
                       } catch (retryError: unknown) {
                         logger.error('Auto-retry after transient error failed', {
-                          error: retryError instanceof Error ? retryError.message : String(retryError),
+                          error:
+                            retryError instanceof Error ? retryError.message : String(retryError),
                           attempt: this.transientRetryAttempts,
                         });
-                        rejectStream(retryError instanceof Error ? retryError : new Error(String(retryError)));
+                        rejectStream(
+                          retryError instanceof Error ? retryError : new Error(String(retryError)),
+                        );
                       }
                     }, retryDelayMs);
                   } else {
@@ -7385,11 +7503,17 @@ export class ACPProvider extends BaseAgentProvider {
                     const callbacks = this.streamingCallbacks.get(completionSessionId);
                     if (callbacks?.onError) {
                       callbacks.onError(
-                        new Error('Connection to the AI service was temporarily lost. Please try again.'),
+                        new Error(
+                          'Connection to the AI service was temporarily lost. Please try again.',
+                        ),
                       );
                     }
                     this.cleanupStreamingCallback(completionSessionId);
-                    reject(new Error('Connection to the AI service was temporarily lost. Please try again.'));
+                    reject(
+                      new Error(
+                        'Connection to the AI service was temporarily lost. Please try again.',
+                      ),
+                    );
                   }
                   return;
                 }
@@ -7403,7 +7527,12 @@ export class ACPProvider extends BaseAgentProvider {
                 }
 
                 // Reset transient retry counter on non-transient errors
-                if (!isTransientPromptError(rawErrorMessage, errorData as { apiStatus?: string; httpStatus?: number } | undefined)) {
+                if (
+                  !isTransientPromptError(
+                    rawErrorMessage,
+                    errorData as { apiStatus?: string; httpStatus?: number } | undefined,
+                  )
+                ) {
                   this.transientRetryAttempts = 0;
                 }
 
@@ -7414,6 +7543,7 @@ export class ACPProvider extends BaseAgentProvider {
                   this.config.model,
                   this.providerCapabilities.id,
                   errorData,
+                  this.config.workspaceId,
                 );
 
                 logger.error('Prompt response returned error from agent', {
@@ -8036,16 +8166,18 @@ export class ACPProvider extends BaseAgentProvider {
             // persistence completes before cleanup proceeds.
             if (callbacks.onComplete) {
               const messageId = unifiedIdService.generateMessageId();
-              await Promise.resolve(callbacks.onComplete({
-                id: messageId,
-                role: 'assistant',
-                content: '',
-                contentBlocks: [],
-                metadata: {
-                  stopReason: 'cancelled',
-                },
-                timestamp: new Date().toISOString(),
-              }));
+              await Promise.resolve(
+                callbacks.onComplete({
+                  id: messageId,
+                  role: 'assistant',
+                  content: '',
+                  contentBlocks: [],
+                  metadata: {
+                    stopReason: 'cancelled',
+                  },
+                  timestamp: new Date().toISOString(),
+                }),
+              );
             }
 
             logger.info(
@@ -8585,10 +8717,13 @@ export class ACPProvider extends BaseAgentProvider {
       this.sshConnectionId &&
       !sshManager.isConnected(this.sshConnectionId)
     ) {
-      logger.info('Remote workspace SSH disconnection detected in handleProcessExit — entering reconnection flow', {
-        connectionId: this.sshConnectionId,
-        workspaceId: this.config.workspaceId,
-      });
+      logger.info(
+        'Remote workspace SSH disconnection detected in handleProcessExit — entering reconnection flow',
+        {
+          connectionId: this.sshConnectionId,
+          workspaceId: this.config.workspaceId,
+        },
+      );
 
       this.isReconnecting = true;
       this.reconnectRemoteAgent()
@@ -8597,9 +8732,12 @@ export class ACPProvider extends BaseAgentProvider {
           logger.info('SSH reconnection from handleProcessExit successful');
         })
         .catch((err) => {
-          logger.error('SSH reconnection from handleProcessExit failed — falling through to full restart', {
-            error: (err as Error).message,
-          });
+          logger.error(
+            'SSH reconnection from handleProcessExit failed — falling through to full restart',
+            {
+              error: (err as Error).message,
+            },
+          );
           this.isReconnecting = false;
 
           // Clean up SSH connection
