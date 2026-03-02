@@ -1185,4 +1185,100 @@ describe('SidebarChangesPanel', () => {
       });
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PR AUTO-DISCOVERY TESTS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe('PR Auto-Discovery', () => {
+    let refreshPRStatusMock: Mock;
+
+    beforeEach(async () => {
+      const prStatusService = await import('$features/git-tracking/pr-status.service');
+      refreshPRStatusMock = prStatusService.refreshPRStatus as Mock;
+
+      // Enable GitHub auth for discovery tests
+      const { githubAuthStore } = await import(
+        '$features/github-auth/renderer/github-auth.store.svelte'
+      );
+      (githubAuthStore as any).state.isAuthenticated = true;
+    });
+
+    afterEach(async () => {
+      // Reset GitHub auth
+      const { githubAuthStore } = await import(
+        '$features/github-auth/renderer/github-auth.store.svelte'
+      );
+      (githubAuthStore as any).state.isAuthenticated = false;
+    });
+
+    it('triggers PR discovery when workspace has pushed commits and no active PR', async () => {
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+      mockFileTrackingStore.commits = [
+        makeCommit({ hash: 'abc123', message: 'pushed commit', isPushed: true }),
+      ];
+
+      await renderPanel();
+
+      await waitFor(() => {
+        expect(refreshPRStatusMock).toHaveBeenCalledWith('ws-1', { force: false });
+      });
+    });
+
+    it('does not trigger PR discovery when there are no pushed commits', async () => {
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+      mockFileTrackingStore.commits = [
+        makeCommit({ hash: 'abc123', message: 'local commit', isPushed: false }),
+      ];
+
+      await renderPanel();
+
+      // Give effects time to run
+      await new Promise((r) => setTimeout(r, 100));
+      expect(refreshPRStatusMock).not.toHaveBeenCalled();
+    });
+
+    it('does not trigger PR discovery when GitHub is not authenticated', async () => {
+      const { githubAuthStore } = await import(
+        '$features/github-auth/renderer/github-auth.store.svelte'
+      );
+      (githubAuthStore as any).state.isAuthenticated = false;
+
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+      mockFileTrackingStore.commits = [
+        makeCommit({ hash: 'abc123', message: 'pushed commit', isPushed: true }),
+      ];
+
+      await renderPanel();
+
+      await new Promise((r) => setTimeout(r, 100));
+      expect(refreshPRStatusMock).not.toHaveBeenCalled();
+    });
+
+    it('re-triggers PR discovery when workspace switches (resets tracked count)', async () => {
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+      mockFileTrackingStore.commits = [
+        makeCommit({ hash: 'abc123', message: 'pushed commit', isPushed: true }),
+      ];
+
+      const { rerender } = await renderPanel();
+
+      await waitFor(() => {
+        expect(refreshPRStatusMock).toHaveBeenCalledTimes(1);
+      });
+
+      // Switch to a different workspace with pushed commits
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace({ id: 'ws-2', branch: 'feature/other' }));
+      mockFileTrackingStore.currentWorkspaceId = 'ws-2';
+      mockFileTrackingStore.commits = [
+        makeCommit({ hash: 'def456', message: 'other push', isPushed: true }),
+      ];
+
+      await rerender({ workspaceId: 'ws-2' });
+
+      await waitFor(() => {
+        expect(refreshPRStatusMock).toHaveBeenCalledTimes(2);
+      });
+    });
+  });
 });

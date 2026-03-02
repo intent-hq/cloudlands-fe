@@ -933,38 +933,45 @@
     }
   });
 
-  // Track if we've already triggered PR discovery for this workspace
-  let hasTriggeredPRDiscovery = $state(false);
+  // Track the last pushed commit count we triggered discovery for.
+  // When pushed commits increase (e.g., agent pushes), we re-trigger discovery.
+  // This is more robust than a one-shot boolean because it detects new pushes
+  // that may have created a PR (via agent, CLI, GitHub website, etc.).
+  let lastDiscoveredPushedCount = $state(0);
 
   // Reset discovery tracking when workspace changes
   $effect(() => {
     // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     workspaceId; // Dependency
-    hasTriggeredPRDiscovery = false;
+    lastDiscoveredPushedCount = 0;
   });
 
-  // Automatically discover PRs when workspace loads with pushed commits but no active PR
-  // This ensures that PRs created externally (via GitHub website, CLI, etc.) are discovered
+  // Automatically discover PRs when workspace loads with pushed commits but no active PR.
+  // Re-triggers when pushed commit count changes (e.g., agent pushes new commits and creates a PR).
+  // Rate-limited by refreshPRStatus's built-in MIN_REFRESH_INTERVAL_MS (5s).
   $effect(() => {
-    // Only run once per workspace, after data has loaded
-    if (hasTriggeredPRDiscovery || !hasLoadedForWorkspace) return;
+    if (!hasLoadedForWorkspace) return;
 
     // Need pushed commits to check for PRs (indicates branch exists on remote)
-    if (pushedCommits.length === 0) return;
+    const currentPushedCount = pushedCommits.length;
+    if (currentPushedCount === 0) return;
 
-    // Skip if we already have an active PR
+    // Skip if we already have an active PR (PR status polling handles updates)
     if (workspace?.activePullRequest) return;
+
+    // Skip if pushed count hasn't changed (already discovered for this state)
+    if (currentPushedCount === lastDiscoveredPushedCount) return;
 
     // Check if GitHub is authenticated
     if (!githubAuthState.isAuthenticated) return;
 
-    // Mark as triggered to prevent multiple calls
-    hasTriggeredPRDiscovery = true;
+    // Mark as triggered for this pushed count to prevent duplicate calls
+    lastDiscoveredPushedCount = currentPushedCount;
 
     // Trigger PR discovery in background (don't await)
     logger.info('[SidebarChangesPanel] Auto-discovering PRs for workspace with pushed commits', {
       workspaceId,
-      pushedCommitsCount: pushedCommits.length,
+      pushedCommitsCount: currentPushedCount,
     });
     refreshPRStatus(workspaceId as WorkspaceId, { force: false }).catch((err) => {
       logger.warn('[SidebarChangesPanel] Auto PR discovery failed', err);
