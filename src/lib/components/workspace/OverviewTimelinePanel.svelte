@@ -120,10 +120,30 @@
   // Is the primary agent a Coordinator (spec-writer)?
   let isCoordinator = $derived(primaryAgent?.specialist === 'spec-writer');
 
+  // Set of all agent IDs (for checking if a parentAgentId refers to an agent in this workspace)
+  let agentIds = $derived(new Set(agents.map((a) => a.id)));
+
+  // IDs of agents that are delegated under another agent in this workspace
+  let delegatedAgentIds = $derived.by(() => {
+    const ids = new Set<string>();
+    for (const a of agents) {
+      if (a.parentAgentId && agentIds.has(a.parentAgentId)) {
+        ids.add(a.id);
+      }
+    }
+    return ids;
+  });
+
+  // Top-level agents: not background, not delegated under another agent
+  // Mirrors WorkspaceAgentsList's topLevelForegroundAgents filtering
+  let topLevelAgents = $derived(
+    agents.filter((a) => !a.isBackground && !delegatedAgentIds.has(a.id)),
+  );
+
   // Other agents: when coordinator, only show agents that are NOT delegated by coordinator
-  // and NOT background, OR are currently running
+  // and NOT background
   let otherAgents = $derived.by(() => {
-    const others = agents.filter((a) => a !== primaryAgent);
+    const others = agents.filter((a) => a !== primaryAgent && !a.isBackground);
     if (!isCoordinator || !primaryAgent) return others;
     // In coordinator mode, only show agents NOT delegated by the coordinator
     return others.filter((a) => a.parentAgentId !== primaryAgent.id);
@@ -336,7 +356,7 @@
         {/if}
       </div>
     </section>
-  {:else if agents.length > 0}
+  {:else if topLevelAgents.length > 0}
     <section class="bg-background/50 rounded-lg overflow-hidden">
       <div class="px-4 pt-3 pb-1">
         <button
@@ -352,14 +372,14 @@
       </div>
 
       <div class="px-2 pb-2 flex flex-col gap-0.5">
-        {#each agents.slice(0, 4) as agent}
+        {#each topLevelAgents.slice(0, 4) as agent}
           <AgentCard
             agentId={agent.id}
             selected={selectedAgentId === agent.id}
             onclick={() => onOpenAgent?.(agent.id)}
           />
         {/each}
-        {#if agents.length > 4}
+        {#if topLevelAgents.length > 4}
           <button
             class="text-[11px] text-muted-foreground/60 text-left px-2 py-0.5 flex items-center cursor-pointer"
             onclick={() => onSwitchTab?.('agents')}
