@@ -6,7 +6,7 @@
   import { identifyUser } from '$lib/services/analytics';
   import { modelStore } from '$lib/stores/model.store.svelte';
   import { createLogger } from '$lib/utils/client-logger';
-  import { MINIMUM_AUGGIE_VERSION } from '$shared/constants/auggie';
+  import { MINIMUM_AUGGIE_VERSION, type InstallErrorType } from '$shared/constants/auggie';
   import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
   import { ACP_PROVIDERS } from '$shared/config/provider-config';
   import type { ProviderAvailabilityResult } from '$features/providers/main/provider-availability.service';
@@ -48,7 +48,7 @@
   // Minimum time between status checks to prevent rapid re-checks and EAGAIN errors
   const STATUS_CHECK_DEBOUNCE_MS = 3000;
 
-  type InstallErrorType = 'permission' | 'missing_npm' | 'unknown';
+
 
   let status: AuggieStatus | null = $state(null);
   let loading = $state(true);

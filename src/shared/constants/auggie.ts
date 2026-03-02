@@ -13,3 +13,12 @@
  * is treated as meeting the 0.13.0 requirement.
  */
 export const MINIMUM_AUGGIE_VERSION = '0.13.0';
+
+/**
+ * Minimum required version of Node.js.
+ * Node.js 22+ is required for auggie CLI installation and operation.
+ */
+export const MINIMUM_NODE_VERSION = '22.0.0';
+
+/** Error types returned by the auggie install handler */
+export type InstallErrorType = 'permission' | 'missing_npm' | 'node_too_old' | 'unknown';

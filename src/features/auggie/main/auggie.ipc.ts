@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { MINIMUM_AUGGIE_VERSION } from '../../../shared/constants/auggie';
+import { MINIMUM_AUGGIE_VERSION, MINIMUM_NODE_VERSION } from '../../../shared/constants/auggie';
 import { execAsync, execAsyncWithRetry, execFileAsyncWithRetry } from '../../../shared/git/git-env';
 import { AUGGIE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
@@ -74,6 +74,139 @@ function meetsMinimumVersion(version: string, minimum: string = MINIMUM_AUGGIE_V
   const comparison = compareVersions(version, minimum);
   // If comparison is null (invalid version), assume it doesn't meet requirements
   return comparison !== null && comparison >= 0;
+}
+
+// ============================================================================
+// Node.js Version Check
+// ============================================================================
+
+/**
+ * Get common Node.js binary paths to search (platform-specific).
+ */
+function getNodePaths(): string[] {
+  const nodePaths: string[] = [];
+  if (process.platform === 'win32') {
+    const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+    nodePaths.push(
+      path.join(programFiles, 'nodejs', 'node.exe'),
+      path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'node.exe'),
+    );
+    const programFilesX86 = process.env['ProgramFiles(x86)'];
+    if (programFilesX86) {
+      nodePaths.push(path.join(programFilesX86, 'nodejs', 'node.exe'));
+    }
+    if (process.env.APPDATA) {
+      nodePaths.push(path.join(process.env.APPDATA, 'nvm', 'node.exe'));
+    }
+  } else {
+    nodePaths.push(
+      '/usr/local/bin/node',
+      '/usr/bin/node',
+      '/opt/homebrew/bin/node',
+      '/opt/homebrew/opt/node/bin/node',
+      path.join(os.homedir(), '.volta/bin/node'),
+      path.join(os.homedir(), '.fnm/aliases/default/bin/node'),
+      path.join(os.homedir(), '.asdf/shims/node'),
+      path.join(os.homedir(), 'n/bin/node'),
+      '/Applications/Node.app/Contents/MacOS/node',
+    );
+  }
+  return nodePaths;
+}
+
+/**
+ * Check the installed Node.js version.
+ * Returns the version string, path to the node binary, and whether it meets the minimum version.
+ */
+async function checkNodeVersion(): Promise<{
+  nodeVersion?: string;
+  nodePath?: string;
+  nodeVersionOk: boolean;
+}> {
+  const nodePaths = getNodePaths();
+
+  // Track the best non-qualifying result to report to the user
+  let bestFallback: { nodeVersion: string; nodePath: string; nodeVersionOk: false } | null = null;
+
+  // Try direct paths first
+  for (const testPath of nodePaths) {
+    if (existsSync(testPath)) {
+      try {
+        const { stdout } = await execFileAsyncWithRetry(testPath, ['--version'], { timeout: 5000 });
+        const version = (stdout || '').trim();
+        if (version) {
+          const versionOk = meetsMinimumVersion(version, MINIMUM_NODE_VERSION);
+          if (versionOk) {
+            return { nodeVersion: version, nodePath: testPath, nodeVersionOk: true };
+          }
+          // Save as fallback if we don't have one yet (first found = most likely the one the user knows about)
+          if (!bestFallback) {
+            bestFallback = { nodeVersion: version, nodePath: testPath, nodeVersionOk: false };
+          }
+        }
+      } catch (err) {
+        logger.debug(`Failed to check node at ${testPath}:`, err);
+      }
+    }
+  }
+
+  // Try nvm versions directory
+  try {
+    const nvmRoot = path.join(os.homedir(), '.nvm', 'versions', 'node');
+    if (existsSync(nvmRoot)) {
+      const entries = readdirSync(nvmRoot, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+
+      for (const versionDir of entries) {
+        const candidate = path.join(nvmRoot, versionDir, 'bin', 'node');
+        if (existsSync(candidate)) {
+          try {
+            const { stdout } = await execFileAsyncWithRetry(candidate, ['--version'], { timeout: 5000 });
+            const version = (stdout || '').trim();
+            if (version) {
+              const versionOk = meetsMinimumVersion(version, MINIMUM_NODE_VERSION);
+              if (versionOk) {
+                return { nodeVersion: version, nodePath: candidate, nodeVersionOk: true };
+              }
+              if (!bestFallback) {
+                bestFallback = { nodeVersion: version, nodePath: candidate, nodeVersionOk: false };
+              }
+            }
+          } catch (err) {
+            logger.debug(`Failed to check nvm node at ${candidate}:`, err);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    logger.debug('Failed to scan nvm directories', { error: err });
+  }
+
+  // Fallback: try `which node` / `where node`
+  try {
+    const whichCommand = process.platform === 'win32' ? 'where node' : 'which node';
+    const { stdout: foundPath } = await execAsync(whichCommand, { timeout: 5000 });
+    const resolvedPath = foundPath.trim().split(/\r?\n/)[0];
+    if (resolvedPath) {
+      const { stdout } = await execFileAsyncWithRetry(resolvedPath, ['--version'], { timeout: 5000 });
+      const version = (stdout || '').trim();
+      if (version) {
+        const versionOk = meetsMinimumVersion(version, MINIMUM_NODE_VERSION);
+        if (versionOk) {
+          return { nodeVersion: version, nodePath: resolvedPath, nodeVersionOk: true };
+        }
+        if (!bestFallback) {
+          bestFallback = { nodeVersion: version, nodePath: resolvedPath, nodeVersionOk: false };
+        }
+      }
+    }
+  } catch (err) {
+    logger.debug('Node not found via which/where', { error: err });
+  }
+
+  return bestFallback ?? { nodeVersionOk: false };
 }
 
 // ============================================================================
@@ -733,14 +866,40 @@ export function setupAuggieIPC() {
       versionOk: boolean;
       minimumVersion: string;
       authDetails?: string;
+      nodeVersion?: string;
+      nodePath?: string;
+      nodeVersionOk: boolean;
     } = {
       installed: false,
       authenticated: false,
       versionOk: false,
       minimumVersion: MINIMUM_AUGGIE_VERSION,
+      nodeVersionOk: false,
     };
 
     try {
+      // Check Node.js version (independent of auggie status, needed even when auggie is not installed)
+      try {
+        const nodeResult = await checkNodeVersion();
+        status.nodeVersion = nodeResult.nodeVersion;
+        status.nodePath = nodeResult.nodePath;
+        status.nodeVersionOk = nodeResult.nodeVersionOk;
+        if (!status.nodeVersionOk) {
+          if (status.nodeVersion) {
+            logger.warn('Node.js version is below minimum required', {
+              current: status.nodeVersion,
+              minimum: MINIMUM_NODE_VERSION,
+            });
+          } else {
+            logger.warn('Node.js not found on system', {
+              minimum: MINIMUM_NODE_VERSION,
+            });
+          }
+        }
+      } catch (error) {
+        logger.debug('Failed to check Node.js version', { error: (error as Error).message });
+      }
+
       // Check installation by running --version
       try {
         const { stdout, stderr } = await executeAuggieCommand('--version', { timeout: 8000 });
@@ -849,6 +1008,23 @@ export function setupAuggieIPC() {
   // Install auggie using npm
   ipcMain.handle(AUGGIE_CHANNELS.INSTALL, async () => {
     try {
+      // Pre-check: ensure Node.js 22+ is available before attempting install
+      const nodeCheck = await checkNodeVersion();
+      if (!nodeCheck.nodeVersionOk) {
+        const versionInfo = nodeCheck.nodeVersion
+          ? ` (found ${nodeCheck.nodeVersion})`
+          : ' (not found)';
+        logger.warn('Node.js version check failed before install', {
+          version: nodeCheck.nodeVersion,
+          path: nodeCheck.nodePath,
+        });
+        return {
+          success: false,
+          error: `Node.js ${MINIMUM_NODE_VERSION.split('.')[0]}+ is required to install auggie${versionInfo}. Please install Node.js ${MINIMUM_NODE_VERSION.split('.')[0]} or later from https://nodejs.org`,
+          errorType: nodeCheck.nodeVersion ? 'node_too_old' : 'missing_npm',
+        };
+      }
+
       logger.info('Installing auggie via npm');
 
       // Try to find npm in common locations - expanded list (platform-specific)

@@ -18,7 +18,11 @@
   import { track } from '$lib/services/analytics';
   import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
   import { ACP_PROVIDERS } from '$shared/config/provider-config';
-  import { MINIMUM_AUGGIE_VERSION } from '$shared/constants/auggie';
+  import {
+    MINIMUM_AUGGIE_VERSION,
+    MINIMUM_NODE_VERSION,
+    type InstallErrorType,
+  } from '$shared/constants/auggie';
   import { modelStore } from '$lib/stores/model.store.svelte';
   import type { ProviderAvailabilityResult } from '$features/providers/main/provider-availability.service';
   import {
@@ -28,8 +32,8 @@
     faPaste,
     faArrowUpRightFromSquare,
     faArrowUp,
-    faTerminal,
     faArrowRight,
+    faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
@@ -85,13 +89,15 @@
     version?: string;
     versionOk: boolean;
     minimumVersion: string;
+    nodeVersion?: string;
+    nodePath?: string;
+    nodeVersionOk: boolean;
   };
   let auggieStatus: AuggieStatus | null = $state(null);
   let actionInProgress = $state(false);
   let hasLoadedOnce = $state(false); // Track if we've done initial load
 
   // Install error handling
-  type InstallErrorType = 'permission' | 'missing_npm' | 'unknown';
   let installError: string | null = $state(null);
   let installErrorType: InstallErrorType | null = $state(null);
   let showManualInstall = $state(false);
@@ -675,6 +681,24 @@
             <span>Multiple AI model provider selection & use</span>
           </li>
         </ul>
+
+        <!-- Node.js version warning -->
+        {#if auggieStatus && auggieStatus.nodeVersionOk === false}
+          <div
+            class="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-md text-amber-600 dark:text-amber-400 mt-3"
+          >
+            <Fa icon={faTriangleExclamation} class="w-4 h-4 flex-shrink-0" />
+            <span class="text-xs">
+              {#if auggieStatus.nodeVersion}
+                Node.js {MINIMUM_NODE_VERSION}+ is required to use Auggie. You have {auggieStatus.nodeVersion}
+                installed.
+              {:else}
+                Node.js {MINIMUM_NODE_VERSION}+ is required to use Auggie. Node.js was not found on
+                your system.
+              {/if}
+            </span>
+          </div>
+        {/if}
       </div>
 
       <!-- Manual install fallback (shown when auto-install fails) -->
@@ -688,11 +712,36 @@
             <p class="text-xs text-subtle">
               Try running with sudo or fix npm permissions.
             </p>
+          {:else if installErrorType === 'node_too_old'}
+            <p class="text-xs text-muted-foreground">
+              Update <a
+                href="https://nodejs.org"
+                class="underline text-primary"
+                onclick={(e) => {
+                  e.preventDefault();
+                  const wsId = workspaceStore.current?.id;
+                  if (wsId)
+                    handleLink('https://nodejs.org', {
+                      workspaceId: wsId as WorkspaceId,
+                      event: e,
+                    });
+                }}>Node.js</a
+              > to version {MINIMUM_NODE_VERSION.split('.')[0]} or later.
+            </p>
           {:else if installErrorType === 'missing_npm'}
             <p class="text-xs text-subtle">
-              Install <a href="https://nodejs.org" class="underline text-primary"
-                onclick={(e) => { e.preventDefault(); const wsId = workspaceStore.current?.id; if (wsId) handleLink('https://nodejs.org', { workspaceId: wsId as WorkspaceId, event: e }); }}
-                >Node.js</a
+              Install <a
+                href="https://nodejs.org"
+                class="underline text-primary"
+                onclick={(e) => {
+                  e.preventDefault();
+                  const wsId = workspaceStore.current?.id;
+                  if (wsId)
+                    handleLink('https://nodejs.org', {
+                      workspaceId: wsId as WorkspaceId,
+                      event: e,
+                    });
+                }}>Node.js</a
               > first.
             </p>
           {/if}
