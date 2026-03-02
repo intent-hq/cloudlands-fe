@@ -269,17 +269,22 @@
 
         // Register this webview for CDP access (browser:exec)
         if (tabId && webviewRef) {
-          const webContentsId = webviewRef.getWebContentsId();
-          logger.info('Registering browser tab for CDP', { tabId, webContentsId });
-          window.electronAPI
-            ?.invoke('browser:register-tab', { tabId, webContentsId })
-            .catch((err) => {
-              logger.error('Failed to register browser tab for CDP', {
-                tabId,
-                webContentsId,
-                error: err,
+          try {
+            const webContentsId = webviewRef.getWebContentsId();
+            logger.info('Registering browser tab for CDP', { tabId, webContentsId });
+            window.electronAPI
+              ?.invoke('browser:register-tab', { tabId, webContentsId })
+              .catch((err) => {
+                logger.error('Failed to register browser tab for CDP', {
+                  tabId,
+                  webContentsId,
+                  error: err,
+                });
               });
-            });
+          } catch {
+            // WebView may have been destroyed between dom-ready and callback execution
+            logger.debug('Failed to get webContentsId for CDP registration', { tabId });
+          }
         }
       };
       webviewRef.addEventListener('dom-ready', handleDomReady, { once: true });
@@ -314,35 +319,43 @@
       const isMod = e.metaKey || e.ctrlKey;
 
       // Only handle shortcuts when this browser panel is focused
-      if (focusRef.current) {
-        // Cmd+[ / Ctrl+[ - Go back in browser history
-        if (isMod && e.key === '[' && !e.shiftKey && !e.altKey) {
-          if (webviewRef?.canGoBack?.()) {
-            e.preventDefault();
-            e.stopPropagation();
-            goBack();
-            return;
+      if (focusRef.current && webviewReady && webviewRef) {
+        try {
+          // Cmd+[ / Ctrl+[ - Go back in browser history
+          if (isMod && e.key === '[' && !e.shiftKey && !e.altKey) {
+            if (webviewRef.canGoBack?.()) {
+              e.preventDefault();
+              e.stopPropagation();
+              goBack();
+              return;
+            }
           }
-        }
 
-        // Cmd+] / Ctrl+] - Go forward in browser history
-        if (isMod && e.key === ']' && !e.shiftKey && !e.altKey) {
-          if (webviewRef?.canGoForward?.()) {
-            e.preventDefault();
-            e.stopPropagation();
-            goForward();
-            return;
+          // Cmd+] / Ctrl+] - Go forward in browser history
+          if (isMod && e.key === ']' && !e.shiftKey && !e.altKey) {
+            if (webviewRef.canGoForward?.()) {
+              e.preventDefault();
+              e.stopPropagation();
+              goForward();
+              return;
+            }
           }
+        } catch {
+          // WebView may have been detached between the guard check and method call
         }
       }
 
       // Alt+Arrow shortcuts work regardless of focus
       if (e.altKey && e.key === 'ArrowLeft' && !isInInput) {
-        e.preventDefault();
-        goBack();
+        if (webviewReady && webviewRef) {
+          e.preventDefault();
+          goBack();
+        }
       } else if (e.altKey && e.key === 'ArrowRight' && !isInInput) {
-        e.preventDefault();
-        goForward();
+        if (webviewReady && webviewRef) {
+          e.preventDefault();
+          goForward();
+        }
       }
 
       // Cmd+R / Ctrl+R / F5 - Refresh browser when this panel is focused
@@ -362,15 +375,19 @@
     // Listen for zoom events from main process (routed via +layout.svelte)
     // Only the focused browser panel should handle these
     const handleBrowserZoom = (e: Event) => {
-      if (!focusRef.current || !webviewRef) return;
-      const action = (e as CustomEvent).detail?.action;
-      const currentZoom = webviewRef.getZoomLevel?.() ?? 0;
-      if (action === 'in') {
-        webviewRef.setZoomLevel?.(currentZoom + 0.5);
-      } else if (action === 'out') {
-        webviewRef.setZoomLevel?.(currentZoom - 0.5);
-      } else if (action === 'reset') {
-        webviewRef.setZoomLevel?.(0);
+      if (!focusRef.current || !webviewRef || !webviewReady) return;
+      try {
+        const action = (e as CustomEvent).detail?.action;
+        const currentZoom = webviewRef.getZoomLevel?.() ?? 0;
+        if (action === 'in') {
+          webviewRef.setZoomLevel?.(currentZoom + 0.5);
+        } else if (action === 'out') {
+          webviewRef.setZoomLevel?.(currentZoom - 0.5);
+        } else if (action === 'reset') {
+          webviewRef.setZoomLevel?.(0);
+        }
+      } catch {
+        // WebView not yet attached to DOM
       }
     };
     window.addEventListener('browser:zoom', handleBrowserZoom);
@@ -521,9 +538,14 @@
   }
 
   function updateNavigationState() {
-    if (webviewRef) {
-      canGoBack = webviewRef.canGoBack?.() ?? false;
-      canGoForward = webviewRef.canGoForward?.() ?? false;
+    if (webviewRef && webviewReady) {
+      try {
+        canGoBack = webviewRef.canGoBack?.() ?? false;
+        canGoForward = webviewRef.canGoForward?.() ?? false;
+      } catch {
+        canGoBack = false;
+        canGoForward = false;
+      }
     }
   }
 
@@ -584,14 +606,24 @@
   }
 
   function goBack() {
-    if (webviewRef?.canGoBack?.()) {
-      webviewRef.goBack();
+    if (!webviewReady || !webviewRef) return;
+    try {
+      if (webviewRef.canGoBack?.()) {
+        webviewRef.goBack();
+      }
+    } catch {
+      // WebView not yet attached to DOM
     }
   }
 
   function goForward() {
-    if (webviewRef?.canGoForward?.()) {
-      webviewRef.goForward();
+    if (!webviewReady || !webviewRef) return;
+    try {
+      if (webviewRef.canGoForward?.()) {
+        webviewRef.goForward();
+      }
+    } catch {
+      // WebView not yet attached to DOM
     }
   }
 
@@ -599,9 +631,13 @@
     // Only reload if webview is ready (dom-ready has fired)
     // Otherwise we get: "The WebView must be attached to the DOM and the dom-ready event emitted before this method can be called"
     if (!webviewReady || !webviewRef) return;
-    webviewRef.reload?.();
-    // Re-focus the webview after reload to maintain focus state
-    webviewRef.focus?.();
+    try {
+      webviewRef.reload?.();
+      // Re-focus the webview after reload to maintain focus state
+      webviewRef.focus?.();
+    } catch {
+      // WebView not yet attached to DOM
+    }
   }
 
   function openExternal() {
@@ -611,11 +647,15 @@
   }
 
   function toggleDevTools() {
-    if (!webviewRef) return;
-    if (webviewRef.isDevToolsOpened?.()) {
-      webviewRef.closeDevTools?.();
-    } else {
-      webviewRef.openDevTools?.();
+    if (!webviewRef || !webviewReady) return;
+    try {
+      if (webviewRef.isDevToolsOpened?.()) {
+        webviewRef.closeDevTools?.();
+      } else {
+        webviewRef.openDevTools?.();
+      }
+    } catch {
+      // WebView not yet attached to DOM
     }
   }
 
