@@ -21,6 +21,10 @@ import { clearDeferredResults } from '$features/agent/deferred-results-cache';
 import { cleanupPRStatusForWorkspace } from '$features/git-tracking/pr-status.service';
 import { invalidateAgentCache } from '$lib/utils/agent-loader';
 import { unifiedStateStore } from '$features/agent/services/unified-state-store';
+import { clearTransientUIStore } from './transient-ui-state.store.svelte';
+import { lineChangesStore } from '$features/line-changes/line-changes.store.svelte';
+import { workspaceStorageManager } from './workspace-storage-manager';
+import { firstVisitManager } from './first-visit-manager.svelte';
 
 const logger = new Logger('WorkspaceStore');
 
@@ -665,6 +669,19 @@ class WorkspaceStore {
         import('./workspace-unified-state.svelte').then(({ disposeWorkspaceState }) => {
           disposeWorkspaceState(id);
         });
+
+        // Clean up remaining workspace-scoped renderer state
+        try {
+          clearTransientUIStore(id);
+          lineChangesStore.clearWorkspaceStats(id);
+          workspaceStorageManager.clearState(id);
+          firstVisitManager.cleanupWorkspace(id);
+        } catch (cleanupErr) {
+          logger.warn('Non-critical cleanup error during workspace deletion', {
+            workspaceId: id,
+            error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+          });
+        }
 
         // Track workspace deletion
         track('Deleted Workspace', {
