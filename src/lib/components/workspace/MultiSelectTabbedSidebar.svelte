@@ -439,7 +439,7 @@
         tasks: { total: 0, completed: 0, inProgress: 0, notStarted: 0 },
         files: { changed: 0, additions: 0, deletions: 0 },
         commits: { total: 0, unpushed: 0 },
-        pr: { hasOpen: false, hasMerged: false },
+        pr: { hasOpen: false, hasMerged: false, hasClosed: false },
       };
     return deriveWorkspaceStats(workspace);
   });

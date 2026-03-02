@@ -24,7 +24,7 @@ export interface WorkspacePhaseStats {
   tasks: { total: number; completed: number; inProgress: number; notStarted: number };
   files: { changed: number; additions: number; deletions: number };
   commits: { total: number; unpushed: number };
-  pr: { hasOpen: boolean; hasMerged: boolean; number?: number; url?: string };
+  pr: { hasOpen: boolean; hasMerged: boolean; hasClosed: boolean; number?: number; url?: string };
 }
 
 export const PHASE_META: Record<WorkspacePhase, { label: string; description: string }> = {
@@ -138,12 +138,16 @@ export function deriveWorkspaceStats(ws: Workspace): WorkspacePhaseStats {
     ws.prStatus === PullRequestStatus.Draft ||
     prs.some((p) => p.status === PullRequestStatus.Open || p.status === PullRequestStatus.Draft) ||
     !!ws.activePullRequest;
+  const hasClosed =
+    ws.prStatus === PullRequestStatus.Closed ||
+    prs.some((p) => p.status === PullRequestStatus.Closed);
   const activePR =
     prs.find(
       (p) =>
         p.status === PullRequestStatus.Open ||
         p.status === PullRequestStatus.Draft ||
-        p.status === PullRequestStatus.Merged,
+        p.status === PullRequestStatus.Merged ||
+        p.status === PullRequestStatus.Closed,
     ) || ws.activePullRequest;
   return {
     tasks: {
@@ -164,6 +168,7 @@ export function deriveWorkspaceStats(ws: Workspace): WorkspacePhaseStats {
     pr: {
       hasOpen,
       hasMerged,
+      hasClosed,
       number: activePR?.number,
       url: activePR?.url,
     },

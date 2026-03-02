@@ -627,24 +627,47 @@
           {/if}
 
           <!-- PR status -->
-          {#if stats.pr.hasOpen || stats.pr.hasMerged}
-            <div class="flex items-center gap-2 text-sm py-0.5">
-              <Fa icon={faCodePullRequest} size="xs" class="text-muted-foreground/30" />
-              {#if stats.pr.hasOpen && stats.pr.number}
-                <span class="text-muted-foreground/60 text-[11px]">PR #{stats.pr.number}</span>
-                <span
-                  class="text-emerald-500 font-medium text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10"
-                  >open</span
-                >
-              {:else if stats.pr.hasMerged}
-                <span class="text-muted-foreground/60 text-[11px]">PR merged</span>
-                <span
-                  class="text-purple-500 font-medium text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/10"
-                  >merged</span
-                >
+          <button
+            class="flex items-center gap-2 w-full text-left py-0.5 cursor-pointer hover:bg-muted/30 rounded transition-colors"
+            onclick={() => {
+              if (stats.pr.url) {
+                window.open(stats.pr.url, '_blank');
+              } else {
+                onSwitchTab?.('changes');
+              }
+            }}
+          >
+            <Fa
+              icon={faCodePullRequest}
+              size="xs"
+              class={stats.pr.hasMerged
+                ? 'text-purple-500/70'
+                : stats.pr.hasOpen
+                  ? 'text-emerald-500/70'
+                  : stats.pr.hasClosed
+                    ? 'text-red-500/70'
+                    : 'text-muted-foreground/30'}
+            />
+            <span class="text-[11px] text-muted-foreground/60 truncate">
+              {#if stats.pr.number}
+                PR #{stats.pr.number}
+              {:else}
+                Pull request
               {/if}
-            </div>
-          {/if}
+            </span>
+            {#if stats.pr.hasOpen || stats.pr.hasMerged || stats.pr.hasClosed}
+              <span
+                class="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0
+                  {stats.pr.hasMerged
+                    ? 'text-purple-500 bg-purple-500/10'
+                    : stats.pr.hasOpen
+                      ? 'text-emerald-500 bg-emerald-500/10'
+                      : 'text-red-500 bg-red-500/10'}"
+              >
+                {stats.pr.hasMerged ? 'merged' : stats.pr.hasOpen ? 'open' : 'closed'}
+              </span>
+            {/if}
+          </button>
         </div>
 
         <!-- View all changes button -->
