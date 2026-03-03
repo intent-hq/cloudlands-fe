@@ -1133,7 +1133,13 @@
             backendTerminal.workspaceId,
             'Setup',
           );
-          logger.info('[WorkspacePage] Added backend terminal to list', {
+
+          // Add to overlay store so it appears in the terminal tab bar
+          // This handles the case where the terminal:created event was missed
+          // (e.g., setup script terminal created before the workspace page mounted)
+          terminalOverlayStore.addTerminal(backendTerminal.id, 'Setup');
+
+          logger.info('[WorkspacePage] Added backend terminal to list and overlay', {
             terminalId: backendTerminal.id,
           });
         }
