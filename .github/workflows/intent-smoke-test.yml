@@ -20,6 +20,17 @@ on:
           - alpha
           - beta
           - stable
+  workflow_call:
+    inputs:
+      build_source:
+        description: 'Where to get the app build'
+        required: true
+        type: string
+      cdn_channel:
+        description: 'CDN channel (only used when build_source=cdn)'
+        required: false
+        default: 'alpha'
+        type: string
 
 concurrency:
   group: intent-smoke-test
