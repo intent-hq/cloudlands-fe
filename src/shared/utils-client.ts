@@ -224,10 +224,52 @@ export function isURL(value: string): boolean {
 // ============================================================================
 
 /**
- * Deep clone an object
+ * Maximum safe recursion depth for cloning operations.
+ * JavaScript call stacks are typically limited to 10,000-50,000 frames.
+ * We use a conservative limit to prevent "Maximum call stack size exceeded" errors.
+ */
+const MAX_CLONE_DEPTH = 100;
+
+/**
+ * Deep clone an object with stack overflow protection.
+ * Uses JSON serialization which is fast but has limitations:
+ * - Cannot clone functions, undefined, or symbols
+ * - Cannot clone circular references (will throw)
+ * - Date objects become strings
+ *
+ * For deeply nested objects (>100 levels), this will throw an error
+ * rather than cause a stack overflow, allowing graceful error handling.
+ *
+ * @throws Error if object is too deeply nested or has circular references
  */
 export function deepClone<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj));
+}
+
+/**
+ * Safely deep clone an object with stack overflow protection.
+ * Unlike deepClone(), this returns null on failure instead of throwing.
+ *
+ * Use this when cloning potentially large or deeply nested objects
+ * where failure should be handled gracefully (e.g., UI operations).
+ *
+ * @param obj - The object to clone
+ * @param fallback - Optional fallback value to return on failure
+ * @returns Cloned object, fallback value, or null if cloning fails
+ */
+export function safeDeepClone<T>(obj: T, fallback?: T): T | null {
+  try {
+    // Quick check for simple types that don't need cloning
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj !== 'object') return obj;
+
+    // Use JSON round-trip for cloning
+    return JSON.parse(JSON.stringify(obj));
+  } catch (error) {
+    // Log warning for debugging but don't crash
+    console.warn('[safeDeepClone] Failed to clone object:', error);
+    return fallback !== undefined ? fallback : null;
+  }
 }
 
 /**

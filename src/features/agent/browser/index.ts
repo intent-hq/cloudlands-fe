@@ -1029,7 +1029,40 @@ export class PersistenceService {
   private async doSaveSession(session: AgentSession, workspaceId: string): Promise<void> {
     try {
       // Ensure session is serializable for IPC
-      const serializableSession = JSON.parse(JSON.stringify(session));
+      // Use try-catch to handle "Maximum call stack size exceeded" errors
+      // that can occur with deeply nested message content blocks
+      let serializableSession: AgentSession;
+      try {
+        serializableSession = JSON.parse(JSON.stringify(session));
+      } catch (serializeError) {
+        // If serialization fails (e.g., stack overflow), try with truncated messages
+        agentProxiesLogger.warn('Session serialization failed, trying minimal save:', {
+          agentId: session.id,
+          messageCount: session.messages?.length,
+          error: serializeError instanceof Error ? serializeError.message : String(serializeError),
+        });
+
+        // Create a minimal session with just essential fields
+        serializableSession = {
+          ...session,
+          messages: session.messages?.slice(-50) || [], // Keep only last 50 messages
+        } as AgentSession;
+
+        try {
+          serializableSession = JSON.parse(JSON.stringify(serializableSession));
+        } catch (retryError) {
+          // If even truncated version fails, save without messages
+          agentProxiesLogger.error('Cannot serialize session even with truncation:', {
+            agentId: session.id,
+          });
+          serializableSession = {
+            ...session,
+            messages: [],
+          } as AgentSession;
+          serializableSession = JSON.parse(JSON.stringify(serializableSession));
+        }
+      }
+
       await invoke(PERSISTENCE_CHANNELS.SAVE_SESSION, {
         session: serializableSession,
         workspaceId,

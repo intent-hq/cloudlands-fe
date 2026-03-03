@@ -2746,7 +2746,31 @@ export class ChatService implements IDisposable {
     }
 
     // Deep clone messages to avoid reference issues
-    const clonedMessages: AgentMessage[] = JSON.parse(JSON.stringify(messagesToFork));
+    // Use try-catch to handle "Maximum call stack size exceeded" errors
+    // that can occur with deeply nested tool_use/tool_result content blocks
+    let clonedMessages: AgentMessage[];
+    try {
+      clonedMessages = JSON.parse(JSON.stringify(messagesToFork));
+    } catch (cloneError) {
+      logger.warn('Failed to clone messages for fork, attempting truncation:', {
+        messageCount: messagesToFork.length,
+        error: cloneError instanceof Error ? cloneError.message : String(cloneError),
+      });
+
+      // Try with fewer messages (last 50)
+      const truncatedMessages = messagesToFork.slice(-50);
+      try {
+        clonedMessages = JSON.parse(JSON.stringify(truncatedMessages));
+        logger.info('Successfully forked with truncated messages', {
+          originalCount: messagesToFork.length,
+          truncatedCount: clonedMessages.length,
+        });
+      } catch (retryError) {
+        // If even truncated version fails, start with empty messages
+        logger.error('Cannot clone messages even with truncation, starting fresh fork');
+        clonedMessages = [];
+      }
+    }
 
     // Generate fork name
     const baseName = sourceSession.name || 'Chat';

@@ -854,7 +854,36 @@
 
       // Clone messages to plain objects for IPC serialization
       // Svelte 5 proxies and reactive objects can't be cloned by Electron IPC
-      const plainMessages = JSON.parse(JSON.stringify(agentMessages));
+      // Use try-catch to handle "Maximum call stack size exceeded" errors
+      // that can occur with deeply nested tool_use/tool_result content blocks
+      let plainMessages: unknown[];
+      try {
+        plainMessages = JSON.parse(JSON.stringify(agentMessages));
+      } catch (cloneError) {
+        logger.warn('[ContentDrawer] Failed to serialize all messages, trying truncation:', {
+          messageCount: agentMessages.length,
+          error: cloneError instanceof Error ? cloneError.message : String(cloneError),
+        });
+
+        // Try with fewer messages (last 100)
+        const truncatedMessages = agentMessages.slice(-100);
+        try {
+          plainMessages = JSON.parse(JSON.stringify(truncatedMessages));
+          logger.info('[ContentDrawer] Exporting with truncated messages', {
+            originalCount: agentMessages.length,
+            exportedCount: plainMessages.length,
+          });
+        } catch (retryError) {
+          logger.error('[ContentDrawer] Cannot serialize messages for export', {
+            error: retryError instanceof Error ? retryError.message : String(retryError),
+          });
+          // Show user-friendly error
+          alert(
+            'Unable to export chat: The conversation is too large or contains complex data. Please try exporting a shorter section.',
+          );
+          return;
+        }
+      }
 
       const result = (await invoke(CHAT_EXPORT_CHANNELS.CHAT_TO_HTML, {
         messages: plainMessages,
@@ -864,7 +893,7 @@
       if (result.success) {
         logger.info('[ContentDrawer] Chat exported successfully', {
           filePath: result.filePath,
-          messageCount: agentMessages.length,
+          messageCount: plainMessages.length,
         });
       } else if (result.canceled) {
         logger.info('[ContentDrawer] Export canceled by user');
