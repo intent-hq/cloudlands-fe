@@ -4274,9 +4274,42 @@ export class ACPProvider extends BaseAgentProvider {
             '\n\nTo use OpenCode in Intent, make sure the OpenCode CLI is installed and accessible.';
         }
 
+        // Detect stale Node.js installations (e.g., Homebrew upgraded but old symlinks remain)
+        let staleNodeHint = '';
+        const stderrText = this.lastProcessExitInfo?.stderr?.join('\n') ?? '';
+        const exitCode = this.lastProcessExitInfo?.code ?? this.agentProcess?.exitCode;
+        const hasStaleNodeIndicators =
+          // ENOENT on Homebrew Cellar node paths — covers both Apple Silicon (/opt/homebrew) and Intel (/usr/local) prefixes
+          (/ENOENT/.test(stderrText) &&
+            /\/Cellar\/node\//.test(stderrText)) ||
+          // Cannot find module pointing to Cellar paths
+          (/Cannot find module/.test(stderrText) &&
+            /\/Cellar\/node\//.test(stderrText)) ||
+          // Exit code 254 with npm/npx-related errors (negative lookbehind-like pattern to exclude pnpm)
+          (exitCode === 254 &&
+            (/(?:^|[^p])npm/.test(stderrText) || /npx/.test(stderrText)));
+
+        if (hasStaleNodeIndicators) {
+          const isHomebrewRelated = /\/Cellar\/node\//.test(stderrText);
+          if (isHomebrewRelated) {
+            staleNodeHint =
+              '\n\nThis looks like a broken Node.js installation — npm/npx is referencing a Node.js path that no longer exists ' +
+              '(possibly from a Homebrew upgrade).\nTo fix this:\n' +
+              '• Run `brew reinstall node` to repair the Homebrew Node installation\n' +
+              '• Or if you use nvm/fnm, ensure your default Node version is set correctly\n' +
+              '• Then restart Intent';
+          } else {
+            staleNodeHint =
+              '\n\nThis looks like a broken Node.js installation.\nTo fix this:\n' +
+              '• Reinstall Node.js from https://nodejs.org\n' +
+              '• Or if you use a version manager (nvm, fnm, Volta), ensure your default Node version is set correctly\n' +
+              '• Then restart Intent';
+          }
+        }
+
         throw new Error(
           `Agent process died before initialization (provider: ${caps.id}, ${exitInfo})${commandHint}.` +
-            `${stderrHint}${providerHint}`,
+            `${stderrHint}${providerHint}${staleNodeHint}`,
         );
       }
     }
