@@ -87,6 +87,9 @@ class SidebarNavStore {
       288,
   );
 
+  /** Whether provider onboarding is active (hides sidebar nav) */
+  onboardingActive = $state(false);
+
   /** Draft prompt text preserved for the new workspace card */
   draftPrompt = $state('');
 
@@ -213,6 +216,7 @@ class SidebarNavStore {
   }
 
   togglePanel(item: SidebarNavItem) {
+    if (this.onboardingActive) return;
     if (this.panelItem === item) {
       this.closePanel();
     } else {
@@ -275,6 +279,15 @@ class SidebarNavStore {
       localStorage.setItem(VIEW_MODE_KEY, mode);
     } catch {
       // localStorage may be full or unavailable
+    }
+  }
+
+  // ── Onboarding ──
+
+  setOnboardingActive(value: boolean) {
+    this.onboardingActive = value;
+    if (value) {
+      this.closeAll();
     }
   }
 

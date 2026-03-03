@@ -28,6 +28,7 @@
   import { replaceState } from '$app/navigation';
   import { hasRunningAgents, getRunningAgentNames } from '$lib/utils/delete-warning-utils';
   import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';
+  import { sidebarNavStore } from '$lib/components/layout/sidebar-nav/sidebar-nav.store.svelte';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
 
   // Feature flag: mimic empty state for testing (set to true to test empty state UI)
@@ -230,6 +231,14 @@
   // Wait for workspaces to load before deciding — avoids flashing the panel for users who have spaces.
   // Only show after onboarding is complete.
   const showProviderPanel = $derived(!hasCompletedProviderSetup && isEmpty);
+
+  // Hide sidebar nav during provider onboarding
+  $effect(() => {
+    sidebarNavStore.setOnboardingActive(showProviderPanel);
+    return () => {
+      sidebarNavStore.setOnboardingActive(false);
+    };
+  });
 
   // Persist preferences when they change
   $effect(() => {

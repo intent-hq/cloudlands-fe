@@ -111,6 +111,7 @@
   let iconRefs = $state<Record<string, HTMLButtonElement | null>>({});
 </script>
 
+{#if !sidebarNavStore.onboardingActive}
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <nav class="group/nav sidebar-nav flex flex-col items-center pt-2 pb-1 gap-1 h-full shrink-0 w-13" aria-label="Global navigation">
   <!-- Top nav items -->
@@ -176,3 +177,4 @@
 
 <!-- Hover Card Portal -->
 <SidebarNavHoverCard {iconRefs} />
+{/if}

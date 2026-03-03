@@ -55,7 +55,7 @@
   }
 </script>
 
-{#if panelItem}
+{#if panelItem && !sidebarNavStore.onboardingActive}
   <!-- Outer wrapper animates width; inner content stays at full static width -->
   <div class="shrink-0 h-full overflow-hidden" transition:slide={{ axis: 'x', duration: 200 }}>
     <div class="sidebar-panel h-full flex flex-col relative" style="width: {panelWidth}px;" aria-label="Sidebar panel">
