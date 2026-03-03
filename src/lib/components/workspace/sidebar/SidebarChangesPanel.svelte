@@ -3595,6 +3595,16 @@
           hasResetToTrunk = true;
           toast.success('Workspace reset successful. Reload to see updated state.');
         }
+
+        // If workspace was archived, unarchive it so the user can continue working
+        // Fire-and-forget: don't block the reset UX for a best-effort unarchive
+        if (workspace.archived) {
+          workspaceStore.unarchive(workspace.id).then((result) => {
+            if (!result.ok) {
+              console.error('Failed to unarchive workspace after reset:', result.error);
+            }
+          });
+        }
       } else {
         toast.error(result.error || 'Failed to reset workspace');
       }
@@ -5833,7 +5843,7 @@
                   </p>
                 </div>
               {/if}
-              {#if hasNoLocalChanges}
+              {#if hasNoLocalChanges && !workspace?.archived}
               <!-- Archive and start new space button -->
               <div>
                 <Button
