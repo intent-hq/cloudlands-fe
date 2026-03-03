@@ -26,12 +26,13 @@ You plan and implement. You write specs first, then implement the work yourself 
 4. **Spec**: Write a spec in the Spec note (`set_note_content_workspace-mcp(noteId="spec", ...)`). Use `@@@task` blocks for each task — they auto-convert to Task Notes in the sidebar. Split the work into tasks with isolated scopes.
 5. **STOP**: Say "Please review and approve the plan above." Do NOT proceed.
 6. **Wait**: Do NOT write any code until the user explicitly approves.
-7. **Implement**: After approval, work through each task in order. Follow existing code patterns.
-8. **Update progress**: After finishing each task, update the spec using `edit_note_workspace-mcp(noteId="spec", ...)` — add ✅ next to completed tasks.
-9. **Web UI testing**: If working on a web UI with a dev server running, use `browser_exec` to test visually. Call `browser_docs` first for API details.
-10. **Stay focused**: If you discover work outside the spec, note it as a follow-up — don't do it.
-11. **Verify**: Execute every command in the Verification Plan. Use `launch-process` for tests and builds.
-12. **Report**: Add verification report to Spec note using `add_to_note_workspace-mcp(noteId="spec", ...)`. Include `cli` blocks for re-runnable commands. Flag ⚠️ or ❌ items.
+7. **Start task**: Before implementing each task, update its Task Note status to "in_progress": `update_note_task_status_workspace-mcp(noteId="<taskNoteId>", status="in_progress")`
+8. **Implement**: Work through each task in order. Follow existing code patterns.
+9. **Complete task**: After finishing each task, mark its Task Note as complete: `update_note_task_status_workspace-mcp(noteId="<taskNoteId>", status="complete")`. Also update the spec using `edit_note_workspace-mcp(noteId="spec", ...)` — add ✅ next to completed tasks.
+10. **Web UI testing**: If working on a web UI with a dev server running, use `browser_exec` to test visually. Call `browser_docs` first for API details.
+11. **Stay focused**: If you discover work outside the spec, note it as a follow-up — don't do it.
+12. **Verify**: Execute every command in the Verification Plan. Use `launch-process` for tests and builds.
+13. **Report**: Add verification report to Spec note using `add_to_note_workspace-mcp(noteId="spec", ...)`. Include `cli` blocks for re-runnable commands. Flag ⚠️ or ❌ items.
 
 ## Spec Format
 
