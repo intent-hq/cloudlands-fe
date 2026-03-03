@@ -1472,7 +1472,9 @@ export class AgentBackendHandler {
         if (!modelId.includes(':') && providerId !== getDefaultProviderId()) {
           modelId = createCompoundModelId(providerId, modelId);
           logger.info('Prefixed model with provider for context inheritance', {
-            agentId: request.agentId, providerId, modelId,
+            agentId: request.agentId,
+            providerId,
+            modelId,
           });
         }
 
@@ -1744,10 +1746,13 @@ export class AgentBackendHandler {
                       // Provider has dynamic models not in PROVIDER_MODEL_TIERS (e.g., opencode).
                       // Use 'default' to let the provider pick its own default model.
                       sessionModel = 'default';
-                      logger.info('Using provider default model for provider without tier mappings', {
-                        agentId: request.agentId,
-                        provider: sessionProvider,
-                      });
+                      logger.info(
+                        'Using provider default model for provider without tier mappings',
+                        {
+                          agentId: request.agentId,
+                          provider: sessionProvider,
+                        },
+                      );
                     }
                   }
 
@@ -2249,7 +2254,7 @@ export class AgentBackendHandler {
           // it indicates a regression or a code path that skipped resumeSession.
           logger.error(
             'Backend: No backend session found — user message will NOT be persisted to disk. ' +
-            'This is a data-loss risk. The session should have been resumed during provider creation.',
+              'This is a data-loss risk. The session should have been resumed during provider creation.',
             {
               agentId: request.agentId,
               messageId: userMessage.id,
@@ -2288,21 +2293,23 @@ export class AgentBackendHandler {
         const needsAgentRename = isRandomAgentName(agentName);
 
         // Only add instructions that are actually needed
+        // NOTE: Tool names include the MCP server suffix (e.g., _workspace-mcp) because
+        // that's how agents see them in their tool list
         if (needsWorkspaceRename && needsAgentRename) {
           namingInstructions = `<system>
-This workspace needs a title. Call \`set_workspace_title\` and \`set_agent_name\` as your first actions. These can be called in parallel with information-gathering.
+This workspace needs a title. Call \`set_workspace_title_workspace-mcp\` and \`set_agent_name_workspace-mcp\` as your first actions. These can be called in parallel with information-gathering.
 </system>
 
 `;
         } else if (needsWorkspaceRename) {
           namingInstructions = `<system>
-This workspace needs a title. Call \`set_workspace_title\` as your first action. This can be called in parallel with information-gathering.
+This workspace needs a title. Call \`set_workspace_title_workspace-mcp\` as your first action. This can be called in parallel with information-gathering.
 </system>
 
 `;
         } else if (needsAgentRename) {
           namingInstructions = `<system>
-Call \`set_agent_name\` to name yourself based on your task. This can be called in parallel with information-gathering.
+Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This can be called in parallel with information-gathering.
 </system>
 
 `;
@@ -3421,8 +3428,10 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
       // Determine cancellation trigger for diagnostics.
       // _stopTrigger is set by internal callers (lifecycle, programmatic stop, workspace deletion).
       // When absent, the call came from the renderer IPC (user action).
-      const trigger: string = (typeof validated === 'object' && validated?._stopTrigger) || 'user_action';
-      const triggerReason: string | undefined = typeof validated === 'object' ? validated?._stopReason : undefined;
+      const trigger: string =
+        (typeof validated === 'object' && validated?._stopTrigger) || 'user_action';
+      const triggerReason: string | undefined =
+        typeof validated === 'object' ? validated?._stopReason : undefined;
 
       // Look up workspaceId and sessionId from tracking maps for correlation
       const workspaceId = this.streamWorkspaceIds.get(agentId);
@@ -4628,9 +4637,10 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
     const windows = BrowserWindow.getAllWindows();
 
     // Normalize target IDs to a Set for O(1) lookup
-    const targetSet: Set<number> | undefined = targetWindowIds !== undefined
-      ? new Set(Array.isArray(targetWindowIds) ? targetWindowIds : [targetWindowIds])
-      : undefined;
+    const targetSet: Set<number> | undefined =
+      targetWindowIds !== undefined
+        ? new Set(Array.isArray(targetWindowIds) ? targetWindowIds : [targetWindowIds])
+        : undefined;
 
     // Use debug level for streaming channels to reduce log noise
     // Streaming can generate hundreds of chunks per response
@@ -5074,11 +5084,14 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
         const subscriptionService = getAgentEventSubscriptionService(workspaceId);
         subscriptionService.markAgentDeleted(agentId);
       } catch (err) {
-        logger.error('[AgentBackendHandler] Failed to mark agent as deleted in subscription service', {
-          agentId,
-          workspaceId,
-          error: err,
-        });
+        logger.error(
+          '[AgentBackendHandler] Failed to mark agent as deleted in subscription service',
+          {
+            agentId,
+            workspaceId,
+            error: err,
+          },
+        );
       }
     }
 
@@ -5246,7 +5259,8 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
       });
       return {
         success: false,
-        error: 'Queued messages are pending processing. Event delivery deferred until queue is drained.',
+        error:
+          'Queued messages are pending processing. Event delivery deferred until queue is drained.',
         errorCode: 'QUEUE_PENDING',
       };
     }
@@ -5934,7 +5948,11 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
       });
 
       // Notify frontend of queue update (workspace-scoped)
-      this.sendToRenderer('agent:queue:updated', { agentId, queue }, this.getWorkspaceWindowsForAgent(agentId));
+      this.sendToRenderer(
+        'agent:queue:updated',
+        { agentId, queue },
+        this.getWorkspaceWindowsForAgent(agentId),
+      );
 
       return { success: true, queuedMessage };
     } catch (error) {
@@ -5967,7 +5985,11 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
       logger.info('Queued message edited', { agentId, messageId });
 
       // Notify frontend of queue update (workspace-scoped)
-      this.sendToRenderer('agent:queue:updated', { agentId, queue }, this.getWorkspaceWindowsForAgent(agentId));
+      this.sendToRenderer(
+        'agent:queue:updated',
+        { agentId, queue },
+        this.getWorkspaceWindowsForAgent(agentId),
+      );
 
       return { success: true };
     } catch (error) {
@@ -6006,7 +6028,11 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
       logger.info('Queued message removed', { agentId, messageId });
 
       // Notify frontend of queue update (workspace-scoped)
-      this.sendToRenderer('agent:queue:updated', { agentId, queue }, this.getWorkspaceWindowsForAgent(agentId));
+      this.sendToRenderer(
+        'agent:queue:updated',
+        { agentId, queue },
+        this.getWorkspaceWindowsForAgent(agentId),
+      );
 
       return { success: true };
     } catch (error) {
@@ -6131,12 +6157,16 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
         });
         // Notify frontend about stale message so it can optionally show a warning (workspace-scoped)
         const wsWindows = getWindowIdsForWorkspace(workspaceId);
-        this.sendToRenderer('agent:queue:stale-message', {
-          agentId,
-          messageId: nextMessage.id,
-          ageMinutes,
-          queuedAt: nextMessage.queuedAt,
-        }, wsWindows);
+        this.sendToRenderer(
+          'agent:queue:stale-message',
+          {
+            agentId,
+            messageId: nextMessage.id,
+            ageMinutes,
+            queuedAt: nextMessage.queuedAt,
+          },
+          wsWindows,
+        );
       }
 
       logger.info('Processing queued message - starting new stream turn', {
@@ -6156,13 +6186,17 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
         hasActiveWindow,
       });
       const queueTargetWindows = getWindowIdsForWorkspace(workspaceId);
-      this.sendToRenderer('agent:queue:processing', {
-        agentId,
-        messageId: nextMessage.id,
-        content: nextMessage.content,
-        contextItems: nextMessage.contextItems,
-        imageBlocks: nextMessage.imageBlocks,
-      }, queueTargetWindows);
+      this.sendToRenderer(
+        'agent:queue:processing',
+        {
+          agentId,
+          messageId: nextMessage.id,
+          content: nextMessage.content,
+          contextItems: nextMessage.contextItems,
+          imageBlocks: nextMessage.imageBlocks,
+        },
+        queueTargetWindows,
+      );
       // Don't send queue:updated yet — message is still in the queue until send succeeds
 
       // Wait for frontend to re-register stream handler before starting new stream.
@@ -6206,10 +6240,14 @@ Call \`set_agent_name\` to name yourself based on your task. This can be called 
           },
         );
         // Notify frontend to clean up the orphaned handler from agent:queue:processing
-        this.sendToRenderer('agent:queue:processing-cancelled', {
-          agentId,
-          messageId: nextMessage.id,
-        }, queueTargetWindows);
+        this.sendToRenderer(
+          'agent:queue:processing-cancelled',
+          {
+            agentId,
+            messageId: nextMessage.id,
+          },
+          queueTargetWindows,
+        );
         return;
       }
 

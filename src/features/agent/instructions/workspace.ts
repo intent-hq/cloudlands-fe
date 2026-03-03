@@ -41,8 +41,8 @@ Call \`get_reference_docs_workspace-mcp(topic="diagrams")\` or \`get_reference_d
 
 ## Workspace Management
 
-- \`set_space_title_space-mcp(title)\` — Set the space title (1-5 words describing the task)
-- \`get_space_details_space-mcp()\` — Get space metadata (title, status, etc.)
+- \`set_workspace_title_workspace-mcp(title)\` — Set the workspace title (1-5 words describing the task)
+- \`get_workspace_details_workspace-mcp()\` — Get workspace metadata (title, status, etc.)
 
 ## Agent Collaboration
 
