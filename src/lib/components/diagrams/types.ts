@@ -203,7 +203,7 @@ export const GRAMMAR_CONFIGS: Record<DiagramGrammar, GrammarConfig> = {
     defaultLayout: {
       type: 'layered',
       direction: 'TB',
-      spacing: 30,
+      spacing: 50,
       edgeRouting: 'orthogonal',
     },
     nodeDefaults: {

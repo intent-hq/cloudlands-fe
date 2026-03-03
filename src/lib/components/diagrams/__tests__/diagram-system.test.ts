@@ -15,6 +15,9 @@ import {
   createStateMachineDiagram,
   createFlowchartDiagram,
   createDependencyGraph,
+  createDataFlowDiagram,
+  createNetworkDiagram,
+  createTimelineDiagram,
 } from '../diagram-templates';
 import { validateDiagram } from '../diagram-validator';
 import { computeLayout } from '../layout-engine';
@@ -130,6 +133,70 @@ describe('Diagram Templates', () => {
 
     const validation = validateDiagram(diagram);
     expect(validation.errors).toHaveLength(0);
+  });
+
+  it('should create valid data flow diagram', () => {
+    const diagram = createDataFlowDiagram(
+      [
+        { id: 'input', label: 'User Input', kind: 'external' },
+        { id: 'process', label: 'Process Data', kind: 'process' },
+        { id: 'store', label: 'Data Store', kind: 'data_store' },
+      ],
+      [
+        { from: 'input', to: 'process', label: 'raw data' },
+        { from: 'process', to: 'store', label: 'processed' },
+      ],
+    );
+
+    const schemaResult = DiagramPrimitiveSchema.safeParse(diagram);
+    expect(schemaResult.success).toBe(true);
+
+    const validation = validateDiagram(diagram);
+    expect(validation.errors).toHaveLength(0);
+    expect(diagram.grammar).toBe('data_flow');
+  });
+
+  it('should create valid network diagram', () => {
+    const diagram = createNetworkDiagram(
+      [
+        { id: 'router1', label: 'Core Router', kind: 'router' },
+        { id: 'switch1', label: 'Switch A', kind: 'switch' },
+        { id: 'server1', label: 'Web Server', kind: 'server' },
+      ],
+      [
+        { from: 'router1', to: 'switch1', label: 'trunk' },
+        { from: 'switch1', to: 'server1' },
+      ],
+    );
+
+    const schemaResult = DiagramPrimitiveSchema.safeParse(diagram);
+    expect(schemaResult.success).toBe(true);
+
+    const validation = validateDiagram(diagram);
+    expect(validation.errors).toHaveLength(0);
+    expect(diagram.grammar).toBe('network');
+    expect(diagram.baseView.layout.type).toBe('force');
+  });
+
+  it('should create valid timeline diagram', () => {
+    const diagram = createTimelineDiagram(
+      [
+        { id: 'start', label: 'Project Start', kind: 'milestone' },
+        { id: 'dev', label: 'Development', kind: 'event' },
+        { id: 'launch', label: 'Launch', kind: 'milestone' },
+      ],
+      [
+        { from: 'start', to: 'dev', label: 'begins' },
+        { from: 'dev', to: 'launch', label: 'completes' },
+      ],
+    );
+
+    const schemaResult = DiagramPrimitiveSchema.safeParse(diagram);
+    expect(schemaResult.success).toBe(true);
+
+    const validation = validateDiagram(diagram);
+    expect(validation.errors).toHaveLength(0);
+    expect(diagram.grammar).toBe('timeline');
   });
 });
 

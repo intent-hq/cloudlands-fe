@@ -67,6 +67,20 @@
     previousIndex = currentIndex;
     onStateChange(states[index].id);
   }
+
+  function handleKeydown(e: KeyboardEvent) {
+    // Only handle arrow keys when there are multiple states to navigate between;
+    // for single-state diagrams, let the browser handle normal scrolling
+    if (states.length <= 1) return;
+
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      goToPrevState();
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      goToNextState();
+    }
+  }
 </script>
 
 <div class="diagram-controls bg-background border-t border-border">
@@ -101,7 +115,8 @@
     </div>
 
     <!-- Stepper and navigation -->
-    <div class="flex items-center gap-1.5 flex-none">
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <div class="flex items-center gap-1.5 flex-none" role="tablist" tabindex="0" onkeydown={handleKeydown}>
       <!-- Stepper dots -->
       <div class="flex items-center gap-1.5">
         {#each states as state, index (state.id)}
@@ -135,25 +150,32 @@
         {/each}
       </div>
 
-      <!-- Navigation buttons -->
-      <div class="flex items-center gap-0.5 sticky left-0">
-        <Button
-          variant="ghost"
-          size="sm"
-          class="h-5 w-5 p-0 opacity-60 hover:opacity-100"
-          onclick={goToPrevState}
-        >
-          <Fa icon={faChevronLeft} class="text-ui" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          class="h-5 w-5 p-0 opacity-60 hover:opacity-100"
-          onclick={goToNextState}
-        >
-          <Fa icon={faChevronRight} class="text-ui" />
-        </Button>
-      </div>
+      <!-- Step counter -->
+      <span class="text-ui text-subtle tabular-nums flex-none">{currentIndex + 1}/{states.length}</span>
+
+      <!-- Navigation buttons (hidden for single state) -->
+      {#if states.length > 1}
+        <div class="flex items-center gap-0.5 sticky left-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            class="h-5 w-5 p-0 opacity-60 hover:opacity-100"
+            onclick={goToPrevState}
+            aria-label="Previous step"
+          >
+            <Fa icon={faChevronLeft} class="text-ui" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            class="h-5 w-5 p-0 opacity-60 hover:opacity-100"
+            onclick={goToNextState}
+            aria-label="Next step"
+          >
+            <Fa icon={faChevronRight} class="text-ui" />
+          </Button>
+        </div>
+      {/if}
     </div>
   </div>
 </div>
@@ -172,22 +194,26 @@
     cursor: pointer;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
-    padding: 0;
+    padding: 6px;
+    background-clip: content-box;
     flex-shrink: 0;
   }
 
   .stepper-dot:hover {
     background: hsl(var(--muted-foreground) / 0.5);
+    background-clip: content-box;
     transform: scale(1.2);
   }
 
   .stepper-dot.completed {
     background: hsl(var(--primary) / 0.6);
+    background-clip: content-box;
   }
 
   .stepper-dot.active {
     width: 24px;
     background: hsl(var(--primary));
+    background-clip: content-box;
     border-radius: 12px;
   }
 

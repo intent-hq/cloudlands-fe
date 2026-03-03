@@ -9,9 +9,12 @@
   interface Props {
     edge: ComputedEdge;
     dimmed?: boolean;
+    highlighted?: boolean;
+    /** Unique scope for SVG marker IDs to avoid cross-diagram conflicts */
+    markerScope?: string;
   }
 
-  let { edge, dimmed = false }: Props = $props();
+  let { edge, dimmed = false, highlighted = false, markerScope = '' }: Props = $props();
   const logger = createLogger('DiagramEdge');
 
   // Handle binding click
@@ -73,8 +76,20 @@
     if (dimmed) {
       classes.push('edge-dimmed');
     }
+    if (highlighted) {
+      classes.push('edge-state-highlighted');
+    }
     return classes.join(' ');
   });
+
+  // Get the appropriate arrowhead marker based on semantic style, scoped by diagram ID
+  const semanticMarkerStyles = new Set(['danger', 'success', 'warning', 'muted', 'inactive', 'highlighted', 'active']);
+  let markerSuffix = $derived(markerScope ? `-${markerScope}` : '');
+  let markerUrl = $derived(
+    edge.semanticStyle && semanticMarkerStyles.has(edge.semanticStyle)
+      ? `url(#arrowhead-${edge.semanticStyle}${markerSuffix})`
+      : `url(#arrowhead${markerSuffix})`,
+  );
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -84,26 +99,12 @@
   <path
     d={edge.path}
     class="edge-path"
-    marker-end="url(#arrowhead)"
+    marker-end={markerUrl}
     vector-effect="non-scaling-stroke"
   />
 </g>
 
-<!-- Marker definitions -->
-<defs>
-  <!-- Chevron arrow at end -->
-  <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
-    <path
-      d="M 3 1 L 8 5 L 3 9"
-      fill="none"
-      stroke="hsl(var(--border))"
-      stroke-width="1.5"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      vector-effect="non-scaling-stroke"
-    />
-  </marker>
-</defs>
+
 
 <style>
   :global(.edge-path) {
@@ -127,6 +128,12 @@
     transition: opacity 0.2s ease;
   }
 
+  /* State-level highlighting (from DiagramState.highlightedEdges) */
+  :global(.edge-state-highlighted .edge-path) {
+    stroke: hsl(var(--accent));
+    stroke-width: 1.5px;
+  }
+
   :global(.edge-highlighted .edge-path) {
     stroke: hsl(var(--accent));
     stroke-width: 1px;
@@ -138,7 +145,7 @@
   }
 
   :global(.edge-danger .edge-path) {
-    stroke: hsl(var(--destructive) / 0.6);
+    stroke: hsl(var(--destructive) / 0.8);
     stroke-width: 1px;
   }
 

@@ -27,6 +27,15 @@ import { GRAMMAR_CONFIGS, DEFAULT_NODE_STYLE } from './types';
 const MAX_ASPECT_RATIO = 1.78;
 // Maximum width before wrapping (in pixels) - reasonable for most screens
 const MAX_DIAGRAM_WIDTH = 900;
+// Spacing limits to prevent unusable layouts
+const MIN_SPACING = 30;
+const MAX_SPACING = 300;
+
+/** Clamp spacing to usable range */
+function clampSpacing(spacing: number | undefined, defaultValue: number = 80): number {
+  const value = spacing ?? defaultValue;
+  return Math.max(MIN_SPACING, Math.min(MAX_SPACING, value));
+}
 
 export function computeLayout(
   model: DiagramModel,
@@ -77,11 +86,11 @@ export function computeLayout(
         result = verticalResult;
       } else {
         // Still too wide - apply wrapping to vertical layout
-        result = applyWrapping(verticalResult, MAX_DIAGRAM_WIDTH, layout.spacing ?? 80);
+        result = applyWrapping(verticalResult, MAX_DIAGRAM_WIDTH, clampSpacing(layout.spacing, 80));
       }
     } else {
       // TB/BT layout that's too wide - apply wrapping
-      result = applyWrapping(result, MAX_DIAGRAM_WIDTH, layout.spacing ?? 80);
+      result = applyWrapping(result, MAX_DIAGRAM_WIDTH, clampSpacing(layout.spacing, 80));
     }
   }
 
@@ -102,21 +111,24 @@ function applyWrapping(layout: ComputedLayout, maxWidth: number, spacing: number
 
   // Sort nodes by their x position to process left-to-right
   const sortedNodes = [...nodes].sort((a, b) => a.x - b.x);
-  const nodeAdjustments = new Map<string, { dy: number }>();
+  const nodeAdjustments = new Map<string, { dx: number; dy: number }>();
 
-  // Track the current row's y offset
+  // Track the current row's y offset and x offset for wrapping
   let rowYOffset = 0;
+  let rowXOffset = 0;
 
   sortedNodes.forEach((node) => {
-    const relativeX = node.x - layout.bounds.minX;
+    const relativeX = node.x - layout.bounds.minX - rowXOffset;
 
     // Check if this node exceeds max width and needs to wrap
     if (relativeX + node.width > maxWidth && relativeX > 0) {
+      // Record the x offset to subtract for this new row
+      rowXOffset = node.x - layout.bounds.minX;
       // Start a new row
       rowYOffset += rowHeight + spacing;
     }
 
-    nodeAdjustments.set(node.id, { dy: rowYOffset });
+    nodeAdjustments.set(node.id, { dx: -rowXOffset, dy: rowYOffset });
   });
 
   // Apply adjustments
@@ -124,6 +136,7 @@ function applyWrapping(layout: ComputedLayout, maxWidth: number, spacing: number
     const adj = nodeAdjustments.get(node.id) || { dx: 0, dy: 0 };
     return {
       ...node,
+      x: node.x + adj.dx,
       y: node.y + adj.dy,
     };
   });
@@ -229,19 +242,20 @@ function computeGroupBoundsFromNodes(
     // Find nodes that were in this group's bounds
     const groupNodes = nodes.filter(
       (n) =>
-        n.x >= group.x - 20 &&
-        n.x <= group.x + group.width + 20 &&
-        n.y >= group.y - 20 &&
-        n.y <= group.y + group.height + 20,
+        n.x >= group.x - 30 &&
+        n.x <= group.x + group.width + 30 &&
+        n.y >= group.y - 30 &&
+        n.y <= group.y + group.height + 30,
     );
 
     if (groupNodes.length === 0) {
       return group;
     }
 
-    const padding = 20;
+    const padding = 30;
+    const headerPadding = 40; // Account for group label/header
     const minX = Math.min(...groupNodes.map((n) => n.x)) - padding;
-    const minY = Math.min(...groupNodes.map((n) => n.y)) - padding - 32; // Account for header
+    const minY = Math.min(...groupNodes.map((n) => n.y)) - padding - headerPadding;
     const maxX = Math.max(...groupNodes.map((n) => n.x + n.width)) + padding;
     const maxY = Math.max(...groupNodes.map((n) => n.y + n.height)) + padding;
 
@@ -320,6 +334,17 @@ function computeLayoutWithDirection(
   // Compute edge paths
   const computedEdges = computeEdgePaths(model.edges, computedNodes, layout);
 
+  // Deduplicate edge IDs to prevent Svelte {#each} key collisions
+  const edgeIdCounts = new Map<string, number>();
+  for (const edge of computedEdges) {
+    const originalId = edge.id;
+    const count = edgeIdCounts.get(originalId) ?? 0;
+    if (count > 0) {
+      edge.id = `${originalId}-${count}`;
+    }
+    edgeIdCounts.set(originalId, count + 1);
+  }
+
   // Compute group bounds
   const computedGroups = model.groups ? computeGroupBounds(model.groups, computedNodes) : undefined;
 
@@ -385,7 +410,7 @@ function computeNodeSize(
   const contentHeight = labelHeight + (node.kind ? style.gap + kindHeight : 0);
 
   // Ensure minimum size but allow nodes to be smaller for short labels
-  const minWidth = isShortLabel ? 60 : defaults.width * 0.6;
+  const minWidth = isShortLabel ? 80 : defaults.width * 0.6;
   const width = Math.min(Math.max(contentWidth + style.paddingX * 2, minWidth), style.maxWidth);
   const height = Math.max(contentHeight + style.paddingY * 2, defaults.height * 0.6);
 
@@ -406,13 +431,64 @@ function computeNodePositions(
   const hasManualPositions = nodes.some((n) => n.position);
 
   if (hasManualPositions || layout.type === 'manual') {
-    return nodes.map((node) => ({
-      ...node,
-      x: node.position?.x ?? 0,
-      y: node.position?.y ?? 0,
-      width: node.size?.width ?? nodeDefaults.width,
-      height: node.size?.height ?? nodeDefaults.height,
-    }));
+    // Collect manually positioned nodes first
+    const manualNodes: Array<{ x: number; y: number; width: number; height: number }> = [];
+    const result: ComputedNode[] = [];
+
+    // First pass: place manually positioned nodes and collect their bounds
+    for (const node of nodes) {
+      const width = node.size?.width ?? nodeDefaults.width;
+      const height = node.size?.height ?? nodeDefaults.height;
+      if (node.position) {
+        const placed = { ...node, x: node.position.x, y: node.position.y, width, height };
+        result.push(placed);
+        manualNodes.push(placed);
+      } else {
+        // Placeholder - will be repositioned below
+        result.push({ ...node, x: 0, y: 0, width, height });
+      }
+    }
+
+    // Second pass: position unpositioned nodes avoiding manual ones
+    const spacing = clampSpacing(layout.spacing, 80);
+    for (let i = 0; i < result.length; i++) {
+      const node = nodes[i];
+      if (node.position) continue; // Already placed
+
+      const width = result[i].width;
+      const height = result[i].height;
+
+      // Find a position that doesn't overlap with any existing node
+      let bestX = 0;
+      let bestY = 0;
+      let placed = false;
+
+      // Try positions in a grid pattern, checking for overlaps
+      for (let row = 0; row < 20 && !placed; row++) {
+        for (let col = 0; col < 20 && !placed; col++) {
+          const candidateX = col * (width + spacing);
+          const candidateY = row * (height + spacing);
+
+          const overlaps = manualNodes.some((mn) => {
+            return !(candidateX + width + spacing * 0.3 < mn.x ||
+                     candidateX > mn.x + mn.width + spacing * 0.3 ||
+                     candidateY + height + spacing * 0.3 < mn.y ||
+                     candidateY > mn.y + mn.height + spacing * 0.3);
+          });
+
+          if (!overlaps) {
+            bestX = candidateX;
+            bestY = candidateY;
+            placed = true;
+          }
+        }
+      }
+
+      result[i] = { ...result[i], x: bestX, y: bestY };
+      manualNodes.push({ x: bestX, y: bestY, width, height });
+    }
+
+    return result;
   }
 
   // Otherwise, compute positions based on layout type
@@ -444,7 +520,7 @@ function computeLayeredLayout(
   nodeDefaults: { width: number; height: number },
   groups?: DiagramGroup[],
 ): ComputedNode[] {
-  const spacing = layout.spacing ?? 80;
+  const spacing = clampSpacing(layout.spacing, 80);
   const direction = layout.direction ?? 'LR';
   const isHorizontal = direction === 'LR' || direction === 'RL';
 
@@ -580,40 +656,174 @@ function computeHierarchicalGroupLayout(
     }
   });
 
-  // Step 5: Calculate group dimensions (based on contained nodes)
+  // Step 5: Compute intra-group layered layout for each group
+  // For each group, build a sub-graph and run mini Sugiyama-style layout
+  const groupInternalLayouts = new Map<string, { layers: string[][]; nodeLayer: Map<string, number> }>();
   const groupDimensions = new Map<string, { width: number; height: number }>();
+
+  // Build intra-group edge maps
+  const intraGroupOutgoing = new Map<string, string[]>();
+  const intraGroupIncoming = new Map<string, string[]>();
+  nodes.forEach((node) => {
+    intraGroupOutgoing.set(node.id, []);
+    intraGroupIncoming.set(node.id, []);
+  });
+  edges.forEach((edge) => {
+    const fromGroup = nodeToGroup.get(edge.from) || UNGROUPED;
+    const toGroup = nodeToGroup.get(edge.to) || UNGROUPED;
+    if (fromGroup === toGroup) {
+      intraGroupOutgoing.get(edge.from)?.push(edge.to);
+      intraGroupIncoming.get(edge.to)?.push(edge.from);
+    }
+  });
 
   allGroupIds.forEach((gid) => {
     const nodeIds = groupNodes.get(gid) || [];
     if (nodeIds.length === 0) {
       groupDimensions.set(gid, { width: 0, height: 0 });
+      groupInternalLayouts.set(gid, { layers: [], nodeLayer: new Map() });
       return;
     }
 
-    // Calculate total size needed for nodes stacked in secondary direction
+    const nodeIdSet = new Set(nodeIds);
+
+    // Assign layers within the group using longest path
+    const nodeLayer = new Map<string, number>();
+    const layerVisited = new Set<string>();
+
+    function assignIntraLayer(nodeId: string): number {
+      if (nodeLayer.has(nodeId)) return nodeLayer.get(nodeId)!;
+      if (layerVisited.has(nodeId)) return 0;
+      layerVisited.add(nodeId);
+
+      const deps = (intraGroupIncoming.get(nodeId) || []).filter((id) => nodeIdSet.has(id));
+      let maxDepLayer = -1;
+      deps.forEach((depId) => {
+        maxDepLayer = Math.max(maxDepLayer, assignIntraLayer(depId));
+      });
+
+      const layer = maxDepLayer + 1;
+      nodeLayer.set(nodeId, layer);
+      return layer;
+    }
+
+    nodeIds.forEach((nid) => assignIntraLayer(nid));
+
+    // Organize into layers
+    const maxLayer = Math.max(...Array.from(nodeLayer.values()), 0);
+    const layers: string[][] = Array.from({ length: maxLayer + 1 }, () => []);
+    nodeLayer.forEach((layer, nodeId) => {
+      if (nodeIdSet.has(nodeId)) layers[layer].push(nodeId);
+    });
+
+    // Barycenter crossing minimization within the group (4 passes)
+    for (let pass = 0; pass < 4; pass++) {
+      // Down sweep
+      for (let i = 1; i < layers.length; i++) {
+        const layer = layers[i];
+        const prevLayer = layers[i - 1];
+        const barycenters = new Map<string, number>();
+        layer.forEach((nodeId) => {
+          const inNodes = (intraGroupIncoming.get(nodeId) || []).filter((id) => nodeIdSet.has(id));
+          const positions = inNodes.map((id) => prevLayer.indexOf(id)).filter((pos) => pos !== -1);
+          if (positions.length > 0) {
+            barycenters.set(nodeId, positions.reduce((a, b) => a + b, 0) / positions.length);
+          } else {
+            barycenters.set(nodeId, layer.indexOf(nodeId));
+          }
+        });
+        layer.sort((a, b) => (barycenters.get(a) ?? 0) - (barycenters.get(b) ?? 0));
+      }
+      // Up sweep
+      for (let i = layers.length - 2; i >= 0; i--) {
+        const layer = layers[i];
+        const nextLayer = layers[i + 1];
+        const barycenters = new Map<string, number>();
+        layer.forEach((nodeId) => {
+          const outNodes = (intraGroupOutgoing.get(nodeId) || []).filter((id) => nodeIdSet.has(id));
+          const positions = outNodes.map((id) => nextLayer.indexOf(id)).filter((pos) => pos !== -1);
+          if (positions.length > 0) {
+            barycenters.set(nodeId, positions.reduce((a, b) => a + b, 0) / positions.length);
+          } else {
+            barycenters.set(nodeId, layer.indexOf(nodeId));
+          }
+        });
+        layer.sort((a, b) => (barycenters.get(a) ?? 0) - (barycenters.get(b) ?? 0));
+      }
+    }
+
+    groupInternalLayouts.set(gid, { layers, nodeLayer });
+
+    // Calculate group dimensions based on multi-layer layout
+    const INTRA_LAYER_SPACING = spacing * 0.7; // spacing between layers within group
     let totalPrimary = 0;
     let maxSecondary = 0;
 
-    nodeIds.forEach((nodeId) => {
-      const size = nodeSizes.get(nodeId)!;
-      if (isHorizontal) {
-        totalPrimary += size.height + NODE_SPACING;
-        maxSecondary = Math.max(maxSecondary, size.width);
-      } else {
-        totalPrimary += size.width + NODE_SPACING;
-        maxSecondary = Math.max(maxSecondary, size.height);
-      }
+    layers.forEach((layer, layerIdx) => {
+      let layerPrimary = 0;
+      let layerSecondary = 0;
+
+      layer.forEach((nodeId) => {
+        const size = nodeSizes.get(nodeId)!;
+        if (isHorizontal) {
+          layerSecondary += size.height + NODE_SPACING;
+          layerPrimary = Math.max(layerPrimary, size.width);
+        } else {
+          layerSecondary += size.width + NODE_SPACING;
+          layerPrimary = Math.max(layerPrimary, size.height);
+        }
+      });
+
+      layerSecondary -= NODE_SPACING; // Remove last spacing
+      maxSecondary = Math.max(maxSecondary, layerSecondary);
+      totalPrimary += layerPrimary;
+      if (layerIdx > 0) totalPrimary += INTRA_LAYER_SPACING;
     });
 
-    totalPrimary -= NODE_SPACING; // Remove last spacing
-
-    const width = isHorizontal ? maxSecondary + GROUP_PADDING * 2 : totalPrimary + GROUP_PADDING * 2;
-    const height = isHorizontal ? totalPrimary + GROUP_PADDING * 2 : maxSecondary + GROUP_PADDING * 2;
+    const width = isHorizontal ? totalPrimary + GROUP_PADDING * 2 : maxSecondary + GROUP_PADDING * 2;
+    const height = isHorizontal ? maxSecondary + GROUP_PADDING * 2 : totalPrimary + GROUP_PADDING * 2;
 
     groupDimensions.set(gid, { width, height });
   });
 
-  // Step 6: Position groups
+  // Step 6: Inter-group barycenter ordering within each layer
+  // Order groups in the same layer to minimize cross-group edge crossings
+  for (let pass = 0; pass < 4; pass++) {
+    // Down sweep
+    for (let i = 1; i < groupLayers.length; i++) {
+      const layer = groupLayers[i];
+      const prevLayer = groupLayers[i - 1];
+      const barycenters = new Map<string, number>();
+      layer.forEach((gid) => {
+        const inGroups = Array.from(groupIncoming.get(gid) || []);
+        const positions = inGroups.map((id) => prevLayer.indexOf(id)).filter((pos) => pos !== -1);
+        if (positions.length > 0) {
+          barycenters.set(gid, positions.reduce((a, b) => a + b, 0) / positions.length);
+        } else {
+          barycenters.set(gid, layer.indexOf(gid));
+        }
+      });
+      layer.sort((a, b) => (barycenters.get(a) ?? 0) - (barycenters.get(b) ?? 0));
+    }
+    // Up sweep
+    for (let i = groupLayers.length - 2; i >= 0; i--) {
+      const layer = groupLayers[i];
+      const nextLayer = groupLayers[i + 1];
+      const barycenters = new Map<string, number>();
+      layer.forEach((gid) => {
+        const outGroups = Array.from(groupOutgoing.get(gid) || []);
+        const positions = outGroups.map((id) => nextLayer.indexOf(id)).filter((pos) => pos !== -1);
+        if (positions.length > 0) {
+          barycenters.set(gid, positions.reduce((a, b) => a + b, 0) / positions.length);
+        } else {
+          barycenters.set(gid, layer.indexOf(gid));
+        }
+      });
+      layer.sort((a, b) => (barycenters.get(a) ?? 0) - (barycenters.get(b) ?? 0));
+    }
+  }
+
+  // Step 7: Position groups
   const groupPositions = new Map<string, { x: number; y: number }>();
   let primaryOffset = 0;
 
@@ -638,42 +848,56 @@ function computeHierarchicalGroupLayout(
     primaryOffset += maxPrimarySize + GROUP_SPACING;
   });
 
-  // Step 7: Position nodes within groups
+  // Step 8: Position nodes within groups using intra-group layers
   const positioned: ComputedNode[] = [];
+  const INTRA_LAYER_SPACING = spacing * 0.7;
 
   allGroupIds.forEach((gid) => {
     const nodeIds = groupNodes.get(gid) || [];
     const groupPos = groupPositions.get(gid);
-    if (!groupPos || nodeIds.length === 0) return;
+    const internalLayout = groupInternalLayouts.get(gid);
+    if (!groupPos || nodeIds.length === 0 || !internalLayout) return;
 
-    // Sort nodes within group by their edge dependencies for better layout
-    const sortedNodeIds = [...nodeIds].sort((a, b) => {
-      const aOut = outgoing.get(a)?.length ?? 0;
-      const aIn = incoming.get(a)?.length ?? 0;
-      const bOut = outgoing.get(b)?.length ?? 0;
-      const bIn = incoming.get(b)?.length ?? 0;
-      // Nodes with more outgoing edges first
-      return (bOut - bIn) - (aOut - aIn);
-    });
+    const { layers } = internalLayout;
+    let layerPrimaryOffset = GROUP_PADDING;
 
-    let nodeOffset = GROUP_PADDING;
+    layers.forEach((layer) => {
+      // Calculate total secondary size for centering within the group
+      let totalSecondary = 0;
+      layer.forEach((nodeId) => {
+        const size = nodeSizes.get(nodeId)!;
+        totalSecondary += (isHorizontal ? size.height : size.width) + NODE_SPACING;
+      });
+      totalSecondary -= NODE_SPACING;
 
-    sortedNodeIds.forEach((nodeId) => {
-      const node = nodes.find((n) => n.id === nodeId)!;
-      const size = nodeSizes.get(nodeId)!;
+      // Center nodes in the secondary direction within the group
+      const groupDim = groupDimensions.get(gid)!;
+      const groupSecondarySize = isHorizontal ? groupDim.height : groupDim.width;
+      let nodeSecondaryOffset = GROUP_PADDING + (groupSecondarySize - GROUP_PADDING * 2 - totalSecondary) / 2;
 
-      let x, y;
-      if (isHorizontal) {
-        x = groupPos.x + GROUP_PADDING;
-        y = groupPos.y + nodeOffset;
-        nodeOffset += size.height + NODE_SPACING;
-      } else {
-        x = groupPos.x + nodeOffset;
-        y = groupPos.y + GROUP_PADDING;
-        nodeOffset += size.width + NODE_SPACING;
-      }
+      let maxLayerPrimary = 0;
 
-      positioned.push({ ...node, x, y, width: size.width, height: size.height });
+      layer.forEach((nodeId) => {
+        const node = nodes.find((n) => n.id === nodeId)!;
+        const size = nodeSizes.get(nodeId)!;
+
+        let x, y;
+        if (isHorizontal) {
+          x = groupPos.x + layerPrimaryOffset;
+          y = groupPos.y + nodeSecondaryOffset;
+          nodeSecondaryOffset += size.height + NODE_SPACING;
+          maxLayerPrimary = Math.max(maxLayerPrimary, size.width);
+        } else {
+          x = groupPos.x + nodeSecondaryOffset;
+          y = groupPos.y + layerPrimaryOffset;
+          nodeSecondaryOffset += size.width + NODE_SPACING;
+          maxLayerPrimary = Math.max(maxLayerPrimary, size.height);
+        }
+
+        positioned.push({ ...node, x, y, width: size.width, height: size.height });
+      });
+
+      layerPrimaryOffset += maxLayerPrimary + INTRA_LAYER_SPACING;
     });
   });
 
@@ -771,8 +995,8 @@ function computeStandardHierarchicalLayout(
 
   // Position nodes
   const positioned: ComputedNode[] = [];
-  const LAYER_SPACING = spacing * 1.5;
-  const NODE_SPACING = spacing * 0.5;
+  const LAYER_SPACING = spacing * 0.8;
+  const NODE_SPACING = spacing * 0.4;
 
   let primaryOffset = 0;
 
@@ -825,11 +1049,11 @@ function computeForceLayout(
   nodeDefaults: { width: number; height: number },
   groups?: DiagramGroup[],
 ): ComputedNode[] {
-  const spacing = layout.spacing ?? 100;
+  const spacing = clampSpacing(layout.spacing, 100);
   const direction = layout.direction ?? 'LR';
   const isHorizontal = direction === 'LR' || direction === 'RL';
   const iterations = 150; // More iterations for better convergence
-  const repulsionStrength = spacing * spacing * 1.0; // Strong repulsion to prevent overlap
+  const repulsionStrength = spacing * spacing * 8; // Moderate repulsion to prevent overlap
   const attractionStrength = 0.04; // Stronger attraction for direct edges
   const edgeCrossingPenalty = 1.5; // Lower penalty for edge crossings
   const damping = 0.7; // Lower damping for more movement
@@ -1019,7 +1243,9 @@ function computeForceLayout(
         const dist = Math.sqrt(distSq);
 
         // Stronger repulsion for overlapping or very close nodes
-        const minDist = (positions[i].width + positions[j].width) / 2 + spacing * 0.1;
+        const minDistX = (positions[i].width + positions[j].width) / 2 + spacing * 0.25;
+        const minDistY = (positions[i].height + positions[j].height) / 2 + spacing * 0.25;
+        const minDist = Math.sqrt(minDistX * minDistX + minDistY * minDistY);
         const force =
           dist < minDist
             ? (repulsionStrength * 3) / distSq // Stronger repulsion when too close
@@ -1230,7 +1456,7 @@ function computeForceLayout(
       });
 
       // 3. Node-level separation between different groups (moderate)
-      const groupSeparationStrength = spacing * 4.0;
+      const groupSeparationStrength = spacing * 2.0;
 
       for (let i = 0; i < positions.length; i++) {
         for (let j = i + 1; j < positions.length; j++) {
@@ -1246,7 +1472,7 @@ function computeForceLayout(
             const dy = positions[j].y - positions[i].y;
             const dist = Math.sqrt(dx * dx + dy * dy + 0.01);
 
-            const force = groupSeparationStrength / (dist * 0.7 + spacing * 0.3);
+            const force = groupSeparationStrength / (dist * 1.0 + spacing * 0.5);
             const fx = (dx / dist) * force;
             const fy = (dy / dist) * force;
 
@@ -1270,6 +1496,131 @@ function computeForceLayout(
       p.x += p.vx * damping;
       p.y += p.vy * damping;
     });
+  }
+
+  // Post-simulation: resolve any remaining rectangular overlaps
+  for (let pass = 0; pass < 10; pass++) {
+    let hasOverlap = false;
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        const overlapX =
+          (positions[i].width + positions[j].width) / 2 +
+          spacing * 0.15 -
+          Math.abs(positions[j].x - positions[i].x);
+        const overlapY =
+          (positions[i].height + positions[j].height) / 2 +
+          spacing * 0.15 -
+          Math.abs(positions[j].y - positions[i].y);
+        if (overlapX > 0 && overlapY > 0) {
+          hasOverlap = true;
+          // Push apart along the axis with less overlap
+          if (overlapX < overlapY) {
+            const push = overlapX / 2 + 1;
+            if (positions[j].x >= positions[i].x) {
+              positions[i].x -= push;
+              positions[j].x += push;
+            } else {
+              positions[i].x += push;
+              positions[j].x -= push;
+            }
+          } else {
+            const push = overlapY / 2 + 1;
+            if (positions[j].y >= positions[i].y) {
+              positions[i].y -= push;
+              positions[j].y += push;
+            } else {
+              positions[i].y += push;
+              positions[j].y -= push;
+            }
+          }
+        }
+      }
+    }
+    if (!hasOverlap) break;
+  }
+
+  // Pack disconnected components closer together
+  // Detect connected components and re-arrange their bounding boxes in a grid
+  const COMPONENT_GAP = 60;
+  const adjacency = new Map<string, Set<string>>();
+  positions.forEach((p) => adjacency.set(p.node.id, new Set()));
+  edges.forEach((edge) => {
+    adjacency.get(edge.from)?.add(edge.to);
+    adjacency.get(edge.to)?.add(edge.from);
+  });
+
+  const componentOf = new Map<string, number>();
+  let componentCount = 0;
+  positions.forEach((p) => {
+    if (componentOf.has(p.node.id)) return;
+    const compId = componentCount++;
+    const stack = [p.node.id];
+    while (stack.length > 0) {
+      const nid = stack.pop()!;
+      if (componentOf.has(nid)) continue;
+      componentOf.set(nid, compId);
+      adjacency.get(nid)?.forEach((neighbor) => {
+        if (!componentOf.has(neighbor)) stack.push(neighbor);
+      });
+    }
+  });
+
+  if (componentCount > 1) {
+    // Compute bounding box for each component
+    const compBounds = new Map<number, { minX: number; minY: number; maxX: number; maxY: number }>();
+    positions.forEach((p) => {
+      const cid = componentOf.get(p.node.id)!;
+      const existing = compBounds.get(cid);
+      if (!existing) {
+        compBounds.set(cid, { minX: p.x, minY: p.y, maxX: p.x + p.width, maxY: p.y + p.height });
+      } else {
+        existing.minX = Math.min(existing.minX, p.x);
+        existing.minY = Math.min(existing.minY, p.y);
+        existing.maxX = Math.max(existing.maxX, p.x + p.width);
+        existing.maxY = Math.max(existing.maxY, p.y + p.height);
+      }
+    });
+
+    // Sort components by size (largest first) for better packing
+    const compIds = Array.from(compBounds.keys()).sort((a, b) => {
+      const ba = compBounds.get(a)!;
+      const bb = compBounds.get(b)!;
+      return (bb.maxX - bb.minX) * (bb.maxY - bb.minY) - (ba.maxX - ba.minX) * (ba.maxY - ba.minY);
+    });
+
+    // Arrange components in a grid layout
+    const cols = Math.ceil(Math.sqrt(compIds.length));
+    let gridX = 0;
+    let gridY = 0;
+    let rowMaxHeight = 0;
+    let colIndex = 0;
+
+    for (const cid of compIds) {
+      const bounds = compBounds.get(cid)!;
+      const compW = bounds.maxX - bounds.minX;
+      const compH = bounds.maxY - bounds.minY;
+
+      // Shift all nodes in this component so the component's top-left is at (gridX, gridY)
+      const dx = gridX - bounds.minX;
+      const dy = gridY - bounds.minY;
+      positions.forEach((p) => {
+        if (componentOf.get(p.node.id) === cid) {
+          p.x += dx;
+          p.y += dy;
+        }
+      });
+
+      gridX += compW + COMPONENT_GAP;
+      rowMaxHeight = Math.max(rowMaxHeight, compH);
+      colIndex++;
+
+      if (colIndex >= cols) {
+        colIndex = 0;
+        gridX = 0;
+        gridY += rowMaxHeight + COMPONENT_GAP;
+        rowMaxHeight = 0;
+      }
+    }
   }
 
   return positions.map((p) => ({
@@ -1313,7 +1664,7 @@ function computeTreeLayout(
   layout: DiagramBaseView['layout'],
   nodeDefaults: { width: number; height: number },
 ): ComputedNode[] {
-  const spacing = layout.spacing ?? 60;
+  const spacing = clampSpacing(layout.spacing, 60);
   const direction = layout.direction ?? 'TB';
   const isVertical = direction === 'TB' || direction === 'BT';
 
@@ -1497,12 +1848,179 @@ function computeEdgePaths(
 ): ComputedEdge[] {
   const edgeRouting = layout.edgeRouting || 'polyline';
 
-  if (edgeRouting === 'orthogonal') {
+  // Circular layouts should always use straight lines — orthogonal routing
+  // creates ugly right-angle paths between circularly-placed nodes
+  if (layout.type === 'circular') {
+    return computeStraightEdgePaths(edges, nodes);
+  }
+
+  // Dense graphs (high edge-to-node ratio) look terrible with orthogonal routing
+  // because every right-angle path consumes channel space. Auto-downgrade to curved.
+  const edgeDensity = nodes.length > 0 ? edges.length / nodes.length : 0;
+  const effectiveRouting = (edgeRouting === 'orthogonal' && edgeDensity > 3) ? 'curved' : edgeRouting;
+
+  if (effectiveRouting === 'orthogonal') {
     return computeOrthogonalEdgePaths(edges, nodes, layout);
+  } else if (effectiveRouting === 'curved') {
+    return computeCurvedEdgePaths(edges, nodes);
   }
 
   // Default: simple straight lines
   return computeStraightEdgePaths(edges, nodes);
+}
+
+/**
+ * Build a map of edge ID → perpendicular offset for bidirectional edge pairs.
+ * When two edges connect the same pair of nodes in opposite directions,
+ * they get offset ±BIDIRECTIONAL_OFFSET perpendicular to the line between nodes.
+ */
+const BIDIRECTIONAL_OFFSET = 12;
+
+function buildBidirectionalOffsetMap(edges: DiagramEdge[]): Map<string, number> {
+  const offsets = new Map<string, number>();
+
+  // Build a map of directed pairs: "from::to" -> edge ids
+  const directedMap = new Map<string, string[]>();
+  for (const edge of edges) {
+    if (edge.from === edge.to) continue;
+    const key = `${edge.from}::${edge.to}`;
+    if (!directedMap.has(key)) directedMap.set(key, []);
+    directedMap.get(key)!.push(edge.id);
+  }
+
+  // Only offset edges that are truly bidirectional (A→B AND B→A both exist)
+  const processed = new Set<string>();
+  for (const [key] of directedMap) {
+    const [from, to] = key.split('::');
+    const reverseKey = `${to}::${from}`;
+    const sortedPairKey = [from, to].sort().join('::');
+
+    if (processed.has(sortedPairKey)) continue;
+    if (!directedMap.has(reverseKey)) continue;
+
+    // Both directions exist - apply offsets
+    processed.add(sortedPairKey);
+    const [nodeA] = sortedPairKey.split('::');
+
+    const forwardEdges = directedMap.get(key)!;
+    const reverseEdges = directedMap.get(reverseKey)!;
+
+    for (const edgeId of forwardEdges) {
+      offsets.set(edgeId, from === nodeA ? BIDIRECTIONAL_OFFSET : -BIDIRECTIONAL_OFFSET);
+    }
+    for (const edgeId of reverseEdges) {
+      offsets.set(edgeId, to === nodeA ? BIDIRECTIONAL_OFFSET : -BIDIRECTIONAL_OFFSET);
+    }
+  }
+
+  return offsets;
+}
+
+/**
+ * Apply perpendicular offset to a point along the line from->to.
+ */
+function applyPerpendicularOffset(
+  point: { x: number; y: number },
+  fromCenter: { x: number; y: number },
+  toCenter: { x: number; y: number },
+  offset: number,
+): { x: number; y: number } {
+  const dx = toCenter.x - fromCenter.x;
+  const dy = toCenter.y - fromCenter.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len === 0) return point;
+  // Perpendicular direction (rotate 90 degrees)
+  const perpX = -dy / len;
+  const perpY = dx / len;
+  return { x: point.x + perpX * offset, y: point.y + perpY * offset };
+}
+
+
+/**
+ * Compute edge paths with curved bezier lines
+ */
+function computeCurvedEdgePaths(
+  edges: DiagramEdge[],
+  nodes: ComputedNode[],
+): ComputedEdge[] {
+  const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+  const biOffsets = buildBidirectionalOffsetMap(edges);
+  const selfLoopCounts = new Map<string, number>();
+
+  return edges.map((edge) => {
+    const fromNode = nodeMap.get(edge.from);
+    const toNode = nodeMap.get(edge.to);
+
+    if (!fromNode || !toNode) {
+      return { ...edge, path: '', points: [] };
+    }
+
+    // Self-loop: edge from a node to itself
+    if (edge.from === edge.to) {
+      const loopIdx = selfLoopCounts.get(edge.from) ?? 0;
+      selfLoopCounts.set(edge.from, loopIdx + 1);
+      const { path, points } = computeSelfLoopPath(fromNode, loopIdx);
+      return { ...edge, path, points };
+    }
+
+    // Calculate centers
+    const fromCenterX = fromNode.x + fromNode.width / 2;
+    const fromCenterY = fromNode.y + fromNode.height / 2;
+    const toCenterX = toNode.x + toNode.width / 2;
+    const toCenterY = toNode.y + toNode.height / 2;
+
+    // Determine direction for connection points
+    const dx = toCenterX - fromCenterX;
+    const dy = toCenterY - fromCenterY;
+    const angle = Math.atan2(dy, dx);
+    const absAngle = Math.abs(angle);
+
+    let fromPoint: { x: number; y: number };
+    let toPoint: { x: number; y: number };
+
+    if (absAngle < Math.PI / 4) {
+      fromPoint = { x: fromNode.x + fromNode.width, y: fromCenterY };
+      toPoint = { x: toNode.x, y: toCenterY };
+    } else if (absAngle > (3 * Math.PI) / 4) {
+      fromPoint = { x: fromNode.x, y: fromCenterY };
+      toPoint = { x: toNode.x + toNode.width, y: toCenterY };
+    } else if (angle > 0) {
+      fromPoint = { x: fromCenterX, y: fromNode.y + fromNode.height };
+      toPoint = { x: toCenterX, y: toNode.y };
+    } else {
+      fromPoint = { x: fromCenterX, y: fromNode.y };
+      toPoint = { x: toCenterX, y: toNode.y + toNode.height };
+    }
+
+    // Add small gap from node edge
+    const gap = 2;
+    const edgeDx = toPoint.x - fromPoint.x;
+    const edgeDy = toPoint.y - fromPoint.y;
+    const length = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
+
+    if (length > gap * 2) {
+      const dirX = edgeDx / length;
+      const dirY = edgeDy / length;
+      fromPoint = { x: fromPoint.x + dirX * gap, y: fromPoint.y + dirY * gap };
+      toPoint = { x: toPoint.x - dirX * gap, y: toPoint.y - dirY * gap };
+    }
+
+    // Apply bidirectional offset if needed
+    const biOffset = biOffsets.get(edge.id);
+    if (biOffset) {
+      const fromCenter = { x: fromCenterX, y: fromCenterY };
+      const toCenter = { x: toCenterX, y: toCenterY };
+      fromPoint = applyPerpendicularOffset(fromPoint, fromCenter, toCenter, biOffset);
+      toPoint = applyPerpendicularOffset(toPoint, fromCenter, toCenter, biOffset);
+    }
+
+    const path = computeCurvedPath(fromPoint.x, fromPoint.y, toPoint.x, toPoint.y);
+    const midX = (fromPoint.x + toPoint.x) / 2;
+    const midY = (fromPoint.y + toPoint.y) / 2;
+    const points = [fromPoint, { x: midX, y: midY }, toPoint];
+
+    return { ...edge, path, points };
+  });
 }
 
 /**
@@ -1513,6 +2031,8 @@ function computeStraightEdgePaths(
   nodes: ComputedNode[],
 ): ComputedEdge[] {
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+  const biOffsets = buildBidirectionalOffsetMap(edges);
+  const selfLoopCounts = new Map<string, number>();
 
   return edges.map((edge) => {
     const fromNode = nodeMap.get(edge.from);
@@ -1520,6 +2040,14 @@ function computeStraightEdgePaths(
 
     if (!fromNode || !toNode) {
       return { ...edge, path: '', points: [] };
+    }
+
+    // Self-loop: edge from a node to itself
+    if (edge.from === edge.to) {
+      const loopIdx = selfLoopCounts.get(edge.from) ?? 0;
+      selfLoopCounts.set(edge.from, loopIdx + 1);
+      const { path, points } = computeSelfLoopPath(fromNode, loopIdx);
+      return { ...edge, path, points };
     }
 
     // Calculate centers
@@ -1567,6 +2095,15 @@ function computeStraightEdgePaths(
       toPoint = { x: toPoint.x - dirX * gap, y: toPoint.y - dirY * gap };
     }
 
+    // Apply bidirectional offset if needed
+    const biOffset = biOffsets.get(edge.id);
+    if (biOffset) {
+      const fromCenter = { x: fromCenterX, y: fromCenterY };
+      const toCenter = { x: toCenterX, y: toCenterY };
+      fromPoint = applyPerpendicularOffset(fromPoint, fromCenter, toCenter, biOffset);
+      toPoint = applyPerpendicularOffset(toPoint, fromCenter, toCenter, biOffset);
+    }
+
     const path = `M ${fromPoint.x} ${fromPoint.y} L ${toPoint.x} ${toPoint.y}`;
     const points = [
       fromPoint,
@@ -1590,6 +2127,7 @@ function computeOrthogonalEdgePaths(
   layout: DiagramBaseView['layout'],
 ): ComputedEdge[] {
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+  const biOffsets = buildBidirectionalOffsetMap(edges);
   const direction = layout.direction || 'TB';
   const isVerticalLayout = direction === 'TB' || direction === 'BT';
 
@@ -1617,11 +2155,22 @@ function computeOrthogonalEdgePaths(
   };
 
   const edgeInfos: EdgeInfo[] = [];
+  const selfLoopEdges: ComputedEdge[] = [];
+  const selfLoopCounts = new Map<string, number>();
 
   for (const edge of edges) {
     const fromNode = nodeMap.get(edge.from);
     const toNode = nodeMap.get(edge.to);
     if (!fromNode || !toNode) continue;
+
+    // Self-loop: edge from a node to itself
+    if (edge.from === edge.to) {
+      const loopIdx = selfLoopCounts.get(edge.from) ?? 0;
+      selfLoopCounts.set(edge.from, loopIdx + 1);
+      const { path, points } = computeSelfLoopPath(fromNode, loopIdx);
+      selfLoopEdges.push({ ...edge, path, points });
+      continue;
+    }
 
     const { fromSide, toSide } = determineConnectionSides(fromNode, toNode, isVerticalLayout);
 
@@ -1892,7 +2441,7 @@ function computeOrthogonalEdgePaths(
   });
 
   // Generate paths
-  return edgeInfos.map((info) => {
+  const computedEdges: ComputedEdge[] = edgeInfos.map((info) => {
     const { edge, fromNode, toNode, fromSide, toSide, goesBackward } = info;
 
     // Calculate port positions with spreading
@@ -1912,8 +2461,18 @@ function computeOrthogonalEdgePaths(
       }
     };
 
-    const fromPos = getPortPosition(fromNode, fromSide, srcT);
-    const toPos = getPortPosition(toNode, toSide, tgtT);
+    let fromPos = getPortPosition(fromNode, fromSide, srcT);
+    let toPos = getPortPosition(toNode, toSide, tgtT);
+
+    // Apply bidirectional offset if needed
+    const biOffset = biOffsets.get(edge.id);
+    if (biOffset) {
+      const fromCenter = { x: fromNode.x + fromNode.width / 2, y: fromNode.y + fromNode.height / 2 };
+      const toCenter = { x: toNode.x + toNode.width / 2, y: toNode.y + toNode.height / 2 };
+      fromPos = applyPerpendicularOffset(fromPos, fromCenter, toCenter, biOffset);
+      toPos = applyPerpendicularOffset(toPos, fromCenter, toCenter, biOffset);
+    }
+
     const points: Array<{ x: number; y: number }> = [fromPos];
 
     const isFromVertical = fromSide === 'top' || fromSide === 'bottom';
@@ -1943,8 +2502,17 @@ function computeOrthogonalEdgePaths(
       }
     } else if (isFromVertical && isToVertical) {
       // Vertical to vertical - use allocated horizontal channel
-      if (Math.abs(fromPos.x - toPos.x) < 5) {
-        // Nearly aligned - straight line
+      // Check if the node centers are aligned (not just port positions, which may be spread)
+      const fromNodeCenterX = fromNode.x + fromNode.width / 2;
+      const toNodeCenterX = toNode.x + toNode.width / 2;
+      if (Math.abs(fromNodeCenterX - toNodeCenterX) < 5 && !biOffset) {
+        // Nodes are vertically aligned - use a single straight line down the center
+        // Skip this optimization when bidirectional offset is applied, as it would
+        // override the offset and cause overlapping edges
+        const centerX = (fromNodeCenterX + toNodeCenterX) / 2;
+        points[0] = { x: centerX, y: fromPos.y };
+        // toPos will be pushed with centerX below
+        toPos = { x: centerX, y: toPos.y };
       } else {
         const channelY = horizontalChannelY.get(edge.id) ?? (fromPos.y + toPos.y) / 2;
         // Add step-out segments for cleaner routing
@@ -2019,6 +2587,8 @@ function computeOrthogonalEdgePaths(
       points,
     };
   });
+
+  return [...selfLoopEdges, ...computedEdges];
 }
 
 /**
@@ -2062,6 +2632,48 @@ function determineConnectionSides(
   return dy > 0
     ? { fromSide: 'bottom', toSide: 'top' }
     : { fromSide: 'top', toSide: 'bottom' };
+}
+
+/**
+ * Compute a self-loop path for edges where from === to.
+ * Exits from the top-right of the node, arcs up and right, returns to the right-top.
+ */
+function computeSelfLoopPath(node: ComputedNode, loopIndex: number = 0): { path: string; points: Array<{ x: number; y: number }> } {
+  const topY = node.y;
+  const rightX = node.x + node.width;
+  const cx = node.x + node.width / 2;
+
+  // Base radius for the loop, grows with each additional self-loop
+  const baseRadius = Math.max(Math.min(node.width, node.height) * 0.4, 28);
+  const indexOffset = loopIndex * 12;
+  const radius = baseRadius + indexOffset;
+
+  // Start: top-center of the node
+  const startX = cx;
+  const startY = topY;
+
+  // End: right side of the node, near the top
+  const endX = rightX;
+  const endY = node.y + node.height * 0.25;
+
+  // Control points form a round arc going up and to the right
+  const cp1x = cx;
+  const cp1y = topY - radius;
+  const cp2x = rightX + radius;
+  const cp2y = endY;
+
+  const path = `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`;
+  const midX = (cp1x + cp2x) / 2;
+  const midY = (cp1y + cp2y) / 2;
+  const points = [
+    { x: startX, y: startY },
+    { x: cp1x, y: cp1y },
+    { x: cp2x, y: cp2y },
+    { x: midX, y: midY },
+    { x: endX, y: endY },
+  ];
+
+  return { path, points };
 }
 
 /**
@@ -2115,9 +2727,9 @@ function computeGroupBounds(groups: DiagramGroup[], nodes: ComputedNode[]): Comp
     const maxX = Math.max(...groupNodes.map((n) => n.x + n.width));
     const maxY = Math.max(...groupNodes.map((n) => n.y + n.height));
 
-    const paddingX = 20;
-    const paddingTop = 32; // More space for header
-    const paddingBottom = 20;
+    const paddingX = 30;
+    const paddingTop = 44; // More space for header/label
+    const paddingBottom = 30;
 
     return {
       ...group,

@@ -9,6 +9,7 @@
     node: ComputedNode;
     editable?: boolean;
     dimmed?: boolean;
+    highlighted?: boolean;
     styleConfig?: NodeStyleConfig;
     onMove?: (x: number, y: number) => void;
     onHover?: (nodeId: string | null) => void;
@@ -19,6 +20,7 @@
     node,
     editable = false,
     dimmed = false,
+    highlighted = false,
     styleConfig = DEFAULT_NODE_STYLE,
     onMove,
     onHover,
@@ -26,20 +28,40 @@
   }: Props = $props();
 
   let isDragging = $state(false);
-  let dragStartX = $state(0);
-  let dragStartY = $state(0);
+  let dragOffsetX = $state(0);
+  let dragOffsetY = $state(0);
+  let nodeEl: HTMLDivElement | undefined = $state();
+
+  // Convert client (screen) coordinates to SVG coordinate space
+  function clientToSVG(clientX: number, clientY: number): { x: number; y: number } {
+    const svg = nodeEl?.closest('svg') as SVGSVGElement | null;
+    if (svg) {
+      const ctm = svg.getScreenCTM();
+      if (ctm) {
+        const inverse = ctm.inverse();
+        return {
+          x: inverse.a * clientX + inverse.c * clientY + inverse.e,
+          y: inverse.b * clientX + inverse.d * clientY + inverse.f,
+        };
+      }
+    }
+    // Fallback: return raw client coords
+    return { x: clientX, y: clientY };
+  }
 
   function handleMouseDown(e: MouseEvent) {
     if (!editable) return;
     isDragging = true;
-    dragStartX = e.clientX - node.x;
-    dragStartY = e.clientY - node.y;
+    const svgPoint = clientToSVG(e.clientX, e.clientY);
+    dragOffsetX = svgPoint.x - node.x;
+    dragOffsetY = svgPoint.y - node.y;
   }
 
   function handleMouseMove(e: MouseEvent) {
     if (!isDragging || !editable) return;
-    const newX = e.clientX - dragStartX;
-    const newY = e.clientY - dragStartY;
+    const svgPoint = clientToSVG(e.clientX, e.clientY);
+    const newX = svgPoint.x - dragOffsetX;
+    const newY = svgPoint.y - dragOffsetY;
     onMove?.(newX, newY);
   }
 
@@ -88,6 +110,9 @@
     if (dimmed) {
       classes.push('node-dimmed');
     }
+    if (highlighted) {
+      classes.push('node-state-highlighted');
+    }
     return classes.join(' ');
   });
 </script>
@@ -97,6 +122,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
+  bind:this={nodeEl}
   class={nodeClass}
   style="
     --label-font-size: {styleConfig.labelFontSize}px;
@@ -152,6 +178,12 @@
     transition: opacity 0.2s ease;
   }
 
+  /* State-level highlighting (from DiagramState.highlightedNodes) */
+  .node-state-highlighted {
+    box-shadow: 0 0 0 2px hsl(var(--accent) / 0.6);
+    border-color: hsl(var(--accent));
+  }
+
   /* Semantic styles */
   .node-highlighted {
     border-color: hsl(var(--accent));
@@ -167,10 +199,9 @@
   }
 
   .node-danger {
-    /* background: hsl(var(--destructive) / 0.05); */
-    background: hsl(var(--destructive) / 1);
+    background: hsl(0 72% 51%);
     color: var(--color-white);
-    border-color: hsl(var(--destructive) / 1);
+    border-color: hsl(0 72% 51%);
   }
 
   .node-success {
@@ -192,7 +223,7 @@
     background: hsl(var(--muted-foreground) / 1);
     color: var(--color-white);
     border-color: hsl(var(--muted-foreground) / 1);
-    opacity: 0.3;
+    opacity: 0.5;
   }
 
   /* Node content */
@@ -214,10 +245,11 @@
     -webkit-box-orient: vertical;
     -webkit-line-clamp: var(--max-lines);
     line-clamp: var(--max-lines);
-    /* overflow: hidden; */
+    overflow: hidden;
     text-overflow: ellipsis;
     text-align: center;
     width: 100%;
+    white-space: pre-line;
     /* color: hsl(var(--foreground)); */
     font-family:
       -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;

@@ -229,3 +229,81 @@ export function createDependencyGraph(
 
   return diagram;
 }
+
+/**
+ * Data flow diagram template
+ */
+export function createDataFlowDiagram(
+  nodes: Array<{ id: string; label: string; kind?: 'process' | 'data_store' | 'external' }>,
+  flows: Array<{ from: string; to: string; label?: string }>,
+): DiagramPrimitive {
+  const diagram = createBaseDiagram('data_flow');
+
+  diagram.model.nodes = nodes.map((n) => ({
+    id: n.id,
+    label: n.label,
+    kind: n.kind || 'process',
+  }));
+
+  diagram.model.edges = flows.map((f, i) => ({
+    id: `flow-${i}`,
+    from: f.from,
+    to: f.to,
+    label: f.label,
+    kind: 'flow',
+  }));
+
+  return diagram;
+}
+
+/**
+ * Network diagram template
+ */
+export function createNetworkDiagram(
+  devices: Array<{ id: string; label: string; kind?: 'node' | 'router' | 'switch' | 'server' }>,
+  connections: Array<{ from: string; to: string; label?: string }>,
+): DiagramPrimitive {
+  const diagram = createBaseDiagram('network');
+
+  diagram.model.nodes = devices.map((d) => ({
+    id: d.id,
+    label: d.label,
+    kind: d.kind || 'node',
+  }));
+
+  diagram.model.edges = connections.map((c, i) => ({
+    id: `conn-${i}`,
+    from: c.from,
+    to: c.to,
+    label: c.label,
+    kind: 'connection',
+  }));
+
+  return diagram;
+}
+
+/**
+ * Timeline diagram template
+ */
+export function createTimelineDiagram(
+  events: Array<{ id: string; label: string; kind?: 'event' | 'milestone' }>,
+  sequences: Array<{ from: string; to: string; label?: string }>,
+): DiagramPrimitive {
+  const diagram = createBaseDiagram('timeline');
+
+  diagram.model.nodes = events.map((e) => ({
+    id: e.id,
+    label: e.label,
+    kind: e.kind || 'event',
+  }));
+
+  diagram.model.edges = sequences.map((s, i) => ({
+    id: `seq-${i}`,
+    from: s.from,
+    to: s.to,
+    label: s.label,
+    kind: 'sequence',
+  }));
+
+  return diagram;
+}
