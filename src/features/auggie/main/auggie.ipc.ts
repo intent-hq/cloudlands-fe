@@ -1,3 +1,5 @@
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { ipcMain } from 'electron';
 import ElectronStore from 'electron-store';
 import { existsSync, readdirSync, readFileSync } from 'fs';
@@ -6,6 +8,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { MINIMUM_AUGGIE_VERSION, MINIMUM_NODE_VERSION } from '../../../shared/constants/auggie';
 import { execAsync, execAsyncWithRetry, execFileAsyncWithRetry } from '../../../shared/git/git-env';
+
+const rawExec = promisify(exec);
 import { AUGGIE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { findAuggieAsync } from '../../../shared/main/async-utils';
@@ -81,132 +85,57 @@ function meetsMinimumVersion(version: string, minimum: string = MINIMUM_AUGGIE_V
 // ============================================================================
 
 /**
- * Get common Node.js binary paths to search (platform-specific).
- */
-function getNodePaths(): string[] {
-  const nodePaths: string[] = [];
-  if (process.platform === 'win32') {
-    const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
-    nodePaths.push(
-      path.join(programFiles, 'nodejs', 'node.exe'),
-      path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'node.exe'),
-    );
-    const programFilesX86 = process.env['ProgramFiles(x86)'];
-    if (programFilesX86) {
-      nodePaths.push(path.join(programFilesX86, 'nodejs', 'node.exe'));
-    }
-    if (process.env.APPDATA) {
-      nodePaths.push(path.join(process.env.APPDATA, 'nvm', 'node.exe'));
-    }
-  } else {
-    nodePaths.push(
-      '/usr/local/bin/node',
-      '/usr/bin/node',
-      '/opt/homebrew/bin/node',
-      '/opt/homebrew/opt/node/bin/node',
-      path.join(os.homedir(), '.volta/bin/node'),
-      path.join(os.homedir(), '.fnm/aliases/default/bin/node'),
-      path.join(os.homedir(), '.asdf/shims/node'),
-      path.join(os.homedir(), 'n/bin/node'),
-      '/Applications/Node.app/Contents/MacOS/node',
-    );
-  }
-  return nodePaths;
-}
-
-/**
  * Check the installed Node.js version.
- * Returns the version string, path to the node binary, and whether it meets the minimum version.
+ *
+ * IMPORTANT: This uses rawExec with process.env (NOT execAsyncWithRetry) to
+ * match how the agent process is actually spawned. The agent (acp-provider.ts)
+ * uses `...process.env` without any PATH enhancement. If we used
+ * execAsyncWithRetry, it would go through buildGitEnv() → getEnhancedPath()
+ * which adds ESSENTIAL_SYSTEM_PATHS (including /opt/homebrew/bin), potentially
+ * finding a different node (e.g. Homebrew's v24) than what the agent actually
+ * runs with (e.g. nvm's v18).
  */
 async function checkNodeVersion(): Promise<{
   nodeVersion?: string;
-  nodePath?: string;
   nodeVersionOk: boolean;
 }> {
-  const nodePaths = getNodePaths();
-
-  // Track the best non-qualifying result to report to the user
-  let bestFallback: { nodeVersion: string; nodePath: string; nodeVersionOk: false } | null = null;
-
-  // Try direct paths first
-  for (const testPath of nodePaths) {
-    if (existsSync(testPath)) {
-      try {
-        const { stdout } = await execFileAsyncWithRetry(testPath, ['--version'], { timeout: 5000 });
-        const version = (stdout || '').trim();
-        if (version) {
-          const versionOk = meetsMinimumVersion(version, MINIMUM_NODE_VERSION);
-          if (versionOk) {
-            return { nodeVersion: version, nodePath: testPath, nodeVersionOk: true };
-          }
-          // Save as fallback if we don't have one yet (first found = most likely the one the user knows about)
-          if (!bestFallback) {
-            bestFallback = { nodeVersion: version, nodePath: testPath, nodeVersionOk: false };
-          }
-        }
-      } catch (err) {
-        logger.debug(`Failed to check node at ${testPath}:`, err);
-      }
-    }
-  }
-
-  // Try nvm versions directory
-  try {
-    const nvmRoot = path.join(os.homedir(), '.nvm', 'versions', 'node');
-    if (existsSync(nvmRoot)) {
-      const entries = readdirSync(nvmRoot, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => entry.name)
-        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-
-      for (const versionDir of entries) {
-        const candidate = path.join(nvmRoot, versionDir, 'bin', 'node');
-        if (existsSync(candidate)) {
-          try {
-            const { stdout } = await execFileAsyncWithRetry(candidate, ['--version'], { timeout: 5000 });
-            const version = (stdout || '').trim();
-            if (version) {
-              const versionOk = meetsMinimumVersion(version, MINIMUM_NODE_VERSION);
-              if (versionOk) {
-                return { nodeVersion: version, nodePath: candidate, nodeVersionOk: true };
-              }
-              if (!bestFallback) {
-                bestFallback = { nodeVersion: version, nodePath: candidate, nodeVersionOk: false };
-              }
-            }
-          } catch (err) {
-            logger.debug(`Failed to check nvm node at ${candidate}:`, err);
-          }
-        }
-      }
-    }
-  } catch (err) {
-    logger.debug('Failed to scan nvm directories', { error: err });
-  }
-
-  // Fallback: try `which node` / `where node`
-  try {
-    const whichCommand = process.platform === 'win32' ? 'where node' : 'which node';
-    const { stdout: foundPath } = await execAsync(whichCommand, { timeout: 5000 });
-    const resolvedPath = foundPath.trim().split(/\r?\n/)[0];
-    if (resolvedPath) {
-      const { stdout } = await execFileAsyncWithRetry(resolvedPath, ['--version'], { timeout: 5000 });
+  // Check the node version using process.env directly (NOT the enhanced/auggie PATH).
+  // The agent process is spawned via acp-provider with `...process.env` — it does
+  // NOT use getEnhancedPath() or getAuggieExecPATH(). So `#!/usr/bin/env node`
+  // resolves `node` using the exact PATH the app was launched with.
+  //
+  // We use rawExec (promisified child_process.exec) instead of execAsyncWithRetry
+  // because the latter goes through buildGitEnv() → getEnhancedPath(), which adds
+  // ESSENTIAL_SYSTEM_PATHS (including /opt/homebrew/bin). That can shadow the user's
+  // nvm/volta node with Homebrew's node, giving a false "version OK" result.
+  // Retry up to 3 times to handle transient spawn errors (e.g. EAGAIN).
+  const MAX_RETRIES = 3;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const { stdout } = await rawExec('node --version', { timeout: 5000, env: process.env, windowsHide: true });
       const version = (stdout || '').trim();
       if (version) {
         const versionOk = meetsMinimumVersion(version, MINIMUM_NODE_VERSION);
-        if (versionOk) {
-          return { nodeVersion: version, nodePath: resolvedPath, nodeVersionOk: true };
-        }
-        if (!bestFallback) {
-          bestFallback = { nodeVersion: version, nodePath: resolvedPath, nodeVersionOk: false };
-        }
+        logger.info('Node.js version check (runtime PATH)', { version, versionOk });
+        return { nodeVersion: version, nodeVersionOk: versionOk };
       }
+    } catch (err) {
+      lastError = err;
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'EAGAIN' || code === 'EBADF') {
+        logger.warn(`Node version check attempt ${attempt}/${MAX_RETRIES} failed with ${code}, retrying...`);
+        await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+        continue;
+      }
+      // Non-transient error — no point retrying
+      break;
     }
-  } catch (err) {
-    logger.debug('Node not found via which/where', { error: err });
   }
 
-  return bestFallback ?? { nodeVersionOk: false };
+  logger.warn('Node not found on PATH', { error: lastError });
+  // If `node --version` fails, auggie can't run.
+  return { nodeVersionOk: false };
 }
 
 // ============================================================================
@@ -867,7 +796,6 @@ export function setupAuggieIPC() {
       minimumVersion: string;
       authDetails?: string;
       nodeVersion?: string;
-      nodePath?: string;
       nodeVersionOk: boolean;
     } = {
       installed: false,
@@ -882,7 +810,6 @@ export function setupAuggieIPC() {
       try {
         const nodeResult = await checkNodeVersion();
         status.nodeVersion = nodeResult.nodeVersion;
-        status.nodePath = nodeResult.nodePath;
         status.nodeVersionOk = nodeResult.nodeVersionOk;
         if (!status.nodeVersionOk) {
           if (status.nodeVersion) {
@@ -939,6 +866,7 @@ export function setupAuggieIPC() {
         return {
           success: false,
           error: `Auggie CLI failed: ${errorMessage}. Please try again.`,
+          data: status,
         };
       }
 
@@ -1016,7 +944,6 @@ export function setupAuggieIPC() {
           : ' (not found)';
         logger.warn('Node.js version check failed before install', {
           version: nodeCheck.nodeVersion,
-          path: nodeCheck.nodePath,
         });
         return {
           success: false,

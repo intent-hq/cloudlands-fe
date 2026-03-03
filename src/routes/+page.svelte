@@ -14,6 +14,8 @@
   import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
   import { modelStore } from '$lib/stores/model.store.svelte';
   import StarterPromptButton from '$lib/components/workspace/StarterPromptButton.svelte';
+  import { AUGGIE_CHANNELS } from '$shared/ipc/channels';
+  import NodeVersionWarning from '$lib/components/NodeVersionWarning.svelte';
   import WorkspaceTableView, {
     type RepoInfo,
   } from '$lib/components/workspace/WorkspaceTableView.svelte';
@@ -202,6 +204,25 @@
     };
     window.addEventListener('open-create-workspace-modal', handleOpenForm);
     return () => window.removeEventListener('open-create-workspace-modal', handleOpenForm);
+  });
+
+  // Node.js version state (checked independently of provider setup)
+  let nodeVersionOk = $state<boolean | null>(null);
+  let nodeVersion = $state<string | undefined>(undefined);
+
+  onMount(async () => {
+    try {
+      const result = await invoke<{
+        success: boolean;
+        data?: { nodeVersionOk: boolean; nodeVersion?: string };
+      }>(AUGGIE_CHANNELS.STATUS);
+      if (result.data) {
+        nodeVersionOk = result.data.nodeVersionOk;
+        nodeVersion = result.data.nodeVersion;
+      }
+    } catch {
+      // Silently ignore — the warning just won't show
+    }
   });
 
   // Preference keys for localStorage
@@ -600,6 +621,11 @@
           initialRepo={initialRepoForCreate}
           showFirstTimeHints={isEmpty}
         />
+
+        <!-- Node.js version warning (shown regardless of provider setup state) -->
+        {#if nodeVersionOk === false}
+          <NodeVersionWarning {nodeVersion} class="-ml-4 w-[calc(100%+32px)] mt-4" />
+        {/if}
       </div>
     {/if}
 
@@ -843,7 +869,10 @@
     pendingRemoveRepoPath = null;
     if (repoPath) {
       try {
-        const result = await invoke<{ success: boolean; data?: { removed: boolean } }>(IPC_CHANNELS.WORKSPACE.REMOVE_RECENT_REPOSITORY, { repository: repoPath });
+        const result = await invoke<{ success: boolean; data?: { removed: boolean } }>(
+          IPC_CHANNELS.WORKSPACE.REMOVE_RECENT_REPOSITORY,
+          { repository: repoPath },
+        );
         if (result?.data?.removed) {
           knownRepos = knownRepos.filter((r) => r.path !== repoPath);
         }

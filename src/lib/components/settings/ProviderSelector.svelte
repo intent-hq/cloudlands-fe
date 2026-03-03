@@ -25,9 +25,9 @@
     faCircleNotch,
     faPaste,
     faTerminal,
-    faTriangleExclamation,
     faXmark,
   } from '@fortawesome/free-solid-svg-icons';
+  import NodeVersionWarning from '$lib/components/NodeVersionWarning.svelte';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
@@ -281,7 +281,9 @@
       const result = await invoke<{ success: boolean; data?: AuggieStatus; error?: string }>(
         AUGGIE_CHANNELS.STATUS,
       );
-      if (result.success && result.data) {
+      // Read data regardless of success — when auggie --version fails (e.g. Node too old),
+      // the handler still returns data with nodeVersionOk/nodeVersion so the warning shows.
+      if (result.data) {
         auggieStatus = result.data;
         if (providerAvailability && auggieStatus.installed) {
           providerAvailability.providers.auggie.available = true;
@@ -841,20 +843,7 @@
 
         <!-- Node.js version warning -->
         {#if auggieStatus && auggieStatus.nodeVersionOk === false}
-          <div
-            class="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-md text-amber-600 dark:text-amber-400 mt-1"
-          >
-            <Fa icon={faTriangleExclamation} class="w-4 h-4 flex-shrink-0" />
-            <span class="text-xs">
-              {#if auggieStatus.nodeVersion}
-                Node.js {MINIMUM_NODE_VERSION}+ is required to use Auggie. You have {auggieStatus.nodeVersion}
-                installed.
-              {:else}
-                Node.js {MINIMUM_NODE_VERSION}+ is required to use Auggie. Node.js was not found on
-                your system.
-              {/if}
-            </span>
-          </div>
+          <NodeVersionWarning nodeVersion={auggieStatus.nodeVersion} class="mt-1" />
         {/if}
 
         <!-- Waiting for browser auth (localhost OAuth flow) -->
@@ -953,9 +942,7 @@
           >
             <p class="text-xs text-destructive-foreground">{installError}</p>
             {#if installErrorType === 'permission'}
-              <p class="text-xs text-subtle">
-                Try running with sudo or fix npm permissions.
-              </p>
+              <p class="text-xs text-subtle">Try running with sudo or fix npm permissions.</p>
             {:else if installErrorType === 'node_too_old'}
               <p class="text-xs text-muted-foreground">
                 Update <a
@@ -970,7 +957,8 @@
                         event: e,
                       });
                   }}>Node.js</a
-                > to version {MINIMUM_NODE_VERSION.split('.')[0]} or later.
+                >
+                to version {MINIMUM_NODE_VERSION.split('.')[0]} or later.
               </p>
             {:else if installErrorType === 'missing_npm'}
               <p class="text-xs text-subtle">
