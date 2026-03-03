@@ -1,4 +1,5 @@
 import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+import { autoUpdateStore } from '$features/auto-update/auto-update.store.svelte';
 import type { DeepLinkAction } from './deep-link-handler';
 import { Logger } from '$shared/logger';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -59,6 +60,9 @@ class DeepLinkStore {
         case 'clone':
           await this.handleCloneRepository(action.params);
           break;
+        case 'settings':
+          await this.handleSettings(action.params);
+          break;
         default:
           throw new Error(`Unknown action type: ${action.type}`);
       }
@@ -110,6 +114,45 @@ class DeepLinkStore {
       ...params,
       title: title || `Clone of ${repo.split('/').pop()?.replace('.git', '')}`,
     });
+  }
+
+  private async handleSettings(params: Record<string, string>) {
+    const { beta } = params;
+    const enableBeta = beta === 'true';
+    const channel = enableBeta ? 'beta' : 'stable';
+
+    try {
+      await autoUpdateStore.setChannel(channel);
+    } catch {
+      // Show error toast and bail out
+      import('svelte-sonner')
+        .then(({ toast }) => {
+          toast.error('Failed to switch update channel');
+        })
+        .catch(() => {
+          // Toast not available - not critical
+        });
+      this.#state = { ...this.#state, pendingAction: null, processing: false };
+      return;
+    }
+
+    // Show a toast confirming the channel switch (session-only)
+    import('svelte-sonner')
+      .then(({ toast }) => {
+        if (enableBeta) {
+          toast.success('Beta updates enabled for this session');
+        } else {
+          toast.success('Switched to stable update channel for this session');
+        }
+      })
+      .catch(() => {
+        // Toast not available - not critical
+      });
+
+    // Trigger an update check after switching channel
+    await autoUpdateStore.checkForUpdates();
+
+    this.#state = { ...this.#state, pendingAction: null, processing: false };
   }
 
   private navigateToCreateModal(params: Record<string, string>) {

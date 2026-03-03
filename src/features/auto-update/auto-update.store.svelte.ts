@@ -298,6 +298,7 @@ function createAutoUpdateStore() {
         state = { ...state, channel };
       } catch (e) {
         console.error('Failed to set update channel:', e);
+        throw e;
       }
     },
 

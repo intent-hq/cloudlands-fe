@@ -6,7 +6,7 @@ import { Logger } from '../../shared/logger';
 const mainLogger = new Logger('DeepLinkHandler');
 
 export interface DeepLinkAction {
-  type: 'open' | 'create' | 'clone';
+  type: 'open' | 'create' | 'clone' | 'settings';
   params: Record<string, string>;
 }
 
@@ -40,7 +40,7 @@ export class DeepLinkHandler {
       }
 
       // Validate action
-      if (!['open', 'create', 'clone'].includes(action)) {
+      if (!['open', 'create', 'clone', 'settings'].includes(action)) {
         mainLogger.warn('[DeepLinkHandler] Invalid action:', { action });
         return null;
       }
@@ -54,14 +54,14 @@ export class DeepLinkHandler {
       mainLogger.info(`[DeepLinkHandler] Parsed action: ${action}`, { params });
 
       // Validate action type
-      const validActions = ['open', 'create', 'clone'] as const;
+      const validActions = ['open', 'create', 'clone', 'settings'] as const;
       if (!validActions.includes(action as any)) {
         mainLogger.warn(`[DeepLinkHandler] Invalid action type: ${action}`);
         return null;
       }
 
       return {
-        type: action as 'open' | 'create' | 'clone',
+        type: action as 'open' | 'create' | 'clone' | 'settings',
         params,
       };
     } catch (error) {

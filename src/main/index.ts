@@ -1042,9 +1042,10 @@ function createWindow() {
 }
 
 /**
- * Create a new window for a deep link URL
- * This is called when the app receives an intent:// URL from the OS
- * Always creates a NEW window (doesn't reuse existing windows)
+ * Handle a deep link URL received from the OS (intent:// protocol)
+ *
+ * Settings deep links are sent to the existing main window.
+ * All other deep link types create a new window.
  */
 async function createWindowForDeepLink(deepLinkUrl: string) {
   logger.info('Creating window for deep link:', { url: deepLinkUrl });
@@ -1053,6 +1054,23 @@ async function createWindowForDeepLink(deepLinkUrl: string) {
   const action = deepLinkHandler.parseDeepLink(deepLinkUrl);
   if (!action) {
     logger.warn('Failed to parse deep link URL:', { url: deepLinkUrl });
+    return;
+  }
+
+  // Settings actions should be sent to the existing window, not create a new one
+  if (action.type === 'settings') {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('deep-link', action);
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.focus();
+      logger.info('Sent settings deep link to existing window');
+    } else {
+      // No window yet — store as pending (will be processed after startup)
+      logger.info('No window available for settings deep link, storing as pending');
+      await deepLinkHandler.handleDeepLink(deepLinkUrl, null);
+    }
     return;
   }
 
@@ -2687,7 +2705,7 @@ app.on('open-url', async (event: Electron.Event, url: string) => {
   } else {
     // App is not ready yet, store the URL for processing after startup
     logger.info('App not ready, storing URL for later processing');
-    deepLinkHandler['pendingUrl'] = url;
+    await deepLinkHandler.handleDeepLink(url, null);
   }
 });
 
