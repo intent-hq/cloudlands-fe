@@ -18,7 +18,6 @@ import { WorkspaceConfig } from '$shared/main/config';
 import { sanitizeBranchName } from '$lib/utils/workspace-validation';
 import { gitService } from '$features/git/main/git.service';
 import type { WorkspaceId } from '$shared/types';
-import { isWorkspaceSlug } from '$shared/services/workspace-slug';
 
 /**
  * Tool to set the workspace title
@@ -31,7 +30,7 @@ export class RenameWorkspaceTool extends BaseMCPTool {
   constructor(protocolAdapter: ProtocolAdapter, workspaceId: string, eventEmitter?: any) {
     super(
       'set_workspace_title',
-      'Set the workspace title when it doesn\'t have one yet. Keep titles short (1-5 words) and descriptive of the main task or goal. Will skip if workspace already has a custom title.',
+      "Set the workspace title when it doesn't have one yet. Keep titles short (1-5 words) and descriptive of the main task or goal. Will skip if workspace already has a custom title.",
       createInputSchema(
         {
           title: stringProperty(
@@ -64,11 +63,12 @@ export class RenameWorkspaceTool extends BaseMCPTool {
       // In MCP context, protocolAdapter.getWorkspace returns data directly or null
       const workspace = await this.protocolAdapter.getWorkspace(this.workspaceId);
 
-      // Check if workspace already has a custom title (not empty, not a slug)
+      // Check if workspace already has a custom title
+      // A title is "custom" if it's different from the workspace ID (not auto-generated)
       // Never allow overriding an existing custom title
       if (workspace?.title) {
         const currentTitle = workspace.title.trim();
-        const hasCustomTitle = currentTitle !== '' && !isWorkspaceSlug(currentTitle);
+        const hasCustomTitle = currentTitle !== '' && currentTitle !== workspace.id;
         if (hasCustomTitle) {
           return this.success(
             `Workspace already has a custom title: "${currentTitle}". Skipping rename.`,
