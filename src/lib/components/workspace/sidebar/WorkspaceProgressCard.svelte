@@ -1287,22 +1287,22 @@
             {#if summaryMessage.action}
               <div class="mt-1">
                 <Tooltip
-                  content={summaryMessage.action.tooltip}
+                  content={summaryMessage.action?.tooltip}
                   side="bottom"
                   align="start"
-                  disabled={!summaryMessage.action.tooltip}
+                  disabled={!summaryMessage.action?.tooltip}
                 >
                   <Button
                     variant="ghost-light"
                     size="xs"
                     class="w-full text-left justify-start px-0! -mb-1"
-                    onclick={summaryMessage.action.onClick}
+                    onclick={summaryMessage.action?.onClick}
                   >
-                    {#if summaryMessage.action.icon}
-                      <Fa icon={summaryMessage.action.icon} size="xs" class="ml-1" />
+                    {#if summaryMessage.action?.icon}
+                      <Fa icon={summaryMessage.action?.icon} size="xs" class="ml-1" />
                     {/if}
                     <span class="underline decoration-dotted underline-offset-2"
-                      >{summaryMessage.action.label}</span
+                      >{summaryMessage.action?.label}</span
                     >
                   </Button>
                 </Tooltip>
