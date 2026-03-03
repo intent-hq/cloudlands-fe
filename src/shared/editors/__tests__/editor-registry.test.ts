@@ -64,7 +64,7 @@ describe('Editor Registry', () => {
     }
   });
 
-  it('should have Windows terminal entries (powershell, windows-terminal, git-bash)', () => {
+  it('should have Windows terminal entries (powershell, windows-terminal)', () => {
     const powershell = EDITOR_REGISTRY.find((e) => e.id === 'powershell');
     expect(powershell).toBeDefined();
     expect(powershell!.category).toBe('terminal');
@@ -77,12 +77,6 @@ describe('Editor Registry', () => {
     expect(windowsTerminal!.category).toBe('terminal');
     expect(windowsTerminal!.win32Only).toBe(true);
     expect(windowsTerminal!.platforms?.win32?.binaries).toContain('wt');
-
-    const gitBash = EDITOR_REGISTRY.find((e) => e.id === 'git-bash');
-    expect(gitBash).toBeDefined();
-    expect(gitBash!.category).toBe('terminal');
-    expect(gitBash!.win32Only).toBe(true);
-    expect(gitBash!.platforms?.win32?.binaries).toContain('git-bash');
   });
 
   it('finder entry should have win32 display name overrides', () => {

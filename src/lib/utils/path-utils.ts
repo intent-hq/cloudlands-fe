@@ -82,6 +82,23 @@ export function joinPath(...segments: string[]): string {
 }
 
 /**
+ * Check if a path is absolute.
+ * Handles both Unix (`/foo`) and Windows (`C:\foo`, `C:/foo`, `\\server\share`) absolute paths.
+ * @param p The path to check
+ * @returns true if the path is absolute
+ */
+export function isAbsolutePath(p: string): boolean {
+  if (!p) return false;
+  // Unix absolute path
+  if (p.startsWith('/')) return true;
+  // Windows drive letter (e.g., C:\ or C:/)
+  if (/^[A-Za-z]:[/\\]/.test(p)) return true;
+  // Windows UNC path (e.g., \\server\share)
+  if (p.startsWith('\\\\')) return true;
+  return false;
+}
+
+/**
  * Detect if running on Windows (renderer-safe).
  * Uses navigator.platform which is available in the renderer process.
  * @returns true if the current platform is Windows
@@ -104,3 +121,5 @@ export function toNativePath(p: string): string {
   }
   return p;
 }
+
+

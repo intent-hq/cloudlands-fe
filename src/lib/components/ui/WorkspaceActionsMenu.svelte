@@ -27,7 +27,7 @@
   import { invoke } from '$lib/electron-bridge';
   import { installedEditorsStore } from '$lib/stores/installed-editors.store.svelte';
   import { createLogger } from '$lib/utils/client-logger';
-  import { toNativePath } from '$lib/utils/path-utils';
+  import { isAbsolutePath, toNativePath, isWindowsPlatform } from '$lib/utils/path-utils';
   import {
     faBoxArchive,
     faBoxOpen,
@@ -123,12 +123,13 @@
         invoke<any>('workspace:get-root', { workspaceId })
           .then((rootPath) => {
             if (rootPath) {
-              if (filePath.startsWith('/')) {
-                resolvedPath = filePath;
+              const normalizedRoot = rootPath.replace(/\\/g, '/');
+              if (isAbsolutePath(filePath)) {
+                resolvedPath = filePath.replace(/\\/g, '/');
               } else {
-                resolvedPath = `${rootPath}/${filePath}`.replace(/\/+/g, '/');
+                resolvedPath = `${normalizedRoot}/${filePath}`.replace(/\/+/g, '/');
               }
-              resolvedFolderPath = rootPath;
+              resolvedFolderPath = normalizedRoot;
               logger.info('[WorkspaceActionsMenu] Resolved note path:', {
                 filePath,
                 rootPath,
@@ -156,12 +157,13 @@
                 workspaceFolderPath || workspace.worktreePath || workspace.repositoryPath;
 
               if (workspacePath) {
-                if (filePath.startsWith('/')) {
-                  resolvedPath = filePath;
+                const normalizedWorkspacePath = workspacePath.replace(/\\/g, '/');
+                if (isAbsolutePath(filePath)) {
+                  resolvedPath = filePath.replace(/\\/g, '/');
                 } else {
-                  resolvedPath = `${workspacePath}/${filePath}`.replace(/\/+/g, '/');
+                  resolvedPath = `${normalizedWorkspacePath}/${filePath}`.replace(/\/+/g, '/');
                 }
-                resolvedFolderPath = workspacePath;
+                resolvedFolderPath = normalizedWorkspacePath;
                 logger.info('[WorkspaceActionsMenu] Resolved file path:', {
                   filePath,
                   workspacePath,
@@ -441,21 +443,23 @@
     }
   }
 
+
+
   async function copyWorkspacePath() {
     if (!filePath) return;
     try {
       // If the path is already absolute and we have a workspace folder path,
       // make it relative to the workspace
-      let pathToCopy = filePath;
+      let pathToCopy = filePath.replace(/\\/g, '/');
 
-      if (filePath.startsWith('/') && resolvedFolderPath) {
+      if (isAbsolutePath(filePath) && resolvedFolderPath) {
         // Convert absolute path to relative by removing the workspace prefix
         const workspacePrefix = resolvedFolderPath.endsWith('/')
           ? resolvedFolderPath
           : resolvedFolderPath + '/';
 
-        if (filePath.startsWith(workspacePrefix)) {
-          pathToCopy = filePath.slice(workspacePrefix.length);
+        if (pathToCopy.startsWith(workspacePrefix)) {
+          pathToCopy = pathToCopy.slice(workspacePrefix.length);
         }
       }
 
@@ -562,7 +566,7 @@
   }
 </script>
 
-<div class="w-full">
+<div class="w-full overflow-hidden">
   {#if showFileActions}
     <!-- Open Actions - dynamically rendered based on installed editors -->
     <div class="space-y-0.5">
@@ -571,7 +575,7 @@
         <Button
           variant="ghost"
           onclick={() => openInEditor(editor)}
-          class="w-full justify-start"
+          class="w-full min-w-0 justify-start"
           size="sm"
         >
           {#if editor.iconBase64}
@@ -590,7 +594,7 @@
           {:else}
             <Fa icon={faCode} size="12" class="mr-1.5 opacity-50" />
           {/if}
-          <span>Open in {editor.name}</span>
+          <span class="truncate" title="Open in {editor.name}">Open in {editor.name}</span>
         </Button>
       {/each}
 
@@ -598,7 +602,7 @@
       <Button
         variant="ghost"
         onclick={openWithOther}
-        class="w-full justify-start text-subtle"
+        class="w-full min-w-0 justify-start text-subtle"
         size="sm"
       >
         <Fa icon={faUpRightFromSquare} size="12" class="ml-1.25 mr-2 opacity-50" />
@@ -610,14 +614,8 @@
 
     <!-- Copy Actions -->
     <div class="space-y-0.5">
-      <Button
-        variant="ghost"
-        onclick={copyAbsolutePath}
-        class="pl-3.75! gap-2.25! w-full justify-start"
-        size="sm"
-      >
-        <div class="text-xs font-black font-mono mr-1 w-3 opacity-50">/</div>
-        <!-- <Fa icon={faCopy} size="12" class="mr-1.5" />  -->
+      <Button variant="ghost" onclick={copyAbsolutePath} class="pl-3.75! gap-2.25! w-full min-w-0 justify-start" size="sm">
+        <div class="text-xs font-black font-mono mr-1 w-3 opacity-50">{isWindowsPlatform() ? '\\' : '/'}</div>
         <span>Copy Absolute Path</span>
       </Button>
 
@@ -625,7 +623,7 @@
         <Button
           variant="ghost"
           onclick={copyWorkspacePath}
-          class="pl-3.75! gap-2.25! w-full justify-start"
+          class="pl-3.75! gap-2.25! w-full min-w-0 justify-start"
           size="sm"
         >
           <div class="text-xs font-black font-mono mr-1 w-3 opacity-50">./</div>
@@ -638,7 +636,7 @@
         <Button
           variant="ghost"
           onclick={copyFileName}
-          class="pl-3.75! gap-2.25! w-full justify-start"
+          class="pl-3.75! gap-2.25! w-full min-w-0 justify-start"
           size="sm"
         >
           <Fa icon={faFile} size="12" class="ml-1 mr-1.5 opacity-50" />
@@ -660,7 +658,7 @@
           action.onClick();
           onClose?.();
         }}
-        class="pl-3.75! gap-2.25! w-full justify-start {action.variant === 'destructive'
+        class="pl-3.75! gap-2.25! w-full min-w-0 justify-start {action.variant === 'destructive'
           ? 'hover:bg-destructive hover:text-destructive-foreground'
           : ''}"
         size="sm"
@@ -670,7 +668,7 @@
         {:else if action.icon}
           <Fa icon={action.icon} size="12" class="mr-1.5 opacity-50" />
         {/if}
-        <span>{action.label}</span>
+        <span class="truncate" title={action.label}>{action.label}</span>
       </Button>
     {/each}
   {/if}
@@ -682,7 +680,7 @@
     <Button
       variant="ghost"
       onclick={handleArchive}
-      class="pl-3.75! gap-2.25! w-full justify-start"
+      class="pl-3.75! gap-2.25! w-full min-w-0 justify-start"
       size="sm"
     >
       <Fa icon={isArchived ? faBoxOpen : faBoxArchive} size="12" class="mr-1.5 opacity-50" />
@@ -695,7 +693,7 @@
     <Button
       variant="ghost"
       onclick={handleDelete}
-      class="pl-3.75! gap-2.25! w-full justify-start hover:bg-destructive hover:text-destructive-foreground"
+      class="pl-3.75! gap-2.25! w-full min-w-0 justify-start hover:bg-destructive hover:text-destructive-foreground"
       size="sm"
     >
       <Fa icon={faTrash} size="12" class="mr-1.5 opacity-50" />
@@ -710,7 +708,7 @@
       variant="ghost"
       onclick={handleDeleteFile}
       disabled={isDeletingFile}
-      class="pl-3.75! gap-2.25! w-full justify-start hover:bg-destructive hover:text-destructive-foreground"
+      class="pl-3.75! gap-2.25! w-full min-w-0 justify-start hover:bg-destructive hover:text-destructive-foreground"
       size="sm"
     >
       {#if isDeletingFile}

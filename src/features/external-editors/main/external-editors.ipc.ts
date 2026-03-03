@@ -504,19 +504,18 @@ export function registerExternalEditorsHandlers(): void {
             if (binary) {
               command = binary;
               if (editorId === 'terminal') {
-                // cmd.exe: use /K cd to set working directory
-                args = ['/K', `cd /d "${path}"`];
+                // CMD: use start /D to set working directory directly (avoids cd /d mangling through multiple cmd layers)
+                const nativePath = path.replace(/\//g, '\\');
+                command = 'cmd';
+                args = ['/c', 'start', '""', '/D', nativePath, binary];
               } else if (editorId === 'powershell') {
-                // PowerShell: use -NoExit and Set-Location
-                // Escape single quotes by doubling them (PowerShell convention)
-                const escapedPath = path.replace(/'/g, "''");
-                args = ['-NoExit', '-Command', `Set-Location '${escapedPath}'`];
+                // PowerShell: use start /D to set working directory directly
+                const nativePath = path.replace(/\//g, '\\');
+                command = 'cmd';
+                args = ['/c', 'start', '""', '/D', nativePath, binary];
               } else if (editorId === 'windows-terminal') {
-                // Windows Terminal: use -d flag
+                // Windows Terminal: GUI app, just use -d flag
                 args = ['-d', path];
-              } else if (editorId === 'git-bash') {
-                // Git Bash: use --cd flag
-                args = [`--cd=${path}`];
               } else {
                 args = file ? [path, file] : [path];
               }
@@ -537,10 +536,11 @@ export function registerExternalEditorsHandlers(): void {
             platform: process.platform,
           });
 
+          const isWindowsGuiTerminal = process.platform === 'win32' && editorId === 'windows-terminal';
           const child = spawn(command, args, {
             detached: true,
             stdio: 'ignore',
-            ...(process.platform === 'win32' ? { windowsHide: true } : {}),
+            ...(process.platform === 'win32' ? { windowsHide: !isWindowsGuiTerminal } : {}),
           });
 
           // Wait briefly to catch immediate spawn errors (ENOENT, EACCES, etc.)

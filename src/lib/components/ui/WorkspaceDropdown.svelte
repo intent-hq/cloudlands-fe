@@ -188,7 +188,7 @@
   {/snippet}
 
   {#snippet content({ close: _close }: { close: () => void })}
-    <div class="w-56">
+    <div class="w-auto min-w-56 max-w-72">
       <WorkspaceActionsMenu
         filePath={workspacePath}
         workspaceId={workspace.id}

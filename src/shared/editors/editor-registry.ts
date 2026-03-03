@@ -568,19 +568,4 @@ export const EDITOR_REGISTRY: EditorDefinition[] = [
       },
     },
   },
-  {
-    id: 'git-bash',
-    name: 'Git Bash',
-    shortLabel: 'Git Bash',
-    appName: 'Git Bash',
-    category: 'terminal',
-    handlerType: 'generic',
-    priority: 97,
-    win32Only: true,
-    platforms: {
-      win32: {
-        binaries: ['git-bash'],
-      },
-    },
-  },
 ];
