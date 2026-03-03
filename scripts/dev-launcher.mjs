@@ -12,7 +12,7 @@ import { createServer } from 'net';
 import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, rmSync } from 'fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -272,13 +272,76 @@ function getCurrentGitBranch() {
   return '';
 }
 
+/**
+ * Get the Electron userData parent directory (where dev-instance-N dirs are created).
+ * Mirrors Electron's default app.getPath('userData') for an app named "Electron" in dev.
+ */
+function getElectronUserDataDir() {
+  const home = process.env.HOME || process.env.USERPROFILE || '';
+  switch (process.platform) {
+    case 'darwin':
+      return join(home, 'Library', 'Application Support', 'Electron');
+    case 'win32':
+      return join(process.env.APPDATA || join(home, 'AppData', 'Roaming'), 'Electron');
+    default: // linux, etc.
+      return join(process.env.XDG_CONFIG_HOME || join(home, '.config'), 'Electron');
+  }
+}
+
+/**
+ * Remove stale dev-instance-N directories that haven't been accessed recently.
+ * Runs at dev startup to prevent unbounded disk growth from Electron userData
+ * (caches, databases, GPU cache, etc.) accumulating across dev sessions.
+ */
+function pruneStaleDevInstances(currentInstanceNum, maxAgeDays = 7) {
+  const userDataDir = getElectronUserDataDir();
+  if (!existsSync(userDataDir)) return;
+
+  const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  let pruned = 0;
+
+  try {
+    const entries = readdirSync(userDataDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !entry.name.startsWith('dev-instance-')) continue;
+
+      // Never prune the instance we are about to launch
+      if (entry.name === `dev-instance-${currentInstanceNum}`) continue;
+
+      const dirPath = join(userDataDir, entry.name);
+      try {
+        const { atimeMs, mtimeMs } = statSync(dirPath);
+        const lastUsed = Math.max(atimeMs, mtimeMs);
+        const ageDays = Math.round((now - lastUsed) / 86400000);
+        if (now - lastUsed > maxAgeMs) {
+          rmSync(dirPath, { recursive: true, force: true });
+          pruned++;
+          console.log(`  🧹 Pruned stale ${entry.name} (unused for ${ageDays}d)`);
+        }
+      } catch {
+        // Skip entries we can't stat or remove (e.g. permission issues, open files)
+      }
+    }
+  } catch {
+    // userData dir not readable — skip silently
+  }
+
+  if (pruned > 0) {
+    console.log(`  🧹 Cleaned up ${pruned} stale dev instance(s)\n`);
+  }
+}
+
 // Main
 const args = process.argv.slice(2);
 const cdpMode = args.includes('--cdp') || args.includes('-c');
 const devName = parseNameArg(args) || getCurrentGitBranch();
 
 findAvailablePorts(cdpMode)
-  .then((ports) => runDev(ports, cdpMode, devName))
+  .then((ports) => {
+    pruneStaleDevInstances(ports.instanceNum);
+    runDev(ports, cdpMode, devName);
+  })
   .catch((err) => {
     console.error('❌ Error:', err.message);
     process.exit(1);
