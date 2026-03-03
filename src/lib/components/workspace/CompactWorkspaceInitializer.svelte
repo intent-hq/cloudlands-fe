@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { goto } from '$app/navigation';
   import { agentService } from '$features/agent/agent.service';
   import { setupScriptStore, SETUP_SCRIPT_TEMPLATES, getTemplateContent } from '$features/setup-scripts';
@@ -463,6 +464,18 @@
         stayOnHomePage,
       };
       localStorage.setItem(FORM_STATE_KEY, JSON.stringify(formState));
+    }
+  });
+
+  // When the active provider changes externally (e.g. user switches in settings),
+  // update the form's selected provider and clear the stale model selection.
+  $effect(() => {
+    const newProviderId = activeProviderStore.activeProviderId;
+    const currentProvider = untrack(() => selectedProvider);
+    if (newProviderId && newProviderId !== currentProvider) {
+      selectedProvider = newProviderId;
+      selectedModel = undefined;
+      modelWasOverridden = false;
     }
   });
 
