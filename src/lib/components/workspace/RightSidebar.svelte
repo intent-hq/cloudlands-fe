@@ -76,6 +76,7 @@
   <div
     class="h-full z-10 {drawerOpen ? '' : 'invisible pointer-events-none'}"
     transition:slide={{ axis: 'x' }}
+    aria-label="Right sidebar"
   >
     <ResizablePanel
       side="right"

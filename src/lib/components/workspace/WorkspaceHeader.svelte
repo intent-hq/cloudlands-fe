@@ -58,7 +58,7 @@
   }
 </script>
 
-<div class="px-6 py-2 border-b-[1px] flex-none border-border flex justify-between items-center">
+<div class="px-6 py-2 border-b-[1px] flex-none border-border flex justify-between items-center" aria-label="Workspace header">
   <div class="flex items-center flex-1 gap-2">
     <a
       href="/"

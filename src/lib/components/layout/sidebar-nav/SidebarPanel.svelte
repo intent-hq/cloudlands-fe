@@ -58,7 +58,7 @@
 {#if panelItem}
   <!-- Outer wrapper animates width; inner content stays at full static width -->
   <div class="shrink-0 h-full overflow-hidden" transition:slide={{ axis: 'x', duration: 200 }}>
-    <div class="sidebar-panel h-full flex flex-col relative" style="width: {panelWidth}px;">
+    <div class="sidebar-panel h-full flex flex-col relative" style="width: {panelWidth}px;" aria-label="Sidebar panel">
       <!-- Header -->
       <div class="flex items-center justify-between px-3 pt-3 pb-2 shrink-0">
         <div class="min-w-0">

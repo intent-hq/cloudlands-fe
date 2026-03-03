@@ -93,7 +93,7 @@
   }
 </script>
 
-<div class="main-navigation-rail relative w-full h-full flex flex-col flex-none z-0 min-h-0">
+<div class="main-navigation-rail relative w-full h-full flex flex-col flex-none z-0 min-h-0" aria-label="Content navigation rail">
   <!-- Resizable Panel Group for sections -->
   <ResizablePanelGroup
     bind:this={resizablePanelGroup}

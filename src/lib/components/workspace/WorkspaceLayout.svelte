@@ -67,7 +67,7 @@
 
 <ErrorBoundary logger={workspaceLogger}>
   <!-- Main Workspace Layout -->
-  <div class="workspace-page h-full flex flex-col relative bg-sidebar">
+  <div class="workspace-page h-full flex flex-col relative bg-sidebar" aria-label="Workspace layout">
     <!-- Upper Area: Sidebar + Content (shrinks when terminal is open) -->
     <div class="upper-area flex-1 flex min-h-0">
       {#if sidebarSide === 'right'}

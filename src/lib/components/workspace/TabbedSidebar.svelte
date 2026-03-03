@@ -565,7 +565,7 @@
   });
 </script>
 
-<div bind:this={sidebarElement} class={cn('flex flex-col h-full bg-sidebar', className)}>
+<div bind:this={sidebarElement} class={cn('flex flex-col h-full bg-sidebar', className)} aria-label="Workspace sidebar">
   <!-- Spaces Picker at the top -->
   <!-- <div class="shrink-0 pl-18 pt-2">
     <SpacesPicker {workspaceId} />

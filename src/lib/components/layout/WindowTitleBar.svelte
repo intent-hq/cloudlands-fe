@@ -205,7 +205,7 @@
 </script>
 
 <!-- Counter-scale wrapper to maintain fixed position relative to macOS traffic lights -->
-<div class="window-title-bar-wrapper" style:height="{35 / zoomStore.zoomFactor}px">
+<div class="window-title-bar-wrapper" style:height="{35 / zoomStore.zoomFactor}px" aria-label="Window title bar">
   <div
     class={cn(
       'window-title-bar app-drag-region',

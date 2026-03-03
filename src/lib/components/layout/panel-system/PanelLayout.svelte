@@ -1006,7 +1006,7 @@
   });
 </script>
 
-<div class="panel-layout h-full w-full flex flex-col">
+<div class="panel-layout h-full w-full flex flex-col" aria-label="Panel layout">
   <!-- Main panel area -->
   <div class="flex-1 min-h-0 overflow-hidden {sidebarWidthStore.collapsed ? 'p-3' : layoutSettings.sidebarSide === 'left' ? 'p-3 pl-0' : 'p-3 pr-0'}">
     {#if layoutManager.layout}

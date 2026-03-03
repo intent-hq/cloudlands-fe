@@ -1819,6 +1819,7 @@
   <!-- Main Layout with Title Bar -->
   <div
     class="panel-layout-container relative h-screen w-screen overflow-hidden text-foreground flex flex-col bg-app-background"
+    aria-label="Application shell"
   >
     <!-- Title bar at top -->
     <WindowTitleBar {workspaceId} />
@@ -1840,6 +1841,7 @@
         <!-- Content area with rounded corners -->
         <main
           class="flex flex-1 min-h-0 flex-col mr-1.5 mb-1.5 rounded-xl overflow-hidden bg-sidebar border border-border/30 shadow-sm"
+          aria-label="Main content"
         >
           <div class="flex-1 min-h-0 overflow-auto">
             {@render children?.()}

@@ -186,7 +186,7 @@
 </script>
 
 <!-- Overview Toggle Button -->
-<div class="h-full flex flex-col items-center gap-3">
+<div class="h-full flex flex-col items-center gap-3" aria-label="Workspace dock">
   <Button size="icon" variant="ghost-light" class="h-9 w-9 mt-5" onclick={onToggleOverview}>
     <Fa icon={faStarOfLife} size="sm" />
   </Button>

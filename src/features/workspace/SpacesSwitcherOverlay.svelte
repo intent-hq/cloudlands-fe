@@ -176,6 +176,8 @@
   <div
     class="fixed top-1/2 left-1/2 -translate-y-1/2 -translate-x-1/2 w-[75vw] max-w-160 z-50"
     transition:fly={{ y: 6, duration: 200 }}
+    aria-label="Workspace switcher"
+    role="dialog"
   >
     <div class="bg-background overflow-hidden border border-border shadow-lg">
       <!-- Scrollable workspace list -->

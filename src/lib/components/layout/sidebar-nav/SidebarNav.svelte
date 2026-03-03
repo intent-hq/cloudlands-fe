@@ -112,7 +112,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<nav class="group/nav sidebar-nav flex flex-col items-center pt-2 pb-1 gap-1 h-full shrink-0 w-13">
+<nav class="group/nav sidebar-nav flex flex-col items-center pt-2 pb-1 gap-1 h-full shrink-0 w-13" aria-label="Global navigation">
   <!-- Top nav items -->
   <div class="flex flex-col items-center gap-1 w-full px-1.5">
     {#each navItems.slice(0, 4) as item (item.id)}

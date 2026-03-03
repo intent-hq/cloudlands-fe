@@ -364,7 +364,7 @@
   });
 </script>
 
-<div class={cn('flex flex-col max-h-full', className)}>
+<div class={cn('flex flex-col max-h-full', className)} aria-label="Agent navigation rail">
   <!-- Add Agent Button -->
   <div class="flex-none flex justify-center">
     <Button

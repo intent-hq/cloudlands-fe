@@ -148,7 +148,7 @@
   });
 </script>
 
-<div class={cn('flex flex-col max-h-full', className)}>
+<div class={cn('flex flex-col max-h-full', className)} aria-label="Terminal navigation rail">
   <!-- Terminal Items - Simple Scrollable Container -->
   <div class="flex-1 overflow-y-auto min-h-0 relative" bind:this={scrollContainer}>
     <!-- Top gradient fade (fixed position) -->
