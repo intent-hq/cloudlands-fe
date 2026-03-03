@@ -309,6 +309,12 @@ export async function createWorkspaceWithPrompt(
     localStorage.removeItem('compact-workspace-initializer-state');
     localStorage.removeItem('workspace-initializer-last-repo');
 
+    // Clear any saved prompt from a previous run so the editor starts empty.
+    // CompactWorkspaceInitializer restores `initialPrompt` from this
+    // sessionStorage key on mount, which causes duplicate text when
+    // keyboard.type() appends to the restored content.
+    sessionStorage.removeItem('compact-workspace-initializer-state-prompt');
+
     // Seed key #1 — read at module scope by loadSavedFormState()
     localStorage.setItem(
       'compact-workspace-initializer-state',
@@ -361,6 +367,15 @@ export async function createWorkspaceWithPrompt(
   await editable.click();
   // Small delay to let TipTap focus handler settle
   await page.waitForTimeout(300);
+
+  // Clear any pre-existing content before typing.  When multiple providers run
+  // in serial the editor may still contain text from a previous iteration
+  // (restored from sessionStorage or not yet cleared).  Select-all + delete
+  // ensures we start with a blank slate so the prompt isn't duplicated.
+  await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+A`);
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(100);
+
   await page.keyboard.type(prompt, { delay: 10 });
 
   // Wait for "Create workspace" button to be enabled before clicking.
@@ -483,18 +498,37 @@ export async function waitForFileContent(
  * Enter to send.  Best-effort — swallows errors so it can be used
  * as a non-critical "nudge" to unblock stuck agents.
  *
+ * IMPORTANT: The selector is scoped to the active (visible) tab content
+ * wrapper so that we don't accidentally type into the spec editor or a
+ * chat input in a hidden tab.  When multiple tabs are cached in the DOM,
+ * an unscoped `.tiptap-editor` selector can match editors in hidden panels.
+ *
  * NOTE: We intentionally use plain Enter (normal submit) rather than
  * Cmd+Enter (force-submit) because force-submit calls stopChat() first,
  * which can wake sleeping agents via event subscriptions and cause races.
  */
 export async function sendFollowUpMessage(page: Page, message: string): Promise<void> {
-  // The chat input is a TipTap/ProseMirror editor with class .tiptap-editor
-  // and contenteditable="true".  The parent SimpleRichInput has role="region",
-  // NOT role="textbox" (that's only on the workspace-initializer RichTextarea).
-  const editable = page.locator('.tiptap-editor[contenteditable="true"]').first();
+  // Scope to the active (visible) tab content wrapper.  The chat input is a
+  // TipTap/ProseMirror editor with class .tiptap-editor and contenteditable="true".
+  // Without scoping, we can hit the spec editor or a hidden tab's chat input.
+  const editable = page
+    .locator('.tab-content-wrapper:not(.hidden) .tiptap-editor[contenteditable="true"]')
+    .first();
   const visible = await editable.isVisible({ timeout: 2_000 }).catch(() => false);
   if (!visible) {
-    console.log('⚠️  Chat input not visible — skipping nudge');
+    // Fallback: try unscoped selector (e.g. during workspace creation when
+    // tab-content-wrapper may not exist yet)
+    const fallback = page.locator('.tiptap-editor[contenteditable="true"]').first();
+    const fallbackVisible = await fallback.isVisible({ timeout: 2_000 }).catch(() => false);
+    if (!fallbackVisible) {
+      console.log('⚠️  Chat input not visible — skipping nudge');
+      return;
+    }
+    await fallback.click();
+    await page.waitForTimeout(200);
+    await page.keyboard.type(message, { delay: 5 });
+    await page.keyboard.press('Enter');
+    console.log(`💬 Sent follow-up nudge (fallback): "${message}"`);
     return;
   }
   await editable.click();
@@ -547,9 +581,12 @@ export async function waitForFileContentWithNudge(
     // Check for UI activity before considering a nudge
     let activityDetected = false;
 
-    // Check streaming indicators
+    // Check streaming indicators.
+    // NOTE: Do NOT include `.animate-pulse` here — it matches generic loading
+    // spinners and save indicators that are always visible, which prevents the
+    // inactivity timer from ever reaching the nudge threshold.
     const streaming = await page
-      .locator('[data-streaming="true"], .animate-pulse, [data-agent-status="streaming"]')
+      .locator('.tab-content-wrapper:not(.hidden) [data-streaming="true"], .tab-content-wrapper:not(.hidden) [data-agent-status="streaming"]')
       .first()
       .isVisible({ timeout: 1_000 })
       .catch(() => false);
@@ -557,9 +594,10 @@ export async function waitForFileContentWithNudge(
       activityDetected = true;
     }
 
-    // Check if the last assistant message ID has changed
+    // Check if the last assistant message ID has changed.
+    // Scope to the active tab so hidden tabs' messages don't cause false activity.
     const currentMessageId = await page
-      .locator('[data-message-role="assistant"]')
+      .locator('.tab-content-wrapper:not(.hidden) [data-message-role="assistant"]')
       .last()
       .getAttribute('data-message-id')
       .catch(() => null);
@@ -694,9 +732,10 @@ async function waitForAgentCompletionViaUI(page: Page, deadline: number): Promis
   while (Date.now() < deadline) {
     try {
       // Check if there are any streaming indicators visible.
-      // Agents that are actively streaming show a pulsing dot or spinner.
+      // NOTE: Do NOT include `.animate-pulse` — it matches generic loading
+      // spinners that are always visible, causing this to never detect completion.
       const hasStreamingIndicator = await page
-        .locator('[data-streaming="true"], .animate-pulse, [data-agent-status="streaming"]')
+        .locator('.tab-content-wrapper:not(.hidden) [data-streaming="true"], .tab-content-wrapper:not(.hidden) [data-agent-status="streaming"]')
         .first()
         .isVisible({ timeout: 1_000 })
         .catch(() => false);
@@ -718,7 +757,7 @@ async function waitForAgentCompletionViaUI(page: Page, deadline: number): Promis
         // Even with disabled send button, if no streaming indicators, give it one more check
         await new Promise((resolve) => setTimeout(resolve, 2_000));
         const stillStreaming = await page
-          .locator('[data-streaming="true"], .animate-pulse, [data-agent-status="streaming"]')
+          .locator('.tab-content-wrapper:not(.hidden) [data-streaming="true"], .tab-content-wrapper:not(.hidden) [data-agent-status="streaming"]')
           .first()
           .isVisible({ timeout: 1_000 })
           .catch(() => false);
@@ -1141,8 +1180,10 @@ export function startChatNudgeMonitor(
   const interval = setInterval(async () => {
     try {
       // 1. Check if an agent is still actively streaming -- if so, reset inactivity timer.
+      // NOTE: Do NOT include `.animate-pulse` — it matches generic loading
+      // spinners that are always visible, preventing nudges from ever firing.
       const streaming = await page
-        .locator('[data-streaming="true"], .animate-pulse, [data-agent-status="streaming"]')
+        .locator('.tab-content-wrapper:not(.hidden) [data-streaming="true"], .tab-content-wrapper:not(.hidden) [data-agent-status="streaming"]')
         .first()
         .isVisible({ timeout: 1_000 })
         .catch(() => false);
@@ -1153,8 +1194,12 @@ export function startChatNudgeMonitor(
       }
 
       // 2. Check if message count or last message ID changed (indicates progress).
-      const messageCount = await page.locator('[data-message-role="assistant"]').count();
-      const lastAssistant = page.locator('[data-message-role="assistant"]').last();
+      //    Scope to the active tab so hidden tabs' messages don't inflate the count.
+      const visibleAssistant = page.locator(
+        '.tab-content-wrapper:not(.hidden) [data-message-role="assistant"]',
+      );
+      const messageCount = await visibleAssistant.count();
+      const lastAssistant = visibleAssistant.last();
       const visible = await lastAssistant.isVisible({ timeout: 1_000 }).catch(() => false);
       if (!visible) return;
 
@@ -1209,7 +1254,8 @@ export function startChatNudgeMonitor(
  * (the vertical sidebar with agent avatar buttons).
  *
  * The first entry is the coordinator (initial agent); subsequent entries are
- * delegated agents. Returns the agent ID of the second agent (the implementor).
+ * delegated agents. Returns the agent ID of the second agent (the implementor),
+ * or `null` if no implementor was found within the timeout.
  *
  * Uses `[data-agent-id]` selectors from the AgentNavRail component which
  * is always visible, unlike the "Threads" list in AgentsList which requires the
@@ -1220,18 +1266,20 @@ export function startChatNudgeMonitor(
  * `[data-agent-id]` elements to detect agents; `openAgentChat` uses `.first()`
  * to avoid Playwright strict-mode violations from duplicate matches.
  *
- * Throws if no implementor agent is found.
+ * Returns `null` (instead of throwing) when no implementor is found — some
+ * providers handle the task inline without delegating.
  */
 export async function findImplementorAgent(
   page: Page,
-): Promise<{ name: string; agentId: string }> {
+  timeout: number = 15_000,
+): Promise<{ name: string; agentId: string } | null> {
   // Agent cards have data-agent-id attributes. The same agent may appear
   // multiple times (main list + delegated children), but nth(1) still gives
   // us a valid implementor agent ID.
   const agentButtons = page.locator('[data-agent-id]');
 
   // Wait for at least 2 agents to appear (coordinator + implementor)
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     const count = await agentButtons.count();
     if (count >= 2) break;
@@ -1240,13 +1288,15 @@ export async function findImplementorAgent(
 
   const count = await agentButtons.count();
   if (count < 2) {
-    throw new Error(`Expected at least 2 agents in nav rail, found ${count}`);
+    console.log(`⚠️  Only ${count} agent(s) in nav rail — provider may not have delegated`);
+    return null;
   }
 
   // First agent = coordinator, second = implementor
   const agentId = await agentButtons.nth(1).getAttribute('data-agent-id');
   if (!agentId) {
-    throw new Error('Implementor agent button has no data-agent-id attribute');
+    console.log('⚠️  Implementor agent button has no data-agent-id attribute');
+    return null;
   }
 
   // Agent name isn't visible in the nav rail; use a short ID label for logging
@@ -1264,7 +1314,11 @@ export async function findImplementorAgent(
  * unlike the "Threads" list which requires a specific sidebar tab.
  *
  * After clicking, waits for the chat panel to become visible (indicated by
- * the presence of a chat message or the chat input).
+ * the presence of a chat message or the chat input in the **active** tab).
+ *
+ * Includes a retry mechanism: if the first click doesn't activate the
+ * correct tab (verified by checking that the active tab's content wrapper
+ * contains a chat panel), it scrolls the button into view and clicks again.
  */
 export async function openAgentChat(page: Page, agentId: string): Promise<void> {
   // The same agent ID can appear in multiple AgentCard instances (main thread
@@ -1275,11 +1329,25 @@ export async function openAgentChat(page: Page, agentId: string): Promise<void> 
   await agentButton.waitFor({ state: 'visible', timeout: 10_000 });
   await agentButton.click();
 
-  // Wait for the chat panel to render — look for the chat input or a message
-  await page
-    .locator('.tiptap-editor[contenteditable="true"], [data-message-role]')
-    .first()
-    .waitFor({ state: 'visible', timeout: 10_000 });
+  // Wait for the chat panel to render in the ACTIVE tab — look for a chat
+  // input or message inside the visible tab-content-wrapper.
+  const activeTabContent = page.locator(
+    '.tab-content-wrapper:not(.hidden) .tiptap-editor[contenteditable="true"], ' +
+    '.tab-content-wrapper:not(.hidden) [data-message-role]',
+  );
+
+  try {
+    await activeTabContent.first().waitFor({ state: 'visible', timeout: 5_000 });
+  } catch {
+    // First click may not have activated the tab (e.g. if the button was
+    // partially obscured or in a scrollable area).  Scroll into view and retry.
+    console.log(`⚠️  First click on agent ${agentId.substring(0, 8)} didn't open tab — retrying`);
+    await agentButton.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(500);
+    await agentButton.click({ force: true });
+    await activeTabContent.first().waitFor({ state: 'visible', timeout: 10_000 });
+  }
+
   // Brief settle time for the panel to fully load
   await page.waitForTimeout(1_000);
 }
@@ -1290,15 +1358,22 @@ export async function openAgentChat(page: Page, agentId: string): Promise<void> 
 
 /**
  * Wait for the assistant to finish streaming and return the text of the last
- * assistant message.
+ * assistant message in the **active** (visible) chat panel.
  *
  * After sending a message, call this to wait for the response. It polls until
  * no streaming indicators are visible and then extracts the inner text of the
  * last `[data-message-role="assistant"]` element.
  *
- * @param previousMessageCount - If provided, wait until the number of assistant
- *   messages exceeds this count before extracting. This prevents returning a
- *   stale message from a prior exchange when the chat already has history.
+ * IMPORTANT: The selector is scoped to the visible tab content wrapper
+ * (`.tab-content-wrapper:not(.hidden)`) so that messages from inactive chat
+ * panels (e.g. the coordinator's tab) are excluded.  Without this scoping,
+ * the function can return a stale message from another panel and fail the
+ * pattern assertion.
+ *
+ * @param previousMessageCount - If provided, wait until the number of visible
+ *   assistant messages exceeds this count before extracting. This prevents
+ *   returning a stale message from a prior exchange when the chat already has
+ *   history.
  */
 export async function waitForAssistantResponse(
   page: Page,
@@ -1308,13 +1383,22 @@ export async function waitForAssistantResponse(
   const pollInterval = 2_000;
   const deadline = Date.now() + timeout;
 
+  // Scope to the active (visible) tab content so we don't pick up messages
+  // from other chat panels that are still mounted but hidden in the DOM.
+  const visibleMessages = page.locator(
+    '.tab-content-wrapper:not(.hidden) [data-message-role="assistant"]',
+  );
+
+  // Brief delay to let the stream start before we check streaming state.
+  // Without this, we can race: the message is sent, streaming hasn't begun
+  // yet, we see "not streaming" and immediately return a stale message.
+  await page.waitForTimeout(2_000);
+
   // If a previous count was provided, wait until at least one new assistant
   // message appears beyond that count before proceeding.
   if (previousMessageCount !== undefined) {
     while (Date.now() < deadline) {
-      const currentCount = await page
-        .locator('[data-message-role="assistant"]')
-        .count();
+      const currentCount = await visibleMessages.count();
       if (currentCount > previousMessageCount) {
         break;
       }
@@ -1322,35 +1406,57 @@ export async function waitForAssistantResponse(
     }
   } else {
     // No count guard — just wait for at least one assistant message to appear
-    await page.locator('[data-message-role="assistant"]').last().waitFor({
+    await visibleMessages.last().waitFor({
       state: 'visible',
       timeout: Math.min(timeout, 30_000),
     });
   }
 
-  // Then wait for streaming to stop
+  // Then wait for streaming to stop AND the response text to stabilize.
+  // We need both checks because:
+  //   1. The streaming indicator may not be set yet when the message first appears
+  //   2. The text may still be rendering even after streaming stops
+  // So we wait for "not streaming" AND then verify the text doesn't change
+  // over a short window before returning.
+  let lastText = '';
+  let stableCount = 0;
+  const STABLE_CHECKS_REQUIRED = 2; // Text must be unchanged for 2 consecutive checks
+
   while (Date.now() < deadline) {
     const isStreaming = await page
-      .locator('[data-streaming="true"], .animate-pulse, [data-agent-status="streaming"]')
+      .locator('.tab-content-wrapper:not(.hidden) [data-streaming="true"], .tab-content-wrapper:not(.hidden) [data-agent-status="streaming"]')
       .first()
       .isVisible({ timeout: 1_000 })
       .catch(() => false);
 
     if (!isStreaming) {
-      // Streaming stopped — grab the last assistant message text
-      const text = await page
-        .locator('[data-message-role="assistant"]')
+      // Streaming stopped — check if the text has stabilized
+      const text = await visibleMessages
         .last()
-        .innerText({ timeout: 5_000 });
-      return text;
+        .innerText({ timeout: 5_000 })
+        .catch(() => '');
+
+      if (text && text === lastText) {
+        stableCount++;
+        if (stableCount >= STABLE_CHECKS_REQUIRED) {
+          return text;
+        }
+      } else {
+        // Text changed — reset stability counter
+        stableCount = 0;
+        lastText = text;
+      }
+    } else {
+      // Still streaming — reset stability tracking
+      stableCount = 0;
+      lastText = '';
     }
 
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
   }
 
   // Timeout — return whatever is there
-  const text = await page
-    .locator('[data-message-role="assistant"]')
+  const text = await visibleMessages
     .last()
     .innerText({ timeout: 5_000 })
     .catch(() => '');

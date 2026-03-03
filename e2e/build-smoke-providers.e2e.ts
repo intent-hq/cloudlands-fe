@@ -24,7 +24,7 @@ import {
   setOpencodeModelViaSettingsUI,
   createWorkspaceWithPrompt,
   resolveWorktreeReadmePath,
-  waitForFileContentWithNudge,
+  waitForFileContent,
   waitForAgentCompletion,
   archiveAndGoHome,
   startPermissionAutoApprover,
@@ -34,7 +34,7 @@ import {
 const KNOWN_PROVIDERS = ['auggie', 'claude-code', 'codex', 'opencode'] as const;
 
 const PROMPT =
-  'Add the text "hello world" to the README.md file. I pre-approve any plan you create — do NOT stop to ask for my review or approval. Write a brief spec with one task and delegate to an implementor in the same turn without pausing. The implementor should make the edit directly without asking for permission, confirming the plan, checking on other agents, or checking file status first -- just write the file.';
+  'Write a simple spec to add "hello world" to the README.md and then delegate it to an implementor.';
 const DEFAULT_PROVIDER_TIMEOUT = 4 * 60 * 1000;
 
 /** Codex needs extra time: coordinator → approval → delegation → implementor + Settings UI model override. */
@@ -248,12 +248,12 @@ test.describe('Build Smoke — Provider Verification', () => {
         }, 30_000);
 
         try {
-          await waitForFileContentWithNudge(
-            page,
+          // startChatNudgeMonitor handles approval nudging reactively —
+          // no need for the inline nudge in waitForFileContentWithNudge.
+          await waitForFileContent(
             readmePath,
             /hello world/i,
             Math.max(remainingTimeout, 10_000),
-            'Approved. I approve the plan. Delegate to an implementor now -- do not wait for further approval. The implementor should write "hello world" to README.md immediately.',
           );
         } finally {
           clearInterval(diagnosticInterval);

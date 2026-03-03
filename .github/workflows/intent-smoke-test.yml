@@ -2,6 +2,24 @@ name: Intent Smoke Tests
 
 on:
   workflow_dispatch:
+    inputs:
+      build_source:
+        description: 'Where to get the app build'
+        required: true
+        default: 'local'
+        type: choice
+        options:
+          - local
+          - cdn
+      cdn_channel:
+        description: 'CDN channel (only used when build_source=cdn)'
+        required: false
+        default: 'alpha'
+        type: choice
+        options:
+          - alpha
+          - beta
+          - stable
 
 concurrency:
   group: intent-smoke-test
@@ -10,6 +28,7 @@ concurrency:
 jobs:
   build:
     name: Build
+    if: inputs.build_source != 'cdn'
     runs-on: macos-14
     env:
       GIT_TERMINAL_PROMPT: '0'
@@ -75,6 +94,7 @@ jobs:
   test:
     name: Test (${{ matrix.provider }})
     needs: build
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped')
     runs-on: macos-14
     timeout-minutes: 45
     strategy:
@@ -103,11 +123,28 @@ jobs:
           path: node_modules
           key: deps-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
-      - name: Download Electron build
+      - name: Download Electron build (from artifact)
+        if: inputs.build_source != 'cdn'
         uses: actions/download-artifact@v4
         with:
           name: electron-build
           path: dist-electron/
+
+      - name: Download Electron build (from CDN)
+        if: inputs.build_source == 'cdn'
+        run: |
+          CHANNEL="${{ inputs.cdn_channel }}"
+          DMG_URL="https://cdn.augmentcode.com/${CHANNEL}/Intent-latest-arm64.dmg"
+          echo "📥 Downloading ${CHANNEL} build from CDN..."
+          curl -fSL -o intent.dmg "$DMG_URL"
+          echo "📦 Mounting DMG..."
+          hdiutil attach intent.dmg -nobrowse -mountpoint /tmp/intent-dmg
+          echo "📂 Copying app to dist-electron/mac-arm64/..."
+          mkdir -p dist-electron/mac-arm64
+          cp -R "/tmp/intent-dmg/Intent by Augment.app" "dist-electron/mac-arm64/Intent by Augment.app"
+          hdiutil detach /tmp/intent-dmg
+          rm -f intent.dmg
+          echo "✅ CDN build (${CHANNEL}) ready"
 
       - name: Fix executable permissions
         run: |
@@ -180,6 +217,7 @@ jobs:
   test-multi-provider:
     name: Test (multi-provider)
     needs: build
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped')
     runs-on: macos-14
     timeout-minutes: 45
     env:
@@ -204,11 +242,28 @@ jobs:
           path: node_modules
           key: deps-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
-      - name: Download Electron build
+      - name: Download Electron build (from artifact)
+        if: inputs.build_source != 'cdn'
         uses: actions/download-artifact@v4
         with:
           name: electron-build
           path: dist-electron/
+
+      - name: Download Electron build (from CDN)
+        if: inputs.build_source == 'cdn'
+        run: |
+          CHANNEL="${{ inputs.cdn_channel }}"
+          DMG_URL="https://cdn.augmentcode.com/${CHANNEL}/Intent-latest-arm64.dmg"
+          echo "📥 Downloading ${CHANNEL} build from CDN..."
+          curl -fSL -o intent.dmg "$DMG_URL"
+          echo "📦 Mounting DMG..."
+          hdiutil attach intent.dmg -nobrowse -mountpoint /tmp/intent-dmg
+          echo "📂 Copying app to dist-electron/mac-arm64/..."
+          mkdir -p dist-electron/mac-arm64
+          cp -R "/tmp/intent-dmg/Intent by Augment.app" "dist-electron/mac-arm64/Intent by Augment.app"
+          hdiutil detach /tmp/intent-dmg
+          rm -f intent.dmg
+          echo "✅ CDN build (${CHANNEL}) ready"
 
       - name: Fix executable permissions
         run: |

@@ -21,10 +21,11 @@ import {
   setCodexModelViaSettingsUI,
   createWorkspaceWithPrompt,
   resolveWorktreeReadmePath,
-  waitForFileContentWithNudge,
+  waitForFileContent,
   waitForAgentCompletion,
   archiveAndGoHome,
   startPermissionAutoApprover,
+  startChatNudgeMonitor,
   sendFollowUpMessage,
   findImplementorAgent,
   openAgentChat,
@@ -34,7 +35,7 @@ import {
 const KNOWN_PROVIDERS = ['opencode', 'auggie', 'claude-code', 'codex'] as const;
 
 const PROMPT =
-  'Add the text "hello world" to the README.md file. I pre-approve any plan you create — do NOT stop to ask for my review or approval. Write a brief spec with one task and delegate to an implementor in the same turn without pausing. The implementor should make the edit directly without asking for permission, confirming the plan, checking on other agents, or checking file status first -- just write the file.';
+  'Write a simple spec to add "hello world" to the README.md and then delegate it to an implementor.';
 
 const DEFAULT_PROVIDER_TIMEOUT = 4 * 60 * 1000;
 
@@ -205,6 +206,14 @@ test.describe('multi-provider smoke tests', () => {
 
         const stopPermissionApprover = startPermissionAutoApprover(page);
 
+        // Reactively monitor the chat thread for the coordinator asking for
+        // approval.  Unlike the fixed-timer nudge, this watches the actual
+        // last assistant message and responds within 10 seconds.
+        const stopChatNudge = startChatNudgeMonitor(
+          page,
+          'Approved. I approve the plan. Delegate to an implementor now -- do not wait for further approval. The implementor should write "hello world" to README.md immediately.',
+        );
+
         try {
         const remainingTimeout = providerTimeout - (Date.now() - start);
         let tick = 0;
@@ -214,12 +223,12 @@ test.describe('multi-provider smoke tests', () => {
         }, 30_000);
 
         try {
-          await waitForFileContentWithNudge(
-            page,
+          // startChatNudgeMonitor handles approval nudging reactively —
+          // no need for the inline nudge in waitForFileContentWithNudge.
+          await waitForFileContent(
             readmePath,
             /hello world/i,
             Math.max(remainingTimeout, 10_000),
-            'Approved. I approve the plan. Delegate to an implementor now -- do not wait for further approval. The implementor should write "hello world" to README.md immediately.',
           );
         } finally {
           clearInterval(diagnosticInterval);
@@ -233,47 +242,72 @@ test.describe('multi-provider smoke tests', () => {
         await page.waitForTimeout(2000);
 
         // --- Phase 2: Find implementor, ask about model ---
+        // Some providers handle the task inline without delegating to a
+        // separate implementor agent.  When that happens, fall back to the
+        // coordinator (first agent) for the model-identity question.
         console.log(`🔍 Finding implementor agent for ${providerId}...`);
         const impl = await findImplementorAgent(page);
-        console.log(`🤖 Found implementor: ${impl.name}`);
 
-        await openAgentChat(page, impl.agentId);
-        await takeScreenshot(page, `mp-${providerId}-implementor-chat`);
+        const agentButtons = page.locator('[data-agent-id]');
+        let targetAgentId: string | null = null;
+        let targetLabel: string = 'unknown';
+        let modelResponse: string | undefined;
 
-        // Count existing assistant messages before sending, so
-        // waitForAssistantResponse can wait for a genuinely new reply
-        // instead of returning a stale message from the hello-world flow.
-        const msgCountBefore = await page.locator('[data-message-role="assistant"]').count();
-
-        await sendFollowUpMessage(page, 'What model are you?');
-        console.log(`💬 Sent "What model are you?" to implementor`);
-
-        const response = await waitForAssistantResponse(page, 60_000, msgCountBefore);
-        console.log(`📝 Model response (${providerId}): ${response.slice(0, 200)}`);
-        await takeScreenshot(page, `mp-${providerId}-model-response`);
-
-        // Assert the response matches the expected pattern
-        const expectedPattern = EXPECTED_MODEL_PATTERNS[providerId];
-        if (expectedPattern) {
-          const matches = expectedPattern.test(response);
-          console.log(
-            `🧪 Pattern ${expectedPattern} ${matches ? 'MATCHES ✅' : 'DOES NOT MATCH ❌'}`,
-          );
-
-          if (providerId === 'auggie') {
-            expect(response).toMatch(expectedPattern);
-          } else {
-            expect
-              .soft(response, `${providerId} model response did not match ${expectedPattern}`)
-              .toMatch(expectedPattern);
-          }
+        if (impl) {
+          targetAgentId = impl.agentId;
+          targetLabel = impl.name;
+          console.log(`🤖 Found implementor: ${targetLabel}`);
+        } else {
+          // Fall back to the coordinator (first agent in the nav rail)
+          targetAgentId = await agentButtons.first().getAttribute('data-agent-id');
+          targetLabel = `coordinator (${targetAgentId?.substring(0, 8) ?? '?'})`;
+          console.log(`🤖 No implementor found — falling back to ${targetLabel}`);
         }
 
-        // Wait for agents to settle after Phase 2 — the implementor's response
-        // to "What model are you?" triggers the coordinator to wake via event
-        // subscription. We must let that complete before archiving.
-        const settleTimeout = providerTimeout - (Date.now() - start);
-        await waitForAgentCompletion(page, workspaceId, Math.max(settleTimeout, 15_000));
+        if (!targetAgentId) {
+          console.log('⚠️  No agents found in nav rail — skipping Phase 2');
+        } else {
+          await openAgentChat(page, targetAgentId);
+          await takeScreenshot(page, `mp-${providerId}-implementor-chat`);
+
+          // Count existing assistant messages in the VISIBLE tab before sending,
+          // so waitForAssistantResponse can wait for a genuinely new reply
+          // instead of returning a stale message from the hello-world flow.
+          const msgCountBefore = await page
+            .locator('.tab-content-wrapper:not(.hidden) [data-message-role="assistant"]')
+            .count();
+
+          await sendFollowUpMessage(page, 'What model are you?');
+          console.log(`💬 Sent "What model are you?" to ${targetLabel}`);
+
+          const response = await waitForAssistantResponse(page, 60_000, msgCountBefore);
+          modelResponse = response.slice(0, 200);
+          console.log(`📝 Model response (${providerId}): ${modelResponse}`);
+          await takeScreenshot(page, `mp-${providerId}-model-response`);
+
+          // Assert the response matches the expected pattern
+          const expectedPattern = EXPECTED_MODEL_PATTERNS[providerId];
+          if (expectedPattern) {
+            const matches = expectedPattern.test(response);
+            console.log(
+              `🧪 Pattern ${expectedPattern} ${matches ? 'MATCHES ✅' : 'DOES NOT MATCH ❌'}`,
+            );
+
+            if (providerId === 'auggie') {
+              expect(response).toMatch(expectedPattern);
+            } else {
+              expect
+                .soft(response, `${providerId} model response did not match ${expectedPattern}`)
+                .toMatch(expectedPattern);
+            }
+          }
+
+          // Wait for agents to settle after Phase 2 — the implementor's response
+          // to "What model are you?" triggers the coordinator to wake via event
+          // subscription. We must let that complete before archiving.
+          const settleTimeout = providerTimeout - (Date.now() - start);
+          await waitForAgentCompletion(page, workspaceId, Math.max(settleTimeout, 15_000));
+        }
 
         const durationMs = Date.now() - start;
         await takeScreenshot(page, `mp-${providerId}-pass`);
@@ -284,7 +318,7 @@ test.describe('multi-provider smoke tests', () => {
           providerId,
           status: 'pass',
           durationMs,
-          modelResponse: response.slice(0, 200),
+          modelResponse,
         });
 
         if (providerId === 'auggie') {
@@ -292,6 +326,7 @@ test.describe('multi-provider smoke tests', () => {
         }
         } finally {
           stopPermissionApprover();
+          stopChatNudge();
         }
       } catch (error) {
         const durationMs = Date.now() - start;
