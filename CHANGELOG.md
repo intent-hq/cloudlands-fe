@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.18
+
+- Rebase-onto-trunk button to sync your worktree with the upstream trunk branch.
+- Gitignored files now visible in the file tree with muted styling.
+- Removed agent spawn cap enforcement, allowing more flexible delegation.
+- Updated workspace MCP tool references.
+- Fixes: default setup script not running for new users, setup script terminal not showing in overlay when loaded from backend, sidebar incorrectly showing "Synced" without PR or merge evidence, duplicate skeleton/follow-up tool_use blocks getting non-descriptive labels.
+
 ## 0.2.17
 
 - PR mergeability tracking with visual status indicators. PR status now always visible in the overview changes tab, including closed PRs.
@@ -12,7 +20,6 @@
 - Improved contrast and typography with semantic tokens. Bold selected theme name in color theme settings.
 - Auto-approve permissions when the provider doesn't support bypassPermissions mode. Force git status refresh before auto-commit to detect agent changes.
 - Fixes: diff rendering for committed agent file changes, OS notification workspace navigation, stale workspace enrichment data across surfaces, phantom polling for deleted workspaces, PR cache bypass on sidebar refresh, PR auto-discovery when pushed commit count changes, null toolName in tool-classifier, webviewReady guards on Electron webview calls, workspace-scoped state cleanup on deletion, Settings menu navigating to wrong window on macOS, toast notification for direct create-pr actions, sync calls blocking the main process.
-
 
 ## 0.2.12
 
