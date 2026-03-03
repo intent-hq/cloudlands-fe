@@ -9,7 +9,7 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import { Logger } from '../../../shared/logger';
 import type { ProjectType } from '../types';
-import { SETUP_SCRIPT_TEMPLATES } from '../types';
+import { SETUP_SCRIPT_TEMPLATES, getTemplateContent } from '../types';
 import { AugmentCLI } from '../../auggie/main/augment-cli';
 
 const logger = new Logger('SetupScriptsIPC');
@@ -117,65 +117,20 @@ async function detectProjectType(repoPath: string): Promise<ProjectAnalysis> {
 }
 
 /**
- * Generate a setup script based on project analysis
+ * Generate a setup script based on project analysis.
+ * Uses the matching template content which references $MAIN_CHECKOUT for env file copying.
  */
 function generateScript(analysis: ProjectAnalysis): string {
-  const isWindows = process.platform === 'win32';
-
-  // Find matching template
-  const template = SETUP_SCRIPT_TEMPLATES.find((t) => t.projectType === analysis.projectType);
+  // Find matching template, fall back to generic
+  const template =
+    SETUP_SCRIPT_TEMPLATES.find((t) => t.projectType === analysis.projectType) ??
+    SETUP_SCRIPT_TEMPLATES.find((t) => t.projectType === 'generic');
 
   if (template) {
-    // Start with template content
-    let script = '';
-
-    // Add copy commands for detected env files
-    if (analysis.gitIgnoredFiles.length > 0) {
-      script += '# Copy environment files from parent directory\n';
-      for (const file of analysis.gitIgnoredFiles) {
-        if (isWindows) {
-          script += `Copy-Item -Path "..\\${file}" -Destination "${file}" -ErrorAction SilentlyContinue\n`;
-        } else {
-          script += `cp ../${file} ${file} 2>/dev/null || true\n`;
-        }
-      }
-      script += '\n';
-    }
-
-    // Add package manager install command
-    if (analysis.packageManager) {
-      script += '# Install dependencies\n';
-      script += `${analysis.packageManager} install\n`;
-    } else if (analysis.projectType === 'python-pip') {
-      script += '# Set up virtual environment and install dependencies\n';
-      script += 'python -m venv venv\n';
-      if (isWindows) {
-        script += '.\\venv\\Scripts\\Activate.ps1\n';
-      } else {
-        script += 'source venv/bin/activate\n';
-      }
-      script += 'pip install -r requirements.txt\n';
-    } else if (analysis.projectType === 'python-poetry') {
-      script += '# Install dependencies with poetry\n';
-      script += 'poetry install\n';
-    } else if (analysis.projectType === 'go') {
-      script += '# Download Go modules\n';
-      script += 'go mod download\n';
-    } else if (analysis.projectType === 'rust') {
-      script += '# Build project\n';
-      script += 'cargo build\n';
-    }
-
-    return script.trim();
+    return getTemplateContent(template);
   }
 
-  // Fallback to generic template
-  // TODO: Use getTemplateContent() from types.ts once available (being added by another agent)
-  const genericTemplate = SETUP_SCRIPT_TEMPLATES.find((t) => t.projectType === 'generic');
-  if (isWindows) {
-    return (genericTemplate as any)?.contentWindows ?? genericTemplate?.content ?? '';
-  }
-  return genericTemplate?.content ?? '';
+  return '';
 }
 
 export function registerSetupScriptsHandlers(): void {

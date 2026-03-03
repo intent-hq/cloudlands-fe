@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { agentService } from '$features/agent/agent.service';
-  import { setupScriptStore } from '$features/setup-scripts';
+  import { setupScriptStore, SETUP_SCRIPT_TEMPLATES, getTemplateContent } from '$features/setup-scripts';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
   import { debugConfig } from '$lib/config/debug';
@@ -362,7 +362,7 @@
   let isCustomSetupScript = $state(savedState?.isCustomSetupScript ?? false);
 
   // Helper to restore the last used setup script for a repo
-  // If no saved script exists for the repo, resets to defaults
+  // If no saved script exists for the repo, falls back to the generic "Copy config files only" template
   function restoreLastUsedSetupScript(repo: string) {
     const lastUsed = repo ? setupScriptStore.getLastUsedForRepo(repo) : undefined;
     if (lastUsed) {
@@ -370,10 +370,16 @@
       setupScriptName = lastUsed.name;
       isCustomSetupScript = false;
     } else {
-      // No saved script for this repo — reset to defaults
-      // The SetupScriptEditor will apply the default template when opened
-      setupScript = '';
-      setupScriptName = 'Custom';
+      // No saved script for this repo — use the generic template as default
+      // This ensures env files are copied even if the user never opens the setup script editor
+      const genericTemplate = SETUP_SCRIPT_TEMPLATES.find((t) => t.id === 'generic');
+      if (genericTemplate) {
+        setupScript = getTemplateContent(genericTemplate);
+        setupScriptName = genericTemplate.name;
+      } else {
+        setupScript = '';
+        setupScriptName = 'Custom';
+      }
       isCustomSetupScript = false;
     }
   }
