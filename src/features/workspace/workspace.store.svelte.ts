@@ -37,6 +37,7 @@ class WorkspaceStore {
   #isCreating = $state(false); // Track if we're in the middle of creating/duplicating
   #loadPromise: Promise<void> | null = null; // Track active load promise
   #pendingDeletions: Set<WorkspaceId> = new Set(); // Track workspaces pending deletion
+  #pendingArchives: Set<WorkspaceId> = new Set(); // Track workspaces pending archive (prevents load() from restoring non-archived status)
   #pendingDeletionTimeouts: Map<WorkspaceId, ReturnType<typeof setTimeout>> = new Map(); // Track undo timeout handles
   #pendingCreations: Map<WorkspaceId, Workspace> = new Map(); // Track workspaces pending creation (not yet in backend)
   #hasLoaded = $state(false); // Track if initial load has completed at least once
@@ -129,7 +130,17 @@ class WorkspaceStore {
           if (workspace && workspace.id && workspace.id !== 'undefined') {
             // Skip workspaces that are pending deletion (optimistically removed)
             if (!this.#pendingDeletions.has(workspace.id)) {
-              uniqueWorkspaces.set(workspace.id, workspace);
+              // If pending archive, force archived status so load() doesn't restore non-archived state
+              if (this.#pendingArchives.has(workspace.id)) {
+                uniqueWorkspaces.set(workspace.id, {
+                  ...workspace,
+                  status: WorkspaceStatusEnum.Archived,
+                  archived: true,
+                  archivedAt: workspace.archivedAt ?? new Date().toISOString(),
+                });
+              } else {
+                uniqueWorkspaces.set(workspace.id, workspace);
+              }
               // If this workspace was pending creation and now appears in backend, remove from pending
               if (this.#pendingCreations.has(workspace.id)) {
                 this.#pendingCreations.delete(workspace.id);
@@ -965,6 +976,9 @@ class WorkspaceStore {
 
   // Backward compatibility methods
   async archive(workspaceId: WorkspaceId): Promise<Result<void, string>> {
+    // Track pending archive to prevent load() from restoring non-archived status
+    this.#pendingArchives.add(workspaceId);
+
     // Optimistically update local state immediately for better UX
     const workspaceIndex = this.#items.findIndex((w) => w.id === workspaceId);
     logger.info('[WorkspaceStore] archive called', {
@@ -1003,6 +1017,7 @@ class WorkspaceStore {
 
         if (!result.ok) {
           // Rollback on failure - restore original workspace
+          this.#pendingArchives.delete(workspaceId);
           const rollbackWorkspace = { ...updatedWorkspace, status: originalStatus };
           this.#items = [
             ...this.#items.slice(0, workspaceIndex),
@@ -1013,6 +1028,9 @@ class WorkspaceStore {
           return result;
         }
 
+        // Backend has persisted the archive, safe to clear pending
+        this.#pendingArchives.delete(workspaceId);
+
         // Clean up workspace-scoped caches to prevent memory leaks
         clearDeferredResults(workspaceId);
         cleanupPRStatusForWorkspace(workspaceId);
@@ -1020,6 +1038,7 @@ class WorkspaceStore {
         return { ok: true, data: undefined };
       } catch (err) {
         // Rollback on error - restore original workspace
+        this.#pendingArchives.delete(workspaceId);
         const rollbackWorkspace = { ...updatedWorkspace, status: originalStatus };
         const currentIndex = this.#items.findIndex((w) => w.id === workspaceId);
         if (currentIndex !== -1) {
@@ -1039,14 +1058,19 @@ class WorkspaceStore {
     // If workspace not found locally, still try to archive via backend
     try {
       const result = await workspaceClient.archive(workspaceId);
+      this.#pendingArchives.delete(workspaceId);
       return result;
     } catch (err) {
+      this.#pendingArchives.delete(workspaceId);
       const error = err instanceof Error ? err.message : 'Failed to archive workspace';
       return { ok: false, error };
     }
   }
 
   async unarchive(workspaceId: WorkspaceId): Promise<Result<void, string>> {
+    // Clear pending archive so a quick archive→unarchive sequence works correctly
+    this.#pendingArchives.delete(workspaceId);
+
     // Optimistically update local state immediately for better UX
     const workspaceIndex = this.#items.findIndex((w) => w.id === workspaceId);
     if (workspaceIndex !== -1) {
