@@ -725,6 +725,16 @@ export function isTransientPromptError(
     return true;
   }
 
+  // LLM special token errors — the model emitted a raw special token (e.g. <|endoftext|>)
+  // which the backend rejects. This is a stochastic model failure that typically
+  // succeeds on retry with a different sampling seed.
+  if (
+    errorLower.includes('disallowed special token') ||
+    errorLower.includes('special token found')
+  ) {
+    return true;
+  }
+
   return false;
 }
 
@@ -800,6 +810,15 @@ function createUserFriendlyErrorMessage(
   if (errorCode === -32603) {
     if (errorLower.includes('session')) {
       return 'The agent session encountered an error.';
+    }
+    // Special token errors — model emitted a disallowed token like <|endoftext|>.
+    // By the time we reach createUserFriendlyErrorMessage, transient retries are
+    // already exhausted, so give the user a clear message.
+    if (
+      errorLower.includes('disallowed special token') ||
+      errorLower.includes('special token found')
+    ) {
+      return 'The model produced an invalid response. Please try again.';
     }
     // Strip the "Internal error: " prefix if present, surface the rest as-is
     return (
@@ -1613,9 +1632,12 @@ export class ACPProvider extends BaseAgentProvider {
     for (const [name, config] of Object.entries(servers)) {
       if (name === 'workspace-mcp') continue;
       const serverConfig = config as any;
-      if (serverConfig.type === 'http' || serverConfig.url ||
-          serverConfig.command?.includes('mcp-remote') ||
-          serverConfig.args?.some((a: string) => a.includes('mcp-remote'))) {
+      if (
+        serverConfig.type === 'http' ||
+        serverConfig.url ||
+        serverConfig.command?.includes('mcp-remote') ||
+        serverConfig.args?.some((a: string) => a.includes('mcp-remote'))
+      ) {
         this.hasRemoteMcpServers = true;
         return;
       }
@@ -8032,6 +8054,18 @@ export class ACPProvider extends BaseAgentProvider {
     sessionId: string,
     stopReason: string = 'end_turn',
   ): Promise<void> {
+    // Record successful operation in circuit breaker — resets failure counts
+    // and allows circuit to close after half-open state
+    if (this.config.workspaceId) {
+      import('$shared/services/agent-circuit-breaker')
+        .then(({ agentCircuitBreaker }) => {
+          agentCircuitBreaker.recordSuccess(this.config.workspaceId!);
+        })
+        .catch(() => {
+          // Circuit breaker not available — non-critical
+        });
+    }
+
     // Reset session recovery attempts on successful stream completion
     // This allows future session errors to trigger recovery again
     if (this.sessionRecoveryAttempts > 0) {
@@ -8796,6 +8830,15 @@ export class ACPProvider extends BaseAgentProvider {
         },
       );
 
+      // Record failure in circuit breaker to prevent further spawn attempts
+      if (this.config.workspaceId) {
+        import('$shared/services/agent-circuit-breaker')
+          .then(({ agentCircuitBreaker }) => {
+            agentCircuitBreaker.recordFailure(this.config.workspaceId!, 'restart_limit_exceeded');
+          })
+          .catch(() => {});
+      }
+
       // Clean up callbacks and exit without restarting
       for (const [sessionId, callbacks] of this.streamingCallbacks) {
         if (callbacks.onError) {
@@ -8890,6 +8933,15 @@ export class ACPProvider extends BaseAgentProvider {
     } catch (restartError) {
       logger.error('Failed to restart agent process', restartError as Error);
 
+      // Record failure in circuit breaker
+      if (this.config.workspaceId) {
+        import('$shared/services/agent-circuit-breaker')
+          .then(({ agentCircuitBreaker }) => {
+            agentCircuitBreaker.recordFailure(this.config.workspaceId!, 'restart_failed');
+          })
+          .catch(() => {});
+      }
+
       // Reset the restart flag
       this.isRestartingProcess = false;
 
@@ -8928,7 +8980,6 @@ export class ACPProvider extends BaseAgentProvider {
       // Ignore IPC errors — don't let error reporting break agent startup
     }
   }
-
 }
 
 // ============================================================================

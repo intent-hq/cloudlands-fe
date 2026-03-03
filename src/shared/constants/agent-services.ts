@@ -143,7 +143,7 @@ export const AGENT_LIMITS = {
   MAX_NAME_LENGTH: 100,
 
   /** Maximum system prompt length */
-  MAX_PROMPT_LENGTH: 10000,
+  MAX_PROMPT_LENGTH: 200000,
 } as const;
 
 // ============================================================================
