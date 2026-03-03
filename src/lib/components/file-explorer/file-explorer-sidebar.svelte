@@ -173,6 +173,7 @@
             {:else if store.rootNode}
               {#snippet FileTreeItem(node: FileNode, depth: number)}
                 {@const nodeExpanded = store.isExpanded(node.path)}
+                {@const isIgnored = node.isGitignored === true}
                 {@const Icon =
                   node.type === 'directory'
                     ? nodeExpanded
@@ -182,7 +183,7 @@
 
                 <Sidebar.MenuItem>
                   <Sidebar.MenuButton
-                    class="w-full"
+                    class="w-full {isIgnored ? 'opacity-50' : ''}"
                     isActive={selectedFile === node.path}
                     onclick={() => selectFile(node)}
                     style={`padding-left: ${depth * 12 + 8}px`}

@@ -573,13 +573,16 @@ export function createFileExplorerStore(
     // .git is always hidden in the file explorer UI
     if (ALWAYS_HIDE.has(fileName)) return true;
 
+    return false;
+  }
+
+  // Check if a file matches gitignore patterns (for muted display, not hiding)
+  function checkGitignored(filePath: string): boolean {
     const stripped = stripWorkspacePrefix(filePath, workspacePath);
+    const lastSlash = filePath.lastIndexOf('/');
+    const fileName = lastSlash >= 0 ? filePath.slice(lastSlash + 1) : filePath;
     const relativePath = stripped !== filePath ? stripped : fileName;
 
-    // Use the `ignore` package for correct gitignore semantics:
-    // - rules processed in order (last match wins)
-    // - negation patterns (!pattern) override earlier matches
-    // - glob, anchored, and directory patterns all handled correctly
     const ig = getIgnoreInstance(gitignorePatterns);
     return ig.ignores(relativePath);
   }
@@ -626,6 +629,7 @@ export function createFileExplorerStore(
         }
         const relativePath = fullPath.replace(`${workspacePath}/`, '');
         const fileGitStatus = gitStatus.get(relativePath);
+        const ignored = checkGitignored(fullPath);
 
         nodes.push({
           name: entry.name,
@@ -635,6 +639,7 @@ export function createFileExplorerStore(
           modified: entry.modified,
           children: entry.isDirectory ? [] : undefined,
           gitStatus: fileGitStatus,
+          ...(ignored && { isGitignored: true }),
         });
       }
 
@@ -697,6 +702,7 @@ export function createFileExplorerStore(
         }
         const relativePath = fullPath.replace(`${workspacePath}/`, '');
         const fileGitStatus = gitStatus.get(relativePath);
+        const ignored = checkGitignored(fullPath);
 
         // Convert modified to ISO string for FileNode compatibility
         const modifiedDate =
@@ -711,6 +717,7 @@ export function createFileExplorerStore(
           modified: modifiedStr,
           children: entry.isDirectory ? [] : undefined,
           gitStatus: fileGitStatus,
+          ...(ignored && { isGitignored: true }),
         });
       }
 
@@ -792,7 +799,8 @@ export function createFileExplorerStore(
 
       // Eagerly load children for directories (one level deep) for instant expansion
       // This populates node.children so toggleDirectory doesn't need to wait
-      const directoriesToPreload = nodes.filter((n) => n.type === 'directory');
+      // Skip gitignored directories (e.g. node_modules) to avoid loading potentially huge trees
+      const directoriesToPreload = nodes.filter((n) => n.type === 'directory' && !n.isGitignored);
       if (directoriesToPreload.length > 0) {
         // Load children in background and assign directly to nodes
         Promise.all(
@@ -948,8 +956,9 @@ export function createFileExplorerStore(
   }
 
   // Preload children for a set of directory nodes (one level deep)
+  // Skip gitignored directories (e.g. node_modules) to avoid loading potentially huge trees
   function preloadChildDirectories(nodes: FileNode[]) {
-    const directoriesToPreload = nodes.filter((n) => n.type === 'directory');
+    const directoriesToPreload = nodes.filter((n) => n.type === 'directory' && !n.isGitignored);
     if (directoriesToPreload.length === 0) return;
 
     // Load children in background and assign directly to nodes
@@ -1664,6 +1673,9 @@ export function createFileExplorerStore(
           batch.map(async ({ node, depth }) => {
             if (node.type !== 'directory') return;
 
+            // Skip gitignored directories (e.g. node_modules) to avoid expanding huge trees
+            if (node.isGitignored) return;
+
             // Check depth limit
             if (maxDepth !== undefined && depth > maxDepth) return;
 
@@ -1684,7 +1696,7 @@ export function createFileExplorerStore(
                 // Queue children from the CURRENT node for expansion
                 if (currentNode.children && (maxDepth === undefined || depth < maxDepth)) {
                   for (const child of currentNode.children) {
-                    if (child.type === 'directory') {
+                    if (child.type === 'directory' && !child.isGitignored) {
                       queue.push({ node: child, depth: depth + 1 });
                     }
                   }
@@ -1699,7 +1711,7 @@ export function createFileExplorerStore(
             // Queue children for expansion (if within depth limit)
             if (node.children && (maxDepth === undefined || depth < maxDepth)) {
               for (const child of node.children) {
-                if (child.type === 'directory') {
+                if (child.type === 'directory' && !child.isGitignored) {
                   queue.push({ node: child, depth: depth + 1 });
                 }
               }

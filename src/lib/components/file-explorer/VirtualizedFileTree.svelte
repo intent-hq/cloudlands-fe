@@ -1073,6 +1073,7 @@
           {:else}
             {@const isFocused = node.path === focusedPath}
             {@const displayName = flatNode.displayPath ?? node.name}
+            {@const isIgnored = node.isGitignored === true}
             {@const gitColor = getGitStatusColor(node.gitStatus?.status)}
             {@const hasChanges =
               (node.gitStatus?.additions ?? 0) > 0 || (node.gitStatus?.deletions ?? 0) > 0}
@@ -1090,7 +1091,7 @@
 
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
-              class="flex items-center transition-colors duration-150"
+              class="flex items-center transition-colors duration-150 {isIgnored ? 'opacity-50' : ''}"
               class:folder-drop-target={isDropTarget}
               class:inside-drop-target={isInsideDropTarget}
               style="height: {itemHeight}px; padding-left: {depth * 16}px;"
