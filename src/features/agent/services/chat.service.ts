@@ -543,44 +543,23 @@ export class ChatService implements IDisposable {
       }
 
       if (!session) {
-        // Only create new session if agentId is provided and no session exists
-        // This prevents duplicate agent creation.
+        // Session not found in memory or on disk.
         //
-        // GUARD: Verify the current workspace still matches the requested one.
-        // During workspace transitions or when stale panel tabs mount ChatPanels
-        // for agents that don't belong to the current workspace, we must NOT
-        // create a spurious new session. This was the root cause of ghost agents
-        // appearing when workspace IDs were reused with stale localStorage state.
-        const activeWorkspace = unifiedStateStore.currentWorkspace;
-        const activeWorkspaceId = activeWorkspace?.workspace?.id;
-        if (activeWorkspaceId && String(activeWorkspaceId) !== String(workspace.id)) {
-          logger.warn('Skipping session creation - workspace mismatch', {
-            agentId,
-            requestedWorkspace: workspace.id,
-            activeWorkspace: activeWorkspaceId,
-          });
-          return;
-        }
-
-        logger.info('No existing session found, creating new one', { agentId });
-
-        const newSession = await agentService.createSession(workspace, {
-          agentId, // Pass the agentId to ensure we use the same ID
-          name: options?.agentName || 'Chat',
-          model: options?.agentModel,
-          agentType: options?.agentType,
-          metadata: {
-            isInitialWorkspaceAgent: options?.isInitialWorkspaceAgent,
-          },
+        // DO NOT auto-create a new session here. Session creation is the
+        // responsibility of explicit user actions (keyboard shortcut, workspace
+        // creation, task delegation) — not a side effect of mounting a chat UI.
+        //
+        // This code path is typically hit when panel layout tabs are restored
+        // from localStorage with stale agent IDs (e.g., after the agent was
+        // deleted, or during a race where ChatPanel mounts before the workspace
+        // page finishes restoring agents from disk). Auto-creating a session
+        // here was the root cause of "random blank agents" appearing on
+        // workspace open.
+        logger.warn('No session found for agent, skipping initialization', {
+          agentId,
+          workspaceId: workspace.id,
         });
-        if (newSession) {
-          session = { ...newSession, isStreaming: newSession.isStreaming ?? false };
-        }
-      }
-
-      // Ensure session exists before proceeding
-      if (!session) {
-        throw new Error('Failed to create or retrieve session');
+        return;
       }
 
       // Get messages for this session
