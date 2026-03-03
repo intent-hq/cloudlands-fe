@@ -2257,12 +2257,14 @@ task:
             enrichedPR.ciStatus !== pr.ciStatus ||
             enrichedPR.reviewDecision !== pr.reviewDecision ||
             enrichedPR.headSha !== pr.headSha ||
-            enrichedPR.mergeableState !== pr.mergeableState
+            enrichedPR.mergeableState !== pr.mergeableState ||
+            enrichedPR.status !== pr.status
           ) {
             // Update activePullRequest
             updatedWorkspace = {
               ...updatedWorkspace,
               activePullRequest: enrichedPR,
+              ...(enrichedPR.status !== pr.status && { prStatus: enrichedPR.status }),
             };
 
             // Also update the matching entry in pullRequests[] if it exists
@@ -2470,9 +2472,25 @@ task:
         JSON.stringify(enrichedPR.ciStatus) !== JSON.stringify(pr.ciStatus) ||
         enrichedPR.reviewDecision !== pr.reviewDecision ||
         enrichedPR.headSha !== pr.headSha ||
-        enrichedPR.mergeableState !== pr.mergeableState
+        enrichedPR.mergeableState !== pr.mergeableState ||
+        enrichedPR.status !== pr.status
       ) {
-        const updatedWorkspace = { ...workspace, activePullRequest: enrichedPR };
+        let updatedWorkspace = {
+          ...workspace,
+          activePullRequest: enrichedPR,
+          ...(enrichedPR.status !== pr.status && { prStatus: enrichedPR.status }),
+        };
+
+        // Also update the matching entry in pullRequests[] if it exists
+        if (updatedWorkspace.pullRequests) {
+          updatedWorkspace = {
+            ...updatedWorkspace,
+            pullRequests: updatedWorkspace.pullRequests.map((existingPR) =>
+              existingPR.number === enrichedPR.number ? enrichedPR : existingPR,
+            ),
+          };
+        }
+
         await this.saveWorkspace(updatedWorkspace);
 
         // Broadcast to renderer windows
