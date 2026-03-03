@@ -566,14 +566,12 @@ export function createFileExplorerStore(
     return cachedIg;
   }
 
-  function shouldIgnore(filePath: string): boolean {
+  // Returns true for entries that should be completely hidden from the tree (not even dimmed).
+  // Currently only .git — all other ignored entries are shown dimmed via isGitignored.
+  function shouldHide(filePath: string): boolean {
     const lastSlash = filePath.lastIndexOf('/');
     const fileName = lastSlash >= 0 ? filePath.slice(lastSlash + 1) : filePath;
-
-    // .git is always hidden in the file explorer UI
-    if (ALWAYS_HIDE.has(fileName)) return true;
-
-    return false;
+    return ALWAYS_HIDE.has(fileName);
   }
 
   // Check if a file matches gitignore patterns (for muted display, not hiding)
@@ -624,7 +622,7 @@ export function createFileExplorerStore(
 
       for (const entry of response.data) {
         const fullPath = `${dirPath}/${entry.name}`;
-        if (shouldIgnore(fullPath)) {
+        if (shouldHide(fullPath)) {
           continue;
         }
         const relativePath = fullPath.replace(`${workspacePath}/`, '');
@@ -697,7 +695,7 @@ export function createFileExplorerStore(
 
       for (const entry of response.data) {
         const fullPath = entry.path || `${dirPath}/${entry.name}`;
-        if (shouldIgnore(fullPath)) {
+        if (shouldHide(fullPath)) {
           continue;
         }
         const relativePath = fullPath.replace(`${workspacePath}/`, '');
@@ -1129,6 +1127,10 @@ export function createFileExplorerStore(
   async function refresh() {
     logger.debug('[FileExplorer] Refreshing file tree and git status');
     directoryCache.clear();
+    // Reload gitignore patterns so newly-ignored/un-ignored files update their dimmed state
+    await loadGitignorePatterns().catch((err) =>
+      logger.warn('Failed to reload gitignore patterns during refresh:', err),
+    );
     await loadGitStatus();
     // Pass false for showLoadingState to avoid skeleton during refreshes
     await loadRootDirectory(false, false);
@@ -1414,8 +1416,8 @@ export function createFileExplorerStore(
     // Small delay to ensure file tracking store has synced
     await new Promise((resolve) => setTimeout(resolve, 200));
 
-    // Load gitignore patterns FIRST — shouldIgnore reads these during directory loading,
-    // so they must be populated before loadRootDirectory runs.
+    // Load gitignore patterns FIRST — checkGitignored reads these during directory loading
+    // to mark files with isGitignored, so they must be populated before loadRootDirectory runs.
     // Git status can load in parallel with the directory since it doesn't affect file visibility.
     await loadGitignorePatterns().catch((err) =>
       logger.warn('Failed to load gitignore patterns:', err),

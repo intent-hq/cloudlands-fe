@@ -99,10 +99,13 @@ describe('FileExplorerStore', () => {
 });
 
 // ---------------------------------------------------------------------------
-// shouldIgnore integration tests
+// Gitignore / shouldHide integration tests
 //
 // These test the gitignore filtering logic end-to-end by mocking IPC calls
-// and verifying which files appear in the loaded tree.
+// and verifying which files appear in the loaded tree and their isGitignored state.
+//
+// Gitignored files are shown in the tree (dimmed) but marked with isGitignored: true.
+// Only ALWAYS_HIDE entries (e.g. .git) are completely removed from the tree.
 // ---------------------------------------------------------------------------
 
 /** Helper: create a mock dir entry as returned by file:readDirWithStats */
@@ -111,17 +114,17 @@ function mockEntry(name: string, isDirectory = false) {
 }
 
 /**
- * Helper: set up IPC mocks and load a workspace, returning visible file names.
+ * Helper: set up IPC mocks and load a workspace, returning the children nodes.
  *
  * @param gitignorePatterns - patterns the mock .gitignore contains
  * @param dirEntries        - entries returned by readDirWithStats
  * @param workspacePath     - workspace root (default '/workspace')
  */
-async function getVisibleNames(
+async function getLoadedChildren(
   gitignorePatterns: string[],
   dirEntries: ReturnType<typeof mockEntry>[],
   workspacePath = '/workspace',
-): Promise<string[]> {
+) {
   const invokeMock = vi.mocked(electronBridge.invoke);
 
   invokeMock.mockImplementation(async (channel: string, ..._args: unknown[]) => {
@@ -144,11 +147,10 @@ async function getVisibleNames(
   const store = createFileExplorerStore(workspacePath);
   await store.setWorkspacePath(workspacePath);
 
-  const children = store.rootNode?.children ?? [];
-  return children.map((n) => n.name);
+  return store.rootNode?.children ?? [];
 }
 
-describe('shouldIgnore — gitignore semantics', () => {
+describe('gitignore semantics — shouldHide + isGitignored', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Advance past the 200ms delay in setWorkspacePath
@@ -165,13 +167,13 @@ describe('shouldIgnore — gitignore semantics', () => {
     entries: ReturnType<typeof mockEntry>[],
     workspacePath = '/workspace',
   ) {
-    const promise = getVisibleNames(patterns, entries, workspacePath);
+    const promise = getLoadedChildren(patterns, entries, workspacePath);
     // Flush the 200ms delay inside setWorkspacePath
     await vi.advanceTimersByTimeAsync(300);
     return promise;
   }
 
-  it('should hide default-ignored files (node_modules, dist, .DS_Store, etc.)', async () => {
+  it('should show default-ignored files as gitignored (dimmed), not hidden', async () => {
     const entries = [
       mockEntry('src', true),
       mockEntry('node_modules', true),
@@ -182,15 +184,29 @@ describe('shouldIgnore — gitignore semantics', () => {
       mockEntry('debug.log'),
     ];
 
-    const visible = await loadWithTimers([], entries);
+    const children = await loadWithTimers([], entries);
+    const names = children.map((n) => n.name);
 
-    expect(visible).toContain('src');
-    expect(visible).toContain('package.json');
-    expect(visible).not.toContain('node_modules');
-    expect(visible).not.toContain('dist');
-    expect(visible).not.toContain('.DS_Store');
-    expect(visible).not.toContain('Thumbs.db');
-    expect(visible).not.toContain('debug.log');
+    // All files should be visible in the tree
+    expect(names).toContain('src');
+    expect(names).toContain('package.json');
+    expect(names).toContain('node_modules');
+    expect(names).toContain('dist');
+    expect(names).toContain('.DS_Store');
+    expect(names).toContain('Thumbs.db');
+    expect(names).toContain('debug.log');
+
+    // But default-ignored ones should be marked as gitignored
+    const byName = (name: string) => children.find((n) => n.name === name)!;
+    expect(byName('node_modules').isGitignored).toBe(true);
+    expect(byName('dist').isGitignored).toBe(true);
+    expect(byName('.DS_Store').isGitignored).toBe(true);
+    expect(byName('Thumbs.db').isGitignored).toBe(true);
+    expect(byName('debug.log').isGitignored).toBe(true);
+
+    // Non-ignored ones should NOT be marked
+    expect(byName('src').isGitignored).toBeFalsy();
+    expect(byName('package.json').isGitignored).toBeFalsy();
   });
 
   it('should allow negation patterns to override defaults (e.g. !dist)', async () => {
@@ -201,12 +217,13 @@ describe('shouldIgnore — gitignore semantics', () => {
     ];
 
     // User's .gitignore negates dist
-    const visible = await loadWithTimers(['!dist'], entries);
+    const children = await loadWithTimers(['!dist'], entries);
+    const byName = (name: string) => children.find((n) => n.name === name)!;
 
-    expect(visible).toContain('dist');
-    expect(visible).toContain('src');
-    // build is still hidden by defaults
-    expect(visible).not.toContain('build');
+    expect(byName('dist').isGitignored).toBeFalsy();
+    expect(byName('src').isGitignored).toBeFalsy();
+    // build is still gitignored by defaults
+    expect(byName('build').isGitignored).toBe(true);
   });
 
   it('should respect last-match-wins for negation then re-ignore', async () => {
@@ -216,30 +233,32 @@ describe('shouldIgnore — gitignore semantics', () => {
     ];
 
     // *.log is in defaults. User negates important.log, then re-ignores it.
-    const visible = await loadWithTimers(
+    const children = await loadWithTimers(
       ['!important.log', 'important.log'],
       entries,
     );
+    const byName = (name: string) => children.find((n) => n.name === name)!;
 
-    // Both should be hidden: debug.log by default *.log, important.log re-ignored
-    expect(visible).not.toContain('important.log');
-    expect(visible).not.toContain('debug.log');
+    // Both should be gitignored: debug.log by default *.log, important.log re-ignored
+    expect(byName('important.log').isGitignored).toBe(true);
+    expect(byName('debug.log').isGitignored).toBe(true);
   });
 
-  it('should hide .git unconditionally (even with negation)', async () => {
+  it('should completely hide .git (even with negation) — not just dim it', async () => {
     const entries = [
       mockEntry('.git', true),
       mockEntry('src', true),
     ];
 
-    // Even if user tries to negate .git, it should stay hidden
-    const visible = await loadWithTimers(['!.git'], entries);
+    // Even if user tries to negate .git, it should stay completely hidden
+    const children = await loadWithTimers(['!.git'], entries);
+    const names = children.map((n) => n.name);
 
-    expect(visible).not.toContain('.git');
-    expect(visible).toContain('src');
+    expect(names).not.toContain('.git');
+    expect(names).toContain('src');
   });
 
-  it('should show dotfiles that are not in any ignore pattern', async () => {
+  it('should show dotfiles that are not in any ignore pattern (not gitignored)', async () => {
     const entries = [
       mockEntry('.prettierrc'),
       mockEntry('.eslintrc.json'),
@@ -248,16 +267,14 @@ describe('shouldIgnore — gitignore semantics', () => {
       mockEntry('.editorconfig'),
     ];
 
-    const visible = await loadWithTimers([], entries);
+    const children = await loadWithTimers([], entries);
 
-    expect(visible).toContain('.prettierrc');
-    expect(visible).toContain('.eslintrc.json');
-    expect(visible).toContain('.npmrc');
-    expect(visible).toContain('.gitignore');
-    expect(visible).toContain('.editorconfig');
+    for (const child of children) {
+      expect(child.isGitignored).toBeFalsy();
+    }
   });
 
-  it('should hide dotfiles that ARE in gitignore patterns', async () => {
+  it('should mark dotfiles in gitignore as gitignored, respect negation', async () => {
     const entries = [
       mockEntry('.env'),
       mockEntry('.env.local'),
@@ -266,15 +283,16 @@ describe('shouldIgnore — gitignore semantics', () => {
     ];
 
     // User's gitignore ignores .env and .env.local but negates .env.example
-    const visible = await loadWithTimers(
+    const children = await loadWithTimers(
       ['.env', '.env.local', '.env.example', '!.env.example'],
       entries,
     );
+    const byName = (name: string) => children.find((n) => n.name === name)!;
 
-    expect(visible).not.toContain('.env');
-    expect(visible).not.toContain('.env.local');
-    expect(visible).toContain('.env.example');
-    expect(visible).toContain('.npmrc');
+    expect(byName('.env').isGitignored).toBe(true);
+    expect(byName('.env.local').isGitignored).toBe(true);
+    expect(byName('.env.example').isGitignored).toBeFalsy();
+    expect(byName('.npmrc').isGitignored).toBeFalsy();
   });
 
   it('should handle glob patterns from gitignore', async () => {
@@ -285,26 +303,31 @@ describe('shouldIgnore — gitignore semantics', () => {
       mockEntry('styles.css'),
     ];
 
-    const visible = await loadWithTimers(['*.min.*'], entries);
+    const children = await loadWithTimers(['*.min.*'], entries);
+    const byName = (name: string) => children.find((n) => n.name === name)!;
 
-    expect(visible).not.toContain('app.min.js');
-    expect(visible).not.toContain('styles.min.css');
-    expect(visible).toContain('app.js');
-    expect(visible).toContain('styles.css');
+    expect(byName('app.min.js').isGitignored).toBe(true);
+    expect(byName('styles.min.css').isGitignored).toBe(true);
+    expect(byName('app.js').isGitignored).toBeFalsy();
+    expect(byName('styles.css').isGitignored).toBeFalsy();
   });
 
-  it('should work with no gitignore file (empty patterns)', async () => {
+  it('should apply default ignores even with no gitignore file (empty patterns)', async () => {
     const entries = [
       mockEntry('src', true),
       mockEntry('node_modules', true),
       mockEntry('package.json'),
     ];
 
-    const visible = await loadWithTimers([], entries);
+    const children = await loadWithTimers([], entries);
+    const byName = (name: string) => children.find((n) => n.name === name)!;
 
-    // Defaults still apply
-    expect(visible).toContain('src');
-    expect(visible).toContain('package.json');
-    expect(visible).not.toContain('node_modules');
+    // All should be in the tree
+    expect(children.map((n) => n.name)).toContain('node_modules');
+
+    // Defaults still mark node_modules as gitignored
+    expect(byName('node_modules').isGitignored).toBe(true);
+    expect(byName('src').isGitignored).toBeFalsy();
+    expect(byName('package.json').isGitignored).toBeFalsy();
   });
 });
