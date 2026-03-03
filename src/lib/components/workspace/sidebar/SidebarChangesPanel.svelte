@@ -1389,14 +1389,6 @@
   // Check if workspace is "completed" - commits have been merged to trunk
   // This persists across refreshes since it's based on actual git state
   const hasNoLocalChanges = $derived(!hasUnstaged && !hasStaged && commits.length === 0);
-  // Workspace is completed when: no local changes and commits have been merged to trunk
-  // For remote repos: pushed commits exist and they've been merged to trunk
-  // For local-only repos: no commits remain ahead of trunk (all merged locally)
-  const isWorkspaceCompleted = $derived(
-    hasNoLocalChanges &&
-      aheadOfTrunk === 0 &&
-      (hasRemote ? hasPushedCommits : allCommits.length === 0),
-  );
 
   // Note: mergeHeadSha is ONLY set during in-session merges (see merge handlers below at lines ~2354/~2423).
   // For external merges (areAllPRsMerged, isContentMergedToTrunk), we do NOT capture mergeHeadSha
@@ -5280,7 +5272,7 @@
                 >
                   Push {unpushedCount} Commit{unpushedCount === 1 ? '' : 's'}
                 </DividerButton>
-              {:else if !hasOpenPR && !(isMergedToTrunk || isWorkspaceCompleted || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)}
+              {:else if !hasOpenPR && !(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)}
                 <!-- Show Create PR + Merge buttons when no open PR and not post-merge -->
                 <div class="w-full flex gap-1">
                   <DividerButton
@@ -5710,7 +5702,7 @@
           {/if}
 
           <!-- Divider with Merge button - hide when PR is already merged, when merge is in upper section, or post-merge -->
-          {#if !isPRMerged && (!hasRemote || hasOpenPR) && !(isMergedToTrunk || isWorkspaceCompleted || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)}
+          {#if !isPRMerged && (!hasRemote || hasOpenPR) && !(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)}
             <TimelineDivider>
               {#if !hasRemote}
                 <div class="w-full flex gap-1">
@@ -5816,10 +5808,10 @@
           <!-- Also shown immediately after direct merge to trunk (isMergedToTrunk), when all PRs are merged on GitHub (areAllPRsMerged), or when squash merge detected via tree hash (isContentMergedToTrunk) -->
           <!-- Hidden when new commits were made after merge (mergeHeadSha no longer matches HEAD) - indicates user is actively working -->
           <!-- areAllPRsMerged is gated by hasResetToTrunk to allow creating new PRs after reset -->
-          {#if (isMergedToTrunk || isWorkspaceCompleted || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) && (!mergeHeadSha || mergeHeadSha === allCommits[0]?.hash)}
+          {#if (isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) && (!mergeHeadSha || mergeHeadSha === allCommits[0]?.hash)}
             <div class="mt-4 pt-4 border-t border-border/50 ml-4 space-y-3">
               <!-- Reset and continue button - hidden when there are uncommitted changes or unpushed commits -->
-              {#if !hasStaged && !hasUnstaged && !hasUnpushedCommits}
+              {#if hasNoLocalChanges}
                 <div>
                   <Button
                     variant="outline"
@@ -5841,6 +5833,7 @@
                   </p>
                 </div>
               {/if}
+              {#if hasNoLocalChanges}
               <!-- Archive and start new space button -->
               <div>
                 <Button
@@ -5856,6 +5849,7 @@
                   Continue working on this repo in a fresh workspace
                 </p>
               </div>
+              {/if}
             </div>
           {/if}
         </div>
