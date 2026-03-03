@@ -40,7 +40,6 @@
   import { fly, slide } from 'svelte/transition';
   import { handleLink } from '$features/navigation/link-handler';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import type { WorkspaceId } from '$shared/types/branded-ids';
   import { toast } from 'svelte-sonner';
 
   // Props for the panel
@@ -560,10 +559,7 @@
     if (enableFocusCheck) {
       pendingFocusCheck = true;
     }
-    const wsId = workspaceStore.current?.id;
-    if (wsId) {
-      await handleLink(url, { workspaceId: wsId as WorkspaceId });
-    }
+    await handleLink(url, { workspaceId: workspaceStore.current?.id });
   }
 </script>
 
@@ -719,12 +715,10 @@
                 class="underline text-primary"
                 onclick={(e) => {
                   e.preventDefault();
-                  const wsId = workspaceStore.current?.id;
-                  if (wsId)
-                    handleLink('https://nodejs.org', {
-                      workspaceId: wsId as WorkspaceId,
-                      event: e,
-                    });
+                  handleLink('https://nodejs.org', {
+                    workspaceId: workspaceStore.current?.id,
+                    event: e,
+                  });
                 }}>Node.js</a
               > to version {MINIMUM_NODE_VERSION.split('.')[0]} or later.
             </p>
@@ -735,12 +729,10 @@
                 class="underline text-primary"
                 onclick={(e) => {
                   e.preventDefault();
-                  const wsId = workspaceStore.current?.id;
-                  if (wsId)
-                    handleLink('https://nodejs.org', {
-                      workspaceId: wsId as WorkspaceId,
-                      event: e,
-                    });
+                  handleLink('https://nodejs.org', {
+                    workspaceId: workspaceStore.current?.id,
+                    event: e,
+                  });
                 }}>Node.js</a
               > first.
             </p>

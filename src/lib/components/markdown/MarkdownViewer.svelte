@@ -16,7 +16,6 @@
   import { TasksBlock } from '$lib/components/tiptap/TasksBlock';
   import { handleLink } from '$features/navigation/link-handler';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { WorkspaceId } from '$shared/types/branded-ids';
 
   // Use shared safe lowlight instance (handles unregistered languages gracefully)
   const lowlight = safeLowlight;
@@ -256,13 +255,10 @@
       event.stopPropagation();
       event.stopImmediatePropagation();
 
-      const wsId = workspaceStore.current?.id;
-      if (wsId) {
-        handleLink(anchor.href, {
-          workspaceId: WorkspaceId(wsId),
-          event,
-        });
-      }
+      handleLink(anchor.href, {
+        workspaceId: workspaceStore.current?.id,
+        event,
+      });
       return;
     }
 

@@ -204,7 +204,6 @@
   import { sentryAuthStore } from '$features/sentry-auth/renderer/sentry-auth.store.svelte';
   import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { WorkspaceId } from '$shared/types/branded-ids';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
@@ -1245,12 +1244,9 @@
             {:else if activeSource === 'github-issues'}
               No issues found for <button
                 onclick={() => {
-                  const wsId = workspaceStore.current?.id;
-                  if (wsId) {
-                    handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/issues`, {
-                      workspaceId: WorkspaceId(wsId),
-                    });
-                  }
+                  handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/issues`, {
+                    workspaceId: workspaceStore.current?.id,
+                  });
                 }}
                 class="underline underline-offset-2 decoration-muted-foreground/20 cursor-pointer"
                 >{repositoryOwner}/{repositoryName}</button
@@ -1258,12 +1254,9 @@
             {:else if activeSource === 'github-prs'}
               No pull requests found for <button
                 onclick={() => {
-                  const wsId = workspaceStore.current?.id;
-                  if (wsId) {
-                    handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/pulls`, {
-                      workspaceId: WorkspaceId(wsId),
-                    });
-                  }
+                  handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/pulls`, {
+                    workspaceId: workspaceStore.current?.id,
+                  });
                 }}
                 class="underline underline-offset-2 decoration-muted-foreground/20 cursor-pointer"
                 >{repositoryOwner}/{repositoryName}</button

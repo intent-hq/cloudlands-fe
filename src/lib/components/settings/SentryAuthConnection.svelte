@@ -5,7 +5,6 @@
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
-  import { WorkspaceId } from '$shared/types/branded-ids';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
@@ -162,12 +161,9 @@
         <button
           type="button"
           onclick={() => {
-            const wsId = workspaceStore.current?.id;
-            if (wsId) {
-              handleLink('https://sentry.io/settings/account/api/auth-tokens/', {
-                workspaceId: WorkspaceId(wsId),
-              });
-            }
+            handleLink('https://sentry.io/settings/account/api/auth-tokens/', {
+              workspaceId: workspaceStore.current?.id,
+            });
           }}
           class="text-primary hover:underline cursor-pointer"
         >

@@ -5,7 +5,6 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { handleLink } from '$features/navigation/link-handler';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import type { WorkspaceId } from '$shared/types/branded-ids';
 
   // Dynamically import MermaidRenderer to reduce bundle size (used infrequently)
   const MermaidRenderer = import('$lib/components/markdown/MermaidRenderer.svelte');
@@ -247,10 +246,7 @@
 
     event.preventDefault();
     event.stopPropagation();
-    const wsId = workspaceStore.current?.id;
-    if (wsId) {
-      await handleLink(href, { workspaceId: wsId as WorkspaceId, event });
-    }
+    await handleLink(href, { workspaceId: workspaceStore.current?.id, event });
   }
 </script>
 

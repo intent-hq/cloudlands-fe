@@ -20,7 +20,6 @@
   import Header from '../ui/Header.svelte';
   import { handleLink } from '$features/navigation/link-handler';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import type { WorkspaceId } from '$shared/types/branded-ids';
 
   // Props
   let { isAuggieProvider = true }: { isAuggieProvider?: boolean } = $props();
@@ -343,7 +342,7 @@
           <button
             type="button"
             class="text-primary hover:underline cursor-pointer"
-            onclick={(e) => { const wsId = workspaceStore.current?.id; if (wsId) handleLink('https://docs.augmentcode.com/windsurf/mcp', { workspaceId: wsId as WorkspaceId, event: e }); }}
+            onclick={(e) => { handleLink('https://docs.augmentcode.com/windsurf/mcp', { workspaceId: workspaceStore.current?.id, event: e }); }}
           >Learn more ↗</button>
         </p>
       </div>
@@ -484,7 +483,7 @@
                 <button
                   type="button"
                   class="text-primary hover:underline cursor-pointer"
-                  onclick={(e) => { const wsId = workspaceStore.current?.id; if (wsId) handleLink('https://docs.augmentcode.com/windsurf/mcp', { workspaceId: wsId as WorkspaceId, event: e }); }}
+                  onclick={(e) => { handleLink('https://docs.augmentcode.com/windsurf/mcp', { workspaceId: workspaceStore.current?.id, event: e }); }}
                 >Learn how ↗</button>
               </p>
             </div>
@@ -641,7 +640,7 @@
                 <a
                   href="https://docs.augmentcode.com/cli/integrations#configure-mcp-via-settings-json"
                   class="text-xs text-primary hover:underline"
-                  onclick={(e) => { e.preventDefault(); const wsId = workspaceStore.current?.id; if (wsId) handleLink('https://docs.augmentcode.com/cli/integrations#configure-mcp-via-settings-json', { workspaceId: wsId as WorkspaceId, event: e }); }}
+                  onclick={(e) => { e.preventDefault(); handleLink('https://docs.augmentcode.com/cli/integrations#configure-mcp-via-settings-json', { workspaceId: workspaceStore.current?.id, event: e }); }}
                 >
                   Documentation ↗
                 </a>

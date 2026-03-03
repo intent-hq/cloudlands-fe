@@ -8,7 +8,6 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { handleLink } from '$features/navigation/link-handler';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { WorkspaceId } from '$shared/types/branded-ids';
   import Fa from 'svelte-fa';
   import {
     faExternalLinkAlt,
@@ -95,12 +94,9 @@
   }
 
   function openDocs() {
-    const wsId = workspaceStore.current?.id;
-    if (wsId) {
-      handleLink('https://docs.augmentcode.com/cli/overview', {
-        workspaceId: WorkspaceId(wsId),
-      });
-    }
+    handleLink('https://docs.augmentcode.com/cli/overview', {
+      workspaceId: workspaceStore.current?.id,
+    });
   }
 </script>
 

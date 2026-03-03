@@ -30,8 +30,8 @@ export interface ModifierFlags {
 }
 
 export interface LinkHandlerOptions {
-  /** Workspace ID for panel layout manager lookup */
-  workspaceId: WorkspaceId;
+  /** Workspace ID for panel layout manager lookup. When undefined, HTTP/HTTPS links fall back to the external browser. */
+  workspaceId?: WorkspaceId;
   /** The original MouseEvent (used to detect Cmd+Click) */
   event?: MouseEvent;
   /** Extracted modifier flags — alternative to passing the full event */
@@ -151,8 +151,12 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
         return await openInExternalBrowser(url);
       }
 
-      // Default: embedded browser panel
-      return await openInBrowserPanel(url, options.workspaceId);
+      // Default: embedded browser panel (requires a workspace), otherwise external browser
+      if (options.workspaceId) {
+        return await openInBrowserPanel(url, options.workspaceId);
+      }
+      logger.debug('No workspaceId available, opening in external browser', { url });
+      return await openInExternalBrowser(url);
     }
 
     // Handle file:// links
@@ -245,8 +249,8 @@ async function openInExternalEditor(url: string): Promise<boolean> {
 // ============================================================================
 
 export interface GlobalLinkClickHandlerOptions {
-  /** Workspace ID for panel layout manager lookup */
-  workspaceId: WorkspaceId;
+  /** Workspace ID for panel layout manager lookup. When undefined, HTTP/HTTPS links fall back to the external browser. */
+  workspaceId?: WorkspaceId;
   /** Custom handler for specific link types */
   customHandler?: (url: string) => Promise<boolean> | boolean;
 }

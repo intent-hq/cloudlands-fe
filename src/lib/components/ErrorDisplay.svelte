@@ -16,7 +16,6 @@
   } from '$lib/utils/svelte-error-resolver';
   import { handleLink } from '$features/navigation/link-handler';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import type { WorkspaceId } from '$shared/types/branded-ids';
 
   interface Props {
     error: string | Error | any;
@@ -158,7 +157,7 @@
             <a
               href={svelteErrorInfo.docsUrl}
               class="inline-flex items-center gap-2 text-xs text-primary hover:underline"
-              onclick={(e) => { e.preventDefault(); const wsId = workspaceStore.current?.id; if (wsId) handleLink(svelteErrorInfo.docsUrl, { workspaceId: wsId as WorkspaceId, event: e }); }}
+              onclick={(e) => { e.preventDefault(); handleLink(svelteErrorInfo.docsUrl, { workspaceId: workspaceStore.current?.id, event: e }); }}
             >
               <Fa icon={faExternalLinkAlt} size="xs" />
               View Svelte Documentation
