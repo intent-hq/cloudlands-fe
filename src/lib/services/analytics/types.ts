@@ -117,6 +117,7 @@ export interface AnalyticsEvents {
     workspace_title?: string;
     is_remote: boolean;
     from_template: boolean;
+    work_mode?: 'team' | 'single';
   };
   'Opened Workspace': {
     workspace_id: string;

@@ -331,11 +331,13 @@ class WorkspaceStore {
         this.#current = result.data;
 
         // Track workspace creation (privacy-safe: no repo names/paths)
+        const workMode = data.initialAgent?.metadata?.workMode;
         track('Created Workspace', {
           workspace_id: result.data.id,
           workspace_title: result.data.title,
           is_remote: data.environmentConfig?.type === 'remote' || false,
           from_template: false, // No template system yet
+          work_mode: workMode === 'team' || workMode === 'single' ? workMode : undefined,
         });
 
         // If a Linear issue was provided, create a third-party source for it

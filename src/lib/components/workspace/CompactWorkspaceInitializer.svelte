@@ -1509,6 +1509,7 @@
           isInitialAgent: true,
           specialist: specialistId ?? undefined,
           provider: selectedProvider, // Also store in metadata for reference
+          workMode: isTeamMode ? 'team' : 'single', // For analytics: which mode card was selected
           createdAt: new Date().toISOString(),
         },
       };
