@@ -2935,6 +2935,11 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
                 replacedStreaming: existingStreamingMsgIndex >= 0,
               });
 
+              // Update status before persisting so the on-disk JSON reflects idle state
+              const { AgentStatus } = await import('../../../shared/types/agent.types.js');
+              backendSession.status = AgentStatus.Idle;
+              backendSession.isStreaming = false;
+
               // Persist the session to disk
               const saveResult = await agentPersistence.saveAgent(backendSession);
               if (saveResult.success) {

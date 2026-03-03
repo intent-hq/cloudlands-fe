@@ -5262,9 +5262,9 @@ class RefactoredAgentService extends EventEmitter {
 
       // CRITICAL FIX: Handle streaming state when loading from disk
       // If the session was streaming, re-register the stream handler to continue receiving chunks
+      let foundStreamingMessage: AgentMessage | undefined;
       if (session) {
         // Check for streaming messages and re-register handler if needed
-        let foundStreamingMessage: AgentMessage | undefined;
         if (session.messages) {
           foundStreamingMessage = session.messages.find((msg: any) => msg.isStreaming);
           if (foundStreamingMessage) {
@@ -5325,6 +5325,24 @@ class RefactoredAgentService extends EventEmitter {
         }
       }
       if (session) {
+        // Normalize stale "active"/"Processing" status when restoring from disk without a backend.
+        // If the session was persisted as active but there is no streaming message in progress,
+        // the backend process is gone and the agent is actually idle.
+        if (
+          (session.status === AgentStatus.Active || session.status === AgentStatus.Processing) &&
+          !foundStreamingMessage
+        ) {
+          logger.warn(
+            'Normalizing stale active status to Idle on restore from disk (no active stream)',
+            {
+              agentId: session.id,
+              previousStatus: session.status,
+              newStatus: AgentStatus.Idle,
+            },
+          );
+          session.status = AgentStatus.Idle;
+        }
+
         // Add to sessionStore - but we need to ensure the workspace is set
         // Since addSession relies on currentWorkspace being set, we need to add it directly
         // to the unified state store with the workspace ID
