@@ -166,6 +166,10 @@ jobs:
         run: |
           find dist-electron -path "*/MacOS/*" -type f -exec chmod +x {} +
           find dist-electron -name "*.sh" -type f -exec chmod +x {} +
+          # Fix permissions on native module binaries (lost during artifact upload/download)
+          find dist-electron -name "*.node" -type f -exec chmod +x {} +
+          find dist-electron -name "spawn-helper" -type f -exec chmod +x {} +
+          find dist-electron -path "*/app.asar.unpacked/*" -name "fontlist" -type f -exec chmod +x {} +
 
       - name: Install and authenticate auggie
         if: matrix.provider == 'auggie' && env.AUGMENT_SESSION_AUTH != ''
@@ -290,6 +294,10 @@ jobs:
         run: |
           find dist-electron -path "*/MacOS/*" -type f -exec chmod +x {} +
           find dist-electron -name "*.sh" -type f -exec chmod +x {} +
+          # Fix permissions on native module binaries (lost during artifact upload/download)
+          find dist-electron -name "*.node" -type f -exec chmod +x {} +
+          find dist-electron -name "spawn-helper" -type f -exec chmod +x {} +
+          find dist-electron -path "*/app.asar.unpacked/*" -name "fontlist" -type f -exec chmod +x {} +
 
       - name: Install and authenticate auggie
         if: env.AUGMENT_SESSION_AUTH != ''
