@@ -263,22 +263,16 @@
                         : wsPrStatus === PullRequestStatus.Draft
                           ? 'bg-muted-foreground/10 text-muted-foreground'
                           : 'bg-red-500/10 text-red-500'}
-                  <span
-                    class="text-ui font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}"
-                  >
+                  <span class="text-ui font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}">
                     PR{wsPrNumber ? ` #${wsPrNumber}` : ''}
                   </span>
                 {/if}
 
-                {#if isRunning}
-                  <span class="text-ui text-green-500/70 whitespace-nowrap shrink-0">Active</span>
-                {:else}
-                  <RelativeTime
-                    date={workspace.lastActivity || workspace.updatedAt}
-                    class="text-ui text-subtle whitespace-nowrap shrink-0"
-                    compact
-                  />
-                {/if}
+                <RelativeTime
+                  date={workspace.lastActivity || workspace.updatedAt}
+                  class="text-ui text-subtle whitespace-nowrap shrink-0"
+                  compact
+                />
               </div>
 
               <!-- Row 2: repo info -->

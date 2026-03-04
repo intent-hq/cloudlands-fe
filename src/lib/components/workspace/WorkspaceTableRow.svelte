@@ -189,24 +189,18 @@
                     : 'bg-red-500/10 text-red-500'}
             {@const tooltipText = prTooltipContent}
             <Tooltip content={tooltipText} side="bottom" sideOffset={4} disabled={!tooltipText}>
-              <span
-                class="text-ui font-medium px-1.5 py-0.5 rounded-full shrink-0 {statusColor}"
-              >
+              <span class="text-ui font-medium px-1.5 py-0.5 rounded-full shrink-0 {statusColor}">
                 PR{prDisplayNumber ? ` #${prDisplayNumber}` : ''}
               </span>
             </Tooltip>
           {/if}
 
           <!-- Activity time -->
-          {#if agents.some((a) => a.isActive)}
-            <span class="text-ui text-green-500/70 whitespace-nowrap">Active</span>
-          {:else}
-            <RelativeTime
-              date={ws.lastActivity || ws.updatedAt}
-              class="text-ui text-subtle whitespace-nowrap"
-              compact
-            />
-          {/if}
+          <RelativeTime
+            date={ws.lastActivity || ws.updatedAt}
+            class="text-ui text-subtle whitespace-nowrap"
+            compact
+          />
         </div>
 
         <!-- Row 2: repo info (hidden when grouped by repo) -->

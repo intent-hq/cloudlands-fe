@@ -196,15 +196,11 @@
               : 'group-hover:opacity-0'
           : ''}"
       >
-        {#if isRunning}
-          <span class="text-ui text-green-500/70 whitespace-nowrap">Active</span>
-        {:else}
-          <RelativeTime
-            date={workspace.lastActivity || workspace.updatedAt}
-            class="text-ui text-subtle whitespace-nowrap"
-            compact
-          />
-        {/if}
+        <RelativeTime
+          date={workspace.lastActivity || workspace.updatedAt}
+          class="text-ui text-subtle whitespace-nowrap"
+          compact
+        />
       </span>
     </div>
 
