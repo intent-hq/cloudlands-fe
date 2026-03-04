@@ -15,23 +15,22 @@
 #   CLOUD_CDN_URL_MAP              - URL map name for Cloud CDN cache invalidation
 #
 # Usage:
-#   ./scripts/upload-banner.sh <banner-file> [channel]
+#   ./scripts/upload-banner.sh <banner-file>
 #
 # Arguments:
 #   banner-file - Path to the banner JSON file to upload
-#   channel     - Update channel: stable, beta, or alpha (default: stable)
 #
 # Example:
-#   # Upload a banner to the stable channel
+#   # Upload a banner
 #   GOOGLE_APPLICATION_CREDENTIALS=./sa-key.json \
 #   GCS_BUCKET=augment-intent-bucket \
 #   GCP_PROJECT=augment-intent \
 #   CLOUD_CDN_URL_MAP=cdn-lb \
-#   ./scripts/upload-banner.sh banner.json stable
+#   ./scripts/upload-banner.sh banner.json
 #
 #   # Clear the banner (upload empty array)
 #   echo '[]' > /tmp/empty-banner.json
-#   ./scripts/upload-banner.sh /tmp/empty-banner.json stable
+#   ./scripts/upload-banner.sh /tmp/empty-banner.json
 #
 # Banner JSON schema example:
 #   [
@@ -55,12 +54,11 @@
 set -e
 
 BANNER_FILE=${1:-}
-CHANNEL=${2:-stable}
 
 # Validate banner file argument
 if [ -z "$BANNER_FILE" ]; then
   echo "❌ Error: Banner file path is required"
-  echo "   Usage: ./scripts/upload-banner.sh <banner-file> [channel]"
+  echo "   Usage: ./scripts/upload-banner.sh <banner-file>"
   exit 1
 fi
 
@@ -106,12 +104,6 @@ if [ -z "$CLOUD_CDN_URL_MAP" ]; then
   exit 1
 fi
 
-# Validate channel
-if [[ ! "$CHANNEL" =~ ^(stable|beta|alpha)$ ]]; then
-  echo "❌ Error: Invalid channel '$CHANNEL'. Must be stable, beta, or alpha"
-  exit 1
-fi
-
 # Check if gcloud CLI is installed
 if ! command -v gcloud &> /dev/null; then
   echo "❌ Error: gcloud CLI is not installed"
@@ -120,7 +112,7 @@ if ! command -v gcloud &> /dev/null; then
   exit 1
 fi
 
-echo "📢 Uploading banner to $CHANNEL channel..."
+echo "📢 Uploading banner..."
 echo "   File: $BANNER_FILE"
 echo "   GCS Bucket: $GCS_BUCKET"
 echo "   Project: $GCP_PROJECT"
@@ -138,7 +130,7 @@ echo "   ✓ Authenticated"
 
 # Upload banner file
 echo "📤 Uploading banner.json..."
-gcloud storage cp "$BANNER_FILE" "gs://$GCS_BUCKET/$CHANNEL/banner.json" \
+gcloud storage cp "$BANNER_FILE" "gs://$GCS_BUCKET/banner.json" \
   --content-type="application/json" \
   --quiet
 echo "   ✓ banner.json uploaded"
@@ -146,13 +138,13 @@ echo "   ✓ banner.json uploaded"
 # Invalidate Cloud CDN cache for the banner file
 echo "🔄 Invalidating Cloud CDN cache..."
 gcloud compute url-maps invalidate-cdn-cache "$CLOUD_CDN_URL_MAP" \
-  --path "/$CHANNEL/banner.json" \
+  --path "/banner.json" \
   --project="$GCP_PROJECT" \
   --quiet
-echo "   ✓ Cache invalidation requested for /$CHANNEL/banner.json"
+echo "   ✓ Cache invalidation requested for /banner.json"
 
 echo ""
-echo "✅ Banner uploaded to $CHANNEL channel successfully!"
+echo "✅ Banner uploaded successfully!"
 echo ""
 echo "🌐 CDN URL:"
-echo "   https://cdn.augmentcode.com/$CHANNEL/banner.json"
+echo "   https://cdn.augmentcode.com/banner.json"

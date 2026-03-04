@@ -7,15 +7,6 @@ on:
         description: 'Banner JSON array (leave empty to clear). Example: [{"id":"my-banner","startAt":"2026-03-05T00:00:00Z","endAt":"2026-03-19T23:59:59Z","priority":1,"dismissable":true,"message":"Hello world","buttons":[]}]'
         required: false
         type: string
-      channel:
-        description: 'Target channel'
-        required: true
-        default: 'stable'
-        type: choice
-        options:
-          - stable
-          - beta
-          - alpha
 
 # OIDC token for GCP Workload Identity Federation
 permissions:
@@ -23,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: intent-banner-${{ github.event.inputs.channel }}
+  group: intent-banner
   cancel-in-progress: true
 
 jobs:
@@ -71,24 +62,22 @@ jobs:
       - name: Upload banner to GCS
         run: |
           gcloud storage cp "${{ steps.banner.outputs.file }}" \
-            "gs://${{ secrets.INTENT_GCS_BUCKET }}/${{ inputs.channel }}/banner.json" \
+            "gs://${{ secrets.INTENT_GCS_BUCKET }}/banner.json" \
             --content-type="application/json"
 
       - name: Invalidate CDN cache
         run: |
           gcloud compute url-maps invalidate-cdn-cache "${{ secrets.INTENT_CLOUD_CDN_URL_MAP }}" \
-            --path "/${{ inputs.channel }}/banner.json" \
+            --path "/banner.json" \
             --project="${{ secrets.INTENT_GCP_PROJECT }}" \
             --quiet
 
       - name: Post summary
         run: |
-          CHANNEL="${{ inputs.channel }}"
           ACTION="${{ steps.banner.outputs.action }}"
 
           echo "## 📢 Banner ${ACTION^}d" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Channel:** $CHANNEL" >> "$GITHUB_STEP_SUMMARY"
           echo "**Triggered by:** ${{ github.actor }}" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
@@ -97,8 +86,8 @@ jobs:
             cat "${{ steps.banner.outputs.file }}" | jq . >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "Banner has been **cleared** for the $CHANNEL channel." >> "$GITHUB_STEP_SUMMARY"
+            echo "Banner has been **cleared**." >> "$GITHUB_STEP_SUMMARY"
           fi
 
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "🌐 **CDN URL:** https://cdn.augmentcode.com/$CHANNEL/banner.json" >> "$GITHUB_STEP_SUMMARY"
+          echo "🌐 **CDN URL:** https://cdn.augmentcode.com/banner.json" >> "$GITHUB_STEP_SUMMARY"
