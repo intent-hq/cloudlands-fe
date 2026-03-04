@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.19
+
+- PRs in the sidebar are now scoped to each workspace instead of showing every open PR across the repo.
+- Cleaner onboarding — sidebar navigation is hidden during provider setup so you can focus on getting connected.
+- Custom behavior prompts now carry through to delegated specialist agents.
+- Improved accessibility across the app shell, navigation, and workspace UI.
+- Visual polish for the diagram system.
+- Fixes: blank agent created on workspace open, tool calls misrouted when provider titles replace tool names, stack overflow in deep clone operations, Node.js version check using the wrong PATH, workspace context menu bugs on Windows, broken links on settings and onboarding pages, provider selection desyncing when changed externally, workspace archive flicker on the home screen, stale agents blocking the spawn cap, PR status changes not reflected in workspace state, unhelpful error when Node.js installation is stale.
+
 ## 0.2.18
 
 - Rebase-onto-trunk button to sync your worktree with the upstream trunk branch.
