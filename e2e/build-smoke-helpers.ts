@@ -1155,7 +1155,7 @@ export function startChatNudgeMonitor(
   let lastActivityTime = Date.now();
   let lastSeenMessageId: string | null = null;
   let lastSeenMessageCount = 0;
-  const INACTIVITY_THRESHOLD = 60_000; // 60 seconds of inactivity required
+  const INACTIVITY_THRESHOLD = 20_000; // 20 seconds of inactivity required
 
   const PERMISSION_KEYWORDS = [
     'approval',
@@ -1214,7 +1214,7 @@ export function startChatNudgeMonitor(
         if (messageId) lastSeenMessageId = messageId;
       }
 
-      // 3. Only proceed if we've been inactive for at least 60 seconds.
+      // 3. Only proceed if we've been inactive for at least 20 seconds.
       const inactivityDuration = Date.now() - lastActivityTime;
       if (inactivityDuration < INACTIVITY_THRESHOLD) return;
 
@@ -1240,7 +1240,7 @@ export function startChatNudgeMonitor(
     } catch {
       /* best-effort */
     }
-  }, 10_000);
+  }, 5_000);
 
   return () => clearInterval(interval);
 }

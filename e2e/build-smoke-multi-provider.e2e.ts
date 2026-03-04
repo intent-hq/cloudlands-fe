@@ -39,9 +39,10 @@ const PROMPT =
 
 const DEFAULT_PROVIDER_TIMEOUT = 4 * 60 * 1000;
 
-/** Codex needs extra time. */
+/** Some providers need extra time. */
 function getProviderTimeout(providerId: string): number {
   if (providerId === 'codex') return 6 * 60 * 1000;
+  if (providerId === 'claude-code') return 5 * 60 * 1000;
   return DEFAULT_PROVIDER_TIMEOUT;
 }
 
