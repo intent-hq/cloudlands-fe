@@ -875,7 +875,7 @@
             {/if}
             {#if tab.id === 'changes' && changedFilesCount > 0}
               <div
-                class="tab-badge min-w-4 h-4 px-1 rounded-full bg-background text-subtle text-ui font-semibold flex items-center justify-center z-10 shrink-0"
+                class="tab-badge min-w-4 h-4 px-1 rounded-full bg-background text-subtle text-[0.65rem] font-semibold flex items-center justify-center z-10 shrink-0"
               >
                 <AnimatedNumber value={changedFilesCount} />
               </div>
@@ -961,9 +961,7 @@
                     </span>
                   {/if}
                 </h6>
-                <p
-                  class="text-ui text-subtle mt-0.5 leading-snug transition-all duration-200"
-                >
+                <p class="text-ui text-subtle mt-0.5 leading-snug transition-all duration-200">
                   {#if tabId === 'context' && workspace?.isRemote}
                     {getTabDescription(tab.id, tab.description)} Your notes live on
                     <span class="font-mono text-subtle"
@@ -1107,9 +1105,14 @@
                       }),
                     );
                   }}
-                  onOpenAllChanges={() => window.dispatchEvent(new CustomEvent('workspace:open-local-changes'))}
+                  onOpenAllChanges={() =>
+                    window.dispatchEvent(new CustomEvent('workspace:open-local-changes'))}
                   onOpenCommit={(hash) => {
-                    window.dispatchEvent(new CustomEvent('workspace:open-commit-changeset', { detail: { commitHash: hash } }));
+                    window.dispatchEvent(
+                      new CustomEvent('workspace:open-commit-changeset', {
+                        detail: { commitHash: hash },
+                      }),
+                    );
                   }}
                   onOpenFileInPanel={handleOpenFileInPanel}
                 />
@@ -1205,9 +1208,7 @@
                     <Button
                       variant="ghost"
                       size="icon-xs"
-                      class="shrink-0 {showOnlyChangedFiles
-                        ? 'text-primary'
-                        : 'text-subtle'}"
+                      class="shrink-0 {showOnlyChangedFiles ? 'text-primary' : 'text-subtle'}"
                       tooltip={showOnlyChangedFiles ? 'Show all files' : 'Show only changed files'}
                       onclick={() => (showOnlyChangedFiles = !showOnlyChangedFiles)}
                     >

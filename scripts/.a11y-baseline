@@ -31,6 +31,7 @@ src/lib/components/file-tracking/MonacoDiffViewer.svelte:3096
 src/lib/components/file-tracking/accept-changes/ChangeTimeline.svelte:1524
 src/lib/components/layout/sidebar-nav/cards/NewWorkspaceCard.svelte:107
 src/lib/components/layout/sidebar-nav/cards/NewWorkspaceCard.svelte:138
+src/lib/components/workspace/MultiSelectTabbedSidebar.svelte:878
 src/lib/components/modals/Modal.svelte:72
 src/lib/components/modals/NewSpaceModal.svelte:83
 src/lib/components/terminal/QuakeTerminalOverlay.svelte:404
