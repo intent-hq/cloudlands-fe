@@ -669,6 +669,30 @@ export function classifyTool(
     return contextEngineDisplay(name, input);
   }
 
+  // API operations (external services)
+  // Detect by name OR by unique input shapes (ACP titles lose the tool name,
+  // e.g., "Get recent failed CI runs" instead of "github-api").
+  // Must come BEFORE search routing because some API tools (Linear, Sentry) have
+  // query/search params that would otherwise match the search routing.
+  if (
+    name.includes('github') ||
+    name.includes('linear') ||
+    name.includes('glean') ||
+    name.includes('web-fetch') ||
+    name.includes('web_fetch') ||
+    name === 'fetch' ||
+    (input.method && input.path && !input.file_content) ||
+    // Input-shape detection for API tools with ACP human-readable titles:
+    // github-api: has summary + path (API path like "/repos/...")
+    (input.summary && input.path && typeof input.path === 'string' && input.path.startsWith('/')) ||
+    // linear: has is_read_only + query (unique combination)
+    (input.is_read_only !== undefined && input.query) ||
+    // glean: has call.payload.query (nested structure unique to glean)
+    (input.call?.payload?.query)
+  ) {
+    return apiDisplay(name, input);
+  }
+
   // Search operations (not context engine)
   if (
     name.includes('search') ||
@@ -679,19 +703,6 @@ export function classifyTool(
     hasQuery
   ) {
     return searchDisplay(name, input);
-  }
-
-  // API operations (external services)
-  if (
-    name.includes('github') ||
-    name.includes('linear') ||
-    name.includes('glean') ||
-    name.includes('web-fetch') ||
-    name.includes('web_fetch') ||
-    name === 'fetch' ||
-    (input.method && input.path && !input.file_content)
-  ) {
-    return apiDisplay(name, input);
   }
 
   // Browser operations (Playwright, MCP browser tools, npx DevTools)
@@ -1041,20 +1052,29 @@ function apiDisplay(name: string, input: Record<string, any>): ToolDisplay {
   let verb = 'API';
   let subject: string | null = null;
 
-  if (name.includes('github')) {
+  // Detect tool type by name OR input shape (ACP titles lose the tool name).
+  // github-api: has summary + path starting with "/" (API path like "/repos/...")
+  const isGitHub = name.includes('github') ||
+    (input.summary && input.path && typeof input.path === 'string' && input.path.startsWith('/'));
+  // linear: has is_read_only + query
+  const isLinear = name.includes('linear') || (input.is_read_only !== undefined && input.query);
+  // glean: has call.payload.query
+  const isGlean = name.includes('glean') || !!input.call?.payload?.query;
+
+  if (isGitHub) {
     verb = 'GitHub';
     if (input.path) {
       // Show API path: "GET /repos/owner/repo/issues"
       const method = input.method || 'GET';
       subject = `${method} ${truncate(input.path, 50)}`;
     } else if (input.summary) {
-      // Fallback to summary if no path (e.g., from github-api tool)
+      // Fallback to summary if no path
       subject = truncate(input.summary, 60);
     }
-  } else if (name.includes('linear')) {
+  } else if (isLinear) {
     verb = 'Linear';
     subject = input.summary ? truncate(input.summary, 300) : null;
-  } else if (name.includes('glean')) {
+  } else if (isGlean) {
     verb = 'Glean';
     subject = input.call?.payload?.query ? truncate(input.call.payload.query, 300) : null;
   } else if (name.includes('sentry')) {
@@ -1708,9 +1728,30 @@ function genericDisplay(toolName: string, input: Record<string, any>): ToolDispl
 
   // Combine: prefer input-derived subject, fall back to name-derived subject
   // If we have both, show name-derived as context: "Find organizations · my-org"
+  // But avoid duplication when the summary essentially repeats the tool name
+  // (e.g., tool name "Get recent failed ci runs" + summary "Get recent failed CI runs")
   let subject: string | null;
   if (inputSubject && nameSubject) {
-    subject = `${nameSubject} · ${inputSubject}`;
+    // Check if the input subject (e.g., summary) is essentially the same as the
+    // verb + nameSubject (the tool name). This happens when ACP titles duplicate
+    // the summary field. Compare case-insensitively and check both with/without verb.
+    // Only use exact matches to avoid false positives from substring collisions.
+    const inputNorm = inputSubject.toLowerCase().trim();
+    const nameNorm = nameSubject.toLowerCase().trim();
+    const fullNameNorm = `${verb.toLowerCase()} ${nameNorm}`;
+    if (inputNorm === nameNorm || inputNorm === fullNameNorm) {
+      // They're essentially the same - just use the input subject (better casing),
+      // but strip the verb prefix if the input repeats it (e.g., summary="Get recent failed CI runs"
+      // when verb is already "Get" → show just "recent failed CI runs" as subject)
+      const verbLower = verb.toLowerCase();
+      if (inputNorm.startsWith(verbLower + ' ')) {
+        subject = inputSubject.slice(verb.length).trim();
+      } else {
+        subject = inputSubject;
+      }
+    } else {
+      subject = `${nameSubject} · ${inputSubject}`;
+    }
   } else {
     subject = inputSubject || nameSubject;
   }
