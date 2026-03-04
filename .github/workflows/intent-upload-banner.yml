@@ -62,13 +62,13 @@ jobs:
       - name: Upload banner to GCS
         run: |
           gcloud storage cp "${{ steps.banner.outputs.file }}" \
-            "gs://${{ secrets.INTENT_GCS_BUCKET }}/banner.json" \
+            "gs://${{ secrets.INTENT_GCS_BUCKET }}/stable/banner.json" \
             --content-type="application/json"
 
       - name: Invalidate CDN cache
         run: |
           gcloud compute url-maps invalidate-cdn-cache "${{ secrets.INTENT_CLOUD_CDN_URL_MAP }}" \
-            --path "/banner.json" \
+            --path "/stable/banner.json" \
             --project="${{ secrets.INTENT_GCP_PROJECT }}" \
             --quiet
 
@@ -90,4 +90,4 @@ jobs:
           fi
 
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "🌐 **CDN URL:** https://cdn.augmentcode.com/banner.json" >> "$GITHUB_STEP_SUMMARY"
+          echo "🌐 **CDN URL:** https://cdn.augmentcode.com/stable/banner.json" >> "$GITHUB_STEP_SUMMARY"

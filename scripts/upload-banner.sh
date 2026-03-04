@@ -130,7 +130,7 @@ echo "   ✓ Authenticated"
 
 # Upload banner file
 echo "📤 Uploading banner.json..."
-gcloud storage cp "$BANNER_FILE" "gs://$GCS_BUCKET/banner.json" \
+gcloud storage cp "$BANNER_FILE" "gs://$GCS_BUCKET/stable/banner.json" \
   --content-type="application/json" \
   --quiet
 echo "   ✓ banner.json uploaded"
@@ -138,13 +138,13 @@ echo "   ✓ banner.json uploaded"
 # Invalidate Cloud CDN cache for the banner file
 echo "🔄 Invalidating Cloud CDN cache..."
 gcloud compute url-maps invalidate-cdn-cache "$CLOUD_CDN_URL_MAP" \
-  --path "/banner.json" \
+  --path "/stable/banner.json" \
   --project="$GCP_PROJECT" \
   --quiet
-echo "   ✓ Cache invalidation requested for /banner.json"
+echo "   ✓ Cache invalidation requested for /stable/banner.json"
 
 echo ""
 echo "✅ Banner uploaded successfully!"
 echo ""
 echo "🌐 CDN URL:"
-echo "   https://cdn.augmentcode.com/banner.json"
+echo "   https://cdn.augmentcode.com/stable/banner.json"
