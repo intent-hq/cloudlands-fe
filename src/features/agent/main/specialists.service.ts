@@ -240,50 +240,75 @@ function getCustomSpecialists(): CustomSpecialist[] {
 }
 
 /**
- * Get user model override for a specialist from electron-store settings.
+ * Get user overrides for a specialist from electron-store settings.
  * These overrides are set by the frontend UI and stored in electron-store
  * under the 'specialists-overrides' key.
  */
-function getUserModelOverride(specialistId: string): string | undefined {
-  if (!settingsStore) return undefined;
+function getUserOverrides(specialistId: string): {
+  model?: string;
+  behaviorPrompt?: string;
+} {
+  if (!settingsStore) return {};
   try {
     const overrides = settingsStore.get(SPECIALISTS_OVERRIDES_KEY) as
-      | { modelOverrides?: Record<string, string> }
+      | {
+          modelOverrides?: Record<string, string>;
+          behaviorPromptOverrides?: Record<string, string>;
+        }
       | undefined;
-    return overrides?.modelOverrides?.[specialistId] || undefined;
+    return {
+      model: overrides?.modelOverrides?.[specialistId] || undefined,
+      behaviorPrompt: overrides?.behaviorPromptOverrides?.[specialistId] || undefined,
+    };
   } catch {
-    return undefined;
+    return {};
   }
 }
 
 /**
- * Apply user model override from electron-store settings if one exists.
+ * Apply user overrides from electron-store settings if they exist.
  * User overrides take highest priority — they represent explicit user choices
  * from the specialist settings UI.
- * When an override is applied, modelTier is cleared to prevent downstream
+ * When a model override is applied, modelTier is cleared to prevent downstream
  * re-resolution via tier-based logic (e.g., in resolveModelForProvider).
  */
-function applyUserModelOverride(specialist: EffectiveSpecialist): EffectiveSpecialist {
-  const override = getUserModelOverride(specialist.id);
-  if (override) {
+function applyUserOverrides(specialist: EffectiveSpecialist): EffectiveSpecialist {
+  const overrides = getUserOverrides(specialist.id);
+  let result = specialist;
+
+  if (overrides.model) {
     logger.info('Applying user model override from settings', {
       specialistId: specialist.id,
       originalModel: specialist.model,
-      overrideModel: override,
+      overrideModel: overrides.model,
     });
-    return {
-      ...specialist,
-      model: override,
+    result = {
+      ...result,
+      model: overrides.model,
       modelTier: undefined, // Don't re-resolve via tier when user explicitly set a model
     };
   }
-  return specialist;
+
+  if (overrides.behaviorPrompt) {
+    logger.info('Applying user behavior prompt override from settings', {
+      specialistId: specialist.id,
+      originalPromptLength: specialist.behaviorPrompt?.length || 0,
+      overridePromptLength: overrides.behaviorPrompt.length,
+    });
+    result = {
+      ...result,
+      behaviorPrompt: overrides.behaviorPrompt,
+      isCustomized: true,
+    };
+  }
+
+  return result;
 }
 
 /**
  * Get the effective configuration for a specialist (with user overrides applied)
  * Priority order:
- * 1. User model overrides from settings UI (specialists-overrides) - highest priority
+ * 1. User overrides from settings UI (specialists-overrides: model + behaviorPrompt) - highest priority
  * 2. User file-based specialists (~/.augment/specialists/*.md)
  * 3. Bundled specialists (resources/specialists/*.md)
  * 4. Custom specialists from electron-store (deprecated, migrated to files)
@@ -330,7 +355,7 @@ export function getEffectiveSpecialist(
       }
     }
 
-    return applyUserModelOverride({
+    return applyUserOverrides({
       id: fileSpecialist.id,
       name: fileSpecialist.frontmatter.name,
       description: fileSpecialist.frontmatter.description,
@@ -355,7 +380,7 @@ export function getEffectiveSpecialist(
   if (custom) {
     // Try to determine tier from the legacy custom specialist's model
     const customTier = custom.model ? getModelTierFromModel(custom.model) : 'balanced';
-    return applyUserModelOverride({
+    return applyUserOverrides({
       id: custom.id,
       name: custom.name,
       description: custom.description,
@@ -386,7 +411,7 @@ export function getEffectiveSpecialist(
         resolvedModel = getDefaultModelForProvider(effectiveProviderId, hardcodedTier);
       }
     }
-    return applyUserModelOverride({
+    return applyUserOverrides({
       id: hardcoded.id,
       name: hardcoded.name,
       description: hardcoded.description,
@@ -438,7 +463,7 @@ export function getAllEffectiveSpecialists(providerId?: string): EffectiveSpecia
       }
     }
 
-    return applyUserModelOverride({
+    return applyUserOverrides({
       id: file.id,
       name: file.frontmatter.name,
       description: file.frontmatter.description,
@@ -459,7 +484,7 @@ export function getAllEffectiveSpecialists(providerId?: string): EffectiveSpecia
     .map((custom) => {
       seenIds.add(custom.id);
       const customTier = custom.model ? getModelTierFromModel(custom.model) : 'balanced';
-      return applyUserModelOverride({
+      return applyUserOverrides({
         id: custom.id,
         name: custom.name,
         description: custom.description,
@@ -487,7 +512,7 @@ export function getAllEffectiveSpecialists(providerId?: string): EffectiveSpecia
         resolvedModel = getDefaultModelForProvider(effectiveProviderId, hardcodedTier);
       }
     }
-    return applyUserModelOverride({
+    return applyUserOverrides({
       id: s.id,
       name: s.name,
       description: s.description,
