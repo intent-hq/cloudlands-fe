@@ -2201,6 +2201,34 @@ task:
           try {
             const prDetail = await githubService.getPullRequest(owner, repo, pr.number);
             if (prDetail) {
+              // Validate source branch matches workspace branch before enriching.
+              // Only clear if we have a POSITIVE MISMATCH: both are non-empty and differ.
+              // If sourceBranch is empty (YAML parsing issue), skip validation to avoid
+              // incorrectly clearing legitimate PR links.
+              if (prDetail.sourceBranch && updatedWorkspace.branch && prDetail.sourceBranch !== updatedWorkspace.branch) {
+                logger.info('Background enrichment: PR source branch does not match workspace, clearing stale link', {
+                  workspaceId,
+                  prNumber: pr.number,
+                  prSourceBranch: prDetail.sourceBranch || '(empty)',
+                  workspaceBranch: updatedWorkspace.branch,
+                });
+                updatedWorkspace = {
+                  ...updatedWorkspace,
+                  prNumber: undefined,
+                  prUrl: undefined,
+                  prStatus: undefined,
+                  activePullRequest: undefined,
+                  pullRequests: (updatedWorkspace.pullRequests || []).filter((p) => p.number !== pr.number),
+                  updatedAt: new Date().toISOString(),
+                };
+                updated = true;
+                // Skip the rest of PR enrichment since we cleared the PR
+                if (updated) {
+                  await this.saveWorkspace(updatedWorkspace);
+                }
+                return;
+              }
+
               if (prDetail.headSha) currentPR.headSha = prDetail.headSha;
               if (prDetail.mergeableState !== undefined)
                 currentPR.mergeableState = prDetail.mergeableState;
@@ -2418,12 +2446,39 @@ task:
       const owner = workspace.repositoryOwner;
       const repo = workspace.repositoryName;
 
-      // Fetch single PR details to get headSha and mergeableState
-      // These are only available from the single PR endpoint
+      // Validate: PR's source branch should match the workspace's own branch.
+      // Previously, baseRef matching could incorrectly link a parent branch's PR.
+      // Check headRef on stored PR, or fetch and validate.
       let currentPR = { ...pr };
       try {
         const prDetail = await githubService.getPullRequest(owner, repo, pr.number);
         if (prDetail) {
+          // Validate source branch matches workspace branch before using this PR.
+          // Only clear if we have a POSITIVE MISMATCH: both sourceBranch and workspace.branch
+          // are non-empty AND they differ. If sourceBranch is empty (YAML parsing issue),
+          // we can't validate, so we keep the PR to avoid incorrectly clearing legitimate links.
+          if (prDetail.sourceBranch && workspace.branch && prDetail.sourceBranch !== workspace.branch) {
+            logger.info('Periodic PR refresh: PR source branch does not match workspace, clearing stale link', {
+              workspaceId,
+              prNumber: pr.number,
+              prSourceBranch: prDetail.sourceBranch || '(empty)',
+              workspaceBranch: workspace.branch,
+            });
+            // Clear the stale PR association
+            const clearedWorkspace = {
+              ...workspace,
+              prNumber: undefined,
+              prUrl: undefined,
+              prStatus: undefined,
+              activePullRequest: undefined,
+              pullRequests: (workspace.pullRequests || []).filter((p) => p.number !== pr.number),
+              updatedAt: new Date().toISOString(),
+            };
+            await this.saveWorkspace(clearedWorkspace);
+            return;
+          }
+
+          // Fetch single PR details to get headSha and mergeableState
           if (prDetail.headSha) currentPR.headSha = prDetail.headSha;
           if (prDetail.mergeableState !== undefined)
             currentPR.mergeableState = prDetail.mergeableState;

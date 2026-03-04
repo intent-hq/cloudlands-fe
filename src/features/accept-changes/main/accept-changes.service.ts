@@ -704,62 +704,97 @@ export class AcceptChangesService {
     }
 
     // Discover and refresh the correct PR for this workspace.
-    // Priority: thirdPartySources URL > branch matching > stored activePullRequest
+    // Priority: thirdPartySources URL > branch matching
+    // NOTE: We do NOT blindly trust stored prNumber/activePullRequest because they may
+    // have been incorrectly linked by previous baseRef matching bugs.
     let existingPR: WorkspaceGitStatus['existingPR'];
 
-    // Always populate existingPR from stored data first as a baseline.
-    // This ensures we never lose PR info if GitHub API calls fail below.
-    if (workspace.activePullRequest) {
-      existingPR = {
-        number: workspace.activePullRequest.number,
-        url: workspace.activePullRequest.url,
-        htmlUrl: workspace.activePullRequest.url,
-        title: workspace.activePullRequest.title,
-        state: (workspace.activePullRequest.status?.toLowerCase() as any) || 'open',
-      };
-    }
-
     if (owner && repo) {
-      // Determine which PR number to fetch/refresh.
-      // If workspace already has a stored prNumber or activePullRequest, use that.
-      // Otherwise, try to discover the right PR.
-      let prNumberToFetch: number | undefined = workspace.prNumber ?? workspace.activePullRequest?.number;
+      let prNumberToFetch: number | undefined;
 
-      // Only run discovery if we don't already have a PR linked
-      if (!prNumberToFetch) {
-        // Strategy 1: Check thirdPartySources for GitHub PR URLs
-        if (workspace.thirdPartySources) {
-          for (const source of workspace.thirdPartySources) {
-            const prMatch = source.url?.match(/github\.com\/[^/]+\/[^/]+\/pull\/(\d+)/);
-            if (prMatch) {
-              prNumberToFetch = parseInt(prMatch[1], 10);
-              break;
-            }
+      // Strategy 1: Check thirdPartySources for GitHub PR URLs (explicit user link)
+      if (workspace.thirdPartySources) {
+        for (const source of workspace.thirdPartySources) {
+          const prMatch = source.url?.match(/github\.com\/[^/]+\/[^/]+\/pull\/(\d+)/);
+          if (prMatch) {
+            prNumberToFetch = parseInt(prMatch[1], 10);
+            break;
           }
         }
+      }
 
-        // Strategy 2: Match open PRs by source branch
-        if (!prNumberToFetch) {
-          const branchesToMatch = new Set<string>();
-          if (workspace.branch) branchesToMatch.add(workspace.branch);
-          if (workspace.baseRef) branchesToMatch.add(workspace.baseRef);
-          branchesToMatch.delete('main');
-          branchesToMatch.delete('master');
-          branchesToMatch.delete('develop');
+      // Strategy 2: Match open PRs by source branch (the workspace's own branch only)
+      if (!prNumberToFetch) {
+        const branchesToMatch = new Set<string>();
+        if (workspace.branch) branchesToMatch.add(workspace.branch);
+        branchesToMatch.delete('main');
+        branchesToMatch.delete('master');
+        branchesToMatch.delete('develop');
 
-          if (branchesToMatch.size > 0) {
-            try {
-              const openPRs = await githubService.getPullRequests(owner, repo, { state: 'open' });
-              const matchingPR = openPRs.find((pr) => {
-                const src = pr.sourceBranch || '';
-                return branchesToMatch.has(src);
-              });
-              if (matchingPR) {
-                prNumberToFetch = matchingPR.number;
-              }
-            } catch (prError) {
-              logger.debug('[AcceptChanges] PR branch matching failed', { error: prError });
+        if (branchesToMatch.size > 0) {
+          try {
+            const openPRs = await githubService.getPullRequests(owner, repo, { state: 'open' });
+            const matchingPR = openPRs.find((pr) => {
+              const src = pr.sourceBranch || '';
+              return branchesToMatch.has(src);
+            });
+            if (matchingPR) {
+              prNumberToFetch = matchingPR.number;
             }
+          } catch (prError) {
+            logger.debug('[AcceptChanges] PR branch matching failed', { error: prError });
+          }
+        }
+      }
+
+      // Strategy 3: Use stored prNumber/activePullRequest ONLY if no discovery found a PR,
+      // and validate that the stored PR's source branch matches the workspace branch.
+      // Only reject on POSITIVE MISMATCH (both non-empty and different).
+      // If sourceBranch is empty (YAML parsing issue), keep the stored PR.
+      if (!prNumberToFetch) {
+        const storedPRNumber = workspace.prNumber ?? workspace.activePullRequest?.number;
+        if (storedPRNumber) {
+          try {
+            const storedPR = await githubService.getPullRequest(owner, repo, storedPRNumber);
+            if (storedPR && storedPR.sourceBranch && workspace.branch && storedPR.sourceBranch !== workspace.branch) {
+              // Positive mismatch: PR belongs to a different branch
+              logger.info('[AcceptChanges] Stored PR does not match workspace branch, clearing stale link', {
+                storedPRNumber,
+                storedPRSourceBranch: storedPR.sourceBranch,
+                workspaceBranch: workspace.branch,
+              });
+              // Clear the stale PR association from workspace
+              try {
+                const clearedWorkspace = {
+                  ...workspace,
+                  prNumber: undefined,
+                  prUrl: undefined,
+                  prStatus: undefined,
+                  activePullRequest: undefined,
+                  updatedAt: new Date().toISOString(),
+                };
+                await this.workspaceRepository.save(clearedWorkspace);
+                workspace = clearedWorkspace;
+                unifiedEventBus.emit('workspace:updated', {
+                  workspaceId: clearedWorkspace.id,
+                  changes: {
+                    activePullRequest: undefined,
+                    prNumber: undefined,
+                    prUrl: undefined,
+                    prStatus: undefined,
+                  },
+                });
+              } catch (clearError) {
+                logger.warn('Failed to clear stale PR association', { error: clearError });
+              }
+            } else if (storedPR) {
+              // Either branches match, or we can't validate (empty sourceBranch) — keep it
+              prNumberToFetch = storedPRNumber;
+            }
+          } catch (prError) {
+            logger.debug('[AcceptChanges] Failed to validate stored PR', { error: prError });
+            // API failed — keep the stored PR number as fallback
+            prNumberToFetch = storedPRNumber;
           }
         }
       }
@@ -828,7 +863,6 @@ export class AcceptChangesService {
             }
           }
         } catch (prError) {
-          // GitHub API failed — existingPR still has the stored baseline from above
           logger.warn('Failed to refresh PR from GitHub', {
             prNumber: prNumberToFetch,
             error: prError,

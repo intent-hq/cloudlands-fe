@@ -198,7 +198,7 @@ function findMostRecentOpenPR(pullRequests: PullRequestInfo[]): PullRequestInfo 
  * Strategy:
  * 1. If workspace has a stored prNumber, fetch that specific PR
  * 2. Fetch all open PRs and find ones whose source branch matches
- *    the workspace's branch or baseRef (the branch the workspace targets)
+ *    the workspace's own branch
  */
 async function discoverPRsForBranch(
   workspaceId: WorkspaceId,
@@ -217,7 +217,10 @@ async function discoverPRsForBranch(
       prNumber: workspace.prNumber,
     });
 
-    // Step 1: If workspace has a stored PR number, fetch it directly
+    // Step 1: If workspace has a stored PR number, fetch it and validate
+    // that the PR's source branch matches this workspace's own branch.
+    // Previously, baseRef matching could incorrectly link a parent branch's PR to a child workspace.
+    // We must validate stored PRs because they may be stale from old incorrect matching.
     if (workspace.prNumber) {
       const response = (await invoke('git-tracking:get-pull-request', {
         owner: workspace.repositoryOwner,
@@ -229,17 +232,39 @@ async function discoverPRsForBranch(
       if (response.success && response.data) {
         const status = normalizePullRequestStatus(response.data);
         const pr = normalizePullRequestInfo(response.data, null, status);
-        logger.debug('[PRStatusService] Found PR by stored number', {
-          workspaceId,
-          prNumber: workspace.prNumber,
-        });
-        return { success: true, prs: [pr] };
+
+        // Validate: PR's source branch should match the workspace's own branch.
+        // Check multiple fields since different response formats use different field names.
+        const prSourceBranch = pr.headRef
+          || response.data.head_ref
+          || response.data.sourceBranch
+          || (response.data.head && response.data.head.ref)
+          || '';
+
+        // Only reject if we have a POSITIVE MISMATCH: both sourceBranch and workspace.branch
+        // are non-empty AND they differ. If sourceBranch is empty (YAML parsing issue),
+        // we can't validate, so we keep the stored PR to avoid losing legitimate links.
+        if (prSourceBranch && workspace.branch && prSourceBranch !== workspace.branch) {
+          logger.info('[PRStatusService] Stored PR source branch does not match workspace branch, skipping', {
+            workspaceId,
+            prNumber: workspace.prNumber,
+            prSourceBranch,
+            workspaceBranch: workspace.branch,
+          });
+          // Fall through to step 2 for proper branch-based discovery
+        } else {
+          logger.debug('[PRStatusService] Found PR by stored number (branch validated)', {
+            workspaceId,
+            prNumber: workspace.prNumber,
+            prSourceBranch: prSourceBranch || '(not available)',
+          });
+          return { success: true, prs: [pr] };
+        }
       }
     }
 
     // Step 2: Fetch all open PRs and match by source branch
-    // The workspace's baseRef is the branch it was created from (e.g., "pr-16d-remote-launch").
-    // We look for open PRs whose source/head branch matches baseRef or workspace.branch.
+    // We look for open PRs whose source/head branch matches workspace.branch.
     const openResponse = (await invoke('git-tracking:get-pull-requests', {
       owner: workspace.repositoryOwner,
       repo: workspace.repositoryName,
@@ -261,12 +286,13 @@ async function discoverPRsForBranch(
       count: allPRs.length,
     });
 
-    // Match PRs whose source branch equals workspace.baseRef or workspace.branch
+    // Match PRs whose source branch equals workspace.branch (the workspace's own branch).
+    // NOTE: We intentionally do NOT match on workspace.baseRef here. baseRef is the branch
+    // the workspace was created FROM (the parent branch). Including it would cause false
+    // positives: e.g., if you create a workspace from a feature branch that has an open PR,
+    // the workspace would incorrectly get linked to that parent PR.
     const branchesToMatch = new Set<string>();
     branchesToMatch.add(workspace.branch);
-    if (workspace.baseRef) {
-      branchesToMatch.add(workspace.baseRef);
-    }
     // Don't match trunk branches — would match ALL PRs
     branchesToMatch.delete('main');
     branchesToMatch.delete('master');
@@ -367,19 +393,13 @@ export async function refreshPRStatus(
 
     const discoveredPRs = discoveryResult.prs || [];
 
-    // Build set of relevant PR numbers.
-    // Always keep the active PR (it may have been user-created or correctly linked).
-    // Also keep discovered PRs and explicit prNumber.
-    // Drop non-active PRs that aren't in discovery (stale from bad auto-discovery).
+    // Build set of relevant PR numbers from discovery results.
+    // Only keep PRs that were confirmed by discovery (branch matching or stored prNumber validation).
+    // Previously we also unconditionally kept workspace.prNumber and activePullRequest,
+    // but that caused incorrectly-linked PRs to persist forever.
     const relevantPRNumbers = new Set<number>();
     for (const pr of discoveredPRs) {
       relevantPRNumbers.add(pr.number);
-    }
-    if (workspace.prNumber) {
-      relevantPRNumbers.add(workspace.prNumber);
-    }
-    if (workspace.activePullRequest) {
-      relevantPRNumbers.add(workspace.activePullRequest.number);
     }
 
     // Step 3: Refresh only RELEVANT existing PRs (skip stale ones from bad discovery)
