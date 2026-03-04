@@ -406,8 +406,9 @@
   let pullError = $state<string | null>(null);
   let showPullConflictDialog = $state(false);
   let isPulling = $state(false);
-  // Track the selected PR's source branch (for "Use PR branch" suggestion)
+  // Track the selected PR's source branch and number (for "Use PR branch" suggestion and auto-linking)
   let selectedPRBranch = $state<string>('');
+  let selectedPRNumber = $state<number | null>(null);
 
   // Save prompt to sessionStorage so it survives navigation (but not browser close)
   // Debounced to avoid blocking the main thread on every keystroke
@@ -717,8 +718,12 @@
           const metadata = prWithBranch.metadata ? JSON.parse(prWithBranch.metadata) : null;
           if (metadata?.sourceBranch) {
             selectedPRBranch = metadata.sourceBranch;
+            // Also extract PR number from identifier
+            const prNumMatch = prWithBranch.identifier?.match(/#(\d+)$/);
+            selectedPRNumber = prNumMatch ? parseInt(prNumMatch[1], 10) : null;
             logger.debug('Restored selectedPRBranch from context mention', {
               branch: metadata.sourceBranch,
+              prNumber: selectedPRNumber,
             });
           }
         } catch {
@@ -776,8 +781,10 @@
           });
           if (response?.success && response.data?.sourceBranch) {
             selectedPRBranch = response.data.sourceBranch;
+            selectedPRNumber = number;
             logger.debug('Fetched and set selectedPRBranch from restored context mention', {
               branch: response.data.sourceBranch,
+              prNumber: number,
             });
           }
         } catch (err) {
@@ -1257,7 +1264,12 @@
         isPulling = false;
       }
 
-      const baseBranch = isNewRepo ? 'main' : branch;
+      // Auto-apply PR branch: if a PR context mention set selectedPRBranch but the user
+      // hasn't manually switched to it, use the PR branch as the base.
+      // This ensures workspace.baseRef matches the PR's source branch for auto-discovery.
+      const effectiveBranch =
+        selectedPRBranch && branch !== selectedPRBranch && !isNewRepo ? selectedPRBranch : branch;
+      const baseBranch = isNewRepo ? 'main' : effectiveBranch;
 
       // Build environment config if remote setup is selected
       const remoteSetupSnapshot = remoteSetup ? $state.snapshot(remoteSetup) : null;
@@ -1567,6 +1579,17 @@
 
       const workspace = result.data;
 
+      // If a PR context mention was used, store the PR number on the workspace
+      // so PR discovery can find the right PR later.
+      if (selectedPRNumber && workspace.id) {
+        invoke('workspace:update', {
+          id: workspace.id,
+          prNumber: selectedPRNumber,
+        }).catch((err) => {
+          logger.warn('Failed to store PR number on workspace', { error: err });
+        });
+      }
+
       // Clear any stale panel layout data for this workspace ID.
       // This is important when workspace IDs are reused (e.g., after deletion and recreation).
       // Without this, the workspace page may load stale layout data with duplicate tabs.
@@ -1836,11 +1859,15 @@
     // Serialize metadata to JSON string for TipTap node storage
     const metadataJson = metadata.metadata ? JSON.stringify(metadata.metadata) : undefined;
 
-    // Track the selected PR's source branch for the "Use PR branch" suggestion
+    // Track the selected PR's source branch and number for auto-linking
     if (metadata.type === 'github' && metadata.metadata?.sourceBranch) {
       selectedPRBranch = metadata.metadata.sourceBranch;
+      // Extract PR number from identifier (format: "owner/repo#123")
+      const prNumMatch = metadata.identifier?.match(/#(\d+)$/);
+      selectedPRNumber = prNumMatch ? parseInt(prNumMatch[1], 10) : null;
     } else {
       selectedPRBranch = '';
+      selectedPRNumber = null;
     }
 
     // Insert context mention pill into the editor

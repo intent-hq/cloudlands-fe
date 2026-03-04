@@ -703,8 +703,12 @@ export class AcceptChangesService {
       logger.warn('Error getting remote branches', { error });
     }
 
-    // Check for existing PR (will be refreshed from GitHub if possible)
+    // Discover and refresh the correct PR for this workspace.
+    // Priority: thirdPartySources URL > branch matching > stored activePullRequest
     let existingPR: WorkspaceGitStatus['existingPR'];
+
+    // Always populate existingPR from stored data first as a baseline.
+    // This ensures we never lose PR info if GitHub API calls fail below.
     if (workspace.activePullRequest) {
       existingPR = {
         number: workspace.activePullRequest.number,
@@ -715,73 +719,121 @@ export class AcceptChangesService {
       };
     }
 
-    // Refresh PR status from GitHub if we have owner/repo and PR number
-    if (owner && repo && workspace.activePullRequest?.number) {
-      try {
-        const pr = await githubService.getPullRequest(
-          owner,
-          repo,
-          workspace.activePullRequest.number,
-        );
-        if (pr) {
-          const prState: 'open' | 'closed' | 'merged' | 'draft' = pr.mergedAt
-            ? 'merged'
-            : (pr.state as 'open' | 'closed');
-          existingPR = {
-            number: pr.number,
-            url: pr.url,
-            htmlUrl: pr.htmlUrl ?? pr.url,
-            title: pr.title,
-            state: prState,
-          };
+    if (owner && repo) {
+      // Determine which PR number to fetch/refresh.
+      // If workspace already has a stored prNumber or activePullRequest, use that.
+      // Otherwise, try to discover the right PR.
+      let prNumberToFetch: number | undefined = workspace.prNumber ?? workspace.activePullRequest?.number;
 
-          const nextPrStatus =
-            prState === 'merged'
-              ? PullRequestStatus.Merged
-              : prState === 'closed'
-                ? PullRequestStatus.Closed
-                : PullRequestStatus.Open;
+      // Only run discovery if we don't already have a PR linked
+      if (!prNumberToFetch) {
+        // Strategy 1: Check thirdPartySources for GitHub PR URLs
+        if (workspace.thirdPartySources) {
+          for (const source of workspace.thirdPartySources) {
+            const prMatch = source.url?.match(/github\.com\/[^/]+\/[^/]+\/pull\/(\d+)/);
+            if (prMatch) {
+              prNumberToFetch = parseInt(prMatch[1], 10);
+              break;
+            }
+          }
+        }
 
-          const updatedWorkspace = {
-            ...workspace,
-            prStatus: nextPrStatus,
-            prNumber: pr.number,
-            prUrl: pr.htmlUrl ?? pr.url,
-            activePullRequest: {
+        // Strategy 2: Match open PRs by source branch
+        if (!prNumberToFetch) {
+          const branchesToMatch = new Set<string>();
+          if (workspace.branch) branchesToMatch.add(workspace.branch);
+          if (workspace.baseRef) branchesToMatch.add(workspace.baseRef);
+          branchesToMatch.delete('main');
+          branchesToMatch.delete('master');
+          branchesToMatch.delete('develop');
+
+          if (branchesToMatch.size > 0) {
+            try {
+              const openPRs = await githubService.getPullRequests(owner, repo, { state: 'open' });
+              const matchingPR = openPRs.find((pr) => {
+                const src = pr.sourceBranch || '';
+                return branchesToMatch.has(src);
+              });
+              if (matchingPR) {
+                prNumberToFetch = matchingPR.number;
+              }
+            } catch (prError) {
+              logger.debug('[AcceptChanges] PR branch matching failed', { error: prError });
+            }
+          }
+        }
+      }
+
+      // Fetch the PR from GitHub to get latest status
+      if (prNumberToFetch) {
+        try {
+          const pr = await githubService.getPullRequest(owner, repo, prNumberToFetch);
+          if (pr) {
+            const prState: 'open' | 'closed' | 'merged' | 'draft' = pr.mergedAt
+              ? 'merged'
+              : (pr.state as 'open' | 'closed' | 'draft');
+            existingPR = {
+              number: pr.number,
+              url: pr.url,
+              htmlUrl: pr.htmlUrl ?? pr.url,
+              title: pr.title,
+              state: prState,
+            };
+
+            const nextPrStatus =
+              prState === 'merged'
+                ? PullRequestStatus.Merged
+                : prState === 'closed'
+                  ? PullRequestStatus.Closed
+                  : PullRequestStatus.Open;
+
+            const prInfo = {
               id: String(pr.number),
               number: pr.number,
               url: pr.htmlUrl ?? pr.url,
               title: pr.title,
               status: nextPrStatus,
-              createdAt: pr.createdAt ?? workspace.activePullRequest.createdAt,
+              createdAt: pr.createdAt ?? workspace.activePullRequest?.createdAt ?? new Date().toISOString(),
               updatedAt: pr.updatedAt ?? new Date().toISOString(),
-            },
-            updatedAt: new Date().toISOString(),
-          };
+            };
 
-          try {
-            await this.workspaceRepository.save(updatedWorkspace);
-            workspace = updatedWorkspace;
+            // Only save if PR changed (new discovery or status update)
+            const currentPRNumber = workspace.activePullRequest?.number;
+            const currentPRStatus = workspace.prStatus;
+            if (currentPRNumber !== pr.number || currentPRStatus !== nextPrStatus) {
+              const updatedWorkspace = {
+                ...workspace,
+                prNumber: pr.number,
+                prUrl: pr.htmlUrl ?? pr.url,
+                prStatus: nextPrStatus,
+                activePullRequest: prInfo,
+                updatedAt: new Date().toISOString(),
+              };
 
-            // Emit workspace:updated event so all frontend components can react to PR status change
-            unifiedEventBus.emit('workspace:updated', {
-              workspaceId: updatedWorkspace.id,
-              changes: {
-                prStatus: updatedWorkspace.prStatus,
-                prNumber: updatedWorkspace.prNumber,
-                prUrl: updatedWorkspace.prUrl,
-                activePullRequest: updatedWorkspace.activePullRequest,
-              },
-            });
-          } catch (saveError) {
-            logger.warn('Failed to persist refreshed PR status', { error: saveError });
+              try {
+                await this.workspaceRepository.save(updatedWorkspace);
+                workspace = updatedWorkspace;
+                unifiedEventBus.emit('workspace:updated', {
+                  workspaceId: updatedWorkspace.id,
+                  changes: {
+                    activePullRequest: prInfo,
+                    prNumber: pr.number,
+                    prUrl: pr.htmlUrl,
+                    prStatus: nextPrStatus,
+                  },
+                });
+              } catch (saveError) {
+                logger.warn('Failed to save PR status', { error: saveError });
+              }
+            }
           }
+        } catch (prError) {
+          // GitHub API failed — existingPR still has the stored baseline from above
+          logger.warn('Failed to refresh PR from GitHub', {
+            prNumber: prNumberToFetch,
+            error: prError,
+          });
         }
-      } catch (prError) {
-        logger.warn('Failed to refresh PR status from GitHub', {
-          prNumber: workspace.activePullRequest.number,
-          prError,
-        });
       }
     }
 

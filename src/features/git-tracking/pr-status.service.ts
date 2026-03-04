@@ -193,8 +193,12 @@ function findMostRecentOpenPR(pullRequests: PullRequestInfo[]): PullRequestInfo 
 }
 
 /**
- * Discover all PRs for the workspace branch.
- * Queries GitHub with state: 'all' to get open, closed, and merged PRs.
+ * Discover PRs for the workspace.
+ *
+ * Strategy:
+ * 1. If workspace has a stored prNumber, fetch that specific PR
+ * 2. Fetch all open PRs and find ones whose source branch matches
+ *    the workspace's branch or baseRef (the branch the workspace targets)
  */
 async function discoverPRsForBranch(
   workspaceId: WorkspaceId,
@@ -206,48 +210,90 @@ async function discoverPRsForBranch(
   }
 
   try {
-    logger.debug('[PRStatusService] Discovering PRs for branch', {
+    logger.debug('[PRStatusService] Discovering PRs for workspace', {
       workspaceId,
       branch: workspace.branch,
-      owner: workspace.repositoryOwner,
-      repo: workspace.repositoryName,
+      baseRef: workspace.baseRef,
+      prNumber: workspace.prNumber,
     });
 
-    // Query GitHub for ALL PRs matching this branch (open, closed, merged)
-    const response = (await invoke('git-tracking:get-pull-requests', {
+    // Step 1: If workspace has a stored PR number, fetch it directly
+    if (workspace.prNumber) {
+      const response = (await invoke('git-tracking:get-pull-request', {
+        owner: workspace.repositoryOwner,
+        repo: workspace.repositoryName,
+        number: workspace.prNumber,
+        force: options.force,
+      })) as { success?: boolean; data?: any; error?: string };
+
+      if (response.success && response.data) {
+        const status = normalizePullRequestStatus(response.data);
+        const pr = normalizePullRequestInfo(response.data, null, status);
+        logger.debug('[PRStatusService] Found PR by stored number', {
+          workspaceId,
+          prNumber: workspace.prNumber,
+        });
+        return { success: true, prs: [pr] };
+      }
+    }
+
+    // Step 2: Fetch all open PRs and match by source branch
+    // The workspace's baseRef is the branch it was created from (e.g., "pr-16d-remote-launch").
+    // We look for open PRs whose source/head branch matches baseRef or workspace.branch.
+    const openResponse = (await invoke('git-tracking:get-pull-requests', {
       owner: workspace.repositoryOwner,
       repo: workspace.repositoryName,
-      options: {
-        state: 'all',
-        head: `${workspace.repositoryOwner}:${workspace.branch}`,
-      },
+      options: { state: 'open', per_page: 100 },
       force: options.force,
     })) as { success?: boolean; data?: any[]; error?: string };
 
-    if (!response.success) {
-      logger.warn('[PRStatusService] Failed to query PRs for branch', {
-        workspaceId,
-        error: response.error,
+    if (!openResponse.success) {
+      logger.warn('[PRStatusService] Failed to fetch open PRs', {
+        error: openResponse.error,
       });
-      return { success: false, error: response.error || 'Failed to query PRs' };
+      return { success: true, prs: [] };
     }
 
-    const prs = response.data || [];
-    const normalizedPRs: PullRequestInfo[] = prs.map((pr) => {
-      const status = normalizePullRequestStatus(pr);
-      return normalizePullRequestInfo(pr, null, status);
-    });
+    const allPRs = openResponse.data || [];
 
-    logger.debug('[PRStatusService] Discovered PRs for branch', {
+    logger.debug('[PRStatusService] Open PRs fetched', {
       workspaceId,
-      branch: workspace.branch,
-      count: normalizedPRs.length,
+      count: allPRs.length,
     });
 
-    return { success: true, prs: normalizedPRs };
+    // Match PRs whose source branch equals workspace.baseRef or workspace.branch
+    const branchesToMatch = new Set<string>();
+    branchesToMatch.add(workspace.branch);
+    if (workspace.baseRef) {
+      branchesToMatch.add(workspace.baseRef);
+    }
+    // Don't match trunk branches — would match ALL PRs
+    branchesToMatch.delete('main');
+    branchesToMatch.delete('master');
+    branchesToMatch.delete('develop');
+
+    const matchingPRs = allPRs.filter((pr: any) => {
+      const src = pr.sourceBranch || '';
+      return branchesToMatch.has(src);
+    });
+
+    logger.debug('[PRStatusService] PR matching result', {
+      workspaceId,
+      matchCount: matchingPRs.length,
+    });
+
+    if (matchingPRs.length > 0) {
+      const normalizedPRs: PullRequestInfo[] = matchingPRs.map((pr: any) => {
+        const status = normalizePullRequestStatus(pr);
+        return normalizePullRequestInfo(pr, null, status);
+      });
+      return { success: true, prs: normalizedPRs };
+    }
+
+    return { success: true, prs: [] };
   } catch (err) {
     const error = err instanceof Error ? err.message : 'Unknown error';
-    logger.error('[PRStatusService] Failed to discover PRs for branch', err as Error);
+    logger.error('[PRStatusService] Failed to discover PRs', err as Error);
     return { success: false, error };
   }
 }
@@ -276,10 +322,13 @@ export async function refreshPRStatus(
 ): Promise<RefreshPRStatusResult> {
   const { force = false } = options;
 
+  logger.info('[PRStatusService] refreshPRStatus called', { workspaceId, force });
+
   // Check if we should skip due to rate limiting
   if (!force) {
     const lastRefresh = lastRefreshTime.get(workspaceId);
     if (lastRefresh && Date.now() - lastRefresh < MIN_REFRESH_INTERVAL_MS) {
+      logger.info('[PRStatusService] Skipping - rate limited', { workspaceId });
       return {
         success: true,
         skipped: true,
@@ -290,10 +339,16 @@ export async function refreshPRStatus(
 
   const workspace = workspaceStore.findById(workspaceId);
   if (!workspace) {
+    logger.info('[PRStatusService] Skipping - workspace not found', { workspaceId });
     return { success: false, error: 'Workspace not found' };
   }
 
   if (!workspace.repositoryOwner || !workspace.repositoryName) {
+    logger.info('[PRStatusService] Skipping - missing repo info', {
+      workspaceId,
+      owner: workspace.repositoryOwner,
+      repo: workspace.repositoryName,
+    });
     return { success: false, error: 'Missing repository info' };
   }
 
@@ -304,30 +359,42 @@ export async function refreshPRStatus(
       existingPRCount: workspace.pullRequests?.length ?? 0,
     });
 
-    // Step 1: Refresh the active PR if it exists (to get latest status)
-    let refreshedActivePR: PullRequestInfo | null = null;
-    if (workspace.activePullRequest) {
-      const response = (await invoke('git-tracking:get-pull-request', {
-        owner: workspace.repositoryOwner,
-        repo: workspace.repositoryName,
-        number: workspace.activePullRequest.number,
-        force,
-      })) as { success?: boolean; data?: any; error?: string };
-
-      if (response.success && response.data) {
-        const normalizedStatus = normalizePullRequestStatus(response.data);
-        refreshedActivePR = normalizePullRequestInfo(
-          response.data,
-          workspace.activePullRequest,
-          normalizedStatus,
-        );
-      }
+    // Step 1: Discover PRs for the workspace first (to know which PRs are relevant)
+    const discoveryResult = await discoverPRsForBranch(workspaceId, workspace, { force });
+    if (!discoveryResult.success) {
+      return { success: false, error: discoveryResult.error };
     }
 
-    // Step 2: Refresh ALL existing PRs by their PR number (to get latest title/status)
+    const discoveredPRs = discoveryResult.prs || [];
+
+    // Build set of relevant PR numbers.
+    // Always keep the active PR (it may have been user-created or correctly linked).
+    // Also keep discovered PRs and explicit prNumber.
+    // Drop non-active PRs that aren't in discovery (stale from bad auto-discovery).
+    const relevantPRNumbers = new Set<number>();
+    for (const pr of discoveredPRs) {
+      relevantPRNumbers.add(pr.number);
+    }
+    if (workspace.prNumber) {
+      relevantPRNumbers.add(workspace.prNumber);
+    }
+    if (workspace.activePullRequest) {
+      relevantPRNumbers.add(workspace.activePullRequest.number);
+    }
+
+    // Step 3: Refresh only RELEVANT existing PRs (skip stale ones from bad discovery)
     const existingPRs = workspace.pullRequests || [];
     const refreshedExistingPRs: PullRequestInfo[] = [];
     for (const existingPR of existingPRs) {
+      // Skip PRs that aren't relevant to this workspace
+      if (!relevantPRNumbers.has(existingPR.number)) {
+        logger.debug('[PRStatusService] Dropping stale PR from workspace', {
+          workspaceId,
+          prNumber: existingPR.number,
+        });
+        continue;
+      }
+
       try {
         const response = (await invoke('git-tracking:get-pull-request', {
           owner: workspace.repositoryOwner,
@@ -345,31 +412,15 @@ export async function refreshPRStatus(
           );
           refreshedExistingPRs.push(refreshedPR);
         } else {
-          // Keep the existing PR if we could not refresh it
           refreshedExistingPRs.push(existingPR);
         }
       } catch {
-        // Keep the existing PR on error
         refreshedExistingPRs.push(existingPR);
       }
     }
 
-
-    // Step 3: Discover all PRs for the branch (open, closed, merged)
-    const discoveryResult = await discoverPRsForBranch(workspaceId, workspace, { force });
-    if (!discoveryResult.success) {
-      return { success: false, error: discoveryResult.error };
-    }
-
-    const discoveredPRs = discoveryResult.prs || [];
-
     // Step 4: Merge refreshed existing PRs with discovered PRs
-    // If we refreshed the active PR, merge it last so its data takes precedence
-    const discoveredWithRefreshed = refreshedActivePR
-      ? mergePullRequestArrays(discoveredPRs, [refreshedActivePR])
-      : discoveredPRs;
-
-    const mergedPRs = mergePullRequestArrays(refreshedExistingPRs, discoveredWithRefreshed);
+    const mergedPRs = mergePullRequestArrays(refreshedExistingPRs, discoveredPRs);
 
     // Step 5: Determine the active PR (most recent open PR, or null)
     let newActivePR = findMostRecentOpenPR(mergedPRs);
