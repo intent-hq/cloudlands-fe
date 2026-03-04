@@ -1225,7 +1225,9 @@ describe('SidebarChangesPanel', () => {
       });
     });
 
-    it('does not trigger PR discovery when there are no pushed commits', async () => {
+    it('triggers initial PR discovery even when there are no pushed commits (remote branch)', async () => {
+      // When a workspace is on a remote branch with no local pushed commits,
+      // initial discovery should still fire (e.g., PR review workspaces)
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       mockFileTrackingStore.commits = [
         makeCommit({ hash: 'abc123', message: 'local commit', isPushed: false }),
@@ -1233,9 +1235,9 @@ describe('SidebarChangesPanel', () => {
 
       await renderPanel();
 
-      // Give effects time to run
-      await new Promise((r) => setTimeout(r, 100));
-      expect(refreshPRStatusMock).not.toHaveBeenCalled();
+      await waitFor(() => {
+        expect(refreshPRStatusMock).toHaveBeenCalledWith('ws-1', { force: false });
+      });
     });
 
     it('does not trigger PR discovery when GitHub is not authenticated', async () => {
