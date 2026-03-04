@@ -1736,30 +1736,9 @@ function genericDisplay(toolName: string, input: Record<string, any>): ToolDispl
 
   // Combine: prefer input-derived subject, fall back to name-derived subject
   // If we have both, show name-derived as context: "Find organizations · my-org"
-  // But avoid duplication when the summary essentially repeats the tool name
-  // (e.g., tool name "Get recent failed ci runs" + summary "Get recent failed CI runs")
   let subject: string | null;
   if (inputSubject && nameSubject) {
-    // Check if the input subject (e.g., summary) is essentially the same as the
-    // verb + nameSubject (the tool name). This happens when ACP titles duplicate
-    // the summary field. Compare case-insensitively and check both with/without verb.
-    // Only use exact matches to avoid false positives from substring collisions.
-    const inputNorm = inputSubject.toLowerCase().trim();
-    const nameNorm = nameSubject.toLowerCase().trim();
-    const fullNameNorm = `${verb.toLowerCase()} ${nameNorm}`;
-    if (inputNorm === nameNorm || inputNorm === fullNameNorm) {
-      // They're essentially the same - just use the input subject (better casing),
-      // but strip the verb prefix if the input repeats it (e.g., summary="Get recent failed CI runs"
-      // when verb is already "Get" → show just "recent failed CI runs" as subject)
-      const verbLower = verb.toLowerCase();
-      if (inputNorm.startsWith(verbLower + ' ')) {
-        subject = inputSubject.slice(verb.length).trim();
-      } else {
-        subject = inputSubject;
-      }
-    } else {
-      subject = `${nameSubject} · ${inputSubject}`;
-    }
+    subject = `${nameSubject} · ${inputSubject}`;
   } else {
     subject = inputSubject || nameSubject;
   }
