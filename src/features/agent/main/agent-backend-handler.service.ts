@@ -6545,6 +6545,23 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         taskTitle,
         parentAgentId,
       });
+
+      // Update workspace lastActivity so the workspace list shows fresh timestamps.
+      // Emit directly to avoid the heavy getWorkspace() read in updateWorkspace().
+      // This updates the renderer's local store; the value is not persisted to disk
+      // but updatedAt serves as a reasonable fallback after restart.
+      try {
+        const { unifiedEventBus } = await import('../../events/main/unified-event-bus');
+        unifiedEventBus.emitDomainEvent('workspace:updated', {
+          workspaceId: workspaceId as WorkspaceId,
+          changes: { lastActivity: new Date().toISOString() },
+        });
+      } catch (updateErr) {
+        logger.debug('Failed to emit workspace lastActivity update', {
+          workspaceId,
+          error: updateErr,
+        });
+      }
     } catch (err) {
       logger.warn('Failed to emit agent:idle event', { agentId, error: err });
     }
@@ -6585,6 +6602,22 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
             workspaceId,
             agentName,
           });
+
+          // Update workspace lastActivity so the workspace list shows fresh timestamps.
+          // Emit directly to avoid the heavy getWorkspace() in updateWorkspace().
+          import('../../events/main/unified-event-bus')
+            .then(({ unifiedEventBus }) => {
+              unifiedEventBus.emitDomainEvent('workspace:updated', {
+                workspaceId: workspaceId as WorkspaceId,
+                changes: { lastActivity: new Date().toISOString() },
+              });
+            })
+            .catch((updateErr) => {
+              logger.debug('Failed to emit workspace lastActivity update on agent create', {
+                workspaceId,
+                error: updateErr,
+              });
+            });
         })
         .catch((err) => {
           logger.warn('Failed to emit agent:created event', { agentId, error: err });
