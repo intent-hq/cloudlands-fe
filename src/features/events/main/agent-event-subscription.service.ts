@@ -2581,6 +2581,21 @@ function createEventDeliveryCallback(
             return { status: 'failed', error: 'Agent has been deleted' };
           }
 
+          // DELIVERY_IN_FLIGHT: Another delivery is already in progress for this agent.
+          // This happens when multiple subscriptions match the same event simultaneously,
+          // causing concurrent deliverEvents calls. The first one wins; this duplicate
+          // should be silently dropped — no retry needed since the first delivery will
+          // handle the wake-up.
+          if (result.errorCode === 'DELIVERY_IN_FLIGHT') {
+            logger.info('Delivery deduplicated: another delivery already in flight', {
+              agentId,
+              workspaceId,
+              eventCount: events.length,
+              attempt,
+            });
+            return { status: 'success' };
+          }
+
           throw new Error(result.error || 'sendBackendInitiatedMessage returned success=false');
         }
 

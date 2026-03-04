@@ -159,6 +159,10 @@ export class AgentBackendHandler {
    *  Set synchronously in finalizeStream, checked in sendBackendInitiatedMessage to prevent
    *  event delivery from racing ahead of queued message processing. */
   private pendingQueueProcessing = new Set<string>();
+  /** @property {Set<string>} pendingBackendDeliveries - Agents with a backend-initiated delivery
+   *  already in flight. Prevents concurrent sendBackendInitiatedMessage calls from creating
+   *  duplicate wake messages when multiple subscriptions match the same event simultaneously. */
+  private pendingBackendDeliveries = new Set<string>();
   /** @property {Set<string>} interruptedAgents - Agents that were intentionally interrupted (skip auto queue processing) */
   private interruptedAgents = new Set<string>();
   /** @property {Map<string, Set<string>>} completedStreams - Track completed streamIds per agentId to prevent duplicate onComplete calls */
@@ -5270,6 +5274,28 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       };
     }
 
+    // CONCURRENT DELIVERY GUARD: If a backend-initiated delivery is already in flight
+    // for this agent, reject the duplicate. This happens when multiple subscriptions
+    // (e.g., oneShot from send_message_to_task_agent + non-oneShot from wake_or_create)
+    // match the same event simultaneously, causing two concurrent deliverEvents calls.
+    // Both pass the streamStartTimes guard (neither has started streaming yet) and both
+    // create wake messages, resulting in duplicate wake-up notifications in the UI.
+    if (this.pendingBackendDeliveries.has(sessionId)) {
+      logger.info('Backend-initiated message: delivery already in flight, rejecting duplicate', {
+        agentId: sessionId,
+        workspaceId,
+      });
+      return {
+        success: false,
+        error: 'A backend-initiated delivery is already in flight for this agent.',
+        errorCode: 'DELIVERY_IN_FLIGHT',
+      };
+    }
+
+    // Mark delivery as in-flight BEFORE any async work
+    this.pendingBackendDeliveries.add(sessionId);
+
+    try {
     if (!existingProvider) {
       // No provider exists - we need to do the frontend handshake before streaming
       // Load agent from persistence to get agent info for the handshake
@@ -5640,6 +5666,9 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       workspaceId,
       ...otherParams,
     });
+    } finally {
+      this.pendingBackendDeliveries.delete(sessionId);
+    }
   }
 
   /**
