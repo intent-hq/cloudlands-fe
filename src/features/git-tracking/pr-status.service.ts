@@ -103,8 +103,12 @@ function normalizePullRequestInfo(
   const additions = pr?.additions ?? existing?.additions;
   const deletions = pr?.deletions ?? existing?.deletions;
   const changedFiles = pr?.changed_files ?? pr?.changedFiles ?? existing?.changedFiles;
-  const baseRef = pr?.base_ref ?? pr?.baseRef ?? pr?.base?.ref ?? existing?.baseRef;
-  const headRef = pr?.head_ref ?? pr?.headRef ?? pr?.head?.ref ?? existing?.headRef;
+  // Extract branch refs from various field names across different response formats:
+  // - GitHub API raw: head_ref/base_ref or head.ref/base.ref
+  // - PullRequest type (github.service.ts): sourceBranch/targetBranch
+  // - PullRequestInfo type: headRef/baseRef
+  const baseRef = pr?.base_ref ?? pr?.baseRef ?? pr?.targetBranch ?? pr?.base?.ref ?? existing?.baseRef;
+  const headRef = pr?.head_ref ?? pr?.headRef ?? pr?.sourceBranch ?? pr?.head?.ref ?? existing?.headRef;
 
   // Extract headSha for CI status fetching
   const headSha = pr?.head_sha ?? pr?.headSha ?? pr?.head?.sha ?? existing?.headSha;
@@ -234,12 +238,9 @@ async function discoverPRsForBranch(
         const pr = normalizePullRequestInfo(response.data, null, status);
 
         // Validate: PR's source branch should match the workspace's own branch.
-        // Check multiple fields since different response formats use different field names.
-        const prSourceBranch = pr.headRef
-          || response.data.head_ref
-          || response.data.sourceBranch
-          || (response.data.head && response.data.head.ref)
-          || '';
+        // normalizePullRequestInfo extracts headRef from all known field names
+        // (head_ref, headRef, sourceBranch, head.ref).
+        const prSourceBranch = pr.headRef || '';
 
         // Only reject if we have a POSITIVE MISMATCH: both sourceBranch and workspace.branch
         // are non-empty AND they differ. If sourceBranch is empty (YAML parsing issue),
@@ -434,7 +435,12 @@ export async function refreshPRStatus(
         } else {
           refreshedExistingPRs.push(existingPR);
         }
-      } catch {
+      } catch (err) {
+        logger.warn('[PRStatusService] Failed to refresh existing PR, keeping stale data', {
+          workspaceId,
+          prNumber: existingPR.number,
+          error: err instanceof Error ? err.message : 'Unknown error',
+        });
         refreshedExistingPRs.push(existingPR);
       }
     }
@@ -519,6 +525,17 @@ export async function refreshPRStatus(
     const prStatus = newActivePR?.status ?? null;
     const prNumber = newActivePR?.number ?? null;
     const prUrl = newActivePR?.url ?? null;
+
+    // Defensive check: warn if the active PR's source branch doesn't match the workspace branch.
+    // This would indicate a PR matching bug (like the baseRef matching issue).
+    if (newActivePR?.headRef && workspace.branch && newActivePR.headRef !== workspace.branch) {
+      logger.warn('[PRStatusService] INVARIANT VIOLATION: Active PR source branch does not match workspace branch', {
+        workspaceId,
+        activePRNumber: newActivePR.number,
+        prSourceBranch: newActivePR.headRef,
+        workspaceBranch: workspace.branch,
+      });
+    }
 
     logger.info('[PRStatusService] PR refresh complete', {
       workspaceId,

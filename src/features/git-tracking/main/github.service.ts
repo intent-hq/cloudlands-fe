@@ -117,12 +117,19 @@ export class GitHubService {
       const githubPrs = await augmentApiClient.listGitHubPullRequests(owner, repo, cacheOptions);
 
       // Convert GithubPullRequest to PullRequest type
-      const pullRequests: PullRequest[] = githubPrs.map((pr) => ({
+      const pullRequests: PullRequest[] = githubPrs.map((pr) => {
+        // Derive state: GitHub API returns state='closed' for merged PRs
+        const derivedState: 'open' | 'closed' | 'merged' | 'draft' = pr.merged
+          ? 'merged'
+          : pr.draft
+            ? 'draft'
+            : (pr.state as 'open' | 'closed');
+        return {
         id: pr.number.toString(),
         number: pr.number,
         title: pr.title,
         description: pr.body || undefined,
-        state: pr.state as 'open' | 'closed' | 'merged' | 'draft',
+        state: derivedState,
         url: pr.html_url,
         htmlUrl: pr.html_url,
         sourceBranch: pr.head_ref,
@@ -148,7 +155,8 @@ export class GitHubService {
         deletions: pr.deletions || 0,
         changedFiles: pr.changed_files || 0,
         headSha: pr.head_sha || undefined,
-      }));
+      };
+      });
 
       this.setCache(cacheKey, pullRequests);
       logger.info('Fetched PRs successfully', { owner, repo, count: pullRequests.length });
@@ -195,38 +203,45 @@ export class GitHubService {
       const githubPrs = await augmentApiClient.searchGitHubPullRequests(owner, repo, cacheOptions);
 
       // Convert GithubPullRequest to PullRequest type
-      const pullRequests: PullRequest[] = githubPrs.map((pr) => ({
-        id: pr.number.toString(),
-        number: pr.number,
-        title: pr.title,
-        description: pr.body || undefined,
-        state: pr.state as 'open' | 'closed' | 'merged' | 'draft',
-        url: pr.html_url,
-        htmlUrl: pr.html_url,
-        sourceBranch: pr.head_ref,
-        targetBranch: pr.base_ref,
-        author: {
-          login: pr.user?.login || 'unknown',
-          name: undefined,
-          avatarUrl: pr.user?.avatar_url,
-        },
-        createdAt: pr.created_at,
-        updatedAt: pr.updated_at,
-        mergedAt: pr.merged_at || undefined,
-        closedAt: pr.closed_at || undefined,
-        mergeable: undefined,
-        mergeableState: undefined,
-        reviews: [],
-        checks: [],
-        labels: pr.labels || [],
-        assignees: (pr.assignees || []).map((a: GithubUser) => a.login),
-        milestone: undefined,
-        commits: pr.commits || 0,
-        additions: pr.additions || 0,
-        deletions: pr.deletions || 0,
-        changedFiles: pr.changed_files || 0,
-        headSha: pr.head_sha || undefined,
-      }));
+      const pullRequests: PullRequest[] = githubPrs.map((pr) => {
+        const derivedState: 'open' | 'closed' | 'merged' | 'draft' = pr.merged
+          ? 'merged'
+          : pr.draft
+            ? 'draft'
+            : (pr.state as 'open' | 'closed');
+        return {
+          id: pr.number.toString(),
+          number: pr.number,
+          title: pr.title,
+          description: pr.body || undefined,
+          state: derivedState,
+          url: pr.html_url,
+          htmlUrl: pr.html_url,
+          sourceBranch: pr.head_ref,
+          targetBranch: pr.base_ref,
+          author: {
+            login: pr.user?.login || 'unknown',
+            name: undefined,
+            avatarUrl: pr.user?.avatar_url,
+          },
+          createdAt: pr.created_at,
+          updatedAt: pr.updated_at,
+          mergedAt: pr.merged_at || undefined,
+          closedAt: pr.closed_at || undefined,
+          mergeable: undefined,
+          mergeableState: undefined,
+          reviews: [],
+          checks: [],
+          labels: pr.labels || [],
+          assignees: (pr.assignees || []).map((a: GithubUser) => a.login),
+          milestone: undefined,
+          commits: pr.commits || 0,
+          additions: pr.additions || 0,
+          deletions: pr.deletions || 0,
+          changedFiles: pr.changed_files || 0,
+          headSha: pr.head_sha || undefined,
+        };
+      });
 
       this.setCache(cacheKey, pullRequests);
       logger.info('Searched PRs successfully', { owner, repo, count: pullRequests.length });
@@ -268,12 +283,20 @@ export class GitHubService {
         return null;
       }
 
+      // Derive state: GitHub API returns state='closed' for merged PRs,
+      // so we check the merged flag to distinguish merged from closed.
+      const derivedState: 'open' | 'closed' | 'merged' | 'draft' = pr.merged
+        ? 'merged'
+        : pr.draft
+          ? 'draft'
+          : (pr.state as 'open' | 'closed');
+
       const pullRequest: PullRequest = {
         id: pr.number.toString(),
         number: pr.number,
         title: pr.title,
         description: pr.body || undefined,
-        state: pr.state as 'open' | 'closed' | 'merged' | 'draft',
+        state: derivedState,
         url: pr.html_url,
         htmlUrl: pr.html_url,
         sourceBranch: pr.head_ref,
@@ -347,12 +370,16 @@ export class GitHubService {
       this.clearCacheForRepo(owner, repo);
 
       // Convert Augment API response to our PullRequest type
+      const derivedState: 'open' | 'closed' | 'merged' | 'draft' = pr.draft
+        ? 'draft'
+        : (pr.state as 'open' | 'closed');
+
       const pullRequest: PullRequest = {
         id: pr.number.toString(),
         number: pr.number,
         title: pr.title,
         description: pr.body || undefined,
-        state: pr.state as 'open' | 'closed',
+        state: derivedState,
         url: pr.html_url,
         htmlUrl: pr.html_url,
         sourceBranch: pr.head_ref,

@@ -711,6 +711,7 @@ export class AcceptChangesService {
 
     if (owner && repo) {
       let prNumberToFetch: number | undefined;
+      let prefetchedPR: Awaited<ReturnType<typeof githubService.getPullRequest>> | undefined;
 
       // Strategy 1: Check thirdPartySources for GitHub PR URLs (explicit user link)
       if (workspace.thirdPartySources) {
@@ -790,6 +791,7 @@ export class AcceptChangesService {
             } else if (storedPR) {
               // Either branches match, or we can't validate (empty sourceBranch) — keep it
               prNumberToFetch = storedPRNumber;
+              prefetchedPR = storedPR; // Avoid re-fetching below
             }
           } catch (prError) {
             logger.debug('[AcceptChanges] Failed to validate stored PR', { error: prError });
@@ -799,11 +801,12 @@ export class AcceptChangesService {
         }
       }
 
-      // Fetch the PR from GitHub to get latest status
+      // Fetch the PR from GitHub to get latest status (reuse prefetched PR if available)
       if (prNumberToFetch) {
         try {
-          const pr = await githubService.getPullRequest(owner, repo, prNumberToFetch);
+          const pr = prefetchedPR ?? await githubService.getPullRequest(owner, repo, prNumberToFetch);
           if (pr) {
+            // Derive state: mergedAt takes priority (state may still say 'closed' for merged PRs)
             const prState: 'open' | 'closed' | 'merged' | 'draft' = pr.mergedAt
               ? 'merged'
               : (pr.state as 'open' | 'closed' | 'draft');
@@ -820,7 +823,9 @@ export class AcceptChangesService {
                 ? PullRequestStatus.Merged
                 : prState === 'closed'
                   ? PullRequestStatus.Closed
-                  : PullRequestStatus.Open;
+                  : prState === 'draft'
+                    ? PullRequestStatus.Draft
+                    : PullRequestStatus.Open;
 
             const prInfo = {
               id: String(pr.number),

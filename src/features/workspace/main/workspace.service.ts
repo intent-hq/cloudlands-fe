@@ -107,6 +107,15 @@ function expandHomePath(inputPath: string): string {
   return inputPath;
 }
 
+/** Map a PullRequest.state string to PullRequestStatus enum */
+const PR_STATE_TO_STATUS: Record<string, PullRequestStatus> = {
+  open: PullRequestStatus.Open,
+  closed: PullRequestStatus.Closed,
+  merged: PullRequestStatus.Merged,
+  draft: PullRequestStatus.Draft,
+};
+
+
 export class WorkspaceService {
   private readonly store: any;
   private lastContextCache: Map<string, WorkspaceUIContext> = new Map();
@@ -2209,7 +2218,7 @@ task:
                 logger.info('Background enrichment: PR source branch does not match workspace, clearing stale link', {
                   workspaceId,
                   prNumber: pr.number,
-                  prSourceBranch: prDetail.sourceBranch || '(empty)',
+                  prSourceBranch: prDetail.sourceBranch,
                   workspaceBranch: updatedWorkspace.branch,
                 });
                 updatedWorkspace = {
@@ -2222,10 +2231,7 @@ task:
                   updatedAt: new Date().toISOString(),
                 };
                 updated = true;
-                // Skip the rest of PR enrichment since we cleared the PR
-                if (updated) {
-                  await this.saveWorkspace(updatedWorkspace);
-                }
+                await this.saveWorkspace(updatedWorkspace);
                 return;
               }
 
@@ -2235,13 +2241,7 @@ task:
               if (prDetail.mergeable !== undefined) currentPR.mergeable = prDetail.mergeable;
               // Sync PR status (merged/closed) from remote
               if (prDetail.state) {
-                const stateMap: Record<string, PullRequestStatus> = {
-                  open: PullRequestStatus.Open,
-                  closed: PullRequestStatus.Closed,
-                  merged: PullRequestStatus.Merged,
-                  draft: PullRequestStatus.Draft,
-                };
-                const mappedStatus = stateMap[prDetail.state];
+                const mappedStatus = PR_STATE_TO_STATUS[prDetail.state];
                 if (mappedStatus) currentPR.status = mappedStatus;
               }
             }
@@ -2461,7 +2461,7 @@ task:
             logger.info('Periodic PR refresh: PR source branch does not match workspace, clearing stale link', {
               workspaceId,
               prNumber: pr.number,
-              prSourceBranch: prDetail.sourceBranch || '(empty)',
+              prSourceBranch: prDetail.sourceBranch,
               workspaceBranch: workspace.branch,
             });
             // Clear the stale PR association
@@ -2485,13 +2485,7 @@ task:
           if (prDetail.mergeable !== undefined) currentPR.mergeable = prDetail.mergeable;
           // Sync PR status (merged/closed) from remote
           if (prDetail.state) {
-            const stateMap: Record<string, PullRequestStatus> = {
-              open: PullRequestStatus.Open,
-              closed: PullRequestStatus.Closed,
-              merged: PullRequestStatus.Merged,
-              draft: PullRequestStatus.Draft,
-            };
-            const mappedStatus = stateMap[prDetail.state];
+            const mappedStatus = PR_STATE_TO_STATUS[prDetail.state];
             if (mappedStatus) currentPR.status = mappedStatus;
           }
         }

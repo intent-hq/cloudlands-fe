@@ -201,7 +201,14 @@ export interface Workspace {
   id: WorkspaceId;
   name?: string; // Added for compatibility with agent system
   title: string;
+  /** The workspace's own working branch (e.g., "fix-login-bug").
+   *  This is the branch that PRs should be matched against (PR.sourceBranch === workspace.branch).
+   *  NOT the same as baseRef. */
   branch: string;
+  /** The parent branch this workspace was created FROM (e.g., "main", "develop").
+   *  Used for: commit boundary calculation (ahead/behind), diff base, worktree creation.
+   *  NOT used for PR matching — a PR whose sourceBranch matches baseRef belongs to the
+   *  parent workspace, not this one. */
   baseRef?: string;
   baseCommitSha?: string; // The exact commit SHA when workspace was created
   initialPrompt?: string; // The initial user message that created this workspace
