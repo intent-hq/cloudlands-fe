@@ -16,11 +16,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from '../../../lib/utils/browser-event-emitter';
 import { unifiedIdService } from '$shared/services/unified-id.service';
 import { Logger } from '../../../shared/logger';
-import type { AgentMessage, ContentBlock } from '../../../shared/types';
+import type { AgentMessage, ContentBlock, Workspace } from '../../../shared/types';
+import { WorkspaceStatus } from '../../../shared/types';
 import { unifiedStateStore } from '$features/agent/services/unified-state-store';
 import { invoke } from '../../../lib/electron-bridge';
 import { AGENT_CHANNELS } from '../../../shared/ipc/channels';
-import { createMessageId, AgentId } from '../../../shared/types/branded-ids';
+import { createMessageId, AgentId, WorkspaceId } from '../../../shared/types/branded-ids';
 import { memoryManager } from './memory-manager';
 import type { IDisposable } from '$shared/types/disposable';
 import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
@@ -55,7 +56,7 @@ const STREAM_CONFIG = {
 export interface StreamConfig {
   agentId: string;
   sessionId: string;
-  workspaceId: string;
+  workspaceId: WorkspaceId;
   messageId?: string;
   frontendSessionId?: string;
   backendSessionId?: string;
@@ -235,11 +236,21 @@ export class StreamManager extends EventEmitter implements IDisposable {
     this.metrics.activeStreams++;
     this.metrics.totalStreams++;
 
-    // Update agent state
-    const workspace = unifiedStateStore.currentWorkspace;
-    if (workspace) {
-      unifiedStateStore.setStreaming(workspace.workspace.id, config.agentId as any, true);
+    // Update agent state - fail fast if workspace not found
+    const workspace = unifiedStateStore.getWorkspace(config.workspaceId);
+    if (!workspace) {
+      logger.error('Workspace not found, cannot start stream — aborting', {
+        workspaceId: config.workspaceId,
+        agentId: config.agentId,
+        operation: 'startStream',
+      });
+      // Clean up the session we just created since the stream will be non-functional
+      this.cleanupSession(config.agentId);
+      this.metrics.activeStreams--;
+      this.metrics.errors++;
+      return config.agentId;
     }
+    unifiedStateStore.setStreaming(workspace.workspace.id, config.agentId as any, true);
 
     // Emit start event (include streamId for backward compatibility in events)
     this.emit('stream:start', { streamId, config });
@@ -366,8 +377,14 @@ export class StreamManager extends EventEmitter implements IDisposable {
       }
 
       // Update agent state
-      const workspace = unifiedStateStore.currentWorkspace;
-      if (workspace) {
+      const workspace = unifiedStateStore.getWorkspace(session.config.workspaceId);
+      if (!workspace) {
+        logger.error('Workspace not found for streaming operation', {
+          workspaceId: session.config.workspaceId,
+          agentId: session.config.agentId,
+          operation: 'addTextChunk',
+        });
+      } else {
         const currentBuffer =
           workspace.agents.get(session.config.agentId as any)?.streaming.buffer || '';
         let newBuffer = currentBuffer + chunk.data;
@@ -425,10 +442,18 @@ export class StreamManager extends EventEmitter implements IDisposable {
     session.lastActivity = Date.now();
 
     // Update agent state - add content block to streaming
-    const workspace = unifiedStateStore.currentWorkspace;
-    const agentStateData = workspace?.agents.get(session.config.agentId as any);
-    if (agentStateData && agentStateData.streaming.active) {
-      agentStateData.streaming.contentBlocks.push(block);
+    const workspace = unifiedStateStore.getWorkspace(session.config.workspaceId);
+    if (!workspace) {
+      logger.error('Workspace not found for streaming operation', {
+        workspaceId: session.config.workspaceId,
+        agentId: session.config.agentId,
+        operation: 'addContentBlock',
+      });
+    } else {
+      const agentStateData = workspace.agents.get(session.config.agentId as any);
+      if (agentStateData && agentStateData.streaming.active) {
+        agentStateData.streaming.contentBlocks.push(block);
+      }
     }
 
     // Emit events
@@ -699,9 +724,15 @@ export class StreamManager extends EventEmitter implements IDisposable {
     }
 
     // Update agent state
-    const workspace = unifiedStateStore.currentWorkspace;
+    const workspace = unifiedStateStore.getWorkspace(session.config.workspaceId);
     if (workspace) {
       unifiedStateStore.setStreaming(workspace.workspace.id, session.config.agentId as any, false);
+    } else {
+      logger.error('Workspace not found for streaming operation', {
+        workspaceId: session.config.workspaceId,
+        agentId: session.config.agentId,
+        operation: 'completeStream',
+      });
     }
 
     // Call completion callbacks - use agentId as the canonical key
@@ -812,7 +843,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
     session.healthStatus = 'error';
 
     // Update agent state
-    const workspace = unifiedStateStore.currentWorkspace;
+    const workspace = unifiedStateStore.getWorkspace(session.config.workspaceId);
     if (workspace) {
       unifiedStateStore.setStreaming(workspace.workspace.id, session.config.agentId as any, false);
       // Add error to agent state
@@ -820,6 +851,12 @@ export class StreamManager extends EventEmitter implements IDisposable {
       if (agentStateData) {
         agentStateData.errors.push(error);
       }
+    } else {
+      logger.error('Workspace not found for streaming operation', {
+        workspaceId: session.config.workspaceId,
+        agentId: session.config.agentId,
+        operation: 'handleError',
+      });
     }
 
     // Call error callbacks - use agentId as the canonical key
@@ -1245,60 +1282,93 @@ export class StreamManager extends EventEmitter implements IDisposable {
   }
 
   /**
+   * Register a temporary workspace in the unified state store for test harness methods.
+   * This is needed because startStream() validates that the workspace exists.
+   */
+  private registerTestWorkspace(workspaceId: string): void {
+    const testWorkspace: Workspace = {
+      id: WorkspaceId(workspaceId),
+      title: 'Test Workspace',
+      branch: 'test',
+      changesets: [],
+      timeline: [],
+      conversationInfo: [],
+      status: WorkspaceStatus.Active,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    unifiedStateStore.setWorkspace(testWorkspace);
+  }
+
+  /**
    * Test streaming functionality (for test harness)
    */
   async testStreaming(chunks: string[], options: { delay?: number } = {}): Promise<StreamResult> {
+    const testWsId = 'test-workspace';
+    this.registerTestWorkspace(testWsId);
+
     const config: StreamConfig = {
       agentId: 'test-agent',
       sessionId: 'test-session',
-      workspaceId: 'test-workspace',
+      workspaceId: WorkspaceId(testWsId),
     };
 
-    const streamId = this.startStream(config);
-    const delay = options.delay || 100;
+    try {
+      const streamId = this.startStream(config);
+      const delay = options.delay || 100;
 
-    // Simulate streaming chunks
-    for (const chunk of chunks) {
-      this.addTextChunk(streamId, chunk);
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      // Simulate streaming chunks
+      for (const chunk of chunks) {
+        this.addTextChunk(streamId, chunk);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+
+      // Complete the stream
+      return this.completeStream(streamId);
+    } finally {
+      unifiedStateStore.removeWorkspace(WorkspaceId(testWsId));
     }
-
-    // Complete the stream
-    return this.completeStream(streamId);
   }
 
   /**
    * Test error recovery (for test harness)
    */
   async testErrorRecovery(options: { type: string }): Promise<boolean> {
+    const testWsId = 'test-workspace';
+    this.registerTestWorkspace(testWsId);
+
     const config: StreamConfig = {
       agentId: 'test-agent-recovery',
       sessionId: 'test-session-recovery',
-      workspaceId: 'test-workspace',
+      workspaceId: WorkspaceId(testWsId),
     };
 
-    const streamId = this.startStream(config);
+    try {
+      const streamId = this.startStream(config);
 
-    if (options.type === 'stream-interruption') {
-      // Simulate stream interruption
-      const session = this.sessions.get(streamId);
-      if (session) {
-        // Force stall the stream
-        session.lastActivity = Date.now() - STREAM_CONFIG.STALLED_TIMEOUT - 1000;
-        session.healthStatus = 'stalled';
+      if (options.type === 'stream-interruption') {
+        // Simulate stream interruption
+        const session = this.sessions.get(streamId);
+        if (session) {
+          // Force stall the stream
+          session.lastActivity = Date.now() - STREAM_CONFIG.STALLED_TIMEOUT - 1000;
+          session.healthStatus = 'stalled';
 
-        // Trigger recovery
-        await this.attemptStreamRecovery(streamId);
+          // Trigger recovery
+          await this.attemptStreamRecovery(streamId);
 
-        // Check if recovery succeeded
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+          // Check if recovery succeeded
+          await new Promise((resolve) => setTimeout(resolve, 1000));
 
-        const recoveredSession = this.sessions.get(streamId);
-        return recoveredSession ? recoveredSession.healthStatus !== 'stalled' : false;
+          const recoveredSession = this.sessions.get(streamId);
+          return recoveredSession ? recoveredSession.healthStatus !== 'stalled' : false;
+        }
       }
-    }
 
-    return false;
+      return false;
+    } finally {
+      unifiedStateStore.removeWorkspace(WorkspaceId(testWsId));
+    }
   }
 
   /**
@@ -1392,8 +1462,14 @@ export class StreamManager extends EventEmitter implements IDisposable {
         this.sessions.set(state.config.agentId, session);
 
         // Update agent state
-        const workspace = unifiedStateStore.currentWorkspace;
-        if (workspace) {
+        const workspace = unifiedStateStore.getWorkspace(state.config.workspaceId);
+        if (!workspace) {
+          logger.error('Workspace not found for streaming operation', {
+            workspaceId: state.config.workspaceId,
+            agentId: state.config.agentId,
+            operation: 'loadFromSessionStorage',
+          });
+        } else {
           unifiedStateStore.setStreaming(workspace.workspace.id, state.config.agentId as any, true);
 
           // Restore content blocks to agent state

@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 /**
  * Browser-Safe Agent Services
  *
@@ -22,6 +23,9 @@ import { writable, type Readable } from 'svelte/store';
 import { createLogger } from '$lib/utils/client-logger';
 
 const logger = createLogger('browser/index');
+
+// Track which deprecation warnings have been shown (once per method per session)
+const deprecationWarningShown = new Set<string>();
 
 export const sessionStoreData = writable<{ sessions: AgentSession[] }>({ sessions: [] });
 
@@ -251,7 +255,12 @@ export const sessionStore = {
     ensureStreamingListener();
     return sessionStoreData;
   },
+  /** @deprecated Use workspace-aware alternative. This method uses currentWorkspace which may be incorrect for background agents. */
   getSession: (agentId: string): AgentSession | undefined => {
+    if (import.meta.env.DEV && !deprecationWarningShown.has('getSession')) {
+      deprecationWarningShown.add('getSession');
+      logger.warn('sessionStore.getSession is deprecated — consider using workspace-aware alternative (e.g., getSessionForWorkspace)');
+    }
     const workspace = unifiedStateStore.currentWorkspace;
     const agent = workspace?.agents.get(agentId as any);
 
@@ -282,7 +291,12 @@ export const sessionStore = {
             : [],
     };
   },
+  /** @deprecated Use workspace-aware alternative. This method uses currentWorkspace which may be incorrect for background agents. */
   getAllSessions: (): AgentSession[] => {
+    if (import.meta.env.DEV && !deprecationWarningShown.has('getAllSessions')) {
+      deprecationWarningShown.add('getAllSessions');
+      logger.warn('sessionStore.getAllSessions is deprecated — consider using workspace-aware alternative');
+    }
     const workspace = unifiedStateStore.currentWorkspace;
     if (!workspace) return [];
     const sessions: AgentSession[] = [];
@@ -329,7 +343,12 @@ export const sessionStore = {
     }
     return sessions;
   },
+  /** @deprecated Use workspace-aware alternative. This method uses currentWorkspace which may be incorrect for background agents. */
   findSessions: (predicate: (s: any) => boolean): AgentSession[] => {
+    if (import.meta.env.DEV && !deprecationWarningShown.has('findSessions')) {
+      deprecationWarningShown.add('findSessions');
+      logger.warn('sessionStore.findSessions is deprecated — consider using workspace-aware alternative');
+    }
     const workspace = unifiedStateStore.currentWorkspace;
     if (!workspace) return [];
     const sessions: AgentSession[] = [];
@@ -347,7 +366,12 @@ export const sessionStore = {
     });
     return sessions;
   },
+  /** @deprecated Use workspace-aware alternative. This method uses currentWorkspace which may be incorrect for background agents. */
   updateSession: (agentId: string, updates: Partial<AgentSession>) => {
+    if (import.meta.env.DEV && !deprecationWarningShown.has('updateSession')) {
+      deprecationWarningShown.add('updateSession');
+      logger.warn('sessionStore.updateSession is deprecated — consider using workspace-aware alternative');
+    }
     const workspace = unifiedStateStore.currentWorkspace;
     if (workspace) {
       const agent = workspace.agents.get(agentId as any);
@@ -365,7 +389,12 @@ export const sessionStore = {
       }
     }
   },
+  /** @deprecated Use workspace-aware alternative. This method uses currentWorkspace as fallback which may be incorrect for background agents. */
   addSession: (session: AgentSession) => {
+    if (import.meta.env.DEV && !deprecationWarningShown.has('addSession')) {
+      deprecationWarningShown.add('addSession');
+      logger.warn('sessionStore.addSession is deprecated — consider using workspace-aware alternative');
+    }
     // CRITICAL FIX: Guard against null/undefined session to prevent errors
     if (!session) {
       logger.warn('addSession called with null/undefined session, ignoring');
@@ -401,7 +430,12 @@ export const sessionStore = {
       });
     }
   },
+  /** @deprecated Use workspace-aware alternative. This method uses currentWorkspace which may be incorrect for background agents. */
   removeSession: (agentId: string) => {
+    if (import.meta.env.DEV && !deprecationWarningShown.has('removeSession')) {
+      deprecationWarningShown.add('removeSession');
+      logger.warn('sessionStore.removeSession is deprecated — consider using workspace-aware alternative');
+    }
     const workspace = unifiedStateStore.currentWorkspace;
     if (workspace) {
       workspace.agents.delete(agentId as any);
@@ -410,11 +444,20 @@ export const sessionStore = {
       scheduleStoreUpdate(workspace.workspace?.id as WorkspaceId, agentId);
     }
   },
+  /** @deprecated Use workspace-aware alternative. Delegates to removeSession which uses currentWorkspace. */
   removeAgent: (agentId: string) => {
-    // Delegate to removeSession — they perform the same operation
+    if (import.meta.env.DEV && !deprecationWarningShown.has('removeAgent')) {
+      deprecationWarningShown.add('removeAgent');
+      logger.warn('sessionStore.removeAgent is deprecated — consider using workspace-aware alternative');
+    }
     sessionStore.removeSession(agentId);
   },
+  /** @deprecated Use setStreamingForWorkspace instead. This method uses currentWorkspace which may be incorrect for background agents. */
   setStreaming: (agentId: string, isStreaming: boolean) => {
+    if (import.meta.env.DEV && !deprecationWarningShown.has('setStreaming')) {
+      deprecationWarningShown.add('setStreaming');
+      logger.warn('sessionStore.setStreaming is deprecated — consider using setStreamingForWorkspace');
+    }
     const workspace = unifiedStateStore.currentWorkspace;
     if (workspace) {
       logger.info('sessionStore.setStreaming - updating unified state store', {
@@ -474,13 +517,23 @@ export const sessionStore = {
     const sessions = unifiedStateStore.getAgentsForWorkspace(workspaceId as WorkspaceId);
     return sessions.find((s) => s.id === agentId);
   },
+  /** @deprecated Use workspace-aware alternative. This method uses currentWorkspace which may be incorrect for background agents. */
   setActiveSession: (agentId: string) => {
+    if (import.meta.env.DEV && !deprecationWarningShown.has('setActiveSession')) {
+      deprecationWarningShown.add('setActiveSession');
+      logger.warn('sessionStore.setActiveSession is deprecated — consider using workspace-aware alternative');
+    }
     const workspace = unifiedStateStore.currentWorkspace;
     if (workspace) {
       unifiedStateStore.setActiveAgent(workspace.workspace.id, agentId as any);
     }
   },
+  /** @deprecated Use workspace-aware alternative. This method uses currentWorkspace which may be incorrect for background agents. */
   getActiveSession: (): AgentSession | undefined => {
+    if (import.meta.env.DEV && !deprecationWarningShown.has('getActiveSession')) {
+      deprecationWarningShown.add('getActiveSession');
+      logger.warn('sessionStore.getActiveSession is deprecated — consider using workspace-aware alternative');
+    }
     const workspace = unifiedStateStore.currentWorkspace;
     if (!workspace || !workspace.activeAgentId) return undefined;
     const agent = workspace.agents.get(workspace.activeAgentId);
@@ -500,7 +553,12 @@ export const sessionStore = {
             : [],
     };
   },
+  /** @deprecated Use addMessageForWorkspace instead. This method uses currentWorkspace which may be incorrect for background agents. */
   addMessage: (agentId: string, message: any) => {
+    if (import.meta.env.DEV && !deprecationWarningShown.has('addMessage')) {
+      deprecationWarningShown.add('addMessage');
+      logger.warn('sessionStore.addMessage is deprecated — consider using addMessageForWorkspace');
+    }
     const workspace = unifiedStateStore.currentWorkspace;
     if (workspace) {
       unifiedStateStore.addMessage(workspace.workspace.id, agentId as any, message);
@@ -528,7 +586,12 @@ export const sessionStore = {
     // Pass agentId so per-agent subscribers are notified of new messages
     scheduleStoreUpdate(workspaceId as WorkspaceId, agentId);
   },
+  /** @deprecated Use updateMessageForWorkspace instead. This method uses currentWorkspace which may be incorrect for background agents. */
   updateMessage: (agentId: string, messageId: string, updates: any) => {
+    if (import.meta.env.DEV && !deprecationWarningShown.has('updateMessage')) {
+      deprecationWarningShown.add('updateMessage');
+      logger.warn('sessionStore.updateMessage is deprecated — consider using updateMessageForWorkspace');
+    }
     const workspace = unifiedStateStore.currentWorkspace;
     if (workspace) {
       const agent = workspace.agents.get(agentId as any);
@@ -589,7 +652,12 @@ export const sessionStore = {
       }
     }
   },
+  /** @deprecated Use workspace-aware alternative. This method uses currentWorkspace which may be incorrect for background agents. */
   updateMessages: (agentId: string, messages: any[]) => {
+    if (import.meta.env.DEV && !deprecationWarningShown.has('updateMessages')) {
+      deprecationWarningShown.add('updateMessages');
+      logger.warn('sessionStore.updateMessages is deprecated — consider using workspace-aware alternative');
+    }
     const workspace = unifiedStateStore.currentWorkspace;
     if (workspace) {
       const agent = workspace.agents.get(agentId as any);
@@ -609,7 +677,12 @@ export const sessionStore = {
       }
     }
   },
+  /** @deprecated Use workspace-aware alternative. This method uses currentWorkspace which may be incorrect for background agents. */
   getStats: () => {
+    if (import.meta.env.DEV && !deprecationWarningShown.has('getStats')) {
+      deprecationWarningShown.add('getStats');
+      logger.warn('sessionStore.getStats is deprecated — consider using workspace-aware alternative');
+    }
     const workspace = unifiedStateStore.currentWorkspace;
     if (!workspace) return { totalSessions: 0, activeSessions: 0, totalMessages: 0 };
     let totalMessages = 0;
@@ -622,7 +695,12 @@ export const sessionStore = {
     });
     return { totalSessions: workspace.agents.size, activeSessions, totalMessages };
   },
+  /** @deprecated Use workspace-aware alternative. This method uses currentWorkspace which may be incorrect for background agents. */
   clear: () => {
+    if (import.meta.env.DEV && !deprecationWarningShown.has('clear')) {
+      deprecationWarningShown.add('clear');
+      logger.warn('sessionStore.clear is deprecated — consider using workspace-aware alternative');
+    }
     const workspace = unifiedStateStore.currentWorkspace;
     if (workspace) {
       workspace.agents.clear();
@@ -639,7 +717,7 @@ import { AGENT_CHANNELS, PERSISTENCE_CHANNELS } from '$shared/ipc/channels';
 import { unifiedStateStore } from '$features/agent/services/unified-state-store';
 import type { Workspace } from '$shared/types';
 import type { AgentSession } from '../../../shared/types';
-import type { WorkspaceId } from '$shared/types/branded-ids';
+import { WorkspaceId } from '$shared/types/branded-ids';
 
 
 const agentProxiesLogger = createLogger('AgentProxies');
@@ -1287,6 +1365,7 @@ class StreamingServiceProxy {
   async startStream(
     agentId: string,
     sessionId: string,
+    workspaceId: string,
     callbacks?: {
       onChunk?: (chunk: string) => void;
       onComplete?: () => Promise<void>;
@@ -1297,7 +1376,7 @@ class StreamingServiceProxy {
       {
         agentId,
         sessionId,
-        workspaceId: '', // Will be set by the stream manager
+        workspaceId: WorkspaceId(workspaceId),
       },
       callbacks
         ? {

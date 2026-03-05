@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 /**
  * Agent Subscription Utilities
  *
@@ -13,6 +15,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import type { Workspace } from '$shared/types';
 
 const logger = createLogger('AgentSubscription');
+let allGetterWarningShown = false;
 
 type WorkspaceIdSource = string | null | undefined | (() => string | null | undefined);
 
@@ -395,14 +398,23 @@ export function useAllAgentsSubscription(workspaceId?: WorkspaceIdSource) {
   return {
     get current() {
       const resolvedWorkspaceId = resolveWorkspaceId(workspaceId);
-      if (!resolvedWorkspaceId) return allAgents;
+      if (!resolvedWorkspaceId) return [];
       return allAgents.filter((s) => {
         const agentWsId = s.workspaceId ? String(s.workspaceId) : '';
         return agentWsId === resolvedWorkspaceId;
       });
     },
-    // Also expose all agents for components that want to do their own filtering
+    // Also expose all agents for components that want to do their own filtering.
+    // WARNING: This returns ALL agents across ALL workspaces. Consumers should
+    // filter by workspaceId before rendering to avoid cross-workspace data leaks.
     get all() {
+      if (import.meta.env.DEV && !allGetterWarningShown) {
+        allGetterWarningShown = true;
+        logger.warn(
+          '[useAllAgentsSubscription] .all accessed — returns unfiltered agents from all workspaces. ' +
+            'Ensure the consumer filters by workspaceId before rendering.',
+        );
+      }
       return allAgents;
     },
     // Expose loading state for showing skeleton loaders

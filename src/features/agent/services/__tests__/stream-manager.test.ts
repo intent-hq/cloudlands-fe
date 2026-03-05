@@ -132,7 +132,7 @@ describe('Unified Stream Manager', () => {
       const config: StreamConfig = {
         agentId: 'agent-123',
         sessionId: 'session-456',
-        workspaceId: 'workspace-789',
+        workspaceId: testWorkspaceId,
       };
 
       const streamId = streamManager.startStream(config);
@@ -145,7 +145,7 @@ describe('Unified Stream Manager', () => {
       const config: StreamConfig = {
         agentId: 'agent-123',
         sessionId: 'session-456',
-        workspaceId: 'workspace-789',
+        workspaceId: testWorkspaceId,
       };
 
       const streamId = streamManager.startStream(config);
@@ -164,7 +164,7 @@ describe('Unified Stream Manager', () => {
       const config: StreamConfig = {
         agentId: 'agent-123',
         sessionId: 'session-456',
-        workspaceId: 'workspace-789',
+        workspaceId: testWorkspaceId,
       };
 
       const streamId = streamManager.startStream(config);
@@ -185,7 +185,7 @@ describe('Unified Stream Manager', () => {
       const config: StreamConfig = {
         agentId: 'agent-123',
         sessionId: 'session-456',
-        workspaceId: 'workspace-789',
+        workspaceId: testWorkspaceId,
       };
 
       const streamId = streamManager.startStream(config);
@@ -207,7 +207,7 @@ describe('Unified Stream Manager', () => {
       const config: StreamConfig = {
         agentId: 'agent-123',
         sessionId: 'session-456',
-        workspaceId: 'workspace-789',
+        workspaceId: testWorkspaceId,
       };
 
       const streamId = streamManager.startStream(config);
@@ -224,7 +224,7 @@ describe('Unified Stream Manager', () => {
       const config: StreamConfig = {
         agentId: 'agent-123',
         sessionId: 'session-456',
-        workspaceId: 'workspace-789',
+        workspaceId: testWorkspaceId,
       };
 
       const streamId = streamManager.startStream(config);
@@ -241,13 +241,13 @@ describe('Unified Stream Manager', () => {
       const config1: StreamConfig = {
         agentId: 'agent-1',
         sessionId: 'session-1',
-        workspaceId: 'workspace-1',
+        workspaceId: testWorkspaceId,
       };
 
       const config2: StreamConfig = {
         agentId: 'agent-2',
         sessionId: 'session-2',
-        workspaceId: 'workspace-2',
+        workspaceId: testWorkspaceId,
       };
 
       const streamId1 = streamManager.startStream(config1);
@@ -263,7 +263,7 @@ describe('Unified Stream Manager', () => {
       const config: StreamConfig = {
         agentId: 'agent-123',
         sessionId: 'session-456',
-        workspaceId: 'workspace-789',
+        workspaceId: testWorkspaceId,
       };
 
       let eventFired = false;
@@ -282,7 +282,7 @@ describe('Unified Stream Manager', () => {
       const config: StreamConfig = {
         agentId: 'agent-123',
         sessionId: 'session-456',
-        workspaceId: 'workspace-789',
+        workspaceId: testWorkspaceId,
       };
 
       // startStream now returns agentId as the canonical key
@@ -302,6 +302,221 @@ describe('Unified Stream Manager', () => {
       streamManager.addTextChunk(agentId, 'Test');
       streamManager.flushBatch(); // Flush any pending async operations
       expect(eventFired).toBe(true);
+    });
+  });
+
+  describe('Cross-Workspace Isolation', () => {
+    const workspaceAId = WorkspaceId('00000000-0000-0000-0000-00000000000a');
+    const workspaceBId = WorkspaceId('00000000-0000-0000-0000-00000000000b');
+
+    beforeEach(() => {
+      // Set up two workspaces
+      unifiedStateStore.setWorkspace({
+        id: workspaceAId,
+        name: 'Workspace A',
+        path: '/test/workspace-a',
+        gitBranch: 'main',
+        gitRemote: 'origin',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        lastOpened: new Date().toISOString(),
+      });
+
+      unifiedStateStore.setWorkspace({
+        id: workspaceBId,
+        name: 'Workspace B',
+        path: '/test/workspace-b',
+        gitBranch: 'main',
+        gitRemote: 'origin',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        lastOpened: new Date().toISOString(),
+      });
+
+      // Create agents in each workspace
+      const agentSessionA: AgentSession = {
+        id: AgentId('agent-ws-a'),
+        name: 'Agent in Workspace A',
+        workspaceId: workspaceAId,
+        backendSessionId: BrandedSessionId('session-ws-a'),
+        status: AgentStatus.Idle,
+        messages: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      unifiedStateStore.setAgent(workspaceAId, {
+        id: agentSessionA.id,
+        session: agentSessionA,
+        streaming: { active: false, buffer: '', contentBlocks: [] },
+        messages: [],
+        errors: [],
+        ui: {
+          isExpanded: false,
+          scrollPosition: 0,
+          searchQuery: '',
+          isAtTop: true,
+          isAtBottom: true,
+          showScrollToBottom: false,
+        },
+        metadata: {},
+        lastAccess: Date.now(),
+      });
+
+      const agentSessionB: AgentSession = {
+        id: AgentId('agent-ws-b'),
+        name: 'Agent in Workspace B',
+        workspaceId: workspaceBId,
+        backendSessionId: BrandedSessionId('session-ws-b'),
+        status: AgentStatus.Idle,
+        messages: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      unifiedStateStore.setAgent(workspaceBId, {
+        id: agentSessionB.id,
+        session: agentSessionB,
+        streaming: { active: false, buffer: '', contentBlocks: [] },
+        messages: [],
+        errors: [],
+        ui: {
+          isExpanded: false,
+          scrollPosition: 0,
+          searchQuery: '',
+          isAtTop: true,
+          isAtBottom: true,
+          showScrollToBottom: false,
+        },
+        metadata: {},
+        lastAccess: Date.now(),
+      });
+    });
+
+    it('should route stream chunks to the correct workspace even after switching currentWorkspace', () => {
+      // Start on workspace A
+      unifiedStateStore.setCurrentWorkspace(workspaceAId);
+
+      // Start a stream for an agent in workspace A
+      const configA: StreamConfig = {
+        agentId: 'agent-ws-a',
+        sessionId: 'session-ws-a',
+        workspaceId: workspaceAId,
+      };
+      const streamIdA = streamManager.startStream(configA);
+
+      // Verify stream is active
+      expect(streamManager.isActive(streamIdA)).toBe(true);
+
+      // Switch current workspace to B
+      unifiedStateStore.setCurrentWorkspace(workspaceBId);
+
+      // Send a chunk — it should still go to workspace A's agent state
+      streamManager.addTextChunk(streamIdA, 'Hello from A');
+      streamManager.flushBatch();
+
+      // Verify the chunk went to workspace A's agent, not B's
+      const workspaceA = unifiedStateStore.getWorkspace(workspaceAId);
+      const agentA = workspaceA?.agents.get('agent-ws-a' as any);
+      expect(agentA?.streaming.buffer).toContain('Hello from A');
+
+      // Verify workspace B's agent was NOT affected
+      const workspaceB = unifiedStateStore.getWorkspace(workspaceBId);
+      const agentB = workspaceB?.agents.get('agent-ws-b' as any);
+      expect(agentB?.streaming.buffer).toBe('');
+      expect(agentB?.streaming.active).toBe(false);
+    });
+
+    it('should fail fast when workspace does not exist', () => {
+      const nonExistentWorkspaceId = WorkspaceId('00000000-0000-0000-0000-ffffffffffff');
+
+      const config: StreamConfig = {
+        agentId: 'agent-orphan',
+        sessionId: 'session-orphan',
+        workspaceId: nonExistentWorkspaceId,
+      };
+
+      // startStream should return agentId but clean up the session immediately
+      const streamId = streamManager.startStream(config);
+      expect(streamId).toBe('agent-orphan');
+
+      // The session should have been cleaned up due to fail-fast
+      expect(streamManager.isActive(streamId)).toBe(false);
+      expect(streamManager.getSession(streamId)).toBeNull();
+    });
+
+    it('should keep streams in different workspaces independent', () => {
+      unifiedStateStore.setCurrentWorkspace(workspaceAId);
+
+      // Start streams in both workspaces
+      const configA: StreamConfig = {
+        agentId: 'agent-ws-a',
+        sessionId: 'session-ws-a',
+        workspaceId: workspaceAId,
+      };
+      const configB: StreamConfig = {
+        agentId: 'agent-ws-b',
+        sessionId: 'session-ws-b',
+        workspaceId: workspaceBId,
+      };
+
+      const streamIdA = streamManager.startStream(configA);
+      const streamIdB = streamManager.startStream(configB);
+
+      // Both should be active
+      expect(streamManager.isActive(streamIdA)).toBe(true);
+      expect(streamManager.isActive(streamIdB)).toBe(true);
+
+      // Send different chunks to each
+      streamManager.addTextChunk(streamIdA, 'Data for A');
+      streamManager.addTextChunk(streamIdB, 'Data for B');
+      streamManager.flushBatch();
+
+      // Verify each workspace got its own data
+      const sessionA = streamManager.getSession(streamIdA);
+      const sessionB = streamManager.getSession(streamIdB);
+      expect(sessionA?.accumulatedText).toBe('Data for A');
+      expect(sessionB?.accumulatedText).toBe('Data for B');
+
+      // Verify state store has correct data per workspace
+      const workspaceA = unifiedStateStore.getWorkspace(workspaceAId);
+      const workspaceB = unifiedStateStore.getWorkspace(workspaceBId);
+      expect(workspaceA?.agents.get('agent-ws-a' as any)?.streaming.buffer).toContain('Data for A');
+      expect(workspaceB?.agents.get('agent-ws-b' as any)?.streaming.buffer).toContain('Data for B');
+
+      // Cancel stream A — stream B should be unaffected
+      streamManager.cancelStream(streamIdA);
+      expect(streamManager.isActive(streamIdA)).toBe(false);
+      expect(streamManager.isActive(streamIdB)).toBe(true);
+    });
+
+    it('should complete stream on correct workspace after workspace switch', async () => {
+      unifiedStateStore.setCurrentWorkspace(workspaceAId);
+
+      const configA: StreamConfig = {
+        agentId: 'agent-ws-a',
+        sessionId: 'session-ws-a',
+        workspaceId: workspaceAId,
+      };
+
+      const streamIdA = streamManager.startStream(configA);
+      streamManager.addTextChunk(streamIdA, 'Complete me');
+
+      // Switch to workspace B before completing
+      unifiedStateStore.setCurrentWorkspace(workspaceBId);
+
+      // Complete should still work correctly for workspace A
+      const result = await streamManager.completeStream(streamIdA);
+      expect(result.success).toBe(true);
+      expect(result.message?.contentBlocks?.[0]).toEqual({
+        type: 'text',
+        text: 'Complete me',
+      });
+
+      // Workspace A's agent should no longer be streaming
+      const workspaceA = unifiedStateStore.getWorkspace(workspaceAId);
+      const agentA = workspaceA?.agents.get('agent-ws-a' as any);
+      expect(agentA?.streaming.active).toBe(false);
     });
   });
 });

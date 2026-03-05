@@ -17,6 +17,8 @@ import {
 } from '../../src/shared/types/branded-ids';
 import { randomUUID } from 'crypto';
 import type { AgentSession } from '../../src/shared/types';
+import { WorkspaceStatus } from '../../src/shared/types';
+import { unifiedStateStore } from '../../src/features/agent/services/unified-state-store';
 import { performance } from 'perf_hooks';
 
 describe('Performance Integration Tests', () => {
@@ -243,8 +245,22 @@ describe('Performance Integration Tests', () => {
     });
 
     it('should handle concurrent stream operations', async () => {
-      const concurrentStreams = 20;
+      const concurrentStreams = 5; // Must not exceed MAX_SESSIONS (10) in stream-manager
       const chunksPerStream = 50;
+
+      // Register the test workspace so startStream() doesn't abort
+      unifiedStateStore.setWorkspace({
+        id: testWorkspaceId,
+        title: 'Performance Test Workspace',
+        branch: 'test',
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        status: WorkspaceStatus.Active,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
       const start = performance.now();
 
       const streamPromises = [];
