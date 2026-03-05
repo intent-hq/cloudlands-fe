@@ -944,7 +944,8 @@ export class AcceptChangesService {
 
   /**
    * Detect merge conflicts between current branch and target branch
-   * Uses git merge-tree to simulate a merge without modifying the working tree
+   * Uses git merge-tree --write-tree (Git 2.38+) to simulate a merge without modifying the working tree.
+   * Falls back to legacy merge-tree for older Git versions.
    */
   private async detectMergeConflicts(
     workspaceId: WorkspaceId,
@@ -953,7 +954,49 @@ export class AcceptChangesService {
     targetBranch: string,
   ): Promise<boolean> {
     try {
-      // Get the merge base between the two branches
+      // Modern approach: git merge-tree --write-tree (Git 2.38+)
+      // Exit code 0 = clean merge (no conflicts)
+      // Exit code 1 = conflicts detected
+      await this.execGitCommand(
+        workspaceId,
+        `git merge-tree --write-tree -- ${targetBranch} ${currentBranch}`,
+        worktreePath,
+      );
+      // Exit code 0 means clean merge, no conflicts
+      return false;
+    } catch (error) {
+      // Exit code 1 from merge-tree --write-tree means conflicts
+      const exitCode = (error as any)?.code ?? (error as any)?.status;
+      if (exitCode === 1) {
+        return true;
+      }
+
+      // If --write-tree is not supported (older Git), fall back to legacy approach
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isUnsupportedFlag =
+        errorMessage.includes('unknown option') ||
+        errorMessage.includes('unrecognized argument');
+
+      if (isUnsupportedFlag) {
+        return this.detectMergeConflictsLegacy(workspaceId, worktreePath, currentBranch, targetBranch);
+      }
+
+      // Other errors - assume no conflicts to avoid blocking operations
+      return false;
+    }
+  }
+
+  /**
+   * Legacy fallback for detecting merge conflicts on Git < 2.38.
+   * Uses the three-way merge-tree approach with merge-base.
+   */
+  private async detectMergeConflictsLegacy(
+    workspaceId: WorkspaceId,
+    worktreePath: string,
+    currentBranch: string,
+    targetBranch: string,
+  ): Promise<boolean> {
+    try {
       const { stdout: mergeBase } = await this.execGitCommand(
         workspaceId,
         `git merge-base ${targetBranch} ${currentBranch}`,
@@ -962,42 +1005,22 @@ export class AcceptChangesService {
       const base = mergeBase.trim();
 
       if (!base) {
-        // No common ancestor, can't determine conflicts
         return false;
       }
 
-      // Use git merge-tree to simulate a merge and check for conflicts
-      // Git merge-tree outputs conflict markers if there are conflicts
       const { stdout: mergeTreeOutput } = await this.execGitCommand(
         workspaceId,
         `git merge-tree ${base} ${targetBranch} ${currentBranch}`,
         worktreePath,
       );
 
-      // Check for conflict markers in the output
-      // Conflicts are indicated by lines starting with "+" or conflict sections
       const hasConflictMarkers =
-        mergeTreeOutput.includes('<<<<<<<') ||
-        mergeTreeOutput.includes('>>>>>>>') ||
-        mergeTreeOutput.includes('=======');
+        mergeTreeOutput.includes('<<<<<<<') &&
+        mergeTreeOutput.includes('>>>>>>>');
 
       return hasConflictMarkers;
     } catch {
-      // If merge-tree fails, try an alternative approach using git diff --check
-      try {
-        // This command exits with non-zero if there would be conflicts
-        await this.execGitCommand(
-          workspaceId,
-          `git merge --no-commit --no-ff ${targetBranch} --dry-run`,
-          worktreePath,
-        );
-        // If successful, no conflicts
-        return false;
-      } catch {
-        // Dry-run merge failed, likely due to conflicts
-        // Check if it's actually a conflict error vs other errors
-        return true;
-      }
+      return false;
     }
   }
 
@@ -2536,8 +2559,14 @@ export class AcceptChangesService {
           let rebaseBaseSha: string | undefined; // Trunk tip SHA at time of auto-rebase (new fork point)
 
           if (!canFastForward) {
-            // Branch is behind trunk - check if we can auto-rebase
-            if (status.hasConflicts) {
+            // Branch is behind trunk - re-check conflicts with fresh refs (post-fetch)
+            const freshHasConflicts = await this.detectMergeConflicts(
+              request.workspaceId,
+              worktreePath,
+              status.branch,
+              trunkRef,
+            );
+            if (freshHasConflicts) {
               // Conflicts detected via merge-tree - skip rebase, return error for manual resolution
               logger.warn('Branch needs rebase but has conflicts - skipping auto-rebase');
               steps[steps.length - 1].status = 'failed';

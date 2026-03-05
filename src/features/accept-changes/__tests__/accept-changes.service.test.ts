@@ -611,3 +611,218 @@ describe('AcceptChangesService.execute - PR operation completion', () => {
     });
   });
 });
+
+
+
+describe('AcceptChangesService.detectMergeConflicts', () => {
+  let service: AcceptChangesService;
+  const workspaceId = 'test-workspace-id' as WorkspaceId;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = new AcceptChangesService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('should return false when modern merge-tree --write-tree succeeds (no conflicts)', async () => {
+    mockExecAsync.mockResolvedValueOnce({ stdout: 'abc123tree', stderr: '' });
+
+    const result = await (service as any).detectMergeConflicts(
+      workspaceId,
+      '/test/worktree',
+      'feature-branch',
+      'origin/main',
+    );
+
+    expect(result).toBe(false);
+    expect(mockExecAsync).toHaveBeenCalledWith(
+      expect.stringContaining('git merge-tree --write-tree'),
+      expect.any(Object),
+    );
+  });
+
+  it('should return true when merge-tree --write-tree exits with code 1 (conflicts)', async () => {
+    const error = new Error('merge-tree failed') as any;
+    error.code = 1;
+    mockExecAsync.mockRejectedValueOnce(error);
+
+    const result = await (service as any).detectMergeConflicts(
+      workspaceId,
+      '/test/worktree',
+      'feature-branch',
+      'origin/main',
+    );
+
+    expect(result).toBe(true);
+  });
+
+  it('should fall back to legacy merge-tree when --write-tree is unsupported (no conflicts)', async () => {
+    // First call: --write-tree fails with "unknown option"
+    const unsupportedError = new Error('unknown option `write-tree\'');
+    mockExecAsync.mockRejectedValueOnce(unsupportedError);
+    // Second call: merge-base
+    mockExecAsync.mockResolvedValueOnce({ stdout: 'base-sha\n', stderr: '' });
+    // Third call: legacy merge-tree (no conflict markers)
+    mockExecAsync.mockResolvedValueOnce({ stdout: 'clean merge output\n', stderr: '' });
+
+    const result = await (service as any).detectMergeConflicts(
+      workspaceId,
+      '/test/worktree',
+      'feature-branch',
+      'origin/main',
+    );
+
+    expect(result).toBe(false);
+    // Verify legacy merge-base was called
+    expect(mockExecAsync).toHaveBeenCalledWith(
+      expect.stringContaining('git merge-base'),
+      expect.any(Object),
+    );
+  });
+
+  it('should return true via legacy fallback when conflict markers are present', async () => {
+    // First call: --write-tree fails with "unrecognized argument"
+    const unsupportedError = new Error('unrecognized argument: --write-tree');
+    mockExecAsync.mockRejectedValueOnce(unsupportedError);
+    // Second call: merge-base
+    mockExecAsync.mockResolvedValueOnce({ stdout: 'base-sha\n', stderr: '' });
+    // Third call: legacy merge-tree with conflict markers
+    mockExecAsync.mockResolvedValueOnce({
+      stdout: '<<<<<<< ours\nsome content\n=======\nother content\n>>>>>>> theirs\n',
+      stderr: '',
+    });
+
+    const result = await (service as any).detectMergeConflicts(
+      workspaceId,
+      '/test/worktree',
+      'feature-branch',
+      'origin/main',
+    );
+
+    expect(result).toBe(true);
+  });
+
+  it('should return false on other errors (code 128) to avoid blocking operations', async () => {
+    const error = new Error('fatal: not a git repository') as any;
+    error.code = 128;
+    mockExecAsync.mockRejectedValueOnce(error);
+
+    const result = await (service as any).detectMergeConflicts(
+      workspaceId,
+      '/test/worktree',
+      'feature-branch',
+      'origin/main',
+    );
+
+    expect(result).toBe(false);
+  });
+});
+
+describe('AcceptChangesService.execute - merge flow calls detectMergeConflicts after fetch', () => {
+  let service: AcceptChangesService;
+  const workspaceId = 'test-workspace-id' as WorkspaceId;
+  const testWorkspace: Partial<Workspace> = {
+    id: workspaceId,
+    title: 'Test Workspace',
+    worktreePath: '/source/worktree',
+    branch: 'feature-branch',
+    baseRef: 'main',
+    status: WorkspaceStatus.Active,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = new AcceptChangesService();
+    mockFindById.mockResolvedValue(testWorkspace);
+    mockRegisterOperation.mockReturnValue('test-op-id');
+    mockGitServiceGetStatus.mockResolvedValue({ ok: true, data: { files: [] } });
+    mockGitServiceCommit.mockResolvedValue({ ok: true, data: { hash: 'commit123' } });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('should call git fetch before detectMergeConflicts in merge flow', async () => {
+    const callOrder: string[] = [];
+
+    mockExecAsync.mockImplementation(async (command: string) => {
+      if (command.includes('git remote get-url')) {
+        return { stdout: 'https://github.com/testowner/testrepo.git', stderr: '' };
+      }
+      if (command.includes('git fetch origin')) {
+        callOrder.push('fetch');
+        return { stdout: '', stderr: '' };
+      }
+      if (command.includes('git rev-list')) {
+        return { stdout: '2\t1', stderr: '' }; // 2 behind trunk (triggers conflict check)
+      }
+      if (command.includes('git rev-parse HEAD^{tree}')) {
+        return { stdout: 'abc123tree', stderr: '' };
+      }
+      if (command.includes('git merge-base') && !command.includes('--is-ancestor')) {
+        return { stdout: 'mergebase123', stderr: '' };
+      }
+      if (command.includes('git log') && command.includes('--format=%T')) {
+        return { stdout: 'differenttree', stderr: '' };
+      }
+      if (command.includes('git log') && command.includes('--format="%H')) {
+        return { stdout: 'abc1234567890123456789012345678901234567|Test commit|Author|2024-01-01T00:00:00Z|\x00\x00', stderr: '' };
+      }
+      if (command.includes('git rev-parse --verify origin/')) {
+        return { stdout: 'abc123', stderr: '' };
+      }
+      if (command.includes('git log') && command.includes('--format=%H')) {
+        return { stdout: 'abc1234567890123456789012345678901234567', stderr: '' };
+      }
+      if (command.includes('git branch -r')) {
+        return { stdout: 'origin/main', stderr: '' };
+      }
+      if (command.includes('git merge-tree --write-tree')) {
+        callOrder.push('merge-tree');
+        return { stdout: '', stderr: '' }; // no conflicts
+      }
+      if (command.includes('git merge-base --is-ancestor')) {
+        return { stdout: '', stderr: '' };
+      }
+      if (command.includes('git ls-remote')) {
+        return { stdout: 'abc123\trefs/heads/main', stderr: '' };
+      }
+      if (command.includes('git push')) {
+        return { stdout: '', stderr: '' };
+      }
+      if (command.includes('git branch --unset-upstream')) {
+        return { stdout: '', stderr: '' };
+      }
+      if (command.includes('git branch --set-upstream')) {
+        return { stdout: '', stderr: '' };
+      }
+      if (command.includes('git update-ref')) {
+        return { stdout: '', stderr: '' };
+      }
+      if (command.includes('git rev-parse HEAD')) {
+        return { stdout: 'abc123headsha', stderr: '' };
+      }
+      if (command.includes('git rev-parse')) {
+        return { stdout: 'abc123', stderr: '' };
+      }
+      return { stdout: '', stderr: '' };
+    });
+
+    await service.execute({
+      workspaceId,
+      action: 'merge',
+    });
+
+    // Verify fetch happens before merge-tree conflict check
+    const fetchIndex = callOrder.indexOf('fetch');
+    const mergeTreeIndex = callOrder.indexOf('merge-tree');
+
+    expect(fetchIndex).toBeGreaterThanOrEqual(0);
+    expect(mergeTreeIndex).toBeGreaterThanOrEqual(0);
+    expect(fetchIndex).toBeLessThan(mergeTreeIndex);
+  });
+});

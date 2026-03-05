@@ -435,7 +435,8 @@ export class CheckMergeConflictsTool extends BaseMCPTool {
 
   /**
    * Detect merge conflicts between current branch and target branch.
-   * Uses git merge-tree to simulate a merge without modifying the working tree.
+   * Uses git merge-tree --write-tree (Git 2.38+) to simulate a merge without modifying the working tree.
+   * Falls back to legacy merge-tree for older Git versions.
    */
   private async detectMergeConflicts(
     worktreePath: string,
@@ -444,9 +445,76 @@ export class CheckMergeConflictsTool extends BaseMCPTool {
     execFile: ExecFileFn,
   ): Promise<{ hasConflicts: boolean; conflictedFiles: string[]; cannotDetermine?: boolean }> {
     try {
-      // Get the merge base between the two branches
-      // Note: git merge-base exits with code 1 when there's no common ancestor (unrelated histories)
-      // We need to handle this case explicitly rather than letting it fall through to the outer catch
+      // Modern approach: git merge-tree --write-tree --name-only (Git 2.38+)
+      // Exit code 0 = clean merge (no conflicts)
+      // Exit code 1 = conflicts detected, stdout lists conflicted files with --name-only
+      await execFile(
+        'git',
+        ['merge-tree', '--write-tree', '--name-only', '--', targetBranch, currentBranch],
+        { cwd: worktreePath },
+      );
+      // Exit code 0 means clean merge, no conflicts
+      return { hasConflicts: false, conflictedFiles: [] };
+    } catch (error) {
+      // Exit code 1 from merge-tree --write-tree means conflicts
+      const exitCode = (error as any)?.code ?? (error as any)?.status;
+      const stdout: string = (error as any)?.stdout ?? '';
+
+      if (exitCode === 1) {
+        // Parse conflicted file names from stdout
+        // With --name-only, the output has the tree OID on the first line,
+        // then an empty line, then "Conflicts:" header, then file paths
+        const conflictedFiles: string[] = [];
+        const lines = stdout.split('\n');
+        let inConflictSection = false;
+        for (const line of lines) {
+          if (line.trim() === '') continue;
+          // The first line is the tree OID, skip it
+          // Look for file paths after any informational headers
+          if (inConflictSection) {
+            const trimmed = line.trim();
+            if (trimmed && !trimmed.endsWith(':')) {
+              conflictedFiles.push(trimmed);
+            }
+          }
+          // Various section headers in merge-tree output end with ':'
+          if (line.trim().endsWith(':')) {
+            inConflictSection = true;
+          }
+        }
+        return { hasConflicts: true, conflictedFiles };
+      }
+
+      // If --write-tree is not supported (older Git), fall back to legacy approach
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isUnsupportedFlag =
+        errorMessage.includes('unknown option') ||
+        errorMessage.includes('unrecognized argument');
+
+      if (isUnsupportedFlag) {
+        return this.detectMergeConflictsLegacy(worktreePath, currentBranch, targetBranch, execFile);
+      }
+
+      // Other errors - can't reliably detect conflicts
+      logger.warn(
+        `merge-tree failed for ${currentBranch}..${targetBranch}, assuming potential conflicts`,
+        error,
+      );
+      return { hasConflicts: true, conflictedFiles: [] };
+    }
+  }
+
+  /**
+   * Legacy fallback for detecting merge conflicts on Git < 2.38.
+   * Uses the three-way merge-tree approach with merge-base.
+   */
+  private async detectMergeConflictsLegacy(
+    worktreePath: string,
+    currentBranch: string,
+    targetBranch: string,
+    execFile: ExecFileFn,
+  ): Promise<{ hasConflicts: boolean; conflictedFiles: string[]; cannotDetermine?: boolean }> {
+    try {
       let base: string;
       try {
         const { stdout: mergeBaseOutput } = await execFile(
@@ -456,38 +524,28 @@ export class CheckMergeConflictsTool extends BaseMCPTool {
         );
         base = mergeBaseOutput.trim();
       } catch {
-        // git merge-base exits non-zero when there's no common ancestor
-        // This indicates unrelated histories, not a conflict
         return { hasConflicts: false, conflictedFiles: [], cannotDetermine: true };
       }
 
       if (!base) {
-        // No common ancestor - unrelated histories, can't determine merge result
         return { hasConflicts: false, conflictedFiles: [], cannotDetermine: true };
       }
 
-      // Use git merge-tree to simulate a merge and check for conflicts
       const { stdout: mergeTreeOutput } = await execFile(
         'git',
         ['merge-tree', '--', base, targetBranch, currentBranch],
         { cwd: worktreePath },
       );
 
-      // Check for conflict markers in the output
       const hasConflictMarkers =
-        mergeTreeOutput.includes('<<<<<<<') ||
-        mergeTreeOutput.includes('>>>>>>>') ||
-        mergeTreeOutput.includes('=======');
+        mergeTreeOutput.includes('<<<<<<<') &&
+        mergeTreeOutput.includes('>>>>>>>');
 
-      // Try to extract conflicted file names from merge-tree output
-      // "changed in both" sections indicate files modified on both branches
       const conflictedFiles: string[] = [];
       if (hasConflictMarkers) {
         const lines = mergeTreeOutput.split('\n');
         for (let i = 0; i < lines.length; i++) {
           if (lines[i].trim() === 'changed in both') {
-            // Look for the "base" line which contains the file path
-            // Format: "  base   100644 <sha> <filename>"
             for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
               const match = lines[j].match(/^\s+base\s+\d+\s+[a-f0-9]+\s+(.+)$/);
               if (match) {
@@ -501,10 +559,8 @@ export class CheckMergeConflictsTool extends BaseMCPTool {
 
       return { hasConflicts: hasConflictMarkers, conflictedFiles };
     } catch (error) {
-      // If merge-tree fails (e.g., older git version), we can't reliably detect conflicts
-      // Return a safe default indicating potential conflicts
       logger.warn(
-        `merge-tree failed for ${currentBranch}..${targetBranch}, assuming potential conflicts`,
+        `legacy merge-tree failed for ${currentBranch}..${targetBranch}, assuming potential conflicts`,
         error,
       );
       return { hasConflicts: true, conflictedFiles: [] };
