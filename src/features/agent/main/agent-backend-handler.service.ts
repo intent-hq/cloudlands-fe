@@ -1539,6 +1539,10 @@ export class AgentBackendHandler {
           environmentConfig,
           // Pass agent metadata (contains modelFallbackChain for model retry logic)
           metadata: agentMetadata,
+          // Pass persisted backend session ID so AcpProvider can resume via session/load
+          // after Intent restart (when the in-memory previousSessionId is lost)
+          backendSessionId: loadResult?.data?.backendSessionId ?? undefined,
+          acpSessionId: loadResult?.data?.acpSessionId ?? undefined,
         });
 
         // Store provider for reuse and track its creation time
@@ -1551,22 +1555,69 @@ export class AgentBackendHandler {
           this.streamWorkspaceIds.set(request.agentId, request.workspaceId);
         }
 
+        // Listen for session:created from the ACP provider to persist the backend session ID.
+        // This fires on both session/new and session/load, giving us the auggie session ID
+        // that can be used for session/load on future Intent restarts.
+        provider.on('session:created', async (event: { sessionId: string; agentId: string }) => {
+          try {
+            const backend = await this.getBackend();
+            const session = backend.getSession(event.agentId);
+            if (session) {
+              session.backendSessionId = event.sessionId as AgentId;
+              session.acpSessionId = event.sessionId;
+              // Persist to disk so it survives Intent restart
+              await agentPersistence.saveAgent(session);
+              logger.info('Persisted backendSessionId from session:created event', {
+                agentId: event.agentId,
+                backendSessionId: event.sessionId,
+              });
+            } else {
+              logger.warn('session:created fired but no in-memory session found to update', {
+                agentId: event.agentId,
+                sessionId: event.sessionId,
+              });
+            }
+          } catch (error) {
+            logger.warn('Failed to persist backendSessionId from session:created', {
+              agentId: event.agentId,
+              sessionId: event.sessionId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        });
+
         // If the agent already has messages from persistence, mark the provider
         // as needing to send full history. This is critical for conversation continuity
         // when a new provider is created for an existing agent (e.g., after page reload).
         // The ACP session is fresh and has no history, so we need to include the full
         // conversation context in the next message.
+        //
+        // EXCEPTION: If session/load succeeded during provider initialization, the agent
+        // already has the conversation context — no history resend needed.
         if (
           loadResult?.success &&
           loadResult.data?.messages &&
           loadResult.data.messages.length > 0
         ) {
           if (typeof provider.markSessionRecreated === 'function') {
-            provider.markSessionRecreated();
-            logger.info('Marked new provider as needing full history (existing agent)', {
-              agentId: request.agentId,
-              existingMessageCount: loadResult.data.messages.length,
-            });
+            if (provider.didUseSessionLoad?.()) {
+              logger.info('Skipping markSessionRecreated — session/load restored context', {
+                agentId: request.agentId,
+                existingMessageCount: loadResult.data.messages.length,
+              });
+            } else if (!loadResult.data?.acpSessionId) {
+              // Brand new agent — never had a real ACP session, no history to resend
+              logger.info('Skipping markSessionRecreated — brand new agent with no prior ACP session', {
+                agentId: request.agentId,
+                existingMessageCount: loadResult.data.messages.length,
+              });
+            } else {
+              provider.markSessionRecreated();
+              logger.info('Marked new provider as needing full history (existing agent)', {
+                agentId: request.agentId,
+                existingMessageCount: loadResult.data.messages.length,
+              });
+            }
           }
         }
 
@@ -1594,6 +1645,7 @@ export class AgentBackendHandler {
             updatedAt: new Date().toISOString(),
             metadata: loadResult.data.metadata || {},
             backendSessionId: loadResult.data.backendSessionId,
+            acpSessionId: loadResult.data.acpSessionId,
           };
 
           const resumeResult = await backend.resumeSession(agentSession);
@@ -1602,6 +1654,33 @@ export class AgentBackendHandler {
               agentId: request.agentId,
               messageCount: agentSession.messages.length,
             });
+
+            // Capture the initial session ID created during provider initialization.
+            // The session:created listener above only catches FUTURE session creations
+            // (edit/regenerate, interrupt, restart). The initial session is created inside
+            // createProvider() before the listener is attached, so we capture it here.
+            // NOTE: This must run AFTER resumeSession() so backend.getSession() returns
+            // the in-memory session.
+            try {
+              const initialSessionId = provider.getSessionId?.();
+              if (initialSessionId && typeof initialSessionId === 'string') {
+                const session = backend.getSession(request.agentId);
+                if (session) {
+                  session.acpSessionId = initialSessionId;
+                  // Persist to disk so it survives Intent restart
+                  await agentPersistence.saveAgent(session);
+                  logger.info('Captured initial acpSessionId from provider', {
+                    agentId: request.agentId,
+                    acpSessionId: initialSessionId,
+                  });
+                }
+              }
+            } catch (error) {
+              logger.warn('Failed to capture initial acpSessionId', {
+                agentId: request.agentId,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
           } else {
             logger.warn('Failed to resume session in backend memory', {
               agentId: request.agentId,
@@ -1846,7 +1925,26 @@ export class AgentBackendHandler {
           try {
             // Check if provider has resetSession method (ACPProvider does)
             if (typeof (provider as any).resetSession === 'function') {
-              await (provider as any).resetSession();
+              // Calculate how many user turns were removed by comparing full vs truncated messages
+              const backendForCount = this.unifiedBackend;
+              let userTurnsToRemove = 1; // default fallback
+              if (backendForCount) {
+                const backendSessionForCount = backendForCount.getSession(request.agentId);
+                if (backendSessionForCount?.messages) {
+                  const fullUserCount = backendSessionForCount.messages.filter((m: any) => m.role === 'user').length;
+                  const truncatedUserCount = messages.filter((m: any) => m.role === 'user').length;
+                  const diff = fullUserCount - truncatedUserCount;
+                  if (diff > 0) {
+                    userTurnsToRemove = diff;
+                  }
+                  logger.info('Calculated userTurnsToRemove for session trim', {
+                    fullUserCount,
+                    truncatedUserCount,
+                    userTurnsToRemove,
+                  });
+                }
+              }
+              await (provider as any).resetSession(userTurnsToRemove);
               logger.info('ACP session reset successfully', {
                 agentId: request.agentId,
               });

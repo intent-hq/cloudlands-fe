@@ -5,6 +5,7 @@
 
 import type { AgentId } from '$shared/types/branded-ids';
 import type {
+  AgentCapabilities,
   AgentInfo,
   AuthMethod,
   AvailableCommand,
@@ -87,6 +88,7 @@ export interface InitializeResult {
   instructions?: string | null;
   promptCapabilities?: PromptCapabilities;
   sessionCapabilities?: SessionCapabilities;
+  agentCapabilities?: AgentCapabilities;
 }
 
 export interface PromptCapabilities {
@@ -174,6 +176,8 @@ export interface LoadSessionRequest extends JsonRpcRequest {
 export interface LoadSessionParams {
   _meta?: Meta;
   sessionId: AgentId;
+  cwd?: string;
+  mcpServers?: unknown[];
 }
 
 export interface LoadSessionResult {

@@ -63,6 +63,7 @@ import { ACPProviderStreaming } from './acp-provider-streaming';
 import type { AgentConfig, AgentMessage, Tool } from './base-provider';
 import { BaseAgentProvider } from './base-provider';
 import { ProviderCapabilities, resolveProviderCapabilities } from './provider-capabilities';
+import { trimSession } from './session-trimmer';
 
 // Maximum characters to include in conversation history when sending full context.
 // The 413 "Request Entity Too Large" error we hit is actually ExceedContextLength from
@@ -939,6 +940,13 @@ export class ACPProvider extends BaseAgentProvider {
   private isReconnecting = false; // Track if we're reconnecting SSH (prevents concurrent reconnection attempts)
   private sshDisconnectHandler?: (connectionId: string) => void; // SSH disconnect event handler reference
   private sessionWasRecreated = false; // Track if session was recreated after restart (need to send full history)
+  // session/load support: store the previous session ID so we can resume after process restart
+  private previousSessionId?: string;
+  // Whether the agent advertised loadSession capability in its initialize response
+  private agentSupportsSessionLoad = false;
+  // Set to true by initializeProtocol() when session/load succeeded (no history resend needed)
+  private lastInitUsedSessionLoad = false;
+  private agentVersion?: string; // Version reported by the agent in initialize response (e.g. "0.18.0")
   // Restart rate limiting to prevent infinite restart loops (which cause process accumulation / memory leaks)
   private restartTimestamps: number[] = [];
   private static readonly MAX_RESTARTS_IN_WINDOW = 3; // Max restarts allowed within the time window
@@ -1072,6 +1080,128 @@ export class ACPProvider extends BaseAgentProvider {
       systemPromptLength: config.systemPrompt?.length || 0,
       workspaceId: config.workspaceId,
     });
+  }
+
+  /**
+   * Check if the agent supports non-destructive cancel (auggie >= 0.18.0).
+   * In auggie 0.18.0+, session/cancel no longer marks the session as permanently cancelled,
+   * so we can keep using the same session ID without creating a new one.
+   * For non-auggie providers or unknown versions, returns false (conservative).
+   */
+  private supportsNonDestructiveCancel(): boolean {
+    if (this.providerCapabilities.id !== 'auggie') return false;
+    if (!this.agentVersion) return false;
+
+    const match = this.agentVersion.match(/(\d+)\.(\d+)(?:\.(\d+))?/);
+    if (!match) return false;
+
+    const major = parseInt(match[1], 10);
+    const minor = parseInt(match[2], 10);
+    // 0.18.0+ supports non-destructive cancel
+    return major > 0 || (major === 0 && minor >= 18);
+  }
+
+  /**
+   * Check if the agent supports session/load (auggie >= 0.18.0).
+   * Uses both the agentCapabilities.loadSession flag from the initialize response
+   * and a version check as a fallback.
+   * For non-auggie providers or unknown versions, returns false (conservative).
+   */
+  private supportsSessionLoad(): boolean {
+    // If the agent explicitly advertised loadSession capability, trust it
+    if (this.agentSupportsSessionLoad) return true;
+    // Fallback: version-based check for auggie only
+    if (this.providerCapabilities.id !== 'auggie') return false;
+    if (!this.agentVersion) return false;
+
+    const match = this.agentVersion.match(/(\d+)\.(\d+)(?:\.(\d+))?/);
+    if (!match) return false;
+
+    const major = parseInt(match[1], 10);
+    const minor = parseInt(match[2], 10);
+    // 0.18.0+ supports session/load
+    return major > 0 || (major === 0 && minor >= 18);
+  }
+
+  /**
+   * Try to load a previous session via session/load instead of creating a new one.
+   * Returns true if session/load succeeded, false if it failed (caller should fall back to session/new).
+   */
+  private async tryLoadPreviousSession(): Promise<boolean> {
+    if (!this.previousSessionId || !this.supportsSessionLoad()) {
+      logger.info('Skipping session/load attempt', {
+        hasPreviousSessionId: !!this.previousSessionId,
+        supportsSessionLoad: this.supportsSessionLoad(),
+        agentVersion: this.agentVersion,
+      });
+      return false;
+    }
+
+    if (!this.sessionCreationParams) {
+      logger.warn('Cannot try session/load without sessionCreationParams');
+      return false;
+    }
+
+    try {
+      const loadRequest = {
+        jsonrpc: '2.0' as const,
+        method: 'session/load',
+        params: {
+          sessionId: this.previousSessionId,
+          cwd: this.sessionCreationParams.cwd,
+          mcpServers: this.sessionCreationParams.mcpServers,
+        },
+        id: ++this.requestId,
+      };
+
+      logger.info('Attempting session/load to resume previous session', {
+        previousSessionId: this.previousSessionId,
+        cwd: this.sessionCreationParams.cwd,
+      });
+
+      const loadResponse = await this.sendRequest(loadRequest, 10000);
+
+      if (loadResponse?.error) {
+        logger.warn('session/load returned error, will fall back to session/new', {
+          previousSessionId: this.previousSessionId,
+          errorCode: loadResponse.error.code,
+          errorMessage: loadResponse.error.message,
+          errorData: loadResponse.error.data ? JSON.stringify(loadResponse.error.data).slice(0, 200) : undefined,
+        });
+        return false;
+      }
+
+      // FIXED: session/load succeeded — auggie may or may not echo sessionId back.
+      // Use the sessionId from the response if provided, otherwise keep using previousSessionId.
+      if (loadResponse?.result) {
+        this.sessionId = loadResponse.result.sessionId || this.previousSessionId!;
+        this.previousSessionId = this.sessionId;
+        logger.info('session/load succeeded — session resumed without history resend', {
+          sessionId: this.sessionId,
+          responseHadSessionId: !!loadResponse.result.sessionId,
+        });
+
+        // Emit event so session manager can update the backend session ID
+        this.emit('session:created', {
+          sessionId: this.sessionId,
+          agentId: this.config.agentId,
+        });
+
+        return true;
+      }
+
+      logger.warn('session/load response missing result entirely, falling back to session/new', {
+        previousSessionId: this.previousSessionId,
+        loadResponse: JSON.stringify(loadResponse).slice(0, 200),
+      });
+      return false;
+    } catch (error) {
+      logger.warn('session/load failed with exception, falling back to session/new', {
+        previousSessionId: this.previousSessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
   }
 
   private shouldInjectRulesIntoPrompt(): boolean {
@@ -1360,6 +1490,18 @@ export class ACPProvider extends BaseAgentProvider {
       this.frontendSessionId = this.config.sessionId;
       logger.info('Using frontend sessionId from config', {
         frontendSessionId: this.frontendSessionId,
+      });
+    }
+
+    // Restore persisted backend session ID for session/load across Intent restarts.
+    // The in-memory previousSessionId is the fast path within a single session;
+    // backendSessionId is the durable fallback loaded from disk.
+    const persistedSessionId = this.config.acpSessionId;
+    if (!this.previousSessionId && persistedSessionId) {
+      this.previousSessionId = persistedSessionId;
+      logger.info('Restored previousSessionId from persisted session ID', {
+        acpSessionId: this.config.acpSessionId,
+        backendSessionId: this.config.backendSessionId,
       });
     }
 
@@ -3799,7 +3941,10 @@ export class ACPProvider extends BaseAgentProvider {
         await this.initializeProtocol();
 
         // Step 8: Mark session as recreated so full history is sent
-        this.sessionWasRecreated = true;
+        // Only set if there was a previous session we failed to resume — brand new agents have no history to resend
+        if (!this.lastInitUsedSessionLoad && this.previousSessionId) {
+          this.sessionWasRecreated = true;
+        }
 
         logger.info('SSH reconnection complete — agent session re-established', {
           workspaceId,
@@ -4388,9 +4533,15 @@ export class ACPProvider extends BaseAgentProvider {
       }
     }
 
+    // Reset session/load tracking for this initialization attempt
+    this.lastInitUsedSessionLoad = false;
+
     logger.info('Starting protocol initialization', {
       processAlive: this.isAgentAlive(),
       isRemote: this.isRemoteWorkspace(),
+      hasPreviousSessionId: !!this.previousSessionId,
+      previousSessionId: this.previousSessionId,
+      supportsSessionLoad: this.supportsSessionLoad(),
     });
 
     // Use retry logic instead of fixed delay - faster in the common case
@@ -4458,6 +4609,32 @@ export class ACPProvider extends BaseAgentProvider {
       throw lastError;
     }
 
+    // Extract agent version from initialize response for capability checks.
+    // ACP initialize responses may include serverInfo.version (e.g. "0.18.0").
+    try {
+      const agentVersion =
+        initResponse?.result?.agentInfo?.version || initResponse?.agentInfo?.version;
+      if (agentVersion && typeof agentVersion === 'string') {
+        this.agentVersion = agentVersion;
+        logger.info('Agent version detected from initialize response', {
+          agentVersion: this.agentVersion,
+          supportsNonDestructiveCancel: this.supportsNonDestructiveCancel(),
+          supportsSessionLoad: this.supportsSessionLoad(),
+        });
+      }
+
+      // Check if the agent advertised loadSession capability
+      const loadSessionCap =
+        initResponse?.result?.agentCapabilities?.loadSession ??
+        initResponse?.result?.capabilities?.loadSession;
+      if (loadSessionCap) {
+        this.agentSupportsSessionLoad = true;
+        logger.info('Agent advertised loadSession capability');
+      }
+    } catch {
+      // Version extraction is best-effort — don't block initialization
+    }
+
     try {
       const caps = this.providerCapabilities;
       // Provider may not implement authenticate (e.g., OpenCode); skip to avoid log noise and stalled init.
@@ -4517,8 +4694,14 @@ export class ACPProvider extends BaseAgentProvider {
         metadata: sessionMetadata,
       };
 
-      // Create new session
-      await this.createSession();
+      // Try to load a previous session (auggie >= 0.18.0) before creating a new one.
+      // If session/load succeeds, we skip session/new entirely and avoid history resend.
+      const loadedPreviousSession = await this.tryLoadPreviousSession();
+      this.lastInitUsedSessionLoad = loadedPreviousSession;
+      if (!loadedPreviousSession) {
+        // Create new session (existing behavior)
+        await this.createSession();
+      }
     } catch (error) {
       logger.error('Failed to initialize protocol', error);
 
@@ -4549,14 +4732,21 @@ export class ACPProvider extends BaseAgentProvider {
 
   private async createSession(): Promise<void> {
     this.hasSentFirstMessage = false;
+
+    logger.info('Creating new ACP session', {
+      isFirstSession: !this.previousSessionId,
+      hadPreviousSession: !!this.previousSessionId,
+      supportsSessionLoad: this.supportsSessionLoad(),
+    });
+
     if (!this.sessionCreationParams) {
       throw new Error('Session creation params not initialized');
     }
 
-    // Note: Session resumption is not supported in ACP protocol.
-    // We always create a new session. Auggie maintains conversation history
-    // within the session, so as long as we preserve the provider instance,
-    // the conversation context is maintained.
+    // Note: For auggie >= 0.18.0, session resumption is supported via the
+    // session/load flow (see tryLoadPreviousSession). If session/load succeeds,
+    // createSession() is skipped entirely. This path is only reached when
+    // session/load is unavailable or failed, so we create a fresh session.
 
     // External providers (OpenCode, Claude Code, Codex) may take significantly longer
     // to create a session — especially delegated agents spawned alongside already-running
@@ -4643,6 +4833,8 @@ export class ACPProvider extends BaseAgentProvider {
 
     if (sessionResponse?.result?.sessionId) {
       this.sessionId = sessionResponse.result.sessionId;
+      // Store for session/load on future restarts (auggie >= 0.18.0)
+      this.previousSessionId = this.sessionId;
       logger.info('ACP session created', { sessionId: this.sessionId });
 
       // New ACP session => inject runtime rules again on the first prompt for providers
@@ -4912,13 +5104,17 @@ export class ACPProvider extends BaseAgentProvider {
       // Reinitialize the protocol and create a new session
       await this.initializeProtocol();
 
-      // Mark that session was recreated - need to send full history on next message
-      this.sessionWasRecreated = true;
+      // If session/load succeeded, the agent already has context — no history resend needed
+      // Only set if there was a previous session we failed to resume — brand new agents have no history to resend
+      if (!this.lastInitUsedSessionLoad && this.previousSessionId) {
+        this.sessionWasRecreated = true;
+      }
 
       logger.info('Session recovery successful', {
         oldSessionId,
         newSessionId: this.sessionId,
         recoveryAttempt: this.sessionRecoveryAttempts,
+        usedSessionLoad: this.lastInitUsedSessionLoad,
       });
 
       return true;
@@ -4933,7 +5129,7 @@ export class ACPProvider extends BaseAgentProvider {
 
   private async sendRequest(request: any, customTimeout?: number): Promise<any> {
     // Don't retry initialization requests
-    const isInitRequest = ['initialize', 'authenticate', 'session/new'].includes(request.method);
+    const isInitRequest = ['initialize', 'authenticate', 'session/new', 'session/load'].includes(request.method);
 
     if (isInitRequest) {
       return this.sendRequestInternal(request, customTimeout);
@@ -4974,7 +5170,8 @@ export class ACPProvider extends BaseAgentProvider {
         customTimeout ||
         (request.method === 'initialize' ||
         request.method === 'authenticate' ||
-        request.method === 'session/new'
+        request.method === 'session/new' ||
+        request.method === 'session/load'
           ? 5000 // 5 seconds for initialization requests
           : 30000); // 30 seconds for normal requests
 
@@ -5313,6 +5510,15 @@ export class ACPProvider extends BaseAgentProvider {
   }
 
   /**
+   * Whether the last protocol initialization used session/load to restore
+   * an existing session. When true, the agent already has conversation
+   * context and a full history resend is unnecessary.
+   */
+  override didUseSessionLoad(): boolean {
+    return this.lastInitUsedSessionLoad;
+  }
+
+  /**
    * Reset the session for edit/regenerate flows.
    * Creates a new ACP session to clear internal history, so the agent only sees
    * the truncated messages we pass in the next streamMessage call.
@@ -5325,7 +5531,7 @@ export class ACPProvider extends BaseAgentProvider {
    * This prevents the double session creation race condition that can cause
    * "process died immediately after spawn" errors during edit/regenerate flows.
    */
-  async resetSession(): Promise<void> {
+  async resetSession(userTurnsToRemove: number = 1): Promise<void> {
     if (!this.sessionCreationParams) {
       logger.warn('Cannot reset session - no session creation params');
       return;
@@ -5342,14 +5548,146 @@ export class ACPProvider extends BaseAgentProvider {
     }
 
     const oldSessionId = this.sessionId;
+    const isRemoteWorkspace = this.isRemoteWorkspace();
+    const isAuggie = this.providerCapabilities.id === 'auggie';
+    const shouldUseTrimmedReload = isAuggie && !isRemoteWorkspace && this.supportsSessionLoad() && !!oldSessionId;
     logger.info('Resetting ACP session for edit/regenerate flow', {
       oldSessionId,
       agentId: this.config.id || this.config.agentId,
+      userTurnsToRemove,
+      supportsSessionLoad: this.supportsSessionLoad(),
+      isRemoteWorkspace,
+      willUseTrimmedReload: shouldUseTrimmedReload,
     });
 
+    if (isAuggie && isRemoteWorkspace && this.supportsSessionLoad() && oldSessionId) {
+      logger.info(
+        'Skipping trim+load reset optimization for remote workspace - falling back to fresh session',
+        {
+          oldSessionId,
+          agentId: this.config.id || this.config.agentId,
+        },
+      );
+    }
+
+    // For local auggie sessions with session/load support: trim the session file and reload
+    // instead of creating a new session + sending XML history
+    if (shouldUseTrimmedReload) {
+      try {
+        // Trim the session file to remove the last N user turns
+        const trimmedSessionId = trimSession(oldSessionId, userTurnsToRemove);
+        logger.info('Session trimmed successfully', {
+          oldSessionId,
+          trimmedSessionId,
+          userTurnsToRemove,
+        });
+
+        // Set the trimmed session as the previous session so tryLoadPreviousSession() uses it
+        this.previousSessionId = trimmedSessionId;
+
+        // Kill the agent process and relaunch — auggie can't load a different session
+        // on the same process while one is active
+        await this.stopAgentProcess();
+        await this.launchAgent();
+        await this.initializeProtocol();
+
+        // Reset flags after successful restart
+        this.isRestartingProcess = false;
+        this.isStoppingIntentionally = false;
+
+        // Check if session/load succeeded during initializeProtocol
+        if (this.lastInitUsedSessionLoad) {
+          // Success! The agent loaded the trimmed session — no XML history needed
+          logger.info('Session trim+load succeeded — no XML history resend needed', {
+            oldSessionId,
+            trimmedSessionId,
+            newSessionId: this.sessionId,
+          });
+
+          // Clean up the original (pre-trim) session file to prevent disk space leaks
+          try {
+            const origPath = path.join(os.homedir(), '.augment', 'sessions', `${oldSessionId}.json`);
+            fs.unlinkSync(origPath);
+            logger.info('Cleaned up original session file after successful trim', {
+              oldSessionId,
+              trimmedSessionId,
+            });
+          } catch (cleanupError) {
+            // Non-fatal — auggie may clean this up on its own
+            logger.debug('Failed to clean up original session file (non-fatal)', {
+              oldSessionId,
+              error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+            });
+          }
+
+          return;
+        }
+
+        // session/load failed during init — fall through to legacy path
+        logger.warn('Session trim succeeded but session/load failed during init — falling back to XML history', {
+          oldSessionId,
+          trimmedSessionId,
+        });
+        this.sessionWasRecreated = true;
+        return;
+      } catch (trimError) {
+        logger.warn('Session trim+load failed - falling back to fresh session', {
+          agentId: this.config.agentId,
+          oldSessionId,
+          error: trimError instanceof Error ? trimError.message : String(trimError),
+        });
+
+        // Reset flags and disable session/load for the fallback path.
+        // We want a fresh ACP session that will receive truncated XML history.
+        this.isRestartingProcess = false;
+        this.isStoppingIntentionally = false;
+        this.lastInitUsedSessionLoad = false;
+        this.previousSessionId = undefined;
+        this.sessionId = undefined;
+
+        try {
+          if (this.isAgentAlive()) {
+            await this.stopAgentProcess();
+          }
+
+          await this.launchAgent();
+          await this.initializeProtocol();
+
+          this.sessionWasRecreated = true;
+          logger.info(
+            'ACP session reset fallback complete after trim+load failure - will send full history on next message',
+            {
+              oldSessionId,
+              newSessionId: this.sessionId,
+            },
+          );
+          return;
+        } catch (fallbackError) {
+          logger.error('Failed to recover with fresh session after trim+load failure', {
+            oldSessionId,
+            error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+          });
+          throw fallbackError;
+        }
+      }
+    }
+
+    // Legacy path: create a new session and mark for XML history resend
     try {
-      // Create a new session (this assigns a new sessionId)
-      await this.createSession();
+      if (!this.isAgentAlive()) {
+        logger.warn('Agent not running during resetSession - relaunching before creating fresh session', {
+          oldSessionId,
+          agentId: this.config.id || this.config.agentId,
+        });
+        this.lastInitUsedSessionLoad = false;
+        this.previousSessionId = undefined;
+        this.sessionId = undefined;
+        await this.launchAgent();
+        await this.initializeProtocol();
+      } else {
+        // Create a new session (this assigns a new sessionId)
+        await this.createSession();
+      }
 
       // Mark that session was recreated - this ensures we send full history
       // (the truncated history) in the prompt on the next message
@@ -5437,12 +5775,15 @@ export class ACPProvider extends BaseAgentProvider {
         logger.warn('Failed to send cancel notification');
       } else {
         logger.info('session/cancel notification sent');
-        // CRITICAL FIX: Wait for Auggie to process the cancel before continuing.
+        // For auggie < 0.18.0: Wait for Auggie to process the cancel before continuing.
         // Without this delay, the sequence session/cancel -> session/new -> session/prompt
         // happens too fast and Auggie may not properly transition out of the cancelled state,
         // causing it to not respond to new prompts.
-        await new Promise((resolve) => setTimeout(resolve, 200));
-        logger.debug('Waited 200ms for Auggie to process cancel');
+        // For auggie >= 0.18.0: cancel is non-destructive, no delay needed.
+        if (!this.supportsNonDestructiveCancel()) {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          logger.debug('Waited 200ms for Auggie to process cancel');
+        }
       }
 
       // Clear pending requests as they won't complete
@@ -5456,13 +5797,23 @@ export class ACPProvider extends BaseAgentProvider {
       this.isStreaming = false;
       this.currentStreamingRequestId = null;
 
-      // CRITICAL FIX: Create a new session after cancelling the old one.
-      // When we send session/cancel, the Auggie backend marks that session as cancelled.
-      // If we then send a new prompt to the SAME session, Auggie will immediately
-      // return stopReason="cancelled" because the session is in a cancelled state.
-      // By creating a new session, we ensure subsequent messages are sent to a fresh
-      // session that doesn't have the cancelled state.
-      if (this.sessionCreationParams) {
+      // For auggie >= 0.18.0, session/cancel is non-destructive — the session stays alive
+      // and can accept new prompts. No need to create a new session or resend history.
+      if (this.supportsNonDestructiveCancel()) {
+        // Track interrupt time for stuck detection
+        this.lastInterruptTime = Date.now();
+        logger.info('Non-destructive cancel — keeping existing session', {
+          sessionId: oldSessionId,
+          agentVersion: this.agentVersion,
+          lastInterruptTime: this.lastInterruptTime,
+        });
+      } else if (this.sessionCreationParams) {
+        // CRITICAL FIX (auggie < 0.18.0): Create a new session after cancelling the old one.
+        // When we send session/cancel, the Auggie backend marks that session as cancelled.
+        // If we then send a new prompt to the SAME session, Auggie will immediately
+        // return stopReason="cancelled" because the session is in a cancelled state.
+        // By creating a new session, we ensure subsequent messages are sent to a fresh
+        // session that doesn't have the cancelled state.
         try {
           logger.info('Creating new session after interrupt', { oldSessionId });
           await this.createSession();
@@ -6512,13 +6863,20 @@ export class ACPProvider extends BaseAgentProvider {
         remainingTimers: this.streamCompletionTimers.size,
       });
 
-      // CRITICAL FIX: Create a new session after cancelling the old one.
-      // When we send session/cancel, the Auggie backend marks that session as cancelled.
-      // If we then send a new prompt to the SAME session, Auggie will immediately
-      // return stopReason="cancelled" because the session is in a cancelled state.
-      // By creating a new session, we ensure subsequent messages are sent to a fresh
-      // session that doesn't have the cancelled state.
-      if (this.sessionCreationParams) {
+      // For auggie >= 0.18.0, session/cancel is non-destructive — the session stays alive
+      // and can accept new prompts. No need to create a new session or resend history.
+      if (this.supportsNonDestructiveCancel()) {
+        logger.info('Non-destructive cancel — keeping existing session for in-flight stream', {
+          sessionId: oldSessionId,
+          agentVersion: this.agentVersion,
+        });
+      } else if (this.sessionCreationParams) {
+        // CRITICAL FIX (auggie < 0.18.0): Create a new session after cancelling the old one.
+        // When we send session/cancel, the Auggie backend marks that session as cancelled.
+        // If we then send a new prompt to the SAME session, Auggie will immediately
+        // return stopReason="cancelled" because the session is in a cancelled state.
+        // By creating a new session, we ensure subsequent messages are sent to a fresh
+        // session that doesn't have the cancelled state.
         try {
           logger.info('Creating new session after in-flight stream cancel', { oldSessionId });
           await this.createSession();
@@ -6575,10 +6933,15 @@ export class ACPProvider extends BaseAgentProvider {
       try {
         await this.launchAgent();
         await this.initializeProtocol();
-        // Mark that session was recreated - need to send full history
-        this.sessionWasRecreated = true;
-        logger.info('Session recreated after agent restart - will send full history', {
+        // If session/load succeeded, agent has context — no history resend needed
+        // Only set if there was a previous session we failed to resume — brand new agents have no history to resend
+        if (!this.lastInitUsedSessionLoad && this.previousSessionId) {
+          this.sessionWasRecreated = true;
+        }
+        logger.info('Session recreated after agent restart', {
           sessionId: this.sessionId,
+          usedSessionLoad: this.lastInitUsedSessionLoad,
+          willSendFullHistory: !this.lastInitUsedSessionLoad,
         });
       } catch (restartError) {
         logger.error('Failed to restart agent process', restartError);
@@ -6592,10 +6955,15 @@ export class ACPProvider extends BaseAgentProvider {
       logger.warn('No active session, attempting to initialize');
       try {
         await this.initializeProtocol();
-        // Mark that session was recreated - need to send full history
-        this.sessionWasRecreated = true;
-        logger.info('Session recreated after session loss - will send full history', {
+        // If session/load succeeded, agent has context — no history resend needed
+        // Only set if there was a previous session we failed to resume — brand new agents have no history to resend
+        if (!this.lastInitUsedSessionLoad && this.previousSessionId) {
+          this.sessionWasRecreated = true;
+        }
+        logger.info('Session recreated after session loss', {
           sessionId: this.sessionId,
+          usedSessionLoad: this.lastInitUsedSessionLoad,
+          willSendFullHistory: !this.lastInitUsedSessionLoad,
         });
       } catch (initError) {
         logger.error('Failed to initialize session', initError);
@@ -6817,6 +7185,12 @@ export class ACPProvider extends BaseAgentProvider {
         //
         // HOWEVER, if the session was recreated (agent process died and restarted, or session was lost),
         // we need to send the full conversation history so the agent has context.
+        logger.info('History send decision', {
+          sessionWasRecreated: this.sessionWasRecreated,
+          lastInitUsedSessionLoad: this.lastInitUsedSessionLoad,
+          willSendFullHistory: this.sessionWasRecreated,
+        });
+
         if (this.sessionWasRecreated && conversationMessages.length > 1) {
           // Build conversation history from all previous messages
           const previousMessages = conversationMessages.slice(0, -1);
@@ -6852,6 +7226,11 @@ export class ACPProvider extends BaseAgentProvider {
           promptText += '\n\n';
 
           // Reset the flag after sending full history
+          this.sessionWasRecreated = false;
+        }
+
+        // Clear the flag even if there was no history to send (e.g., first message of a new agent)
+        if (this.sessionWasRecreated) {
           this.sessionWasRecreated = false;
         }
 
@@ -7126,12 +7505,16 @@ export class ACPProvider extends BaseAgentProvider {
                   this.isRestartingProcess = false;
                   this.isStoppingIntentionally = false;
 
-                  // Mark session as recreated
-                  this.sessionWasRecreated = true;
+                  // If session/load succeeded, agent has context — no history resend needed
+                  // Only set if there was a previous session we failed to resume — brand new agents have no history to resend
+                  if (!this.lastInitUsedSessionLoad && this.previousSessionId) {
+                    this.sessionWasRecreated = true;
+                  }
                   this.lastInterruptTime = undefined; // Clear to avoid infinite loops
 
                   logger.info('Successfully restarted stuck Auggie process', {
                     newSessionId: this.sessionId,
+                    usedSessionLoad: this.lastInitUsedSessionLoad,
                   });
 
                   // Notify user that they need to retry
@@ -9029,11 +9412,18 @@ export class ACPProvider extends BaseAgentProvider {
       // Reset the restart flag on success
       this.isRestartingProcess = false;
 
-      // Mark that session was recreated - need to send full history on next message
-      this.sessionWasRecreated = true;
-      logger.info(
-        'Session recreated after unexpected exit - will send full history on next message',
-      );
+      // If session/load succeeded, the agent already has conversation context — no need to resend history.
+      // Only mark sessionWasRecreated when we fell back to session/new (agent has no context).
+      if (this.lastInitUsedSessionLoad) {
+        logger.info(
+          'Session loaded via session/load after unexpected exit — skipping history resend',
+        );
+      } else {
+        this.sessionWasRecreated = true;
+        logger.info(
+          'Session recreated after unexpected exit - will send full history on next message',
+        );
+      }
 
       // Don't notify callbacks about the error since we recovered
       logger.info('Agent recovered from unexpected exit, continuing operations');

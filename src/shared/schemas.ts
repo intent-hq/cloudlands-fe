@@ -496,6 +496,7 @@ export const AgentMessageSchema = z.object({
 export const AgentSessionSchema = z.object({
   id: AgentIdSchema,
   backendSessionId: z.string().nullable().optional(),
+  acpSessionId: z.string().optional(),
   sessionId: z.string().nullable().optional(), // Legacy support
   workspaceId: workspaceIdSchema, // Accepts slug format, UUID, or optimistic IDs
   threadId: z.string().optional(),

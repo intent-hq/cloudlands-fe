@@ -96,6 +96,20 @@ export interface AgentConfig {
    */
   simpleRequest?: boolean;
 
+  /**
+   * Persisted backend/auggie session ID. Used to resume ACP sessions across
+   * Intent restarts via session/load. Populated from AgentSession.backendSessionId
+   * when creating a provider for an existing agent.
+   */
+  backendSessionId?: string;
+
+  /**
+   * ACP session UUID from the provider's session:created event.
+   * Preferred over backendSessionId for session/load since it is never
+   * overwritten by internal routing.
+   */
+  acpSessionId?: string;
+
   [key: string]: any; // Allow provider-specific config
 }
 
@@ -342,6 +356,16 @@ export abstract class BaseAgentProvider extends EventEmitter {
    */
   isHealthy(): boolean {
     return true;
+  }
+
+  /**
+   * Whether the last protocol initialization used session/load to restore
+   * an existing session. When true, the agent already has conversation
+   * context and a full history resend is unnecessary.
+   * Override in providers that support session/load (e.g., AcpProvider).
+   */
+  didUseSessionLoad(): boolean {
+    return false;
   }
 
   /**

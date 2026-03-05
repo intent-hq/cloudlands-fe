@@ -77,6 +77,11 @@ export interface AgentSession {
   /** Backend/Auggie session ID (null until first message) */
   backendSessionId: AgentId | null;
 
+  /** ACP session UUID from the provider's session:created event.
+   *  Written ONLY by the session:created listener — never overwritten by internal routing.
+   *  Used to resume sessions via session/load across Intent restarts. */
+  acpSessionId?: string;
+
   /** Workspace this agent belongs to */
   workspaceId: WorkspaceId;
 

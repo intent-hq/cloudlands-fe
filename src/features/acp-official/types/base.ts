@@ -196,6 +196,20 @@ export interface JsonRpcError {
 }
 
 /**
+ * Capabilities that the agent supports beyond the base protocol.
+ */
+export interface AgentCapabilities {
+  _meta?: Meta;
+  loadSession?: boolean;
+  promptCapabilities?: {
+    image?: boolean;
+  };
+  sessionCapabilities?: {
+    list?: Record<string, unknown>;
+  };
+}
+
+/**
  * Standard JSON-RPC error codes.
  */
 export enum JsonRpcErrorCode {

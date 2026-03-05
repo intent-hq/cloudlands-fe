@@ -497,6 +497,7 @@ export class UnifiedPersistence {
     // session without knowing about the config or name
     let preservedConfig: Record<string, any> | undefined;
     let preservedName: string | undefined;
+    let preservedAcpSessionId: string | undefined;
     const metadataFS = workspacePath ? new LocalMetadataFS() : this.getFS(agent.workspaceId);
     try {
       const existingData = await metadataFS.readFile(agentPath, 'utf-8');
@@ -525,6 +526,15 @@ export class UnifiedPersistence {
       if (existingAgent.name && !(agent as any).name) {
         preservedName = existingAgent.name;
       }
+
+      // Preserve acpSessionId from existing file if incoming save doesn't have it.
+      // acpSessionId is written ONLY by the session:created event handler and stores
+      // the real auggie session UUID for session/load. Other save paths may not have
+      // this field on their copy of the session object, so we must not let them clobber it.
+      if (existingAgent.acpSessionId && !agent.acpSessionId) {
+        preservedAcpSessionId = existingAgent.acpSessionId;
+      }
+
     } catch {
       // File doesn't exist or can't be read - that's fine, nothing to preserve
     }
@@ -573,6 +583,11 @@ export class UnifiedPersistence {
       ...(preservedName && {
         name: preservedName,
       }),
+      // Preserve acpSessionId from existing file if not in incoming agent
+      ...(preservedAcpSessionId && {
+        acpSessionId: preservedAcpSessionId,
+      }),
+
     };
 
     // Remove null values that should be undefined
