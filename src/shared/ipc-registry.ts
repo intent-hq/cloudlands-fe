@@ -272,6 +272,11 @@ export const IPC_CHANNELS = {
     GET_MODELS: 'cortex:get-models',
   },
 
+  // Promotional Banner
+  BANNER: {
+    FETCH: 'banner:fetch',
+  },
+
   // Provider Availability (aggregates all ACP providers)
   PROVIDERS: {
     GET_AVAILABILITY: 'providers:get-availability',

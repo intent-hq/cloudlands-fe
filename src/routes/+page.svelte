@@ -7,6 +7,7 @@
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import type { KnownRepo } from '$features/workspace/main/repo-registry';
   import Button from '$lib/components/ui/button/button.svelte';
+
   import { Skeleton } from '$lib/components/ui/skeleton';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
@@ -595,6 +596,7 @@
           : 'min-w-0'} pt-52 lg:self-start lg:sticky lg:top-0"
         style="--entry-delay: 0ms"
       >
+
         <div class="w-full flex items-baseline space-between mb-5 relative">
           <h1 class="text-3xl font-medium tracking-[-0.03em]">
             {isEmpty ? 'Create your first workspace' : 'Workspaces'}

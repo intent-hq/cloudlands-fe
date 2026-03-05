@@ -65,6 +65,8 @@
   // Current active tab - initialized from URL or default to Agents
   let activeTab = $state<SettingsTab>(getInitialTab());
 
+
+
   // Update URL when tab changes
   function setActiveTab(tab: SettingsTab) {
     activeTab = tab;

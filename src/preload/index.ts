@@ -244,6 +244,7 @@ const ALLOWED_CHANNELS = [
   "codex:get-models",
   "cortex:check-availability",
   "cortex:get-models",
+  "banner:fetch",
   "providers:get-availability",
   "providers:get-paths",
   "sources:create",

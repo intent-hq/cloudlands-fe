@@ -28,6 +28,7 @@
   import { PanelLayoutControls } from '$lib/components/layout/panel-system';
   import type { LayoutPresetId } from '$lib/components/layout/panel-system/types';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
+  import PromotionalBanner from '$lib/components/PromotionalBanner.svelte';
   import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
   import { WorkspaceStatusEnum } from '$shared/types';
   import { getLineStats, type LineStats } from '$features/file-tracking/file-tracking.client';
@@ -232,7 +233,7 @@
           </button>
         </Tooltip>
       {/if}
-
+      <PromotionalBanner />
     </div>
 
     <!-- Center: Search bar (workspace pages only) -->

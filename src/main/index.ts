@@ -372,6 +372,7 @@ import { registerLineChangesIPC } from '../features/line-changes/line-changes.ip
 import { setupLinearAuthIPC } from '../features/linear-auth/main/linear-auth.ipc';
 import { setupLogIPC } from '../features/log/main/log.ipc';
 import { setupMCPIPC, cleanupMCP } from '../features/mcp/mcp.ipc';
+import { setupBannerIPC } from '../features/banner/main/banner.ipc';
 import { setupMemoriesIPC } from '../features/memories/main/memories.ipc';
 import { setupAssetsIPC } from '../features/notes/main/assets.ipc';
 import { setupLineAttributionIPC } from '../features/notes/main/line-attribution.ipc';
@@ -2220,6 +2221,7 @@ app.whenReady().then(async () => {
     // registerAcceptChangesHandlers(); // Already called in critical IPC setup
     setupObservabilityIPC();
     setupMemoriesIPC();
+    setupBannerIPC(); // Needed for promotional banner CDN fetch
     setupRulesIPC();
     setupRepoConfigIPC();
     setupSpecialistsIPC();

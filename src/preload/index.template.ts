@@ -444,6 +444,7 @@ const ALLOWED_CHANNELS = [
   'memories:delete',
   'memories:search',
   'memories:get-context',
+  'banner:fetch',
   'editor:open',
   'editor:save',
   'editor:settings',
