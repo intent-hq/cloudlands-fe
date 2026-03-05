@@ -1,0 +1,128 @@
+name: Intent - Windows Nightly Alpha Build
+
+on:
+  schedule:
+    # Run daily at ~07:00 UTC (1 hour after macOS nightly, to pick up the alpha tag)
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel any in-progress Windows nightly if a new one triggers
+concurrency:
+  group: intent-windows-nightly
+  cancel-in-progress: true
+
+jobs:
+  nightly-windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout with tags
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Find latest alpha tag and checkout
+        id: version
+        shell: bash
+        run: |
+          # Find the latest alpha tag (sorted by version, most recent first)
+          LATEST_TAG=$(git tag -l 'v*-alpha.*' --sort=-version:refname | head -n 1)
+          if [ -z "$LATEST_TAG" ]; then
+            echo "::error::No macOS nightly alpha tag found — macOS nightly may not have run yet."
+            exit 1
+          fi
+          ALPHA_VERSION="${LATEST_TAG#v}"
+          echo "alpha=$ALPHA_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+          echo "Using alpha tag: $LATEST_TAG (version: $ALPHA_VERSION)"
+
+          # Checkout the exact tagged commit so dependencies match the tagged source
+          git checkout "$LATEST_TAG"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set alpha version
+        run: npm run version:set -- ${{ steps.version.outputs.alpha }}
+
+      - name: Create .env file
+        shell: bash
+        run: |
+          cat > .env << 'EOF'
+          SENTRY_DSN="${{ secrets.INTENT_SENTRY_DSN }}"
+          SENTRY_RELEASE="intent@${{ steps.version.outputs.alpha }}"
+          SENTRY_AUTH_TOKEN="${{ secrets.INTENT_SENTRY_AUTH_TOKEN }}"
+          SEGMENT_WRITE_KEY="${{ secrets.INTENT_SEGMENT_WRITE_KEY }}"
+          EOF
+
+      - name: Build and package Windows app
+        run: npm run dist:win
+        env:
+          NODE_OPTIONS: '--max-old-space-size=8192'
+          CSC_LINK: ${{ secrets.INTENT_WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.INTENT_WIN_CSC_KEY_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if Windows signing was configured
+        id: signing
+        shell: bash
+        run: |
+          if [ -n "$CSC_LINK" ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Windows code signing not configured — skipping upload of unsigned binaries"
+          fi
+        env:
+          CSC_LINK: ${{ secrets.INTENT_WIN_CSC_LINK }}
+
+      - name: Setup Google Cloud SDK
+        if: steps.signing.outputs.signed == 'true'
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          version: 'latest'
+
+      - name: Authenticate with GCP
+        if: steps.signing.outputs.signed == 'true'
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.INTENT_GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Upload to GCP alpha channel
+        if: steps.signing.outputs.signed == 'true'
+        shell: bash
+        run: bash scripts/upload-release-windows-gcp.sh alpha
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.alpha }}
+          GCS_BUCKET: ${{ secrets.INTENT_GCS_BUCKET }}
+          GCP_PROJECT: ${{ secrets.INTENT_GCP_PROJECT }}
+          CLOUD_CDN_URL_MAP: ${{ secrets.INTENT_CLOUD_CDN_URL_MAP }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
+
+      - name: Post summary
+        if: steps.signing.outputs.signed == 'true'
+        shell: bash
+        run: |
+          ALPHA_VERSION="${{ steps.version.outputs.alpha }}"
+          echo "## Windows Nightly Alpha Build" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Version:** $ALPHA_VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Channel:** alpha" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Download URLs" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [Windows Installer](https://cdn.augmentcode.com/alpha/Intent-latest-Setup.exe)" >> "$GITHUB_STEP_SUMMARY"
+

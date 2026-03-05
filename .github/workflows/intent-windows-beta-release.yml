@@ -1,0 +1,140 @@
+name: Intent - Windows Beta Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Never cancel a release in progress
+concurrency:
+  group: intent-windows-release
+  cancel-in-progress: false
+
+jobs:
+  windows-beta-release:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Validate version format
+        shell: bash
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version format '$VERSION'. Expected semver (e.g., 1.2.3)"
+            exit 1
+          fi
+          echo "Version $VERSION is valid"
+
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set version
+        run: npm run version:set -- ${{ inputs.version }}
+
+      - name: Create .env file
+        shell: bash
+        run: |
+          cat > .env << 'EOF'
+          SENTRY_DSN="${{ secrets.INTENT_SENTRY_DSN }}"
+          SENTRY_RELEASE="intent@${{ inputs.version }}"
+          SENTRY_AUTH_TOKEN="${{ secrets.INTENT_SENTRY_AUTH_TOKEN }}"
+          SEGMENT_WRITE_KEY="${{ secrets.INTENT_SEGMENT_WRITE_KEY }}"
+          EOF
+
+      - name: Build and package Windows app
+        run: npm run dist:win
+        env:
+          NODE_OPTIONS: '--max-old-space-size=8192'
+          CSC_LINK: ${{ secrets.INTENT_WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.INTENT_WIN_CSC_KEY_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if Windows signing was configured
+        id: signing
+        shell: bash
+        run: |
+          if [ -n "$CSC_LINK" ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Windows code signing not configured — skipping upload of unsigned binaries"
+          fi
+        env:
+          CSC_LINK: ${{ secrets.INTENT_WIN_CSC_LINK }}
+
+      - name: Setup Google Cloud SDK
+        if: steps.signing.outputs.signed == 'true'
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          version: 'latest'
+
+      - name: Authenticate with GCP
+        if: steps.signing.outputs.signed == 'true'
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.INTENT_GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Upload to GCP beta channel
+        if: steps.signing.outputs.signed == 'true'
+        shell: bash
+        run: bash scripts/upload-release-windows-gcp.sh beta
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          GCS_BUCKET: ${{ secrets.INTENT_GCS_BUCKET }}
+          GCP_PROJECT: ${{ secrets.INTENT_GCP_PROJECT }}
+          CLOUD_CDN_URL_MAP: ${{ secrets.INTENT_CLOUD_CDN_URL_MAP }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
+
+      - name: Post summary
+        if: steps.signing.outputs.signed == 'true'
+        shell: bash
+        run: |
+          VERSION="${{ inputs.version }}"
+          echo "## Windows Beta Release" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Version:** v$VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Channel:** beta" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Download URLs" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [Windows Installer](https://cdn.augmentcode.com/beta/Intent-latest-Setup.exe)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify Slack
+        if: success() && steps.signing.outputs.signed == 'true'
+        shell: bash
+        run: |
+          VERSION="${{ inputs.version }}"
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{
+              \"text\": \"Intent Windows v${VERSION} released to beta channel\",
+              \"blocks\": [
+                {
+                  \"type\": \"section\",
+                  \"text\": {
+                    \"type\": \"mrkdwn\",
+                    \"text\": \"*Intent Windows Beta Release*\n\n*Version:* v${VERSION}\n*Channel:* beta\n*Triggered by:* ${{ github.actor }}\n\n<https://cdn.augmentcode.com/beta/Intent-latest-Setup.exe|Windows Installer>\"
+                  }
+                }
+              ]
+            }" \
+            ${{ secrets.INTENT_SLACK_WEBHOOK_URL }}
+
