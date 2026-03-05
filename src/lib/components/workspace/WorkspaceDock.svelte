@@ -65,6 +65,9 @@
   // Track previous streaming/processing state to detect relevant changes
   let previousStreamingState = new Map<string, boolean>();
 
+  // Track known session IDs to detect when new agents are added
+  let knownSessionIds = new Set<string>();
+
   // Subscribe to agent service changes to detect when background agents start/stop streaming
   // OPTIMIZATION: Only trigger updates when streaming/processing state actually changes
   onMount(() => {
@@ -74,6 +77,12 @@
       let hasRelevantChange = false;
 
       for (const session of allSessions) {
+        // Detect newly added agents
+        if (!knownSessionIds.has(session.id)) {
+          knownSessionIds.add(session.id);
+          hasRelevantChange = true;
+        }
+
         const isRunning = session.isStreaming || session.isResponding || session.isProcessing;
         const wasRunning = previousStreamingState.get(session.id) ?? false;
 
@@ -104,6 +113,7 @@
       unsubscribeUnread();
       unsubscribeStreaming();
       previousStreamingState.clear();
+      knownSessionIds.clear();
     };
   });
 
@@ -142,6 +152,10 @@
         const isRunning =
           s.isStreaming || s.isResponding || s.isProcessing || isAgentStreamingFromStore(s.id);
         if (isRunning) return true;
+
+        // Show if recently created (within 5 seconds) — streaming state may not be set yet
+        const createdAt = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+        if (createdAt > 0 && Date.now() - createdAt < 5000) return true;
 
         // Show if has unread messages (completed but not read yet)
         if (unreadTrackingService.hasUnread(s.id)) return true;

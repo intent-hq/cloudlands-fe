@@ -194,17 +194,23 @@
       );
     };
 
-    // Filter out background agents that are not open and not running
+    // Filter out background agents that are not open, not running, and not recently created
     const filteredAgents = dedupedAgents.filter((agent) => {
       const isBackground = agent.isBackground || agent.metadata?.isBackground;
       if (!isBackground) return true;
 
-      // For background agents, only show if open or running
+      // For background agents, only show if open, running, or recently created
       const isOpen =
         currentDrawerType === 'agent' &&
         String(agent.id) === String(currentActiveId) &&
         currentDrawerOpen;
-      return isOpen || isRunning(agent);
+      if (isOpen || isRunning(agent)) return true;
+
+      // Show if recently created (within 5 seconds) — streaming state may not be set yet
+      const createdAt = agent.createdAt ? new Date(agent.createdAt).getTime() : 0;
+      if (createdAt > 0 && Date.now() - createdAt < 5000) return true;
+
+      return false;
     });
 
     // Sort by createdAt - oldest first (top) to newest last (bottom)
