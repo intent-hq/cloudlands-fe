@@ -68,6 +68,7 @@ export interface PropertySchema {
   minimum?: number;
   maximum?: number;
   pattern?: string;
+  items?: { type: string };
 }
 
 /**

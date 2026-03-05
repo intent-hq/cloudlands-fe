@@ -159,6 +159,7 @@ export function arrayProperty(
   return {
     type: 'array',
     description,
+    items: { type: itemType },
     ...options,
   };
 }
