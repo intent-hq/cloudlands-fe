@@ -45,10 +45,18 @@ let pendingTargetWorkspaceId: WorkspaceId | undefined = undefined;
  * Subscribe to updates for a specific agent.
  * More efficient than subscribing to the global store during streaming.
  * The callback only fires when the specified agent's data changes.
+ *
+ * @param agentId - The agent ID to subscribe to
+ * @param callback - Called when the agent's data changes
+ * @param workspaceId - Optional workspace ID to scope the lookup. When provided,
+ *   only that workspace is searched. When omitted, falls back to currentWorkspace only.
+ *   This prevents cross-workspace state bleed where an agent from workspace B
+ *   could be returned while viewing workspace A.
  */
 export function subscribeToAgent(
   agentId: string,
   callback: (session: AgentSession | undefined) => void,
+  workspaceId?: string,
 ): () => void {
   let subscribers = agentSubscribers.get(agentId);
   if (!subscribers) {
@@ -58,20 +66,18 @@ export function subscribeToAgent(
   subscribers.add(callback);
 
   // Immediately call with current value
-  // Search current workspace first, then all workspaces (for cross-workspace scenarios during transitions)
+  // When workspaceId is provided, only search that workspace (workspace-scoped).
+  // Otherwise, search currentWorkspace only (no all-workspace fallback to prevent cross-workspace bleed).
   let agent = null;
 
-  // 1. Try current workspace first
-  const currentWorkspace = unifiedStateStore.currentWorkspace;
-  agent = currentWorkspace?.agents.get(agentId as any);
-
-  // 2. Search all workspaces as a fallback
-  if (!agent) {
-    const allWorkspaces = unifiedStateStore.getAllWorkspaces();
-    for (const ws of allWorkspaces) {
-      agent = ws.agents.get(agentId as any);
-      if (agent) break;
-    }
+  if (workspaceId) {
+    // Scoped lookup: only search the specified workspace
+    const targetWorkspace = unifiedStateStore.getWorkspace(workspaceId as WorkspaceId);
+    agent = targetWorkspace?.agents.get(agentId as any);
+  } else {
+    // Unscoped: use currentWorkspace only (no all-workspace fallback)
+    const currentWorkspace = unifiedStateStore.currentWorkspace;
+    agent = currentWorkspace?.agents.get(agentId as any);
   }
 
   if (agent?.session) {
@@ -79,18 +85,14 @@ export function subscribeToAgent(
       ...agent.session,
       messages: agent.messages || agent.session.messages || [],
     };
-    // DIAGNOSTIC: Log what session data we're providing to subscribers
-    logger.debug('[subscribeToAgent] DIAGNOSTIC: Initial callback data', {
+    logger.debug('[subscribeToAgent] Initial callback data', {
       agentId,
+      workspaceId: workspaceId || 'current',
       hasSession: true,
-      sessionHasMetadata: !!agent.session.metadata,
-      sessionMetadataSpecialist: agent.session.metadata?.specialist || 'NONE',
-      agentStateHasMetadata: !!(agent as any).metadata,
-      agentStateMetadataSpecialist: (agent as any).metadata?.specialist || 'NONE',
     });
     callback(sessionData);
   } else {
-    logger.debug('[subscribeToAgent] DIAGNOSTIC: No session found', { agentId });
+    logger.debug('[subscribeToAgent] No session found', { agentId, workspaceId: workspaceId || 'current' });
     callback(undefined);
   }
 
@@ -107,38 +109,29 @@ export function subscribeToAgent(
 }
 
 /**
- * Notify subscribers for a specific agent
+ * Notify subscribers for a specific agent.
+ *
+ * When targetWorkspaceId is provided, only that workspace is searched for the agent.
+ * When not provided, falls back to currentWorkspace only.
+ * The all-workspaces fallback has been removed to prevent cross-workspace state bleed.
+ *
  * @param agentId - The agent ID to notify subscribers for
- * @param targetWorkspaceId - Optional specific workspace to look in (for cross-workspace scenarios)
+ * @param targetWorkspaceId - Optional specific workspace to look in
  */
 export function notifyAgentSubscribers(agentId: string, targetWorkspaceId?: WorkspaceId) {
   const subscribers = agentSubscribers.get(agentId);
   if (!subscribers || subscribers.size === 0) return;
 
-  // Try to find the agent - first in the target workspace, then in current workspace,
-  // then search all workspaces. This handles the case where agents are being loaded
-  // into a workspace during workspace transitions.
   let agent = null;
 
-  // 1. Try target workspace first (if specified)
   if (targetWorkspaceId) {
+    // Scoped: only search the target workspace
     const targetWorkspace = unifiedStateStore.getWorkspace(targetWorkspaceId);
     agent = targetWorkspace?.agents.get(agentId as any);
-  }
-
-  // 2. Try current workspace
-  if (!agent) {
+  } else {
+    // Unscoped: use currentWorkspace only (no all-workspace fallback)
     const currentWorkspace = unifiedStateStore.currentWorkspace;
     agent = currentWorkspace?.agents.get(agentId as any);
-  }
-
-  // 3. Search all workspaces as a fallback
-  if (!agent) {
-    const allWorkspaces = unifiedStateStore.getAllWorkspaces();
-    for (const ws of allWorkspaces) {
-      agent = ws.agents.get(agentId as any);
-      if (agent) break;
-    }
   }
 
   const session = agent?.session
@@ -148,12 +141,10 @@ export function notifyAgentSubscribers(agentId: string, targetWorkspaceId?: Work
       }
     : undefined;
 
-  // DIAGNOSTIC: Log what we're notifying subscribers with (debug level to reduce noise)
-  logger.debug('[notifyAgentSubscribers] DIAGNOSTIC: Notifying with session', {
+  logger.debug('[notifyAgentSubscribers] Notifying', {
     agentId,
+    targetWorkspaceId: targetWorkspaceId || 'current',
     hasSession: !!session,
-    sessionHasMetadata: !!session?.metadata,
-    sessionMetadataSpecialist: session?.metadata?.specialist || 'NONE',
     subscriberCount: subscribers.size,
   });
 

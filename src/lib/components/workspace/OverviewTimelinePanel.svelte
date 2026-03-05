@@ -296,6 +296,7 @@
             agentId={primaryAgent.id}
             selected={selectedAgentId === primaryAgent.id}
             onclick={() => onOpenAgent?.(primaryAgent!.id)}
+            {workspace}
           />
 
           <!-- Delegated agents (within parent card) -->
@@ -341,6 +342,7 @@
                 selected={selectedAgentId === agent.id}
                 onclick={() => onOpenAgent?.(agent.id)}
                 hidePreview={!agent.isActive}
+                {workspace}
               />
             {/each}
             {#if otherAgents.length > 3}
@@ -377,6 +379,7 @@
             agentId={agent.id}
             selected={selectedAgentId === agent.id}
             onclick={() => onOpenAgent?.(agent.id)}
+            {workspace}
           />
         {/each}
         {#if topLevelAgents.length > 4}

@@ -780,15 +780,19 @@
               {/if}
             </p>
           {/if}
-          <div class="{isNarrow ? 'px-1' : 'px-3'}">
-            <WorkspaceAgentsList
-              agents={workspaceAgents}
-              loading={agentsLoading}
-              selectedAgentId={effectiveSelectedAgentId}
-              onSelect={({ agentId }) => handleOpenAgentInPanel(agentId)}
-              onCreate={onCreateAgent}
-            />
-          </div>
+          <!-- {#key workspaceId} forces remount of agent cards on workspace switch,
+               ensuring onMount stream listeners and subscriptions rebind correctly -->
+          {#key workspaceId}
+            <div class="{isNarrow ? 'px-1' : 'px-3'}">
+              <WorkspaceAgentsList
+                agents={workspaceAgents}
+                loading={agentsLoading}
+                selectedAgentId={effectiveSelectedAgentId}
+                onSelect={({ agentId }) => handleOpenAgentInPanel(agentId)}
+                onCreate={onCreateAgent}
+              />
+            </div>
+          {/key}
         </div>
         <div
           class={cn('pt-3 pb-3 min-h-full flex flex-col', activeTab !== 'terminals' && 'hidden')}

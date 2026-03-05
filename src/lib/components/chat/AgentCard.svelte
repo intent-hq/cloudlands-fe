@@ -6,7 +6,7 @@
    * Uses subscription for real-time updates and displays line changes stats.
    * Listens to streaming events for real-time response updates.
    */
-  import { onMount, onDestroy, tick } from 'svelte';
+  import { tick } from 'svelte';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { useAgentSubscription } from '$lib/utils/agent-subscription.svelte';
@@ -246,19 +246,39 @@
   // Streaming state - updated via events for real-time display
   let streamingBuffer: string = $state('');
   let isStreamActive: boolean = $state(false);
-  let streamListenerCleanup: (() => void) | undefined;
 
-  // Listen to streaming events for real-time updates
-  onMount(() => {
-    const streamEventName = `agent:stream:${agentId}`;
-    const messageSentEventName = `agent:message-sent:${agentId}`;
+  // Use $effect for stream listener lifecycle so it automatically cleans up
+  // and re-binds when agentId changes (e.g., component reuse in keyed lists).
+  // This also ensures cleanup happens correctly during HMR and workspace switches.
+  $effect(() => {
+    // Capture agentId in the effect's reactive scope
+    const currentAgentId = agentId;
+    // Capture the workspace context for this card — used to guard against
+    // cross-workspace stream events when sidebar panels stay mounted (F3 fix).
+    const cardWorkspaceId = workspace?.id ? String(workspace.id) : undefined;
+
+    const streamEventName = `agent:stream:${currentAgentId}`;
+    const messageSentEventName = `agent:message-sent:${currentAgentId}`;
+
+    // Reset streaming state when effect re-runs (agentId changed)
+    streamingBuffer = '';
+    isStreamActive = false;
 
     const streamListener = (event: Event) => {
       const customEvent = event as CustomEvent;
       const { type, content } = customEvent.detail || {};
 
+      // Workspace guard: if this card has a workspace context, verify the agent's
+      // session belongs to the same workspace. This prevents streaming indicators
+      // from bleeding across workspaces when sidebar panels stay mounted.
+      if (cardWorkspaceId && agent?.workspaceId) {
+        const agentWsId = String(agent.workspaceId);
+        if (agentWsId !== cardWorkspaceId) {
+          return; // Ignore events for agents in other workspaces
+        }
+      }
+
       if (type === 'start') {
-        // Message processing has started
         isStreamActive = true;
       } else if (type === 'chunk' && content) {
         streamingBuffer += content;
@@ -272,21 +292,18 @@
       }
     };
 
-    // Listen for message sent event to show running state immediately
     const messageSentListener = () => {
       isStreamActive = true;
     };
 
     window.addEventListener(streamEventName, streamListener);
     window.addEventListener(messageSentEventName, messageSentListener);
-    streamListenerCleanup = () => {
+
+    // $effect cleanup: automatically called when effect re-runs or component unmounts
+    return () => {
       window.removeEventListener(streamEventName, streamListener);
       window.removeEventListener(messageSentEventName, messageSentListener);
     };
-  });
-
-  onDestroy(() => {
-    streamListenerCleanup?.();
   });
 
   // Extract display data
@@ -409,7 +426,7 @@
               bind:value={editingValue}
               onblur={saveEdit}
               onkeydown={handleEditKeydown}
-              class="text-sm truncate bg-transparent border-none outline-none! ring-0! focus:ring-0! focus:outline-none! focus-visible:ring-0! focus-visible:outline-none! min-w-0 flex-1 text-foreground/90"
+              class="text-sm truncate bg-transparent border-none outline-none! ring-0! focus:ring-0! focus:outline-none! focus-visible:ring-0! focus-visible:outline-none! min-w-0 flex-1 text-foreground"
               onclick={(e) => e.stopPropagation()}
             />
           {:else}

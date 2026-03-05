@@ -82,6 +82,7 @@
   import * as Tooltip from '$lib/components/ui/tooltip';
   import Button from '$lib/components/ui/button/button.svelte';
   import AgentCard from './AgentCard.svelte';
+  import type { Workspace } from '$shared/types';
 
   interface EventData {
     type: string;
@@ -110,6 +111,8 @@
     showSummary?: boolean;
     /** Whether to show agent cards (default: true) */
     showAgentCards?: boolean;
+    /** Optional workspace for scoping AgentCard subscriptions (prevents cross-workspace bleed) */
+    workspace?: Workspace | null;
   }
 
   let {
@@ -120,6 +123,7 @@
     onScrollToPrevious,
     showSummary = true,
     showAgentCards = true,
+    workspace = null,
   }: Props = $props();
 
   // Get a friendly summary description for the banner
@@ -333,6 +337,7 @@
             agentName={event.agentName}
             completionReport={event.completionReport}
             lastResponseSummary={event.lastResponseSummary}
+            {workspace}
           />
         {/each}
         {#if agentEvents.length > 5}

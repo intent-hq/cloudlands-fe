@@ -39,7 +39,7 @@ vi.mock('$features/workspace/workspace.store.svelte', () => {
 
 import { agentService } from '$features/agent/agent.service';
 import { sessionStore, subscribeToAgent } from '$features/agent/browser';
-import { useAgentSubscription } from '../agent-subscription.svelte';
+import { useAgentSubscription, useAllAgentsSubscription } from '../agent-subscription.svelte';
 
 describe('useAgentSubscription', () => {
   let mockStore: ReturnType<typeof writable>;
@@ -710,5 +710,216 @@ describe('useAgentSubscription', () => {
 
       cleanup();
     });
+
+    it('should isolate streaming between agents in different workspaces', () => {
+      // Regression: streaming updates for workspace-B agent must not leak into
+      // a subscription for a workspace-A agent.
+      const agentA: AgentSession = {
+        id: 'ws-a-agent' as any,
+        backendSessionId: 'ws-a-agent' as any,
+        workspaceId: 'workspace-A' as any,
+        name: 'Workspace A Agent',
+        status: AgentStatus.Active,
+        messages: [
+          {
+            id: 'msg-a' as any,
+            role: 'assistant',
+            contentBlocks: [{ type: 'text', text: '' }],
+            timestamp: new Date().toISOString(),
+            isStreaming: true,
+          },
+        ],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        lastActivity: new Date(),
+        isProcessing: true,
+      };
+
+      const agentB: AgentSession = {
+        id: 'ws-b-agent' as any,
+        backendSessionId: 'ws-b-agent' as any,
+        workspaceId: 'workspace-B' as any,
+        name: 'Workspace B Agent',
+        status: AgentStatus.Active,
+        messages: [
+          {
+            id: 'msg-b' as any,
+            role: 'assistant',
+            contentBlocks: [{ type: 'text', text: '' }],
+            timestamp: new Date().toISOString(),
+            isStreaming: true,
+          },
+        ],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        lastActivity: new Date(),
+        isProcessing: true,
+      };
+
+      mockSessions.push(agentA);
+      mockSessions.push(agentB);
+
+      const cleanup = $effect.root(() => {
+        const subA = useAgentSubscription('ws-a-agent');
+        const subB = useAgentSubscription('ws-b-agent');
+
+        flushSync();
+
+        // Stream into workspace-B agent only
+        agentB.messages[0].contentBlocks = [{ type: 'text', text: 'B streaming text' }];
+        mockStore.set({ sessions: mockSessions, activeSessionId: null });
+        flushSync();
+
+        // Workspace-A subscription must NOT pick up workspace-B content
+        expect(subA.current?.messages[0].contentBlocks?.[0].text).toBe('');
+        expect(subA.current?.workspaceId).toBe('workspace-A');
+        // Workspace-B subscription sees its own content
+        expect(subB.current?.messages[0].contentBlocks?.[0].text).toBe('B streaming text');
+        expect(subB.current?.workspaceId).toBe('workspace-B');
+
+        // Now stream into workspace-A agent
+        agentA.messages[0].contentBlocks = [{ type: 'text', text: 'A streaming text' }];
+        mockStore.set({ sessions: mockSessions, activeSessionId: null });
+        flushSync();
+
+        // Each subscription sees only its own agent's content
+        expect(subA.current?.messages[0].contentBlocks?.[0].text).toBe('A streaming text');
+        expect(subB.current?.messages[0].contentBlocks?.[0].text).toBe('B streaming text');
+      });
+
+      cleanup();
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// useAllAgentsSubscription – cross-workspace isolation
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('useAllAgentsSubscription – workspace isolation', () => {
+  let mockStore: ReturnType<typeof writable>;
+  let mockSessions: AgentSession[];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    mockSessions = [];
+    mockStore = writable({ sessions: mockSessions, activeSessionId: null });
+
+    vi.mocked(sessionStore.getStore).mockReturnValue(mockStore as any);
+    vi.mocked(agentService.restoreSessionWithoutBackend).mockResolvedValue(true);
+  });
+
+  function makeAgent(id: string, workspaceId: string, overrides: Partial<AgentSession> = {}): AgentSession {
+    return {
+      id: id as any,
+      backendSessionId: id as any,
+      workspaceId: workspaceId as any,
+      name: `Agent ${id}`,
+      status: AgentStatus.Active,
+      messages: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      lastActivity: new Date(),
+      isProcessing: false,
+      ...overrides,
+    };
+  }
+
+  it('current getter filters agents by workspaceId', () => {
+    const agentA = makeAgent('agent-a', 'workspace-A');
+    const agentB = makeAgent('agent-b', 'workspace-B');
+    const agentA2 = makeAgent('agent-a2', 'workspace-A');
+    mockSessions.push(agentA, agentB, agentA2);
+
+    const cleanup = $effect.root(() => {
+      const sub = useAllAgentsSubscription('workspace-A');
+
+      flushSync();
+
+      // .current should only contain workspace-A agents
+      const currentIds = sub.current.map((s: AgentSession) => s.id);
+      expect(currentIds).toContain('agent-a');
+      expect(currentIds).toContain('agent-a2');
+      expect(currentIds).not.toContain('agent-b');
+
+      // .all should contain everything
+      expect(sub.all).toHaveLength(3);
+    });
+
+    cleanup();
+  });
+
+  it('streaming updates in workspace-B do not appear in workspace-A current list', () => {
+    const agentA = makeAgent('agent-a', 'workspace-A', {
+      messages: [
+        {
+          id: 'msg-a' as any,
+          role: 'assistant',
+          contentBlocks: [{ type: 'text', text: 'A initial' }],
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    });
+    const agentB = makeAgent('agent-b', 'workspace-B', {
+      isProcessing: true,
+      messages: [
+        {
+          id: 'msg-b' as any,
+          role: 'assistant',
+          contentBlocks: [{ type: 'text', text: '' }],
+          timestamp: new Date().toISOString(),
+          isStreaming: true,
+        },
+      ],
+    });
+    mockSessions.push(agentA, agentB);
+
+    const cleanup = $effect.root(() => {
+      const subA = useAllAgentsSubscription('workspace-A');
+
+      flushSync();
+
+      // Simulate streaming into workspace-B agent
+      agentB.messages[0].contentBlocks = [{ type: 'text', text: 'B streaming content' }];
+      mockStore.set({ sessions: mockSessions, activeSessionId: null });
+      flushSync();
+
+      // workspace-A current list must NOT contain workspace-B agent
+      const currentA = subA.current;
+      expect(currentA).toHaveLength(1);
+      expect(currentA[0].id).toBe('agent-a');
+      // workspace-A agent content is unchanged
+      expect(currentA[0].messages[0].contentBlocks?.[0].text).toBe('A initial');
+    });
+
+    cleanup();
+  });
+
+  it('workspace getter function re-evaluates filtering dynamically', () => {
+    const agentA = makeAgent('agent-a', 'workspace-A');
+    const agentB = makeAgent('agent-b', 'workspace-B');
+    mockSessions.push(agentA, agentB);
+
+    let activeWorkspace = 'workspace-A';
+
+    const cleanup = $effect.root(() => {
+      // Pass a getter so filtering is dynamic
+      const sub = useAllAgentsSubscription(() => activeWorkspace);
+
+      flushSync();
+
+      expect(sub.current.map((s: AgentSession) => s.id)).toEqual(['agent-a']);
+
+      // Switch workspace
+      activeWorkspace = 'workspace-B';
+      // Re-trigger store to force re-evaluation
+      mockStore.set({ sessions: mockSessions, activeSessionId: null });
+      flushSync();
+
+      expect(sub.current.map((s: AgentSession) => s.id)).toEqual(['agent-b']);
+    });
+
+    cleanup();
   });
 });

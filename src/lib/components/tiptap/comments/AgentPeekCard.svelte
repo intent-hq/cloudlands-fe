@@ -9,6 +9,7 @@
   import { lineChangesStore } from '$features/line-changes/line-changes.store.svelte';
   import { getAgentPeekData, truncateToLines } from '$lib/utils/agent-peek-utils';
   import { useAgentSubscription } from '$lib/utils/agent-subscription.svelte';
+  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -39,7 +40,9 @@
   }: Props = $props();
 
   // Use subscription utility for reliable reactivity with Maps
-  const agentSubscription = useAgentSubscription(agentId);
+  // Pass workspaceStore.current so the subscription is scoped to the current workspace
+  // and doesn't accidentally pick up agent data from a different workspace (F9 fix).
+  const agentSubscription = useAgentSubscription(agentId, workspaceStore.current);
   const agent = $derived(agentSubscription.current);
   const agentData = $derived(getAgentPeekData(agent));
 

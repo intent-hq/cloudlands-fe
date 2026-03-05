@@ -3928,7 +3928,81 @@ export class ACPProvider extends BaseAgentProvider {
             sessionId: this.sessionId,
             frontendSessionId: this.frontendSessionId,
             currentGeneration: this.streamGeneration,
+            hasContentInResponse: !!message.result.content,
+            contentLength: message.result.content?.length,
           });
+
+          // FIX: Extract content from the orphaned prompt response into the accumulator.
+          // Without this, handleStreamCompletion finds no accumulated content and
+          // triggers an empty-response error — even though the response carried valid
+          // content. This mirrors the extraction logic in the normal pending-request
+          // resolve callback (see the prompt-response extraction around line 7723).
+          if (message.result.content) {
+            const accumulatorId = this.frontendSessionId || this.sessionId;
+            if (accumulatorId) {
+              // Check if the accumulator already has streamed content to avoid duplicates
+              const possibleAccumulatorIds = [
+                accumulatorId,
+                this.frontendSessionId,
+                this.sessionId,
+                this.streamingAgentId,
+              ].filter((id): id is string => Boolean(id));
+              const uniqueAccumulatorIds = [...new Set(possibleAccumulatorIds)];
+
+              let hasStreamedContent = false;
+              for (const sid of uniqueAccumulatorIds) {
+                const existing = messageAccumulator.getAccumulated(sid);
+                if (
+                  existing &&
+                  (existing.content.length > 0 || existing.orderedItems.length > 0)
+                ) {
+                  hasStreamedContent = true;
+                  break;
+                }
+              }
+
+              if (!hasStreamedContent) {
+                if (Array.isArray(message.result.content)) {
+                  const contentBlocks = parseACPMessage(message.result.content);
+                  if (contentBlocks && contentBlocks.length > 0) {
+                    logger.info(
+                      'Extracting content from orphaned prompt response into accumulator',
+                      {
+                        accumulatorId,
+                        blocksCount: contentBlocks.length,
+                        blockTypes: contentBlocks.map((b: any) => b.type),
+                      },
+                    );
+
+                    if (!messageAccumulator.getActiveSessionIds().includes(accumulatorId)) {
+                      messageAccumulator.startAccumulation(accumulatorId);
+                    }
+
+                    for (const block of contentBlocks) {
+                      if (block.type === 'text' && 'text' in block && block.text) {
+                        messageAccumulator.addChunk(accumulatorId, block.text);
+                      } else if (block.type === 'tool_use') {
+                        messageAccumulator.addContentBlock(accumulatorId, block);
+                      }
+                    }
+                  }
+                } else if (typeof message.result.content === 'string') {
+                  logger.info(
+                    'Extracting string content from orphaned prompt response into accumulator',
+                    {
+                      accumulatorId,
+                      contentLength: message.result.content.length,
+                    },
+                  );
+
+                  if (!messageAccumulator.getActiveSessionIds().includes(accumulatorId)) {
+                    messageAccumulator.startAccumulation(accumulatorId);
+                  }
+                  messageAccumulator.addChunk(accumulatorId, message.result.content);
+                }
+              }
+            }
+          }
 
           // Try to complete the stream using the frontend session ID
           const completionSessionId = this.frontendSessionId || this.sessionId;

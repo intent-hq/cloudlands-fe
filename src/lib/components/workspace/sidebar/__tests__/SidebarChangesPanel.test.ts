@@ -1226,9 +1226,10 @@ describe('SidebarChangesPanel', () => {
       });
     });
 
-    it('triggers initial PR discovery even when there are no pushed commits (remote branch)', async () => {
-      // When a workspace is on a remote branch with no local pushed commits,
-      // initial discovery should still fire (e.g., PR review workspaces)
+    it('triggers initial PR discovery on remote branches even with no pushed commits', async () => {
+      // Workspaces on existing remote branches (e.g., PR review) should perform one
+      // initial PR discovery even when there are no local pushed commits, because the
+      // branch may already have a PR. hasRemote defaults to true in the component.
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       mockFileTrackingStore.commits = [
         makeCommit({ hash: 'abc123', message: 'local commit', isPushed: false }),

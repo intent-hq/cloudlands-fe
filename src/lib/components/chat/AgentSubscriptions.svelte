@@ -25,6 +25,8 @@
   import AgentCard from './AgentCard.svelte';
   import InlineAgentAvatar from './InlineAgentAvatar.svelte';
   import { agentService } from '$features/agent/agent.service';
+  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import type { WorkspaceId } from '$shared/types/branded-ids';
 
   const logger = createLogger('AgentSubscriptions');
 
@@ -66,6 +68,10 @@
   }
 
   let { workspaceId, agentId }: Props = $props();
+
+  // Resolve the Workspace object from workspaceId so child components (AgentCard,
+  // InlineAgentAvatar) can scope their subscriptions to the correct workspace.
+  const resolvedWorkspace = $derived(workspaceStore.findById(workspaceId as WorkspaceId) ?? null);
 
   // CRITICAL: Destruction flag to prevent async IPC callbacks from mutating state after unmount.
   // When the parent uses {#key} to force remount on workspace switch, the old instance is destroyed
@@ -1052,7 +1058,7 @@
       {#if isCollapsed}
         <div class="flex items-center -space-x-1.5">
           {#each watchedAgentIds.slice(0, 5) as watchedAgentId (watchedAgentId)}
-            <InlineAgentAvatar agentId={watchedAgentId} />
+            <InlineAgentAvatar agentId={watchedAgentId} workspace={resolvedWorkspace} />
           {/each}
           {#if watchedAgentIds.length > 5}
             <span class="text-ui text-subtle pl-2">
@@ -1111,7 +1117,7 @@
     >
       {#each watchedAgentIds.slice(0, 5) as watchedAgentId (watchedAgentId)}
         <div class="w-full" transition:slide={{ axis: 'y', duration: 200 }}>
-          <AgentCard agentId={watchedAgentId} />
+          <AgentCard agentId={watchedAgentId} workspace={resolvedWorkspace} />
         </div>
       {/each}
       {#if watchedAgentIds.length > 5}

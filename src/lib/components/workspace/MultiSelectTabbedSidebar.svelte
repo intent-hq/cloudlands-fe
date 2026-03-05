@@ -1010,6 +1010,9 @@
               </div>
             {/if}
             <!-- Panel content -->
+            <!-- {#key workspaceId} forces remount of agent-related panels on workspace switch,
+                 ensuring onMount stream listeners and subscriptions rebind correctly -->
+            {#key workspaceId}
             <div class="h-full pt-2 pb-6">
               {#if tabId === 'overview'}
                 {@const overviewAgents = workspaceAgents.map((agent) => {
@@ -1250,6 +1253,7 @@
                 </div>
               {/if}
             </div>
+            {/key}
           </div>
         </div>
       {/each}

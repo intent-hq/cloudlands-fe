@@ -3731,6 +3731,7 @@
                             isSticky={stickyMessageId === message.id}
                             onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
                             showAgentCards={false}
+                            {workspace}
                           />
                         </div>
                         <!-- Agent cards - NOT inside sticky div, so they scroll normally -->
@@ -3742,6 +3743,7 @@
                                 agentName={event.agentName}
                                 completionReport={event.completionReport}
                                 lastResponseSummary={event.lastResponseSummary}
+                                {workspace}
                               />
                             {/each}
                             {#if agentEventsForCards.length > 5}

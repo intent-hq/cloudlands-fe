@@ -10,15 +10,19 @@
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
   import { permissionStore } from '$lib/stores/permission.store.svelte';
   import * as Tooltip from '$lib/components/ui/tooltip';
+  import type { Workspace } from '$shared/types';
 
   interface Props {
     agentId: string;
+    /** Optional workspace for scoping the agent subscription (prevents cross-workspace bleed) */
+    workspace?: Workspace | null;
   }
 
-  let { agentId }: Props = $props();
+  let { agentId, workspace = null }: Props = $props();
 
   // Subscribe to agent updates for real-time state
-  const agentSubscription = useAgentSubscription(agentId);
+  // Pass workspace to scope the subscription to the correct workspace context.
+  const agentSubscription = useAgentSubscription(agentId, workspace);
   const agent = $derived(agentSubscription.current);
   const agentData = $derived(getAgentPeekData(agent));
 

@@ -136,25 +136,35 @@ export function useAgentSubscription(agentId: string, workspace?: Workspace | nu
   let lastAgentFingerprint: string | null = null;
   let restoreAttempted = $state(false);
 
+  // Resolve workspace ID for scoped subscription
+  // This ensures the subscription only looks in the correct workspace,
+  // preventing cross-workspace state bleed (F2 fix).
+  const resolvedWsId = workspace?.id ? String(workspace.id) : undefined;
+
   // Use $effect for subscription management with automatic cleanup
   $effect(() => {
     // Subscribe to agent updates using the efficient per-agent subscription
     // This only triggers when THIS agent's data changes, not when ANY agent changes
     // (Much more efficient during streaming when multiple agents may be active)
-    const unsubscribe = subscribeToAgent(agentId, (updatedAgent) => {
-      if (updatedAgent) {
-        // Only update when something about the session actually changed (including streaming text)
-        const nextFingerprint = agentSessionFingerprint(updatedAgent);
-        if (lastAgentFingerprint !== nextFingerprint) {
-          lastAgentFingerprint = nextFingerprint;
-          agent = updatedAgent;
+    // Pass workspaceId to scope the lookup to the correct workspace
+    const unsubscribe = subscribeToAgent(
+      agentId,
+      (updatedAgent) => {
+        if (updatedAgent) {
+          // Only update when something about the session actually changed (including streaming text)
+          const nextFingerprint = agentSessionFingerprint(updatedAgent);
+          if (lastAgentFingerprint !== nextFingerprint) {
+            lastAgentFingerprint = nextFingerprint;
+            agent = updatedAgent;
+          }
+        } else if (agent !== null) {
+          // Agent was removed
+          lastAgentFingerprint = null;
+          agent = null;
         }
-      } else if (agent !== null) {
-        // Agent was removed
-        lastAgentFingerprint = null;
-        agent = null;
-      }
-    });
+      },
+      resolvedWsId,
+    );
 
     // Note: subscribeToAgent calls the callback immediately with current value,
     // so we don't need to do a separate initial load here

@@ -6,7 +6,9 @@
   import AgentCard from '$lib/components/chat/AgentCard.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import { useAllAgentsSubscription } from '$lib/utils/agent-subscription.svelte';
+  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import type { FileOperation, AgentStatus } from '$shared/types';
+  import type { WorkspaceId } from '$shared/types/branded-ids';
 
   interface AgentSummary {
     id: string;
@@ -58,6 +60,9 @@
     onCreateTerminal?: () => void;
     class?: string;
   } = $props();
+
+  // Resolve the Workspace object from workspaceId so AgentCard can scope its subscription.
+  const resolvedWorkspace = $derived(workspaceStore.findById(workspaceId as WorkspaceId) ?? null);
 
   // Subscribe to session store for real-time message updates. Pass workspaceId to trigger loading from disk if needed.
   const agentSubscription = useAllAgentsSubscription(() => workspaceId);
@@ -183,6 +188,7 @@
               agentName={agent.name}
               isBackground={agent.metadata?.isBackground || agent.isBackground}
               onclick={() => onSelectAgent?.(agent.id)}
+              workspace={resolvedWorkspace}
             />
           {/each}
         </div>
