@@ -91,6 +91,8 @@ export type SidebarTabId =
  */
 export interface PostMergeState {
   aheadOfTrunk: number | null;
+  behindTrunk: number;
+  hasConflicts: boolean;
   isContentMergedToTrunk: boolean;
   hasRemote: boolean;
   isMergedToTrunk: boolean;

@@ -567,6 +567,8 @@
         mergeHeadSha = cachedPostMerge.mergeHeadSha;
         isContentMergedToTrunk = cachedPostMerge.isContentMergedToTrunk;
         aheadOfTrunk = cachedPostMerge.aheadOfTrunk;
+        behindTrunk = cachedPostMerge.behindTrunk ?? 0;
+        hasConflicts = cachedPostMerge.hasConflicts ?? false;
         hasRemote = cachedPostMerge.hasRemote;
       } else {
         hasResetToTrunk = false;
@@ -578,7 +580,21 @@
         hasConflicts = false;
         hasRemote = true;
       }
+      // Reset operation-in-progress and UI states to prevent leaking between workspaces
       isResettingToTrunk = false;
+      isRebasing = false;
+      isForcePushing = false;
+      isPulling = false;
+      isRefreshingPR = false;
+      forcePushDrawerOpen = false;
+      connectRemoteDrawerOpen = false;
+      isEditingBranch = false;
+      editedBranch = '';
+      isSavingBranch = false;
+      // Reset PR discovery tracking for the new workspace so discovery can
+      // run again (for PR-review workspaces on existing remote branches with no pushed commits).
+      lastDiscoveredPushedCount = 0;
+      hasAttemptedInitialDiscovery = false;
       // Only reset to false if the new workspace isn't already loaded
       // This prevents a brief flash when accordion is first opened for an already-loaded workspace
       if (storeLoading || storeWsId !== workspaceId) {
@@ -958,18 +974,10 @@
   // (for workspaces on existing remote branches with no local pushed commits, e.g., PR review)
   let hasAttemptedInitialDiscovery = $state(false);
 
-  // Reset discovery tracking when workspace changes
-  $effect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-    workspaceId; // Dependency
-    lastDiscoveredPushedCount = 0;
-    hasAttemptedInitialDiscovery = false;
-  });
-
   // Automatically discover PRs when workspace loads.
   // Re-triggers when pushed commit count changes (e.g., agent pushes new commits and creates a PR).
-  // Also triggers once for workspaces on existing remote branches (e.g., PR review workspaces)
-  // even when there are no local pushed commits, since the branch may already have a PR.
+  // Discovery tracking (lastDiscoveredPushedCount, hasAttemptedInitialDiscovery) is reset
+  // in the workspace-switch block of the consolidated load-state effect above.
   // Rate-limited by refreshPRStatus's built-in MIN_REFRESH_INTERVAL_MS (5s).
   $effect(() => {
     if (!hasLoadedForWorkspace) return;
@@ -1230,6 +1238,8 @@
   $effect(() => {
     // Track all the post-merge signals
     const currentAheadOfTrunk = aheadOfTrunk;
+    const currentBehindTrunk = behindTrunk;
+    const currentHasConflicts = hasConflicts;
     const currentIsContentMergedToTrunk = isContentMergedToTrunk;
     const currentHasRemote = hasRemote;
     const currentIsMergedToTrunk = isMergedToTrunk;
@@ -1242,6 +1252,8 @@
     untrack(() => {
       transientStore.setPostMergeState({
         aheadOfTrunk: currentAheadOfTrunk,
+        behindTrunk: currentBehindTrunk,
+        hasConflicts: currentHasConflicts,
         isContentMergedToTrunk: currentIsContentMergedToTrunk,
         hasRemote: currentHasRemote,
         isMergedToTrunk: currentIsMergedToTrunk,
