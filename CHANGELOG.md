@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.20
+
+- Fixes: Opencode no longer errors when running OpenAI models, agent response pollution across workspaces, agent streaming state not isolated by workspace, create_agent tool reactivity and background agent visibility, conversation-retrieval tool incorrectly displaying as "Search codebase", fix ReferenceError in model selection, hardened PR data flow with correct merged/draft state and invariant checks.
+
 ## 0.2.19
 
 - PRs in the sidebar are now scoped to each workspace instead of showing every open PR across the repo.
