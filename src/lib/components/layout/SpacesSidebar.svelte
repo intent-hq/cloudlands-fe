@@ -44,6 +44,7 @@
   import { getLineStats, type LineStats } from '$features/file-tracking/file-tracking.client';
   import { groupAndSortWorkspaces } from '$lib/utils/workspace-sorting';
   import { featureCodesStore } from '$lib/stores/feature-codes.store.svelte';
+  import { sidebarNavStore } from '$lib/components/layout/sidebar-nav/sidebar-nav.store.svelte';
 
   // Crossfade for transitioning workspaces between views
   const [send, receive] = crossfade({
@@ -129,8 +130,6 @@
     spaceOrdering.syncWithWorkspaces(workspaceIds);
   });
 
-  let orderVersion = $state(0);
-
   // View mode: 'recent' (flat list by recency) or 'grouped' (grouped by repo)
   type ViewMode = 'recent' | 'grouped';
   const VIEW_MODE_STORAGE_KEY = 'spaces-sidebar-view-mode';
@@ -157,22 +156,23 @@
     }
   }
 
+  function getWorkspaceSortTime(workspace: Workspace): number {
+    return new Date(workspace.lastActivity || workspace.updatedAt || 0).getTime();
+  }
+
   let orderedWorkspaces = $derived.by(() => {
-    void orderVersion;
-    const order = spaceOrdering.order;
-    const workspaceMap = new SvelteMap<string, Workspace>(workspaces.map((w) => [w.id, w]));
-    const ordered: Workspace[] = [];
-    for (const id of order) {
-      const ws = workspaceMap.get(id);
-      if (ws) {
-        ordered.push(ws);
-        workspaceMap.delete(id);
+    void sidebarNavStore.pinnedIds;
+
+    return [...workspaces].sort((a, b) => {
+      const aPinned = sidebarNavStore.isPinned(a.id);
+      const bPinned = sidebarNavStore.isPinned(b.id);
+
+      if (aPinned !== bPinned) {
+        return aPinned ? -1 : 1;
       }
-    }
-    for (const ws of workspaceMap.values()) {
-      ordered.push(ws);
-    }
-    return ordered;
+
+      return getWorkspaceSortTime(b) - getWorkspaceSortTime(a);
+    });
   });
 
   // Grouped workspaces by repository (each group sorted by recency)
@@ -183,8 +183,6 @@
   }
 
   let groupedWorkspaces = $derived.by((): WorkspaceGroup[] => {
-    void orderVersion;
-
     return groupAndSortWorkspaces({
       workspaces: orderedWorkspaces,
       getId: (ws) => ws.id,
@@ -305,7 +303,6 @@
     spaceOrdering.openSpace(workspaceId);
     workspaceTabManager.openTab(workspaceId);
     goto(route);
-    orderVersion++;
   }
 
   function handleNewWorkspace() {
@@ -381,7 +378,10 @@
   <div class="flex-1 overflow-y-auto px-1">
     {#if viewMode === 'recent'}
       <!-- Flat list ordered by recency -->
-      {#each orderedWorkspaces as workspace (workspace.id)}
+      {#each orderedWorkspaces as workspace, i (workspace.id)}
+        {#if i > 0 && !sidebarNavStore.isPinned(workspace.id) && sidebarNavStore.isPinned(orderedWorkspaces[i - 1].id)}
+          <div class="border-t border-border my-1 mx-2"></div>
+        {/if}
         {@const isActive = workspace.id === currentWorkspaceId}
         {@const tooltipText = workspace.branch
           ? `${workspace.title}\n${workspace.branch}`
@@ -483,7 +483,10 @@
         </div>
 
         <!-- Workspaces in group -->
-        {#each group.workspaces as workspace (workspace.id)}
+        {#each group.workspaces as workspace, i (workspace.id)}
+          {#if i > 0 && !sidebarNavStore.isPinned(workspace.id) && sidebarNavStore.isPinned(group.workspaces[i - 1].id)}
+            <div class="border-t border-border my-1 mx-2"></div>
+          {/if}
           {@const isActive = workspace.id === currentWorkspaceId}
           {@const tooltipText = workspace.branch
             ? `${workspace.title}\n${workspace.branch}`

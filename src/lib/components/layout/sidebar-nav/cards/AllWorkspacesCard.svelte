@@ -53,13 +53,28 @@
     activeStreamsTracker.fetchActiveStreams();
   });
 
+  function getWorkspaceUpdatedTime(workspace: Workspace): number {
+    return new Date(workspace.lastActivity || workspace.updatedAt || 0).getTime();
+  }
+
   const allWorkspaces = $derived.by(() => {
+    void sidebarNavStore.pinnedIds;
+
     return workspaceStore.items
       .filter(
         (w) =>
           w.status !== WorkspaceStatusEnum.Archived && w.status !== WorkspaceStatusEnum.Deleted,
       )
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      .sort((a, b) => {
+        const aPinned = sidebarNavStore.isPinned(a.id);
+        const bPinned = sidebarNavStore.isPinned(b.id);
+
+        if (aPinned !== bPinned) {
+          return aPinned ? -1 : 1;
+        }
+
+        return getWorkspaceUpdatedTime(b) - getWorkspaceUpdatedTime(a);
+      });
   });
 
   function getDisplayStatus(ws: Workspace): WorkspaceDisplayStatus {
@@ -108,8 +123,8 @@
       groups.get(repo)!.workspaces.push(ws);
     }
     return [...groups.entries()].sort((a, b) => {
-      const aTime = new Date(a[1].workspaces[0].updatedAt).getTime();
-      const bTime = new Date(b[1].workspaces[0].updatedAt).getTime();
+      const aTime = getWorkspaceUpdatedTime(a[1].workspaces[0]);
+      const bTime = getWorkspaceUpdatedTime(b[1].workspaces[0]);
       return bTime - aTime;
     });
   });
@@ -292,6 +307,9 @@
     <div class="overflow-y-auto flex-1 min-h-0 pb-2">
       {#if viewMode === 'recent'}
         {#each filteredWorkspaces as workspace, i (workspace.id)}
+          {#if i > 0 && !sidebarNavStore.isPinned(workspace.id) && sidebarNavStore.isPinned(filteredWorkspaces[i - 1].id)}
+            <div class="border-t border-border my-1 mx-2"></div>
+          {/if}
           <WorkspaceListItem
             {workspace}
             isRunning={isRunning(workspace)}
@@ -323,7 +341,10 @@
             {/if}
             <Header size={3}>{repoName}</Header>
           </div>
-          {#each group.workspaces as workspace (workspace.id)}
+          {#each group.workspaces as workspace, i (workspace.id)}
+            {#if i > 0 && !sidebarNavStore.isPinned(workspace.id) && sidebarNavStore.isPinned(group.workspaces[i - 1].id)}
+              <div class="border-t border-border my-1 mx-2"></div>
+            {/if}
             <WorkspaceListItem
               {workspace}
               hideRepoAvatar
@@ -348,7 +369,10 @@
           <div class="px-3 pt-2 pb-1 mt-3">
             <Header size={3}>{statusLabel}</Header>
           </div>
-          {#each workspaces as workspace (workspace.id)}
+          {#each workspaces as workspace, i (workspace.id)}
+            {#if i > 0 && !sidebarNavStore.isPinned(workspace.id) && sidebarNavStore.isPinned(workspaces[i - 1].id)}
+              <div class="border-t border-border my-1 mx-2"></div>
+            {/if}
             <WorkspaceListItem
               {workspace}
               isRunning={isRunning(workspace)}
