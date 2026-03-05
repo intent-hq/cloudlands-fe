@@ -66,8 +66,13 @@
   const isCommitRetrieval = $derived(
     toolUse.name.toLowerCase().includes('git') || toolUse.name.toLowerCase().includes('commit'),
   );
+  const isConversationRetrieval = $derived(
+    toolUse.name.toLowerCase().includes('conversation'),
+  );
 
-  const sourceLabel = $derived(isCommitRetrieval ? 'commit history' : 'codebase');
+  const sourceLabel = $derived(
+    isCommitRetrieval ? 'commit history' : isConversationRetrieval ? 'conversations' : 'codebase',
+  );
 
   // Get the query/information request (cast to String to handle non-string values safely)
   const query = $derived(String(toolUse.input?.information_request || toolUse.input?.query || ''));

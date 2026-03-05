@@ -499,6 +499,9 @@
         return getString('path') ? `Saving ${getString('path')}` : 'Saving file';
       case 'codebase-retrieval':
         return 'Searching codebase';
+      case 'conversation-retrieval':
+      case 'conversation_retrieval':
+        return 'Searching conversations';
       case 'launch-process': {
         const command = getString('command');
         return command

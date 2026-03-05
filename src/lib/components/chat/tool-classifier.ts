@@ -202,6 +202,8 @@ const CONTEXT_ENGINE_TOOLS = [
   'codebase_retrieval',
   'git-commit-retrieval',
   'git_commit_retrieval',
+  'conversation-retrieval',
+  'conversation_retrieval',
 ] as const;
 
 /**
@@ -223,6 +225,9 @@ export function getContextEngineSource(toolName: string | undefined | null): str
   const cleanName = cleanToolName(toolName).toLowerCase();
   if (cleanName.includes('git') || cleanName.includes('commit')) {
     return 'Commit History';
+  }
+  if (cleanName.includes('conversation')) {
+    return 'Conversations';
   }
   return 'Codebase';
 }
@@ -989,6 +994,9 @@ function contextEngineDisplay(name: string, input: Record<string, any>): ToolDis
   if (name.includes('git') || name.includes('commit')) {
     verb = 'Context Engine';
     subject = 'Commit History';
+  } else if (name.includes('conversation')) {
+    verb = 'Context Engine';
+    subject = 'Conversations';
   } else {
     verb = 'Context Engine';
     subject = 'Codebase';

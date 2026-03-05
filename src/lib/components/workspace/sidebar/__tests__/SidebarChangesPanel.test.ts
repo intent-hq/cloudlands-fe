@@ -1196,6 +1196,7 @@ describe('SidebarChangesPanel', () => {
     beforeEach(async () => {
       const prStatusService = await import('$features/git-tracking/pr-status.service');
       refreshPRStatusMock = prStatusService.refreshPRStatus as Mock;
+      refreshPRStatusMock.mockClear();
 
       // Enable GitHub auth for discovery tests
       const { githubAuthStore } = await import(

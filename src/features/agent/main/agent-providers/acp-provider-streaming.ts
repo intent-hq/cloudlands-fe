@@ -1181,8 +1181,13 @@ export class ACPProviderStreaming {
       // view tool with explicit line range - unambiguous
       actualToolName = 'view';
     } else if (input.information_request !== undefined) {
-      // codebase-retrieval is the only tool with information_request parameter
-      actualToolName = 'codebase-retrieval';
+      // Both codebase-retrieval and conversation-retrieval use information_request.
+      // Distinguish by checking the ACP title for "conversation".
+      if (typeof toolName === 'string' && toolName.toLowerCase().includes('conversation')) {
+        actualToolName = 'conversation-retrieval';
+      } else {
+        actualToolName = 'codebase-retrieval';
+      }
     } else if (input.file_paths !== undefined && Array.isArray(input.file_paths)) {
       // remove-files is the only tool with file_paths array parameter
       actualToolName = 'remove-files';

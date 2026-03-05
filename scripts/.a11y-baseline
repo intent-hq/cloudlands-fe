@@ -6,7 +6,7 @@ src/lib/components/ErrorDisplay.svelte:186
 src/lib/components/agent-overview/AgentNodeCard.svelte:64
 src/lib/components/agent-overview/AgentNodeCard.svelte:71
 src/lib/components/chat/AgentCard.svelte:412
-src/lib/components/chat/ContextEngineToolCall.svelte:290
+src/lib/components/chat/ContextEngineToolCall.svelte:295
 src/lib/components/chat/ResponseGroup.svelte:103
 src/lib/components/chat/ToolCall.svelte:152
 src/lib/components/chat/ToolDetails.svelte:283
