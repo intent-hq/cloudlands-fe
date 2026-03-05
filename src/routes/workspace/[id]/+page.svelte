@@ -1838,7 +1838,7 @@
 
     const unsubscribe = listenSync('terminal:created', (event: any) => {
       const payload = event.payload || event;
-      const { terminalId, workspaceId: eventWorkspaceId, title, createdAt } = payload;
+      const { terminalId, workspaceId: eventWorkspaceId, title, createdAt, background } = payload;
 
       // Only handle terminals for this workspace
       if (eventWorkspaceId !== workspaceId) return;
@@ -1910,6 +1910,9 @@
       const pendingAgentKey = `workspace:${eventWorkspaceId}:initial-agent-pending`;
       const hasPendingAgentInStorage = !!sessionStorage.getItem(pendingAgentKey);
 
+      // Don't auto-expand the overlay for background terminals — they should stay hidden
+      const isBackgroundTerminal = background === true;
+
       if (isShowingInitialAgent || isNewlyCreatedWithPendingAgent || hasPendingAgentInStorage) {
         logger.info(
           '[WorkspacePage] Terminal created but not opening drawer - initial agent is displayed or pending',
@@ -1921,7 +1924,7 @@
             hasPendingAgentInStorage,
           },
         );
-      } else {
+      } else if (!isBackgroundTerminal) {
         // Open the terminal drawer
         openTerminal(terminalId);
       }

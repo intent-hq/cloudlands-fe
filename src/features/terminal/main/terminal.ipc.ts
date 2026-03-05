@@ -1663,6 +1663,7 @@ export async function createTerminalFromBackend(options: {
           title: title || 'Remote Terminal',
           cwd: terminalCwd,
           createdAt: new Date().toISOString(),
+          background: !!initialCommand,
         });
 
         logger.info('[Terminal] Backend remote terminal created', {
@@ -1839,6 +1840,7 @@ export async function createTerminalFromBackend(options: {
       title: title || 'Terminal',
       cwd: workingDir,
       createdAt: new Date().toISOString(),
+      background: !!initialCommand,
     });
 
     logger.info('[Terminal] Backend terminal created', {
@@ -1869,7 +1871,7 @@ export async function createTerminalFromBackend(options: {
           const command = isWindows
             ? `powershell -ExecutionPolicy Bypass -File "${scriptPath}"`
             : `bash "${scriptPath}"`;
-          terminal.write(`${command}\n`);
+          terminal.write(`${command}\r`);
           logger.info('[Terminal] Executing setup script', { terminalId, scriptPath });
 
           // Notify frontend that a command was executed so it can track it
@@ -1892,12 +1894,12 @@ export async function createTerminalFromBackend(options: {
           if (process.platform === 'win32') {
             // Pipe the script to PowerShell via stdin
             terminal.write(
-              `powershell -ExecutionPolicy Bypass -Command "${initialCommand.replace(/"/g, '\\"')}"\n`,
+              `powershell -ExecutionPolicy Bypass -Command "${initialCommand.replace(/"/g, '\\"')}"\r`,
             );
           } else {
             // Fallback: try to execute inline with heredoc
             terminal.write(
-              `bash << 'SETUP_SCRIPT_EOF'\n${initialCommand}\nSETUP_SCRIPT_EOF\n`,
+              `bash << 'SETUP_SCRIPT_EOF'\n${initialCommand}\nSETUP_SCRIPT_EOF\r`,
             );
           }
         }

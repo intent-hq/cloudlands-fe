@@ -230,6 +230,7 @@ export interface DomainEventPayloads {
     title: string;
     cwd: string;
     createdAt: string;
+    background?: boolean;
   };
   'terminal:data': { terminalId: string; data: string };
   'terminal:exit': { terminalId: string; code: number | null; signal: string | null };

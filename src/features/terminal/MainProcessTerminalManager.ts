@@ -285,6 +285,13 @@ export class ProfessionalTerminal extends EventEmitter {
         // 3. Kill the PTY with graceful shutdown
         // node-pty's kill() sends SIGTERM by default, which allows the process to cleanup
         await this.killPtyGracefully();
+
+        // 4. Wait for native conpty thread to complete its exit callback.
+        // After the PTY process exits, conpty.cc's background thread calls
+        // tsfn.BlockingCall() then tsfn.Release(). If we tear down the Node
+        // environment too quickly, BlockingCall fails with status != napi_ok,
+        // triggering an assertion crash in conpty.cc:110.
+        await new Promise((resolve) => setTimeout(resolve, 200));
       } catch (e) {
         this.logger.error(
           'Error during PTY cleanup:',

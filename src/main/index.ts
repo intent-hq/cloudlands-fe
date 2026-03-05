@@ -493,6 +493,13 @@ async function gracefulShutdown() {
     // to prevent Napi::Error crashes during shutdown (AUGMENT-INTENT-8)
     await cleanupTerminals();
 
+    // Allow native conpty threads to complete their exit callbacks
+    // before tearing down the Node environment. The conpty.cc background thread
+    // calls tsfn.BlockingCall() then tsfn.Release() after the PTY process exits;
+    // if the environment is torn down too quickly, the assertion at conpty.cc:110
+    // fires. This delay gives those threads time to finish. (AUGMENT-INTENT-9)
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
     // Kill any active note terminal processes (exec() spawns via shell,
     // so these need tree-kill to avoid orphaning the child command)
     try {
@@ -2624,9 +2631,10 @@ app.on('window-all-closed', async () => {
     }
   }
 
-  // Cleanup terminals gracefully - this properly cleans up PTY processes
-  // to prevent Napi::Error crashes during shutdown (AUGMENT-INTENT-8)
-  await cleanupTerminals();
+  // Terminal cleanup is NOT done here — app.quit() (line 2692) triggers
+  // before-quit → gracefulShutdown() which already calls cleanupTerminals()
+  // with a proper settling delay. Calling it here too caused a double-cleanup
+  // race that could crash conpty's native thread (AUGMENT-INTENT-8).
 
   // Stop line attribution service
   lineAttributionService.stop();
