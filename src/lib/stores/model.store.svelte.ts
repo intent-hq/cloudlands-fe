@@ -123,7 +123,13 @@ class ModelStore {
    * This is called on initialization and when the provider changes.
    */
   async loadModels() {
-    const activeProviderId = activeProviderStore.activeProviderId;
+    let activeProviderId: string;
+    try {
+      activeProviderId = activeProviderStore.activeProviderId;
+    } catch (e) {
+      logger.warn('Failed to read activeProviderId during loadModels — chunk may not be loaded yet', e);
+      return;
+    }
 
     // Skip if already loaded for this provider or currently loading
     if (
@@ -141,8 +147,12 @@ class ModelStore {
     this.loadError = null;
     logger.debug('Loading models for active provider:', { activeProviderId });
 
-    // Sync loading state with unified store
-    unifiedStateStore.setModelsLoading(true);
+    // Sync loading state with unified store (defensive against chunk-loading race)
+    try {
+      unifiedStateStore.setModelsLoading(true);
+    } catch (e) {
+      logger.warn('Failed to sync loading state with unified store', e);
+    }
 
     try {
       // Load models only from the active provider
@@ -180,8 +190,12 @@ class ModelStore {
           prefixedModelIds: prefixedModels.map((m) => m.value),
         });
 
-        // Sync models with unified state store
-        unifiedStateStore.setAvailableModels(this.availableModels);
+        // Sync models with unified state store (defensive against chunk-loading race)
+        try {
+          unifiedStateStore.setAvailableModels(this.availableModels);
+        } catch (e) {
+          logger.warn('Failed to sync available models with unified store', e);
+        }
 
         // Validate selected model is in the available list (using prefixed values)
         const availableModelValues = prefixedModels.map((m) => m.value);
@@ -219,8 +233,12 @@ class ModelStore {
       this.scheduleAutoRetry(activeProviderId);
     } finally {
       this.isLoadingModels = false;
-      // Sync loading state with unified store
-      unifiedStateStore.setModelsLoading(false);
+      // Sync loading state with unified store (defensive against chunk-loading race)
+      try {
+        unifiedStateStore.setModelsLoading(false);
+      } catch (e) {
+        logger.warn('Failed to sync loading state with unified store', e);
+      }
     }
   }
 
@@ -250,9 +268,13 @@ class ModelStore {
     this.retryTimeoutId = setTimeout(() => {
       this.retryTimeoutId = null;
       // Only retry if still for the same provider and not yet loaded
-      if (!this.modelsLoaded && activeProviderStore.activeProviderId === forProviderId) {
-        logger.info(`Auto-retrying model load (attempt ${this.retryAttempt}/${ModelStore.MAX_AUTO_RETRIES})`);
-        this.loadModels();
+      try {
+        if (!this.modelsLoaded && activeProviderStore.activeProviderId === forProviderId) {
+          logger.info(`Auto-retrying model load (attempt ${this.retryAttempt}/${ModelStore.MAX_AUTO_RETRIES})`);
+          this.loadModels();
+        }
+      } catch (e) {
+        logger.warn('Failed to check activeProviderId during auto-retry', e);
       }
     }, delay);
   }
@@ -304,7 +326,13 @@ class ModelStore {
    * otherwise preserves the global selectedModel for loadModels() validation.
    */
   async reloadModelsForProvider() {
-    const newProviderId = activeProviderStore.activeProviderId;
+    let newProviderId: string;
+    try {
+      newProviderId = activeProviderStore.activeProviderId;
+    } catch (e) {
+      logger.warn('Failed to read activeProviderId during reloadModelsForProvider — chunk may not be loaded yet', e);
+      return;
+    }
     logger.info('Reloading models for provider change', {
       previousProvider: this.loadedForProviderId,
       newProvider: newProviderId,
@@ -329,8 +357,16 @@ class ModelStore {
         savedModel,
       });
       this.selectedModel = savedModel;
-      localStorage.setItem(GLOBAL_MODEL_KEY, savedModel);
-      unifiedStateStore.selectModel(savedModel);
+      try {
+        localStorage.setItem(GLOBAL_MODEL_KEY, savedModel);
+      } catch (e) {
+        logger.warn('Failed to persist saved model to localStorage', e);
+      }
+      try {
+        unifiedStateStore.selectModel(savedModel);
+      } catch (e) {
+        logger.warn('Failed to sync saved model with unified store', e);
+      }
     }
 
     // Reset state to force reload
@@ -393,20 +429,34 @@ class ModelStore {
    */
   selectModel(model: string) {
     logger.debug('Selecting model:', { model, previousModel: this.selectedModel });
+
+    // Update internal state first (highest priority)
     this.selectedModel = model;
 
-    // Sync with unified state store
-    unifiedStateStore.selectModel(model);
+    // Persist to localStorage (critical - survives page refresh)
+    try {
+      localStorage.setItem(GLOBAL_MODEL_KEY, model);
+    } catch (e) {
+      logger.warn('Failed to persist model to localStorage', e);
+    }
 
-    // Persist to localStorage
-    localStorage.setItem(GLOBAL_MODEL_KEY, model);
+    // Sync with unified state store (non-critical - defensive against chunk-loading race)
+    try {
+      unifiedStateStore.selectModel(model);
+    } catch (e) {
+      logger.warn('Failed to sync model with unified state store', e);
+    }
 
     // Also remember this model for the current active provider
     // so switching away and back restores the user's choice
-    const activeProviderId = activeProviderStore.activeProviderId;
-    this.providerModels.set(activeProviderId, model);
-    this.saveProviderModels();
-    logger.debug('Saved model for provider:', { activeProviderId, model });
+    try {
+      const activeProviderId = activeProviderStore.activeProviderId;
+      this.providerModels.set(activeProviderId, model);
+      this.saveProviderModels();
+      logger.debug('Saved model for provider:', { activeProviderId, model });
+    } catch (e) {
+      logger.warn('Failed to save model for provider', e);
+    }
   }
 
   /**
@@ -486,7 +536,13 @@ class ModelStore {
     providerDisplayName: string;
     models: AuggieModel[];
   }> {
-    const activeProviderId = activeProviderStore.activeProviderId;
+    let activeProviderId: string;
+    try {
+      activeProviderId = activeProviderStore.activeProviderId;
+    } catch (e) {
+      logger.warn('Failed to read activeProviderId in getGroupedModels', e);
+      return [];
+    }
     const providerConfig = ACP_PROVIDERS[activeProviderId];
 
     if (!providerConfig || this.availableModels.length === 0) {
