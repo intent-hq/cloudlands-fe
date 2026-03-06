@@ -4,7 +4,6 @@
   import { fetchPromotionalBanners } from '$lib/services/promotional-banner';
   import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
   import { modelStore } from '$lib/stores/model.store.svelte';
-  import { specialistsStore } from '$lib/stores/specialists.store.svelte';
   import type {
     PromotionalBanner as PromotionalBannerData,
     PromotionalBannerAction,
@@ -15,7 +14,6 @@
   import { faBell, faXmark } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import { toast } from 'svelte-sonner';
   import { fly, slide } from 'svelte/transition';
 
   interface BannerInteractionRecord {
@@ -99,10 +97,10 @@
     };
   });
 
-  // Recompute applicable buttons when provider changes, but only if the user
-  // hasn't started the sequential flow yet (no action taken).
+  // Recompute applicable buttons when provider changes, but
+  // only if the user hasn't started the sequential flow yet (no action taken).
   $effect(() => {
-    // Read the reactive dependency
+    // Read reactive dependencies so Svelte tracks them
     const _providerId = activeProviderStore.activeProviderId;
 
     // Only recompute if banners are loaded and the user hasn't started clicking buttons
@@ -184,12 +182,7 @@
         }
       }
 
-      if (button.action.type === 'setDefaultModel') {
-        // If models haven't loaded yet, include the button optimistically.
-        // It will be re-evaluated via recomputeRemainingButtons() after provider switch.
-        if (availableModelValues.size === 0) return true;
-        return availableModelValues.has(button.action.model);
-      }
+      if (button.action.type === 'setDefaultModel') return false;
 
       return true;
     });
@@ -222,10 +215,7 @@
         }
       }
 
-      // Apply model availability filter
-      if (button.action.type === 'setDefaultModel') {
-        return availableModelValues.has(button.action.model);
-      }
+      if (button.action.type === 'setDefaultModel') return false;
 
       return true;
     });
@@ -354,26 +344,6 @@
 
         // Recompute remaining buttons now that models are loaded for the new provider.
         recomputeRemainingButtons();
-      }
-
-      if (action.type === 'setDefaultModel') {
-        const resolvedModel = action.model;
-
-        if (action.agents.includes('general')) {
-          modelStore.selectModel(resolvedModel);
-        }
-
-        if (action.agents.includes('specialists')) {
-          for (const specialist of specialistsStore.specialists) {
-            specialistsStore.setModelOverride(specialist.id, resolvedModel);
-          }
-        }
-      }
-
-      if (action.type === 'setDefaultModel') {
-        toast.success('The default agent model and specialists are now set to GPT-5.4. Open Settings to restore your previous selections.', {
-          duration: 4000,
-        });
       }
 
       if (visibleBanner) {

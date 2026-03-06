@@ -106,8 +106,8 @@ describe('Specialist Prompts Verification', () => {
       // pr-reviewer needs high capability for thorough review
       expect(prReviewer!.defaultModelTier).toBe('smart');
 
-      // ui-designer uses fast model for quick iteration
-      expect(uiDesigner!.defaultModelTier).toBe('fast');
+      // ui-designer uses smart model like other specialists
+      expect(uiDesigner!.defaultModelTier).toBe('smart');
     });
   });
 

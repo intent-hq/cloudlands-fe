@@ -70,6 +70,9 @@ export function getModelIcon(modelValue: string): string {
     'gemini25-pro': '💎',
     'gemini3-eap': '🔥',
 
+    // GPT models
+    'gpt5.4': '🧠',
+
     // Other models
     'glm4.6': '🌟',
     'gpt5-codex': '🤖',

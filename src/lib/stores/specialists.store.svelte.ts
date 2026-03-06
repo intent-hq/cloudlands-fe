@@ -83,7 +83,7 @@ class SpecialistsStore {
       if (!seen.has(file.id)) {
         seen.add(file.id);
         // Default to 'balanced' tier when neither model nor modelTier is set,
-        // so file specialists don't fall through to DEFAULT_AGENT_MODEL (opus4.6).
+        // so file specialists don't fall through to DEFAULT_AGENT_MODEL (gpt5.4).
         const effectiveTier = file.modelTier || (!file.model ? 'balanced' : undefined);
         result.push({
           id: file.id,

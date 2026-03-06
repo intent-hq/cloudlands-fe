@@ -421,7 +421,7 @@ Update a workspace note after each iteration with: Iteration number, PR state su
     id: 'ui-designer',
     name: 'UI Designer',
     description: 'Creates elegant, accessible, production-ready user interfaces',
-    defaultModelTier: 'fast',
+    defaultModelTier: 'smart',
     defaultBehaviorPrompt: `## UI Designer
 
 You create elegant, accessible, production-ready user interfaces. You write code that is beautiful, functional, and follows the project's established patterns.

@@ -11,6 +11,17 @@ import {
   getSpecialistById,
   type Specialist,
 } from '../../src/lib/constants/specialists';
+import {
+  MODEL_DEFAULTS,
+  MODEL_IDS,
+  DEFAULT_AGENT_MODEL,
+} from '../../src/shared/constants/agent-services';
+import {
+  PROVIDER_MODEL_TIERS,
+  getDefaultModelForProvider,
+  getModelTierFromModel,
+  getDefaultProviderId,
+} from '../../src/shared/config/provider-config';
 
 // Mock electron-store for getEffectiveSpecialist
 vi.mock('electron-store', () => ({
@@ -75,9 +86,9 @@ describe('Specialist Configuration', () => {
       expect(specialist!.defaultModelTier).toBe('smart');
     });
 
-    it('ui-designer uses fast tier for quick iteration', () => {
+    it('ui-designer uses smart tier like other specialists', () => {
       const specialist = getSpecialistById('ui-designer');
-      expect(specialist!.defaultModelTier).toBe('fast');
+      expect(specialist!.defaultModelTier).toBe('smart');
     });
   });
 
@@ -161,6 +172,71 @@ describe('Specialist Configuration', () => {
         ).toBeDefined();
         expect(specialist.defaultBehaviorPrompt).toBeDefined();
       }
+    });
+  });
+
+  // ==========================================================================
+  // Regression: Auggie default model is GPT-5.4
+  // These tests lock in the gpt5.4 default so a revert to opus4.5/opus4.6
+  // would be caught immediately.
+  // ==========================================================================
+
+  describe('Auggie Default Model Regression (gpt5.4)', () => {
+    it('MODEL_DEFAULTS.AGENT_MODEL is gpt5.4', () => {
+      expect(MODEL_DEFAULTS.AGENT_MODEL).toBe('gpt5.4');
+    });
+
+    it('MODEL_DEFAULTS.UI_INITIAL_MODEL is gpt5.4', () => {
+      expect(MODEL_DEFAULTS.UI_INITIAL_MODEL).toBe('gpt5.4');
+    });
+
+    it('MODEL_DEFAULTS.UI_MODEL_PREFERENCE has gpt5.4 first', () => {
+      expect(MODEL_DEFAULTS.UI_MODEL_PREFERENCE[0]).toBe('gpt5.4');
+    });
+
+    it('deprecated DEFAULT_AGENT_MODEL alias is gpt5.4', () => {
+      expect(DEFAULT_AGENT_MODEL).toBe('gpt5.4');
+    });
+
+    it('MODEL_IDS.GPT_5_4 is the canonical gpt5.4 string', () => {
+      expect(MODEL_IDS.GPT_5_4).toBe('gpt5.4');
+    });
+  });
+
+  describe('Auggie Provider Tier Regression (gpt5.4)', () => {
+    it('auggie smart tier resolves to gpt5.4', () => {
+      expect(PROVIDER_MODEL_TIERS['auggie'].smart).toBe('gpt5.4');
+    });
+
+    it('getDefaultModelForProvider(auggie, smart) returns gpt5.4', () => {
+      expect(getDefaultModelForProvider('auggie', 'smart')).toBe('gpt5.4');
+    });
+
+    it('getModelTierFromModel(gpt5.4) returns smart', () => {
+      expect(getModelTierFromModel('gpt5.4')).toBe('smart');
+    });
+
+    it('getModelTierFromModel(gpt5.4, auggie) returns smart', () => {
+      expect(getModelTierFromModel('gpt5.4', 'auggie')).toBe('smart');
+    });
+
+    it('default provider is auggie', () => {
+      expect(getDefaultProviderId()).toBe('auggie');
+    });
+
+    it('smart-tier specialists resolve to gpt5.4 for auggie', () => {
+      const smartSpecialists = SPECIALISTS.filter((s) => s.defaultModelTier === 'smart');
+      expect(smartSpecialists.length).toBeGreaterThan(0);
+      for (const s of smartSpecialists) {
+        const resolved = getDefaultModelForProvider('auggie', s.defaultModelTier!);
+        expect(resolved).toBe('gpt5.4');
+      }
+    });
+
+    it('non-auggie provider tiers are NOT gpt5.4', () => {
+      // Ensure the change is scoped to auggie only
+      const claudeCode = PROVIDER_MODEL_TIERS['claude-code'];
+      expect(claudeCode.smart).not.toBe('gpt5.4');
     });
   });
 });

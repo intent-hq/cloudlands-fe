@@ -340,7 +340,7 @@ export function getEffectiveSpecialist(
     // Only override the model via tier-based resolution when:
     // 1. The specialist has an explicit modelTier (user wants provider-aware resolution), OR
     // 2. The specialist has NO explicit model (need a default — without this, empty string
-    //    cascades to DEFAULT_AGENT_MODEL opus4.6)
+    //    cascades to DEFAULT_AGENT_MODEL gpt5.4)
     // When the user explicitly set `model` without `modelTier`, respect their choice.
     if (hasExplicitTier || !hasExplicitModel) {
       if (tier) {

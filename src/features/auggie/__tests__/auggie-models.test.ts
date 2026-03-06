@@ -83,4 +83,14 @@ describe('auggie-models', () => {
       expect(model.description).toBeUndefined();
     });
   });
+
+  // Regression: gpt5.4 is the Auggie default and must have display metadata
+  describe('gpt5.4 default model regression', () => {
+    it('gpt5.4 has a dedicated icon (not the fallback)', () => {
+      const icon = getModelIcon('gpt5.4');
+      expect(icon).toBe('🧠');
+      // Ensure it's NOT the generic fallback
+      expect(icon).not.toBe(getModelIcon('unknown-model'));
+    });
+  });
 });

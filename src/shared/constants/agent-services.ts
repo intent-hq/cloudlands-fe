@@ -198,6 +198,7 @@ export const MODEL_IDS = {
   GPT_4O: 'gpt-4o' as const,
   GPT_4O_MINI: 'gpt-4o-mini' as const,
   GPT_3_5_TURBO: 'gpt-3.5-turbo' as const,
+  GPT_5_4: 'gpt5.4' as const,
   GPT_5_CODEX: 'gpt5-codex' as const,
 
   // Gemini models
@@ -223,14 +224,14 @@ export const MODEL_DEFAULTS = {
    * Default model for interactive agents (workspaces, chat).
    * This is the primary model used when users create new agents.
    */
-  AGENT_MODEL: MODEL_IDS.CLAUDE_OPUS_4_6,
+  AGENT_MODEL: MODEL_IDS.GPT_5_4,
 
   /**
    * Default model for the model picker UI initial selection.
    * Used when no model has been previously selected by the user.
    * Should match AGENT_MODEL since this is the default for interactive use.
    */
-  UI_INITIAL_MODEL: MODEL_IDS.CLAUDE_OPUS_4_6,
+  UI_INITIAL_MODEL: MODEL_IDS.GPT_5_4,
 
   /**
    * Ordered preference list for the default interactive model.
@@ -238,7 +239,7 @@ export const MODEL_DEFAULTS = {
    * Used by the model store and model picker to resolve a sane default
    * instead of blindly picking availableModels[0].
    */
-  UI_MODEL_PREFERENCE: [MODEL_IDS.CLAUDE_OPUS_4_6, MODEL_IDS.CLAUDE_OPUS_4_5] as readonly string[],
+  UI_MODEL_PREFERENCE: [MODEL_IDS.GPT_5_4, MODEL_IDS.CLAUDE_OPUS_4_6, MODEL_IDS.CLAUDE_OPUS_4_5] as readonly string[],
 
   /**
    * Default model for background agents (commit, PR, review).

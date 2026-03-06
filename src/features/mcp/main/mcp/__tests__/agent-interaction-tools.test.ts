@@ -88,7 +88,7 @@ vi.mock('$features/agent/main/specialists.service', () => ({
       implementor: {
         specialistId: 'implementor',
         specialistName: 'Implementor',
-        model: 'opus4.6',
+        model: 'gpt5.4',
         behaviorPrompt: 'You are an implementor agent. Focus on the specific task.',
         roleReminder: '',
       },
@@ -718,12 +718,12 @@ describe('Agent Interaction Tools', () => {
       const result = await tool.execute(call);
 
       expect(result.isError).toBe(false);
-      // Should use implementor's model (opus4.6) and behavior prompt
+      // Should use implementor's model (gpt5.4) and behavior prompt
       expect(mockBackendHandler.createAgent).toHaveBeenCalledWith(
         workspaceId,
         'Implementation Agent',
         expect.objectContaining({
-          model: 'opus4.6',
+          model: 'gpt5.4',
           behaviorPrompt: expect.stringContaining('implementor'),
         }),
       );
