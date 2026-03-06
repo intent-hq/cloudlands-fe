@@ -4233,7 +4233,12 @@ export class ACPProvider extends BaseAgentProvider {
         // This prevents premature timeout when agents are actively working
         // NOTE: This is the actual code path for session updates - the acpServer.on('session:update')
         // event handler is not triggered for these messages
-        if (message.params?.sessionId) {
+        // IMPORTANT: Skip timer reset for cancelled sessions — stale events from a cancelled
+        // session must not keep the completion timer alive for the new stream.
+        if (
+          message.params?.sessionId &&
+          !(this.streamingHandler?.isSessionCancelled(message.params.sessionId))
+        ) {
           const timerSessionId = this.frontendSessionId || message.params.sessionId;
           this.resetCompletionDetection(timerSessionId);
         }
@@ -5808,6 +5813,11 @@ export class ACPProvider extends BaseAgentProvider {
           lastInterruptTime: this.lastInterruptTime,
         });
       } else if (this.sessionCreationParams) {
+        // Mark the old session as cancelled to reject stale events during createSession()
+        if (oldSessionId && this.streamingHandler) {
+          this.streamingHandler.markSessionCancelled(oldSessionId);
+        }
+
         // CRITICAL FIX (auggie < 0.18.0): Create a new session after cancelling the old one.
         // When we send session/cancel, the Auggie backend marks that session as cancelled.
         // If we then send a new prompt to the SAME session, Auggie will immediately
@@ -6871,6 +6881,15 @@ export class ACPProvider extends BaseAgentProvider {
           agentVersion: this.agentVersion,
         });
       } else if (this.sessionCreationParams) {
+        // Mark the old session as cancelled in the streaming handler
+        // BEFORE createSession(). During the async createSession() call, the event loop
+        // can process stale chunks from the old session. Without this, those chunks pass
+        // through the sessionId guard (because internalSessionId still holds the old value)
+        // and get forwarded to the new onChunk callback, causing interleaved text.
+        if (oldSessionId && this.streamingHandler) {
+          this.streamingHandler.markSessionCancelled(oldSessionId);
+        }
+
         // CRITICAL FIX (auggie < 0.18.0): Create a new session after cancelling the old one.
         // When we send session/cancel, the Auggie backend marks that session as cancelled.
         // If we then send a new prompt to the SAME session, Auggie will immediately

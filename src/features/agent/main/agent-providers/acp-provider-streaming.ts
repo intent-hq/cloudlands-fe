@@ -615,6 +615,9 @@ export class ACPProviderStreaming {
   private internalSessionId?: string;
   private frontendSessionId?: string;
   private aliasedSessionIds = new Set<string>(); // Track which session IDs we've already aliased
+  // Track cancelled session IDs to reject stale events that arrive after session/cancel
+  // but before internalSessionId is updated to the new session.
+  private cancelledSessionIds = new Set<string>();
   // Track the last pending tool call ID so we can auto-complete it when a new tool_call arrives.
   // This handles ACP providers (like Codex) that send tool_call events but never send
   // tool_call_update completion events.
@@ -726,6 +729,35 @@ export class ACPProviderStreaming {
    */
   setInternalSessionId(sessionId: string): void {
     this.internalSessionId = sessionId;
+    // Safety: ensure the new active session isn't blocked by a stale cancel entry.
+    // This is normally a no-op (UUIDs don't collide) but prevents a theoretical issue
+    // if a provider ever reuses session IDs.
+    this.cancelledSessionIds.delete(sessionId);
+  }
+
+  /**
+   * Check if a session ID has been cancelled.
+   */
+  isSessionCancelled(sessionId: string): boolean {
+    return this.cancelledSessionIds.has(sessionId);
+  }
+
+  /**
+   * Mark a session ID as cancelled so that stale events from it are rejected.
+   * This must be called BEFORE createSession() to close the race window where
+   * internalSessionId still holds the old value during the async session creation.
+   */
+  markSessionCancelled(sessionId: string): void {
+    this.cancelledSessionIds.add(sessionId);
+    logger.debug('[ACPProviderStreaming] Marked session as cancelled', {
+      sessionId,
+      cancelledCount: this.cancelledSessionIds.size,
+    });
+    // Cap the set size to prevent unbounded growth — keep only the last 20
+    if (this.cancelledSessionIds.size > 20) {
+      const first = this.cancelledSessionIds.values().next().value;
+      if (first) this.cancelledSessionIds.delete(first);
+    }
   }
 
   /**
@@ -735,6 +767,17 @@ export class ACPProviderStreaming {
     if (!this.internalSessionId) {
       throw new Error('No internal session ID set');
     }
+
+    // Clear stale tool/skeleton state from the previous session.
+    // Without this, a pending skeleton timer from a cancelled session could fire and
+    // inject a stale tool_use block into the new session's BackendStreamManager data.
+    // Similarly, lastPendingToolId from the old session could cause the first tool_call
+    // in the new session to auto-complete a stale tool_use_id.
+    this.clearSkeletonTimer();
+    this.pendingSkeleton = undefined;
+    this.pendingSkeletonSession = undefined;
+    this.lastPendingToolId = undefined;
+    this.emittedSkeletonToolId = undefined;
 
     // Store frontend session ID if provided
     this.frontendSessionId = options.frontendSessionId;
@@ -791,12 +834,25 @@ export class ACPProviderStreaming {
       hasContent: !!update.content,
     });
 
-    // CRITICAL FIX FOR DOUBLE-STREAMING:
+    // CRITICAL FIX FOR DOUBLE-STREAMING / INTERLEAVING:
     // When an error occurs (like "agent.name undefined"), the old session may still
     // be sending chunks while we've already created a new session for the retry.
     // We MUST ignore chunks from old sessions to prevent double-streaming.
     // The sessionId in params is the provider's session ID (e.g., "ses_XXXX").
     // If it doesn't match our current internalSessionId, it's from an old session.
+    //
+    // Also check cancelledSessionIds: after session/cancel is sent but before
+    // createSession() completes, internalSessionId still holds the OLD value.
+    // Without the cancelledSessionIds check, stale chunks pass through because
+    // sessionId === internalSessionId (both are the old ID), causing interleaved text.
+    if (sessionId && this.cancelledSessionIds.has(sessionId)) {
+      logger.debug('[ACPProviderStreaming] Ignoring chunk from cancelled session', {
+        incomingSessionId: sessionId,
+        currentSessionId: this.internalSessionId,
+        updateType,
+      });
+      return;
+    }
     if (sessionId && this.internalSessionId && sessionId !== this.internalSessionId) {
       logger.debug('[ACPProviderStreaming] Ignoring chunk from old session', {
         incomingSessionId: sessionId,
