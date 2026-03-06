@@ -1261,7 +1261,7 @@ export class ChatService implements IDisposable {
 
       // Persist truncated messages to disk immediately so they survive page refresh.
       // Fire-and-forget: the subsequent sendMessage will also persist on stream complete.
-      agentService.saveSession(sessionId, workspace.id).catch((err) => {
+      agentService.saveSession(sessionId, workspace.id, false, { allowTruncation: true }).catch((err) => {
         logger.warn('Failed to persist truncated messages after edit', {
           sessionId,
           error: err instanceof Error ? err.message : String(err),
@@ -1373,7 +1373,7 @@ export class ChatService implements IDisposable {
       sessionStore.updateMessages(sessionId, messagesBeforeRegenerate);
 
       // Persist truncated messages to disk immediately so they survive page refresh.
-      agentService.saveSession(sessionId, workspace.id).catch((err) => {
+      agentService.saveSession(sessionId, workspace.id, false, { allowTruncation: true }).catch((err) => {
         logger.warn('Failed to persist truncated messages after regenerate', {
           sessionId,
           error: err instanceof Error ? err.message : String(err),
@@ -1511,7 +1511,7 @@ export class ChatService implements IDisposable {
       sessionStore.updateMessages(sessionId, messagesBeforeRegenerate);
 
       // Persist truncated messages to disk immediately so they survive page refresh.
-      agentService.saveSession(sessionId, workspace.id).catch((err) => {
+      agentService.saveSession(sessionId, workspace.id, false, { allowTruncation: true }).catch((err) => {
         logger.warn('Failed to persist truncated messages after regenerate from message', {
           sessionId,
           error: err instanceof Error ? err.message : String(err),
@@ -1716,7 +1716,7 @@ export class ChatService implements IDisposable {
       sessionStore.updateMessages(sessionId, messagesBeforeRetry);
 
       // Persist truncated messages to disk
-      agentService.saveSession(sessionId, workspace.id).catch((err) => {
+      agentService.saveSession(sessionId, workspace.id, false, { allowTruncation: true }).catch((err) => {
         logger.warn('Failed to persist truncated messages after retry fallback', {
           sessionId,
           error: err instanceof Error ? err.message : String(err),

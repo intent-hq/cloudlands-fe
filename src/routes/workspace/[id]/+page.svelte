@@ -1509,6 +1509,37 @@
         // decide whether to show the spec panel immediately or defer it for the
         // slide-in animation. Cleaning up too early would remove the signal.
 
+        // Reconcile panel layout tabs that reference stale/deleted agent IDs.
+        // This can happen when the agent ID changes between sessions (e.g., agent
+        // was deleted and recreated, or the on-disk agent file has a different ID
+        // than what was persisted in the localStorage layout).
+        if (restoredAgents.length > 0 && capturedWorkspaceId) {
+          const layoutManager = getPanelLayoutManager(capturedWorkspaceId);
+          const validAgentIds = new Set(restoredAgents.map((a: AgentSession) => String(a.id)));
+          // Use the most recent agent as the replacement
+          const sortedForReconcile = [...restoredAgents].sort((a, b) => {
+            const aTime = new Date(a.createdAt || 0).getTime();
+            const bTime = new Date(b.createdAt || 0).getTime();
+            return bTime - aTime;
+          });
+          const replacement = sortedForReconcile[0];
+          if (replacement) {
+            const reconciled = layoutManager.reconcileStaleAgentTabs(
+              validAgentIds,
+              String(replacement.id),
+              replacement.name || 'Agent',
+            );
+            if (reconciled > 0) {
+              logger.info('[WorkspacePage] Reconciled stale agent tabs in panel layout', {
+                workspaceId: capturedWorkspaceId,
+                reconciledCount: reconciled,
+                replacementAgentId: replacement.id,
+                validAgentIds: Array.from(validAgentIds),
+              });
+            }
+          }
+        }
+
         // After loading agents, verify streaming states with the backend
         // This clears stale isStreaming flags for agents whose backend streams have completed
         // and returns the list of agent IDs that have active streams

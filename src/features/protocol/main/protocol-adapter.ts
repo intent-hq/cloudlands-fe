@@ -108,8 +108,12 @@ export class ProtocolAdapter {
   }
 
   async listWorkspaces(): Promise<Result<any[], string>> {
-    // Include archived workspaces - frontend handles filtering via "Show archived" toggle
-    const result = await this.workspaceService.listWorkspaces({ includeArchived: true });
+    // Default to lite mode for bulk workspace listings to avoid expensive eager enrichment.
+    // Callers that truly need synchronous summaries should use listAllWorkspaces({ lite: false }).
+    const result = await this.workspaceService.listWorkspaces({
+      includeArchived: true,
+      lite: true,
+    });
     if (result.ok) {
       // Convert new format to old format for backward compatibility
       return { ok: true, data: result.data.workspaces };

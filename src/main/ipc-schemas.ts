@@ -710,6 +710,14 @@ export const PersistenceSaveAgentConfigSchema = z.object({
 export const PersistenceSaveSessionSchema = z.object({
   workspaceId: WorkspaceIdSchema,
   session: z.any(),
+  options: z
+    .object({
+      immediate: z.boolean().optional(),
+      /** When true, allows the save to overwrite disk messages even if the frontend has fewer.
+       *  Used by edit/regenerate flows that intentionally truncate message history. */
+      allowTruncation: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export const PersistenceDeleteSchema = z.object({

@@ -1336,6 +1336,81 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
       logger.warn('Tab not found for title update', { tabId });
     },
 
+    /**
+     * Reconcile stale agent tabs in the layout.
+     * Replaces agent tabs that reference non-existent agent IDs with a valid agent ID.
+     * Only the first stale tab is replaced; additional stale tabs are removed to avoid
+     * duplicates (e.g., two tabs pointing to the same replacement agent).
+     * If the replacement agent already has a tab in the layout, all stale tabs are removed.
+     *
+     * This fixes blank chat panels caused by localStorage layout referencing deleted/old agents.
+     *
+     * @param validAgentIds - Set of agent IDs that actually exist (restored from disk)
+     * @param replacementAgentId - The agent ID to use as replacement (e.g., the most recent agent)
+     * @param replacementTitle - The title for the replacement tab
+     * @returns Number of tabs that were reconciled (replaced or removed)
+     */
+    reconcileStaleAgentTabs(
+      validAgentIds: Set<string>,
+      replacementAgentId: string,
+      replacementTitle: string,
+    ): number {
+      // Check if the replacement agent already has a tab somewhere in the layout
+      let replacementAlreadyExists = false;
+      for (const panel of Object.values(state.panels)) {
+        if (panel.tabs.some((t) => t.type === 'agent' && t.agentId === replacementAgentId)) {
+          replacementAlreadyExists = true;
+          break;
+        }
+      }
+
+      let reconciledCount = 0;
+      let hasReplaced = false;
+
+      // Use addToHistory: false — this is an automatic repair, not a user action
+      mutate(() => {
+        for (const panel of Object.values(state.panels)) {
+          const tabsToRemove: string[] = [];
+
+          for (const tab of panel.tabs) {
+            if (tab.type === 'agent' && tab.agentId && !validAgentIds.has(tab.agentId)) {
+              if (!replacementAlreadyExists && !hasReplaced) {
+                // Replace the first stale tab with the valid agent
+                logger.info('Reconciling stale agent tab (replacing)', {
+                  tabId: tab.id,
+                  staleAgentId: tab.agentId,
+                  replacementAgentId,
+                });
+                tab.agentId = replacementAgentId;
+                tab.title = replacementTitle;
+                hasReplaced = true;
+              } else {
+                // Remove additional stale tabs to avoid duplicates
+                logger.info('Reconciling stale agent tab (removing duplicate)', {
+                  tabId: tab.id,
+                  staleAgentId: tab.agentId,
+                  replacementAlreadyExists,
+                });
+                tabsToRemove.push(tab.id);
+              }
+              reconciledCount++;
+            }
+          }
+
+          // Remove stale tabs that weren't replaced
+          if (tabsToRemove.length > 0) {
+            panel.tabs = panel.tabs.filter((t) => !tabsToRemove.includes(t.id));
+            // Fix activeTabId if it was pointing to a removed tab
+            if (panel.activeTabId && tabsToRemove.includes(panel.activeTabId)) {
+              panel.activeTabId = panel.tabs[0]?.id ?? null;
+            }
+          }
+        }
+      }, { addToHistory: false });
+
+      return reconciledCount;
+    },
+
     /** Update a browser tab's URL - called when user navigates within the webview */
     updateTabBrowserUrl(tabId: string, newUrl: string) {
       // Find the panel containing this tab

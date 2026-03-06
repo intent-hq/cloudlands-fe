@@ -127,6 +127,7 @@ describe('WorkspaceService', () => {
   });
 
   afterEach(() => {
+    service.cleanup();
     vi.clearAllMocks();
   });
 
@@ -355,6 +356,41 @@ describe('WorkspaceService', () => {
         expect(ids).toContain(ws1.data.id);
         expect(ids).toContain(ws2.data.id);
       }
+    });
+
+    it('should keep the default list path lite and schedule background enrichment', async () => {
+      await service.createWorkspace({ title: 'Workspace 1', repositoryPath: '/path/to/repo' });
+
+      const buildListWorkspaceSpy = vi.spyOn(service as any, 'buildListWorkspace');
+      const scheduleBackgroundEnrichmentSpy = vi
+        .spyOn(service as any, 'scheduleBackgroundEnrichment')
+        .mockImplementation(() => {});
+
+      const result = await service.listWorkspaces();
+
+      expect(result.ok).toBe(true);
+      expect(buildListWorkspaceSpy).not.toHaveBeenCalled();
+      expect(scheduleBackgroundEnrichmentSpy).toHaveBeenCalledTimes(1);
+      if (result.ok) {
+        expect(result.data.workspaces[0]?.taskStats).toBeUndefined();
+        expect(result.data.workspaces[0]?.gitSummary).toBeUndefined();
+      }
+    });
+
+    it('should only build list summaries when explicitly requested', async () => {
+      await service.createWorkspace({ title: 'Workspace 1', repositoryPath: '/path/to/repo' });
+
+      vi.spyOn(service as any, 'scheduleBackgroundEnrichment').mockImplementation(() => {});
+
+      const buildListWorkspacesWithConcurrencySpy = vi.spyOn(
+        service as any,
+        'buildListWorkspacesWithConcurrency',
+      );
+
+      const result = await service.listWorkspaces({ lite: false });
+
+      expect(result.ok).toBe(true);
+      expect(buildListWorkspacesWithConcurrencySpy).toHaveBeenCalledTimes(1);
     });
   });
 

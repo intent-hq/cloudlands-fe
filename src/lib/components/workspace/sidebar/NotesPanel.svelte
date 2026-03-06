@@ -444,24 +444,7 @@
     }
   }
 
-  // Get the spec status label when the coordinator is actively working on it
-  function getSpecStatusLabel(note: Note): string | null {
-    if (!isSpecNote(note.id)) return null;
 
-    // Access streamingStateVersion to ensure reactivity
-    void streamingStateVersion;
-
-    // Check if the initial spec write is in progress
-    const wsId = WorkspaceIdFn(workspaceId);
-    const isInitialWrite = unifiedStateStore.getInitialSpecWriteInProgress(wsId);
-    if (isInitialWrite) return 'Being written…';
-
-    // Check if any agents are actively working on the spec
-    const activeAgents = getActiveAgentsForNote(note);
-    if (activeAgents.length > 0) return 'In progress…';
-
-    return null;
-  }
 </script>
 
 <div class={cn('w-full flex flex-col', className)}>
@@ -592,7 +575,6 @@
             {:else if note?.metadata?.task?.status}
               <!-- Task note with status - show TaskStatusIcon -->
               {@const activeAgents = getActiveAgentsForNote(note)}
-              {@const specStatusLabel = getSpecStatusLabel(note)}
               <div class="relative flex-1 w-full flex items-center gap-1">
                 <ListItem
                   iconClass="text-ghost"
@@ -618,13 +600,6 @@
                     ></span>
                   {/if}
                 </ListItem>
-
-                <!-- Show spec status label when coordinator is working -->
-                {#if specStatusLabel}
-                  <span class="shrink-0 text-ui text-blue-400 animate-pulse pr-0.5">
-                    {specStatusLabel}
-                  </span>
-                {/if}
 
                 <!-- Show active agents working on this note -->
                 {#if activeAgents.length > 0}
@@ -732,7 +707,6 @@
               </div>
             {:else}
               {@const activeAgents = getActiveAgentsForNote(note)}
-              {@const specStatusLabel = getSpecStatusLabel(note)}
               <div class="relative flex-1 w-full flex items-center gap-1">
                 <ListItem
                   icon={getNoteIcon(note)}
@@ -753,13 +727,6 @@
                     ></span>
                   {/if}
                 </ListItem>
-
-                <!-- Show spec status label when coordinator is working -->
-                {#if specStatusLabel}
-                  <span class="shrink-0 text-ui text-blue-400 animate-pulse pr-0.5">
-                    {specStatusLabel}
-                  </span>
-                {/if}
 
                 <!-- Show active agents working on this note -->
                 {#if activeAgents.length > 0}

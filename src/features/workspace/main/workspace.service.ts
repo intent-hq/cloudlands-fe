@@ -116,6 +116,18 @@ const PR_STATE_TO_STATUS: Record<string, PullRequestStatus> = {
   draft: PullRequestStatus.Draft,
 };
 
+type BackgroundEnrichmentWorkspaceUpdates = Partial<
+  Pick<
+    Workspace,
+    | 'repositoryOwner'
+    | 'repositoryName'
+    | 'activePullRequest'
+    | 'diffSummary'
+    | 'agentSummary'
+    | 'taskStats'
+    | 'gitSummary'
+  >
+>;
 
 export class WorkspaceService {
   private readonly store: any;
@@ -123,12 +135,18 @@ export class WorkspaceService {
   private contextCacheOrder: string[] = []; // Track access order for LRU
   private readonly pendingBackgroundEnrichment = new Set<WorkspaceId>();
   private readonly MAX_CONTEXT_CACHE_SIZE = 50; // Limit cache size to prevent unbounded growth
+  private readonly backgroundEnrichmentQueue: WorkspaceId[] = [];
+  private readonly backgroundSummaryHydratedAt = new Map<WorkspaceId, number>();
   private backgroundEnrichmentTimer: NodeJS.Timeout | null = null;
+  private activeBackgroundEnrichmentCount = 0;
   private periodicPRRefreshTimer: NodeJS.Timeout | null = null;
   private periodicPRRefreshInitialTimeout: NodeJS.Timeout | null = null;
   private periodicPRStaggeredTimeouts: NodeJS.Timeout[] = [];
   private disposed = false;
   private readonly PR_REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
+  private readonly LIST_ENRICHMENT_CONCURRENCY = 3;
+  private readonly BACKGROUND_ENRICHMENT_CONCURRENCY = 3;
+  private readonly BACKGROUND_SUMMARY_TTL_MS = 5 * 60 * 1000;
   private workspaceDeletedListener?: (data: { workspaceId: WorkspaceId }) => void;
 
   // Short-lived cache for getWorkspace to reduce redundant fetches during bulk operations
@@ -1212,11 +1230,14 @@ export class WorkspaceService {
                 { timeout: 15000 },
               );
               if (serveResult.exitCode !== 0) {
-                logger.warn('Failed to start RPC serve daemon during skipWorktree workspace creation', {
-                  workspaceId: id,
-                  exitCode: serveResult.exitCode,
-                  stderr: serveResult.stderr,
-                });
+                logger.warn(
+                  'Failed to start RPC serve daemon during skipWorktree workspace creation',
+                  {
+                    workspaceId: id,
+                    exitCode: serveResult.exitCode,
+                    stderr: serveResult.stderr,
+                  },
+                );
               } else {
                 logger.info('RPC serve daemon ready for skipWorktree workspace creation', {
                   workspaceId: id,
@@ -1366,7 +1387,11 @@ task:
               error: error instanceof Error ? error.message : String(error),
             });
           } finally {
-            try { await sshManager.disconnect(mkdirConnectionId); } catch { /* ignore */ }
+            try {
+              await sshManager.disconnect(mkdirConnectionId);
+            } catch {
+              /* ignore */
+            }
           }
 
           // Extract git repository info from remote git config
@@ -1761,7 +1786,7 @@ task:
     limit?: number;
     offset?: number;
     includeArchived?: boolean;
-    lite?: boolean; // When true, skip heavy computations to avoid blocking other IPC operations
+    lite?: boolean; // Defaults to true; pass false to opt into bounded list enrichment
   }): Promise<Result<{ workspaces: Workspace[]; total: number; hasMore: boolean }, string>> {
     try {
       const allWorkspaces = await this.repository.findAll();
@@ -1786,9 +1811,13 @@ task:
       const paginatedWorkspaces = filteredWorkspaces.slice(offset, offset + limit);
 
       let sanitizedWorkspaces: Workspace[];
-      // PERF: Automatically use lite mode when workspace creation is in progress
-      // This prevents heavy list operations from blocking the create IPC response
-      const useLiteMode = options?.lite || this.creationInProgressCount > 0;
+      // PERF: Default workspace lists to lite mode so startup and validation flows
+      // never trigger unbounded per-workspace enrichment. Callers must opt into
+      // full enrichment explicitly, and even then we cap concurrency.
+      const requestedLiteMode = options?.lite ?? true;
+      // Automatically force lite mode when workspace creation is in progress to
+      // avoid blocking create IPC responses.
+      const useLiteMode = requestedLiteMode || this.creationInProgressCount > 0;
       if (useLiteMode) {
         // PERF: In lite mode, skip heavy buildListWorkspace() computations
         // This prevents blocking workspace:create and other IPC operations
@@ -1809,13 +1838,15 @@ task:
           gitSummary: undefined,
         }));
       } else {
-        sanitizedWorkspaces = await Promise.all(
-          paginatedWorkspaces.map((workspace) => this.buildListWorkspace(workspace)),
+        sanitizedWorkspaces = await this.buildListWorkspacesWithConcurrency(
+          paginatedWorkspaces,
+          this.LIST_ENRICHMENT_CONCURRENCY,
         );
-
-        // Only enrich visible workspaces when not in lite mode
-        this.scheduleBackgroundEnrichment(paginatedWorkspaces);
       }
+
+      // Hydrate repo/PR/list-summary data incrementally in the background.
+      // This keeps the bulk list response cheap while still filling in richer data.
+      this.scheduleBackgroundEnrichment(sanitizedWorkspaces);
 
       return {
         ok: true,
@@ -1865,6 +1896,34 @@ task:
       taskStats: taskStats ?? undefined,
       gitSummary: gitSummary ?? undefined,
     };
+  }
+
+  private async buildListWorkspacesWithConcurrency(
+    workspaces: Workspace[],
+    concurrency: number,
+  ): Promise<Workspace[]> {
+    if (workspaces.length === 0) {
+      return [];
+    }
+
+    const results = new Array<Workspace>(workspaces.length);
+    let nextIndex = 0;
+    const workerCount = Math.max(1, Math.min(concurrency, workspaces.length));
+
+    await Promise.all(
+      Array.from({ length: workerCount }, async () => {
+        while (true) {
+          const currentIndex = nextIndex++;
+          if (currentIndex >= workspaces.length) {
+            return;
+          }
+
+          results[currentIndex] = await this.buildListWorkspace(workspaces[currentIndex]!);
+        }
+      }),
+    );
+
+    return results;
   }
 
   /**
@@ -2122,21 +2181,18 @@ task:
         }
 
         this.pendingBackgroundEnrichment.add(workspaceId);
-
-        this.performBackgroundEnrichment(workspaceId)
-          .catch((error) => {
-            logger.error('Background workspace enrichment failed', error as Error, {
-              workspaceId,
-            });
-          })
-          .finally(() => {
-            this.pendingBackgroundEnrichment.delete(workspaceId);
-          });
+        this.backgroundEnrichmentQueue.push(workspaceId);
       }
+
+      this.processBackgroundEnrichmentQueue();
     }, 0);
   }
 
   private workspaceNeedsEnrichment(workspace: Workspace): boolean {
+    if (workspace.status === WorkspaceStatus.Archived) {
+      return false;
+    }
+
     const missingGitInfo =
       Boolean(workspace.repositoryPath) &&
       (!workspace.repositoryOwner || !workspace.repositoryName);
@@ -2146,13 +2202,89 @@ task:
     // Check if workspace has an open PR that's missing ciStatus or reviewDecision
     const needsPREnrichment = Boolean(
       workspace.activePullRequest?.status === PullRequestStatus.Open &&
-        workspace.repositoryOwner &&
-        workspace.repositoryName &&
-        (workspace.activePullRequest.ciStatus == null ||
-          workspace.activePullRequest.reviewDecision === undefined),
+      workspace.repositoryOwner &&
+      workspace.repositoryName &&
+      (workspace.activePullRequest.ciStatus == null ||
+        workspace.activePullRequest.reviewDecision === undefined),
     );
 
-    return missingGitInfo || hasPersistedDiffs || needsPREnrichment;
+    const needsListSummaryHydration = this.needsListSummaryHydration(workspace);
+
+    return missingGitInfo || hasPersistedDiffs || needsPREnrichment || needsListSummaryHydration;
+  }
+
+  private needsListSummaryHydration(workspace: Workspace): boolean {
+    const lastHydratedAt = this.backgroundSummaryHydratedAt.get(workspace.id);
+    if (lastHydratedAt && Date.now() - lastHydratedAt < this.BACKGROUND_SUMMARY_TTL_MS) {
+      return false;
+    }
+
+    return (
+      workspace.diffSummary === undefined ||
+      workspace.agentSummary === undefined ||
+      workspace.taskStats === undefined ||
+      workspace.gitSummary === undefined
+    );
+  }
+
+  private processBackgroundEnrichmentQueue(): void {
+    if (this.disposed) {
+      this.backgroundEnrichmentQueue.length = 0;
+      this.pendingBackgroundEnrichment.clear();
+      return;
+    }
+
+    while (
+      this.activeBackgroundEnrichmentCount < this.BACKGROUND_ENRICHMENT_CONCURRENCY &&
+      this.backgroundEnrichmentQueue.length > 0
+    ) {
+      const workspaceId = this.backgroundEnrichmentQueue.shift();
+      if (!workspaceId) {
+        return;
+      }
+
+      this.activeBackgroundEnrichmentCount += 1;
+
+      this.performBackgroundEnrichment(workspaceId)
+        .catch((error) => {
+          logger.error('Background workspace enrichment failed', error as Error, {
+            workspaceId,
+          });
+        })
+        .finally(() => {
+          this.pendingBackgroundEnrichment.delete(workspaceId);
+          this.activeBackgroundEnrichmentCount = Math.max(
+            0,
+            this.activeBackgroundEnrichmentCount - 1,
+          );
+          this.processBackgroundEnrichmentQueue();
+        });
+    }
+  }
+
+  private async broadcastBackgroundEnrichmentUpdate(
+    workspaceId: WorkspaceId,
+    updates: BackgroundEnrichmentWorkspaceUpdates,
+  ): Promise<void> {
+    if (this.disposed || Object.keys(updates).length === 0) {
+      return;
+    }
+
+    try {
+      const windows = BrowserWindow.getAllWindows();
+      for (const win of windows) {
+        if (!win.isDestroyed()) {
+          win.webContents.send('workspace:background-enrichment-complete', {
+            workspaceId,
+            updates,
+          });
+        }
+      }
+    } catch (broadcastError) {
+      logger.debug('Failed to broadcast enrichment update', {
+        error: (broadcastError as Error).message,
+      });
+    }
   }
 
   private async performBackgroundEnrichment(workspaceId: WorkspaceId): Promise<void> {
@@ -2164,6 +2296,7 @@ task:
 
       let updatedWorkspace = workspace;
       let updated = false;
+      const rendererUpdates: BackgroundEnrichmentWorkspaceUpdates = {};
 
       if (workspace.repositoryPath && (!workspace.repositoryOwner || !workspace.repositoryName)) {
         const gitInfo = await this.getGitRepoInfo(workspace.repositoryPath, {
@@ -2180,6 +2313,8 @@ task:
             repositoryOwner: owner,
             repositoryName: name,
           };
+          rendererUpdates.repositoryOwner = owner;
+          rendererUpdates.repositoryName = name;
           updated = true;
         }
       }
@@ -2215,24 +2350,37 @@ task:
               // Only clear if we have a POSITIVE MISMATCH: both are non-empty and differ.
               // If sourceBranch is empty (YAML parsing issue), skip validation to avoid
               // incorrectly clearing legitimate PR links.
-              if (prDetail.sourceBranch && updatedWorkspace.branch && prDetail.sourceBranch !== updatedWorkspace.branch) {
-                logger.info('Background enrichment: PR source branch does not match workspace, clearing stale link', {
-                  workspaceId,
-                  prNumber: pr.number,
-                  prSourceBranch: prDetail.sourceBranch,
-                  workspaceBranch: updatedWorkspace.branch,
-                });
+              if (
+                prDetail.sourceBranch &&
+                updatedWorkspace.branch &&
+                prDetail.sourceBranch !== updatedWorkspace.branch
+              ) {
+                logger.info(
+                  'Background enrichment: PR source branch does not match workspace, clearing stale link',
+                  {
+                    workspaceId,
+                    prNumber: pr.number,
+                    prSourceBranch: prDetail.sourceBranch,
+                    workspaceBranch: updatedWorkspace.branch,
+                  },
+                );
                 updatedWorkspace = {
                   ...updatedWorkspace,
                   prNumber: undefined,
                   prUrl: undefined,
                   prStatus: undefined,
                   activePullRequest: undefined,
-                  pullRequests: (updatedWorkspace.pullRequests || []).filter((p) => p.number !== pr.number),
+                  pullRequests: (updatedWorkspace.pullRequests || []).filter(
+                    (p) => p.number !== pr.number,
+                  ),
                   updatedAt: new Date().toISOString(),
                 };
                 updated = true;
                 await this.saveWorkspace(updatedWorkspace);
+                await this.broadcastBackgroundEnrichmentUpdate(workspaceId, {
+                  ...rendererUpdates,
+                  activePullRequest: undefined,
+                });
                 return;
               }
 
@@ -2306,6 +2454,7 @@ task:
               };
             }
 
+            rendererUpdates.activePullRequest = enrichedPR;
             updated = true;
             logger.debug('Enriched PR status for workspace', {
               workspaceId,
@@ -2324,28 +2473,20 @@ task:
         }
       }
 
+      if (this.needsListSummaryHydration(updatedWorkspace)) {
+        const listWorkspace = await this.buildListWorkspace(updatedWorkspace);
+        rendererUpdates.diffSummary = listWorkspace.diffSummary;
+        rendererUpdates.agentSummary = listWorkspace.agentSummary;
+        rendererUpdates.taskStats = listWorkspace.taskStats;
+        rendererUpdates.gitSummary = listWorkspace.gitSummary;
+        this.backgroundSummaryHydratedAt.set(workspaceId, Date.now());
+      }
+
       if (updated) {
         await this.saveWorkspace(updatedWorkspace);
-
-        // Notify renderer windows that workspace data has changed
-        // so the workspace store can refresh and show updated PR status
-        try {
-          const { BrowserWindow } = await import('electron');
-          const windows = BrowserWindow.getAllWindows();
-          for (const win of windows) {
-            if (!win.isDestroyed()) {
-              win.webContents.send('workspace:background-enrichment-complete', {
-                workspaceId,
-                activePullRequest: updatedWorkspace.activePullRequest,
-              });
-            }
-          }
-        } catch (broadcastError) {
-          logger.debug('Failed to broadcast enrichment update', {
-            error: (broadcastError as Error).message,
-          });
-        }
       }
+
+      await this.broadcastBackgroundEnrichmentUpdate(workspaceId, rendererUpdates);
     } catch (error) {
       logger.error('Background workspace enrichment failed', error as Error, { workspaceId });
     }
@@ -2458,13 +2599,20 @@ task:
           // Only clear if we have a POSITIVE MISMATCH: both sourceBranch and workspace.branch
           // are non-empty AND they differ. If sourceBranch is empty (YAML parsing issue),
           // we can't validate, so we keep the PR to avoid incorrectly clearing legitimate links.
-          if (prDetail.sourceBranch && workspace.branch && prDetail.sourceBranch !== workspace.branch) {
-            logger.info('Periodic PR refresh: PR source branch does not match workspace, clearing stale link', {
-              workspaceId,
-              prNumber: pr.number,
-              prSourceBranch: prDetail.sourceBranch,
-              workspaceBranch: workspace.branch,
-            });
+          if (
+            prDetail.sourceBranch &&
+            workspace.branch &&
+            prDetail.sourceBranch !== workspace.branch
+          ) {
+            logger.info(
+              'Periodic PR refresh: PR source branch does not match workspace, clearing stale link',
+              {
+                workspaceId,
+                prNumber: pr.number,
+                prSourceBranch: prDetail.sourceBranch,
+                workspaceBranch: workspace.branch,
+              },
+            );
             // Clear the stale PR association
             const clearedWorkspace = {
               ...workspace,
@@ -2543,16 +2691,10 @@ task:
 
         await this.saveWorkspace(updatedWorkspace);
 
-        // Broadcast to renderer windows
-        const windows = BrowserWindow.getAllWindows();
-        for (const win of windows) {
-          if (!win.isDestroyed()) {
-            win.webContents.send('workspace:background-enrichment-complete', {
-              workspaceId,
-              activePullRequest: enrichedPR,
-            });
-          }
-        }
+        // Broadcast to renderer windows using the same format as background enrichment
+        await this.broadcastBackgroundEnrichmentUpdate(workspaceId, {
+          activePullRequest: enrichedPR,
+        });
 
         logger.info('Periodic PR refresh: updated workspace', {
           workspaceId,
@@ -3082,10 +3224,13 @@ task:
               { timeout: 5000 },
             );
           } catch (cleanupErr) {
-            logger.warn('Failed to clean up remote intent-server directory for skip-worktree workspace', {
-              workspaceId: id,
-              error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
-            });
+            logger.warn(
+              'Failed to clean up remote intent-server directory for skip-worktree workspace',
+              {
+                workspaceId: id,
+                error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+              },
+            );
           } finally {
             await sshManager.disconnect(deleteConnectionId).catch(() => {});
           }
@@ -3626,6 +3771,9 @@ task:
 
     // Clear all pending background enrichments
     this.pendingBackgroundEnrichment.clear();
+    this.backgroundEnrichmentQueue.length = 0;
+    this.activeBackgroundEnrichmentCount = 0;
+    this.backgroundSummaryHydratedAt.clear();
 
     // Clear all caches
     this.lastContextCache.clear();

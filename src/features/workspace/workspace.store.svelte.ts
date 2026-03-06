@@ -115,12 +115,12 @@ class WorkspaceStore {
     }
 
     try {
-      // PERF: Use lite mode on initial load and when another operation is pending.
-      // Full mode runs 4 git subprocesses per workspace (diffSummary, agentSummary,
-      // taskStats, gitSummary) — with 30+ workspaces that's 120+ concurrent git
-      // processes which spikes memory to 1GB+ and can cause native addon crashes.
-      // The first load shows workspace cards quickly; enrichment happens on demand.
-      const useLiteMode = !this.#hasLoaded || this.#isCreating;
+      // PERF: Workspace list loads must stay lite-only.
+      // Expensive per-workspace summaries (diffSummary, agentSummary, taskStats,
+      // gitSummary) are hydrated incrementally in the background and merged back
+      // into the store via partial updates. Avoiding full list loads prevents
+      // startup and refresh paths from spawning unbounded concurrent work.
+      const useLiteMode = true;
       const result = await workspaceClient.list({ lite: useLiteMode });
       if (result.ok) {
         // Deduplicate workspaces by ID to prevent duplicate key errors
@@ -167,7 +167,7 @@ class WorkspaceStore {
         // FIX: Preserve existing enrichment data (taskStats, diffSummary, agentSummary,
         // gitSummary) when the incoming response has undefined for those fields.
         // This can happen when:
-        //  - The frontend explicitly requests lite mode (!hasLoaded || isCreating)
+        //  - The frontend always requests lite mode for bulk workspace lists
         //  - The backend independently forces lite mode (creationInProgressCount > 0)
         //  - Individual buildListWorkspace calls fail for specific workspaces
         // Without this, phase indicators show "not started" even for 10/10 complete tasks.
@@ -216,11 +216,14 @@ class WorkspaceStore {
             const hadStats = existing.taskStats !== undefined;
             const hasStats = w.taskStats !== undefined;
             if (hadStats !== hasStats) return true;
-            if (hasStats && hadStats && (
-              w.taskStats!.total !== existing.taskStats!.total ||
-              w.taskStats!.completed !== existing.taskStats!.completed ||
-              w.taskStats!.inProgress !== existing.taskStats!.inProgress
-            )) return true;
+            if (
+              hasStats &&
+              hadStats &&
+              (w.taskStats!.total !== existing.taskStats!.total ||
+                w.taskStats!.completed !== existing.taskStats!.completed ||
+                w.taskStats!.inProgress !== existing.taskStats!.inProgress)
+            )
+              return true;
             const hadDiff = existing.diffSummary !== undefined;
             const hasDiff = w.diffSummary !== undefined;
             if (hadDiff !== hasDiff) return true;
@@ -242,10 +245,13 @@ class WorkspaceStore {
               const hasCI = newPR.ciStatus != null;
               if (hadCI !== hasCI) return true;
               if (hadCI && hasCI) {
-                if (oldPR.ciStatus!.failed !== newPR.ciStatus!.failed ||
-                    oldPR.ciStatus!.pending !== newPR.ciStatus!.pending ||
-                    oldPR.ciStatus!.passed !== newPR.ciStatus!.passed ||
-                    oldPR.ciStatus!.total !== newPR.ciStatus!.total) return true;
+                if (
+                  oldPR.ciStatus!.failed !== newPR.ciStatus!.failed ||
+                  oldPR.ciStatus!.pending !== newPR.ciStatus!.pending ||
+                  oldPR.ciStatus!.passed !== newPR.ciStatus!.passed ||
+                  oldPR.ciStatus!.total !== newPR.ciStatus!.total
+                )
+                  return true;
               }
               if (oldPR.reviewDecision !== newPR.reviewDecision) return true;
               if (oldPR.mergeable !== newPR.mergeable) return true;
@@ -262,16 +268,8 @@ class WorkspaceStore {
           this.#items = newItems;
         }
         this.#error = null; // Clear any previous errors on success
-        const wasFirstLoad = !this.#hasLoaded;
         this.#hasLoaded = true; // Mark that initial load has completed
         logger.info('Workspaces loaded successfully', { count: this.#items.length });
-
-        // PERF: After the initial lite-mode load, schedule a follow-up full load
-        // to populate taskStats, diffSummary, agentSummary, and gitSummary.
-        // This ensures progress indicators show correctly without blocking the initial render.
-        if (wasFirstLoad && useLiteMode) {
-          setTimeout(() => this.load(), 500);
-        }
       } else {
         // Handle error response
         if (retryCount < MAX_RETRIES) {
@@ -506,11 +504,7 @@ class WorkspaceStore {
             gitSummary: result.data.gitSummary ?? existing.gitSummary,
             activePullRequest: result.data.activePullRequest ?? existing.activePullRequest,
           };
-          this.#items = [
-            ...this.#items.slice(0, index),
-            merged,
-            ...this.#items.slice(index + 1),
-          ];
+          this.#items = [...this.#items.slice(0, index), merged, ...this.#items.slice(index + 1)];
         }
 
         // Update current if it's the same workspace — use merged data to
@@ -564,9 +558,7 @@ class WorkspaceStore {
       // Preserve archived/deleted status unless explicitly included in updates
       // This prevents stale events from un-archiving a workspace
       const preservedStatus =
-        'status' in updates && updates.status !== undefined
-          ? updates.status
-          : oldWorkspace.status;
+        'status' in updates && updates.status !== undefined ? updates.status : oldWorkspace.status;
 
       // Create a new workspace object with updates, normalizing paths
       // Preserve updatedAt and createdAt to prevent event-driven updates from
@@ -602,7 +594,11 @@ class WorkspaceStore {
       }
 
       // Track workspace rename events (only when title actually changed)
-      if ('title' in updates && updates.title !== undefined && updates.title !== oldWorkspace.title) {
+      if (
+        'title' in updates &&
+        updates.title !== undefined &&
+        updates.title !== oldWorkspace.title
+      ) {
         track('Renamed Workspace', { workspace_id: id });
       }
 
@@ -1172,21 +1168,35 @@ if (typeof window !== 'undefined') {
     workspaceStore.flushPendingDeletions();
   });
 
-  // Listen for background enrichment updates from main process
-  // This ensures the workspace list shows correct PR status after enrichment completes
+  // Listen for background enrichment updates from the main process.
+  // This keeps the bulk list cheap while letting PR and summary updates stream in incrementally.
   if (window.electronAPI?.on) {
     window.electronAPI.on(
       'workspace:background-enrichment-complete',
-      (data: { workspaceId: string; activePullRequest: any }) => {
-        if (data.workspaceId && data.activePullRequest) {
-          logger.debug('Received background enrichment update', {
-            workspaceId: data.workspaceId,
-            prNumber: data.activePullRequest?.number,
-          });
-          workspaceStore.updateLocalWorkspace(data.workspaceId as WorkspaceId, {
-            activePullRequest: data.activePullRequest,
-          });
-        }
+      (data: {
+        workspaceId: string;
+        updates?: Partial<
+          Pick<
+            Workspace,
+            | 'repositoryOwner'
+            | 'repositoryName'
+            | 'activePullRequest'
+            | 'diffSummary'
+            | 'agentSummary'
+            | 'taskStats'
+            | 'gitSummary'
+          >
+        >;
+      }) => {
+        if (!data.workspaceId || !data.updates) return;
+
+        logger.debug('Received background enrichment update', {
+          workspaceId: data.workspaceId,
+          updatedKeys: Object.keys(data.updates),
+          prNumber: data.updates.activePullRequest?.number,
+        });
+
+        workspaceStore.updateLocalWorkspace(data.workspaceId as WorkspaceId, data.updates);
       },
     );
   }

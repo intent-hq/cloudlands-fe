@@ -278,10 +278,74 @@ export function setupPersistenceIPC(): void {
           let agentToSave = validated.session;
 
           if (existingAgent.success && existingAgent.data) {
+            // CRITICAL FIX: Prevent frontend from overwriting backend-persisted messages.
+            // When the backend adds messages (e.g., subscription wake + assistant response),
+            // those messages are persisted to disk. If the frontend's in-memory session
+            // doesn't have those messages (e.g., after page refresh with stale state),
+            // the frontend's save would overwrite the complete history with a truncated version.
+            //
+            // Detection: Check if the frontend's known messages (those that also exist on disk)
+            // appear as a prefix of the disk messages. If so, the frontend has a stale subset
+            // and we should merge. If the frontend has reordered or removed specific messages
+            // (edit/regenerate), the prefix check will fail and we use the frontend's version.
+            const existingMessages: any[] = existingAgent.data.messages || [];
+            const frontendMessages: any[] = validated.session.messages || [];
+            let mergedMessages = frontendMessages;
+
+            const allowTruncation = validated.options?.allowTruncation === true;
+
+            if (
+              !allowTruncation &&
+              existingMessages.length > frontendMessages.length &&
+              frontendMessages.length > 0
+            ) {
+              const existingMessageIds = new Set(existingMessages.map((m: any) => m.id));
+
+              // Split frontend messages into those that exist on disk and those that are new
+              const frontendNewMessages = frontendMessages.filter(
+                (m: any) => !existingMessageIds.has(m.id),
+              );
+              const frontendKnownMessages = frontendMessages.filter(
+                (m: any) => existingMessageIds.has(m.id),
+              );
+
+              // Check if the frontend's known messages form a prefix of the disk messages.
+              // This distinguishes "stale frontend missing backend-added messages" from
+              // "intentional edit/regenerate that removed messages from the middle/end".
+              let isPrefix = true;
+              for (let i = 0; i < frontendKnownMessages.length; i++) {
+                if (
+                  i >= existingMessages.length ||
+                  frontendKnownMessages[i].id !== existingMessages[i].id
+                ) {
+                  isPrefix = false;
+                  break;
+                }
+              }
+
+              if (isPrefix && frontendKnownMessages.length < existingMessages.length) {
+                logger.warn(
+                  'Frontend save has stale message subset - merging with disk to prevent data loss',
+                  {
+                    agentId: validated.session.id,
+                    existingMessageCount: existingMessages.length,
+                    frontendMessageCount: frontendMessages.length,
+                    frontendKnownCount: frontendKnownMessages.length,
+                    frontendNewCount: frontendNewMessages.length,
+                  },
+                );
+
+                // Merge: keep all disk messages, append new frontend messages
+                mergedMessages = [...existingMessages, ...frontendNewMessages];
+              }
+            }
+
             // Merge with existing data, preserving systemPrompt and other backend-only fields
             agentToSave = {
               ...existingAgent.data,
               ...validated.session,
+              // Use merged messages to prevent data loss
+              messages: mergedMessages,
               // Explicitly preserve systemPrompt from existing data if not provided
               systemPrompt: validated.session.systemPrompt || existingAgent.data.systemPrompt,
             };
@@ -291,6 +355,9 @@ export function setupPersistenceIPC(): void {
               hadExistingSystemPrompt: !!existingAgent.data.systemPrompt,
               hasNewSystemPrompt: !!validated.session.systemPrompt,
               preservedSystemPrompt: !!agentToSave.systemPrompt,
+              existingMessageCount: existingMessages.length,
+              frontendMessageCount: frontendMessages.length,
+              mergedMessageCount: mergedMessages.length,
             });
           }
 

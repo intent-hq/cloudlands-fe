@@ -3451,7 +3451,11 @@ class RefactoredAgentService extends EventEmitter {
 
                       // Save the session immediately after adding the user message
                       // This ensures the message persists even if the app crashes or refreshes
-                      await this.saveSession(agentId, workspace.id, true);
+                      // For edit/regenerate flows (resetHistory), allow truncation since messages
+                      // were intentionally removed before this save
+                      await this.saveSession(agentId, workspace.id, true, {
+                        allowTruncation: options.resetHistory,
+                      });
                     } else {
                       // Remove the optimistic flag from the existing message if present
                       if (existingUserMessage.metadata) {
@@ -4699,7 +4703,7 @@ class RefactoredAgentService extends EventEmitter {
    * sessions after streaming completes. Use this only for explicit saves
    * outside of the normal streaming flow (e.g., manual metadata updates).
    */
-  async saveSession(agentId: string, workspaceId: string, immediate = false): Promise<void> {
+  async saveSession(agentId: string, workspaceId: string, immediate = false, options?: { allowTruncation?: boolean }): Promise<void> {
     const session = sessionStore.getSession(agentId);
     if (!session) {
       logger.warn('Cannot save session - session not found', { agentId });
@@ -4724,7 +4728,7 @@ class RefactoredAgentService extends EventEmitter {
       }
     }
 
-    await persistenceService.saveSession(session, workspaceId, { immediate });
+    await persistenceService.saveSession(session, workspaceId, { immediate, allowTruncation: options?.allowTruncation });
   }
 
   /**

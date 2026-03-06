@@ -38,12 +38,19 @@ const agentSubscribers = new Map<string, Set<(session: AgentSession | undefined)
 // Track agent IDs that have pending updates (for targeted notifications)
 const pendingAgentUpdates = new Set<string>();
 
+// Per-agent workspace ID tracking for batched updates.
+// When updates for agents in different workspaces are batched in the same
+// requestAnimationFrame tick, we need to look up each agent in its correct
+// workspace. A single pendingTargetWorkspaceId would be overwritten by the
+// last update, causing notifyAgentSubscribers to use the wrong workspace
+// for earlier agents in the batch — making their subscribers receive
+// `undefined` and the UI appear frozen until refresh.
+const pendingAgentWorkspaces = new Map<string, WorkspaceId>();
+
 // Batching mechanism for store updates during streaming
 // This prevents UI jank by batching multiple updates into a single frame
 let pendingStoreUpdate = false;
 let rafId: number | null = null;
-// Store the target workspace ID so it can be updated if a more specific one is provided
-let pendingTargetWorkspaceId: WorkspaceId | undefined = undefined;
 
 /**
  * Subscribe to updates for a specific agent.
@@ -145,6 +152,14 @@ export function notifyAgentSubscribers(agentId: string, targetWorkspaceId?: Work
       }
     : undefined;
 
+  if (!session) {
+    logger.debug('notifyAgentSubscribers: agent not found, subscribers will get undefined', {
+      agentId,
+      targetWorkspaceId: targetWorkspaceId || 'current',
+      subscriberCount: subscribers.size,
+    });
+  }
+
   logger.debug('[notifyAgentSubscribers] Notifying', {
     agentId,
     targetWorkspaceId: targetWorkspaceId || 'current',
@@ -165,45 +180,51 @@ function scheduleStoreUpdate(forWorkspaceId?: WorkspaceId, forAgentId?: string) 
   // Track which agent triggered this update for targeted notifications
   if (forAgentId) {
     pendingAgentUpdates.add(forAgentId);
+
+    // Store the workspace ID for THIS specific agent so we can look it up
+    // in its correct workspace when the RAF callback fires.
+    if (forWorkspaceId) {
+      pendingAgentWorkspaces.set(forAgentId, forWorkspaceId);
+    } else if (!pendingAgentWorkspaces.has(forAgentId)) {
+      // Only fall back to currentWorkspace if we don't already have a workspace for this agent
+      const currentWsId = unifiedStateStore.currentWorkspace?.workspace?.id as WorkspaceId;
+      if (currentWsId) {
+        pendingAgentWorkspaces.set(forAgentId, currentWsId);
+      }
+    }
   }
 
-  // If a specific workspace ID is provided, always use it (even if update is already scheduled)
-  // This fixes a race condition where streaming listener schedules update without workspace ID,
-  // then addSession tries to schedule with workspace ID but gets ignored
-  if (forWorkspaceId) {
-    pendingTargetWorkspaceId = forWorkspaceId;
-  } else if (!pendingTargetWorkspaceId) {
-    // Only use currentWorkspace if no specific workspace ID has been set
-    pendingTargetWorkspaceId = unifiedStateStore.currentWorkspace?.workspace?.id as WorkspaceId;
-  }
-
-  if (pendingStoreUpdate) return; // Already scheduled, but workspace ID may have been updated above
+  if (pendingStoreUpdate) return; // Already scheduled, workspace IDs tracked per-agent above
   pendingStoreUpdate = true;
 
-  // Debug: Log what workspace ID we're using
+  // Debug: Log what we're batching
   logger.debug('Scheduling store update', {
     forWorkspaceId,
-    pendingTargetWorkspaceId,
+    forAgentId,
     currentWorkspaceId: unifiedStateStore.currentWorkspace?.workspace?.id,
     pendingAgentCount: pendingAgentUpdates.size,
+    pendingWorkspaceCount: pendingAgentWorkspaces.size,
   });
 
   // Use requestAnimationFrame to batch updates within a single frame
   rafId = requestAnimationFrame(() => {
     pendingStoreUpdate = false;
     rafId = null;
-    // Use the stored workspace ID (which may have been updated by subsequent calls)
-    const targetWorkspaceId = pendingTargetWorkspaceId;
-    pendingTargetWorkspaceId = undefined; // Reset for next batch
 
-    // Capture and clear pending agent updates
+    // Capture and clear pending agent updates and their workspace mappings
     const agentIdsToNotify = Array.from(pendingAgentUpdates);
+    const workspaceSnapshot = new Map(pendingAgentWorkspaces);
     pendingAgentUpdates.clear();
+    pendingAgentWorkspaces.clear();
 
-    // Notify per-agent subscribers first (more efficient - only notifies affected subscribers)
-    // Pass the targetWorkspaceId so we can find agents that may have been loaded into a specific workspace
+    // Notify per-agent subscribers with the CORRECT workspace for each agent.
+    // Previously a single pendingTargetWorkspaceId was used for ALL agents in
+    // the batch, so if agent A (workspace-1) and agent B (workspace-2) both
+    // updated in the same frame, agent A's subscriber would get workspace-2's
+    // context and receive `undefined`.
     for (const agentId of agentIdsToNotify) {
-      notifyAgentSubscribers(agentId, targetWorkspaceId);
+      const agentWorkspaceId = workspaceSnapshot.get(agentId);
+      notifyAgentSubscribers(agentId, agentWorkspaceId);
     }
 
     // Also update the global store for backward compatibility
@@ -245,7 +266,8 @@ export function cancelPendingStoreUpdate() {
     cancelAnimationFrame(rafId);
     rafId = null;
     pendingStoreUpdate = false;
-    pendingTargetWorkspaceId = undefined;
+    pendingAgentUpdates.clear();
+    pendingAgentWorkspaces.clear();
   }
 }
 
@@ -1018,7 +1040,7 @@ export class PersistenceService {
 
   // Debounce timers for saveSession to batch rapid saves
   private saveDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private pendingSaves = new Map<string, { session: AgentSession; workspaceId: string }>();
+  private pendingSaves = new Map<string, { session: AgentSession; workspaceId: string; allowTruncation?: boolean }>();
   private readonly SAVE_DEBOUNCE_MS = 500; // 500ms debounce for non-immediate saves
 
   async save(key: string, data: any) {
@@ -1031,7 +1053,7 @@ export class PersistenceService {
     }
   }
 
-  async saveSession(session: AgentSession, workspaceId: string, options?: { immediate?: boolean }) {
+  async saveSession(session: AgentSession, workspaceId: string, options?: { immediate?: boolean; allowTruncation?: boolean }) {
     // Guard: session must have required fields
     if (!session || !session.id || !Array.isArray(session.messages) || !session.status) {
       agentProxiesLogger.warn('Cannot save session: missing required fields', {
@@ -1067,12 +1089,12 @@ export class PersistenceService {
         this.pendingSaves.delete(agentId);
       }
 
-      return this.doSaveSession(session, workspaceId);
+      return this.doSaveSession(session, workspaceId, options?.allowTruncation);
     }
 
     // For non-immediate saves, debounce to batch rapid updates
     // Store the latest session data (newer data overwrites older)
-    this.pendingSaves.set(agentId, { session, workspaceId });
+    this.pendingSaves.set(agentId, { session, workspaceId, allowTruncation: options?.allowTruncation });
 
     // Cancel existing timer if any
     const existingTimer = this.saveDebounceTimers.get(agentId);
@@ -1086,7 +1108,7 @@ export class PersistenceService {
       if (pending) {
         this.pendingSaves.delete(agentId);
         this.saveDebounceTimers.delete(agentId);
-        this.doSaveSession(pending.session, pending.workspaceId).catch((error) => {
+        this.doSaveSession(pending.session, pending.workspaceId, pending.allowTruncation).catch((error) => {
           agentProxiesLogger.error('Failed to save debounced session:', error);
         });
       }
@@ -1095,7 +1117,7 @@ export class PersistenceService {
     this.saveDebounceTimers.set(agentId, timer);
   }
 
-  private async doSaveSession(session: AgentSession, workspaceId: string): Promise<void> {
+  private async doSaveSession(session: AgentSession, workspaceId: string, allowTruncation?: boolean): Promise<void> {
     try {
       // Ensure session is serializable for IPC
       // Use try-catch to handle "Maximum call stack size exceeded" errors
@@ -1135,7 +1157,7 @@ export class PersistenceService {
       await invoke(PERSISTENCE_CHANNELS.SAVE_SESSION, {
         session: serializableSession,
         workspaceId,
-        options: { immediate: true },
+        options: { immediate: true, allowTruncation },
       });
     } catch (error) {
       agentProxiesLogger.error('Failed to save session:', error);
