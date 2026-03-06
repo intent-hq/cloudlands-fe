@@ -6,6 +6,7 @@ import {
   PROVIDER_MODEL_TIERS,
 } from '$shared/config/provider-config';
 import { activeProviderStore } from './active-provider.store.svelte';
+import { featureCodesStore } from './feature-codes.store.svelte';
 import { SPECIALISTS_CHANNELS } from '$shared/ipc/channels';
 
 const logger = createLogger('SpecialistsStore');
@@ -138,6 +139,11 @@ class SpecialistsStore {
       this.bundledSpecialists.length === 0
     ) {
       logger.warn('Using hardcoded SPECIALISTS fallback - file/bundled loading may have failed');
+    }
+
+    // Gate ralph behind feature flag
+    if (!featureCodesStore.isFeatureEnabled('ralph-agent')) {
+      return result.filter((s) => s.id !== 'ralph');
     }
 
     return result;

@@ -153,7 +153,7 @@ describe('Specialist Configuration', () => {
 
   describe('Specialist ID Validation', () => {
     it('all specialists have valid IDs matching type constraints', () => {
-      const validIds = ['spec-writer', 'implementor', 'verifier', 'pr-reviewer', 'ui-designer', 'developer', 'pr-shepherd'];
+      const validIds = ['spec-writer', 'implementor', 'verifier', 'pr-reviewer', 'ui-designer', 'developer', 'pr-shepherd', 'ralph'];
 
       for (const specialist of SPECIALISTS) {
         expect(validIds).toContain(specialist.id);

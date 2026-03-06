@@ -169,6 +169,7 @@ export type AgentTypeId =
   | 'task-debug'
   | 'task-focused'
   | 'task-loop'
+  | 'ralph-loop'
   | 'workspace-agent'
   | 'code-review'
   | 'commit-message'
@@ -188,6 +189,7 @@ export const AGENT_TYPE_IDS: readonly AgentTypeId[] = [
   'task-debug',
   'task-focused',
   'task-loop',
+  'ralph-loop',
   'workspace-agent',
   'code-review',
   'commit-message',

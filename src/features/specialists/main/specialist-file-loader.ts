@@ -262,6 +262,7 @@ export function parseSpecialistFile(
     model: frontmatter.model,
     modelTier: modelTier as ModelTier | undefined,
     roleReminder: frontmatter.roleReminder,
+    agentType: frontmatter.agentType,
   };
 
   return {

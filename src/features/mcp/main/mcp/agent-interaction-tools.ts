@@ -332,6 +332,7 @@ function resolveSpecialistConfig(
   effectiveSpecialistId: string | undefined;
   specialistName: string | undefined;
   roleReminder: string | undefined;
+  defaultAgentType: string | undefined;
 } {
   // Validate modelOverride against the parent's provider.
   // If the LLM specified a model from a different provider, discard it and fall through
@@ -373,6 +374,7 @@ function resolveSpecialistConfig(
         effectiveSpecialistId: undefined,
         specialistName: undefined,
         roleReminder: undefined,
+        defaultAgentType: undefined,
       };
     }
 
@@ -416,6 +418,7 @@ function resolveSpecialistConfig(
       effectiveSpecialistId,
       specialistName: resolved.specialistName,
       roleReminder: resolved.roleReminder,
+      defaultAgentType: resolved.defaultAgentType,
     };
   }
 
@@ -435,6 +438,7 @@ function resolveSpecialistConfig(
     effectiveSpecialistId: undefined,
     specialistName: undefined,
     roleReminder: undefined,
+    defaultAgentType: undefined,
   };
 }
 
@@ -629,7 +633,7 @@ This allows you to create multiple agents in parallel and be notified as each fi
         model: config.model,
         provider: ctx.provider, // Inherit ACP provider from parent agent
         initialMessage: enhancedInitialMessage,
-        agentType: 'task-loop', // Use task-loop for task-oriented agents with task notes
+        agentType: config.defaultAgentType || 'task-loop',
         behaviorPrompt: config.behaviorPrompt,
         specialistName: config.specialistName,
         roleReminder: config.roleReminder,
@@ -949,6 +953,7 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
           config.effectiveSpecialistId,
           config.specialistName,
           config.roleReminder,
+          config.defaultAgentType,
         );
       }
 
@@ -1215,7 +1220,7 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
           model: config.model,
           provider: ctx.provider, // Inherit ACP provider from parent agent
           initialMessage: enhancedInitialMessage,
-          agentType: 'task-loop', // Use task-loop for task-oriented agents with task notes
+          agentType: config.defaultAgentType || 'task-loop',
           behaviorPrompt: config.behaviorPrompt,
           specialistName: config.specialistName,
           roleReminder: config.roleReminder,
@@ -1363,6 +1368,7 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
     specialist?: string,
     specialistName?: string,
     roleReminder?: string,
+    defaultAgentType?: string,
   ): Promise<ToolResult> {
     // Create the agent
     const { AgentBackendHandler } =
@@ -1392,7 +1398,7 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
       model,
       provider: ctx.provider, // Inherit ACP provider from parent agent
       initialMessage: enhancedInitialMessage,
-      agentType: 'task-loop', // Use task-loop for task-oriented agents with task notes
+      agentType: defaultAgentType || 'task-loop',
       behaviorPrompt,
       specialistName,
       roleReminder,
@@ -2175,6 +2181,7 @@ an agent is working on the task.`,
       const handler = AgentBackendHandler.getInstance();
 
       let agentToWake: { id: string; status: string } | null = null;
+      let previousSpecialist: string | undefined;
 
       for (let i = assignedAgentIds.length - 1; i >= 0; i--) {
         const agentId = assignedAgentIds[i];
@@ -2185,6 +2192,11 @@ an agent is working on the task.`,
           status: resumability.status,
           canWake: resumability.canWake,
         });
+
+        // Extract specialist from the most recent agent's metadata for new agent creation
+        if (!previousSpecialist && resumability.agentData?.metadata?.specialist) {
+          previousSpecialist = resumability.agentData.metadata.specialist as string;
+        }
 
         if (resumability.canWake) {
           agentToWake = { id: agentId, status: resumability.status };
@@ -2329,7 +2341,6 @@ an agent is working on the task.`,
         previousAgentCount: assignedAgentIds.length,
       });
 
-      // Create agent with task-loop type for proper instructions
       // Pre-register subscription via onBeforeStart to prevent the race condition
       // where a fast-completing child agent emits agent:idle before the parent subscribes.
       const agentName = `Task: ${note.title || taskNoteId}`.substring(0, 100);
@@ -2337,12 +2348,17 @@ an agent is working on the task.`,
       // Extract parent provider so child agents inherit the correct provider
       const parentProvider = ctx.model ? parseCompoundModelId(ctx.model).providerId : undefined;
 
+      // Resolve defaultAgentType from previous agent's specialist (if any)
+      const previousSpecialistConfig = previousSpecialist
+        ? resolveSpecialistForAgent(previousSpecialist, parentProvider)
+        : null;
+
       const newAgent = await handler.createAgent(this.workspaceId, agentName, {
         workspacePath: this.workspacePath,
         model,
         provider: ctx.provider, // Inherit ACP provider from parent agent
         initialMessage: contextMessage,
-        agentType: 'task-loop', // Use task-loop instructions
+        agentType: previousSpecialistConfig?.defaultAgentType || 'task-loop',
         contextReferences: [
           {
             type: 'note',

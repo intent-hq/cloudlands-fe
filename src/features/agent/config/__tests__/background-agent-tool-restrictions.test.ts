@@ -82,6 +82,7 @@ describe('Background Agent Tool Restrictions', () => {
       expect(types).toContain('pr-description');
       expect(types).toContain('code-review');
       expect(types).toContain('code-walkthrough');
+      expect(types).toContain('ralph-loop');
     });
 
     it('isBackgroundAgentType should correctly identify background agents', () => {
@@ -90,6 +91,7 @@ describe('Background Agent Tool Restrictions', () => {
       // chat and task-loop are now background agents with limited restrictions (only sub-agent denied)
       expect(isBackgroundAgentType('chat')).toBe(true);
       expect(isBackgroundAgentType('task-loop')).toBe(true);
+      expect(isBackgroundAgentType('ralph-loop')).toBe(true);
 
       // Non-background agents
       expect(isBackgroundAgentType('workspace')).toBe(false);

@@ -30,6 +30,7 @@ import {
   migrateOverridesFromStore,
 } from '../../specialists/main/specialist-file-loader';
 import type { SpecialistFile } from '../../../shared/specialist-file-types';
+import { featureCodesService } from '../../feature-codes/main/feature-codes.service';
 
 const logger = new Logger('SpecialistsService');
 
@@ -531,7 +532,14 @@ export function getAllEffectiveSpecialists(providerId?: string): EffectiveSpecia
     );
   }
 
-  return [...fileEffective, ...customEffective, ...hardcodedFallback];
+  const allSpecialists = [...fileEffective, ...customEffective, ...hardcodedFallback];
+
+  // Gate ralph specialist behind feature flag
+  if (!featureCodesService.isFeatureEnabled('ralph-agent')) {
+    return allSpecialists.filter((s) => s.id !== 'ralph');
+  }
+
+  return allSpecialists;
 }
 
 /**
@@ -616,6 +624,12 @@ export interface ResolvedSpecialistConfig {
   behaviorPrompt: string;
   /** Critical constraints reminder (explicit or auto-generated from behaviorPrompt) */
   roleReminder: string;
+  /**
+   * Default agent type for agents created with this specialist.
+   * Controls which instruction set (agent loop) the agent uses.
+   * If not set, callers should default to 'task-loop'.
+   */
+  defaultAgentType?: string;
 }
 
 /**
@@ -634,6 +648,12 @@ export function resolveSpecialistForAgent(
   specialistId: string,
   providerId?: string,
 ): ResolvedSpecialistConfig | null {
+  // Gate ralph specialist behind feature flag
+  if (specialistId === 'ralph' && !featureCodesService.isFeatureEnabled('ralph-agent')) {
+    logger.info('resolveSpecialistForAgent: ralph specialist gated by feature flag');
+    return null;
+  }
+
   const specialist = getEffectiveSpecialist(specialistId, providerId);
   if (!specialist) {
     logger.warn('resolveSpecialistForAgent: specialist not found', {
@@ -660,6 +680,11 @@ export function resolveSpecialistForAgent(
         : 'electron-store',
   });
 
+  // Resolve defaultAgentType from file frontmatter or hardcoded specialist
+  const fileSpec = fileSpecialistsCache.find((s) => s.id === specialistId);
+  const defaultAgentType =
+    fileSpec?.frontmatter.agentType || getSpecialistById(specialistId)?.defaultAgentType;
+
   return {
     specialistId: specialist.id,
     specialistName: specialist.name,
@@ -667,6 +692,7 @@ export function resolveSpecialistForAgent(
     modelTier: specialist.modelTier,
     behaviorPrompt: specialist.behaviorPrompt,
     roleReminder,
+    defaultAgentType,
   };
 }
 

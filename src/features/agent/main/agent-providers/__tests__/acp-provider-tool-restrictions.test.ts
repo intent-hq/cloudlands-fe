@@ -133,7 +133,7 @@ describe('ACPProvider Tool Restrictions Integration', () => {
   describe('all background agent types have restrictions', () => {
     const backgroundAgentTypes = Object.keys(BACKGROUND_AGENT_TOOL_DENYLISTS);
     // chat and task-loop have minimal restrictions (only subagent tools denied)
-    const minimalRestrictionAgents = ['chat', 'task-loop'];
+    const minimalRestrictionAgents = ['chat', 'task-loop', 'ralph-loop'];
 
     for (const agentType of backgroundAgentTypes) {
       it(`${agentType} should have non-empty denylist`, () => {

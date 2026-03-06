@@ -32,6 +32,7 @@ import taskBreakdown from './task-breakdown';
 import taskDebug from './task-debug';
 import taskFocused from './task-focused';
 import taskLoop from './task-loop';
+import ralphLoop from './ralph-loop';
 import workspaceAgent from './workspace-agent';
 
 // Shared documentation
@@ -55,6 +56,7 @@ export {
   taskDebug,
   taskFocused,
   taskLoop,
+  ralphLoop,
   workspaceAgent,
   notesSystemGuide,
   codeReview,
@@ -118,6 +120,11 @@ export function getAgentTypesWithMetadata(): AgentTypeInfo[] {
       id: 'task-debug',
       label: 'Task Debug',
       description: 'Debugging agent for fixing failing tasks',
+    },
+    {
+      id: 'ralph-loop',
+      label: 'Ralph Loop',
+      description: 'Coordinator that plans with user then delegates work/test loops',
     },
     { id: 'debug', label: 'Debug', description: 'General debugging and error investigation' },
     {
@@ -194,6 +201,7 @@ export function getInstructionById(id: string, fallbackToWorkspace = true): stri
     'task-debug': taskDebug,
     'task-focused': taskFocused,
     'task-loop': taskLoop,
+    'ralph-loop': ralphLoop,
     'workspace-agent': workspaceAgent,
     'notes-system-guide': notesSystemGuide,
     'code-review': codeReview,
@@ -234,6 +242,7 @@ export function getAvailableInstructionIds(): string[] {
     'task-debug',
     'task-focused',
     'task-loop',
+    'ralph-loop',
     'workspace-agent',
     'notes-system-guide',
     'code-review',

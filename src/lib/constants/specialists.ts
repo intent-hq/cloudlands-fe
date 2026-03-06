@@ -8,7 +8,8 @@ export type BuiltinSpecialistId =
   | 'pr-reviewer'
   | 'pr-shepherd'
   | 'ui-designer'
-  | 'developer';
+  | 'developer'
+  | 'ralph';
 
 export interface Specialist {
   id: string;
@@ -35,6 +36,12 @@ export interface Specialist {
    * Should be 1-2 sentences focusing on what the specialist MUST NOT do.
    */
   roleReminder?: string;
+  /**
+   * Default agent type for agents created with this specialist.
+   * Controls which instruction set (agent loop) the agent uses.
+   * If not set, defaults to 'task-loop'.
+   */
+  defaultAgentType?: string;
 }
 
 export const SPECIALISTS: Specialist[] = [
@@ -575,6 +582,17 @@ For each acceptance criterion:
 Then: Commands Run, Risk Notes, Follow-ups.`,
     roleReminder:
       'You work ALONE — never use delegate_task or create_agent. Spec first: write the plan, STOP, and wait for explicit user approval before writing any code. NEVER use checkboxes — use @@@task blocks ONLY. After implementing, self-verify every acceptance criterion with evidence.',
+  },
+  {
+    id: 'ralph',
+    name: 'Ralph',
+    description:
+      'Iterative work/test loop — plans with user, then autonomously works until tests pass',
+    defaultModelTier: 'smart',
+    defaultBehaviorPrompt: '',
+    defaultAgentType: 'ralph-loop',
+    roleReminder:
+      'You are Ralph. Phase 1: plan with user, agree on tests, get approval. Phase 2: delegate work→test to fresh child agents in a loop. Never implement directly — always delegate. Focus on task note state, not conversation history.',
   },
 ];
 

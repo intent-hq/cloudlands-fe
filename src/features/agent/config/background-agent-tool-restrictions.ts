@@ -217,6 +217,7 @@ export const BACKGROUND_AGENT_TOOL_DENYLISTS: Record<string, readonly string[]> 
   ],
 
   'task-loop': [...SUBAGENT_TOOLS],
+  'ralph-loop': [...SUBAGENT_TOOLS],
   chat: [...SUBAGENT_TOOLS],
 };
 

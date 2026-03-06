@@ -67,6 +67,12 @@ export interface SpecialistFileFrontmatter {
    * Should be 1-2 sentences focusing on what the specialist MUST NOT do.
    */
   roleReminder?: string;
+  /**
+   * Default agent type for agents created with this specialist.
+   * Controls which instruction set (agent loop) the agent uses.
+   * If not set, defaults to 'task-loop'.
+   */
+  agentType?: string;
 }
 
 /**

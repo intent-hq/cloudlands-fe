@@ -48,7 +48,7 @@ describe('Specialist Prompts Verification', () => {
 
   describe('Specialist Definitions', () => {
     it('should have exactly 7 specialists defined', () => {
-      expect(SPECIALISTS).toHaveLength(7);
+      expect(SPECIALISTS).toHaveLength(8);
       expect(SPECIALISTS.map((s) => s.id)).toEqual([
         'spec-writer',
         'implementor',
@@ -57,6 +57,7 @@ describe('Specialist Prompts Verification', () => {
         'pr-shepherd',
         'ui-designer',
         'developer',
+        'ralph',
       ]);
     });
 
@@ -175,6 +176,8 @@ describe('Specialist Prompts Verification', () => {
 
     it('each specialist prompt should be substantial', () => {
       for (const specialist of SPECIALISTS) {
+        // Ralph gets its prompt via ralph-loop agentType instruction, not defaultBehaviorPrompt
+        if (specialist.id === 'ralph') continue;
         expect(specialist.defaultBehaviorPrompt.length).toBeGreaterThan(100);
         expect(specialist.description.length).toBeGreaterThan(10);
         expect(specialist.name.length).toBeGreaterThan(3);
