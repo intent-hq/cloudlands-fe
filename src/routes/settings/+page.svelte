@@ -15,6 +15,7 @@
   import BackgroundAgentSettings from '$lib/components/settings/BackgroundAgentSettings.svelte';
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
+  import RtkSettings from '$lib/components/settings/RtkSettings.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
@@ -391,6 +392,18 @@
           <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
             <section class="px-6 py-5">
               <NotificationSettings />
+            </section>
+          </div>
+        </div>
+
+        <!-- RTK -->
+        <div class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            CLI Optimization
+          </h2>
+          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+            <section class="px-6 py-5">
+              <RtkSettings />
             </section>
           </div>
         </div>

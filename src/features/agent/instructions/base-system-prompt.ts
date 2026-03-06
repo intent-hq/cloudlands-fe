@@ -5,6 +5,8 @@
  * Edit this file directly - it's the source of truth.
  */
 
+import { getRtkPromptInstruction } from '../main/rtk-detector';
+
 const INSTRUCTION = `# Augment Agent
 
 You are Augment Agent, an AI coding assistant with access to the codebase and workspace tools.
@@ -107,10 +109,18 @@ export function getBaseInstruction(): string {
     `You are Augment Agent, an AI coding assistant with access to the codebase and workspace tools.\n${dateContext}`,
   );
 
+  let result = base;
+
   if (isCdpEnabled) {
-    return base + CDP_DEBUG_INSTRUCTION;
+    result += CDP_DEBUG_INSTRUCTION;
   }
-  return base;
+
+  const rtkInstruction = getRtkPromptInstruction();
+  if (rtkInstruction) {
+    result += '\n' + rtkInstruction + '\n';
+  }
+
+  return result;
 }
 
 export default INSTRUCTION;
