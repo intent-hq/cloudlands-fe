@@ -3992,6 +3992,9 @@
   onDestroy(async () => {
     logger.debug('Starting workspace page cleanup', { workspaceId });
 
+    // Fire-and-forget: clean up PTY terminals for this workspace
+    window.electronAPI?.invoke('workspace:closing', { id: workspaceId }).catch(() => {});
+
     // Clear currently viewed note state to prevent stale tracking
     noteReadTrackingStore.clearCurrentlyViewed();
 

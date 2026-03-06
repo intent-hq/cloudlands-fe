@@ -98,41 +98,53 @@ export class ProfessionalTerminal extends EventEmitter {
     // Forward PTY output to listeners
     // Store disposable for cleanup
     this.ptyDataDisposable = this.pty.onData((data: string) => {
-      // Don't process data if we're disposing
-      if (this.isDisposing || this.isDisposed) return;
+      try {
+        // Don't process data if we're disposing
+        if (this.isDisposing || this.isDisposed) return;
 
-      this.logger.debug(`[ProfessionalTerminal] PTY data for ${this.id}: ${data.length} bytes`);
+        this.logger.debug(`[ProfessionalTerminal] PTY data for ${this.id}: ${data.length} bytes`);
 
-      // Buffer the data for replay when renderer connects
-      this.outputBuffer.push(data);
-      this.outputBufferBytes += data.length;
+        // Buffer the data for replay when renderer connects
+        this.outputBuffer.push(data);
+        this.outputBufferBytes += data.length;
 
-      // Trim buffer if it exceeds max size
-      while (
-        this.outputBufferBytes > ProfessionalTerminal.MAX_BUFFER_BYTES &&
-        this.outputBuffer.length > 0
-      ) {
-        const removed = this.outputBuffer.shift();
-        if (removed) {
-          this.outputBufferBytes -= removed.length;
+        // Trim buffer if it exceeds max size
+        while (
+          this.outputBufferBytes > ProfessionalTerminal.MAX_BUFFER_BYTES &&
+          this.outputBuffer.length > 0
+        ) {
+          const removed = this.outputBuffer.shift();
+          if (removed) {
+            this.outputBufferBytes -= removed.length;
+          }
         }
+
+        // Parse for shell integration markers
+        this.parseShellIntegration(data);
+
+        // Emit raw data for XTerm.js to render
+        this.emit('data', data);
+      } catch (err) {
+        // Guard: native PTY thread can fire callbacks after disposal has started.
+        // Log but never throw to prevent crashes in the native layer.
+        this.logger.warn(`[ProfessionalTerminal] onData callback error for ${this.id}:`, err);
       }
-
-      // Parse for shell integration markers
-      this.parseShellIntegration(data);
-
-      // Emit raw data for XTerm.js to render
-      this.emit('data', data);
     });
 
     // Handle PTY exit
     // Store disposable for cleanup
     this.ptyExitDisposable = this.pty.onExit(({ exitCode, signal }) => {
-      // Don't process exit if we're already disposing
-      if (this.isDisposing || this.isDisposed) return;
+      try {
+        // Don't process exit if we're already disposing
+        if (this.isDisposing || this.isDisposed) return;
 
-      this.emit('exit', { exitCode, signal });
-      this.dispose();
+        this.emit('exit', { exitCode, signal });
+        this.dispose();
+      } catch (err) {
+        // Guard: native PTY thread can fire callbacks after disposal has started.
+        // Log but never throw to prevent crashes in the native layer.
+        this.logger.warn(`[ProfessionalTerminal] onExit callback error for ${this.id}:`, err);
+      }
     });
   }
 
@@ -355,12 +367,20 @@ export class ProfessionalTerminal extends EventEmitter {
     }
 
     if (this.pty) {
+      const ptyRef = this.pty;
       try {
-        this.pty.kill();
+        ptyRef.kill();
       } catch (e) {
         this.logger.error('Error killing PTY:', e instanceof Error ? e : new Error(String(e)));
       }
-      this.pty = null;
+      // Defer nulling the PTY reference to allow the native background thread
+      // to complete its exit callback. Without this delay, the thread in
+      // pty.cc:192 may call back into a destroyed instance, causing a crash.
+      // See AUGMENT-INTENT-8 / AUGMENT-INTENT-9 and the async dispose() path
+      // which uses the same 200ms settle delay.
+      setTimeout(() => {
+        this.pty = null;
+      }, 200);
     }
 
     // Clear output buffer
