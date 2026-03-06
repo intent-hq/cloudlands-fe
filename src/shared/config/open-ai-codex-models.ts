@@ -72,9 +72,13 @@ const CODEX_BASE_MODELS = {
     label: 'GPT-5 Codex Mini',
     description: 'Faster coding model',
   },
+  'gpt-5.4': {
+    label: 'GPT-5.4',
+    description: 'Latest frontier agentic coding model',
+  },
   'gpt-5.3': {
     label: 'GPT-5.3',
-    description: 'Latest general GPT model',
+    description: 'General GPT-5.3 model',
   },
   'gpt-5.2': {
     label: 'GPT-5.2',
