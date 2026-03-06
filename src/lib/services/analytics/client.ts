@@ -165,6 +165,11 @@ export async function initAnalytics(): Promise<boolean> {
       writeKey: config.writeKey,
     });
 
+    // Apply download attribution anonymous ID BEFORE exposing analyticsInstance,
+    // so no track() calls can fire with the wrong anonymous ID.
+    // (track() guards on analyticsInstance, so we must not set it until after this.)
+    await applyDownloadAttribution(analytics);
+
     analyticsInstance = analytics;
     isInitialized = true;
     isInitializing = false;
@@ -191,6 +196,68 @@ async function fetchAnalyticsConfig(): Promise<AnalyticsConfig | null> {
   } catch (error) {
     console.warn('[Analytics] Failed to fetch config:', error);
     return null;
+  }
+}
+
+/**
+ * Apply download attribution anonymous ID if available.
+ *
+ * Reads the stored attribution data from the settings store (written by the main
+ * process on first launch). If an ajs_aid exists, overrides Segment's auto-generated
+ * anonymous ID so all events are linked to the website visitor who downloaded the app.
+ *
+ * Also tracks a one-time 'Claimed Download Attribution' event with UTM params.
+ */
+async function applyDownloadAttribution(analytics: Analytics): Promise<void> {
+  try {
+    const result = await window.electronAPI?.invoke('settings:get', {
+      key: 'downloadAttribution',
+    });
+
+    const attribution = result?.data;
+    if (!attribution) return;
+
+    // If there's no ajs_aid, there's nothing actionable — mark as tracked to
+    // avoid re-evaluating on every launch and skip further processing.
+    if (!attribution.ajs_aid) {
+      if (!attribution.eventTracked) {
+        await window.electronAPI?.invoke('settings:set', {
+          key: 'downloadAttribution',
+          value: { ...attribution, eventTracked: true },
+        });
+      }
+      return;
+    }
+
+    // Set the anonymous ID from the website visitor's Segment profile
+    analytics.setAnonymousId(attribution.ajs_aid);
+    console.log('[Analytics] Set anonymous ID from download attribution');
+
+    // Track the one-time attribution event
+    if (!attribution.eventTracked) {
+      const enrichedProperties = {
+        ...buildCommonProperties(),
+        confidence: attribution.confidence ?? 'low',
+        download_location: attribution.download_location ?? null,
+        utm_source: attribution.utm_source ?? null,
+        utm_medium: attribution.utm_medium ?? null,
+        utm_campaign: attribution.utm_campaign ?? null,
+        utm_content: attribution.utm_content ?? null,
+        utm_term: attribution.utm_term ?? null,
+        has_ajs_aid: true,
+      };
+      analytics.track('Claimed Download Attribution', enrichedProperties);
+
+      // Mark event as tracked so it doesn't fire again
+      await window.electronAPI?.invoke('settings:set', {
+        key: 'downloadAttribution',
+        value: { ...attribution, eventTracked: true },
+      });
+      console.log('[Analytics] Tracked download attribution event');
+    }
+  } catch (error) {
+    // Best-effort — don't break analytics initialization
+    console.warn('[Analytics] Failed to apply download attribution:', error);
   }
 }
 

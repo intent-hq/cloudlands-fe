@@ -417,6 +417,7 @@ import {
 } from '../features/workspace/main/workspace.ipc';
 import { startupMetrics } from '../utils/startup-metrics';
 import { CdpMcpBridge } from './cdp-mcp-bridge';
+import { claimDownloadAttribution } from './download-attribution';
 import { HttpMcpBridge } from './http-mcp-bridge';
 
 import { agentBackendHandler } from '../features/agent/main/agent-backend-handler.service';
@@ -2323,6 +2324,11 @@ app.whenReady().then(async () => {
 
     startupMetrics.end('secondaryIPC');
     logger.info('All secondary IPC handlers registered successfully');
+
+    // Best-effort download attribution claim (fire-and-forget, non-blocking)
+    claimDownloadAttribution().catch(() => {
+      // Errors already logged inside claimDownloadAttribution
+    });
 
     // PERF: Start memory monitoring to detect and prevent GC pauses
     memoryMonitor.start();

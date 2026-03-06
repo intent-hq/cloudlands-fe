@@ -391,6 +391,20 @@ export interface AnalyticsEvents {
     skipped: boolean;
     final_step: number;
   };
+
+  // ============================================
+  // Attribution (one-time, on first launch after download)
+  // ============================================
+  'Claimed Download Attribution': {
+    confidence: 'high' | 'low';
+    download_location: string | null;
+    utm_source: string | null;
+    utm_medium: string | null;
+    utm_campaign: string | null;
+    utm_content: string | null;
+    utm_term: string | null;
+    has_ajs_aid: boolean;
+  };
 }
 
 /**
