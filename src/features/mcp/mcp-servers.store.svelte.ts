@@ -66,9 +66,15 @@ class McpServersStore {
         const { serverName, command, errorMessage } = data || {};
         if (!errorMessage) return;
 
+        // Make error messages more user-friendly
+        const isAuthError = /\bUnauthorized\b|\b401\b|\b403\b|\bauth/i.test(errorMessage);
+        const friendlyMessage = isAuthError
+          ? 'Authentication required — check your credentials or reauthenticate'
+          : errorMessage;
+
         // If we have a server name, use it directly
         if (serverName) {
-          this.#serverErrors = { ...this.#serverErrors, [serverName]: errorMessage };
+          this.#serverErrors = { ...this.#serverErrors, [serverName]: friendlyMessage };
           logger.warn('MCP server error received', { serverName, errorMessage });
           return;
         }
@@ -80,7 +86,7 @@ class McpServersStore {
               (server.url && command.includes(server.url)) ||
               (server.command && command.includes(server.command))
             ) {
-              this.#serverErrors = { ...this.#serverErrors, [server.name]: errorMessage };
+              this.#serverErrors = { ...this.#serverErrors, [server.name]: friendlyMessage };
               logger.warn('MCP server error matched by command', {
                 serverName: server.name,
                 errorMessage,

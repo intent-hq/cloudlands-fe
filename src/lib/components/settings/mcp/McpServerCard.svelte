@@ -34,11 +34,11 @@
 
   // Status tooltip text
   const statusTooltips = $derived<Record<string, string>>({
-    connected: 'Connected',
+    connected: 'Connected and working',
     configured: 'Configured — starts when an agent runs',
-    disconnected: 'Disconnected',
-    error: server.errorMessage || 'Connection error',
-    auth_required: 'Authentication required',
+    disconnected: 'Not connected',
+    error: server.errorMessage || 'Failed to connect — check configuration',
+    auth_required: server.errorMessage || 'Authentication required — click Authenticate to connect',
     disabled: 'Disabled',
   });
 
@@ -113,9 +113,11 @@
         </div>
         <p class="text-xs text-subtle truncate">{displayCommand()}</p>
 
-        <!-- Error message (shown inline when server failed to start) -->
+        <!-- Error/auth message (shown inline when server has issues) -->
         {#if server.status === 'error' && server.errorMessage}
           <p class="mt-1 text-xs text-red-500 dark:text-red-400 line-clamp-2">{server.errorMessage}</p>
+        {:else if server.status === 'auth_required'}
+          <p class="mt-1 text-xs text-yellow-600 dark:text-yellow-400 line-clamp-2">{server.errorMessage || 'Authentication required — click Authenticate to connect'}</p>
         {/if}
 
         <!-- Tools expansion (inline, only if has tools) -->

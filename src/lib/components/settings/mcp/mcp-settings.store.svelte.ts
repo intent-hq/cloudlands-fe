@@ -51,11 +51,18 @@ class McpSettingsStore {
         const { serverName, command, errorMessage } = data || {};
         if (!errorMessage) return;
 
+        // Determine if this is an auth error based on the error message
+        const isAuthError = /\bUnauthorized\b|\b401\b|\b403\b|\bauth/i.test(errorMessage);
+        const status: McpServerStatus = isAuthError ? 'auth_required' : 'error';
+        const friendlyMessage = isAuthError
+          ? 'Authentication required — check your credentials or reauthenticate'
+          : errorMessage;
+
         // If we have a server name, use it directly
         if (serverName) {
-          this.#statusMap = { ...this.#statusMap, [serverName]: 'error' };
-          this.#errorMessages = { ...this.#errorMessages, [serverName]: errorMessage };
-          logger.warn('MCP server error received', { serverName, errorMessage });
+          this.#statusMap = { ...this.#statusMap, [serverName]: status };
+          this.#errorMessages = { ...this.#errorMessages, [serverName]: friendlyMessage };
+          logger.warn('MCP server error received', { serverName, errorMessage, status });
           return;
         }
 
@@ -66,11 +73,12 @@ class McpSettingsStore {
               ? (server.args?.length ? `${server.command} ${server.args.join(' ')}` : server.command)
               : server.url;
             if (serverCmd && command.includes(serverCmd)) {
-              this.#statusMap = { ...this.#statusMap, [server.name]: 'error' };
-              this.#errorMessages = { ...this.#errorMessages, [server.name]: errorMessage };
+              this.#statusMap = { ...this.#statusMap, [server.name]: status };
+              this.#errorMessages = { ...this.#errorMessages, [server.name]: friendlyMessage };
               logger.warn('MCP server error matched by command', {
                 serverName: server.name,
                 errorMessage,
+                status,
               });
               return;
             }
@@ -281,20 +289,25 @@ class McpSettingsStore {
         logger.info('Loaded MCP servers:', { count: this.#servers.length });
 
         // Set initial status for non-disabled servers.
-        // HTTP/SSE servers are set to 'connected' (error events from main process will override for failures).
-        // Stdio servers are set to 'configured' since they can't be tested from settings —
+        // All servers start as 'configured' — HTTP/SSE servers will be tested in the background.
+        // Stdio servers stay 'configured' since they can't be tested from settings —
         // they're only spawned when an agent starts.
         // Clear previous errors — new errors will arrive via IPC if servers still fail.
         this.#errorMessages = {};
         for (const server of this.#servers) {
           if (!this.#disabledServers.has(server.name)) {
-            // Only update if not already in error state
+            // Only update if not already in error/auth state
             // (error events may arrive before loadServers completes)
-            if (this.#statusMap[server.name] !== 'error') {
-              this.#statusMap[server.name] = server.type === 'stdio' ? 'configured' : 'connected';
+            const currentStatus = this.#statusMap[server.name];
+            if (currentStatus !== 'error' && currentStatus !== 'auth_required') {
+              this.#statusMap[server.name] = 'configured';
             }
           }
         }
+
+        // Test HTTP/SSE server connections in the background to show accurate status.
+        // Fire-and-forget — don't await, so loadServers returns quickly.
+        this.testAllHttpConnections();
       } else {
         this.#error = result?.error || 'Failed to load servers';
       }
@@ -423,6 +436,30 @@ class McpSettingsStore {
   }
 
   /**
+   * Test all HTTP/SSE server connections in the background.
+   * Updates status from 'configured' to 'connected', 'auth_required', or 'error'.
+   */
+  private async testAllHttpConnections(): Promise<void> {
+    const httpServers = this.#servers.filter(
+      (s) => s.type !== 'stdio' && s.url && !this.#disabledServers.has(s.name),
+    );
+
+    if (httpServers.length === 0) return;
+
+    logger.debug('Testing HTTP/SSE server connections:', {
+      count: httpServers.length,
+      names: httpServers.map((s) => s.name),
+    });
+
+    // Test all servers in parallel, don't block on failures
+    await Promise.allSettled(
+      httpServers.map((server) =>
+        this.testServerConnection(server.name, server.url!, server.headers),
+      ),
+    );
+  }
+
+  /**
    * Test connection to an HTTP/SSE server and update status
    */
   async testServerConnection(
@@ -445,6 +482,15 @@ class McpSettingsStore {
 
         // Update the server status based on connection test
         this.setServerStatus(name, status);
+
+        // Update error message if present
+        if (errorMessage) {
+          this.#errorMessages = { ...this.#errorMessages, [name]: errorMessage };
+        } else {
+          // Clear any previous error message on success
+          const { [name]: _, ...rest } = this.#errorMessages;
+          this.#errorMessages = rest;
+        }
       }
     } catch (error) {
       logger.error('Failed to test server connection:', { name, error });
