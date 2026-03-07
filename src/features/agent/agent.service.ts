@@ -1959,6 +1959,14 @@ class RefactoredAgentService extends EventEmitter {
       // Listen for backend-created agents (e.g., from createPrerequisiteNote)
       // This ensures we register stream handlers for agents created outside the frontend flow
       registerGlobalListener('agent:created', (data: any) => {
+        // DIAG: Trace agent:created IPC arrival in renderer
+        console.warn('[DIAG agent:created] IPC event received in renderer', {
+          dataKeys: data ? Object.keys(data) : [],
+          hasType: !!data?.type,
+          hasAgent: !!data?.agent || !!data?.data?.agent,
+          timestamp: Date.now(),
+        });
+
         // Handle two event formats:
         // 1. Direct from backend.emit(): { agentId, workspaceId, agent }
         // 2. From WorkspaceEventBus.emitEvent(): { type, workspaceId, data: { agentId, agentName, ... } }
@@ -2099,6 +2107,12 @@ class RefactoredAgentService extends EventEmitter {
             metadata: agent.metadata,
           };
 
+          console.warn('[DIAG agent:created] Calling sessionStore.addSession', {
+            agentId,
+            workspaceId: newSession.workspaceId,
+            name: newSession.name,
+            isBackground: newSession.isBackground,
+          });
           sessionStore.addSession(newSession);
           logger.debug('Created session for backend-created agent', {
             agentId,

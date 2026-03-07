@@ -153,7 +153,7 @@ export function notifyAgentSubscribers(agentId: string, targetWorkspaceId?: Work
     : undefined;
 
   if (!session) {
-    logger.debug('notifyAgentSubscribers: agent not found, subscribers will get undefined', {
+    console.warn('[DIAG notifyAgentSubscribers] Agent NOT FOUND — subscribers get undefined', {
       agentId,
       targetWorkspaceId: targetWorkspaceId || 'current',
       subscriberCount: subscribers.size,
@@ -217,6 +217,12 @@ function scheduleStoreUpdate(forWorkspaceId?: WorkspaceId, forAgentId?: string) 
     pendingAgentUpdates.clear();
     pendingAgentWorkspaces.clear();
 
+    console.warn('[DIAG RAF] Flushing batched updates', {
+      agentCount: agentIdsToNotify.length,
+      agentIds: agentIdsToNotify,
+      workspaceMap: Object.fromEntries(workspaceSnapshot),
+    });
+
     // Notify per-agent subscribers with the CORRECT workspace for each agent.
     // Previously a single pendingTargetWorkspaceId was used for ALL agents in
     // the batch, so if agent A (workspace-1) and agent B (workspace-2) both
@@ -234,6 +240,10 @@ function scheduleStoreUpdate(forWorkspaceId?: WorkspaceId, forAgentId?: string) 
     // workspace, the sidebar shows "No agents yet" when switching workspaces.
     const sessions = unifiedStateStore.getAllAgents();
 
+    console.warn('[DIAG RAF] Setting sessionStoreData', {
+      sessionCount: sessions.length,
+      sessionIds: sessions.map((s: any) => s?.id).slice(0, 10),
+    });
     sessionStoreData.set({ sessions });
   });
 }
@@ -442,10 +452,14 @@ export const sessionStore = {
       // CRITICAL: Pass agentId so per-agent subscribers are notified when the agent is added
       // This fixes the issue where panels remain empty after workspace switch because
       // subscribeToAgent callbacks were never notified of the new agent
+      console.warn('[DIAG addSession] Added to store, scheduling update', {
+        agentId: session.id,
+        targetWorkspaceId,
+        subscriberCount: agentSubscribers.get(session.id)?.size ?? 0,
+      });
       scheduleStoreUpdate(targetWorkspaceId as WorkspaceId, session.id);
     } else {
-      // Log warning if we can't determine the target workspace
-      logger.warn('addSession: No target workspace ID available, session not added', {
+      console.warn('[DIAG addSession] NO TARGET WORKSPACE — session dropped!', {
         sessionId: session?.id,
         sessionWorkspaceId,
         hasCurrentWorkspace: !!currentWorkspace,
