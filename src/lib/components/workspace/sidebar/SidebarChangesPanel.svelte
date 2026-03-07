@@ -58,7 +58,7 @@
   import { dialog, invoke, isElectron } from '$lib/electron-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { faNote } from '$lib/icons/faNote';
-  import { track, getFileExtension } from '$lib/services/analytics';
+  import { track, trackGitOp, getFileExtension } from '$lib/services/analytics';
   import { createWorkspaceSettingsStore } from '$lib/stores/workspace-settings.store.svelte';
   import { logger } from '$lib/utils/client-logger';
   import { SYSTEM_CHANNELS, WORKSPACE_CHANNELS } from '$shared/ipc/channels';
@@ -327,7 +327,12 @@
   // Construct the correct PR URL from repository info and PR number
   // This is more reliable than using the stored URL which may be incorrect
   const constructPrUrl = (prNumber: number, fallbackUrl?: string): string => {
-    return constructPrUrlUtil(prNumber, workspace?.repositoryOwner, workspace?.repositoryName, fallbackUrl);
+    return constructPrUrlUtil(
+      prNumber,
+      workspace?.repositoryOwner,
+      workspace?.repositoryName,
+      fallbackUrl,
+    );
   };
 
   const pullRequests = $derived.by<PRInfo[]>(() => {
@@ -1564,6 +1569,8 @@
         commitMessage: message,
       });
 
+      trackGitOp('commit', { workspaceId, success: result.success, trigger: 'manual' });
+
       if (!result.success) {
         throw new Error(result.error || 'Commit failed');
       }
@@ -2178,6 +2185,8 @@
         commitMessage,
       });
 
+      trackGitOp('commit', { workspaceId, success: result.success, trigger: 'manual' });
+
       if (result.success) {
         // Toast is handled by git:op-completed event in +layout.svelte
       } else {
@@ -2186,6 +2195,7 @@
         });
       }
     } catch (error) {
+      trackGitOp('commit', { workspaceId, success: false, trigger: 'manual' });
       logger.error('Failed to commit agent group', error as Error);
       toast.error('Commit failed', {
         description: error instanceof Error ? error.message : 'Unknown error',
@@ -2238,9 +2248,10 @@
       });
 
       // Track analytics event for both success and failure
-      track('Created Pull Request', {
-        workspace_id: workspaceId,
+      trackGitOp('create-pr', {
+        workspaceId: wsId,
         success: result.success,
+        trigger: 'manual',
       });
 
       if (result.success) {
@@ -2256,6 +2267,7 @@
         toast.error(result.error || 'Failed to create pull request');
       }
     } catch (error) {
+      trackGitOp('create-pr', { workspaceId: wsId, success: false, trigger: 'manual' });
       toast.error('Failed to create pull request');
     } finally {
       isCreatingPR = false;
@@ -2283,9 +2295,10 @@
         commitMessage: commitMessage.trim(),
       });
       // Track analytics event for both success and failure
-      track('Committed Changes', {
-        workspace_id: workspaceId,
+      trackGitOp('commit', {
+        workspaceId: wsId,
         success: result.success,
+        trigger: 'manual',
       });
 
       if (result.success) {
@@ -2296,6 +2309,7 @@
         toast.error(result.error || 'Failed to commit');
       }
     } catch (error) {
+      trackGitOp('commit', { workspaceId: wsId, success: false, trigger: 'manual' });
       toast.error('Failed to commit');
     } finally {
       isCommitting = false;
@@ -2516,6 +2530,7 @@
       const commitResult = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'commit', {
         commitMessage: commitMessage.trim(),
       });
+      trackGitOp('commit', { workspaceId, success: commitResult.success, trigger: 'manual' });
       if (!commitResult.success) {
         toast.error(commitResult.error || 'Failed to commit staged changes');
         return;
@@ -2530,6 +2545,8 @@
         rebaseFirst: options?.rebaseFirst,
         localOnly: options?.localOnly,
       });
+
+      trackGitOp('merge', { workspaceId, success: result.success, trigger: 'manual' });
 
       if (result.success) {
         isMergedToTrunk = true;
@@ -2590,6 +2607,7 @@
         }
       }
     } catch (error) {
+      trackGitOp('merge', { workspaceId, success: false, trigger: 'manual' });
       toast.error('Failed to merge to trunk');
     } finally {
       isMergingToTrunk = false;
@@ -2611,11 +2629,12 @@
       });
 
       // Track analytics event for both success and failure
-      track('Merged Pull Request on GitHub', {
-        workspace_id: workspaceId,
-        pr_number: openPR.number,
-        merge_method: options?.mergeMethod || (squashMerge ? 'squash' : 'merge'),
+      trackGitOp('merge-pr', {
+        workspaceId,
         success: result.success,
+        trigger: 'manual',
+        prNumber: openPR.number,
+        mergeMethod: options?.mergeMethod || (squashMerge ? 'squash' : 'merge'),
       });
 
       if (result.success) {
@@ -2638,6 +2657,7 @@
         toast.error(result.error || 'Failed to merge PR on GitHub');
       }
     } catch (error) {
+      trackGitOp('merge-pr', { workspaceId, success: false, trigger: 'manual' });
       toast.error('Failed to merge PR on GitHub');
     } finally {
       isMergingPROnGitHub = false;
@@ -3195,11 +3215,12 @@
       const commitCount = getCommitsToPushCount_(commitIndex);
 
       // Track analytics event for both success and failure
-      track('Pushed Changes', {
-        workspace_id: workspaceId,
-        commit_count: commitCount,
-        has_pr: pullRequests.length > 0,
+      trackGitOp('push', {
+        workspaceId,
         success: result.success,
+        trigger: 'manual',
+        commitCount,
+        hasPr: pullRequests.length > 0,
       });
 
       if (result.success) {
@@ -3231,6 +3252,7 @@
         }
       }
     } catch (error) {
+      trackGitOp('push', { workspaceId, success: false, trigger: 'manual' });
       toast.error('Failed to push commits');
     } finally {
       isPushing = false;
@@ -3291,7 +3313,10 @@
     const capturedWsId = workspaceId;
     isRebasing = true;
     try {
-      const result = await AcceptChangesClient.execute(capturedWsId as WorkspaceId, 'rebase-onto-trunk');
+      const result = await AcceptChangesClient.execute(
+        capturedWsId as WorkspaceId,
+        'rebase-onto-trunk',
+      );
 
       // If workspace changed during the async call, discard stale updates
       if (workspaceId !== capturedWsId) return;
@@ -3341,8 +3366,9 @@
         const stepErrors = result.steps
           ?.filter((s) => s.status === 'failed' && s.error && s.error !== mainError)
           .map((s) => s.error);
-        const detailError =
-          stepErrors?.length ? `${mainError}\n${stepErrors.join('\n')}` : mainError;
+        const detailError = stepErrors?.length
+          ? `${mainError}\n${stepErrors.join('\n')}`
+          : mainError;
         toast.error(detailError);
       }
     } catch (error) {
@@ -3408,12 +3434,11 @@
         upToCommitHash: resetToHash,
       });
 
+      trackGitOp('undo-push', { workspaceId, success: result.success, trigger: 'manual' });
+
       if (result.success) {
         const commitWord = commitCount === 1 ? 'commit' : 'commits';
         toast.warning(`${commitCount} ${commitWord} removed from remote`);
-
-        // Track undo push after confirmed success
-        track('Undid Push', { workspace_id: workspaceId });
         // Invalidate cache and refresh stores to update UI (don't await - let UI update reactively)
         gitCache.invalidate(`git-status-${workspaceId}`);
         Promise.all([
@@ -3424,6 +3449,7 @@
         toast.error(result.error || 'Failed to undo push');
       }
     } catch (error) {
+      trackGitOp('undo-push', { workspaceId, success: false, trigger: 'manual' });
       toast.error('Failed to undo push');
     } finally {
       isUndoing = false;
@@ -3486,12 +3512,16 @@
         undoCommitsMetadata,
       });
 
+      trackGitOp('undo-commit', {
+        workspaceId,
+        success: result.success,
+        trigger: 'manual',
+        commitCountUndone: commitCount,
+      });
+
       if (result.success) {
         const commitWord = commitCount === 1 ? 'commit' : 'commits';
         toast.warning(`${commitCount} ${commitWord} undone - changes moved to staging`);
-
-        // Track undo commit after confirmed success
-        track('Undid Commit', { workspace_id: workspaceId, commit_count: commitCount });
         // Invalidate cache and refresh stores to update UI (don't await - let UI update reactively)
         gitCache.invalidate(`git-status-${workspaceId}`);
         Promise.all([
@@ -3502,6 +3532,7 @@
         toast.error(result.error || 'Failed to undo commit');
       }
     } catch (error) {
+      trackGitOp('undo-commit', { workspaceId, success: false, trigger: 'manual' });
       toast.error('Failed to undo commit');
     } finally {
       isUndoingCommit = false;
@@ -3743,15 +3774,11 @@
       >
         <div class="branch-labels w-full flex justify-between mb-1 mt-1">
           <p class="text-subtle leading-snug text-ui">Your code lives in:</p>
-          <p class="text-subtle leading-snug text-ui">
-            and will be merged into:
-          </p>
+          <p class="text-subtle leading-snug text-ui">and will be merged into:</p>
         </div>
 
         <!-- Branch display/edit with trunk branch picker -->
-        <div
-          class="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-subtle text-xs mb-3 -ml-0.5"
-        >
+        <div class="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-subtle text-xs mb-3 -ml-0.5">
           <!-- Working branch -->
           <div class="flex items-center shrink-0">
             <GitBranchIcon size={12} class="shrink-0 text-ghost" />
@@ -3772,12 +3799,14 @@
                 style="width: {Math.max(60, Math.min(150, (editedBranch || '').length * 6 + 20))}px"
               />
             {:else}
-              <Tooltip
-                side="top"
-                disableCloseOnTriggerClick
-                bind:open={workingBranchTooltipOpen}
-              >
-                {#snippet content()}<span>Working on the {workspace?.branch || 'no branch'} branch. Click to change name.</span><br /><span class="text-ghost">Shift+click to copy</span>{#if copiedWorkingBranch}<span class="text-green-500 ml-1.5 inline-flex items-center gap-1"><Fa icon={faCheck} size="xs" /></span>{/if}{/snippet}
+              <Tooltip side="top" disableCloseOnTriggerClick bind:open={workingBranchTooltipOpen}>
+                {#snippet content()}<span
+                    >Working on the {workspace?.branch || 'no branch'} branch. Click to change name.</span
+                  ><br /><span class="text-ghost">Shift+click to copy</span
+                  >{#if copiedWorkingBranch}<span
+                      class="text-green-500 ml-1.5 inline-flex items-center gap-1"
+                      ><Fa icon={faCheck} size="xs" /></span
+                    >{/if}{/snippet}
                 <button
                   class="text-ui text-subtle bg-transparent
                          border-none px-1 py-0.5 rounded cursor-pointer text-left
@@ -3824,7 +3853,13 @@
               disableCloseOnTriggerClick
               bind:open={trunkBranchTooltipOpen}
             >
-              {#snippet content()}{#if canChangeTrunk}<span>Trunk branch - click to change</span>{:else}<span>Trunk branch (cannot change after pushing)</span>{/if}<br /><span class="text-ghost">Shift+click to copy</span>{#if copiedTrunkBranch}<span class="text-green-500 ml-1.5 inline-flex items-center gap-1"><Fa icon={faCheck} size="xs" /></span>{/if}{/snippet}
+              {#snippet content()}{#if canChangeTrunk}<span>Trunk branch - click to change</span
+                  >{:else}<span>Trunk branch (cannot change after pushing)</span>{/if}<br /><span
+                  class="text-ghost">Shift+click to copy</span
+                >{#if copiedTrunkBranch}<span
+                    class="text-green-500 ml-1.5 inline-flex items-center gap-1"
+                    ><Fa icon={faCheck} size="xs" /></span
+                  >{/if}{/snippet}
               <div
                 class="flex items-center min-w-0 max-w-full"
                 role="button"
@@ -4012,11 +4047,7 @@
                                 content="These changes will auto-commit when agent completes"
                                 align="start"
                               >
-                                <Fa
-                                  icon={faLock}
-                                  class="text-subtle shrink-0"
-                                  size={10}
-                                />
+                                <Fa icon={faLock} class="text-subtle shrink-0" size={10} />
                               </Tooltip>
                             {/if}
                             <span
@@ -4670,11 +4701,7 @@
                           />
                         </span>
                       {:else}
-                        <Fa
-                          icon={faCodeCommit}
-                          size="xs"
-                          class="text-ghost shrink-0"
-                        />
+                        <Fa icon={faCodeCommit} size="xs" class="text-ghost shrink-0" />
                       {/if}
                       {#if editingCommitHash === commit.hash}
                         <!-- Inline edit mode for commit message -->
@@ -4698,9 +4725,7 @@
                           ondblclick={(e) => handleCommitMessageDoubleClick(e, commit, index)}
                         >
                           <span
-                            class="text-ui text-subtle truncate flex-1 {canAmendCommit(
-                              index,
-                            )
+                            class="text-ui text-subtle truncate flex-1 {canAmendCommit(index)
                               ? ''
                               : ''}"
                             title={commit.message}
@@ -4735,11 +4760,7 @@
                             tooltip="Open in browser"
                             tooltipSide="top"
                           >
-                            <Fa
-                              icon={faArrowUpRightFromSquare}
-                              size="xs"
-                              class="text-subtle"
-                            />
+                            <Fa icon={faArrowUpRightFromSquare} size="xs" class="text-subtle" />
                           </Button>
                           <!-- Undo push button - absolutely positioned to overlap cloud icon -->
                           <div
@@ -4755,11 +4776,7 @@
                               tooltipSide="top"
                             >
                               {#if isOperatingOnThis && isUndoing}
-                                <Fa
-                                  icon={faSpinner}
-                                  size="xs"
-                                  class="animate-spin text-subtle"
-                                />
+                                <Fa icon={faSpinner} size="xs" class="animate-spin text-subtle" />
                               {:else}
                                 <Fa icon={faRotateLeft} size="xs" class="text-ghost" />
                               {/if}
@@ -4778,11 +4795,7 @@
                             tooltipSide="top"
                           >
                             {#if isOperatingOnThis && isUndoingCommit}
-                              <Fa
-                                icon={faSpinner}
-                                size="xs"
-                                class="animate-spin text-subtle"
-                              />
+                              <Fa icon={faSpinner} size="xs" class="animate-spin text-subtle" />
                             {:else}
                               <Fa icon={faRotateLeft} size="xs" class="text-ghost" />
                             {/if}
@@ -4800,17 +4813,9 @@
                               tooltipSide="top"
                             >
                               {#if isOperatingOnThis && isPushing}
-                                <Fa
-                                  icon={faSpinner}
-                                  size="xs"
-                                  class="animate-spin text-subtle"
-                                />
+                                <Fa icon={faSpinner} size="xs" class="animate-spin text-subtle" />
                               {:else}
-                                <Fa
-                                  icon={faArrowUpFromBracket}
-                                  size="xs"
-                                  class="text-subtle"
-                                />
+                                <Fa icon={faArrowUpFromBracket} size="xs" class="text-subtle" />
                               {/if}
                             </Button>
                           {/if}
@@ -4937,10 +4942,7 @@
                         class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
                         onclick={() => handleOpenCommitChangeset(commit.hash, commit.message)}
                       >
-                        <span
-                          class="text-ui text-subtle truncate flex-1"
-                          title={commit.message}
-                        >
+                        <span class="text-ui text-subtle truncate flex-1" title={commit.message}>
                           {commit.message}
                         </span>
                       </button>
@@ -5660,9 +5662,7 @@
                               class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
                               onclick={onOpenFullPanel}
                             >
-                              <span class="text-ui text-subtle truncate flex-1"
-                                >{pr.title}</span
-                              >
+                              <span class="text-ui text-subtle truncate flex-1">{pr.title}</span>
                               <span class="text-ui text-subtle">#{pr.number}</span>
                               {#if pr.status === 'merged'}
                                 <span class="text-ui text-purple-500 font-medium">Merged</span>
@@ -5854,21 +5854,21 @@
                 </div>
               {/if}
               {#if hasNoLocalChanges && !workspace?.archived}
-              <!-- Archive and start new space button -->
-              <div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  class="w-full gap-2"
-                  onclick={handleStartNewSpace}
-                >
-                  <Fa icon={faRocket} size="sm" class="text-primary" />
-                  <span>Archive and start new space</span>
-                </Button>
-                <p class="text-xs text-subtle text-center mt-2">
-                  Continue working on this repo in a fresh workspace
-                </p>
-              </div>
+                <!-- Archive and start new space button -->
+                <div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    class="w-full gap-2"
+                    onclick={handleStartNewSpace}
+                  >
+                    <Fa icon={faRocket} size="sm" class="text-primary" />
+                    <span>Archive and start new space</span>
+                  </Button>
+                  <p class="text-xs text-subtle text-center mt-2">
+                    Continue working on this repo in a fresh workspace
+                  </p>
+                </div>
               {/if}
             </div>
           {/if}

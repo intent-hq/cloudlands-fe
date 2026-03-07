@@ -97,6 +97,20 @@ export interface UserTraits {
   plan?: string;
 }
 
+/** Trigger source for git operations */
+export type GitOpTrigger = 'manual' | 'agent' | 'auto_commit';
+
+/** Common context for git operations that can be triggered by agents */
+type GitOpContext = {
+  trigger?: GitOpTrigger;
+  agent_id?: string;
+};
+
+/** Common context for git operations that are manual-only */
+type ManualGitOpContext = {
+  trigger?: 'manual';
+};
+
 /**
  * All trackable events and their properties.
  * Property names use snake_case per spec.
@@ -197,27 +211,27 @@ export interface AnalyticsEvents {
   'Committed Changes': {
     workspace_id: string;
     success: boolean;
-  };
+  } & GitOpContext;
   'Pushed Changes': {
     workspace_id: string;
     success: boolean;
     commit_count?: number;
     has_pr?: boolean;
-  };
+  } & GitOpContext;
   'Created Pull Request': {
     workspace_id: string;
     success: boolean;
-  };
+  } & GitOpContext;
   'Merged Changes': {
     workspace_id: string;
     success: boolean;
-  };
+  } & ManualGitOpContext;
   'Merged Pull Request on GitHub': {
     workspace_id: string;
     pr_number: number;
     merge_method: string;
     success: boolean;
-  };
+  } & ManualGitOpContext;
 
   // ============================================
   // Settings Events
@@ -300,7 +314,7 @@ export interface AnalyticsEvents {
   'Staged Changes': {
     method: 'file' | 'hunk' | 'lines';
     file_count?: number;
-  };
+  } & GitOpContext;
   'Requested Code Review': {
     staged_file_count: number;
   };
@@ -354,13 +368,15 @@ export interface AnalyticsEvents {
   'Undid Commit': {
     workspace_id: string;
     commit_count: number;
-  };
+    success: boolean;
+  } & ManualGitOpContext;
   'Undid Push': {
     workspace_id: string;
-  };
+    success: boolean;
+  } & ManualGitOpContext;
   'Switched Branch': {
     workspace_id: string;
-  };
+  } & GitOpContext;
 
   // ============================================
   // Setup Funnel Events

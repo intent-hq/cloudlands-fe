@@ -4,7 +4,7 @@
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { sessionStoreData } from '$features/agent/browser';
-  import { track, setAnalyticsContextProvider } from '$lib/services/analytics';
+  import { track, trackGitOp, isGitOp, setAnalyticsContextProvider } from '$lib/services/analytics';
   import type { AnalyticsUIContext } from '$lib/services/analytics';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
 
@@ -638,6 +638,22 @@
               .catch(() => {
                 // Toast not available - not critical
               });
+
+            // Track agent-initiated git operations in analytics
+            // Manual operations are tracked at their UI call sites (SidebarChangesPanel, AcceptChangesPanel, SidebarGitStatusBar)
+            // so we only track here when agentId is present to avoid double-tracking
+            if (data.metadata?.agentId) {
+              const trigger = data.operationType === 'auto-commit' ? 'auto_commit' : 'agent';
+              const op = data.operationType === 'auto-commit' ? 'commit' : data.operationType;
+              if (isGitOp(op)) {
+                trackGitOp(op, {
+                  workspaceId: data.workspaceId,
+                  success: true,
+                  trigger,
+                  agentId: data.metadata.agentId,
+                });
+              }
+            }
           },
         );
       }
@@ -745,6 +761,20 @@
               .catch(() => {
                 // Toast not available - not critical
               });
+
+            // Track agent-initiated git operation failures in analytics
+            if (data.metadata?.agentId) {
+              const trigger = data.operationType === 'auto-commit' ? 'auto_commit' : 'agent';
+              const op = data.operationType === 'auto-commit' ? 'commit' : data.operationType;
+              if (isGitOp(op)) {
+                trackGitOp(op, {
+                  workspaceId: data.workspaceId,
+                  success: false,
+                  trigger,
+                  agentId: data.metadata.agentId,
+                });
+              }
+            }
           },
         );
       }

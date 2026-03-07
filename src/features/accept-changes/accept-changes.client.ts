@@ -16,7 +16,6 @@ import type {
   MergeStrategy,
   UndoCommitMetadata,
 } from './types';
-import { track } from '$lib/services/analytics';
 
 interface IPCResponse<T> {
   success: boolean;
@@ -129,26 +128,6 @@ export class AcceptChangesClient {
       );
     }
 
-    // Track git actions based on action type
-    if (response.data?.success) {
-      const baseProps = { workspace_id: workspaceId as string, success: true };
-      switch (action) {
-        case 'commit':
-          track('Committed Changes', baseProps);
-          break;
-        case 'push':
-          track('Pushed Changes', baseProps);
-          break;
-        case 'create-pr':
-          track('Created Pull Request', baseProps);
-          break;
-        case 'merge':
-          track('Merged Changes', baseProps);
-          break;
-        // Note: 'export', 'undo-push', 'undo-commit' are not tracked
-      }
-    }
-
     return response.data!;
   }
 
@@ -183,15 +162,6 @@ export class AcceptChangesClient {
           error: response.error || 'Failed to merge PR',
         }
       );
-    }
-
-    if (response.data?.success) {
-      track('Merged Pull Request on GitHub', {
-        workspace_id: workspaceId as string,
-        pr_number: prNumber,
-        merge_method: options?.mergeMethod || 'merge',
-        success: true,
-      });
     }
 
     return response.data!;

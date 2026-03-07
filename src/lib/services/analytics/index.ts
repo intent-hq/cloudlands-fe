@@ -42,7 +42,11 @@ export type {
   AnalyticsUIContext,
   CommonEventProperties,
   EventProperties,
+  GitOpTrigger,
   UserTraits,
 } from './types';
+
+export { trackGitOp, isGitOp } from './track-git-op';
+export type { GitOp } from './track-git-op';
 
 export { extractDomain, getFileExtension } from './utils';

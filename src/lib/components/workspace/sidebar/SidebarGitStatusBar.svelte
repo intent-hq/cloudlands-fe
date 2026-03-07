@@ -29,6 +29,7 @@
   import { terminalOverlayStore } from '$lib/stores/terminal-overlay.store.svelte';
   import { logger } from '$lib/utils/client-logger';
   import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
+  import { trackGitOp } from '$lib/services/analytics';
   import DividerButton from './DividerButton.svelte';
   import DividerPanel from './DividerPanel.svelte';
 
@@ -166,6 +167,11 @@
     isPushing = true;
     try {
       const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'push');
+      trackGitOp('push', {
+        workspaceId,
+        success: result.success,
+        trigger: 'manual',
+      });
       if (result.success) {
         toast.success('Changes pushed');
         // Invalidate cache and refresh stores to update UI (don't await - let UI update reactively)
@@ -193,6 +199,7 @@
         }
       }
     } catch (error) {
+      trackGitOp('push', { workspaceId, success: false, trigger: 'manual' });
       toast.error('Failed to push changes');
     } finally {
       isPushing = false;
@@ -373,8 +380,8 @@
           <div class="flex items-start gap-2 text-amber-600 dark:text-amber-400 mb-2">
             <Fa icon={faExclamationTriangle} size="sm" class="mt-0.5 flex-shrink-0" />
             <p class="text-xs">
-              <strong>Warning:</strong> This will overwrite remote commits. Are you sure you want to
-              force push?
+              <strong>Warning:</strong> This will overwrite remote commits. Are you sure you want to force
+              push?
             </p>
           </div>
           <p class="text-xs text-subtle mb-3">

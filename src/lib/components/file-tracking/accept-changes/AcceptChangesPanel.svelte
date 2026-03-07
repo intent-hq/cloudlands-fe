@@ -56,7 +56,7 @@
   import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
   import { handleLink } from '$features/navigation/link-handler';
   import { terminalOverlayStore } from '$lib/stores/terminal-overlay.store.svelte';
-  import { track } from '$lib/services/analytics';
+  import { track, trackGitOp } from '$lib/services/analytics';
 
   const logger = createLogger('AcceptChangesPanel');
   const { state: githubAuthState } = githubAuthStore;
@@ -1272,6 +1272,7 @@
 
       logger.info('Commit result received', { success: result.success, error: result.error });
 
+      trackGitOp('commit', { workspaceId, success: result.success, trigger: 'manual' });
       if (result.success) {
         logger.info('Commit succeeded, updating UI');
         toast.success('Changes committed');
@@ -1287,6 +1288,7 @@
         toast.error(result.error || 'Failed to commit');
       }
     } catch (error) {
+      trackGitOp('commit', { workspaceId, success: false, trigger: 'manual' });
       logger.error('Failed to commit changes', error as Error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to commit changes';
       if (errorMessage.includes('timed out')) {
@@ -1313,6 +1315,7 @@
         }),
       );
 
+      trackGitOp('push', { workspaceId, success: result.success, trigger: 'manual' });
       if (result.success) {
         toast.success('Changes pushed');
         await loadStatus(false);
@@ -1322,6 +1325,7 @@
         toast.error(result.error || 'Failed to push');
       }
     } catch (error) {
+      trackGitOp('push', { workspaceId, success: false, trigger: 'manual' });
       logger.error('Failed to push changes', error as Error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to push changes';
       if (errorMessage.includes('timed out')) {
@@ -1360,6 +1364,7 @@
         }),
       );
 
+      trackGitOp('merge', { workspaceId, success: result.success, trigger: 'manual' });
       if (result.success) {
         toast.success(`Changes merged into ${targetBranch}`);
         isMergedToTrunk = true;
@@ -1391,6 +1396,7 @@
         }
       }
     } catch (error) {
+      trackGitOp('merge', { workspaceId, success: false, trigger: 'manual' });
       logger.error('Failed to merge to trunk', error as Error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to merge changes';
       if (errorMessage.includes('timed out')) {
@@ -1599,6 +1605,7 @@
           }),
         );
 
+        trackGitOp('commit', { workspaceId, success: result.success, trigger: 'manual' });
         if (result.success) {
           toast.success('Changes added to PR');
           commitMessage = '';
@@ -1616,6 +1623,12 @@
           }),
         );
 
+        trackGitOp('push', {
+          workspaceId,
+          success: result.success,
+          trigger: 'manual',
+          hasPr: true,
+        });
         if (result.success) {
           toast.success('Changes added to PR');
           await loadStatus(false);
@@ -1626,6 +1639,11 @@
         }
       }
     } catch (error) {
+      trackGitOp(includeCommit ? 'commit' : 'push', {
+        workspaceId,
+        success: false,
+        trigger: 'manual',
+      });
       logger.error('Failed to add to PR', error as Error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to add to PR';
       if (errorMessage.includes('timed out')) {
@@ -1671,6 +1689,7 @@
         }),
       );
 
+      trackGitOp('create-pr', { workspaceId, success: result.success, trigger: 'manual' });
       if (result.success) {
         prTitle = '';
         prDescription = '';
@@ -1691,6 +1710,7 @@
         await loadStatus(false);
       }
     } catch (error) {
+      trackGitOp('create-pr', { workspaceId, success: false, trigger: 'manual' });
       logger.error('Failed to create pull request', error as Error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to create pull request';
       if (errorMessage.includes('timed out')) {

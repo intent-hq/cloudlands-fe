@@ -14,6 +14,7 @@ import {
 import { ToolCall, ToolResult } from './protocol';
 import { Logger } from '../../../../shared/logger';
 import { WorkspaceId } from '../../../../shared/types/branded-ids';
+import { backgroundGitOpsService } from '../../../git/main/background-git-ops.service';
 
 type ExecFileFn = (
   file: string,
@@ -257,6 +258,7 @@ If auto-commit is disabled for this workspace, you must set userRequested: true 
   }
 
   async execute(call: ToolCall): Promise<ToolResult> {
+    let operationId: string | undefined;
     try {
       const { message, files, userRequested = false } = call.arguments;
       const agentId = call.context?.agentId;
@@ -278,6 +280,13 @@ If auto-commit is disabled for this workspace, you must set userRequested: true 
         return this.error(commitCheck.reason);
       }
 
+      // Register background git operation for tracking
+      operationId = backgroundGitOpsService.registerOperation(
+        this.workspaceId as WorkspaceId,
+        'commit',
+        { agentId, agentName: call.context?.agentName, message },
+      );
+
       // Delegate to shared commit logic
       const { commitAgentChanges } = await import('../../../agent/main/agent-commit.service');
 
@@ -289,8 +298,13 @@ If auto-commit is disabled for this workspace, you must set userRequested: true 
       });
 
       if (!result.ok) {
+        backgroundGitOpsService.failOperation(operationId, result.error);
         return this.error(result.error);
       }
+
+      backgroundGitOpsService.completeOperation(operationId, {
+        commitHash: result.data.hash,
+      });
 
       return this.success(
         `Committed ${result.data.fileCount} file(s): ${result.data.hash.slice(0, 7)}\n${message}`,
@@ -298,6 +312,9 @@ If auto-commit is disabled for this workspace, you must set userRequested: true 
       );
     } catch (error) {
       logger.error('agent_commit_changes failed', error as Error);
+      if (operationId) {
+        backgroundGitOpsService.failOperation(operationId, (error as Error).message);
+      }
       return this.error(`Failed to commit: ${(error as Error).message}`);
     }
   }
