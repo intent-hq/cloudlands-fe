@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.22
+
+- GPT-5.4 is now the default model for Auggie agents and available in the Codex model picker.
+- Ralph agent — a new specialist that iterates in a work/test loop until the job is done.
+- ACP session persistence: agent sessions survive app restarts instead of starting fresh.
+- RTK command optimization setting with auto-detection and guided install flow.
+- Sidebar workspaces now sort by most recently updated, with pinned workspaces first and a visual separator.
+- Fixes: node-pty NAPI crash during workspace navigation, false-positive merge conflicts in automatic rebasing, rebase button not appearing after workspace switch, Windows setup terminal not expanding and newline issues in command execution.
+
 ## 0.2.20
 
 - Fixes: Opencode no longer errors when running OpenAI models, agent response pollution across workspaces, agent streaming state not isolated by workspace, create_agent tool reactivity and background agent visibility, conversation-retrieval tool incorrectly displaying as "Search codebase", fix ReferenceError in model selection, hardened PR data flow with correct merged/draft state and invariant checks.
@@ -134,8 +143,7 @@ Fixes:
 
 2 new features:
 
-- one-click Auggie Context Engine install for Claude Code, Codex, and OpenCode
-  @terminal mentions — Agent can now read from and interact with terminal sessions
+- one-click Auggie Context Engine install for Claude Code, Codex, and OpenCode@terminal mentions — Agent can now read from and interact with terminal sessions
 
 bunch of fixes (40+ commits):
 
