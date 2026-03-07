@@ -443,8 +443,6 @@
       onOpenAgent(agentId);
     }
   }
-
-
 </script>
 
 <div class={cn('w-full flex flex-col', className)}>
