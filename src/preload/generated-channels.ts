@@ -15,7 +15,6 @@ export const ALLOWED_CHANNELS = [
   'workspace:get-root',
   'workspace:open',
   'workspace:close',
-  'workspace:closing',
   'workspace:save',
   'workspace:update',
   'workspace:delete',

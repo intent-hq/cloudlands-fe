@@ -248,7 +248,6 @@ export function setupWorkspaceIPC(): void {
   registerValidationSchema(WORKSPACE_CHANNELS.UPDATE, WorkspaceUpdateSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.DELETE, WorkspaceDeleteSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.CLOSE, WorkspaceCloseSchema);
-  registerValidationSchema(WORKSPACE_CHANNELS.CLOSING, WorkspaceCloseSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.OPEN, WorkspaceOpenSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.RENAME, WorkspaceRenameSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.RENAME_BRANCH, WorkspaceRenameBranchSchema);
@@ -646,36 +645,6 @@ export function setupWorkspaceIPC(): void {
         }
       },
       WORKSPACE_CHANNELS.CLOSE,
-    ),
-  );
-
-  // Workspace closing - renderer is navigating away from a workspace page.
-  // Fire-and-forget terminal cleanup. Safe to call even if terminals were already
-  // cleaned up by archive/delete (cleanupWorkspaceTerminals is a no-op when empty).
-  ipcMain.handle(
-    WORKSPACE_CHANNELS.CLOSING,
-    createSafeValidatedHandler(
-      WorkspaceCloseSchema,
-      async (_, validated) => {
-        const id = validated.id;
-        logger.debug('[WorkspaceIPC] Workspace closing - cleaning up terminals', {
-          workspaceId: id,
-        });
-
-        try {
-          await cleanupWorkspaceTerminals(id as WorkspaceId);
-          logger.debug('[WorkspaceIPC] Terminal cleanup on workspace close complete', {
-            workspaceId: id,
-          });
-        } catch (error) {
-          logger.warn('[WorkspaceIPC] Failed to cleanup terminals on workspace close', error as Error, {
-            workspaceId: id,
-          });
-        }
-
-        return resultToCommandResponse({ ok: true, data: null });
-      },
-      WORKSPACE_CHANNELS.CLOSING,
     ),
   );
 

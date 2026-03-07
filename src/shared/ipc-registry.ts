@@ -18,7 +18,6 @@ export const IPC_CHANNELS = {
     GET_ROOT: 'workspace:get-root',
     OPEN: 'workspace:open',
     CLOSE: 'workspace:close',
-    CLOSING: 'workspace:closing',
     SAVE: 'workspace:save',
     UPDATE: 'workspace:update',
     DELETE: 'workspace:delete',
