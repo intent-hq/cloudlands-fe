@@ -155,6 +155,13 @@ export class ChatService implements IDisposable {
   private stateReconciliationFailureCount = 0;
   private readonly STATE_RECONCILIATION_FAILURE_THRESHOLD = 2; // Reset after 2 consecutive failures (20 seconds)
 
+  // HMR message protection: timestamp of last HMR recovery where messages were preserved
+  // from instance state. During the cooldown period, sessionUpdatedHandler will reject
+  // updates that would reduce message count, preventing stale disk data from overwriting
+  // optimistic user messages that haven't been persisted to disk yet.
+  private hmrMessageProtectionUntil = 0;
+  private readonly HMR_MESSAGE_PROTECTION_MS = 10_000; // 10 seconds
+
   constructor(agentId?: string) {
     this.agentId = agentId;
     this.state = writable<ChatState>({
@@ -566,19 +573,26 @@ export class ChatService implements IDisposable {
       // During HMR/remount, if this instance is already streaming, prefer its own
       // state.messages because sessionStore is only synced periodically and may be stale.
       let messages: AgentMessage[] = [];
+      let hasActiveStream = false;
       try {
         const currentState = get(this.state);
-        const hasActiveStream =
+        hasActiveStream =
           currentState.isStreaming &&
           currentState.messages.length > 0;
 
         if (hasActiveStream) {
           // Use this instance's messages - they're the most up-to-date during streaming
           messages = currentState.messages;
+          // Activate HMR message protection: during this cooldown window, sessionUpdatedHandler
+          // will reject updates that would reduce message count. This prevents stale disk data
+          // (loaded by loadAgentsFromDisk → resumeSession) from overwriting optimistic user
+          // messages that were added to state but not yet persisted to disk.
+          this.hmrMessageProtectionUntil = Date.now() + this.HMR_MESSAGE_PROTECTION_MS;
           logger.info('Using instance state messages during active stream (HMR recovery)', {
             agentId,
             count: messages.length,
             lastMessageBlocks: messages[messages.length - 1]?.contentBlocks?.length || 0,
+            hmrProtectionUntil: this.hmrMessageProtectionUntil,
           });
         } else {
           // Normal case: check sessionStore first for latest state
@@ -655,10 +669,27 @@ export class ChatService implements IDisposable {
         });
       }
 
+      // CRITICAL FIX: During HMR, the session and unified state store may be reset while
+      // the ChatService singleton's own state still correctly reflects streaming=true.
+      // If we detected an active stream from the instance state (hasActiveStream above),
+      // trust it — it's the most up-to-date source during HMR. Without this, isCurrentlyStreaming
+      // would be false after HMR, causing the sessionUpdatedHandler guard to fail, which allows
+      // stale disk data from loadAgentsFromDisk to overwrite in-memory messages (including
+      // optimistic user messages that haven't been persisted to disk yet).
+      if (hasActiveStream && !isCurrentlyStreaming) {
+        isCurrentlyStreaming = true;
+        logger.info('Preserving streaming state from instance during HMR recovery', {
+          agentId,
+          sessionIsStreaming: session?.isStreaming,
+          storeStreamingActive: agentFromStore?.streaming?.active,
+        });
+      }
+
       logger.info('Initializing chat - streaming state check', {
         agentId,
         sessionIsStreaming: session?.isStreaming,
         storeStreamingActive: agentFromStore?.streaming?.active,
+        instanceStreamingActive: hasActiveStream,
         isCurrentlyStreaming,
       });
 
@@ -1798,6 +1829,31 @@ export class ChatService implements IDisposable {
       if (session && session.messages) {
         const currentState = get(this.state);
         const newIsStreaming = session.isStreaming ?? currentState.isStreaming;
+
+        // HMR MESSAGE PROTECTION: After HMR recovery, loadAgentsFromDisk loads stale disk
+        // data into sessionStore, which triggers this handler. The disk data is missing
+        // optimistic user messages that were added to ChatService state but not yet persisted.
+        // During the protection window, reject any update that would reduce message count.
+        // This is safe because:
+        // 1. Stream completion uses handleStreamEvent 'end' handler directly, not this handler
+        // 2. The protection window is short (10s) and only activates during HMR
+        // 3. Legitimate message additions (more messages) still go through
+        if (this.hmrMessageProtectionUntil > Date.now() && currentState.messages.length > 0) {
+          const currentMessageCount = currentState.messages.length;
+          const sessionMessageCount = session.messages.length;
+          if (sessionMessageCount < currentMessageCount) {
+            logger.info(
+              '[ChatService] sessionUpdatedHandler: HMR protection - rejecting update with fewer messages',
+              {
+                sessionId,
+                currentMessageCount,
+                sessionMessageCount,
+                protectionRemainingMs: this.hmrMessageProtectionUntil - Date.now(),
+              },
+            );
+            return;
+          }
+        }
 
         // CRITICAL FIX: Don't overwrite ChatService messages with stale data during active streaming.
         // When switching workspaces, resumeSession() loads stale disk data into sessionStore,
