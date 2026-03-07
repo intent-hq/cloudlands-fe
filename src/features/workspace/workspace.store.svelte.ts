@@ -8,11 +8,14 @@
 import type {
   CreateWorkspaceRequest,
   Result,
+  TaskStatus,
   Workspace,
   WorkspaceId,
   WorkspaceUIContext,
 } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
+import { EXCLUDED_STATUSES, IN_PROGRESS_STATUSES } from '$shared/utils/task-stats';
+import { listenSync } from '$lib/electron-bridge';
 import { Logger } from '../../shared/logger';
 import { workspaceClient, normalizeWorkspacePaths } from './workspace.client';
 import { workspaceRecencyStore } from './workspace-recency.store.svelte';
@@ -617,6 +620,57 @@ class WorkspaceStore {
     }
   }
 
+  private applyOptimisticTaskStatusUpdate(payload: {
+    workspaceId?: WorkspaceId;
+    previousStatus?: TaskStatus;
+    newStatus?: TaskStatus;
+    data?: {
+      previousStatus?: TaskStatus;
+      newStatus?: TaskStatus;
+    };
+  }): void {
+    const workspaceId = payload.workspaceId;
+    const previousStatus = payload.previousStatus || payload.data?.previousStatus;
+    const newStatus = payload.newStatus || payload.data?.newStatus;
+
+    if (!workspaceId || !previousStatus || !newStatus) {
+      return;
+    }
+
+    const workspace = this.#items.find((item) => item.id === workspaceId);
+    const taskStats = workspace?.taskStats;
+    if (!workspace || !taskStats) {
+      return;
+    }
+
+    const wasExcluded = EXCLUDED_STATUSES.has(previousStatus);
+    const isExcluded = EXCLUDED_STATUSES.has(newStatus);
+    const wasInProgress = IN_PROGRESS_STATUSES.has(previousStatus);
+    const isInProgress = IN_PROGRESS_STATUSES.has(newStatus);
+    const wasCompleted = previousStatus === 'complete';
+    const isCompleted = newStatus === 'complete';
+
+    let total = taskStats.total;
+    let completed = taskStats.completed;
+    let inProgress = taskStats.inProgress;
+
+    if (!wasExcluded && isExcluded) total = Math.max(0, total - 1);
+    if (wasExcluded && !isExcluded) total += 1;
+    if (wasCompleted && !isCompleted) completed = Math.max(0, completed - 1);
+    if (!wasCompleted && isCompleted) completed += 1;
+    if (wasInProgress && !isInProgress) inProgress = Math.max(0, inProgress - 1);
+    if (!wasInProgress && isInProgress) inProgress += 1;
+
+    this.updateLocalWorkspace(workspaceId, {
+      taskStats: {
+        ...taskStats,
+        total,
+        completed,
+        inProgress,
+      },
+    });
+  }
+
   /**
    * Fetch a workspace from the backend and add it to the store
    * Used when receiving events for workspaces not yet in local state
@@ -1197,6 +1251,22 @@ if (typeof window !== 'undefined') {
         });
 
         workspaceStore.updateLocalWorkspace(data.workspaceId as WorkspaceId, data.updates);
+      },
+    );
+
+    listenSync(
+      'task:status-changed',
+      (data: {
+        workspaceId?: WorkspaceId;
+        previousStatus?: TaskStatus;
+        newStatus?: TaskStatus;
+        payload?: {
+          workspaceId?: WorkspaceId;
+          previousStatus?: TaskStatus;
+          newStatus?: TaskStatus;
+        };
+      }) => {
+        (workspaceStore as any).applyOptimisticTaskStatusUpdate(data.payload ?? data);
       },
     );
   }

@@ -137,6 +137,7 @@ export class WorkspaceService {
   private readonly MAX_CONTEXT_CACHE_SIZE = 50; // Limit cache size to prevent unbounded growth
   private readonly backgroundEnrichmentQueue: WorkspaceId[] = [];
   private readonly backgroundSummaryHydratedAt = new Map<WorkspaceId, number>();
+  private readonly dirtyBackgroundEnrichment = new Set<WorkspaceId>();
   private backgroundEnrichmentTimer: NodeJS.Timeout | null = null;
   private activeBackgroundEnrichmentCount = 0;
   private periodicPRRefreshTimer: NodeJS.Timeout | null = null;
@@ -148,6 +149,13 @@ export class WorkspaceService {
   private readonly BACKGROUND_ENRICHMENT_CONCURRENCY = 3;
   private readonly BACKGROUND_SUMMARY_TTL_MS = 5 * 60 * 1000;
   private workspaceDeletedListener?: (data: { workspaceId: WorkspaceId }) => void;
+  private noteCreatedListener?: (data: {
+    workspaceId: WorkspaceId;
+    note?: { metadata?: any };
+  }) => void;
+  private noteDeletedListener?: (data: { workspaceId: WorkspaceId }) => void;
+  private gitStatusChangedListener?: (data: { workspaceId: WorkspaceId }) => void;
+  private taskStatusChangedListener?: (event: { workspaceId?: WorkspaceId }) => void;
 
   // Short-lived cache for getWorkspace to reduce redundant fetches during bulk operations
   // (e.g., delegating multiple tasks in parallel)
@@ -196,6 +204,32 @@ export class WorkspaceService {
       }, this.RECENTLY_DELETED_TTL);
     };
     this.eventBus.onDomainEvent('workspace:deleted', this.workspaceDeletedListener);
+
+    this.noteCreatedListener = ({ workspaceId, note }) => {
+      if (!workspaceId) return;
+      if (note?.metadata?.task || note == null) {
+        this.invalidateWorkspaceSummaries(workspaceId, 'note-created');
+      }
+    };
+    this.eventBus.onDomainEvent('note:created', this.noteCreatedListener);
+
+    this.noteDeletedListener = ({ workspaceId }) => {
+      if (!workspaceId) return;
+      this.invalidateWorkspaceSummaries(workspaceId, 'note-deleted');
+    };
+    this.eventBus.onDomainEvent('note:deleted', this.noteDeletedListener);
+
+    this.gitStatusChangedListener = ({ workspaceId }) => {
+      if (!workspaceId) return;
+      this.invalidateWorkspaceSummaries(workspaceId, 'git-status-changed');
+    };
+    this.eventBus.onDomainEvent('git:status-changed', this.gitStatusChangedListener);
+
+    this.taskStatusChangedListener = (event) => {
+      if (!event?.workspaceId) return;
+      this.invalidateWorkspaceSummaries(event.workspaceId, 'task-status-changed');
+    };
+    this.eventBus.on('task:status-changed', this.taskStatusChangedListener);
 
     // Start periodic PR refresh for non-active workspaces with open PRs
     this.startPeriodicPRRefresh();
@@ -1820,8 +1854,8 @@ task:
       const useLiteMode = requestedLiteMode || this.creationInProgressCount > 0;
       if (useLiteMode) {
         // PERF: In lite mode, skip heavy buildListWorkspace() computations
-        // This prevents blocking workspace:create and other IPC operations
-        // The UI can still show workspace cards with basic info (title, status, etc.)
+        // (git diffs, git log, agent state, GitHub API) but still compute taskStats
+        // because it only reads note JSON files and is needed for progress indicators.
         if (this.creationInProgressCount > 0) {
           logger.debug(
             'Using lite mode for workspace list - creation in progress, skipping heavy computations',
@@ -1829,12 +1863,39 @@ task:
         } else {
           logger.debug('Using lite mode for workspace list - skipping heavy computations');
         }
-        sanitizedWorkspaces = paginatedWorkspaces.map((workspace) => ({
+
+        // Compute taskStats in parallel with bounded concurrency — it's cheap (just note reads)
+        // but we still don't want 200 concurrent file reads.
+        const TASK_STATS_CONCURRENCY = 10;
+        const taskStatsResults = new Array<WorkspaceTaskStats | undefined>(
+          paginatedWorkspaces.length,
+        );
+        let taskStatsNextIndex = 0;
+        await Promise.all(
+          Array.from(
+            { length: Math.min(TASK_STATS_CONCURRENCY, paginatedWorkspaces.length) },
+            async () => {
+              while (true) {
+                const idx = taskStatsNextIndex++;
+                if (idx >= paginatedWorkspaces.length) return;
+                try {
+                  taskStatsResults[idx] = await this.getWorkspaceTaskStats(
+                    paginatedWorkspaces[idx]!.id,
+                  );
+                } catch {
+                  taskStatsResults[idx] = undefined;
+                }
+              }
+            },
+          ),
+        );
+
+        sanitizedWorkspaces = paginatedWorkspaces.map((workspace, i) => ({
           ...workspace,
           diffs: undefined,
           diffSummary: undefined,
           agentSummary: undefined,
-          taskStats: undefined,
+          taskStats: taskStatsResults[i],
           gitSummary: undefined,
         }));
       } else {
@@ -2176,16 +2237,37 @@ task:
       this.backgroundEnrichmentTimer = null;
 
       for (const workspaceId of candidateIds) {
-        if (this.pendingBackgroundEnrichment.has(workspaceId)) {
-          continue;
-        }
-
-        this.pendingBackgroundEnrichment.add(workspaceId);
-        this.backgroundEnrichmentQueue.push(workspaceId);
+        this.queueBackgroundEnrichment(workspaceId, 'list-load');
       }
 
       this.processBackgroundEnrichmentQueue();
     }, 0);
+  }
+
+  private invalidateWorkspaceSummaries(workspaceId: WorkspaceId, reason: string): void {
+    if (this.disposed || this.recentlyDeletedWorkspaces.has(workspaceId)) {
+      return;
+    }
+
+    this.backgroundSummaryHydratedAt.delete(workspaceId);
+    this.queueBackgroundEnrichment(workspaceId, reason);
+    this.processBackgroundEnrichmentQueue();
+  }
+
+  private queueBackgroundEnrichment(workspaceId: WorkspaceId, reason: string): void {
+    if (this.disposed || this.recentlyDeletedWorkspaces.has(workspaceId)) {
+      return;
+    }
+
+    if (this.pendingBackgroundEnrichment.has(workspaceId)) {
+      this.dirtyBackgroundEnrichment.add(workspaceId);
+      logger.debug('Marked workspace enrichment dirty while pending', { workspaceId, reason });
+      return;
+    }
+
+    this.pendingBackgroundEnrichment.add(workspaceId);
+    this.backgroundEnrichmentQueue.push(workspaceId);
+    logger.debug('Queued background enrichment', { workspaceId, reason });
   }
 
   private workspaceNeedsEnrichment(workspace: Workspace): boolean {
@@ -2252,11 +2334,15 @@ task:
           });
         })
         .finally(() => {
+          const shouldRequeue = this.dirtyBackgroundEnrichment.delete(workspaceId);
           this.pendingBackgroundEnrichment.delete(workspaceId);
           this.activeBackgroundEnrichmentCount = Math.max(
             0,
             this.activeBackgroundEnrichmentCount - 1,
           );
+          if (shouldRequeue) {
+            this.queueBackgroundEnrichment(workspaceId, 'dirty-rerun');
+          }
           this.processBackgroundEnrichmentQueue();
         });
     }
@@ -3741,8 +3827,24 @@ task:
 
     // Remove event listeners
     if (this.workspaceDeletedListener) {
-      this.eventBus.off('workspace:deleted', this.workspaceDeletedListener);
+      this.eventBus.offDomainEvent('workspace:deleted', this.workspaceDeletedListener);
       this.workspaceDeletedListener = undefined;
+    }
+    if (this.noteCreatedListener) {
+      this.eventBus.offDomainEvent('note:created', this.noteCreatedListener);
+      this.noteCreatedListener = undefined;
+    }
+    if (this.noteDeletedListener) {
+      this.eventBus.offDomainEvent('note:deleted', this.noteDeletedListener);
+      this.noteDeletedListener = undefined;
+    }
+    if (this.gitStatusChangedListener) {
+      this.eventBus.offDomainEvent('git:status-changed', this.gitStatusChangedListener);
+      this.gitStatusChangedListener = undefined;
+    }
+    if (this.taskStatusChangedListener) {
+      this.eventBus.off('task:status-changed', this.taskStatusChangedListener);
+      this.taskStatusChangedListener = undefined;
     }
 
     // Clear background enrichment timer
@@ -3774,6 +3876,7 @@ task:
     this.backgroundEnrichmentQueue.length = 0;
     this.activeBackgroundEnrichmentCount = 0;
     this.backgroundSummaryHydratedAt.clear();
+    this.dirtyBackgroundEnrichment.clear();
 
     // Clear all caches
     this.lastContextCache.clear();
