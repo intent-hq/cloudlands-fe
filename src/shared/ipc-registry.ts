@@ -1247,6 +1247,8 @@ export const EVENT_CHANNELS = [
   'browser:open-tab',
   // MCP server error events (main → renderer)
   'mcp:server-error',
+  // Analytics bridge (main → renderer)
+  'analytics:track-from-main',
 ] as const;
 
 // Dynamic channel patterns that use runtime IDs

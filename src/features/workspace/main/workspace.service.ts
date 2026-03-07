@@ -87,6 +87,7 @@ import { FileSystemWorkspaceRepository } from './workspace.repository';
 import { getBranchPrefix, getWorktreesLocation } from './app-settings.service';
 import { getRepoBranchPrefix, getRepoSetupScript } from './repo-config.service';
 import { sshManager, type SSHConnectionConfig } from '../../../shared/main/ssh-manager';
+import { trackMain } from '$lib/services/analytics/main';
 import { githubService } from '../../git-tracking/main/github.service';
 
 const { WorkspaceNotFoundError, WorkspaceValidationError, GitWorktreeError } = Errors;
@@ -2939,21 +2940,32 @@ task:
 
       logger.info('Starting deletion of workspace', { workspaceId: id });
 
+      // Get workspace info before deletion for tracking
+      const trackingWorkspaceResult = await this.getWorkspace(id as WorkspaceId);
+      let workspaceTitle: string | undefined;
+      let ageInDays: number | undefined;
+      if (trackingWorkspaceResult.ok) {
+        workspaceTitle = trackingWorkspaceResult.data.title;
+        ageInDays = Math.floor(
+          (Date.now() - new Date(trackingWorkspaceResult.data.createdAt).getTime()) / (1000 * 60 * 60 * 24),
+        );
+      }
+
       // Emit pre-delete event to allow cleanup
       this.eventBus.emitDomainEvent('workspace:deleting', {
         workspaceId: id,
       });
 
       // Remove git worktree if it exists
-      const workspaceResult = await this.getWorkspace(id as WorkspaceId);
+      const worktreeWorkspaceResult = await this.getWorkspace(id as WorkspaceId);
       if (
-        workspaceResult.ok &&
-        workspaceResult.data.worktreePath &&
-        workspaceResult.data.repositoryPath &&
-        !workspaceResult.data.skipWorktree // Don't remove worktree for direct-branch mode
+        worktreeWorkspaceResult.ok &&
+        worktreeWorkspaceResult.data.worktreePath &&
+        worktreeWorkspaceResult.data.repositoryPath &&
+        !worktreeWorkspaceResult.data.skipWorktree // Don't remove worktree for direct-branch mode
       ) {
         try {
-          const workspace = workspaceResult.data;
+          const workspace = worktreeWorkspaceResult.data;
           logger.debug('Removing git worktree', {
             worktreePath: workspace.worktreePath,
             isRemote: workspace.isRemote,
@@ -3033,14 +3045,14 @@ task:
           });
           // Continue with deletion even if worktree removal fails
         }
-      } else if (workspaceResult.ok && workspaceResult.data.skipWorktree) {
+      } else if (worktreeWorkspaceResult.ok && worktreeWorkspaceResult.data.skipWorktree) {
         logger.info('Skipping git worktree removal for direct-branch mode workspace', {
           workspaceId: id,
         });
 
         // Skip-worktree workspaces still start the RPC daemon, so we need to
         // clean up ~/.intent-server/workspaces/{id}/ on the remote host.
-        const workspace = workspaceResult.data;
+        const workspace = worktreeWorkspaceResult.data;
         if (workspace.isRemote && workspace.environmentConfig?.ssh) {
           const ssh = workspace.environmentConfig.ssh;
           const sshConfig: SSHConnectionConfig = {
@@ -3086,6 +3098,13 @@ task:
       // Emit event
       this.eventBus.emitDomainEvent('workspace:deleted', {
         workspaceId: id,
+      });
+
+      // Track workspace deletion
+      trackMain('Deleted Workspace', {
+        workspace_id: id,
+        workspace_title: workspaceTitle,
+        age_in_days: ageInDays,
       });
 
       logger.info('Workspace deleted successfully', { workspaceId: id });

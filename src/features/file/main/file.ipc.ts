@@ -43,6 +43,8 @@ import { getWorkspaceGitInfo } from '../../git/main/git-router';
 import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
 import { RemoteRPCError } from '../../../shared/main/remote-rpc-client';
 import type { RemoteRPCClient } from '../../../shared/main/remote-rpc-client';
+import { trackMain } from '$lib/services/analytics/main';
+import { getFileExtension } from '$lib/services/analytics/utils';
 
 const logger = new Logger('FileIPC');
 
@@ -320,6 +322,16 @@ export function setupFileIPC() {
           // Check for remote workspace
           const rpcClient = await getRemoteRPCClient(validated.workspaceId);
           if (rpcClient) {
+            // Check if file exists before writing (to track creation vs modification)
+            let remoteFileExisted = false;
+            try {
+              const existsResult = await rpcClient.fileExists({ path: validated.path });
+              remoteFileExisted = existsResult.exists;
+            } catch {
+              // Assume file doesn't exist if check fails
+              remoteFileExisted = false;
+            }
+
             // Write file content via RPC (mkdirp handles directory creation)
             await rpcClient.writeFile({
               path: validated.path,
@@ -329,6 +341,14 @@ export function setupFileIPC() {
             });
 
             logger.debug('Remote file written successfully', { filePath: validated.path });
+
+            // Track file creation if this is a new file
+            if (!remoteFileExisted && validated.workspaceId) {
+              trackMain('Created File', {
+                workspace_id: validated.workspaceId,
+                file_extension: getFileExtension(validated.path),
+              });
+            }
 
             // Emit file change event for immediate UI update
             if (validated.workspaceId) {
@@ -360,6 +380,16 @@ export function setupFileIPC() {
           // Local workspace - existing code path
           const expandedPath = expandPath(validated.path);
 
+          // Check if file exists before writing (to track creation vs modification)
+          let fileExisted = false;
+          try {
+            await fs.access(expandedPath);
+            fileExisted = true;
+          } catch {
+            // File doesn't exist, will be created
+            fileExisted = false;
+          }
+
           // Create directory if it doesn't exist
           const dir = path.dirname(expandedPath);
           logger.debug('Creating directory if needed', { dir });
@@ -389,6 +419,14 @@ export function setupFileIPC() {
             await renameWithRetry(tempPath, expandedPath);
             // PERF: Changed from INFO to DEBUG - called for every file write
             logger.debug('File written successfully', { filePath: expandedPath });
+
+            // Track file creation if this is a new file
+            if (!fileExisted && validated.workspaceId) {
+              trackMain('Created File', {
+                workspace_id: validated.workspaceId,
+                file_extension: getFileExtension(validated.path),
+              });
+            }
 
             // Emit file change event for immediate UI update if workspaceId provided
             if (validated.workspaceId) {
@@ -544,6 +582,15 @@ export function setupFileIPC() {
         try {
           const expandedPath = expandPath(validated.path);
           await fs.unlink(expandedPath);
+
+          // Track file deletion
+          if (validated.workspaceId) {
+            trackMain('Deleted File', {
+              workspace_id: validated.workspaceId,
+              file_extension: getFileExtension(validated.path),
+            });
+          }
+
           return { success: true, data: undefined };
         } catch (error) {
           return { success: false, error: (error as Error).message };

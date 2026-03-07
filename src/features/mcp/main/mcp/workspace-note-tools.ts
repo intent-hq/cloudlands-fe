@@ -177,6 +177,16 @@ export class CreateNoteTool extends BaseMCPTool {
           title: note.title,
         });
 
+        // Track note creation (best-effort — don't break note creation if analytics fails)
+        try {
+          const { trackMain } = await import('$lib/services/analytics/main');
+          trackMain('Created Note', {
+            note_type: note.metadata?.task ? 'task' : 'regular',
+          });
+        } catch {
+          // Silently ignore analytics errors
+        }
+
         // Emit note:created event to workspace windows
         try {
           sendToWorkspaceWindows(this.workspaceId, 'note:created', {

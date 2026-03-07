@@ -861,7 +861,8 @@ const ALLOWED_CHANNELS = [
   "browser:focus-tab",
   "browser:list-tabs-request",
   "browser:open-tab",
-  "mcp:server-error"
+  "mcp:server-error",
+  "analytics:track-from-main"
 ];
 
 // Dynamic channel patterns that are matched with startsWith()
@@ -1019,7 +1020,8 @@ const EVENT_CHANNELS = [
   "browser:focus-tab",
   "browser:list-tabs-request",
   "browser:open-tab",
-  "mcp:server-error"
+  "mcp:server-error",
+  "analytics:track-from-main"
 ];
 
 /**

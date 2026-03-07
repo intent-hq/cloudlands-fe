@@ -289,6 +289,7 @@ export const FileWriteSchema = z.object({
 
 export const FileDeleteSchema = z.object({
   path: z.string().min(1, 'Path is required'),
+  workspaceId: z.string().optional(),
 });
 
 export const FileListSchema = z.object({

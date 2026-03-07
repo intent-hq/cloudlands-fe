@@ -20,6 +20,7 @@ import { getWorkspaceGitInfo, getRemoteGitManager, validatePathsInScope } from '
 import { execAsync, execFileAsync } from '../../../shared/git/git-env';
 import { getAutoCommitStatuses } from '../../agent/main/auto-commit.service';
 import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
+import { trackMain } from '$lib/services/analytics/main';
 
 const logger = new Logger('GitIPC');
 const gitService = new GitService();
@@ -546,6 +547,12 @@ export function setupGitIPC() {
           // Don't fail the commit response, just log the error
         }
 
+        // Track commit event
+        trackMain('Committed Changes', {
+          workspace_id: workspaceId,
+          success: true,
+        });
+
         return { success: true, data: { hash: commitHash } };
       },
       IPC_CHANNELS.GIT.COMMIT,
@@ -574,6 +581,11 @@ export function setupGitIPC() {
               gitInfo.repositoryPath || gitInfo.worktreePath,
             );
             await remoteGit.push(gitInfo.worktreePath, { setUpstream: true, force });
+            // Track push event for remote workspace
+            trackMain('Pushed Changes', {
+              workspace_id: workspaceId,
+              success: true,
+            });
             return { success: true, data: undefined };
           } catch (error) {
             logger.error('Failed to push on remote', error as Error, { workspaceId });
@@ -583,6 +595,11 @@ export function setupGitIPC() {
 
         const result = await gitService.push(workspaceId as WorkspaceId, force);
         if (result.ok) {
+          // Track push event
+          trackMain('Pushed Changes', {
+            workspace_id: workspaceId,
+            success: true,
+          });
           return { success: true, data: result.data };
         } else {
           return { success: false, error: result.error };

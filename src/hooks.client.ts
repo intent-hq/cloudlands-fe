@@ -129,6 +129,18 @@ async function initAnalyticsClient() {
 
       // Track app opened event (common properties are auto-attached)
       track('Opened App', {});
+
+      // Listen for analytics events forwarded from the main process
+      window.electronAPI?.on('analytics:track-from-main', (data: { event: string; properties: Record<string, unknown> }) => {
+        try {
+          if (typeof data?.event !== 'string' || typeof data?.properties !== 'object') {
+            return;
+          }
+          track(data.event as any, data.properties as any);
+        } catch (err) {
+          console.warn('[Analytics] Failed to track main-process event:', data?.event, err);
+        }
+      });
     }
   } catch (error) {
     console.warn('[Analytics] Failed to initialize:', error);

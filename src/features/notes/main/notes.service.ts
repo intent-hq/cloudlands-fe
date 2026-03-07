@@ -29,6 +29,7 @@ import { FileSystemCommentsRepository } from '../../comments/main/comments.repos
 import { FileSystemNotesRepository } from './notes.repository';
 import { Logger } from '../../../shared/logger';
 import { createNoteId, NoteId as NoteIdBrand } from '../../../shared/types/branded-ids';
+import { trackMain } from '$lib/services/analytics/main';
 import { taskNoteLink } from '../../../shared/constants/intent-links';
 import { editEventsCapturer } from './edit-events.capturer';
 import { editEventsStore } from './edit-events.store';
@@ -597,6 +598,12 @@ export class NotesService {
         sessionId: provenanceManager.getCurrentSessionId(),
       });
 
+      // Track note edit
+      trackMain('Edited Note', {
+        note_type: note.metadata?.task ? 'task' : 'regular',
+        note_id: note.id,
+      });
+
       logger.info('Note updated', {
         workspaceId: note.workspaceId,
         noteId: note.id,
@@ -670,6 +677,15 @@ export class NotesService {
         workspaceId,
         noteId,
         actor: currentActor,
+      });
+
+      // Track note deletion
+      const ageInDays = Math.floor(
+        (Date.now() - new Date(note.createdAt).getTime()) / (1000 * 60 * 60 * 24),
+      );
+      trackMain('Deleted Note', {
+        note_type: note.metadata?.task ? 'task' : 'regular',
+        note_age_days: ageInDays,
       });
 
       logger.info('Note deleted', { workspaceId, noteId });
