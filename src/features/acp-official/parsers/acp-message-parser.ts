@@ -22,7 +22,7 @@ import type {
 const logger = new Logger('ACPMessageParser');
 
 /**
- * Parse ACP message content into UI ContentBlocks
+ * Parse ACP message content in UI ContentBlocks
  *
  * Converts from ACP's structured format to the UI's expected format
  */

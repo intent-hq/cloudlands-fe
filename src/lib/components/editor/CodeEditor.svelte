@@ -39,6 +39,8 @@
     filePath?: string;
     /** Placeholder text shown when editor is empty */
     placeholder?: string;
+    /** Whether this editor's panel is currently focused. When false, global events like go-to-line are ignored. Defaults to true for backward compatibility. */
+    isPanelFocused?: boolean;
   }
 
   let {
@@ -57,6 +59,7 @@
     workspaceId,
     filePath,
     placeholder,
+    isPanelFocused = true,
   }: Props = $props();
 
   // Content size tracking
@@ -861,7 +864,10 @@
 
   // Listen for F12 "Go to Definition" global shortcut
   $effect(() => {
-    if (!editor) return;
+    // Read editorReady to make this effect re-run when the editor is created
+    // (editor is a plain variable, not $state, so we need editorReady to trigger re-runs)
+    const isReady = editorReady;
+    if (!isReady || !editor) return;
 
     const handleGoToDefinition = () => {
       // Only trigger if this editor is focused
@@ -873,6 +879,50 @@
     window.addEventListener('editor:go-to-definition', handleGoToDefinition);
     return () => {
       window.removeEventListener('editor:go-to-definition', handleGoToDefinition);
+    };
+  });
+
+  // Listen for "Go to Line" from the command palette (Cmd+G / Ctrl+G)
+  $effect(() => {
+    // Read editorReady to make this effect re-run when the editor is created
+    // (editor is a plain variable, not $state, so we need editorReady to trigger re-runs)
+    const isReady = editorReady;
+    if (!isReady || !editor) {
+      return;
+    }
+
+    const handleGoToLine = (e: Event) => {
+      const detail = (e as CustomEvent<{ line: number }>).detail;
+      if (!detail?.line || !editor) {
+        return;
+      }
+
+      // Only respond if this editor's panel is focused (prevents all mounted editors from jumping)
+      if (!isPanelFocused) {
+        return;
+      }
+
+      // Use setTimeout to let the command palette close first
+      setTimeout(() => {
+        if (!editor || !isPanelFocused) return;
+        const line = Math.max(1, Math.floor(detail.line));
+        const model = editor.getModel?.();
+        const maxLine = model?.getLineCount?.() ?? line;
+        const clampedLine = Math.min(line, maxLine);
+        const position = { lineNumber: clampedLine, column: 1 } as const;
+        try {
+          editor.focus();
+          editor.setPosition(position);
+          editor.revealPositionInCenterIfOutsideViewport(position, 0);
+        } catch {
+          // ignore
+        }
+      }, 100);
+    };
+
+    window.addEventListener('workspace:go-to-line', handleGoToLine);
+    return () => {
+      window.removeEventListener('workspace:go-to-line', handleGoToLine);
     };
   });
 </script>

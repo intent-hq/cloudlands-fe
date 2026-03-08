@@ -18,6 +18,11 @@ class PaletteStore {
     this.query = q;
   }
 
+  openGoToLine() {
+    this.isOpen = true;
+    this.query = ':';
+  }
+
   toggle() {
     if (this.isOpen) this.close();
     else this.open();

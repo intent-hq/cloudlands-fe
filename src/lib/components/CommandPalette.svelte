@@ -80,14 +80,14 @@
 
   interface Props {
     isOpen: boolean;
-
+    initialQuery?: string;
     workspaceId?: string;
     onClose: () => void;
     /** Callback when a file is selected. Includes openInAdjacentPanel for cmd+Enter support. */
     onSelectFile?: (detail: { path: string; line?: number; openInAdjacentPanel?: boolean }) => void;
   }
 
-  let { isOpen = $bindable(false), workspaceId, onClose, onSelectFile }: Props = $props();
+  let { isOpen = $bindable(false), initialQuery = '', workspaceId, onClose, onSelectFile }: Props = $props();
 
   let searchQuery = $state('');
   let selectedIndex = $state(0);
@@ -121,6 +121,14 @@
     }
 
     return { filter: null, searchTerm: query };
+  });
+
+  // Go to Line mode: detect when query starts with ':'
+  let isGoToLineMode = $derived(searchQuery.trimStart().startsWith(':'));
+  let goToLineNumber = $derived.by(() => {
+    if (!isGoToLineMode) return null;
+    const num = parseInt(searchQuery.trimStart().slice(1).trim(), 10);
+    return Number.isNaN(num) ? null : num;
   });
 
   // Update activeFilter when parsed query changes
@@ -465,14 +473,22 @@
     const q = (searchQuery || '').trim();
     const wsId = workspaceId;
 
-    // Clear any pending debounce timer
+    // Clear any pending debounce timer and invalidate in-flight requests first,
+    // including when switching into Go to Line mode.
     if (fileQueryTimeout) {
       clearTimeout(fileQueryTimeout);
       fileQueryTimeout = null;
     }
-
-    // Increment request ID to invalidate any in-flight requests
     const requestId = ++currentFileRequestId;
+
+    // Skip file queries in Go to Line mode
+    if (q.startsWith(':')) {
+      untrack(() => {
+        groupFiles = [];
+        isLoadingFiles = false;
+      });
+      return;
+    }
 
     // If no workspace, clear files immediately (untracked write)
     if (!wsId) {
@@ -694,6 +710,22 @@
   $effect(() => {
     // Use the parsed search term (with prefix stripped)
     const q = parsedQuery.searchTerm;
+    // Skip result computation in Go to Line mode
+    if ((searchQuery || '').trimStart().startsWith(':')) {
+      // Cancel any pending debounce/RAF from a previous non-GoToLine query
+      if (resultComputeRaf !== null) {
+        cancelAnimationFrame(resultComputeRaf);
+        resultComputeRaf = null;
+      }
+      if (searchDebounceTimer !== null) {
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = null;
+      }
+      untrack(() => {
+        searchResults = [];
+      });
+      return;
+    }
     const files = groupFiles;
     // Track activeFilter to trigger recomputation when it changes
     activeFilter;
@@ -794,6 +826,7 @@
       }
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
+      if (isGoToLineMode) return;
       // Skip group labels and new action items
       let nextIndex = selectedIndex + 1;
       while (
@@ -807,6 +840,7 @@
       selectedIndex = Math.min(nextIndex, searchResults.length - 1);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
+      if (isGoToLineMode) return;
       // Skip group labels and new action items
       let prevIndex = selectedIndex - 1;
       while (
@@ -820,6 +854,16 @@
       selectedIndex = Math.max(prevIndex, 0);
     } else if (e.key === 'Enter') {
       e.preventDefault();
+      // Handle Go to Line mode
+      if (isGoToLineMode) {
+        if (goToLineNumber != null && goToLineNumber > 0) {
+          window.dispatchEvent(
+            new CustomEvent('workspace:go-to-line', { detail: { line: goToLineNumber } }),
+          );
+          onClose?.();
+        }
+        return;
+      }
       // Cmd+Enter opens in adjacent panel
       const openInAdjacentPanel = e.metaKey || e.ctrlKey;
       selectItem(searchResults[selectedIndex], { openInAdjacentPanel });
@@ -1002,15 +1046,40 @@
     }
   });
 
+  // Main open/init effect — initialQuery read inside untrack to avoid reactive dependency
   $effect(() => {
     if (isOpen && inputRef) {
       inputRef.focus();
-      // Reset state when opening - use untrack to avoid triggering other effects
       untrack(() => {
-        searchQuery = '';
+        searchQuery = initialQuery || '';
         groupFiles = [];
         isLoadingFiles = false;
       });
+    }
+  });
+
+  // Separate effect: propagate initialQuery changes while palette is already open
+  // (e.g. user presses Cmd+G while palette is open with a search query)
+  let prevInitialQuery = '';
+  $effect(() => {
+    // Read isOpen first — when closed, read initialQuery inside untrack()
+    // to avoid creating a reactive dependency that re-runs this effect on
+    // every parent re-render (e.g. during Vite HMR).
+    if (!isOpen) {
+      untrack(() => {
+        prevInitialQuery = initialQuery || '';
+      });
+      return;
+    }
+    const currentInitialQuery = initialQuery || '';
+    if (currentInitialQuery !== prevInitialQuery) {
+      prevInitialQuery = currentInitialQuery;
+      // Only update searchQuery if the initialQuery actually changed to a non-empty value
+      if (currentInitialQuery !== '') {
+        untrack(() => {
+          searchQuery = currentInitialQuery;
+        });
+      }
     }
   });
 </script>
@@ -1059,7 +1128,7 @@
           bind:value={searchQuery}
           onkeydown={handleKeyDown}
           type="text"
-          placeholder="Type @ # > ~ / * to filter..."
+          placeholder={isGoToLineMode ? 'Type a line number to go to...' : 'Type @ # > ~ / * to filter...'}
           class="flex-1 bg-transparent outline-none text-[15px] text-foreground placeholder:text-foreground/35 focus:outline-none! focus:ring-0!"
           autocorrect="off"
           autocapitalize="off"
@@ -1082,8 +1151,31 @@
       <!-- Divider -->
       <div class="h-px bg-foreground/[0.06]"></div>
 
+      <!-- Go to Line mode -->
+      {#if isGoToLineMode}
+        <div class="max-h-[480px] overflow-y-auto py-1">
+          <div class="px-3 py-2">
+            {#if goToLineNumber != null && goToLineNumber > 0}
+              <button
+                class="w-full px-3 py-2 flex items-center gap-3 text-left rounded-md bg-foreground/[0.04] hover:bg-foreground/[0.06] transition-colors duration-50"
+                onclick={() => {
+                  if (goToLineNumber != null && goToLineNumber > 0) {
+                    window.dispatchEvent(
+                      new CustomEvent('workspace:go-to-line', { detail: { line: goToLineNumber } }),
+                    );
+                  }
+                  onClose?.();
+                }}
+              >
+                <span class="text-[14px] font-medium text-foreground">Go to line {goToLineNumber}</span>
+              </button>
+            {:else}
+              <p class="text-[13px] text-subtle px-3">Enter a valid line number</p>
+            {/if}
+          </div>
+        </div>
       <!-- Results -->
-      {#if searchResults.length > 0 || isLoadingFiles}
+      {:else if searchResults.length > 0 || isLoadingFiles}
         <div class="max-h-[480px] overflow-y-auto py-1">
           {#each searchResults as item, index (item._idx !== undefined ? item._idx : `fallback-${index}`)}
             {#if item._borderAbove}

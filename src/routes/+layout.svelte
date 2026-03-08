@@ -1342,6 +1342,17 @@
       description: 'Command Palette (Alt)',
       action: openCmd,
     });
+    // Cmd+G (Mac) / Ctrl+G (Win/Linux) -> Go to Line
+    const openGoToLine = () => paletteStore.openGoToLine();
+    register({ key: 'g', meta: true, description: 'Go to Line (Mac)', action: openGoToLine });
+    if (!isMac) {
+      register({
+        key: 'g',
+        ctrl: true,
+        description: 'Go to Line (Win/Linux)',
+        action: openGoToLine,
+      });
+    }
     // Cmd+Shift+F (Mac) / Ctrl+Shift+F (Win/Linux) -> search
     register({
       key: 'f',
@@ -1890,6 +1901,7 @@
   <!-- Global Command Palette Mount -->
   <CommandPalette
     isOpen={paletteStore.isOpen}
+    initialQuery={paletteStore.query}
     {workspaceId}
     onClose={() => paletteStore.close()}
     onSelectFile={(detail: { path: string; line?: number; openInAdjacentPanel?: boolean }) => {

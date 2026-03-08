@@ -32,7 +32,7 @@
 
   const logger = createLogger('FileTabType');
 
-  let { tab, workspaceId, isActive }: TabTypeComponentProps = $props();
+  let { tab, workspaceId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
 
   const headerContext = getPanelHeaderContext();
   const layoutManager = $derived(getPanelLayoutManager(workspaceId));
@@ -627,6 +627,7 @@
           lineWrapping={editorSettings.lineWrapping}
           lineChanges={editorSettings.diffIndicators ? fileLineChanges : []}
           jumpTo={jumpToLine}
+          {isPanelFocused}
         />
       {/if}
     {:else}

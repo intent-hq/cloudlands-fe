@@ -119,6 +119,7 @@ export const SHORTCUTS = {
   // ============================================================================
   // File / Editor
   // ============================================================================
+  GO_TO_LINE: { key: 'mod+g', label: 'Go to Line' },
   SAVE: { key: 'mod+s', label: 'Save' },
   UNDO: { key: 'mod+z', label: 'Undo' },
   REDO: { key: 'mod+shift+z', label: 'Redo' },
@@ -256,6 +257,7 @@ export const SHORTCUT_CATEGORIES: Record<
   editor: {
     title: 'Editor',
     shortcuts: [
+      { key: 'mod+g', label: 'Go to Line', contexts: ['editor'] },
       { key: 'mod+s', label: 'Save', contexts: ['editor'] },
       { key: 'mod+z', label: 'Undo', contexts: ['editor'] },
       { key: 'mod+shift+z', label: 'Redo', contexts: ['editor'] },
