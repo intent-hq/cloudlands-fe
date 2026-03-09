@@ -280,6 +280,56 @@ describe('InstructionService', () => {
       expect(prompt).toContain('File: src/main.ts');
     });
 
+    it('should include the skills catalog between user rules and workspace context', async () => {
+      await fs.writeFile(path.join(workspacePath, 'AGENTS.md'), '# Project Rules\n\nAlways test changes.');
+
+      const skillDir = path.join(workspacePath, '.agents', 'skills', 'test-skill');
+      await fs.mkdir(skillDir, { recursive: true });
+      const skillFile = path.join(skillDir, 'SKILL.md');
+      await fs.writeFile(
+        skillFile,
+        `---\nname: test-skill\ndescription: A test skill for prompt injection.\n---\n# Test Skill\nUse this skill for test tasks.\n`,
+      );
+
+      const prompt = await service.buildSystemPrompt({
+        agentType: 'debug',
+        workspacePath,
+        workspaceContext: {
+          openPanels: [{ type: 'note', title: 'Spec', id: 'spec' }],
+          linkedReferences: [],
+        },
+      });
+
+      const userRulesIndex = prompt.indexOf('## User Rules & Guidelines');
+      const skillsIndex = prompt.indexOf('<available_skills>');
+      const workspaceIndex = prompt.indexOf('## Workspace Context');
+
+      expect(userRulesIndex).toBeGreaterThanOrEqual(0);
+      expect(skillsIndex).toBeGreaterThan(userRulesIndex);
+      expect(workspaceIndex).toBeGreaterThan(skillsIndex);
+      expect(prompt).toContain('<name>test-skill</name>');
+      expect(prompt).toContain('<description>A test skill for prompt injection.</description>');
+      expect(prompt).toContain(`<location>${skillFile}</location>`);
+    });
+
+    it('should include the skills catalog for sub-agents', async () => {
+      const skillDir = path.join(workspacePath, '.agents', 'skills', 'subagent-skill');
+      await fs.mkdir(skillDir, { recursive: true });
+      await fs.writeFile(
+        path.join(skillDir, 'SKILL.md'),
+        `---\nname: subagent-skill\ndescription: Available to delegated agents.\n---\n# Sub-agent Skill\nUse this skill when delegated.\n`,
+      );
+
+      const prompt = await service.buildSystemPrompt({
+        agentType: 'task-loop',
+        workspacePath,
+        isSubAgent: true,
+      });
+
+      expect(prompt).toContain('<available_skills>');
+      expect(prompt).toContain('<name>subagent-skill</name>');
+    });
+
     it('should handle missing agentType gracefully', async () => {
       const prompt = await service.buildSystemPrompt({
         workspacePath,
@@ -288,6 +338,45 @@ describe('InstructionService', () => {
       // Should still return base system prompt
       expect(prompt).toBeDefined();
       expect(prompt.length).toBeGreaterThan(0);
+    });
+
+    it('should skip the skills catalog when workspacePath is missing', async () => {
+      const prompt = await service.buildSystemPrompt({
+        agentType: 'debug',
+      });
+
+      expect(prompt).not.toContain('<available_skills>');
+    });
+
+    it('should refresh a cacheable prompt when the skills catalog changes', async () => {
+      const skillDir = path.join(workspacePath, '.agents', 'skills', 'cache-skill');
+      await fs.mkdir(skillDir, { recursive: true });
+      const skillFile = path.join(skillDir, 'SKILL.md');
+
+      await fs.writeFile(
+        skillFile,
+        `---\nname: cache-skill\ndescription: First version.\n---\n# Cache Skill\nInitial content.\n`,
+      );
+
+      const firstPrompt = await service.buildSystemPrompt({
+        agentType: 'debug',
+        workspacePath,
+      });
+
+      expect(firstPrompt).toContain('<description>First version.</description>');
+
+      await fs.writeFile(
+        skillFile,
+        `---\nname: cache-skill\ndescription: Updated version.\n---\n# Cache Skill\nUpdated content.\n`,
+      );
+
+      const secondPrompt = await service.buildSystemPrompt({
+        agentType: 'debug',
+        workspacePath,
+      });
+
+      expect(secondPrompt).toContain('<description>Updated version.</description>');
+      expect(secondPrompt).not.toContain('<description>First version.</description>');
     });
 
     it('should format layers with proper separators', async () => {

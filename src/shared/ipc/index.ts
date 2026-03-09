@@ -68,6 +68,7 @@ export {
   LINE_CHANGES_CHANNELS,
   REMOTE_FS_CHANNELS,
   TESTING_CHANNELS,
+  SKILLS_CHANNELS,
   ALL_CHANNELS,
   type ChannelName,
   createChannelName,

@@ -243,7 +243,7 @@
             type="button"
             onclick={() => {
               specialistsStore.setModelOverrideForAll(selectedModelValue);
-              track('settings_use_model_for_all_specialists');
+              track('Used Model for All Specialists', { model_id: selectedModelValue });
             }}
             class="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           >

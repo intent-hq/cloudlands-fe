@@ -261,6 +261,9 @@ export interface AnalyticsEvents {
     provider_id: string;
     success: boolean;
   };
+  'Used Model for All Specialists': {
+    model_id: string;
+  };
 
   // ============================================
   // Navigation (auto-tracked, see spec note)

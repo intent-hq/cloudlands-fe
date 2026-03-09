@@ -729,6 +729,7 @@ const ALLOWED_CHANNELS = [
   "ssh:list-keys",
   "ssh:get-agent-status",
   "ssh:test-connection",
+  "skills:list",
   "event:workspace:created",
   "event:workspace:updated",
   "event:workspace:deleted",

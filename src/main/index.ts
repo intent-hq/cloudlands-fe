@@ -326,6 +326,7 @@ import {
 } from '../features/observability/main/observability.ipc';
 import { setupRemoteFileSystemIPC } from '../features/remote-fs/main/remote-fs.ipc';
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
+import { setupSkillsIPC } from '../features/agent/main/skills.ipc';
 import { setupSpecialistsIPC } from '../features/specialists/main/specialists.ipc';
 import { setupUserRulesIPC as setupWorkspaceRulesIPC } from '../features/rules/main/user-rules.ipc';
 import { setupSandboxIPC } from '../features/sandbox/main/sandbox.ipc';
@@ -1651,6 +1652,7 @@ app.whenReady().then(async () => {
     setupRulesIPC();
     setupRepoConfigIPC();
     setupSpecialistsIPC();
+    setupSkillsIPC();
     // setupWorkspaceRulesIPC(); // Already called in critical IPC setup
     registerLineChangesIPC();
     // registerSetupScriptsHandlers(); // Already called in critical IPC setup

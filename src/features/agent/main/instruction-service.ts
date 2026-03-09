@@ -21,6 +21,7 @@
  * 3.7. Specialist configuration (available specialists and their models)
  * 3.8. Branch naming preference (user-configured branch prefix)
  * 4. User rules (CLAUDE.md, AGENTS.md, .augment/guidelines.md, .augment/rules/)
+ * 4.7. Skills catalog (.agents/skills, .augment/skills, ~/.claude/skills)
  * 4.5. Workspace context (open panels + linked references)
  * 5. Runtime context (contextReferences)
  * 6. Mandatory actions footer (includes specialist role reminder for recency)
@@ -45,6 +46,7 @@ import { EndUserRulesManager } from '../../rules/user-rules.service';
 import { getInstructionWithCommon, NON_INTERACTIVE_BACKGROUND_AGENTS } from '../instructions';
 import { getBaseInstruction } from '../instructions/base-system-prompt';
 import { loadUserRules, formatUserRulesForContext } from './rules-loader';
+import { formatSkillsCatalogForPrompt } from './skills-loader';
 import { formatSpecialistsForPrompt, initSpecialistsService } from './specialists.service';
 import {
   formatActiveTeamForPrompt,
@@ -245,6 +247,7 @@ export class InstructionService {
    * - Layer 3: Specialization rules (common → workspace → agent-specific)
    * - Layer 3.5: Specialist configuration (available specialists)
    * - Layer 4: User rules (CLAUDE.md, AGENTS.md, .augment/guidelines.md, .augment/rules/)
+   * - Layer 4.7: Skills catalog (.agents/skills, .augment/skills, ~/.claude/skills)
    * - Layer 4.5: Workspace context (open panels + linked references)
    * - Layer 5: Runtime context (if contextReferences provided)
    * - Layer 6: Mandatory actions footer (includes specialist role reminder for recency)
@@ -283,10 +286,25 @@ export class InstructionService {
       config.workspaceContext &&
       (config.workspaceContext.openPanels.length > 0 ||
         config.workspaceContext.linkedReferences.length > 0);
-    const isCacheable =
+    let isCacheable =
       (!config.contextReferences || config.contextReferences.length === 0) &&
       !config.behaviorPrompt &&
       !hasWorkspaceContext;
+
+    let prefetchedSkillsCatalog: string | null = null;
+    if (isCacheable && config.workspacePath) {
+      try {
+        prefetchedSkillsCatalog = await formatSkillsCatalogForPrompt(config.workspacePath);
+      } catch (error) {
+        logger.warn('Failed to prefetch skills catalog for system prompt cache', {
+          workspacePath: config.workspacePath,
+          error,
+        });
+        // Disable caching: the cache key would hash empty skills, but the prompt
+        // may later retry and include actual skills content, creating a mismatch.
+        isCacheable = false;
+      }
+    }
 
     // Include isInitialAgent and workspaceTitle in cache key since they affect the prompt
     // (initial agents get workspace rename instructions based on title)
@@ -300,9 +318,13 @@ export class InstructionService {
           : 'titled';
 
     const subAgentSuffix = config.isSubAgent ? ':subagent' : '';
+    const skillsCatalogSuffix =
+      isCacheable && config.workspacePath
+        ? `:skills:${this.hashString(prefetchedSkillsCatalog ?? '')}`
+        : '';
 
     const cacheKey = isCacheable
-      ? `prompt:${config.agentType || 'default'}:${config.workspacePath || 'default'}${initialAgentSuffix}${subAgentSuffix}:${titleStatus}`
+      ? `prompt:${config.agentType || 'default'}:${config.workspacePath || 'default'}${initialAgentSuffix}${subAgentSuffix}:${titleStatus}${skillsCatalogSuffix}`
       : null;
 
     // Check cache for frequently-used prompts (e.g., bulk task delegation)
@@ -489,6 +511,33 @@ The instructions in <specialist_role> define your primary function. Prioritize t
       }
     } else {
       logger.debug('Layer 4: Skipping user rules (no workspacePath)');
+    }
+
+    // Layer 4.7: Skills catalog (.agents/skills, .augment/skills, ~/.claude/skills)
+    // Available to all agents, including sub-agents, so they can discover execution skills.
+    if (config.workspacePath) {
+      try {
+        const skillsCatalog =
+          prefetchedSkillsCatalog ?? (await formatSkillsCatalogForPrompt(config.workspacePath));
+        if (skillsCatalog.trim().length > 0) {
+          parts.push(skillsCatalog);
+          logger.debug('Layer 4.7: Skills catalog added', {
+            workspacePath: config.workspacePath,
+            length: skillsCatalog.length,
+          });
+        } else {
+          logger.debug('Layer 4.7: No skills catalog found', {
+            workspacePath: config.workspacePath,
+          });
+        }
+      } catch (error) {
+        logger.warn('Failed to load skills catalog', {
+          workspacePath: config.workspacePath,
+          error,
+        });
+      }
+    } else {
+      logger.debug('Layer 4.7: Skipping skills catalog (no workspacePath)');
     }
 
     // Layer 4.5: Workspace context (open panels + linked references)
@@ -701,6 +750,17 @@ The instructions in <specialist_role> define your primary function. Prioritize t
       timestamp: Date.now(),
       hits: 0,
     });
+  }
+
+  /**
+   * Create a stable, compact hash for cache key components.
+   */
+  private hashString(value: string): string {
+    let hash = 0;
+    for (let index = 0; index < value.length; index += 1) {
+      hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+    }
+    return hash.toString(36);
   }
 
   /**

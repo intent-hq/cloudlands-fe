@@ -16,6 +16,7 @@
   import AddContextSection from './AddContextSection.svelte';
   import ContextItemRow from './ContextItemRow.svelte';
   import McpServersSection from './McpServersSection.svelte';
+  import SkillsSection from './SkillsSection.svelte';
   import NotesPanel from './NotesPanel.svelte';
   import { ContextPickerModal } from './context-picker';
 
@@ -270,5 +271,8 @@
 
     <!-- MCP Servers Section -->
     <McpServersSection {workspaceId} />
+
+    <!-- Skills Section -->
+    <SkillsSection {workspaceId} />
   </div>
 </div>

@@ -1096,6 +1096,11 @@ export const IPC_CHANNELS = {
     GET_AGENT_STATUS: 'ssh:get-agent-status',
     TEST_CONNECTION: 'ssh:test-connection',
   },
+
+  // Agent Skills
+  SKILLS: {
+    LIST: 'skills:list',
+  },
 } as const;
 
 // Event channels that are sent from main to renderer
