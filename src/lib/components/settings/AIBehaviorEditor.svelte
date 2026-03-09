@@ -36,6 +36,14 @@
     }
   });
 
+  // Check if all specialists already use the currently selected default model
+  const allSpecialistsUseSelectedModel = $derived(
+    specialistsStore.specialists.length > 0 &&
+      specialistsStore.specialists.every(
+        (s) => specialistsStore.getEffectiveModel(s.id) === selectedModelValue,
+      ),
+  );
+
   // Get the default model for new specialists - use the user's current selection
   function getDefaultModel(): string {
     return modelStore.selectedModel;
@@ -223,12 +231,26 @@
     <!-- Model Picker -->
     <div id="default-model" class="mb-6">
       <Header size={3} class="mb-3">Default Model</Header>
-      <ModelPicker
-        bind:selectedModel={selectedModelValue}
-        showDefaultOption={false}
-        variant="default"
-        updateGlobalStore
-      />
+      <div class="flex flex-col items-start gap-2">
+        <ModelPicker
+          bind:selectedModel={selectedModelValue}
+          showDefaultOption={false}
+          variant="default"
+          updateGlobalStore
+        />
+        {#if !allSpecialistsUseSelectedModel}
+          <button
+            type="button"
+            onclick={() => {
+              specialistsStore.setModelOverrideForAll(selectedModelValue);
+              track('settings_use_model_for_all_specialists');
+            }}
+            class="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          >
+            Use for all specialists
+          </button>
+        {/if}
+      </div>
     </div>
 
     <!-- Agent Instructions (1fr) -->

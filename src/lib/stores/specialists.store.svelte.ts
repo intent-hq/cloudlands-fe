@@ -655,6 +655,17 @@ class SpecialistsStore {
   }
 
   /**
+   * Set the same model override for all specialists at once (single save).
+   */
+  setModelOverrideForAll(model: string) {
+    logger.debug('Setting model override for all specialists:', { model });
+    for (const specialist of this.specialists) {
+      this.userOverrides.modelOverrides[specialist.id] = model;
+    }
+    this.saveOverrides();
+  }
+
+  /**
    * Clear a model override for a specialist
    */
   clearModelOverride(specialistId: string) {
