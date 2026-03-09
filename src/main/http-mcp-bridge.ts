@@ -21,7 +21,7 @@ import {
 import { type PRContext } from '../features/mcp/main/mcp/pr-comment-tools';
 import { protocolAdapter } from '../features/protocol/main/protocol-adapter';
 import { unifiedEventBus, type UnifiedEventBus } from '../features/events/main/unified-event-bus';
-
+import { findAvailablePort } from '../utils/port-utils';
 import ElectronStore from 'electron-store';
 import { storeMcpToolParams } from '../shared/services/mcp-tool-params-cache';
 
@@ -53,7 +53,7 @@ export class HttpMcpBridge {
   private cleanupIntervalId: NodeJS.Timeout | null = null;
   private readonly mcpServerTtlMs: number = DEFAULT_MCP_SERVER_TTL_MS;
 
-  constructor(port: number = parseInt(process.env.HTTP_MCP_PORT || '0', 10) || 0) {
+  constructor(port: number = parseInt(process.env.HTTP_MCP_PORT || '5179', 10)) {
     this.port = port;
     this.logger = new Logger('HttpMcpBridge');
     this.eventBus = unifiedEventBus;
@@ -817,6 +817,16 @@ export class HttpMcpBridge {
   }
 
   async start(): Promise<void> {
+    // Try to find an available port if the default is in use
+    let actualPort = this.port;
+
+    try {
+      actualPort = await findAvailablePort(this.port, 10);
+      this.port = actualPort;
+    } catch (error) {
+      this.logger.warn(`Could not find available port, trying default ${this.port}:`, error);
+    }
+
     return new Promise((resolve, reject) => {
       // Always use 127.0.0.1 to ensure IPv4 binding (avoids IPv6/IPv4 port conflicts with Vite)
       // In production builds, use 0.0.0.0 to ensure binding works in ASAR
@@ -826,20 +836,25 @@ export class HttpMcpBridge {
       // Create HTTP server explicitly for better ASAR compatibility
       this.server = createServer(this.app);
 
+      // Add error handler before listening - this is the ONLY error handler
+      // to avoid duplicate handlers causing race conditions
       this.server.on('error', (error: any) => {
         this.logger.error('HTTP MCP Bridge server error', {
           error: error.message,
           code: error.code,
         });
 
-        // If the requested port is taken (e.g. during restart, another process grabbed
-        // the old port), fall back to port 0 to let the OS assign a new one.
-        if (error.code === 'EADDRINUSE' && this.port !== 0) {
-          this.logger.warn(`Port ${this.port} in use, falling back to OS-assigned port`);
-          this.port = 0;
-          this.server.close();
-          this.start().then(resolve).catch(reject);
+        // If address in use, try next port (up to a reasonable limit)
+        if (error.code === 'EADDRINUSE' && this.port < this.port + 10) {
+          this.logger.warn(`Port ${this.port} in use, trying next port...`);
+          this.port++;
+          setTimeout(() => {
+            this.server.close();
+            this.start().then(resolve).catch(reject);
+          }, 100);
         } else {
+          // For non-retryable errors, reject the promise
+          this.logger.error('Server listen error (not retrying):', error);
           reject(error);
         }
       });
@@ -848,20 +863,7 @@ export class HttpMcpBridge {
       (global as any).__httpMcpBridgeServer = this.server;
       (global as any).__httpMcpBridgeInstance = this;
 
-      // Bind to the requested port (default: 0 = OS-assigned random port).
-      // Using port 0 avoids all port conflicts with dev servers, other instances, etc.
       this.server.listen(this.port, host, () => {
-        // Read the actual port assigned by the OS
-        const addr = this.server.address();
-        if (addr && typeof addr === 'object' && addr.port > 0) {
-          this.port = addr.port;
-        } else {
-          this.logger.error('Failed to read assigned port from server.address()', { addr });
-          this.server.close();
-          reject(new Error('Server started but could not determine assigned port'));
-          return;
-        }
-
         // CRITICAL: Only set the port env var and persist AFTER successfully binding
         // This ensures agents get the correct port even after fallback retries
         process.env.HTTP_MCP_PORT = this.port.toString();
@@ -929,8 +931,7 @@ export class HttpMcpBridge {
 
   /**
    * Check if the HTTP bridge is healthy and responding.
-   * Validates that the response is actually from our MCP bridge (not another
-   * server that may have taken the port, e.g. a Vite dev server returning 404).
+   * Returns true if the health endpoint responds correctly.
    */
   async isHealthy(): Promise<boolean> {
     if (!this.server) {
@@ -953,16 +954,6 @@ export class HttpMcpBridge {
       }
 
       const data = await response.json();
-      // Validate the response is from our bridge, not another server on the same port.
-      // Another process (e.g. Vite dev server) could be listening on this port and
-      // return a 200 with different JSON, or a 404 for /health.
-      if (data.service !== 'http-mcp-bridge') {
-        this.logger.warn('Health check response is not from MCP bridge', {
-          service: data.service,
-          port: this.port,
-        });
-        return false;
-      }
       return data.status === 'ok';
     } catch (error) {
       this.logger.warn('Health check failed', { error: (error as Error).message });

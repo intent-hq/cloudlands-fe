@@ -93,15 +93,9 @@ logToStderr('INFO', 'MCP stdio server boot', {
 const HTTP_MCP_HOST = process.env.HTTP_MCP_HOST || '127.0.0.1';
 const ELECTRON_STORE_CWD = process.env.ELECTRON_STORE_CWD;
 
-// Port must be an integer in the valid TCP range (1–65535) to be usable for connecting.
-// Port 0 is only valid for bind() (OS-assigned), not for connect().
-function isValidPort(v: number | undefined): v is number {
-  return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 65535;
-}
-
 // Prefer explicit CLI arg for port to avoid env/store mismatches. Args: <workspaceId> <workspacePath> [port]
-const cliPort = isValidPort(Number(process.argv[4])) ? Number(process.argv[4]) : undefined;
-const envPort = isValidPort(Number(process.env.HTTP_MCP_PORT))
+const cliPort = Number.isFinite(Number(process.argv[4])) ? Number(process.argv[4]) : undefined;
+const envPort = Number.isFinite(Number(process.env.HTTP_MCP_PORT))
   ? Number(process.env.HTTP_MCP_PORT)
   : undefined;
 
@@ -115,7 +109,7 @@ function readPortFromStore(): number | undefined {
     const settings: any = new ElectronStore(storeOpts);
     const persisted = settings.get('http-bridge-port');
     const asNumber = Number(persisted);
-    if (isValidPort(asNumber)) {
+    if (Number.isFinite(asNumber)) {
       return asNumber;
     }
   } catch (_err) {
@@ -125,17 +119,14 @@ function readPortFromStore(): number | undefined {
 }
 
 function getCandidatePorts(): number[] {
-  // Re-read the store each time — the bridge may have restarted on a new
-  // OS-assigned port and persisted it since we last checked.
   const storePort = readPortFromStore();
-  const candidates = [cliPort, envPort, storePort].filter(isValidPort);
+  const candidates = [cliPort, envPort, storePort, 5179].filter((v) =>
+    Number.isFinite(v),
+  ) as number[];
   return Array.from(new Set(candidates));
 }
 
-// The bridge binds to port 0 (OS-assigned) by default. The actual port is
-// communicated via CLI arg, env var, or settings store — there is no hardcoded default.
-// A value of 0 means "port not yet known" — the reconnect loop will discover it.
-let HTTP_MCP_PORT: number = cliPort ?? envPort ?? readPortFromStore() ?? 0;
+let HTTP_MCP_PORT: number = cliPort ?? envPort ?? readPortFromStore() ?? 5179;
 
 const HTTP_MCP_ENDPOINT = () => `http://${HTTP_MCP_HOST}:${HTTP_MCP_PORT}/mcp`;
 
@@ -254,16 +245,7 @@ async function makeHttpRequest(
           statusText: response.statusText,
           endpoint: HTTP_MCP_ENDPOINT(),
         });
-        // Treat 404/502/503 as potential "bridge unavailable" — the port may now
-        // be occupied by a different server (e.g. Vite dev server) or the bridge
-        // may have crashed. Tag the error so the catch block triggers reconnection.
-        const isBridgeGone =
-          response.status === 404 || response.status === 502 || response.status === 503;
-        const error = new Error(`HTTP ${response.status}: ${response.statusText}`);
-        if (isBridgeGone) {
-          (error as Error & { isBridgeGone: boolean }).isBridgeGone = true;
-        }
-        throw error;
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       // Handle empty responses (e.g., for notifications)
@@ -344,10 +326,7 @@ async function makeHttpRequest(
     });
 
     // Check if this is a connection error (app likely closed or bridge crashed)
-    // Also treat HTTP 404/502/503 as connection errors — the port may now be
-    // occupied by a different server (e.g. Vite dev server returning 404).
     const isConnectionError =
-      (err as Error & { isBridgeGone?: boolean }).isBridgeGone ||
       err.message.includes('ECONNREFUSED') ||
       err.message.includes('ECONNRESET') ||
       err.message.includes('fetch failed') ||
@@ -390,10 +369,8 @@ async function makeHttpRequest(
         }
       }
 
-      // Reconnect failed — mark as unavailable (will be retried on next request
-      // and by the background reconnection loop)
+      // Reconnect failed — mark as unavailable (will be retried on next request)
       httpBridgeUnavailable = true;
-      startReconnectLoop();
 
       // Return clear error message about app connection lost
       return {
@@ -441,11 +418,6 @@ async function waitForHttpServer(
   maxRetries: number = 5,
   initialDelay: number = 1000,
 ): Promise<number | null> {
-  if (ports.length === 0) {
-    logToStderr('WARN', 'No candidate ports to check — bridge port not yet known');
-    return null;
-  }
-
   const MAX_DELAY = 4000; // Cap backoff at 4 seconds
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -457,7 +429,7 @@ async function waitForHttpServer(
           const response = await fetch(`http://${HTTP_MCP_HOST}:${port}/health`, {
             signal: controller.signal,
           });
-          if (await isValidBridgeHealthResponse(response)) {
+          if (response.ok) {
             logToStderr('INFO', 'HTTP MCP server is available', { port, attempt });
             return port;
           }
@@ -486,78 +458,30 @@ async function waitForHttpServer(
 }
 
 /**
- * Validate that a health response is actually from the MCP bridge,
- * not from another server (e.g. Vite dev server) that happens to be on the same port.
- */
-async function isValidBridgeHealthResponse(response: Response): Promise<boolean> {
-  if (!response.ok) return false;
-  try {
-    const data = await response.json();
-    return data.service === 'http-mcp-bridge' && data.status === 'ok';
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Build the list of candidate ports to try when reconnecting.
- * Since the bridge uses port 0 (OS-assigned), the only way to discover
- * the port is via the settings store (which the bridge updates after binding).
- * Re-reads the store each time to pick up port changes from bridge restarts.
- */
-function getReconnectCandidatePorts(): number[] {
-  return getCandidatePorts();
-}
-
-/**
  * Quick health check — try to reach the HTTP MCP server on the current port
  * or any candidate port. Returns the working port or null.
  * Uses a short timeout (2s) since this is called per-request when the bridge is down.
- *
- * Validates that the response is actually from the MCP bridge (checks the
- * `service` field) to avoid connecting to a different server on the same port.
  */
 async function tryReconnect(): Promise<number | null> {
-  const ports = getReconnectCandidatePorts();
-  // Ensure the currently configured port is tried first (if it's a real port)
-  if (isValidPort(HTTP_MCP_PORT) && !ports.includes(HTTP_MCP_PORT)) {
+  const ports = getCandidatePorts();
+  // Also include the currently configured port in case it's not in candidates
+  if (!ports.includes(HTTP_MCP_PORT)) {
     ports.unshift(HTTP_MCP_PORT);
-  } else if (isValidPort(HTTP_MCP_PORT)) {
-    // Move current port to front so we try it first
-    const idx = ports.indexOf(HTTP_MCP_PORT);
-    if (idx > 0) {
-      ports.splice(idx, 1);
-      ports.unshift(HTTP_MCP_PORT);
-    }
   }
-
-  if (ports.length === 0) {
-    logToStderr('WARN', 'No candidate ports available for reconnect — waiting for bridge to persist its port');
-    return null;
-  }
-
-  logToStderr('DEBUG', 'Attempting reconnect', { ports });
-
   for (const port of ports) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
       const response = await fetch(`http://${HTTP_MCP_HOST}:${port}/health`, {
         signal: controller.signal,
       });
-      if (await isValidBridgeHealthResponse(response)) {
+      clearTimeout(timeoutId);
+      if (response.ok) {
         logToStderr('INFO', 'HTTP MCP server reconnected', { port });
         return port;
       }
-      // Got a response but it's not from our bridge (e.g. Vite dev server)
-      logToStderr('DEBUG', 'Port responded but is not MCP bridge', {
-        port,
-        status: response.status,
-      });
     } catch {
       // Not available on this port
-    } finally {
-      clearTimeout(timeoutId);
     }
   }
   return null;
@@ -565,69 +489,10 @@ async function tryReconnect(): Promise<number | null> {
 
 // Flag to track if HTTP bridge is unavailable (set during startup or if connection is lost)
 // This flag is now recoverable — when set, each incoming request will attempt a quick
-// reconnect before giving up. A background reconnection loop also runs periodically.
+// reconnect before giving up.
 let httpBridgeUnavailable = false;
-let reconnectIntervalId: ReturnType<typeof setTimeout> | null = null;
 const HTTP_BRIDGE_UNAVAILABLE_ERROR =
   'Intent by Augment app connection lost. The app may have been closed or the MCP bridge crashed. Please restart the Intent by Augment app and try again.';
-
-/**
- * Start a background reconnection loop that periodically tries to find the
- * bridge when it's marked unavailable. This ensures recovery even when no
- * new MCP requests are arriving (e.g. the LLM client gave up after errors).
- *
- * The loop runs every 5 seconds while the bridge is unavailable and stops
- * automatically once reconnection succeeds.
- */
-function startReconnectLoop(): void {
-  if (reconnectIntervalId) return; // Already running
-
-  const RECONNECT_INTERVAL_MS = 5000;
-  logToStderr('INFO', 'Starting background reconnection loop', {
-    intervalMs: RECONNECT_INTERVAL_MS,
-  });
-
-  // Use self-scheduling setTimeout instead of setInterval to prevent
-  // overlapping reconnect attempts when tryReconnect() takes longer
-  // than the interval.
-  async function scheduleNext(): Promise<void> {
-    reconnectIntervalId = setTimeout(async () => {
-      if (!httpBridgeUnavailable) {
-        stopReconnectLoop();
-        return;
-      }
-
-      logToStderr('DEBUG', 'Background reconnect attempt');
-      try {
-        const reconnectedPort = await tryReconnect();
-        if (reconnectedPort) {
-          HTTP_MCP_PORT = reconnectedPort;
-          httpBridgeUnavailable = false;
-          logToStderr('INFO', 'Background reconnect succeeded', { port: reconnectedPort });
-          stopReconnectLoop();
-          return;
-        }
-      } catch (err) {
-        logToStderr('WARN', 'Background reconnect error', {
-          error: (err as Error).message,
-        });
-      }
-
-      // Schedule next attempt only after current one completes
-      scheduleNext();
-    }, RECONNECT_INTERVAL_MS);
-  }
-
-  scheduleNext();
-}
-
-function stopReconnectLoop(): void {
-  if (reconnectIntervalId) {
-    clearTimeout(reconnectIntervalId);
-    reconnectIntervalId = null;
-    logToStderr('DEBUG', 'Stopped background reconnection loop');
-  }
-}
 
 async function main() {
   try {
@@ -671,7 +536,6 @@ async function main() {
         'Cannot connect to HTTP MCP server - will return error responses for all requests',
       );
       httpBridgeUnavailable = true;
-      startReconnectLoop();
       // Don't exit - keep process running to return proper MCP error responses
     } else {
       HTTP_MCP_PORT = resolvedPort;

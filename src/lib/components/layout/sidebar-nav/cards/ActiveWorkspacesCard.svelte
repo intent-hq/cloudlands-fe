@@ -262,8 +262,8 @@
 
     <!-- Unread section -->
     {#if filteredUnread.length > 0}
-      <div class="section-header px-3 pt-2 pb-1 flex items-center gap-1.5 min-w-0">
-        <Header size={3} class="truncate">Unread</Header>
+      <div class="px-3 pt-2 pb-1 flex items-center gap-1.5">
+        <Header size={3}>Unread</Header>
       </div>
       {#each filteredUnread as { workspace, unreadIds }, i (workspace.id)}
         <WorkspaceListItem
@@ -284,9 +284,9 @@
     <!-- Running section -->
     {#if filteredRunning.length > 0}
       {@const unreadOffset = filteredUnread.length}
-      <div class="section-header px-3 pt-2 pb-1 flex items-center gap-1.5 min-w-0">
-        <Header size={3} class="truncate">Running</Header>
-        <span class="text-ui text-subtle shrink-0">{runningWorkspaces.length}</span>
+      <div class="px-3 pt-2 pb-1 flex items-center gap-1.5">
+        <Header size={3}>Running</Header>
+        <span class="text-ui text-subtle">{runningWorkspaces.length}</span>
       </div>
       {#each filteredRunning as { workspace, streamingIds }, i (workspace.id)}
         <WorkspaceListItem
@@ -306,8 +306,8 @@
     <!-- Pinned section -->
     {#if filteredPinned.length > 0}
       {@const pinnedOffset = filteredUnread.length + filteredRunning.length}
-      <div class="section-header px-3 pt-2 pb-1 flex items-center gap-1.5 min-w-0">
-        <Header size={3} class="truncate">Pinned</Header>
+      <div class="px-3 pt-2 pb-1 flex items-center gap-1.5">
+        <Header size={3}>Pinned</Header>
       </div>
       {#each filteredPinned as { workspace }, i (workspace.id)}
         <WorkspaceListItem
@@ -323,13 +323,3 @@
     {/if}
   {/if}
 </div>
-
-
-<style>
-  @container (max-width: 160px) {
-    .section-header {
-      padding-left: 0.5rem;
-      padding-right: 0.5rem;
-    }
-  }
-</style>

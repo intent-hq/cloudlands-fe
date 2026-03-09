@@ -6,10 +6,9 @@
   import SettingsCard from './cards/SettingsCard.svelte';
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
-  import { faXmark, faThumbtack } from '@fortawesome/free-solid-svg-icons';
-  import { Tooltip } from '$lib/components/ui/tooltip';
+  import { faXmark } from '@fortawesome/free-solid-svg-icons';
 
-  const MIN_WIDTH = 100;
+  const MIN_WIDTH = 220;
   const MAX_WIDTH = 480;
 
   const panelItem = $derived(sidebarNavStore.panelItem);
@@ -61,36 +60,22 @@
   <div class="shrink-0 h-full overflow-hidden" transition:slide={{ axis: 'x', duration: 200 }}>
     <div class="sidebar-panel h-full flex flex-col relative" style="width: {panelWidth}px;" aria-label="Sidebar panel">
       <!-- Header -->
-      <div class="panel-header shrink-0">
-        <div class="min-w-0 flex-1">
-          <h2 class="panel-title text-sm font-semibold text-foreground truncate">{panelMeta.title}</h2>
-          {#if panelMeta.description}
-            <p class="text-xs text-subtle mt-0.5 truncate">{panelMeta.description}</p>
-          {/if}
+      <div class="flex items-center justify-between px-3 pt-3 pb-2 shrink-0">
+        <div class="min-w-0">
+          <h2 class="text-base font-semibold text-foreground">{panelMeta.title}</h2>
+          <p class="text-xs text-subtle mt-0.5">{panelMeta.description}</p>
         </div>
-        <div class="flex items-center gap-0.5 shrink-0">
-          <Tooltip content={sidebarNavStore.isCardPinned ? 'Unpin panel' : 'Pin panel open'} side="bottom" sideOffset={4}>
-            <button
-              class="w-6 h-6 flex items-center justify-center rounded-md transition-colors cursor-pointer
-                {sidebarNavStore.isCardPinned ? 'text-foreground rotate-0' : 'text-muted-foreground rotate-45 hover:text-foreground hover:bg-muted/50'}"
-              onclick={() => sidebarNavStore.toggleCardPinned()}
-              aria-label={sidebarNavStore.isCardPinned ? 'Unpin panel' : 'Pin panel open'}
-            >
-              <Fa icon={faThumbtack} size="xs" />
-            </button>
-          </Tooltip>
-          <button
-            class="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
-            onclick={() => sidebarNavStore.closePanel()}
-            aria-label="Close panel"
-          >
-            <Fa icon={faXmark} size="xs" />
-          </button>
-        </div>
+        <button
+          class="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer shrink-0"
+          onclick={() => sidebarNavStore.closePanel()}
+          aria-label="Close panel"
+        >
+          <Fa icon={faXmark} size="xs" />
+        </button>
       </div>
 
       <!-- Content -->
-      <div class="sidebar-panel-content flex-1 min-h-0 overflow-y-auto">
+      <div class="flex-1 min-h-0 overflow-y-auto">
         {#if panelItem === 'home'}
           <HomeCard />
         {:else if panelItem === 'active'}
@@ -120,36 +105,3 @@
   <!-- Overlay to prevent iframe/selection interference during resize -->
   <div class="fixed inset-0 z-50 cursor-col-resize" style="pointer-events: all;"></div>
 {/if}
-
-
-<style>
-  .sidebar-panel {
-    container-type: inline-size;
-  }
-
-  .sidebar-panel-content {
-    container-type: inline-size;
-  }
-
-  /* Default: horizontal header */
-  .panel-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.5rem 0.5rem 0.375rem;
-    gap: 0.25rem;
-  }
-
-  /* Narrow: stack header vertically */
-  @container (max-width: 160px) {
-    .panel-header {
-      flex-direction: column;
-      align-items: stretch;
-      gap: 0.25rem;
-      padding: 0.375rem;
-    }
-    .panel-title {
-      font-size: 12px;
-    }
-  }
-</style>

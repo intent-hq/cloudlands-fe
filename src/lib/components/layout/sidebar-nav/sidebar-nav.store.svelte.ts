@@ -74,9 +74,6 @@ class SidebarNavStore {
   /** Currently "pinned" open item (clicked to expand hover card) */
   expandedItem = $state<SidebarNavItem | null>(null);
 
-  /** Whether the expanded card is pinned open (won't close on mouse leave) */
-  isCardPinned = $state(false);
-
   /** Currently open sidebar panel (persistent, pushes content) */
   panelItem = $state<SidebarNavItem | null>(
     (typeof localStorage !== 'undefined'
@@ -162,9 +159,6 @@ class SidebarNavStore {
       this.#hoverTimeout = null;
     }
 
-    // If the card is pinned open, don't auto-close
-    if (this.isCardPinned) return;
-
     this.#leaveTimeout = setTimeout(() => {
       this.hoveredItem = null;
       // Don't clear expandedItem on mouse leave - it stays until clicked elsewhere
@@ -179,9 +173,6 @@ class SidebarNavStore {
   }
 
   handleCardMouseLeave() {
-    // If the card is pinned open, don't auto-close
-    if (this.isCardPinned) return;
-
     this.#leaveTimeout = setTimeout(() => {
       this.hoveredItem = null;
       this.expandedItem = null;
@@ -197,19 +188,10 @@ class SidebarNavStore {
     }
   }
 
-  /** Toggle pinned state for the expanded card */
-  toggleCardPinned() {
-    this.isCardPinned = !this.isCardPinned;
-  }
-
   /** Close only hover cards (not the panel) */
   closeHoverCards() {
     this.hoveredItem = null;
     this.expandedItem = null;
-    // Reset pin if no panel is open (pin was for the hover card)
-    if (!this.panelItem) {
-      this.isCardPinned = false;
-    }
     if (this.#hoverTimeout) {
       clearTimeout(this.#hoverTimeout);
       this.#hoverTimeout = null;
@@ -229,7 +211,6 @@ class SidebarNavStore {
   }
 
   closePanel() {
-    this.isCardPinned = false;
     this.panelItem = null;
     this.#persistPanel(null);
   }
@@ -237,11 +218,6 @@ class SidebarNavStore {
   togglePanel(item: SidebarNavItem) {
     if (this.onboardingActive) return;
     if (this.panelItem === item) {
-      // If pinned, unpin instead of closing
-      if (this.isCardPinned) {
-        this.isCardPinned = false;
-        return;
-      }
       this.closePanel();
     } else {
       this.openPanel(item);
@@ -311,20 +287,17 @@ class SidebarNavStore {
   setOnboardingActive(value: boolean) {
     this.onboardingActive = value;
     if (value) {
-      this.closeAll(true);
+      this.closeAll();
     }
   }
 
   // ── General ──
 
-  /** Close everything (hover cards + panel). Respects pinned panel unless forced. */
-  closeAll(force = false) {
+  /** Close everything (hover cards + panel) */
+  closeAll() {
     this.closeHoverCards();
-    if (!this.isCardPinned || force) {
-      this.isCardPinned = false;
-      this.panelItem = null;
-      this.#persistPanel(null);
-    }
+    this.panelItem = null;
+    this.#persistPanel(null);
   }
 }
 
