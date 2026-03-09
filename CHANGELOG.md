@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.23
+
+- Agent Skills — agents discover SKILL.md files from your project and gain repo-specific capabilities automatically.
+- Go to Line with Cmd+G / Ctrl+G in the code editor.
+- YAML front matter is now preserved in the markdown editor instead of being corrupted on save.
+- Polished streaming animation with a cylinder scroller for response groups — smoother collapse, expand, and scroll behavior.
+- "Use for all specialists" button in settings to apply your default model to every specialist at once.
+- Editing a message pre-selects the model that was originally used for that response.
+- Workspace list shows live task progress indicators without waiting for background enrichment.
+- Fixes: agent stuck in "Thinking" state, message data loss on save, stale session events interleaving during transitions, stale disk data overwriting messages during HMR, inaccurate MCP connection status for HTTP/SSE servers.
+
 ## 0.2.22
 
 - GPT-5.4 is now the default model for Auggie agents and available in the Codex model picker.
