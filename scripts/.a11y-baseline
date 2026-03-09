@@ -47,3 +47,5 @@ src/lib/components/workspace/SpacesPicker.svelte:203
 src/routes/observability/+page.svelte:702
 src/routes/workspace/[id]/terminal-test/+page.svelte:36
 src/routes/workspace/[id]/terminal-test/+page.svelte:43
+src/lib/components/shared/LineChangesBadge.svelte:33
+src/lib/components/shared/LineChangesBadge.svelte:34

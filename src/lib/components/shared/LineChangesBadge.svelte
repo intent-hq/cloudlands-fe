@@ -30,8 +30,8 @@
 
   // Size classes
   const sizeClasses = {
-    xxs: 'text-ui',
-    xs: 'text-ui',
+    xxs: 'text-[0.6rem]',
+    xs: 'text-[0.7rem]',
     sm: 'text-sm',
     md: 'text-base',
   };
@@ -59,7 +59,11 @@
         {#if showIcons}
           <Fa icon={faPlus} size={iconSize === 10 ? 'xs' : iconSize === 12 ? 'xs' : 'sm'} />
         {/if}
-        <span>+{#if animated}<AnimatedNumber value={additions} />{:else}{additions.toLocaleString()}{/if}</span>
+        <span
+          >+{#if animated}<AnimatedNumber
+              value={additions}
+            />{:else}{additions.toLocaleString()}{/if}</span
+        >
       </span>
     {/if}
 
@@ -72,7 +76,11 @@
         {#if showIcons}
           <Fa icon={faMinus} size={iconSize === 10 ? 'xs' : iconSize === 12 ? 'xs' : 'sm'} />
         {/if}
-        <span>-{#if animated}<AnimatedNumber value={deletions} />{:else}{deletions.toLocaleString()}{/if}</span>
+        <span
+          >-{#if animated}<AnimatedNumber
+              value={deletions}
+            />{:else}{deletions.toLocaleString()}{/if}</span
+        >
       </span>
     {/if}
   </div>
