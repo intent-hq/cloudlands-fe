@@ -4195,6 +4195,34 @@ export class ACPProvider extends BaseAgentProvider {
                 : false,
               availableCallbackIds: Array.from(this.streamingCallbacks.keys()),
             });
+
+            // Even without callbacks, ensure the streaming state is fully reset
+            // so the UI doesn't stay stuck in "Thinking" forever. Without this,
+            // the provider remains in isStreaming=true with no way to complete.
+            // This ensures that isStreaming is only reset when all streams have completed.
+            if (this.streamingCallbacks.size === 0) {
+              this.isStreaming = false;
+              this.currentStreamingRequestId = null;
+
+              // Clear the messageAccumulator for this session to prevent stale content
+              // from the orphaned response leaking into the next stream's onComplete.
+              // Normally handleStreamCompletion clears this, but without callbacks it
+              // never runs, so we must clean up here.
+              const sessionIdsToClear = [
+                completionSessionId,
+                this.frontendSessionId,
+                this.sessionId,
+                this.streamingAgentId,
+              ].filter((id): id is string => Boolean(id));
+              for (const sid of [...new Set(sessionIdsToClear)]) {
+                messageAccumulator.clear(sid);
+              }
+
+              logger.info('Reset streaming state after orphaned response with no callbacks', {
+                completionSessionId,
+                clearedAccumulatorIds: [...new Set(sessionIdsToClear)],
+              });
+            }
           }
         }
 
@@ -5177,7 +5205,7 @@ export class ACPProvider extends BaseAgentProvider {
         request.method === 'authenticate' ||
         request.method === 'session/new' ||
         request.method === 'session/load'
-          ? 5000 // 5 seconds for initialization requests
+          ? 10000 // 10 seconds for initialization requests (was 5s, caused race conditions)
           : 30000); // 30 seconds for normal requests
 
       const timeout = setTimeout(() => {
