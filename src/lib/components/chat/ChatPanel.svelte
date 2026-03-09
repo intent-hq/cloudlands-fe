@@ -3126,11 +3126,11 @@
   }
 
   // Handle editing a user message and regenerating
-  async function handleEditMessage(messageId: string, newText: string) {
+  async function handleEditMessage(messageId: string, newText: string, model?: string) {
     if (!workspace) return;
     try {
       // Per-agent ChatService: always bound to this agent, no re-acquisition needed
-      await chatService.editAndRegenerate(messageId, newText, workspace);
+      await chatService.editAndRegenerate(messageId, newText, workspace, model ? { model } : undefined);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Something went wrong';
       logger.error('Failed to edit message', error);
@@ -3786,7 +3786,8 @@
                           <ChatMessage
                             {message}
                             {workspace}
-                            onEditSubmit={(newText) => handleEditMessage(message.id, newText)}
+                            onEditSubmit={(newText, model) => handleEditMessage(message.id, newText, model)}
+                            editModel={turn.assistantMessages[0]?.metadata?.model}
                             enableSticky={shouldEnableSticky}
                             onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
                             backendSessionId={auggieSessionId}
@@ -3836,7 +3837,7 @@
                             {message}
                             {workspace}
                             isStreaming={isCurrentlyStreaming}
-                            onEditSubmit={(newText) => handleEditMessage(message.id, newText)}
+                            onEditSubmit={(newText, model) => handleEditMessage(message.id, newText, model)}
                             onRegenerate={() => handleRegenerateFromMessage(message.id)}
                             onFork={() => handleForkFromMessage(message.id)}
                             backendSessionId={auggieSessionId}
