@@ -274,10 +274,10 @@
   tabindex="0"
 >
   <div class="flex flex-col gap-1 px-3 pt-1 pb-1 shrink-0 w-full">
-    <div class="flex items-center gap-0.5 bg-slate-500/10 rounded-lg p-0.5 mb-2 w-full">
-      {#each [['recent', 'Recent'], ['repo', 'By repo'], ['status', 'By status']] as [mode, label]}
+    <div class="view-mode-tabs gap-0.5 bg-slate-500/10 rounded-lg p-0.5 mb-2 w-full">
+      {#each [['recent', 'Recent'], ['repo', 'Repo'], ['status', 'Status']] as [mode, label]}
         <button
-          class="flex-1 px-2.5 py-1 text-xs rounded-md transition-all duration-150 cursor-pointer text-center
+          class="view-mode-tab px-1.5 py-1 text-xs rounded-md transition-all duration-150 cursor-pointer text-center truncate
             {viewMode === mode
             ? 'bg-background text-foreground font-medium shadow-sm'
             : 'text-muted-foreground hover:text-foreground'}"
@@ -329,7 +329,7 @@
         {/each}
       {:else if viewMode === 'repo'}
         {#each groupedByRepo as [repoName, group]}
-          <div class="flex items-center gap-1.5 px-3 pt-2.5 pb-1 mt-3">
+          <div class="section-header flex items-center gap-1.5 px-3 pt-2.5 pb-1 mt-3 min-w-0">
             {#if group.owner}
               <img
                 src={getGitHubAvatarUrl(group.owner)}
@@ -339,7 +339,7 @@
                 onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
               />
             {/if}
-            <Header size={3}>{repoName}</Header>
+            <Header size={3} class="truncate">{repoName}</Header>
           </div>
           {#each group.workspaces as workspace, i (workspace.id)}
             {#if i > 0 && !sidebarNavStore.isPinned(workspace.id) && sidebarNavStore.isPinned(group.workspaces[i - 1].id)}
@@ -366,8 +366,8 @@
         {/each}
       {:else if viewMode === 'status'}
         {#each groupedByStatus as [statusLabel, workspaces]}
-          <div class="px-3 pt-2 pb-1 mt-3">
-            <Header size={3}>{statusLabel}</Header>
+          <div class="section-header px-3 pt-2 pb-1 mt-3 min-w-0">
+            <Header size={3} class="truncate">{statusLabel}</Header>
           </div>
           {#each workspaces as workspace, i (workspace.id)}
             {#if i > 0 && !sidebarNavStore.isPinned(workspace.id) && sidebarNavStore.isPinned(workspaces[i - 1].id)}
@@ -395,3 +395,30 @@
     </div>
   {/if}
 </div>
+
+
+<style>
+  /* Default: horizontal tabs */
+  .view-mode-tabs {
+    display: flex;
+    flex-direction: row;
+  }
+  .view-mode-tab {
+    flex: 1;
+  }
+
+  /* Narrow: stack tabs vertically, tighten spacing */
+  @container (max-width: 180px) {
+    .view-mode-tabs {
+      flex-direction: column;
+    }
+    .view-mode-tab {
+      flex: none;
+      width: 100%;
+    }
+    .section-header {
+      padding-left: 0.5rem;
+      padding-right: 0.5rem;
+    }
+  }
+</style>

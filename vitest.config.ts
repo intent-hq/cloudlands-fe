@@ -56,7 +56,7 @@ export default defineConfig(async () => {
         // Integration tests with various pre-existing issues
         '**/tests/event-integration.test.ts',
         '**/tests/integration/notes-primitives-integration.test.ts',
-        '**/main/__tests__/http-mcp-bridge.test.ts',
+        // Re-enabled: http-mcp-bridge tests now work with port 0 (OS-assigned)
         '**/tests/agent/integration/streaming-integration.test.ts',
         '**/features/file-tracking/__tests__/file-tracking-integration.test.ts',
         '**/features/protocol/__tests__/protocol-adapter-context.test.ts',

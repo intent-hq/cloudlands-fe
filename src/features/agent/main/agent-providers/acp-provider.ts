@@ -1895,8 +1895,8 @@ export class ACPProvider extends BaseAgentProvider {
           const mcpServerPath = getMcpServerPath();
 
           // Also pass workspace ID and path as command line arguments for the stdio server
-          // Use the actual HTTP MCP port from environment (set by HttpMcpBridge after finding available port)
-          const httpMcpPort = process.env.HTTP_MCP_PORT || '5179';
+          // Use the actual HTTP MCP port from environment (set by HttpMcpBridge after binding)
+          const httpMcpPort = process.env.HTTP_MCP_PORT || '';
 
           // For remote workspaces, pass the remote workspace path to MCP tools
           // The MCP tools will use the FileSystemAdapter to access remote files
@@ -2302,7 +2302,7 @@ export class ACPProvider extends BaseAgentProvider {
     if (!workspaceMcpServers && this.config.workspaceId && this.config.workspacePath) {
       try {
         const mcpServerPath = getMcpServerPath();
-        const httpMcpPort = process.env.HTTP_MCP_PORT || '5179';
+        const httpMcpPort = process.env.HTTP_MCP_PORT || '';
 
         // Use Electron's embedded Node.js (ELECTRON_RUN_AS_NODE=1) for portability.
         let nodeCommand = process.execPath;
@@ -3096,10 +3096,16 @@ export class ACPProvider extends BaseAgentProvider {
       // Step 4: Set up reverse port forwarding for MCP access
       // This allows the remote agent to connect to localhost:REMOTE_MCP_PORT
       // and have it forwarded back to the local HTTP MCP bridge
-      const localMcpPort = parseInt(process.env.HTTP_MCP_PORT || '5179', 10);
+      const localMcpPort = parseInt(process.env.HTTP_MCP_PORT || '0', 10);
       // Use a high port on the remote to avoid conflicts (add agent hash for uniqueness)
       const remoteMcpPort = 19000 + ((this.config.agentId?.charCodeAt(0) || 0) % 1000);
 
+      if (!localMcpPort) {
+        logger.warn(
+          'HTTP_MCP_PORT not set — skipping MCP port forwarding. Remote agent will start without MCP tools.',
+        );
+        // Continue without MCP — the agent can still work for non-MCP tasks
+      } else {
       try {
         this.remotePortForwarding = await sshManager.forwardRemotePort(this.sshConnectionId, {
           remotePort: remoteMcpPort,
@@ -3120,6 +3126,7 @@ export class ACPProvider extends BaseAgentProvider {
           },
         );
       }
+      } // end if (localMcpPort)
 
       // Step 5: Build auggie args (provider-specific)
       const args = [...(this.config.args || [])];
@@ -3669,24 +3676,30 @@ export class ACPProvider extends BaseAgentProvider {
         }
 
         // Step 2: Re-establish reverse port forwarding for MCP
-        const localMcpPort = parseInt(process.env.HTTP_MCP_PORT || '5179', 10);
+        const localMcpPort = parseInt(process.env.HTTP_MCP_PORT || '0', 10);
         const remoteMcpPort = 19000 + ((this.config.agentId?.charCodeAt(0) || 0) % 1000);
 
-        try {
-          this.remotePortForwarding = await sshManager.forwardRemotePort(this.sshConnectionId, {
-            remotePort: remoteMcpPort,
-            localHost: 'localhost',
-            localPort: localMcpPort,
-          });
-          logger.info('SSH reverse port forwarding re-established for MCP', {
-            remoteMcpPort,
-            localMcpPort,
-          });
-        } catch (portForwardError) {
-          logger.warn('Failed to re-establish port forwarding for MCP during reconnection', {
-            error: (portForwardError as Error).message,
-          });
-          // Continue without MCP - agent can still work
+        if (!localMcpPort) {
+          logger.warn(
+            'HTTP_MCP_PORT not set — skipping MCP port forwarding during reconnection',
+          );
+        } else {
+          try {
+            this.remotePortForwarding = await sshManager.forwardRemotePort(this.sshConnectionId, {
+              remotePort: remoteMcpPort,
+              localHost: 'localhost',
+              localPort: localMcpPort,
+            });
+            logger.info('SSH reverse port forwarding re-established for MCP', {
+              remoteMcpPort,
+              localMcpPort,
+            });
+          } catch (portForwardError) {
+            logger.warn('Failed to re-establish port forwarding for MCP during reconnection', {
+              error: (portForwardError as Error).message,
+            });
+            // Continue without MCP - agent can still work
+          }
         }
 
         // Step 3: Check auggie status via intent-server

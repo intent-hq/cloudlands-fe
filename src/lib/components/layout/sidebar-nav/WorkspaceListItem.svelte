@@ -97,7 +97,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class={cn(
-    'group relative flex w-full cursor-pointer items-start gap-2 px-3 py-2 text-left',
+    'wli-root group relative flex w-full cursor-pointer items-start gap-2 px-3 py-2 text-left',
     isCurrent ? 'bg-background' : highlighted ? 'bg-sidebar' : !suppressHover && 'hover:bg-sidebar',
   )}
   role="button"
@@ -125,7 +125,7 @@
     <!-- Row 1: title + agents + PR + time -->
     <div class="flex items-center gap-1.5">
       <span
-        class="truncate text-[13px] flex-1 min-w-0
+        class="wli-title truncate text-[13px] flex-1 min-w-0
         {isCurrent
           ? 'font-medium text-foreground'
           : workspace.title
@@ -137,7 +137,7 @@
 
       <!-- Agent avatars -->
       {#if isRunning && streamingAgentIds.length > 0}
-        <div class="flex items-center -space-x-1.5 shrink-0">
+        <div class="wli-secondary flex items-center -space-x-1.5 shrink-0">
           {#each streamingAgentIds.slice(0, 3) as agentId (agentId)}
             <AugieAvatarWithState {agentId} size={14} state="running" />
           {/each}
@@ -148,7 +148,7 @@
           {/if}
         </div>
       {:else if agentInfos.length > 0}
-        <div class="flex items-center -space-x-1.5 shrink-0">
+        <div class="wli-secondary flex items-center -space-x-1.5 shrink-0">
           {#each agentInfos.slice(0, 3) as agent (agent.id)}
             <AugieAvatarWithState
               agentId={agent.id}
@@ -181,14 +181,14 @@
                 : 'bg-red-500/10 text-red-500'}
         {@const tooltipText = prTooltipContent}
         <Tooltip content={tooltipText} side="bottom" sideOffset={4} disabled={!tooltipText}>
-          <span class="text-ui font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}">
+          <span class="wli-secondary text-ui font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}">
             PR{prNumber ? ` #${prNumber}` : ''}
           </span>
         </Tooltip>
       {/if}
 
       <span
-        class="shrink-0 {onTogglePin || (isUnread && onMarkAsRead)
+        class="wli-secondary shrink-0 {onTogglePin || (isUnread && onMarkAsRead)
           ? highlighted
             ? 'opacity-0'
             : suppressHover
@@ -206,7 +206,7 @@
 
     <!-- Row 2: repo info -->
     {#if !hideRepoAvatar && workspace.repositoryOwner && workspace.repositoryName}
-      <div class="truncate text-ui text-subtle">
+      <div class="wli-repo truncate text-ui text-subtle">
         {workspace.repositoryOwner}/{workspace.repositoryName}
       </div>
     {/if}
@@ -215,7 +215,7 @@
   <!-- Hover actions (absolute positioned) -->
   {#if onTogglePin || (isUnread && onMarkAsRead)}
     <div
-      class="absolute right-0 top-1.5 px-2 flex items-center gap-0.5 bg-[inherit]
+      class="wli-actions absolute right-0 top-1.5 px-2 flex items-center gap-0.5 bg-[inherit]
         {highlighted
         ? 'opacity-100'
         : suppressHover
@@ -246,3 +246,33 @@
     </div>
   {/if}
 </div>
+
+
+<style>
+  /* Medium: hide secondary metadata */
+  @container (max-width: 220px) {
+    .wli-secondary {
+      display: none;
+    }
+    .wli-repo {
+      display: none;
+    }
+  }
+
+  /* Narrow: tighten spacing, shrink text */
+  @container (max-width: 160px) {
+    .wli-root {
+      padding-left: 0.5rem;
+      padding-right: 0.5rem;
+      padding-top: 0.25rem;
+      padding-bottom: 0.25rem;
+      gap: 0.375rem;
+    }
+    .wli-title {
+      font-size: 12px;
+    }
+    .wli-actions {
+      display: none;
+    }
+  }
+</style>
