@@ -18,7 +18,9 @@
    */
 
   import { cn } from '$lib/utils';
-  import { tabDragStore, type HandleDropZoneType } from '$lib/stores/tab-drag.store.svelte';
+  import { selectIsDragging } from '$lib/store/slices/tab-drag/tab-drag-selectors';
+  import { setActiveHandleDrop, type HandleDropZoneType, type SerializableRect } from '$lib/store/slices/tab-drag/tab-drag-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
 
   /** Position relative to the split for container-level insertion */
   export type HandleDropZone = 'before' | 'after';
@@ -51,6 +53,7 @@
     onResizeEnd,
     onTabDropToHandle,
   }: Props = $props();
+  const dispatch = getDispatch();
 
   let isDragging = $state(false);
   let startPos = $state(0);
@@ -61,11 +64,11 @@
   let handleRef: HTMLButtonElement;
 
   // Track global tab drag state
-  let isGlobalTabDragging = $derived(tabDragStore.isDragging);
+  const isTabDragging = selectIsDragging();
 
   // Reset drop zone state when global drag ends
   $effect(() => {
-    if (!isGlobalTabDragging) {
+    if (!$isTabDragging) {
       isTabDragOver = false;
       activeDropZone = null;
     }
@@ -236,12 +239,16 @@
       const container = handleRef.closest('.panel-split-container');
       const containerRect = container?.getBoundingClientRect() ?? handleRect;
 
-      tabDragStore.setActiveHandleDrop({
-        handleRect,
-        containerRect,
+      const toRect = (r: DOMRect): SerializableRect => ({
+        x: r.x, y: r.y, width: r.width, height: r.height,
+        top: r.top, right: r.right, bottom: r.bottom, left: r.left,
+      });
+      dispatch(setActiveHandleDrop({
+        handleRect: toRect(handleRect),
+        containerRect: toRect(containerRect),
         zoneType: zoneInfo.zoneType,
         label: zoneInfo.label,
-      });
+      }));
     }
   }
 
@@ -252,7 +259,7 @@
     isTabDragOver = false;
     activeDropZone = null;
     currentZoneInfo = null;
-    tabDragStore.setActiveHandleDrop(null);
+    dispatch(setActiveHandleDrop(null));
   }
 
   function handleTabDrop(e: DragEvent) {
@@ -263,7 +270,7 @@
     isTabDragOver = false;
     activeDropZone = null;
     currentZoneInfo = null;
-    tabDragStore.setActiveHandleDrop(null);
+    dispatch(setActiveHandleDrop(null));
 
     if (!zoneInfo) return;
 

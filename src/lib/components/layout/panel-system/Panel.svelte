@@ -15,7 +15,7 @@
   import PanelDropZones from './PanelDropZones.svelte';
   import { createPanelHeaderContext } from './panel-header-context.svelte';
   import { setPanelContext } from './panel-context';
-  import { tabDragStore } from '$lib/stores/tab-drag.store.svelte';
+  import { selectIsDragging } from '$lib/store/slices/tab-drag/tab-drag-selectors';
   import { untrack, type Snippet } from 'svelte';
 
   export type DropZone = 'top' | 'bottom' | 'left' | 'right' | 'center';
@@ -151,11 +151,11 @@
   const TAB_BAR_HEIGHT = 36;
 
   // Track global drag state to disable pointer events on content
-  let isGlobalDragging = $derived(tabDragStore.isDragging);
+  const isDragging = selectIsDragging();
 
   // Reset local drop zone state when global drag ends
   $effect(() => {
-    if (!isGlobalDragging) {
+    if (!$isDragging) {
       isDragOver = false;
       activeDropZone = null;
     }
@@ -310,7 +310,7 @@
     - Content from interfering with drop zones
   -->
     <div
-      class={cn('panel-content flex-1 overflow-hidden', isGlobalDragging && 'pointer-events-none')}
+      class={cn('panel-content flex-1 overflow-hidden', $isDragging && 'pointer-events-none')}
     >
       {#if panel.tabs.length > 0 && activeTab}
         <!-- Render all cached tabs, showing only the active one -->

@@ -64,6 +64,7 @@
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import type { InitialRepoInfo } from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
   import { SidebarNav, sidebarNavStore, SidebarPanel } from '$lib/components/layout/sidebar-nav';
+  import Store from '$lib/store/components/Store.svelte';
 
   const logger = createLogger('+layout');
 
@@ -1857,6 +1858,7 @@
 </script>
 
 <TooltipProvider>
+<Store>
   <!-- Main Layout with Title Bar -->
   <div
     class="panel-layout-container relative h-screen w-screen overflow-hidden text-foreground flex flex-col bg-app-background"
@@ -2005,6 +2007,7 @@
   {#if import.meta.env.DEV}
     <DebugPanel />
   {/if}
+</Store>
 </TooltipProvider>
 
 <style>

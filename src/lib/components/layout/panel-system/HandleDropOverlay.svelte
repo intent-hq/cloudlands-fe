@@ -16,10 +16,11 @@
    * - column-right: Vertical strip at right of handle (new column right)
    */
 
-  import { tabDragStore } from '$lib/stores/tab-drag.store.svelte';
+  import { selectActiveHandleDrop } from '$lib/store/slices/tab-drag/tab-drag-selectors';
 
-  // Get the active handle drop info from the global store
-  let dropInfo = $derived(tabDragStore.activeHandleDrop);
+  // Get the active handle drop info from the Redux store
+  const activeHandleDrop = selectActiveHandleDrop();
+  let dropInfo = $derived($activeHandleDrop);
 
   // Height/width of the overlay strip (mimics where new panel will appear)
   const OVERLAY_SIZE = 80;

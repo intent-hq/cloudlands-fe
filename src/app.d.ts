@@ -14,6 +14,18 @@ declare global {
   const __DEV_GIT_BRANCH__: string;
 
   interface Window {
+    intent?: {
+      reduxContext?:
+        | import('./lib/store/types').ReduxStoreContext
+        | import('./lib/store/types').ReduxStoreContext[];
+      debug?: {
+        toggleReduxLogs?: () => void;
+        toggleStateReferenceChecks?: () => void;
+        toggleStructuredCloneChecks?: () => void;
+      };
+      exposeStore?: (() => void) | undefined;
+    };
+    isStorybook?: boolean;
     electronAPI: {
       // Sentry config exposed from preload (DSN not bundled into client JS)
       getSentryConfig?: () => {

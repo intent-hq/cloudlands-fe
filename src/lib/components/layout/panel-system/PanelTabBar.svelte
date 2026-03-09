@@ -39,7 +39,9 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { getContext, onMount, tick, type Snippet } from 'svelte';
   import Button from '$lib/components/ui/button/button.svelte';
-  import { tabDragStore } from '$lib/stores/tab-drag.store.svelte';
+  import { selectIsDragging } from '$lib/store/slices/tab-drag/tab-drag-selectors';
+  import { startDrag, endDrag } from '$lib/store/slices/tab-drag/tab-drag-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import { faNote } from '$lib/icons/faNote';
   import { notesStateManager } from '$features/notes/notes.store.svelte';
   import EditableName from '$lib/components/ui/EditableName.svelte';
@@ -128,6 +130,9 @@
     onSplitHorizontal,
     onSplitVertical,
   }: Props = $props();
+
+  const dispatch = getDispatch();
+  const isDragging = selectIsDragging();
 
   // Access layout manager from context for expand-on-double-click
   const getLayoutManager = getContext<(() => PanelLayoutManager) | undefined>('panelLayoutManager');
@@ -640,7 +645,7 @@
     e.dataTransfer.setData(TAB_DRAG_MIME, JSON.stringify({ tabId, panelId }));
 
     // Update global drag state
-    tabDragStore.startDrag();
+    dispatch(startDrag());
 
     // Make the dragged element semi-transparent
     const target = e.target as HTMLElement;
@@ -658,7 +663,7 @@
     dragOverContainer = false;
 
     // Update global drag state - this ensures all panels reset their drop zone state
-    tabDragStore.endDrag();
+    dispatch(endDrag());
   }
 
   // Check if a tab drag is happening (from this panel or another)
@@ -666,7 +671,7 @@
     // Check local state first (dragging from this panel)
     if (draggedTabId) return true;
     // Check global state (dragging from any panel)
-    if (tabDragStore.isDragging) return true;
+    if ($isDragging) return true;
     // Check dataTransfer types
     return e.dataTransfer?.types.includes(TAB_DRAG_MIME) ?? false;
   }
@@ -1161,7 +1166,7 @@
       {/each}
 
       <!-- Drop zone indicator for end of tab bar -->
-      {#if (draggedTabId || tabDragStore.isDragging) && dragOverContainer && !dragOverTabId}
+      {#if (draggedTabId || $isDragging) && dragOverContainer && !dragOverTabId}
         <div class="flex items-center h-full px-1">
           <div class="w-0.5 h-5 bg-primary rounded-full"></div>
         </div>

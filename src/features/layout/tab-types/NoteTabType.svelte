@@ -24,7 +24,9 @@
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import NoteFontStyleButton from '$lib/components/notes/NoteFontStyleButton.svelte';
   import { noteSpellcheckSettings } from '$lib/stores/note-spellcheck-settings.store.svelte';
-  import { tabScrollStore } from '$lib/stores/tab-scroll.store.svelte';
+  import { selectScrollPosition } from '$lib/store/slices/tab-scroll/tab-scroll-selectors';
+  import { saveScrollPosition } from '$lib/store/slices/tab-scroll/tab-scroll-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import Fa from 'svelte-fa';
   import { faCheck, faClockRotateLeft, faCopy, faSpellCheck, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
@@ -37,6 +39,8 @@
   const headerContext = getPanelHeaderContext();
   const layoutManager = $derived(getPanelLayoutManager(workspaceId));
   const workspace = $derived(workspaceStore.findById(WorkspaceId(workspaceId)));
+  const dispatch = getDispatch();
+  const scrollPosition = selectScrollPosition(tab.id);
 
   // Get the note
   const note = $derived.by(() => {
@@ -311,8 +315,8 @@
       noteId={tab.noteId}
       editable={noteEditable}
       {isPanelFocused}
-      initialScrollPosition={tabScrollStore.get(tab.id)}
-      onScrollPositionSave={(scrollTop: number) => tabScrollStore.save(tab.id, scrollTop)}
+      initialScrollPosition={$scrollPosition}
+      onScrollPositionSave={(scrollTop: number) => dispatch(saveScrollPosition(tab.id, scrollTop))}
     />
   {/if}
 {:else}
