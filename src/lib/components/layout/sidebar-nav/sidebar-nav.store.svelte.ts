@@ -19,6 +19,7 @@ const PINNED_WORKSPACES_KEY = 'intent:pinned-workspaces';
 const VIEW_MODE_KEY = 'intent:all-spaces-view-mode';
 const PANEL_WIDTH_KEY = 'intent:sidebar-panel-width';
 const PANEL_ITEM_KEY = 'intent:sidebar-panel-item';
+const CARD_PINNED_KEY = 'intent:sidebar-card-pinned';
 
 function loadPinnedWorkspaces(): string[] {
   if (typeof localStorage === 'undefined') return [];
@@ -75,7 +76,9 @@ class SidebarNavStore {
   expandedItem = $state<SidebarNavItem | null>(null);
 
   /** Whether the expanded card is pinned open (won't close on mouse leave) */
-  isCardPinned = $state(false);
+  isCardPinned = $state(
+    typeof localStorage !== 'undefined' ? localStorage.getItem(CARD_PINNED_KEY) === 'true' : false,
+  );
 
   /** Currently open sidebar panel (persistent, pushes content) */
   panelItem = $state<SidebarNavItem | null>(
@@ -200,6 +203,7 @@ class SidebarNavStore {
   /** Toggle pinned state for the expanded card */
   toggleCardPinned() {
     this.isCardPinned = !this.isCardPinned;
+    this.#persistCardPinned(this.isCardPinned);
   }
 
   /** Close only hover cards (not the panel) */
@@ -209,6 +213,7 @@ class SidebarNavStore {
     // Reset pin if no panel is open (pin was for the hover card)
     if (!this.panelItem) {
       this.isCardPinned = false;
+      this.#persistCardPinned(false);
     }
     if (this.#hoverTimeout) {
       clearTimeout(this.#hoverTimeout);
@@ -230,6 +235,7 @@ class SidebarNavStore {
 
   closePanel() {
     this.isCardPinned = false;
+    this.#persistCardPinned(false);
     this.panelItem = null;
     this.#persistPanel(null);
   }
@@ -240,6 +246,7 @@ class SidebarNavStore {
       // If pinned, unpin instead of closing
       if (this.isCardPinned) {
         this.isCardPinned = false;
+        this.#persistCardPinned(false);
         return;
       }
       this.closePanel();
@@ -252,6 +259,14 @@ class SidebarNavStore {
     this.panelWidth = width;
     try {
       localStorage.setItem(PANEL_WIDTH_KEY, String(width));
+    } catch {
+      // localStorage may be full or unavailable
+    }
+  }
+
+  #persistCardPinned(pinned: boolean) {
+    try {
+      localStorage.setItem(CARD_PINNED_KEY, String(pinned));
     } catch {
       // localStorage may be full or unavailable
     }
@@ -322,6 +337,7 @@ class SidebarNavStore {
     this.closeHoverCards();
     if (!this.isCardPinned || force) {
       this.isCardPinned = false;
+      this.#persistCardPinned(false);
       this.panelItem = null;
       this.#persistPanel(null);
     }
