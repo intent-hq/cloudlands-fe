@@ -11,6 +11,32 @@ const logger = new Logger('MarkdownProcessor');
 const primitivesSerializer = new NotesPrimitivesSerializer();
 
 /**
+ * Regex to match YAML front matter at the very beginning of a markdown document.
+ * Matches: --- (newline) ...yaml content... (newline) --- (newline or EOF)
+ * The front matter must start at the very first character of the string.
+ */
+const FRONT_MATTER_REGEX = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
+
+/**
+ * Extract YAML front matter from the beginning of a markdown string.
+ * Returns the front matter block (including delimiters) and the remaining body.
+ * If no front matter is found, frontMatter is null and body is the original content.
+ */
+export function extractFrontMatter(content: string): {
+  frontMatter: string | null;
+  body: string;
+} {
+  const match = content.match(FRONT_MATTER_REGEX);
+  if (match) {
+    return {
+      frontMatter: match[0],
+      body: content.slice(match[0].length),
+    };
+  }
+  return { frontMatter: null, body: content };
+}
+
+/**
  * Yield to the macrotask queue, allowing the browser to process IPC responses,
  * render frames, and handle user input between heavy processing steps.
  * Unlike `await Promise.resolve()`, this actually yields to the event loop.
@@ -463,9 +489,14 @@ export async function processMarkdownToHTML(
 
     // --- Main-thread preprocessing (quick, needs main-thread deps) ---
 
+    // Strip YAML front matter before any processing — marked doesn't understand it
+    // and will corrupt the --- delimiters (treating them as <hr> / headings).
+    // The front matter is not renderable content so we simply discard it from the HTML output.
+    const { body: contentWithoutFrontMatter } = extractFrontMatter(content);
+
     // Escape HTML-like tags FIRST, before any processing that generates HTML
     // This prevents user content like <COMPANY>Adobe</COMPANY> from being interpreted as HTML
-    const contentWithEscapedTags = escapeHtmlTags(content);
+    const contentWithEscapedTags = escapeHtmlTags(contentWithoutFrontMatter);
     const t1 = isLargeContent ? performance.now() : 0;
 
     // Process ws-block primitives (needs NotesPrimitivesSerializer, must run on main thread)

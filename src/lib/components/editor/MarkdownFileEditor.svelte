@@ -14,7 +14,7 @@
   import { onMount, onDestroy, untrack } from 'svelte';
   import { Editor } from '@tiptap/core';
   import { createEditorConfig } from '$lib/utils/editor-config';
-  import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
+  import { processMarkdownToHTML, processHTMLToMarkdown, extractFrontMatter } from '$lib/utils/markdown-processor';
   import { createLogger } from '$lib/utils/client-logger';
   import BubbleMenu from '$lib/components/tiptap/BubbleMenu.svelte';
 
@@ -38,13 +38,22 @@
   // Track the last markdown we received from parent to avoid re-processing on our own edits
   let lastMarkdownFromParent = '';
 
+  // Preserve YAML front matter across the markdown→HTML→markdown round-trip.
+  // marked doesn't understand front matter and will corrupt the --- delimiters,
+  // so we strip it before rendering and re-attach it when converting back.
+  let preservedFrontMatter: string | null = null;
+
   /**
    * Handle TipTap content updates: convert HTML → markdown and emit
    */
   function handleEditorUpdate(html: string) {
     const markdown = processHTMLToMarkdown(html, { preserveAnchors: false });
-    lastMarkdownFromEditor = markdown;
-    value = markdown;
+    // Ensure there's a newline separator between front matter and body
+    // (front matter may end at EOF without trailing newline)
+    const separator = preservedFrontMatter && !preservedFrontMatter.endsWith('\n') ? '\n' : '';
+    const fullMarkdown = preservedFrontMatter ? preservedFrontMatter + separator + markdown : markdown;
+    lastMarkdownFromEditor = fullMarkdown;
+    value = fullMarkdown;
   }
 
   /**
@@ -52,6 +61,10 @@
    */
   async function initializeEditor() {
     if (!element) return;
+
+    // Extract and preserve YAML front matter before processing
+    const { frontMatter } = extractFrontMatter(value);
+    preservedFrontMatter = frontMatter;
 
     const html = await processMarkdownToHTML(value, {
       preserveAnchors: false,
@@ -108,6 +121,9 @@
 
     if (editor && !editor.isDestroyed) {
       lastMarkdownFromParent = currentValue;
+      // Re-extract front matter in case it changed externally
+      const { frontMatter } = extractFrontMatter(currentValue);
+      preservedFrontMatter = frontMatter;
       // Re-process markdown → HTML and set into editor
       processMarkdownToHTML(currentValue, {
         preserveAnchors: false,
