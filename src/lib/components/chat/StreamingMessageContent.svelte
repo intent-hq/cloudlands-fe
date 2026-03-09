@@ -25,6 +25,7 @@
     type RenderContentBlock,
   } from '$lib/utils/messageParser';
   import ResponseGroup from './ResponseGroup.svelte';
+  import CylinderScroller from './CylinderScroller.svelte';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { createLogger } from '$lib/utils/client-logger';
   import { onDestroy } from 'svelte';
@@ -62,6 +63,41 @@
     cleanupFunctions.forEach((cleanup) => cleanup());
     cleanupFunctions = [];
   });
+
+  /**
+   * Set of block keys that have already been animated.
+   * Prevents the slide-up animation from replaying when Svelte
+   * recreates DOM elements due to reactive content updates.
+   */
+  const animatedKeys = new Set<string>();
+
+  /**
+   * Svelte action that adds the slide-up animation class once per unique
+   * block key, then removes it after the animation completes. Uses a
+   * persistent Set to track which keys have already animated, so even if
+   * Svelte recreates the DOM element the animation won't replay.
+   */
+  function animateIn(node: HTMLElement, params: { animate: boolean; key: string }) {
+    if (!params.animate || animatedKeys.has(params.key)) return {};
+
+    // Mark as animated immediately
+    animatedKeys.add(params.key);
+
+    node.classList.add('content-block--animate-in');
+
+    function onEnd() {
+      node.classList.remove('content-block--animate-in');
+      node.removeEventListener('animationend', onEnd);
+    }
+
+    node.addEventListener('animationend', onEnd);
+
+    return {
+      destroy() {
+        node.removeEventListener('animationend', onEnd);
+      },
+    };
+  }
 
   // Use $derived.by for synchronous computation without side effects
   let blocks = $derived.by(() => {
@@ -341,9 +377,20 @@
     return results;
   });
 
+  // Clear animatedKeys when streaming ends to prevent unbounded growth
+  // during long conversations (keys are only needed while streaming)
+  let prevIsStreaming = false;
+  $effect(() => {
+    if (prevIsStreaming && !isStreaming) {
+      animatedKeys.clear();
+    }
+    prevIsStreaming = isStreaming;
+  });
+
   // Clear cache when component is destroyed
   onDestroy(() => {
     parsedTextCache.clear();
+    animatedKeys.clear();
   });
 
   /**
@@ -364,24 +411,14 @@
       return contentBlock.id;
     }
 
-    // For text blocks, include a simple hash of the first 50 chars to differentiate
+    // For text blocks, use stable index-based key
     if (contentBlock.type === 'text') {
-      const text = contentBlock.text || (contentBlock as any).content || '';
-      const hash = text
-        .slice(0, 50)
-        .split('')
-        .reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0);
-      return `text-${index}-${hash}`;
+      return `text-${index}`;
     }
 
     // For thinking blocks
     if (contentBlock.type === 'thinking') {
-      const thinking = (contentBlock as any).thinking || '';
-      const hash = thinking
-        .slice(0, 50)
-        .split('')
-        .reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0);
-      return `thinking-${index}-${hash}`;
+      return `thinking-${index}`;
     }
 
     // For tool_result blocks, use the tool_use_id if available
@@ -405,6 +442,7 @@
       return count > 0 ? `${key}-dup-${index}` : key;
     });
   });
+
 </script>
 
 <!-- Use animated component when streaming with animations enabled -->
@@ -580,7 +618,7 @@
     {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
       {#if block.type === 'content_group'}
         {@const group = block as ContentBlockGroup}
-        <div class="content-block content-block--group my-1.25">
+        <div class="content-block content-block--group my-1.25" use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}>
           <ResponseGroup
             name={group.name}
             isStreaming={group.isStreaming}
@@ -603,7 +641,7 @@
           </ResponseGroup>
         </div>
       {:else if ['text', 'tool_use', 'thinking'].includes(block.type)}
-        <div class="content-block content-block--{block.type} my-1.25">
+        <div class="content-block content-block--{block.type} my-1.25" use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}>
           {@render renderContentBlock(block as ContentBlock, String(blockIndex), blockIndex)}
         </div>
       {/if}
@@ -638,5 +676,18 @@
   /* PERF: Tool use blocks are heavier - use stricter containment */
   .content-block--tool_use {
     contain: layout style paint;
+  }
+
+  @keyframes slideUpIn {
+    from {
+      transform: translateY(24px);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+
+  .content-block--animate-in {
+    animation: slideUpIn 250ms ease-out both;
   }
 </style>

@@ -7,14 +7,15 @@
   Auto-expands while streaming and auto-collapses when done, with user toggle override.
 -->
 <script lang="ts">
-  import { slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
-  import { faChevronRight, faRectangleList } from '@fortawesome/free-solid-svg-icons';
+  import { faRectangleList } from '@fortawesome/free-solid-svg-icons';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import type { Snippet } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { classifyTool, CATEGORY_ICONS, type ToolCategory } from './tool-classifier';
   import type { ContentBlock } from '$shared/types';
+  import CylinderScroller from './CylinderScroller.svelte';
 
   interface Props {
     name: string;
@@ -35,21 +36,76 @@
     class: className = '',
   }: Props = $props();
 
-  // Auto-expand while streaming, collapse when done (unless it's the last group)
+  // State model: two independent booleans
+  // - isExpanded: user wants full content (no cylinder)
+  // - showCylinder: cylinder preview is visible (during/after streaming)
   let isExpanded = $state(false);
-
-  // Track if user has manually toggled
   let userToggled = $state(false);
+  let showCylinder = $state(false);
+  let collapseTimer: ReturnType<typeof setTimeout> | null = null;
+  let contentEl: HTMLElement | undefined = $state();
+
+  // Track previous streaming state to detect streaming→not-streaming edge
+  let prevStreaming = $state(false);
 
   $effect(() => {
-    if (!userToggled) {
-      isExpanded = isStreaming || isLast;
+    const currentlyStreaming = isStreaming;
+
+    if (currentlyStreaming) {
+      showCylinder = true;
+      prevStreaming = true;
+      if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
+    } else if (prevStreaming && !currentlyStreaming) {
+      prevStreaming = false;
+      // Reset userToggled so auto-collapse works even if user toggled during streaming
+      userToggled = false;
+      isExpanded = false;
+      // After streaming ends, collapse after delay
+      collapseTimer = setTimeout(() => {
+        showCylinder = false;
+        collapseTimer = null;
+      }, 800);
     }
+  });
+
+  onDestroy(() => {
+    if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
   });
 
   function toggle() {
     userToggled = true;
-    isExpanded = !isExpanded;
+    if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
+
+    const el = contentEl;
+    if (el) {
+      // Capture current height before toggle
+      const startHeight = el.offsetHeight;
+
+      // Toggle state
+      isExpanded = !isExpanded;
+
+      // After Svelte updates the DOM, animate from old height to new height
+      requestAnimationFrame(() => {
+        const endHeight = el.scrollHeight;
+
+        // Only animate if heights differ significantly
+        if (Math.abs(startHeight - endHeight) > 10) {
+          el.animate(
+            [
+              { height: `${startHeight}px`, overflow: 'hidden' },
+              { height: `${endHeight}px`, overflow: 'hidden' }
+            ],
+            {
+              duration: 250,
+              easing: 'cubic-bezier(0.33, 1, 0.68, 1)',
+              fill: 'none'
+            }
+          );
+        }
+      });
+    } else {
+      isExpanded = !isExpanded;
+    }
   }
 
   // Compute stats from blocks
@@ -74,6 +130,33 @@
     return { toolCalls, agents, icons };
   });
 
+  // Custom collapse transition that reads the element's CURRENT offsetHeight
+  // (constrained by the cylinder) instead of the full content height.
+  function collapseFromCurrent(node: HTMLElement, { duration = 300, easing = cubicOut } = {}) {
+    const currentHeight = node.offsetHeight;
+    const style = getComputedStyle(node);
+    const paddingTop = parseFloat(style.paddingTop);
+    const paddingBottom = parseFloat(style.paddingBottom);
+    const marginTop = parseFloat(style.marginTop);
+    const marginBottom = parseFloat(style.marginBottom);
+
+    return {
+      duration,
+      easing,
+      css: (t: number) => {
+        return `
+          overflow: hidden;
+          height: ${t * currentHeight}px;
+          padding-top: ${t * paddingTop}px;
+          padding-bottom: ${t * paddingBottom}px;
+          margin-top: ${t * marginTop}px;
+          margin-bottom: ${t * marginBottom}px;
+          opacity: ${Math.min(1, t * 2)};
+        `;
+      }
+    };
+  }
+
   // Extract snippet from first text block for collapsed preview
   const textSnippet = $derived.by(() => {
     if (!blocks) return '';
@@ -97,35 +180,50 @@
     onclick={toggle}
     aria-expanded={isExpanded}
   >
-    <div class="flex items-center justify-center shrink-0 {isStreaming ? 'animate-pulse' : ''}">
+    <div class="flex items-center justify-center shrink-0 transition-opacity duration-300 {isStreaming ? 'opacity-70' : ''}">
       <Fa icon={faRectangleList} size={12} class="text-ghost" />
     </div>
-    <span class="font-semibold text-foreground/80 shrink-0">{name}</span>
-    {#if !isExpanded && textSnippet}
+    <span class="font-semibold text-foreground shrink-0">{name}</span>
+    {#if textSnippet}
       <span class="text-sm text-subtle truncate min-w-0">{textSnippet}</span>
     {/if}
-    {#if stats.icons.length > 0}
-      <div class="flex items-center gap-1.5 ml-0.75 opacity-40">
-        {#each stats.icons.slice(0, 5) as icon}
+    <div class="flex items-center gap-1.5 ml-auto shrink-0 opacity-40">
+      {#each stats.icons.slice(0, 5) as icon, i (icon)}
+        <span class="icon-animate-in" style="animation-delay: {i * 50}ms">
           <Fa {icon} size={10} />
-        {/each}
-      </div>
-    {/if}
-    <!-- <div
-      class="flex items-center justify-center shrink-0 ml-auto transition-transform duration-200 {isExpanded
-        ? 'rotate-90'
-        : 'rotate-180'}"
-    >
-      <Fa icon={faChevronRight} size={9} class="text-ghost" />
-    </div> -->
+        </span>
+      {/each}
+    </div>
   </button>
 
-  {#if isExpanded}
+  {#if isExpanded || showCylinder}
     <div
-      class="pl-4.5 border-l border-muted-foreground/15 ml-2 flex flex-col gap-1.5"
-      transition:slide={{ duration: 200, easing: cubicOut }}
+      bind:this={contentEl}
+      class="pl-4.5 border-l border-muted-foreground/15 ml-2"
+      out:collapseFromCurrent={{ duration: 300 }}
     >
-      {@render children()}
+      <CylinderScroller isActive={isStreaming && !isExpanded} constrained={!isExpanded}>
+        <div class="flex flex-col gap-1.5">
+          {@render children()}
+        </div>
+      </CylinderScroller>
     </div>
   {/if}
 </div>
+
+<style>
+  @keyframes slideInX {
+    from {
+      opacity: 0;
+      transform: translateX(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .icon-animate-in {
+    animation: slideInX 200ms ease-out both;
+  }
+</style>

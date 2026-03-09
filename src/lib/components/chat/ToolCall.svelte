@@ -2,9 +2,7 @@
   import type { ToolUseBlock } from '$shared/types';
   import {
     faCheckCircle,
-    faChevronDown,
     faExclamationTriangle,
-    faSpinner,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
@@ -75,7 +73,7 @@
   );
   const targetAgentName = $derived.by(() => {
     if (!isAgentMessage || !parsedResult?.toAgentId) return null;
-    const session = sessionStore.getSession(parsedResult.toAgentId);
+    const session = sessionStore?.getSession(parsedResult.toAgentId);
     if (session?.name && !isGenericAgentName(session.name)) {
       return session.name;
     }
@@ -126,20 +124,17 @@
     class="tool-call-container group relative w-full text-base rounded-md transition-all duration-150 ease-out -ml-2 overflow-hidden block font-family-child"
     style:border-left="2px solid {borderColor}"
   >
-    {#if toolState === 'running'}
-      <div
-        class="absolute inset-0 pointer-events-none opacity-10 z-1 animate-shimmer shimmer-gradient"
-      ></div>
-    {/if}
+    <!-- Running state: border-left shimmer is sufficient — no overlay needed -->
     <div class="flex items-center w-full min-w-0 gap-2 px-1 py-0.5 relative min-h-6">
-      <!-- Category icon -->
-      <Fa icon={toolDisplay.icon} size="xs" class="w-4 text-ghost shrink-0" />
+      <!-- Category icon (subtle pulse when running) -->
+      <Fa icon={toolDisplay.icon} size="xs" class="w-4 text-ghost shrink-0 {toolState === 'running' ? 'animate-pulse' : ''}" />
 
       <!-- Clickable text area for expand/collapse -->
       <button
-        class="flex items-center gap-[0.5ch] shrink min-w-0 overflow-hidden bg-transparent border-0 p-0 {isExpandable
+        class="flex items-center gap-[0.5ch] min-w-0 overflow-hidden bg-transparent border-0 p-0 {isExpandable
           ? 'cursor-pointer'
           : ''} text-left"
+        style="flex: 0 0.01 auto;"
         onclick={() => {
           if (isExpandable) expanded = !expanded;
         }}
@@ -149,7 +144,7 @@
           <span class="text-subtle whitespace-nowrap shrink-0">Message</span>
           <AuggieAvatar seed={parsedResult.toAgentId} size={16} class="shrink-0" />
           <span
-            class="text-foreground/90 font-medium whitespace-nowrap shrink-0 max-w-[120px] truncate"
+            class="text-foreground font-medium whitespace-nowrap shrink-0 max-w-[120px] truncate"
           >
             {targetAgentName}
           </span>
@@ -181,6 +176,7 @@
         <a
           href={noteUrl(toolDisplay.noteId)}
           class="text-muted-foreground whitespace-nowrap truncate min-w-0 hover:text-foreground hover:underline"
+          style="flex: 0 0.01 auto;"
           onclick={async (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -264,24 +260,17 @@
       <!-- Status indicator and chevron -->
       <div class="ml-auto flex items-center gap-2 shrink-0">
         {#if toolState === 'running'}
-          <Fa icon={faSpinner} size="xs" class="text-ghost animate-spin" />
+          <!-- No spinner — the border-left shimmer indicates running state -->
         {:else if toolState === 'completed' && expanded}
           <Fa icon={faCheckCircle} size="xs" class="text-emerald-500 opacity-60" />
         {:else if toolState === 'error'}
           <Fa icon={faExclamationTriangle} size="xs" class="text-red-500" />
         {/if}
 
-        <!-- {#if isExpandable}
-          <Fa
-            icon={faChevronDown}
-            size={10}
-            class="text-subtle transition-transform duration-150 {expanded
-              ? ''
-              : '-rotate-90'}"
-          />
-        {/if} -->
+
       </div>
     </div>
+
   </div>
 
   {#if expanded}
@@ -292,12 +281,6 @@
 {/if}
 
 <style>
-  /* Shimmer gradient - uses CSS variable that can't be done in Tailwind */
-  .shimmer-gradient {
-    background: linear-gradient(90deg, transparent, var(--color-background), transparent);
-    background-size: 200% 100%;
-  }
-
   /* PERF: Tool call container uses CSS containment for rendering isolation */
   .tool-call-container {
     contain: layout style;
