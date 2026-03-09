@@ -58,9 +58,11 @@ npx vitest        # Run tests in watch mode
 │   │   └── workspace/
 │   │       └── [id]/
 │   └── shared/         # Shared types & constants
-├── main/              # Electron main process
-│   ├── handlers/      # IPC handlers
-│   └── utils/         # Backend utilities
+├── src/main/          # Electron main process
+│   ├── index.ts       # Entry point — app lifecycle, IPC registration, event wiring
+│   ├── state.ts       # Shared mutable state (mainWindow getter/setter)
+│   ├── window.ts      # Window creation, session persistence, window helpers
+│   └── utils/         # Pure utility functions
 └── docs/              # Documentation
 ```
 

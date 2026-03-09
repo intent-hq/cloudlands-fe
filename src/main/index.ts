@@ -17,7 +17,7 @@ import * as Sentry from '@sentry/electron/main';
 // We need createRequire for CommonJS compatibility with electron
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const { ipcMain, app, BrowserWindow, screen, nativeTheme } = require('electron');
+const { ipcMain, app, BrowserWindow } = require('electron');
 
 // PERF: Enable --expose-gc to allow manual GC on critical memory pressure
 // This must be done before app.isReady() and only triggers GC when memory is critically high
@@ -105,62 +105,6 @@ if (BUILD_CONFIG.SENTRY_DSN) {
   console.warn('[Sentry] Not initialized - SENTRY_DSN not set');
 }
 
-// NOTE: Git-specific environment variables are applied per-command in shared/git/git-env.ts
-// to avoid leaking non-interactive settings into user terminals.
-
-// Base dev port used for deriving instance numbers (keeps menu/window titles unique)
-const DEV_PORT_BASE = 5177;
-
-function resolveDevInstance(): string {
-  const envInstance = (process.env.DEV_INSTANCE || '').trim();
-  if (envInstance) return envInstance;
-
-  const devPort = Number(process.env.DEV_PORT);
-  if (Number.isFinite(devPort) && devPort >= DEV_PORT_BASE) {
-    return String(devPort - DEV_PORT_BASE + 1);
-  }
-
-  return '';
-}
-
-/**
- * Build the window/app title.
- * - In production: "Intent"
- * - In dev with --name: "Intent [MyName]"
- * - In dev without --name: "Intent [Dev N]" or "Intent [Dev]"
- */
-function resolveAppTitle(): string {
-  const isDev = process.env.NODE_ENV === 'development';
-  if (!isDev) return 'Intent';
-
-  const devName = (process.env.DEV_NAME || '').trim();
-  if (devName) return `Intent [${devName}]`;
-
-  const devInstance = resolveDevInstance();
-  return devInstance ? `Intent [Dev ${devInstance}]` : 'Intent [Dev]';
-}
-
-function decodeUrlPath(pathname: string): string | null {
-  try {
-    const decoded = decodeURIComponent(pathname);
-    if (decoded.includes('\0')) {
-      return null;
-    }
-    return decoded;
-  } catch {
-    return null;
-  }
-}
-
-function safeResolvePath(root: string, requestPath: string): string | null {
-  const rootPath = path.resolve(root);
-  const resolvedPath = path.resolve(rootPath, requestPath);
-  if (resolvedPath === rootPath || resolvedPath.startsWith(`${rootPath}${path.sep}`)) {
-    return resolvedPath;
-  }
-  return null;
-}
-
 // Set app name early - in dev mode, show custom name or "Intent [Dev N]" in dock/menu bar
 const isDev = process.env.NODE_ENV === 'development';
 app.setName(resolveAppTitle());
@@ -225,10 +169,7 @@ setTimeout(() => {
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 import { dialog, protocol } from 'electron';
 import * as fs from 'fs';
-import * as fsAsync from 'fs/promises';
 
-import { dirname } from 'path';
-import { fileURLToPath } from 'url';
 import { Logger } from '../shared/logger';
 import { exportHandlerDebugInfo, setupIPCInterceptor } from './ipc-handler-wrapper';
 import { initializeWarningSuppression } from './utils/suppress-warnings';
@@ -238,10 +179,6 @@ import { createDebugBundle } from '../features/debug-export/main/debug-bundle.se
 // No custom protocol needed - we'll use file:// protocol
 import { ipcDebugTracker } from '../shared/main/ipc-debug-tracker';
 import { memoryMonitor } from '../shared/main/memory-monitor';
-
-// Get __dirname equivalent in ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 // Early startup timing for diagnostics
 const startupStartTime = Date.now();
@@ -438,10 +375,14 @@ import { protocolAdapter } from '../features/protocol/main/protocol-adapter';
 import { registerSSHHandlers } from '../features/ssh/main/ssh.ipc';
 import { registerWorkspacePRHandlers } from '../features/workspace/main/workspace-pr.ipc';
 import { ipcCleanupManager } from './ipc-cleanup-manager';
+import { resolveAppTitle } from './utils/resolve-app-title.js';
+import { getMainWindow} from './state';
+import { createWindow, createWindowForDeepLink, createWindowForSession, getWindowSessionsPath, loadWindowSessions, saveWindowSessions } from './window.js';
+import { decodeUrlPath } from './utils/decode-url-path.js';
+import { safeResolvePath } from './utils/safe-resolve-path.js';
 
 const logger = new Logger('Main');
 
-let mainWindow: BrowserWindowType | null = null;
 let httpMcpServer: HttpMcpBridge | null = null;
 let cdpMcpServer: CdpMcpBridge | null = null;
 let isShuttingDown = false;
@@ -582,6 +523,8 @@ async function gracefulShutdown() {
       // Auto-updater may not be initialized
     }
 
+    const mainWindow = getMainWindow();
+
     // Close all windows
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.close();
@@ -602,537 +545,6 @@ if (process.env.NODE_ENV === 'development' && process.env.ENABLE_CDP_DEBUG) {
   const cdpPort = process.env.CDP_PORT || '9223';
   app.commandLine.appendSwitch('remote-debugging-port', cdpPort);
   logger.info(`CDP debugging enabled on port ${cdpPort}`);
-}
-
-// ---- Window Session Persistence ----
-// Saves and restores window sessions so the app reopens with the same workspaces/windows.
-
-interface WindowSession {
-  route: string;
-  bounds: { x: number; y: number; width: number; height: number };
-}
-
-function getWindowSessionsPath(): string {
-  return path.join(app.getPath('userData'), 'window-sessions.json');
-}
-
-async function saveWindowSessions(): Promise<void> {
-  try {
-    const allWindows = BrowserWindow.getAllWindows();
-    const sessions: WindowSession[] = allWindows
-      .filter((w: BrowserWindowType) => {
-        if (w.isDestroyed()) return false;
-        const url = w.webContents.getURL();
-        // Skip windows that haven't loaded yet (about:blank) or have empty URLs
-        if (!url || url === 'about:blank') return false;
-        return true;
-      })
-      .map((w: BrowserWindowType) => {
-        const bounds = w.getBounds();
-        const url = w.webContents.getURL();
-        let route = '/';
-        try {
-          const parsed = new URL(url);
-          if (parsed.protocol === 'file:') {
-            // Windows created via WINDOW_CHANNELS.CREATE use file:// with ?initialRoute=
-            const initialRoute = parsed.searchParams.get('initialRoute');
-            route = initialRoute || '/';
-          } else {
-            // For dev (http:) and production (app:): pathname is the route
-            route = parsed.pathname;
-          }
-        } catch {
-          // Fall back to home
-        }
-        return { route, bounds };
-      });
-
-    const sessionsPath = getWindowSessionsPath();
-    if (sessions.length > 0) {
-      await fsAsync.writeFile(sessionsPath, JSON.stringify(sessions), 'utf-8');
-      logger.info('Saved window sessions', {
-        count: sessions.length,
-        routes: sessions.map((s) => s.route),
-      });
-    }
-  } catch (err) {
-    logger.warn('Failed to save window sessions:', err);
-  }
-}
-
-function isValidWindowSession(s: unknown): s is WindowSession {
-  if (typeof s !== 'object' || s === null) return false;
-  const obj = s as Record<string, unknown>;
-  if (typeof obj.route !== 'string') return false;
-  if (typeof obj.bounds !== 'object' || obj.bounds === null) return false;
-  const b = obj.bounds as Record<string, unknown>;
-  return (
-    typeof b.x === 'number' &&
-    typeof b.y === 'number' &&
-    typeof b.width === 'number' &&
-    typeof b.height === 'number'
-  );
-}
-
-function loadWindowSessions(): WindowSession[] | null {
-  try {
-    const sessionsPath = getWindowSessionsPath();
-    if (fs.existsSync(sessionsPath)) {
-      const data = JSON.parse(fs.readFileSync(sessionsPath, 'utf-8'));
-      if (Array.isArray(data) && data.length > 0) {
-        const valid = data.filter(isValidWindowSession);
-        if (valid.length > 0) {
-          // Cap at 20 windows to guard against corrupted sessions file
-          const capped = valid.slice(0, 20);
-          logger.info('Loaded window sessions', { count: capped.length, total: valid.length });
-          return capped;
-        }
-      }
-    }
-  } catch (err) {
-    logger.warn('Failed to load window sessions:', err);
-  }
-  return null;
-}
-
-/**
- * Create a window to restore a saved session.
- * Similar to createWindow() but accepts a specific route and bounds.
- */
-function createWindowForSession(session: WindowSession, setAsMain: boolean): void {
-  const windowTitle = resolveAppTitle();
-
-  // Resolve icon (same as createWindow)
-  let iconPath: string | undefined;
-  if (isDev) {
-    const iconPngPath = path.join(__dirname, '../../src/assets/icons/icon.png');
-    const iconIcoPath = path.join(__dirname, '../../src/assets/icons/icon.ico');
-    const iconIcnsPath = path.join(__dirname, '../../src/assets/icons/icon.icns');
-    const platformIconPath = process.platform === 'win32' ? iconIcoPath : iconPngPath;
-    if (fs.existsSync(platformIconPath)) {
-      iconPath = platformIconPath;
-    } else if (fs.existsSync(iconPngPath)) {
-      iconPath = iconPngPath;
-    } else if (fs.existsSync(iconIcoPath)) {
-      iconPath = iconIcoPath;
-    } else if (fs.existsSync(iconIcnsPath)) {
-      iconPath = iconIcnsPath;
-    }
-    // Set dock icon on macOS
-    if (setAsMain && process.platform === 'darwin') {
-      const { nativeImage } = require('electron');
-      try {
-        if (fs.existsSync(iconPngPath)) {
-          app.dock.setIcon(nativeImage.createFromPath(iconPngPath));
-        } else if (fs.existsSync(iconIcnsPath)) {
-          app.dock.setIcon(nativeImage.createFromPath(iconIcnsPath));
-        }
-      } catch (e) {
-        logger.warn('Failed to set dev dock icon:', e);
-      }
-    }
-  }
-
-  const { workArea } = screen.getPrimaryDisplay();
-
-  // Validate saved bounds
-  let bounds = session.bounds;
-  const minVisibleSize = 100;
-  const isReasonable =
-    bounds.width >= 800 &&
-    bounds.height >= 600 &&
-    bounds.x < workArea.x + workArea.width - minVisibleSize &&
-    bounds.x > workArea.x - bounds.width + minVisibleSize &&
-    bounds.y < workArea.y + workArea.height - minVisibleSize &&
-    bounds.y > workArea.y - bounds.height + minVisibleSize;
-
-  if (!isReasonable) {
-    bounds = {
-      x: workArea.x,
-      y: workArea.y,
-      width: workArea.width,
-      height: workArea.height,
-    };
-  }
-
-  const isDarkMode = nativeTheme.shouldUseDarkColors;
-  const windowOptions: Electron.BrowserWindowConstructorOptions = {
-    x: bounds.x,
-    y: bounds.y,
-    width: bounds.width,
-    height: bounds.height,
-    minWidth: 800,
-    minHeight: 600,
-    webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      webviewTag: true,
-    },
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    frame: process.platform !== 'darwin',
-    ...(process.platform === 'darwin' && {
-      trafficLightPosition: { x: 9, y: 11 },
-      tabbingIdentifier: 'intent',
-    }),
-    title: windowTitle,
-    backgroundColor: isDarkMode ? '#0a0a0a' : '#ffffff',
-    ...(iconPath && { icon: iconPath }),
-  };
-
-  const window = new BrowserWindow(windowOptions);
-
-  if (setAsMain) {
-    mainWindow = window;
-    // Update auto-updater's window reference
-    import('../features/auto-update/main/auto-update.ipc')
-      .then(({ updateAutoUpdaterWindow }) => updateAutoUpdaterWindow(window))
-      .catch(() => {});
-  }
-
-  // Clear cache in production to ensure fresh file references after rebuilds
-  // (same as createWindow — without this, stale assets can be served after an update)
-  // Only clear once for the main window since all windows share the same session.
-  if (setAsMain && (!process.env.NODE_ENV || process.env.NODE_ENV === 'production')) {
-    window.webContents.session
-      .clearCache()
-      .then(() => {
-        logger.info('Cache cleared for session-restored window');
-      })
-      .catch((error: unknown) => {
-        logger.error('Failed to clear cache for session-restored window:', error as Error);
-      });
-  }
-
-  // Build URL with the session's route
-  let loadUrl: string;
-  if (process.env.NODE_ENV === 'development') {
-    const devPort = process.env.DEV_PORT || '5177';
-    loadUrl = `http://127.0.0.1:${devPort}${session.route}`;
-  } else {
-    loadUrl = `app://workspaces${session.route}`;
-  }
-
-  window.loadURL(loadUrl);
-
-  // Save bounds on resize/move (updates the main window bounds file for backward compat)
-  let saveBoundsTimeout: NodeJS.Timeout | null = null;
-  if (setAsMain) {
-    const savedBoundsPath = path.join(app.getPath('userData'), 'window-bounds.json');
-    const saveWindowBounds = () => {
-      if (saveBoundsTimeout) clearTimeout(saveBoundsTimeout);
-      saveBoundsTimeout = setTimeout(async () => {
-        if (window.isDestroyed() || window.isMinimized() || window.isFullScreen()) return;
-        try {
-          const currentBounds = window.getBounds();
-          await fsAsync.writeFile(savedBoundsPath, JSON.stringify(currentBounds), 'utf-8');
-        } catch (err) {
-          logger.warn('Failed to save window bounds:', err);
-        }
-      }, 500);
-    };
-    window.on('resize', saveWindowBounds);
-    window.on('move', saveWindowBounds);
-  }
-
-  window.on('closed', () => {
-    if (setAsMain) {
-      mainWindow = null;
-    }
-    if (saveBoundsTimeout) clearTimeout(saveBoundsTimeout);
-  });
-
-  logger.info('Restored session window', { route: session.route, isMain: setAsMain });
-}
-
-function createWindow() {
-  // Support running multiple dev instances with distinct titles
-  const windowTitle = resolveAppTitle();
-
-  // Use dev icon (black background) in development mode
-  let iconPath: string | undefined;
-  if (isDev) {
-    const fs = require('fs');
-    const iconPngPath = path.join(__dirname, '../../src/assets/icons/icon.png');
-    const iconIcoPath = path.join(__dirname, '../../src/assets/icons/icon.ico');
-    const iconIcnsPath = path.join(__dirname, '../../src/assets/icons/icon.icns');
-    // In dev, use the same icons as production (prefer platform-appropriate formats)
-    const platformIconPath = process.platform === 'win32' ? iconIcoPath : iconPngPath;
-    if (fs.existsSync(platformIconPath)) {
-      iconPath = platformIconPath;
-    } else if (fs.existsSync(iconPngPath)) {
-      iconPath = iconPngPath;
-    } else if (fs.existsSync(iconIcoPath)) {
-      iconPath = iconIcoPath;
-    } else if (fs.existsSync(iconIcnsPath)) {
-      iconPath = iconIcnsPath;
-    }
-    // Set dock icon on macOS
-    if (process.platform === 'darwin') {
-      const { nativeImage } = require('electron');
-      try {
-        // macOS dock icon requires PNG
-        if (fs.existsSync(iconPngPath)) {
-          app.dock.setIcon(nativeImage.createFromPath(iconPngPath));
-        } else if (fs.existsSync(iconIcnsPath)) {
-          app.dock.setIcon(nativeImage.createFromPath(iconIcnsPath));
-        }
-      } catch (e) {
-        logger.warn('Failed to set dev dock icon:', e);
-      }
-    }
-  }
-
-  const { workArea } = screen.getPrimaryDisplay();
-
-  // Try to restore saved window bounds, falling back to full workArea
-  interface WindowBounds {
-    x?: number;
-    y?: number;
-    width?: number;
-    height?: number;
-  }
-
-  // Default to full workArea (maximized but not fullscreen)
-  let windowBounds = {
-    x: workArea.x,
-    y: workArea.y,
-    width: workArea.width,
-    height: workArea.height,
-  };
-
-  // Try to load saved bounds synchronously using fs
-  const savedBoundsPath = path.join(app.getPath('userData'), 'window-bounds.json');
-  try {
-    if (fs.existsSync(savedBoundsPath)) {
-      const savedBounds = JSON.parse(fs.readFileSync(savedBoundsPath, 'utf-8')) as WindowBounds;
-      logger.info('Loaded window bounds from file:', savedBounds);
-
-      if (savedBounds && savedBounds.width && savedBounds.height) {
-        // Check if saved bounds are reasonable (at least partially visible)
-        const minVisibleSize = 100;
-        const isReasonable =
-          savedBounds.width >= 800 &&
-          savedBounds.height >= 600 &&
-          (savedBounds.x === undefined ||
-            (savedBounds.x < workArea.x + workArea.width - minVisibleSize &&
-              savedBounds.x > workArea.x - savedBounds.width + minVisibleSize)) &&
-          (savedBounds.y === undefined ||
-            (savedBounds.y < workArea.y + workArea.height - minVisibleSize &&
-              savedBounds.y > workArea.y - savedBounds.height + minVisibleSize));
-
-        if (isReasonable) {
-          windowBounds = {
-            x: savedBounds.x ?? workArea.x,
-            y: savedBounds.y ?? workArea.y,
-            width: savedBounds.width,
-            height: savedBounds.height,
-          };
-          logger.info('Using saved window bounds:', windowBounds);
-        } else {
-          logger.info('Saved window bounds not reasonable for current display, using defaults');
-        }
-      }
-    }
-  } catch (err) {
-    logger.warn('Failed to load saved window bounds:', err);
-  }
-
-  const windowOptions: Electron.BrowserWindowConstructorOptions = {
-    x: windowBounds.x,
-    y: windowBounds.y,
-    width: windowBounds.width,
-    height: windowBounds.height,
-    minWidth: 800,
-    minHeight: 600,
-    webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      webviewTag: true, // Enable <webview> tag for embedded browser
-    },
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    frame: process.platform !== 'darwin',
-    ...(process.platform === 'darwin' && {
-      trafficLightPosition: { x: 9, y: 11 },
-      tabbingIdentifier: 'intent',
-    }),
-    title: windowTitle,
-    ...(iconPath && { icon: iconPath }),
-  };
-
-  // Use solid background for better performance (vibrancy disabled)
-  // Detect system theme to set appropriate initial background color
-  const isDarkMode = nativeTheme.shouldUseDarkColors;
-  windowOptions.backgroundColor = isDarkMode ? '#0a0a0a' : '#ffffff';
-
-  const window = new BrowserWindow(windowOptions);
-
-  mainWindow = window;
-
-  // Update auto-updater's window reference so status events go to the current window
-  import('../features/auto-update/main/auto-update.ipc')
-    .then(({ updateAutoUpdaterWindow }) => updateAutoUpdaterWindow(window))
-    .catch(() => {
-      // Auto-updater may not be initialized yet during first window creation
-    });
-
-  // Save window bounds when resized or moved (debounced)
-  let saveBoundsTimeout: NodeJS.Timeout | null = null;
-  const saveWindowBounds = () => {
-    if (saveBoundsTimeout) {
-      clearTimeout(saveBoundsTimeout);
-    }
-    saveBoundsTimeout = setTimeout(async () => {
-      if (window.isDestroyed() || window.isMinimized() || window.isFullScreen()) return;
-      try {
-        const bounds = window.getBounds();
-        await fsAsync.writeFile(savedBoundsPath, JSON.stringify(bounds), 'utf-8');
-        logger.info('Saved window bounds:', bounds);
-      } catch (err) {
-        logger.warn('Failed to save window bounds:', err);
-      }
-    }, 500);
-  };
-
-  window.on('resize', saveWindowBounds);
-  window.on('move', saveWindowBounds);
-
-  // Log initial bounds after window is shown
-  window.once('show', () => {
-    logger.info('Window shown with bounds:', window.getBounds());
-  });
-
-  // Clear cache in production to ensure fresh file references after rebuilds
-  if (!process.env.NODE_ENV || process.env.NODE_ENV === 'production') {
-    window.webContents.session
-      .clearCache()
-      .then(() => {
-        logger.info('Cache cleared for fresh build');
-      })
-      .catch((error: unknown) => {
-        logger.error('Failed to clear cache:', error as Error);
-      });
-  }
-
-  // Check process.argv for intent:// URL on cold start BEFORE loading
-  // This handles the case where the app is launched via: electron dist/main "intent://create?repo=..."
-  const intentUrl = process.argv.find((arg: string) => arg.startsWith('intent://'));
-  let loadUrl: string;
-  if (process.env.NODE_ENV === 'development') {
-    // Support running multiple dev servers concurrently via DEV_PORT env var
-    // Use 127.0.0.1 instead of localhost to avoid IPv6 resolution issues on Linux
-    const devPort = process.env.DEV_PORT || '5177';
-    loadUrl = `http://127.0.0.1:${devPort}`;
-  } else {
-    // In production, use the custom app:// protocol
-    // Use 'workspaces' instead of 'localhost' to avoid any localhost-specific logic
-    loadUrl = 'app://workspaces/';
-  }
-
-  // Embed deep link in URL if present
-  if (intentUrl) {
-    const action = deepLinkHandler.parseDeepLink(intentUrl);
-    if (action) {
-      const encoded = encodeURIComponent(JSON.stringify(action));
-      loadUrl += `${loadUrl.includes('?') ? '&' : '?'}deepLink=${encoded}`;
-      logger.info('Embedding deep link in load URL for cold start:', { url: intentUrl });
-    }
-  }
-
-  window.loadURL(loadUrl);
-
-  window.on('closed', () => {
-    mainWindow = null;
-    if (saveBoundsTimeout) {
-      clearTimeout(saveBoundsTimeout);
-    }
-  });
-}
-
-/**
- * Handle a deep link URL received from the OS (intent:// protocol)
- *
- * Settings deep links are sent to the existing main window.
- * All other deep link types create a new window.
- */
-async function createWindowForDeepLink(deepLinkUrl: string) {
-  logger.info('Creating window for deep link:', { url: deepLinkUrl });
-
-  // Parse the deep link to extract action and params
-  const action = deepLinkHandler.parseDeepLink(deepLinkUrl);
-  if (!action) {
-    logger.warn('Failed to parse deep link URL:', { url: deepLinkUrl });
-    return;
-  }
-
-  // Settings actions should be sent to the existing window, not create a new one
-  if (action.type === 'settings') {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('deep-link', action);
-      if (mainWindow.isMinimized()) {
-        mainWindow.restore();
-      }
-      mainWindow.focus();
-      logger.info('Sent settings deep link to existing window');
-    } else {
-      // No window yet — store as pending (will be processed after startup)
-      logger.info('No window available for settings deep link, storing as pending');
-      await deepLinkHandler.handleDeepLink(deepLinkUrl, null);
-    }
-    return;
-  }
-
-  // Create a new window (same configuration as createWindow)
-  const windowTitle = resolveAppTitle();
-
-  const { workArea } = screen.getPrimaryDisplay();
-  const windowBounds = {
-    x: workArea.x,
-    y: workArea.y,
-    width: workArea.width,
-    height: workArea.height,
-  };
-
-  const isDarkMode = nativeTheme.shouldUseDarkColors;
-  const windowOptions: Electron.BrowserWindowConstructorOptions = {
-    x: windowBounds.x,
-    y: windowBounds.y,
-    width: windowBounds.width,
-    height: windowBounds.height,
-    minWidth: 800,
-    minHeight: 600,
-    webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      webviewTag: true,
-    },
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    frame: process.platform !== 'darwin',
-    ...(process.platform === 'darwin' && {
-      trafficLightPosition: { x: 9, y: 11 },
-      tabbingIdentifier: 'intent',
-    }),
-    title: windowTitle,
-    backgroundColor: isDarkMode ? '#0a0a0a' : '#ffffff',
-  };
-
-  const newWindow = new BrowserWindow(windowOptions);
-
-  // Load the app with deep link embedded in URL query parameter
-  const encodedAction = encodeURIComponent(JSON.stringify(action));
-  if (isDev) {
-    const devPort = process.env.DEV_PORT || '5177';
-    newWindow.loadURL(`http://localhost:${devPort}?deepLink=${encodedAction}`);
-  } else {
-    newWindow.loadURL(`app://workspaces/?deepLink=${encodedAction}`);
-  }
-
-  // Focus the new window
-  newWindow.focus();
-
-  logger.info('New window created for deep link:', { action: action.type });
 }
 
 app.whenReady().then(async () => {
@@ -1247,6 +659,7 @@ app.whenReady().then(async () => {
           recentWorkspacesSubmenu.push({
             label: displayName,
             click: () => {
+              const mainWindow = getMainWindow();
               if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send('navigate', `/workspace/${workspace.id}`);
               }
@@ -1505,6 +918,7 @@ app.whenReady().then(async () => {
             .filter(Boolean)
             .join('\n');
 
+          const mainWindow = getMainWindow();
           if (mainWindow && !mainWindow.isDestroyed()) {
             dialog.showMessageBox(mainWindow, {
               type: 'info',
@@ -1523,6 +937,7 @@ app.whenReady().then(async () => {
       helpMenuItems.push({
         label: 'Check for Updates...',
         click: async () => {
+          const mainWindow = getMainWindow();
           logger.info('[Menu] Check for Updates clicked', {
             isDevMode,
             hasMainWindow: !!mainWindow,
@@ -1560,6 +975,7 @@ app.whenReady().then(async () => {
       helpMenuItems.push({
         label: "Install 'intent' command in PATH...",
         click: async () => {
+          const mainWindow = getMainWindow();
           try {
             const result = await installIntentCli();
             if (result?.success) {
@@ -1646,6 +1062,7 @@ app.whenReady().then(async () => {
           {
             label: 'Check for Updates...',
             click: async () => {
+              const mainWindow = getMainWindow();
               logger.info('[Menu] Check for Updates clicked', {
                 isDevMode,
                 hasMainWindow: !!mainWindow,
@@ -1696,6 +1113,7 @@ app.whenReady().then(async () => {
           {
             label: "Install 'intent' command in PATH...",
             click: async () => {
+              const mainWindow = getMainWindow();
               try {
                 const result = await installIntentCli();
                 if (result?.success) {
@@ -2257,6 +1675,7 @@ app.whenReady().then(async () => {
     const { setupAutoUpdateIPC, initializeAutoUpdater } =
       await import('../features/auto-update/main/auto-update.ipc');
     setupAutoUpdateIPC();
+    const mainWindow = getMainWindow();
     if (process.env.NODE_ENV !== 'development' && mainWindow) {
       initializeAutoUpdater(mainWindow);
     }
@@ -2468,6 +1887,7 @@ app.whenReady().then(async () => {
   }
 
   // Process any pending deep link URL that was received before the window was ready
+  const mainWindow = getMainWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
     await deepLinkHandler.processPendingUrl(mainWindow);
   }
@@ -2545,7 +1965,8 @@ app.whenReady().then(async () => {
       logger.warn('Failed to start postWindowIPC metric:', error);
     }
 
-    await Promise.all([initializeUnifiedBackend(mainWindow!), setupMCPIPC(mainWindow!)]);
+    const mainWindow = getMainWindow()!;
+    await Promise.all([initializeUnifiedBackend(mainWindow), setupMCPIPC(mainWindow)]);
 
     try {
       startupMetrics.end('postWindowIPC');
@@ -2720,8 +2141,9 @@ app.on('open-url', async (event: Electron.Event, url: string) => {
   logger.info('Received open-url event:', { url });
 
   // If app is ready and has a main window, create a new window for the deep link
+  const mainWindow = getMainWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
-    await createWindowForDeepLink(url);
+    await createWindowForDeepLink(url, deepLinkHandler);
   } else {
     // App is not ready yet, store the URL for processing after startup
     logger.info('App not ready, storing URL for later processing');
@@ -2747,11 +2169,13 @@ if (!gotTheLock) {
 
     if (deepLinkUrl) {
       logger.info('Found deep link URL in second instance:', { url: deepLinkUrl });
+      const mainWindow = getMainWindow();
       if (mainWindow && !mainWindow.isDestroyed()) {
-        await createWindowForDeepLink(deepLinkUrl);
+        await createWindowForDeepLink(deepLinkUrl, deepLinkHandler);
       }
     } else {
       // No deep link, just focus the existing window
+      const mainWindow = getMainWindow();
       if (mainWindow && !mainWindow.isDestroyed()) {
         if (mainWindow.isMinimized()) {
           mainWindow.restore();
@@ -2770,6 +2194,7 @@ app.on('activate', () => {
   );
   if (allWindows.length > 0) {
     // Focus an existing window instead of creating a new one
+    const mainWindow = getMainWindow();
     const targetWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : allWindows[0];
     if (targetWindow.isMinimized()) targetWindow.restore();
     targetWindow.show();
