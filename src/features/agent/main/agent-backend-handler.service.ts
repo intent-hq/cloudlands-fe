@@ -3001,6 +3001,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
             timestamp: new Date().toISOString(),
             metadata: {
               ...providerMessage?.metadata,
+              // Store the model used for this response so the UI can pre-select it when editing
+              model: provider?.getConfig?.()?.model || request.model,
               // Include interrupted flag for persistence so UI shows "Stopped" after refresh
               ...(wasInterrupted ? { interrupted: true } : {}),
             },
