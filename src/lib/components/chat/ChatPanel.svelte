@@ -3176,6 +3176,13 @@
     handleSend(prompt);
   }
 
+  // Handle editing a suggested prompt - loads into input without sending
+  async function handleEditSuggestedPrompt(prompt: string) {
+    inputValue = prompt;
+    await inputComponent?.setContent?.(prompt);
+    inputComponent?.focus?.();
+  }
+
   // Export functions for parent components
   export function focusPrompt(): boolean {
     const result = inputComponent?.focus?.() ?? false;
@@ -3909,6 +3916,7 @@
           <SuggestedPrompts
             prompts={visibleSuggestedPrompts}
             onSelect={handleSelectSuggestedPrompt}
+            onEdit={handleEditSuggestedPrompt}
           />
         </div>
       {/if}
