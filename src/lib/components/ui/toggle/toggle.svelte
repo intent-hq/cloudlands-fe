@@ -157,7 +157,7 @@
         'relative rounded-xs transition-all duration-300',
         size === 'xs' ? 'w-2.5 h-2.5' : size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4',
         pressed
-          ? 'bg-accent shadow-[inset_1px_1px_0_rgba(0,0,0,0.15),inset_-1px_-1px_0_rgba(255,255,255,0.3),0_0_6px_1px_hsl(var(--accent)/0.15)]'
+          ? 'bg-primary shadow-[inset_1px_1px_0_rgba(0,0,0,0.15),inset_-1px_-1px_0_rgba(255,255,255,0.3),0_0_6px_1px_hsl(var(--primary)/0.15)]'
           : 'bg-muted-foreground/15 shadow-[inset_1px_1px_0_rgba(0,0,0,0.05),inset_-1px_-1px_0_rgba(255,255,255,0.15)]',
       )}
     ></span>
@@ -197,7 +197,7 @@
       class={cn(
         'relative flex items-center justify-center rounded-full transition-all duration-200',
         size === 'xs' ? 'w-5 h-2.5' : size === 'sm' ? 'w-6 h-3' : 'w-7 h-3.5',
-        pressed ? 'bg-accent' : 'bg-muted-foreground/30',
+        pressed ? 'bg-primary' : 'bg-muted-foreground/30',
       )}
     >
       <!-- Sliding dot -->
@@ -227,7 +227,7 @@
   <div class="relative inline-flex items-center rounded-md bg-sidebar p-1 gap-0">
     <!-- Animated background indicator -->
     <div
-      class="absolute top-1 bottom-1 rounded-sm bg-accent transition-all duration-200 ease-out pointer-events-none"
+      class="absolute top-1 bottom-1 rounded-sm bg-primary transition-all duration-200 ease-out pointer-events-none"
       style={`left: ${selectedButtonOffset}px; width: ${selectedButtonWidth}px;`}
     ></div>
 
@@ -238,7 +238,7 @@
         onclick={() => handleOptionClick(option.value)}
         title={option.label}
         class={`relative z-10 font-medium rounded-sm transition-colors whitespace-nowrap cursor-pointer ${groupSizeClasses[size]} ${
-          value === option.value ? 'text-white' : 'text-muted-foreground hover:text-foreground'
+          value === option.value ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
         }`}
       >
         {option.label}
