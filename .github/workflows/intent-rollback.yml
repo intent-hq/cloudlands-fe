@@ -97,7 +97,6 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### Stable Channel URLs" >> "$GITHUB_STEP_SUMMARY"
           echo "- [Apple Silicon Mac](https://cdn.augmentcode.com/stable/Intent-latest-arm64.dmg)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- [Intel Mac](https://cdn.augmentcode.com/stable/Intent-latest.dmg)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Notify Slack
         if: always()

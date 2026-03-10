@@ -35,7 +35,7 @@ concurrency:
 
 jobs:
   # ==========================================================================
-  # Build macOS (x64 + arm64 universal build with code signing & notarization)
+  # Build macOS (arm64 universal build with code signing & notarization)
   # ==========================================================================
   build-macos:
     runs-on: macos-14 # Apple Silicon runner for faster builds
@@ -209,7 +209,6 @@ jobs:
           echo "**Channel:** $CHANNEL" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Download URLs" >> $GITHUB_STEP_SUMMARY
-          echo "- [Intel Mac](https://cdn.augmentcode.com/$CHANNEL/Intent-latest.dmg)" >> $GITHUB_STEP_SUMMARY
           echo "- [Apple Silicon Mac](https://cdn.augmentcode.com/$CHANNEL/Intent-latest-arm64.dmg)" >> $GITHUB_STEP_SUMMARY
 
       - name: Cleanup artifacts

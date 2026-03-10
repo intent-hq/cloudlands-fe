@@ -147,12 +147,6 @@ if aws s3 ls "s3://$S3_BUCKET/beta/Intent-latest-arm64.dmg" --region "$AWS_REGIO
   echo -e "   ${GREEN}✓${NC} Intent-latest-arm64.dmg"
 fi
 
-if aws s3 ls "s3://$S3_BUCKET/beta/Intent-latest.dmg" --region "$AWS_REGION" &>/dev/null; then
-  aws s3 cp "s3://$S3_BUCKET/beta/Intent-latest.dmg" "s3://$S3_BUCKET/stable/Intent-latest.dmg" \
-    --region "$AWS_REGION" --no-progress
-  echo -e "   ${GREEN}✓${NC} Intent-latest.dmg"
-fi
-
 # Copy release notes
 echo -e "${BLUE}📤 Copying release notes...${NC}"
 if aws s3 ls "s3://$S3_BUCKET/beta/release-notes.json" --region "$AWS_REGION" &>/dev/null; then

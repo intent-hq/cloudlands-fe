@@ -2,7 +2,7 @@
  * Ensure cross-architecture native module prebuilds are present.
  *
  * npm/pnpm only install optional dependencies matching the host CPU.
- * When building for multiple architectures (e.g., x64 + arm64 on Apple Silicon),
+ * When building for multiple architectures (e.g., arm64 on Apple Silicon),
  * the non-host prebuilds must be downloaded manually so electron-builder includes
  * them in the asar archive.
  *
@@ -37,7 +37,7 @@ const PLATFORM_PACKAGES = [
     parentPkg: '@parcel/watcher',
     nameTemplate: '@parcel/watcher-{platform}-{arch}',
     platforms: ['darwin'],
-    arches: ['x64', 'arm64'],
+    arches: ['arm64'],
   },
 ];
 

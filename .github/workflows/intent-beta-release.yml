@@ -153,7 +153,6 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### Download URLs" >> "$GITHUB_STEP_SUMMARY"
           echo "- [Apple Silicon Mac](https://cdn.augmentcode.com/beta/Intent-latest-arm64.dmg)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- [Intel Mac](https://cdn.augmentcode.com/beta/Intent-latest.dmg)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Notify Slack
         if: success()
@@ -167,7 +166,7 @@ jobs:
                   \"type\": \"section\",
                   \"text\": {
                     \"type\": \"mrkdwn\",
-                    \"text\": \"*Intent Beta Release*\n\n*Version:* v${VERSION}\n*Channel:* beta\n*Tag:* \`v${VERSION}\`\n*Triggered by:* ${{ github.actor }}\"
+                    \"text\": \"*Intent Beta Release*\n\n*Version:* v${VERSION}\n*Channel:* beta\n*Tag:* \`v${VERSION}\`\n*Triggered by:* ${{ github.actor }}\n\n<https://cdn.augmentcode.com/beta/Intent-latest-arm64.dmg|Download (Apple Silicon)> · <intent://settings?beta=true|Enroll in beta>\"
                   }
                 }
               ]

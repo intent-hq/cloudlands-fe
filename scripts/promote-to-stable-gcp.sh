@@ -109,7 +109,7 @@ done
 
 # Copy "latest" DMG links
 echo "Copying 'latest' DMG links..."
-for dmg in Intent-latest-arm64.dmg Intent-latest.dmg; do
+for dmg in Intent-latest-arm64.dmg; do
   if gcloud storage ls "gs://$GCS_BUCKET/beta/$dmg" &>/dev/null; then
     gcloud storage cp "gs://$GCS_BUCKET/beta/$dmg" "gs://$GCS_BUCKET/stable/$dmg" --quiet
     echo "  $dmg"
@@ -145,7 +145,6 @@ echo ""
 echo "CDN URLs:"
 echo "  https://cdn.augmentcode.com/stable/latest-mac.yml"
 echo "  https://cdn.augmentcode.com/stable/Intent-latest-arm64.dmg"
-echo "  https://cdn.augmentcode.com/stable/Intent-latest.dmg"
 echo ""
 echo "Note: CDN cache invalidation may take a few minutes to complete."
 

@@ -141,17 +141,6 @@ else
   echo "   ⚠ arm64 DMG not found: $ARM64_DMG"
 fi
 
-# Upload the current version's x64 DMG as Intent-latest.dmg
-X64_DMG="$DIST_DIR/Intent by Augment-${VERSION}.dmg"
-if [ -f "$X64_DMG" ]; then
-  aws s3 cp "$X64_DMG" "s3://$S3_BUCKET/$CHANNEL/Intent-latest.dmg" \
-    --content-type "application/x-apple-diskimage" \
-    --region "$AWS_REGION"
-  echo "   ✓ Intent-latest.dmg (→ $(basename "$X64_DMG"))"
-else
-  echo "   ⚠ x64 DMG not found: $X64_DMG"
-fi
-
 # Upload release notes (if exists)
 RELEASE_NOTES="$DIST_DIR/release-notes.json"
 if [ -f "$RELEASE_NOTES" ]; then

@@ -206,15 +206,6 @@ else
   echo "   ⚠ arm64 DMG not found: $ARM64_DMG"
 fi
 
-# Upload the current version's x64 DMG as Intent-latest.dmg
-X64_DMG="$DIST_DIR/Intent by Augment-${VERSION}.dmg"
-if [ -f "$X64_DMG" ]; then
-  upload_file "$X64_DMG" "$CHANNEL/Intent-latest.dmg" "application/x-apple-diskimage"
-  echo "   ✓ Intent-latest.dmg (→ $(basename "$X64_DMG"))"
-else
-  echo "   ⚠ x64 DMG not found: $X64_DMG"
-fi
-
 # Upload release notes (if exists)
 RELEASE_NOTES="$DIST_DIR/release-notes.json"
 if [ -f "$RELEASE_NOTES" ]; then
@@ -316,7 +307,6 @@ echo ""
 echo "🌐 CDN URLs (primary):"
 echo "   https://cdn.augmentcode.com/$CHANNEL/latest-mac.yml"
 echo "   https://cdn.augmentcode.com/$CHANNEL/Intent-latest-arm64.dmg"
-echo "   https://cdn.augmentcode.com/$CHANNEL/Intent-latest.dmg"
 
 if [ "$AWS_ENABLED" = true ]; then
   echo ""

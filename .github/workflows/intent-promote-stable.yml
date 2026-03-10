@@ -74,9 +74,7 @@ jobs:
           # Check key artifacts exist (HEAD request)
           for artifact in \
             "Intent by Augment-${VERSION}-arm64.dmg" \
-            "Intent by Augment-${VERSION}.dmg" \
-            "Intent by Augment-${VERSION}-arm64-mac.zip" \
-            "Intent by Augment-${VERSION}-mac.zip"; do
+            "Intent by Augment-${VERSION}-arm64-mac.zip"; do
 
             ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$artifact'))")
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" --head "$CDN_BASE/$ENCODED")
@@ -88,7 +86,7 @@ jobs:
           done
 
           # At minimum, the latest DMGs must exist
-          for dmg in Intent-latest-arm64.dmg Intent-latest.dmg; do
+          for dmg in Intent-latest-arm64.dmg; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" --head "$CDN_BASE/$dmg")
             if [ "$STATUS" = "200" ]; then
               echo "  $dmg: OK"
@@ -193,7 +191,6 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### Download URLs" >> "$GITHUB_STEP_SUMMARY"
           echo "- [Apple Silicon Mac](https://cdn.augmentcode.com/stable/Intent-latest-arm64.dmg)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- [Intel Mac](https://cdn.augmentcode.com/stable/Intent-latest.dmg)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### Verification" >> "$GITHUB_STEP_SUMMARY"
           echo "- Beta manifests validated" >> "$GITHUB_STEP_SUMMARY"
@@ -212,7 +209,7 @@ jobs:
                   \"type\": \"section\",
                   \"text\": {
                     \"type\": \"mrkdwn\",
-                    \"text\": \"*Intent Stable Promotion*\n\n*Version:* v${VERSION}\n*Promoted from:* beta\n*Channel:* stable\n*Triggered by:* ${{ github.actor }}\n\n<https://cdn.augmentcode.com/stable/Intent-latest-arm64.dmg|Download Apple Silicon> | <https://cdn.augmentcode.com/stable/Intent-latest.dmg|Download Intel>\"
+                    \"text\": \"*Intent Stable Promotion*\n\n*Version:* v${VERSION}\n*Promoted from:* beta\n*Channel:* stable\n*Triggered by:* ${{ github.actor }}\n\n<https://cdn.augmentcode.com/stable/Intent-latest-arm64.dmg|Download Apple Silicon>\"
                   }
                 }
               ]

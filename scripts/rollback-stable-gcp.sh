@@ -74,12 +74,10 @@ echo "🔍 Verifying target version artifacts exist on GCS..."
 
 PRODUCT_NAME="Intent by Augment"
 ARM64_ZIP="${PRODUCT_NAME}-${VERSION}-arm64-mac.zip"
-X64_ZIP="${PRODUCT_NAME}-${VERSION}-mac.zip"
 ARM64_DMG="${PRODUCT_NAME}-${VERSION}-arm64.dmg"
-X64_DMG="${PRODUCT_NAME}-${VERSION}.dmg"
 
 MISSING=0
-for file in "$ARM64_ZIP" "$X64_ZIP" "$ARM64_DMG" "$X64_DMG"; do
+for file in "$ARM64_ZIP" "$ARM64_DMG"; do
   if gcloud storage ls "gs://$GCS_BUCKET/$CHANNEL/$file" &>/dev/null; then
     echo "   ✓ $file"
   else
@@ -115,44 +113,36 @@ rewrite_mac_manifest() {
     return 0
   fi
 
-  # No versioned manifest — download both ZIPs and build a merged manifest
+  # No versioned manifest — download ZIP and build manifest
   echo "   No versioned manifest found, rewriting $manifest_name..."
 
-  # Download both ZIPs to compute sha512 (electron-builder uses base64-encoded sha512)
-  echo "   Downloading $X64_ZIP to compute sha512 (this may take a moment)..."
-  gcloud storage cp "$gcs_path/$X64_ZIP" "$TMPDIR/$X64_ZIP" --quiet
+  # Download ZIP to compute sha512 (electron-builder uses base64-encoded sha512)
   echo "   Downloading $ARM64_ZIP to compute sha512 (this may take a moment)..."
   gcloud storage cp "$gcs_path/$ARM64_ZIP" "$TMPDIR/$ARM64_ZIP" --quiet
 
-  local x64_sha512 x64_size arm64_sha512 arm64_size
-  x64_sha512=$(openssl dgst -sha512 -binary "$TMPDIR/$X64_ZIP" | base64 | tr -d '\n')
-  x64_size=$(stat -c%s "$TMPDIR/$X64_ZIP" 2>/dev/null || stat -f%z "$TMPDIR/$X64_ZIP")
+  local arm64_sha512 arm64_size
   arm64_sha512=$(openssl dgst -sha512 -binary "$TMPDIR/$ARM64_ZIP" | base64 | tr -d '\n')
   arm64_size=$(stat -c%s "$TMPDIR/$ARM64_ZIP" 2>/dev/null || stat -f%z "$TMPDIR/$ARM64_ZIP")
 
-  rm -f "$TMPDIR/$X64_ZIP" "$TMPDIR/$ARM64_ZIP"
+  rm -f "$TMPDIR/$ARM64_ZIP"
 
-  local x64_url arm64_url
-  x64_url=$(echo "$X64_ZIP" | sed 's/ /%20/g')
+  local arm64_url
   arm64_url=$(echo "$ARM64_ZIP" | sed 's/ /%20/g')
 
   cat > "$TMPDIR/$manifest_name" <<EOF
 version: ${VERSION}
 files:
-  - url: ${x64_url}
-    sha512: ${x64_sha512}
-    size: ${x64_size}
   - url: ${arm64_url}
     sha512: ${arm64_sha512}
     size: ${arm64_size}
-path: ${x64_url}
-sha512: ${x64_sha512}
+path: ${arm64_url}
+sha512: ${arm64_sha512}
 releaseDate: '$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")'
 EOF
 
   gcloud storage cp "$TMPDIR/$manifest_name" "$gcs_path/$manifest_name" \
     --content-type="application/x-yaml" --quiet
-  echo "   ✓ $manifest_name (rewritten with both architectures)"
+  echo "   ✓ $manifest_name (rewritten for arm64)"
 }
 
 rewrite_mac_manifest
@@ -164,10 +154,6 @@ echo "📤 Updating 'latest' DMG links..."
 gcloud storage cp "gs://$GCS_BUCKET/$CHANNEL/$ARM64_DMG" \
   "gs://$GCS_BUCKET/$CHANNEL/Intent-latest-arm64.dmg" --quiet
 echo "   ✓ Intent-latest-arm64.dmg → $ARM64_DMG"
-
-gcloud storage cp "gs://$GCS_BUCKET/$CHANNEL/$X64_DMG" \
-  "gs://$GCS_BUCKET/$CHANNEL/Intent-latest.dmg" --quiet
-echo "   ✓ Intent-latest.dmg → $X64_DMG"
 
 # --- Invalidate Cloud CDN cache ---
 echo ""
@@ -185,12 +171,10 @@ echo "   ✅ Stable channel rolled back to v$VERSION"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
 echo "📋 Updated files:"
-echo "   - stable/latest-mac.yml → v$VERSION (both architectures)"
+echo "   - stable/latest-mac.yml → v$VERSION (arm64)"
 echo "   - stable/Intent-latest-arm64.dmg → $ARM64_DMG"
-echo "   - stable/Intent-latest.dmg → $X64_DMG"
 echo ""
 echo "🌐 CDN URLs (may take a few minutes to update):"
 echo "   https://cdn.augmentcode.com/$CHANNEL/latest-mac.yml"
 echo "   https://cdn.augmentcode.com/$CHANNEL/Intent-latest-arm64.dmg"
-echo "   https://cdn.augmentcode.com/$CHANNEL/Intent-latest.dmg"
 
