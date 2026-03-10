@@ -16,15 +16,19 @@
   } from '$lib/utils/shortcuts';
   import Button from '../ui/button/button.svelte';
   import Header from '../ui/Header.svelte';
+  import {
+    selectCheatSheetContext,
+    selectIsCheatSheetOpen,
+  } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-selectors';
 
   interface Props {
-    isOpen: boolean;
     onClose: () => void;
-    /** Current context to highlight relevant shortcuts */
-    context?: 'global' | 'chat' | 'editor' | 'panel' | 'terminal';
   }
 
-  let { isOpen, onClose, context = 'global' }: Props = $props();
+  let { onClose }: Props = $props();
+
+  const isCheatSheetOpen = selectIsCheatSheetOpen();
+  const cheatSheetContext = selectCheatSheetContext();
 
   const categories = getAllShortcutCategories();
   const categoryOrder: ShortcutCategory[] = [
@@ -52,7 +56,7 @@
 
 <svelte:window onkeydown={handleKeyDown} />
 
-{#if isOpen}
+{#if $isCheatSheetOpen}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
@@ -68,9 +72,9 @@
         <div class="flex items-center gap-3">
           <!-- <Fa icon={faKeyboard} class="text-primary" /> -->
           <span class="text-lg font-semibold">Keyboard Shortcuts</span>
-          {#if context !== 'global'}
+          {#if $cheatSheetContext !== 'global'}
             <span class="text-xs px-2 py-0.5 bg-primary/10 text-primary rounded-full capitalize">
-              {context} context
+              {$cheatSheetContext} context
             </span>
           {/if}
         </div>

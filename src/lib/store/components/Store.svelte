@@ -46,4 +46,5 @@
 <RunSaga sagaName="autoUpdateSaga" />
 <RunSaga sagaName="workspaceInitializerSaga" />
 <RunSaga sagaName="tabScrollSaga" />
+<RunSaga sagaName="terminalOverlaySaga" />
 {@render children?.()}

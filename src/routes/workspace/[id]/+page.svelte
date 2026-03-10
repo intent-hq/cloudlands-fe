@@ -66,7 +66,8 @@
   import { getTransientUIStore } from '$features/workspace/transient-ui-state.store.svelte';
   import { track, setAnalyticsContextProvider, getFileExtension } from '$lib/services/analytics';
   import { layoutSettings } from '$features/layout/layout-settings.svelte';
-  import { terminalOverlayStore } from '$lib/stores/terminal-overlay.store.svelte';
+  import { addTerminal } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
 
   // Components
   import WorkspaceLayout from '$lib/components/workspace/WorkspaceLayout.svelte';
@@ -97,6 +98,8 @@
   // ============================================================================
   // Core State
   // ============================================================================
+
+  const dispatch = getDispatch();
 
   // Create unified state for this workspace
   // @ts-expect-error - Svelte 5 rune scoping issue
@@ -1137,7 +1140,7 @@
           // Add to overlay store so it appears in the terminal tab bar
           // This handles the case where the terminal:created event was missed
           // (e.g., setup script terminal created before the workspace page mounted)
-          terminalOverlayStore.addTerminal(backendTerminal.id, 'Setup');
+          dispatch(addTerminal(backendTerminal.id, 'Setup'));
 
           logger.info('[WorkspacePage] Added backend terminal to list and overlay', {
             terminalId: backendTerminal.id,
@@ -1918,7 +1921,7 @@
       terminalManager.saveTerminalMetadata(terminalId, eventWorkspaceId, title);
 
       // Add the terminal to the overlay store so it appears in the QuakeTerminalOverlay tab bar
-      terminalOverlayStore.addTerminal(terminalId, title || 'Setup');
+      dispatch(addTerminal(terminalId, title || 'Setup'));
 
       // Don't open the terminal drawer if there's a pending initial agent
       // This prevents the terminal from taking over the drawer during workspace creation

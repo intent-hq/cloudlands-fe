@@ -10,9 +10,10 @@
   import Fa from 'svelte-fa';
   import { faPlus, faTerminal, faGlobe, faFile, faRobot } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
+  import { dispatch } from '$lib/store/redux-dispatch-bridge';
+  import { openCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
   import { paletteStore } from '$features/palette/palette.store.svelte';
-  import { shortcutsCheatSheetStore } from '$lib/stores/shortcuts-cheatsheet.store.svelte';
 
   interface Props {
     workspaceId: string;
@@ -113,7 +114,7 @@
     {
       key: 'mod+?',
       label: 'Keyboard Shortcuts',
-      action: () => shortcutsCheatSheetStore.open(),
+      action: () => dispatch(openCheatSheet('global')),
     },
   ];
 </script>

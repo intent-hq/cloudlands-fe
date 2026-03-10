@@ -7,10 +7,10 @@ import type { GenericAction, ReduxStore } from "./types";
  * to dispatch actions without needing Svelte context.
  */
 
-let dispatchFn: ((action: GenericAction) => void) | null = null;
+let dispatchFn: ReduxStore["dispatch"] | null = null;
 let storeBridge: ReduxStore | null = null;
 
-export function initReduxDispatchBridge(dispatch: (action: GenericAction) => void): void {
+export function initReduxDispatchBridge(dispatch: ReduxStore["dispatch"]): void {
   dispatchFn = dispatch;
 }
 
@@ -18,12 +18,16 @@ export function initReduxStoreBridge(store: ReduxStore): void {
   storeBridge = store;
 }
 
-export function getReduxDispatch(): (action: GenericAction) => void {
+export function getReduxDispatch(): ReduxStore["dispatch"] {
   if (!dispatchFn) {
     throw new Error("Redux dispatch bridge not initialized. Call initReduxDispatchBridge first.");
   }
   return dispatchFn;
 }
+
+export const dispatch = <A extends GenericAction>(action: A): A => {
+  return getReduxDispatch()(action) as A;
+};
 
 export function getReduxStore(): ReduxStore {
   if (!storeBridge) {

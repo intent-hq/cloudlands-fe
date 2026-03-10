@@ -30,7 +30,8 @@
   import { handleLink } from '$features/navigation/link-handler';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { getTransientUIStore } from '$features/workspace/transient-ui-state.store.svelte';
-  import { terminalOverlayStore } from '$lib/stores/terminal-overlay.store.svelte';
+  import { addTerminal, openTerminalOverlay } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import {
@@ -116,6 +117,8 @@
   } from './sidebar-changes-utils';
   import TimelineDivider from './TimelineDivider.svelte';
   import TimelineSection from './TimelineSection.svelte';
+
+  const dispatch = getDispatch();
 
   interface Props {
     workspaceId: string;
@@ -2692,8 +2695,8 @@
       if (result.ok && result.terminalId) {
         // Open the terminal in the quake terminal bar
         const terminalTitle = `Rebase onto ${targetBranch || trunkBranch}`;
-        terminalOverlayStore.addTerminal(result.terminalId, terminalTitle);
-        terminalOverlayStore.open(workspaceId, result.terminalId);
+        dispatch(addTerminal(result.terminalId, terminalTitle));
+        dispatch(openTerminalOverlay(workspaceId, result.terminalId));
 
         toast.success('Rebase started in terminal', {
           description: 'After rebase completes, retry the merge.',
@@ -2737,8 +2740,8 @@
 
       if (result.ok && result.terminalId) {
         // Open the terminal in the quake terminal bar
-        terminalOverlayStore.addTerminal(result.terminalId, `Pull from origin/${remoteBranch}`);
-        terminalOverlayStore.open(workspaceId, result.terminalId);
+        dispatch(addTerminal(result.terminalId, `Pull from origin/${remoteBranch}`));
+        dispatch(openTerminalOverlay(workspaceId, result.terminalId));
 
         toast.success('Pull started in terminal', {
           description: 'After pull completes, click Refresh then retry push.',

@@ -20,7 +20,8 @@
   import HandleDropOverlay from './HandleDropOverlay.svelte';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
-  import { terminalOverlayStore } from '$lib/stores/terminal-overlay.store.svelte';
+  import { selectIsTerminalOverlayOpen } from '$lib/store/slices/terminal-overlay/terminal-overlay-selectors';
+  import { get } from 'svelte/store';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import { createLogger } from '$lib/utils/client-logger';
   import { track } from '$lib/services/analytics';
@@ -354,6 +355,8 @@
     }, 100);
   }
 
+  const terminalOverlayOpen$ = selectIsTerminalOverlayOpen();
+
   const isMac =
     typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
 
@@ -496,7 +499,7 @@
         e.key === 'PageUp')
     ) {
       // Check if terminal is open and has focus - let terminal handle its own tab cycling
-      const terminalIsOpen = terminalOverlayStore.isOpen;
+      const terminalIsOpen = get(terminalOverlayOpen$);
       const terminalHasFocus = isFocusInTerminal(e.target as HTMLElement);
 
       if (terminalIsOpen && terminalHasFocus) {

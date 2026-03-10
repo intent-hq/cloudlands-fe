@@ -36,12 +36,20 @@
   import LinkTooltip from '$lib/components/ui/tooltip/LinkTooltip.svelte';
   import UpdateDownloadIndicator from '$lib/components/UpdateDownloadIndicator.svelte';
   import { invoke, listenSync } from '$lib/electron-bridge';
+  import { dispatch } from '$lib/store/redux-dispatch-bridge';
+  import {
+    closeCheatSheet,
+    toggleCheatSheet,
+    type CheatSheetContext,
+  } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import { editorSettings } from '$lib/stores/editor-settings.store.svelte';
   import { featureCodesStore } from '$lib/stores/feature-codes.store.svelte';
   import { modelStore } from '$lib/stores/model.store.svelte';
   import { initPipStore } from '$lib/stores/pip.store.svelte';
-  import { shortcutsCheatSheetStore } from '$lib/stores/shortcuts-cheatsheet.store.svelte';
-  import { terminalOverlayStore } from '$lib/stores/terminal-overlay.store.svelte';
+  import {
+    toggleTerminalOverlay,
+    openTerminalOverlay,
+  } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
   import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
@@ -50,6 +58,7 @@
   import { WorkspaceStatus, type AgentSession, type Workspace } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { onMount, untrack } from 'svelte';
+
   import { createLinkTooltipHandler } from '$features/navigation/link-handler';
   import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
   import {
@@ -169,7 +178,7 @@
     });
   });
 
-  // Terminal overlay state is now persisted per-workspace in terminalOverlayStore.setWorkspace()
+  // Terminal overlay state is now persisted per-workspace via Redux terminal-overlay slice
   // No need to close it here - the store handles saving/restoring state when switching workspaces
 
   // Analytics context provider for non-workspace routes
@@ -987,14 +996,11 @@
     // Listen for notification:navigate events to navigate to the correct workspace on click
     const setupNotificationNavigateListener = () => {
       if (typeof window !== 'undefined' && window.electronAPI) {
-        window.electronAPI.on(
-          'notification:navigate',
-          (data: { workspaceId: string }) => {
-            if (data?.workspaceId) {
-              goto(`/workspace/${data.workspaceId}`);
-            }
-          },
-        );
+        window.electronAPI.on('notification:navigate', (data: { workspaceId: string }) => {
+          if (data?.workspaceId) {
+            goto(`/workspace/${data.workspaceId}`);
+          }
+        });
       }
     };
 
@@ -1378,7 +1384,7 @@
       // We can't rely on workspaceId from the store because it might not be cleared yet
       const isOnWorkspacePage = $page.url.pathname.startsWith('/workspace/');
       const terminalContextId = isOnWorkspacePage ? workspaceId : ROOT_WORKSPACE_ID;
-      terminalOverlayStore.toggle(terminalContextId);
+      dispatch(toggleTerminalOverlay(terminalContextId));
     };
     register({
       key: '`',
@@ -1435,7 +1441,7 @@
       ctrl: !isMac,
       shift: true,
       description: 'Toggle Keyboard Shortcuts',
-      action: () => shortcutsCheatSheetStore.toggle(),
+      action: () => dispatch(toggleCheatSheet('global')),
     });
     // Also register with '/' for keyboards where e.key stays as '/' even with shift
     register({
@@ -1444,7 +1450,7 @@
       ctrl: !isMac,
       shift: true,
       description: 'Toggle Keyboard Shortcuts',
-      action: () => shortcutsCheatSheetStore.toggle(),
+      action: () => dispatch(toggleCheatSheet('global')),
     });
 
     // Ctrl+Shift+F12 -> Feature Code Entry (hidden shortcut, all platforms)
@@ -1729,7 +1735,7 @@
       });
 
       if (result.ok && result.terminalId) {
-        terminalOverlayStore.open(gitCredentialsError.workspaceId, result.terminalId);
+        dispatch(openTerminalOverlay(gitCredentialsError.workspaceId, result.terminalId));
       }
     } catch (err) {
       logger.error('[+layout] Failed to create terminal for credentials retry:', err);
@@ -1858,156 +1864,152 @@
 </script>
 
 <TooltipProvider>
-<Store>
-  <!-- Main Layout with Title Bar -->
-  <div
-    class="panel-layout-container relative h-screen w-screen overflow-hidden text-foreground flex flex-col bg-app-background"
-    aria-label="Application shell"
-  >
-    <!-- Title bar at top -->
-    <WindowTitleBar {workspaceId} />
+  <Store>
+    <!-- Main Layout with Title Bar -->
+    <div
+      class="panel-layout-container relative h-screen w-screen overflow-hidden text-foreground flex flex-col bg-app-background"
+      aria-label="Application shell"
+    >
+      <!-- Title bar at top -->
+      <WindowTitleBar {workspaceId} />
 
-    <!-- Update indicator (top-right corner) -->
-    <div class="absolute top-2 right-3 z-10">
-      <UpdateDownloadIndicator />
+      <!-- Update indicator (top-right corner) -->
+      <div class="absolute top-2 right-3 z-10">
+        <UpdateDownloadIndicator />
+      </div>
+
+      <!-- Main Content Area with Sidebar Nav -->
+      <ErrorBoundary componentName="MainLayout">
+        <div class="flex flex-1 min-h-0">
+          <!-- Global Sidebar Nav Rail -->
+          <SidebarNav />
+
+          <!-- Sidebar Panel (persistent, pushes content) -->
+          <SidebarPanel />
+
+          <!-- Content area with rounded corners -->
+          <main
+            class="flex flex-1 min-h-0 flex-col mr-1.5 mb-1.5 rounded-xl overflow-hidden bg-sidebar border border-border/30 shadow-sm"
+            aria-label="Main content"
+          >
+            <div class="flex-1 min-h-0 overflow-auto">
+              {@render children?.()}
+            </div>
+
+            <!-- Root Quake Terminal Overlay (for non-workspace pages) -->
+            <!-- Only shown when not in a workspace context -->
+            {#if !workspaceId}
+              <RootQuakeTerminalOverlay />
+            {/if}
+          </main>
+        </div>
+      </ErrorBoundary>
     </div>
 
-    <!-- Main Content Area with Sidebar Nav -->
-    <ErrorBoundary componentName="MainLayout">
-      <div class="flex flex-1 min-h-0">
-        <!-- Global Sidebar Nav Rail -->
-        <SidebarNav />
-
-        <!-- Sidebar Panel (persistent, pushes content) -->
-        <SidebarPanel />
-
-        <!-- Content area with rounded corners -->
-        <main
-          class="flex flex-1 min-h-0 flex-col mr-1.5 mb-1.5 rounded-xl overflow-hidden bg-sidebar border border-border/30 shadow-sm"
-          aria-label="Main content"
-        >
-          <div class="flex-1 min-h-0 overflow-auto">
-            {@render children?.()}
-          </div>
-
-          <!-- Root Quake Terminal Overlay (for non-workspace pages) -->
-          <!-- Only shown when not in a workspace context -->
-          {#if !workspaceId}
-            <RootQuakeTerminalOverlay />
-          {/if}
-        </main>
-      </div>
-    </ErrorBoundary>
-  </div>
-
-  <!-- Global Command Palette Mount -->
-  <CommandPalette
-    isOpen={paletteStore.isOpen}
-    initialQuery={paletteStore.query}
-    {workspaceId}
-    onClose={() => paletteStore.close()}
-    onSelectFile={(detail: { path: string; line?: number; openInAdjacentPanel?: boolean }) => {
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-file', {
-          detail: {
-            path: detail.path,
-            line: detail.line,
-            openInAdjacentPanel: detail.openInAdjacentPanel ?? false,
-          },
-        }),
-      );
-    }}
-  />
-
-  <!-- Spaces Switcher Overlay (Ctrl+Tab) -->
-  {#if spacesSwitcher}
-    <SpacesSwitcherOverlay
-      isOpen={spacesSwitcher.isOpen}
-      workspaces={switcherLiveWorkspaces}
-      selectedIndex={spacesSwitcher.selectedIndex}
-      currentWorkspaceId={workspaceStore.current?.id ?? null}
-    />
-  {/if}
-
-  <!-- Keyboard Shortcuts Cheat Sheet (press Cmd+/ to toggle) -->
-  <KeyboardShortcutsCheatSheet
-    isOpen={shortcutsCheatSheetStore.isOpen}
-    onClose={() => shortcutsCheatSheetStore.close()}
-    context={shortcutsCheatSheetStore.context}
-  />
-
-  <!-- Auggie Setup Gate -->
-  <AuggieSetupGate />
-
-  <!-- Error Console (Enhanced Error Handling) -->
-  <!-- <ErrorConsole /> -->
-
-  <!-- Toast Notifications -->
-  <Toast />
-
-  <!-- Link Hover Tooltip (singleton — shows URL + Cmd+Click hint on link hover) -->
-  <LinkTooltip />
-
-  <!-- Auto-Update Notification -->
-  {#await import('$lib/components/UpdateNotification.svelte') then { default: UpdateNotification }}
-    <UpdateNotification />
-  {/await}
-
-  {#if showGitHubAuthModal}
-    {#key githubAuthModalKey}
-      <GitHubAuthModal
-        open={true}
-        autoStart={pendingGitHubAuth !== null}
-        onClose={() => {
-          showGitHubAuthModal = false;
-          pendingGitHubAuth = null;
-        }}
-        onSuccess={handleGitHubAuthSuccess}
-      />
-    {/key}
-  {/if}
-
-  {#if showGitCredentialsModal}
-    <GitCredentialsModal
-      open={true}
-      errorMessage={gitCredentialsError?.message ?? ''}
-      rawError={gitCredentialsError?.rawError}
-      operation={gitCredentialsError?.operation ?? 'push'}
-      command={gitCredentialsError?.command}
-      cwd={gitCredentialsError?.cwd}
-      onClose={() => {
-        showGitCredentialsModal = false;
-        gitCredentialsError = null;
+    <!-- Global Command Palette Mount -->
+    <CommandPalette
+      isOpen={paletteStore.isOpen}
+      initialQuery={paletteStore.query}
+      {workspaceId}
+      onClose={() => paletteStore.close()}
+      onSelectFile={(detail: { path: string; line?: number; openInAdjacentPanel?: boolean }) => {
+        window.dispatchEvent(
+          new CustomEvent('workspace:open-file', {
+            detail: {
+              path: detail.path,
+              line: detail.line,
+              openInAdjacentPanel: detail.openInAdjacentPanel ?? false,
+            },
+          }),
+        );
       }}
-      onRetryInTerminal={handleCredentialsRetryInTerminal}
     />
-  {/if}
 
-  <!-- Release Notes Modal (shown after update) -->
-  <ReleaseNotesModal
-    open={releaseNotesStore.showModal}
-    releaseNotes={releaseNotesStore.releaseNotes}
-    onClose={() => releaseNotesStore.closeModal()}
-  />
+    <!-- Spaces Switcher Overlay (Ctrl+Tab) -->
+    {#if spacesSwitcher}
+      <SpacesSwitcherOverlay
+        isOpen={spacesSwitcher.isOpen}
+        workspaces={switcherLiveWorkspaces}
+        selectedIndex={spacesSwitcher.selectedIndex}
+        currentWorkspaceId={workspaceStore.current?.id ?? null}
+      />
+    {/if}
 
-  <!-- New Workspace Modal -->
-  <NewSpaceModal
-    bind:open={showNewSpaceModal}
-    initialRepo={newSpaceInitialRepo}
-    onClose={() => {
-      showNewSpaceModal = false;
-      newSpaceInitialRepo = undefined;
-    }}
-  />
+    <!-- Keyboard Shortcuts Cheat Sheet (press Cmd+/ to toggle) -->
+    <KeyboardShortcutsCheatSheet onClose={() => dispatch(closeCheatSheet())} />
 
-  <!-- Feature Code Dialog (hidden, activated via Ctrl+Shift+F12) -->
-  <FeatureCodeDialog bind:open={showFeatureCodeDialog} />
+    <!-- Auggie Setup Gate -->
+    <AuggieSetupGate />
 
-  <!-- Debug Panel (only in dev mode) -->
-  {#if import.meta.env.DEV}
-    <DebugPanel />
-  {/if}
-</Store>
+    <!-- Error Console (Enhanced Error Handling) -->
+    <!-- <ErrorConsole /> -->
+
+    <!-- Toast Notifications -->
+    <Toast />
+
+    <!-- Link Hover Tooltip (singleton — shows URL + Cmd+Click hint on link hover) -->
+    <LinkTooltip />
+
+    <!-- Auto-Update Notification -->
+    {#await import('$lib/components/UpdateNotification.svelte') then { default: UpdateNotification }}
+      <UpdateNotification />
+    {/await}
+
+    {#if showGitHubAuthModal}
+      {#key githubAuthModalKey}
+        <GitHubAuthModal
+          open={true}
+          autoStart={pendingGitHubAuth !== null}
+          onClose={() => {
+            showGitHubAuthModal = false;
+            pendingGitHubAuth = null;
+          }}
+          onSuccess={handleGitHubAuthSuccess}
+        />
+      {/key}
+    {/if}
+
+    {#if showGitCredentialsModal}
+      <GitCredentialsModal
+        open={true}
+        errorMessage={gitCredentialsError?.message ?? ''}
+        rawError={gitCredentialsError?.rawError}
+        operation={gitCredentialsError?.operation ?? 'push'}
+        command={gitCredentialsError?.command}
+        cwd={gitCredentialsError?.cwd}
+        onClose={() => {
+          showGitCredentialsModal = false;
+          gitCredentialsError = null;
+        }}
+        onRetryInTerminal={handleCredentialsRetryInTerminal}
+      />
+    {/if}
+
+    <!-- Release Notes Modal (shown after update) -->
+    <ReleaseNotesModal
+      open={releaseNotesStore.showModal}
+      releaseNotes={releaseNotesStore.releaseNotes}
+      onClose={() => releaseNotesStore.closeModal()}
+    />
+
+    <!-- New Workspace Modal -->
+    <NewSpaceModal
+      bind:open={showNewSpaceModal}
+      initialRepo={newSpaceInitialRepo}
+      onClose={() => {
+        showNewSpaceModal = false;
+        newSpaceInitialRepo = undefined;
+      }}
+    />
+
+    <!-- Feature Code Dialog (hidden, activated via Ctrl+Shift+F12) -->
+    <FeatureCodeDialog bind:open={showFeatureCodeDialog} />
+
+    <!-- Debug Panel (only in dev mode) -->
+    {#if import.meta.env.DEV}
+      <DebugPanel />
+    {/if}
+  </Store>
 </TooltipProvider>
 
 <style>

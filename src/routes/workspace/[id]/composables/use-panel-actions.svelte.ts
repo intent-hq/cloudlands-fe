@@ -14,7 +14,8 @@ import type {
   UnifiedWorkspaceState,
   createUnifiedWorkspaceState,
 } from '$features/workspace/workspace-unified-state.svelte';
-import { terminalOverlayStore } from '$lib/stores/terminal-overlay.store.svelte';
+import { openTerminalOverlay } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
+import { getDispatch } from '$lib/store/utils/utils';
 
 /** Type alias for the unified workspace state manager */
 export type UnifiedWorkspaceStateManager = ReturnType<typeof createUnifiedWorkspaceState>;
@@ -37,6 +38,7 @@ export interface UsePanelActionsOptions {
 }
 
 export function usePanelActions(options: UsePanelActionsOptions) {
+  const dispatch = getDispatch();
   async function openFile(filePath: string) {
     await options.workspaceState()?.openFile(filePath);
   }
@@ -110,7 +112,7 @@ export function usePanelActions(options: UsePanelActionsOptions) {
 
     // Open the Quake-style terminal overlay
     if (workspace?.id) {
-      terminalOverlayStore.open(workspace.id, terminalId);
+      dispatch(openTerminalOverlay(workspace.id, terminalId));
     }
   }
 

@@ -618,14 +618,17 @@ export class TerminalProvider implements Provider {
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     try {
       const { terminalManager } = await import('$features/terminal/terminal-manager.svelte');
-      const { terminalOverlayStore } = await import('$lib/stores/terminal-overlay.store.svelte');
+      const { selectTerminals, selectTerminalDisplayName } = await import('$lib/store/slices/terminal-overlay/terminal-overlay-selectors');
+      const { getReduxStore } = await import('$lib/store/redux-dispatch-bridge');
+      const store = getReduxStore();
+      const state = store.getState();
 
       if (!context.workspaceId) {
         return [];
       }
 
       // Get terminals from the overlay store (these are the visible terminal tabs)
-      const terminalTabs = terminalOverlayStore.terminals;
+      const terminalTabs = selectTerminals.select(state);
 
       // Also load metadata for terminals that might not be in tabs yet
       const storedMetadata = terminalManager.loadTerminalMetadata(context.workspaceId);
@@ -638,7 +641,7 @@ export class TerminalProvider implements Provider {
         seen.add(tab.id);
         allTerminals.push({
           id: tab.id,
-          name: terminalOverlayStore.getDisplayName(tab.id),
+          name: selectTerminalDisplayName.select(state, tab.id),
         });
       }
 

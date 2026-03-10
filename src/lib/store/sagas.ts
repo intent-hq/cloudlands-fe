@@ -5,6 +5,7 @@
  */
 
 import { tabScrollSaga } from "./slices/tab-scroll/sagas/tab-scroll-saga";
+import { terminalOverlaySaga } from "./slices/terminal-overlay/sagas/terminal-overlay-saga";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 function* noopSaga() {}
@@ -18,6 +19,7 @@ function* noopSaga() {}
  */
 export const sagas = {
   tabScrollSaga,
+  terminalOverlaySaga,
   // Placeholder sagas for Store.svelte references — will be replaced with real implementations
   streamingSaga: noopSaga,
   workspaceSaga: noopSaga,

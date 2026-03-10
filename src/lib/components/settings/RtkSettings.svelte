@@ -10,8 +10,11 @@
   import { SETTINGS_CHANNELS, SYSTEM_CHANNELS } from '$shared/ipc/channels';
   import { onMount } from 'svelte';
   import { invoke } from '$lib/electron-bridge';
-  import { terminalOverlayStore } from '$lib/stores/terminal-overlay.store.svelte';
+  import { addTerminal, openTerminalOverlay, toggleTerminalOverlay } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import { ROOT_WORKSPACE_ID } from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
+
+  const dispatch = getDispatch();
 
   let rtkAvailable = $state(false);
   let rtkEnabled = $state(false);
@@ -55,8 +58,8 @@
     try {
       // Create a new terminal tab and open the overlay
       const termId = `terminal-${Date.now()}`;
-      terminalOverlayStore.addTerminal(termId, 'Install RTK');
-      terminalOverlayStore.open(ROOT_WORKSPACE_ID, termId);
+      dispatch(addTerminal(termId, 'Install RTK'));
+      dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, termId));
 
       // Wait briefly for the terminal to initialize, then write the command
       setTimeout(async () => {
@@ -77,7 +80,7 @@
       }
     } catch {
       // Fallback: just open the terminal
-      terminalOverlayStore.toggle(ROOT_WORKSPACE_ID);
+      dispatch(toggleTerminalOverlay(ROOT_WORKSPACE_ID));
     }
   }
 

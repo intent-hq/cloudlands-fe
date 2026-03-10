@@ -34,8 +34,7 @@ src/lib/components/layout/sidebar-nav/cards/NewWorkspaceCard.svelte:138
 src/lib/components/workspace/MultiSelectTabbedSidebar.svelte:878
 src/lib/components/modals/Modal.svelte:72
 src/lib/components/modals/NewSpaceModal.svelte:83
-src/lib/components/terminal/QuakeTerminalOverlay.svelte:404
-src/lib/components/terminal/RootQuakeTerminalOverlay.svelte:350
+
 src/lib/components/terminal/SetupScriptBanner.svelte:265
 src/lib/components/terminal/SetupScriptBanner.svelte:318
 src/lib/components/tiptap/comments/CommentSnippet.svelte:61

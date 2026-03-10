@@ -21,7 +21,24 @@
    */
   import { slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
-  import { terminalOverlayStore } from '$lib/stores/terminal-overlay.store.svelte';
+  import {
+    selectIsTerminalOverlayOpen,
+    selectTerminalOverlayHeight,
+    selectTerminalOverlayWorkspaceId,
+    selectActiveTerminalId,
+    selectTerminals,
+  } from '$lib/store/slices/terminal-overlay/terminal-overlay-selectors';
+  import {
+    openTerminalOverlay,
+    closeTerminalOverlay,
+    toggleTerminalOverlay,
+    selectTerminal as selectTerminalAction,
+    addTerminal,
+    removeTerminal,
+    setTerminalOverlayHeight,
+    renameTerminal,
+  } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import Terminal from './Terminal.svelte';
   import Fa from 'svelte-fa';
   import {
@@ -39,11 +56,18 @@
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
 
   // Store bindings
-  const isOpen = $derived(terminalOverlayStore.isOpen);
-  const height = $derived(terminalOverlayStore.height);
-  const storeWorkspaceId = $derived(terminalOverlayStore.workspaceId);
-  const activeTerminalId = $derived(terminalOverlayStore.activeTerminalId);
-  const terminals = $derived(terminalOverlayStore.terminals);
+  const dispatch = getDispatch();
+  const isOpen$ = selectIsTerminalOverlayOpen();
+  const height$ = selectTerminalOverlayHeight();
+  const storeWorkspaceId$ = selectTerminalOverlayWorkspaceId();
+  const activeTerminalId$ = selectActiveTerminalId();
+  const terminals$ = selectTerminals();
+
+  const isOpen = $derived($isOpen$);
+  const height = $derived($height$);
+  const storeWorkspaceId = $derived($storeWorkspaceId$);
+  const activeTerminalId = $derived($activeTerminalId$);
+  const terminals = $derived($terminals$);
 
   // Only show when store is bound to root workspace
   const isRootContext = $derived(storeWorkspaceId === ROOT_WORKSPACE_ID);
@@ -92,7 +116,7 @@
 
   function finishEditing() {
     if (editingTerminalId) {
-      terminalOverlayStore.renameTerminal(editingTerminalId, editingValue);
+      dispatch(renameTerminal(editingTerminalId, editingValue));
       editingTerminalId = null;
       editingValue = '';
     }
@@ -130,7 +154,7 @@
 
   function finishEditingHeaderName() {
     if (isEditingHeaderName && activeTerminalId) {
-      terminalOverlayStore.renameTerminal(activeTerminalId, headerEditValue);
+      dispatch(renameTerminal(activeTerminalId, headerEditValue));
     }
     isEditingHeaderName = false;
     headerEditValue = '';
@@ -157,20 +181,20 @@
   // ============================================================================
 
   function handleClose() {
-    terminalOverlayStore.close();
+    dispatch(closeTerminalOverlay());
   }
 
   function createNewTerminal() {
     const newId = `terminal-root-${Date.now()}`;
-    terminalOverlayStore.addTerminal(newId, `Terminal ${terminals.length + 1}`);
+    dispatch(addTerminal(newId, `Terminal ${terminals.length + 1}`));
     if (!isOpen) {
-      terminalOverlayStore.open(ROOT_WORKSPACE_ID, newId);
+      dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, newId));
     }
   }
 
   function closeTerminal(termId: string, e?: MouseEvent) {
     e?.stopPropagation();
-    terminalOverlayStore.removeTerminal(termId);
+    dispatch(removeTerminal(termId));
     terminalManager.disposeTerminal(termId);
   }
 
@@ -194,9 +218,9 @@
       if (termId === activeTerminalId && isOpen) {
         handleClose();
       } else {
-        terminalOverlayStore.selectTerminal(termId);
+        dispatch(selectTerminalAction(termId));
         if (!isOpen) {
-          terminalOverlayStore.open(ROOT_WORKSPACE_ID, termId);
+          dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, termId));
         }
       }
     }, 200);
@@ -215,7 +239,7 @@
     if (!activeTerminalId || terminals.length <= 1) return;
     const currentIndex = terminals.findIndex((t) => t.id === activeTerminalId);
     const nextIndex = (currentIndex + direction + terminals.length) % terminals.length;
-    terminalOverlayStore.selectTerminal(terminals[nextIndex].id);
+    dispatch(selectTerminalAction(terminals[nextIndex].id));
   }
 
   // ============================================================================
@@ -235,7 +259,7 @@
     if (!isResizing) return;
     const windowHeight = window.innerHeight;
     const newHeight = ((windowHeight - event.clientY) / windowHeight) * 100;
-    terminalOverlayStore.setHeight(newHeight);
+    dispatch(setTerminalOverlayHeight(newHeight));
   }
 
   function stopResize() {
@@ -257,7 +281,7 @@
     function handleToggle() {
       // Only handle if we're in root context
       if (isRootContext) {
-        terminalOverlayStore.toggle(ROOT_WORKSPACE_ID);
+        dispatch(toggleTerminalOverlay(ROOT_WORKSPACE_ID));
       }
     }
 
@@ -347,13 +371,13 @@
               bind:value={headerEditValue}
               onblur={finishEditingHeaderName}
               onkeydown={handleHeaderEditKeydown}
-              class="text-sm font-medium bg-transparent border-0 outline-none focus:outline-none! focus:ring-0! px-0 w-40 text-foreground/80"
+              class="text-sm font-medium bg-transparent border-0 outline-none focus:outline-none! focus:ring-0! px-0 w-40 text-muted-foreground"
               placeholder="Terminal name"
             />
           {:else}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <span
-              class="text-sm font-medium text-foreground/80 cursor-pointer hover:text-foreground transition-colors"
+              class="text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
               onclick={startEditingHeaderName}
               ondblclick={startEditingHeaderName}
               title="Click to rename terminal"

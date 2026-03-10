@@ -26,7 +26,8 @@
   import { refreshPRStatus } from '$features/git-tracking/pr-status.service';
   import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
   import GitHubAuthModal from '$lib/components/GitHubAuthModal.svelte';
-  import { terminalOverlayStore } from '$lib/stores/terminal-overlay.store.svelte';
+  import { addTerminal, openTerminalOverlay } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import { logger } from '$lib/utils/client-logger';
   import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
   import { trackGitOp } from '$lib/services/analytics';
@@ -38,6 +39,8 @@
   }
 
   let { workspaceId }: Props = $props();
+
+  const dispatch = getDispatch();
 
   // Get workspace for PR info
   const workspace = $derived(workspaceStore.findById(workspaceId as WorkspaceId));
@@ -135,8 +138,8 @@
 
       if (result.ok && result.terminalId) {
         // Open the terminal in the quake terminal bar
-        terminalOverlayStore.addTerminal(result.terminalId, `Pull from origin/${remoteBranch}`);
-        terminalOverlayStore.open(workspaceId, result.terminalId);
+        dispatch(addTerminal(result.terminalId, `Pull from origin/${remoteBranch}`));
+        dispatch(openTerminalOverlay(workspaceId, result.terminalId));
 
         toast.success('Pull started in terminal', {
           description: 'After pull completes, click Refresh then retry push.',

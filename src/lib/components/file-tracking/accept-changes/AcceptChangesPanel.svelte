@@ -55,9 +55,14 @@
   import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
   import { handleLink } from '$features/navigation/link-handler';
-  import { terminalOverlayStore } from '$lib/stores/terminal-overlay.store.svelte';
   import { track, trackGitOp } from '$lib/services/analytics';
+  import {
+    addTerminal,
+    openTerminalOverlay,
+  } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
 
+  const dispatch = getDispatch();
   const logger = createLogger('AcceptChangesPanel');
   const { state: githubAuthState } = githubAuthStore;
 
@@ -1439,8 +1444,8 @@
       if (result.ok && result.terminalId) {
         // Open the terminal in the quake terminal bar
         const terminalTitle = `Rebase onto ${targetBranch || trunkBranch}`;
-        terminalOverlayStore.addTerminal(result.terminalId, terminalTitle);
-        terminalOverlayStore.open(workspaceId, result.terminalId);
+        dispatch(addTerminal(result.terminalId, terminalTitle));
+        dispatch(openTerminalOverlay(workspaceId, result.terminalId));
 
         toast.success('Rebase started in terminal', {
           description: 'After rebase completes, retry the merge.',

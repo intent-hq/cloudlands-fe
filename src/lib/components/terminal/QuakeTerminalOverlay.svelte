@@ -13,7 +13,25 @@
    */
   import { fly, slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
-  import { terminalOverlayStore } from '$lib/stores/terminal-overlay.store.svelte';
+  import {
+    selectIsTerminalOverlayOpen,
+    selectTerminalOverlayHeight,
+    selectTerminalOverlayWorkspaceId,
+    selectActiveTerminalId,
+    selectTerminals,
+  } from '$lib/store/slices/terminal-overlay/terminal-overlay-selectors';
+  import {
+    openTerminalOverlay,
+    closeTerminalOverlay,
+    toggleTerminalOverlay,
+    selectTerminal,
+    addTerminal,
+    removeTerminal,
+    setTerminalOverlayHeight,
+    setTerminalOverlayWorkspace,
+    renameTerminal,
+  } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import Terminal from './Terminal.svelte';
   import SetupScriptBanner from './SetupScriptBanner.svelte';
   import Fa from 'svelte-fa';
@@ -45,11 +63,18 @@
   let { workspaceId: propWorkspaceId }: Props = $props();
 
   // Store bindings
-  const isOpen = $derived(terminalOverlayStore.isOpen);
-  const height = $derived(terminalOverlayStore.height);
-  const storeWorkspaceId = $derived(terminalOverlayStore.workspaceId);
-  const activeTerminalId = $derived(terminalOverlayStore.activeTerminalId);
-  const terminals = $derived(terminalOverlayStore.terminals);
+  const dispatch = getDispatch();
+  const isOpen$ = selectIsTerminalOverlayOpen();
+  const height$ = selectTerminalOverlayHeight();
+  const storeWorkspaceId$ = selectTerminalOverlayWorkspaceId();
+  const activeTerminalId$ = selectActiveTerminalId();
+  const terminals$ = selectTerminals();
+
+  const isOpen = $derived($isOpen$);
+  const height = $derived($height$);
+  const storeWorkspaceId = $derived($storeWorkspaceId$);
+  const activeTerminalId = $derived($activeTerminalId$);
+  const terminals = $derived($terminals$);
 
   // Computed workspace ID (prop takes priority)
   const workspaceId = $derived(propWorkspaceId || storeWorkspaceId);
@@ -71,7 +96,7 @@
   // Sync workspace ID to store (also loads terminals for the new workspace)
   $effect(() => {
     if (propWorkspaceId && propWorkspaceId !== storeWorkspaceId) {
-      terminalOverlayStore.setWorkspace(propWorkspaceId);
+      dispatch(setTerminalOverlayWorkspace(propWorkspaceId));
     }
   });
 
@@ -111,7 +136,7 @@
 
     function handleToggle() {
       if (wsId) {
-        terminalOverlayStore.toggle(wsId);
+        dispatch(toggleTerminalOverlay(wsId));
       }
     }
 
@@ -158,7 +183,7 @@
 
   function finishEditing() {
     if (editingTerminalId) {
-      terminalOverlayStore.renameTerminal(editingTerminalId, editingValue);
+      dispatch(renameTerminal(editingTerminalId, editingValue));
       editingTerminalId = null;
       editingValue = '';
     }
@@ -185,7 +210,7 @@
 
   function finishEditingHeaderName() {
     if (isEditingHeaderName && activeTerminalId) {
-      terminalOverlayStore.renameTerminal(activeTerminalId, headerEditValue);
+      dispatch(renameTerminal(activeTerminalId, headerEditValue));
     }
     isEditingHeaderName = false;
     headerEditValue = '';
@@ -223,28 +248,28 @@
   // ============================================================================
 
   function handleClose() {
-    terminalOverlayStore.close();
+    dispatch(closeTerminalOverlay());
   }
 
   function handleOpen() {
     if (workspaceId) {
-      terminalOverlayStore.open(workspaceId);
+      dispatch(openTerminalOverlay(workspaceId));
     }
   }
 
   function createNewTerminal() {
     if (!workspaceId) return;
     const newId = `terminal-${Date.now()}`;
-    terminalOverlayStore.addTerminal(newId, `Terminal ${terminals.length + 1}`);
+    dispatch(addTerminal(newId, `Terminal ${terminals.length + 1}`));
     if (!isOpen) {
-      terminalOverlayStore.open(workspaceId, newId);
+      dispatch(openTerminalOverlay(workspaceId, newId));
     }
     track('Opened Terminal', { workspace_id: workspaceId, source: 'bottom-bar' });
   }
 
   function closeTerminal(termId: string, e?: MouseEvent) {
     e?.stopPropagation();
-    terminalOverlayStore.removeTerminal(termId);
+    dispatch(removeTerminal(termId));
     terminalManager.disposeTerminal(termId);
   }
 
@@ -270,9 +295,9 @@
       if (termId === activeTerminalId && isOpen) {
         handleClose();
       } else {
-        terminalOverlayStore.selectTerminal(termId);
+        dispatch(selectTerminal(termId));
         if (!isOpen && workspaceId) {
-          terminalOverlayStore.open(workspaceId, termId);
+          dispatch(openTerminalOverlay(workspaceId, termId));
         }
       }
     }, 200);
@@ -292,7 +317,7 @@
     if (!activeTerminalId || terminals.length <= 1) return;
     const currentIndex = terminals.findIndex((t) => t.id === activeTerminalId);
     const nextIndex = (currentIndex + direction + terminals.length) % terminals.length;
-    terminalOverlayStore.selectTerminal(terminals[nextIndex].id);
+    dispatch(selectTerminal(terminals[nextIndex].id));
   }
 
   // ============================================================================
@@ -312,7 +337,7 @@
     if (!isResizing) return;
     const windowHeight = window.innerHeight;
     const newHeight = ((windowHeight - event.clientY) / windowHeight) * 100;
-    terminalOverlayStore.setHeight(newHeight);
+    dispatch(setTerminalOverlayHeight(newHeight));
   }
 
   function stopResize() {
@@ -401,13 +426,13 @@
                 bind:value={headerEditValue}
                 onblur={finishEditingHeaderName}
                 onkeydown={handleHeaderEditKeydown}
-                class="text-sm font-medium bg-transparent border-0 outline-none focus:outline-none! focus:ring-0! px-0 w-40 text-foreground/80"
+                class="text-sm font-medium bg-transparent border-0 outline-none focus:outline-none! focus:ring-0! px-0 w-40 text-muted-foreground"
                 placeholder="Terminal name"
               />
             {:else}
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <span
-                class="text-sm font-medium text-foreground/80 cursor-pointer hover:text-foreground transition-colors"
+                class="text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
                 onclick={startEditingHeaderName}
                 ondblclick={startEditingHeaderName}
                 title="Click to rename terminal"

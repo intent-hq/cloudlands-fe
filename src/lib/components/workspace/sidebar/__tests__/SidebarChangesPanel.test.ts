@@ -159,8 +159,14 @@ vi.mock('$features/navigation/link-handler', () => ({
   handleLink: vi.fn(),
 }));
 
-vi.mock('$lib/stores/terminal-overlay.store.svelte', () => ({
-  terminalOverlayStore: { open: vi.fn(), close: vi.fn() },
+vi.mock('$lib/store/slices/terminal-overlay/terminal-overlay-slice', () => ({
+  addTerminal: vi.fn((...args: any[]) => ({ type: 'terminalOverlay/addTerminal', payload: args })),
+  openTerminalOverlay: vi.fn((...args: any[]) => ({ type: 'terminalOverlay/open', payload: args })),
+}));
+
+vi.mock('$lib/store/utils/utils', () => ({
+  getDispatch: vi.fn(() => vi.fn()),
+  getStoreContext: vi.fn(),
 }));
 
 vi.mock('$lib/services/analytics', () => ({
