@@ -314,6 +314,21 @@
     return hiddenProviders.includes(matchedProviders.agentProviderId);
   });
 
+  // Provider display name for contextual status messages (e.g. "Claude Code is taking longer than usual...")
+  // Derived from the session's actual provider (not the active selection) so that
+  // switching providers mid-stream doesn't attribute latency to the wrong provider.
+  let providerDisplayName = $derived.by(() => {
+    const session = chatState.session;
+    if (session) {
+      const agentProvider = getAgentProvider(session);
+      if (agentProvider) {
+        return getProviderConfig(agentProvider).displayName;
+      }
+    }
+    // Fallback to active provider if no session/provider info available
+    return getProviderConfig(activeProviderStore.activeProviderId).displayName;
+  });
+
   // Track previous workspace to detect changes
   let previousWorkspaceId = $state<string | null>(null);
 
@@ -1732,6 +1747,43 @@
 
       // Update chat state with new values from service
       // Only update specific fields to avoid overwriting local state
+      // Preserve streamingStartTime across store updates — the store doesn't track
+      // this value, so we use the previous local state to avoid resetting the timer.
+      // IMPORTANT: use currentChatState (untracked) not _chatStateInternal (tracked)
+      // to avoid creating a reactive dependency that re-triggers this effect.
+      //
+      // Reset the timer whenever visible activity occurs:
+      // - New messages arrive (e.g. prepping steps) — user can see progress
+      // - Streaming content transitions from non-empty to empty (e.g. between phases)
+      // This ensures the 30s "slow" threshold only counts from the last visible activity.
+      const prevContentLength = currentChatState.streamingContent?.length ?? 0;
+      const newContentLength = state.streamingContent?.length ?? 0;
+      const contentCleared = prevContentLength > 0 && newContentLength === 0;
+      const hasNewActivity = messagesChanged || contentCleared;
+
+      // Keep timers alive during both streaming and processing-only periods
+      // (e.g. agent activation where isProcessing=true but isStreaming=false)
+      const isActive = effectiveIsStreaming || effectiveIsProcessing;
+
+      const streamingStartTime = isActive
+        ? hasNewActivity
+          ? Date.now()
+          : (currentChatState.streamingStartTime ?? Date.now())
+        : null;
+
+      // Track when the last chunk arrived — update whenever streaming content grows.
+      // Reset to null on phase transitions (hasNewActivity) so that StreamingStatus
+      // treats the new phase as "no data received" and shows neutral messages until
+      // chunks actually arrive in this phase.
+      const contentGrew = newContentLength > prevContentLength;
+      const lastChunkTime = isActive
+        ? contentGrew
+          ? Date.now()
+          : hasNewActivity
+            ? null
+            : (currentChatState.lastChunkTime ?? null)
+        : null;
+
       _chatStateInternal = {
         ...currentChatState,
         session: state.session,
@@ -1740,6 +1792,8 @@
         isProcessing: effectiveIsProcessing,
         streamingContent: state.streamingContent,
         error: state.error,
+        streamingStartTime,
+        lastChunkTime,
       };
 
       // SCROLL FIX: Restore scroll anchor after DOM settles
@@ -3130,7 +3184,12 @@
     if (!workspace) return;
     try {
       // Per-agent ChatService: always bound to this agent, no re-acquisition needed
-      await chatService.editAndRegenerate(messageId, newText, workspace, model ? { model } : undefined);
+      await chatService.editAndRegenerate(
+        messageId,
+        newText,
+        workspace,
+        model ? { model } : undefined,
+      );
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Something went wrong';
       logger.error('Failed to edit message', error);
@@ -3557,6 +3616,7 @@
                         isStreaming={chatState.isStreaming}
                         isProcessing={chatState.isProcessing}
                         startTime={chatState.streamingStartTime}
+                        lastChunkTime={chatState.lastChunkTime}
                         streamingContentLength={chatState.streamingContent?.length ?? 0}
                         error={chatState.error}
                         isStalled={chatState.isStalled}
@@ -3566,6 +3626,7 @@
                         onRetryWithModel={handleRetryWithModel}
                         onStop={handleStop}
                         seed={agentId}
+                        providerName={providerDisplayName}
                       />
                     </div>
                   {/if}
@@ -3578,6 +3639,7 @@
                       isStreaming={chatState.isStreaming}
                       isProcessing={chatState.isProcessing}
                       startTime={chatState.streamingStartTime}
+                      lastChunkTime={chatState.lastChunkTime}
                       streamingContentLength={chatState.streamingContent?.length ?? 0}
                       error={chatState.error}
                       isStalled={chatState.isStalled}
@@ -3587,6 +3649,7 @@
                       onRetryWithModel={handleRetryWithModel}
                       onStop={handleStop}
                       seed={agentId}
+                      providerName={providerDisplayName}
                     />
                   </div>
                 {/if}
@@ -3625,6 +3688,7 @@
                         isStreaming={chatState.isStreaming}
                         isProcessing={chatState.isProcessing}
                         startTime={chatState.streamingStartTime}
+                        lastChunkTime={chatState.lastChunkTime}
                         streamingContentLength={chatState.streamingContent?.length ?? 0}
                         error={chatState.error}
                         isStalled={chatState.isStalled}
@@ -3634,6 +3698,7 @@
                         onRetryWithModel={handleRetryWithModel}
                         onStop={handleStop}
                         seed={agentId}
+                        providerName={providerDisplayName}
                       />
                     </div>
                   {/if}
@@ -3646,6 +3711,7 @@
                       isStreaming={chatState.isStreaming}
                       isProcessing={chatState.isProcessing}
                       startTime={chatState.streamingStartTime}
+                      lastChunkTime={chatState.lastChunkTime}
                       streamingContentLength={chatState.streamingContent?.length ?? 0}
                       error={chatState.error}
                       isStalled={chatState.isStalled}
@@ -3655,6 +3721,7 @@
                       onRetryWithModel={handleRetryWithModel}
                       onStop={handleStop}
                       seed={agentId}
+                      providerName={providerDisplayName}
                     />
                   </div>
                 {/if}
@@ -3793,7 +3860,8 @@
                           <ChatMessage
                             {message}
                             {workspace}
-                            onEditSubmit={(newText, model) => handleEditMessage(message.id, newText, model)}
+                            onEditSubmit={(newText, model) =>
+                              handleEditMessage(message.id, newText, model)}
                             editModel={turn.assistantMessages[0]?.metadata?.model}
                             enableSticky={shouldEnableSticky}
                             onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
@@ -3809,6 +3877,7 @@
                             isStreaming={chatState.isStreaming}
                             isProcessing={chatState.isProcessing}
                             startTime={chatState.streamingStartTime}
+                            lastChunkTime={chatState.lastChunkTime}
                             streamingContentLength={chatState.streamingContent?.length ?? 0}
                             error={chatState.error}
                             isStalled={chatState.isStalled}
@@ -3818,6 +3887,7 @@
                             onRetryWithModel={handleRetryWithModel}
                             onStop={handleStop}
                             seed={agentId}
+                            providerName={providerDisplayName}
                           />
                         </div>
                       {/if}
@@ -3844,7 +3914,8 @@
                             {message}
                             {workspace}
                             isStreaming={isCurrentlyStreaming}
-                            onEditSubmit={(newText, model) => handleEditMessage(message.id, newText, model)}
+                            onEditSubmit={(newText, model) =>
+                              handleEditMessage(message.id, newText, model)}
                             onRegenerate={() => handleRegenerateFromMessage(message.id)}
                             onFork={() => handleForkFromMessage(message.id)}
                             backendSessionId={auggieSessionId}
@@ -3857,6 +3928,7 @@
                               isStreaming={chatState.isStreaming}
                               isProcessing={chatState.isProcessing}
                               startTime={chatState.streamingStartTime}
+                              lastChunkTime={chatState.lastChunkTime}
                               streamingContentLength={chatState.streamingContent?.length ?? 0}
                               error={chatState.error}
                               isStalled={chatState.isStalled}
@@ -3866,6 +3938,7 @@
                               onRetryWithModel={handleRetryWithModel}
                               onStop={handleStop}
                               seed={agentId}
+                              providerName={providerDisplayName}
                             />
                           </div>
                         {/if}

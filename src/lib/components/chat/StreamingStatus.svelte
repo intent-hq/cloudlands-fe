@@ -1,13 +1,17 @@
 <!--
   StreamingStatus.svelte
 
-  Progressive streaming status indicator that shows different states:
+  Progressive streaming status indicator that shows different states based on
+  silence duration (time since last chunk, or since start if no chunks yet):
+
   - Normal: Pulsing dots (thinking)
-  - Slow (>15s): "Taking a moment..." with dots
-  - Very slow (>45s): "Taking longer than expected" with Stop button
+  - Slow (>30s): Contextual message depending on whether data has arrived
+  - Very slow (>60s): Escalated message with Stop button
+  - Stalled (>90s): Warning with status page link
   - Error/Timeout: "Connection issue" with Try Again button
 
-  Replaces StreamingTypingIndicator and LongRunningDebugInfo for a unified UX.
+  Distinguishes between "no data received" (could be network/provider) and
+  "mid-stream silence" (agent is taking long) for more accurate messaging.
 -->
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
@@ -31,6 +35,8 @@
     isProcessing?: boolean;
     /** When streaming/processing started (timestamp in ms) */
     startTime?: number | null;
+    /** When the last streaming chunk was received (timestamp in ms) */
+    lastChunkTime?: number | null;
     /** Current streaming content length (to know if we've received anything) */
     streamingContentLength?: number;
     /** Error message if connection failed */
@@ -50,6 +56,8 @@
     onRetryWithModel?: (model: string) => void;
     /** Callback to stop streaming */
     onStop?: () => void;
+    /** Display name of the model provider (e.g. "Claude Code") for contextual messages */
+    providerName?: string | null;
     /** Seed for spinner colors (typically agent ID) */
     seed?: string;
     /** Additional class names */
@@ -60,11 +68,13 @@
     isStreaming = false,
     isProcessing = false,
     startTime = null,
+    lastChunkTime = null,
     streamingContentLength = 0,
     error = null,
     isStalled = false,
     modelUnavailable = null,
     hasPendingPermission = false,
+    providerName = null,
     onRetry,
     onRetryWithModel,
     onStop,
@@ -72,29 +82,47 @@
     class: className = '',
   }: Props = $props();
 
-  // Time thresholds (in seconds)
-  const SLOW_THRESHOLD = 15;
-  const VERY_SLOW_THRESHOLD = 45;
+  // Silence thresholds (in seconds since last chunk, or since start if no chunks yet)
+  const SLOW_THRESHOLD = 30;
+  const VERY_SLOW_THRESHOLD = 60;
+  const STALLED_THRESHOLD = 90;
 
-  let elapsedSeconds = $state(0);
+  // Provider status page URLs — used in stalled/very-slow messages
+  const PROVIDER_STATUS_URLS: Record<string, string> = {
+    'Augment Auggie': 'https://status.augmentcode.com/',
+    'Anthropic Claude Code': 'https://status.anthropic.com/',
+    'OpenAI Codex': 'https://status.openai.com/',
+  };
+
+  let providerStatusUrl = $derived(
+    providerName ? (PROVIDER_STATUS_URLS[providerName] ?? null) : null,
+  );
+
+  /** Seconds of silence — time since last chunk arrived, or since start if no chunks yet */
+  let silenceSeconds = $state(0);
   let intervalId: ReturnType<typeof setInterval> | null = null;
 
-  function updateElapsed() {
-    if (startTime) {
-      elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+  function updateSilence() {
+    // Measure from the most recent activity: last chunk if we've received data, otherwise start time
+    const referenceTime = lastChunkTime ?? startTime;
+    if (referenceTime) {
+      silenceSeconds = Math.floor((Date.now() - referenceTime) / 1000);
+    } else {
+      silenceSeconds = 0;
     }
   }
 
-  // Determine current status
+  // Determine current status based on silence duration
   type Status = 'normal' | 'slow' | 'very-slow' | 'stalled' | 'error' | 'model-unavailable';
 
   let status: Status = $derived.by(() => {
     if (modelUnavailable) return 'model-unavailable';
     if (error) return 'error';
-    if (isStalled) return 'stalled'; // Stalled takes priority over time-based thresholds
+    if (isStalled) return 'stalled'; // External stall detection takes priority
     if (!startTime) return 'normal';
-    if (elapsedSeconds >= VERY_SLOW_THRESHOLD) return 'very-slow';
-    if (elapsedSeconds >= SLOW_THRESHOLD && streamingContentLength === 0) return 'slow';
+    if (silenceSeconds >= STALLED_THRESHOLD) return 'stalled';
+    if (silenceSeconds >= VERY_SLOW_THRESHOLD) return 'very-slow';
+    if (silenceSeconds >= SLOW_THRESHOLD) return 'slow';
     return 'normal';
   });
 
@@ -104,29 +132,55 @@
     (isStreaming || isProcessing || error || modelUnavailable) && !hasPendingPermission,
   );
 
-  // Status message - display user-friendly error messages with actionable guidance
+  // Whether we've received any streaming data — used to distinguish
+  // "no data" (network/provider unknown) from "mid-stream silence" (agent working)
+  let hasReceivedData = $derived((streamingContentLength ?? 0) > 0 || lastChunkTime !== null);
+
+  // Status message - differentiated by whether we've received data:
+  // - No data: neutral messages (could be network, provider, or agent)
+  // - Has data: agent-specific messages (connection was working, agent is slow)
+  // Note: stalled status message with status page link is rendered directly in the template
   let statusMessage = $derived.by(() => {
     if (error) {
       return error;
     }
-    if (status === 'stalled') {
-      // More actionable message - let users know they can stop and retry
-      return 'Response delayed. You can wait or try again.';
-    }
-    if (status === 'very-slow') {
-      return streamingContentLength > 0
-        ? 'Response taking longer than expected...'
-        : 'Taking longer than expected';
-    }
-    if (status === 'slow') {
-      return 'Agent is connecting...';
+
+    if (hasReceivedData) {
+      // Mid-stream silence — we know the connection works, agent is the bottleneck
+      if (status === 'stalled') {
+        return providerName
+          ? `${providerName} has not responded for over 90 seconds.`
+          : 'Agent has not responded for over 90 seconds.';
+      }
+      if (status === 'very-slow') {
+        return providerName
+          ? `${providerName} is taking longer than expected. We'll keep trying.`
+          : 'Agent is taking longer than expected...';
+      }
+      if (status === 'slow') {
+        return providerName
+          ? `Your model provider, ${providerName}, is taking longer than usual to respond.`
+          : 'Agent is taking longer than usual...';
+      }
+    } else {
+      // No data received — could be network, provider down, or agent hasn't started.
+      // Keep provider name out since we can't pin the blame.
+      if (status === 'stalled') {
+        return 'No response received. Check your network connection or try again.';
+      }
+      if (status === 'very-slow') {
+        return 'Still waiting for a response. This could be a network issue.';
+      }
+      if (status === 'slow') {
+        return 'Waiting for a response...';
+      }
     }
     return 'Thinking';
   });
 
   onMount(() => {
-    updateElapsed();
-    intervalId = setInterval(updateElapsed, 1000);
+    updateSilence();
+    intervalId = setInterval(updateSilence, 1000);
   });
 
   onDestroy(() => {
@@ -160,12 +214,20 @@
         <Fa icon={faExclamationTriangle} class="text-destructive/70 shrink-0" />
         <span class="text-destructive-foreground text-sm">{statusMessage}</span>
       {:else if status === 'stalled'}
-        <!-- Stalled just means no chunks for 90s - agent is likely doing complex work -->
+        <!-- Stalled means no chunks for 90s -->
         <Fa icon={faInfoCircle} class="text-amber-500/70 shrink-0" />
         <Spinner size={4} {seed} />
-        <span class="text-amber-600 dark:text-amber-400 text-sm font-family-child"
-          >{statusMessage}</span
-        >
+        <span class="text-amber-600 dark:text-amber-400 text-sm font-family-child">
+          {statusMessage}
+          {#if providerStatusUrl}
+            <a
+              href={providerStatusUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="underline hover:text-amber-500 dark:hover:text-amber-300">Check status</a
+            >
+          {/if}
+        </span>
       {:else if status === 'very-slow'}
         <Fa icon={faInfoCircle} class="text-amber-500/70 shrink-0" />
         <span class="text-amber-600 dark:text-amber-400 text-sm font-family-child"
