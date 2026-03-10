@@ -407,6 +407,7 @@ export interface ToolCallUpdate {
   _meta?: Meta;
   toolCallId: ToolCallId;
   title: string;
+  name?: string;
   kind?: ToolKind | null;
   status?: ToolCallStatus | null;
   content?: ToolCallContent[];
@@ -420,6 +421,7 @@ export interface ToolCallUpdateUpdate {
   _meta?: Meta;
   toolCallId: ToolCallId;
   title?: string | null;
+  name?: string | null;
   kind?: ToolKind | null;
   status?: ToolCallStatus | null;
   content?: ToolCallContent[] | null;

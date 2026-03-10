@@ -128,6 +128,7 @@ const FILE_EDIT_TOOLS = new Set([
   'save_file',
   'str-replace-editor',
   'str_replace_editor',
+  'apply_patch',
   'write_file',
   'create_file',
 ]);
@@ -634,6 +635,7 @@ export class ACPProviderStreaming {
   private pendingSkeleton?: {
     toolName: string;
     toolId: string;
+    acpTitle?: string;
   };
   private pendingSkeletonTimer?: ReturnType<typeof setTimeout>;
   private pendingSkeletonSession?: any;
@@ -667,7 +669,7 @@ export class ACPProviderStreaming {
     // ~6ms after the skeleton is deferred, well within the 300ms timer window.
     const mcpParams = consumeMcpToolParams(session.agentId, skeleton.toolName);
     const enrichedInput: Record<string, any> = {
-      _acpTitle: skeleton.toolName,
+      _acpTitle: skeleton.acpTitle || skeleton.toolName,
       ...(mcpParams || {}),
     };
 
@@ -980,6 +982,162 @@ export class ACPProviderStreaming {
     }
   }
 
+  private async processPendingFileEdit(
+    toolCallId: string,
+    status: string,
+    isError: boolean,
+    session: any,
+  ): Promise<void> {
+    if (!toolCallId) {
+      return;
+    }
+
+    const pendingEdit = pendingFileEdits.get(toolCallId);
+    pendingFileEdits.delete(toolCallId);
+
+    if (!pendingEdit || status !== 'completed' || isError) {
+      return;
+    }
+
+    // Check if this is a recognized file edit tool
+    // Include 'file-edit' as a fallback for title-based detection (e.g., "Edit path/to/file.ts")
+    const isFileEditTool =
+      pendingEdit.toolName === 'str-replace-editor' ||
+      pendingEdit.toolName === 'str_replace_editor' ||
+      pendingEdit.toolName === 'save-file' ||
+      pendingEdit.toolName === 'file-edit';
+
+    if (!isFileEditTool) {
+      return;
+    }
+
+    // Read the file to get the final content after the edit
+    try {
+      const fullPath =
+        pendingEdit.workspacePath && !isAbsolute(pendingEdit.filePath)
+          ? join(pendingEdit.workspacePath, pendingEdit.filePath)
+          : pendingEdit.filePath;
+
+      const content = await readFile(fullPath, 'utf-8');
+      const attributionEngine = getAttributionEngine();
+
+      // Pass workspacePath and workspaceId for path normalization and persistence
+      attributionEngine.recordAgentWrite(
+        {
+          agentId: pendingEdit.agentId,
+          agentName: pendingEdit.agentName || pendingEdit.agentId,
+          sessionId: pendingEdit.sessionId,
+        },
+        fullPath,
+        content,
+        pendingEdit.workspacePath,
+        pendingEdit.workspaceId,
+      );
+
+      logger.info('Recorded agent write for file edit tool', {
+        toolName: pendingEdit.toolName,
+        agentId: pendingEdit.agentId,
+        sessionAgentId: session?.agentId,
+        filePath: fullPath,
+        workspacePath: pendingEdit.workspacePath,
+        workspaceId: pendingEdit.workspaceId,
+        contentLength: content.length,
+      });
+
+      // Emit file:content-changed event to renderer so open editors refresh content
+      // This ensures files open in panels update immediately when agents edit them
+      if (pendingEdit.workspaceId) {
+        try {
+          sendToWorkspaceWindows(
+            pendingEdit.workspaceId,
+            `file:content-changed:${pendingEdit.workspaceId}`,
+            {
+              path: fullPath,
+              relativePath: pendingEdit.filePath,
+              content,
+              source: 'agent',
+              workspaceId: pendingEdit.workspaceId,
+            },
+          );
+
+          // Also emit file-tracking:agent-file-changed for components that listen to that
+          sendToWorkspaceWindows(
+            pendingEdit.workspaceId,
+            'file-tracking:agent-file-changed',
+            {
+              workspaceId: pendingEdit.workspaceId,
+              filePath: pendingEdit.filePath,
+              source: 'agent',
+            },
+          );
+
+          logger.debug('Emitted file content change events to renderer for agent edit', {
+            filePath: pendingEdit.filePath,
+            workspaceId: pendingEdit.workspaceId,
+          });
+        } catch (emitError) {
+          logger.warn('Failed to emit file content change events', {
+            error: emitError instanceof Error ? emitError.message : String(emitError),
+            filePath: pendingEdit.filePath,
+          });
+        }
+      }
+
+      // Emit file:changed event to activity log with diff data
+      if (pendingEdit.workspaceId) {
+        try {
+          const oldContent = pendingEdit.oldContent ?? '';
+          const patch = Diff.createPatch(pendingEdit.filePath, oldContent, content, '', '', {
+            context: 3,
+          });
+
+          // Count additions and deletions from the patch
+          let additions = 0;
+          let deletions = 0;
+          for (const line of patch.split('\n')) {
+            if (line.startsWith('@@') || line.startsWith('---') || line.startsWith('+++'))
+              continue;
+            if (line.startsWith('+')) additions++;
+            else if (line.startsWith('-')) deletions++;
+          }
+
+          const action = oldContent === '' ? 'create' : 'modify';
+          const eventService = getWorkspaceEventService(pendingEdit.workspaceId);
+          eventService.emitFileChange(pendingEdit.filePath, action, {
+            diff: patch,
+            additions,
+            deletions,
+            actor: {
+              type: 'agent',
+              id: pendingEdit.agentId,
+              name: pendingEdit.agentName || 'Agent',
+            },
+          });
+
+          logger.info('Emitted file:changed event with diff to activity log', {
+            filePath: pendingEdit.filePath,
+            action,
+            additions,
+            deletions,
+            workspaceId: pendingEdit.workspaceId,
+          });
+        } catch (diffError) {
+          logger.warn('Failed to emit file change event with diff', {
+            error: diffError instanceof Error ? diffError.message : String(diffError),
+            filePath: pendingEdit.filePath,
+          });
+        }
+      }
+    } catch (error) {
+      logger.warn('Failed to record agent write for file edit tool', {
+        toolName: pendingEdit.toolName,
+        sessionAgentId: session?.agentId,
+        error: error instanceof Error ? error.message : String(error),
+        filePath: pendingEdit.filePath,
+      });
+    }
+  }
+
   /**
    * Handle a tool call
    */
@@ -1022,15 +1180,17 @@ export class ACPProviderStreaming {
     if (!hasRealInput) {
       // Skeleton call (no real input) — auto-complete the previous REAL tool, then defer.
       if (this.lastPendingToolId) {
+        const completedToolId = this.lastPendingToolId;
         const syntheticResult: ContentBlock = {
           type: 'tool_result',
-          tool_use_id: this.lastPendingToolId,
+          tool_use_id: completedToolId,
           content: '',
           is_error: false,
         };
         streamSessionManager.addContentBlock(session.agentId, syntheticResult);
+        await this.processPendingFileEdit(completedToolId, 'completed', false, session);
         logger.debug('[ACPProviderStreaming] Auto-completed previous tool on skeleton tool_call', {
-          previousToolId: this.lastPendingToolId,
+          previousToolId: completedToolId,
           agentId: session.agentId,
         });
         this.lastPendingToolId = undefined;
@@ -1047,9 +1207,11 @@ export class ACPProviderStreaming {
       // Store skeleton info — the follow-up call with real input will create the block
       const skeletonToolId =
         update?.toolCallId || update?.id || `tool_${Date.now()}`;
+      const skeletonTitle = update?.title || update?.name || 'unknown';
       this.pendingSkeleton = {
-        toolName: update?.title || update?.name || 'unknown',
+        toolName: update?.name || update?.title || 'unknown',
         toolId: skeletonToolId,
+        acpTitle: skeletonTitle,
       };
       this.pendingSkeletonSession = session;
 
@@ -1094,15 +1256,17 @@ export class ACPProviderStreaming {
         this.emittedSkeletonToolId = undefined;
         // Normal tool_call — auto-complete previous tool
         if (this.lastPendingToolId) {
+          const completedToolId = this.lastPendingToolId;
           const syntheticResult: ContentBlock = {
             type: 'tool_result',
-            tool_use_id: this.lastPendingToolId,
+            tool_use_id: completedToolId,
             content: '',
             is_error: false,
           };
           streamSessionManager.addContentBlock(session.agentId, syntheticResult);
+          await this.processPendingFileEdit(completedToolId, 'completed', false, session);
           logger.debug('[ACPProviderStreaming] Auto-completed previous tool on new tool_call', {
-            previousToolId: this.lastPendingToolId,
+            previousToolId: completedToolId,
             agentId: session.agentId,
           });
           this.lastPendingToolId = undefined;
@@ -1111,15 +1275,17 @@ export class ACPProviderStreaming {
     } else {
       // Normal tool_call (not a follow-up) — auto-complete previous tool
       if (this.lastPendingToolId) {
+        const completedToolId = this.lastPendingToolId;
         const syntheticResult: ContentBlock = {
           type: 'tool_result',
-          tool_use_id: this.lastPendingToolId,
+          tool_use_id: completedToolId,
           content: '',
           is_error: false,
         };
         streamSessionManager.addContentBlock(session.agentId, syntheticResult);
+        await this.processPendingFileEdit(completedToolId, 'completed', false, session);
         logger.debug('[ACPProviderStreaming] Auto-completed previous tool on new tool_call', {
-          previousToolId: this.lastPendingToolId,
+          previousToolId: completedToolId,
           agentId: session.agentId,
         });
         this.lastPendingToolId = undefined;
@@ -1130,17 +1296,20 @@ export class ACPProviderStreaming {
     // 1. In the content object (for tests)
     // 2. In the title/name field directly (for production)
     let toolName = 'unknown';
+    let toolTitle = 'unknown';
     let toolInput = {};
     let toolId = `tool_${Date.now()}`;
 
     if (update?.content && typeof update.content === 'object' && !Array.isArray(update.content)) {
       // Test format: tool info is in content (object, not array)
       toolName = update.content.name || update.content.title || 'unknown';
+      toolTitle = update.content.title || update.content.name || 'unknown';
       toolInput = update.content.input || update.content.rawInput || {};
       toolId = update.content.id || update.content.toolCallId || toolId;
     } else {
       // Production format: tool info is in update directly
-      toolName = update?.title || update?.name || 'unknown';
+      toolName = update?.name || update?.title || 'unknown';
+      toolTitle = update?.title || update?.name || 'unknown';
       toolInput = update?.rawInput || update?.input || {};
       toolId = update?.toolCallId || update?.id || toolId;
     }
@@ -1247,6 +1416,9 @@ export class ACPProviderStreaming {
     } else if (input.file_paths !== undefined && Array.isArray(input.file_paths)) {
       // remove-files is the only tool with file_paths array parameter
       actualToolName = 'remove-files';
+    } else if (typeof input.input === 'string' && input.input.includes('*** Begin Patch')) {
+      // apply_patch sends V4A patch content in input.input
+      actualToolName = 'apply_patch';
     }
     // Workspace MCP tool name derivation:
     // When the ACP title is vague (e.g., "Read note", "Edit", "Replace note"),
@@ -1318,8 +1490,8 @@ export class ACPProviderStreaming {
       }
 
       // 3. Try extracting from human-readable title (e.g., "Edit file.ts", "Read `src/lib/App.svelte`")
-      if (!extractedPath && typeof toolName === 'string') {
-        const filePathMatch = toolName.match(
+      if (!extractedPath && typeof toolTitle === 'string') {
+        const filePathMatch = toolTitle.match(
           /^(?:Edit|Save|Read|Write|Delete|View|Create)\s+(.+)/i,
         );
         if (filePathMatch) {
@@ -1347,8 +1519,8 @@ export class ACPProviderStreaming {
 
     // Extract command from ACP title for terminal tools (e.g., "Run `cd experimental/amelia && npx vitest ...`")
     // The ACP backend sends the command backtick-wrapped in the title, but rawInput may be empty.
-    if (!input.command && typeof toolName === 'string') {
-      const cmdMatch = toolName.match(/^(?:Run|Launch)\s+`(.+)`\s*$/i);
+    if (!input.command && typeof toolTitle === 'string') {
+      const cmdMatch = toolTitle.match(/^(?:Run|Launch)\s+`(.+)`\s*$/i);
       if (cmdMatch) {
         (toolInput as Record<string, any>).command = cmdMatch[1];
       }
@@ -1358,8 +1530,8 @@ export class ACPProviderStreaming {
     // to extract file paths. When we derive actualToolName (e.g., "str-replace-editor") from
     // input parameters, the original human-readable title (e.g., "Edit src/foo.ts") is lost.
     // The classifier needs this to show file names when rawInput doesn't contain a path field.
-    if (typeof toolName === 'string' && toolName !== 'unknown') {
-      (toolInput as Record<string, any>)._acpTitle = toolName;
+    if (typeof toolTitle === 'string' && toolTitle !== 'unknown') {
+      (toolInput as Record<string, any>)._acpTitle = toolTitle;
     }
 
     // Look up note title from notesService so the UI can show human-readable names
@@ -1436,7 +1608,12 @@ export class ACPProviderStreaming {
       input.command === 'str_replace' ||
       input.file_content !== undefined ||
       (typeof toolName === 'string' &&
-        (toolName.startsWith('Save ') || toolName.startsWith('Edit '))) ||
+        (
+          toolName.startsWith('Save ') ||
+          toolName.startsWith('Edit ') ||
+          toolName.startsWith('Update ') ||
+          toolName.startsWith('Apply patch')
+        )) ||
       FILE_EDIT_TOOLS.has(actualToolName);
 
     logger.info('[ACPProviderStreaming] File edit detection', {
@@ -1447,7 +1624,12 @@ export class ACPProviderStreaming {
       hasFileContent: input.file_content !== undefined,
       startsWithSaveOrEdit:
         typeof toolName === 'string' &&
-        (toolName.startsWith('Save ') || toolName.startsWith('Edit ')),
+        (
+          toolName.startsWith('Save ') ||
+          toolName.startsWith('Edit ') ||
+          toolName.startsWith('Update ') ||
+          toolName.startsWith('Apply patch')
+        ),
       inFileEditTools: FILE_EDIT_TOOLS.has(actualToolName),
       toolId,
     });
@@ -1550,6 +1732,7 @@ export class ACPProviderStreaming {
         is_error: status === 'failed',
       };
       streamSessionManager.addContentBlock(session.agentId, resultBlock);
+      await this.processPendingFileEdit(toolId, status, Boolean(resultBlock.is_error), session);
       logger.debug('[ACPProviderStreaming] tool_call had terminal status, emitted tool_result', {
         toolId,
         status,
@@ -1813,150 +1996,11 @@ export class ACPProviderStreaming {
       }
     }
 
-    // Record agent write when file-editing tool completes successfully
-    // We read the actual file content to get the correct hash (the content the agent sends
-    // may differ from what's written to disk, e.g., Augment may add trailing newlines)
-    const pendingEdit = pendingFileEdits.get(toolCallId);
-    if (pendingEdit && update?.status === 'completed' && !toolResultBlock.is_error) {
-      // Check if this is a recognized file edit tool
-      // Include 'file-edit' as a fallback for title-based detection (e.g., "Edit path/to/file.ts")
-      const isFileEditTool =
-        pendingEdit.toolName === 'str-replace-editor' ||
-        pendingEdit.toolName === 'str_replace_editor' ||
-        pendingEdit.toolName === 'save-file' ||
-        pendingEdit.toolName === 'file-edit';
-
-      if (isFileEditTool) {
-        // Read the file to get the final content after the edit
-        try {
-          const fullPath =
-            pendingEdit.workspacePath && !isAbsolute(pendingEdit.filePath)
-              ? join(pendingEdit.workspacePath, pendingEdit.filePath)
-              : pendingEdit.filePath;
-
-          const content = await readFile(fullPath, 'utf-8');
-          const attributionEngine = getAttributionEngine();
-
-          // Pass workspacePath and workspaceId for path normalization and persistence
-          attributionEngine.recordAgentWrite(
-            {
-              agentId: pendingEdit.agentId,
-              agentName: pendingEdit.agentName || pendingEdit.agentId,
-              sessionId: pendingEdit.sessionId,
-            },
-            fullPath,
-            content,
-            pendingEdit.workspacePath,
-            pendingEdit.workspaceId,
-          );
-
-          logger.info('Recorded agent write for file edit tool', {
-            toolName: pendingEdit.toolName,
-            agentId: pendingEdit.agentId,
-            filePath: fullPath,
-            workspacePath: pendingEdit.workspacePath,
-            workspaceId: pendingEdit.workspaceId,
-            contentLength: content.length,
-          });
-
-          // Emit file:content-changed event to renderer so open editors refresh content
-          // This ensures files open in panels update immediately when agents edit them
-          if (pendingEdit.workspaceId) {
-            try {
-              sendToWorkspaceWindows(
-                pendingEdit.workspaceId,
-                `file:content-changed:${pendingEdit.workspaceId}`,
-                {
-                  path: fullPath,
-                  relativePath: pendingEdit.filePath,
-                  content,
-                  source: 'agent',
-                  workspaceId: pendingEdit.workspaceId,
-                },
-              );
-
-              // Also emit file-tracking:agent-file-changed for components that listen to that
-              sendToWorkspaceWindows(
-                pendingEdit.workspaceId,
-                'file-tracking:agent-file-changed',
-                {
-                  workspaceId: pendingEdit.workspaceId,
-                  filePath: pendingEdit.filePath,
-                  source: 'agent',
-                },
-              );
-
-              logger.debug('Emitted file content change events to renderer for agent edit', {
-                filePath: pendingEdit.filePath,
-                workspaceId: pendingEdit.workspaceId,
-              });
-            } catch (emitError) {
-              logger.warn('Failed to emit file content change events', {
-                error: emitError instanceof Error ? emitError.message : String(emitError),
-                filePath: pendingEdit.filePath,
-              });
-            }
-          }
-
-          // Emit file:changed event to activity log with diff data
-          if (pendingEdit.workspaceId) {
-            try {
-              const oldContent = pendingEdit.oldContent ?? '';
-              const patch = Diff.createPatch(pendingEdit.filePath, oldContent, content, '', '', {
-                context: 3,
-              });
-
-              // Count additions and deletions from the patch
-              let additions = 0;
-              let deletions = 0;
-              for (const line of patch.split('\n')) {
-                if (line.startsWith('@@') || line.startsWith('---') || line.startsWith('+++'))
-                  continue;
-                if (line.startsWith('+')) additions++;
-                else if (line.startsWith('-')) deletions++;
-              }
-
-              const action = oldContent === '' ? 'create' : 'modify';
-              const eventService = getWorkspaceEventService(pendingEdit.workspaceId);
-              eventService.emitFileChange(pendingEdit.filePath, action, {
-                diff: patch,
-                additions,
-                deletions,
-                actor: {
-                  type: 'agent',
-                  id: pendingEdit.agentId,
-                  name: pendingEdit.agentName || 'Agent',
-                },
-              });
-
-              logger.info('Emitted file:changed event with diff to activity log', {
-                filePath: pendingEdit.filePath,
-                action,
-                additions,
-                deletions,
-                workspaceId: pendingEdit.workspaceId,
-              });
-            } catch (diffError) {
-              logger.warn('Failed to emit file change event with diff', {
-                error: diffError instanceof Error ? diffError.message : String(diffError),
-                filePath: pendingEdit.filePath,
-              });
-            }
-          }
-        } catch (error) {
-          logger.warn('Failed to record agent write for file edit tool', {
-            toolName: pendingEdit.toolName,
-            error: error instanceof Error ? error.message : String(error),
-            filePath: pendingEdit.filePath,
-          });
-        }
-      }
-    }
+    await this.processPendingFileEdit(toolCallId, update?.status || '', Boolean(toolResultBlock.is_error), session);
 
     // Clean up pending tool kind and file edit
     if (toolCallId) {
       pendingToolKinds.delete(toolCallId);
-      pendingFileEdits.delete(toolCallId);
     }
   }
 
@@ -1974,15 +2018,17 @@ export class ACPProviderStreaming {
     // pending tool without a tool_call_update, emit a synthetic tool_result so the UI
     // transitions it to completed immediately (rather than waiting for the fallback).
     if (this.lastPendingToolId) {
+      const completedToolId = this.lastPendingToolId;
       const syntheticResult: ContentBlock = {
         type: 'tool_result',
-        tool_use_id: this.lastPendingToolId,
+        tool_use_id: completedToolId,
         content: '',
         is_error: false,
       };
       streamSessionManager.addContentBlock(session.agentId, syntheticResult);
+      await this.processPendingFileEdit(completedToolId, 'completed', false, session);
       logger.debug('[ACPProviderStreaming] Auto-completed last pending tool on stream complete', {
-        toolId: this.lastPendingToolId,
+        toolId: completedToolId,
         agentId: session.agentId,
       });
       this.lastPendingToolId = undefined;
