@@ -1022,7 +1022,8 @@ app.whenReady().then(async () => {
           // Generate suggested filename with date
           const now = new Date();
           const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
-          const suggestedFilename = `intent-debug-${dateStr}.zip`;
+          const timeStr = now.toTimeString().slice(0, 5).replace(':', ''); // HHmm
+          const suggestedFilename = `intent-debug-${dateStr}-${timeStr}.zip`;
 
           // Show save dialog
           const { filePath, canceled } = await dialog.showSaveDialog({

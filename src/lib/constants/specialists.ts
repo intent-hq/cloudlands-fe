@@ -596,6 +596,9 @@ Then: Commands Run, Risk Notes, Follow-ups.`,
   },
 ];
 
+/** Specialist IDs that require GitHub to be connected */
+export const GITHUB_DEPENDENT_SPECIALIST_IDS = new Set(['pr-shepherd', 'pr-reviewer']);
+
 export function getSpecialistById(id: string): Specialist | undefined {
   return SPECIALISTS.find((s) => s.id === id);
 }

@@ -3,6 +3,7 @@ import { Logger } from '../../../shared/logger';
 import { augmentApiClient } from '../../../shared/augment-api/augment-api.client';
 import { GITHUB_AUTH_CHANNELS } from '../constants';
 import { githubAuthService } from './github-auth.service';
+import { refreshGitHubAuthStatus } from '../../agent/main/specialists.service';
 
 const logger = new Logger('GitHubAuthIPC');
 
@@ -33,6 +34,10 @@ export function setupGitHubAuthIPC(): void {
       const isComplete = await githubAuthService.checkAuthComplete();
       if (isComplete) {
         const user = await githubAuthService.getUser();
+        // Refresh cached GitHub auth status so specialists list updates
+        refreshGitHubAuthStatus().catch((e) =>
+          logger.warn('Failed to refresh GitHub auth status for specialists', e as Error),
+        );
         return { success: true, data: { user, isComplete: true } };
       }
       return { success: true, data: { isComplete: false } };

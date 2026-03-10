@@ -5,10 +5,11 @@
  * Ensures specialists are correctly configured with models and behavior prompts.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import {
   SPECIALISTS,
   getSpecialistById,
+  GITHUB_DEPENDENT_SPECIALIST_IDS,
   type Specialist,
 } from '../../src/lib/constants/specialists';
 import {
@@ -33,6 +34,22 @@ vi.mock('electron-store', () => ({
     set(key: string, value: unknown) {
       this.data[key] = value;
     }
+  },
+}));
+
+// Mock electron app for file paths
+vi.mock('electron', () => ({
+  app: {
+    getPath: () => '/tmp/test-augment',
+    isPackaged: false,
+  },
+}));
+
+// Mock github-auth service — controls whether GitHub-dependent specialists are visible
+const mockIsAuthenticated = vi.fn().mockResolvedValue(false);
+vi.mock('../../src/features/github-auth/main/github-auth.service', () => ({
+  githubAuthService: {
+    isAuthenticated: (...args: unknown[]) => mockIsAuthenticated(...args),
   },
 }));
 
@@ -237,6 +254,91 @@ describe('Specialist Configuration', () => {
       // Ensure the change is scoped to auggie only
       const claudeCode = PROVIDER_MODEL_TIERS['claude-code'];
       expect(claudeCode.smart).not.toBe('gpt5.4');
+    });
+  });
+
+  describe('GitHub-dependent Specialist Gating', () => {
+    // These tests verify that pr-shepherd and pr-reviewer are hidden
+    // when GitHub is not connected, using the backend specialists service.
+
+    // Lazy-import so mocks are applied before the module loads
+    let getAllEffectiveSpecialists: typeof import('../../src/features/agent/main/specialists.service').getAllEffectiveSpecialists;
+    let resolveSpecialistForAgent: typeof import('../../src/features/agent/main/specialists.service').resolveSpecialistForAgent;
+    let initSpecialistsService: typeof import('../../src/features/agent/main/specialists.service').initSpecialistsService;
+    let refreshGitHubAuthStatus: typeof import('../../src/features/agent/main/specialists.service').refreshGitHubAuthStatus;
+
+    beforeAll(async () => {
+      const mod = await import('../../src/features/agent/main/specialists.service');
+      getAllEffectiveSpecialists = mod.getAllEffectiveSpecialists;
+      resolveSpecialistForAgent = mod.resolveSpecialistForAgent;
+      initSpecialistsService = mod.initSpecialistsService;
+      refreshGitHubAuthStatus = mod.refreshGitHubAuthStatus;
+      await initSpecialistsService();
+    });
+
+    it('GITHUB_DEPENDENT_SPECIALIST_IDS contains pr-shepherd and pr-reviewer', () => {
+      expect(GITHUB_DEPENDENT_SPECIALIST_IDS.has('pr-shepherd')).toBe(true);
+      expect(GITHUB_DEPENDENT_SPECIALIST_IDS.has('pr-reviewer')).toBe(true);
+    });
+
+    it('should hide pr-shepherd and pr-reviewer when GitHub is not authenticated', async () => {
+      mockIsAuthenticated.mockResolvedValue(false);
+      await refreshGitHubAuthStatus();
+
+      const specialists = getAllEffectiveSpecialists();
+      const ids = specialists.map((s) => s.id);
+
+      expect(ids).not.toContain('pr-shepherd');
+      expect(ids).not.toContain('pr-reviewer');
+      // Other specialists should still be present
+      expect(ids).toContain('spec-writer');
+      expect(ids).toContain('implementor');
+      expect(ids).toContain('verifier');
+    });
+
+    it('should show pr-shepherd and pr-reviewer when GitHub is authenticated', async () => {
+      mockIsAuthenticated.mockResolvedValue(true);
+      await refreshGitHubAuthStatus();
+
+      const specialists = getAllEffectiveSpecialists();
+      const ids = specialists.map((s) => s.id);
+
+      expect(ids).toContain('pr-shepherd');
+      expect(ids).toContain('pr-reviewer');
+    });
+
+    it('resolveSpecialistForAgent returns null for pr-shepherd when GitHub not authenticated', async () => {
+      mockIsAuthenticated.mockResolvedValue(false);
+      await refreshGitHubAuthStatus();
+
+      const result = resolveSpecialistForAgent('pr-shepherd');
+      expect(result).toBeNull();
+    });
+
+    it('resolveSpecialistForAgent returns config for pr-shepherd when GitHub is authenticated', async () => {
+      mockIsAuthenticated.mockResolvedValue(true);
+      await refreshGitHubAuthStatus();
+
+      const result = resolveSpecialistForAgent('pr-shepherd');
+      expect(result).not.toBeNull();
+      expect(result!.specialistId).toBe('pr-shepherd');
+    });
+
+    it('resolveSpecialistForAgent returns null for pr-reviewer when GitHub not authenticated', async () => {
+      mockIsAuthenticated.mockResolvedValue(false);
+      await refreshGitHubAuthStatus();
+
+      const result = resolveSpecialistForAgent('pr-reviewer');
+      expect(result).toBeNull();
+    });
+
+    it('non-GitHub specialists are unaffected by GitHub auth status', async () => {
+      mockIsAuthenticated.mockResolvedValue(false);
+      await refreshGitHubAuthStatus();
+
+      const result = resolveSpecialistForAgent('implementor');
+      expect(result).not.toBeNull();
+      expect(result!.specialistId).toBe('implementor');
     });
   });
 });

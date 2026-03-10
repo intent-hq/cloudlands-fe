@@ -15,7 +15,7 @@
 
 import { Logger } from '$shared/logger';
 import type { Specialist } from '$lib/constants/specialists';
-import { SPECIALISTS, getSpecialistById } from '$lib/constants/specialists';
+import { SPECIALISTS, getSpecialistById, GITHUB_DEPENDENT_SPECIALIST_IDS } from '$lib/constants/specialists';
 import {
   getDefaultModelForProvider,
   getDefaultProviderId,
@@ -31,8 +31,12 @@ import {
 } from '../../specialists/main/specialist-file-loader';
 import type { SpecialistFile } from '../../../shared/specialist-file-types';
 import { featureCodesService } from '../../feature-codes/main/feature-codes.service';
+import { githubAuthService } from '../../github-auth/main/github-auth.service';
 
 const logger = new Logger('SpecialistsService');
+
+// Cached GitHub auth status for synchronous filtering
+let isGitHubAuthenticated = false;
 
 // Storage keys - must match frontend store
 const CUSTOM_SPECIALISTS_KEY = 'custom-specialists';
@@ -122,11 +126,28 @@ export async function initSpecialistsService(): Promise<void> {
 
       // Pre-load file-based specialists (includes bundled + user files)
       await refreshFileSpecialistsCache();
+
+      // Cache GitHub auth status for synchronous specialist filtering
+      await refreshGitHubAuthStatus();
     } catch (error) {
       logger.error('Failed to initialize specialists service', error as Error);
     }
   })();
   return initPromise;
+}
+
+/**
+ * Refresh the cached GitHub authentication status.
+ * Called during init and can be called when auth state changes.
+ */
+export async function refreshGitHubAuthStatus(): Promise<void> {
+  try {
+    isGitHubAuthenticated = await githubAuthService.isAuthenticated();
+    logger.info('GitHub auth status refreshed', { isGitHubAuthenticated });
+  } catch (error) {
+    logger.warn('Failed to check GitHub auth status, defaulting to false', error as Error);
+    isGitHubAuthenticated = false;
+  }
 }
 
 /**
@@ -534,12 +555,19 @@ export function getAllEffectiveSpecialists(providerId?: string): EffectiveSpecia
 
   const allSpecialists = [...fileEffective, ...customEffective, ...hardcodedFallback];
 
+  let filtered = allSpecialists;
+
   // Gate ralph specialist behind feature flag
   if (!featureCodesService.isFeatureEnabled('ralph-agent')) {
-    return allSpecialists.filter((s) => s.id !== 'ralph');
+    filtered = filtered.filter((s) => s.id !== 'ralph');
   }
 
-  return allSpecialists;
+  // Hide GitHub-dependent specialists when GitHub is not connected
+  if (!isGitHubAuthenticated) {
+    filtered = filtered.filter((s) => !GITHUB_DEPENDENT_SPECIALIST_IDS.has(s.id));
+  }
+
+  return filtered;
 }
 
 /**
@@ -651,6 +679,12 @@ export function resolveSpecialistForAgent(
   // Gate ralph specialist behind feature flag
   if (specialistId === 'ralph' && !featureCodesService.isFeatureEnabled('ralph-agent')) {
     logger.info('resolveSpecialistForAgent: ralph specialist gated by feature flag');
+    return null;
+  }
+
+  // Gate GitHub-dependent specialists behind GitHub auth
+  if (GITHUB_DEPENDENT_SPECIALIST_IDS.has(specialistId) && !isGitHubAuthenticated) {
+    logger.info('resolveSpecialistForAgent: specialist requires GitHub auth', { specialistId });
     return null;
   }
 

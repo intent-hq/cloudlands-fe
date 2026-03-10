@@ -1,5 +1,5 @@
 import { createLogger } from '$lib/utils/client-logger';
-import { SPECIALISTS, type Specialist } from '$lib/constants/specialists';
+import { SPECIALISTS, GITHUB_DEPENDENT_SPECIALIST_IDS, type Specialist } from '$lib/constants/specialists';
 import {
   getDefaultModelForProvider,
   getDefaultProviderId,
@@ -7,6 +7,7 @@ import {
 } from '$shared/config/provider-config';
 import { activeProviderStore } from './active-provider.store.svelte';
 import { featureCodesStore } from './feature-codes.store.svelte';
+import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
 import { SPECIALISTS_CHANNELS } from '$shared/ipc/channels';
 
 const logger = createLogger('SpecialistsStore');
@@ -77,7 +78,7 @@ class SpecialistsStore {
   // Deduplicate by ID to prevent Svelte each_key_duplicate errors
   specialists = $derived.by<Specialist[]>(() => {
     const seen = new Set<string>();
-    const result: Specialist[] = [];
+    let result: Specialist[] = [];
 
     // File-based specialists first (highest priority)
     for (const file of this.fileSpecialists) {
@@ -143,7 +144,12 @@ class SpecialistsStore {
 
     // Gate ralph behind feature flag
     if (!featureCodesStore.isFeatureEnabled('ralph-agent')) {
-      return result.filter((s) => s.id !== 'ralph');
+      result = result.filter((s) => s.id !== 'ralph');
+    }
+
+    // Hide GitHub-dependent specialists when GitHub is not connected
+    if (!githubAuthStore.state.isAuthenticated) {
+      result = result.filter((s) => !GITHUB_DEPENDENT_SPECIALIST_IDS.has(s.id));
     }
 
     return result;
