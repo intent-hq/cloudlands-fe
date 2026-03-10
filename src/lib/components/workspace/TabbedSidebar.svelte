@@ -272,6 +272,15 @@
     });
   }
 
+  function handleOpenAgentOverview() {
+    panelLayoutManager.openTab({
+      type: 'agent-overview',
+      title: 'Agent Overview',
+      closable: true,
+      workspaceId,
+    });
+  }
+
   // Container dimensions for tiling calculations
   let containerWidth = $state(800);
   let containerHeight = $state(600);
@@ -790,6 +799,7 @@
                 selectedAgentId={effectiveSelectedAgentId}
                 onSelect={({ agentId }) => handleOpenAgentInPanel(agentId)}
                 onCreate={onCreateAgent}
+                onOpenAgentOverview={handleOpenAgentOverview}
               />
             </div>
           {/key}

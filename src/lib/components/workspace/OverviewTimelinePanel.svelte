@@ -15,7 +15,9 @@
     faCodeBranch,
     faCodeCommit,
     faCodePullRequest,
+    faPencil,
     faPlus,
+    faSitemap,
   } from '@fortawesome/free-solid-svg-icons';
   import AgentCard from '$lib/components/chat/AgentCard.svelte';
   import { ListItem } from '$lib/components/ui/list';
@@ -23,6 +25,7 @@
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import type { UIFileChange } from '$lib/components/file-tracking/accept-changes/types';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
+  import FileActionsDropdown from '$lib/components/ui/FileActionsDropdown.svelte';
   import Skeleton from '$lib/components/ui/skeleton/skeleton.svelte';
   import { invoke } from '$lib/electron-bridge';
   import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
@@ -73,6 +76,8 @@
     selectedFilePath?: string | null;
     /** The file path from the active diff view (for highlighting changed files) */
     activeFilePath?: string | null;
+    /** The commit hash from the active commit changeset view */
+    activeCommitHash?: string | null;
     /** Loading states for each section */
     agentsLoading?: boolean;
     notesLoading?: boolean;
@@ -84,6 +89,7 @@
     onOpenAllChanges?: () => void;
     onOpenCommit?: (hash: string) => void;
     onOpenFileInPanel?: (filePath: string) => void;
+    onOpenAgentOverview?: () => void;
     class?: string;
   }
 
@@ -99,6 +105,7 @@
     selectedAgentId = null,
     selectedFilePath = null,
     activeFilePath = null,
+    activeCommitHash = null,
     agentsLoading = false,
     notesLoading = false,
     changesLoading = false,
@@ -109,6 +116,7 @@
     onOpenAllChanges,
     onOpenCommit,
     onOpenFileInPanel,
+    onOpenAgentOverview,
     class: className,
   }: Props = $props();
 
@@ -294,6 +302,7 @@
           <!-- Coordinator agent -->
           <AgentCard
             agentId={primaryAgent.id}
+            agentName={primaryAgent.name}
             selected={selectedAgentId === primaryAgent.id}
             onclick={() => onOpenAgent?.(primaryAgent!.id)}
             {workspace}
@@ -339,6 +348,7 @@
             {#each otherAgents.slice(0, 3) as agent}
               <AgentCard
                 agentId={agent.id}
+                agentName={agent.name}
                 selected={selectedAgentId === agent.id}
                 onclick={() => onOpenAgent?.(agent.id)}
                 hidePreview={!agent.isActive}
@@ -350,13 +360,22 @@
                 class="text-ui text-ghost text-left px-2 py-0.5 hover:text-muted-foreground transition-colors cursor-pointer"
                 onclick={() => onSwitchTab?.('agents')}
               >
-                <Fa icon={faPlus} size="xs" class="ml-0.75 -mt-px mr-0.75" />
+                <Fa icon={faPlus} size="xs" class="ml-0.75 -mt-px mr-0.75 opacity-50" />
                 +{otherAgents.length - 3} more
               </button>
             {/if}
           </div>
         {/if}
       </div>
+      {#if agents.length > 1}
+        <button
+          class="flex items-center gap-1.5 w-full px-4 py-2 text-ui text-subtle hover:text-muted-foreground border-t border-border/30 transition-colors cursor-pointer"
+          onclick={() => onOpenAgentOverview?.()}
+        >
+          <Fa icon={faSitemap} size="xs" class="opacity-50" />
+          <span>View agent tree</span>
+        </button>
+      {/if}
     </section>
   {:else if topLevelAgents.length > 0}
     <section class="bg-background/50 rounded-lg overflow-hidden">
@@ -377,6 +396,7 @@
         {#each topLevelAgents.slice(0, 4) as agent}
           <AgentCard
             agentId={agent.id}
+            agentName={agent.name}
             selected={selectedAgentId === agent.id}
             onclick={() => onOpenAgent?.(agent.id)}
             {workspace}
@@ -391,6 +411,15 @@
           </button>
         {/if}
       </div>
+      {#if agents.length > 1}
+        <button
+          class="flex items-center gap-1.5 w-full px-4 py-2 text-ui text-subtle hover:text-muted-foreground border-t border-border/30 transition-colors cursor-pointer"
+          onclick={() => onOpenAgentOverview?.()}
+        >
+          <Fa icon={faSitemap} size="xs" class="opacity-50" />
+          <span>View agent tree</span>
+        </button>
+      {/if}
     </section>
   {/if}
 
@@ -491,7 +520,7 @@
             class="text-ui text-subtle text-left px-2 py-0.5 flex items-center cursor-pointer"
             onclick={() => onSwitchTab?.('context')}
           >
-            <Fa icon={faPlus} size="xs" class="ml-0.75 -mt-px mr-0.75" />
+            <Fa icon={faPlus} size="xs" class="ml-0.75 -mt-px mr-0.75 opacity-50" />
             {moreContextCount} more notes
           </button>
         {/if}
@@ -507,7 +536,7 @@
       <div class="px-4 pt-3 pb-1">
         <h3 class="text-sm font-semibold text-foreground">Changes</h3>
         <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
-          Files changed by agents working in this space.
+          Files changed manually or by agents working in this space.
         </p>
       </div>
       <div class="px-4 pb-3">
@@ -539,7 +568,7 @@
           <Fa icon={faArrowRight} size="xs" class="ml-auto text-ghost shrink-0" />
         </button>
         <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
-          Files changed by agents working in this space.
+          Files changed manually or by agents working in this space.
         </p>
       </div>
 
@@ -548,12 +577,13 @@
           {#if workspace?.branch}
             <div class="flex items-center gap-1 text-sm py-0.5">
               <Fa icon={faCodeBranch} size="xs" class="text-ghost" />
-              <Tooltip
-                side="top"
-                disableCloseOnTriggerClick
-                bind:open={workingBranchTooltipOpen}
-              >
-                {#snippet content()}<span>Click to copy</span>{#if copiedWorkingBranch}<span class="text-green-500 ml-1.5 inline-flex items-center gap-1"><Fa icon={faCheck} size="xs" /></span>{/if}{/snippet}
+              <Tooltip side="top" disableCloseOnTriggerClick bind:open={workingBranchTooltipOpen}>
+                {#snippet content()}<span
+                    >Working on the {workspace.branch} branch. Click to copy.</span
+                  >{#if copiedWorkingBranch}<span
+                      class="text-green-500 ml-1.5 inline-flex items-center gap-1"
+                      ><Fa icon={faCheck} size="xs" /></span
+                    >{/if}{/snippet}
                 <button
                   class="text-muted-foreground truncate text-xs cursor-pointer hover:text-muted-foreground transition-colors bg-transparent border-none p-0 focus-visible:outline-none!"
                   onclick={() => {
@@ -571,12 +601,12 @@
               </Tooltip>
               {#if workspace.baseRef}
                 <Fa icon={faArrowRight} size="xs" class="text-ghost" />
-                <Tooltip
-                  side="top"
-                  disableCloseOnTriggerClick
-                  bind:open={trunkBranchTooltipOpen}
-                >
-                  {#snippet content()}<span>Click to copy</span>{#if copiedTrunkBranch}<span class="text-green-500 ml-1.5 inline-flex items-center gap-1"><Fa icon={faCheck} size="xs" /></span>{/if}{/snippet}
+                <Tooltip side="top" disableCloseOnTriggerClick bind:open={trunkBranchTooltipOpen}>
+                  {#snippet content()}<span>Trunk branch. Click to copy.</span
+                    >{#if copiedTrunkBranch}<span
+                        class="text-green-500 ml-1.5 inline-flex items-center gap-1"
+                        ><Fa icon={faCheck} size="xs" /></span
+                      >{/if}{/snippet}
                   <button
                     class="text-muted-foreground truncate text-xs cursor-pointer hover:text-muted-foreground transition-colors bg-transparent border-none p-0 focus-visible:outline-none!"
                     onclick={() => {
@@ -613,14 +643,14 @@
 
           {#if moreFilesCount > 0}
             <button
-              class="mt-1 flex items-center text-xs text-subtle text-left py-0.5 transition-colors cursor-pointer px-2"
+              class="text-ui text-subtle text-left pt-1.5 py-0.5 flex items-center cursor-pointer"
               onclick={(e) => {
                 e.stopPropagation();
                 onSwitchTab?.('changes');
               }}
             >
-              <Fa icon={faPlus} size="xs" class="ml-0.75 -mt-px mr-0.75" />
-              {moreFilesCount} more files changed
+              <Fa icon={faPlus} size="xs" class="ml-0.75 -mt-px mr-0.75 opacity-50" />
+              {moreFilesCount} more changed files
             </button>
           {/if}
         </div>
@@ -630,79 +660,95 @@
           {#if commits.length > 0}
             <div class="flex flex-col gap-0.5">
               {#each commits.slice(0, 6) as commit}
+                {@const isActive = activeCommitHash === commit.hash}
                 <button
-                  class="flex items-center gap-2 text-ui py-0.5 w-full text-left cursor-pointer hover:bg-muted/30 rounded transition-colors"
+                  class="flex items-center gap-2 text-ui py-0.5 w-full text-left cursor-pointer transition-colors {isActive
+                    ? 'text-foreground'
+                    : ''}"
                   onclick={(e) => {
                     e.stopPropagation();
                     onOpenCommit?.(commit.hash);
                   }}
                 >
-                  <Fa icon={faCodeCommit} size="xs" class="text-ghost shrink-0" />
-                  <span class="text-subtle truncate">{commit.message}</span>
+                  <Fa
+                    icon={faCodeCommit}
+                    size="xs"
+                    class="{isActive ? 'text-foreground' : 'text-ghost'} shrink-0 ml-0.5"
+                  />
+                  <span class="{isActive ? 'text-foreground' : 'text-muted-foreground'} truncate"
+                    >{commit.message}</span
+                  >
                 </button>
               {/each}
               {#if commits.length > 6}
-                <span class="text-ui text-subtle pl-5"
-                  >+{commits.length - 6} more</span
+                <button
+                  class="text-ui text-subtle text-left py-0.5 flex items-center cursor-pointer"
+                  onclick={() => onSwitchTab?.('changes')}
                 >
+                  <Fa icon={faPlus} size="xs" class="ml-0.75 -mt-px mr-0.75 opacity-50" />
+                  {commits.length - 6} more commits
+                </button>
               {/if}
             </div>
           {/if}
 
-          <!-- PR status -->
-          <button
-            class="flex items-center gap-2 w-full text-left py-0.5 cursor-pointer hover:bg-muted/30 rounded transition-colors"
-            onclick={() => {
-              if (stats.pr.url) {
-                window.open(stats.pr.url, '_blank');
-              } else {
-                onSwitchTab?.('changes');
-              }
-            }}
-          >
-            <Fa
-              icon={faCodePullRequest}
-              size="xs"
-              class={stats.pr.hasMerged
-                ? 'text-purple-500/70'
-                : stats.pr.hasOpen
-                  ? 'text-emerald-500/70'
-                  : stats.pr.hasClosed
-                    ? 'text-red-500/70'
-                    : 'text-ghost'}
-            />
-            <span class="text-ui text-subtle truncate">
-              {#if stats.pr.number}
-                PR #{stats.pr.number}
-              {:else}
-                Pull request
-              {/if}
-            </span>
-            {#if stats.pr.hasOpen || stats.pr.hasMerged || stats.pr.hasClosed}
-              <span
-                class="text-ui font-medium px-1.5 py-0.5 rounded-full shrink-0
-                  {stats.pr.hasMerged
+          <!-- PR status (only show when a PR exists) -->
+          {#if stats.pr.number || stats.pr.hasOpen || stats.pr.hasMerged || stats.pr.hasClosed}
+            <button
+              class="flex items-center gap-2 w-full text-left py-0.5 cursor-pointer hover:bg-muted/30 rounded transition-colors"
+              onclick={() => {
+                if (stats.pr.url) {
+                  window.open(stats.pr.url, '_blank');
+                } else {
+                  onSwitchTab?.('changes');
+                }
+              }}
+            >
+              <Fa
+                icon={faCodePullRequest}
+                size="xs"
+                class="ml-0.5 {stats.pr.hasMerged
+                  ? 'text-purple-500/70'
+                  : stats.pr.hasOpen
+                    ? 'text-emerald-500/70'
+                    : stats.pr.hasClosed
+                      ? 'text-red-500/70'
+                      : 'text-ghost'}"
+              />
+              <span class="text-ui text-muted-foreground truncate">
+                {#if stats.pr.number}
+                  PR #{stats.pr.number}
+                {:else}
+                  Pull request
+                {/if}
+              </span>
+              {#if stats.pr.hasOpen || stats.pr.hasMerged || stats.pr.hasClosed}
+                <span
+                  class="text-ui font-medium px-2 py-px rounded ml-auto shrink-0
+                    {stats.pr.hasMerged
                     ? 'text-purple-500 bg-purple-500/10'
                     : stats.pr.hasOpen
                       ? 'text-emerald-500 bg-emerald-500/10'
                       : 'text-red-500 bg-red-500/10'}"
-              >
-                {stats.pr.hasMerged ? 'merged' : stats.pr.hasOpen ? 'open' : 'closed'}
-              </span>
-            {/if}
-          </button>
+                >
+                  {stats.pr.hasMerged ? 'merged' : stats.pr.hasOpen ? 'open' : 'closed'}
+                </span>
+              {/if}
+            </button>
+          {/if}
         </div>
 
         <!-- View all changes button -->
-        <div class="px-4 pb-2">
-          <button
-            class="text-xs text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
-            onclick={() => onOpenAllChanges?.()}
-          >
-            View all changes
-          </button>
-        </div>
       </div>
+      {#if changedFiles.length > 0}
+        <button
+          class="flex items-center gap-1.5 w-full px-4 py-2 text-ui text-subtle hover:text-muted-foreground border-t border-border/30 transition-colors cursor-pointer"
+          onclick={() => onOpenAllChanges?.()}
+        >
+          <Fa icon={faPencil} size="xs" class="opacity-50" />
+          <span>View full diff</span>
+        </button>
+      {/if}
     </section>
   {/if}
 
@@ -732,53 +778,33 @@
         </button>
       </div>
       <p class="text-ui text-subtle mt-0.5 leading-tight text-pretty">
-        The agents in this space are working off a copy of your files.
+        {#if workspace?.worktreePath}
+          The workspace contains a copy of your repo that lives in
+          <span class="inline-flex items-baseline gap-1">
+            <OpenComboButton
+              filePath={workspace.worktreePath}
+              isDirectory={true}
+              variant="sidebar"
+              compact
+              class="inline-flex"
+            >
+              <span class="text-inherit underline underline-offset-2 decoration-muted-foreground/20"
+                >/{workspace.worktreePath.split('/').slice(-2).join('/')}</span
+              >
+            </OpenComboButton></span
+          >.
+        {:else}
+          The workspace contains a copy of your repo.
+        {/if}
       </p>
     </div>
 
-    <div class="px-2 pb-3.5 flex flex-col">
-      {#if rootFilesLoading}
-        <div class="px-2 py-1 space-y-1">
-          {#each Array(6) as _}
-            <div class="flex items-center gap-2 py-1">
-              <Skeleton class="size-4 rounded shrink-0" />
-              <Skeleton class="h-3 flex-1" />
-            </div>
-          {/each}
-        </div>
-      {:else}
-        {#each rootFiles as entry (entry.path)}
-          <button
-            class="flex items-center gap-1.5 w-full px-2 py-0.75 text-left text-ui hover:bg-muted/50 transition-colors border cursor-pointer truncate {activeFilePath ===
-              entry.path || selectedFilePath === entry.path
-              ? 'bg-background border-border shadow-xs'
-              : 'border-transparent'}"
-            onclick={() => {
-              if (!entry.isDirectory && onOpenFileInPanel) onOpenFileInPanel(entry.path);
-              else onSwitchTab?.('files');
-            }}
-          >
-            {#if entry.isDirectory}
-              <Fa icon={faFolder} size="xs" class="text-ghost shrink-0 w-4" />
-            {:else}
-              <span class="w-4 h-4 shrink-0 [&>svg]:w-full [&>svg]:h-full">
-                {@html getFileTypeIconSvg(entry.name)}
-              </span>
-            {/if}
-            <span class="truncate text-muted-foreground">{entry.name}</span>
-          </button>
-        {/each}
-
-        {#if rootFilesTotal > MAX_ROOT_FILES}
-          <button
-            class="mt-1 flex items-center text-xs text-muted-foreground text-left py-0.5 transition-colors cursor-pointer px-2 hover:text-muted-foreground"
-            onclick={() => onSwitchTab?.('files')}
-          >
-            <Fa icon={faPlus} size="xs" class="ml-0.75 -mt-px mr-0.75" />
-            {rootFilesTotal - MAX_ROOT_FILES} more
-          </button>
-        {/if}
-      {/if}
-    </div>
+    <button
+      class="flex items-center gap-1.5 w-full px-4 py-2 text-ui text-subtle hover:text-muted-foreground border-t border-border/30 transition-colors cursor-pointer"
+      onclick={() => onSwitchTab?.('files')}
+    >
+      <Fa icon={faFolder} size="xs" class="opacity-50" />
+      <span>View or edit files directly</span>
+    </button>
   </section>
 </div>

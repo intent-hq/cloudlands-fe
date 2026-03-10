@@ -8,7 +8,7 @@
   import type { TabTypeComponentProps } from './registry';
   import { AgentOverviewPanel } from '$lib/components/agent-overview';
 
-  let { workspaceId }: TabTypeComponentProps = $props();
+  let { workspaceId, onFocus }: TabTypeComponentProps = $props();
 </script>
 
-<AgentOverviewPanel {workspaceId} />
+<AgentOverviewPanel {workspaceId} {onFocus} />

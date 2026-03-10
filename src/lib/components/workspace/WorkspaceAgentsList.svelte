@@ -5,7 +5,7 @@
   import { ListEmpty } from '$lib/components/ui/list';
   import VirtualList from '$lib/components/ui/VirtualList.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import { faChevronDown, faEye, faEyeSlash, faRobot } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faEye, faEyeSlash, faRobot, faSitemap } from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
@@ -21,6 +21,7 @@
     onSelect?: (detail: { agentId: string }) => void;
     onCreate?: () => void;
     onCreateWithSpecialist?: (specialistId: string | null) => void;
+    onOpenAgentOverview?: () => void;
     useVirtualScrolling?: boolean;
     loading?: boolean;
   }
@@ -31,6 +32,7 @@
     onSelect,
     onCreate,
     onCreateWithSpecialist,
+    onOpenAgentOverview,
     useVirtualScrolling = true,
     loading = false,
   }: Props = $props();
@@ -266,6 +268,7 @@
 
     <AgentCard
       agentId={agent.id}
+      agentName={agent.name}
       isBackground={isBackgroundAgent(agent)}
       selected={agent.id === selectedAgentId}
       {depth}
@@ -351,6 +354,7 @@
       {#snippet children({ item: agent }: { item: AgentSession })}
         <AgentCard
           agentId={agent.id}
+          agentName={agent.name}
           isBackground={false}
           selected={agent.id === selectedAgentId}
           depth={0}
@@ -414,6 +418,7 @@
         <div class="w-full" transition:slide={{ axis: 'y', duration: 150 }}>
           <AgentCard
             agentId={agent.id}
+            agentName={agent.name}
             isBackground={true}
             selected={agent.id === selectedAgentId}
             depth={0}
@@ -422,6 +427,19 @@
         </div>
       {/if}
     {/each}
+  </div>
+{/if}
+
+{#if onOpenAgentOverview && agents.length > 1}
+  <div class="px-1.5 pt-2">
+    <button
+      type="button"
+      class="flex items-center gap-1.5 w-full px-2.5 py-1.5 text-xs text-subtle hover:text-muted-foreground hover:bg-muted/50 rounded-md transition-colors cursor-pointer"
+      onclick={() => onOpenAgentOverview?.()}
+    >
+      <Fa icon={faSitemap} size="xs" class="opacity-50" />
+      <span>View agent tree</span>
+    </button>
   </div>
 {/if}
 

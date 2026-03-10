@@ -148,7 +148,7 @@
       id: 'changes',
       label: 'Changes',
       icon: faPencil,
-      description: 'Files changed by agents working in this space.',
+      description: 'Files changed manually or by agents working in this space.',
     },
     {
       id: 'files',
@@ -481,6 +481,13 @@
     return null;
   });
   const effectiveIsAllChangesViewActive = $derived(focusedContent.type === 'local-changes');
+  const effectiveActiveCommitHash = $derived.by(() => {
+    const tab = panelLayoutManager.focusedTab;
+    if (tab?.type === 'changes' && tab.data?.commitHash) {
+      return tab.data.commitHash as string;
+    }
+    return null;
+  });
 
   // Panel open handlers
   function handleOpenAgentInPanel(agentId: string) {
@@ -531,6 +538,15 @@
     panelLayoutManager.openTab({
       type: 'code-review',
       title: 'Code Review',
+      closable: true,
+      workspaceId,
+    });
+  }
+
+  function handleOpenAgentOverview() {
+    panelLayoutManager.openTab({
+      type: 'agent-overview',
+      title: 'Agent Overview',
       closable: true,
       workspaceId,
     });
@@ -988,7 +1004,7 @@
                   {:else if tabId === 'files' && workspacePath}
                     {workspace?.skipWorktree
                       ? 'Working directly in'
-                      : 'Your copy of the repo lives in'}
+                      : 'The workspace contains a copy of your repo that lives in'}
                     <span class="inline-flex items-baseline gap-1">
                       <OpenComboButton
                         filePath={workspacePath}
@@ -1013,246 +1029,251 @@
             <!-- {#key workspaceId} forces remount of agent-related panels on workspace switch,
                  ensuring onMount stream listeners and subscriptions rebind correctly -->
             {#key workspaceId}
-            <div class="h-full pt-2 pb-6">
-              {#if tabId === 'overview'}
-                {@const overviewAgents = workspaceAgents.map((agent) => {
-                  const state = getAvatarState(
-                    {
-                      isStreaming: agent.isStreaming,
-                      isProcessing: agent.isProcessing,
-                      isResponding: agent.isResponding,
-                      status: agent.status,
-                    },
-                    {},
-                  );
-                  const specialist = (agent.metadata?.specialist as string) || null;
-                  const validSpecialist =
-                    specialist === 'spec-writer' ||
-                    specialist === 'implementor' ||
-                    specialist === 'verifier' ||
-                    specialist === 'ui-designer'
-                      ? (specialist as 'spec-writer' | 'implementor' | 'verifier' | 'ui-designer')
-                      : null;
-                  return {
-                    id: agent.id,
-                    name: agent.name,
-                    specialist: validSpecialist,
-                    state,
-                    isActive: state === 'running' || state === 'responding',
-                    isInitialAgent:
-                      agent.metadata?.isInitialAgent === true ||
-                      agent.metadata?.isInitialWorkspaceAgent === true,
-                    isBackground: agent.metadata?.isBackground === true,
-                    parentAgentId: (agent.metadata?.createdByAgentId as string) || null,
-                    hasUnread: agent.hasUnread === true,
-                    digest: agent.digest || undefined,
-                    statusLabel:
-                      state === 'waiting'
-                        ? 'waiting'
-                        : state === 'running' || state === 'responding'
-                          ? 'running'
-                          : 'idle',
-                    waitingForCount: agent.metadata?.delegatedAgentIds
-                      ? (agent.metadata.delegatedAgentIds as string[]).length
-                      : 0,
-                  };
-                })}
-                {@const overviewChangedFiles = [
-                  ...workingChanges.unstaged.map((c) => ({
-                    path: c.relativePath || c.file,
-                    additions: c.stats?.additions ?? 0,
-                    deletions: c.stats?.deletions ?? 0,
-                    status: c.status,
-                    staged: false,
-                  })),
-                  ...workingChanges.staged
-                    .filter(
-                      (s) =>
-                        !workingChanges.unstaged.some(
-                          (u) => u.file === s.file || u.relativePath === s.relativePath,
-                        ),
-                    )
-                    .map((c) => ({
+              <div class="h-full pt-2 pb-6">
+                {#if tabId === 'overview'}
+                  {@const overviewAgents = workspaceAgents.map((agent) => {
+                    const state = getAvatarState(
+                      {
+                        isStreaming: agent.isStreaming,
+                        isProcessing: agent.isProcessing,
+                        isResponding: agent.isResponding,
+                        status: agent.status,
+                      },
+                      {},
+                    );
+                    const specialist = (agent.metadata?.specialist as string) || null;
+                    const validSpecialist =
+                      specialist === 'spec-writer' ||
+                      specialist === 'implementor' ||
+                      specialist === 'verifier' ||
+                      specialist === 'ui-designer'
+                        ? (specialist as 'spec-writer' | 'implementor' | 'verifier' | 'ui-designer')
+                        : null;
+                    return {
+                      id: agent.id,
+                      name: agent.name,
+                      specialist: validSpecialist,
+                      state,
+                      isActive: state === 'running' || state === 'responding',
+                      isInitialAgent:
+                        agent.metadata?.isInitialAgent === true ||
+                        agent.metadata?.isInitialWorkspaceAgent === true,
+                      isBackground: agent.metadata?.isBackground === true,
+                      parentAgentId: (agent.metadata?.createdByAgentId as string) || null,
+                      hasUnread: agent.hasUnread === true,
+                      digest: agent.digest || undefined,
+                      statusLabel:
+                        state === 'waiting'
+                          ? 'waiting'
+                          : state === 'running' || state === 'responding'
+                            ? 'running'
+                            : 'idle',
+                      waitingForCount: agent.metadata?.delegatedAgentIds
+                        ? (agent.metadata.delegatedAgentIds as string[]).length
+                        : 0,
+                    };
+                  })}
+                  {@const overviewChangedFiles = [
+                    ...workingChanges.unstaged.map((c) => ({
                       path: c.relativePath || c.file,
                       additions: c.stats?.additions ?? 0,
                       deletions: c.stats?.deletions ?? 0,
                       status: c.status,
-                      staged: true,
+                      staged: false,
                     })),
-                ]}
-                <OverviewTimelinePanel
-                  {workspace}
-                  phase={workspacePhaseInfo}
-                  stats={workspacePhaseStats}
-                  {notes}
-                  agents={overviewAgents}
-                  changedFiles={overviewChangedFiles}
-                  commits={allCommits.map((c) => ({
-                    hash: c.hash || '',
-                    message: c.message || '',
-                  }))}
-                  selectedNoteId={effectiveSelectedNoteId}
-                  selectedAgentId={effectiveSelectedAgentId}
-                  selectedFilePath={effectiveSelectedFile}
-                  activeFilePath={effectiveActiveFilePath}
-                  {agentsLoading}
-                  {notesLoading}
-                  changesLoading={!storeHasCorrectWorkspace}
-                  onSwitchTab={switchToTab}
-                  onOpenNote={(noteId) => handleOpenNoteInPanel(noteId)}
-                  onOpenAgent={(agentId) => handleOpenAgentInPanel(agentId)}
-                  onOpenFile={(filePath) => {
-                    window.dispatchEvent(
-                      new CustomEvent('workspace:open-diff', {
-                        detail: { filePath },
-                      }),
-                    );
-                  }}
-                  onOpenAllChanges={() =>
-                    window.dispatchEvent(new CustomEvent('workspace:open-local-changes'))}
-                  onOpenCommit={(hash) => {
-                    window.dispatchEvent(
-                      new CustomEvent('workspace:open-commit-changeset', {
-                        detail: { commitHash: hash },
-                      }),
-                    );
-                  }}
-                  onOpenFileInPanel={handleOpenFileInPanel}
-                />
-              {:else if tabId === 'agents'}
-                <div class="px-3 transition-all duration-200">
-                  <WorkspaceAgentsList
-                    agents={workspaceAgents}
-                    loading={agentsLoading}
-                    selectedAgentId={effectiveSelectedAgentId}
-                    onSelect={({ agentId }) => handleOpenAgentInPanel(agentId)}
-                  />
-                </div>
-              {:else if tabId === 'context'}
-                <div class="px-3 transition-all duration-200">
-                  <ContextPanel
+                    ...workingChanges.staged
+                      .filter(
+                        (s) =>
+                          !workingChanges.unstaged.some(
+                            (u) => u.file === s.file || u.relativePath === s.relativePath,
+                          ),
+                      )
+                      .map((c) => ({
+                        path: c.relativePath || c.file,
+                        additions: c.stats?.additions ?? 0,
+                        deletions: c.stats?.deletions ?? 0,
+                        status: c.status,
+                        staged: true,
+                      })),
+                  ]}
+                  <OverviewTimelinePanel
+                    {workspace}
+                    phase={workspacePhaseInfo}
+                    stats={workspacePhaseStats}
                     {notes}
-                    {workspaceId}
+                    agents={overviewAgents}
+                    changedFiles={overviewChangedFiles}
+                    commits={allCommits.map((c) => ({
+                      hash: c.hash || '',
+                      message: c.message || '',
+                    }))}
                     selectedNoteId={effectiveSelectedNoteId}
-                    onOpenNote={handleOpenNoteInPanel}
-                    onOpenAgent={handleOpenAgentInPanel}
-                    {onReorderNotes}
-                    {onCreateNote}
-                    loading={notesLoading}
-                    showAddSection={false}
+                    selectedAgentId={effectiveSelectedAgentId}
+                    selectedFilePath={effectiveSelectedFile}
+                    activeFilePath={effectiveActiveFilePath}
+                    activeCommitHash={effectiveActiveCommitHash}
+                    {agentsLoading}
+                    {notesLoading}
+                    changesLoading={!storeHasCorrectWorkspace}
+                    onSwitchTab={switchToTab}
+                    onOpenNote={(noteId) => handleOpenNoteInPanel(noteId)}
+                    onOpenAgent={(agentId) => handleOpenAgentInPanel(agentId)}
+                    onOpenFile={(filePath) => {
+                      window.dispatchEvent(
+                        new CustomEvent('workspace:open-diff', {
+                          detail: { filePath },
+                        }),
+                      );
+                    }}
+                    onOpenAllChanges={() =>
+                      window.dispatchEvent(new CustomEvent('workspace:open-local-changes'))}
+                    onOpenCommit={(hash) => {
+                      window.dispatchEvent(
+                        new CustomEvent('workspace:open-commit-changeset', {
+                          detail: { commitHash: hash },
+                        }),
+                      );
+                    }}
+                    onOpenFileInPanel={handleOpenFileInPanel}
+                    onOpenAgentOverview={handleOpenAgentOverview}
                   />
-                </div>
-              {:else if tabId === 'changes'}
-                <div class="px-2.5 flex-1 h-full flex flex-col transition-all duration-200">
-                  <div class="w-full flex-1">
-                    <SidebarChangesPanel
-                      {workspaceId}
-                      activeFilePath={effectiveActiveFilePath}
-                      activeFileStaged={effectiveActiveFileStaged}
-                      isAllChangesViewActive={effectiveIsAllChangesViewActive}
-                      onOpenChange={(change) => {
-                        window.dispatchEvent(
-                          new CustomEvent('workspace:open-diff', {
-                            detail: {
-                              change,
-                              filePath: change.relativePath || change.file,
-                              changeId: change.id,
-                              staged: change.stage === 'staged',
-                            },
-                          }),
-                        );
-                      }}
-                      onOpenFullPanel={handleOpenAcceptChanges}
-                      onOpenNote={handleOpenNoteInPanel}
-                      onOpenCodeReview={handleOpenCodeReviewInPanel}
+                {:else if tabId === 'agents'}
+                  <div class="px-3 transition-all duration-200">
+                    <WorkspaceAgentsList
+                      agents={workspaceAgents}
+                      loading={agentsLoading}
+                      selectedAgentId={effectiveSelectedAgentId}
+                      onSelect={({ agentId }) => handleOpenAgentInPanel(agentId)}
+                      onOpenAgentOverview={handleOpenAgentOverview}
                     />
                   </div>
-                </div>
-              {:else if tabId === 'files'}
-                <div class="px-3 transition-all duration-200">
-                  <!-- File filter controls -->
-                  <div class="pb-2 flex items-center gap-2">
-                    <div class="flex-1 relative">
-                      <Fa
-                        icon={faSearch}
-                        class="absolute left-2.5 top-1/2 -translate-y-1/2 w-2.5 h-2.5 text-ghost"
-                      />
-                      <Input
-                        bind:this={fileSearchInputRef}
-                        bind:value={fileSearchQuery}
-                        type="text"
-                        placeholder="Search files..."
-                        class="h-7 pl-7 pr-6 text-xs bg-transparent! border-0 placeholder:text-muted-foreground/50!"
-                        noFocusStyle
-                        onkeydown={(e: KeyboardEvent) => filesPanelRef?.handleSearchKeyDown(e)}
-                      />
-                      {#if fileSearchQuery}
-                        <button
-                          type="button"
-                          class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-muted-foreground cursor-pointer"
-                          onclick={() => {
-                            fileSearchQuery = '';
-                            fileSearchInputRef?.focus();
-                          }}
-                        >
-                          <Fa icon={faTimes} class="w-2.5 h-2.5" />
-                        </button>
-                      {/if}
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      class="shrink-0 text-subtle"
-                      tooltip="New file"
-                      onclick={() => filesPanelRef?.startCreatingFile()}
-                    >
-                      <Fa icon={faPlus} class="w-3 h-3" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      class="shrink-0 {showOnlyChangedFiles ? 'text-primary' : 'text-subtle'}"
-                      tooltip={showOnlyChangedFiles ? 'Show all files' : 'Show only changed files'}
-                      onclick={() => (showOnlyChangedFiles = !showOnlyChangedFiles)}
-                    >
-                      <Fa icon={faPencil} class="w-3 h-3" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      class="shrink-0 text-subtle"
-                      tooltip={hasExpandedDirectories ? 'Collapse all' : 'Expand all'}
-                      onclick={async () => {
-                        if (hasExpandedDirectories) {
-                          filesPanelRef?.collapseAll();
-                        } else {
-                          await filesPanelRef?.expandAll();
-                        }
-                        filesExpandedTick++;
-                      }}
-                    >
-                      <Fa
-                        icon={hasExpandedDirectories ? faCompressAlt : faExpandAlt}
-                        class="w-3 h-3"
-                      />
-                    </Button>
+                {:else if tabId === 'context'}
+                  <div class="px-3 transition-all duration-200">
+                    <ContextPanel
+                      {notes}
+                      {workspaceId}
+                      selectedNoteId={effectiveSelectedNoteId}
+                      onOpenNote={handleOpenNoteInPanel}
+                      onOpenAgent={handleOpenAgentInPanel}
+                      {onReorderNotes}
+                      {onCreateNote}
+                      loading={notesLoading}
+                      showAddSection={false}
+                    />
                   </div>
-                  <FilesPanel
-                    bind:this={filesPanelRef}
-                    {workspacePath}
-                    {workspaceId}
-                    environmentConfig={workspace?.environmentConfig}
-                    selectedFile={effectiveSelectedFile}
-                    onOpenFile={handleOpenFileInPanel}
-                    {onCreateFile}
-                    {onFileRenamed}
-                    onSelectAgent={handleOpenAgentInPanel}
-                    showOnlyChanged={showOnlyChangedFiles}
-                    searchQuery={fileSearchQuery}
-                  />
-                </div>
-              {/if}
-            </div>
+                {:else if tabId === 'changes'}
+                  <div class="px-2.5 flex-1 h-full flex flex-col transition-all duration-200">
+                    <div class="w-full flex-1">
+                      <SidebarChangesPanel
+                        {workspaceId}
+                        activeFilePath={effectiveActiveFilePath}
+                        activeFileStaged={effectiveActiveFileStaged}
+                        isAllChangesViewActive={effectiveIsAllChangesViewActive}
+                        onOpenChange={(change) => {
+                          window.dispatchEvent(
+                            new CustomEvent('workspace:open-diff', {
+                              detail: {
+                                change,
+                                filePath: change.relativePath || change.file,
+                                changeId: change.id,
+                                staged: change.stage === 'staged',
+                              },
+                            }),
+                          );
+                        }}
+                        onOpenFullPanel={handleOpenAcceptChanges}
+                        onOpenNote={handleOpenNoteInPanel}
+                        onOpenCodeReview={handleOpenCodeReviewInPanel}
+                      />
+                    </div>
+                  </div>
+                {:else if tabId === 'files'}
+                  <div class="px-3 transition-all duration-200">
+                    <!-- File filter controls -->
+                    <div class="pb-2 flex items-center gap-2">
+                      <div class="flex-1 relative">
+                        <Fa
+                          icon={faSearch}
+                          class="absolute left-2.5 top-1/2 -translate-y-1/2 w-2.5 h-2.5 text-ghost"
+                        />
+                        <Input
+                          bind:this={fileSearchInputRef}
+                          bind:value={fileSearchQuery}
+                          type="text"
+                          placeholder="Search files..."
+                          class="h-7 pl-7 pr-6 text-xs bg-transparent! border-0 placeholder:text-muted-foreground/50!"
+                          noFocusStyle
+                          onkeydown={(e: KeyboardEvent) => filesPanelRef?.handleSearchKeyDown(e)}
+                        />
+                        {#if fileSearchQuery}
+                          <button
+                            type="button"
+                            class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-muted-foreground cursor-pointer"
+                            onclick={() => {
+                              fileSearchQuery = '';
+                              fileSearchInputRef?.focus();
+                            }}
+                          >
+                            <Fa icon={faTimes} class="w-2.5 h-2.5" />
+                          </button>
+                        {/if}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        class="shrink-0 text-subtle"
+                        tooltip="New file"
+                        onclick={() => filesPanelRef?.startCreatingFile()}
+                      >
+                        <Fa icon={faPlus} class="w-3 h-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        class="shrink-0 {showOnlyChangedFiles ? 'text-primary' : 'text-subtle'}"
+                        tooltip={showOnlyChangedFiles
+                          ? 'Show all files'
+                          : 'Show only changed files'}
+                        onclick={() => (showOnlyChangedFiles = !showOnlyChangedFiles)}
+                      >
+                        <Fa icon={faPencil} class="w-3 h-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        class="shrink-0 text-subtle"
+                        tooltip={hasExpandedDirectories ? 'Collapse all' : 'Expand all'}
+                        onclick={async () => {
+                          if (hasExpandedDirectories) {
+                            filesPanelRef?.collapseAll();
+                          } else {
+                            await filesPanelRef?.expandAll();
+                          }
+                          filesExpandedTick++;
+                        }}
+                      >
+                        <Fa
+                          icon={hasExpandedDirectories ? faCompressAlt : faExpandAlt}
+                          class="w-3 h-3"
+                        />
+                      </Button>
+                    </div>
+                    <FilesPanel
+                      bind:this={filesPanelRef}
+                      {workspacePath}
+                      {workspaceId}
+                      environmentConfig={workspace?.environmentConfig}
+                      selectedFile={effectiveSelectedFile}
+                      onOpenFile={handleOpenFileInPanel}
+                      {onCreateFile}
+                      {onFileRenamed}
+                      onSelectAgent={handleOpenAgentInPanel}
+                      showOnlyChanged={showOnlyChangedFiles}
+                      searchQuery={fileSearchQuery}
+                    />
+                  </div>
+                {/if}
+              </div>
             {/key}
           </div>
         </div>

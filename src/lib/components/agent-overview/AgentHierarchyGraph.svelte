@@ -24,9 +24,10 @@
     agents: AgentNode[];
     edges: GraphEdge[];
     onAgentClick?: (agentId: string, agentName: string, event: MouseEvent) => void;
+    onFocus?: () => void;
   }
 
-  let { agents, edges, onAgentClick }: Props = $props();
+  let { agents, edges, onAgentClick, onFocus }: Props = $props();
 
   // Layout constants
   const GAPX = 12; // Gap between cards
@@ -112,6 +113,11 @@
       isPanning = true;
       lastPanPoint = { x: e.clientX, y: e.clientY };
       e.preventDefault();
+    }
+
+    // Focus the panel on any mousedown
+    if (e.button === 0) {
+      onFocus?.();
     }
   }
 
@@ -443,8 +449,10 @@
               {@const lineClass = isWaitingForItem ? '' : 'text-border'}
               {@const lineWidth = isWaitingForItem ? 2 : 1}
               {@const endY = item.type === 'batch' ? connectorHeight - BOX_PADDING : connectorHeight}
+              {@const hDist = Math.abs(itemCenterX - branchX)}
+              {@const r = Math.min(curveRadius, hDist / 2)}
 
-              {#if Math.abs(itemCenterX - branchX) < 1}
+              {#if hDist < 1}
                 <path
                   d="M {branchX} {connectorHeight / 3} L {branchX} {endY}"
                   stroke={lineStroke}
@@ -455,10 +463,10 @@
               {:else if itemCenterX < branchX}
                 <path
                   d="M {branchX} {connectorHeight / 3}
-                     L {branchX} {horizontalY - curveRadius}
-                     Q {branchX} {horizontalY}, {branchX - curveRadius} {horizontalY}
-                     L {itemCenterX + curveRadius} {horizontalY}
-                     Q {itemCenterX} {horizontalY}, {itemCenterX} {horizontalY + curveRadius}
+                     L {branchX} {horizontalY - r}
+                     Q {branchX} {horizontalY}, {branchX - r} {horizontalY}
+                     L {itemCenterX + r} {horizontalY}
+                     Q {itemCenterX} {horizontalY}, {itemCenterX} {horizontalY + r}
                      L {itemCenterX} {endY}"
                   stroke={lineStroke}
                   class={lineClass}
@@ -468,10 +476,10 @@
               {:else}
                 <path
                   d="M {branchX} {connectorHeight / 3}
-                     L {branchX} {horizontalY - curveRadius}
-                     Q {branchX} {horizontalY}, {branchX + curveRadius} {horizontalY}
-                     L {itemCenterX - curveRadius} {horizontalY}
-                     Q {itemCenterX} {horizontalY}, {itemCenterX} {horizontalY + curveRadius}
+                     L {branchX} {horizontalY - r}
+                     Q {branchX} {horizontalY}, {branchX + r} {horizontalY}
+                     L {itemCenterX - r} {horizontalY}
+                     Q {itemCenterX} {horizontalY}, {itemCenterX} {horizontalY + r}
                      L {itemCenterX} {endY}"
                   stroke={lineStroke}
                   class={lineClass}

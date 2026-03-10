@@ -19,9 +19,10 @@
 
   interface Props {
     workspaceId: string;
+    onFocus?: () => void;
   }
 
-  let { workspaceId }: Props = $props();
+  let { workspaceId, onFocus }: Props = $props();
 
   // Create store for graph state
   // svelte-ignore state_referenced_locally - workspaceId doesn't change during component lifecycle
@@ -92,6 +93,7 @@
     agents={agentNodes}
     edges={graphState.edges}
     onAgentClick={handleAgentClick}
+    {onFocus}
   />
 </div>
 
