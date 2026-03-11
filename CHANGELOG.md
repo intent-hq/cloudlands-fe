@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.24
+
+- Pinned projects in the sidebar now persist across app restarts.
+- Edit button for suggested answers lets you tweak a suggestion before sending it.
+- Slow-agent latency surfacing with provider-aware messaging so you know when a model is taking longer than expected.
+- PR Shepherd is hidden when GitHub auth is not available.
+- Fixes: GPT-5.4 `apply_patch` tool not detected for auto-commit attribution, oversized line-change indicators in the sidebar.
+
 ## 0.2.23
 
 - Agent Skills — agents discover SKILL.md files from your project and gain repo-specific capabilities automatically.
