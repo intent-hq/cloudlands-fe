@@ -4,7 +4,7 @@
   import { mcpSettingsStore } from './mcp/mcp-settings.store.svelte';
   import type { McpServerConfig, McpServerWithStatus, McpServerFormState } from './mcp/types';
   import { serverToFormState } from './mcp/types';
-  import { mcpOptions, isServerInstalled, type McpInstallOption } from './mcp/mcp-options';
+  import { mcpOptions, isServerInstalled, normalizeServerName, type McpInstallOption } from './mcp/mcp-options';
   import McpServerCard from './mcp/McpServerCard.svelte';
   import McpServerForm from './mcp/McpServerForm.svelte';
   import McpJsonImport from './mcp/McpJsonImport.svelte';
@@ -14,12 +14,19 @@
   import Input from '$lib/components/ui/input/input.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { slide } from 'svelte/transition';
-  import { faPlus, faCheck } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faCheck,
+    faCopy,
+    faPlus,
+    faRotateRight,
+    faTerminal,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { toast } from '$lib/components/ui/toast';
   import Header from '../ui/Header.svelte';
   import { handleLink } from '$features/navigation/link-handler';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { isMacPlatform } from '$lib/utils/shortcuts';
 
   // Props
   let { isAuggieProvider = true }: { isAuggieProvider?: boolean } = $props();
@@ -43,6 +50,11 @@
   let userMcpSaveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
   let userMcpSaveError = $state('');
   let showAdvanced = $state(false);
+
+  let isOpeningDiagnosticTerminal = $state(false);
+
+  const diagnosticCommand = 'auggie mcp list';
+  const canOpenDiagnosticTerminal = isMacPlatform();
 
   // Reactive getters from store
   const servers = $derived(mcpSettingsStore.serversWithStatus);
@@ -79,6 +91,56 @@
 
   async function handleToggleEnabled() {
     await mcpSettingsStore.setEnabled(!enabled);
+  }
+
+  async function handleRetryLoadServers() {
+    await mcpSettingsStore.loadServers();
+  }
+
+  async function handleCopyDiagnosticCommand() {
+    try {
+      await navigator.clipboard.writeText(diagnosticCommand);
+      toast.success('Diagnostic command copied');
+    } catch (copyError) {
+      logger.error('Failed to copy MCP diagnostic command:', copyError);
+      toast.error('Failed to copy diagnostic command');
+    }
+  }
+
+  async function handleOpenDiagnosticTerminal() {
+    if (!window.electronAPI) {
+      toast.error('Terminal integration is unavailable in browser mode');
+      return;
+    }
+
+    if (!canOpenDiagnosticTerminal) {
+      await handleCopyDiagnosticCommand();
+      toast.info('Paste the diagnostic command into your terminal');
+      return;
+    }
+
+    isOpeningDiagnosticTerminal = true;
+
+    try {
+      const result = await window.electronAPI.invoke('system:execute-command', {
+        command:
+          'osascript -e \'tell application "Terminal" to activate\' -e \'tell application "Terminal" to do script "auggie mcp list"\'',
+      });
+
+      if (result?.success) {
+        toast.success('Opened Terminal and started MCP diagnostic');
+      } else {
+        logger.error('Failed to open MCP diagnostic terminal:', result?.error);
+        await handleCopyDiagnosticCommand();
+        toast.error('Could not open Terminal automatically. Command copied instead.');
+      }
+    } catch (terminalError) {
+      logger.error('Failed to launch MCP diagnostic terminal:', terminalError);
+      await handleCopyDiagnosticCommand();
+      toast.error('Could not open Terminal automatically. Command copied instead.');
+    } finally {
+      isOpeningDiagnosticTerminal = false;
+    }
   }
 
   async function handleToggleServer(name: string) {
@@ -196,6 +258,13 @@
     return isServerInstalled(option.label, servers);
   }
 
+  function getInstalledServerStatus(option: McpInstallOption): string | undefined {
+    const server = servers.find(
+      (s) => s.name.toLowerCase().replace(/\s+/g, '-') === option.label.toLowerCase().replace(/\s+/g, '-'),
+    );
+    return server?.status;
+  }
+
   function startInstall(option: McpInstallOption) {
     if (isInstalled(option)) return;
 
@@ -237,13 +306,22 @@
       // Convert label to a valid server name (replace spaces with hyphens, lowercase)
       const serverName = option.label.toLowerCase().replace(/\s+/g, '-');
 
-      const config: McpServerConfig = {
-        name: serverName,
-        type: 'stdio',
-        command: option.command,
-        args: args.length > 0 ? args : undefined,
-        env: Object.keys(env).length > 0 ? env : undefined,
-      };
+      // Build config based on transport type
+      const isRemote = option.type === 'http' || option.type === 'sse';
+      const config: McpServerConfig = isRemote
+        ? {
+            name: serverName,
+            type: option.type!,
+            url: option.url,
+            authType: option.authType,
+          }
+        : {
+            name: serverName,
+            type: 'stdio',
+            command: option.command!,
+            args: args.length > 0 ? args : undefined,
+            env: Object.keys(env).length > 0 ? env : undefined,
+          };
 
       await mcpSettingsStore.addServer(config);
       activeConfig = null;
@@ -342,15 +420,21 @@
           <button
             type="button"
             class="text-primary hover:underline cursor-pointer"
-            onclick={(e) => { handleLink('https://docs.augmentcode.com/windsurf/mcp', { workspaceId: workspaceStore.current?.id, event: e }); }}
-          >Learn more ↗</button>
+            onclick={(e) => {
+              handleLink('https://docs.augmentcode.com/windsurf/mcp', {
+                workspaceId: workspaceStore.current?.id,
+                event: e,
+              });
+            }}>Learn more ↗</button
+          >
         </p>
       </div>
       <Switch checked={enabled} onCheckedChange={handleToggleEnabled} size="md" />
     </div>
     {#if !isAuggieProvider}
       <p class="text-xs text-subtle mt-2">
-        MCP servers are used by Auggie agents. Switch to Auggie as your provider to use custom MCP servers.
+        MCP servers are used by Auggie agents. Switch to Auggie as your provider to use custom MCP
+        servers.
       </p>
     {/if}
   </section>
@@ -413,7 +497,11 @@
               </div>
 
               {#if addMode === 'form'}
-                <McpServerForm onSubmit={handleAddServer} onCancel={handleCancelAdd} existingServerNames={servers.map(s => s.name)} />
+                <McpServerForm
+                  onSubmit={handleAddServer}
+                  onCancel={handleCancelAdd}
+                  existingServerNames={servers.map((s) => s.name)}
+                />
               {:else}
                 <McpJsonImport onImport={handleImportJson} onCancel={handleCancelAdd} />
               {/if}
@@ -475,16 +563,62 @@
               </div>
             </div>
           {:else if error}
-            <p class="text-sm text-destructive-foreground py-4">{error}</p>
+            <div class="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+              <div class="space-y-1">
+                <p class="text-sm font-medium text-foreground">Couldn&apos;t load MCP servers</p>
+                <p class="text-sm text-destructive">{error}</p>
+              </div>
+
+              <div class="mt-3 rounded-md border border-border bg-background/70 p-3">
+                <p class="text-xs text-muted-foreground">Diagnostic command</p>
+                <code class="mt-1 block break-all text-xs text-foreground">{diagnosticCommand}</code
+                >
+              </div>
+
+              <div class="mt-3 flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" onclick={handleRetryLoadServers}>
+                  <Fa icon={faRotateRight} size="xs" />
+                  <span class="ml-2">Retry</span>
+                </Button>
+
+                <Button variant="outline" size="sm" onclick={handleCopyDiagnosticCommand}>
+                  <Fa icon={faCopy} size="xs" />
+                  <span class="ml-2">Copy command</span>
+                </Button>
+
+                {#if canOpenDiagnosticTerminal}
+                  <Button
+                    size="sm"
+                    onclick={handleOpenDiagnosticTerminal}
+                    disabled={isOpeningDiagnosticTerminal}
+                  >
+                    <Fa icon={faTerminal} size="xs" />
+                    <span class="ml-2">
+                      {isOpeningDiagnosticTerminal ? 'Opening Terminal…' : 'Open Terminal & Run'}
+                    </span>
+                  </Button>
+                {/if}
+              </div>
+
+              <p class="mt-3 text-xs text-muted-foreground">
+                Run this command to inspect the CLI output directly if MCP server loading fails.
+              </p>
+            </div>
           {:else if servers.length === 0}
             <div class="text-xs text-subtle mb-4">
               <p>No custom MCP servers configured yet.</p>
-              <p class="mt-1">Add servers to give Auggie agents access to external tools and data.
+              <p class="mt-1">
+                Add servers to give Auggie agents access to external tools and data.
                 <button
                   type="button"
                   class="text-primary hover:underline cursor-pointer"
-                  onclick={(e) => { handleLink('https://docs.augmentcode.com/windsurf/mcp', { workspaceId: workspaceStore.current?.id, event: e }); }}
-                >Learn how ↗</button>
+                  onclick={(e) => {
+                    handleLink('https://docs.augmentcode.com/windsurf/mcp', {
+                      workspaceId: workspaceStore.current?.id,
+                      event: e,
+                    });
+                  }}>Learn how ↗</button
+                >
               </p>
             </div>
           {:else}
@@ -511,6 +645,7 @@
                 {@const installed = isInstalled(option)}
                 {@const installing = installingServer === option.label}
                 {@const configuring = activeConfig?.label === option.label}
+                {@const needsAuth = installed && getInstalledServerStatus(option) === 'auth_required'}
 
                 <div class="relative">
                   {#if configuring}
@@ -552,38 +687,56 @@
                     </div>
                   {:else}
                     <!-- Preset option button -->
-                    <button
-                      type="button"
-                      class="w-full flex items-center gap-3 py-2.5 px-1 rounded-md
-                             transition-colors cursor-pointer
-                             {installed ? 'opacity-50' : ''}"
-                      onclick={() => startInstall(option)}
-                      disabled={installed || installing}
+                    <div
+                      class="w-full flex items-center gap-3 py-2.5 px-1 rounded-md transition-colors"
                     >
-                      <McpIcon iconName={option.iconName} label={option.label} size={20} />
+                      <button
+                        type="button"
+                        class="flex-1 flex items-center gap-3 min-w-0 cursor-pointer"
+                        onclick={() => startInstall(option)}
+                        disabled={(installed && !needsAuth) || installing}
+                      >
+                        <McpIcon iconName={option.iconName} label={option.label} size={20} />
 
-                      <div class="flex-1 min-w-0 text-left">
-                        <div class="flex items-center gap-2">
-                          <span class="text-sm font-medium truncate">{option.label}</span>
-                          {#if installed}
-                            <span class="text-ui text-green-600 font-medium"> Installed </span>
-                          {/if}
+                        <div class="flex-1 min-w-0 text-left">
+                          <div class="flex items-center gap-2">
+                            <span class="text-sm font-medium truncate">{option.label}</span>
+                            {#if needsAuth}
+                              <span class="text-ui text-amber-700 dark:text-amber-400 font-medium"> Needs Auth </span>
+                            {:else if installed}
+                              <span class="text-ui text-green-600 font-medium"> Installed </span>
+                            {/if}
+                          </div>
+                          <p class="text-xs text-subtle truncate">{option.description}</p>
                         </div>
-                        <p class="text-xs text-subtle truncate">{option.description}</p>
-                      </div>
+                      </button>
 
-                      <div class="shrink-0 text-subtle">
+                      <div class="shrink-0 flex items-center gap-2">
                         {#if installing}
                           <div
                             class="w-4 h-4 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin"
                           ></div>
+                        {:else if needsAuth}
+                          <button
+                            type="button"
+                            class="px-3 py-1 text-xs font-medium rounded-md border border-amber-500/50 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 transition-colors cursor-pointer"
+                            onclick={() => handleReauthenticate(normalizeServerName(option.label))}
+                          >
+                            Authenticate
+                          </button>
                         {:else if installed}
                           <Fa icon={faCheck} size="sm" class="text-green-500" />
                         {:else}
-                          <Fa icon={faPlus} size="sm" />
+                          <button
+                            type="button"
+                            class="p-1 rounded-md hover:bg-muted transition-colors cursor-pointer"
+                            onclick={() => startInstall(option)}
+                          >
+                            <Fa icon={faPlus} size="sm" class="text-subtle" />
+                          </button>
                         {/if}
                       </div>
-                    </button>
+                    </div>
                   {/if}
                 </div>
               {/each}
@@ -607,10 +760,8 @@
               >
             </p>
           </div>
-          <span
-            class="text-subtle text-xs transition-transform {showAdvanced
-              ? 'rotate-90'
-              : ''}">▶</span
+          <span class="text-subtle text-xs transition-transform {showAdvanced ? 'rotate-90' : ''}"
+            >▶</span
           >
         </button>
 
@@ -640,7 +791,13 @@
                 <a
                   href="https://docs.augmentcode.com/cli/integrations#configure-mcp-via-settings-json"
                   class="text-xs text-primary hover:underline"
-                  onclick={(e) => { e.preventDefault(); handleLink('https://docs.augmentcode.com/cli/integrations#configure-mcp-via-settings-json', { workspaceId: workspaceStore.current?.id, event: e }); }}
+                  onclick={(e) => {
+                    e.preventDefault();
+                    handleLink(
+                      'https://docs.augmentcode.com/cli/integrations#configure-mcp-via-settings-json',
+                      { workspaceId: workspaceStore.current?.id, event: e },
+                    );
+                  }}
                 >
                   Documentation ↗
                 </a>

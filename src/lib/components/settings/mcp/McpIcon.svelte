@@ -3,7 +3,7 @@
    * McpIcon - Icon component for MCP server presets
    *
    * Uses Simple Icons CDN for brand logos with fallback to initials.
-   * Icons are displayed at 50% opacity by default.
+   * Icons are displayed at full opacity.
    */
   import { faServer, faBrain, faDatabase, faCloud, faCog } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -19,6 +19,7 @@
 
   // Map icon names to Simple Icons slugs (case-sensitive)
   const simpleIconsMap: Record<string, string> = {
+    slack: 'slack',
     redis: 'redis',
     mongodb: 'mongodb',
     circleci: 'circleci',
@@ -29,6 +30,12 @@
     context7: 'upstash',
     playwright: 'playwright',
     sentry: 'sentry',
+    figma: 'figma',
+  };
+
+  // Map specific icon names to custom image URLs (for icons that need color)
+  const customIconUrls: Record<string, string> = {
+    figma: 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/33/Figma-logo.svg/960px-Figma-logo.svg.png',
   };
 
   // Map icon names to FontAwesome icons as fallback
@@ -50,9 +57,10 @@
   let imageLoaded = $state(false);
   let imageError = $state(false);
 
-  // Simple Icons CDN URL - using the SVG version
+  // Icon URL - prefer custom URLs for colorful logos, then Simple Icons CDN
   const iconUrl = $derived(
-    simpleIconSlug ? `https://cdn.simpleicons.org/${simpleIconSlug}` : null
+    customIconUrls[iconName.toLowerCase()] ||
+    (simpleIconSlug ? `https://cdn.simpleicons.org/${simpleIconSlug}` : null)
   );
 
   function handleLoad() {
@@ -72,7 +80,7 @@
     <img
       src={iconUrl}
       alt={label}
-      class="w-full h-full object-contain opacity-60"
+      class="w-full h-full object-contain"
       class:opacity-0={!imageLoaded}
       onload={handleLoad}
       onerror={handleError}
@@ -87,7 +95,7 @@
       </span>
     {/if}
   {:else if faIconMap[iconName.toLowerCase()]}
-    <Fa icon={faIcon} class="text-ghost opacity-60" style="font-size: {size * 0.7}px;" />
+    <Fa icon={faIcon} class="text-ghost" style="font-size: {size * 0.7}px;" />
   {:else}
     <!-- Fallback to initial -->
     <span

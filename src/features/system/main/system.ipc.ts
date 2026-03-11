@@ -80,6 +80,35 @@ const require = createRequire(import.meta.url);
 
 const logger = new Logger('SystemIPC');
 
+function parseJsonFromCliOutput(output: string): unknown {
+  const trimmedOutput = output.trim();
+  if (!trimmedOutput) {
+    throw new Error('CLI returned empty output');
+  }
+
+  try {
+    return JSON.parse(trimmedOutput);
+  } catch {
+    // Fall through and try to recover JSON from mixed stdout.
+  }
+
+  for (let index = 0; index < trimmedOutput.length; index++) {
+    const char = trimmedOutput[index];
+    if (char !== '{' && char !== '[') {
+      continue;
+    }
+
+    const candidate = trimmedOutput.slice(index);
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // Keep scanning until we find the actual JSON payload.
+    }
+  }
+
+  throw new Error(`Unable to parse JSON from CLI output: ${trimmedOutput}`);
+}
+
 // ============================================================================
 // Window Workspace State Tracking
 // ============================================================================
@@ -2344,10 +2373,19 @@ export function setupSystemIPC() {
             child.on('close', (code: number) => {
               if (code === 0) {
                 try {
-                  const servers = JSON.parse(stdout);
+                  const servers = parseJsonFromCliOutput(stdout);
                   resolve({ success: true, data: servers });
-                } catch {
-                  resolve({ success: true, data: [] });
+                } catch (error) {
+                  logger.error('Failed to parse MCP list JSON output', {
+                    error: error instanceof Error ? error.message : String(error),
+                    stdout,
+                    stderr,
+                  });
+                  resolve({
+                    success: false,
+                    error:
+                      error instanceof Error ? error.message : 'Failed to parse MCP server list output',
+                  });
                 }
               } else {
                 resolve({ success: false, error: stderr || 'Failed to list MCP servers' });
@@ -2511,6 +2549,20 @@ export function setupSystemIPC() {
         try {
           const { findAuggieAsync } = await import('../../../shared/main/async-utils');
           const auggiePath = await findAuggieAsync();
+
+          // Always clear any stored OAuth tokens for this server
+          try {
+            const { clearMcpOAuthTokens } = await import('../../mcp/main/mcp-oauth');
+            await clearMcpOAuthTokens(validated.name);
+            // Clear known aliases so tokens don't survive under alternate names
+            if (validated.name.toLowerCase() === 'figma') {
+              await clearMcpOAuthTokens('Figma');
+              await clearMcpOAuthTokens('figma');
+              await clearMcpOAuthTokens('augment-partner-remote-mcp-figma');
+            }
+          } catch (error) {
+            logger.error('Failed to clear MCP OAuth tokens during server removal:', error);
+          }
 
           // Fallback: write directly to ~/.augment/settings.json when CLI is unavailable
           if (!auggiePath) {

@@ -22,6 +22,8 @@ const CODE_REGISTRY: ReadonlyMap<string, string> = new Map([
   ['ab86e93de0fec19bf005cbdcc44f55f8ae844bc173dd323b42c6e16de7b58e2d', 'remote-workspaces'],
   // SHA-256 of the ralph-agent activation code
   ['d6c49d67c698a30b76d2018c02c7a9df9b6a75d16b7be9209a14c7141cafe8a5', 'ralph-agent'],
+  // SHA-256 of the enable_figma_mcp activation code
+  ['6156f1c9c227f56ee98669b41a6a674a20f53ccb65b6fd9c55f2dc599a9733a1', 'enable_figma_mcp'],
 ]);
 
 const STORE_KEY = 'featureCodes';

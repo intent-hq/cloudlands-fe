@@ -73,6 +73,22 @@ async function saveTokensToStorage(mcpName: string, tokens: OAuthTokens): Promis
   }
 }
 
+/**
+ * Clear OAuth tokens for an MCP server (both in-memory and persistent storage).
+ * Used when the user disconnects an integration.
+ */
+export async function clearMcpOAuthTokens(mcpName: string): Promise<void> {
+  logger.info('Clearing OAuth tokens for:', mcpName);
+  tokenStore.delete(mcpName);
+  try {
+    const store = await getOAuthTokenStore();
+    store.delete(`tokens.${mcpName}`);
+    logger.debug('Cleared OAuth tokens from storage for:', mcpName);
+  } catch (error) {
+    logger.error('Failed to clear OAuth tokens from storage:', error);
+  }
+}
+
 interface OAuthServerMetadata {
   issuer: string;
   authorization_endpoint: string;
@@ -163,7 +179,10 @@ async function discoverOAuthMetadata(serverUrl: string): Promise<OAuthServerMeta
 }
 
 /**
- * Dynamically register a client with the OAuth server
+ * Dynamically register a client with the OAuth server.
+ *
+ * Aligned with the sidecar implementation (clients/sidecar/libs/src/mcp/auth/mcp-oauth.ts)
+ * to handle non-conformant OAuth servers (Figma, Stripe, Linear, Ramp, etc.).
  */
 async function registerClient(
   metadata: OAuthServerMetadata,
@@ -181,23 +200,39 @@ async function registerClient(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        client_name: 'Augment Workspaces',
+        client_name: 'Augment Code',
+        client_uri: 'https://augmentcode.com',
         redirect_uris: [redirectUri],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
       }),
     });
 
-    if (!response.ok) {
-      logger.error('Client registration failed:', response.status);
+    // Some servers (e.g. Stripe, Ramp) return 200 instead of 201 on success
+    const effectiveStatus = response.status === 200 ? 201 : response.status;
+
+    if (effectiveStatus !== 201) {
+      const errorBody = await response.text().catch(() => '');
+      logger.error('Client registration failed:', {
+        status: response.status,
+        body: errorBody,
+      });
       return null;
     }
 
     const client = await response.json();
+
+    // Some servers (e.g. Linear) omit client_secret_expires_at — not fatal, just log
+    if (!client.client_secret_expires_at) {
+      logger.debug('Registration response missing client_secret_expires_at, defaulting to 0');
+    }
+
+    const clientSecret = client.client_secret || undefined;
+
     logger.info('Registered OAuth client:', { client_id: client.client_id });
     return {
       client_id: client.client_id,
-      client_secret: client.client_secret,
+      client_secret: clientSecret,
     };
   } catch (error) {
     logger.error('Client registration error:', error);

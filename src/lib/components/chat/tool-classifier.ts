@@ -114,7 +114,14 @@ function cleanToolName(name: string | undefined | null): string {
     .replace(/_augment$/, '')
     .replace(/-augment$/, '')
     .replace(/_npx$/, '')
-    .replace(/_Sequential_thinking$/, '');
+    .replace(/_Sequential_thinking$/, '')
+    .replace(/_figma$/i, '')
+    .replace(/_slack$/i, '')
+    .replace(/_sentry$/i, '')
+    .replace(/_github$/i, '')
+    .replace(/_linear$/i, '')
+    .replace(/_notion$/i, '')
+    .replace(/_jira$/i, '');
 }
 
 /**
@@ -1709,6 +1716,17 @@ function genericDisplay(toolName: string, input: Record<string, any>): ToolDispl
   // e.g., "find organizations" → verb="Find", nameSubject="organizations"
   // e.g., "resolve library id" → verb="Resolve", nameSubject="library id"
   const words = formattedName.split(/\s+/);
+
+  // Remove trailing duplicate word (e.g. "generate figma design figma" → "generate figma design")
+  // This catches MCP server name suffixes not covered by the hardcoded list in cleanToolName
+  if (words.length > 2) {
+    const lastWord = words[words.length - 1];
+    const earlierWords = words.slice(0, -1);
+    if (earlierWords.some((w) => w === lastWord)) {
+      words.pop();
+    }
+  }
+
   const verb = words[0] ? words[0].charAt(0).toUpperCase() + words[0].slice(1) : 'Run';
   const nameSubject = words.length > 1 ? words.slice(1).join(' ') : null;
 

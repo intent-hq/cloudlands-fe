@@ -109,6 +109,46 @@ const sentryProvider: McpAuthProvider = {
 
   getAuthHint(): string {
     return 'Click "Authenticate" to sign in with Sentry, or configure Sentry in Settings > Integrations';
+    
+  },
+};
+
+const FIGMA_MCP_SERVER_NAME_ALIASES = ['Figma', 'figma', 'augment-partner-remote-mcp-figma'];
+
+/**
+ * Figma MCP authentication provider.
+ * Uses OAuth tokens stored by the MCP OAuth flow.
+ */
+const figmaProvider: McpAuthProvider = {
+  name: 'figma',
+  displayName: 'Figma',
+
+  matchesUrl(url: string): boolean {
+    try {
+      const parsed = new URL(url);
+      return parsed.hostname === 'mcp.figma.com';
+    } catch {
+      return false;
+    }
+  },
+
+  async getAuthHeaders(serverName?: string): Promise<Record<string, string> | null> {
+    const candidateNames = serverName
+      ? [serverName, ...FIGMA_MCP_SERVER_NAME_ALIASES.filter((name) => name !== serverName)]
+      : FIGMA_MCP_SERVER_NAME_ALIASES;
+
+    for (const candidateName of candidateNames) {
+      const oauthHeader = await getMcpAuthHeaderAsync(candidateName);
+      if (oauthHeader) {
+        return { Authorization: oauthHeader };
+      }
+    }
+
+    return null;
+  },
+
+  getAuthHint(): string {
+    return 'Click "Connect" in Settings > Integrations to sign in with Figma.';
   },
 };
 
@@ -120,7 +160,7 @@ const sentryProvider: McpAuthProvider = {
  * Registry of all MCP authentication providers
  * Add new providers here to enable automatic auth injection
  */
-const AUTH_PROVIDERS: McpAuthProvider[] = [sentryProvider];
+const AUTH_PROVIDERS: McpAuthProvider[] = [sentryProvider, figmaProvider];
 
 /**
  * Find an auth provider that matches the given URL

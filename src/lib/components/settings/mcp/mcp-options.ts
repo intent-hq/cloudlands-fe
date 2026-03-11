@@ -5,6 +5,8 @@
  * Ported from VS Code extension's mcp-options.ts
  */
 
+import type { McpTransportType, McpAuthType } from './types';
+
 export type UserInputType = 'argument' | 'environmentVariable';
 
 export interface UserInputConfig {
@@ -21,13 +23,49 @@ export interface McpInstallOption {
   label: string;
   description: string;
   iconName: string;
-  command: string;
+  // For stdio presets
+  command?: string;
   args?: string[];
   userInput?: UserInputConfig[];
+  // For http/sse presets
+  type?: McpTransportType;
+  url?: string;
+  authType?: McpAuthType;
 }
 
 // MCP preset options data
 export const mcpOptions: McpInstallOption[] = [
+  {
+    label: 'Figma',
+    description: 'Interact with Figma design files and metadata.',
+    iconName: 'figma',
+    type: 'http',
+    url: 'https://mcp.figma.com/mcp',
+    authType: 'oauth',
+  },
+  {
+    label: 'Slack',
+    description: 'Read from and post to Slack channels.',
+    iconName: 'slack',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-slack'],
+    userInput: [
+      {
+        label: 'Slack Bot Token',
+        description: 'Enter your Slack Bot Token (xoxb-...)',
+        placeholder: 'xoxb-...',
+        type: 'environmentVariable',
+        envVarName: 'SLACK_BOT_TOKEN',
+      },
+      {
+        label: 'Slack Team ID',
+        description: 'Enter your Slack Team ID (optional)',
+        placeholder: 'T01234567',
+        type: 'environmentVariable',
+        envVarName: 'SLACK_TEAM_ID',
+      },
+    ],
+  },
   {
     label: 'Redis',
     description: 'Real-time data platform for building fast apps',
@@ -151,7 +189,7 @@ export const mcpOptions: McpInstallOption[] = [
 ];
 
 /** Normalize a label or server name for comparison (lowercase, spaces → hyphens) */
-function normalizeServerName(name: string): string {
+export function normalizeServerName(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '-');
 }
 
@@ -161,4 +199,12 @@ function normalizeServerName(name: string): string {
 export function isServerInstalled(label: string, installedServers: { name: string }[]): boolean {
   const normalized = normalizeServerName(label);
   return installedServers.some((s) => normalizeServerName(s.name) === normalized);
+}
+
+/**
+ * Find a matching preset for a server by name
+ */
+export function findMatchingPreset(serverName: string): McpInstallOption | undefined {
+  const normalized = normalizeServerName(serverName);
+  return mcpOptions.find((opt) => normalizeServerName(opt.label) === normalized);
 }

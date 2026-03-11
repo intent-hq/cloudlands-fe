@@ -16,8 +16,16 @@
 
   // Integration metadata for skeleton rendering
   const integrations = [
-    { icon: 'github', name: 'GitHub', description: 'Push changes and create pull requests directly from workspaces.' },
-    { icon: 'linear', name: 'Linear', description: 'Create workspaces tasks directly from tickets.' },
+    {
+      icon: 'github',
+      name: 'GitHub',
+      description: 'Push changes and create pull requests directly from workspaces.',
+    },
+    {
+      icon: 'linear',
+      name: 'Linear',
+      description: 'Create workspaces tasks directly from tickets.',
+    },
     { icon: 'sentry', name: 'Sentry', description: 'Create spaces directly from issues.' },
   ] as const;
 
