@@ -44,29 +44,6 @@ export const mcpOptions: McpInstallOption[] = [
     authType: 'oauth',
   },
   {
-    label: 'Slack',
-    description: 'Read from and post to Slack channels.',
-    iconName: 'slack',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-slack'],
-    userInput: [
-      {
-        label: 'Slack Bot Token',
-        description: 'Enter your Slack Bot Token (xoxb-...)',
-        placeholder: 'xoxb-...',
-        type: 'environmentVariable',
-        envVarName: 'SLACK_BOT_TOKEN',
-      },
-      {
-        label: 'Slack Team ID',
-        description: 'Enter your Slack Team ID (optional)',
-        placeholder: 'T01234567',
-        type: 'environmentVariable',
-        envVarName: 'SLACK_TEAM_ID',
-      },
-    ],
-  },
-  {
     label: 'Redis',
     description: 'Real-time data platform for building fast apps',
     iconName: 'redis',
@@ -185,6 +162,29 @@ export const mcpOptions: McpInstallOption[] = [
     command: 'npx',
     args: ['-y', '@modelcontextprotocol/server-sequential-thinking'],
     userInput: [],
+  },
+  {
+    label: 'Slack',
+    description: 'Read from and post to Slack channels.',
+    iconName: 'slack',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-slack'],
+    userInput: [
+      {
+        label: 'Slack Bot Token',
+        description: 'Enter your Slack Bot Token (xoxb-...)',
+        placeholder: 'xoxb-...',
+        type: 'environmentVariable',
+        envVarName: 'SLACK_BOT_TOKEN',
+      },
+      {
+        label: 'Slack Team ID',
+        description: 'Enter your Slack Team ID (optional)',
+        placeholder: 'T01234567',
+        type: 'environmentVariable',
+        envVarName: 'SLACK_TEAM_ID',
+      },
+    ],
   },
 ];
 
