@@ -17,6 +17,7 @@
     faThumbsUp,
     faThumbsDown,
     faCodeBranch,
+    faArrowUp,
   } from '@fortawesome/free-solid-svg-icons';
   import { isMacPlatform } from '$lib/utils/shortcuts';
 
@@ -35,6 +36,8 @@
     class?: string;
     /** Request ID for this message (used for debugging) */
     requestId?: string;
+    /** Called when user wants to scroll to previous user message */
+    onScrollToPrevious?: () => void;
   }
 
   let {
@@ -48,6 +51,7 @@
     showOnHover = true,
     class: className = '',
     requestId,
+    onScrollToPrevious,
   }: Props = $props();
 
   let copied = $state(false);
@@ -178,5 +182,19 @@
         </div>
       {/snippet}
     </Tooltip>
+  {/if}
+
+  <!-- Scroll to previous button for user messages -->
+  {#if role === 'user' && onScrollToPrevious}
+    <TooltipShortcut label="Scroll to previous message" side="top" delayDuration={300}>
+      <Button
+        variant="ghost-light"
+        size="icon-xs"
+        onclick={() => onScrollToPrevious?.()}
+        aria-label="Scroll to previous message"
+      >
+        <Fa icon={faArrowUp} class="w-2.5! h-2.5!" />
+      </Button>
+    </TooltipShortcut>
   {/if}
 </div>

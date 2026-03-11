@@ -879,6 +879,7 @@
                 onCopy={handleCopy}
                 showOnHover={false}
                 requestId={backendSessionId ?? undefined}
+                {onScrollToPrevious}
               />
             </div>
           </div>

@@ -287,7 +287,7 @@
   >
     <!-- Summary row -->
     {#if showSummary}
-      <div class="flex items-center w-full min-w-0 py-1 bg-sidebar">
+      <div class="relative flex items-center w-full min-w-0 py-1 bg-sidebar">
         <!-- Provider ensures proper context and cleanup during component destruction -->
         <Tooltip.Provider delayDuration={0}>
           <Tooltip.Root delayDuration={0}>

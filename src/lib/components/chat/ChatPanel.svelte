@@ -3855,8 +3855,34 @@
                       <!-- Sticky compact user message header - shows when scrolled past expanded message -->
                       <!-- Positioned BEFORE expanded message in DOM so it's naturally behind it -->
                       {#if shouldEnableSticky && turn.userMessage && !isEventNotification}
-                        <div class="sticky -top-px w-full z-10 cursor-pointer h-0 overflow-visible">
-                          <StickyMessageHeader message={turn.userMessage} />
+                        <div
+                          class="sticky -top-px w-full z-10 cursor-pointer h-0 overflow-visible"
+                          onclick={() => {
+                            const targetElement = scrollContainer?.querySelector(
+                              `[data-message-id="${turn.userMessage!.id}"]`,
+                            ) as HTMLElement | null;
+                            if (targetElement) {
+                              smoothScrollTo(targetElement, 'start');
+                            }
+                          }}
+                          role="button"
+                          tabindex="-1"
+                          onkeydown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              const targetElement = scrollContainer?.querySelector(
+                                `[data-message-id="${turn.userMessage!.id}"]`,
+                              ) as HTMLElement | null;
+                              if (targetElement) {
+                                smoothScrollTo(targetElement, 'start');
+                              }
+                            }
+                          }}
+                        >
+                          <StickyMessageHeader
+                            message={turn.userMessage}
+                            onScrollToPrevious={() => scrollToPreviousUserMessage(turn.userMessage!.id)}
+                          />
                         </div>
                       {/if}
 

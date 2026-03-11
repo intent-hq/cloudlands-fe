@@ -8,8 +8,10 @@
     faCodeCompare,
     faNoteSticky,
     faClipboard,
+    faArrowUp,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import Button from '$lib/components/ui/button/button.svelte';
   import type { AgentMessage } from '$features/agent/agent.service';
   import { extractAllContent } from '$shared/types/agent-message.conversion';
   import { notesStateManager } from '$features/notes/notes.store.svelte';
@@ -18,9 +20,11 @@
 
   interface Props {
     message: AgentMessage;
+    /** Called when user wants to scroll to previous user message */
+    onScrollToPrevious?: () => void;
   }
 
-  let { message }: Props = $props();
+  let { message, onScrollToPrevious }: Props = $props();
 
   // Pill type used for both context pills and metadata pills
   interface Pill {
@@ -137,7 +141,7 @@
   });
 </script>
 
-<div class="h-fit min-w-0 px-2 pt-2 pb-2 text-subtle whitespace-nowrap text-ellipsis leading-normal bg-sidebar rounded-xs w-full max-w-full truncate">
+<div class="group/sticky-header relative h-fit min-w-0 px-2 pt-2 pb-2 text-subtle whitespace-nowrap text-ellipsis leading-normal bg-sidebar rounded-xs w-full max-w-full truncate">
   {#each parsed.pills as pill (`${pill.type}-${pill.label}`)}
     <span class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-muted/60 text-foreground/80 rounded-md text-xs whitespace-nowrap font-medium mx-0.5 align-middle">
       {#if pill.mentionType && ['linear', 'github', 'sentry'].includes(pill.mentionType)}
@@ -166,4 +170,22 @@
       </span>
     {/if}
   {/each}
+  <!-- Scroll to previous button (visible on hover) -->
+  {#if onScrollToPrevious}
+    <div
+      class="absolute top-1 right-1 flex items-center gap-0.5 bg-sidebar/95 backdrop-blur-sm rounded-md border border-border opacity-0 group-hover/sticky-header:opacity-100"
+    >
+      <Button
+        variant="ghost-light"
+        size="icon-xs"
+        onclick={(e: MouseEvent) => {
+          e.stopPropagation();
+          onScrollToPrevious();
+        }}
+        title="Scroll to previous message"
+      >
+        <Fa icon={faArrowUp} class="w-2.5! h-2.5!" />
+      </Button>
+    </div>
+  {/if}
 </div>
