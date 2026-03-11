@@ -614,6 +614,135 @@ describe('AcceptChangesService.execute - PR operation completion', () => {
 
 
 
+describe('getWorkspaceGitStatus - isContentMergedToTrunk detection', () => {
+  let service: AcceptChangesService;
+  const workspaceId = 'test-workspace-id' as WorkspaceId;
+  const testWorkspace: Partial<Workspace> = {
+    id: workspaceId,
+    title: 'Test Workspace',
+    worktreePath: '/source/worktree',
+    branch: 'feature-branch',
+    baseRef: 'main',
+    status: WorkspaceStatus.Active,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = new AcceptChangesService();
+    mockFindById.mockResolvedValue(testWorkspace);
+    mockGitServiceGetStatus.mockResolvedValue({ ok: true, data: { files: [] } });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function setupGitStatusMocks(options: {
+    revListOutput: string;
+    branchTree?: string;
+    mergeBase?: string;
+    trunkTrees?: string;
+  }) {
+    const {
+      revListOutput,
+      branchTree = 'abc123tree',
+      mergeBase = 'mergebase123',
+      trunkTrees = 'differenttree',
+    } = options;
+
+    mockExecAsync.mockImplementation(async (command: string) => {
+      if (command.includes('git remote get-url')) {
+        return { stdout: 'https://github.com/testowner/testrepo.git', stderr: '' };
+      }
+      if (command.includes('git fetch origin')) {
+        return { stdout: '', stderr: '' };
+      }
+      if (command.includes('git rev-list')) {
+        return { stdout: revListOutput, stderr: '' };
+      }
+      if (command.includes('git rev-parse HEAD^{tree}')) {
+        return { stdout: branchTree, stderr: '' };
+      }
+      if (command.includes('git merge-base') && !command.includes('--is-ancestor')) {
+        return { stdout: mergeBase, stderr: '' };
+      }
+      if (command.includes('git log') && command.includes('--format=%T')) {
+        return { stdout: trunkTrees, stderr: '' };
+      }
+      if (command.includes('git log') && command.includes('--format="%H')) {
+        return { stdout: '', stderr: '' };
+      }
+      if (command.includes('git rev-parse --verify origin/')) {
+        return { stdout: 'abc123', stderr: '' };
+      }
+      if (command.includes('git log') && command.includes('--format=%H')) {
+        return { stdout: '', stderr: '' };
+      }
+      if (command.includes('git branch -r')) {
+        return { stdout: 'origin/main', stderr: '' };
+      }
+      if (command.includes('git merge-base --is-ancestor')) {
+        return { stdout: '', stderr: '' };
+      }
+      if (command.includes('git merge-tree')) {
+        return { stdout: '', stderr: '' };
+      }
+      if (command.includes('git rev-parse HEAD')) {
+        return { stdout: 'abc123headsha', stderr: '' };
+      }
+      return { stdout: '', stderr: '' };
+    });
+  }
+
+  it('sets isContentMergedToTrunk=true when aheadOfTrunk===0 and behindTrunk>0', async () => {
+    setupGitStatusMocks({ revListOutput: '5\t0' }); // 5 behind, 0 ahead
+
+    const result = await service.getWorkspaceGitStatus(workspaceId);
+
+    expect(result.isContentMergedToTrunk).toBe(true);
+    expect(result.aheadOfTrunk).toBe(0);
+    expect(result.behindTrunk).toBe(5);
+  });
+
+  it('does NOT set isContentMergedToTrunk when aheadOfTrunk===0 and behindTrunk===0', async () => {
+    setupGitStatusMocks({ revListOutput: '0\t0' }); // 0 behind, 0 ahead
+
+    const result = await service.getWorkspaceGitStatus(workspaceId);
+
+    expect(result.isContentMergedToTrunk).toBe(false);
+    expect(result.aheadOfTrunk).toBe(0);
+    expect(result.behindTrunk).toBe(0);
+  });
+
+  it('still detects squash merge via tree hash when aheadOfTrunk>0', async () => {
+    setupGitStatusMocks({
+      revListOutput: '3\t2', // 3 behind, 2 ahead
+      branchTree: 'matching-tree-hash',
+      trunkTrees: 'matching-tree-hash', // tree hash matches
+    });
+
+    const result = await service.getWorkspaceGitStatus(workspaceId);
+
+    expect(result.isContentMergedToTrunk).toBe(true);
+    expect(result.aheadOfTrunk).toBe(2);
+    expect(result.behindTrunk).toBe(3);
+  });
+
+  it('does NOT set isContentMergedToTrunk when aheadOfTrunk>0 and tree hashes do not match', async () => {
+    setupGitStatusMocks({
+      revListOutput: '0\t2', // 0 behind, 2 ahead
+      branchTree: 'branch-tree-hash',
+      trunkTrees: 'different-trunk-tree-hash', // tree hashes differ
+    });
+
+    const result = await service.getWorkspaceGitStatus(workspaceId);
+
+    expect(result.isContentMergedToTrunk).toBe(false);
+    expect(result.aheadOfTrunk).toBe(2);
+    expect(result.behindTrunk).toBe(0);
+  });
+});
+
 describe('AcceptChangesService.detectMergeConflicts', () => {
   let service: AcceptChangesService;
   const workspaceId = 'test-workspace-id' as WorkspaceId;

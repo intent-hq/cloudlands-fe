@@ -610,6 +610,13 @@ export class AcceptChangesService {
         // Tree hash detection failed, default to false
         logger.debug('Tree hash detection failed, defaulting to false', { workspaceId });
       }
+    } else if (isRefSafe && aheadOfTrunk === 0 && behindTrunk > 0) {
+      // Branch tip is an ancestor of trunk — all branch content is already in trunk
+      isContentMergedToTrunk = true;
+      logger.info('Branch is fully merged into trunk (aheadOfTrunk === 0, behindTrunk > 0)', {
+        workspaceId,
+        behindTrunk,
+      });
     }
 
     // Get local commits with file changes
