@@ -23,7 +23,8 @@
   import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import NoteFontStyleButton from '$lib/components/notes/NoteFontStyleButton.svelte';
-  import { noteSpellcheckSettings } from '$lib/stores/note-spellcheck-settings.store.svelte';
+  import { selectSpellcheckEnabled } from '$lib/store/slices/note-spellcheck-settings/note-spellcheck-settings-selectors';
+  import { toggleSpellcheck } from '$lib/store/slices/note-spellcheck-settings/note-spellcheck-settings-slice';
   import { selectScrollPosition } from '$lib/store/slices/tab-scroll/tab-scroll-selectors';
   import { saveScrollPosition } from '$lib/store/slices/tab-scroll/tab-scroll-slice';
   import { getDispatch } from '$lib/store/utils/utils';
@@ -40,6 +41,7 @@
   const layoutManager = $derived(getPanelLayoutManager(workspaceId));
   const workspace = $derived(workspaceStore.findById(WorkspaceId(workspaceId)));
   const dispatch = getDispatch();
+  const spellcheckEnabled = selectSpellcheckEnabled();
   const scrollPosition = selectScrollPosition(tab.id);
 
   // Get the note
@@ -264,10 +266,10 @@
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => noteSpellcheckSettings.toggle()}
-    tooltip={noteSpellcheckSettings.enabled ? 'Spellcheck: On' : 'Spellcheck: Off'}
+    onclick={() => dispatch(toggleSpellcheck())}
+    tooltip={$spellcheckEnabled ? 'Spellcheck: On' : 'Spellcheck: Off'}
     tooltipSide="bottom"
-    class={noteSpellcheckSettings.enabled ? 'text-foreground' : 'text-muted-foreground'}
+    class={$spellcheckEnabled ? 'text-foreground' : 'text-muted-foreground'}
   >
     <Fa icon={faSpellCheck} size="xs" />
   </Button>

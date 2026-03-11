@@ -39,7 +39,7 @@
   import { IPC_CHANNELS } from '$shared/ipc-registry';
 
   const logger = createLogger('PanelLayout');
-  const isCollapsed$ = selectIsCollapsed();
+  const isCollapsed = selectIsCollapsed();
 
   interface Props {
     workspaceId: string;
@@ -356,7 +356,7 @@
     }, 100);
   }
 
-  const terminalOverlayOpen$ = selectIsTerminalOverlayOpen();
+  const terminalOverlayOpen = selectIsTerminalOverlayOpen();
 
   const isMac =
     typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
@@ -500,7 +500,7 @@
         e.key === 'PageUp')
     ) {
       // Check if terminal is open and has focus - let terminal handle its own tab cycling
-      const terminalIsOpen = get(terminalOverlayOpen$);
+      const terminalIsOpen = get(terminalOverlayOpen);
       const terminalHasFocus = isFocusInTerminal(e.target as HTMLElement);
 
       if (terminalIsOpen && terminalHasFocus) {
@@ -1012,7 +1012,7 @@
 
 <div class="panel-layout h-full w-full flex flex-col" aria-label="Panel layout">
   <!-- Main panel area -->
-  <div class="flex-1 min-h-0 overflow-hidden {$isCollapsed$ ? 'p-3' : layoutSettings.sidebarSide === 'left' ? 'p-3 pl-0' : 'p-3 pr-0'}">
+  <div class="flex-1 min-h-0 overflow-hidden {$isCollapsed ? 'p-3' : layoutSettings.sidebarSide === 'left' ? 'p-3 pl-0' : 'p-3 pr-0'}">
     {#if layoutManager.layout}
       {@const currentFocusedPanelId = layoutManager.focusedPanelId}
       <PanelContainer

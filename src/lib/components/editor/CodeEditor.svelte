@@ -14,7 +14,7 @@
   import { invoke } from '$lib/electron-bridge';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { WorkspaceId } from '$shared/types/branded-ids';
-  import { codeFontSettings } from '$lib/stores/code-font-settings.store.svelte';
+  import { selectCodeFontFamilyCSS } from '$lib/store/slices/code-font-settings/code-font-settings-selectors';
 
   const logger = createLogger('CodeEditor');
 
@@ -61,6 +61,8 @@
     placeholder,
     isPanelFocused = true,
   }: Props = $props();
+
+  const codeFontFamilyCSS = selectCodeFontFamilyCSS();
 
   // Content size tracking
   let contentTooLarge = $state(false);
@@ -263,7 +265,7 @@
             overviewRulerLanes: 0,
             scrollBeyondLastLine: false,
             fontSize: 13,
-            fontFamily: codeFontSettings.fontFamilyCSS,
+            fontFamily: $codeFontFamilyCSS,
             fontWeight: '500',
             fontLigatures: true,
             guides: { indentation: false }, // Disable indent guides to work around Monaco 0.54.0 crash
@@ -467,7 +469,7 @@
 
   // Update font when code font settings change
   $effect(() => {
-    const fontFamily = codeFontSettings.fontFamilyCSS;
+    const fontFamily = $codeFontFamilyCSS;
     if (editor) {
       editor.updateOptions({ fontFamily });
     }
@@ -580,7 +582,7 @@
         overviewRulerLanes: 0,
         scrollBeyondLastLine: false,
         fontSize: 13,
-        fontFamily: codeFontSettings.fontFamilyCSS,
+        fontFamily: $codeFontFamilyCSS,
         fontWeight: '500',
         fontLigatures: true,
         guides: { indentation: false }, // Disable indent guides to work around Monaco 0.54.0 crash
@@ -653,7 +655,7 @@
           minimap: { enabled: false },
           automaticLayout: true,
           wordWrap: lineWrapping ? 'on' : 'off',
-          fontFamily: codeFontSettings.fontFamilyCSS,
+          fontFamily: $codeFontFamilyCSS,
           guides: { indentation: false }, // Disable indent guides to work around Monaco 0.54.0 crash
         });
 
@@ -1002,7 +1004,7 @@
   }
 
   :global(.monaco-editor) {
-    /* font-family is set dynamically via codeFontSettings in Monaco config */
+    /* font-family is set dynamically via code font settings Redux selector in Monaco config */
     font-weight: 500 !important;
     font-size: 13px !important;
   }

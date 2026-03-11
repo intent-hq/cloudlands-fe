@@ -17,7 +17,9 @@
   import { navigateToNote } from '$lib/utils/workspace-navigation';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { agentFontSettings } from '$lib/stores/agent-font-settings.store.svelte';
+  import { cycleFontStyle } from '$lib/store/slices/agent-font-settings/agent-font-settings-slice';
+  import { selectAgentFontStyleLabel, selectIsAgentMonospace } from '$lib/store/slices/agent-font-settings/agent-font-settings-selectors';
+  import { getDispatch } from '$lib/store/utils/utils';
   import { modelStore } from '$lib/stores/model.store.svelte';
   import { specialistsStore } from '$lib/stores/specialists.store.svelte';
   import { untrack } from 'svelte';
@@ -27,6 +29,10 @@
   import { formatAgentMessagesForClipboard } from '$lib/utils/clipboard-formatters';
 
   const logger = createLogger('AgentTabType');
+
+  const dispatch = getDispatch();
+  const fontStyleLabel = selectAgentFontStyleLabel();
+  const isMonospace = selectIsAgentMonospace();
 
   let { tab, workspaceId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
 
@@ -173,13 +179,13 @@
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => agentFontSettings.cycleFontStyle()}
-    tooltip={`Font: ${agentFontSettings.fontStyleLabel}`}
+    onclick={() => dispatch(cycleFontStyle())}
+    tooltip={`Font: ${$fontStyleLabel}`}
     tooltipSide="bottom"
   >
     <span
       class="text-xs font-semibold tracking-tight"
-      class:font-mono={agentFontSettings.isMonospace}>Aa</span
+      class:font-mono={$isMonospace}>Aa</span
     >
   </Button>
   <Button

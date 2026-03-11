@@ -19,10 +19,12 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { invoke } from '$lib/electron-bridge';
   import { DiffViewer } from '$lib/components/ui/diff';
-  import { editorSettings } from '$lib/stores/editor-settings.store.svelte';
+  import { selectDiffSideBySide } from '$lib/store/slices/editor-settings/editor-settings-selectors';
   import { LOCKED_TOOLTIP } from '$lib/utils/agent-lock-utils';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { WorkspaceId } from '$shared/types/branded-ids';
+
+  const diffSideBySide = selectDiffSideBySide();
 
   const logger = createLogger('InteractiveDiffView');
 
@@ -264,7 +266,7 @@
         patch={change.content?.diff || ''}
         fileName={change.relativePath || change.file}
         showHeader={false}
-        viewMode={editorSettings.diffSideBySide ? 'split' : 'unified'}
+        viewMode={$diffSideBySide ? 'split' : 'unified'}
       />
     </div>
   {:else if hasContent}
@@ -275,7 +277,7 @@
         newContent={change.content?.newContent || ''}
         fileName={change.relativePath || change.file}
         showHeader={false}
-        viewMode={editorSettings.diffSideBySide ? 'split' : 'unified'}
+        viewMode={$diffSideBySide ? 'split' : 'unified'}
       />
     </div>
   {:else}

@@ -23,12 +23,17 @@
   import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import SaveIndicator from '$lib/components/ui/SaveIndicator.svelte';
-  import { editorSettings } from '$lib/stores/editor-settings.store.svelte';
+  import { selectLineWrapping, selectDiffIndicators } from '$lib/store/slices/editor-settings/editor-settings-selectors';
+  import { toggleLineWrapping, toggleDiffIndicators } from '$lib/store/slices/editor-settings/editor-settings-slice';
+  import { dispatch } from '$lib/store/redux-dispatch-bridge';
   import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import { faPaintbrush, faTextWidth, faPencil, faTrash, faEye, faCode } from '@fortawesome/free-solid-svg-icons';
   import { deleteWithUndo } from '$lib/utils/reversible-actions';
   import { track, getFileExtension } from '$lib/services/analytics';
+
+  const lineWrapping = selectLineWrapping();
+  const diffIndicators = selectDiffIndicators();
 
   const logger = createLogger('FileTabType');
 
@@ -547,22 +552,22 @@
       <Button
         variant="ghost-light"
         size="icon-xs"
-        onclick={() => editorSettings.toggleDiffIndicators()}
-        tooltip={editorSettings.diffIndicators ? 'Hide diff indicators' : 'Show diff indicators'}
+        onclick={() => dispatch(toggleDiffIndicators())}
+        tooltip={$diffIndicators ? 'Hide diff indicators' : 'Show diff indicators'}
         tooltipSide="bottom"
-        class={editorSettings.diffIndicators ? 'text-foreground' : 'text-muted-foreground'}
+        class={$diffIndicators ? 'text-foreground' : 'text-muted-foreground'}
       >
         <Fa icon={faPaintbrush} size="xs" />
       </Button>
       <Button
         variant="ghost-light"
         size="icon-xs"
-        onclick={() => editorSettings.toggleLineWrapping()}
-        tooltip={editorSettings.lineWrapping
+        onclick={() => dispatch(toggleLineWrapping())}
+        tooltip={$lineWrapping
           ? 'Wrapping lines. Click to disable.'
           : 'Click to wrap lines'}
         tooltipSide="bottom"
-        class={editorSettings.lineWrapping ? 'text-foreground' : 'text-muted-foreground'}
+        class={$lineWrapping ? 'text-foreground' : 'text-muted-foreground'}
       >
         <Fa icon={faTextWidth} size="xs" />
       </Button>
@@ -624,8 +629,8 @@
           fileName={tab.filePath}
           {workspaceId}
           filePath={tab.filePath}
-          lineWrapping={editorSettings.lineWrapping}
-          lineChanges={editorSettings.diffIndicators ? fileLineChanges : []}
+          lineWrapping={$lineWrapping}
+          lineChanges={$diffIndicators ? fileLineChanges : []}
           jumpTo={jumpToLine}
           {isPanelFocused}
         />

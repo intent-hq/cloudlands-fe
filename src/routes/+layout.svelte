@@ -38,7 +38,7 @@
   import { invoke, listenSync } from '$lib/electron-bridge';
   import { dispatch } from '$lib/store/redux-dispatch-bridge';
   import { toggleCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
-  import { editorSettings } from '$lib/stores/editor-settings.store.svelte';
+  import { toggleLineWrapping } from '$lib/store/slices/editor-settings/editor-settings-slice';
   import { featureCodesStore } from '$lib/stores/feature-codes.store.svelte';
   import { modelStore } from '$lib/stores/model.store.svelte';
   import { initPipStore } from '$lib/stores/pip.store.svelte';
@@ -1369,7 +1369,7 @@
       key: 'z',
       alt: true,
       description: 'Toggle Word Wrap',
-      action: () => editorSettings.toggleLineWrapping(),
+      action: () => dispatch(toggleLineWrapping()),
     });
     // Ctrl+` -> toggle terminal overlay (matches VS Code behavior - Ctrl on all platforms including Mac)
     // In workspace pages, this is also handled by useDockNavigation, but we register it globally

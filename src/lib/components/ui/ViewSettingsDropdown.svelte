@@ -10,7 +10,9 @@
   import { faEye, faCheck } from '@fortawesome/free-solid-svg-icons';
   import DropdownMenu from './dropdown-menu.svelte';
   import { Button } from './button';
-  import { editorSettings } from '$lib/stores/editor-settings.store.svelte';
+  import { selectFoldUnchanged, selectLineWrapping, selectDiffSideBySide } from '$lib/store/slices/editor-settings/editor-settings-selectors';
+  import { toggleFoldUnchanged, toggleLineWrapping, toggleDiffSideBySide } from '$lib/store/slices/editor-settings/editor-settings-slice';
+  import { dispatch } from '$lib/store/redux-dispatch-bridge';
 
   interface Props {
     /** Show fold unchanged toggle */
@@ -38,6 +40,10 @@
     class: className = '',
     size = 'xs',
   }: Props = $props();
+
+  const foldUnchanged = selectFoldUnchanged();
+  const lineWrapping = selectLineWrapping();
+  const diffSideBySide = selectDiffSideBySide();
 
   let dropdownOpen = $state(false);
 
@@ -69,10 +75,10 @@
         <button
           type="button"
           class="flex items-center gap-2 w-full pl-2 pr-3 py-1.5 text-sm hover:bg-muted/50 cursor-pointer transition-colors"
-          onclick={() => editorSettings.toggleFoldUnchanged()}
+          onclick={() => dispatch(toggleFoldUnchanged())}
         >
           <span class="w-3 h-3 flex items-center justify-center">
-            {#if editorSettings.foldUnchanged}
+            {#if $foldUnchanged}
               <Fa icon={faCheck} size="xs" class="text-accent" />
             {/if}
           </span>
@@ -84,10 +90,10 @@
         <button
           type="button"
           class="flex items-center gap-2 w-full pl-2 pr-3 py-1.5 text-sm hover:bg-muted/50 cursor-pointer transition-colors"
-          onclick={() => editorSettings.toggleLineWrapping()}
+          onclick={() => dispatch(toggleLineWrapping())}
         >
           <span class="w-3 h-3 flex items-center justify-center">
-            {#if editorSettings.lineWrapping}
+            {#if $lineWrapping}
               <Fa icon={faCheck} size="xs" class="text-accent" />
             {/if}
           </span>
@@ -99,10 +105,10 @@
         <button
           type="button"
           class="flex items-center gap-2 w-full pl-2 pr-3 py-1.5 text-sm hover:bg-muted/50 cursor-pointer transition-colors"
-          onclick={() => editorSettings.toggleDiffSideBySide()}
+          onclick={() => dispatch(toggleDiffSideBySide())}
         >
           <span class="w-3 h-3 flex items-center justify-center">
-            {#if editorSettings.diffSideBySide}
+            {#if $diffSideBySide}
               <Fa icon={faCheck} size="xs" class="text-accent" />
             {/if}
           </span>

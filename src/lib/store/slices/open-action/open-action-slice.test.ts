@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   openActionReducer,
   setOpenAction,
-  loadOpenAction,
   isSpecialAction,
   type OpenActionState,
 } from "./open-action-slice";
@@ -35,17 +34,6 @@ describe("openActionReducer", () => {
     });
   });
 
-  describe("loadOpenAction", () => {
-    it("should load the open action from storage", () => {
-      const state = openActionReducer(initialState, loadOpenAction("jetbrains"));
-      expect(state.action).toBe("jetbrains");
-    });
-
-    it("should handle empty string", () => {
-      const state = openActionReducer(initialState, loadOpenAction(""));
-      expect(state.action).toBe("");
-    });
-  });
 });
 
 describe("isSpecialAction", () => {

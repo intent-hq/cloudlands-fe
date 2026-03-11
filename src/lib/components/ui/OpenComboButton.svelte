@@ -101,7 +101,7 @@
   );
 
   const dispatch = getDispatch();
-  const openAction$ = selectOpenAction();
+  const openAction = selectOpenAction();
 
   let dropdownOpen = $state(false);
 
@@ -171,7 +171,7 @@
   });
 
   const currentAction = $derived(
-    actions.find((a) => a.id === $openAction$) || actions[0],
+    actions.find((a) => a.id === $openAction) || actions[0],
   );
 
   /**
@@ -259,7 +259,7 @@
   }
 
   function handlePrimaryClick() {
-    executeAction($openAction$);
+    executeAction($openAction);
   }
 
   function handleActionClick(actionId: OpenAction) {

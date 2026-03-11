@@ -45,9 +45,14 @@
 <RunSaga sagaName="terminalsSaga" />
 <RunSaga sagaName="autoUpdateSaga" />
 <RunSaga sagaName="workspaceInitializerSaga" />
+<RunSaga sagaName="agentFontSettingsSaga" />
+<RunSaga sagaName="noteFontSettingsSaga" />
+<RunSaga sagaName="codeFontSettingsSaga" />
+<RunSaga sagaName="editorSettingsSaga" />
 <RunSaga sagaName="openActionSaga" />
 <RunSaga sagaName="tabScrollSaga" />
 <RunSaga sagaName="sidebarWidthSaga" />
 <RunSaga sagaName="terminalOverlaySaga" />
+<RunSaga sagaName="noteSpellcheckSettingsSaga" />
 <RunSaga sagaName="zoomSaga" />
 {@render children?.()}

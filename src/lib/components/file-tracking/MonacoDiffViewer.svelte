@@ -30,7 +30,7 @@
   import { toast } from '$lib/components/ui/toast';
   import * as Diff from 'diff';
   import { stripWorkspacePrefix, pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
-  import { codeFontSettings } from '$lib/stores/code-font-settings.store.svelte';
+  import { selectCodeFontFamilyCSS } from '$lib/store/slices/code-font-settings/code-font-settings-selectors';
 
   // Content size limits to prevent freezes with massive files
   const MAX_CONTENT_SIZE_BYTES = 500 * 1024; // 500KB
@@ -76,6 +76,8 @@
     onUnstageHunk,
     lineOffset,
   }: Props = $props();
+
+  const codeFontFamilyCSS = selectCodeFontFamilyCSS();
 
   // Default alwaysConsumeMouseWheel to match handleMouseWheel for backward compatibility
   let effectiveAlwaysConsume = $derived(alwaysConsumeMouseWheel ?? handleMouseWheel);
@@ -494,7 +496,7 @@
 
   // Update font when code font settings change
   $effect(() => {
-    const fontFamily = codeFontSettings.fontFamilyCSS;
+    const fontFamily = $codeFontFamilyCSS;
     if (editor) {
       editor.updateOptions({ fontFamily });
     }
@@ -894,7 +896,7 @@
               overviewRuler: false,
               scrollBeyondLastLine: false,
               fontSize: 13,
-              fontFamily: codeFontSettings.fontFamilyCSS,
+              fontFamily: $codeFontFamilyCSS,
               // Use custom line numbers function when lineOffset is provided to show real file line numbers
               lineNumbers: lineOffset ? (n: number) => `${lineOffset + n - 1}` : 'on',
               lineNumbersMinChars: lineOffset ? 4 : 2,
@@ -2968,7 +2970,7 @@
 
   /* Sleek line number styling */
   :global(.diff-editor-container .monaco-editor .line-numbers) {
-    color: #9ca3af !important;
+    color: hsl(var(--text-ghost)) !important;
     font-size: 12px !important;
   }
 
@@ -3068,11 +3070,6 @@
     text-decoration-color: rgba(220, 38, 38, 0.7) !important;
   }
 
-  /* ===== DARK THEME STYLES ===== */
-  :global(.dark .diff-editor-container .monaco-editor .line-numbers) {
-    color: #6b7280 !important;
-  }
-
   :global(.dark .diff-editor-container .monaco-editor .inline-deleted-text) {
     background-color: rgba(239, 68, 68, 0.15) !important;
   }
@@ -3093,11 +3090,7 @@
     border-bottom: 1px dashed rgba(128, 128, 128, 0.3) !important;
     font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace !important;
     font-size: 11px !important;
-    color: #9ca3af !important;
-  }
-
-  :global(.dark .diff-editor-container .monaco-editor .diff-hidden-lines .center) {
-    color: #6b7280 !important;
+    color: hsl(var(--text-ghost)) !important;
   }
 
   /* Diff skeleton loader styles */

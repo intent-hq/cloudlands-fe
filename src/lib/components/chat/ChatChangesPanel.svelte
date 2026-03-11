@@ -39,7 +39,7 @@
   import { tick, untrack, onMount, onDestroy } from 'svelte';
   import PanelWrapper from '$lib/components/ui/PanelWrapper.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import { editorSettings } from '$lib/stores/editor-settings.store.svelte';
+  import { selectFoldUnchanged, selectLineWrapping } from '$lib/store/slices/editor-settings/editor-settings-selectors';
   import {
     ChangeSetVisualization,
     type VisualizationLine,
@@ -55,6 +55,9 @@
   import { notesStore } from '$features/notes/notes.store.svelte';
   import CombinedInlineDiffItem from './CombinedInlineDiffItem.svelte';
   import { LOCKED_TOOLTIP } from '$lib/utils/agent-lock-utils';
+
+  const foldUnchanged = selectFoldUnchanged();
+  const lineWrapping = selectLineWrapping();
 
   // Re-export types from types.ts for backward compatibility
   export type { ChangeCategory, LocalFileChange, DiffHunk } from './types';
@@ -2512,8 +2515,8 @@
             <!-- Merged change: show all parts with gutter indicators -->
             <CombinedInlineDiffItem
               parts={change.allParts}
-              foldUnchanged={editorSettings.foldUnchanged}
-              lineWrapping={editorSettings.lineWrapping}
+              foldUnchanged={$foldUnchanged}
+              lineWrapping={$lineWrapping}
               {isAggregate}
               onStageHunk={showStagingControls ? handleStageHunk : undefined}
               onUnstageHunk={showStagingControls ? handleUnstageHunk : undefined}
@@ -2524,8 +2527,8 @@
             {@const category = getChangeCategory(change)}
             <InlineDiffItem
               {change}
-              foldUnchanged={editorSettings.foldUnchanged}
-              lineWrapping={editorSettings.lineWrapping}
+              foldUnchanged={$foldUnchanged}
+              lineWrapping={$lineWrapping}
               scrollToLine={scrollTarget?.filePath === change.filePath
                 ? scrollTarget.lineNumber
                 : undefined}

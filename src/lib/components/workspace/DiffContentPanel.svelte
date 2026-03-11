@@ -12,8 +12,11 @@
   import { faCodeBranch } from '@fortawesome/free-solid-svg-icons';
   import type { DiffContent } from '$features/workspace/workspace-content-diff-manager';
   import type { BreadcrumbItem } from '$lib/components/ui/content-header/types';
-  import { editorSettings } from '$lib/stores/editor-settings.store.svelte';
+  import { selectDiffSideBySide, selectFoldUnchanged } from '$lib/store/slices/editor-settings/editor-settings-selectors';
   import { LOCKED_TOOLTIP } from '$lib/utils/agent-lock-utils';
+
+  const diffSideBySide = selectDiffSideBySide();
+  const foldUnchanged = selectFoldUnchanged();
 
   interface Props {
     diffContent: DiffContent;
@@ -111,8 +114,8 @@
       oldContent={diffContent.oldContent}
       newContent={diffContent.newContent}
       fileName={diffContent.fileName}
-      viewMode={editorSettings.diffSideBySide ? 'split' : 'unified'}
-      expandUnchanged={!editorSettings.foldUnchanged}
+      viewMode={$diffSideBySide ? 'split' : 'unified'}
+      expandUnchanged={!$foldUnchanged}
       showHeader={false}
     />
   </div>

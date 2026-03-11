@@ -1,22 +1,16 @@
 <script lang="ts">
-  import {
-    noteFontSettings,
-    type NoteFontStyle,
-  } from '$lib/stores/note-font-settings.store.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { cycleNoteFontStyle } from '$lib/store/slices/note-font-settings/note-font-settings-slice';
+  import { selectNoteFontStyle, selectNoteFontStyleLabel, selectIsNoteMonospace } from '$lib/store/slices/note-font-settings/note-font-settings-selectors';
+  import { getDispatch } from '$lib/store/utils/utils';
 
-  // Font styles to cycle through
-  const fontStyles: NoteFontStyle[] = ['sans', 'monospace'];
-
-  // Get label for current style
-  const currentLabel = $derived(
-    noteFontSettings.fontStyle === 'monospace' ? 'Monospace' : 'Sans-serif',
-  );
+  const dispatch = getDispatch();
+  const noteFontStyle = selectNoteFontStyle();
+  const noteFontStyleLabel = selectNoteFontStyleLabel();
+  const isNoteMonospace = selectIsNoteMonospace();
 
   function cycleFont() {
-    const currentIndex = fontStyles.indexOf(noteFontSettings.fontStyle);
-    const nextIndex = (currentIndex + 1) % fontStyles.length;
-    noteFontSettings.fontStyle = fontStyles[nextIndex];
+    dispatch(cycleNoteFontStyle());
   }
 </script>
 
@@ -24,12 +18,12 @@
   variant="ghost-light"
   size="icon-xs"
   onclick={cycleFont}
-  tooltip={`Font: ${currentLabel}`}
+  tooltip={`Font: ${$noteFontStyleLabel}`}
   tooltipSide="bottom"
 >
   <span
     class="text-xs font-semibold tracking-tight"
-    class:font-mono={noteFontSettings.fontStyle === 'monospace'}
+    class:font-mono={$isNoteMonospace}
   >
     Aa
   </span>

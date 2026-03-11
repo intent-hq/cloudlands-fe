@@ -85,7 +85,7 @@
   } = $props();
 
   const dispatch = getDispatch();
-  const isCollapsed$ = selectIsCollapsed();
+  const sidebarIsCollapsed = selectIsCollapsed();
 
   // Compute effective weight (legacy usePercentage prop takes precedence if defined)
   const effectiveWeight = $derived(
@@ -310,7 +310,7 @@
     const isWorkspaceLeftPanel = storageKey === 'workspace-left-panel-width';
     if (isWorkspaceLeftPanel) {
       // Initialize from store's collapsed state
-      const initialCollapsed = $isCollapsed$;
+      const initialCollapsed = $sidebarIsCollapsed;
       if (initialCollapsed) {
         widthBeforeToggle = panelWidth;
         panelWidth = 0;

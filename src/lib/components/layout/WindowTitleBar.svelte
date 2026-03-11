@@ -46,10 +46,8 @@
   const dispatch = getDispatch();
 
   // Zoom selectors
-  const zoomFactor$ = selectZoomFactor();
-  const counterScale$ = selectCounterScale();
-  const zoomFactor = $derived($zoomFactor$);
-  const counterScale = $derived($counterScale$);
+  const zoomFactor = selectZoomFactor();
+  const counterScale = selectCounterScale();
 
   // Detect platform for conditional styling and shortcuts
   const isMac = $derived.by(() => {
@@ -215,15 +213,15 @@
 </script>
 
 <!-- Counter-scale wrapper to maintain fixed position relative to macOS traffic lights -->
-<div class="window-title-bar-wrapper" style:height="{35 / zoomFactor}px" aria-label="Window title bar">
+<div class="window-title-bar-wrapper" style:height="{35 / $zoomFactor}px" aria-label="Window title bar">
   <div
     class={cn(
       'window-title-bar app-drag-region',
       isMac ? 'window-title-bar-mac' : 'window-title-bar-windows',
     )}
-    style:transform="scale({counterScale})"
+    style:transform="scale({$counterScale})"
     style:transform-origin="top left"
-    style:width="{100 * zoomFactor}%"
+    style:width="{100 * $zoomFactor}%"
   >
     <!-- Left column -->
     <div class="flex items-center app-no-drag min-w-0">

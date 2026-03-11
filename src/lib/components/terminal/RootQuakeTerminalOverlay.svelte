@@ -58,20 +58,14 @@
 
   // Store bindings
   const dispatch = getDispatch();
-  const isOpen$ = selectIsTerminalOverlayOpen();
-  const height$ = selectTerminalOverlayHeight();
-  const storeWorkspaceId$ = selectTerminalOverlayWorkspaceId();
-  const activeTerminalId$ = selectActiveTerminalId();
-  const terminals$ = selectTerminals();
-
-  const isOpen = $derived($isOpen$);
-  const height = $derived($height$);
-  const storeWorkspaceId = $derived($storeWorkspaceId$);
-  const activeTerminalId = $derived($activeTerminalId$);
-  const terminals = $derived($terminals$);
+  const isOpen = selectIsTerminalOverlayOpen();
+  const height = selectTerminalOverlayHeight();
+  const storeWorkspaceId = selectTerminalOverlayWorkspaceId();
+  const activeTerminalId = selectActiveTerminalId();
+  const terminals = selectTerminals();
 
   // Only show when store is bound to root workspace
-  const isRootContext = $derived(storeWorkspaceId === ROOT_WORKSPACE_ID);
+  const isRootContext = $derived($storeWorkspaceId === ROOT_WORKSPACE_ID);
 
   // NOTE: We intentionally do NOT have an $effect here to sync workspace ID.
   // The workspace ID is set by the keyboard shortcut handler in +layout.svelte
@@ -141,8 +135,8 @@
 
   // Header name editing
   function startEditingHeaderName() {
-    if (!activeTerminalId) return;
-    const term = terminals.find((t) => t.id === activeTerminalId);
+    if (!$activeTerminalId) return;
+    const term = $terminals.find((t) => t.id === $activeTerminalId);
     if (!term) return;
     isEditingHeaderName = true;
     headerEditValue = term.customName || term.name || 'Terminal';
@@ -154,8 +148,8 @@
   }
 
   function finishEditingHeaderName() {
-    if (isEditingHeaderName && activeTerminalId) {
-      dispatch(renameTerminal(ROOT_WORKSPACE_ID, activeTerminalId, headerEditValue));
+    if (isEditingHeaderName && $activeTerminalId) {
+      dispatch(renameTerminal(ROOT_WORKSPACE_ID, $activeTerminalId, headerEditValue));
     }
     isEditingHeaderName = false;
     headerEditValue = '';
@@ -187,8 +181,8 @@
 
   function createNewTerminal() {
     const newId = `terminal-root-${Date.now()}`;
-    dispatch(addTerminal(ROOT_WORKSPACE_ID, newId, `Terminal ${terminals.length + 1}`));
-    if (!isOpen) {
+    dispatch(addTerminal(ROOT_WORKSPACE_ID, newId, `Terminal ${$terminals.length + 1}`));
+    if (!$isOpen) {
       dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, newId));
     }
   }
@@ -200,8 +194,8 @@
   }
 
   function clearActiveTerminal() {
-    if (activeTerminalId) {
-      terminalManager.clearTerminal(activeTerminalId);
+    if ($activeTerminalId) {
+      terminalManager.clearTerminal($activeTerminalId);
     }
   }
 
@@ -216,11 +210,11 @@
 
     pendingClickTimeout = setTimeout(() => {
       pendingClickTimeout = null;
-      if (termId === activeTerminalId && isOpen) {
+      if (termId === $activeTerminalId && $isOpen) {
         handleClose();
       } else {
         dispatch(selectTerminalAction(ROOT_WORKSPACE_ID, termId));
-        if (!isOpen) {
+        if (!$isOpen) {
           dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, termId));
         }
       }
@@ -237,10 +231,10 @@
   }
 
   function cycleTerminal(direction: 1 | -1) {
-    if (!activeTerminalId || terminals.length <= 1) return;
-    const currentIndex = terminals.findIndex((t) => t.id === activeTerminalId);
-    const nextIndex = (currentIndex + direction + terminals.length) % terminals.length;
-    dispatch(selectTerminalAction(ROOT_WORKSPACE_ID, terminals[nextIndex].id));
+    if (!$activeTerminalId || $terminals.length <= 1) return;
+    const currentIndex = $terminals.findIndex((t) => t.id === $activeTerminalId);
+    const nextIndex = (currentIndex + direction + $terminals.length) % $terminals.length;
+    dispatch(selectTerminalAction(ROOT_WORKSPACE_ID, $terminals[nextIndex].id));
   }
 
   // ============================================================================
@@ -309,13 +303,13 @@
     const isMod = event.metaKey || event.ctrlKey;
 
     // Only handle when in root context and terminal is open
-    if (!isRootContext || !isOpen) return;
+    if (!isRootContext || !$isOpen) return;
 
     // Tab cycling shortcuts should only work when focus is in the terminal
     const isTerminalFocused = isFocusInTerminal(event.target as HTMLElement | null);
     if (!isTerminalFocused) return;
 
-    if (terminals.length <= 1) return;
+    if ($terminals.length <= 1) return;
 
     // Cmd+Shift+] - Next terminal
     if ((event.key === ']' || event.key === '}') && isMod && event.shiftKey) {
@@ -338,13 +332,13 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <!-- Only render when the overlay is open in root context (invisible when closed) -->
-{#if isRootContext && isOpen && activeTerminalId}
+{#if isRootContext && $isOpen && $activeTerminalId}
   <div class="terminal-overlay flex flex-col w-full">
     <!-- Expanded Terminal Panel -->
     <div
       class="terminal-panel relative flex flex-col bg-sidebar border-t border-border/50 shadow-2xl w-full"
       class:is-resizing={isResizing}
-      style="height: {height}vh;"
+      style="height: {$height}vh;"
       transition:slide={{ axis: 'y', duration: 200, easing: cubicOut }}
     >
       <!-- Resize Handle -->
@@ -383,8 +377,8 @@
               ondblclick={startEditingHeaderName}
               title="Click to rename terminal"
             >
-              {terminals.find((t) => t.id === activeTerminalId)?.customName ||
-                terminals.find((t) => t.id === activeTerminalId)?.name ||
+              {$terminals.find((t) => t.id === $activeTerminalId)?.customName ||
+                $terminals.find((t) => t.id === $activeTerminalId)?.name ||
                 'Terminal'}
             </span>
           {/if}
@@ -420,9 +414,9 @@
 
       <!-- Terminal Content -->
       <div class="flex-1 overflow-hidden">
-        {#key activeTerminalId}
+        {#key $activeTerminalId}
           <Terminal
-            terminalId={activeTerminalId}
+            terminalId={$activeTerminalId}
             workspaceId={ROOT_WORKSPACE_ID}
             class="h-full w-full"
           />
@@ -438,8 +432,8 @@
             <Fa icon={faTerminal} class="shrink-0 w-3.5 h-3.5 opacity-60" />
           </div>
 
-          {#each terminals as term (term.id)}
-            {@const isActive = term.id === activeTerminalId}
+          {#each $terminals as term (term.id)}
+            {@const isActive = term.id === $activeTerminalId}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class={cn(

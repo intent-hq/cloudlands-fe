@@ -15,7 +15,7 @@
   import SaveIndicator from '$lib/components/ui/SaveIndicator.svelte';
   import { Toggle } from '$lib/components/ui/toggle';
   import ViewSettingsDropdown from '$lib/components/ui/ViewSettingsDropdown.svelte';
-  import { editorSettings } from '$lib/stores/editor-settings.store.svelte';
+  import { selectLineWrapping } from '$lib/store/slices/editor-settings/editor-settings-selectors';
   import type { LineChange } from '$lib/utils/line-change-decorations';
   import { faFile, faPencil } from '@fortawesome/free-solid-svg-icons';
   import FileVersionHistoryPicker from './FileVersionHistoryPicker.svelte';
@@ -23,6 +23,8 @@
   import type { CommitInfo, Workspace, WorkspaceId } from '$shared/types';
   import { formatDistanceToNow } from '$lib/utils/date';
   import Fa from 'svelte-fa';
+
+  const lineWrapping = selectLineWrapping();
 
   const logger = createLogger('FileContentPanel');
 
@@ -273,7 +275,7 @@
         language={fileLanguage}
         jumpTo={jumpToLine ? { line: jumpToLine } : undefined}
         lineChanges={effectiveLineChanges}
-        lineWrapping={editorSettings.lineWrapping}
+        lineWrapping={$lineWrapping}
       />
     {:else}
       <FileViewer {filePath} {fileContent} {isBinary} />

@@ -18,7 +18,7 @@
   import type { ChatFileChange } from '$lib/utils/get-file-changes-from-messages';
   import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { editorSettings } from '$lib/stores/editor-settings.store.svelte';
+  import { selectDiffSideBySide } from '$lib/store/slices/editor-settings/editor-settings-selectors';
   import Fa from 'svelte-fa';
   import { faArrowPointer } from '@fortawesome/free-solid-svg-icons';
   import MonacoDiffViewer from '../file-tracking/MonacoDiffViewer.svelte';
@@ -53,8 +53,7 @@
     onOpenCommit,
   }: Props = $props();
 
-  // Use $derived to properly track the sideBySide setting
-  let sideBySide = $derived(editorSettings.diffSideBySide);
+  const sideBySide = selectDiffSideBySide();
 
   // Click-to-focus state
   let focused = $state(false);
@@ -205,7 +204,7 @@
     <MonacoDiffViewer
       change={trackedChange}
       {workspaceId}
-      {sideBySide}
+      sideBySide={$sideBySide}
       {foldUnchanged}
       {lineWrapping}
       {lineOffset}

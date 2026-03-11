@@ -19,12 +19,18 @@
   import MonacoDiffViewer from '$lib/components/file-tracking/MonacoDiffViewer.svelte';
   import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
-  import { editorSettings } from '$lib/stores/editor-settings.store.svelte';
+  import { selectLineWrapping, selectFoldUnchanged, selectDiffSideBySide } from '$lib/store/slices/editor-settings/editor-settings-selectors';
+  import { toggleLineWrapping, toggleFoldUnchanged, toggleDiffSideBySide } from '$lib/store/slices/editor-settings/editor-settings-slice';
+  import { dispatch } from '$lib/store/redux-dispatch-bridge';
   import { toast } from '$lib/components/ui/toast';
   import { createLogger } from '$lib/utils/client-logger';
   import { track, getFileExtension } from '$lib/services/analytics';
   import Fa from 'svelte-fa';
   import { faFile, faTextWidth, faMap, faColumns } from '@fortawesome/free-solid-svg-icons';
+
+  const lineWrapping = selectLineWrapping();
+  const foldUnchanged = selectFoldUnchanged();
+  const diffSideBySide = selectDiffSideBySide();
 
   const logger = createLogger('DiffTabType');
 
@@ -308,36 +314,36 @@
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => editorSettings.toggleLineWrapping()}
-    tooltip={editorSettings.lineWrapping
+    onclick={() => dispatch(toggleLineWrapping())}
+    tooltip={$lineWrapping
       ? 'Wrapping lines. Click to disable.'
       : 'Click to wrap lines'}
     tooltipSide="bottom"
-    class={editorSettings.lineWrapping ? 'text-foreground' : 'text-muted-foreground'}
+    class={$lineWrapping ? 'text-foreground' : 'text-muted-foreground'}
   >
     <Fa icon={faTextWidth} size="xs" />
   </Button>
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => editorSettings.toggleFoldUnchanged()}
-    tooltip={editorSettings.foldUnchanged
+    onclick={() => dispatch(toggleFoldUnchanged())}
+    tooltip={$foldUnchanged
       ? 'Folding unchanged lines. Click to disable.'
       : 'Click to fold unchanged lines'}
     tooltipSide="bottom"
-    class={editorSettings.foldUnchanged ? 'text-foreground' : 'text-muted-foreground'}
+    class={$foldUnchanged ? 'text-foreground' : 'text-muted-foreground'}
   >
     <Fa icon={faMap} size="xs" />
   </Button>
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => editorSettings.toggleDiffSideBySide()}
-    tooltip={editorSettings.diffSideBySide
+    onclick={() => dispatch(toggleDiffSideBySide())}
+    tooltip={$diffSideBySide
       ? 'Click to show unified view'
       : 'Click to show split view'}
     tooltipSide="bottom"
-    class={editorSettings.diffSideBySide ? 'text-foreground' : 'text-muted-foreground'}
+    class={$diffSideBySide ? 'text-foreground' : 'text-muted-foreground'}
   >
     <Fa icon={faColumns} size="xs" />
   </Button>
@@ -356,9 +362,9 @@
     <MonacoDiffViewer
       {change}
       {workspaceId}
-      sideBySide={editorSettings.diffSideBySide}
-      foldUnchanged={editorSettings.foldUnchanged}
-      lineWrapping={editorSettings.lineWrapping}
+      sideBySide={$diffSideBySide}
+      foldUnchanged={$foldUnchanged}
+      lineWrapping={$lineWrapping}
       refreshKey={stableRefreshKey}
       readOnly={false}
       onStageHunk={change.stage === ChangeStage.Unstaged ? handleStageHunk : undefined}

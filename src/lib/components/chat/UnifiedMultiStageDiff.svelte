@@ -14,7 +14,7 @@
   import type { ChangePart } from './types';
   import { mergeChangeParts, buildContentFromMergedHunks } from './unified-diff-merger';
   import MonacoDiffViewer from '../file-tracking/MonacoDiffViewer.svelte';
-  import { editorSettings } from '$lib/stores/editor-settings.store.svelte';
+  import { selectDiffSideBySide } from '$lib/store/slices/editor-settings/editor-settings-selectors';
 
   interface Props {
     /** The change parts to display (staged, unstaged, committed) */
@@ -43,8 +43,7 @@
   // Silence unused variable warnings (onOpenCommit not yet implemented for merged view)
   void _onOpenCommit;
 
-  // Use $derived to properly track the sideBySide setting
-  const sideBySide = $derived(editorSettings.diffSideBySide);
+  const sideBySide = selectDiffSideBySide();
 
   // Merge the change parts into a unified diff
   const mergedHunks = $derived(mergeChangeParts(parts));
@@ -97,7 +96,7 @@
     <MonacoDiffViewer
       change={mergedTrackedChange}
       {workspaceId}
-      {sideBySide}
+      sideBySide={$sideBySide}
       {foldUnchanged}
       {lineWrapping}
       {onStageHunk}

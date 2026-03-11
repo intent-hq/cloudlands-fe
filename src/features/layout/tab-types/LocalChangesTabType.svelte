@@ -13,9 +13,15 @@
   import { WorkspaceId } from '$shared/types/branded-ids';
   import ChatChangesPanel from '$lib/components/chat/ChatChangesPanel.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { editorSettings } from '$lib/stores/editor-settings.store.svelte';
+  import { selectLineWrapping, selectFoldUnchanged, selectDiffSideBySide } from '$lib/store/slices/editor-settings/editor-settings-selectors';
+  import { toggleLineWrapping, toggleFoldUnchanged, toggleDiffSideBySide } from '$lib/store/slices/editor-settings/editor-settings-slice';
+  import { dispatch } from '$lib/store/redux-dispatch-bridge';
   import Fa from 'svelte-fa';
   import { faTextWidth, faMap, faColumns, faCompressAlt } from '@fortawesome/free-solid-svg-icons';
+
+  const lineWrapping = selectLineWrapping();
+  const foldUnchanged = selectFoldUnchanged();
+  const diffSideBySide = selectDiffSideBySide();
 
   let { workspaceId, isActive }: TabTypeComponentProps = $props();
 
@@ -117,36 +123,36 @@
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => editorSettings.toggleLineWrapping()}
-    tooltip={editorSettings.lineWrapping
+    onclick={() => dispatch(toggleLineWrapping())}
+    tooltip={$lineWrapping
       ? 'Wrapping lines. Click to disable.'
       : 'Click to wrap lines'}
     tooltipSide="bottom"
-    class={editorSettings.lineWrapping ? 'text-foreground' : 'text-muted-foreground'}
+    class={$lineWrapping ? 'text-foreground' : 'text-muted-foreground'}
   >
     <Fa icon={faTextWidth} size="xs" />
   </Button>
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => editorSettings.toggleFoldUnchanged()}
-    tooltip={editorSettings.foldUnchanged
+    onclick={() => dispatch(toggleFoldUnchanged())}
+    tooltip={$foldUnchanged
       ? 'Folding unchanged lines. Click to disable.'
       : 'Click to fold unchanged lines'}
     tooltipSide="bottom"
-    class={editorSettings.foldUnchanged ? 'text-foreground' : 'text-muted-foreground'}
+    class={$foldUnchanged ? 'text-foreground' : 'text-muted-foreground'}
   >
     <Fa icon={faMap} size="xs" />
   </Button>
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => editorSettings.toggleDiffSideBySide()}
-    tooltip={editorSettings.diffSideBySide
+    onclick={() => dispatch(toggleDiffSideBySide())}
+    tooltip={$diffSideBySide
       ? 'Click to show unified view'
       : 'Click to show split view'}
     tooltipSide="bottom"
-    class={editorSettings.diffSideBySide ? 'text-foreground' : 'text-muted-foreground'}
+    class={$diffSideBySide ? 'text-foreground' : 'text-muted-foreground'}
   >
     <Fa icon={faColumns} size="xs" />
   </Button>

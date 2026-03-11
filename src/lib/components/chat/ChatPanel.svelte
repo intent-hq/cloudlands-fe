@@ -111,7 +111,7 @@
   import LazyTurn from './LazyTurn.svelte';
   import InlinePermissionRequest from './InlinePermissionRequest.svelte';
   import { permissionStore } from '$lib/stores/permission.store.svelte';
-  import { agentFontSettings } from '$lib/stores/agent-font-settings.store.svelte';
+  import { selectIsAgentMonospace } from '$lib/store/slices/agent-font-settings/agent-font-settings-selectors';
   import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
   import AuroraBackground from './AuroraBackground.svelte';
   import { invoke, listenSync } from '$lib/electron-bridge';
@@ -127,6 +127,8 @@
   import { cleanErrorMessage } from '$shared/errors/messages';
 
   const logger = createLogger('ChatPanel');
+
+  const isAgentMonospace = selectIsAgentMonospace();
 
   // Constants
   const SCROLL_BOTTOM_THRESHOLD = 30; // pixels from bottom to consider "at bottom"
@@ -3555,7 +3557,7 @@
         },
       }}
       class="flex-1 overflow-y-auto px-[5%]"
-      class:agent-font-monospace={agentFontSettings.isMonospace}
+      class:agent-font-monospace={$isAgentMonospace}
     >
       <!-- Task Assignment Pill -->
       {#if agentTasks.length > 0}

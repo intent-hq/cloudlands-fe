@@ -20,9 +20,13 @@
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
   import { notificationSettingsStore } from '$lib/stores/notification-settings.store.svelte';
-  import { noteFontSettings } from '$lib/stores/note-font-settings.store.svelte';
-  import { agentFontSettings } from '$lib/stores/agent-font-settings.store.svelte';
-  import { codeFontSettings } from '$lib/stores/code-font-settings.store.svelte';
+  import { setNoteFontStyle } from '$lib/store/slices/note-font-settings/note-font-settings-slice';
+  import { selectNoteFontStyle, selectIsNoteMonospace } from '$lib/store/slices/note-font-settings/note-font-settings-selectors';
+  import { setAgentFontStyle, type AgentFontStyle } from '$lib/store/slices/agent-font-settings/agent-font-settings-slice';
+  import { selectAgentFontStyle } from '$lib/store/slices/agent-font-settings/agent-font-settings-selectors';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { setCodeFontFamily } from '$lib/store/slices/code-font-settings/code-font-settings-slice';
+  import { selectCodeFontFamily, selectCodeFontFamilyCSS, selectCodeFontFamilyLabel, selectCodeFontOptions } from '$lib/store/slices/code-font-settings/code-font-settings-selectors';
   import { Select } from '$lib/components/ui/select';
 
   import { isMacPlatform } from '$lib/utils/shortcuts';
@@ -37,6 +41,15 @@
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
+
+  const settingsDispatch = getDispatch();
+  const noteFontStyle = selectNoteFontStyle();
+  const isNoteMonospace = selectIsNoteMonospace();
+  const agentFontStyle = selectAgentFontStyle();
+  const codeFontFamily = selectCodeFontFamily();
+  const codeFontFamilyCSS = selectCodeFontFamilyCSS();
+  const codeFontFamilyLabel = selectCodeFontFamilyLabel();
+  const codeFontOptions = selectCodeFontOptions();
 
   // Tab types
   type SettingsTab = 'accounts' | 'agents' | 'setup' | 'fonts-colors' | 'general';
@@ -161,15 +174,15 @@
   ];
 
   function handleNoteFontChange(value: string | boolean) {
-    noteFontSettings.fontStyle = value as 'sans' | 'monospace';
+    settingsDispatch(setNoteFontStyle(value as 'sans' | 'monospace'));
   }
 
   function handleAgentFontChange(value: string | boolean) {
-    agentFontSettings.fontStyle = value as 'sans' | 'monospace';
+    settingsDispatch(setAgentFontStyle(value as AgentFontStyle));
   }
 
   function handleCodeFontChange(value: string) {
-    codeFontSettings.fontFamily = value;
+    settingsDispatch(setCodeFontFamily(value));
   }
 
   // App version from Electron
@@ -277,8 +290,8 @@
     // Clear custom color theme
     colorThemeSettingsRef?.clearTheme();
     // Reset font styles
-    noteFontSettings.fontStyle = 'sans';
-    agentFontSettings.fontStyle = 'sans';
+    settingsDispatch(setNoteFontStyle('sans'));
+    settingsDispatch(setAgentFontStyle('sans'));
     // Reset notification settings
     notificationSettingsStore.reset();
     // Reset Git & Workspace settings
@@ -467,7 +480,7 @@
                   <p class="text-sm font-medium text-foreground">Notes</p>
                   <p
                     class="text-xs text-subtle mt-0.5 transition-all duration-200"
-                    class:font-mono={noteFontSettings.fontStyle === 'monospace'}
+                    class:font-mono={$isNoteMonospace}
                   >
                     The typeface used for your notes, specs, and documents. Monospace can feel more
                     focused for technical writing.
@@ -476,7 +489,7 @@
                 <Toggle
                   variant="group"
                   options={fontStyleOptions}
-                  value={noteFontSettings.fontStyle}
+                  value={$noteFontStyle}
                   onChange={handleNoteFontChange}
                   size="sm"
                 />
@@ -488,7 +501,7 @@
                   <p class="text-sm font-medium text-foreground">Agent Chat</p>
                   <p
                     class="text-xs text-subtle mt-0.5 transition-all duration-200"
-                    class:font-mono={agentFontSettings.fontStyle === 'monospace'}
+                    class:font-mono={$agentFontStyle === 'monospace'}
                   >
                     The typeface used for agent conversation messages, including code references and
                     explanations.
@@ -497,7 +510,7 @@
                 <Toggle
                   variant="group"
                   options={fontStyleOptions}
-                  value={agentFontSettings.fontStyle}
+                  value={$agentFontStyle}
                   onChange={handleAgentFontChange}
                   size="sm"
                 />
@@ -513,16 +526,16 @@
                 </div>
                 <div class="w-[180px] flex-shrink-0">
                   <Select.Root
-                    value={codeFontSettings.fontFamily}
+                    value={$codeFontFamily}
                     onchange={handleCodeFontChange}
                   >
                     <Select.Trigger>
-                      <span class="truncate" style:font-family={codeFontSettings.fontFamilyCSS}>
-                        {codeFontSettings.fontFamilyLabel}
+                      <span class="truncate" style:font-family={$codeFontFamilyCSS}>
+                        {$codeFontFamilyLabel}
                       </span>
                     </Select.Trigger>
                     <Select.Content portal class="max-h-[300px] w-[180px]">
-                      {#each codeFontSettings.fontOptions as option}
+                      {#each $codeFontOptions as option}
                         <Select.Item value={option.value}>
                           <span class="truncate" style:font-family={option.fontFamily}>
                             {option.label}

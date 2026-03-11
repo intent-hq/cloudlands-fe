@@ -37,10 +37,6 @@ export const setOpenAction = createAction<[action: OpenAction]>(
   "openAction/setOpenAction"
 );
 
-export const loadOpenAction = createAction<[action: OpenAction]>(
-  "openAction/loadOpenAction"
-);
-
 // ============================================================================
 // Utilities
 // ============================================================================
@@ -56,10 +52,6 @@ export function isSpecialAction(value: string): value is SpecialAction {
 
 export const openActionReducer = createReducer<OpenActionState>(initialState)
   .with(setOpenAction, (state, { payload: [action] }) => ({
-    ...state,
-    action,
-  }))
-  .with(loadOpenAction, (state, { payload: [action] }) => ({
     ...state,
     action,
   }));

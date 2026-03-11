@@ -1,10 +1,9 @@
 <script lang="ts">
   import { Dropdown, type DropdownOption } from '$lib/components/ui/dropdown';
-  import {
-    noteFontSettings,
-    type NoteFontStyle,
-  } from '$lib/stores/note-font-settings.store.svelte';
-  import { noteSpellcheckSettings } from '$lib/stores/note-spellcheck-settings.store.svelte';
+  import { setNoteFontStyle, type NoteFontStyle } from '$lib/store/slices/note-font-settings/note-font-settings-slice';
+  import { selectNoteFontStyle } from '$lib/store/slices/note-font-settings/note-font-settings-selectors';
+  import { selectSpellcheckEnabled } from '$lib/store/slices/note-spellcheck-settings/note-spellcheck-settings-selectors';
+  import { toggleSpellcheck } from '$lib/store/slices/note-spellcheck-settings/note-spellcheck-settings-slice';
   import { invoke } from '$lib/electron-bridge';
   import { setOpenAction, type OpenAction } from '$lib/store/slices/open-action/open-action-slice';
   import { getDispatch } from '$lib/store/utils/utils';
@@ -37,6 +36,8 @@
   }: Props = $props();
 
   const dispatch = getDispatch();
+  const noteFontStyle = selectNoteFontStyle();
+  const spellcheckEnabled = selectSpellcheckEnabled();
 
   let dropdownOpen = $state(false);
 
@@ -73,10 +74,10 @@
         value: `font:${style.value}`,
         label: style.label,
         onclick: () => {
-          noteFontSettings.fontStyle = style.value;
+          dispatch(setNoteFontStyle(style.value));
           dropdownOpen = false;
         },
-        endLabel: noteFontSettings.fontStyle === style.value ? '✓' : undefined,
+        endLabel: $noteFontStyle === style.value ? '✓' : undefined,
       })),
     });
 
@@ -86,9 +87,9 @@
       label: 'Spellcheck',
       icon: faSpellCheck,
       type: 'toggle',
-      checked: noteSpellcheckSettings.enabled,
+      checked: $spellcheckEnabled,
       onclick: () => {
-        noteSpellcheckSettings.toggle();
+        dispatch(toggleSpellcheck());
       },
     });
 

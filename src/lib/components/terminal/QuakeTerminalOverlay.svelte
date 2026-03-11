@@ -63,15 +63,10 @@
 
   // Store bindings
   const dispatch = getDispatch();
-  const isOpen$ = selectIsTerminalOverlayOpen();
-  const height$ = selectTerminalOverlayHeight();
-  const activeTerminalId$ = selectActiveTerminalId();
-  const terminals$ = selectTerminals();
-
-  const isOpen = $derived($isOpen$);
-  const height = $derived($height$);
-  const activeTerminalId = $derived($activeTerminalId$);
-  const terminals = $derived($terminals$);
+  const isOpen = selectIsTerminalOverlayOpen();
+  const height = selectTerminalOverlayHeight();
+  const activeTerminalId = selectActiveTerminalId();
+  const terminals = selectTerminals();
 
   // Workspace ID from props (required)
   const workspaceId = $derived(propWorkspaceId);
@@ -101,9 +96,9 @@
   $effect(() => {
     if (typeof document === 'undefined') return;
 
-    const hasTerminals = workspaceId && terminals.length > 0;
-    const terminalIsOpen = isOpen && activeTerminalId;
-    const terminalHeight = height;
+    const hasTerminals = workspaceId && $terminals.length > 0;
+    const terminalIsOpen = $isOpen && $activeTerminalId;
+    const terminalHeight = $height;
 
     function updateLayoutHeight() {
       let totalHeight = 0;
@@ -193,8 +188,8 @@
 
   // Header name editing
   function startEditingHeaderName() {
-    if (!activeTerminalId) return;
-    const term = terminals.find((t) => t.id === activeTerminalId);
+    if (!$activeTerminalId) return;
+    const term = $terminals.find((t) => t.id === $activeTerminalId);
     if (!term) return;
     isEditingHeaderName = true;
     headerEditValue = term.customName || term.name || 'Terminal';
@@ -206,8 +201,8 @@
   }
 
   function finishEditingHeaderName() {
-    if (isEditingHeaderName && activeTerminalId && workspaceId) {
-      dispatch(renameTerminal(workspaceId, activeTerminalId, headerEditValue));
+    if (isEditingHeaderName && $activeTerminalId && workspaceId) {
+      dispatch(renameTerminal(workspaceId, $activeTerminalId, headerEditValue));
     }
     isEditingHeaderName = false;
     headerEditValue = '';
@@ -257,8 +252,8 @@
   function createNewTerminal() {
     if (!workspaceId) return;
     const newId = `terminal-${Date.now()}`;
-    dispatch(addTerminal(workspaceId, newId, `Terminal ${terminals.length + 1}`));
-    if (!isOpen) {
+    dispatch(addTerminal(workspaceId, newId, `Terminal ${$terminals.length + 1}`));
+    if (!$isOpen) {
       dispatch(openTerminalOverlay(workspaceId, newId));
     }
     track('Opened Terminal', { workspace_id: workspaceId, source: 'bottom-bar' });
@@ -271,8 +266,8 @@
   }
 
   function clearActiveTerminal() {
-    if (activeTerminalId) {
-      terminalManager.clearTerminal(activeTerminalId);
+    if ($activeTerminalId) {
+      terminalManager.clearTerminal($activeTerminalId);
     }
   }
 
@@ -289,12 +284,12 @@
     // Delay single-click action to allow double-click to cancel it
     pendingClickTimeout = setTimeout(() => {
       pendingClickTimeout = null;
-      if (termId === activeTerminalId && isOpen) {
+      if (termId === $activeTerminalId && $isOpen) {
         handleClose();
       } else {
         if (workspaceId) {
           dispatch(selectTerminal(workspaceId, termId));
-          if (!isOpen) {
+          if (!$isOpen) {
             dispatch(openTerminalOverlay(workspaceId, termId));
           }
         }
@@ -313,10 +308,10 @@
   }
 
   function cycleTerminal(direction: 1 | -1) {
-    if (!activeTerminalId || terminals.length <= 1 || !workspaceId) return;
-    const currentIndex = terminals.findIndex((t) => t.id === activeTerminalId);
-    const nextIndex = (currentIndex + direction + terminals.length) % terminals.length;
-    dispatch(selectTerminal(workspaceId, terminals[nextIndex].id));
+    if (!$activeTerminalId || $terminals.length <= 1 || !workspaceId) return;
+    const currentIndex = $terminals.findIndex((t) => t.id === $activeTerminalId);
+    const nextIndex = (currentIndex + direction + $terminals.length) % $terminals.length;
+    dispatch(selectTerminal(workspaceId, $terminals[nextIndex].id));
   }
 
   // ============================================================================
@@ -357,7 +352,7 @@
     // Note: Cmd+` is reserved for native macOS window cycling; use Ctrl+` or Cmd+J for terminal toggle
 
     // Only handle tab cycling when terminal is open
-    if (!isOpen) return;
+    if (!$isOpen) return;
 
     // Tab cycling shortcuts (Cmd+Shift+[/]) should only work when focus is in the terminal
     // This prevents conflicts with panel cycling shortcuts in PanelLayout
@@ -365,7 +360,7 @@
     if (!isTerminalFocused) return;
 
     // Tab cycling (only with multiple terminals)
-    if (terminals.length <= 1) return;
+    if ($terminals.length <= 1) return;
 
     // Cmd+Shift+] - Next terminal
     // Note: Shift+] produces } on US keyboards, so we check for both
@@ -393,11 +388,11 @@
   <!-- Terminal Overlay Container - rendered within layout's terminal-overlay-container -->
   <div class="terminal-overlay flex flex-col w-full">
     <!-- Expanded Terminal Panel -->
-    {#if isOpen && activeTerminalId}
+    {#if $isOpen && $activeTerminalId}
       <div
         class="terminal-panel relative flex flex-col bg-sidebar border-t border-border shadow-2xl w-full"
         class:is-resizing={isResizing}
-        style="height: {height}vh;"
+        style="height: {$height}vh;"
         transition:slide={{ axis: 'y', duration: 200, easing: cubicOut }}
       >
         <!-- Resize Handle - Sleek minimal design -->
@@ -436,8 +431,8 @@
                 ondblclick={startEditingHeaderName}
                 title="Click to rename terminal"
               >
-                {terminals.find((t) => t.id === activeTerminalId)?.customName ||
-                  terminals.find((t) => t.id === activeTerminalId)?.name ||
+                {$terminals.find((t) => t.id === $activeTerminalId)?.customName ||
+                  $terminals.find((t) => t.id === $activeTerminalId)?.name ||
                   'Terminal'}
               </span>
             {/if}
@@ -475,8 +470,8 @@
         <div class="flex-1 flex flex-col min-h-0 relative overflow-hidden">
           <!-- Terminal Content -->
           <div class="flex-1 overflow-hidden">
-            {#key activeTerminalId}
-              <Terminal terminalId={activeTerminalId} {workspaceId} class="h-full w-full" />
+            {#key $activeTerminalId}
+              <Terminal terminalId={$activeTerminalId} {workspaceId} class="h-full w-full" />
             {/key}
           </div>
 
@@ -497,8 +492,8 @@
           <Fa icon={faTerminal} class="shrink-0 w-3.5 h-3.5 opacity-60" />
         </div>
 
-        {#each terminals as term (term.id)}
-          {@const isActive = term.id === activeTerminalId && isOpen}
+        {#each $terminals as term (term.id)}
+          {@const isActive = term.id === $activeTerminalId && $isOpen}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             class={cn(
@@ -562,12 +557,12 @@
         <Button
           variant="ghost-light"
           size="icon-xs"
-          onclick={() => (isOpen ? handleClose() : handleOpen())}
-          tooltip={isOpen ? 'Collapse Terminal' : 'Expand Terminal'}
+          onclick={() => ($isOpen ? handleClose() : handleOpen())}
+          tooltip={$isOpen ? 'Collapse Terminal' : 'Expand Terminal'}
           tooltipShortcut="mod+`"
-          aria-label={isOpen ? 'Collapse terminal' : 'Expand terminal'}
+          aria-label={$isOpen ? 'Collapse terminal' : 'Expand terminal'}
         >
-          <Fa icon={isOpen ? faChevronDown : faChevronUp} size="xs" />
+          <Fa icon={$isOpen ? faChevronDown : faChevronUp} size="xs" />
         </Button>
       </div>
     </div>

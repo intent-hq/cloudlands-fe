@@ -34,7 +34,7 @@
   import DiffHeader from './DiffHeader.svelte';
   import { getDiffWorkerPool, getSafeDiffLanguage } from '$lib/utils/diff-highlighter-preloader';
   import { themeManager } from '$lib/utils/theme';
-  import { codeFontSettings } from '$lib/stores/code-font-settings.store.svelte';
+  import { selectCodeFontFamilyCSS } from '$lib/store/slices/code-font-settings/code-font-settings-selectors';
   import Fa from 'svelte-fa';
   import {
     faSearch,
@@ -109,6 +109,8 @@
     maxHighlightLines = 5000,
     disableHighlighting = false,
   }: Props = $props();
+
+  const codeFontFamilyCSS = selectCodeFontFamilyCSS();
 
   // Performance: Check if content is too large to render
   const contentTooLarge = $derived.by(() => {
@@ -703,7 +705,7 @@
       style={maxHeight ? `max-height: calc(${maxHeight} - 40px);` : ''}
     >
       {#if diffData}
-        <div bind:this={containerRef} class="pure-diff-container" style:--diffs-font-family={codeFontSettings.fontFamilyCSS}></div>
+        <div bind:this={containerRef} class="pure-diff-container" style:--diffs-font-family={$codeFontFamilyCSS}></div>
       {:else}
         <div class="pure-diff-empty">
           <p class="text-subtle text-sm">No diff content available</p>

@@ -63,12 +63,14 @@
   import { unifiedStateStore } from '$features/agent/services/unified-state-store';
   import { invoke } from '$lib/electron-bridge';
   import { getUnifiedWorkspaceState } from '$features/workspace/workspace-unified-state.svelte';
-  import { noteFontSettings } from '$lib/stores/note-font-settings.store.svelte';
-  import { noteSpellcheckSettings } from '$lib/stores/note-spellcheck-settings.store.svelte';
+  import { selectNoteFontStyle } from '$lib/store/slices/note-font-settings/note-font-settings-selectors';
+  import { selectSpellcheckEnabled } from '$lib/store/slices/note-spellcheck-settings/note-spellcheck-settings-selectors';
   import { createTiptapTaskListMarked } from '$lib/utils/tiptap-task-list-extension';
   import { track } from '$lib/services/analytics';
 
   const logger = createLogger('NoteWithComments');
+  const noteFontStyle = selectNoteFontStyle();
+  const spellcheckEnabled = selectSpellcheckEnabled();
 
   // --- Markdown paste detection helpers ---
 
@@ -1537,11 +1539,11 @@
 
   // Reactively set spellcheck on the editor element based on user preference
   $effect(() => {
-    const spellcheckEnabled = noteSpellcheckSettings.enabled;
+    const isEnabled = $spellcheckEnabled;
     if (editor && !editor.isDestroyed) {
       const editorElement = editor.view.dom;
       if (editorElement) {
-        editorElement.setAttribute('spellcheck', String(spellcheckEnabled));
+        editorElement.setAttribute('spellcheck', String(isEnabled));
       }
     }
   });
@@ -1770,7 +1772,7 @@
 <svelte:window onkeydown={handleGlobalKeydown} />
 
 <div
-  class="workspace-spec-with-comments h-full overflow-hidden flex flex-col px-0 note-font-{noteFontSettings.fontStyle}"
+  class="workspace-spec-with-comments h-full overflow-hidden flex flex-col px-0 note-font-{$noteFontStyle}"
   role="application"
   aria-label="Space specification editor"
   tabindex="-1"
