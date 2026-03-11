@@ -138,7 +138,7 @@
 
       if (result.ok && result.terminalId) {
         // Open the terminal in the quake terminal bar
-        dispatch(addTerminal(result.terminalId, `Pull from origin/${remoteBranch}`));
+        dispatch(addTerminal(workspaceId, result.terminalId, `Pull from origin/${remoteBranch}`));
         dispatch(openTerminalOverlay(workspaceId, result.terminalId));
 
         toast.success('Pull started in terminal', {

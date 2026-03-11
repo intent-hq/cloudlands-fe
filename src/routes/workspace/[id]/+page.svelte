@@ -1140,7 +1140,7 @@
           // Add to overlay store so it appears in the terminal tab bar
           // This handles the case where the terminal:created event was missed
           // (e.g., setup script terminal created before the workspace page mounted)
-          dispatch(addTerminal(backendTerminal.id, 'Setup'));
+          dispatch(addTerminal(capturedWorkspaceId, backendTerminal.id, 'Setup'));
 
           logger.info('[WorkspacePage] Added backend terminal to list and overlay', {
             terminalId: backendTerminal.id,
@@ -1921,7 +1921,7 @@
       terminalManager.saveTerminalMetadata(terminalId, eventWorkspaceId, title);
 
       // Add the terminal to the overlay store so it appears in the QuakeTerminalOverlay tab bar
-      dispatch(addTerminal(terminalId, title || 'Setup'));
+      dispatch(addTerminal(eventWorkspaceId, terminalId, title || 'Setup'));
 
       // Don't open the terminal drawer if there's a pending initial agent
       // This prevents the terminal from taking over the drawer during workspace creation
@@ -3930,7 +3930,7 @@
 
   usePanelShortcuts({
     panelVisibilityManager,
-    // Note: Cmd+B sidebar toggle is now handled directly by sidebarWidthStore.toggle()
+    // Note: Cmd+B sidebar toggle is handled by dispatch(toggleSidebar())
     // in use-panel-shortcuts.svelte.ts
     onOpenAgentOverview: () => {
       // Open the Agent Overview panel tab

@@ -32,8 +32,9 @@
   import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
   import { WorkspaceStatusEnum } from '$shared/types';
   import { getLineStats, type LineStats } from '$features/file-tracking/file-tracking.client';
-  import { zoomStore } from '$lib/stores/zoom.store.svelte';
-  import { sidebarWidthStore } from '$lib/stores/sidebar-width.store.svelte';
+  import { selectZoomFactor, selectCounterScale } from '$lib/store/slices/zoom/zoom-selectors';
+  import { toggleSidebar } from '$lib/store/slices/sidebar-width/sidebar-width-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import { layoutSettings } from '$features/layout/layout-settings.svelte';
 
   interface Props {
@@ -41,6 +42,14 @@
   }
 
   let { workspaceId }: Props = $props();
+
+  const dispatch = getDispatch();
+
+  // Zoom selectors
+  const zoomFactor$ = selectZoomFactor();
+  const counterScale$ = selectCounterScale();
+  const zoomFactor = $derived($zoomFactor$);
+  const counterScale = $derived($counterScale$);
 
   // Detect platform for conditional styling and shortcuts
   const isMac = $derived.by(() => {
@@ -206,15 +215,15 @@
 </script>
 
 <!-- Counter-scale wrapper to maintain fixed position relative to macOS traffic lights -->
-<div class="window-title-bar-wrapper" style:height="{35 / zoomStore.zoomFactor}px" aria-label="Window title bar">
+<div class="window-title-bar-wrapper" style:height="{35 / zoomFactor}px" aria-label="Window title bar">
   <div
     class={cn(
       'window-title-bar app-drag-region',
       isMac ? 'window-title-bar-mac' : 'window-title-bar-windows',
     )}
-    style:transform="scale({zoomStore.counterScale})"
+    style:transform="scale({counterScale})"
     style:transform-origin="top left"
-    style:width="{100 * zoomStore.zoomFactor}%"
+    style:width="{100 * zoomFactor}%"
   >
     <!-- Left column -->
     <div class="flex items-center app-no-drag min-w-0">
@@ -226,7 +235,7 @@
           {/snippet}
           <button
             class="p-2 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground cursor-pointer"
-            onclick={() => sidebarWidthStore.toggle()}
+            onclick={() => dispatch(toggleSidebar())}
             aria-label="Toggle sidebar"
           >
             <SidebarIcon size={16} side="left" />
@@ -280,7 +289,7 @@
           {/snippet}
           <button
             class="p-2 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground cursor-pointer"
-            onclick={() => sidebarWidthStore.toggle()}
+            onclick={() => dispatch(toggleSidebar())}
             aria-label="Toggle sidebar"
           >
             <SidebarIcon size={16} side="right" />

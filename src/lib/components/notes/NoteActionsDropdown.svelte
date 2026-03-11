@@ -6,7 +6,8 @@
   } from '$lib/stores/note-font-settings.store.svelte';
   import { noteSpellcheckSettings } from '$lib/stores/note-spellcheck-settings.store.svelte';
   import { invoke } from '$lib/electron-bridge';
-  import { openActionStore, type OpenAction } from '$lib/stores/open-action.store.svelte';
+  import { setOpenAction, type OpenAction } from '$lib/store/slices/open-action/open-action-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import { toast } from '$lib/components/ui/toast';
   import { createLogger } from '$lib/utils/client-logger';
   import Fa from 'svelte-fa';
@@ -34,6 +35,8 @@
     isSpec = false,
     onDelete,
   }: Props = $props();
+
+  const dispatch = getDispatch();
 
   let dropdownOpen = $state(false);
 
@@ -166,7 +169,7 @@
           toast.success('Path copied to clipboard');
           break;
       }
-      openActionStore.action = actionId;
+      dispatch(setOpenAction(actionId));
     } catch (error) {
       logger.error(`Failed to execute action ${actionId}:`, error);
     }

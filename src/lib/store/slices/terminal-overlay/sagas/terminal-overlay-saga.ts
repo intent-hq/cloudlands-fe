@@ -23,7 +23,7 @@ export function* terminalOverlaySaga() {
   yield* fork(watchRemoveTerminalCustomName);
   yield* fork(watchWorkspaceState);
 
-  // Fork IPC listener
+  // Fork IPC listener for terminal:disposed events (uses saga channel)
   yield* fork(watchTerminalDisposed);
 
   // Fork workspace init watchers

@@ -6,7 +6,7 @@ import {
   loadWorkspaceTerminals,
   getTerminalName,
   type TerminalTab,
-  type WorkspaceTerminalState,
+  type PersistedWorkspaceState,
   WORKSPACE_STATE_STORAGE_KEY,
 } from "../terminal-overlay-slice";
 import { getStoredCustomName } from "./persistence-saga";
@@ -15,11 +15,11 @@ import { getStoredCustomName } from "./persistence-saga";
 // Helpers
 // ============================================================================
 
-function loadWorkspaceState(wsId: string): WorkspaceTerminalState | null {
+function loadWorkspaceState(wsId: string): PersistedWorkspaceState | null {
   try {
     const stored = localStorage.getItem(WORKSPACE_STATE_STORAGE_KEY);
     if (stored) {
-      const states = JSON.parse(stored) as Record<string, WorkspaceTerminalState>;
+      const states = JSON.parse(stored) as Record<string, PersistedWorkspaceState>;
       return states[wsId] || null;
     }
   } catch { /* ignore */ }
@@ -32,7 +32,7 @@ function loadTerminalMetadataForWorkspace(wsId: string): TerminalTab[] {
   return storedTerminals.map((t) => ({
     id: t.terminalId,
     name: t.title || getTerminalName(t.terminalId),
-    customName: getStoredCustomName(t.terminalId),
+    customName: getStoredCustomName(wsId, t.terminalId),
   }));
 }
 
@@ -41,37 +41,25 @@ function loadTerminalMetadataForWorkspace(wsId: string): TerminalTab[] {
 // ============================================================================
 
 /**
- * When setWorkspace is dispatched, save current workspace state and load
- * terminals + state for the new workspace.
+ * When setWorkspace is dispatched, load terminals for the new workspace
+ * if they haven't been loaded yet.
+ *
+ * No need to "save previous workspace state" anymore — all workspaces
+ * are in the Record and persist independently. setTerminalOverlayWorkspace
+ * just changes activeWorkspaceId.
  */
 export function* watchSetWorkspace() {
   yield* takeEvery(setTerminalOverlayWorkspace.type, function* (action: ReturnType<typeof setTerminalOverlayWorkspace>) {
     const [wsId] = action.payload;
     if (typeof window === 'undefined') return;
 
-    // Save current workspace state before switching
-    const prevState = yield* select((state) => ({
-      workspaceId: state.terminalOverlay.workspaceId,
-      isOpen: state.terminalOverlay.isOpen,
-      activeTerminalId: state.terminalOverlay.activeTerminalId,
-    }));
-
-    if (prevState.workspaceId && prevState.workspaceId !== wsId) {
-      // Save previous workspace state
-      try {
-        const stored = localStorage.getItem(WORKSPACE_STATE_STORAGE_KEY);
-        const states = stored ? JSON.parse(stored) as Record<string, WorkspaceTerminalState> : {};
-        states[prevState.workspaceId] = {
-          isOpen: prevState.isOpen,
-          activeTerminalId: prevState.activeTerminalId,
-        };
-        localStorage.setItem(WORKSPACE_STATE_STORAGE_KEY, JSON.stringify(states));
-      } catch { /* ignore */ }
-    }
+    // Check if this workspace already has terminals loaded in the Record
+    const wsState = yield* select((state) => state.terminalOverlay.workspaces[wsId]);
+    if (wsState && wsState.terminals.length > 0) return;
 
     // Load terminals for new workspace
     const terminals: TerminalTab[] = yield* call(loadTerminalMetadataForWorkspace, wsId);
-    const savedState: WorkspaceTerminalState | null = yield* call(loadWorkspaceState, wsId);
+    const savedState: PersistedWorkspaceState | null = yield* call(loadWorkspaceState, wsId);
 
     yield* put(loadWorkspaceTerminals(wsId, terminals, savedState));
   });
@@ -86,18 +74,13 @@ export function* watchOpenWithWorkspace() {
     const [wsId] = action.payload;
     if (!wsId || typeof window === 'undefined') return;
 
-    // Check if we need to load terminals (workspace changed or empty)
-    const currentState = yield* select((state) => ({
-      workspaceId: state.terminalOverlay.workspaceId,
-      terminals: state.terminalOverlay.terminals,
-    }));
-
-    // Only load if workspace just changed or terminals are empty
-    if (currentState.workspaceId === wsId && currentState.terminals.length > 0) return;
+    // Check if this workspace already has terminals in the Record
+    const wsState = yield* select((state) => state.terminalOverlay.workspaces[wsId]);
+    if (wsState && wsState.terminals.length > 0) return;
 
     const terminals: TerminalTab[] = yield* call(loadTerminalMetadataForWorkspace, wsId);
     if (terminals.length > 0) {
-      const savedState: WorkspaceTerminalState | null = yield* call(loadWorkspaceState, wsId);
+      const savedState: PersistedWorkspaceState | null = yield* call(loadWorkspaceState, wsId);
       yield* put(loadWorkspaceTerminals(wsId, terminals, savedState));
     }
   });

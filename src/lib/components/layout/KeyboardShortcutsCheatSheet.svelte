@@ -17,18 +17,15 @@
   import Button from '../ui/button/button.svelte';
   import Header from '../ui/Header.svelte';
   import {
-    selectCheatSheetContext,
     selectIsCheatSheetOpen,
+    selectCheatSheetContext,
   } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-selectors';
+  import { closeCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
 
-  interface Props {
-    onClose: () => void;
-  }
-
-  let { onClose }: Props = $props();
-
-  const isCheatSheetOpen = selectIsCheatSheetOpen();
-  const cheatSheetContext = selectCheatSheetContext();
+  const isOpen = selectIsCheatSheetOpen();
+  const context = selectCheatSheetContext();
+  const dispatch = getDispatch();
 
   const categories = getAllShortcutCategories();
   const categoryOrder: ShortcutCategory[] = [
@@ -40,23 +37,27 @@
     'leader',
   ];
 
+  function handleClose() {
+    dispatch(closeCheatSheet());
+  }
+
   function handleBackdropClick(e: MouseEvent) {
     if (e.target === e.currentTarget) {
-      onClose();
+      handleClose();
     }
   }
 
   function handleKeyDown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       e.preventDefault();
-      onClose();
+      handleClose();
     }
   }
 </script>
 
 <svelte:window onkeydown={handleKeyDown} />
 
-{#if $isCheatSheetOpen}
+{#if $isOpen}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
@@ -72,13 +73,13 @@
         <div class="flex items-center gap-3">
           <!-- <Fa icon={faKeyboard} class="text-primary" /> -->
           <span class="text-lg font-semibold">Keyboard Shortcuts</span>
-          {#if $cheatSheetContext !== 'global'}
+          {#if $context !== 'global'}
             <span class="text-xs px-2 py-0.5 bg-primary/10 text-primary rounded-full capitalize">
-              {$cheatSheetContext} context
+              {$context} context
             </span>
           {/if}
         </div>
-        <Button variant="ghost-light" size="icon-xs" onclick={onClose}>
+        <Button variant="ghost-light" size="icon-xs" onclick={handleClose}>
           <Fa icon={faTimes} size={12} />
         </Button>
       </div>

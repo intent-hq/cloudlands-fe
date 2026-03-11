@@ -38,6 +38,7 @@
     setTerminalOverlayHeight,
     renameTerminal,
   } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
+  // RootQuakeTerminalOverlay uses ROOT_WORKSPACE_ID as its workspace ID
   import { getDispatch } from '$lib/store/utils/utils';
   import Terminal from './Terminal.svelte';
   import Fa from 'svelte-fa';
@@ -116,7 +117,7 @@
 
   function finishEditing() {
     if (editingTerminalId) {
-      dispatch(renameTerminal(editingTerminalId, editingValue));
+      dispatch(renameTerminal(ROOT_WORKSPACE_ID, editingTerminalId, editingValue));
       editingTerminalId = null;
       editingValue = '';
     }
@@ -154,7 +155,7 @@
 
   function finishEditingHeaderName() {
     if (isEditingHeaderName && activeTerminalId) {
-      dispatch(renameTerminal(activeTerminalId, headerEditValue));
+      dispatch(renameTerminal(ROOT_WORKSPACE_ID, activeTerminalId, headerEditValue));
     }
     isEditingHeaderName = false;
     headerEditValue = '';
@@ -181,12 +182,12 @@
   // ============================================================================
 
   function handleClose() {
-    dispatch(closeTerminalOverlay());
+    dispatch(closeTerminalOverlay(ROOT_WORKSPACE_ID));
   }
 
   function createNewTerminal() {
     const newId = `terminal-root-${Date.now()}`;
-    dispatch(addTerminal(newId, `Terminal ${terminals.length + 1}`));
+    dispatch(addTerminal(ROOT_WORKSPACE_ID, newId, `Terminal ${terminals.length + 1}`));
     if (!isOpen) {
       dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, newId));
     }
@@ -194,7 +195,7 @@
 
   function closeTerminal(termId: string, e?: MouseEvent) {
     e?.stopPropagation();
-    dispatch(removeTerminal(termId));
+    dispatch(removeTerminal(ROOT_WORKSPACE_ID, termId));
     terminalManager.disposeTerminal(termId);
   }
 
@@ -218,7 +219,7 @@
       if (termId === activeTerminalId && isOpen) {
         handleClose();
       } else {
-        dispatch(selectTerminalAction(termId));
+        dispatch(selectTerminalAction(ROOT_WORKSPACE_ID, termId));
         if (!isOpen) {
           dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, termId));
         }
@@ -239,7 +240,7 @@
     if (!activeTerminalId || terminals.length <= 1) return;
     const currentIndex = terminals.findIndex((t) => t.id === activeTerminalId);
     const nextIndex = (currentIndex + direction + terminals.length) % terminals.length;
-    dispatch(selectTerminalAction(terminals[nextIndex].id));
+    dispatch(selectTerminalAction(ROOT_WORKSPACE_ID, terminals[nextIndex].id));
   }
 
   // ============================================================================

@@ -37,11 +37,7 @@
   import UpdateDownloadIndicator from '$lib/components/UpdateDownloadIndicator.svelte';
   import { invoke, listenSync } from '$lib/electron-bridge';
   import { dispatch } from '$lib/store/redux-dispatch-bridge';
-  import {
-    closeCheatSheet,
-    toggleCheatSheet,
-    type CheatSheetContext,
-  } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
+  import { toggleCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import { editorSettings } from '$lib/stores/editor-settings.store.svelte';
   import { featureCodesStore } from '$lib/stores/feature-codes.store.svelte';
   import { modelStore } from '$lib/stores/model.store.svelte';
@@ -119,7 +115,6 @@
 
   let agents: AgentSession[] = $state([]);
   let previousAgentsJson = $state('');
-
   let currentWorkspaceId = $derived($page.params.id as string | undefined);
   let isHome = $derived($page.route.id === '/');
 
@@ -1383,7 +1378,7 @@
       // Check if we're on a workspace page by looking at the current URL
       // We can't rely on workspaceId from the store because it might not be cleared yet
       const isOnWorkspacePage = $page.url.pathname.startsWith('/workspace/');
-      const terminalContextId = isOnWorkspacePage ? workspaceId : ROOT_WORKSPACE_ID;
+      const terminalContextId = isOnWorkspacePage && workspaceId ? workspaceId : ROOT_WORKSPACE_ID;
       dispatch(toggleTerminalOverlay(terminalContextId));
     };
     register({
@@ -1936,7 +1931,7 @@
     {/if}
 
     <!-- Keyboard Shortcuts Cheat Sheet (press Cmd+/ to toggle) -->
-    <KeyboardShortcutsCheatSheet onClose={() => dispatch(closeCheatSheet())} />
+    <KeyboardShortcutsCheatSheet />
 
     <!-- Auggie Setup Gate -->
     <AuggieSetupGate />

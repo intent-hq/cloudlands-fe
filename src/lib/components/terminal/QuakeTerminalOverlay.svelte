@@ -16,7 +16,6 @@
   import {
     selectIsTerminalOverlayOpen,
     selectTerminalOverlayHeight,
-    selectTerminalOverlayWorkspaceId,
     selectActiveTerminalId,
     selectTerminals,
   } from '$lib/store/slices/terminal-overlay/terminal-overlay-selectors';
@@ -66,18 +65,16 @@
   const dispatch = getDispatch();
   const isOpen$ = selectIsTerminalOverlayOpen();
   const height$ = selectTerminalOverlayHeight();
-  const storeWorkspaceId$ = selectTerminalOverlayWorkspaceId();
   const activeTerminalId$ = selectActiveTerminalId();
   const terminals$ = selectTerminals();
 
   const isOpen = $derived($isOpen$);
   const height = $derived($height$);
-  const storeWorkspaceId = $derived($storeWorkspaceId$);
   const activeTerminalId = $derived($activeTerminalId$);
   const terminals = $derived($terminals$);
 
-  // Computed workspace ID (prop takes priority)
-  const workspaceId = $derived(propWorkspaceId || storeWorkspaceId);
+  // Workspace ID from props (required)
+  const workspaceId = $derived(propWorkspaceId);
 
   // UI state
   let isResizing = $state(false);
@@ -95,7 +92,7 @@
 
   // Sync workspace ID to store (also loads terminals for the new workspace)
   $effect(() => {
-    if (propWorkspaceId && propWorkspaceId !== storeWorkspaceId) {
+    if (propWorkspaceId) {
       dispatch(setTerminalOverlayWorkspace(propWorkspaceId));
     }
   });
@@ -182,8 +179,8 @@
   }
 
   function finishEditing() {
-    if (editingTerminalId) {
-      dispatch(renameTerminal(editingTerminalId, editingValue));
+    if (editingTerminalId && workspaceId) {
+      dispatch(renameTerminal(workspaceId, editingTerminalId, editingValue));
       editingTerminalId = null;
       editingValue = '';
     }
@@ -209,8 +206,8 @@
   }
 
   function finishEditingHeaderName() {
-    if (isEditingHeaderName && activeTerminalId) {
-      dispatch(renameTerminal(activeTerminalId, headerEditValue));
+    if (isEditingHeaderName && activeTerminalId && workspaceId) {
+      dispatch(renameTerminal(workspaceId, activeTerminalId, headerEditValue));
     }
     isEditingHeaderName = false;
     headerEditValue = '';
@@ -248,7 +245,7 @@
   // ============================================================================
 
   function handleClose() {
-    dispatch(closeTerminalOverlay());
+    if (workspaceId) dispatch(closeTerminalOverlay(workspaceId));
   }
 
   function handleOpen() {
@@ -260,7 +257,7 @@
   function createNewTerminal() {
     if (!workspaceId) return;
     const newId = `terminal-${Date.now()}`;
-    dispatch(addTerminal(newId, `Terminal ${terminals.length + 1}`));
+    dispatch(addTerminal(workspaceId, newId, `Terminal ${terminals.length + 1}`));
     if (!isOpen) {
       dispatch(openTerminalOverlay(workspaceId, newId));
     }
@@ -269,7 +266,7 @@
 
   function closeTerminal(termId: string, e?: MouseEvent) {
     e?.stopPropagation();
-    dispatch(removeTerminal(termId));
+    if (workspaceId) dispatch(removeTerminal(workspaceId, termId));
     terminalManager.disposeTerminal(termId);
   }
 
@@ -295,9 +292,11 @@
       if (termId === activeTerminalId && isOpen) {
         handleClose();
       } else {
-        dispatch(selectTerminal(termId));
-        if (!isOpen && workspaceId) {
-          dispatch(openTerminalOverlay(workspaceId, termId));
+        if (workspaceId) {
+          dispatch(selectTerminal(workspaceId, termId));
+          if (!isOpen) {
+            dispatch(openTerminalOverlay(workspaceId, termId));
+          }
         }
       }
     }, 200);
@@ -314,10 +313,10 @@
   }
 
   function cycleTerminal(direction: 1 | -1) {
-    if (!activeTerminalId || terminals.length <= 1) return;
+    if (!activeTerminalId || terminals.length <= 1 || !workspaceId) return;
     const currentIndex = terminals.findIndex((t) => t.id === activeTerminalId);
     const nextIndex = (currentIndex + direction + terminals.length) % terminals.length;
-    dispatch(selectTerminal(terminals[nextIndex].id));
+    dispatch(selectTerminal(workspaceId, terminals[nextIndex].id));
   }
 
   // ============================================================================

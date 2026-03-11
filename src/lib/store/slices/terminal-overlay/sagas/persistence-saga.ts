@@ -1,4 +1,4 @@
-import { call, put, takeEvery } from "typed-redux-saga";
+import { call, put, select, takeEvery } from "typed-redux-saga";
 import {
   openTerminalOverlay,
   closeTerminalOverlay,
@@ -10,17 +10,40 @@ import {
   renameTerminal,
   loadWorkspaceTerminals,
   hydrateHeight,
-  type WorkspaceTerminalState,
+  emptyWorkspaceState,
   STORAGE_KEY,
   CUSTOM_NAMES_STORAGE_KEY,
   WORKSPACE_STATE_STORAGE_KEY,
+  type PersistedWorkspaceState,
 } from "../terminal-overlay-slice";
 import {
-  selectIsTerminalOverlayOpen,
-  selectActiveTerminalId,
-  selectTerminalOverlayWorkspaceId,
   selectTerminalOverlayHeight,
 } from "../terminal-overlay-selectors";
+
+const LEGACY_CUSTOM_NAMES_BUCKET = "__legacy__";
+
+type WorkspaceCustomNames = Record<string, string>;
+type StoredCustomNames = Record<string, WorkspaceCustomNames>;
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return !!value
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && Object.values(value).every((entry) => typeof entry === "string");
+}
+
+function isStoredCustomNames(value: unknown): value is StoredCustomNames {
+  return !!value
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && Object.values(value).every((entry) => isStringRecord(entry));
+}
+
+function pruneEmptyCustomNameBuckets(all: StoredCustomNames): StoredCustomNames {
+  return Object.fromEntries(
+    Object.entries(all).filter(([, names]) => Object.keys(names).length > 0)
+  );
+}
 
 // ============================================================================
 // localStorage helpers
@@ -43,44 +66,69 @@ function saveHeight(height: number): void {
   } catch { /* ignore */ }
 }
 
-function loadCustomNames(): Record<string, string> {
+function loadAllCustomNames(): StoredCustomNames {
   try {
     const stored = localStorage.getItem(CUSTOM_NAMES_STORAGE_KEY);
-    if (stored) return JSON.parse(stored);
+    if (!stored) return {};
+
+    const parsed: unknown = JSON.parse(stored);
+    if (isStoredCustomNames(parsed)) return parsed;
+
+    if (isStringRecord(parsed)) {
+      const migrated = { [LEGACY_CUSTOM_NAMES_BUCKET]: parsed };
+      localStorage.setItem(CUSTOM_NAMES_STORAGE_KEY, JSON.stringify(migrated));
+      return migrated;
+    }
   } catch { /* ignore */ }
   return {};
 }
 
-function saveCustomName(termId: string, customName: string | undefined): void {
+function loadCustomNamesForWorkspace(wsId: string): Record<string, string> {
+  const all = loadAllCustomNames();
+  return {
+    ...(all[LEGACY_CUSTOM_NAMES_BUCKET] || {}),
+    ...(all[wsId] || {}),
+  };
+}
+
+function saveCustomName(wsId: string, termId: string, customName: string | undefined): void {
   try {
-    const names = loadCustomNames();
-    if (customName) {
-      names[termId] = customName;
-    } else {
-      delete names[termId];
+    const all = loadAllCustomNames();
+    if (all[LEGACY_CUSTOM_NAMES_BUCKET]) {
+      delete all[LEGACY_CUSTOM_NAMES_BUCKET][termId];
     }
-    localStorage.setItem(CUSTOM_NAMES_STORAGE_KEY, JSON.stringify(names));
+    if (!all[wsId]) all[wsId] = {};
+    if (customName) {
+      all[wsId][termId] = customName;
+    } else {
+      delete all[wsId][termId];
+    }
+    localStorage.setItem(CUSTOM_NAMES_STORAGE_KEY, JSON.stringify(pruneEmptyCustomNameBuckets(all)));
   } catch { /* ignore */ }
 }
 
-function removeCustomName(termId: string): void {
+function removeCustomName(wsId: string, termId: string): void {
   try {
-    const names = loadCustomNames();
-    delete names[termId];
-    localStorage.setItem(CUSTOM_NAMES_STORAGE_KEY, JSON.stringify(names));
+    const all = loadAllCustomNames();
+    if (all[LEGACY_CUSTOM_NAMES_BUCKET]) {
+      delete all[LEGACY_CUSTOM_NAMES_BUCKET][termId];
+    }
+    if (all[wsId]) {
+      delete all[wsId][termId];
+    }
+    localStorage.setItem(CUSTOM_NAMES_STORAGE_KEY, JSON.stringify(pruneEmptyCustomNameBuckets(all)));
   } catch { /* ignore */ }
 }
 
-export function getStoredCustomName(termId: string): string | undefined {
-  const names = loadCustomNames();
-  return names[termId];
+export function getStoredCustomName(wsId: string, termId: string): string | undefined {
+  return loadCustomNamesForWorkspace(wsId)[termId];
 }
 
-function saveWorkspaceState(wsId: string, state: WorkspaceTerminalState): void {
+function saveWorkspaceState(wsId: string, state: PersistedWorkspaceState): void {
   try {
     const stored = localStorage.getItem(WORKSPACE_STATE_STORAGE_KEY);
-    const states = stored ? (JSON.parse(stored) as Record<string, WorkspaceTerminalState>) : {};
-    states[wsId] = state;
+    const states = stored ? (JSON.parse(stored) as Record<string, PersistedWorkspaceState>) : {};
+    states[wsId] = { isOpen: state.isOpen, activeTerminalId: state.activeTerminalId };
     localStorage.setItem(WORKSPACE_STATE_STORAGE_KEY, JSON.stringify(states));
   } catch { /* ignore */ }
 }
@@ -110,17 +158,17 @@ export function* watchHeightChanges() {
 /** Persist custom names on rename */
 export function* watchRenameTerminal() {
   yield* takeEvery(renameTerminal.type, function* (action: ReturnType<typeof renameTerminal>) {
-    const [termId, newName] = action.payload;
+    const [wsId, termId, newName] = action.payload;
     const trimmedName = newName.trim() || undefined;
-    yield* call(saveCustomName, termId, trimmedName);
+    yield* call(saveCustomName, wsId, termId, trimmedName);
   });
 }
 
 /** Remove custom name on terminal removal */
 export function* watchRemoveTerminalCustomName() {
   yield* takeEvery(removeTerminal.type, function* (action: ReturnType<typeof removeTerminal>) {
-    const [termId] = action.payload;
-    yield* call(removeCustomName, termId);
+    const [wsId, termId] = action.payload;
+    yield* call(removeCustomName, wsId, termId);
   });
 }
 
@@ -136,12 +184,11 @@ const WORKSPACE_STATE_ACTIONS = [
 ];
 
 export function* watchWorkspaceState() {
-  yield* takeEvery(WORKSPACE_STATE_ACTIONS, function* () {
-    const wsId = yield* selectTerminalOverlayWorkspaceId.effect();
+  yield* takeEvery(WORKSPACE_STATE_ACTIONS, function* (action: { type: string; payload: [string, ...unknown[]] }) {
+    const wsId = action.payload[0];
     if (!wsId) return;
-    const isOpen = yield* selectIsTerminalOverlayOpen.effect();
-    const activeTerminalId = yield* selectActiveTerminalId.effect();
-    yield* call(saveWorkspaceState, wsId, { isOpen, activeTerminalId });
+    const ws = yield* select((state) => state.terminalOverlay.workspaces[wsId] || emptyWorkspaceState);
+    yield* call(saveWorkspaceState, wsId, { isOpen: ws.isOpen, activeTerminalId: ws.activeTerminalId });
   });
 }
 

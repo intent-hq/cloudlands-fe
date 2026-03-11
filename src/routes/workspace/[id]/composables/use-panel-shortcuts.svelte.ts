@@ -32,7 +32,8 @@
 import type { PanelVisibilityManager } from '$features/workspace/panel-visibility-manager.svelte';
 import { createLogger } from '$lib/utils/client-logger';
 import { isFocusInEditableElement } from '$lib/utils/keyboardShortcuts';
-import { sidebarWidthStore } from '$lib/stores/sidebar-width.store.svelte';
+import { toggleSidebar } from '$lib/store/slices/sidebar-width/sidebar-width-slice';
+import { getDispatch } from '$lib/store/utils/utils';
 
 const logger = createLogger('PanelShortcuts');
 
@@ -55,6 +56,8 @@ export interface UsePanelShortcutsOptions {
 }
 
 export function usePanelShortcuts(options: UsePanelShortcutsOptions) {
+  const dispatch = getDispatch();
+
   $effect(() => {
     if (typeof window === 'undefined') return;
 
@@ -104,7 +107,7 @@ export function usePanelShortcuts(options: UsePanelShortcutsOptions) {
       if (event.key === 'b' && !event.shiftKey && !event.altKey) {
         event.preventDefault();
         logger.debug('Toggling workspace left sidebar');
-        sidebarWidthStore.toggle();
+        dispatch(toggleSidebar());
         return;
       }
 

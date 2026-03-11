@@ -1,5 +1,5 @@
-import { call, put, take, select } from "typed-redux-saga";
-import { eventChannel, type EventChannel } from "redux-saga";
+import { put, take } from "typed-redux-saga";
+import { createListenSyncChannel } from "$lib/store/utils/ipc-channel";
 import { removeTerminal } from "../terminal-overlay-slice";
 import { createLogger } from "$lib/utils/client-logger";
 
@@ -10,53 +10,26 @@ interface TerminalDisposedEvent {
   workspaceId: string;
 }
 
-function createTerminalDisposedChannel(): EventChannel<TerminalDisposedEvent> {
-  return eventChannel<TerminalDisposedEvent>((emit) => {
-    const handler = (data: TerminalDisposedEvent) => {
-      if (data && data.terminalId) {
-        emit(data);
-      }
-    };
-
-    if (typeof window !== 'undefined' && window.electronAPI) {
-      window.electronAPI.on('terminal:disposed', handler);
-    }
-
-    return () => {
-      // Cleanup - electronAPI.on doesn't have a removeListener in this pattern
-    };
-  });
-}
-
 /**
- * Listen for terminal:disposed IPC events from Electron main process.
- * Only removes terminals for the current workspace.
+ * Watches for terminal:disposed IPC events using a saga channel.
+ * This keeps the handler within the saga lifecycle for proper state access.
+ *
+ * With per-workspace state, we no longer need to filter by "current workspace" —
+ * the workspaceId from the event tells us which workspace Record entry to update.
  */
 export function* watchTerminalDisposed() {
-  if (typeof window === 'undefined' || !window.electronAPI) return;
+  if (typeof window === "undefined" || !window.electronAPI) return;
 
-  const channel: EventChannel<TerminalDisposedEvent> = yield* call(createTerminalDisposedChannel);
-
+  const channel = createListenSyncChannel<TerminalDisposedEvent>('terminal:disposed');
   try {
     while (true) {
-      const event: TerminalDisposedEvent = yield* take(channel);
-
-      // Only process events for the current workspace
-      const currentWsId = yield* select((state) => state.terminalOverlay.workspaceId);
-      if (event.workspaceId !== currentWsId) {
-        logger.debug('[TerminalOverlaySaga] Ignoring terminal:disposed for different workspace', {
-          eventWorkspaceId: event.workspaceId,
-          currentWorkspaceId: currentWsId,
-        });
-        continue;
-      }
-
+      const data: TerminalDisposedEvent = yield* take(channel);
+      if (!data || !data.terminalId || !data.workspaceId) continue;
       logger.info('[TerminalOverlaySaga] Received terminal:disposed event', {
-        terminalId: event.terminalId,
-        workspaceId: event.workspaceId,
+        terminalId: data.terminalId,
+        workspaceId: data.workspaceId,
       });
-
-      yield* put(removeTerminal(event.terminalId));
+      yield* put(removeTerminal(data.workspaceId, data.terminalId));
     }
   } finally {
     channel.close();

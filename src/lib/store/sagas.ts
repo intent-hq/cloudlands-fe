@@ -4,8 +4,11 @@
  * Sagas are started/stopped via the RunSaga component.
  */
 
+import { openActionSaga } from "./slices/open-action/sagas/open-action-saga";
+import { sidebarWidthSaga } from "./slices/sidebar-width/sagas/sidebar-width-saga";
 import { tabScrollSaga } from "./slices/tab-scroll/sagas/tab-scroll-saga";
 import { terminalOverlaySaga } from "./slices/terminal-overlay/sagas/terminal-overlay-saga";
+import { zoomSaga } from "./slices/zoom/sagas/zoom-saga";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 function* noopSaga() {}
@@ -18,8 +21,11 @@ function* noopSaga() {}
  * will be added here as their respective stores are migrated.
  */
 export const sagas = {
+  openActionSaga,
+  sidebarWidthSaga,
   tabScrollSaga,
   terminalOverlaySaga,
+  zoomSaga,
   // Placeholder sagas for Store.svelte references — will be replaced with real implementations
   streamingSaga: noopSaga,
   workspaceSaga: noopSaga,

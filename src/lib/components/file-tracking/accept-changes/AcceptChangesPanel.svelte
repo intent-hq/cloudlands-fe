@@ -1444,7 +1444,7 @@
       if (result.ok && result.terminalId) {
         // Open the terminal in the quake terminal bar
         const terminalTitle = `Rebase onto ${targetBranch || trunkBranch}`;
-        dispatch(addTerminal(result.terminalId, terminalTitle));
+        dispatch(addTerminal(workspaceId, result.terminalId, terminalTitle));
         dispatch(openTerminalOverlay(workspaceId, result.terminalId));
 
         toast.success('Rebase started in terminal', {

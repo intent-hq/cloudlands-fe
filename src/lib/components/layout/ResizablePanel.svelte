@@ -2,7 +2,9 @@
   import { onMount, onDestroy } from 'svelte';
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
-  import { sidebarWidthStore } from '$lib/stores/sidebar-width.store.svelte';
+  import { setWidth as setSidebarWidth } from '$lib/store/slices/sidebar-width/sidebar-width-slice';
+  import { selectIsCollapsed } from '$lib/store/slices/sidebar-width/sidebar-width-selectors';
+  import { getDispatch } from '$lib/store/utils/utils';
 
   let {
     // Common props
@@ -81,6 +83,9 @@
 
     children?: any;
   } = $props();
+
+  const dispatch = getDispatch();
+  const isCollapsed$ = selectIsCollapsed();
 
   // Compute effective weight (legacy usePercentage prop takes precedence if defined)
   const effectiveWeight = $derived(
@@ -244,7 +249,7 @@
 
         // Update sidebar width store for left sidebar on window resize
         if (storageKey === 'workspace-left-panel-width') {
-          sidebarWidthStore.setWidth(panelWidth);
+          dispatch(setSidebarWidth(panelWidth));
         }
       }
       if (expandedWidthPercent > 0) {
@@ -305,7 +310,7 @@
     const isWorkspaceLeftPanel = storageKey === 'workspace-left-panel-width';
     if (isWorkspaceLeftPanel) {
       // Initialize from store's collapsed state
-      const initialCollapsed = sidebarWidthStore.collapsed;
+      const initialCollapsed = $isCollapsed$;
       if (initialCollapsed) {
         widthBeforeToggle = panelWidth;
         panelWidth = 0;
@@ -357,7 +362,7 @@
 
         // Update sidebar width store for left sidebar (live during drag)
         if (storageKey === 'workspace-left-panel-width') {
-          sidebarWidthStore.setWidth(panelWidth);
+          dispatch(setSidebarWidth(panelWidth));
         }
       }
     } else {
@@ -397,7 +402,7 @@
 
         // Update sidebar width store for left sidebar
         if (storageKey === 'workspace-left-panel-width') {
-          sidebarWidthStore.setWidth(panelWidth);
+          dispatch(setSidebarWidth(panelWidth));
         }
       }
     } else {

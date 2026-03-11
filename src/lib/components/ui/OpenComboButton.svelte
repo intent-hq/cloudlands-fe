@@ -15,7 +15,9 @@
     installedEditorsStore,
     type InstalledEditor,
   } from '$lib/stores/installed-editors.store.svelte';
-  import { openActionStore, type OpenAction } from '$lib/stores/open-action.store.svelte';
+  import { setOpenAction, type OpenAction } from '$lib/store/slices/open-action/open-action-slice';
+  import { selectOpenAction } from '$lib/store/slices/open-action/open-action-selectors';
+  import { getDispatch } from '$lib/store/utils/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import { toNativePath } from '$lib/utils/path-utils';
   import {
@@ -98,6 +100,9 @@
     variant === 'sidebar' ? 'bg-sidebar hover:bg-sidebar/80' : 'bg-background hover:bg-muted',
   );
 
+  const dispatch = getDispatch();
+  const openAction$ = selectOpenAction();
+
   let dropdownOpen = $state(false);
 
   // Fetch installed editors when component mounts
@@ -166,7 +171,7 @@
   });
 
   const currentAction = $derived(
-    actions.find((a) => a.id === openActionStore.action) || actions[0],
+    actions.find((a) => a.id === $openAction$) || actions[0],
   );
 
   /**
@@ -254,11 +259,11 @@
   }
 
   function handlePrimaryClick() {
-    executeAction(openActionStore.action);
+    executeAction($openAction$);
   }
 
   function handleActionClick(actionId: OpenAction) {
-    openActionStore.action = actionId;
+    dispatch(setOpenAction(actionId));
     executeAction(actionId);
     dropdownOpen = false;
   }

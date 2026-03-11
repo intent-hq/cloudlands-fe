@@ -108,16 +108,18 @@ window.electronAPI.on('window:zoom-changed', (data) => {
 });
 window.addEventListener('resize', () => { /* debounced fetch */ });
 
-// AFTER: Redux saga
+// AFTER: Redux saga using createListenSyncChannel
+import { createListenSyncChannel } from "$lib/store/utils/ipc-channel";
+
 function* watchZoomChanges() {
-  // Create a channel from the IPC event
-  const channel = yield* call(createZoomChannel);
+  const channel = createListenSyncChannel<{ zoomFactor: number }>('window:zoom-changed');
   try {
     while (true) {
-      const factor: number = yield* take(channel);
-      yield* put(setZoomFactor(factor));
+      const data = yield* take(channel);
+      yield* put(setZoomFactor(data.zoomFactor));
     }
   } finally {
+    // Required cleanup: runs when the saga is cancelled/stopped
     channel.close();
   }
 }
@@ -495,39 +497,37 @@ function* initializeSidebarWidth() {
 
 ### IPC Listeners
 
+Use `createListenSyncChannel` from `$lib/store/utils/ipc-channel` to bridge Electron IPC events into sagas. This wraps `listenSync` (which supports proper cleanup via `offById`) into a redux-saga `eventChannel`, so handlers have full saga context (`put`, `select`, `call`, etc.) without needing a dispatch bridge.
+
 ```typescript
-// BEFORE
+// BEFORE: Svelte store or raw dispatch bridge
 window.electronAPI.on('window:zoom-changed', (data) => {
   updateZoom(data.zoomFactor);
 });
 
-// AFTER: Saga with event channel
-function createZoomChannel() {
-  return eventChannel<number>((emit) => {
-    const handler = (data: { zoomFactor: number }) => {
-      if (typeof data?.zoomFactor === 'number' && data.zoomFactor > 0) {
-        emit(data.zoomFactor);
-      }
-    };
-    window.electronAPI?.on('window:zoom-changed', handler);
-    return () => {
-      // Cleanup if needed
-    };
-  });
-}
+// AFTER: Saga with createListenSyncChannel
+import { createListenSyncChannel } from "$lib/store/utils/ipc-channel";
 
 function* watchZoomIPC() {
-  const channel = yield* call(createZoomChannel);
+  const channel = createListenSyncChannel<{ zoomFactor: number }>('window:zoom-changed');
   try {
     while (true) {
-      const factor: number = yield* take(channel);
-      yield* put(setZoomFactor(factor));
+      const data = yield* take(channel);
+      if (typeof data?.zoomFactor === 'number' && data.zoomFactor > 0) {
+        yield* put(setZoomFactor(data.zoomFactor));
+      }
     }
   } finally {
+    // Required cleanup: runs when the saga is cancelled/stopped
     channel.close();
   }
 }
 ```
+
+**Why this is better than `listenSync` + dispatch bridge:**
+- Handlers run within the saga lifecycle — full access to `yield* select()`, `yield* call()`, etc.
+- Channel cleanup happens in the `finally` block when the saga is cancelled (no manual `ipcCleanup` tracking)
+- No dependency on the module-level `dispatch` from `redux-dispatch-bridge`
 
 ### Debounced Event Listeners
 
