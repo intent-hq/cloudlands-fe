@@ -41,6 +41,10 @@
         contextStore.updateItem(tab.contextItemId, { title });
       }
     }}
+    onFaviconChange={(faviconUrl: string) => {
+      // Update the tab's favicon URL in the panel layout
+      layoutManager.updateTabFavicon(tab.id, faviconUrl);
+    }}
     {onFocus}
   />
 {/if}

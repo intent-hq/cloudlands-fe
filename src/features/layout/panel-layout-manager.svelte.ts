@@ -58,6 +58,7 @@ export interface PanelTab {
   terminalId?: string;
   diffPath?: string;
   browserUrl?: string; // URL for browser tabs
+  faviconUrl?: string; // Favicon URL for browser tabs (from page-favicon-updated event)
   contextItemId?: string; // ID of the context item associated with this tab (for browser tabs)
 
   // Additional data for rendering
@@ -1425,6 +1426,19 @@ function createPanelLayoutManagerInternal(workspaceId: string) {
         }
       }
       logger.warn('Tab not found for browserUrl update', { tabId });
+    },
+
+    /** Update a browser tab's favicon URL */
+    updateTabFavicon(tabId: string, faviconUrl: string) {
+      for (const panel of Object.values(state.panels)) {
+        const tab = panel.tabs.find((t) => t.id === tabId);
+        if (tab && tab.type === 'browser') {
+          mutate(() => {
+            tab.faviconUrl = faviconUrl;
+          });
+          return;
+        }
+      }
     },
 
     /** Update file tabs when a file is renamed - updates filePath and title */

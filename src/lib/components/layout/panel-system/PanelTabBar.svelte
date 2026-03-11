@@ -59,8 +59,7 @@
   import { toNativePath } from '$lib/utils/path-utils';
 
   // Detect platform for file manager labels
-  const isWindows =
-    typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
+  const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
   const isMac =
     typeof navigator !== 'undefined' &&
     // @ts-expect-error - userAgentData is not in all browsers
@@ -1093,9 +1092,7 @@
               <div class="absolute left-0 top-1 bottom-1 w-0.5 bg-primary rounded-full z-10"></div>
             {/if}
             <div
-              class={cn(
-                'flex items-center gap-1.5 pl-2.5 pr-2 py-1 h-9 text-ui whitespace-nowrap',
-              )}
+              class={cn('flex items-center gap-1.5 pl-2.5 pr-2 py-1 h-9 text-ui whitespace-nowrap')}
             >
               {#if tab.type === 'agent' && tab.agentId}
                 <AugieAvatarWithState
@@ -1107,6 +1104,26 @@
                     | null}
                   class="shrink-0"
                 />
+              {:else if tab.faviconUrl}
+                <img
+                  src={tab.faviconUrl}
+                  alt=""
+                  width="16"
+                  height="16"
+                  class="shrink-0 rounded-sm"
+                  onerror={(e) => {
+                    // On favicon load failure, hide the img so the fallback icon shows
+                    const target = e.currentTarget as HTMLImageElement;
+                    target.style.display = 'none';
+                    // Show the sibling fallback icon
+                    const fallback = target.nextElementSibling as HTMLElement | null;
+                    if (fallback) fallback.style.display = '';
+                  }}
+                />
+                <!-- Fallback icon, hidden by default, shown if favicon fails to load -->
+                <span style="display: none;">
+                  <Fa icon={getTabIcon(tab.type)} size={16} class="tab-icon shrink-0 opacity-50" />
+                </span>
               {:else}
                 <Fa icon={getTabIcon(tab.type)} size={16} class="tab-icon shrink-0 opacity-50" />
               {/if}
@@ -1374,11 +1391,7 @@
                 maxWidth={200}
               />
             {:else}
-              <span
-                class="text-sm truncate shrink {isFocused
-                  ? 'text-foreground'
-                  : 'text-subtle'}"
-              >
+              <span class="text-sm truncate shrink {isFocused ? 'text-foreground' : 'text-subtle'}">
                 {getTabTitle(activeTab)}
               </span>
             {/if}
@@ -1410,11 +1423,7 @@
             {@const lastSlash = activeTabPath.lastIndexOf('/')}
             {@const dirPath = lastSlash > 0 ? activeTabPath.substring(0, lastSlash) : null}
             {#if dirPath}
-              <span
-                class="text-xs truncate {isFocused
-                  ? 'text-subtle'
-                  : 'text-ghost'}"
-              >
+              <span class="text-xs truncate {isFocused ? 'text-subtle' : 'text-ghost'}">
                 {dirPath}
               </span>
             {/if}
@@ -1424,11 +1433,7 @@
           {#if activeTab.type === 'diff'}
             {@const change = activeTab.data?.change as { commitHash?: string } | undefined}
             {#if change?.commitHash}
-              <span
-                class="text-xs font-mono {isFocused
-                  ? 'text-subtle'
-                  : 'text-ghost'}"
-              >
+              <span class="text-xs font-mono {isFocused ? 'text-subtle' : 'text-ghost'}">
                 @ {change.commitHash.substring(0, 7)}
               </span>
             {/if}

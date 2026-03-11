@@ -75,6 +75,7 @@
     onNavigate?: (url: string) => void;
     onClose?: () => void;
     onTitleChange?: (title: string) => void;
+    onFaviconChange?: (faviconUrl: string) => void;
     onFocus?: () => void;
     /** If true, focus the URL bar on mount */
     focusUrlBarOnMount?: boolean;
@@ -89,6 +90,7 @@
     onNavigate,
     onClose,
     onTitleChange,
+    onFaviconChange,
     onFocus,
     focusUrlBarOnMount = false,
     isFocused = false,
@@ -467,6 +469,7 @@
     addWebviewListener('page-favicon-updated', (e: any) => {
       if (e.favicons?.length > 0) {
         browserStore.updateUrlMetadata(displayUrl, undefined, e.favicons[0]);
+        onFaviconChange?.(e.favicons[0]);
       }
     });
 
