@@ -136,7 +136,8 @@ export function formatSingleEvent(event: WorkspaceEvent): string {
   if (isAgentMessageSentEvent(event)) {
     const { fromAgentName, toAgentName, message, priority } = event.data;
     const preview = message.length > 100 ? `${message.substring(0, 100)}...` : message;
-    return `[agent:message:sent] "${fromAgentName}" sent message to "${toAgentName}"${priority === 'high' ? ' (HIGH PRIORITY)' : ''}\n   - Message: "${preview}"`;
+    const prioritySuffix = priority === 'interrupt' ? ' (INTERRUPT)' : priority === 'high' ? ' (HIGH PRIORITY)' : '';
+    return `[agent:message:sent] "${fromAgentName}" sent message to "${toAgentName}"${prioritySuffix}\n   - Message: "${preview}"`;
   }
 
   // Agent message received

@@ -57,13 +57,114 @@ export const handleAgentMessageSent: EventHandler<AgentMessageSentEvent> = async
     }
 
     // Format the message with context about the sender
-    const formattedMessage = `**Message from agent "${fromAgentName}"${priority === 'high' ? ' (HIGH PRIORITY)' : ''}:**\n\n${message}`;
+    const priorityLabel = priority === 'interrupt' ? ' (INTERRUPT)' : priority === 'high' ? ' (HIGH PRIORITY)' : '';
+    const formattedMessage = `**Message from agent "${fromAgentName}"${priorityLabel}:**\n\n${message}`;
 
     // Check if the target agent is currently streaming
     const activeStreams = handler.getActiveStreams();
     const isStreaming = activeStreams.some((s) => s.agentId === toAgentId);
 
-    if (isStreaming) {
+    if (priority === 'interrupt' && isStreaming) {
+      // Interrupt priority: stop the current stream and send the message immediately
+      logger.info('[MESSAGE-DELIVERY] Interrupt priority - stopping current stream to deliver message', {
+        toAgentId,
+        fromAgentId,
+      });
+
+      try {
+        // stopAgent calls handleStopSession which marks the agent as interrupted
+        // (adds to interruptedAgents set), preventing processNextQueuedMessage from
+        // automatically picking up queued messages after the stream finalizes.
+        // The partial response is preserved via the existing handleStreamCompletion flow.
+        await handler.stopAgent(toAgentId, 'agent_interrupt_message');
+
+        logger.info('[MESSAGE-DELIVERY] Stream stopped, sending interrupt message directly', {
+          toAgentId,
+          fromAgentId,
+        });
+
+        // Now send the interrupt message directly
+        const sendResult = await handler.sendBackendInitiatedMessage({
+          sessionId: toAgentId,
+          message: formattedMessage,
+          workspaceId,
+          messageMetadata: {
+            type: 'agent_message',
+            fromAgentId,
+            fromAgentName,
+            priority,
+          },
+        });
+
+        if (sendResult.success) {
+          logger.info('[MESSAGE-DELIVERY] ✓ Interrupt message sent successfully', {
+            toAgentId,
+            fromAgentId,
+          });
+        } else {
+          logger.error('[MESSAGE-DELIVERY] ✗ Failed to send interrupt message after stopping stream', {
+            toAgentId,
+            error: sendResult.error,
+            errorCode: sendResult.errorCode,
+          });
+          // Fall back to queueing if direct send fails after interrupt
+          logger.info('[MESSAGE-DELIVERY] Attempting queue fallback after failed interrupt send', {
+            toAgentId,
+            fromAgentId,
+          });
+          const queueResult = await handler.handleQueueMessage(null, {
+            agentId: toAgentId,
+            content: formattedMessage,
+          });
+          if (!queueResult.success) {
+            await emitMessageDeliveryFailure(
+              workspaceId,
+              fromAgentId,
+              fromAgentName,
+              toAgentId,
+              sendResult.error || 'Failed to send interrupt message and queue fallback failed',
+            );
+          } else {
+            // Clear the interrupted flag so processNextQueuedMessage can pick up
+            // the queued message on the next cycle. Without this, the flag set by
+            // stopAgent causes processNextQueuedMessage to return early, deadlocking
+            // the queued message.
+            handler.clearInterruptedFlag(toAgentId);
+            logger.info('[MESSAGE-DELIVERY] ✓ Message queued as fallback after failed interrupt send', {
+              toAgentId,
+              fromAgentId,
+            });
+          }
+        }
+      } catch (stopError) {
+        logger.error('[MESSAGE-DELIVERY] ✗ Failed to stop agent for interrupt delivery', stopError as Error, {
+          toAgentId,
+          fromAgentId,
+        });
+        // Fall back to queueing if we can't stop the stream
+        const queueResult = await handler.handleQueueMessage(null, {
+          agentId: toAgentId,
+          content: formattedMessage,
+        });
+        if (!queueResult.success) {
+          await emitMessageDeliveryFailure(
+            workspaceId,
+            fromAgentId,
+            fromAgentName,
+            toAgentId,
+            `Failed to stop agent and queue fallback failed: ${queueResult.error}`,
+          );
+        } else {
+          // Clear the interrupted flag so processNextQueuedMessage can pick up
+          // the queued message. stopAgent may have set this flag before throwing.
+          handler.clearInterruptedFlag(toAgentId);
+          logger.info('[MESSAGE-DELIVERY] ✓ Interrupt message queued via fallback after stop failure', {
+            toAgentId,
+            messageId: queueResult.queuedMessage?.id,
+          });
+        }
+      }
+    } else if (isStreaming) {
       // Agent is busy - queue the message
       logger.info('[MESSAGE-DELIVERY] Target agent is streaming, queueing message', {
         toAgentId,

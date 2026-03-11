@@ -1059,6 +1059,17 @@ export class AgentBackendHandler {
         `Backend: handleBackendStreamMessage called: agentId=${request.agentId}, sessionId=${extReq.sessionId}, workspaceId=${request.workspaceId}, contentLength=${request.content?.length}, hasBehaviorPrompt=${!!extReq.behaviorPrompt}, behaviorPromptLength=${extReq.behaviorPrompt?.length || 0}, hasSpecialist=${!!extReq.specialist}, specialist=${extReq.specialist}`,
       );
 
+      // Clear the interrupted flag now that a new message is being sent.
+      // This is the correct place to clear it — the interrupt message has been delivered
+      // (or a new user message is starting), so processNextQueuedMessage can resume
+      // normal queue processing on the next stream completion.
+      if (this.interruptedAgents.has(request.agentId)) {
+        logger.info('Clearing interruptedAgents flag - new message being sent', {
+          agentId: request.agentId,
+        });
+        this.interruptedAgents.delete(request.agentId);
+      }
+
       // Get or create provider for this agent
       let provider = this.providers.get(request.agentId);
       let loadResult: any = null; // Store load result for message history
@@ -5144,6 +5155,18 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
   }
 
   /**
+   * Clear the interruptedAgents flag for an agent.
+   * Call this after successfully queueing a fallback message during interrupt delivery,
+   * so that processNextQueuedMessage can pick up the queued message on the next cycle.
+   */
+  public clearInterruptedFlag(agentId: string): void {
+    if (this.interruptedAgents.has(agentId)) {
+      logger.info('Clearing interruptedAgents flag via clearInterruptedFlag', { agentId });
+      this.interruptedAgents.delete(agentId);
+    }
+  }
+
+  /**
    * Check if an agent has been marked as deleted.
    * Also runs eviction to keep the set bounded.
    */
@@ -6205,12 +6228,15 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
    */
   private async processNextQueuedMessage(agentId: string, workspaceId: string): Promise<void> {
     // Check if the agent was intentionally interrupted (e.g., user clicked "Send now" on a specific message)
-    // In this case, skip automatic queue processing - the frontend will send the specific message directly
+    // In this case, skip automatic queue processing - the frontend will send the specific message directly.
+    // NOTE: We do NOT delete the flag here. The flag is cleared in handleSendMessage when the
+    // interrupt message is actually delivered. This prevents a race where another event triggers
+    // processNextQueuedMessage again before the interrupt message is sent — without the flag,
+    // it would proceed with normal queue processing instead of waiting.
     if (this.interruptedAgents.has(agentId)) {
       logger.info('Skipping automatic queue processing - agent was intentionally interrupted', {
         agentId,
       });
-      this.interruptedAgents.delete(agentId);
       return;
     }
 

@@ -51,14 +51,25 @@ describe('Agent Interruption Handling', () => {
       expect(interruptedAgents.has(agentId)).toBe(true);
     });
 
-    it('should remove agent from interrupted set after queue processing skip', () => {
+    it('should NOT remove agent from interrupted set in processNextQueuedMessage', () => {
       const agentId = 'agent-1';
       interruptedAgents.add(agentId);
 
-      // Simulate processNextQueuedMessage checking and removing
+      // Simulate processNextQueuedMessage checking — flag is NOT deleted here
       if (interruptedAgents.has(agentId)) {
-        interruptedAgents.delete(agentId);
+        // Skip processing, but do NOT delete the flag
       }
+
+      // Flag should still be set — it's cleared in handleSendMessage
+      expect(interruptedAgents.has(agentId)).toBe(true);
+    });
+
+    it('should remove agent from interrupted set when message is sent (handleSendMessage)', () => {
+      const agentId = 'agent-1';
+      interruptedAgents.add(agentId);
+
+      // Simulate handleSendMessage clearing the flag
+      interruptedAgents.delete(agentId);
 
       expect(interruptedAgents.has(agentId)).toBe(false);
     });
@@ -69,15 +80,40 @@ describe('Agent Interruption Handling', () => {
 
       let queueProcessed = false;
 
-      // Simulate processNextQueuedMessage logic
+      // Simulate processNextQueuedMessage logic — flag is checked but NOT deleted
       if (interruptedAgents.has(agentId)) {
-        interruptedAgents.delete(agentId);
         // Skip processing
       } else {
         queueProcessed = true;
       }
 
       expect(queueProcessed).toBe(false);
+      // Flag should still be set
+      expect(interruptedAgents.has(agentId)).toBe(true);
+    });
+
+    it('should clear interrupted flag via clearInterruptedFlag for fallback queue paths', () => {
+      const agentId = 'agent-1';
+      interruptedAgents.add(agentId);
+
+      // Simulate clearInterruptedFlag (used when interrupt delivery falls back to queue)
+      if (interruptedAgents.has(agentId)) {
+        interruptedAgents.delete(agentId);
+      }
+
+      expect(interruptedAgents.has(agentId)).toBe(false);
+    });
+
+    it('should be a no-op when clearInterruptedFlag is called on non-interrupted agent', () => {
+      const agentId = 'agent-1';
+
+      // Simulate clearInterruptedFlag on agent not in set
+      if (interruptedAgents.has(agentId)) {
+        interruptedAgents.delete(agentId);
+      }
+
+      expect(interruptedAgents.has(agentId)).toBe(false);
+      expect(interruptedAgents.size).toBe(0);
     });
 
     it('should clear all interrupted agents on dispose', () => {

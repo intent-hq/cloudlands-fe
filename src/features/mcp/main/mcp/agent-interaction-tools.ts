@@ -1537,16 +1537,16 @@ export class SendMessageToAgentTool extends BaseMCPTool {
   constructor(private workspaceId: string) {
     super(
       'send_message_to_agent',
-      `Send a message to another agent. The message will be queued and delivered when the target agent becomes idle.
+      `Send a message to another agent. The message will be queued and delivered when the target agent becomes idle. Use priority "interrupt" to stop the agent's current response and deliver the message immediately.
 Use this for coordination, sharing information, or requesting help from other agents.`,
       createInputSchema(
         {
           agentId: stringProperty('ID of the target agent'),
           message: stringProperty('Message content to send'),
           priority: stringProperty(
-            'Message priority: "high" for immediate delivery, "normal" for batched delivery',
+            'Message priority: "normal" for delivery when idle, "high" for immediate delivery when idle, "interrupt" to stop the agent mid-response and deliver immediately',
             {
-              enum: ['high', 'normal'],
+              enum: ['high', 'normal', 'interrupt'],
               default: 'normal',
             },
           ),
@@ -1594,8 +1594,12 @@ Use this for coordination, sharing information, or requesting help from other ag
         agentId,
       );
 
+      const deliveryMessage = priority === 'interrupt'
+        ? `Message sent to agent ${agentId}. If the agent is currently streaming, this will attempt to interrupt and deliver immediately. Otherwise, the message will be delivered normally when the agent is idle. If interruption fails, the message will be queued.\nYou will be notified when the agent responds.`
+        : `Message sent to agent ${agentId}. The message will be delivered when the agent becomes idle.\nYou will be notified when the agent responds.`;
+
       return this.success(
-        `Message sent to agent ${agentId}. The message will be delivered when the agent becomes idle.\nYou will be notified when the agent responds.`,
+        deliveryMessage,
         { sent: true, toAgentId: agentId, subscriptionId },
       );
     } catch (error) {
@@ -1619,7 +1623,7 @@ export class SendMessageToTaskAgentTool extends BaseMCPTool {
       'send_message_to_task_agent',
       `Send a follow-up message to the agent working on a specific task.
 Use this when you want to ask a task agent to make corrections, provide additional context,
-or request changes to their work.
+or request changes to their work. Use priority "interrupt" to stop the agent's current response and deliver the message immediately.
 
 This is more convenient than send_message_to_agent because you only need the task note ID,
 not the agent ID. The tool automatically finds which agent is assigned to the task.`,
@@ -1630,9 +1634,9 @@ not the agent ID. The tool automatically finds which agent is assigned to the ta
             'Message content to send. Be specific about what changes or corrections you need.',
           ),
           priority: stringProperty(
-            'Message priority: "high" for immediate delivery, "normal" for batched delivery',
+            'Message priority: "normal" for delivery when idle, "high" for immediate delivery when idle, "interrupt" to stop the agent mid-response and deliver immediately',
             {
-              enum: ['high', 'normal'],
+              enum: ['high', 'normal', 'interrupt'],
               default: 'normal',
             },
           ),
@@ -1716,9 +1720,14 @@ not the agent ID. The tool automatically finds which agent is assigned to the ta
         targetAgentId,
       );
 
+      const taskDeliveryMessage = priority === 'interrupt'
+        ? `Message sent to agent ${targetAgentId} (working on "${note.title || taskNoteId}"). ` +
+          'If the agent is currently streaming, this will attempt to interrupt and deliver immediately. Otherwise, the message will be delivered normally when the agent is idle. If interruption fails, the message will be queued.\nYou will be notified when the agent responds.'
+        : `Message sent to agent ${targetAgentId} (working on "${note.title || taskNoteId}"). ` +
+          'The message will be delivered when the agent becomes idle.\nYou will be notified when the agent responds.';
+
       return this.success(
-        `Message sent to agent ${targetAgentId} (working on "${note.title || taskNoteId}"). ` +
-          'The message will be delivered when the agent becomes idle.\nYou will be notified when the agent responds.',
+        taskDeliveryMessage,
         {
           sent: true,
           toAgentId: targetAgentId,

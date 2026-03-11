@@ -19,6 +19,7 @@ interface MockQueueHandler {
   streamStartTimes: Map<string, number>;
   processNextQueuedMessage: (agentId: string, workspaceId: string) => Promise<void>;
   handleStopSession: (agentId: string) => Promise<void>;
+  handleSendMessage: (agentId: string) => void;
   queueMessage: (agentId: string, content: string) => { id: string };
   removeQueuedMessage: (agentId: string, messageId: string) => void;
 }
@@ -38,8 +39,9 @@ describe('Message Queue Edge Cases', () => {
 
       async processNextQueuedMessage(agentId: string, _workspaceId: string) {
         // Check if agent was intentionally interrupted
+        // NOTE: Do NOT delete the flag here — it's cleared in handleSendMessage
+        // when the interrupt message is actually delivered
         if (this.interruptedAgents.has(agentId)) {
-          this.interruptedAgents.delete(agentId);
           return; // Skip automatic processing
         }
 
@@ -80,6 +82,12 @@ describe('Message Queue Edge Cases', () => {
       async handleStopSession(agentId: string) {
         // Mark as interrupted BEFORE doing anything else
         this.interruptedAgents.add(agentId);
+      },
+
+      handleSendMessage(agentId: string) {
+        // Clear the interrupted flag when a new message is actually sent
+        // This mirrors the real handleSendMessage behavior
+        this.interruptedAgents.delete(agentId);
       },
 
       queueMessage(agentId: string, content: string) {
@@ -142,7 +150,7 @@ describe('Message Queue Edge Cases', () => {
       expect(handler.messageQueues.get(agentId)?.[0].id).toBe(msg2.id);
     });
 
-    it('should clear the interrupted flag after skipping', async () => {
+    it('should NOT clear the interrupted flag in processNextQueuedMessage', async () => {
       const agentId = 'agent_1';
       const workspaceId = 'workspace_1';
 
@@ -153,7 +161,20 @@ describe('Message Queue Edge Cases', () => {
 
       await handler.processNextQueuedMessage(agentId, workspaceId);
 
-      // Flag should be cleared
+      // Flag should still be set — it's only cleared when the interrupt message is sent
+      expect(handler.interruptedAgents.has(agentId)).toBe(true);
+    });
+
+    it('should clear the interrupted flag when handleSendMessage is called', async () => {
+      const agentId = 'agent_1';
+
+      await handler.handleStopSession(agentId);
+      expect(handler.interruptedAgents.has(agentId)).toBe(true);
+
+      // Simulate the interrupt message being sent
+      handler.handleSendMessage(agentId);
+
+      // Flag should now be cleared
       expect(handler.interruptedAgents.has(agentId)).toBe(false);
     });
 
@@ -173,7 +194,10 @@ describe('Message Queue Edge Cases', () => {
       await handler.processNextQueuedMessage(agentId, workspaceId);
       expect(processedMessages.length).toBe(0);
 
-      // Now simulate msg1's stream completing normally (no interrupt flag set)
+      // Simulate the interrupt message being sent (clears the flag)
+      handler.handleSendMessage(agentId);
+
+      // Now simulate msg1's stream completing normally (interrupt flag cleared)
       // This should trigger processing of msg2
       await handler.processNextQueuedMessage(agentId, workspaceId);
 
@@ -200,6 +224,9 @@ describe('Message Queue Edge Cases', () => {
       // Stream interrupt triggers processNextQueuedMessage - should skip
       await handler.processNextQueuedMessage(agentId, workspaceId);
       expect(processedMessages.length).toBe(0);
+
+      // Simulate the interrupt message being sent (clears the flag)
+      handler.handleSendMessage(agentId);
 
       // After msg1 completes, process msg2
       await handler.processNextQueuedMessage(agentId, workspaceId);
@@ -270,6 +297,9 @@ describe('Message Queue Edge Cases', () => {
       // Interrupt processing - should skip
       await handler.processNextQueuedMessage(agentId, workspaceId);
       expect(processedMessages.length).toBe(0);
+
+      // Simulate the interrupt message being sent (clears the flag)
+      handler.handleSendMessage(agentId);
 
       // After msg2 completes, remaining queue (msg1, msg3) should process in order
       // Note: msg1 is now at position 0, msg3 at position 1
@@ -359,6 +389,117 @@ describe('Message Queue Edge Cases', () => {
       await handler.processNextQueuedMessage(agentId, workspaceId);
       expect(processedMessages.length).toBe(1);
       expect(handler.messageQueues.get(agentId)?.length).toBe(0);
+    });
+  });
+
+  describe('Interrupt Fallback-to-Queue Deadlock Prevention', () => {
+    it('should clear interrupted flag when interrupt send fails and falls back to queue', async () => {
+      const agentId = 'agent_1';
+      const workspaceId = 'workspace_1';
+
+      // Simulate: stopAgent sets interrupted flag, sendBackendInitiatedMessage fails,
+      // message is queued as fallback
+      await handler.handleStopSession(agentId);
+      expect(handler.interruptedAgents.has(agentId)).toBe(true);
+
+      // Queue the fallback message (simulates handleQueueMessage succeeding)
+      handler.queueMessage(agentId, 'Interrupt fallback message');
+
+      // The fix: clear interrupted flag after successful queue fallback
+      handler.interruptedAgents.delete(agentId);
+
+      // Now processNextQueuedMessage should process the queued message
+      await handler.processNextQueuedMessage(agentId, workspaceId);
+      expect(processedMessages.length).toBe(1);
+      expect(handler.messageQueues.get(agentId)?.length).toBe(0);
+    });
+
+    it('should deadlock without the fix when interrupt send fails and falls back to queue', async () => {
+      const agentId = 'agent_1';
+      const workspaceId = 'workspace_1';
+
+      // Simulate the bug: stopAgent sets interrupted flag, send fails, message queued,
+      // but interrupted flag NOT cleared
+      await handler.handleStopSession(agentId);
+      handler.queueMessage(agentId, 'Interrupt fallback message');
+
+      // Without clearing the flag, processNextQueuedMessage returns early
+      await handler.processNextQueuedMessage(agentId, workspaceId);
+      expect(processedMessages.length).toBe(0); // deadlocked!
+      expect(handler.messageQueues.get(agentId)?.length).toBe(1); // message stuck
+    });
+
+    it('should clear interrupted flag when stopAgent throws and fallback queue succeeds', async () => {
+      const agentId = 'agent_1';
+      const workspaceId = 'workspace_1';
+
+      // Simulate: stopAgent partially executes (sets flag) then throws.
+      // The catch block queues the message as fallback.
+      handler.interruptedAgents.add(agentId); // flag was set before throw
+      handler.queueMessage(agentId, 'Fallback after stopAgent throw');
+
+      // The fix: clear the flag after successful queue in the catch block
+      handler.interruptedAgents.delete(agentId);
+
+      // processNextQueuedMessage should work now
+      await handler.processNextQueuedMessage(agentId, workspaceId);
+      expect(processedMessages.length).toBe(1);
+    });
+
+    it('should NOT clear interrupted flag when queue fallback also fails', async () => {
+      const agentId = 'agent_1';
+
+      // Simulate: stopAgent sets flag, send fails, queue also fails
+      await handler.handleStopSession(agentId);
+
+      // Queue fails — flag should NOT be cleared (nothing was queued)
+      // This is correct behavior: the failure event is emitted instead
+      expect(handler.interruptedAgents.has(agentId)).toBe(true);
+    });
+  });
+
+  describe('Race Condition - Interrupt Cleanup Timing', () => {
+    it('should keep blocking queue processing until interrupt message is sent', async () => {
+      const agentId = 'agent_1';
+      const workspaceId = 'workspace_1';
+
+      handler.queueMessage(agentId, 'Queued message');
+      await handler.handleStopSession(agentId);
+
+      // First processNextQueuedMessage — skipped due to interrupt flag
+      await handler.processNextQueuedMessage(agentId, workspaceId);
+      expect(processedMessages.length).toBe(0);
+
+      // Another event triggers processNextQueuedMessage BEFORE the interrupt message is sent
+      // This should STILL be blocked because the flag persists
+      await handler.processNextQueuedMessage(agentId, workspaceId);
+      expect(processedMessages.length).toBe(0);
+
+      // Now the interrupt message is actually sent
+      handler.handleSendMessage(agentId);
+
+      // After the interrupt message completes, queue processing should resume
+      await handler.processNextQueuedMessage(agentId, workspaceId);
+      expect(processedMessages.length).toBe(1);
+    });
+
+    it('should not allow queue processing to slip through between interrupt and message delivery', async () => {
+      const agentId = 'agent_1';
+      const workspaceId = 'workspace_1';
+
+      const msg1 = handler.queueMessage(agentId, 'Should not be auto-processed');
+
+      await handler.handleStopSession(agentId);
+
+      // Multiple rapid processNextQueuedMessage calls (simulating multiple events)
+      // None should process the queue because the interrupt message hasn't been sent yet
+      await handler.processNextQueuedMessage(agentId, workspaceId);
+      await handler.processNextQueuedMessage(agentId, workspaceId);
+      await handler.processNextQueuedMessage(agentId, workspaceId);
+
+      expect(processedMessages.length).toBe(0);
+      expect(handler.messageQueues.get(agentId)?.length).toBe(1);
+      expect(handler.interruptedAgents.has(agentId)).toBe(true);
     });
   });
 });

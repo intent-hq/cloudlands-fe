@@ -420,7 +420,7 @@ export interface AgentMessageSentEvent extends WorkspaceEventBase {
     toAgentName: string;
     message: string;
     /** Priority of the message */
-    priority: 'high' | 'normal';
+    priority: 'high' | 'normal' | 'interrupt';
   };
 }
 
