@@ -116,10 +116,14 @@
   });
 
   const groupedByRepo = $derived.by(() => {
-    const groups = new Map<string, { workspaces: Workspace[]; owner?: string }>();
+    const groups = new Map<string, { workspaces: Workspace[]; owner?: string; label: string }>();
     for (const ws of filteredWorkspaces) {
-      const repo = ws.repositoryName || 'No Repository';
-      if (!groups.has(repo)) groups.set(repo, { workspaces: [], owner: ws.repositoryOwner });
+      const repo = ws.repositoryName
+        || ws.repositoryPath
+        || 'No Repository';
+      const label = ws.repositoryName
+        || (ws.repositoryPath ? ws.repositoryPath.split('/').pop() || 'No Repository' : 'No Repository');
+      if (!groups.has(repo)) groups.set(repo, { workspaces: [], owner: ws.repositoryOwner, label });
       groups.get(repo)!.workspaces.push(ws);
     }
     return [...groups.entries()].sort((a, b) => {
@@ -339,7 +343,7 @@
                 onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
               />
             {/if}
-            <Header size={3} class="truncate">{repoName}</Header>
+            <Header size={3} class="truncate">{group.label}</Header>
           </div>
           {#each group.workspaces as workspace, i (workspace.id)}
             {#if i > 0 && !sidebarNavStore.isPinned(workspace.id) && sidebarNavStore.isPinned(group.workspaces[i - 1].id)}
