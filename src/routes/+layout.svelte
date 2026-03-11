@@ -46,6 +46,7 @@
     toggleTerminalOverlay,
     openTerminalOverlay,
   } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
+  import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
   import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
@@ -1080,6 +1081,11 @@
       if (typeof window !== 'undefined' && window.electronAPI) {
         // New Agent - dispatch event for workspace page to handle
         window.electronAPI.on('menu:new-agent', () => {
+          // When focus is in the terminal area, create a new terminal instead
+          if (isFocusInTerminal()) {
+            window.dispatchEvent(new CustomEvent('terminal:create-new'));
+            return;
+          }
           logger.info('[+layout] New agent from menu');
           window.dispatchEvent(new CustomEvent('app:new-agent'));
         });

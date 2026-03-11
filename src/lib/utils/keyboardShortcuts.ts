@@ -26,6 +26,15 @@ export function isFocusInTerminal(target?: HTMLElement | null): boolean {
     return true;
   }
 
+  // Also check if focus is within the terminal overlay container
+  // (e.g., right after creating a terminal before xterm gets focus)
+  if (
+    typeof activeElement.closest === 'function' &&
+    activeElement.closest('.terminal-overlay')
+  ) {
+    return true;
+  }
+
   return false;
 }
 

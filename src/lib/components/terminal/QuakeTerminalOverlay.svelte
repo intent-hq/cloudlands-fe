@@ -136,12 +136,20 @@
       createNewTerminal();
     }
 
+    function handleCloseActive() {
+      if (activeTerminalId) {
+        closeTerminal(activeTerminalId);
+      }
+    }
+
     window.addEventListener('terminal:toggle-overlay', handleToggle);
     window.addEventListener('terminal:create-new', handleCreateNew);
+    window.addEventListener('terminal:close-active', handleCloseActive);
 
     return () => {
       window.removeEventListener('terminal:toggle-overlay', handleToggle);
       window.removeEventListener('terminal:create-new', handleCreateNew);
+      window.removeEventListener('terminal:close-active', handleCloseActive);
     };
   });
 
@@ -249,6 +257,8 @@
     }
   }
 
+  let overlayContainer = $state<HTMLDivElement>();
+
   function createNewTerminal() {
     if (!workspaceId) return;
     const newId = `terminal-${Date.now()}`;
@@ -257,6 +267,11 @@
       dispatch(openTerminalOverlay(workspaceId, newId));
     }
     track('Opened Terminal', { workspace_id: workspaceId, source: 'bottom-bar' });
+    // Focus the overlay container immediately so keyboard shortcuts
+    // (Cmd+T, Cmd+W) route to the terminal before xterm is ready
+    requestAnimationFrame(() => {
+      overlayContainer?.focus();
+    });
   }
 
   function closeTerminal(termId: string, e?: MouseEvent) {
@@ -386,7 +401,8 @@
 
 {#if workspaceId}
   <!-- Terminal Overlay Container - rendered within layout's terminal-overlay-container -->
-  <div class="terminal-overlay flex flex-col w-full">
+  <!-- tabindex=-1 allows programmatic focus for keyboard shortcut routing -->
+  <div bind:this={overlayContainer} tabindex="-1" class="terminal-overlay flex flex-col w-full outline-none">
     <!-- Expanded Terminal Panel -->
     {#if $isOpen && $activeTerminalId}
       <div

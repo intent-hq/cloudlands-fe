@@ -702,6 +702,9 @@ app.whenReady().then(async () => {
         label: 'New Agent',
         accelerator: 'CmdOrCtrl+T',
         enabled: inWorkspace,
+        // Don't register accelerator - let renderer handle Cmd+T first
+        // so the terminal can intercept it when focused
+        registerAccelerator: false,
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
           if (focusedWindow && !focusedWindow.isDestroyed()) {

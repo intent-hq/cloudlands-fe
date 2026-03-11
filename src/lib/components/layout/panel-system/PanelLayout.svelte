@@ -433,6 +433,20 @@
         return;
       }
 
+      // When the terminal overlay is open and focus is in the terminal area
+      // (or the terminal overlay itself), close the active terminal tab
+      // instead of a panel tab. isFocusInTerminal checks xterm focus;
+      // we also check if focus is within the terminal overlay container
+      // (e.g., right after creating a terminal before xterm gets focus).
+      const terminalAreaFocused = isFocusInTerminal(e.target as HTMLElement) ||
+        (e.target as HTMLElement)?.closest?.('.terminal-overlay');
+      if (get(terminalOverlayOpen$) && terminalAreaFocused) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.dispatchEvent(new CustomEvent('terminal:close-active'));
+        return;
+      }
+
       // Always prevent default first to stop browser from closing the tab
       e.preventDefault();
       e.stopPropagation();

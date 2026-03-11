@@ -179,12 +179,19 @@
     dispatch(closeTerminalOverlay(ROOT_WORKSPACE_ID));
   }
 
+  let overlayContainer = $state<HTMLDivElement>();
+
   function createNewTerminal() {
     const newId = `terminal-root-${Date.now()}`;
     dispatch(addTerminal(ROOT_WORKSPACE_ID, newId, `Terminal ${$terminals.length + 1}`));
     if (!$isOpen) {
       dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, newId));
     }
+    // Focus the overlay container immediately so keyboard shortcuts
+    // route to the terminal before xterm is ready
+    requestAnimationFrame(() => {
+      overlayContainer?.focus();
+    });
   }
 
   function closeTerminal(termId: string, e?: MouseEvent) {
@@ -286,12 +293,20 @@
       }
     }
 
+    function handleCloseActive() {
+      if (isRootContext && activeTerminalId) {
+        closeTerminal(activeTerminalId);
+      }
+    }
+
     window.addEventListener('terminal:toggle-overlay', handleToggle);
     window.addEventListener('terminal:create-new', handleCreateNew);
+    window.addEventListener('terminal:close-active', handleCloseActive);
 
     return () => {
       window.removeEventListener('terminal:toggle-overlay', handleToggle);
       window.removeEventListener('terminal:create-new', handleCreateNew);
+      window.removeEventListener('terminal:close-active', handleCloseActive);
     };
   });
 
@@ -333,7 +348,12 @@
 
 <!-- Only render when the overlay is open in root context (invisible when closed) -->
 {#if isRootContext && $isOpen && $activeTerminalId}
-  <div class="terminal-overlay flex flex-col w-full">
+  <!-- tabindex=-1 allows programmatic focus for keyboard shortcut routing -->
+  <div
+    bind:this={overlayContainer}
+    tabindex="-1"
+    class="terminal-overlay flex flex-col w-full outline-none"
+  >
     <!-- Expanded Terminal Panel -->
     <div
       class="terminal-panel relative flex flex-col bg-sidebar border-t border-border/50 shadow-2xl w-full"

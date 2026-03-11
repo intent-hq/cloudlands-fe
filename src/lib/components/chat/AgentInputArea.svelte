@@ -7,6 +7,7 @@
   import type { AgentSession } from '$features/agent/agent.service';
   import type { Workspace } from '$shared/types';
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
+  import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
 
   interface Props {
     session?: AgentSession | null;
@@ -140,9 +141,11 @@
 
   // Lifecycle
   onMount(() => {
-    // Focus input on mount
+    // Focus input on mount, but not if a terminal already has focus
     setTimeout(() => {
-      focus();
+      if (!isFocusInTerminal()) {
+        focus();
+      }
     }, 100);
 
     // Add global keyboard listener

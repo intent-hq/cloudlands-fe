@@ -432,6 +432,31 @@ export class TerminalAdapter {
         return false; // Prevent terminal from handling
       }
 
+      // Cmd+T (Mac) / Ctrl+T (Win/Linux) - create new terminal
+      // When the terminal is focused, Cmd+T should create a new terminal
+      // instead of the default "new tab" behavior
+      if (isMod && (event.key === 't' || event.key === 'T') && !event.shiftKey && !event.altKey) {
+        if (event.type === 'keydown') {
+          window.dispatchEvent(new CustomEvent('terminal:create-new'));
+        }
+        return false;
+      }
+
+      // Cmd+W (Mac) / Ctrl+W (Win/Linux) - close active terminal tab
+      if (isMod && (event.key === 'w' || event.key === 'W') && !event.shiftKey && !event.altKey) {
+        if (event.type === 'keydown') {
+          window.dispatchEvent(new CustomEvent('terminal:close-active'));
+        }
+        return false;
+      }
+
+      // Cmd+Shift+] / Cmd+Shift+[ - cycle terminal tabs
+      // Return false to let the overlay's window keydown handler pick these up
+      if (isMod && event.shiftKey && !event.altKey &&
+          (event.key === ']' || event.key === '}' || event.key === '[' || event.key === '{')) {
+        return false;
+      }
+
       // Ctrl+` or Ctrl+Shift+` (tilde) - toggle/create terminal
       // Dispatch custom events for these as well
       if (

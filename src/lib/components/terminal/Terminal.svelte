@@ -112,6 +112,10 @@
           onReady: () => {
             isLoading = false;
             isConnected = true;
+            // Auto-focus the terminal when it's ready
+            requestAnimationFrame(() => {
+              terminal?.focus();
+            });
           },
           onCommandStart: () => {
             isExecuting = true;
