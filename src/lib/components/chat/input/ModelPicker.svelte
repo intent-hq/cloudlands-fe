@@ -36,8 +36,12 @@
   interface Props {
     selectedModel?: string;
     onModelChange?: (model: string) => void;
+    /** Optional provider override for non-agent contexts (e.g. specialist settings). */
+    providerId?: string;
     isCompact?: boolean;
     isLocked?: boolean;
+    lockedTitle?: string;
+    showLockIconWhenLocked?: boolean;
     /** Defer backend update until streaming ends - UI updates immediately but IPC call is delayed */
     deferUpdate?: boolean;
     variant?: 'ghost' | 'ghost-light' | 'underline' | 'outline' | 'default';
@@ -62,8 +66,11 @@
   let {
     selectedModel = $bindable(),
     onModelChange = () => {},
+    providerId,
     isCompact = false,
     isLocked = false,
+    lockedTitle,
+    showLockIconWhenLocked = true,
     deferUpdate = false,
     variant = 'ghost-light',
     size = 'sm',
@@ -85,6 +92,10 @@
   // For new agent creation (no agentId), use the global active provider.
   // Always normalize through getProviderConfig().id so aliases like 'acp' resolve to 'auggie'.
   const effectiveProviderId = $derived.by(() => {
+    if (providerId) {
+      return getProviderConfig(providerId).id;
+    }
+
     if (agentId) {
       const session = sessionStore.getSession(agentId);
       if (session) {
@@ -304,6 +315,8 @@
           'Default model'
       : getModelLabel(localModel) || 'Default model',
   );
+  const lockedButtonTitle = $derived(lockedTitle?.trim() || `Model locked: ${currentModelLabel}`);
+  const shouldShowLockIconWhenLocked = $derived(isCompact || showLockIconWhenLocked);
 
   // Determine button size based on props
   const buttonSize = $derived(isCompact ? 'icon' : size);
@@ -541,17 +554,22 @@
     {variant}
     size={buttonSize}
     class={cn(buttonClass, 'cursor-default')}
-    title={`Model locked: ${currentModelLabel}`}
+    title={lockedButtonTitle}
+    tooltip={lockedButtonTitle}
     disabled={true}
   >
     {#if isCompact}
       <Fa icon={faLock} class="h-4 w-4" />
     {:else if size === 'xs'}
-      <Fa icon={faLock} class="h-3.5 w-3.5" />
+      {#if shouldShowLockIconWhenLocked}
+        <Fa icon={faLock} class="h-3.5 w-3.5" />
+      {/if}
       <span class="flex-1 text-left truncate">{currentModelLabel}</span>
     {:else}
-      <span class="flex items-center gap-1.5">
-        <Fa icon={faLock} class="h-3.5 w-3.5" />
+      <span class={cn('flex items-center', shouldShowLockIconWhenLocked && 'gap-1.5')}>
+        {#if shouldShowLockIconWhenLocked}
+          <Fa icon={faLock} class="h-3.5 w-3.5" />
+        {/if}
         <span class="text-xs truncate">{currentModelLabel}</span>
       </span>
     {/if}

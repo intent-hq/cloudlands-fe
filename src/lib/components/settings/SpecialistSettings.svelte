@@ -8,9 +8,10 @@
     faFileExport,
     faFile,
   } from '@fortawesome/free-solid-svg-icons';
-  import { Dropdown, type DropdownOption, type DropdownGroup } from '$lib/components/ui/dropdown';
+  import { Dropdown } from '$lib/components/ui/dropdown';
   import { specialistsStore } from '$lib/stores/specialists.store.svelte';
   import { modelStore } from '$lib/stores/model.store.svelte';
+  import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
   import { additionalAgentsStore } from '$lib/stores/additional-agents.store.svelte';
   import type { Specialist } from '$lib/constants/specialists';
   import SettingsCard from './SettingsCard.svelte';
@@ -19,7 +20,16 @@
   import Input from '../ui/input/input.svelte';
   import Textarea from '../ui/textarea/textarea.svelte';
   import AuggieAvatar from '../ui/auggie-avatar/AuggieAvatar.svelte';
+  import ModelPicker from '../chat/input/ModelPicker.svelte';
+  import {
+    buildProviderDropdownOptions,
+    getSelectableProviderIds,
+    resolveCompatibleModelForProvider,
+    resolveUsableProviderIds,
+  } from '$lib/utils/provider-model-selection';
+  import { getProviderConfig } from '$shared/config/provider-config';
   import { track } from '$lib/services/analytics';
+  import { toast } from 'svelte-sonner';
 
   interface Props {
     /** Specialist ID to auto-expand on mount (from URL query parameter) */
@@ -52,6 +62,7 @@
   let isCreating = $state(false);
   let newName = $state('');
   let newDescription = $state('');
+  let newCodingAgent = $state(activeProviderStore.activeProviderId);
   let newModel = $state(getDefaultModel());
   let newPrompt = $state('');
 
@@ -74,29 +85,30 @@
     Math.min(100, Math.round((newPromptCharCount / MAX_PROMPT_LENGTH) * 100)),
   );
 
-  // Derive model options from modelStore
-  const modelOptions = $derived<DropdownOption[]>(
-    modelStore.availableModels.map((model) => ({
-      value: model.value,
-      label: model.label,
-    })),
-  );
-
-  // Check if we have multiple providers enabled
   const enabledProviderIds = $derived(additionalAgentsStore.getEnabledProviderIds());
-  const hasMultipleProviders = $derived(enabledProviderIds.length > 1);
+  let usableProviderIds = $state<string[]>([]);
+  let usableProviderRequestId = 0;
 
-  // Derive grouped model options (for multi-provider mode)
-  const modelGroups = $derived<DropdownGroup[]>(
-    modelStore.getGroupedModels().map((group) => ({
-      key: group.providerId,
-      label: group.providerDisplayName,
-      options: group.models.map((m) => ({
-        value: m.value,
-        label: m.label,
-      })),
-    })),
-  );
+  $effect(() => {
+    const providerIds = enabledProviderIds;
+    const requestId = ++usableProviderRequestId;
+
+    void resolveUsableProviderIds(providerIds).then((nextUsableProviderIds) => {
+      if (requestId === usableProviderRequestId) {
+        usableProviderIds = nextUsableProviderIds;
+      }
+    });
+  });
+
+  function getProviderOptions(selectedProviderId?: string) {
+    return buildProviderDropdownOptions(
+      getSelectableProviderIds({
+        enabledProviderIds,
+        usableProviderIds,
+        selectedProviderId,
+      }),
+    );
+  }
 
   // Check if the specialist ID is a built-in specialist type
   function isBuiltInSpecialistId(
@@ -116,6 +128,19 @@
     isCreating = false;
   }
 
+  async function resolveModelOrToast(providerId: string, currentModel?: string, fallbackModel?: string) {
+    const resolvedModel = await resolveCompatibleModelForProvider(providerId, {
+      currentModel,
+      fallbackModel,
+    });
+
+    if (!resolvedModel) {
+      toast.error(`No models available for ${getProviderConfig(providerId).displayName}.`);
+    }
+
+    return resolvedModel;
+  }
+
   function handleModelChange(specialist: Specialist, newModel: string) {
     if (specialistsStore.isBuiltIn(specialist.id)) {
       // Get the resolved default model for the current provider (from tier)
@@ -127,6 +152,38 @@
       }
     } else {
       specialistsStore.updateCustomSpecialist(specialist.id, { model: newModel });
+    }
+  }
+
+  async function handleCodingAgentChange(specialist: Specialist, newProvider: string) {
+    if (!newProvider) return;
+
+    const nextModel = await resolveModelOrToast(
+      newProvider,
+      specialistsStore.getEffectiveModel(specialist.id),
+      specialistsStore.getResolvedDefaultModel(specialist.id, newProvider),
+    );
+    if (!nextModel) return;
+
+    if (specialistsStore.isBuiltIn(specialist.id)) {
+      const defaultProvider = specialistsStore.getResolvedDefaultCodingAgent(specialist.id);
+      if (newProvider !== defaultProvider) {
+        specialistsStore.setCodingAgentOverride(specialist.id, newProvider);
+      } else {
+        specialistsStore.clearCodingAgentOverride(specialist.id);
+      }
+
+      const resolvedDefaultModel = specialistsStore.getResolvedDefaultModel(specialist.id, newProvider);
+      if (resolvedDefaultModel && nextModel === resolvedDefaultModel) {
+        specialistsStore.clearModelOverride(specialist.id);
+      } else {
+        specialistsStore.setModelOverride(specialist.id, nextModel);
+      }
+    } else {
+      specialistsStore.updateCustomSpecialist(specialist.id, {
+        codingAgent: newProvider,
+        model: nextModel,
+      });
     }
   }
 
@@ -217,6 +274,7 @@
     expandedId = null;
     newName = '';
     newDescription = '';
+    newCodingAgent = activeProviderStore.activeProviderId;
     newModel = getDefaultModel();
     newPrompt = 'You are a specialist agent.\n\nYour job is to:\n1. ...\n2. ...\n3. ...';
   }
@@ -233,6 +291,7 @@
     specialistsStore.createCustomSpecialist({
       name: newName.trim(),
       description: newDescription.trim() || 'Custom specialist',
+      codingAgent: newCodingAgent,
       model: newModel,
       behaviorPrompt: newPrompt,
     });
@@ -243,6 +302,20 @@
     });
 
     isCreating = false;
+  }
+
+  function hasCodingAgentOverride(specialist: Specialist): boolean {
+    return !!specialistsStore.userOverrides.codingAgentOverrides[specialist.id];
+  }
+
+  async function handleCreateCodingAgentChange(newProvider: string) {
+    if (!newProvider || newProvider === newCodingAgent) return;
+
+    const nextModel = await resolveModelOrToast(newProvider, newModel);
+    if (!nextModel) return;
+
+    newCodingAgent = newProvider;
+    newModel = nextModel;
   }
 </script>
 
@@ -305,6 +378,32 @@
             <span class="text-xs">{getModelLabel(getEffectiveModel(specialist))}</span>
           {/snippet}
 
+          <!-- Coding Agent -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-medium text-foreground">Coding agent</span>
+              {#if isBuiltIn && hasCodingAgentOverride(specialist)}
+                <button
+                  type="button"
+                  onclick={() => specialistsStore.clearCodingAgentOverride(specialist.id)}
+                  class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  <Fa icon={faRotateLeft} class="w-3 h-3" />
+                  Reset
+                </button>
+              {/if}
+            </div>
+            <Dropdown
+              value={specialistsStore.getEffectiveCodingAgent(specialist.id)}
+              options={getProviderOptions(specialistsStore.getEffectiveCodingAgent(specialist.id))}
+              onchange={(value) => void handleCodingAgentChange(specialist, value as string)}
+              variant="default"
+              size="sm"
+              searchable={false}
+              class="w-full"
+            />
+          </div>
+
           <!-- Model Selection -->
           <div class="space-y-2">
             <div class="flex items-center justify-between">
@@ -320,26 +419,14 @@
                 </button>
               {/if}
             </div>
-            <Dropdown
-              value={getEffectiveModel(specialist)}
-              options={hasMultipleProviders ? [] : modelOptions}
-              groups={hasMultipleProviders ? modelGroups : []}
-              onchange={(value) => handleModelChange(specialist, value as string)}
+            <ModelPicker
+              selectedModel={getEffectiveModel(specialist)}
+              providerId={specialistsStore.getEffectiveCodingAgent(specialist.id)}
+              onModelChange={(value) => handleModelChange(specialist, value)}
+              showDefaultOption={false}
               variant="default"
               size="sm"
-              searchable={false}
-              contentClass="min-w-[280px]"
-              class="w-full"
-            >
-              {#snippet trigger({ open: _open, value: _value })}
-                <span class="inline-flex items-center justify-between w-full">
-                  <span class="truncate">{getModelLabel(getEffectiveModel(specialist))}</span>
-                  {#if isBuiltIn && hasModelOverride(specialist)}
-                    <span class="text-ui text-primary font-medium ml-2">Custom</span>
-                  {/if}
-                </span>
-              {/snippet}
-            </Dropdown>
+            />
           </div>
 
           <!-- Behavior Prompt with Auto-Save -->
@@ -447,16 +534,26 @@
           </div>
 
           <div>
-            <span class="text-sm font-medium text-foreground block mb-1.5">Default model</span>
+            <span class="text-sm font-medium text-foreground block mb-1.5">Coding agent</span>
             <Dropdown
-              bind:value={newModel}
-              options={hasMultipleProviders ? [] : modelOptions}
-              groups={hasMultipleProviders ? modelGroups : []}
+              value={newCodingAgent}
+              options={getProviderOptions(newCodingAgent)}
+              onchange={(value) => void handleCreateCodingAgentChange(value as string)}
               variant="default"
               size="sm"
               searchable={false}
-              contentClass="min-w-[280px]"
               class="w-full"
+            />
+          </div>
+
+          <div>
+            <span class="text-sm font-medium text-foreground block mb-1.5">Default model</span>
+            <ModelPicker
+              bind:selectedModel={newModel}
+              providerId={newCodingAgent}
+              showDefaultOption={false}
+              variant="default"
+              size="sm"
             />
           </div>
 

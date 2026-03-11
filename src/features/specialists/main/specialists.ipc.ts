@@ -260,6 +260,7 @@ export function setupSpecialistsIPC(): void {
             id: bundled.id,
             name: bundled.frontmatter.name,
             description: bundled.frontmatter.description,
+            codingAgent: bundled.frontmatter.codingAgent,
             model: bundled.frontmatter.model,
             modelTier: bundled.frontmatter.modelTier,
             roleReminder: bundled.frontmatter.roleReminder,

@@ -95,7 +95,7 @@ export interface AgentSession {
   /** Model identifier (e.g., "sonnet-3.5", "gpt-4") */
   model?: string;
 
-  /** ACP provider ID (e.g., "auggie", "claude-code", "opencode"). Immutable after creation. */
+  /** ACP provider ID (e.g., "auggie", "claude-code", "opencode"). Mutable only until first real session use, then locked. */
   provider?: string;
 
   /** System prompt for the agent */
@@ -282,4 +282,15 @@ export function getAgentProvider(session: AgentSession): string | undefined {
   }
 
   return undefined;
+}
+
+/**
+ * Returns true once an agent has executed its first prompt/session work.
+ *
+ * Blank agents may already have backend/runtime setup before the first prompt, so
+ * provider/model locking should key off the first real user message instead of
+ * backend session IDs or ACP session initialization alone.
+ */
+export function hasAgentHandledFirstPrompt(session: AgentSession): boolean {
+  return session.messages.some((message) => message.role === 'user');
 }

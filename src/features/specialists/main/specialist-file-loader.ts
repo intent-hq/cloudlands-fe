@@ -259,6 +259,7 @@ export function parseSpecialistFile(
   const specialistFrontmatter: SpecialistFileFrontmatter = {
     name: frontmatter.name,
     description: frontmatter.description,
+    codingAgent: frontmatter.codingAgent,
     model: frontmatter.model,
     modelTier: modelTier as ModelTier | undefined,
     roleReminder: frontmatter.roleReminder,
@@ -452,6 +453,7 @@ export async function writeSpecialistFile(specialist: {
   id: string;
   name: string;
   description: string;
+  codingAgent?: string;
   model?: string;
   modelTier?: string;
   roleReminder?: string;
@@ -469,6 +471,10 @@ export async function writeSpecialistFile(specialist: {
       `name: "${escapeYamlValue(specialist.name)}"`,
       `description: "${escapeYamlValue(specialist.description)}"`,
     ];
+
+    if (specialist.codingAgent) {
+      frontmatterParts.push(`codingAgent: "${escapeYamlValue(specialist.codingAgent)}"`);
+    }
 
     // modelTier takes precedence over model (provider-aware resolution)
     if (specialist.modelTier) {
@@ -566,6 +572,7 @@ export async function migrateCustomSpecialistsFromStore(): Promise<{
           id: string;
           name: string;
           description: string;
+          codingAgent?: string;
           model: string;
           behaviorPrompt: string;
           roleReminder?: string;
@@ -606,6 +613,7 @@ export async function migrateCustomSpecialistsFromStore(): Promise<{
           id: safeId,
           name: specialist.name,
           description: specialist.description,
+          codingAgent: specialist.codingAgent,
           model: specialist.model,
           roleReminder: specialist.roleReminder,
           behaviorPrompt: specialist.behaviorPrompt,
@@ -743,6 +751,7 @@ export async function migrateOverridesFromStore(): Promise<{
           id: specialistId,
           name: bundled.frontmatter.name,
           description: bundled.frontmatter.description,
+          codingAgent: bundled.frontmatter.codingAgent,
           model: modelOverrides[specialistId] ? model : bundled.frontmatter.model,
           modelTier: modelOverrides[specialistId] ? undefined : bundled.frontmatter.modelTier,
           roleReminder: bundled.frontmatter.roleReminder,

@@ -16,6 +16,11 @@ export interface Specialist {
   name: string;
   description: string;
   /**
+   * ACP provider / runtime backend for this specialist (e.g. 'auggie', 'codex').
+   * If omitted, callers should fall back to the global default coding agent.
+   */
+  codingAgent?: string;
+  /**
    * The capability tier for this specialist's default model.
    * Resolved at runtime to the appropriate model for the active provider.
    * - fast: Quick, cheap models (haiku4.5, haiku, gpt-5.1-codex-mini)

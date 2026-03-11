@@ -5815,56 +5815,75 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
 
     try {
       // Determine the agent's current provider before making any changes.
-      // Provider is immutable per agent — cross-provider model changes are rejected.
+      // Provider changes are allowed only before the agent has handled any real prompt.
       const backend = this.unifiedBackend;
       const agent = backend ? await backend.getAgent(agentId) : undefined;
       const runtimeProvider = this.providers.get(agentId);
       const currentModel = (runtimeProvider as any)?.config?.model as string | undefined;
+      const { UnifiedPersistence } = await import('./agent-persistence');
+      const persistence = UnifiedPersistence.getInstance();
+      const persistedAgentResult =
+        agent || !workspaceId
+          ? undefined
+          : await persistence.loadAgent(agentId as any, workspaceId as any);
+      const persistedAgent = agent || persistedAgentResult?.data;
 
       const agentProvider =
-        agent?.provider ??
-        agent?.metadata?.provider ??
-        (agent?.model ? parseCompoundModelId(agent.model).providerId : undefined) ??
+        persistedAgent?.provider ??
+        persistedAgent?.metadata?.provider ??
+        (persistedAgent?.model ? parseCompoundModelId(persistedAgent.model).providerId : undefined) ??
         (currentModel ? parseCompoundModelId(currentModel).providerId : undefined) ??
         ((runtimeProvider as any)?.config?._providerConfig?.id as string | undefined);
 
-      // Provider is immutable per agent — reject cross-provider model changes
-      if (agentProvider && agentProvider !== providerId) {
-        logger.warn('Rejected cross-provider model change', {
+      // A blank agent may already have backend/runtime state before the first prompt.
+      // Provider changes should lock only after a real user message exists.
+      const hasRealSessionUse =
+        persistedAgent?.messages?.some((message: any) => message?.role === 'user') ?? false;
+
+      // Existing agents may switch provider only before their first real prompt.
+      if (agentProvider && agentProvider !== providerId && hasRealSessionUse) {
+        logger.warn('Rejected cross-provider model change after first use', {
           agentId,
           fromProvider: agentProvider,
           toProvider: providerId,
         });
         return {
           success: false,
-          error: `Cannot change provider for an existing agent. This agent uses ${agentProvider}. Create a new workspace to use ${providerConfig?.displayName || providerId}.`,
+          error: `Cannot change provider after an agent has handled its first prompt. This agent already uses ${agentProvider}. Create a new agent to use ${providerConfig?.displayName || providerId}.`,
         };
       }
 
-      // Update the agent's model in persistence
+      // Persist the model/provider mutation before touching any live runtime.
       if (backend) {
         if (agent) {
-          // Update in-memory model
+          const timestamp = new Date().toISOString();
           agent.model = modelId;
-          logger.debug('Updated in-memory agent model', { agentId, modelId });
-        } else {
-          // Agent not in memory - need to persist directly
-          const { UnifiedPersistence } = await import('./agent-persistence');
-          const persistence = UnifiedPersistence.getInstance();
-
-          const loadResult = await persistence.loadAgent(agentId as any, workspaceId as any);
-          if (loadResult.success && loadResult.data) {
-            const updatedData = {
-              ...loadResult.data,
-              model: modelId,
-            };
-            await persistence.saveAgent(updatedData);
-            logger.info('Persisted model change to agent', {
-              agentId,
-              modelId,
-              workspaceId,
-            });
-          }
+          agent.provider = providerId;
+          agent.updatedAt = timestamp;
+          agent.metadata = {
+            ...(agent.metadata || {}),
+            provider: providerId,
+          };
+          await backend.saveAgent(agentId);
+          logger.debug('Updated in-memory agent model/provider', { agentId, modelId, providerId });
+        } else if (persistedAgentResult?.success && persistedAgentResult.data) {
+          const updatedData = {
+            ...persistedAgentResult.data,
+            model: modelId,
+            provider: providerId,
+            updatedAt: new Date().toISOString(),
+            metadata: {
+              ...(persistedAgentResult.data.metadata || {}),
+              provider: providerId,
+            },
+          };
+          await persistence.saveAgent(updatedData);
+          logger.info('Persisted model/provider change to agent', {
+            agentId,
+            modelId,
+            providerId,
+            workspaceId,
+          });
         }
       }
 

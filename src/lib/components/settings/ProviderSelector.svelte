@@ -8,6 +8,7 @@
    */
   import { onMount } from 'svelte';
   import { invoke, shell } from '$lib/electron-bridge';
+  import { additionalAgentsStore } from '$lib/stores/additional-agents.store.svelte';
   import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
   import { modelStore } from '$lib/stores/model.store.svelte';
   import { ACP_PROVIDERS } from '$shared/config/provider-config';
@@ -128,6 +129,10 @@
 
   // Helper to get provider availability from result (handles different key formats)
   function getProviderAvailable(providerId: string): boolean {
+    if (providerId === 'auggie') {
+      return !!auggieStatus?.installed;
+    }
+
     if (!providerAvailability) return false;
     const key = providerKeyMap[providerId];
     if (key && providerAvailability.providers[key]) {
@@ -138,6 +143,10 @@
 
   // Helper to get provider auth status
   function getProviderAuthenticated(providerId: string): boolean | undefined {
+    if (providerId === 'auggie') {
+      return auggieStatus?.authenticated;
+    }
+
     if (!providerAvailability) return undefined;
     const key = providerKeyMap[providerId];
     if (key && providerAvailability.providers[key]) {
@@ -162,6 +171,30 @@
         loginDocsUrl: provider.loginDocsUrl,
       })),
   );
+
+  function isProviderReadyForUse(providerId: string): boolean {
+    if (providerId === 'auggie') {
+      return !!auggieStatus?.installed &&
+        !!auggieStatus?.authenticated &&
+        !needsUpdate &&
+        auggieStatus?.nodeVersionOk !== false;
+    }
+
+    if (!getProviderAvailable(providerId)) return false;
+    return getProviderAuthenticated(providerId) !== false;
+  }
+
+  function isProviderEnabled(providerId: string): boolean {
+    return additionalAgentsStore.isProviderEnabled(providerId);
+  }
+
+  function canManageProviderEnablement(providerId: string): boolean {
+    return ACP_PROVIDERS[providerId]?.canBeDisabled !== false;
+  }
+
+  function handleToggleProvider(providerId: string, enabled: boolean) {
+    additionalAgentsStore.setProviderEnabled(providerId, enabled);
+  }
 
   onMount(() => {
     checkProviderAvailability();
@@ -262,11 +295,6 @@
       }>(PROVIDERS_CHANNELS.GET_AVAILABILITY);
 
       if (providerResult.success && providerResult.data) {
-        // Reconcile auggie status if already loaded
-        if (auggieStatus?.installed) {
-          providerResult.data.providers.auggie.available = true;
-          providerResult.data.hasAnyProvider = true;
-        }
         providerAvailability = providerResult.data;
       }
     } catch (err) {
@@ -285,10 +313,6 @@
       // the handler still returns data with nodeVersionOk/nodeVersion so the warning shows.
       if (result.data) {
         auggieStatus = result.data;
-        if (providerAvailability && auggieStatus.installed) {
-          providerAvailability.providers.auggie.available = true;
-          providerAvailability.hasAnyProvider = true;
-        }
       }
     } catch (err) {
       logger.warn('Failed to check Auggie status', { error: err });
@@ -312,12 +336,6 @@
         return;
       }
       providerAvailability = providerResult.data || null;
-
-      // If auggie status already arrived, reconcile
-      if (providerAvailability && auggieStatus?.installed) {
-        providerAvailability.providers.auggie.available = true;
-        providerAvailability.hasAnyProvider = true;
-      }
 
       if (refreshModels) {
         await modelStore.retryLoadModels();
@@ -746,6 +764,9 @@
     {:else}
       {@const auggieProvider = providerOptions.find((p) => p.id === 'auggie')}
       {@const isAuggieActive = activeProviderStore.activeProviderId === 'auggie'}
+      {@const isAuggieEnabled = isProviderEnabled('auggie')}
+      {@const isAuggieReady = isProviderReadyForUse('auggie')}
+      {@const canManageAuggieEnablement = canManageProviderEnablement('auggie')}
       {#if auggieProvider}
         <div class="flex items-start justify-between gap-4">
           <div class="space-y-1">
@@ -764,10 +785,10 @@
                   onPathChange={(path) => handlePathChange('auggie', path)}
                 />
               </div>
-              {#if auggieStatus?.installed && auggieStatus?.authenticated}
+              {#if isAuggieReady}
                 <span class="text-xs text-subtle flex items-center gap-1">
                   <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
-                  {isAuggieActive ? 'Active' : 'Installed'}
+                  Ready
                 </span>
               {/if}
             </div>
@@ -789,7 +810,7 @@
             {/if}
           </div>
 
-          <div class="flex items-center gap-2 text-xs">
+          <div class="flex items-center gap-3 text-xs">
             {#if !auggieStatus?.installed}
               {#if actionInProgress}
                 <span class="text-subtle">Installing...</span>
@@ -826,7 +847,27 @@
                   Login
                 </button>
               {/if}
-            {:else if !isAuggieActive}
+            {/if}
+
+            {#if canManageAuggieEnablement && !isAuggieActive && isAuggieEnabled}
+              <button
+                type="button"
+                class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors font-medium"
+                onclick={() => handleToggleProvider('auggie', false)}
+              >
+                Disable
+              </button>
+            {:else if canManageAuggieEnablement && !isAuggieActive && !isAuggieEnabled && isAuggieReady}
+              <button
+                type="button"
+                class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+                onclick={() => handleToggleProvider('auggie', true)}
+              >
+                Enable
+              </button>
+            {/if}
+
+            {#if !isAuggieActive && isAuggieReady}
               <button
                 type="button"
                 class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
@@ -993,6 +1034,9 @@
     <!-- Other providers -->
     {#each providerOptions.filter((p) => p.id !== 'auggie') as provider (provider.id)}
       {@const isActive = activeProviderStore.activeProviderId === provider.id}
+      {@const isEnabled = isProviderEnabled(provider.id)}
+      {@const isReady = isProviderReadyForUse(provider.id)}
+      {@const canManageEnablement = canManageProviderEnablement(provider.id)}
       <div>
         <div class="flex items-start justify-between gap-4">
           <div class="space-y-1">
@@ -1055,7 +1099,7 @@
             </div>
           </div>
 
-          <div class="flex items-center gap-5 text-xs">
+          <div class="flex items-center gap-4 text-xs flex-wrap justify-end">
             {#if provider.available}
               <!-- Auth status -->
               {#if provider.authenticated === true}
@@ -1072,10 +1116,28 @@
                   Log in
                 </button>
               {/if}
-              <!-- Default / Set as default -->
+
+              {#if canManageEnablement && !isActive && isEnabled}
+                <button
+                  type="button"
+                  class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors font-medium"
+                  onclick={() => handleToggleProvider(provider.id, false)}
+                >
+                  Disable
+                </button>
+              {:else if canManageEnablement && !isActive && !isEnabled && isReady}
+                <button
+                  type="button"
+                  class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+                  onclick={() => handleToggleProvider(provider.id, true)}
+                >
+                  Enable
+                </button>
+              {/if}
+
               {#if isActive}
                 <span class="text-xs text-subtle flex items-center gap-1"> Default </span>
-              {:else}
+              {:else if isReady}
                 <button
                   type="button"
                   class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"

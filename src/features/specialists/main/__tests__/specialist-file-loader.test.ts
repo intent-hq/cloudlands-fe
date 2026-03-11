@@ -10,8 +10,25 @@
  * - YAML block scalars (| and >)
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { parseSpecialistFile } from '../specialist-file-loader';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
+import {
+  parseSpecialistFile,
+  writeSpecialistFile,
+  loadSpecialistFile,
+  migrateCustomSpecialistsFromStore,
+  migrateOverridesFromStore,
+  getBundledSpecialistsDirectory,
+  getSpecialistsDirectory,
+} from '../specialist-file-loader';
+
+const { mockSettingsData } = vi.hoisted(() => ({
+  mockSettingsData: {} as Record<string, unknown>,
+}));
+
+const TEST_HOME = '/tmp/augment-specialist-file-loader-test';
+let originalHome: string | undefined;
 
 // Mock electron app
 vi.mock('electron', () => ({
@@ -21,12 +38,49 @@ vi.mock('electron', () => ({
   },
 }));
 
+vi.mock('electron-store', () => ({
+  default: class MockStore {
+    get(key: string) {
+      return mockSettingsData[key];
+    }
+
+    set(key: string, value: unknown) {
+      mockSettingsData[key] = value;
+    }
+
+    delete(key: string) {
+      delete mockSettingsData[key];
+    }
+  },
+}));
+
+beforeAll(async () => {
+  originalHome = process.env.HOME;
+  process.env.HOME = TEST_HOME;
+  await fs.rm(TEST_HOME, { recursive: true, force: true });
+});
+
+beforeEach(async () => {
+  Object.keys(mockSettingsData).forEach((key) => delete mockSettingsData[key]);
+  await fs.rm(TEST_HOME, { recursive: true, force: true });
+});
+
+afterAll(async () => {
+  await fs.rm(TEST_HOME, { recursive: true, force: true });
+  if (originalHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = originalHome;
+  }
+});
+
 describe('parseSpecialistFile', () => {
   describe('Valid files', () => {
     it('should parse a valid specialist file', () => {
       const content = `---
 name: "Test Specialist"
 description: "A test specialist"
+codingAgent: "codex"
 modelTier: "fast"
 ---
 
@@ -38,6 +92,7 @@ You are a test specialist.`;
         expect(result.id).toBe('test-specialist');
         expect(result.frontmatter.name).toBe('Test Specialist');
         expect(result.frontmatter.description).toBe('A test specialist');
+        expect(result.frontmatter.codingAgent).toBe('codex');
         expect(result.frontmatter.modelTier).toBe('fast');
         expect(result.behaviorPrompt).toBe('You are a test specialist.');
       }
@@ -335,6 +390,104 @@ Body`;
       expect('error' in result).toBe(false);
       if (!('error' in result)) {
         expect(result.source).toBe('bundled');
+      }
+    });
+  });
+
+  describe('Persistence and migration', () => {
+    it('should round-trip codingAgent when writing and loading a specialist file', async () => {
+      await writeSpecialistFile({
+        id: 'round-trip',
+        name: 'Round Trip',
+        description: 'Round-trip test specialist',
+        codingAgent: 'codex',
+        modelTier: 'fast',
+        roleReminder: 'Stay focused.',
+        behaviorPrompt: 'Round-trip prompt',
+      });
+
+      const loaded = await loadSpecialistFile('round-trip');
+
+      expect(loaded).not.toBeNull();
+      expect(loaded?.frontmatter.codingAgent).toBe('codex');
+      expect(loaded?.frontmatter.modelTier).toBe('fast');
+      expect(loaded?.frontmatter.roleReminder).toBe('Stay focused.');
+      expect(loaded?.behaviorPrompt).toBe('Round-trip prompt');
+    });
+
+    it('should migrate custom specialists with and without codingAgent', async () => {
+      mockSettingsData['custom-specialists'] = [
+        {
+          id: 'legacy with agent',
+          name: 'Legacy With Agent',
+          description: 'Legacy specialist with coding agent',
+          codingAgent: 'codex',
+          model: 'gpt-5.3-codex/high',
+          behaviorPrompt: 'Prompt A',
+        },
+        {
+          id: 'legacy without agent',
+          name: 'Legacy Without Agent',
+          description: 'Legacy specialist without coding agent',
+          model: 'sonnet4.5',
+          behaviorPrompt: 'Prompt B',
+        },
+      ];
+
+      const result = await migrateCustomSpecialistsFromStore();
+      const specialistsDir = getSpecialistsDirectory();
+      const withAgentContent = await fs.readFile(
+        path.join(specialistsDir, 'legacy-with-agent.md'),
+        'utf-8',
+      );
+      const withoutAgentContent = await fs.readFile(
+        path.join(specialistsDir, 'legacy-without-agent.md'),
+        'utf-8',
+      );
+
+      expect(result.migrated).toBe(2);
+      expect(result.errors).toEqual([]);
+      expect(withAgentContent).toContain('codingAgent: "codex"');
+      expect(withoutAgentContent).not.toContain('codingAgent:');
+    });
+
+    it('should preserve bundled codingAgent when migrating overrides to a user file', async () => {
+      const specialistId = 'override-migration-coding-agent-test';
+      const bundledDir = getBundledSpecialistsDirectory();
+      const bundledPath = path.join(bundledDir, `${specialistId}.md`);
+
+      await fs.mkdir(bundledDir, { recursive: true });
+      await fs.writeFile(
+        bundledPath,
+        `---
+name: "Override Migration Test"
+description: "Bundled specialist for override migration"
+codingAgent: "codex"
+modelTier: "fast"
+---
+
+Bundled prompt`,
+        'utf-8',
+      );
+
+      mockSettingsData['specialists-overrides'] = {
+        behaviorPromptOverrides: {
+          [specialistId]: 'Overridden prompt',
+        },
+      };
+
+      try {
+        const result = await migrateOverridesFromStore();
+        const migrated = await loadSpecialistFile(specialistId);
+
+        expect(result.migrated).toBe(1);
+        expect(result.errors).toEqual([]);
+        expect(migrated).not.toBeNull();
+        expect(migrated?.frontmatter.codingAgent).toBe('codex');
+        expect(migrated?.frontmatter.modelTier).toBe('fast');
+        expect(migrated?.behaviorPrompt).toBe('Overridden prompt');
+      } finally {
+        await fs.rm(bundledPath, { force: true });
       }
     });
   });

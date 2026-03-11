@@ -54,12 +54,10 @@ import {
 } from '$shared/constants/intent-links';
 import {
   parseCompoundModelId,
-  createCompoundModelId,
   getDefaultProviderId,
   getDefaultModelForProvider,
   isModelValidForProvider,
   PROVIDER_MODEL_TIERS,
-  type ModelTier,
 } from '$shared/config/provider-config';
 
 const logger = new Logger('AgentInteractionTools');
@@ -90,93 +88,6 @@ async function getDelegationDepth(workspaceId: string, agentId: string): Promise
     logger.warn('Failed to get delegation depth, defaulting to 0', { agentId, error });
     return 0;
   }
-}
-
-/**
- * Resolve a specialist's model for the correct provider using tier-based resolution.
- *
- * When a coordinator delegates to an implementor, the specialist's model must be
- * resolved for the parent's provider (not just the default provider). Using the
- * modelTier ensures the resolved model is always valid for the target provider.
- *
- * Previous approach: `inheritProviderFromParent()` naively prefixed the specialist's
- * model ID with the parent provider (e.g., `codex:sonnet4.5`), which created invalid
- * model IDs because `sonnet4.5` is an auggie model, not a codex model.
- *
- * @param specialistModel - The model ID from the specialist definition (may be bare or compound)
- * @param modelTier - The specialist's capability tier (if available)
- * @param parentModel - The parent agent's model (should be a compound model ID)
- * @returns The specialist model resolved for the correct provider
- */
-function resolveModelForProvider(
-  specialistModel: string,
-  modelTier: ModelTier | undefined,
-  parentModel: string | undefined,
-): string {
-  // If no parent model, return specialist model as-is (will use default provider)
-  if (!parentModel) {
-    return specialistModel;
-  }
-
-  const { providerId: parentProvider } = parseCompoundModelId(parentModel);
-  const defaultProvider = getDefaultProviderId();
-
-  // If we have a tier, resolve it for the parent's provider — this guarantees a valid model
-  if (modelTier) {
-    // Check if this provider has its own tier mapping.
-    // Providers with dynamic/opaque model lists (e.g. opencode) won't have a mapping,
-    // so we inherit the parent's model instead of guessing an invalid model name.
-    const providerHasTierMapping = parentProvider in PROVIDER_MODEL_TIERS;
-    if (!providerHasTierMapping) {
-      logger.info('Provider has no tier mapping, inheriting parent model for delegation', {
-        parentProvider,
-        modelTier,
-        parentModel,
-      });
-      return parentModel;
-    }
-
-    const providerModel = getDefaultModelForProvider(parentProvider, modelTier);
-    const result =
-      parentProvider !== defaultProvider
-        ? createCompoundModelId(parentProvider, providerModel)
-        : providerModel;
-    logger.debug('Resolved specialist model via tier for provider', {
-      specialistModel,
-      modelTier,
-      parentProvider,
-      resultModel: result,
-    });
-    return result;
-  }
-
-  // No tier available — legacy fallback.
-  // Without tier info we cannot safely map the specialist model to the parent's provider.
-  // If the specialist model belongs to a different provider, inherit parentModel instead of
-  // blindly creating a cross-provider compound ID (e.g., 'codex:sonnet4.5').
-  if (specialistModel.includes(':')) {
-    const { providerId: specialistProvider } = parseCompoundModelId(specialistModel);
-    if (specialistProvider !== parentProvider) {
-      logger.warn(
-        'Cross-provider specialist model without tier mapping, inheriting parent model',
-        { specialistModel, specialistProvider, parentProvider, parentModel },
-      );
-      return parentModel;
-    }
-    return specialistModel;
-  }
-
-  // Bare model ID — implicitly belongs to the default provider
-  if (parentProvider !== defaultProvider) {
-    // specialistModel is for the default provider but parent uses a different one.
-    // Without tier info we can't map it — inherit parentModel to avoid invalid IDs.
-    logger.warn(
-      'No modelTier available, specialist model from different provider, inheriting parent model',
-      { specialistModel, parentProvider, parentModel },
-    );
-    return parentModel;
-  }
-  return specialistModel;
 }
 
 /**
@@ -324,52 +235,59 @@ function resolveSpecialistConfig(
   modelOverride: string | undefined,
   behaviorPromptOverride: string | undefined,
   parentModel: string | undefined,
+  parentProvider: string | undefined,
   defaultToImplementor: boolean = true,
   autoCommitEnabled: boolean = true,
 ): {
   model: string;
+  provider: string;
   behaviorPrompt: string | undefined;
   effectiveSpecialistId: string | undefined;
   specialistName: string | undefined;
   roleReminder: string | undefined;
   defaultAgentType: string | undefined;
 } {
-  // Validate modelOverride against the parent's provider.
-  // If the LLM specified a model from a different provider, discard it and fall through
-  // to tier-based resolution (prevents cross-provider compound IDs like 'codex:opencode/model').
-  let validatedModelOverride = modelOverride;
-  if (validatedModelOverride && parentModel) {
-    const { providerId: parentProvider } = parseCompoundModelId(parentModel);
-    if (!isModelValidForProvider(validatedModelOverride, parentProvider)) {
-      logger.warn('Model override belongs to a different provider, discarding', {
-        modelOverride: validatedModelOverride,
-        parentProvider,
-      });
-      validatedModelOverride = undefined;
+  const defaultProviderId = getDefaultProviderId();
+  const inheritedProvider =
+    parentProvider ?? (parentModel ? parseCompoundModelId(parentModel).providerId : undefined);
+
+  const validateModelOverride = (
+    candidate: string | undefined,
+    targetProvider: string,
+  ): string | undefined => {
+    if (!candidate) {
+      return undefined;
     }
-  }
+    if (!isModelValidForProvider(candidate, targetProvider)) {
+      logger.warn('Model override belongs to a different provider, discarding', {
+        modelOverride: candidate,
+        targetProvider,
+      });
+      return undefined;
+    }
+    return candidate;
+  };
 
   // Resolve specialist ID - default to 'implementor' if not provided and defaultToImplementor is true
   const effectiveSpecialistId = specialistId || (defaultToImplementor ? 'implementor' : undefined);
 
   // If we have a specialist (explicit or defaulted), use centralized resolver as the base
   if (effectiveSpecialistId) {
-    // Extract provider from parent model to resolve specialist with correct provider's models
-    // This ensures that when a codex coordinator delegates, implementors get codex models
-    const parentProvider = parentModel ? parseCompoundModelId(parentModel).providerId : undefined;
-    const resolved = resolveSpecialistForAgent(effectiveSpecialistId, parentProvider);
+    const resolved = resolveSpecialistForAgent(effectiveSpecialistId, inheritedProvider);
     if (!resolved) {
       logger.warn('Unknown specialist ID, falling back to parent model', {
         specialistId: effectiveSpecialistId,
       });
+      const fallbackProvider = inheritedProvider || defaultProviderId;
+      const validatedModelOverride = validateModelOverride(modelOverride, fallbackProvider);
       // Use provider-aware fallback instead of hardcoded model
       let fallbackModel = validatedModelOverride || parentModel;
       if (!fallbackModel) {
-        const defaultProvider = getDefaultProviderId();
-        fallbackModel = getDefaultModelForProvider(defaultProvider, 'fast');
+        fallbackModel = getDefaultModelForProvider(fallbackProvider, 'fast');
       }
       return {
         model: fallbackModel,
+        provider: fallbackProvider,
         behaviorPrompt: behaviorPromptOverride,
         effectiveSpecialistId: undefined,
         specialistName: undefined,
@@ -377,6 +295,9 @@ function resolveSpecialistConfig(
         defaultAgentType: undefined,
       };
     }
+
+    const targetProvider = resolved.codingAgent || inheritedProvider || defaultProviderId;
+    const validatedModelOverride = validateModelOverride(modelOverride, targetProvider);
 
     // MCP-specific: Build the behavior prompt with auto-commit instructions
     // Always inject commit instructions — either auto-commit or no-auto-commit guidance
@@ -390,19 +311,23 @@ function resolveSpecialistConfig(
       }
     }
 
-    // MCP-specific: Resolve model for parent's provider using tier-based resolution.
-    // This ensures the specialist model is always valid for the parent's provider
-    // (e.g., codex coordinator gets codex models, not auggie models).
-    const specialistModelForProvider = resolveModelForProvider(
-      resolved.model,
-      resolved.modelTier,
-      parentModel,
-    );
-    const finalModel = validatedModelOverride || specialistModelForProvider;
+    let finalModel = validatedModelOverride || resolved.model;
+    if (!finalModel) {
+      if (resolved.modelTier && targetProvider in PROVIDER_MODEL_TIERS) {
+        finalModel = getDefaultModelForProvider(targetProvider, resolved.modelTier);
+      } else if (targetProvider !== defaultProviderId) {
+        // Dynamic-model providers (for example opencode) should choose their own default
+        // model instead of receiving an invalid fallback from the default provider.
+        finalModel = 'default';
+      } else {
+        finalModel = getDefaultModelForProvider(targetProvider, 'fast');
+      }
+    }
 
     logger.debug('Resolved specialist configuration', {
       specialistId: effectiveSpecialistId,
       wasExplicit: !!specialistId,
+      targetProvider,
       specialistModel: resolved.model,
       modelTier: resolved.modelTier,
       parentModel,
@@ -414,6 +339,7 @@ function resolveSpecialistConfig(
 
     return {
       model: finalModel,
+      provider: targetProvider,
       behaviorPrompt,
       effectiveSpecialistId,
       specialistName: resolved.specialistName,
@@ -423,17 +349,19 @@ function resolveSpecialistConfig(
   }
 
   // No specialist and not defaulting - use manual model/behaviorPrompt or inherit from parent
+  const fallbackProvider = inheritedProvider || defaultProviderId;
+  const validatedModelOverride = validateModelOverride(modelOverride, fallbackProvider);
   let fallbackModel = validatedModelOverride || parentModel;
   if (!fallbackModel) {
-    const defaultProvider = getDefaultProviderId();
-    fallbackModel = getDefaultModelForProvider(defaultProvider, 'fast');
+    fallbackModel = getDefaultModelForProvider(fallbackProvider, 'fast');
     logger.debug('Using provider-aware fallback model (no specialist, no parent)', {
       fallbackModel,
-      defaultProvider,
+      defaultProvider: fallbackProvider,
     });
   }
   return {
     model: fallbackModel,
+    provider: fallbackProvider,
     behaviorPrompt: behaviorPromptOverride,
     effectiveSpecialistId: undefined,
     specialistName: undefined,
@@ -549,6 +477,7 @@ This allows you to create multiple agents in parallel and be notified as each fi
         model,
         behaviorPrompt,
         ctx.model,
+        ctx.provider,
         true, // defaultToImplementor
         autoCommitEnabled,
       );
@@ -625,13 +554,10 @@ This allows you to create multiple agents in parallel and be notified as each fi
       // Pre-register subscription via onBeforeStart to prevent the race condition
       // where a fast-completing child agent emits agent:idle before the parent subscribes.
       let subscriptionId = '';
-      // Extract parent provider so child agents inherit the correct provider
-      const parentProvider = ctx.model ? parseCompoundModelId(ctx.model).providerId : undefined;
-
       const agent = await handler.createAgent(this.workspaceId, agentName, {
         workspacePath: this.workspacePath,
         model: config.model,
-        provider: ctx.provider, // Inherit ACP provider from parent agent
+        provider: config.provider,
         initialMessage: enhancedInitialMessage,
         agentType: config.defaultAgentType || 'task-loop',
         behaviorPrompt: config.behaviorPrompt,
@@ -899,6 +825,7 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
         model,
         behaviorPrompt,
         ctx.model,
+        ctx.provider,
         true, // defaultToImplementor
         autoCommitEnabled,
       );
@@ -945,6 +872,7 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
           taskTitle,
           initialMessage,
           config.model,
+          config.provider,
           waitMode,
           protocolAdapter,
           parentDepth,
@@ -1209,16 +1137,13 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
       // where a fast-completing child agent emits agent:idle before the parent subscribes.
       let subscriptionId = '';
       let groupId: string | undefined;
-      // Extract parent provider so child agents inherit the correct provider
-      const parentProvider = ctx.model ? parseCompoundModelId(ctx.model).providerId : undefined;
-
       const agent = await handler.createAgent(
         this.workspaceId,
         agentName, // Use truncated task text as agent name
         {
           workspacePath: this.workspacePath,
           model: config.model,
-          provider: ctx.provider, // Inherit ACP provider from parent agent
+          provider: config.provider,
           initialMessage: enhancedInitialMessage,
           agentType: config.defaultAgentType || 'task-loop',
           behaviorPrompt: config.behaviorPrompt,
@@ -1360,6 +1285,7 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
     taskTitle: string,
     initialMessage: string,
     model: string | undefined,
+    provider: string | undefined,
     waitMode: 'immediate' | 'after_all',
     protocolAdapter: any,
     parentDepth: number,
@@ -1390,13 +1316,11 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
     // where a fast-completing child agent emits agent:idle before the parent subscribes.
     let subscriptionId = '';
     let groupId: string | undefined;
-    // Extract provider from the model so child agents inherit the correct provider
-    const inferredProvider = model ? parseCompoundModelId(model).providerId : undefined;
 
     const agent = await handler.createAgent(this.workspaceId, agentName, {
       workspacePath: this.workspacePath,
       model,
-      provider: ctx.provider, // Inherit ACP provider from parent agent
+      provider: provider || ctx.provider,
       initialMessage: enhancedInitialMessage,
       agentType: defaultAgentType || 'task-loop',
       behaviorPrompt,
@@ -2362,10 +2286,13 @@ an agent is working on the task.`,
         ? resolveSpecialistForAgent(previousSpecialist, parentProvider)
         : null;
 
+      const wakeProvider = previousSpecialistConfig?.codingAgent || ctx.provider;
+      const wakeModel = model || previousSpecialistConfig?.model;
+
       const newAgent = await handler.createAgent(this.workspaceId, agentName, {
         workspacePath: this.workspacePath,
-        model,
-        provider: ctx.provider, // Inherit ACP provider from parent agent
+        model: wakeModel,
+        provider: wakeProvider,
         initialMessage: contextMessage,
         agentType: previousSpecialistConfig?.defaultAgentType || 'task-loop',
         contextReferences: [

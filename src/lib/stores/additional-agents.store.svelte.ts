@@ -7,6 +7,7 @@
  */
 
 import { createLogger } from '$lib/utils/client-logger';
+import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
 import { getAlwaysEnabledProviders, getProviderConfig } from '$shared/config/provider-config';
 
 const logger = createLogger('AdditionalAgentsStore');
@@ -54,6 +55,30 @@ function saveSettings(settings: AdditionalAgentsSettings) {
   }
 }
 
+export function canDisableProvider(providerId: string, activeProviderId: string): boolean {
+  const config = getProviderConfig(providerId);
+  return config.canBeDisabled !== false && providerId !== activeProviderId;
+}
+
+export function getEffectivelyEnabledProviderIds(
+  enabledProviders: Record<string, boolean>,
+  activeProviderId: string,
+): string[] {
+  const enabled = getAlwaysEnabledProviders().map((provider) => provider.id);
+
+  if (!enabled.includes(activeProviderId)) {
+    enabled.push(activeProviderId);
+  }
+
+  for (const [providerId, isEnabled] of Object.entries(enabledProviders)) {
+    if (isEnabled && !enabled.includes(providerId)) {
+      enabled.push(providerId);
+    }
+  }
+
+  return enabled;
+}
+
 class AdditionalAgentsStore {
   // State - which providers are enabled
   enabledProviders = $state<Record<string, boolean>>(DEFAULT_SETTINGS.enabledProviders);
@@ -61,6 +86,7 @@ class AdditionalAgentsStore {
   constructor() {
     const settings = loadSettings();
     this.enabledProviders = settings.enabledProviders;
+    this.ensureProviderEnabled(activeProviderStore.activeProviderId);
   }
 
   /**
@@ -76,17 +102,27 @@ class AdditionalAgentsStore {
    * Providers with canBeDisabled=false are always considered enabled
    */
   isProviderEnabled(providerId: string): boolean {
-    if (!this.canProviderBeDisabled(providerId)) return true;
-    return this.enabledProviders[providerId] ?? false;
+    return getEffectivelyEnabledProviderIds(
+      this.enabledProviders,
+      activeProviderStore.activeProviderId,
+    ).includes(providerId);
   }
 
   /**
    * Enable or disable a provider
    */
   setProviderEnabled(providerId: string, enabled: boolean) {
-    if (!this.canProviderBeDisabled(providerId)) {
+    if (enabled) {
+      this.ensureProviderEnabled(providerId);
+      return;
+    }
+
+    if (!canDisableProvider(providerId, activeProviderStore.activeProviderId)) {
       const config = getProviderConfig(providerId);
-      logger.warn(`Cannot disable the ${config.displayName} provider`);
+      logger.warn(`Cannot disable the ${config.displayName} provider`, {
+        providerId,
+        activeProviderId: activeProviderStore.activeProviderId,
+      });
       return;
     }
 
@@ -110,16 +146,7 @@ class AdditionalAgentsStore {
    * Get list of all enabled provider IDs (always includes providers with canBeDisabled=false)
    */
   getEnabledProviderIds(): string[] {
-    // Start with always-enabled providers
-    const enabled = getAlwaysEnabledProviders().map((p) => p.id);
-
-    // Add explicitly enabled providers
-    for (const [providerId, isEnabled] of Object.entries(this.enabledProviders)) {
-      if (isEnabled && !enabled.includes(providerId)) {
-        enabled.push(providerId);
-      }
-    }
-    return enabled;
+    return getEffectivelyEnabledProviderIds(this.enabledProviders, activeProviderStore.activeProviderId);
   }
 
   /**
@@ -136,6 +163,17 @@ class AdditionalAgentsStore {
       saveSettings({ enabledProviders: this.enabledProviders });
       logger.info('Auto-enabled provider after detecting available models', { providerId });
     }
+  }
+
+  ensureProviderEnabled(providerId: string) {
+    if (!this.canProviderBeDisabled(providerId) || this.enabledProviders[providerId] === true) return;
+
+    this.enabledProviders = {
+      ...this.enabledProviders,
+      [providerId]: true,
+    };
+    saveSettings({ enabledProviders: this.enabledProviders });
+    logger.info('Enabled provider', { providerId });
   }
 }
 

@@ -2206,6 +2206,7 @@ export const SpecialistWriteSchema = z.object({
   id: z.string().min(1, 'Specialist ID is required'),
   name: z.string().min(1, 'Specialist name is required'),
   description: z.string().min(1, 'Description is required'),
+  codingAgent: z.string().optional(),
   model: z.string().optional(),
   modelTier: z.enum(['fast', 'balanced', 'smart']).optional(),
   roleReminder: z.string().optional(),

@@ -3794,6 +3794,7 @@
     // Get specialist configuration if provided
     const existingNames = agents.map((a: AgentSession) => a.name).filter(Boolean) as string[];
     let model = modelStore.getWorkspaceDefaultModel(safeWorkspace.id);
+    let provider = activeProviderStore.activeProviderId;
     let behaviorPrompt: string | undefined;
     let specialistBaseName = 'Agent';
 
@@ -3801,11 +3802,13 @@
       const specialist = specialistsStore.specialists.find((s) => s.id === specialistId);
       if (specialist) {
         specialistBaseName = specialist.name;
+        provider = specialistsStore.getEffectiveCodingAgent(specialistId);
         model = specialistsStore.getEffectiveModel(specialistId);
         behaviorPrompt = specialistsStore.getEffectiveBehaviorPrompt(specialistId);
         logger.info('[WorkspacePage] Creating agent with specialist config', {
           specialistId,
           specialistBaseName,
+          provider,
           model,
           behaviorPromptLength: behaviorPrompt?.length || 0,
           behaviorPromptPreview: behaviorPrompt?.substring(0, 100),
@@ -3819,7 +3822,7 @@
       name: agentName,
       workspaceId: WorkspaceId(safeWorkspace.id),
       model,
-      provider: activeProviderStore.activeProviderId,
+      provider,
       agentType: createAgentTypeId('chat'),
       behaviorPrompt,
       source: 'specialist-picker',

@@ -5,7 +5,9 @@
  * Ensures specialists are correctly configured with models and behavior prompts.
  */
 
-import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import { describe, it, expect, beforeEach, beforeAll, afterAll, vi } from 'vitest';
 import {
   SPECIALISTS,
   getSpecialistById,
@@ -23,21 +25,35 @@ import {
   getModelTierFromModel,
   getDefaultProviderId,
 } from '../../src/shared/config/provider-config';
+import { writeSpecialistFile } from '../../src/features/specialists/main/specialist-file-loader';
+import {
+  initSpecialistsService,
+  refreshSpecialistsFromFiles,
+  resolveSpecialistForAgent,
+} from '../../src/features/agent/main/specialists.service';
+
+const { mockSettingsData } = vi.hoisted(() => ({
+  mockSettingsData: {} as Record<string, unknown>,
+}));
+
+const TEST_HOME = '/tmp/augment-specialist-config-test';
+let originalHome: string | undefined;
 
 // Mock electron-store for getEffectiveSpecialist
 vi.mock('electron-store', () => ({
   default: class MockStore {
-    private data: Record<string, unknown> = {};
     get(key: string) {
-      return this.data[key];
+      return mockSettingsData[key];
     }
     set(key: string, value: unknown) {
-      this.data[key] = value;
+      mockSettingsData[key] = value;
+    }
+    delete(key: string) {
+      delete mockSettingsData[key];
     }
   },
 }));
 
-// Mock electron app for file paths
 vi.mock('electron', () => ({
   app: {
     getPath: () => '/tmp/test-augment',
@@ -52,8 +68,15 @@ vi.mock('../../src/features/github-auth/main/github-auth.service', () => ({
     isAuthenticated: (...args: unknown[]) => mockIsAuthenticated(...args),
   },
 }));
-
 describe('Specialist Configuration', () => {
+  beforeAll(async () => {
+    originalHome = process.env.HOME;
+    process.env.HOME = TEST_HOME;
+    await fs.rm(TEST_HOME, { recursive: true, force: true });
+    await initSpecialistsService();
+    await refreshSpecialistsFromFiles();
+  });
+
   describe('getSpecialistById', () => {
     it('should return spec-writer specialist', () => {
       const specialist = getSpecialistById('spec-writer');
@@ -80,6 +103,21 @@ describe('Specialist Configuration', () => {
       const specialist = getSpecialistById('unknown');
       expect(specialist).toBeUndefined();
     });
+  });
+
+  beforeEach(async () => {
+    Object.keys(mockSettingsData).forEach((key) => delete mockSettingsData[key]);
+    await fs.rm(path.join(TEST_HOME, '.augment'), { recursive: true, force: true });
+    await refreshSpecialistsFromFiles();
+  });
+
+  afterAll(async () => {
+    await fs.rm(TEST_HOME, { recursive: true, force: true });
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
   });
 
   describe('Specialist Model Assignments', () => {
@@ -339,6 +377,109 @@ describe('Specialist Configuration', () => {
       const result = resolveSpecialistForAgent('implementor');
       expect(result).not.toBeNull();
       expect(result!.specialistId).toBe('implementor');
+    });
+  });
+
+  describe('resolveSpecialistForAgent coding agent resolution', () => {
+    it('falls back to the caller coding agent for built-in specialists without an explicit codingAgent', () => {
+      const resolved = resolveSpecialistForAgent('implementor', 'codex');
+
+      expect(resolved).not.toBeNull();
+      expect(resolved?.codingAgent).toBe('codex');
+      expect(resolved?.modelTier).toBe('smart');
+      expect(resolved?.model).toBe(getDefaultModelForProvider('codex', 'smart'));
+    });
+
+    it('uses an explicit file specialist codingAgent when present', async () => {
+      await writeSpecialistFile({
+        id: 'file-specialist',
+        name: 'File Specialist',
+        description: 'File-backed specialist',
+        codingAgent: 'codex',
+        modelTier: 'fast',
+        behaviorPrompt: 'Focus on file-backed work.',
+      });
+      await refreshSpecialistsFromFiles();
+
+      const resolved = resolveSpecialistForAgent('file-specialist', 'auggie');
+
+      expect(resolved).not.toBeNull();
+      expect(resolved?.codingAgent).toBe('codex');
+      expect(resolved?.modelTier).toBe('fast');
+      expect(resolved?.model).toBe(getDefaultModelForProvider('codex', 'fast'));
+    });
+
+    it('falls back legacy custom specialists without codingAgent to the caller coding agent', () => {
+      mockSettingsData['custom-specialists'] = [
+        {
+          id: 'legacy-custom',
+          name: 'Legacy Custom',
+          description: 'Legacy specialist from settings',
+          model: 'sonnet4.5',
+          behaviorPrompt: 'Legacy custom prompt',
+        },
+      ];
+
+      const resolved = resolveSpecialistForAgent('legacy-custom', 'codex');
+
+      expect(resolved).not.toBeNull();
+      expect(resolved?.codingAgent).toBe('codex');
+      expect(resolved?.model).toBe('sonnet4.5');
+      expect(resolved?.modelTier).toBe('balanced');
+    });
+
+    it('falls back legacy custom specialists without codingAgent to the global default provider when no caller provider is supplied', () => {
+      const defaultProvider = getDefaultProviderId();
+      const defaultBalancedModel = getDefaultModelForProvider(defaultProvider, 'balanced');
+
+      mockSettingsData['custom-specialists'] = [
+        {
+          id: 'legacy-default-provider-custom',
+          name: 'Legacy Default Provider Custom',
+          description: 'Legacy specialist that should inherit the global default provider',
+          model: defaultBalancedModel,
+          behaviorPrompt: 'Legacy custom prompt',
+        },
+      ];
+
+      const resolved = resolveSpecialistForAgent('legacy-default-provider-custom');
+
+      expect(resolved).not.toBeNull();
+      expect(resolved?.codingAgent).toBe(defaultProvider);
+      expect(resolved?.model).toBe(defaultBalancedModel);
+      expect(resolved?.modelTier).toBe('balanced');
+    });
+
+    it('applies codingAgent overrides from settings and re-resolves tier-based models', () => {
+      mockSettingsData['specialists-overrides'] = {
+        codingAgentOverrides: {
+          implementor: 'codex',
+        },
+      };
+
+      const resolved = resolveSpecialistForAgent('implementor', 'auggie');
+
+      expect(resolved).not.toBeNull();
+      expect(resolved?.codingAgent).toBe('codex');
+      expect(resolved?.modelTier).toBe('smart');
+      expect(resolved?.model).toBe(getDefaultModelForProvider('codex', 'smart'));
+    });
+
+    it('applies codingAgent and model overrides together from settings', () => {
+      mockSettingsData['specialists-overrides'] = {
+        codingAgentOverrides: {
+          verifier: 'codex',
+        },
+        modelOverrides: {
+          verifier: 'codex:gpt-5-codex',
+        },
+      };
+
+      const resolved = resolveSpecialistForAgent('verifier', 'auggie');
+
+      expect(resolved).not.toBeNull();
+      expect(resolved?.codingAgent).toBe('codex');
+      expect(resolved?.model).toBe('codex:gpt-5-codex');
     });
   });
 });

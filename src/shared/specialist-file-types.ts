@@ -48,6 +48,11 @@ export interface SpecialistFileFrontmatter {
   /** Short description shown in UI (required) */
   description: string;
   /**
+   * ACP provider / runtime backend for this specialist (optional).
+   * If omitted, callers should fall back to the global default coding agent.
+   */
+  codingAgent?: string;
+  /**
    * Default model ID, e.g., "opus4.5", "sonnet4.5" (optional)
    * If modelTier is also specified, modelTier takes precedence for provider-aware resolution.
    */
@@ -104,6 +109,8 @@ export interface UnifiedSpecialist {
   name: string;
   /** Short description */
   description: string;
+  /** ACP provider / runtime backend, if explicitly configured */
+  codingAgent?: string;
   /** Default model ID */
   defaultModel: string;
   /** Behavior prompt / system instructions */

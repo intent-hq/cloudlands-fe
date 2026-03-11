@@ -115,15 +115,15 @@
   import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
   import AuroraBackground from './AuroraBackground.svelte';
   import { invoke, listenSync } from '$lib/electron-bridge';
-  import { specialistsStore } from '$lib/stores/specialists.store.svelte';
   import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
-  import { modelStore } from '$lib/stores/model.store.svelte';
+  import { specialistsStore } from '$lib/stores/specialists.store.svelte';
+  import { additionalAgentsStore } from '$lib/stores/additional-agents.store.svelte';
+  import { resolveUsableProviderIds } from '$lib/utils/provider-model-selection';
+  import { resolveProviderOverlayState } from './provider-overlay';
+  import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
+  import { resolveHydratedInputModel } from './input-hydration';
   import { getAgentProvider } from '$shared/types/agent-session';
-  import {
-    getDefaultProviderId,
-    getProviderConfig,
-    parseCompoundModelId,
-  } from '$shared/config/provider-config';
+  import { getProviderConfig } from '$shared/config/provider-config';
   import { cleanErrorMessage } from '$shared/errors/messages';
 
   const logger = createLogger('ChatPanel');
@@ -277,41 +277,42 @@
   );
 
   let hiddenProviders = $state<string[]>([]);
+  let unusableProviders = $state<string[]>([]);
+  let providerUsabilityRequestId = 0;
 
-  // Provider mismatch detection — blocks interaction when agent's provider ≠ active provider
-  // Compares resolved/canonical provider IDs to handle aliases (e.g., 'acp' → 'auggie')
-  let isProviderMismatch = $derived.by(() => {
-    if (sandboxMode) return false;
-    const session = chatState.session;
-    if (!session) return false;
-    const agentProvider = getAgentProvider(session);
-    if (!agentProvider) return false; // Legacy agents without provider — allow interaction
-    // Normalize both provider IDs through getProviderConfig to resolve aliases
-    // (e.g., 'acp' and 'auggie' both resolve to the 'auggie' config)
-    const resolvedAgentProvider = getProviderConfig(agentProvider).id;
-    const resolvedActiveProvider = getProviderConfig(activeProviderStore.activeProviderId).id;
-    return resolvedAgentProvider !== resolvedActiveProvider;
-  });
-
-  let matchedProviders = $derived.by(() => {
-    if (!isProviderMismatch) return null;
+  // Resolve canonical agent provider from session state.
+  let agentProviderDetails = $derived.by(() => {
+    if (sandboxMode) return null;
     const session = chatState.session;
     if (!session) return null;
     const agentProvider = getAgentProvider(session);
     if (!agentProvider) return null;
     const agentProviderConfig = getProviderConfig(agentProvider);
-    const activeProviderName = getProviderConfig(activeProviderStore.activeProviderId).displayName;
     return {
-      agentProviderName: agentProviderConfig.displayName,
-      agentProviderId: agentProviderConfig.id,
-      activeProviderName,
+      id: agentProviderConfig.id,
+      name: agentProviderConfig.displayName,
     };
   });
 
-  // Whether the agent's provider is hidden (env var gate) — used to hide "switch back" button
-  let isAgentProviderHidden = $derived.by(() => {
-    if (!isProviderMismatch || !matchedProviders) return false;
-    return hiddenProviders.includes(matchedProviders.agentProviderId);
+  // Resolve whether the bound provider is currently usable by trying to load its models.
+  $effect(() => {
+    const providerId = agentProviderDetails?.id;
+    if (!providerId) {
+      unusableProviders = [];
+      return;
+    }
+
+    const requestId = ++providerUsabilityRequestId;
+    void resolveUsableProviderIds([providerId])
+      .then((usableProviderIds) => {
+        if (requestId !== providerUsabilityRequestId) return;
+        unusableProviders = usableProviderIds.includes(providerId) ? [] : [providerId];
+      })
+      .catch(() => {
+        if (requestId !== providerUsabilityRequestId) return;
+        // Keep chat accessible on transient availability lookup failures.
+        unusableProviders = [];
+      });
   });
 
   // Provider display name for contextual status messages (e.g. "Claude Code is taking longer than usual...")
@@ -328,6 +329,28 @@
     // Fallback to active provider if no session/provider info available
     return getProviderConfig(activeProviderStore.activeProviderId).displayName;
   });
+
+  let isAgentProviderHidden = $derived.by(() => {
+    if (!agentProviderDetails) return false;
+    return hiddenProviders.includes(agentProviderDetails.id);
+  });
+  let disabledProviderIds = $derived.by(() => {
+    if (!agentProviderDetails) return [];
+    return additionalAgentsStore.isProviderEnabled(agentProviderDetails.id)
+      ? []
+      : [agentProviderDetails.id];
+  });
+  let isAgentProviderDisabled = $derived.by(() => {
+    if (!agentProviderDetails) return false;
+    return disabledProviderIds.includes(agentProviderDetails.id);
+  });
+  let isAgentProviderUnavailable = $derived.by(() => {
+    if (!agentProviderDetails) return false;
+    return unusableProviders.includes(agentProviderDetails.id);
+  });
+  let hydratedInputModel = $derived.by(() =>
+    resolveHydratedInputModel(chatState.session, agentModel),
+  );
 
   // Track previous workspace to detect changes
   let previousWorkspaceId = $state<string | null>(null);
@@ -1132,6 +1155,24 @@
         } as import('$features/agent/agent.service').AgentMessage)
       : null,
   );
+  let canChangeAgentProvider = $derived.by(() =>
+    resolveCanChangeAgentProvider({
+      session: chatState.session,
+      messages: chatState.messages,
+      pendingInitialPrompt,
+      pendingContextReferenceCount: pendingInitialData.contextReferences?.length || 0,
+    }),
+  );
+  let providerOverlayState = $derived.by(() =>
+    resolveProviderOverlayState({
+      agentProviderId: agentProviderDetails?.id,
+      hiddenProviderIds: hiddenProviders,
+      disabledProviderIds,
+      unusableProviderIds: unusableProviders,
+      canChangeAgentProvider,
+    }),
+  );
+  let showProviderMismatchOverlay = $derived(providerOverlayState.show);
 
   // Note: pendingInitialPrompt is cleared in sendInitialMessage() after the message is sent
   // We don't need a reactive effect here as it can cause infinite loops
@@ -4078,13 +4119,13 @@
       </div>
     {/if}
 
-    {#if isProviderMismatch && matchedProviders}
+    {#if showProviderMismatchOverlay && agentProviderDetails}
       <div
         class="absolute z-50 w-4/5 inset-x-0 mx-auto top-1/2 -translate-y-1/2 px-3 py-2.5 text-sm text-subtle bg-muted/50 border border-border rounded-lg flex items-center justify-between gap-2"
       >
         <p class="text-balance">
           {#if isAgentProviderHidden}
-            <span class="text-foreground">{matchedProviders.agentProviderName}</span> is no longer
+            <span class="text-foreground">{agentProviderDetails.name}</span> is no longer
             available.
             <button
               class="underline cursor-pointer"
@@ -4095,12 +4136,14 @@
                   }),
                 )}>Create a new agent</button
             > to continue.
-          {:else}
-            This agent was started with <span class="text-foreground"
-              >{matchedProviders.agentProviderName}</span
-            >.
+          {:else if isAgentProviderDisabled}
+            <span class="text-foreground">{agentProviderDetails.name}</span> has been disabled in
+            Model Providers.
             <br />
-            To use <span class="text-foreground">{matchedProviders.activeProviderName}</span>,
+            <button
+              class="underline cursor-pointer"
+              onclick={() => navigateToSettings({ hash: 'providers' })}>Re-enable it in settings</button
+            > or
             <button
               class="underline cursor-pointer"
               onclick={() =>
@@ -4109,15 +4152,22 @@
                     detail: { agentType: chatState.session?.metadata?.agentType },
                   }),
                 )}>create a new agent</button
-            >
-            or
+            > to continue.
+          {:else if isAgentProviderUnavailable}
+            <span class="text-foreground">{agentProviderDetails.name}</span> is currently
+            unavailable.
+            <br />
+            Provider changes lock after the first prompt.
+            <br />
             <button
               class="underline cursor-pointer"
-              onclick={async () => {
-                activeProviderStore.setActiveProvider(matchedProviders.agentProviderId);
-                await modelStore.reloadModelsForProvider();
-              }}>switch back</button
-            > <span class="text-xs opacity-60 italic whitespace-nowrap">(applies globally).</span>
+              onclick={() =>
+                window.dispatchEvent(
+                  new CustomEvent('app:new-agent', {
+                    detail: { agentType: chatState.session?.metadata?.agentType },
+                  }),
+                )}>Create a new agent</button
+            > to continue.
           {/if}
         </p>
       </div>
@@ -4132,14 +4182,16 @@
       onstop={handleStop}
       onHistoryPrev={handleHistoryPrev}
       onHistoryNext={handleHistoryNext}
-      disabled={!workspace || !chatState.session || isProviderMismatch}
+      disabled={!workspace || !chatState.session || showProviderMismatchOverlay}
       isStreaming={chatState.isStreaming}
       {workspace}
       currentContext={currentMainPanelContext}
       {agentId}
-      selectedModel={agentModel}
+      selectedModel={hydratedInputModel}
+      providerId={agentProviderDetails?.id || (chatState.session ? getAgentProvider(chatState.session) : undefined)}
+      isProviderChangeLocked={!canChangeAgentProvider}
       compactMode={isCompactMode}
-      providerMismatch={isProviderMismatch}
+      providerMismatch={showProviderMismatchOverlay}
     />
   </div>
 </div>

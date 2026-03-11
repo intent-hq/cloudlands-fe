@@ -2,15 +2,20 @@
   import { onMount, tick } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { createLogger } from '$lib/utils/client-logger';
+  import { agentClient } from '$features/agent/agent.client';
+  import { sessionStore } from '$features/agent/browser';
 
   import type { Workspace } from '$shared/types';
-  import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
+  import { getDefaultProviderId, getProviderConfig } from '$shared/config/provider-config';
   import { invoke } from '$lib/electron-bridge';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
   import { unifiedStateStore } from '$features/agent/services/unified-state-store';
+  import { additionalAgentsStore } from '$lib/stores/additional-agents.store.svelte';
+  import { getAgentProvider } from '$shared/types/agent-session';
   import Fa from 'svelte-fa';
   import {
+    faChevronDown,
     faMagicWandSparkles,
     faPaperclip,
     faPaperPlane,
@@ -18,15 +23,24 @@
     faXmark,
     faLayerGroup,
     faStop,
+    faLock,
   } from '@fortawesome/free-solid-svg-icons';
   import Button from '../../ui/button/button.svelte';
   import TipTapEditor from './TipTapEditor.svelte';
   import ModelPicker from './ModelPicker.svelte';
+  import { Dropdown } from '$lib/components/ui/dropdown';
   import Header from '$lib/components/ui/Header.svelte';
   import AttachmentPreview from '../AttachmentPreview.svelte';
   import ContextChip from '../ContextChip.svelte';
   import ContextPickerButton from './ContextPickerButton.svelte';
   import { multiPanelContextStore } from '$lib/stores/multi-panel-context.store.svelte';
+  import {
+    buildProviderDropdownOptions,
+    getSelectableProviderIds,
+    resolveCompatibleModelForProvider,
+    resolveUsableProviderIds,
+    shouldShowChatProviderControl,
+  } from '$lib/utils/provider-model-selection';
   import { slide } from 'svelte/transition';
 
   const logger = createLogger('SimpleRichInput');
@@ -60,6 +74,8 @@
     /** Whether to use compact mode (shorter height for short panels) */
     compactMode?: boolean;
     providerMismatch?: boolean;
+    providerId?: string;
+    isProviderChangeLocked?: boolean;
     onsubmit?: (value: string) => void;
     onforcesubmit?: (value: string) => void; // Interrupt streaming and send immediately
     onenhance?: () => void | Promise<void>;
@@ -98,6 +114,8 @@
     panelFocused: _panelFocused = true, // Reserved for future use
     compactMode: _compactMode = false, // Reserved for future use
     providerMismatch = false,
+    providerId: propProviderId,
+    isProviderChangeLocked = false,
     onsubmit,
     onforcesubmit,
     onenhance,
@@ -304,17 +322,17 @@
   let isAutoExpand = $derived(containerHeight === null);
 
   // Model selection
-  let selectedModel = $state(propSelectedModel || DEFAULT_AGENT_MODEL);
+  let selectedModel = $state<string | undefined>(propSelectedModel);
 
   // Track the last notified model to prevent infinite loops
-  let lastNotifiedModel = propSelectedModel || DEFAULT_AGENT_MODEL;
+  let lastNotifiedModel: string | undefined = propSelectedModel;
 
   // Track if user has made a local change that should take precedence over props
   let userChangedModel = $state(false);
 
   // Update internal model when prop changes (but only if user hasn't made a local change)
   $effect(() => {
-    if (propSelectedModel && propSelectedModel !== selectedModel && !userChangedModel) {
+    if (propSelectedModel !== selectedModel && !userChangedModel) {
       selectedModel = propSelectedModel;
       lastNotifiedModel = propSelectedModel;
     }
@@ -332,6 +350,148 @@
       onmodelChange(selectedModel);
     }
   });
+
+  const hydratedPropProviderId = $derived.by(() => {
+    if (propProviderId) {
+      return getProviderConfig(propProviderId).id;
+    }
+
+    if (!agentId) {
+      return getProviderConfig(getDefaultProviderId()).id;
+    }
+
+    const session = sessionStore.getSession(agentId);
+    const provider = session ? getAgentProvider(session) : undefined;
+    return provider ? getProviderConfig(provider).id : undefined;
+  });
+  let localProviderId = $state<string | undefined>(undefined);
+
+  $effect(() => {
+    if (localProviderId && hydratedPropProviderId === localProviderId) {
+      localProviderId = undefined;
+    }
+  });
+
+  const selectedProviderId = $derived.by(() => {
+    return localProviderId || hydratedPropProviderId;
+  });
+  const providerChangeLocked = $derived(isProviderChangeLocked);
+  const effectiveModelLocked = $derived(isModelLocked || providerChangeLocked);
+  const providerAndModelLockedTitle = 'Start a new agent to change provider or model.';
+  const modelLockedTitle = $derived.by(() => {
+    if (!providerChangeLocked) {
+      return undefined;
+    }
+
+    return providerAndModelLockedTitle;
+  });
+  const enabledProviderIds = $derived(additionalAgentsStore.getEnabledProviderIds());
+  let usableProviderIds = $state<string[]>([]);
+  let usableProviderRequestId = 0;
+
+  $effect(() => {
+    const providerIds = enabledProviderIds;
+    const requestId = ++usableProviderRequestId;
+
+    void resolveUsableProviderIds(providerIds).then((nextUsableProviderIds) => {
+      if (requestId === usableProviderRequestId) {
+        usableProviderIds = nextUsableProviderIds;
+      }
+    });
+  });
+
+  const selectableProviderIds = $derived.by(() => {
+    return getSelectableProviderIds({
+      enabledProviderIds,
+      usableProviderIds,
+      selectedProviderId,
+    });
+  });
+  const providerOptions = $derived.by(() => {
+    return buildProviderDropdownOptions(selectableProviderIds);
+  });
+  const showProviderControl = $derived.by(() => {
+    if (!agentId) {
+      return false;
+    }
+
+    return shouldShowChatProviderControl({
+      defaultProviderId: getDefaultProviderId(),
+      selectableProviderIds,
+      selectedProviderId,
+    });
+  });
+  const selectedProviderLabel = $derived(
+    selectedProviderId ? getProviderConfig(selectedProviderId).displayName : '',
+  );
+  let isChangingProvider = $state(false);
+
+  async function handleProviderChange(newProvider: string) {
+    if (
+      !agentId ||
+      !workspace?.id ||
+      !newProvider ||
+      newProvider === selectedProviderId ||
+      providerChangeLocked
+    ) {
+      return;
+    }
+
+    const previousSession = agentId ? sessionStore.getSession(agentId) : undefined;
+    const previousProvider = selectedProviderId;
+    const previousModel = selectedModel;
+    const nextModel = await resolveCompatibleModelForProvider(newProvider, {
+      currentModel: selectedModel,
+    });
+
+    if (!nextModel) {
+      toast.error(`No models available for ${getProviderConfig(newProvider).displayName}.`);
+      return;
+    }
+
+    isChangingProvider = true;
+    localProviderId = newProvider;
+    userChangedModel = true;
+    selectedModel = nextModel;
+    lastNotifiedModel = nextModel;
+
+    sessionStore.updateSession(agentId, {
+      provider: newProvider,
+      model: nextModel,
+      metadata: {
+        ...(previousSession?.metadata || {}),
+        provider: newProvider,
+      },
+    });
+
+    try {
+      const result = await agentClient.setModel(agentId, nextModel, workspace.id);
+      if (!result.ok || !result.data.success) {
+        throw new Error(result.ok ? result.data.error : result.error);
+      }
+
+      onmodelChange?.(nextModel);
+    } catch (error) {
+      logger.error('Failed to switch agent provider', { error, agentId, newProvider });
+      localProviderId = previousProvider === hydratedPropProviderId ? undefined : previousProvider;
+      selectedModel = previousModel;
+      lastNotifiedModel = previousModel;
+      userChangedModel = false;
+      sessionStore.updateSession(agentId, {
+        provider: previousProvider,
+        model: previousModel,
+        metadata: {
+          ...(previousSession?.metadata || {}),
+          provider: previousProvider,
+        },
+      });
+      toast.error(
+        error instanceof Error ? error.message : `Failed to switch to ${newProvider}.`,
+      );
+    } finally {
+      isChangingProvider = false;
+    }
+  }
 
   function removeContextItem(id: string) {
     contextItems = contextItems.filter((item) => item.id !== id);
@@ -871,13 +1031,52 @@
     class="action-bar flex items-end justify-between px-1 pt-0 pb-0.5 opacity-0 pointer-events-none group-[.focused]/panel:opacity-100 group-[.focused]/panel:pointer-events-auto transition-opacity duration-150"
   >
     <div class="flex items-end gap-1 min-w-0 mb-0.5">
+      {#if showProviderControl}
+        {#if providerChangeLocked}
+          <Button
+            variant="ghost-light"
+            size="xs"
+            disabled
+            title={providerAndModelLockedTitle}
+            tooltip={providerAndModelLockedTitle}
+            class="gap-1 max-w-[11rem]"
+          >
+            <Fa icon={faLock} class="w-3 h-3 shrink-0" />
+            <span class="truncate">{selectedProviderLabel}</span>
+          </Button>
+        {:else}
+          <Dropdown
+            value={selectedProviderId}
+            options={providerOptions}
+            onchange={(value) => void handleProviderChange(value as string)}
+            searchable={false}
+            variant="ghost"
+            size="xs"
+            class="max-w-[11rem]"
+            triggerClass="max-w-full"
+            contentClass="min-w-[180px]"
+            portal
+          >
+            {#snippet trigger()}
+              <span class="inline-flex items-center gap-1 truncate min-w-0" title={selectedProviderLabel}>
+                <span class="truncate">{selectedProviderLabel}</span>
+              </span>
+              <Fa icon={faChevronDown} class="h-2 w-2 opacity-50 shrink-0" />
+            {/snippet}
+          </Dropdown>
+        {/if}
+      {/if}
+
       <ModelPicker
         bind:this={modelPickerRef}
         bind:selectedModel
+        providerId={selectedProviderId}
         variant="ghost-light"
         size="xs"
-        isLocked={isModelLocked}
-        deferUpdate={isStreaming}
+        isLocked={effectiveModelLocked}
+        lockedTitle={modelLockedTitle}
+        showLockIconWhenLocked={!providerChangeLocked}
+        deferUpdate={isStreaming || isChangingProvider}
         workspaceId={workspace?.id}
         {agentId}
         portal

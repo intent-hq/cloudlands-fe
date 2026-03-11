@@ -660,13 +660,16 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
         workspaceId: workspace.id,
         name: config.name || 'Agent',
         model: config.model || DEFAULT_AGENT_MODEL,
-        provider: config.provider, // Top-level ACP provider — immutable after creation
+        provider: config.provider, // Top-level ACP provider — locked after first real prompt/session use
         systemPrompt: config.systemPrompt || '',
         metadata: config.metadata || {},
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: initialMessages,
         status: AgentStatus.Active,
+        // Local backend session ID is assigned immediately for persistence/routing,
+        // but blank agents are still considered unused until they get an ACP session
+        // or any real conversation messages.
         backendSessionId: sessionId,
         isBackground, // Set at top level so agent appears in correct lists
       };

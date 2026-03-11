@@ -118,6 +118,13 @@ class ActiveProviderStore {
     logger.info('Setting active provider:', { from: previousProviderId, to: providerId });
     this.activeProviderId = providerId;
     saveActiveProviderId(providerId);
+    void import('./additional-agents.store.svelte')
+      .then(({ additionalAgentsStore }) => {
+        additionalAgentsStore.ensureProviderEnabled(providerId);
+      })
+      .catch((error) => {
+        logger.warn('Failed to sync enabled providers after default change', { providerId, error });
+      });
 
     // Save current settings for the outgoing provider, then restore (or reset)
     // settings for the incoming provider. This lets users switch back and forth

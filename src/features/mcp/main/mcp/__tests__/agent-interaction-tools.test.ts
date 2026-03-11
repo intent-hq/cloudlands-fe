@@ -67,6 +67,10 @@ vi.mock('$features/protocol/main/protocol-adapter', () => ({
     createNote: vi
       .fn()
       .mockResolvedValue({ ok: true, data: { id: 'created-note-id', title: 'Test Note' } }),
+    getNote: vi.fn().mockResolvedValue({
+      ok: true,
+      data: { id: 'task-note-id', title: 'Task Note', content: 'Do the task' },
+    }),
     markAsTask: vi.fn().mockResolvedValue({ ok: true, data: {} }),
     assignAgentToTask: vi.fn().mockResolvedValue({ ok: true, data: {} }),
   },
@@ -88,7 +92,8 @@ vi.mock('$features/agent/main/specialists.service', () => ({
       implementor: {
         specialistId: 'implementor',
         specialistName: 'Implementor',
-        model: 'gpt5.4',
+        codingAgent: 'codex',
+        model: 'gpt-5-codex',
         behaviorPrompt: 'You are an implementor agent. Focus on the specific task.',
         roleReminder: '',
       },
@@ -104,9 +109,12 @@ vi.mock('$features/agent/main/specialists.service', () => ({
   }),
 }));
 
+import { resolveSpecialistForAgent } from '$features/agent/main/specialists.service';
+
 // Import after mocks are set up
 import {
   CreateAgentTool,
+  DelegateTaskTool,
   SendMessageToAgentTool,
   SubscribeToEventsTool,
   UnsubscribeFromEventsTool,
@@ -127,6 +135,10 @@ describe('Agent Interaction Tools', () => {
     vi.mocked(protocolAdapter.createNote).mockResolvedValue({
       ok: true,
       data: { id: 'created-note-id', title: 'Test Note' },
+    });
+    vi.mocked(protocolAdapter.getNote).mockResolvedValue({
+      ok: true,
+      data: { id: 'task-note-id', title: 'Task Note', content: 'Do the task' },
     });
     vi.mocked(protocolAdapter.markAsTask).mockResolvedValue({ ok: true, data: {} });
     vi.mocked(protocolAdapter.assignAgentToTask).mockResolvedValue({ ok: true, data: {} });
@@ -216,6 +228,127 @@ describe('Agent Interaction Tools', () => {
 
       expect(result.isError).toBe(true);
       expect((result.content[0] as any).text).toContain('context');
+    });
+
+    it('should propagate specialist provider and preserve a valid override', async () => {
+      const tool = new CreateAgentTool(workspaceId, workspacePath);
+
+      mockBackendHandler.createAgent.mockResolvedValue({
+        id: 'new-agent-id',
+        name: 'Test Agent',
+      });
+
+      const call: ToolCall = {
+        name: 'create_agent',
+        arguments: {
+          name: 'Test Agent',
+          specialist: 'implementor',
+          model: 'codex:gpt-5-codex',
+        },
+        context: {
+          workspaceId,
+          agentId: 'parent-agent-id',
+          agentName: 'Parent Agent',
+          sessionId: 'session-123',
+          model: 'auggie:gpt5.4',
+          provider: 'auggie',
+        },
+      };
+
+      await tool.execute(call);
+
+      expect(mockBackendHandler.createAgent).toHaveBeenCalledWith(
+        workspaceId,
+        'Test Agent',
+        expect.objectContaining({
+          model: 'codex:gpt-5-codex',
+          provider: 'codex',
+        }),
+      );
+    });
+  });
+
+  describe('DelegateTaskTool', () => {
+    it('should propagate specialist provider when delegating by task note', async () => {
+      const tool = new DelegateTaskTool(workspaceId, workspacePath);
+
+      mockBackendHandler.createAgent.mockResolvedValue({
+        id: 'delegated-agent-id',
+        name: 'Task Note',
+      });
+
+      const call: ToolCall = {
+        name: 'delegate_task',
+        arguments: {
+          taskNoteId: 'task-note-id',
+          specialist: 'implementor',
+        },
+        context: {
+          workspaceId,
+          agentId: 'parent-agent-id',
+          agentName: 'Parent Agent',
+          sessionId: 'session-123',
+          model: 'auggie:gpt5.4',
+          provider: 'auggie',
+        },
+      };
+
+      await tool.execute(call);
+
+      expect(mockBackendHandler.createAgent).toHaveBeenCalledWith(
+        workspaceId,
+        'Task Note',
+        expect.objectContaining({
+          model: 'gpt-5-codex',
+          provider: 'codex',
+        }),
+      );
+    });
+
+    it('should preserve a mapped provider specialist model when delegating', async () => {
+      const tool = new DelegateTaskTool(workspaceId, workspacePath);
+      vi.mocked(resolveSpecialistForAgent).mockReturnValueOnce({
+        specialistId: 'implementor',
+        specialistName: 'Implementor',
+        codingAgent: 'codex',
+        model: 'gpt-5-codex',
+        modelTier: 'fast',
+        behaviorPrompt: 'You are an implementor agent. Focus on the specific task.',
+        roleReminder: '',
+        defaultAgentType: undefined,
+      });
+
+      mockBackendHandler.createAgent.mockResolvedValue({
+        id: 'delegated-agent-id',
+        name: 'Task Note',
+      });
+
+      const call: ToolCall = {
+        name: 'delegate_task',
+        arguments: {
+          taskNoteId: 'task-note-id',
+          specialist: 'implementor',
+        },
+        context: {
+          workspaceId,
+          agentId: 'parent-agent-id',
+          agentName: 'Parent Agent',
+          sessionId: 'session-123',
+          model: 'auggie:gpt5.4',
+          provider: 'auggie',
+        },
+      };
+
+      await tool.execute(call);
+
+      expect(mockBackendHandler.createAgent).toHaveBeenCalledWith(
+        workspaceId,
+        'Task Note',
+        expect.objectContaining({
+          model: 'gpt-5-codex',
+          provider: 'codex',
+        }),
+      );
     });
   });
 
@@ -718,12 +851,13 @@ describe('Agent Interaction Tools', () => {
       const result = await tool.execute(call);
 
       expect(result.isError).toBe(false);
-      // Should use implementor's model (gpt5.4) and behavior prompt
+      // Should use the current implementor defaults and behavior prompt
       expect(mockBackendHandler.createAgent).toHaveBeenCalledWith(
         workspaceId,
         'Implementation Agent',
         expect.objectContaining({
-          model: 'gpt5.4',
+          model: 'gpt-5-codex',
+          provider: 'codex',
           behaviorPrompt: expect.stringContaining('implementor'),
         }),
       );
@@ -766,7 +900,104 @@ describe('Agent Interaction Tools', () => {
       );
     });
 
-    it('should allow model override while using specialist behavior prompt', async () => {
+    it('should use the effective specialist provider returned by the resolver', async () => {
+      const tool = new CreateAgentTool(workspaceId, workspacePath);
+      vi.mocked(resolveSpecialistForAgent).mockReturnValueOnce({
+        specialistId: 'verifier',
+        specialistName: 'Verifier',
+        codingAgent: 'codex',
+        model: 'codex:gpt-5-codex',
+        behaviorPrompt: 'You are a verifier agent. Review work thoroughly.',
+        roleReminder: '',
+        defaultAgentType: undefined,
+      });
+
+      mockBackendHandler.createAgent.mockResolvedValue({
+        id: 'new-agent-id',
+        name: 'Verifier Agent',
+      });
+
+      const call: ToolCall = {
+        name: 'create_agent',
+        arguments: {
+          name: 'Verifier Agent',
+          initialMessage: 'Review the implementation',
+          specialist: 'verifier',
+          taskNoteId: 'existing-task-note',
+        },
+        context: {
+          workspaceId,
+          agentId: 'parent-agent-id',
+          agentName: 'Parent Agent',
+          sessionId: 'session-123',
+          provider: 'auggie',
+          model: 'auggie:gpt5.4',
+        },
+      };
+
+      const result = await tool.execute(call);
+
+      expect(result.isError).toBe(false);
+      expect(mockBackendHandler.createAgent).toHaveBeenCalledWith(
+        workspaceId,
+        'Verifier Agent',
+        expect.objectContaining({
+          provider: 'codex',
+          model: 'codex:gpt-5-codex',
+        }),
+      );
+    });
+
+    it('should fall back to the provider default when a dynamic-provider specialist has no concrete model', async () => {
+      const tool = new CreateAgentTool(workspaceId, workspacePath);
+      vi.mocked(resolveSpecialistForAgent).mockReturnValueOnce({
+        specialistId: 'implementor',
+        specialistName: 'Implementor',
+        codingAgent: 'opencode',
+        model: '',
+        modelTier: 'fast',
+        behaviorPrompt: 'You are an implementor agent. Focus on the specific task.',
+        roleReminder: '',
+        defaultAgentType: undefined,
+      });
+
+      mockBackendHandler.createAgent.mockResolvedValue({
+        id: 'new-agent-id',
+        name: 'OpenCode Agent',
+      });
+
+      const call: ToolCall = {
+        name: 'create_agent',
+        arguments: {
+          name: 'OpenCode Agent',
+          initialMessage: 'Implement the fix',
+          specialist: 'implementor',
+          taskNoteId: 'existing-task-note',
+        },
+        context: {
+          workspaceId,
+          agentId: 'parent-agent-id',
+          agentName: 'Parent Agent',
+          sessionId: 'session-123',
+          provider: 'opencode',
+          model: 'opencode:claude-sonnet-4.5',
+        },
+      };
+
+      const result = await tool.execute(call);
+
+      expect(result.isError).toBe(false);
+      expect(mockBackendHandler.createAgent).toHaveBeenCalledWith(
+        workspaceId,
+        'OpenCode Agent',
+        expect.objectContaining({
+          provider: 'opencode',
+          model: 'default',
+        }),
+      );
+    });
+
+    it('should allow a same-provider model override while using specialist behavior prompt', async () => {
       const tool = new CreateAgentTool(workspaceId, workspacePath);
 
       mockBackendHandler.createAgent.mockResolvedValue({
@@ -780,7 +1011,7 @@ describe('Agent Interaction Tools', () => {
           name: 'Custom Agent',
           initialMessage: 'Do the work',
           specialist: 'implementor',
-          model: 'opus4.5', // Override the model
+          model: 'codex:gpt-5-codex',
           taskNoteId: 'existing-task-note', // Use existing task note to skip note creation
         },
         context: {
@@ -798,7 +1029,8 @@ describe('Agent Interaction Tools', () => {
         workspaceId,
         'Custom Agent',
         expect.objectContaining({
-          model: 'opus4.5', // Override takes precedence
+          model: 'codex:gpt-5-codex',
+          provider: 'codex',
           behaviorPrompt: expect.stringContaining('implementor'),
         }),
       );

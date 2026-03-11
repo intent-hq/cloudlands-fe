@@ -3,6 +3,7 @@ import { SPECIALISTS, GITHUB_DEPENDENT_SPECIALIST_IDS, type Specialist } from '$
 import {
   getDefaultModelForProvider,
   getDefaultProviderId,
+  isModelValidForProvider,
   PROVIDER_MODEL_TIERS,
 } from '$shared/config/provider-config';
 import { activeProviderStore } from './active-provider.store.svelte';
@@ -19,6 +20,7 @@ const CUSTOM_SPECIALISTS_KEY = 'custom-specialists';
 const PROVIDER_MODEL_OVERRIDES_KEY = 'specialists-model-overrides-per-provider';
 
 export interface SpecialistOverrides {
+  codingAgentOverrides: Record<string, string>;
   modelOverrides: Record<string, string>;
   behaviorPromptOverrides: Record<string, string>;
 }
@@ -27,6 +29,7 @@ export interface CustomSpecialist {
   id: string;
   name: string;
   description: string;
+  codingAgent?: string;
   model: string;
   behaviorPrompt: string;
   /**
@@ -43,6 +46,7 @@ export interface FileSpecialist {
   id: string;
   name: string;
   description: string;
+  codingAgent?: string;
   model: string;
   modelTier?: 'fast' | 'balanced' | 'smart';
   behaviorPrompt: string;
@@ -57,6 +61,7 @@ class SpecialistsStore {
   customSpecialists = $state<CustomSpecialist[]>([]);
   fileSpecialists = $state<FileSpecialist[]>([]);
   userOverrides = $state<SpecialistOverrides>({
+    codingAgentOverrides: {},
     modelOverrides: {},
     behaviorPromptOverrides: {},
   });
@@ -91,6 +96,7 @@ class SpecialistsStore {
           id: file.id,
           name: file.name,
           description: file.description,
+          codingAgent: file.codingAgent,
           defaultModel: file.model || undefined,
           defaultModelTier: effectiveTier,
           defaultBehaviorPrompt: file.behaviorPrompt,
@@ -115,6 +121,7 @@ class SpecialistsStore {
           id: custom.id,
           name: custom.name,
           description: custom.description,
+          codingAgent: custom.codingAgent,
           defaultModel: custom.model,
           defaultModelTier: undefined,
           defaultBehaviorPrompt: custom.behaviorPrompt,
@@ -195,6 +202,7 @@ class SpecialistsStore {
               frontmatter: {
                 name: string;
                 description: string;
+                codingAgent?: string;
                 model?: string;
                 modelTier?: 'fast' | 'balanced' | 'smart';
                 roleReminder?: string;
@@ -205,6 +213,7 @@ class SpecialistsStore {
               id: spec.id,
               name: spec.frontmatter.name,
               description: spec.frontmatter.description,
+              codingAgent: spec.frontmatter.codingAgent,
               defaultModel: spec.frontmatter.model || '',
               defaultModelTier: spec.frontmatter.modelTier,
               defaultBehaviorPrompt: spec.behaviorPrompt,
@@ -243,7 +252,11 @@ class SpecialistsStore {
           dataKeys: result?.data ? Object.keys(result.data) : [],
         });
         if (result?.success && result.data) {
-          this.userOverrides = result.data;
+          this.userOverrides = {
+            codingAgentOverrides: { ...(result.data.codingAgentOverrides || {}) },
+            modelOverrides: { ...(result.data.modelOverrides || {}) },
+            behaviorPromptOverrides: { ...(result.data.behaviorPromptOverrides || {}) },
+          };
           logger.info('[SpecialistsStore] Loaded specialist overrides from electron-store', {
             modelOverrides: Object.keys(result.data.modelOverrides || {}),
             hasSpecWriterOverride: !!result.data.modelOverrides?.['spec-writer'],
@@ -297,6 +310,7 @@ class SpecialistsStore {
               frontmatter: {
                 name: string;
                 description: string;
+                codingAgent?: string;
                 model?: string;
                 modelTier?: 'fast' | 'balanced' | 'smart';
                 roleReminder?: string;
@@ -307,6 +321,7 @@ class SpecialistsStore {
               id: s.id,
               name: s.frontmatter.name,
               description: s.frontmatter.description,
+              codingAgent: s.frontmatter.codingAgent,
               model: s.frontmatter.model || '',
               modelTier: s.frontmatter.modelTier,
               behaviorPrompt: s.behaviorPrompt,
@@ -390,6 +405,7 @@ class SpecialistsStore {
     id: string;
     name: string;
     description: string;
+    codingAgent?: string;
     model?: string;
     modelTier?: 'fast' | 'balanced' | 'smart';
     roleReminder?: string;
@@ -471,6 +487,7 @@ class SpecialistsStore {
     try {
       if (typeof window !== 'undefined' && window.electronAPI) {
         const plainOverrides: SpecialistOverrides = {
+          codingAgentOverrides: { ...this.userOverrides.codingAgentOverrides },
           modelOverrides: { ...this.userOverrides.modelOverrides },
           behaviorPromptOverrides: { ...this.userOverrides.behaviorPromptOverrides },
         };
@@ -554,8 +571,27 @@ class SpecialistsStore {
   }
 
   /**
+   * Get the effective coding agent for a specialist.
+   * Falls back to the active provider when the specialist does not specify one.
+   */
+  getEffectiveCodingAgent(specialistId: string): string {
+    const override = this.userOverrides.codingAgentOverrides[specialistId];
+    if (override) return override;
+
+    return this.getResolvedDefaultCodingAgent(specialistId);
+  }
+
+  /**
+   * Get the resolved default coding agent for a specialist, ignoring user overrides.
+   */
+  getResolvedDefaultCodingAgent(specialistId: string): string {
+    const specialist = this.specialists.find((s) => s.id === specialistId);
+    return specialist?.codingAgent || activeProviderStore.activeProviderId;
+  }
+
+  /**
    * Get the effective model for a specialist (override or default).
-   * Resolves the model tier to an actual model ID based on the active provider.
+   * Resolves the model tier to an actual model ID based on the effective coding agent.
    */
   getEffectiveModel(specialistId: string): string {
     const specialist = this.specialists.find((s) => s.id === specialistId);
@@ -574,12 +610,12 @@ class SpecialistsStore {
       return override;
     }
 
-    // Resolve the model tier to an actual model ID for the active provider.
+    // Resolve the model tier to an actual model ID for the effective coding agent.
     // Only resolve when the provider has a known tier mapping — providers with
     // dynamic model lists (e.g. opencode) don't have mappings, so we skip tier
     // resolution and return empty to let callers use their own fallback.
     if (specialist.defaultModelTier) {
-      const providerId = activeProviderStore.activeProviderId;
+      const providerId = this.getEffectiveCodingAgent(specialistId);
       if (providerId in PROVIDER_MODEL_TIERS) {
         const baseModel = getDefaultModelForProvider(providerId, specialist.defaultModelTier);
         // Prefix with provider ID for non-default providers (matches model store behavior)
@@ -617,27 +653,53 @@ class SpecialistsStore {
 
   /**
    * Get the resolved default model for a specialist (ignoring user overrides).
-   * This resolves the model tier to an actual model ID for the active provider.
+   * This resolves the model tier to an actual model ID for the effective coding agent.
    * Used to determine if a user's selection differs from the default.
    */
-  getResolvedDefaultModel(specialistId: string): string {
+  getResolvedDefaultModel(specialistId: string, providerId?: string): string {
     const specialist = this.specialists.find((s) => s.id === specialistId);
     if (!specialist) return '';
 
-    // Resolve the model tier to an actual model ID for the active provider.
+    const effectiveProviderId = providerId ?? this.getEffectiveCodingAgent(specialistId);
+
+    // Resolve the model tier to an actual model ID for the effective coding agent.
     // Skip for providers without tier mappings (dynamic model lists).
     if (specialist.defaultModelTier) {
-      const providerId = activeProviderStore.activeProviderId;
-      if (providerId in PROVIDER_MODEL_TIERS) {
-        const baseModel = getDefaultModelForProvider(providerId, specialist.defaultModelTier);
+      if (effectiveProviderId in PROVIDER_MODEL_TIERS) {
+        const baseModel = getDefaultModelForProvider(effectiveProviderId, specialist.defaultModelTier);
         // Prefix with provider ID for non-default providers (matches model store behavior)
         const defaultProviderId = getDefaultProviderId();
-        return providerId !== defaultProviderId ? `${providerId}:${baseModel}` : baseModel;
+        return effectiveProviderId !== defaultProviderId
+          ? `${effectiveProviderId}:${baseModel}`
+          : baseModel;
       }
+
+      return '';
     }
 
     // Fallback to hardcoded defaultModel (for custom specialists)
-    return specialist.defaultModel ?? '';
+    const defaultModel = specialist.defaultModel ?? '';
+    if (!defaultModel) return '';
+
+    return isModelValidForProvider(defaultModel, effectiveProviderId) ? defaultModel : '';
+  }
+
+  /**
+   * Set a coding-agent override for a specialist.
+   */
+  setCodingAgentOverride(specialistId: string, codingAgent: string) {
+    logger.debug('Setting coding-agent override:', { specialistId, codingAgent });
+    this.userOverrides.codingAgentOverrides[specialistId] = codingAgent;
+    this.saveOverrides();
+  }
+
+  /**
+   * Clear a coding-agent override for a specialist.
+   */
+  clearCodingAgentOverride(specialistId: string) {
+    logger.debug('Clearing coding-agent override:', { specialistId });
+    delete this.userOverrides.codingAgentOverrides[specialistId];
+    this.saveOverrides();
   }
 
   /**
@@ -703,6 +765,7 @@ class SpecialistsStore {
    */
   hasOverrides(specialistId: string): boolean {
     return (
+      !!this.userOverrides.codingAgentOverrides[specialistId] ||
       !!this.userOverrides.modelOverrides[specialistId] ||
       !!this.userOverrides.behaviorPromptOverrides[specialistId]
     );
@@ -763,6 +826,7 @@ class SpecialistsStore {
    */
   clearAllOverrides(specialistId: string) {
     logger.debug('Clearing all overrides:', { specialistId });
+    delete this.userOverrides.codingAgentOverrides[specialistId];
     delete this.userOverrides.modelOverrides[specialistId];
     delete this.userOverrides.behaviorPromptOverrides[specialistId];
     this.saveOverrides();
@@ -774,6 +838,7 @@ class SpecialistsStore {
   resetAllOverrides() {
     logger.debug('Resetting all specialist overrides');
     this.userOverrides = {
+      codingAgentOverrides: {},
       modelOverrides: {},
       behaviorPromptOverrides: {},
     };

@@ -46,6 +46,7 @@ export interface CustomSpecialist {
   id: string;
   name: string;
   description: string;
+  codingAgent?: string;
   model: string;
   behaviorPrompt: string;
   /**
@@ -59,6 +60,8 @@ export interface EffectiveSpecialist {
   id: string;
   name: string;
   description: string;
+  /** ACP provider / runtime backend for this specialist after fallback resolution. */
+  codingAgent: string;
   model: string;
   /**
    * The capability tier for this specialist's model.
@@ -267,6 +270,7 @@ function getCustomSpecialists(): CustomSpecialist[] {
  * under the 'specialists-overrides' key.
  */
 function getUserOverrides(specialistId: string): {
+  codingAgent?: string;
   model?: string;
   behaviorPrompt?: string;
 } {
@@ -274,11 +278,13 @@ function getUserOverrides(specialistId: string): {
   try {
     const overrides = settingsStore.get(SPECIALISTS_OVERRIDES_KEY) as
       | {
+          codingAgentOverrides?: Record<string, string>;
           modelOverrides?: Record<string, string>;
           behaviorPromptOverrides?: Record<string, string>;
         }
       | undefined;
     return {
+      codingAgent: overrides?.codingAgentOverrides?.[specialistId] || undefined,
       model: overrides?.modelOverrides?.[specialistId] || undefined,
       behaviorPrompt: overrides?.behaviorPromptOverrides?.[specialistId] || undefined,
     };
@@ -291,12 +297,30 @@ function getUserOverrides(specialistId: string): {
  * Apply user overrides from electron-store settings if they exist.
  * User overrides take highest priority — they represent explicit user choices
  * from the specialist settings UI.
+ * Coding-agent overrides re-resolve provider-aware defaults unless the user also
+ * picked an explicit model override.
  * When a model override is applied, modelTier is cleared to prevent downstream
  * re-resolution via tier-based logic (e.g., in resolveModelForProvider).
  */
 function applyUserOverrides(specialist: EffectiveSpecialist): EffectiveSpecialist {
   const overrides = getUserOverrides(specialist.id);
   let result = specialist;
+
+  if (overrides.codingAgent && overrides.codingAgent !== result.codingAgent) {
+    logger.info('Applying user coding agent override from settings', {
+      specialistId: specialist.id,
+      originalCodingAgent: specialist.codingAgent,
+      overrideCodingAgent: overrides.codingAgent,
+    });
+    result = {
+      ...result,
+      codingAgent: overrides.codingAgent,
+      model:
+        !overrides.model && result.modelTier && overrides.codingAgent in PROVIDER_MODEL_TIERS
+          ? getDefaultModelForProvider(overrides.codingAgent, result.modelTier)
+          : result.model,
+    };
+  }
 
   if (overrides.model) {
     logger.info('Applying user model override from settings', {
@@ -327,10 +351,17 @@ function applyUserOverrides(specialist: EffectiveSpecialist): EffectiveSpecialis
   return result;
 }
 
+function resolveSpecialistCodingAgent(
+  explicitCodingAgent: string | undefined,
+  fallbackCodingAgent?: string,
+): string {
+  return explicitCodingAgent || fallbackCodingAgent || getDefaultProviderId();
+}
+
 /**
  * Get the effective configuration for a specialist (with user overrides applied)
  * Priority order:
- * 1. User overrides from settings UI (specialists-overrides: model + behaviorPrompt) - highest priority
+ * 1. User overrides from settings UI (specialists-overrides: codingAgent + model + behaviorPrompt) - highest priority
  * 2. User file-based specialists (~/.augment/specialists/*.md)
  * 3. Bundled specialists (resources/specialists/*.md)
  * 4. Custom specialists from electron-store (deprecated, migrated to files)
@@ -338,7 +369,7 @@ function applyUserOverrides(specialist: EffectiveSpecialist): EffectiveSpecialis
  * Note: Bundled specialists are included in the file cache alongside user files.
  *
  * @param specialistId - The specialist ID to look up
- * @param providerId - Optional provider ID for resolving model tiers. Defaults to default provider.
+ * @param providerId - Optional fallback coding agent used when the specialist does not specify one.
  */
 export function getEffectiveSpecialist(
   specialistId: string,
@@ -348,6 +379,7 @@ export function getEffectiveSpecialist(
   // User files take priority over bundled (handled by the cache refresh logic)
   const fileSpecialist = findFileSpecialistSync(specialistId);
   if (fileSpecialist) {
+    const codingAgent = resolveSpecialistCodingAgent(fileSpecialist.frontmatter.codingAgent, providerId);
     const hasExplicitModel = !!fileSpecialist.frontmatter.model;
     const hasExplicitTier = !!fileSpecialist.frontmatter.modelTier;
     let resolvedModel = fileSpecialist.frontmatter.model || '';
@@ -356,7 +388,7 @@ export function getEffectiveSpecialist(
     // Priority: explicit modelTier > reverse-mapped from explicit model > 'balanced' default
     const tier: ModelTier | undefined =
       fileSpecialist.frontmatter.modelTier ||
-      (resolvedModel ? getModelTierFromModel(resolvedModel) : undefined) ||
+      (resolvedModel ? getModelTierFromModel(resolvedModel, codingAgent) : undefined) ||
       'balanced';
 
     // Only override the model via tier-based resolution when:
@@ -366,13 +398,12 @@ export function getEffectiveSpecialist(
     // When the user explicitly set `model` without `modelTier`, respect their choice.
     if (hasExplicitTier || !hasExplicitModel) {
       if (tier) {
-        const effectiveProviderId = providerId || getDefaultProviderId();
         // Only resolve tiers for providers with known tier mappings.
         // Providers with dynamic model lists (e.g. opencode) would produce
         // invalid model IDs — leave resolvedModel empty so downstream
         // consumers can resolve via the specialist's modelTier field.
-        if (effectiveProviderId in PROVIDER_MODEL_TIERS) {
-          resolvedModel = getDefaultModelForProvider(effectiveProviderId, tier);
+        if (codingAgent in PROVIDER_MODEL_TIERS) {
+          resolvedModel = getDefaultModelForProvider(codingAgent, tier);
         }
       }
     }
@@ -381,6 +412,7 @@ export function getEffectiveSpecialist(
       id: fileSpecialist.id,
       name: fileSpecialist.frontmatter.name,
       description: fileSpecialist.frontmatter.description,
+      codingAgent,
       model: resolvedModel,
       // Only propagate modelTier when it should drive downstream resolution:
       // - explicit modelTier from frontmatter, OR
@@ -400,12 +432,14 @@ export function getEffectiveSpecialist(
   const customSpecialists = getCustomSpecialists();
   const custom = customSpecialists.find((s) => s.id === specialistId);
   if (custom) {
+    const codingAgent = resolveSpecialistCodingAgent(custom.codingAgent, providerId);
     // Try to determine tier from the legacy custom specialist's model
-    const customTier = custom.model ? getModelTierFromModel(custom.model) : 'balanced';
+    const customTier = custom.model ? getModelTierFromModel(custom.model, codingAgent) : 'balanced';
     return applyUserOverrides({
       id: custom.id,
       name: custom.name,
       description: custom.description,
+      codingAgent,
       model: custom.model,
       modelTier: customTier,
       behaviorPrompt: custom.behaviorPrompt,
@@ -422,21 +456,22 @@ export function getEffectiveSpecialist(
     logger.warn(
       `Using hardcoded fallback for specialist "${specialistId}" — file-based loading may have failed`,
     );
+    const codingAgent = resolveSpecialistCodingAgent(hardcoded.codingAgent, providerId);
     const hardcodedTier: ModelTier | undefined =
       hardcoded.defaultModelTier ||
-      (hardcoded.defaultModel ? getModelTierFromModel(hardcoded.defaultModel) : undefined) ||
+      (hardcoded.defaultModel ? getModelTierFromModel(hardcoded.defaultModel, codingAgent) : undefined) ||
       'balanced';
     let resolvedModel = hardcoded.defaultModel || '';
     if (hardcodedTier) {
-      const effectiveProviderId = providerId || getDefaultProviderId();
-      if (effectiveProviderId in PROVIDER_MODEL_TIERS) {
-        resolvedModel = getDefaultModelForProvider(effectiveProviderId, hardcodedTier);
+      if (codingAgent in PROVIDER_MODEL_TIERS) {
+        resolvedModel = getDefaultModelForProvider(codingAgent, hardcodedTier);
       }
     }
     return applyUserOverrides({
       id: hardcoded.id,
       name: hardcoded.name,
       description: hardcoded.description,
+      codingAgent,
       model: resolvedModel,
       modelTier: hardcodedTier,
       behaviorPrompt: hardcoded.defaultBehaviorPrompt,
@@ -453,7 +488,7 @@ export function getEffectiveSpecialist(
  * Includes file-based specialists (user + bundled) and electron-store custom specialists.
  * User file-based specialists override bundled specialists with the same ID.
  *
- * @param providerId - Optional provider ID for resolving model tiers. Defaults to default provider.
+ * @param providerId - Optional fallback coding agent used when a specialist does not specify one.
  */
 export function getAllEffectiveSpecialists(providerId?: string): EffectiveSpecialist[] {
   // Track IDs we've already seen (user file-based takes priority)
@@ -464,6 +499,7 @@ export function getAllEffectiveSpecialists(providerId?: string): EffectiveSpecia
   const fileEffective: EffectiveSpecialist[] = fileSpecialistsCache.map((file) => {
     seenIds.add(file.id);
 
+    const codingAgent = resolveSpecialistCodingAgent(file.frontmatter.codingAgent, providerId);
     const hasExplicitModel = !!file.frontmatter.model;
     const hasExplicitTier = !!file.frontmatter.modelTier;
     let resolvedModel = file.frontmatter.model || '';
@@ -471,16 +507,15 @@ export function getAllEffectiveSpecialists(providerId?: string): EffectiveSpecia
     // Determine the effective tier for downstream re-resolution.
     const tier: ModelTier | undefined =
       file.frontmatter.modelTier ||
-      (resolvedModel ? getModelTierFromModel(resolvedModel) : undefined) ||
+      (resolvedModel ? getModelTierFromModel(resolvedModel, codingAgent) : undefined) ||
       'balanced';
 
     // Only override model via tier when user specified modelTier or has no explicit model.
     // Respect explicit model values from user specialist files.
     if (hasExplicitTier || !hasExplicitModel) {
       if (tier) {
-        const effectiveProviderId = providerId || getDefaultProviderId();
-        if (effectiveProviderId in PROVIDER_MODEL_TIERS) {
-          resolvedModel = getDefaultModelForProvider(effectiveProviderId, tier);
+        if (codingAgent in PROVIDER_MODEL_TIERS) {
+          resolvedModel = getDefaultModelForProvider(codingAgent, tier);
         }
       }
     }
@@ -489,6 +524,7 @@ export function getAllEffectiveSpecialists(providerId?: string): EffectiveSpecia
       id: file.id,
       name: file.frontmatter.name,
       description: file.frontmatter.description,
+      codingAgent,
       model: resolvedModel,
       // Only propagate modelTier when it should drive downstream resolution
       modelTier: hasExplicitTier || !hasExplicitModel ? tier : undefined,
@@ -505,11 +541,13 @@ export function getAllEffectiveSpecialists(providerId?: string): EffectiveSpecia
     .filter((custom) => !seenIds.has(custom.id))
     .map((custom) => {
       seenIds.add(custom.id);
-      const customTier = custom.model ? getModelTierFromModel(custom.model) : 'balanced';
+      const codingAgent = resolveSpecialistCodingAgent(custom.codingAgent, providerId);
+      const customTier = custom.model ? getModelTierFromModel(custom.model, codingAgent) : 'balanced';
       return applyUserOverrides({
         id: custom.id,
         name: custom.name,
         description: custom.description,
+        codingAgent,
         model: custom.model,
         modelTier: customTier,
         behaviorPrompt: custom.behaviorPrompt,
@@ -523,21 +561,22 @@ export function getAllEffectiveSpecialists(providerId?: string): EffectiveSpecia
   const hardcodedFallback: EffectiveSpecialist[] = SPECIALISTS.filter(
     (s) => !seenIds.has(s.id),
   ).map((s) => {
+    const codingAgent = resolveSpecialistCodingAgent(s.codingAgent, providerId);
     const hardcodedTier: ModelTier | undefined =
       s.defaultModelTier ||
-      (s.defaultModel ? getModelTierFromModel(s.defaultModel) : undefined) ||
+      (s.defaultModel ? getModelTierFromModel(s.defaultModel, codingAgent) : undefined) ||
       'balanced';
     let resolvedModel = s.defaultModel || '';
     if (hardcodedTier) {
-      const effectiveProviderId = providerId || getDefaultProviderId();
-      if (effectiveProviderId in PROVIDER_MODEL_TIERS) {
-        resolvedModel = getDefaultModelForProvider(effectiveProviderId, hardcodedTier);
+      if (codingAgent in PROVIDER_MODEL_TIERS) {
+        resolvedModel = getDefaultModelForProvider(codingAgent, hardcodedTier);
       }
     }
     return applyUserOverrides({
       id: s.id,
       name: s.name,
       description: s.description,
+      codingAgent,
       model: resolvedModel,
       modelTier: hardcodedTier,
       behaviorPrompt: s.defaultBehaviorPrompt,
@@ -639,6 +678,8 @@ export interface ResolvedSpecialistConfig {
   specialistId: string;
   /** Display name (e.g., 'Coordinator', 'Implementor') */
   specialistName: string;
+  /** ACP provider / runtime backend for this specialist after fallback resolution. */
+  codingAgent: string;
   /** Resolved model ID (modelTier resolved to concrete model for the provider) */
   model: string;
   /**
@@ -669,7 +710,7 @@ export interface ResolvedSpecialistConfig {
  * new specialist field is a one-place change instead of updating 5+ code paths.
  *
  * @param specialistId - The specialist ID to resolve
- * @param providerId - Optional provider ID for resolving model tiers (e.g., 'auggie', 'codex')
+ * @param providerId - Optional fallback coding agent when a specialist does not specify one.
  * @returns Complete specialist config, or null if specialist not found
  */
 export function resolveSpecialistForAgent(
@@ -703,6 +744,7 @@ export function resolveSpecialistForAgent(
   logger.info('resolveSpecialistForAgent: resolved', {
     specialistId,
     specialistName: specialist.name,
+    codingAgent: specialist.codingAgent,
     hasBehaviorPrompt: !!specialist.behaviorPrompt,
     behaviorPromptLength: specialist.behaviorPrompt?.length || 0,
     hasRoleReminder: !!roleReminder,
@@ -722,6 +764,7 @@ export function resolveSpecialistForAgent(
   return {
     specialistId: specialist.id,
     specialistName: specialist.name,
+    codingAgent: specialist.codingAgent,
     model: specialist.model,
     modelTier: specialist.modelTier,
     behaviorPrompt: specialist.behaviorPrompt,
