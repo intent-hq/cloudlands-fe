@@ -2650,6 +2650,7 @@
           await Promise.all([
             gitStore.loadStatus(workspaceId as WorkspaceId, true),
             fileTrackingStore.refresh(),
+            refreshPRStatus(workspaceId as WorkspaceId, { force: true }),
           ]);
         } catch {
           // Refresh failed but merge succeeded
