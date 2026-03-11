@@ -1,10 +1,10 @@
 // We use expectSaga, which works as expect, but eslint does not like it
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, expectTypeOf, vi } from "vitest";
 import { expectSaga } from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
-import { get } from "svelte/store";
-import { take } from "typed-redux-saga";
+import { get, type Readable } from "svelte/store";
+import { take, type SagaGenerator } from "typed-redux-saga";
 import { createSelector } from "./create-selector";
 import { createChannelFromSelector } from "./selector-channel-effects";
 import { init } from "../init";
@@ -55,6 +55,80 @@ describe("createSelector", () => {
       const result = selector.select(store.getState());
 
       expect(result).toBe(false);
+    });
+  });
+
+  describe("Typing contract", () => {
+    it("should keep StoreState first across selector APIs with no extra arguments", () => {
+      const { store } = init();
+      const selector = createSelector((state: StoreState) => state.storeUtility.updatesLocked);
+      const withStoreSelector = selector.withStore(store);
+
+      expectTypeOf<Parameters<typeof selector.select>>().toEqualTypeOf<[StoreState]>();
+      expectTypeOf<ReturnType<typeof selector.select>>().toEqualTypeOf<boolean>();
+      expectTypeOf<Parameters<typeof selector.effect>>().toEqualTypeOf<[]>();
+      expectTypeOf<ReturnType<typeof selector.effect>>().toEqualTypeOf<SagaGenerator<boolean>>();
+      expectTypeOf<Parameters<typeof selector>>().toEqualTypeOf<[]>();
+      expectTypeOf<ReturnType<typeof selector>>().toEqualTypeOf<Readable<boolean>>();
+      expectTypeOf<Parameters<typeof withStoreSelector>>().toEqualTypeOf<[]>();
+      expectTypeOf<ReturnType<typeof withStoreSelector>>().toEqualTypeOf<Readable<boolean>>();
+    });
+
+    it("should type extra arguments without leaking StoreState into effect or readable APIs", () => {
+      const { store } = init();
+      type SelectorResult = { id: string; count: number; locked: boolean };
+
+      const selector = createSelector(
+        (state: StoreState, id: string, count: number): SelectorResult => ({
+          id,
+          count,
+          locked: state.storeUtility.updatesLocked,
+        })
+      );
+      const withStoreSelector = selector.withStore(store);
+
+      expectTypeOf<Parameters<typeof selector.select>>().toEqualTypeOf<[
+        StoreState,
+        string,
+        number,
+      ]>();
+      expectTypeOf<ReturnType<typeof selector.select>>().toEqualTypeOf<SelectorResult>();
+      expectTypeOf<Parameters<typeof selector.effect>>().toEqualTypeOf<[string, number]>();
+      expectTypeOf<ReturnType<typeof selector.effect>>().toEqualTypeOf<
+        SagaGenerator<SelectorResult>
+      >();
+      expectTypeOf<Parameters<typeof selector>>().toEqualTypeOf<[
+        string | Readable<string>,
+        number | Readable<number>,
+      ]>();
+      expectTypeOf<ReturnType<typeof selector>>().toEqualTypeOf<Readable<SelectorResult>>();
+      expectTypeOf<Parameters<typeof withStoreSelector>>().toEqualTypeOf<[
+        string | Readable<string>,
+        number | Readable<number>,
+      ]>();
+      expectTypeOf<ReturnType<typeof withStoreSelector>>().toEqualTypeOf<
+        Readable<SelectorResult>
+      >();
+
+      const result = selector.select(store.getState(), "test-id", 42);
+      expect(result).toEqual({ id: "test-id", count: 42, locked: false });
+
+      // @ts-expect-error StoreState must remain the first callback parameter to createSelector
+      const invalidSelector = createSelector((id: string, state: StoreState) => ({
+        id,
+        locked: state.storeUtility.updatesLocked,
+      }));
+      // @ts-expect-error .select requires StoreState as the first argument
+      const invalidSelectCall = () => selector.select("test-id", 42);
+      // @ts-expect-error .effect only accepts the selector's extra arguments
+      const invalidEffectCall = () => selector.effect(store.getState(), "test-id", 42);
+      // @ts-expect-error the readable selector surface accepts only extra args / readables, never StoreState
+      const invalidReadableCall = () => withStoreSelector(store.getState(), 42);
+
+      void invalidSelector;
+      void invalidSelectCall;
+      void invalidEffectCall;
+      void invalidReadableCall;
     });
   });
 

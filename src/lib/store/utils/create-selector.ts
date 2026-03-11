@@ -1,4 +1,12 @@
-import type { StoreState, ReduxStore, StoreSelector, ReadableArgs } from "../types";
+import type {
+  CreateSelector,
+  StoreState,
+  ReduxStore,
+  StoreSelector,
+  ReadableArgs,
+  StoreSelectorCallback,
+  StoreSelectorSelect,
+} from "../types";
 import { getStoreContext } from "./utils";
 import { collectionFieldsSet, isCollection, type Collection } from "./collection-utils";
 import { readable, derived, type Readable } from "svelte/store";
@@ -124,9 +132,9 @@ const hasStateChanged = (
  * 2. State fields that were accessed in the previous run have changed (reference equality)
  */
 export const createCachedSelector = <ARGS extends any[] = [], R extends any = undefined>(
-  selectorFunc: (state: StoreState, ...args: ARGS) => R,
+  selectorFunc: StoreSelectorSelect<R, ARGS>,
   lockable: boolean
-) => {
+): StoreSelectorSelect<R, ARGS> => {
   let previousSelectResult: R | undefined = undefined;
   let previousArgs: ARGS | undefined = undefined;
   let previousState: StoreState | undefined = undefined;
@@ -194,10 +202,13 @@ const isReadable = <T = any>(arg: unknown): arg is Readable<T> => {
   return "subscribe" in arg && typeof arg.subscribe === "function";
 };
 
-export const createSelector = <ARGS extends any[], R>(
-  selectorFunc: (state: StoreState, ...args: ARGS) => R
+export const createSelector: CreateSelector = <ARGS extends any[], R>(
+  selectorFunc: StoreSelectorCallback<R, ARGS>
 ): StoreSelector<R, ARGS> => {
-  const boundSelector = (
+  const boundSelector: (
+    readableStoreState: Readable<StoreState>,
+    ...restArgs: ReadableArgs<ARGS>
+  ) => Readable<R> = (
     readableStoreState: Readable<StoreState>,
     ...restArgs: ReadableArgs<ARGS>
   ): Readable<R> => {
@@ -214,7 +225,7 @@ export const createSelector = <ARGS extends any[], R>(
     });
   };
 
-  const readableSelector = (...restArgs: ReadableArgs<ARGS>) => {
+  const readableSelector: StoreSelector<R, ARGS> = (...restArgs: ReadableArgs<ARGS>) => {
     const context = getStoreContext();
     if (!context) {
       throw new Error("Missing redux store context. Wrap root component into <Store/>");
@@ -237,7 +248,7 @@ export const createSelector = <ARGS extends any[], R>(
 };
 
 export const createCollectionItemSelector = <ITEM extends object, K extends keyof ITEM & string>(
-  collectionSelector: (state: StoreState, ...args: any[]) => Collection<ITEM, K>
+  collectionSelector: StoreSelectorCallback<Collection<ITEM, K>, any[]>
 ) => {
   return createSelector<[itemId: ITEM[K] & string], ITEM | undefined>(
     (state, itemId: ITEM[K] & string): ITEM | undefined => {
@@ -253,7 +264,7 @@ export const createCollectionItemsListSelector = <
   K extends keyof ITEM & string,
   F extends (...args: any) => boolean,
 >(
-  collectionSelector: (state: StoreState, ...args: any[]) => Collection<ITEM, K>,
+  collectionSelector: StoreSelectorCallback<Collection<ITEM, K>, any[]>,
   itemFilter?: F
 ) => {
   return createSelector((state): ITEM[] => {

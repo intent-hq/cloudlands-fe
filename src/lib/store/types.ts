@@ -1,6 +1,7 @@
 import type { Middleware, Store, UnknownAction } from "redux";
 import type { Readable } from "svelte/store";
 import type { Saga, Task } from "redux-saga";
+import type { SagaGenerator } from "typed-redux-saga";
 import type { reducers } from "./reducer";
 import type { sagas } from "./sagas";
 
@@ -101,10 +102,30 @@ export type ReadableArgs<ARGS extends any[]> = {
   [K in keyof ARGS]: ARGS[K] | Readable<ARGS[K]>;
 };
 
-export type StoreSelector<R, ARGS extends any[] = []> = {
-  (...args: ReadableArgs<ARGS>): Readable<R>;
-  withStore: (store: ReduxStore) => (...args: ReadableArgs<ARGS>) => Readable<R>;
-  select: (state: StoreState, ...args: ARGS) => R;
-  effect: (...args: ARGS) => any;
+export type StoreSelectorCallback<R, ARGS extends any[] = []> = (
+  state: StoreState,
+  ...args: ARGS
+) => R;
+
+export type StoreSelectorReadable<R, ARGS extends any[] = []> = (
+  ...args: ReadableArgs<ARGS>
+) => Readable<R>;
+
+export type StoreSelectorSelect<R, ARGS extends any[] = []> = StoreSelectorCallback<R, ARGS>;
+
+export type StoreSelectorEffect<R, ARGS extends any[] = []> = (...args: ARGS) => SagaGenerator<R>;
+
+export type StoreSelectorWithStore<R, ARGS extends any[] = []> = (
+  store: ReduxStore
+) => StoreSelectorReadable<R, ARGS>;
+
+export type StoreSelector<R, ARGS extends any[] = []> = StoreSelectorReadable<R, ARGS> & {
+  withStore: StoreSelectorWithStore<R, ARGS>;
+  select: StoreSelectorSelect<R, ARGS>;
+  effect: StoreSelectorEffect<R, ARGS>;
 };
+
+export type CreateSelector = <ARGS extends any[] = [], R = unknown>(
+  selectorFunc: StoreSelectorCallback<R, ARGS>
+) => StoreSelector<R, ARGS>;
 
