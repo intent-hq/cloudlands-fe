@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/svelte";
+import * as Sentry from "@sentry/electron/renderer";
 import { call, delay, race } from "typed-redux-saga";
 
 export class StreamTimeoutError extends Error {
