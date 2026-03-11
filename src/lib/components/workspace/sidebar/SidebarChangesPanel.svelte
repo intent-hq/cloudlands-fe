@@ -94,7 +94,7 @@
   import Fa from 'svelte-fa';
   import { flip } from 'svelte/animate';
   import { quintOut } from 'svelte/easing';
-  import { crossfade, slide } from 'svelte/transition';
+  import { slide } from 'svelte/transition';
   import DividerButton from './DividerButton.svelte';
   import DividerPanel from './DividerPanel.svelte';
   import {
@@ -3676,49 +3676,32 @@
   let isWorkspaceSwitching = $state(false);
   let workspaceSwitchTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  // Create a crossfade instance - extracted so we can recreate it on workspace switch
-  // to clear stale internal transition maps that cause |global crashes
-  function makeCrossfade() {
-    return crossfade({
-      duration: 200,
-
-      fallback(node) {
-        // Guard against 0-dimension elements that cause NaN/Infinity
-        const rect = node.getBoundingClientRect();
-        if (rect.width === 0 || rect.height === 0) {
-          return {
-            duration: 0,
-            css: () => '',
-          };
-        }
-
-        return slide(node, { duration: 200, easing: quintOut, delay: 0, axis: 'y' });
-      },
-    });
-  }
-
-  // The raw crossfade pair — recreated on workspace switch to clear stale maps.
-  // We never expose these directly; the `send`/`receive` wrappers below add safety.
-  let currentCrossfade = makeCrossfade();
-
-  // Wrapper transition functions that bypass the crossfade during workspace switches.
+  // Transition functions that always return non-deferred transitions (slide).
   //
-  // Why: crossfade always returns a *deferred* transition (a function that returns a config).
+  // Why not crossfade: crossfade returns a *deferred* transition (a function).
   // Svelte creates a facade for deferred transitions where `reset()` calls `a.reset()`,
   // but `a` is assigned in a microtask. If `reset()` is called before the microtask runs
   // (which happens during {#each} reconciliation with |global), it crashes:
   //   "Cannot read properties of undefined (reading 'reset')"
   //
-  // By returning a plain `{ duration: 0 }` config (not a function) during workspace switches,
-  // Svelte takes the non-deferred path which returns safe no-op handlers.
+  // By always returning a plain transition config (not a function), Svelte takes the
+  // non-deferred path which returns safe no-op handlers.
   function send(node: Element, params: { key: any }) {
     if (isWorkspaceSwitching) return { duration: 0 };
-    return currentCrossfade[0](node, params);
+    const rect = node.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) {
+      return { duration: 0, css: () => '' };
+    }
+    return slide(node, { duration: 200, easing: quintOut, delay: 0, axis: 'y' });
   }
 
   function receive(node: Element, params: { key: any }) {
     if (isWorkspaceSwitching) return { duration: 0 };
-    return currentCrossfade[1](node, params);
+    const rect = node.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) {
+      return { duration: 0, css: () => '' };
+    }
+    return slide(node, { duration: 200, easing: quintOut, delay: 0, axis: 'y' });
   }
 
   // Detect workspace switches and temporarily disable animations.
@@ -3729,15 +3712,12 @@
     // Read workspaceId to create dependency
     void workspaceId;
 
-    // When workspace changes, set switching flag and recreate crossfade
+    // When workspace changes, set switching flag
     untrack(() => {
       if (workspaceSwitchTimeout) {
         clearTimeout(workspaceSwitchTimeout);
       }
       isWorkspaceSwitching = true;
-      // Recreate crossfade to clear stale internal maps from previous workspace —
-      // prevents old send entries from pairing with new receive entries across workspaces
-      currentCrossfade = makeCrossfade();
       workspaceSwitchTimeout = setTimeout(() => {
         isWorkspaceSwitching = false;
         workspaceSwitchTimeout = null;
