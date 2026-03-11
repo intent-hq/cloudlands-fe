@@ -5199,24 +5199,38 @@ export class ACPProvider extends BaseAgentProvider {
   private async sendRequestInternal(request: any, customTimeout?: number): Promise<any> {
     return new Promise((resolve, reject) => {
       // Set up timeout - use custom timeout if provided, otherwise use defaults
-      const timeoutDuration =
-        customTimeout ||
-        (request.method === 'initialize' ||
-        request.method === 'authenticate' ||
-        request.method === 'session/new' ||
-        request.method === 'session/load'
-          ? 10000 // 10 seconds for initialization requests (was 5s, caused race conditions)
-          : 30000); // 30 seconds for normal requests
-
-      const timeout = setTimeout(() => {
-        this.pendingRequests.delete(request.id);
-        logger.error(`Request timeout for ${request.method}`, {
-          requestId: request.id,
-          method: request.method,
-          processAlive: this.isAgentAlive(),
-        });
-        reject(new Error(`Timeout waiting for response to ${request.method}`));
-      }, timeoutDuration);
+      const CHECK_INTERVAL_MS = 5000;
+      const MAX_WAIT_MS = 90000; // 90s — aligns with PR 189 latency UI messaging
+      const maxWaitMs = Math.max(customTimeout ?? MAX_WAIT_MS, 1000); // floor at 1s
+      const intervalMs = Math.min(CHECK_INTERVAL_MS, maxWaitMs);
+      const startTime = Date.now();
+      const timeout = setInterval(() => {
+        if (Date.now() - startTime >= maxWaitMs) {
+          this.pendingRequests.delete(request.id);
+          clearInterval(timeout);
+          logger.error(`Request timeout for ${request.method}`, {
+            requestId: request.id,
+            method: request.method,
+            processAlive: this.isAgentAlive(),
+            elapsedMs: Date.now() - startTime,
+            maxWaitMs,
+          });
+          reject(new Error(`Timeout waiting for response to ${request.method}`));
+          return;
+        }
+        if (!this.isAgentAlive()) {
+          this.pendingRequests.delete(request.id);
+          clearInterval(timeout);
+          logger.error(`Agent process died while waiting for ${request.method}`, {
+            requestId: request.id,
+            method: request.method,
+            elapsedMs: Date.now() - startTime,
+          });
+          reject(new Error(`Agent process died while waiting for response to ${request.method}`));
+          return;
+        }
+        logger.debug(`Waiting for response to ${request.method}...`);
+      }, intervalMs);
 
       // Store pending request
       this.pendingRequests.set(request.id, {
@@ -5243,7 +5257,7 @@ export class ACPProvider extends BaseAgentProvider {
               const parsed = JSON.parse(response);
               if (this.pendingRequests.has(request.id)) {
                 const pending = this.pendingRequests.get(request.id)!;
-                clearTimeout(pending.timeout);
+                clearInterval(pending.timeout);
                 this.pendingRequests.delete(request.id);
                 pending.resolve(parsed);
               }
@@ -5252,14 +5266,14 @@ export class ACPProvider extends BaseAgentProvider {
           .catch((error: Error) => {
             if (this.pendingRequests.has(request.id)) {
               const pending = this.pendingRequests.get(request.id)!;
-              clearTimeout(pending.timeout);
+              clearInterval(pending.timeout);
               this.pendingRequests.delete(request.id);
               pending.reject(error);
             }
           });
       } else {
         // No agent process or server available
-        clearTimeout(timeout);
+        clearInterval(timeout);
         this.pendingRequests.delete(request.id);
         reject(new Error('No agent process or ACP server available'));
       }

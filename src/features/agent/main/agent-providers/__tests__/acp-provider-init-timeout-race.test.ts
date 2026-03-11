@@ -1,66 +1,159 @@
 /**
- * Regression tests for the "stuck in Thinking" bug caused by orphaned JSON-RPC responses.
+ * Regression tests for the "stuck in Thinking" bug caused by orphaned JSON-RPC responses
+ * and the process-aware timeout logic in sendRequestInternal.
  *
  * Root cause: A request times out, deleting its pendingRequests entry. The response
  * arrives shortly after and is treated as "orphaned". If the orphaned response carries
  * a stopReason and no streaming callbacks are registered, the stream can never complete
- * → UI stays stuck in "Thinking" forever. This was observed with both prompt responses
- * (the primary incident) and initialization requests.
+ * → UI stays stuck in "Thinking" forever.
  *
- * Fix 1: Increase default init timeout from 5s → 10s to reduce orphaned responses.
+ * Fix 1: Process-aware timeout — use setInterval to periodically check if the agent
+ *         process is alive. Only reject when the process dies or MAX_WAIT_MS is exceeded.
+ *         This prevents premature timeouts when the agent is just slow to start.
  * Fix 2: When an orphaned response has no callbacks, reset isStreaming and
  *         currentStreamingRequestId so the provider doesn't stay permanently stuck.
  *
- * These tests verify the fix at the logic level by simulating the orphaned response
- * handling and timeout configuration, without needing to instantiate the full ACPProvider.
+ * These tests verify the fix at the logic level by simulating the interval-based
+ * timeout and orphaned response handling, without needing to instantiate the full ACPProvider.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 describe('ACP Provider Init Timeout Race Condition', () => {
-  describe('Fix 1: Initialization timeout values', () => {
-    // Verify the timeout branching logic matches the expected pattern.
-    // NOTE: These tests replicate the branching logic inline rather than
-    // importing from ACPProvider (which can't be easily instantiated in
-    // a unit test). See auggie-session-integration.test.ts for e2e coverage.
+  describe('Fix 1: Process-aware interval timeout', () => {
+    // Simulates the interval-based timeout logic from sendRequestInternal.
+    // We replicate the logic inline since ACPProvider can't be easily
+    // instantiated in a unit test.
 
-    it('should use >= 10s timeout for initialization methods', () => {
-      const initMethods = ['initialize', 'authenticate', 'session/new', 'session/load'];
-      const normalMethods = ['prompt', 'session/cancel', 'custom/method'];
+    const CHECK_INTERVAL_MS = 5000;
+    const MAX_WAIT_MS = 90000; // 90s — matches acp-provider.ts
 
-      for (const method of initMethods) {
-        const timeoutDuration =
-          method === 'initialize' ||
-          method === 'authenticate' ||
-          method === 'session/new' ||
-          method === 'session/load'
-            ? 10000
-            : 30000;
+    let pendingRequests: Map<number, { resolve: Function; reject: Function; timeout: ReturnType<typeof setInterval> }>;
+    let isAgentAlive: () => boolean;
 
-        expect(timeoutDuration).toBeGreaterThanOrEqual(10000);
-        expect(timeoutDuration).toBeLessThanOrEqual(30000);
-      }
+    /**
+     * Simulates the setInterval-based timeout logic from sendRequestInternal.
+     * Returns a promise that behaves like the real implementation.
+     */
+    function simulateSendRequest(
+      method: string,
+      requestId: number,
+      customTimeout?: number,
+    ): Promise<any> {
+      return new Promise((resolve, reject) => {
+        const maxWaitMs = Math.max(customTimeout ?? MAX_WAIT_MS, 1000);
+        const intervalMs = Math.min(CHECK_INTERVAL_MS, maxWaitMs);
+        const startTime = Date.now();
+        const timeout = setInterval(() => {
+          if (Date.now() - startTime >= maxWaitMs) {
+            pendingRequests.delete(requestId);
+            clearInterval(timeout);
+            reject(new Error(`Timeout waiting for response to ${method}`));
+            return;
+          }
+          if (!isAgentAlive()) {
+            pendingRequests.delete(requestId);
+            clearInterval(timeout);
+            reject(new Error(`Agent process died while waiting for response to ${method}`));
+            return;
+          }
+        }, intervalMs);
 
-      for (const method of normalMethods) {
-        const timeoutDuration =
-          method === 'initialize' ||
-          method === 'authenticate' ||
-          method === 'session/new' ||
-          method === 'session/load'
-            ? 10000
-            : 30000;
+        pendingRequests.set(requestId, { resolve, reject, timeout });
+      });
+    }
 
-        expect(timeoutDuration).toBe(30000);
-      }
+    beforeEach(() => {
+      vi.useFakeTimers();
+      pendingRequests = new Map();
+      isAgentAlive = () => true; // default: process alive
     });
 
-    it('should allow enough time for slow backend responses', () => {
-      // The customer logs showed the response arriving 64ms after the 5s timeout.
-      // With 10s timeout, even a 6-second response delay would be handled.
-      const INIT_TIMEOUT_MS = 10000;
-      const WORST_CASE_RESPONSE_DELAY_MS = 6000;
+    afterEach(() => {
+      // Clean up any remaining intervals and resolve pending promises
+      // to avoid unhandled rejection errors
+      for (const pending of pendingRequests.values()) {
+        clearInterval(pending.timeout);
+        pending.resolve(undefined);
+      }
+      pendingRequests.clear();
+      vi.useRealTimers();
+    });
 
-      expect(INIT_TIMEOUT_MS).toBeGreaterThan(WORST_CASE_RESPONSE_DELAY_MS);
+    it('should reject with timeout error when MAX_WAIT_MS is exceeded', async () => {
+      const promise = simulateSendRequest('initialize', 1);
+      let caughtError: Error | null = null;
+      promise.catch((e) => { caughtError = e; });
+
+      // Advance past MAX_WAIT_MS (90s default)
+      await vi.advanceTimersByTimeAsync(MAX_WAIT_MS + CHECK_INTERVAL_MS);
+
+      expect(caughtError).not.toBeNull();
+      expect(caughtError!.message).toBe('Timeout waiting for response to initialize');
+      expect(pendingRequests.size).toBe(0);
+    });
+
+    it('should reject immediately when agent process dies', async () => {
+      const promise = simulateSendRequest('initialize', 1);
+      let caughtError: Error | null = null;
+      promise.catch((e) => { caughtError = e; });
+
+      // Process dies after first interval
+      isAgentAlive = () => false;
+      await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS);
+
+      expect(caughtError).not.toBeNull();
+      expect(caughtError!.message).toBe('Agent process died while waiting for response to initialize');
+      expect(pendingRequests.size).toBe(0);
+    });
+
+    it('should keep waiting while process is alive and under max wait', async () => {
+      const promise = simulateSendRequest('initialize', 1);
+
+      // Advance several intervals but stay under MAX_WAIT_MS
+      await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS * 3); // 15s
+
+      // Promise should still be pending
+      expect(pendingRequests.size).toBe(1);
+
+      // Resolve it manually to clean up
+      const pending = pendingRequests.get(1)!;
+      clearInterval(pending.timeout);
+      pending.resolve({ result: 'ok' });
+      pendingRequests.delete(1);
+
+      await expect(promise).resolves.toEqual({ result: 'ok' });
+    });
+
+    it('should resolve when response arrives and clean up interval', async () => {
+      const promise = simulateSendRequest('session/new', 1);
+
+      // Advance one interval — process is alive, so it keeps waiting
+      await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS);
+      expect(pendingRequests.size).toBe(1);
+
+      // Simulate response arriving (as the real code does when it receives JSON-RPC response)
+      const pending = pendingRequests.get(1)!;
+      clearInterval(pending.timeout);
+      pendingRequests.delete(1);
+      pending.resolve({ result: { sessionId: 'abc' } });
+
+      await expect(promise).resolves.toEqual({ result: { sessionId: 'abc' } });
+      expect(pendingRequests.size).toBe(0);
+    });
+
+    it('should use customTimeout instead of MAX_WAIT_MS when provided', async () => {
+      const customTimeout = 10000;
+      const promise = simulateSendRequest('initialize', 1, customTimeout);
+      let caughtError: Error | null = null;
+      promise.catch((e) => { caughtError = e; });
+
+      // Advance past customTimeout but under MAX_WAIT_MS
+      await vi.advanceTimersByTimeAsync(customTimeout + CHECK_INTERVAL_MS);
+
+      expect(caughtError).not.toBeNull();
+      expect(caughtError!.message).toBe('Timeout waiting for response to initialize');
+      expect(pendingRequests.size).toBe(0);
     });
   });
 
