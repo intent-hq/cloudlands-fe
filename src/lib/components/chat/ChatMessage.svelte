@@ -915,7 +915,9 @@
                 disabled={!isClickable}
               >
                 <Fa icon={pill.icon} size="12" class="opacity-50" />
-                <span class="font-medium truncate max-w-[180px]" title={pill.label}>{pill.label}</span>
+                <span class="font-medium truncate max-w-[180px]" title={pill.label}
+                  >{pill.label}</span
+                >
               </button>
             {/each}
             <!-- Render text with inline @mentions as chips -->
@@ -1038,28 +1040,6 @@
           <div class="flex items-center gap-2 text-subtle font-medium text-sm mt-5">
             <Fa icon={faSquare} class="size-2.5 opacity-50 mt-px" />
             <span>Stopped</span>
-          </div>
-        {/if}
-
-        <!-- Response metadata (duration, model, tokens) - shown below completed messages -->
-        {#if !isStreaming && metadataInfo}
-          <div class="text-xs text-subtle mt-3 pt-2 border-t border-border/30">
-            {#each metadataInfo as part, i}
-              {#if i > 0}
-                <span class="mx-1">·</span>
-              {/if}
-              {#if i === 0 && message?.metadata?.duration_ms}
-                <!-- Duration with tooltip -->
-                <span
-                  title={`Start: ${new Date(message.timestamp).toLocaleTimeString()} | Model: ${message.metadata.model || 'unknown'}`}
-                  class="cursor-help hover:text-foreground transition-colors"
-                >
-                  {part}
-                </span>
-              {:else}
-                <span>{part}</span>
-              {/if}
-            {/each}
           </div>
         {/if}
 
