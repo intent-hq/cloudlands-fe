@@ -11,7 +11,7 @@
   import { onMount, tick } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { Button } from '$lib/components/ui/button';
-  import { BROWSER_PROTOCOLS } from '../../../shared/constants';
+  import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../../../shared/constants';
   import { browserStore } from '$features/browser/browser.store.svelte';
   import Fa from 'svelte-fa';
   import {
@@ -258,6 +258,21 @@
   // Set up webview listeners whenever webviewRef changes (including after {#key} recreates it)
   $effect(() => {
     if (webviewRef) {
+      // Ensure critical attributes are set on the webview DOM element.
+      // Svelte may not reliably set attributes on custom elements like <webview>,
+      // so we set them programmatically as a safety net.
+      // - partition: isolates cookies/storage from the main app session
+      // - allowpopups: enables popup windows (required for OAuth flows)
+      // These MUST be set before the first navigation (Electron requirement for partition).
+      if (!webviewRef.getAttribute('partition')) {
+        webviewRef.setAttribute('partition', BROWSER_PANEL_PARTITION);
+        logger.debug('Set partition attribute on webview', { partition: BROWSER_PANEL_PARTITION });
+      }
+      if (!webviewRef.hasAttribute('allowpopups')) {
+        webviewRef.setAttribute('allowpopups', '');
+        logger.debug('Set allowpopups attribute on webview');
+      }
+
       // Clear previous listeners array (the old webview is already destroyed by Svelte)
       webviewListeners = [];
       setupWebviewListeners();
@@ -812,7 +827,12 @@
         When isRecreatingWebview is true, the webview is removed from DOM.
         When it becomes false, a fresh webview is created with the new URL.
       -->
-      <webview bind:this={webviewRef} class="w-full h-full border-none" src={currentWebviewUrl}
+      <webview
+        bind:this={webviewRef}
+        class="w-full h-full border-none"
+        src={currentWebviewUrl}
+        partition={BROWSER_PANEL_PARTITION}
+        allowpopups
       ></webview>
     {:else if url && !isRecreatingWebview}
       <!-- URL is invalid or blocked - show error with details -->

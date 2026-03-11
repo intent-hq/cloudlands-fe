@@ -335,6 +335,14 @@ export const BROWSER_PROTOCOLS = {
   INTERNAL: ['app:', 'workspace-asset:'] as readonly string[],
 } as const;
 
+
+/**
+ * Browser panel session partition name.
+ * Uses 'persist:' prefix for persistent storage across app restarts.
+ * This isolates the embedded browser's cookies/storage from the main app session.
+ */
+export const BROWSER_PANEL_PARTITION = 'persist:browser-panel';
+
 // ============================================================================
 // PATTERNS & VALIDATION
 // ============================================================================
