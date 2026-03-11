@@ -66,6 +66,7 @@
   import DateSeparator from './DateSeparator.svelte';
   import EventWakeupBanner, { parseAgentEvents } from './EventWakeupBanner.svelte';
   import AgentCard from './AgentCard.svelte';
+  import StickyMessageHeader from './StickyMessageHeader.svelte';
   import StreamingStatus from './StreamingStatus.svelte';
   import RegularAgentWelcome from './RegularAgentWelcome.svelte';
   import SuggestedPrompts from './SuggestedPrompts.svelte';
@@ -136,40 +137,6 @@
   const FORCE_VISIBLE_TURN_COUNT = 3;
   /** PERF: Minimum turns before enabling lazy loading (overhead not worth it for small conversations) */
   const LAZY_TURN_THRESHOLD = 10;
-
-  /**
-   * Format message content for sticky header display.
-   * Extracts context reference labels and cleans up raw @context[...] patterns.
-   */
-  function formatMessageForStickyHeader(message: AgentMessage): string {
-    const rawText = extractAllContent(message);
-
-    // Get context references from metadata
-    const contextRefs = message.metadata?.contextReferences as
-      | Array<{ provider?: string; identifier?: string; title?: string }>
-      | undefined;
-
-    // Build labels from context references
-    const pillLabels: string[] = [];
-    if (contextRefs && contextRefs.length > 0) {
-      for (const ref of contextRefs) {
-        const label = ref.title || ref.identifier || 'Context';
-        pillLabels.push(`🔗 ${label}`);
-      }
-    }
-
-    // Strip out @context[...] patterns from raw text
-    const cleanText = rawText.replace(/@context\[[^\]]*\]/g, '').trim();
-
-    // Combine pills and clean text
-    if (pillLabels.length > 0 && cleanText) {
-      return `${pillLabels.join(' ')} — ${cleanText}`;
-    } else if (pillLabels.length > 0) {
-      return pillLabels.join(' ');
-    } else {
-      return cleanText || rawText;
-    }
-  }
 
   interface Props {
     workspace: Workspace | null;
@@ -3889,11 +3856,7 @@
                       <!-- Positioned BEFORE expanded message in DOM so it's naturally behind it -->
                       {#if shouldEnableSticky && turn.userMessage && !isEventNotification}
                         <div class="sticky -top-px w-full z-10 cursor-pointer h-0 overflow-visible">
-                          <div
-                            class="h-fit min-w-0 px-2 pt-2 pb-2 text-subtle whitespace-nowrap text-ellipsis leading-normal bg-sidebar rounded-xs w-full max-w-full truncate"
-                          >
-                            {formatMessageForStickyHeader(turn.userMessage)}
-                          </div>
+                          <StickyMessageHeader message={turn.userMessage} />
                         </div>
                       {/if}
 
