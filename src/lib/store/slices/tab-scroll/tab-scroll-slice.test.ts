@@ -60,7 +60,7 @@ describe("tabScrollReducer", () => {
   });
 
   describe("clearForWorkspace", () => {
-    it("should remove all positions containing the workspace ID", () => {
+    it("should remove all positions prefixed by the workspace ID", () => {
       const stateWithPositions: TabScrollState = {
         positions: {
           "ws-123-tab-1": 100,
@@ -70,6 +70,21 @@ describe("tabScrollReducer", () => {
       };
       const state = tabScrollReducer(stateWithPositions, clearForWorkspace("ws-123"));
       expect(state.positions).toEqual({ "ws-456-tab-1": 300 });
+    });
+
+    it("should not remove positions for similar workspace IDs", () => {
+      const stateWithPositions: TabScrollState = {
+        positions: {
+          "ws-123-tab-1": 100,
+          "ws-1234-tab-1": 200,
+          "ws-456-tab-1": 300,
+        },
+      };
+      const state = tabScrollReducer(stateWithPositions, clearForWorkspace("ws-123"));
+      expect(state.positions).toEqual({
+        "ws-1234-tab-1": 200,
+        "ws-456-tab-1": 300,
+      });
     });
 
     it("should return same state if no positions match", () => {

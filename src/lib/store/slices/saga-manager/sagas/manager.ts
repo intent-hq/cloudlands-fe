@@ -16,10 +16,11 @@ const DECREASE_RESTARTS_COUNT_DELAY = 60 * 1000; // a minute
   but a saga that fails once in a while will not run out of restart attempts;
 */
 const RESTART_DELAY = 1000;
+const MAX_RESTART_DELAY = 10 * 60 * 1000;
 
 // const RESTART_RESET_TIMDEOUT =
-const getBackOffDelay = (restarts: number) => {
-  return RESTART_DELAY * Math.pow(2, restarts);
+export const getBackOffDelay = (restarts: number) => {
+  return Math.min(RESTART_DELAY * Math.pow(2, restarts), MAX_RESTART_DELAY);
 };
 
 const autoRestart = (sagaName: SagaName) => {

@@ -62,8 +62,9 @@ export const tabScrollReducer = createReducer<TabScrollState>(initialState)
     };
   })
   .with(clearForWorkspace, (state, { payload: [workspaceId] }) => {
+    const workspaceKeyPrefix = `${workspaceId}-`;
     const keysToRemove = Object.keys(state.positions).filter((key) =>
-      key.includes(workspaceId)
+      key.startsWith(workspaceKeyPrefix)
     );
     if (keysToRemove.length === 0) {
       return state;
