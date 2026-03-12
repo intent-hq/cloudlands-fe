@@ -107,7 +107,7 @@ jobs:
           CSC_LINK: ${{ secrets.INTENT_MACOS_CERTIFICATE }}
           CSC_KEY_PASSWORD: ${{ secrets.INTENT_MACOS_CERTIFICATE_PWD }}
           APPLE_ID: ${{ secrets.INTENT_APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.INTENT_APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.INTENT_APPLE_APP_SPECIFIC_PASSWORD_V2 }}
           APPLE_TEAM_ID: ${{ secrets.INTENT_APPLE_TEAM_ID }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
