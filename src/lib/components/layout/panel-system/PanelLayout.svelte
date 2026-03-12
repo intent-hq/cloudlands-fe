@@ -438,9 +438,10 @@
       // instead of a panel tab. isFocusInTerminal checks xterm focus;
       // we also check if focus is within the terminal overlay container
       // (e.g., right after creating a terminal before xterm gets focus).
-      const terminalAreaFocused = isFocusInTerminal(e.target as HTMLElement) ||
+      const terminalAreaFocused =
+        isFocusInTerminal(e.target as HTMLElement) ||
         (e.target as HTMLElement)?.closest?.('.terminal-overlay');
-      if (get(terminalOverlayOpen$) && terminalAreaFocused) {
+      if (get(terminalOverlayOpen) && terminalAreaFocused) {
         e.preventDefault();
         e.stopPropagation();
         window.dispatchEvent(new CustomEvent('terminal:close-active'));
@@ -1026,7 +1027,13 @@
 
 <div class="panel-layout h-full w-full flex flex-col" aria-label="Panel layout">
   <!-- Main panel area -->
-  <div class="flex-1 min-h-0 overflow-hidden {$isCollapsed ? 'p-3' : layoutSettings.sidebarSide === 'left' ? 'p-3 pl-0' : 'p-3 pr-0'}">
+  <div
+    class="flex-1 min-h-0 overflow-hidden {$isCollapsed
+      ? 'p-3'
+      : layoutSettings.sidebarSide === 'left'
+        ? 'p-3 pl-0'
+        : 'p-3 pr-0'}"
+  >
     {#if layoutManager.layout}
       {@const currentFocusedPanelId = layoutManager.focusedPanelId}
       <PanelContainer
@@ -1075,9 +1082,7 @@
         <span class="text-primary">Press 1-9</span> to jump to panel
       {:else}
         <span class="text-primary">⌘K</span> activated — press a key
-        <span class="text-subtle ml-2">
-          h/j/k/l navigate • z zoom • % split • x close
-        </span>
+        <span class="text-subtle ml-2"> h/j/k/l navigate • z zoom • % split • x close </span>
       {/if}
     </div>
   </div>
