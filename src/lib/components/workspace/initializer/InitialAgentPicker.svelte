@@ -267,7 +267,7 @@
   let specialistDropdownOpen = $state(false);
 
   // Track the last single-agent specialist/model so switching to team mode and back preserves them
-  let lastSingleAgentSpecialist = $state<string | null>('developer');
+  let lastSingleAgentSpecialist = $state<string | null>(null);
   let lastSingleAgentModel = $state<string | undefined>(undefined);
   let lastSingleAgentModelOverridden = $state<boolean>(false);
 
