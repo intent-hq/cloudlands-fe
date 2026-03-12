@@ -745,7 +745,10 @@
                   duration: number;
                   action?: { label: string; onClick: () => Promise<void> };
                 } = {
-                  description: data.error,
+                  description:
+                    data.error && data.error.length > 200
+                      ? data.error.slice(0, 200) + '…'
+                      : data.error,
                   duration: 10000, // Longer duration for errors
                 };
 

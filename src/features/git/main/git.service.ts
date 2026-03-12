@@ -491,7 +491,13 @@ export class GitService {
 
       return { ok: true, data: undefined };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      // execFileAsync errors include the full command + args in message, which can be huge.
+      // Extract just the stderr (e.g. "fatal: pathspec '...' did not match any files") for the user-facing error.
+      const stderr =
+        error && typeof error === 'object' && 'stderr' in error && typeof error.stderr === 'string'
+          ? error.stderr.trim()
+          : '';
+      const errorMessage = stderr || (error instanceof Error ? error.message : String(error));
       logger.error('Failed to stage files', error as Error);
       return {
         ok: false,
