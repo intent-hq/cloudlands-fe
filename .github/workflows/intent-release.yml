@@ -106,7 +106,7 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.INTENT_MACOS_CERTIFICATE_PWD }}
           # Notarization
           APPLE_ID: ${{ secrets.INTENT_APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.INTENT_APPLE_APP_SPECIFIC_PASSWORD_V2 }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.INTENT_APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.INTENT_APPLE_TEAM_ID }}
           # GitHub token for electron-builder
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
