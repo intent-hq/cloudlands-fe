@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.25
+
+- Figma MCP integration available as a one-click install in Settings.
+- Multiple provider support for all agent types. Mix-and-match providers across agents, specialists, and coordinators.
+- Embedded browser now supports OAuth/authentication flows and displays website favicons.
+- PR status refreshes automatically after a merge operation.
+- Better timeouts and status messages for slow agent requests.
+- Fixes: reset/archive buttons not showing when branch is fully merged to trunk, toggle indicators using wrong color in custom themes, ModelPicker not reflecting the correct model when editing previous messages, workspaces not grouped correctly when repositoryName is missing.
+
 ## 0.2.24
 
 - Pinned projects in the sidebar now persist across app restarts.
