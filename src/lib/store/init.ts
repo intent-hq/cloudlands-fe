@@ -102,6 +102,25 @@ const exposeStore = (storeContext: ReduxStoreContext) => {
   window.intent.debug.toggleStructuredCloneChecks = () => {
     toggleBooleanLsKey(REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY);
   };
+
+  window.intent.debug.toggleSharedPromptPrefix = async () => {
+    const currentResult = await window.electronAPI.invoke("settings:get", {
+      key: "sharedPromptPrefix",
+    });
+    const currentValue = currentResult?.success ? currentResult.data : undefined;
+    const nextValue = currentValue === false;
+
+    const setResult = await window.electronAPI.invoke("settings:set", {
+      key: "sharedPromptPrefix",
+      value: nextValue,
+    });
+
+    if (!setResult?.success) {
+      throw new Error(setResult?.error || "Failed to update sharedPromptPrefix");
+    }
+
+    return nextValue;
+  };
 };
 
 const cleanUpWindow = (context: ReduxStoreContext) => {

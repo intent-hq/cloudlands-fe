@@ -67,6 +67,14 @@ export function getBranchPrefix(): string {
 }
 
 /**
+ * Whether shared prompt prefix ordering is enabled.
+ * Defaults to true so shared layers come before specialist behavior.
+ */
+export function isSharedPromptPrefixEnabled(): boolean {
+  return getSetting<boolean>('sharedPromptPrefix', true) !== false;
+}
+
+/**
  * Get the custom worktrees location setting.
  * Returns empty string if not set (use default ~/intent/workspaces).
  */

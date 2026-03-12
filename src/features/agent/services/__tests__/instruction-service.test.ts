@@ -12,6 +12,7 @@ import * as os from 'os';
 import { InstructionService } from '../../main/instruction-service';
 import { EndUserRulesManager } from '../../../rules/user-rules.service';
 import type { ConfigManager } from '../../../../shared/services/config-manager';
+import * as appSettingsService from '../../../workspace/main/app-settings.service';
 
 // Mock fs module for file watching
 vi.mock('fs', async (importOriginal) => {
@@ -47,6 +48,14 @@ vi.mock('../../../github-auth/main/github-auth.service', () => ({
   },
 }));
 
+vi.mock('../../../workspace/main/app-settings.service', () => ({
+  getSetting: vi.fn(() => undefined),
+  getBranchPrefix: vi.fn(() => ''),
+  getWorktreesLocation: vi.fn(() => ''),
+  getSshKeyPath: vi.fn(() => ''),
+  isSharedPromptPrefixEnabled: vi.fn(() => true),
+}));
+
 
 // Mock Logger
 vi.mock('$shared/logger', () => ({
@@ -66,6 +75,9 @@ describe('InstructionService', () => {
   let mockConfigManager: ConfigManager;
 
   beforeEach(async () => {
+    vi.mocked(appSettingsService.getBranchPrefix).mockReturnValue('feature/');
+    vi.mocked(appSettingsService.isSharedPromptPrefixEnabled).mockReturnValue(true);
+
     // Create temporary directory for testing
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'instruction-service-test-'));
     workspacePath = path.join(tempDir, 'workspace');
@@ -330,6 +342,241 @@ describe('InstructionService', () => {
       expect(prompt).toContain(`<location>${skillFile}</location>`);
     });
 
+    it('should place behavior instructions after shared layers by default', async () => {
+      await fs.writeFile(path.join(workspacePath, 'AGENTS.md'), '# Project Rules\n\nAlways test changes.');
+
+      const skillDir = path.join(workspacePath, '.agents', 'skills', 'ordering-skill');
+      await fs.mkdir(skillDir, { recursive: true });
+      await fs.writeFile(
+        path.join(skillDir, 'SKILL.md'),
+        `---\nname: ordering-skill\ndescription: Verifies prompt order.\n---\n# Ordering Skill\nUse this skill for ordering tests.\n`,
+      );
+
+      const specializationRules = await service.getSpecializationRules('task-loop', workspacePath);
+      const specializationMarker = specializationRules.split('\n')[0];
+      const behaviorMarker = '## Specialist Behavior\n\nStay laser-focused.';
+
+      const prompt = await service.buildSystemPrompt({
+        agentType: 'task-loop',
+        workspacePath,
+        behaviorPrompt: behaviorMarker,
+        specialistName: 'Implementor',
+        roleReminder: 'Stay within task scope.',
+        workspaceContext: {
+          openPanels: [{ type: 'note', title: 'Spec', id: 'spec' }],
+          linkedReferences: [],
+        },
+      });
+
+      const baseIndex = prompt.indexOf('Augment Agent');
+      const specializationIndex = prompt.indexOf(specializationMarker);
+      const userRulesIndex = prompt.indexOf('## User Rules & Guidelines');
+      const skillsIndex = prompt.indexOf('<available_skills>');
+      const behaviorIndex = prompt.indexOf(behaviorMarker);
+      const workspaceIndex = prompt.indexOf('## Workspace Context');
+
+      expect(baseIndex).toBeGreaterThanOrEqual(0);
+      expect(specializationIndex).toBeGreaterThan(baseIndex);
+      expect(userRulesIndex).toBeGreaterThan(specializationIndex);
+      expect(skillsIndex).toBeGreaterThan(userRulesIndex);
+      expect(behaviorIndex).toBeGreaterThan(skillsIndex);
+      expect(workspaceIndex).toBeGreaterThan(behaviorIndex);
+    });
+
+    it('should keep legacy behavior-first ordering when shared prefix is disabled', async () => {
+      vi.mocked(appSettingsService.isSharedPromptPrefixEnabled).mockReturnValue(false);
+
+      await fs.writeFile(path.join(workspacePath, 'AGENTS.md'), '# Project Rules\n\nAlways test changes.');
+
+      const skillDir = path.join(workspacePath, '.agents', 'skills', 'legacy-skill');
+      await fs.mkdir(skillDir, { recursive: true });
+      await fs.writeFile(
+        path.join(skillDir, 'SKILL.md'),
+        `---\nname: legacy-skill\ndescription: Verifies legacy ordering.\n---\n# Legacy Skill\nUse this skill for ordering tests.\n`,
+      );
+
+      const behaviorMarker = '## Specialist Behavior\n\nLegacy ordering.';
+
+      const prompt = await service.buildSystemPrompt({
+        agentType: 'task-loop',
+        workspacePath,
+        behaviorPrompt: behaviorMarker,
+        specialistName: 'Implementor',
+        roleReminder: 'Stay within task scope.',
+      });
+
+      const behaviorIndex = prompt.indexOf(behaviorMarker);
+      const baseIndex = prompt.indexOf('Augment Agent');
+      const userRulesIndex = prompt.indexOf('## User Rules & Guidelines');
+      const skillsIndex = prompt.indexOf('<available_skills>');
+
+      expect(behaviorIndex).toBeGreaterThanOrEqual(0);
+      expect(baseIndex).toBeGreaterThan(behaviorIndex);
+      expect(userRulesIndex).toBeGreaterThan(baseIndex);
+      expect(skillsIndex).toBeGreaterThan(userRulesIndex);
+    });
+
+    it('should share an identical parent/sub-agent prefix up to the behavior boundary', async () => {
+      await fs.writeFile(path.join(workspacePath, 'AGENTS.md'), '# Project Rules\n\nAlways test changes.');
+
+      const skillDir = path.join(workspacePath, '.agents', 'skills', 'shared-prefix-skill');
+      await fs.mkdir(skillDir, { recursive: true });
+      await fs.writeFile(
+        path.join(skillDir, 'SKILL.md'),
+        `---\nname: shared-prefix-skill\ndescription: Verifies shared prompt prefixes.\n---\n# Shared Prefix Skill\nUse this skill for prefix tests.\n`,
+      );
+
+      const parentPrompt = await service.buildSystemPrompt({
+        agentType: 'task-loop',
+        workspacePath,
+        behaviorPrompt: '## Specialist Behavior\n\nParent behavior.',
+        specialistName: 'Coordinator',
+        roleReminder: 'Coordinate carefully.',
+      });
+
+      const subAgentPrompt = await service.buildSystemPrompt({
+        agentType: 'task-loop',
+        workspacePath,
+        behaviorPrompt: '## Specialist Behavior\n\nSub-agent behavior.',
+        specialistName: 'Implementor',
+        roleReminder: 'Stay within task scope.',
+        isSubAgent: true,
+      });
+
+      const behaviorSectionMarker = '# Your Specialist Role';
+      const parentBehaviorIndex = parentPrompt.indexOf(behaviorSectionMarker);
+      const subAgentBehaviorIndex = subAgentPrompt.indexOf(behaviorSectionMarker);
+      const parentPrefix = parentPrompt.slice(0, parentBehaviorIndex);
+      const subAgentPrefix = subAgentPrompt.slice(0, subAgentBehaviorIndex);
+
+      expect(parentBehaviorIndex).toBeGreaterThanOrEqual(0);
+      expect(subAgentBehaviorIndex).toBeGreaterThanOrEqual(0);
+      expect(parentPrefix).toBe(subAgentPrefix);
+      expect(parentPrefix).toContain('Augment Agent');
+      expect(parentPrefix).toContain('## User Rules & Guidelines');
+      expect(parentPrefix).toContain('<available_skills>');
+    });
+
+    describe('shared prompt prefix integration', () => {
+      const getCommonPrefix = (left: string, right: string): string => {
+        let index = 0;
+
+        while (index < left.length && index < right.length && left[index] === right[index]) {
+          index += 1;
+        }
+
+        return left.slice(0, index);
+      };
+
+      it('should keep the entire shared prefix identical until the behavior prompts begin', async () => {
+        await fs.writeFile(path.join(workspacePath, 'AGENTS.md'), '# Project Rules\n\nAlways test changes.');
+
+        const skillDir = path.join(workspacePath, '.agents', 'skills', 'integration-prefix-skill');
+        await fs.mkdir(skillDir, { recursive: true });
+        await fs.writeFile(
+          path.join(skillDir, 'SKILL.md'),
+          `---\nname: integration-prefix-skill\ndescription: Verifies shared prompt prefix integration.\n---\n# Integration Prefix Skill\nUse this skill for prompt prefix integration tests.\n`,
+        );
+
+        const agentType = 'task-loop';
+        const specializationRules = await service.getSpecializationRules(agentType, workspacePath);
+        const specializationMarker = specializationRules
+          .split('\n')
+          .find((line) => line.trim().length > 0);
+        const parentBehaviorPrompt = 'PARENT_ONLY_BEHAVIOR\nCoordinate parent execution.';
+        const subAgentBehaviorPrompt = 'SUBAGENT_ONLY_BEHAVIOR\nExecute the delegated task.';
+
+        expect(specializationMarker).toBeTruthy();
+
+        const parentPrompt = await service.buildSystemPrompt({
+          agentType,
+          workspacePath,
+          behaviorPrompt: parentBehaviorPrompt,
+          specialistName: 'Implementor',
+          roleReminder: 'Stay within task scope.',
+        });
+
+        const subAgentPrompt = await service.buildSystemPrompt({
+          agentType,
+          workspacePath,
+          behaviorPrompt: subAgentBehaviorPrompt,
+          specialistName: 'Implementor',
+          roleReminder: 'Stay within task scope.',
+          isSubAgent: true,
+        });
+
+        const parentBehaviorIndex = parentPrompt.indexOf(parentBehaviorPrompt);
+        const subAgentBehaviorIndex = subAgentPrompt.indexOf(subAgentBehaviorPrompt);
+        const parentPrefix = parentPrompt.slice(0, parentBehaviorIndex);
+        const subAgentPrefix = subAgentPrompt.slice(0, subAgentBehaviorIndex);
+        const commonPrefix = getCommonPrefix(parentPrompt, subAgentPrompt);
+
+        expect(parentBehaviorIndex).toBeGreaterThanOrEqual(0);
+        expect(subAgentBehaviorIndex).toBeGreaterThanOrEqual(0);
+        expect(parentPrefix).toBe(subAgentPrefix);
+        expect(commonPrefix).toBe(parentPrefix);
+        expect(commonPrefix.length).toBeGreaterThan(1000);
+        expect(commonPrefix).toContain('Augment Agent');
+        expect(commonPrefix).toContain(specializationMarker!);
+        expect(commonPrefix).toContain('## User Rules & Guidelines');
+        expect(commonPrefix).toContain('<available_skills>');
+      });
+
+      it('should lose the base and specialization shared prefix when legacy ordering is enabled', async () => {
+        vi.mocked(appSettingsService.isSharedPromptPrefixEnabled).mockReturnValue(false);
+
+        await fs.writeFile(path.join(workspacePath, 'AGENTS.md'), '# Project Rules\n\nAlways test changes.');
+
+        const skillDir = path.join(workspacePath, '.agents', 'skills', 'legacy-prefix-skill');
+        await fs.mkdir(skillDir, { recursive: true });
+        await fs.writeFile(
+          path.join(skillDir, 'SKILL.md'),
+          `---\nname: legacy-prefix-skill\ndescription: Verifies legacy prompt prefix behavior.\n---\n# Legacy Prefix Skill\nUse this skill for legacy prefix tests.\n`,
+        );
+
+        const agentType = 'task-loop';
+        const specializationRules = await service.getSpecializationRules(agentType, workspacePath);
+        const specializationMarker = specializationRules
+          .split('\n')
+          .find((line) => line.trim().length > 0);
+        const parentBehaviorPrompt = 'PARENT_ONLY_BEHAVIOR\nCoordinate parent execution.';
+        const subAgentBehaviorPrompt = 'SUBAGENT_ONLY_BEHAVIOR\nExecute the delegated task.';
+
+        expect(specializationMarker).toBeTruthy();
+
+        const parentPrompt = await service.buildSystemPrompt({
+          agentType,
+          workspacePath,
+          behaviorPrompt: parentBehaviorPrompt,
+          specialistName: 'Implementor',
+          roleReminder: 'Stay within task scope.',
+        });
+
+        const subAgentPrompt = await service.buildSystemPrompt({
+          agentType,
+          workspacePath,
+          behaviorPrompt: subAgentBehaviorPrompt,
+          specialistName: 'Implementor',
+          roleReminder: 'Stay within task scope.',
+          isSubAgent: true,
+        });
+
+        const commonPrefix = getCommonPrefix(parentPrompt, subAgentPrompt);
+        const parentBehaviorIndex = parentPrompt.indexOf(parentBehaviorPrompt);
+        const subAgentBehaviorIndex = subAgentPrompt.indexOf(subAgentBehaviorPrompt);
+        const parentBaseIndex = parentPrompt.indexOf('Augment Agent');
+        const subAgentBaseIndex = subAgentPrompt.indexOf('Augment Agent');
+
+        expect(parentBehaviorIndex).toBeGreaterThanOrEqual(0);
+        expect(subAgentBehaviorIndex).toBeGreaterThanOrEqual(0);
+        expect(parentBehaviorIndex).toBeLessThan(parentBaseIndex);
+        expect(subAgentBehaviorIndex).toBeLessThan(subAgentBaseIndex);
+        expect(commonPrefix.length).toBeLessThan(parentBaseIndex);
+        expect(commonPrefix).not.toContain('Augment Agent');
+        expect(commonPrefix).not.toContain(specializationMarker!);
+      });
+    });
+
     it('should include the skills catalog for sub-agents', async () => {
       const skillDir = path.join(workspacePath, '.agents', 'skills', 'subagent-skill');
       await fs.mkdir(skillDir, { recursive: true });
@@ -407,6 +654,109 @@ describe('InstructionService', () => {
       // Should have separators between layers
       const separatorCount = (prompt.match(/---/g) || []).length;
       expect(separatorCount).toBeGreaterThanOrEqual(2); // At least 2 separators for 3 layers
+    });
+
+    it('should cache prompts with behavior instructions and keep parent/sub-agent keys distinct', async () => {
+      const buildConfig = {
+        agentType: 'task-loop',
+        workspacePath,
+        behaviorPrompt: '## Specialist Behavior\n\nCache me.',
+        specialistName: 'Implementor',
+        roleReminder: 'Stay within task scope.',
+      };
+
+      const parentPrompt = await service.buildSystemPrompt(buildConfig);
+      const cachedParentPrompt = await service.buildSystemPrompt(buildConfig);
+      const subAgentPrompt = await service.buildSystemPrompt({
+        ...buildConfig,
+        isSubAgent: true,
+      });
+
+      const systemPromptCache = (service as any).systemPromptCache as Map<
+        string,
+        { content: string; timestamp: number; hits: number }
+      >;
+
+      expect(cachedParentPrompt).toBe(parentPrompt);
+      expect(subAgentPrompt).not.toBe(parentPrompt);
+      expect(systemPromptCache.size).toBe(2);
+
+      const hitCounts = Array.from(systemPromptCache.values()).map((entry) => entry.hits);
+      expect(Math.max(...hitCounts)).toBeGreaterThan(0);
+    });
+
+    it('should keep cache entries distinct across ordering modes without behavior prompts', async () => {
+      await fs.writeFile(path.join(workspacePath, 'AGENTS.md'), '# Project Rules\n\nAlways test changes.');
+
+      const skillDir = path.join(workspacePath, '.agents', 'skills', 'cache-ordering-skill');
+      await fs.mkdir(skillDir, { recursive: true });
+      await fs.writeFile(
+        path.join(skillDir, 'SKILL.md'),
+        `---\nname: cache-ordering-skill\ndescription: Verifies ordering cache keys.\n---\n# Cache Ordering Skill\nUse this skill for cache ordering tests.\n`,
+      );
+
+      const sharedPrompt = await service.buildSystemPrompt({
+        agentType: 'task-loop',
+        workspacePath,
+      });
+
+      vi.mocked(appSettingsService.isSharedPromptPrefixEnabled).mockReturnValue(false);
+
+      const legacyPrompt = await service.buildSystemPrompt({
+        agentType: 'task-loop',
+        workspacePath,
+      });
+
+      const systemPromptCache = (service as any).systemPromptCache as Map<
+        string,
+        { content: string; timestamp: number; hits: number }
+      >;
+
+      expect(sharedPrompt).not.toBe(legacyPrompt);
+      expect(systemPromptCache.size).toBe(2);
+    });
+
+    it('should truncate shared-prefix layers by priority before dropping behavior instructions', () => {
+      const makeLayer = (
+        name: string,
+        marker: string,
+        repeatCount: number,
+        priority: number,
+        canTruncate: boolean,
+      ) => ({
+        name,
+        content: `${marker}\n${'x'.repeat(repeatCount)}`,
+        priority,
+        canTruncate,
+      });
+
+      const layers = [
+        makeLayer('base-system-prompt', 'BASE_SYSTEM_PROMPT', 80, 1, false),
+        makeLayer('specialization-rules', 'SPECIALIZATION_RULES', 80, 1, false),
+        makeLayer('user-rules', 'USER_RULES', 50, 2, true),
+        makeLayer('skills-catalog', 'SKILLS_CATALOG', 50, 3, true),
+        makeLayer('behavior-prompt', 'BEHAVIOR_PROMPT', 70, 1, false),
+        makeLayer('team-context', 'TEAM_CONTEXT', 40, 3, true),
+        makeLayer('workspace-context', 'WORKSPACE_CONTEXT', 60, 4, true),
+        makeLayer('runtime-context', 'RUNTIME_CONTEXT', 60, 4, true),
+        makeLayer('mandatory-actions-footer', 'MANDATORY_ACTIONS_FOOTER', 30, 2, true),
+      ];
+
+      const prompt = (service as any).truncatePromptToFit(layers, 520) as string;
+
+      expect(prompt.length).toBeLessThanOrEqual(520);
+      expect(prompt).toContain('BASE_SYSTEM_PROMPT');
+      expect(prompt).toContain('SPECIALIZATION_RULES');
+      expect(prompt).toContain('BEHAVIOR_PROMPT');
+      expect(prompt).toContain('USER_RULES');
+      expect(prompt).toContain('MANDATORY_ACTIONS_FOOTER');
+      expect(prompt).not.toContain('WORKSPACE_CONTEXT');
+      expect(prompt).not.toContain('RUNTIME_CONTEXT');
+
+      expect(prompt.indexOf('USER_RULES')).toBeLessThan(prompt.indexOf('BEHAVIOR_PROMPT'));
+      expect(prompt.indexOf('BEHAVIOR_PROMPT')).toBeLessThan(
+        prompt.indexOf('MANDATORY_ACTIONS_FOOTER'),
+      );
     });
   });
 

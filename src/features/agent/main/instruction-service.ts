@@ -12,22 +12,19 @@
  * - Caching with TTL and LRU eviction
  * - File watching for auto-invalidation
  *
- * System prompt layers (in order):
- * 1. Agent behavior instructions (specialist role - FIRST for maximum primacy)
- * 2. Base system prompt (identity and tools)
- * 3. Specialization rules (common → workspace → agent-specific instructions)
- * 3.5a. Agent team context (active team philosophy and specialists)
- * 3.6. Global knobs (diff budget, test strictness)
- * 3.7. Specialist configuration (available specialists and their models)
- * 3.8. Branch naming preference (user-configured branch prefix)
- * 4. User rules (CLAUDE.md, AGENTS.md, .augment/guidelines.md, .augment/rules/)
- * 4.7. Skills catalog (.agents/skills, .augment/skills, ~/.claude/skills)
- * 4.5. Workspace context (open panels + linked references)
- * 5. Runtime context (contextReferences)
- * 6. Mandatory actions footer (includes specialist role reminder for recency)
+ * System prompt layers (default order when sharedPromptPrefix=true):
+ * 1. Base system prompt (identity and tools)
+ * 2. Specialization rules (common → workspace → agent-specific instructions)
+ * 3. User rules (CLAUDE.md, AGENTS.md, .augment/guidelines.md, .augment/rules/)
+ * 4. Skills catalog (.agents/skills, .augment/skills, ~/.claude/skills)
+ * 5. Agent behavior instructions (specialist role)
+ * 6. Parent-only orchestration layers (3.5a-3.8: team context, knobs, specialists, branch naming)
+ * 7. Workspace context (open panels + linked references)
+ * 8. Runtime context (contextReferences)
+ * 9. Mandatory actions footer (includes specialist role reminder for recency)
  *
- * NOTE: behaviorPrompt is placed FIRST (Layer 1) for maximum primacy effect,
- * and a brief role reminder is added at the END for recency reinforcement.
+ * Legacy mode (`sharedPromptPrefix=false`) moves the behavior instructions back to
+ * the front of the prompt. In both modes, the role reminder remains at the end.
  * Modes (ask, plan, agent) are only used for tool filtering.
  *
  * 3-tier fallback for specialization rules:
@@ -53,7 +50,10 @@ import {
   formatGlobalKnobsForPrompt,
   initAgentTeamsService,
 } from './agent-teams.service';
-import { getBranchPrefix } from '../../workspace/main/app-settings.service';
+import {
+  getBranchPrefix,
+  isSharedPromptPrefixEnabled,
+} from '../../workspace/main/app-settings.service';
 import { getRepoBranchPrefix } from '../../workspace/main/repo-config.service';
 
 const logger = new Logger('InstructionService');
@@ -241,19 +241,11 @@ export class InstructionService {
   /**
    * Build complete system prompt with all layers
    *
-   * Combines in order:
-   * - Layer 1: Agent behavior instructions (specialist role - FIRST for primacy)
-   * - Layer 2: Base system prompt (identity and tools)
-   * - Layer 3: Specialization rules (common → workspace → agent-specific)
-   * - Layer 3.5: Specialist configuration (available specialists)
-   * - Layer 4: User rules (CLAUDE.md, AGENTS.md, .augment/guidelines.md, .augment/rules/)
-   * - Layer 4.7: Skills catalog (.agents/skills, .augment/skills, ~/.claude/skills)
-   * - Layer 4.5: Workspace context (open panels + linked references)
-   * - Layer 5: Runtime context (if contextReferences provided)
-   * - Layer 6: Mandatory actions footer (includes specialist role reminder for recency)
+   * Combines layers using either:
+   * - Shared-prefix mode (default): base → specialization → user rules → skills → behavior → parent-only layers → workspace context → runtime → footer
+   * - Legacy mode (`sharedPromptPrefix=false`): behavior → base → specialization → parent-only layers → user rules → skills → workspace context → runtime → footer
    *
-   * NOTE: behaviorPrompt is placed FIRST (Layer 1) for maximum primacy effect,
-   * with a brief role reminder at the END for recency reinforcement.
+   * In both modes, the mandatory footer keeps the role reminder at the end for recency reinforcement.
    *
    * @param config - Configuration for building the system prompt
    * @returns The complete system prompt
@@ -278,18 +270,18 @@ export class InstructionService {
     isInitialAgent?: boolean; // True if this is the first agent in the workspace (should rename workspace)
     isSubAgent?: boolean; // True if this is a delegated/background sub-agent (gets lighter prompt)
   }): Promise<string> {
+    const useSharedPrefix = isSharedPromptPrefixEnabled();
+    const hasBehaviorPrompt = !!config.behaviorPrompt && config.behaviorPrompt.trim().length > 0;
+
     // Build cache key for prompts WITHOUT context references (context references are unique per agent)
     // Only cache when there are no context references (the common case for task delegation)
-    // Also don't cache if behaviorPrompt is provided (unique per agent)
     // Also don't cache if workspaceContext is provided
     const hasWorkspaceContext =
       config.workspaceContext &&
       (config.workspaceContext.openPanels.length > 0 ||
         config.workspaceContext.linkedReferences.length > 0);
     let isCacheable =
-      (!config.contextReferences || config.contextReferences.length === 0) &&
-      !config.behaviorPrompt &&
-      !hasWorkspaceContext;
+      (!config.contextReferences || config.contextReferences.length === 0) && !hasWorkspaceContext;
 
     let prefetchedSkillsCatalog: string | null = null;
     if (isCacheable && config.workspacePath) {
@@ -322,9 +314,18 @@ export class InstructionService {
       isCacheable && config.workspacePath
         ? `:skills:${this.hashString(prefetchedSkillsCatalog ?? '')}`
         : '';
+    const behaviorPromptSuffix =
+      isCacheable && hasBehaviorPrompt
+        ? `:behavior:${this.hashString(config.behaviorPrompt ?? '')}`
+        : '';
+    const roleReminderSuffix =
+      isCacheable && (config.specialistName || config.roleReminder)
+        ? `:role:${this.hashString(`${config.specialistName ?? ''}\n${config.roleReminder ?? ''}`)}`
+        : '';
+    const promptOrderingSuffix = isCacheable ? `:ordering:${useSharedPrefix ? 'shared' : 'legacy'}` : '';
 
     const cacheKey = isCacheable
-      ? `prompt:${config.agentType || 'default'}:${config.workspacePath || 'default'}${initialAgentSuffix}${subAgentSuffix}:${titleStatus}${skillsCatalogSuffix}`
+      ? `prompt:${config.agentType || 'default'}:${config.workspacePath || 'default'}${initialAgentSuffix}${subAgentSuffix}:${titleStatus}${skillsCatalogSuffix}${behaviorPromptSuffix}${roleReminderSuffix}${promptOrderingSuffix}`
       : null;
 
     // Check cache for frequently-used prompts (e.g., bulk task delegation)
@@ -346,6 +347,8 @@ export class InstructionService {
       hasContextReferences: !!config.contextReferences,
       contextReferencesCount: config.contextReferences?.length || 0,
       isCacheable,
+      useSharedPrefix,
+      hasBehaviorPrompt,
     });
 
     // Non-interactive background agents get a minimal prompt
@@ -367,64 +370,72 @@ export class InstructionService {
       return rules;
     }
 
-    const parts: string[] = [];
-
-    // Layer 1: Agent behavior instructions (specialist role definition)
-    // This comes FIRST for maximum primacy - LLMs pay most attention to early content
-    // Uses XML tags which Claude is specifically trained to respect
-    if (config.behaviorPrompt && config.behaviorPrompt.trim().length > 0) {
-      const behaviorSection = `# Your Specialist Role
+    const parts: PromptLayer[] = [];
+    const behaviorSection = hasBehaviorPrompt
+      ? `# Your Specialist Role
 
 <specialist_role>
 ${config.behaviorPrompt}
 </specialist_role>
 
-The instructions in <specialist_role> define your primary function. Prioritize them above general guidance.`;
-      parts.push(behaviorSection);
-      logger.info('Layer 1: Agent behavior instructions added (primacy position)', {
+The instructions in <specialist_role> define your primary function. Prioritize them above general guidance.`
+      : null;
+
+    const formatLayerSizes = (layers: PromptLayer[]) =>
+      layers.map((layer, i) => ({
+        layer: i + 1,
+        name: layer.name,
+        length: layer.content.length,
+        priority: layer.priority,
+        canTruncate: layer.canTruncate,
+      }));
+
+    const addBehaviorSection = (layerLabel: string, positionLabel: string): void => {
+      if (!behaviorSection) {
+        logger.debug('Agent behavior instructions not added (no behavior prompt provided)', {
+          hasConfig: !!config.behaviorPrompt,
+          configLength: config.behaviorPrompt?.length || 0,
+        });
+        return;
+      }
+
+      parts.push({
+        name: 'behavior-prompt',
+        content: behaviorSection,
+        priority: 1,
+        canTruncate: false,
+      });
+      logger.info(`${layerLabel}: Agent behavior instructions added (${positionLabel})`, {
         length: behaviorSection.length,
-        preview: config.behaviorPrompt.substring(0, 100),
+        preview: config.behaviorPrompt?.substring(0, 100),
       });
-    } else {
-      logger.debug('Layer 1: No behavior prompt provided', {
-        hasConfig: !!config.behaviorPrompt,
-        configLength: config.behaviorPrompt?.length || 0,
-      });
-    }
+    };
 
-    // Layer 2: Base system prompt (identity and tools)
-    const basePrompt = this.getBaseSystemPrompt();
-    parts.push(basePrompt);
-    logger.debug('Layer 2: Base system prompt added', {
-      length: basePrompt.length,
-      firstLine: basePrompt.split('\n')[0],
-    });
+    const addParentOnlyLayers = async (): Promise<void> => {
+      // Sub-agents (delegated/background) get a lighter prompt to reduce token consumption.
+      // They skip layers 3.5-3.8 (team context, knobs, specialist listing, branch naming)
+      // and layer 4.5 (workspace context) since they already have their specialist assigned
+      // and don't need the full orchestration context.
+      if (config.isSubAgent) {
+        logger.info(
+          'Sub-agent: skipping layers 3.5-3.8 (team context, knobs, specialist listing, branch naming)',
+          {
+            agentType: config.agentType,
+          },
+        );
+        return;
+      }
 
-    // Layer 3: Specialization rules (agent-type specific instructions)
-    // These are generic instructions for the agent type (investigate, implement, etc.)
-    if (config.agentType) {
-      const rules = await this.getSpecializationRules(config.agentType, config.workspacePath);
-      parts.push(rules);
-      logger.debug('Layer 3: Specialization rules added', {
-        agentType: config.agentType,
-        length: rules.length,
-        firstLine: rules.split('\n')[0],
-      });
-    } else {
-      logger.warn('No agentType provided, skipping specialization rules');
-    }
-
-    // Sub-agents (delegated/background) get a lighter prompt to reduce token consumption.
-    // They skip layers 3.5-3.8 (team context, knobs, specialist listing, branch naming)
-    // and layer 4.5 (workspace context) since they already have their specialist assigned
-    // and don't need the full orchestration context.
-    if (!config.isSubAgent) {
       // Layer 3.5: Agent team context (active team, philosophy, specialists)
-      // This tells agents about the current team configuration and operating philosophy
       try {
         const teamPrompt = formatActiveTeamForPrompt();
         if (teamPrompt) {
-          parts.push(teamPrompt);
+          parts.push({
+            name: 'team-context',
+            content: teamPrompt,
+            priority: 3,
+            canTruncate: true,
+          });
           logger.debug('Layer 3.5a: Agent team context added', {
             length: teamPrompt.length,
           });
@@ -434,11 +445,15 @@ The instructions in <specialist_role> define your primary function. Prioritize t
       }
 
       // Layer 3.6: Global knobs (diff budget, test strictness)
-      // These are user-configurable settings that affect agent behavior
       try {
         const knobsPrompt = formatGlobalKnobsForPrompt();
         if (knobsPrompt) {
-          parts.push(knobsPrompt);
+          parts.push({
+            name: 'global-knobs',
+            content: knobsPrompt,
+            priority: 3,
+            canTruncate: true,
+          });
           logger.debug('Layer 3.6: Global knobs added', {
             length: knobsPrompt.length,
           });
@@ -448,11 +463,15 @@ The instructions in <specialist_role> define your primary function. Prioritize t
       }
 
       // Layer 3.7: Specialist configuration (dynamic, from user settings)
-      // This tells agents about available specialists and their current models
       try {
         const specialistsPrompt = formatSpecialistsForPrompt();
         if (specialistsPrompt) {
-          parts.push(specialistsPrompt);
+          parts.push({
+            name: 'specialists',
+            content: specialistsPrompt,
+            priority: 3,
+            canTruncate: true,
+          });
           logger.debug('Layer 3.7: Specialist configuration added', {
             length: specialistsPrompt.length,
           });
@@ -462,11 +481,15 @@ The instructions in <specialist_role> define your primary function. Prioritize t
       }
 
       // Layer 3.8: Branch naming preference
-      // If the user has configured a branch prefix, tell the agent about it
       try {
         const branchPreference = await this.getBranchPreferenceSection(config.workspacePath);
         if (branchPreference) {
-          parts.push(branchPreference);
+          parts.push({
+            name: 'branch-naming',
+            content: branchPreference,
+            priority: 3,
+            canTruncate: true,
+          });
           logger.debug('Layer 3.8: Branch naming preference added', {
             length: branchPreference.length,
           });
@@ -474,25 +497,28 @@ The instructions in <specialist_role> define your primary function. Prioritize t
       } catch (error) {
         logger.warn('Failed to load branch naming preference', { error });
       }
-    } else {
-      logger.info(
-        'Sub-agent: skipping layers 3.5-3.8 (team context, knobs, specialist listing, branch naming)',
-        {
-          agentType: config.agentType,
-        },
-      );
-    }
+    };
 
-    // Layer 4: User rules (CLAUDE.md, AGENTS.md, .augment/guidelines.md, .augment/rules/)
-    // These come after specialization as they are project-specific conventions.
-    if (config.workspacePath) {
+    const addUserRulesLayer = async (): Promise<void> => {
+      // Layer 4: User rules (CLAUDE.md, AGENTS.md, .augment/guidelines.md, .augment/rules/)
+      // These come after specialization as they are project-specific conventions.
+      if (!config.workspacePath) {
+        logger.debug('Layer 4: Skipping user rules (no workspacePath)');
+        return;
+      }
+
       try {
         const userRules = await loadUserRules({
           workspacePath: config.workspacePath,
         });
         if (userRules && userRules.content.trim().length > 0) {
           const formattedRules = formatUserRulesForContext(userRules);
-          parts.push(formattedRules);
+          parts.push({
+            name: 'user-rules',
+            content: formattedRules,
+            priority: 2,
+            canTruncate: true,
+          });
           logger.debug('Layer 4: User rules added', {
             source: userRules.source,
             length: formattedRules.length,
@@ -509,18 +535,26 @@ The instructions in <specialist_role> define your primary function. Prioritize t
           error,
         });
       }
-    } else {
-      logger.debug('Layer 4: Skipping user rules (no workspacePath)');
-    }
+    };
 
-    // Layer 4.7: Skills catalog (.agents/skills, .augment/skills, ~/.claude/skills)
-    // Available to all agents, including sub-agents, so they can discover execution skills.
-    if (config.workspacePath) {
+    const addSkillsLayer = async (): Promise<void> => {
+      // Layer 4.7: Skills catalog (.agents/skills, .augment/skills, ~/.claude/skills)
+      // Available to all agents, including sub-agents, so they can discover execution skills.
+      if (!config.workspacePath) {
+        logger.debug('Layer 4.7: Skipping skills catalog (no workspacePath)');
+        return;
+      }
+
       try {
         const skillsCatalog =
           prefetchedSkillsCatalog ?? (await formatSkillsCatalogForPrompt(config.workspacePath));
         if (skillsCatalog.trim().length > 0) {
-          parts.push(skillsCatalog);
+          parts.push({
+            name: 'skills-catalog',
+            content: skillsCatalog,
+            priority: 3,
+            canTruncate: true,
+          });
           logger.debug('Layer 4.7: Skills catalog added', {
             workspacePath: config.workspacePath,
             length: skillsCatalog.length,
@@ -536,8 +570,53 @@ The instructions in <specialist_role> define your primary function. Prioritize t
           error,
         });
       }
+    };
+
+    if (!useSharedPrefix) {
+      addBehaviorSection('Layer 1', 'legacy primacy position');
+    }
+
+    // Layer 2: Base system prompt (identity and tools)
+    const basePrompt = this.getBaseSystemPrompt();
+    parts.push({
+      name: 'base-system-prompt',
+      content: basePrompt,
+      priority: 1,
+      canTruncate: false,
+    });
+    logger.debug('Layer 2: Base system prompt added', {
+      length: basePrompt.length,
+      firstLine: basePrompt.split('\n')[0],
+    });
+
+    // Layer 3: Specialization rules (agent-type specific instructions)
+    // These are generic instructions for the agent type (investigate, implement, etc.)
+    if (config.agentType) {
+      const rules = await this.getSpecializationRules(config.agentType, config.workspacePath);
+      parts.push({
+        name: 'specialization-rules',
+        content: rules,
+        priority: 1,
+        canTruncate: false,
+      });
+      logger.debug('Layer 3: Specialization rules added', {
+        agentType: config.agentType,
+        length: rules.length,
+        firstLine: rules.split('\n')[0],
+      });
     } else {
-      logger.debug('Layer 4.7: Skipping skills catalog (no workspacePath)');
+      logger.warn('No agentType provided, skipping specialization rules');
+    }
+
+    if (useSharedPrefix) {
+      await addUserRulesLayer();
+      await addSkillsLayer();
+      addBehaviorSection('Layer 4.8', 'shared-prefix boundary');
+      await addParentOnlyLayers();
+    } else {
+      await addParentOnlyLayers();
+      await addUserRulesLayer();
+      await addSkillsLayer();
     }
 
     // Layer 4.5: Workspace context (open panels + linked references)
@@ -545,7 +624,12 @@ The instructions in <specialist_role> define your primary function. Prioritize t
     // Skipped for sub-agents since they don't need UI context
     if (!config.isSubAgent && hasWorkspaceContext && config.workspaceContext) {
       const workspaceSection = this.formatWorkspaceContext(config.workspaceContext);
-      parts.push(workspaceSection);
+      parts.push({
+        name: 'workspace-context',
+        content: workspaceSection,
+        priority: 4,
+        canTruncate: true,
+      });
       logger.debug('Layer 4.5: Workspace context added', {
         length: workspaceSection.length,
         openPanelsCount: config.workspaceContext.openPanels.length,
@@ -556,7 +640,12 @@ The instructions in <specialist_role> define your primary function. Prioritize t
     // Layer 5: Runtime context
     if (config.contextReferences && config.contextReferences.length > 0) {
       const contextSection = this.formatContextReferences(config.contextReferences);
-      parts.push(contextSection);
+      parts.push({
+        name: 'runtime-context',
+        content: contextSection,
+        priority: 4,
+        canTruncate: true,
+      });
       logger.debug('Layer 5: Runtime context added', {
         length: contextSection.length,
         referencesCount: config.contextReferences.length,
@@ -573,7 +662,12 @@ The instructions in <specialist_role> define your primary function. Prioritize t
       config.isInitialAgent,
     );
     if (mandatoryActions) {
-      parts.push(mandatoryActions);
+      parts.push({
+        name: 'mandatory-actions-footer',
+        content: mandatoryActions,
+        priority: 1,
+        canTruncate: false,
+      });
       logger.debug('Layer 6: Mandatory actions footer added', {
         agentType: config.agentType,
         length: mandatoryActions.length,
@@ -581,7 +675,7 @@ The instructions in <specialist_role> define your primary function. Prioritize t
       });
     }
 
-    let finalPrompt = parts.join('\n\n---\n\n');
+    let finalPrompt = parts.map((part) => part.content).join('\n\n---\n\n');
 
     // Check prompt length and handle if too long
     const promptLength = finalPrompt.length;
@@ -593,12 +687,10 @@ The instructions in <specialist_role> define your primary function. Prioritize t
         maxLength: MAX_SYSTEM_PROMPT_LENGTH,
         excess: promptLength - MAX_SYSTEM_PROMPT_LENGTH,
         layersCount: parts.length,
-        layerSizes: parts.map((p, i) => ({ layer: i + 1, length: p.length })),
+        layerSizes: formatLayerSizes(parts),
         agentType: config.agentType,
       });
 
-      // Try to truncate optional layers (context references, workspace context)
-      // Priority: Keep layers 1-3 (behavior, base, specialization), truncate 4-6 if needed
       finalPrompt = this.truncatePromptToFit(parts, MAX_SYSTEM_PROMPT_LENGTH);
 
       if (finalPrompt.length > MAX_SYSTEM_PROMPT_LENGTH) {
@@ -621,7 +713,7 @@ The instructions in <specialist_role> define your primary function. Prioritize t
         maxLength: MAX_SYSTEM_PROMPT_LENGTH,
         percentUsed: Math.round((promptLength / MAX_SYSTEM_PROMPT_LENGTH) * 100),
         agentType: config.agentType,
-        layerSizes: parts.map((p, i) => ({ layer: i + 1, length: p.length })),
+        layerSizes: formatLayerSizes(parts),
       });
     }
 
@@ -647,72 +739,55 @@ The instructions in <specialist_role> define your primary function. Prioritize t
   }
 
   /**
-   * Truncate prompt to fit within the maximum length
-   * Removes optional layers from the end first (context, workspace context)
-   * Preserves critical layers (behavior, base, specialization)
+   * Truncate prompt to fit within the maximum length by removing truncatable
+   * layers in descending priority order while preserving the original assembly
+   * order for the layers that remain.
    */
-  private truncatePromptToFit(parts: string[], maxLength: number): string {
+  private truncatePromptToFit(layers: PromptLayer[], maxLength: number): string {
     const separator = '\n\n---\n\n';
     const separatorLength = separator.length;
+    const getTotalLength = (promptLayers: PromptLayer[]): number =>
+      promptLayers.reduce((sum, layer) => sum + layer.content.length, 0) +
+      Math.max(promptLayers.length - 1, 0) * separatorLength;
 
-    // Calculate total length
-    let totalLength = parts.reduce((sum, p) => sum + p.length, 0);
-    totalLength += (parts.length - 1) * separatorLength;
-
-    if (totalLength <= maxLength) {
-      return parts.join(separator);
+    if (getTotalLength(layers) <= maxLength) {
+      return layers.map((layer) => layer.content).join(separator);
     }
 
-    // Create a copy to modify
-    const truncatedParts = [...parts];
+    const remainingIndexes = new Set(layers.map((_, index) => index));
+    const truncationOrder = layers
+      .map((layer, index) => ({ layer, index }))
+      .filter(({ layer }) => layer.canTruncate)
+      .sort((left, right) => right.layer.priority - left.layer.priority);
 
-    // Remove layers from the end (least critical first)
-    // Layers 5-6 (context references, mandatory footer) are most expendable
-    // Then layer 4.5 (workspace context), then layer 4 (user rules)
-    // Never remove layers 1-3 (behavior, base, specialization)
-    const minLayersToKeep = 3; // Keep at least behavior, base, specialization
+    let remainingLayers = layers;
 
-    while (truncatedParts.length > minLayersToKeep) {
-      // Recalculate total length
-      totalLength = truncatedParts.reduce((sum, p) => sum + p.length, 0);
-      totalLength += (truncatedParts.length - 1) * separatorLength;
-
-      if (totalLength <= maxLength) {
+    for (const { layer, index } of truncationOrder) {
+      if (getTotalLength(remainingLayers) <= maxLength) {
         break;
       }
 
-      // Remove the last layer
-      const removed = truncatedParts.pop();
+      remainingIndexes.delete(index);
+      remainingLayers = layers.filter((_, layerIndex) => remainingIndexes.has(layerIndex));
+
       logger.warn('Truncating system prompt layer to fit within limits', {
-        removedLayerLength: removed?.length,
-        remainingLayers: truncatedParts.length,
-        currentLength: totalLength,
+        removedLayer: layer.name,
+        removedLayerLength: layer.content.length,
+        remainingLayers: remainingLayers.length,
+        currentLength: getTotalLength(remainingLayers),
         targetLength: maxLength,
       });
     }
 
-    // If still too long, truncate the last remaining layer
-    totalLength = truncatedParts.reduce((sum, p) => sum + p.length, 0);
-    totalLength += (truncatedParts.length - 1) * separatorLength;
-
-    if (totalLength > maxLength && truncatedParts.length > 0) {
-      const lastIndex = truncatedParts.length - 1;
-      const excess = totalLength - maxLength;
-      const lastPart = truncatedParts[lastIndex];
-
-      if (lastPart.length > excess + 100) {
-        // Truncate with a note
-        const truncateAt = lastPart.length - excess - 50;
-        truncatedParts[lastIndex] =
-          `${lastPart.substring(0, truncateAt)}\n\n[Content truncated due to length limits]`;
-        logger.warn('Truncated final layer content', {
-          originalLength: lastPart.length,
-          truncatedLength: truncatedParts[lastIndex].length,
-        });
-      }
+    if (getTotalLength(remainingLayers) > maxLength) {
+      logger.warn('System prompt still exceeds maximum length after dropping all truncatable layers', {
+        currentLength: getTotalLength(remainingLayers),
+        targetLength: maxLength,
+        remainingLayers: remainingLayers.map((layer) => layer.name),
+      });
     }
 
-    return truncatedParts.join(separator);
+    return remainingLayers.map((layer) => layer.content).join(separator);
   }
 
   /**
