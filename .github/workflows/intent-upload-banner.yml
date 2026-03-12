@@ -1,10 +1,14 @@
 name: Intent - Upload Banner
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'banner/intent-banner.json'
   workflow_dispatch:
     inputs:
       banner_json:
-        description: 'Banner JSON array (leave empty to clear). Example: [{"id":"my-banner","startAt":"2026-03-05T00:00:00Z","endAt":"2026-03-19T23:59:59Z","priority":1,"dismissable":true,"message":"Hello world","buttons":[]}]'
+        description: 'Override banner JSON (bypasses repo file). Example: [{"id":"my-banner","startAt":"2026-03-05T00:00:00Z","endAt":"2026-03-19T23:59:59Z","priority":1,"dismissable":true,"message":"Hello world","buttons":[]}]'
         required: false
         type: string
 
@@ -23,6 +27,9 @@ jobs:
     timeout-minutes: 10
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Authenticate with GCP (OIDC)
         id: auth
         uses: google-github-actions/auth@v2
@@ -35,23 +42,45 @@ jobs:
         with:
           version: 'latest'
 
-      - name: Build banner JSON
+      - name: Resolve banner JSON
         id: banner
         run: |
           BANNER_FILE=$(mktemp)
-          INPUT='${{ inputs.banner_json }}'
+          OVERRIDE=$(cat <<'EOJSON'
+          ${{ inputs.banner_json }}
+          EOJSON
+          )
+          OVERRIDE="${OVERRIDE#"${OVERRIDE%%[![:space:]]*}"}"
+          OVERRIDE="${OVERRIDE%"${OVERRIDE##*[![:space:]]}"}"
 
-          if [ -z "$INPUT" ]; then
-            echo '[]' > "$BANNER_FILE"
-            echo "action=clear" >> "$GITHUB_OUTPUT"
-          else
-            # Validate it's valid JSON
-            if ! echo "$INPUT" | jq . > /dev/null 2>&1; then
-              echo "❌ Error: Invalid JSON"
-              echo "$INPUT"
+          if [ -n "$OVERRIDE" ]; then
+            # workflow_dispatch override — validate JSON and ensure top-level array
+            if ! echo "$OVERRIDE" | jq -e 'type == "array"' > /dev/null 2>&1; then
+              echo "❌ Error: Input must be a valid JSON array"
+              echo "$OVERRIDE"
               exit 1
             fi
-            echo "$INPUT" | jq . > "$BANNER_FILE"
+            echo "$OVERRIDE" | jq . > "$BANNER_FILE"
+            echo "source=workflow_dispatch override" >> "$GITHUB_OUTPUT"
+          elif [ ! -f banner/intent-banner.json ]; then
+            # File missing — treat as clear
+            echo '[]' > "$BANNER_FILE"
+            echo "source=banner/intent-banner.json (missing, defaulting to clear)" >> "$GITHUB_OUTPUT"
+          else
+            # Read from repo file
+            if ! jq -e 'type == "array"' banner/intent-banner.json > /dev/null 2>&1; then
+              echo "❌ Error: banner/intent-banner.json must be a valid JSON array"
+              exit 1
+            fi
+            jq . banner/intent-banner.json > "$BANNER_FILE"
+            echo "source=banner/intent-banner.json" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Determine action
+          CONTENT=$(cat "$BANNER_FILE")
+          if [ "$CONTENT" = "[]" ]; then
+            echo "action=clear" >> "$GITHUB_OUTPUT"
+          else
             echo "action=set" >> "$GITHUB_OUTPUT"
           fi
 
@@ -75,10 +104,12 @@ jobs:
       - name: Post summary
         run: |
           ACTION="${{ steps.banner.outputs.action }}"
+          SOURCE="${{ steps.banner.outputs.source }}"
 
           echo "## 📢 Banner ${ACTION^}d" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "**Triggered by:** ${{ github.actor }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Source:** ${SOURCE}" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
           if [ "$ACTION" = "set" ]; then
