@@ -1808,24 +1808,30 @@
       // (e.g. agent activation where isProcessing=true but isStreaming=false)
       const isActive = effectiveIsStreaming || effectiveIsProcessing;
 
-      const streamingStartTime = isActive
-        ? hasNewActivity
-          ? Date.now()
-          : (currentChatState.streamingStartTime ?? Date.now())
-        : null;
-
-      // Track when the last chunk arrived — update whenever streaming content grows.
-      // Reset to null on phase transitions (hasNewActivity) so that StreamingStatus
-      // treats the new phase as "no data received" and shows neutral messages until
-      // chunks actually arrive in this phase.
       const contentGrew = newContentLength > prevContentLength;
-      const lastChunkTime = isActive
-        ? contentGrew
-          ? Date.now()
-          : hasNewActivity
-            ? null
-            : (currentChatState.lastChunkTime ?? null)
-        : null;
+
+      // When not active, both timers are off
+      let streamingStartTime: number | null = null;
+      let lastChunkTime: number | null = null;
+
+      if (isActive) {
+        if (hasNewActivity) {
+          // Visible activity (messages changed, content cleared) — reset the silence timer
+          // and record that we received data from the server
+          streamingStartTime = Date.now();
+          lastChunkTime = Date.now();
+        } else if (contentGrew) {
+          // New streaming text arrived — keep the existing start time, update last chunk
+          streamingStartTime = currentChatState.streamingStartTime ?? Date.now();
+          lastChunkTime = Date.now();
+        } else {
+          // No new activity — preserve existing timestamps
+          // streamingStartTime falls back to Date.now() because the silence timer always needs a reference point
+          // lastChunkTime falls back to null because null means "no server data received yet" (drives hasReceivedData)
+          streamingStartTime = currentChatState.streamingStartTime ?? Date.now();
+          lastChunkTime = currentChatState.lastChunkTime ?? null;
+        }
+      }
 
       _chatStateInternal = {
         ...currentChatState,
