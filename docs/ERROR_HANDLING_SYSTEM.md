@@ -209,8 +209,6 @@ Each error includes:
 
 ### Components
 
-- `ErrorConsole.svelte`: Main console UI component
-- `ErrorNotifications.svelte`: Toast notifications
 - `error-handler.svelte.ts`: Core error handling logic
 - `error-reporter.ts`: Report generation and formatting
 
@@ -252,7 +250,6 @@ errorHandler.handleError(new Error('Test error'), {
 ### Console Not Opening
 
 - Check keyboard shortcut: `Ctrl+Shift+E`
-- Ensure ErrorConsole is imported in layout
 - Check browser console for initialization errors
 
 ### Errors Not Captured

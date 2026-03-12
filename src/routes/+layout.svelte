@@ -645,7 +645,7 @@
               });
 
             // Track agent-initiated git operations in analytics
-            // Manual operations are tracked at their UI call sites (SidebarChangesPanel, AcceptChangesPanel, SidebarGitStatusBar)
+            // Manual operations are tracked at their UI call sites (SidebarChangesPanel, AcceptChangesPanel)
             // so we only track here when agentId is present to avoid double-tracking
             if (data.metadata?.agentId) {
               const trigger = data.operationType === 'auto-commit' ? 'auto_commit' : 'agent';
@@ -1935,9 +1935,6 @@
 
     <!-- Auggie Setup Gate -->
     <AuggieSetupGate />
-
-    <!-- Error Console (Enhanced Error Handling) -->
-    <!-- <ErrorConsole /> -->
 
     <!-- Toast Notifications -->
     <Toast />

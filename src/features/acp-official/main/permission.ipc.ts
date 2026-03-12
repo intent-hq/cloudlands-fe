@@ -2,13 +2,13 @@
  * Permission IPC Handlers
  *
  * Bridges permission requests from main process (ACPServer/ACPProvider)
- * to the renderer process (PermissionDialog) via IPC.
+ * to the renderer permission UI via IPC.
  *
  * Flow:
  * 1. ACPProvider receives session/request_permission from auggie CLI
  * 2. ACPProvider calls permissionIPCBridge.requestPermission()
  * 3. This sends the request to renderer via webContents.send()
- * 4. PermissionDialog shows UI and user responds
+ * 4. Renderer permission UI shows and user responds
  * 5. Renderer sends response back via ipcMain.handle('permission:respond')
  * 6. Promise resolves and ACPProvider sends response to auggie CLI
  */

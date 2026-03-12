@@ -3,8 +3,8 @@
    * Global Modal Command Palette (Cmd/Ctrl+K)
    *
    * App-wide palette for commands, files, workspace search, notes and headings.
-   * Distinct from lib/components/commands/CommandPalette.svelte which is an
-   * inline slash command suggester for text inputs.
+   * This is the app-wide palette, not the inline slash-command suggester used
+   * in text inputs.
    */
   import { onMount, untrack } from 'svelte';
   import { goto } from '$app/navigation';

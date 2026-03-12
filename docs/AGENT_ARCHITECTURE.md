@@ -550,7 +550,6 @@ All agent creation goes through `agentFactory.createAgent()`:
 | AgentLaunchMenu | `agent-launch-menu` | Contextual agent launch |
 | ContextualMenu | `contextual-menu` | Right-click menu |
 | ChatPanel | `chat-panel` | Chat interface |
-| BackgroundAgentTrigger | `background-agent` | Automated agents |
 | BubbleMenu | `bubble-menu` | Text selection menu |
 | TaskDelegation | `task-menu` | Task assignment |
 | MCP Tools | `mcp-tool` | Agent-spawned agents |

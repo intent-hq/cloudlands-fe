@@ -255,7 +255,6 @@ const modelOptions = $derived<DropdownOption[]>(() => {
 Apply same grouping pattern to:
 - `src/routes/settings/+page.svelte` - Default model setting
 - `src/lib/components/settings/ModeSettings.svelte` - Per-mode model
-- `src/lib/components/settings/SpecialistSettings.svelte` - Per-specialist model
 
 ### Phase 4: Agent Config Updates
 

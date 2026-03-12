@@ -10,7 +10,6 @@ Add an embedded browser feature to the Intent app that allows users to:
 ## Current State
 
 ### What Exists
-- `WebBrowserPanel.svelte` - Uses **iframe** (severely limited: CORS blocks many sites, no console access)
 - Third-party sources feature - Persists external references (Linear, GitHub, etc.) but not integrated in new sidebar
 - `mainContentType` includes `'browser'` - Main content area has conditional for browser type
 - `webviewTag: true` enabled in Electron's BrowserWindow config
@@ -32,7 +31,6 @@ src/features/browser/
 src/lib/components/browser/
 ├── BrowserPanel.svelte        # Sidebar: URL input + recent list (NEW)
 ├── EmbeddedBrowser.svelte     # Main content: webview component (NEW)
-├── WebBrowserPanel.svelte     # Existing iframe version (KEEP as fallback)
 ```
 
 ### Key Technical Decisions

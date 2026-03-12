@@ -60,7 +60,7 @@ This document analyzes all TipTap extensions in the Intent app to identify candi
 
 ### 2. **MentionSuggestionWrapper.svelte** ⭐ STRONG CANDIDATE
 
-**Location**: `src/lib/components/chat/input/MentionSuggestionWrapper.svelte`
+**Location**: legacy chat-input wrapper component
 
 **Current Implementation**:
 - Custom `MentionSuggestionRenderer` class (167 lines)

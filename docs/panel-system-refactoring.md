@@ -134,7 +134,6 @@ $effect(() => {
 
 ### Core Panel System
 - `src/lib/components/layout/panel-system/PanelContentRenderer.svelte` - Simplified to use registry
-- `src/lib/components/layout/panel-system/PanelContentHeader.svelte` - Uses registry for icons
 - `src/lib/components/layout/panel-system/PanelTabBar.svelte` - Uses registry for tab display
 
 ### Layout Management

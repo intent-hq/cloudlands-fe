@@ -1858,11 +1858,6 @@
         <NoteCodeChangesCard workspaceId={workspace.id} note={currentNote} />
       {/if}
 
-      <!-- Table of Contents -->
-      <!-- {#if editor && !showVersionHistory}
-        <TableOfContents {editor} />
-      {/if} -->
-
       <!-- Wrapper for editor and comments that scrolls together -->
       <div
         class="positioning-relative-container relative min-h-full"

@@ -7,11 +7,9 @@ A comprehensive diagram system for the Intent app that enables agents and users 
 ### Core Components
 
 - **DiagramRenderer.svelte** - Main rendering component with state management and interactivity
-- **DiagramNode.svelte** - Individual node rendering with semantic styling
 - **DiagramEdge.svelte** - Edge/connection rendering with path computation
 - **DiagramGroup.svelte** - Group/container rendering for logical grouping
 - **DiagramControls.svelte** - State navigation and zoom controls
-- **DiagramNarrative.svelte** - Narrative text display for states
 
 ### Layout & Computation
 
@@ -112,11 +110,9 @@ Visit `/sandbox` route to test diagrams in the browser without Electron/IPC.
 ```
 src/lib/components/diagrams/
 ├── DiagramRenderer.svelte      # Main renderer
-├── DiagramNode.svelte          # Node component
 ├── DiagramEdge.svelte          # Edge component
 ├── DiagramGroup.svelte         # Group component
 ├── DiagramControls.svelte      # Controls UI
-├── DiagramNarrative.svelte     # Narrative display
 ├── layout-engine.ts            # Layout algorithms
 ├── types.ts                    # Type definitions
 ├── diagram-validator.ts        # Validation

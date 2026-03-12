@@ -8,19 +8,10 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { glob } from 'glob';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-interface Fix {
-  file: string;
-  issue: string;
-  fix: () => void;
-}
-
-const fixes: Fix[] = [];
 
 // Fix 1: UnifiedStateStore missing methods
 function fixUnifiedStateStore() {
@@ -62,11 +53,7 @@ function fixUnifiedStateStore() {
 // Fix 2: Branded type conversions
 function fixBrandedTypes() {
   const files = [
-    'src/lib/components/plans/PlanView.svelte',
     'src/lib/components/acp/ACPEnhancedUI.svelte',
-    'src/lib/components/commands/CommandPalette.svelte',
-    'src/lib/components/file-tracking/MainPanelChangesView.svelte',
-    'src/lib/components/file-tracking/ChangeSetView.svelte',
     'src/lib/components/file-tracking/CodeChangesPanel.svelte',
     'src/lib/components/notes/NotesPanel.svelte',
   ];
