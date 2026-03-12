@@ -1544,7 +1544,7 @@ export class ACPProvider extends BaseAgentProvider {
     const serverConfig: ACPServerConfig = {
       clientInfo: {
         name: 'Intent',
-        version: '1.0.0',
+        version: app.getVersion(),
       },
       workspacePath: effectiveWorkspacePath,
       // Note: workspaceId may be undefined if not provided in config
