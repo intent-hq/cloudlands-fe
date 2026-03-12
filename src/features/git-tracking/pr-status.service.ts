@@ -404,11 +404,19 @@ export async function refreshPRStatus(
     }
 
     // Step 3: Refresh only RELEVANT existing PRs (skip stale ones from bad discovery)
+    // Merged/closed PRs are always preserved as historical data — they can't be
+    // re-discovered since discovery only searches open PRs.
     const existingPRs = workspace.pullRequests || [];
     const refreshedExistingPRs: PullRequestInfo[] = [];
     for (const existingPR of existingPRs) {
-      // Skip PRs that aren't relevant to this workspace
-      if (!relevantPRNumbers.has(existingPR.number)) {
+      // Skip PRs that aren't relevant to this workspace,
+      // but always keep merged PRs (historical data that can't be re-discovered
+      // since discovery only searches open PRs).
+      // Note: we intentionally do NOT preserve closed (non-merged) PRs here —
+      // legitimately-closed PRs are always discoverable via Step 1 (stored prNumber),
+      // so any closed PR that's not in relevantPRNumbers is a stale incorrect link.
+      const isMerged = existingPR.status === PullRequestStatus.Merged;
+      if (!relevantPRNumbers.has(existingPR.number) && !isMerged) {
         logger.debug('[PRStatusService] Dropping stale PR from workspace', {
           workspaceId,
           prNumber: existingPR.number,
@@ -521,10 +529,15 @@ export async function refreshPRStatus(
       }
     }
 
-    // Compute legacy fields from active PR
-    const prStatus = newActivePR?.status ?? null;
-    const prNumber = newActivePR?.number ?? null;
-    const prUrl = newActivePR?.url ?? null;
+    // Compute legacy fields from active PR, falling back to most recent merged PR
+    // so that workspace.prStatus correctly reflects "Merged" when the PR has been merged.
+    const fallbackMergedPR = !newActivePR
+      ? mergedPRs.find((pr) => pr.status === PullRequestStatus.Merged) ?? null
+      : null;
+    const legacyPR = newActivePR ?? fallbackMergedPR;
+    const prStatus = legacyPR?.status ?? null;
+    const prNumber = legacyPR?.number ?? null;
+    const prUrl = legacyPR?.url ?? null;
 
     // Defensive check: warn if the active PR's source branch doesn't match the workspace branch.
     // This would indicate a PR matching bug (like the baseRef matching issue).

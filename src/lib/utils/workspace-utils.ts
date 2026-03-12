@@ -21,8 +21,13 @@ export type WorkspaceStage = 'planning' | 'in-progress' | 'pr-open' | 'merged';
  * ```
  */
 export function getWorkspaceStage(workspace: Workspace): WorkspaceStage {
-  // Check if PR is merged
-  if (workspace.activePullRequest?.status === PullRequestStatus.Merged) {
+  // Check if PR is merged — check all sources consistently
+  // (activePullRequest may be null when PR is merged since it tracks the active open PR)
+  if (
+    workspace.activePullRequest?.status === PullRequestStatus.Merged ||
+    workspace.prStatus === PullRequestStatus.Merged ||
+    workspace.pullRequests?.some((pr) => pr.status === PullRequestStatus.Merged)
+  ) {
     return 'merged';
   }
 
