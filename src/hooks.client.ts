@@ -1,8 +1,22 @@
 import { logger } from '$shared/logger';
 import type { HandleClientError } from '@sveltejs/kit';
-import * as Sentry from '@sentry/electron/renderer';
 import { initAnalytics, track, identifyUser } from '$lib/services/analytics';
 import { shouldSuppressMonacoUnhandledRejection } from '$lib/utils/monaco-error-suppression';
+
+// In browser-only mode (no Electron), @sentry/electron/renderer is unavailable.
+// We lazily import it and provide a no-op fallback so the app still boots.
+let Sentry: { init: (...args: any[]) => void; captureException: (...args: any[]) => void } = {
+  init: () => {},
+  captureException: () => {},
+};
+const sentryReady = (async () => {
+  try {
+    const mod = await import('@sentry/electron/renderer');
+    Sentry = mod;
+  } catch {
+    console.info('[hooks.client] @sentry/electron/renderer not available — running in browser mode');
+  }
+})();
 
 /**
  * Check if a Sentry exception should be filtered out before sending.
@@ -79,6 +93,7 @@ function shouldFilterSentryException(exception: {
 // This avoids bundling the DSN into the client JavaScript
 async function initSentry() {
   try {
+    await sentryReady;
     // Fetch config from main process (which has build-time config baked in)
     const sentryConfig = await window.electronAPI?.fetchSentryConfig?.();
     if (sentryConfig?.dsn) {
@@ -92,7 +107,7 @@ async function initSentry() {
         debug: !isProduction, // Only enable debug in development
         // Filter out known benign errors that bypass handleError hook
         // but are caught by Sentry's global handlers
-        beforeSend: (event) => {
+        beforeSend: (event: any) => {
           const exceptions = event.exception?.values || [];
           for (const ex of exceptions) {
             if (shouldFilterSentryException(ex)) {
@@ -147,18 +162,10 @@ async function initAnalyticsClient() {
   }
 }
 
-// Provide a minimal electronAPI stub when running outside Electron (e.g. browser-only dev/sandbox).
-// This prevents crashes in stores and layouts that call window.electronAPI.on/invoke at module level.
-if (typeof window !== 'undefined' && !window.electronAPI) {
-  (window as any).electronAPI = {
-    invoke: () => Promise.resolve(undefined),
-    on: () => () => {},
-    off: () => {},
-    offById: () => {},
-    send: () => {},
-    fetchSentryConfig: () => Promise.resolve(undefined),
-  };
-}
+// Install a full browser mock for window.electronAPI when running outside Electron.
+// This provides mock data for workspaces, settings, etc. so the app renders fully.
+// The import auto-installs the mock if window.electronAPI is not already present.
+import '$lib/browser-mock';
 
 // Initialize Sentry and Analytics asynchronously
 initSentry();

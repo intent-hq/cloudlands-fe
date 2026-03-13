@@ -12,6 +12,7 @@ import * as path from 'path';
 import express, { Request, Response } from 'express';
 import { app } from 'electron';
 import { createServer } from 'http';
+import { WebSocketServer, WebSocket } from 'ws';
 import { Logger } from '../shared/logger';
 import {
   createWorkspaceMCPServer,
@@ -45,6 +46,7 @@ interface CachedMcpServer {
 export class HttpMcpBridge {
   private app: express.Application;
   private server: any;
+  private wss: WebSocketServer | null = null;
   private mcpServers: Map<string, CachedMcpServer> = new Map(); // Workspace-specific MCP servers with metadata
   private logger: Logger;
   private settingsStore: any;
@@ -349,6 +351,82 @@ export class HttpMcpBridge {
       const key = req.params.key;
       const value = this.settingsStore.get(key);
       res.json({ success: true, key, data: value });
+    });
+
+    // ---------------------------------------------------------------
+    // IPC-over-HTTP bridge for browser-mode rendering
+    // Allows the browser (non-Electron) renderer to call real IPC handlers
+    // ---------------------------------------------------------------
+    this.app.post('/ipc', async (req: Request, res: Response) => {
+      const { channel, data } = req.body || {};
+      if (!channel || typeof channel !== 'string') {
+        return res.status(400).json({ success: false, error: 'Missing or invalid "channel"' });
+      }
+
+      const handlers: Map<string, (...args: any[]) => any> | undefined =
+        (global as any).__ipcHandlerFunctions;
+
+      if (!handlers || !handlers.has(channel)) {
+        return res.status(404).json({
+          success: false,
+          error: `No handler registered for channel "${channel}"`,
+        });
+      }
+
+      try {
+        // Create a synthetic IpcMainInvokeEvent-like object.
+        // Handlers that call event.sender.send() (for streaming) will have
+        // those messages routed through the WebSocket to browser clients.
+        //
+        // IMPORTANT: Many handlers call BrowserWindow.fromWebContents(event.sender)
+        // which throws if sender is not a real WebContents. We mark the event with
+        // __isBrowserBridge so handlers can detect this and skip native Electron calls.
+        const broadcast = (global as any).__browserIpcBroadcast;
+        const syntheticSender = {
+          id: -1,
+          __isBrowserBridge: true,
+          // Route streaming sends through WebSocket
+          send: (ch: string, ...args: any[]) => {
+            if (typeof broadcast === 'function') {
+              broadcast(ch, args.length === 1 ? args[0] : args);
+            }
+          },
+          // Stubs for properties that some handlers may access
+          isDestroyed: () => false,
+          getZoomFactor: () => 1.0,
+        };
+        const syntheticEvent = {
+          sender: syntheticSender,
+          senderFrame: null,
+          processId: process.pid,
+          frameId: -1,
+          __isBrowserBridge: true,
+        };
+
+        // Temporarily patch BrowserWindow.fromWebContents so it returns null
+        // for our synthetic sender instead of throwing a TypeError.
+        // Many IPC handlers call BrowserWindow.fromWebContents(event.sender).
+        const { BrowserWindow } = await import('electron');
+        const origFromWebContents = BrowserWindow.fromWebContents;
+        BrowserWindow.fromWebContents = (wc: any) => {
+          if (wc && wc.__isBrowserBridge) return null as any;
+          return origFromWebContents.call(BrowserWindow, wc);
+        };
+
+        try {
+          const handler = handlers.get(channel)!;
+          const result = await handler(syntheticEvent, data);
+          res.json(result);
+        } finally {
+          BrowserWindow.fromWebContents = origFromWebContents;
+        }
+      } catch (error) {
+        this.logger.error(`IPC bridge error on channel "${channel}"`, error as Error);
+        res.status(500).json({
+          success: false,
+          error: error instanceof Error ? error.message : 'IPC handler error',
+        });
+      }
     });
 
     // MCP endpoint - transparent proxy to the existing MCP server
@@ -835,6 +913,25 @@ export class HttpMcpBridge {
 
       // Create HTTP server explicitly for better ASAR compatibility
       this.server = createServer(this.app);
+
+      // Setup WebSocket server for browser-mode event push (shares the HTTP server)
+      this.wss = new WebSocketServer({ server: this.server, path: '/ipc-events' });
+      this.wss.on('connection', (ws) => {
+        this.logger.info('Browser IPC WebSocket client connected');
+        ws.on('close', () => this.logger.debug('Browser IPC WebSocket client disconnected'));
+      });
+
+      // Expose a global broadcast function so any code that does webContents.send
+      // can also push events to browser-mode clients
+      (global as any).__browserIpcBroadcast = (channel: string, data: any) => {
+        if (!this.wss) return;
+        const message = JSON.stringify({ channel, data });
+        for (const client of this.wss.clients) {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(message);
+          }
+        }
+      };
 
       // Add error handler before listening - this is the ONLY error handler
       // to avoid duplicate handlers causing race conditions

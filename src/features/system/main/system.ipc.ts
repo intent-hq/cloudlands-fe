@@ -258,6 +258,16 @@ export function sendToWorkspaceWindows(
       window.webContents.send(channel, data);
     }
   }
+
+  // Also broadcast to browser-mode WebSocket clients (if any are connected)
+  try {
+    const broadcast = (global as any).__browserIpcBroadcast;
+    if (typeof broadcast === 'function') {
+      broadcast(channel, data);
+    }
+  } catch {
+    // Ignore — WebSocket bridge may not be initialized yet
+  }
 }
 
 

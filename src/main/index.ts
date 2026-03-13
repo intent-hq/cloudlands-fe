@@ -113,6 +113,11 @@ app.setName(resolveAppTitle());
 const __registeredHandlers = new Set<string>();
 (global as any).__ipcRegisteredHandlers = __registeredHandlers;
 
+// Store handler functions so they can be called from the HTTP IPC bridge
+// This enables browser-mode rendering with real data from the running Electron app
+const __ipcHandlerFunctions = new Map<string, (...args: any[]) => any>();
+(global as any).__ipcHandlerFunctions = __ipcHandlerFunctions;
+
 // Store the original handle method
 const originalHandle = ipcMain.handle.bind(ipcMain);
 
@@ -121,6 +126,7 @@ const originalHandle = ipcMain.handle.bind(ipcMain);
 Object.defineProperty(ipcMain, 'handle', {
   value(channel: string, handler: any) {
     __registeredHandlers.add(channel);
+    __ipcHandlerFunctions.set(channel, handler);
     // Silent - no per-handler logging to reduce noise
     return originalHandle(channel, handler);
   },

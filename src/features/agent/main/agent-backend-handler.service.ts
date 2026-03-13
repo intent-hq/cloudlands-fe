@@ -4814,6 +4814,14 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       }
     });
 
+    // Also broadcast to browser-mode WebSocket clients (HTTP bridge)
+    // This allows the browser (non-Electron) renderer to receive streaming events
+    const broadcast = (global as any).__browserIpcBroadcast;
+    if (typeof broadcast === 'function') {
+      broadcast(channel, data);
+      sentToAtLeastOne = true;
+    }
+
     // Log when no window received a streaming message (potential data loss)
     if (!sentToAtLeastOne && channel.startsWith('agent:stream:')) {
       logger.warn('Stream data not delivered - no window received message', {

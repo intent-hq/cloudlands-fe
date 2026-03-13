@@ -1068,7 +1068,16 @@ function registerBackendChannelHandlers(backend: IAgentBackendService): void {
       async (event, validated: any) => {
         // Extract the window ID from the sender to target stream responses
         // This prevents "crossed streams" where messages go to the wrong window
-        const senderWindowId = BrowserWindow.fromWebContents(event.sender)?.id;
+        // When called from the HTTP bridge (browser mode), event.sender is synthetic
+        // and BrowserWindow.fromWebContents would throw, so we skip it.
+        let senderWindowId: number | undefined;
+        if (!(event as any).__isBrowserBridge) {
+          try {
+            senderWindowId = BrowserWindow.fromWebContents(event.sender)?.id;
+          } catch {
+            // Synthetic sender from HTTP bridge — no window ID needed
+          }
+        }
         const requestWithWindowId = {
           ...validated,
           _senderWindowId: senderWindowId,
