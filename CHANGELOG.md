@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.26
+
+- Workspace Scripts — detect, manage, and run project scripts (dev servers, builds, tests) directly from the workspace.
+- Bun-compiled binary fallback for Auggie install — no longer requires Node.js 22+ to get started.
+- Terminal keyboard shortcuts: Cmd+T to create tabs, Cmd+W to close, Cmd+Shift+[/] to cycle between them.
+- Scroll-to-previous arrow on user messages and sticky headers for easier navigation in long conversations.
+- Interrupt priority for agent-to-agent messaging — agents can stop each other mid-response for urgent coordination.
+- Prompt layer reordering for better sub-agent cache reuse.
+- Note names are now clickable links in tool calls, with full content copy support.
+- Last response group stays expanded when the response ends on it instead of auto-collapsing.
+- Context pills render properly in sticky user message headers.
+- SOURCE_BRANCH now available in setup scripts.
+- Fixes: false "No response received" during tool execution, fullscreen tooltip from massive git error strings, merged PRs disappearing from workspace lists on refresh, duplicate queued events delivered to agents.
+
 ## 0.2.25
 
 - Figma MCP integration available as a one-click install in Settings.
