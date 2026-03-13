@@ -1014,26 +1014,18 @@ export function groupContentBlocks(
     closeCurrentGroup();
   }
 
-  // Unwrap single-child groups: if a content_group has only one child (a single text chunk),
-  // promote the child directly to the top level. Groups are only useful when they wrap
-  // multiple chunks (e.g., text + tool calls).
-  const unwrapped: RenderContentBlock[] = [];
-  for (const item of result) {
-    if (
-      item.type === 'content_group' &&
-      (item as ContentBlockGroup).children.length <= 1 &&
-      !isStreaming
-    ) {
-      // Unwrap: add children directly
-      for (const child of (item as ContentBlockGroup).children) {
-        unwrapped.push(child);
-      }
-    } else {
-      unwrapped.push(item);
-    }
+  // Remove trailing text blocks that contain only suggested-prompts content.
+  // These would otherwise become the last item in the result array, preventing
+  // the real last content_group from getting isLast=true in the renderer.
+  while (result.length > 0) {
+    const last = result[result.length - 1];
+    if (last.type !== 'text' || !(last as ContentBlock).text) break;
+    const { cleanedContent } = parseSuggestedPrompts((last as ContentBlock).text!);
+    if (cleanedContent.trim().length > 0) break;
+    result.pop();
   }
 
-  return unwrapped;
+  return result;
 }
 
 /**

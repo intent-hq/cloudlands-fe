@@ -818,14 +818,17 @@ describe('groupContentBlocks', () => {
     expect(result[3].type).toBe('text');
   });
 
-  it('should unwrap single-child group to plain text block', () => {
+  it('should keep single-child group as content_group', () => {
     const blocks: ContentBlock[] = [textBlock('<group:Research>Finding files...</group:Research>')];
     const result = groupContentBlocks(blocks);
 
-    // Single-child groups are unwrapped to their child
+    // Single-child groups are preserved as content_group
     expect(result.length).toBe(1);
-    expect(result[0].type).toBe('text');
-    expect((result[0] as ContentBlock).text).toBe('Finding files...');
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('Research');
+    expect(group.children.length).toBe(1);
+    expect(group.children[0].text).toBe('Finding files...');
   });
 
   it('should group text + tool_use + tool_result blocks', () => {
@@ -869,33 +872,40 @@ describe('groupContentBlocks', () => {
     expect(group.children[2].text).toBe('I have decided.');
   });
 
-  it('should unwrap multiple single-child groups in sequence', () => {
+  it('should keep multiple single-child groups in sequence', () => {
     const blocks: ContentBlock[] = [
       textBlock('<group:First>content 1</group:First>'),
       textBlock('<group:Second>content 2</group:Second>'),
     ];
     const result = groupContentBlocks(blocks);
 
-    // Single-child groups are unwrapped
+    // Single-child groups are preserved as content_group
     expect(result.length).toBe(2);
-    expect(result[0].type).toBe('text');
-    expect(result[1].type).toBe('text');
-    expect((result[0] as ContentBlock).text).toBe('content 1');
-    expect((result[1] as ContentBlock).text).toBe('content 2');
+    expect(result[0].type).toBe('content_group');
+    expect(result[1].type).toBe('content_group');
+    const g1 = result[0] as ContentBlockGroup;
+    const g2 = result[1] as ContentBlockGroup;
+    expect(g1.name).toBe('First');
+    expect(g1.children[0].text).toBe('content 1');
+    expect(g2.name).toBe('Second');
+    expect(g2.children[0].text).toBe('content 2');
   });
 
-  it('should split text before and after group tags, unwrapping single-child group', () => {
+  it('should split text before and after group tags, keeping single-child group', () => {
     const blocks: ContentBlock[] = [
       textBlock('Before text <group:Middle>inside group</group:Middle> After text'),
     ];
     const result = groupContentBlocks(blocks);
 
-    // Single-child group is unwrapped, so we get 3 text blocks
+    // Single-child group is preserved as content_group
     expect(result.length).toBe(3);
     expect(result[0].type).toBe('text');
     expect((result[0] as ContentBlock).text).toBe('Before text');
-    expect(result[1].type).toBe('text');
-    expect((result[1] as ContentBlock).text).toBe('inside group');
+    expect(result[1].type).toBe('content_group');
+    const group = result[1] as ContentBlockGroup;
+    expect(group.name).toBe('Middle');
+    expect(group.children.length).toBe(1);
+    expect(group.children[0].text).toBe('inside group');
     expect(result[2].type).toBe('text');
     expect((result[2] as ContentBlock).text).toBe('After text');
   });
@@ -940,45 +950,56 @@ describe('groupContentBlocks', () => {
     ];
     const result = groupContentBlocks(blocks);
 
-    // First group has 2 children (text + tool_use), so it stays as a group
-    // Second group has 1 child, so it's unwrapped
+    // Both groups are preserved as content_group
     expect(result.length).toBe(2);
     const g1 = result[0] as ContentBlockGroup;
     expect(g1.type).toBe('content_group');
     expect(g1.name).toBe('First');
     expect(g1.isStreaming).toBe(false); // auto-closed, not streaming
     expect(g1.children.length).toBe(2); // text + tool_use
-    // Second group unwrapped to plain text
-    expect(result[1].type).toBe('text');
-    expect((result[1] as ContentBlock).text).toBe('content 2');
+    const g2 = result[1] as ContentBlockGroup;
+    expect(g2.type).toBe('content_group');
+    expect(g2.name).toBe('Second');
+    expect(g2.children.length).toBe(1);
+    expect(g2.children[0].text).toBe('content 2');
   });
 
-  it('should handle short close tag </group> (single-child unwrapped)', () => {
+  it('should handle short close tag </group> (single-child kept as group)', () => {
     const blocks: ContentBlock[] = [textBlock('<group:Test>content</group>')];
     const result = groupContentBlocks(blocks);
 
-    // Single-child group is unwrapped
+    // Single-child group is preserved
     expect(result.length).toBe(1);
-    expect(result[0].type).toBe('text');
-    expect((result[0] as ContentBlock).text).toBe('content');
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('Test');
+    expect(group.children.length).toBe(1);
+    expect(group.children[0].text).toBe('content');
   });
 
-  it('should handle named close tag </group:Name> (single-child unwrapped)', () => {
+  it('should handle named close tag </group:Name> (single-child kept as group)', () => {
     const blocks: ContentBlock[] = [textBlock('<group:MyGroup>content</group:MyGroup>')];
     const result = groupContentBlocks(blocks);
 
-    // Single-child group is unwrapped
+    // Single-child group is preserved
     expect(result.length).toBe(1);
-    expect(result[0].type).toBe('text');
-    expect((result[0] as ContentBlock).text).toBe('content');
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('MyGroup');
+    expect(group.children.length).toBe(1);
+    expect(group.children[0].text).toBe('content');
   });
 
   it('should handle empty group (open immediately followed by close)', () => {
     const blocks: ContentBlock[] = [textBlock('<group:Empty></group:Empty>')];
     const result = groupContentBlocks(blocks);
 
-    // Empty group (0 children) is unwrapped to nothing
-    expect(result.length).toBe(0);
+    // Empty group (0 children) is preserved as content_group
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('Empty');
+    expect(group.children.length).toBe(0);
   });
 
   it('should not process group tags inside non-text blocks', () => {
@@ -1023,6 +1044,37 @@ describe('groupContentBlocks', () => {
     expect(group.children[4].text).toBe('Finishing');
     expect(result[2].type).toBe('text');
     expect((result[2] as ContentBlock).text).toBe('After');
+  });
+
+  it('should strip trailing text blocks that contain only suggested-prompts', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('<group:Work>doing stuff</group:Work>'),
+      textBlock('<!-- suggested-prompts\nRun the tests\nReview changes\n-->'),
+    ];
+    const result = groupContentBlocks(blocks);
+
+    // The trailing suggested-prompts-only text block should be removed
+    // so the content_group is the last item and gets isLast=true
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('Work');
+    expect(group.children.length).toBe(1);
+    expect(group.children[0].text).toBe('doing stuff');
+  });
+
+  it('should keep trailing text blocks that have real content alongside suggested-prompts', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('<group:Work>doing stuff</group:Work>'),
+      textBlock('Some real text <!-- suggested-prompts\nRun tests\n-->'),
+    ];
+    const result = groupContentBlocks(blocks);
+
+    // The trailing text block has real content, so it should be kept
+    expect(result.length).toBe(2);
+    expect(result[0].type).toBe('content_group');
+    expect(result[1].type).toBe('text');
+    expect((result[1] as ContentBlock).text).toBe('Some real text <!-- suggested-prompts\nRun tests\n-->');
   });
 });
 

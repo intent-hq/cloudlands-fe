@@ -294,8 +294,8 @@
     }
 
     function handleCloseActive() {
-      if (isRootContext && activeTerminalId) {
-        closeTerminal(activeTerminalId);
+      if (isRootContext && $activeTerminalId) {
+        closeTerminal($activeTerminalId);
       }
     }
 

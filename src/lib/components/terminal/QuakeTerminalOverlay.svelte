@@ -137,8 +137,8 @@
     }
 
     function handleCloseActive() {
-      if (activeTerminalId) {
-        closeTerminal(activeTerminalId);
+      if ($activeTerminalId) {
+        closeTerminal($activeTerminalId);
       }
     }
 

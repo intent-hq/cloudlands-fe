@@ -39,9 +39,9 @@
   // State model: two independent booleans
   // - isExpanded: user wants full content (no cylinder)
   // - showCylinder: cylinder preview is visible (during/after streaming)
-  let isExpanded = $state(false);
+  let isExpanded = $state(isLast && !isStreaming);
   let userToggled = $state(false);
-  let showCylinder = $state(false);
+  let showCylinder = $state(isLast && !isStreaming);
   let collapseTimer: ReturnType<typeof setTimeout> | null = null;
   let contentEl: HTMLElement | undefined = $state();
 
@@ -59,12 +59,19 @@
       prevStreaming = false;
       // Reset userToggled so auto-collapse works even if user toggled during streaming
       userToggled = false;
-      isExpanded = false;
-      // After streaming ends, collapse after delay
-      collapseTimer = setTimeout(() => {
-        showCylinder = false;
-        collapseTimer = null;
-      }, 800);
+
+      if (isLast) {
+        // Last group stays fully expanded after streaming ends
+        isExpanded = true;
+        showCylinder = true;
+      } else {
+        isExpanded = false;
+        // After streaming ends, collapse after delay
+        collapseTimer = setTimeout(() => {
+          showCylinder = false;
+          collapseTimer = null;
+        }, 800);
+      }
     }
   });
 
@@ -83,6 +90,7 @@
 
       // Toggle state
       isExpanded = !isExpanded;
+      if (!isExpanded) showCylinder = false;
 
       // After Svelte updates the DOM, animate from old height to new height
       requestAnimationFrame(() => {
@@ -105,6 +113,7 @@
       });
     } else {
       isExpanded = !isExpanded;
+      if (!isExpanded) showCylinder = false;
     }
   }
 

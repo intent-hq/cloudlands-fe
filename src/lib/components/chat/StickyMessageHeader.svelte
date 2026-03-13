@@ -143,7 +143,7 @@
 
 <div class="group/sticky-header relative h-fit min-w-0 px-2 pt-2 pb-2 text-subtle whitespace-nowrap text-ellipsis leading-normal bg-sidebar rounded-xs w-full max-w-full truncate">
   {#each parsed.pills as pill (`${pill.type}-${pill.label}`)}
-    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-muted/60 text-foreground/80 rounded-md text-xs whitespace-nowrap font-medium mx-0.5 align-middle">
+    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-muted/60 text-muted-foreground rounded-md text-xs whitespace-nowrap font-medium mx-0.5 align-middle">
       {#if pill.mentionType && ['linear', 'github', 'sentry'].includes(pill.mentionType)}
         <ProviderIcon provider={pill.mentionType as ContextProvider} size={10} class="shrink-0 opacity-30" />
       {:else}
@@ -157,7 +157,7 @@
       <span>{segment.content}</span>
     {:else if segment.type === 'mention'}
       {@const isContextProvider = ['linear', 'github', 'sentry', 'browser'].includes(segment.mentionType)}
-      <span class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-muted/60 text-foreground/80 rounded-md text-xs whitespace-nowrap font-medium mx-0.5 align-middle">
+      <span class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-muted/60 text-muted-foreground rounded-md text-xs whitespace-nowrap font-medium mx-0.5 align-middle">
         {#if isContextProvider}
           <ProviderIcon provider={segment.mentionType as ContextProvider} size={10} class="shrink-0 opacity-30" />
         {:else}
