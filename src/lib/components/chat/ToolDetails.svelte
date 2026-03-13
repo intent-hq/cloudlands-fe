@@ -148,10 +148,13 @@
 
         <!-- Copy button (appears on hover, top-right of content area) -->
         <!-- Skip for file-view since CodeBlock has its own copy button -->
-        {#if parsedResult?.content && parsedResult?.type !== 'file-view'}
+        {#if (parsedResult?.content || parsedResult?.newContent) && parsedResult?.type !== 'file-view'}
           <button
             class="absolute top-2 right-2 p-1.5 rounded bg-muted/80 border border-border/50 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer transition-all opacity-0 group-hover/details:opacity-100 z-10"
-            onclick={() => copyToClipboard(parsedResult?.content || '')}
+            onclick={() =>
+              copyToClipboard(
+                input.content || parsedResult?.newContent || parsedResult?.content || '',
+              )}
             title="Copy content"
           >
             <Fa icon={copied ? faCheck : faCopy} size="xs" />
@@ -280,7 +283,7 @@
                   <div
                     class="flex items-center gap-1.5 px-2 py-1 bg-muted/50 border-b border-border/40"
                   >
-                    <span class="font-mono text-xs font-medium text-foreground/80">{fileName}</span>
+                    <span class="font-mono text-xs font-medium text-muted-foreground">{fileName}</span>
                     {#if snippet.lineStart}
                       <span class="text-xs text-subtle">:{snippet.lineStart}</span>
                     {/if}
@@ -464,7 +467,7 @@
                     size="xs"
                     class={isDirectory ? 'text-amber-500/70' : 'text-subtle'}
                   />
-                  <span class={isDirectory ? 'text-foreground/90' : 'text-subtle'}>
+                  <span class={isDirectory ? 'text-foreground' : 'text-subtle'}>
                     {file}
                   </span>
                 </div>
@@ -475,7 +478,7 @@
             <div class="flex flex-col gap-2">
               {#if parsedResult.taskTitle}
                 <div class="flex items-center gap-2">
-                  <span class="font-medium text-foreground/90">{parsedResult.taskTitle}</span>
+                  <span class="font-medium text-foreground">{parsedResult.taskTitle}</span>
                   {#if parsedResult.taskStatus}
                     <span class="px-1.5 py-0.5 text-xs rounded bg-muted text-subtle"
                       >{parsedResult.taskStatus}</span
@@ -493,7 +496,7 @@
             </div>
           {:else if parsedResult.type === 'task-update'}
             <!-- Task update - show task name and status -->
-            <div class="flex flex-wrap items-center gap-1.5 p-2 text-sm text-foreground/80">
+            <div class="flex flex-wrap items-center gap-1.5 p-2 text-sm text-muted-foreground">
               {#if parsedResult.taskTitle && parsedResult.taskStatus}
                 <span>Marked</span>
                 <span class="font-medium text-foreground">{parsedResult.taskTitle}</span>
@@ -515,7 +518,7 @@
             </div>
           {:else if parsedResult.type === 'agent-report'}
             <!-- Agent report - show the report message in sans-serif -->
-            <div class="p-3 text-sm text-foreground/90 max-h-48 overflow-y-auto">
+            <div class="p-3 text-sm text-foreground max-h-48 overflow-y-auto">
               {#if parsedResult.reportMessage}
                 <p class="m-0 leading-relaxed">{parsedResult.reportMessage}</p>
               {:else}
@@ -539,7 +542,7 @@
                 {#if agentId}
                   <button
                     type="button"
-                    class="inline-flex items-center gap-1 text-foreground/90 font-medium hover:text-foreground cursor-pointer bg-transparent border-0 p-0"
+                    class="inline-flex items-center gap-1 text-foreground font-medium hover:text-foreground cursor-pointer bg-transparent border-0 p-0"
                     onclick={(e) => {
                       window.dispatchEvent(
                         new CustomEvent('workspace:open-agent', {
@@ -552,7 +555,7 @@
                     <span>{agentName}</span>
                   </button>
                 {:else}
-                  <span class="text-foreground/90 font-medium">agent</span>
+                  <span class="text-foreground font-medium">agent</span>
                 {/if}
               </div>
               <!-- Message content -->
@@ -569,7 +572,7 @@
             </div>
           {:else if parsedResult.type === 'comment-add'}
             <!-- Comment add result - show success message -->
-            <div class="flex flex-wrap items-center gap-1.5 p-2 text-sm text-foreground/80">
+            <div class="flex flex-wrap items-center gap-1.5 p-2 text-sm text-muted-foreground">
               {#if parsedResult.commentMessage}
                 <span>{parsedResult.commentMessage}</span>
               {:else if parsedResult.commentAnchorText}
@@ -699,7 +702,7 @@
                       title="Click to focus this tab"
                     >
                       <span class="w-2 h-2 rounded-full shrink-0 {tab.mounted ? 'bg-green-500/70' : 'bg-muted-foreground/30'}"></span>
-                      <span class="text-foreground/90 truncate flex-1" title={tab.url}>
+                      <span class="text-foreground truncate flex-1" title={tab.url}>
                         {tab.title || tab.url || tab.tabId}
                       </span>
                       {#if tab.url}
@@ -751,7 +754,7 @@
               {#if parsedResult.content && !parsedResult.screenshotBase64 && !parsedResult.screenshotUrl && !parsedResult.browserTabs?.length && !parsedResult.evaluateResult && !parsedResult.accessibilityTree && !parsedResult.error}
                 <!-- Fallback content for other browser actions -->
                 <div class="overflow-hidden rounded">
-                  <pre class="m-0 p-2 font-mono text-sm leading-relaxed overflow-x-auto max-h-48 overflow-y-auto text-foreground/80">{parsedResult.content}</pre>
+                  <pre class="m-0 p-2 font-mono text-sm leading-relaxed overflow-x-auto max-h-48 overflow-y-auto text-muted-foreground">{parsedResult.content}</pre>
                 </div>
               {/if}
             </div>
@@ -759,13 +762,13 @@
             <!-- Confirmation/info result - clean text display -->
             <div class="overflow-hidden rounded">
               <pre
-                class="m-0 p-2 text-sm leading-relaxed overflow-x-auto max-h-72 overflow-y-auto text-foreground/80 whitespace-pre-wrap">{parsedResult.content}</pre>
+                class="m-0 p-2 text-sm leading-relaxed overflow-x-auto max-h-72 overflow-y-auto text-muted-foreground whitespace-pre-wrap">{parsedResult.content}</pre>
             </div>
           {:else if parsedResult.content}
             <!-- Plain text preview (no syntax highlighting for cleaner light/dark mode support) -->
             <div class="overflow-hidden rounded">
               <pre
-                class="m-0 p-2 font-mono text-sm leading-relaxed overflow-x-auto max-h-72 overflow-y-auto text-foreground/80">{parsedResult.content}</pre>
+                class="m-0 p-2 font-mono text-sm leading-relaxed overflow-x-auto max-h-72 overflow-y-auto text-muted-foreground">{parsedResult.content}</pre>
             </div>
           {/if}
         {:else if result}

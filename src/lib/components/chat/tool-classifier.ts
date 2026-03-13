@@ -429,11 +429,25 @@ function extractResultMetadata(result: any): ResultMetadata | null {
 
   // Text-based extraction from any result format
   if (resultText) {
-    // Match "Note: <title>" at the start
+    // Match "Note: <title>" at the start (read_note results — must be before noteId patterns
+    // to avoid accidentally extracting noteId from intent links inside note content)
     const noteMatch = resultText.match(/^Note:\s*(.+?)(?:\n|$)/);
     if (noteMatch) {
       return { title: noteMatch[1].trim() };
     }
+
+    // Extract noteId from result text patterns
+    const noteContentReplaced = resultText.match(/Note content replaced:\s*([a-zA-Z0-9_-]+)/);
+    if (noteContentReplaced) return { noteId: noteContentReplaced[1] };
+
+    const intentLink = resultText.match(/intent:\/\/local\/note\/([a-zA-Z0-9_-]+)/);
+    if (intentLink) return { noteId: intentLink[1] };
+
+    const addedToNote = resultText.match(/Content added to note "([^"]+)"/);
+    if (addedToNote) return { noteId: addedToNote[1] };
+
+    const noteDeleted = resultText.match(/Note deleted:\s*([a-zA-Z0-9_-]+)/);
+    if (noteDeleted) return { noteId: noteDeleted[1] };
     // Try to extract file path from result text
     const filePath = extractFilePathFromResultText(resultText);
     if (filePath) {
@@ -465,7 +479,13 @@ export function classifyTool(
 
   // First check if this is a pre-formatted display name
   const preFormatted = detectPreFormattedToolName(toolName, input);
-  if (preFormatted) return preFormatted;
+  if (preFormatted) {
+    // Merge noteId from result metadata for pre-formatted names
+    if (!preFormatted.noteId && (resultMetadata?.noteId || input.noteId)) {
+      preFormatted.noteId = resultMetadata?.noteId || input.noteId;
+    }
+    return preFormatted;
+  }
 
   const cleanedName = cleanToolName(toolName);
   const name = cleanedName.toLowerCase();
