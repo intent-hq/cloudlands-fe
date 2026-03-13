@@ -10,9 +10,13 @@ import { tabScrollReducer } from "./slices/tab-scroll/tab-scroll-slice";
 import { terminalOverlayReducer } from "./slices/terminal-overlay/terminal-overlay-slice";
 import { editorSettingsReducer } from "./slices/editor-settings/editor-settings-slice";
 import { noteSpellcheckSettingsReducer } from "./slices/note-spellcheck-settings/note-spellcheck-settings-slice";
+import { notificationSettingsReducer } from "./slices/notification-settings/notification-settings-slice";
+import { workspaceSettingsReducer } from "./slices/workspace-settings/workspace-settings-slice";
+import { betaUpdatesReducer } from "./slices/beta-updates/beta-updates-slice";
 import { zoomReducer } from "./slices/zoom/zoom-slice";
 
 export const reducers = {
+  betaUpdates: betaUpdatesReducer,
   agentFontSettings: agentFontSettingsReducer,
   noteFontSettings: noteFontSettingsReducer,
   codeFontSettings: codeFontSettingsReducer,
@@ -24,7 +28,9 @@ export const reducers = {
   tabDrag: tabDragReducer,
   tabScroll: tabScrollReducer,
   terminalOverlay: terminalOverlayReducer,
+  notificationSettings: notificationSettingsReducer,
   noteSpellcheckSettings: noteSpellcheckSettingsReducer,
+  workspaceSettings: workspaceSettingsReducer,
   zoom: zoomReducer,
 } as const;
 

@@ -14,8 +14,31 @@ import { unifiedStateStore } from '$features/agent/browser';
 import { agentService } from '$features/agent/agent.service';
 import { notesStateManager } from '$features/notes/notes.store.svelte';
 import { fileTrackingStore } from './file-tracking.store.svelte';
-import { createWorkspaceSettingsStore } from '$lib/stores/workspace-settings.store.svelte';
+import { syncWorkspaceSettings } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
+import { dispatch as reduxDispatch, getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import type { WorkspaceId } from '$shared/types/branded-ids';
+
+// Module-level reactive state mirroring Redux autoCommitEnabled.
+// This keeps $derived blocks reactive (just like the old module-level $state).
+let _autoCommitEnabled = $state(true);
+let _storeSubscribed = false;
+
+function ensureStoreSubscription(): void {
+  if (_storeSubscribed) return;
+  try {
+    const store = getReduxStore();
+    _autoCommitEnabled = store.getState().workspaceSettings.autoCommitEnabled;
+    store.subscribe(() => {
+      const nextAutoCommitEnabled = store.getState().workspaceSettings.autoCommitEnabled;
+      if (nextAutoCommitEnabled !== _autoCommitEnabled) {
+        _autoCommitEnabled = nextAutoCommitEnabled;
+      }
+    });
+    _storeSubscribed = true;
+  } catch {
+    // Store not initialized yet — will use default
+  }
+}
 
 /**
  * Check if an agent is actively working (streaming or task not complete).
@@ -57,11 +80,19 @@ function isAgentActivelyWorking(agentId: string): boolean {
  * Create a reactive agent lock store for a specific workspace.
  */
 export function createAgentLockStore(workspaceId: WorkspaceId | string | undefined) {
-  // Create workspace settings store for auto-commit setting
-  const workspaceSettings = $derived(
-    workspaceId ? createWorkspaceSettingsStore(workspaceId as WorkspaceId) : null,
-  );
-  const autoCommitEnabled = $derived(workspaceSettings?.autoCommitEnabled ?? true);
+  // Ensure we're subscribed to Redux store for autoCommit changes
+  ensureStoreSubscription();
+
+  // Sync workspace settings on first access per workspace
+  if (workspaceId) {
+    try {
+      reduxDispatch(syncWorkspaceSettings(workspaceId as string));
+    } catch {
+      // Redux dispatch bridge not initialized yet — skip sync for now
+    }
+  }
+
+  const autoCommitEnabled = $derived(_autoCommitEnabled);
 
   // Get working changes
   const unstagedChanges = $derived(fileTrackingStore.workingChanges.unstaged);

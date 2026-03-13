@@ -84,11 +84,7 @@ vi.mock('$features/file-tracking/agent-lock.store.svelte', () => ({
   }),
 }));
 
-vi.mock('$lib/stores/workspace-settings.store.svelte', () => ({
-  createWorkspaceSettingsStore: vi.fn().mockReturnValue({
-    autoCommitEnabled: true,
-  }),
-}));
+
 
 vi.mock('$features/github-auth/renderer/github-auth.store.svelte', () => ({
   githubAuthStore: {
@@ -162,6 +158,18 @@ vi.mock('$features/navigation/link-handler', () => ({
 vi.mock('$lib/store/slices/terminal-overlay/terminal-overlay-slice', () => ({
   addTerminal: vi.fn((...args: any[]) => ({ type: 'terminalOverlay/addTerminal', payload: args })),
   openTerminalOverlay: vi.fn((...args: any[]) => ({ type: 'terminalOverlay/open', payload: args })),
+}));
+
+vi.mock('$lib/store/slices/workspace-settings/workspace-settings-selectors', () => {
+  const { readable } = require('svelte/store');
+  return {
+    selectAutoCommitEnabled: vi.fn(() => readable(true)),
+  };
+});
+
+vi.mock('$lib/store/slices/workspace-settings/workspace-settings-slice', () => ({
+  setAutoCommitEnabled: vi.fn((val: any) => ({ type: 'workspaceSettings/setAutoCommitEnabled', payload: val })),
+  syncWorkspaceSettings: vi.fn((id: any) => ({ type: 'workspaceSettings/syncWorkspaceSettings', payload: id })),
 }));
 
 vi.mock('$lib/store/utils/utils', () => ({

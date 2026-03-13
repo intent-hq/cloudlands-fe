@@ -71,6 +71,8 @@
   import type { InitialRepoInfo } from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
   import { SidebarNav, sidebarNavStore, SidebarPanel } from '$lib/components/layout/sidebar-nav';
   import Store from '$lib/store/components/Store.svelte';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectSoundEnabled, selectSoundOnlyWhenUnfocused, selectNotificationVolume } from '$lib/store/slices/notification-settings/notification-settings-selectors';
 
   const logger = createLogger('+layout');
 
@@ -285,14 +287,6 @@
   let showGitHubAuthModal = $state(false);
   let pendingGitHubAuth = $state<GitHubAuthRequiredEvent | null>(null);
   let githubAuthModalKey = $state(0);
-
-  // Keychain access modal state (for macOS keychain consent)
-  let showKeychainAccessModal = $state(false);
-  let keychainWarningData = $state<{
-    requestId: string;
-    service?: string;
-    account?: string;
-  } | null>(null);
 
   // Feature code dialog state
   let showFeatureCodeDialog = $state(false);
@@ -962,25 +956,26 @@
           'notification:show',
           async (data: { agentName: string; timestamp: string }) => {
             try {
-              // Import stores and utilities dynamically to avoid SSR issues
-              const { notificationSettingsStore } =
-                await import('$lib/stores/notification-settings.store.svelte');
               const { playNotificationSound } = await import('$lib/utils/notification-sound');
+              const state = getReduxStore().getState();
 
               // Check if sound is enabled
-              if (!notificationSettingsStore.soundEnabled) {
+              const soundEnabled = selectSoundEnabled.select(state);
+              if (!soundEnabled) {
                 logger.debug('[+layout] Notification sound disabled');
                 return;
               }
 
               // Check if we should only play when unfocused
-              if (notificationSettingsStore.soundOnlyWhenUnfocused && document.hasFocus()) {
+              const soundOnlyWhenUnfocused = selectSoundOnlyWhenUnfocused.select(state);
+              if (soundOnlyWhenUnfocused && document.hasFocus()) {
                 logger.debug('[+layout] Window focused, skipping notification sound');
                 return;
               }
 
               // Play the notification sound
-              await playNotificationSound(notificationSettingsStore.volume);
+              const volume = selectNotificationVolume.select(state);
+              await playNotificationSound(volume);
               logger.debug('[+layout] Played notification sound for agent:', data.agentName);
             } catch (error) {
               logger.error('[+layout] Failed to play notification sound:', error);
@@ -1680,39 +1675,6 @@
       .catch(() => {
         // Toast not available - not critical
       });
-  }
-
-  function handleKeychainAllow() {
-    if (keychainWarningData?.requestId && window.electronAPI) {
-      window.electronAPI.invoke('git:keychain-consent-respond', {
-        requestId: keychainWarningData.requestId,
-        outcome: 'allow',
-      });
-    }
-    showKeychainAccessModal = false;
-    keychainWarningData = null;
-  }
-
-  function handleKeychainDeny() {
-    if (keychainWarningData?.requestId && window.electronAPI) {
-      window.electronAPI.invoke('git:keychain-consent-respond', {
-        requestId: keychainWarningData.requestId,
-        outcome: 'deny',
-      });
-    }
-    showKeychainAccessModal = false;
-    keychainWarningData = null;
-  }
-
-  function handleKeychainClose() {
-    if (keychainWarningData?.requestId && window.electronAPI) {
-      window.electronAPI.invoke('git:keychain-consent-respond', {
-        requestId: keychainWarningData.requestId,
-        outcome: 'cancelled',
-      });
-    }
-    showKeychainAccessModal = false;
-    keychainWarningData = null;
   }
 
   // Handle retry in terminal for git credentials errors (auth failures)

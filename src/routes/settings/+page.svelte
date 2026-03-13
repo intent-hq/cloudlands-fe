@@ -19,7 +19,7 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
-  import { notificationSettingsStore } from '$lib/stores/notification-settings.store.svelte';
+  import { resetNotificationSettings } from '$lib/store/slices/notification-settings/notification-settings-slice';
   import { setNoteFontStyle } from '$lib/store/slices/note-font-settings/note-font-settings-slice';
   import { selectNoteFontStyle, selectIsNoteMonospace } from '$lib/store/slices/note-font-settings/note-font-settings-selectors';
   import { setAgentFontStyle, type AgentFontStyle } from '$lib/store/slices/agent-font-settings/agent-font-settings-slice';
@@ -293,7 +293,7 @@
     settingsDispatch(setNoteFontStyle('sans'));
     settingsDispatch(setAgentFontStyle('sans'));
     // Reset notification settings
-    notificationSettingsStore.reset();
+    settingsDispatch(resetNotificationSettings());
     // Reset Git & Workspace settings
     gitWorkspaceSettingsRef?.resetToDefaults();
   }

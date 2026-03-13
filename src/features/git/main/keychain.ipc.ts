@@ -7,7 +7,7 @@
  * 1. GitService detects keychain access risk before network operation
  * 2. GitService calls keychainIPCBridge.requestConsent()
  * 3. This sends the request to renderer via webContents.send()
- * 4. KeychainAccessModal shows UI and user responds
+ * 4. Renderer may handle the consent request and respond
  * 5. Renderer sends response back via ipcMain.handle('git:keychain-consent-respond')
  * 6. Promise resolves and GitService continues or cancels the operation
  */

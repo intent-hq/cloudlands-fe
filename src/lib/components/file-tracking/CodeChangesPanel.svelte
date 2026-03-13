@@ -27,7 +27,9 @@
   import { toast } from 'svelte-sonner';
   import { getTransientUIStore } from '$features/workspace/transient-ui-state.store.svelte';
   import { Switch } from '../ui/switch';
-  import { createWorkspaceSettingsStore } from '$lib/stores/workspace-settings.store.svelte';
+  import { selectAutoCommitEnabled } from '$lib/store/slices/workspace-settings/workspace-settings-selectors';
+  import { setAutoCommitEnabled, syncWorkspaceSettings } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import { handleLink } from '$features/navigation/link-handler';
 
   interface Props {
@@ -82,9 +84,16 @@
   let unstagedCollapsed = $state(false);
   let stagedCollapsed = $state(false);
 
-  // Auto-commit settings - create store when workspaceId is available
-  let workspaceSettings = $derived(workspaceId ? createWorkspaceSettingsStore(workspaceId) : null);
-  const autoCommitEnabled = $derived(workspaceSettings?.autoCommitEnabled ?? true);
+  // Auto-commit settings from Redux
+  const dispatch = getDispatch();
+  const autoCommitEnabled = selectAutoCommitEnabled();
+
+  // Sync workspace settings when workspaceId is available
+  $effect(() => {
+    if (workspaceId) {
+      dispatch(syncWorkspaceSettings(workspaceId));
+    }
+  });
 
   // Get working changes from FileTrackingStore - the single source of truth
   // PERF: Use store arrays directly to avoid creating new array references on every update.
@@ -389,14 +398,14 @@
       </ToggleGroup.Item>
     </ToggleGroup.Root>
 
-    <Tooltip content={autoCommitEnabled ? 'Auto-commit enabled' : 'Auto-commit disabled'}>
+    <Tooltip content={$autoCommitEnabled ? 'Auto-commit enabled' : 'Auto-commit disabled'}>
       <div class="flex items-center gap-1.5 pl-1">
         <Switch
           size="sm"
-          checked={autoCommitEnabled}
+          checked={$autoCommitEnabled}
           onCheckedChange={(checked) => {
-            if (workspaceSettings) {
-              workspaceSettings.autoCommitEnabled = checked;
+            if (workspaceId) {
+              dispatch(setAutoCommitEnabled(workspaceId, checked));
             }
           }}
         />
@@ -435,7 +444,7 @@
     {:else}
       <div class="w-full flex flex-col">
         <!-- Auto-commit notice -->
-        {#if autoCommitEnabled && (workingChanges.staged.length > 0 || workingChanges.unstaged.length > 0)}
+        {#if $autoCommitEnabled && (workingChanges.staged.length > 0 || workingChanges.unstaged.length > 0)}
           <div class="px-2 py-1.5 mb-2 text-xs text-subtle bg-muted/50 rounded">
             Auto-commit is on. Agent changes will be committed automatically.
           </div>
@@ -443,7 +452,7 @@
 
         {#if workingChanges.staged.length > 0}
           <ListSection
-            class="mb-3 pb-3 {autoCommitEnabled ? 'opacity-50 pointer-events-none' : ''}"
+            class="mb-3 pb-3 {$autoCommitEnabled ? 'opacity-50 pointer-events-none' : ''}"
             collapsible
             collapsed={stagedCollapsed}
             onToggleCollapse={() => (stagedCollapsed = !stagedCollapsed)}
@@ -453,7 +462,7 @@
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  disabled={autoCommitEnabled}
+                  disabled={$autoCommitEnabled}
                   onclick={(e) => {
                     e.stopPropagation();
                     handleUnstageAll();
@@ -468,10 +477,10 @@
                 changes={workingChanges.staged}
                 {viewMode}
                 showStats={true}
-                showActions={!autoCommitEnabled}
+                showActions={!$autoCommitEnabled}
                 selectedChangeId={selectedChange?.id}
                 onFileClick={handleFileClick}
-                onUnstageClick={autoCommitEnabled ? undefined : handleUnstageChange}
+                onUnstageClick={$autoCommitEnabled ? undefined : handleUnstageChange}
               />
             </ListContainer>
           </ListSection>
@@ -480,7 +489,7 @@
         <!-- Working Changes -->
         {#if workingChanges.unstaged.length > 0}
           <ListSection
-            class="mb-3 {autoCommitEnabled ? 'opacity-50 pointer-events-none' : ''}"
+            class="mb-3 {$autoCommitEnabled ? 'opacity-50 pointer-events-none' : ''}"
             title="Unstaged"
             collapsible
             collapsed={unstagedCollapsed}
@@ -491,7 +500,7 @@
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  disabled={autoCommitEnabled}
+                  disabled={$autoCommitEnabled}
                   onclick={(e) => {
                     e.stopPropagation();
                     handleStageAll();
@@ -506,11 +515,11 @@
                 changes={workingChanges.unstaged}
                 {viewMode}
                 showStats={true}
-                showActions={!autoCommitEnabled}
+                showActions={!$autoCommitEnabled}
                 selectedChangeId={selectedChange?.id}
                 onFileClick={handleFileClick}
-                onStageClick={autoCommitEnabled ? undefined : handleStageChange}
-                onRevertClick={autoCommitEnabled ? undefined : handleRevertChange}
+                onStageClick={$autoCommitEnabled ? undefined : handleStageChange}
+                onRevertClick={$autoCommitEnabled ? undefined : handleRevertChange}
               />
             </ListContainer>
           </ListSection>

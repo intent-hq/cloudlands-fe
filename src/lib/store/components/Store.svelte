@@ -53,6 +53,9 @@
 <RunSaga sagaName="tabScrollSaga" />
 <RunSaga sagaName="sidebarWidthSaga" />
 <RunSaga sagaName="terminalOverlaySaga" />
+<RunSaga sagaName="notificationSettingsSaga" />
 <RunSaga sagaName="noteSpellcheckSettingsSaga" />
+<RunSaga sagaName="workspaceSettingsSaga" />
 <RunSaga sagaName="zoomSaga" />
+<RunSaga sagaName="betaUpdatesSaga" />
 {@render children?.()}

@@ -12,7 +12,10 @@ import { openActionSaga } from "./slices/open-action/sagas/open-action-saga";
 import { sidebarWidthSaga } from "./slices/sidebar-width/sagas/sidebar-width-saga";
 import { tabScrollSaga } from "./slices/tab-scroll/sagas/tab-scroll-saga";
 import { terminalOverlaySaga } from "./slices/terminal-overlay/sagas/terminal-overlay-saga";
+import { notificationSettingsSaga } from "./slices/notification-settings/sagas/notification-settings-saga";
 import { noteSpellcheckSettingsSaga } from "./slices/note-spellcheck-settings/sagas/note-spellcheck-settings-saga";
+import { workspaceSettingsSaga } from "./slices/workspace-settings/sagas/workspace-settings-saga";
+import { betaUpdatesSaga } from "./slices/beta-updates/sagas/beta-updates-saga";
 import { zoomSaga } from "./slices/zoom/sagas/zoom-saga";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
@@ -26,6 +29,7 @@ function* noopSaga() {}
  * will be added here as their respective stores are migrated.
  */
 export const sagas = {
+  betaUpdatesSaga,
   agentFontSettingsSaga,
   noteFontSettingsSaga,
   codeFontSettingsSaga,
@@ -34,7 +38,9 @@ export const sagas = {
   sidebarWidthSaga,
   tabScrollSaga,
   terminalOverlaySaga,
+  notificationSettingsSaga,
   noteSpellcheckSettingsSaga,
+  workspaceSettingsSaga,
   zoomSaga,
   // Placeholder sagas for Store.svelte references — will be replaced with real implementations
   streamingSaga: noopSaga,

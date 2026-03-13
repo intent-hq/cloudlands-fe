@@ -9,19 +9,27 @@
    * - Volume control
    */
 
-  import { notificationSettingsStore } from '$lib/stores/notification-settings.store.svelte';
+  import { selectNotificationEnabled, selectSoundEnabled, selectSoundOnlyWhenUnfocused, selectNotificationVolume } from '$lib/store/slices/notification-settings/notification-settings-selectors';
+  import { setNotificationEnabled, setSoundEnabled, setSoundOnlyWhenUnfocused, setVolume } from '$lib/store/slices/notification-settings/notification-settings-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { playNotificationSound } from '$lib/utils/notification-sound';
   import { faPlay } from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
   import Fa from 'svelte-fa';
 
+  const notificationEnabled = selectNotificationEnabled();
+  const soundEnabled = selectSoundEnabled();
+  const soundOnlyWhenUnfocused = selectSoundOnlyWhenUnfocused();
+  const notificationVolume = selectNotificationVolume();
+  const dispatch = getDispatch();
+
   let testSoundLoading = $state(false);
 
   async function handleTestSound() {
     testSoundLoading = true;
     try {
-      await playNotificationSound(notificationSettingsStore.volume);
+      await playNotificationSound($notificationVolume);
     } catch {
       // Silently fail
     } finally {
@@ -33,11 +41,11 @@
     const target = e.target as HTMLInputElement;
     const percentage = parseInt(target.value, 10);
     const normalized = percentage / 100;
-    notificationSettingsStore.setVolume(normalized);
+    dispatch(setVolume(normalized));
   }
 
   // Derive volume percentage from store (0-1 to 0-100)
-  const volumePercentage = $derived(Math.round(notificationSettingsStore.volume * 100));
+  const volumePercentage = $derived(Math.round($notificationVolume * 100));
 </script>
 
 <div class="grid grid-cols-[repeat(auto-fit,_minmax(220px,_1fr))] gap-x-10 gap-y-6">
@@ -48,8 +56,8 @@
       <p class="text-xs text-subtle">Show system notifications when tasks complete</p>
     </div>
     <Toggle
-      pressed={notificationSettingsStore.enabled}
-      onclick={() => notificationSettingsStore.setEnabled(!notificationSettingsStore.enabled)}
+      pressed={$notificationEnabled}
+      onclick={() => dispatch(setNotificationEnabled(!$notificationEnabled))}
       variant="indicator"
       size="xs"
       class="mb-auto"
@@ -63,9 +71,8 @@
       <p class="text-xs text-subtle">Play a sound when notifications arrive</p>
     </div>
     <Toggle
-      pressed={notificationSettingsStore.soundEnabled}
-      onclick={() =>
-        notificationSettingsStore.setSoundEnabled(!notificationSettingsStore.soundEnabled)}
+      pressed={$soundEnabled}
+      onclick={() => dispatch(setSoundEnabled(!$soundEnabled))}
       variant="indicator"
       size="xs"
       class="mb-auto"
@@ -79,11 +86,8 @@
       <p class="text-xs text-subtle">Only play sounds when the app is in the background</p>
     </div>
     <Toggle
-      pressed={notificationSettingsStore.soundOnlyWhenUnfocused}
-      onclick={() =>
-        notificationSettingsStore.setSoundOnlyWhenUnfocused(
-          !notificationSettingsStore.soundOnlyWhenUnfocused,
-        )}
+      pressed={$soundOnlyWhenUnfocused}
+      onclick={() => dispatch(setSoundOnlyWhenUnfocused(!$soundOnlyWhenUnfocused))}
       variant="indicator"
       size="xs"
       class="mb-auto"

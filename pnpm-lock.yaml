@@ -108,9 +108,6 @@ importers:
       '@sentry/electron':
         specifier: ^7.5.0
         version: 7.5.0
-      '@sentry/svelte':
-        specifier: ^10.42.0
-        version: 10.42.0(svelte@5.46.0)
       '@tiptap/core':
         specifier: ^3.10.1
         version: 3.13.0(@tiptap/pm@3.13.0)
@@ -336,6 +333,9 @@ importers:
       redux:
         specifier: ^5.0.1
         version: 5.0.1
+      redux-logger:
+        specifier: ^3.0.6
+        version: 3.0.6
       redux-saga:
         specifier: ^1.4.2
         version: 1.4.2
@@ -463,6 +463,9 @@ importers:
       '@types/node':
         specifier: ^22.18.13
         version: 22.19.3
+      '@types/redux-logger':
+        specifier: ^3.0.13
+        version: 3.0.13
       '@types/uuid':
         specifier: ^10.0.0
         version: 10.0.0
@@ -2120,32 +2123,16 @@ packages:
     resolution: {integrity: sha512-M3kycMY6f3KY9a8jDYac+yG0E3ZgWVWSxlOEC5MhYyX+g7mqxkwrb3LFQyuxSm/m+CCgMTCaPOOaB2twXP6EQg==}
     engines: {node: '>=18'}
 
-  '@sentry-internal/browser-utils@10.42.0':
-    resolution: {integrity: sha512-HCEICKvepxN4/6NYfnMMMlppcSwIEwtS66X6d1/mwaHdi2ivw0uGl52p7Nfhda/lIJArbrkWprxl0WcjZajhQA==}
-    engines: {node: '>=18'}
-
   '@sentry-internal/feedback@10.29.0':
     resolution: {integrity: sha512-Y7IRsNeS99cEONu1mZWZc3HvbjNnu59Hgymm0swFFKbdgbCgdT6l85kn2oLsuq4Ew8Dw/pL/Sgpwsl9UgYFpUg==}
-    engines: {node: '>=18'}
-
-  '@sentry-internal/feedback@10.42.0':
-    resolution: {integrity: sha512-lpPcHsog10MVYFTWE0Pf8vQRqQWwZHJpkVl2FEb9/HDdHFyTBUhCVoWo1KyKaG7GJl9AVKMAg7bp9SSNArhFNQ==}
     engines: {node: '>=18'}
 
   '@sentry-internal/replay-canvas@10.29.0':
     resolution: {integrity: sha512-typY4JrpAQQGPuSyd/BD8+nNCbvTV2UVvKzr+iKgI0m1qc4Dz8tHZ4Nfais2Z8eYn/pL1kqVQN5ERTmJoYFdIw==}
     engines: {node: '>=18'}
 
-  '@sentry-internal/replay-canvas@10.42.0':
-    resolution: {integrity: sha512-am3m1Fj8ihoPfoYo41Qq4KeCAAICn4bySso8Oepu9dMNe9Lcnsf+reMRS2qxTPg3pZDc4JEMOcLyNCcgnAfrHw==}
-    engines: {node: '>=18'}
-
   '@sentry-internal/replay@10.29.0':
     resolution: {integrity: sha512-45NVw9PwB9TQ8z+xJ6G6Za+wmQ1RTA35heBSzR6U4bknj8LmA04k2iwnobvxCBEQXeLfcJEO1vFgagMoqMZMBw==}
-    engines: {node: '>=18'}
-
-  '@sentry-internal/replay@10.42.0':
-    resolution: {integrity: sha512-Zh3EoaH39x2lqVY1YyVB2vJEyCIrT+YLUQxYl1yvP0MJgLxaR6akVjkgxbSUJahan4cX5DxpZiEHfzdlWnYPyQ==}
     engines: {node: '>=18'}
 
   '@sentry/babel-plugin-component-annotate@4.6.1':
@@ -2154,10 +2141,6 @@ packages:
 
   '@sentry/browser@10.29.0':
     resolution: {integrity: sha512-XdbyIR6F4qoR9Z1JCWTgunVcTJjS9p2Th+v4wYs4ME+ZdLC4tuKKmRgYg3YdSIWCn1CBfIgdI6wqETSf7H6Njw==}
-    engines: {node: '>=18'}
-
-  '@sentry/browser@10.42.0':
-    resolution: {integrity: sha512-iXxYjXNEBwY1MH4lDSDZZUNjzPJDK7/YLwVIJq/3iBYpIQVIhaJsoJnf3clx9+NfJ8QFKyKfcvgae61zm+hgTA==}
     engines: {node: '>=18'}
 
   '@sentry/bundler-plugin-core@4.6.1':
@@ -2272,10 +2255,6 @@ packages:
     resolution: {integrity: sha512-olQ2DU9dA/Bwsz3PtA9KNXRMqBWRQSkPw+MxwWEoU1K1qtiM9L0j6lbEFb5iSY3d7WYD5MB+1d5COugjSBrHtw==}
     engines: {node: '>=18'}
 
-  '@sentry/core@10.42.0':
-    resolution: {integrity: sha512-L4rMrXMqUKBanpjpMT+TuAVk6xAijz6AWM6RiEYpohAr7SGcCEc1/T0+Ep1eLV8+pwWacfU27OvELIyNeOnGzA==}
-    engines: {node: '>=18'}
-
   '@sentry/electron@7.5.0':
     resolution: {integrity: sha512-88t/YsB5iO75faKdd7lIuJkwp9FGKgFlkDuaSJhsJiVcjlywkn8CwUbctAbS0gu6Suc0raHCF4ULvGyksKAoww==}
     peerDependencies:
@@ -2309,12 +2288,6 @@ packages:
       '@opentelemetry/core': ^1.30.1 || ^2.1.0 || ^2.2.0
       '@opentelemetry/sdk-trace-base': ^1.30.1 || ^2.1.0 || ^2.2.0
       '@opentelemetry/semantic-conventions': ^1.37.0
-
-  '@sentry/svelte@10.42.0':
-    resolution: {integrity: sha512-HDzWUzbH5GBytTuf/tR5Sxi2wEYTiXpsBB/1T7ZeJjM2k/1zU1If5sKodVrs+k8mXL36Vw6HVkBp/tF4ueU2Vw==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      svelte: 3.x || 4.x || 5.x
 
   '@sentry/vite-plugin@4.6.1':
     resolution: {integrity: sha512-Qvys1y3o8/bfL3ikrHnJS9zxdjt0z3POshdBl3967UcflrTqBmnGNkcVk53SlmtJWIfh85fgmrLvGYwZ2YiqNg==}
@@ -2981,6 +2954,9 @@ packages:
 
   '@types/range-parser@1.2.7':
     resolution: {integrity: sha512-hKormJbkJqzQGhziax5PItDUTMAM9uE2XXQmM37dyd4hVM+5aVl7oVxMVUiVQn2oCQFN/LKCZdvSM0pFRqbSmQ==}
+
+  '@types/redux-logger@3.0.13':
+    resolution: {integrity: sha512-jylqZXQfMxahkuPcO8J12AKSSCQngdEWQrw7UiLUJzMBcv1r4Qg77P6mjGLjM27e5gFQDPD8vwUMJ9AyVxFSsg==}
 
   '@types/resolve@1.20.2':
     resolution: {integrity: sha512-60BCwRFOZCQhDncwQdxxeOEEkbc5dIMccYLwbxsS4TUNeVECQ/pBJ0j09mrHOl/JJvpRPGwO9SvE4nR2Nb/a4Q==}
@@ -3917,6 +3893,10 @@ packages:
   decompress-response@6.0.0:
     resolution: {integrity: sha512-aW35yZM6Bb/4oJlZncMH2LCoZtJXTRxES17vE3hoRiowU2kWHaJKFkSBDnDR+cm9J+9QhXmREyIfv0pji9ejCQ==}
     engines: {node: '>=10'}
+
+  deep-diff@0.3.8:
+    resolution: {integrity: sha512-yVn6RZmHiGnxRKR9sJb3iVV2XTF1Ghh2DiWRZ3dMnGc43yUdWWF/kX6lQyk3+P84iprfWKU/8zFTrlkvtFm1ug==}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
 
   deep-extend@0.6.0:
     resolution: {integrity: sha512-LOHxIOaPYdHlJRtCQfDIVZtfw/ufM8+rVj649RIHzcm/vGwQRXFt6OPqIFWsm2XEMrNIEtWR64sY1LEKD2vAOA==}
@@ -5869,6 +5849,9 @@ packages:
   readdirp@4.1.2:
     resolution: {integrity: sha512-GDhwkLfywWL2s6vEjyhri+eXmfH6j1L7JE27WhqLeYzoh/A3DBaYGEj2H/HFZCn/kMfim73FXxEJTw06WtxQwg==}
     engines: {node: '>= 14.18.0'}
+
+  redux-logger@3.0.6:
+    resolution: {integrity: sha512-JoCIok7bg/XpqA1JqCqXFypuqBbQzGQySrhFzewB7ThcnysTO30l4VCst86AuB9T9tuT03MAA56Jw2PNhRSNCg==}
 
   redux-saga-test-plan@4.0.6:
     resolution: {integrity: sha512-ESdbFoDWCeJ/EiFdUNSCGtA2CC9tnuvHDm6k06gVFa98EIeR2hpzFkGk9kJ1/hpMUnYFp+OOEEITIrZeDYBfFg==}
@@ -8563,37 +8546,19 @@ snapshots:
     dependencies:
       '@sentry/core': 10.29.0
 
-  '@sentry-internal/browser-utils@10.42.0':
-    dependencies:
-      '@sentry/core': 10.42.0
-
   '@sentry-internal/feedback@10.29.0':
     dependencies:
       '@sentry/core': 10.29.0
-
-  '@sentry-internal/feedback@10.42.0':
-    dependencies:
-      '@sentry/core': 10.42.0
 
   '@sentry-internal/replay-canvas@10.29.0':
     dependencies:
       '@sentry-internal/replay': 10.29.0
       '@sentry/core': 10.29.0
 
-  '@sentry-internal/replay-canvas@10.42.0':
-    dependencies:
-      '@sentry-internal/replay': 10.42.0
-      '@sentry/core': 10.42.0
-
   '@sentry-internal/replay@10.29.0':
     dependencies:
       '@sentry-internal/browser-utils': 10.29.0
       '@sentry/core': 10.29.0
-
-  '@sentry-internal/replay@10.42.0':
-    dependencies:
-      '@sentry-internal/browser-utils': 10.42.0
-      '@sentry/core': 10.42.0
 
   '@sentry/babel-plugin-component-annotate@4.6.1': {}
 
@@ -8604,14 +8569,6 @@ snapshots:
       '@sentry-internal/replay': 10.29.0
       '@sentry-internal/replay-canvas': 10.29.0
       '@sentry/core': 10.29.0
-
-  '@sentry/browser@10.42.0':
-    dependencies:
-      '@sentry-internal/browser-utils': 10.42.0
-      '@sentry-internal/feedback': 10.42.0
-      '@sentry-internal/replay': 10.42.0
-      '@sentry-internal/replay-canvas': 10.42.0
-      '@sentry/core': 10.42.0
 
   '@sentry/bundler-plugin-core@4.6.1(encoding@0.1.13)':
     dependencies:
@@ -8713,8 +8670,6 @@ snapshots:
 
   '@sentry/core@10.29.0': {}
 
-  '@sentry/core@10.42.0': {}
-
   '@sentry/electron@7.5.0':
     dependencies:
       '@sentry/browser': 10.29.0
@@ -8787,13 +8742,6 @@ snapshots:
       '@opentelemetry/sdk-trace-base': 2.3.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/semantic-conventions': 1.38.0
       '@sentry/core': 10.29.0
-
-  '@sentry/svelte@10.42.0(svelte@5.46.0)':
-    dependencies:
-      '@sentry/browser': 10.42.0
-      '@sentry/core': 10.42.0
-      magic-string: 0.30.21
-      svelte: 5.46.0
 
   '@sentry/vite-plugin@4.6.1(encoding@0.1.13)':
     dependencies:
@@ -9525,6 +9473,10 @@ snapshots:
   '@types/qs@6.14.0': {}
 
   '@types/range-parser@1.2.7': {}
+
+  '@types/redux-logger@3.0.13':
+    dependencies:
+      redux: 5.0.1
 
   '@types/resolve@1.20.2': {}
 
@@ -10665,6 +10617,8 @@ snapshots:
   decompress-response@6.0.0:
     dependencies:
       mimic-response: 3.1.0
+
+  deep-diff@0.3.8: {}
 
   deep-extend@0.6.0: {}
 
@@ -12796,6 +12750,10 @@ snapshots:
       picomatch: 2.3.1
 
   readdirp@4.1.2: {}
+
+  redux-logger@3.0.6:
+    dependencies:
+      deep-diff: 0.3.8
 
   redux-saga-test-plan@4.0.6(@redux-saga/is@1.2.1)(@redux-saga/symbols@1.2.1)(redux-saga@1.4.2):
     dependencies:

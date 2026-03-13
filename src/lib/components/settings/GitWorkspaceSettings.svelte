@@ -2,7 +2,8 @@
   import { logger } from '../../../shared/logger';
   import Fa from 'svelte-fa';
   import { faFolder, faKey } from '@fortawesome/free-solid-svg-icons';
-  import { refreshGlobalAutoCommit } from '$lib/stores/workspace-settings.store.svelte';
+  import { refreshAutoCommitSettings } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import { onMount } from 'svelte';
   import { validateBranchPrefix, sanitizeBranchPrefix } from '$lib/utils/workspace-validation';
 
@@ -70,7 +71,8 @@
         });
 
         // Refresh global autoCommit so workspaces pick up the new setting
-        refreshGlobalAutoCommit();
+        const dispatch = getDispatch();
+        dispatch(refreshAutoCommitSettings());
       } catch (error) {
         logger.error('Failed to save settings:', error);
       }

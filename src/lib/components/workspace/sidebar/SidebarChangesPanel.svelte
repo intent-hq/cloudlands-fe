@@ -42,7 +42,6 @@
   } from '$lib/components/file-tracking/accept-changes/types';
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
-  import Header from '$lib/components/ui/Header.svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -56,11 +55,11 @@
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
-  import { dialog, invoke, isElectron } from '$lib/electron-bridge';
-  import { IPC_CHANNELS } from '$shared/ipc-registry';
+  import { dialog, invoke } from '$lib/electron-bridge';
   import { faNote } from '$lib/icons/faNote';
   import { track, trackGitOp, getFileExtension } from '$lib/services/analytics';
-  import { createWorkspaceSettingsStore } from '$lib/stores/workspace-settings.store.svelte';
+  import { selectAutoCommitEnabled } from '$lib/store/slices/workspace-settings/workspace-settings-selectors';
+  import { setAutoCommitEnabled, syncWorkspaceSettings } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
   import { logger } from '$lib/utils/client-logger';
   import { SYSTEM_CHANNELS, WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import type { WorkspaceId } from '$shared/types/branded-ids';
@@ -224,9 +223,15 @@
   const unstagedChanges = $derived(workingChanges?.unstaged ?? []);
   const stagedChanges = $derived(workingChanges?.staged ?? []);
 
-  // Auto-commit settings
-  let workspaceSettings = $derived(workspaceId ? createWorkspaceSettingsStore(workspaceId) : null);
-  const autoCommitEnabled = $derived(workspaceSettings?.autoCommitEnabled ?? true);
+  // Auto-commit settings from Redux
+  const autoCommitEnabled = selectAutoCommitEnabled();
+
+  // Sync workspace settings when workspaceId is available
+  $effect(() => {
+    if (workspaceId) {
+      dispatch(syncWorkspaceSettings(workspaceId as string));
+    }
+  });
 
   // Agent lock store - provides reactive locked agent/file state
   const agentLockStore = $derived(createAgentLockStore(workspaceId));
@@ -3980,7 +3985,7 @@
                 <!-- Auto-commit toggle -->
                 <div class="flex items-center justify-between gap-2 -my-0.5">
                   <Tooltip
-                    content={autoCommitEnabled
+                    content={$autoCommitEnabled
                       ? 'Agent changes will be committed automatically when finished'
                       : 'Agent changes need to be committed manually'}
                     side="right"
@@ -3993,12 +3998,11 @@
                       size="xs"
                       onLabel="Auto-commit"
                       offLabel="Auto-commit"
-                      pressed={autoCommitEnabled}
+                      pressed={$autoCommitEnabled}
                       class="font-normal text-subtle flex-row-reverse -mr-1 whitespace-nowrap"
                       onclick={() => {
-                        if (workspaceSettings) {
-                          // Toggle is about to flip pressed, so we set the opposite of current
-                          workspaceSettings.autoCommitEnabled = !autoCommitEnabled;
+                        if (workspaceId) {
+                          dispatch(setAutoCommitEnabled(workspaceId as string, !$autoCommitEnabled));
                         }
                       }}
                     />
