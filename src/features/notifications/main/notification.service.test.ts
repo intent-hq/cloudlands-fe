@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { NotificationService } from './notification.service';
 import { getWorkspaceEventBus } from '../../events/main/workspace-event-bus';
 import { getWindowIdsForWorkspace } from '../../system/main/system.ipc';
@@ -21,9 +21,10 @@ vi.mock('electron-store', () => ({
   },
 }));
 
-const { mockNotificationIsSupported, mockNotificationInstances } = vi.hoisted(() => ({
+const { mockNotificationIsSupported, mockNotificationInstances, mockShowShouldThrow } = vi.hoisted(() => ({
   mockNotificationIsSupported: { value: false },
   mockNotificationInstances: [] as Array<{ handlers: Record<string, Function>; show: ReturnType<typeof vi.fn> }>,
+  mockShowShouldThrow: { value: false },
 }));
 
 vi.mock('electron', () => ({
@@ -31,6 +32,7 @@ vi.mock('electron', () => ({
     on: vi.fn(),
     off: vi.fn(),
     emit: vi.fn(),
+    show: vi.fn(),
     getName: vi.fn(() => 'test-app'),
     getVersion: vi.fn(() => '1.0.0'),
     getPath: vi.fn(() => '/tmp/test'),
@@ -47,7 +49,11 @@ vi.mock('electron', () => ({
     }
 
     handlers: Record<string, Function> = {};
-    show = vi.fn();
+    show = vi.fn(() => {
+      if (mockShowShouldThrow.value) {
+        throw new Error('show failed');
+      }
+    });
 
     constructor(_opts?: unknown) {
       mockNotificationInstances.push(this as any);
@@ -136,16 +142,20 @@ describe('NotificationService showNotification click behavior', () => {
   let mockRestore: ReturnType<typeof vi.fn>;
   let mockIsMinimized: ReturnType<typeof vi.fn>;
 
+  let mockShow: ReturnType<typeof vi.fn>;
+
   function createMockWindow(isMinimized = false) {
     mockWebContentsSend = vi.fn();
     mockFocus = vi.fn();
     mockRestore = vi.fn();
     mockIsMinimized = vi.fn(() => isMinimized);
+    mockShow = vi.fn();
 
     return {
       id: 1,
       webContents: { send: mockWebContentsSend, isDestroyed: () => false },
       focus: mockFocus,
+      show: mockShow,
       restore: mockRestore,
       isMinimized: mockIsMinimized,
       isFocused: () => false,
@@ -252,5 +262,123 @@ describe('NotificationService showNotification click behavior', () => {
 
     expect(mockFocus).toHaveBeenCalled();
     expect(mockWebContentsSend).not.toHaveBeenCalled();
+  });
+
+  it('stores notification in activeNotifications set and removes after click', () => {
+    const mockWindow = createMockWindow(false);
+    const service = new NotificationService('workspace-1');
+
+    (service as any).showNotification(
+      { title: 'Test', body: 'Test notification' },
+      mockWindow,
+      'workspace-1',
+    );
+
+    // Notification should be stored in the set
+    expect((service as any).activeNotifications.size).toBe(1);
+
+    // Trigger click
+    const notification = mockNotificationInstances[mockNotificationInstances.length - 1];
+    notification.handlers['click']();
+
+    // Notification should be removed from the set
+    expect((service as any).activeNotifications.size).toBe(0);
+  });
+
+  it('removes notification from activeNotifications set after close', () => {
+    const mockWindow = createMockWindow(false);
+    const service = new NotificationService('workspace-1');
+
+    (service as any).showNotification(
+      { title: 'Test', body: 'Test notification' },
+      mockWindow,
+      'workspace-1',
+    );
+
+    expect((service as any).activeNotifications.size).toBe(1);
+
+    // Trigger close
+    const notification = mockNotificationInstances[mockNotificationInstances.length - 1];
+    notification.handlers['close']();
+
+    expect((service as any).activeNotifications.size).toBe(0);
+  });
+
+  it('removes notification from activeNotifications set after failed event', () => {
+    const mockWindow = createMockWindow(false);
+    const service = new NotificationService('workspace-1');
+
+    (service as any).showNotification(
+      { title: 'Test', body: 'Test notification' },
+      mockWindow,
+      'workspace-1',
+    );
+
+    expect((service as any).activeNotifications.size).toBe(1);
+
+    const notification = mockNotificationInstances[mockNotificationInstances.length - 1];
+    notification.handlers['failed']({}, 'some error');
+
+    expect((service as any).activeNotifications.size).toBe(0);
+  });
+
+  it('removes notification from activeNotifications set when show() throws', () => {
+    const mockWindow = createMockWindow(false);
+    const service = new NotificationService('workspace-1');
+
+    mockShowShouldThrow.value = true;
+    try {
+      (service as any).showNotification(
+        { title: 'Test', body: 'Test notification' },
+        mockWindow,
+        'workspace-1',
+      );
+    } finally {
+      mockShowShouldThrow.value = false;
+    }
+
+    // Notification should have been removed from the set after show() threw
+    expect((service as any).activeNotifications.size).toBe(0);
+  });
+
+  it('calls mainWindow.show() before mainWindow.focus() on click', () => {
+    const mockWindow = createMockWindow(false);
+    triggerNotificationClick('workspace-1', mockWindow);
+
+    expect(mockShow).toHaveBeenCalled();
+    expect(mockFocus).toHaveBeenCalled();
+
+    // show should be called before focus
+    const showOrder = mockShow.mock.invocationCallOrder[0];
+    const focusOrder = mockFocus.mock.invocationCallOrder[0];
+    expect(showOrder).toBeLessThan(focusOrder);
+  });
+
+  it('calls app.show() on macOS when notification is clicked', () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+
+    try {
+      const mockWindow = createMockWindow(false);
+      triggerNotificationClick('workspace-1', mockWindow);
+
+      expect(app.show).toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    }
+  });
+
+  it('does not call app.show() on non-macOS platforms', () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+
+    try {
+      const mockWindow = createMockWindow(false);
+      triggerNotificationClick('workspace-1', mockWindow);
+
+      expect(app.show).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    }
   });
 });

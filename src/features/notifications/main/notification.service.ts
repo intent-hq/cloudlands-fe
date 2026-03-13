@@ -5,7 +5,7 @@
  * Subscribes to workspace event bus for agent:idle events and displays native OS notifications.
  */
 
-import { BrowserWindow, Notification } from 'electron';
+import { app, BrowserWindow, Notification } from 'electron';
 import ElectronStore from 'electron-store';
 import { Logger } from '../../../shared/logger';
 import { getWorkspaceEventBus } from '../../events/main/workspace-event-bus';
@@ -50,6 +50,7 @@ export class NotificationService {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private settingsStore: any;
   private unsubscribe?: () => void;
+  private activeNotifications = new Set<Notification>();
 
   constructor(workspaceId: string) {
     this.workspaceId = workspaceId;
@@ -243,8 +244,17 @@ export class NotificationService {
         body: content.body,
       });
 
+      // Keep a strong reference to prevent GC before user interaction
+      this.activeNotifications.add(notification);
+
       // Focus workspace window on click and navigate to the correct workspace
       notification.on('click', () => {
+        this.activeNotifications.delete(notification);
+
+        if (process.platform === 'darwin') {
+          app.show();
+        }
+
         if (mainWindow) {
           if (mainWindow.isDestroyed()) {
             return;
@@ -252,6 +262,7 @@ export class NotificationService {
           if (mainWindow.isMinimized()) {
             mainWindow.restore();
           }
+          mainWindow.show();
           mainWindow.focus();
           if (workspaceId && !mainWindow.webContents.isDestroyed()) {
             mainWindow.webContents.send('notification:navigate', { workspaceId });
@@ -259,12 +270,23 @@ export class NotificationService {
         }
       });
 
+      notification.on('close', () => {
+        this.activeNotifications.delete(notification);
+      });
+
       // Log any errors that occur during notification display
       notification.on('failed', (_event, error) => {
+        this.activeNotifications.delete(notification);
         logger.error('Notification failed to show', { error });
       });
 
-      notification.show();
+      try {
+        notification.show();
+      } catch (error) {
+        this.activeNotifications.delete(notification);
+        logger.error('Notification.show() threw', error as Error);
+        return;
+      }
 
       // Send notification:show event to workspace windows for sound playback
       sendToWorkspaceWindows(this.workspaceId, 'notification:show', {
