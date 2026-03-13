@@ -722,10 +722,7 @@ class RefactoredAgentService extends EventEmitter {
         const { agentId, accumulatedContent, workspaceId: streamWorkspaceId } = stream;
 
         // Check if we already have a handler for this agent
-        if (this.activeStreamHandlers.has(agentId)) {
-          logger.debug('Stream handler already exists for agent', { agentId });
-          continue;
-        }
+        const handlerAlreadyExists = this.activeStreamHandlers.has(agentId);
 
         // Get the session from the store - use workspace-aware lookup since the streaming agent
         // might be in a different workspace than the one currently being viewed
@@ -853,17 +850,8 @@ class RefactoredAgentService extends EventEmitter {
               });
             }
 
-            // CRITICAL FIX: Dispatch session-updated event so ChatService syncs its localStreamingContent
-            // Without this, ChatService's localStreamingContent stays empty even though the message
-            // now has content. This causes the streaming content to not display until new chunks arrive.
-            logger.info(
-              'Dispatching session-updated event after restoring backend accumulated content',
-              {
-                agentId,
-                contentLength: accumulatedContent.content?.length || 0,
-              },
-            );
-            window.dispatchEvent(new CustomEvent(`agent:session-updated:${agentId}`));
+            // Note: session-updated event is dispatched once at the end of this loop iteration
+            // (after all state updates are complete) to ensure ChatService syncs its state.
           } else {
             logger.info('Keeping existing content (backend has fewer blocks or less content)', {
               agentId,
@@ -878,71 +866,93 @@ class RefactoredAgentService extends EventEmitter {
           }
         }
 
-        logger.info('Re-registering stream handler for backend active stream', {
-          agentId,
-          hasSession: !!session,
-          hasExistingMessage: !!existingMessage,
-          existingMessageId: existingMessage?.id,
-          existingContentBlocksCount: existingMessage?.contentBlocks?.length || 0,
-          hasBackendAccumulatedContent: !!accumulatedContent,
-        });
-
-        // Mark the existing message as streaming if it isn't already
-        // This is important so that the stream handler updates the existing message
-        // instead of creating a new one
-        if (existingMessage && !existingMessage.isStreaming && session) {
-          logger.info('Marking existing message as streaming for reconnection', {
+        // Only register handler and mark messages if handler doesn't already exist.
+        // But ALWAYS sync accumulated content and streaming state (below) to ensure
+        // the frontend has the full response after workspace switches.
+        if (!handlerAlreadyExists) {
+          logger.info('Re-registering stream handler for backend active stream', {
             agentId,
-            messageId: existingMessage.id,
+            hasSession: !!session,
+            hasExistingMessage: !!existingMessage,
+            existingMessageId: existingMessage?.id,
+            existingContentBlocksCount: existingMessage?.contentBlocks?.length || 0,
+            hasBackendAccumulatedContent: !!accumulatedContent,
           });
-          sessionStore.updateMessage(agentId, existingMessage.id, {
-            isStreaming: true,
-          });
-        }
 
-        // Register the stream handler with the workspace ID for cross-workspace handling
-        // CRITICAL: Prefer streamWorkspaceId from the backend's active stream info over session.workspaceId
-        // The session might not be loaded if the user switched workspaces, but the backend
-        // always knows which workspace the stream belongs to. This fixes the issue where
-        // completing streams would fail to load/update the session because workspaceId was undefined.
-        this.registerStreamHandlerForSession(
-          agentId,
-          existingMessage,
-          streamWorkspaceId || (session?.workspaceId ? String(session.workspaceId) : undefined),
-        );
+          // Mark the existing message as streaming if it isn't already
+          // This is important so that the stream handler updates the existing message
+          // instead of creating a new one
+          if (existingMessage && !existingMessage.isStreaming && session) {
+            logger.info('Marking existing message as streaming for reconnection', {
+              agentId,
+              messageId: existingMessage.id,
+            });
+            sessionStore.updateMessage(agentId, existingMessage.id, {
+              isStreaming: true,
+            });
+          }
 
-        // CRITICAL FIX: Explicitly set streaming.active via setStreaming/setStreamingForWorkspace.
-        // sessionStore.addSession() calls setAgent() which PRESERVES existing streaming.active
-        // to prevent stale disk data from resetting active streams. Since the backend confirmed
-        // this agent IS actively streaming, we must explicitly set streaming.active. Without this,
-        // streaming.active stays false after HMR/page refresh, allowing the user to send a new
-        // message that bypasses the isStreaming guard and clears the in-progress streaming response.
-        if (streamWorkspaceId) {
-          sessionStore.setStreamingForWorkspace(streamWorkspaceId, agentId, true);
+          // Register the stream handler with the workspace ID for cross-workspace handling
+          // CRITICAL: Prefer streamWorkspaceId from the backend's active stream info over session.workspaceId
+          // The session might not be loaded if the user switched workspaces, but the backend
+          // always knows which workspace the stream belongs to. This fixes the issue where
+          // completing streams would fail to load/update the session because workspaceId was undefined.
+          this.registerStreamHandlerForSession(
+            agentId,
+            existingMessage,
+            streamWorkspaceId || (session?.workspaceId ? String(session.workspaceId) : undefined),
+          );
         } else {
-          sessionStore.setStreaming(agentId, true);
-        }
-
-        // Update the session to mark it as streaming if not already
-        if (session && !session.isStreaming) {
-          // CRITICAL FIX: Re-read session from store to pick up any message updates
-          // made by updateMessageForWorkspace above. The local `session` variable was
-          // read before those updates and has stale message content blocks.
-          const freshSession = streamWorkspaceId
-            ? sessionStore.getSessionForWorkspace(streamWorkspaceId, agentId)
-            : sessionStore.getSession(agentId);
-          const sessionToUpdate = freshSession || session;
-          sessionToUpdate.isStreaming = true;
-          sessionStore.addSession(sessionToUpdate);
-
-          // Dispatch session-updated event so ChatService syncs its streaming state
-          // This is critical - without this event, ChatService won't show the streaming indicator
-          // even though the backend is actively streaming
-          logger.info('Dispatching session-updated event for active backend stream', {
+          logger.info('Stream handler already exists, syncing accumulated content only', {
             agentId,
+            hasAccumulatedContent: !!accumulatedContent,
+            streamWorkspaceId,
           });
-          window.dispatchEvent(new CustomEvent(`agent:session-updated:${agentId}`));
         }
+
+        // Only update streaming state and session for new handlers.
+        // For existing handlers, streaming.active is already set correctly,
+        // and calling setStreaming again would trigger unnecessary listener
+        // notifications (e.g., progress increments, store updates).
+        if (!handlerAlreadyExists) {
+          // CRITICAL FIX: Explicitly set streaming.active via setStreaming/setStreamingForWorkspace.
+          // sessionStore.addSession() calls setAgent() which PRESERVES existing streaming.active
+          // to prevent stale disk data from resetting active streams. Since the backend confirmed
+          // this agent IS actively streaming, we must explicitly set streaming.active. Without this,
+          // streaming.active stays false after HMR/page refresh, allowing the user to send a new
+          // message that bypasses the isStreaming guard and clears the in-progress streaming response.
+          if (streamWorkspaceId) {
+            sessionStore.setStreamingForWorkspace(streamWorkspaceId, agentId, true);
+          } else {
+            sessionStore.setStreaming(agentId, true);
+          }
+
+          // Update the session to mark it as streaming if not already
+          if (session && !session.isStreaming) {
+            // CRITICAL FIX: Re-read session from store to pick up any message updates
+            // made by updateMessageForWorkspace above. The local `session` variable was
+            // read before those updates and has stale message content blocks.
+            const freshSession = streamWorkspaceId
+              ? sessionStore.getSessionForWorkspace(streamWorkspaceId, agentId)
+              : sessionStore.getSession(agentId);
+            const sessionToUpdate = freshSession || session;
+            sessionToUpdate.isStreaming = true;
+            sessionStore.addSession(sessionToUpdate);
+          }
+        }
+
+        // Always dispatch session-updated event so ChatService syncs its state.
+        // For new handlers: this was previously only dispatched when !session.isStreaming.
+        // For existing handlers: this is the key fix for workspace switching.
+        // When switching workspaces, the ChatService may have been initialized with stale
+        // messages from disk. This event triggers sessionUpdatedHandler which syncs
+        // the ChatService's localStreamingContent with the latest sessionStore data,
+        // ensuring the full response is displayed instead of just the tail end.
+        logger.info('Dispatching session-updated event for active backend stream', {
+          agentId,
+          handlerAlreadyExists,
+        });
+        window.dispatchEvent(new CustomEvent(`agent:session-updated:${agentId}`));
       }
 
       // Return the list of agent IDs with active streams

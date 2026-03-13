@@ -717,11 +717,42 @@ class UnifiedStateStore {
       (existingMessageCount > sessionMessageCount ||
         existingLastMsgBlockCount >= sessionLastMsgBlockCount);
 
-    const sourceMessages: AgentMessage[] = preserveStreamingMessages
-      ? existingAgent.messages // Preserve streaming messages
-      : session.messages && session.messages.length > 0
+    let sourceMessages: AgentMessage[];
+    if (preserveStreamingMessages) {
+      // CRITICAL FIX: When preserving streaming messages, MERGE unique messages
+      // from session.messages into the existing messages. This prevents losing
+      // user messages or earlier responses that exist in disk data but not in
+      // the existing streaming state. Without this, switching workspaces during
+      // streaming drops the user prompt because the existing store only has the
+      // streaming assistant message, and the disk data (with the user message)
+      // is ignored entirely.
+      const existingIds = new Set(existingAgent.messages.map((m: AgentMessage) => m.id));
+      const missingMessages = (session.messages || []).filter(
+        (m: AgentMessage) => !existingIds.has(m.id),
+      );
+      if (missingMessages.length > 0) {
+        logger.info('[setAgent] Merging missing messages during active streaming', {
+          agentId: session.id,
+          existingCount: existingAgent.messages.length,
+          sessionCount: session.messages?.length || 0,
+          missingCount: missingMessages.length,
+          missingIds: missingMessages.map((m: AgentMessage) => m.id),
+        });
+        // Prepend missing messages (typically user messages that come before the streaming response)
+        // Sort by timestamp to maintain correct order
+        sourceMessages = [...missingMessages, ...existingAgent.messages].sort((a, b) => {
+          const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+          const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+          return timeA - timeB;
+        });
+      } else {
+        sourceMessages = existingAgent.messages;
+      }
+    } else {
+      sourceMessages = session.messages && session.messages.length > 0
         ? session.messages
         : existingAgent?.messages || [];
+    }
 
     // CRITICAL FIX: Deduplicate messages to prevent duplicate message IDs in the state.
     // Persisted session data may contain duplicates due to race conditions during saving.
@@ -753,12 +784,10 @@ class UnifiedStateStore {
         usingSource: preserveStreamingMessages ? 'existing' : 'session',
       });
     }
-    // When using session.messages (new message added), rebuild the messageIdSet
-    // to include the new message's ID. Otherwise, use existing set for O(1) lookups.
-    const messageIdSet =
-      preserveStreamingMessages && existingAgent?.messageIdSet
-        ? existingAgent.messageIdSet
-        : new Set<string>(messages.map((m: AgentMessage) => m.id));
+    // Rebuild messageIdSet from the final deduplicated messages to stay in sync.
+    // Previously this reused existingAgent.messageIdSet when preserveStreamingMessages was true,
+    // but since we now merge missing messages, we always need a fresh set.
+    const messageIdSet = new Set<string>(messages.map((m: AgentMessage) => m.id));
 
     // For the session, also ensure messages is a separate array
     // Use deduplicatedMessages (not sourceMessages) to prevent duplicates in session.messages

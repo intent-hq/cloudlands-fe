@@ -1913,7 +1913,7 @@ export class ChatService implements IDisposable {
             return;
           }
 
-          // Don't overwrite with fewer content blocks on the last message during streaming
+          // Don't overwrite with fewer content blocks or less text content on the last message during streaming
           if (sessionMessageCount === currentMessageCount && sessionMessageCount > 0) {
             const currentLast = currentState.messages[currentMessageCount - 1];
             const sessionLast = session.messages[sessionMessageCount - 1];
@@ -1931,6 +1931,32 @@ export class ChatService implements IDisposable {
                   },
                 );
                 return;
+              }
+
+              // Also check text content length to prevent stale data with same block structure
+              // but less text from overwriting during workspace switches
+              if (sessionBlockCount === currentBlockCount && currentBlockCount > 0) {
+                const getTextLength = (blocks: ContentBlock[]) =>
+                  blocks.reduce((sum: number, b: ContentBlock) => {
+                    if (b.type === 'text' && 'text' in b) {
+                      return sum + ((b as any).text?.length || 0);
+                    }
+                    return sum;
+                  }, 0);
+                const currentTextLength = getTextLength(currentLast?.contentBlocks || []);
+                const sessionTextLength = getTextLength(sessionLast?.contentBlocks || []);
+                if (sessionTextLength < currentTextLength) {
+                  logger.debug(
+                    '[ChatService] sessionUpdatedHandler: skipping - would overwrite streaming data with less text content',
+                    {
+                      sessionId,
+                      messageId: currentLast?.id,
+                      currentTextLength,
+                      sessionTextLength,
+                    },
+                  );
+                  return;
+                }
               }
             }
           }
