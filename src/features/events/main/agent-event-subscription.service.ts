@@ -1865,18 +1865,57 @@ export class AgentEventSubscriptionService {
       this.batchTimers.delete(agentId);
     }
 
-    // Collect oneShot subscription IDs to clean up after delivery
+    // Collect oneShot subscription IDs to clean up after delivery and collapse
+    // duplicate queued entries that reference the same underlying event.
+    const priorityOrder = { high: 0, normal: 1, low: 2 } as const;
     const oneShotSubscriptionIds = new Set<string>();
+    const dedupedSnapshotByEventId = new Map<string, QueuedEvent>();
     for (const queuedEvent of snapshot) {
       if (queuedEvent.oneShot && queuedEvent.subscriptionId) {
         oneShotSubscriptionIds.add(queuedEvent.subscriptionId);
       }
+
+      const existingQueuedEvent = dedupedSnapshotByEventId.get(queuedEvent.event.id);
+      if (!existingQueuedEvent) {
+        dedupedSnapshotByEventId.set(queuedEvent.event.id, queuedEvent);
+        continue;
+      }
+
+      const existingQueuedAt = Date.parse(existingQueuedEvent.queuedAt);
+      const nextQueuedAt = Date.parse(queuedEvent.queuedAt);
+      if (Number.isNaN(existingQueuedAt) || nextQueuedAt >= existingQueuedAt) {
+        dedupedSnapshotByEventId.set(queuedEvent.event.id, {
+          ...queuedEvent,
+          priority:
+            priorityOrder[existingQueuedEvent.priority] < priorityOrder[queuedEvent.priority]
+              ? existingQueuedEvent.priority
+              : queuedEvent.priority,
+        });
+        continue;
+      }
+
+      if (priorityOrder[queuedEvent.priority] < priorityOrder[existingQueuedEvent.priority]) {
+        dedupedSnapshotByEventId.set(queuedEvent.event.id, {
+          ...existingQueuedEvent,
+          priority: queuedEvent.priority,
+        });
+      }
+    }
+
+    const dedupedSnapshot = Array.from(dedupedSnapshotByEventId.values());
+    const droppedDuplicateCount = snapshot.length - dedupedSnapshot.length;
+    if (droppedDuplicateCount > 0) {
+      logger.info('deliverQueuedEvents: dropped duplicate queued events', {
+        agentId,
+        droppedDuplicateCount,
+        snapshotCount: snapshot.length,
+        dedupedCount: dedupedSnapshot.length,
+      });
     }
 
     // Sort by priority (high first) then by time
-    const sortedEvents = snapshot
+    const sortedEvents = dedupedSnapshot
       .sort((a, b) => {
-        const priorityOrder = { high: 0, normal: 1, low: 2 };
         const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
         if (priorityDiff !== 0) return priorityDiff;
         return new Date(a.queuedAt).getTime() - new Date(b.queuedAt).getTime();

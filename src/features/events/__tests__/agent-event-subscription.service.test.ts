@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AgentEventSubscriptionService } from '../main/agent-event-subscription.service';
 import { getWorkspaceEventBus } from '../main/workspace-event-bus';
 import type { WorkspaceEvent } from '../types';
+import { Logger } from '../../../shared/logger';
 
 // Mock electron
 vi.mock('electron', () => ({
@@ -2081,6 +2082,113 @@ describe('AgentEventSubscriptionService', () => {
 
         // Now the subscription should be fully cleaned up
         expect((service as any).subscriptions.has(subId)).toBe(false);
+      });
+
+      it('B1b: deliverQueuedEvents deduplicates queued duplicates and cleans all oneShot subscriptions', async () => {
+        const delivery = vi.fn().mockReturnValue({ status: 'success' as const });
+        service.setDeliveryCallback(delivery);
+        service.setAgentStatus('agent-b1-dedupe', 'idle');
+
+        const oneShotSub1 = service.subscribe('agent-b1-dedupe', 'Agent B1 Dedupe', {
+          eventTypes: ['agent:idle'],
+          actorIds: ['child-b1-dedupe'],
+          oneShot: true,
+        });
+        const oneShotSub2 = service.subscribe('agent-b1-dedupe', 'Agent B1 Dedupe', {
+          eventTypes: ['agent:idle'],
+          actorIds: ['child-b1-dedupe'],
+          oneShot: true,
+        });
+        const persistentSub = service.subscribe('agent-b1-dedupe', 'Agent B1 Dedupe', {
+          eventTypes: ['agent:idle'],
+          actorIds: ['child-b1-dedupe'],
+        });
+
+        const eventBase = {
+          id: 'duplicate-queued-event',
+          workspaceId,
+          type: 'agent:idle' as const,
+          actor: { type: 'agent' as const, id: 'child-b1-dedupe', name: 'Child B1 Dedupe' },
+        };
+        const firstEvent: WorkspaceEvent = {
+          ...eventBase,
+          timestamp: '2026-03-10T10:00:00.000Z',
+          data: { agentId: 'child-b1-dedupe', marker: 'first' },
+        };
+        const middleEvent: WorkspaceEvent = {
+          ...eventBase,
+          timestamp: '2026-03-10T10:00:01.000Z',
+          data: { agentId: 'child-b1-dedupe', marker: 'middle' },
+        };
+        const latestEvent: WorkspaceEvent = {
+          ...eventBase,
+          timestamp: '2026-03-10T10:00:02.000Z',
+          data: { agentId: 'child-b1-dedupe', marker: 'latest' },
+        };
+        const separateEvent: WorkspaceEvent = {
+          id: 'separate-queued-event',
+          workspaceId,
+          type: 'agent:completed',
+          timestamp: '2026-03-10T10:00:01.500Z',
+          actor: { type: 'agent', id: 'child-b1-dedupe', name: 'Child B1 Dedupe' },
+          data: { agentId: 'child-b1-dedupe', marker: 'separate' },
+        };
+
+        (service as any).firedOneShotSubscriptions.add(oneShotSub1);
+        (service as any).firedOneShotSubscriptions.add(oneShotSub2);
+        (service as any).agentQueues.set('agent-b1-dedupe', [
+          {
+            event: firstEvent,
+            queuedAt: '2026-03-10T10:00:00.000Z',
+            priority: 'high',
+            subscriptionId: oneShotSub1,
+            oneShot: true,
+          },
+          {
+            event: middleEvent,
+            queuedAt: '2026-03-10T10:00:01.000Z',
+            priority: 'normal',
+            subscriptionId: persistentSub,
+            oneShot: false,
+          },
+          {
+            event: separateEvent,
+            queuedAt: '2026-03-10T10:00:01.500Z',
+            priority: 'normal',
+            subscriptionId: undefined,
+            oneShot: false,
+          },
+          {
+            event: latestEvent,
+            queuedAt: '2026-03-10T10:00:02.000Z',
+            priority: 'normal',
+            subscriptionId: oneShotSub2,
+            oneShot: true,
+          },
+        ]);
+
+        const loggerInfoSpy = vi.spyOn(Logger.prototype, 'info');
+
+        const result = await (service as any).deliverQueuedEvents('agent-b1-dedupe');
+
+        expect(result).toEqual({ status: 'success' });
+        expect(delivery).toHaveBeenCalledTimes(1);
+        expect(delivery).toHaveBeenCalledWith('agent-b1-dedupe', [latestEvent, separateEvent]);
+        expect((service as any).subscriptions.has(oneShotSub1)).toBe(false);
+        expect((service as any).subscriptions.has(oneShotSub2)).toBe(false);
+        expect((service as any).subscriptions.has(persistentSub)).toBe(true);
+        expect((service as any).firedOneShotSubscriptions.has(oneShotSub1)).toBe(false);
+        expect((service as any).firedOneShotSubscriptions.has(oneShotSub2)).toBe(false);
+        expect(loggerInfoSpy).toHaveBeenCalledWith(
+          'deliverQueuedEvents: dropped duplicate queued events',
+          expect.objectContaining({
+            agentId: 'agent-b1-dedupe',
+            droppedDuplicateCount: 2,
+            snapshotCount: 4,
+            dedupedCount: 2,
+          }),
+        );
+        loggerInfoSpy.mockRestore();
       });
 
       it('B2: Agent deleted during delivery: no crash, no orphaned state', async () => {
