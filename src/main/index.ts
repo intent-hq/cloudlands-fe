@@ -331,6 +331,8 @@ import { setupSpecialistsIPC } from '../features/specialists/main/specialists.ip
 import { setupUserRulesIPC as setupWorkspaceRulesIPC } from '../features/rules/main/user-rules.ipc';
 import { setupSandboxIPC } from '../features/sandbox/main/sandbox.ipc';
 import { setupSentryAuthIPC } from '../features/sentry-auth/main/sentry-auth.ipc';
+import { registerScriptsHandlers } from '../features/scripts/main/scripts.ipc';
+import { disposeAllScriptProcessManagers } from '../features/scripts/main/script-process-manager';
 import { registerSetupScriptsHandlers } from '../features/setup-scripts/main/setup-scripts.ipc';
 import {
   setupSystemIPC,
@@ -450,6 +452,17 @@ async function gracefulShutdown() {
     } catch (error) {
       logger.error(
         'Error cleaning up note terminals:',
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
+
+    // Stop all running workspace scripts (spawned via child_process.spawn)
+    try {
+      await disposeAllScriptProcessManagers();
+      logger.info('All script process managers disposed');
+    } catch (error) {
+      logger.error(
+        'Error disposing script process managers:',
         error instanceof Error ? error : new Error(String(error)),
       );
     }
@@ -1350,6 +1363,7 @@ app.whenReady().then(async () => {
   setupThirdPartySourcesIPC(); // Needed for sources:list
   setupEventsIPC(); // Needed for events:query
   registerSetupScriptsHandlers(); // Needed for workspace initializer setup scripts
+  registerScriptsHandlers(); // Needed for workspace script management (CRUD, lifecycle, output)
   registerAcceptChangesHandlers(); // Needed for AcceptChangesPanel on workspace open
   setupEditorIPC(); // Needed for ReferenceBlock "Open in Editor" button
   setupTerminalIPC(); // Needed for CLI blocks in notes (includes get-buffer handler)

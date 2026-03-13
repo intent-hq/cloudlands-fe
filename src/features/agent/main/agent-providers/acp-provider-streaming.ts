@@ -22,6 +22,33 @@ import { sendToWorkspaceWindows } from '../../../system/main/system.ipc';
 
 const logger = new Logger('ACPProviderStreaming');
 
+/**
+ * Patterns that match common dev server commands.
+ * When an agent runs one of these via launch-process, we append a soft hint
+ * suggesting the scripts system instead.
+ */
+const DEV_SERVER_PATTERNS: RegExp[] = [
+  /\b(npm|yarn|pnpm)\s+run\s+(dev|start|serve)\b/,
+  /\b(npm|yarn|pnpm)\s+(start|dev)\b/,
+  /\bnpx\s+(vite|next|nuxt|remix)\b/,
+  /\bnode\s+.*server/,
+  /\bpython\s+.*manage\.py\s+runserver/,
+  /\bcargo\s+run/,
+  /\bgo\s+run/,
+];
+
+const DEV_SERVER_HINT =
+  '\n\nHint: This looks like a dev server command. Consider using `create_script` + `run_script` MCP tools instead for better process management, auto-restart, and URL detection.';
+
+/**
+ * Check if a command looks like a dev server command and return the hint if so.
+ * Returns empty string if no match.
+ */
+function getDevServerHint(command: string | undefined): string {
+  if (!command || typeof command !== 'string') return '';
+  return DEV_SERVER_PATTERNS.some((pattern) => pattern.test(command)) ? DEV_SERVER_HINT : '';
+}
+
 // Track tool kinds for pending tool calls to know when file edits complete
 // Key: toolId, Value: { kind: string, agentId: string, timestamp: number }
 interface PendingToolKind {
@@ -1725,6 +1752,12 @@ export class ACPProviderStreaming {
           }
         }
       }
+      // Append dev server hint for launch-process commands that match common patterns
+      const devServerHint = getDevServerHint(input.command);
+      if (devServerHint) {
+        output = (typeof output === 'string' ? output : '') + devServerHint;
+      }
+
       const resultBlock: ContentBlock = {
         type: 'tool_result',
         tool_use_id: toolId,
@@ -1951,6 +1984,19 @@ export class ACPProviderStreaming {
     // Note: We no longer check for ❌ emoji as it may be used as a visual indicator in content
     const hasErrorInContent =
       typeof output === 'string' && (output.startsWith('Error:') || output.includes('Tool Error:'));
+
+    // Append dev server hint for launch-process commands that match common patterns
+    if (toolCallId && typeof output === 'string') {
+      const partial = messageAccumulator.getPartialContent(session.agentId);
+      const toolUseBlock = partial.contentBlocks.find(
+        (b: ContentBlock) => b.type === 'tool_use' && b.id === toolCallId,
+      );
+      const toolCommand = (toolUseBlock?.input as Record<string, any> | undefined)?.command;
+      const devServerHint = getDevServerHint(toolCommand);
+      if (devServerHint) {
+        output += devServerHint;
+      }
+    }
 
     const toolResultBlock: ContentBlock = {
       type: 'tool_result',

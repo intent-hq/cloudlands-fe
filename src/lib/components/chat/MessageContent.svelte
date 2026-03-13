@@ -8,6 +8,7 @@
   import ChatDiffViewer from './ChatDiffViewer.svelte';
   import { PatchBlockContent } from '$lib/components/ui/diff';
   import DigestCard from './DigestCard.svelte';
+  import DetectedScriptsCard from './DetectedScriptsCard.svelte';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
   import {
     parseAgentMessage,
@@ -280,6 +281,8 @@
       patches={[{ filePath: patchData.filePath, diff: patchData.diff }]}
       label={patchData.description || patchData.filePath}
     />
+  {:else if parsedBlock.type === 'detected_scripts' && parsedBlock.metadata?.detectedScriptsData}
+    <DetectedScriptsCard scripts={parsedBlock.metadata.detectedScriptsData} />
   {:else if parsedBlock.type === 'digest'}
     <DigestCard digest={parsedBlock.content || ''} />
   {:else if parsedBlock.type === 'mermaid'}

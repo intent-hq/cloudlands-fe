@@ -121,7 +121,9 @@
     info: 'bg-blue-500/20 text-blue-600 dark:text-blue-400',
   };
 
-  let leftIndent = $derived(indent > 0 ? indent * indentSize + config.basePaddingX : config.basePaddingX);
+  let leftIndent = $derived(
+    indent > 0 ? indent * indentSize + config.basePaddingX : config.basePaddingX,
+  );
 </script>
 
 <button

@@ -1101,6 +1101,21 @@ export const IPC_CHANNELS = {
   SKILLS: {
     LIST: 'skills:list',
   },
+
+  // Workspace Scripts
+  SCRIPTS: {
+    LIST: 'scripts:list',
+    CREATE: 'scripts:create',
+    UPDATE: 'scripts:update',
+    REMOVE: 'scripts:remove',
+    START: 'scripts:start',
+    STOP: 'scripts:stop',
+    RESTART: 'scripts:restart',
+    GET_STATUS: 'scripts:get-status',
+    GET_OUTPUT: 'scripts:get-output',
+    DETECT: 'scripts:detect',
+    SAVE_TO_REPO: 'scripts:save-to-repo',
+  },
 } as const;
 
 // Event channels that are sent from main to renderer
@@ -1254,6 +1269,12 @@ export const EVENT_CHANNELS = [
   'mcp:server-error',
   // Analytics bridge (main → renderer)
   'analytics:track-from-main',
+  // Script events (main → renderer)
+  'script:started',
+  'script:stopped',
+  'script:output',
+  'script:error',
+  'script:url-detected',
 ] as const;
 
 // Dynamic channel patterns that use runtime IDs

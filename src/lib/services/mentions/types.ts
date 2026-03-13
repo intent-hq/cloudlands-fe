@@ -69,6 +69,7 @@ export type MentionType =
   | 'github-issue'
   | 'command'
   | 'group'
+  | 'script'
   | 'terminal';
 
 export interface SearchContext {

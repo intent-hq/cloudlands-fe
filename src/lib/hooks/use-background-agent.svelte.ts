@@ -52,6 +52,7 @@ export interface UseBackgroundAgentReturn {
   result: string | null;
   error: Error | null;
   messages: any[];
+  agentId: string | null;
 
   // Methods
   execute: (workspace: Workspace, context?: any) => Promise<string | null>;
@@ -102,6 +103,9 @@ export function useBackgroundAgent(
     },
     get messages() {
       return executor.messages;
+    },
+    get agentId() {
+      return executor.agentId;
     },
 
     // Methods

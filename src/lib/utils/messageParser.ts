@@ -42,6 +42,7 @@ export interface ParsedContent {
     | 'reference'
     | 'cli'
     | 'agent_action'
+    | 'detected_scripts'
     | 'group_start'
     | 'group_end';
   content: string;
@@ -62,6 +63,12 @@ export interface ParsedContent {
     };
     cliData?: { command: string; description?: string; cwd?: string };
     agentActionData?: { agentId: string; goal: string; description?: string };
+    detectedScriptsData?: Array<{
+      name: string;
+      command: string;
+      mode: string;
+      category?: string;
+    }>;
     groupName?: string;
     isStreaming?: boolean;
   };
@@ -98,12 +105,14 @@ const SPECIAL_BLOCK_PATTERNS = {
   mermaid: /```mermaid\s*\n([\s\S]*?)```/g,
   // Agent digest - short summary for display
   agentDigest: /<agent_digest>([\s\S]*?)<\/agent_digest>/g,
+  // Detected scripts from background agent
+  detectedScripts: /<<<DETECTED_SCRIPTS>>>([\s\S]*?)<<<\/DETECTED_SCRIPTS>>>/g,
 };
 
 // PERF: Combined regex for single-pass special block detection
 // This finds all special blocks in one pass through the content
 const COMBINED_SPECIAL_REGEX =
-  /(<augment_code_snippet\s+path="[^"]+"(?:\s+mode="[^"]+")?\s*>\s*````\w*\s*\n[\s\S]*?\n\s*````\s*<\/augment_code_snippet>|````\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?\n````|```\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?\n```|```diff\n[\s\S]*?```|<COMMIT_MESSAGE>[\s\S]*?<\/COMMIT_MESSAGE>|```(?:diagram|ws-block:diagram)\s*\n[\s\S]*?```|```ws-block:patch\s*\n[\s\S]*?```|```ws-block:reference\s*\n[\s\S]*?```|```ws-block:cli\s*\n[\s\S]*?```|```ws-block:agent_action\s*\n[\s\S]*?```|```mermaid\s*\n[\s\S]*?```|<agent_digest>[\s\S]*?<\/agent_digest>)/g;
+  /(<augment_code_snippet\s+path="[^"]+"(?:\s+mode="[^"]+")?\s*>\s*````\w*\s*\n[\s\S]*?\n\s*````\s*<\/augment_code_snippet>|````\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?\n````|```\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?\n```|```diff\n[\s\S]*?```|<COMMIT_MESSAGE>[\s\S]*?<\/COMMIT_MESSAGE>|```(?:diagram|ws-block:diagram)\s*\n[\s\S]*?```|```ws-block:patch\s*\n[\s\S]*?```|```ws-block:reference\s*\n[\s\S]*?```|```ws-block:cli\s*\n[\s\S]*?```|```ws-block:agent_action\s*\n[\s\S]*?```|```mermaid\s*\n[\s\S]*?```|<agent_digest>[\s\S]*?<\/agent_digest>|<<<DETECTED_SCRIPTS>>>[\s\S]*?<<<\/DETECTED_SCRIPTS>>>)/g;
 
 /**
  * Parse a single special block match into a ParsedContent
@@ -400,6 +409,35 @@ function parseSpecialBlock(blockText: string): ParsedContent | null {
           type: 'digest',
           content: digestContent,
         };
+      }
+    }
+  }
+
+  // Check detected scripts block
+  if (blockText.startsWith('<<<DETECTED_SCRIPTS>>>')) {
+    const match = blockText.match(/<<<DETECTED_SCRIPTS>>>([\s\S]*?)<<<\/DETECTED_SCRIPTS>>>/);
+    if (match) {
+      try {
+        const jsonContent = match[1].trim();
+        const scriptsData = JSON.parse(jsonContent);
+        // Support both flat array format and object format with add/update/remove
+        const scriptsArray = Array.isArray(scriptsData)
+          ? scriptsData
+          : scriptsData && typeof scriptsData === 'object' && Array.isArray(scriptsData.add)
+            ? scriptsData.add
+            : null;
+        if (scriptsArray) {
+          return {
+            type: 'detected_scripts',
+            content: jsonContent,
+            metadata: {
+              detectedScriptsData: scriptsArray,
+            },
+          };
+        }
+      } catch (e) {
+        logger.warn('[parseSpecialBlock] Failed to parse detected scripts JSON:', e);
+        return { type: 'text', content: blockText };
       }
     }
   }

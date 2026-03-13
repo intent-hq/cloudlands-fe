@@ -118,7 +118,14 @@ export type DomainEvent =
   | 'git:op-failed'
 
   // Log events
-  | 'log:events-updated';
+  | 'log:events-updated'
+
+  // Script events
+  | 'script:started'
+  | 'script:stopped'
+  | 'script:output'
+  | 'script:error'
+  | 'script:url-detected';
 
 /**
  * Domain event data payloads
@@ -335,6 +342,40 @@ export interface DomainEventPayloads {
   };
 
   'log:events-updated': { workspaceId: WorkspaceId; events: any };
+
+  // Script events
+  'script:started': {
+    workspaceId: WorkspaceId;
+    scriptId: string;
+    scriptName: string;
+    pid?: number;
+    startedAt?: string;
+  };
+  'script:stopped': {
+    workspaceId: WorkspaceId;
+    scriptId: string;
+    scriptName: string;
+    exitCode?: number | null;
+    signal?: string | null;
+    stoppedAt?: string;
+  };
+  'script:output': {
+    workspaceId: WorkspaceId;
+    scriptId: string;
+    lines: Array<{ text: string; stream: 'stdout' | 'stderr'; timestamp: string }>;
+  };
+  'script:error': {
+    workspaceId: WorkspaceId;
+    scriptId: string;
+    scriptName: string;
+    error: string;
+  };
+  'script:url-detected': {
+    workspaceId: WorkspaceId;
+    scriptId: string;
+    scriptName: string;
+    url: string;
+  };
 }
 
 // Global STDIO connection for MCP

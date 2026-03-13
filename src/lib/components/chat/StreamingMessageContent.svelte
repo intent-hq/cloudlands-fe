@@ -6,6 +6,7 @@
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import AugmentCodeSnippet from '$lib/components/editor/AugmentCodeSnippet.svelte';
   import DigestCard from './DigestCard.svelte';
+  import DetectedScriptsCard from './DetectedScriptsCard.svelte';
   import ChatDiffViewer from './ChatDiffViewer.svelte';
   import { PatchBlockContent } from '$lib/components/ui/diff';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
@@ -491,6 +492,8 @@
         patches={[{ filePath: patchData.filePath, diff: patchData.diff }]}
         label={patchData.description || patchData.filePath}
       />
+    {:else if parsedBlock.type === 'detected_scripts' && parsedBlock.metadata?.detectedScriptsData}
+      <DetectedScriptsCard scripts={parsedBlock.metadata.detectedScriptsData} />
     {:else if parsedBlock.type === 'reference' && parsedBlock.metadata?.referenceData}
       {@const refData = parsedBlock.metadata.referenceData}
       {@const refFileName = refData.filePath?.split('/').pop() || refData.semanticId || 'Reference'}

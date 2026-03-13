@@ -27,6 +27,7 @@
     onOpenChange?: (open: boolean) => void;
     class?: string;
     contentClass?: string;
+    contentContainerClass?: string;
     showArrow?: boolean;
     showClose?: boolean;
     onClose?: () => void;
@@ -61,6 +62,7 @@
     onOpenChange,
     class: className = '',
     contentClass = '',
+    contentContainerClass = '',
     showArrow = true,
     showClose = false,
     onClose,
@@ -82,7 +84,7 @@
     default: {
       bg: 'bg-popover',
       text: 'text-popover-foreground',
-      border: 'border border-border',
+      border: '',
       icon: null,
       iconColor: '',
     },
@@ -130,7 +132,7 @@
   // Combined content classes - use $derived to react to prop changes
   const contentClasses = $derived(
     cn(
-      'z-[200] rounded-lg shadow-lg',
+      'z-[200] shadow-lg',
       !disableAnimation && [
         'animate-in fade-in-0 zoom-in-95',
         'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
@@ -197,7 +199,7 @@
               </button>
             {/if}
 
-            <div class="p-2 space-y-1">
+            <div class="px-3 py-2 space-y-1 {contentContainerClass}">
               {#if title || IconComponent}
                 <div class="flex items-start gap-2">
                   {#if IconComponent}
@@ -225,12 +227,7 @@
             </div>
 
             {#if footer}
-              <div
-                class={cn(
-                  'border-t px-3 py-2 bg-black/5 dark:bg-white/5 rounded-b-lg',
-                  footerClass,
-                )}
-              >
+              <div class={cn('px-3 py-2', footerClass)}>
                 {@render footer?.()}
               </div>
             {/if}

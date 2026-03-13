@@ -223,8 +223,8 @@
   }
 
   function handleSelectSearchResult(result: MentionCandidate) {
-    // For types that aren't panel context items (e.g. terminal), insert as a mention chip
-    if (result.type === 'terminal') {
+    // For types that aren't panel context items (e.g. terminal, script), insert as a mention chip
+    if (result.type === 'terminal' || result.type === 'script') {
       onInsertMention?.({
         id: result.id,
         label: result.label,

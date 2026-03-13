@@ -92,6 +92,17 @@ import {
 import { BrowserExecTool, BrowserDocsTool } from './browser-tools';
 import { ListTerminalsTool, ReadTerminalOutputTool } from './terminal-tools';
 import {
+  ListScriptsTool,
+  CreateScriptTool,
+  RemoveScriptTool,
+  StartScriptTool,
+  StopScriptTool,
+  RestartScriptTool,
+  GetScriptOutputTool,
+  GetScriptStatusTool,
+  RunScriptTool,
+} from './script-tools';
+import {
   ListPRReviewCommentsTool,
   ReplyToPRReviewCommentTool,
   ResolvePRReviewThreadTool,
@@ -268,6 +279,17 @@ export async function createWorkspaceMCPServer(
   // Register terminal tools for agent access to user terminal sessions
   server.registerTool(new ListTerminalsTool(workspaceId));
   server.registerTool(new ReadTerminalOutputTool(workspaceId));
+
+  // Register script tools for agent interaction with workspace scripts
+  server.registerTool(new ListScriptsTool(workspaceId));
+  server.registerTool(new CreateScriptTool(workspaceId));
+  server.registerTool(new RemoveScriptTool(workspaceId));
+  server.registerTool(new StartScriptTool(workspaceId));
+  server.registerTool(new StopScriptTool(workspaceId));
+  server.registerTool(new RestartScriptTool(workspaceId));
+  server.registerTool(new GetScriptOutputTool(workspaceId));
+  server.registerTool(new GetScriptStatusTool(workspaceId));
+  server.registerTool(new RunScriptTool(workspaceId));
 
   // Register PR comment tools if workspace has an active PR
   if (workspaceManager) {

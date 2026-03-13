@@ -107,24 +107,11 @@
     <span class="text-sm">{label}</span>
 
     {#if formattedShortcut.length > 0}
-      <div class="flex items-center gap-1">
+      <div class="flex items-center text-muted-foreground/75"> <!-- a11y-ignore -->
         {#each formattedShortcut as key, i (`key-${i}-${key}`)}
-          <kbd
-            class={cn(
-              'inline-flex items-center justify-center',
-              'min-w-[20px] px-1.5 py-0.5',
-              'text-ui font-medium',
-              'bg-muted text-subtle',
-              'border border-border',
-              'rounded-sm shadow-sm',
-              isMac && 'font-mono',
-            )}
-          >
+          <kbd class={cn()}>
             {key}
           </kbd>
-          {#if i < formattedShortcut.length - 1}
-            <span class="text-ui text-subtle mx-0.5">+</span>
-          {/if}
         {/each}
       </div>
     {/if}

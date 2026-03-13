@@ -730,6 +730,18 @@ const ALLOWED_CHANNELS = [
   "ssh:get-agent-status",
   "ssh:test-connection",
   "skills:list",
+  "scripts:list",
+  "scripts:create",
+  "scripts:update",
+  "scripts:remove",
+  "scripts:start",
+  "scripts:stop",
+  "scripts:restart",
+  "scripts:get-status",
+  "scripts:get-output",
+  "scripts:detect",
+  "scripts:save-to-repo",
+  "skills:list",
   "event:workspace:created",
   "event:workspace:updated",
   "event:workspace:deleted",
@@ -863,7 +875,12 @@ const ALLOWED_CHANNELS = [
   "browser:list-tabs-request",
   "browser:open-tab",
   "mcp:server-error",
-  "analytics:track-from-main"
+  "analytics:track-from-main",
+  "script:started",
+  "script:stopped",
+  "script:output",
+  "script:error",
+  "script:url-detected"
 ];
 
 // Dynamic channel patterns that are matched with startsWith()
@@ -1022,7 +1039,12 @@ const EVENT_CHANNELS = [
   "browser:list-tabs-request",
   "browser:open-tab",
   "mcp:server-error",
-  "analytics:track-from-main"
+  "analytics:track-from-main",
+  "script:started",
+  "script:stopped",
+  "script:output",
+  "script:error",
+  "script:url-detected"
 ];
 
 /**

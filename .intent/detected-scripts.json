@@ -1,0 +1,956 @@
+{
+  "version": 1,
+  "detectedAt": "2026-03-12T02:40:03.177Z",
+  "packageManager": "pnpm",
+  "manifestHash": "9e46466836fe97554c559815bd0bceee0efe6d17dd5b8029457115a43a23e90f",
+  "scripts": [
+    {
+      "name": "generate:ipc-channels",
+      "command": "pnpm generate:ipc-channels",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "generate:build-config",
+      "command": "pnpm generate:build-config",
+      "category": "build",
+      "mode": "command"
+    },
+    {
+      "name": "dev",
+      "command": "pnpm dev",
+      "category": "dev",
+      "mode": "service"
+    },
+    {
+      "name": "dev:cdp",
+      "command": "pnpm dev:cdp",
+      "category": "dev",
+      "mode": "service"
+    },
+    {
+      "name": "dev:base",
+      "command": "pnpm dev:base",
+      "category": "dev",
+      "mode": "service"
+    },
+    {
+      "name": "dev:cdp:base",
+      "command": "pnpm dev:cdp:base",
+      "category": "dev",
+      "mode": "service"
+    },
+    {
+      "name": "dev:renderer",
+      "command": "pnpm dev:renderer",
+      "category": "dev",
+      "mode": "service"
+    },
+    {
+      "name": "dev:electron",
+      "command": "pnpm dev:electron",
+      "category": "dev",
+      "mode": "service"
+    },
+    {
+      "name": "dev:electron:cdp",
+      "command": "pnpm dev:electron:cdp",
+      "category": "dev",
+      "mode": "service"
+    },
+    {
+      "name": "kill:electron",
+      "command": "pnpm kill:electron",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "build",
+      "command": "pnpm build",
+      "category": "build",
+      "mode": "command"
+    },
+    {
+      "name": "build:renderer",
+      "command": "pnpm build:renderer",
+      "category": "build",
+      "mode": "command"
+    },
+    {
+      "name": "build:main",
+      "command": "pnpm build:main",
+      "category": "build",
+      "mode": "command"
+    },
+    {
+      "name": "build:mcp",
+      "command": "pnpm build:mcp",
+      "category": "build",
+      "mode": "command"
+    },
+    {
+      "name": "build:cdp-mcp",
+      "command": "pnpm build:cdp-mcp",
+      "category": "build",
+      "mode": "command"
+    },
+    {
+      "name": "build:preload",
+      "command": "pnpm build:preload",
+      "category": "build",
+      "mode": "command"
+    },
+    {
+      "name": "preview",
+      "command": "pnpm preview",
+      "category": "dev",
+      "mode": "service"
+    },
+    {
+      "name": "start",
+      "command": "pnpm start",
+      "category": "dev",
+      "mode": "service"
+    },
+    {
+      "name": "dist",
+      "command": "pnpm dist",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "dist:mac",
+      "command": "pnpm dist:mac",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "dist:win",
+      "command": "pnpm dist:win",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "dist:linux",
+      "command": "pnpm dist:linux",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "dist:all",
+      "command": "pnpm dist:all",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "version:set",
+      "command": "pnpm version:set",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "version:patch",
+      "command": "pnpm version:patch",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "version:minor",
+      "command": "pnpm version:minor",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "version:major",
+      "command": "pnpm version:major",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "version:sync-sentry",
+      "command": "pnpm version:sync-sentry",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "release:patch",
+      "command": "pnpm release:patch",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "release:minor",
+      "command": "pnpm release:minor",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "release:major",
+      "command": "pnpm release:major",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "generate:release-notes",
+      "command": "pnpm generate:release-notes",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "upload:stable",
+      "command": "pnpm upload:stable",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "upload:beta",
+      "command": "pnpm upload:beta",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "upload:alpha",
+      "command": "pnpm upload:alpha",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "upload:gcp-only:stable",
+      "command": "pnpm upload:gcp-only:stable",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "upload:gcp-only:beta",
+      "command": "pnpm upload:gcp-only:beta",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "upload:gcp-only:alpha",
+      "command": "pnpm upload:gcp-only:alpha",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "promote:beta-to-stable",
+      "command": "pnpm promote:beta-to-stable",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "reset-onboarding",
+      "command": "pnpm reset-onboarding",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "reset-onboarding:restore",
+      "command": "pnpm reset-onboarding:restore",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "test:diff-viewer",
+      "command": "pnpm test:diff-viewer",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:diff-viewer:watch",
+      "command": "pnpm test:diff-viewer:watch",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "check",
+      "command": "pnpm check",
+      "category": "typecheck",
+      "mode": "command"
+    },
+    {
+      "name": "format",
+      "command": "pnpm format",
+      "category": "format",
+      "mode": "command"
+    },
+    {
+      "name": "format:check",
+      "command": "pnpm format:check",
+      "category": "format",
+      "mode": "command"
+    },
+    {
+      "name": "lint",
+      "command": "pnpm lint",
+      "category": "lint",
+      "mode": "command"
+    },
+    {
+      "name": "lint:fix",
+      "command": "pnpm lint:fix",
+      "category": "lint",
+      "mode": "command"
+    },
+    {
+      "name": "test",
+      "command": "pnpm test",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:unit",
+      "command": "pnpm test:unit",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:unit:watch",
+      "command": "pnpm test:unit:watch",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:playwright",
+      "command": "pnpm test:playwright",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:playwright:ui",
+      "command": "pnpm test:playwright:ui",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:playwright:headed",
+      "command": "pnpm test:playwright:headed",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:run",
+      "command": "pnpm test:run",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:ci",
+      "command": "pnpm test:ci",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:kill",
+      "command": "pnpm test:kill",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:agent-launch",
+      "command": "pnpm test:agent-launch",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:agent-launch:verbose",
+      "command": "pnpm test:agent-launch:verbose",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "observe",
+      "command": "pnpm observe",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "observe:follow",
+      "command": "pnpm observe:follow",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "observe:memory",
+      "command": "pnpm observe:memory",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "observe:memory:follow",
+      "command": "pnpm observe:memory:follow",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "observe:help",
+      "command": "pnpm observe:help",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "rebuild:electron",
+      "command": "pnpm rebuild:electron",
+      "category": "build",
+      "mode": "command"
+    },
+    {
+      "name": "rebuild:node",
+      "command": "pnpm rebuild:node",
+      "category": "build",
+      "mode": "command"
+    },
+    {
+      "name": "rebuild:native",
+      "command": "pnpm rebuild:native",
+      "category": "build",
+      "mode": "command"
+    },
+    {
+      "name": "rebuild:native:verbose",
+      "command": "pnpm rebuild:native:verbose",
+      "category": "build",
+      "mode": "command"
+    },
+    {
+      "name": "rebuild:native:force",
+      "command": "pnpm rebuild:native:force",
+      "category": "build",
+      "mode": "command"
+    },
+    {
+      "name": "test:service-integration",
+      "command": "pnpm test:service-integration",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:launcher-integration",
+      "command": "pnpm test:launcher-integration",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:bundled-rules",
+      "command": "pnpm test:bundled-rules",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:bundled-rules:fallback",
+      "command": "pnpm test:bundled-rules:fallback",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "type-check",
+      "command": "pnpm type-check",
+      "category": "typecheck",
+      "mode": "command"
+    },
+    {
+      "name": "type-check:quiet",
+      "command": "pnpm type-check:quiet",
+      "category": "typecheck",
+      "mode": "command"
+    },
+    {
+      "name": "type-check:validate",
+      "command": "pnpm type-check:validate",
+      "category": "typecheck",
+      "mode": "command"
+    },
+    {
+      "name": "type-check:handlers",
+      "command": "pnpm type-check:handlers",
+      "category": "typecheck",
+      "mode": "command"
+    },
+    {
+      "name": "type-check:report",
+      "command": "pnpm type-check:report",
+      "category": "typecheck",
+      "mode": "command"
+    },
+    {
+      "name": "generate:ipc-types",
+      "command": "pnpm generate:ipc-types",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "prebuild",
+      "command": "pnpm prebuild",
+      "category": "build",
+      "mode": "command"
+    },
+    {
+      "name": "test:mcp-stdio-proxy",
+      "command": "pnpm test:mcp-stdio-proxy",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:agent-launch-mcp",
+      "command": "pnpm test:agent-launch-mcp",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:migration",
+      "command": "pnpm test:migration",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:event-system",
+      "command": "pnpm test:event-system",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:cdp-helpers",
+      "command": "pnpm test:cdp-helpers",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:cdp-helpers:watch",
+      "command": "pnpm test:cdp-helpers:watch",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:accessibility-tree",
+      "command": "pnpm test:accessibility-tree",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:api-reference",
+      "command": "pnpm test:api-reference",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "agent-errors",
+      "command": "pnpm agent-errors",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "memory-events",
+      "command": "pnpm memory-events",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "test:error-tracking",
+      "command": "pnpm test:error-tracking",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "ipc:debug",
+      "command": "pnpm ipc:debug",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "ipc:debug:summary",
+      "command": "pnpm ipc:debug:summary",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "ipc:debug:missing",
+      "command": "pnpm ipc:debug:missing",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "ipc:debug:errors",
+      "command": "pnpm ipc:debug:errors",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "ipc:debug:clear",
+      "command": "pnpm ipc:debug:clear",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "ipc:debug:path",
+      "command": "pnpm ipc:debug:path",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "test:ipc-harness",
+      "command": "pnpm test:ipc-harness",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:ipc-client",
+      "command": "pnpm test:ipc-client",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:integration",
+      "command": "pnpm test:integration",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:integration:verbose",
+      "command": "pnpm test:integration:verbose",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:integration:basic",
+      "command": "pnpm test:integration:basic",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:integration:runner",
+      "command": "pnpm test:integration:runner",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:integration:runner:verbose",
+      "command": "pnpm test:integration:runner:verbose",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:integration:watch",
+      "command": "pnpm test:integration:watch",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:integration:coverage",
+      "command": "pnpm test:integration:coverage",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:integration:agent-creation",
+      "command": "pnpm test:integration:agent-creation",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:integration:streaming",
+      "command": "pnpm test:integration:streaming",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:streaming-ui",
+      "command": "pnpm test:streaming-ui",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:streaming-edge",
+      "command": "pnpm test:streaming-edge",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:streaming-perf",
+      "command": "pnpm test:streaming-perf",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:streaming-refresh",
+      "command": "pnpm test:streaming-refresh",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:streaming-all",
+      "command": "pnpm test:streaming-all",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:workspace-creation",
+      "command": "pnpm test:workspace-creation",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:workspace-flow",
+      "command": "pnpm test:workspace-flow",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:workspace-all",
+      "command": "pnpm test:workspace-all",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:edge-cases-advanced",
+      "command": "pnpm test:edge-cases-advanced",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:contextual-menu-fixes",
+      "command": "pnpm test:contextual-menu-fixes",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:contextual-menu-streaming",
+      "command": "pnpm test:contextual-menu-streaming",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:streaming-state-timing",
+      "command": "pnpm test:streaming-state-timing",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:tool-calls-display",
+      "command": "pnpm test:tool-calls-display",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:message-duplication",
+      "command": "pnpm test:message-duplication",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:content-blocks",
+      "command": "pnpm test:content-blocks",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:error-recovery",
+      "command": "pnpm test:error-recovery",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:state-persistence",
+      "command": "pnpm test:state-persistence",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:concurrent-operations",
+      "command": "pnpm test:concurrent-operations",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:ui-state-consistency",
+      "command": "pnpm test:ui-state-consistency",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:agent-creation-all",
+      "command": "pnpm test:agent-creation-all",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:all-comprehensive",
+      "command": "pnpm test:all-comprehensive",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:streaming-ui:watch",
+      "command": "pnpm test:streaming-ui:watch",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:integration:workspace",
+      "command": "pnpm test:integration:workspace",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:integration:persistence",
+      "command": "pnpm test:integration:persistence",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:integration:error",
+      "command": "pnpm test:integration:error",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:integration:performance",
+      "command": "pnpm test:integration:performance",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:harness",
+      "command": "pnpm test:harness",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:harness:runner",
+      "command": "pnpm test:harness:runner",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:harness:runner:verbose",
+      "command": "pnpm test:harness:runner:verbose",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:e2e",
+      "command": "pnpm test:e2e",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:e2e:build",
+      "command": "pnpm test:e2e:build",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:e2e:workflows",
+      "command": "pnpm test:e2e:workflows",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:e2e:multi-agent",
+      "command": "pnpm test:e2e:multi-agent",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:e2e:error",
+      "command": "pnpm test:e2e:error",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:e2e:performance",
+      "command": "pnpm test:e2e:performance",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:e2e:ui",
+      "command": "pnpm test:e2e:ui",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:e2e:debug",
+      "command": "pnpm test:e2e:debug",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:e2e:ci",
+      "command": "pnpm test:e2e:ci",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:e2e:install",
+      "command": "pnpm test:e2e:install",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:build-smoke",
+      "command": "pnpm test:build-smoke",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:build-smoke:providers",
+      "command": "pnpm test:build-smoke:providers",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:remote",
+      "command": "pnpm test:remote",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:remote:standard",
+      "command": "pnpm test:remote:standard",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:remote:devpod",
+      "command": "pnpm test:remote:devpod",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:remote:minimal",
+      "command": "pnpm test:remote:minimal",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "test:remote:all",
+      "command": "pnpm test:remote:all",
+      "category": "test",
+      "mode": "command"
+    },
+    {
+      "name": "remote-env:start",
+      "command": "pnpm remote-env:start",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "remote-env:start:devpod",
+      "command": "pnpm remote-env:start:devpod",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "remote-env:start:all",
+      "command": "pnpm remote-env:start:all",
+      "category": "other",
+      "mode": "command"
+    },
+    {
+      "name": "remote-env:stop",
+      "command": "pnpm remote-env:stop",
+      "category": "other",
+      "mode": "command"
+    }
+  ]
+}

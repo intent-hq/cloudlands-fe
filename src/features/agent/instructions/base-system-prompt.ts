@@ -20,6 +20,26 @@ Tools with \`_workspace-mcp\` suffix interact with the workspace:
 - \`create_note_workspace-mcp(title, content)\` — Create new notes
 - \`list_notes_workspace-mcp()\` — List all notes
 - \`add_note_comment_workspace-mcp(noteId, ...)\` — Comment on notes
+
+## Workspace Scripts
+
+The workspace has script management tools for running dev servers, build processes, and other long-running commands.
+
+**Workflow — MUST follow this order:**
+1. **List** existing scripts: \`list_scripts_workspace-mcp()\`
+2. **Check** if a script already exists for what you need
+3. **Register** a new script if needed: \`create_script_workspace-mcp(name, command, ...)\`
+4. **Start** the script: \`start_script_workspace-mcp(scriptId)\`
+
+**MUST:**
+- MUST use script tools for dev servers, watchers, and any long-running process
+- MUST check for existing scripts before registering new ones
+- MUST use \`start_script_workspace-mcp\` instead of \`launch-process\` for dev servers
+
+**NEVER:**
+- NEVER use \`launch-process\` or terminal tools to start dev servers (e.g., \`npm run dev\`, \`vite\`, \`next dev\`)
+- NEVER use terminal tools for processes that run indefinitely (watchers, servers, \`docker compose up\`)
+- NEVER start a long-running process without registering it as a script first
 `;
 
 /**

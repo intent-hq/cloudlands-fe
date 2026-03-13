@@ -346,6 +346,7 @@ export class BackgroundAgentExecutor {
         pr: 'pr-description',
         review: 'code-review',
         walkthrough: 'code-walkthrough',
+        'script-detect': 'chat',
       };
 
       const agentType = agentTypeMap[this.config.type];
@@ -711,43 +712,64 @@ export class BackgroundAgentExecutor {
     const assistantMessages = this.messages.filter((m) => m.role === 'assistant');
     if (assistantMessages.length === 0) return;
 
-    const lastMessage = assistantMessages[assistantMessages.length - 1];
-    let content = extractAllContent(lastMessage);
-
-    if (!content || typeof content !== 'string') return;
-
-    // Clean model fallback status messages that may have been injected
-    // These should not be included in the extracted result
-    const originalContent = content;
-    content = this.cleanModelFallbackMessages(content);
-
-    if (content !== originalContent) {
-      logger.info('[BackgroundAgentExecutor] Cleaned model fallback messages from content', {
-        originalLength: originalContent.length,
-        cleanedLength: content.length,
-        removedChars: originalContent.length - content.length,
-      });
-    }
-
+    // Search ALL assistant messages for the result tag/pattern, not just the last one.
+    // ACP agents that do multiple tool call rounds may emit the result tag in an earlier
+    // message, with subsequent messages containing only tool calls and no text.
+    // Search in reverse order so we find the latest match first.
+    let content: string | null = null;
     let extractedResult: string | null = null;
 
-    // Try to extract using tag
-    if (this.config.resultTag) {
-      const tagRegex = new RegExp(
-        `<<<${this.config.resultTag}>>>([\\s\\S]*?)<<<\\/${this.config.resultTag}>>>`,
-        'i',
-      );
-      const match = content.match(tagRegex);
-      if (match) {
-        extractedResult = match[1].trim();
+    if (this.config.resultTag || this.config.resultPattern) {
+      const tagRegex = this.config.resultTag
+        ? new RegExp(
+            `<<<${this.config.resultTag}>>>([\\s\\S]*?)<<<\\/${this.config.resultTag}>>>`,
+            'i',
+          )
+        : null;
+
+      for (let i = assistantMessages.length - 1; i >= 0; i--) {
+        const msgContent = extractAllContent(assistantMessages[i]);
+        if (!msgContent || typeof msgContent !== 'string') continue;
+
+        const cleaned = this.cleanModelFallbackMessages(msgContent);
+
+        // Try tag extraction
+        if (tagRegex && !extractedResult) {
+          const match = cleaned.match(tagRegex);
+          if (match) {
+            extractedResult = match[1].trim();
+            content = cleaned;
+            break;
+          }
+        }
+
+        // Try pattern extraction
+        if (!extractedResult && this.config.resultPattern) {
+          const match = cleaned.match(this.config.resultPattern);
+          if (match) {
+            extractedResult = match[1] || match[0];
+            content = cleaned;
+            break;
+          }
+        }
       }
     }
 
-    // Try to extract using pattern
-    if (!extractedResult && this.config.resultPattern) {
-      const match = content.match(this.config.resultPattern);
-      if (match) {
-        extractedResult = match[1] || match[0];
+    // If no tag/pattern extraction succeeded, fall back to last message content
+    if (!content) {
+      const lastMessage = assistantMessages[assistantMessages.length - 1];
+      const lastContent = extractAllContent(lastMessage);
+      if (!lastContent || typeof lastContent !== 'string') return;
+
+      const originalContent = lastContent;
+      content = this.cleanModelFallbackMessages(lastContent);
+
+      if (content !== originalContent) {
+        logger.info('[BackgroundAgentExecutor] Cleaned model fallback messages from content', {
+          originalLength: originalContent.length,
+          cleanedLength: content.length,
+          removedChars: originalContent.length - content.length,
+        });
       }
     }
 

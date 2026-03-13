@@ -84,11 +84,15 @@
   });
 </script>
 
-<div class="inline-flex items-center justify-center relative {className}">
+<div
+  class="inline-flex items-center justify-center relative shrink-0 {className}"
+  style="min-width: {size}px; min-height: {size * (12.3 / 20)}px;"
+>
   <svg
     width={size}
     height={size * (12.3 / 20)}
     viewBox="0 1 20 12.3"
+    style="min-width: {size}px; min-height: {size * (12.3 / 20)}px;"
     fill="currentColor"
     stroke-width="0"
     stroke="currentColor"

@@ -1424,6 +1424,52 @@
             logger.warn('[CompactWorkspaceInitializer] Failed to read terminal buffer:', error);
           }
         }
+
+        if (mention.type === 'script') {
+          try {
+            const { scriptsStore } = await import('$features/scripts/scripts.store.svelte');
+            const scriptId = mention.id;
+            const outputLines = scriptsStore.getOutput(scriptId);
+            const script = scriptsStore.scripts.get(scriptId);
+            const runtime = scriptsStore.getRuntime(scriptId);
+
+            let content = `Script: ${script?.name || mention.label}\n`;
+            content += `Command: ${script?.command || 'unknown'}\n`;
+            content += `Status: ${runtime.status}`;
+            if (runtime.exitCode !== null && runtime.exitCode !== undefined) {
+              content += ` (exit code: ${runtime.exitCode})`;
+            }
+            content += '\n';
+            if (runtime.detectedUrl) {
+              content += `URL: ${runtime.detectedUrl}\n`;
+            }
+            if (outputLines.length > 0) {
+              const lastLines = outputLines
+                .slice(-100)
+                .map((l: any) => l.text)
+                .join('\n');
+              content += `\nOutput (last ${Math.min(outputLines.length, 100)} lines):\n${lastLines}`;
+            } else {
+              content += '\nNo output yet.';
+            }
+
+            const contextRef: Record<string, any> = {
+              type: 'script',
+              content,
+              title: script?.name || mention.label,
+              metadata: {
+                scriptId,
+                command: script?.command,
+                status: runtime.status,
+                exitCode: runtime.exitCode,
+                detectedUrl: runtime.detectedUrl,
+              },
+            };
+            contextReferences.push(contextRef);
+          } catch (error) {
+            logger.warn('[ScriptMention] Failed to resolve script context:', error);
+          }
+        }
       }
 
       // Convert inline images to imageBlocks (separate from contextReferences)

@@ -63,6 +63,7 @@ read_note_workspace-mcp(noteId="spec")
 4. **Document your work** - Update notes with your findings and progress
 5. **Ask for clarification** - If something is unclear, ask rather than assume
 6. **Use notes** - Create new notes for communicating with the user. Plans, long summaries, diagrams, etc.
+7. **Use script tools for dev servers** - Always use \`list_scripts\`, \`create_script\`, and \`start_script\` workspace tools instead of terminal/launch-process for dev servers, watchers, and long-running processes
 
 ## Your Role
 

@@ -27,6 +27,8 @@ import { getNotificationService } from '../../notifications/main/notification.se
 import { GitService } from '../../git/main/git.service';
 import { getWorkspaceGitInfo, getRemoteGitManager } from '../../git/main/git-router';
 import { cleanupWorkspaceTerminals } from '../../terminal/main/terminal.ipc';
+import { disposeScriptProcessManager } from '../../scripts/main/script-process-manager';
+import { readScripts } from '../../scripts/main/scripts-persistence';
 import { getUnifiedWatcher, shutdownUnifiedWatcher, shutdownOtherWatchers } from './unified-workspace-watcher';
 import { initRepoRegistry, getAllRepos, addRepo, removeRepo, syncRepos, clearRepos } from './repo-registry';
 import { sshManager, type SSHConnectionConfig } from '../../../shared/main/ssh-manager';
@@ -605,6 +607,16 @@ export function setupWorkspaceIPC(): void {
             logger.debug('[WorkspaceIPC] Notification service cleanup not available', { error });
           }
 
+          // Stop all running scripts and dispose ScriptProcessManager
+          try {
+            await disposeScriptProcessManager(id);
+            logger.info('[WorkspaceIPC] Script process manager disposed', { workspaceId: id });
+          } catch (error) {
+            logger.warn('[WorkspaceIPC] Failed to dispose script process manager', error as Error, {
+              workspaceId: id,
+            });
+          }
+
           // Clean up agent context registry to prevent memory leaks
           try {
             const { getAgentContextRegistry } = await import('../../agent/agent-context-registry');
@@ -1149,12 +1161,51 @@ export function setupWorkspaceIPC(): void {
                 }
               })();
 
+              // Initialize workspace scripts: clean stale PIDs and start autoStart services
+              const scriptsInitPromise = (async () => {
+                try {
+                  const { getScriptProcessManager } = await import(
+                    '../../scripts/main/script-process-manager'
+                  );
+                  const scriptsWorkspacePath = workspace.worktreePath || workspace.repositoryPath;
+                  if (!scriptsWorkspacePath) return;
+
+                  const scriptsMetadataPath = WorkspaceConfig.paths.metadata(id);
+                  const manager = getScriptProcessManager(id, scriptsWorkspacePath, scriptsMetadataPath);
+
+                  // Clean up stale PIDs from previous sessions
+                  manager.cleanupStalePids();
+
+                  // Load scripts and start autoStart services
+                  const scripts = await readScripts(id);
+                  const autoStartScripts = scripts.filter(
+                    (s) => s.autoStart && s.mode === 'service',
+                  );
+
+                  if (autoStartScripts.length > 0) {
+                    logger.info('[WorkspaceIPC] Starting autoStart scripts', {
+                      workspaceId: id,
+                      count: autoStartScripts.length,
+                      names: autoStartScripts.map((s) => s.name),
+                    });
+                    for (const script of autoStartScripts) {
+                      manager.start(script);
+                    }
+                  }
+                } catch (error) {
+                  logger.warn('[WorkspaceIPC] Failed to initialize scripts', error as Error, {
+                    workspaceId: id,
+                  });
+                }
+              })();
+
               // Wait for ALL to complete in parallel
               await Promise.all([
                 gitIntegrationPromise,
                 activityLogPromise,
                 cacheWarmingPromise,
                 notificationServicePromise,
+                scriptsInitPromise,
               ]);
 
               logger.info('[WorkspaceIPC] Background initialization complete', {
@@ -1438,6 +1489,16 @@ export function setupWorkspaceIPC(): void {
           }
         } catch (error) {
           logger.debug('Agent context registry cleanup not available before delete', { error });
+        }
+
+        // Stop all running scripts and dispose ScriptProcessManager before delete
+        try {
+          await disposeScriptProcessManager(validatedId);
+          logger.debug('Script process manager disposed before delete', { workspaceId: validatedId });
+        } catch (error) {
+          logger.warn('Failed to dispose script process manager before delete', error as Error, {
+            workspaceId: validatedId,
+          });
         }
 
         // Clean up HTTP MCP bridge cached servers

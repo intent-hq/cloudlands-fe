@@ -1,0 +1,215 @@
+import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { mockDetect, mockExecute, mockRefresh, scriptsStore, workspaceStore, toast } = vi.hoisted(() => {
+  const mockDetect = vi.fn();
+  const mockExecute = vi.fn();
+  const mockRefresh = vi.fn();
+  return {
+    mockDetect,
+    mockExecute,
+    mockRefresh,
+    scriptsStore: {
+      scriptEntries: [] as any[],
+      refresh: mockRefresh,
+      upsertScript: vi.fn(),
+      removeScript: vi.fn(),
+    },
+    workspaceStore: {
+      current: { id: 'ws-1', path: '/repo' },
+    },
+    toast: {
+      success: vi.fn(),
+      info: vi.fn(),
+      error: vi.fn(),
+    },
+  };
+});
+
+vi.mock('$features/scripts/scripts.client', () => ({
+  scriptsClient: {
+    detect: mockDetect,
+    create: vi.fn(),
+    update: vi.fn(),
+    remove: vi.fn(),
+    start: vi.fn(),
+    stop: vi.fn(),
+    restart: vi.fn(),
+    saveToRepo: vi.fn(),
+  },
+}));
+
+vi.mock('$features/scripts/scripts.store.svelte', () => ({ scriptsStore }));
+vi.mock('$features/workspace/workspace.store.svelte', () => ({ workspaceStore }));
+vi.mock('$lib/stores/terminal-overlay.store.svelte', () => ({
+  terminalOverlayStore: { terminals: [], activeTerminalId: null },
+}));
+vi.mock('$lib/components/ui/toast', () => ({ toast }));
+vi.mock('$lib/utils/client-logger', () => ({
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+}));
+vi.mock('$lib/hooks/use-background-agent.svelte', () => ({
+  useBackgroundAgent: () => ({
+    status: 'idle',
+    isRunning: false,
+    isComplete: false,
+    progress: 0,
+    result: null,
+    error: null,
+    messages: [],
+    agentId: null,
+    execute: mockExecute,
+    cancel: vi.fn(),
+    reset: vi.fn(),
+  }),
+}));
+
+vi.mock('$lib/store/utils/utils', () => ({
+  getDispatch: () => vi.fn(),
+}));
+vi.mock('$lib/store/slices/terminal-overlay/terminal-overlay-selectors', () => ({
+  selectTerminals: () => ({ subscribe: (fn: any) => { fn([]); return () => {}; } }),
+  selectActiveTerminalId: () => ({ subscribe: (fn: any) => { fn(null); return () => {}; } }),
+}));
+vi.mock('$lib/store/slices/terminal-overlay/terminal-overlay-slice', () => ({
+  removeTerminal: vi.fn(),
+}));
+
+vi.mock('svelte-fa', async () => {
+  const MockFa = (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default;
+  return { default: MockFa, Fa: MockFa };
+});
+
+vi.mock('$lib/components/ui/auggie-avatar/AuggieAvatarWithState.svelte', async () => {
+  const MockSimple = (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
+    .default;
+  return { default: MockSimple };
+});
+
+vi.mock('$lib/components/ui/skeleton', async () => {
+  const MockSimple = (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
+    .default;
+  return { Skeleton: MockSimple };
+});
+
+vi.mock('$lib/components/ui/button/button.svelte', async () => {
+  const MockButton = (await import('./mocks/MockButton.svelte')).default;
+  return { default: MockButton };
+});
+
+import TerminalSidebar from '../TerminalSidebar.svelte';
+
+describe('TerminalSidebar detection flow', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    scriptsStore.scriptEntries = [];
+    workspaceStore.current = { id: 'ws-1', path: '/repo' } as any;
+  });
+
+  it('runs local detection first and shows scanning copy without starting the agent', async () => {
+    // When scripts exist, the scan icon button triggers local detection
+    scriptsStore.scriptEntries = [
+      {
+        id: 'existing-1',
+        name: 'build',
+        command: 'npm run build',
+        mode: 'command',
+        category: 'build',
+        source: 'user',
+        runtime: { status: 'idle', exitCode: null },
+      },
+    ] as any[];
+
+    let resolveDetect: (() => void) | undefined;
+    mockDetect.mockReturnValue(
+      new Promise((resolve) => {
+        resolveDetect = () => resolve({ success: true, detected: 0 });
+      }),
+    );
+    mockRefresh.mockResolvedValue(undefined);
+
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+
+    await fireEvent.click(screen.getByTitle('Scan local project files for scripts'));
+
+    await waitFor(() => expect(mockDetect).toHaveBeenCalledWith('ws-1'));
+    expect(mockExecute).not.toHaveBeenCalled();
+    expect(screen.getByText('Scanning files…')).toBeTruthy();
+
+    resolveDetect?.();
+    await waitFor(() => expect(toast.info).toHaveBeenCalled());
+  });
+
+  it('offers manual agent-assisted detection after local detection finds no scripts', async () => {
+    // When scripts exist and local detection finds nothing, agent assist is offered
+    scriptsStore.scriptEntries = [
+      {
+        id: 'existing-1',
+        name: 'build',
+        command: 'npm run build',
+        mode: 'command',
+        category: 'build',
+        source: 'user',
+        runtime: { status: 'idle', exitCode: null },
+      },
+    ] as any[];
+
+    mockDetect.mockResolvedValue({ success: true, detected: 0 });
+    mockRefresh.mockImplementation(async () => {
+      scriptsStore.scriptEntries = [...scriptsStore.scriptEntries];
+    });
+
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+
+    await fireEvent.click(screen.getByTitle('Scan local project files for scripts'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /agent assist/i })).toBeTruthy();
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /agent assist/i }));
+
+    await waitFor(() => {
+      expect(mockExecute).toHaveBeenCalledWith(
+        workspaceStore.current,
+        expect.objectContaining({ message: expect.stringContaining('Read package.json') }),
+      );
+    });
+  });
+
+  it('keeps agent-assisted detection visible after a no-results local scan when user scripts already exist', async () => {
+    scriptsStore.scriptEntries = [
+      {
+        id: 'user-1',
+        name: 'dev',
+        command: 'npm run dev',
+        mode: 'service',
+        category: 'dev',
+        source: 'user',
+        runtime: { status: 'idle', exitCode: null },
+      },
+    ] as any[];
+
+    mockDetect.mockResolvedValue({ success: true, detected: 0 });
+    mockRefresh.mockImplementation(async () => {
+      scriptsStore.scriptEntries = [...scriptsStore.scriptEntries];
+    });
+
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+
+    await fireEvent.click(screen.getByTitle('Scan local project files for scripts'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /agent assist/i })).toBeTruthy();
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /agent assist/i }));
+
+    await waitFor(() => {
+      expect(mockExecute).toHaveBeenCalledWith(
+        workspaceStore.current,
+        expect.objectContaining({ message: expect.stringContaining('Read package.json') }),
+      );
+    });
+  });
+});

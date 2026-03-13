@@ -24,6 +24,36 @@ interface Terminal {
   createdAt: Date;
 }
 
+/**
+ * Detect commands that are likely long-running dev servers or watchers.
+ * Returns a descriptive reason if matched, or null if the command looks safe.
+ */
+export function isLikelyLongRunningCommand(command: string, args?: string[]): string | null {
+  const full = [command, ...(args || [])].join(' ');
+
+  // Package manager dev/start scripts: npm run dev, yarn dev, pnpm dev, bun run dev, etc.
+  if (/\b(npm|yarn|pnpm|bun)\b.*\b(run\s+)?(dev|start|serve)\b/i.test(full)) {
+    return 'Dev server command detected (e.g., npm run dev). Use workspace script tools instead: list_scripts → create_script → start_script.';
+  }
+
+  // Direct tool invocations: vite, next dev, nuxt dev, storybook
+  if (/\b(vite|next\s+dev|nuxt\s+dev|storybook)\b/i.test(full)) {
+    return 'Dev server tool detected (e.g., vite, next dev). Use workspace script tools instead: list_scripts → create_script → start_script.';
+  }
+
+  // Docker compose up (without -d is long-running)
+  if (/\bdocker\s+compose\s+up\b/i.test(full) && !/\s-d\b/.test(full)) {
+    return 'docker compose up without -d runs in foreground. Use workspace script tools instead: list_scripts → create_script → start_script.';
+  }
+
+  // Watch flags
+  if (/\s--watch\b/i.test(full)) {
+    return 'Command uses --watch flag (long-running). Use workspace script tools instead: list_scripts → create_script → start_script.';
+  }
+
+  return null;
+}
+
 export class TerminalHandler {
   private terminals = new Map<string, Terminal>();
 
@@ -53,6 +83,17 @@ export class TerminalHandler {
       ...(env || {}),
     };
 
+    // Warn if this looks like a long-running dev server command
+    const longRunningWarning = isLikelyLongRunningCommand(command, args);
+    if (longRunningWarning) {
+      logger.warn('Long-running command detected in terminal', {
+        terminalId,
+        command,
+        args,
+        warning: longRunningWarning,
+      });
+    }
+
     logger.info('Creating terminal', {
       terminalId,
       command,
@@ -71,7 +112,7 @@ export class TerminalHandler {
     const terminal: Terminal = {
       id: terminalId,
       process: childProcess,
-      output: [],
+      output: longRunningWarning ? [`⚠️ WARNING: ${longRunningWarning}\n`] : [],
       createdAt: new Date(),
     };
 

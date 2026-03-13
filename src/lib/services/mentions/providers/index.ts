@@ -691,6 +691,69 @@ export class TerminalProvider implements Provider {
   }
 }
 
+// Script Provider
+export class ScriptProvider implements Provider {
+  id = 'script';
+  triggers = ['@script', '@scripts'];
+
+  async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
+    try {
+      const { scriptsStore } = await import('$features/scripts/scripts.store.svelte');
+
+      if (!context.workspaceId) {
+        return [];
+      }
+
+      const scripts = scriptsStore.scriptEntries;
+      if (scripts.length === 0) {
+        return [];
+      }
+
+      const triggerWords = ['script', 'scripts'];
+      const isTypingTrigger = query
+        ? triggerWords.some(
+            (t) => t.startsWith(query.toLowerCase()) || query.toLowerCase().startsWith(t),
+          )
+        : false;
+      const filtered =
+        query && !isTypingTrigger
+          ? scripts.filter(
+              (s) =>
+                fuzzyMatch(query, s.name) !== null || fuzzyMatch(query, s.command) !== null,
+            )
+          : scripts;
+
+      return filtered.slice(0, 10).map((script) => {
+        const status = script.runtime.status;
+        const statusLabel =
+          status === 'running' ? '● Running' : status === 'exited' ? '○ Exited' : '○ Idle';
+        return {
+          id: script.id,
+          type: 'script' as MentionType,
+          label: script.name,
+          subtitle: `${statusLabel} · ${script.command}`,
+          description: 'Include script output in context',
+          icon: '▶️',
+          uri: `devspace://script/${encodeURIComponent(script.id)}`,
+          meta: {
+            workspaceId: context.workspaceId,
+            command: script.command,
+            status:
+              status === 'running'
+                ? ('ok' as const)
+                : status === 'exited'
+                  ? ('warning' as const)
+                  : undefined,
+          },
+        };
+      });
+    } catch (error) {
+      logger.debug('[ScriptProvider] Failed to get scripts:', error);
+      return [];
+    }
+  }
+}
+
 // Specialist Provider - lists available specialist types
 export class SpecialistProvider implements Provider {
   id = 'specialist';
@@ -855,11 +918,12 @@ export class ProviderRegistry {
     this.register(new PersonalityProvider());
     this.register(new CommandProvider());
     this.register(new TerminalProvider());
+    this.register(new ScriptProvider());
     this.register(new AgentProvider());
     this.register(new SpecialistProvider());
 
     // Set default providers
-    this.defaultProviders = ['file', 'folder', 'note', 'terminal', 'agent', 'specialist'];
+    this.defaultProviders = ['file', 'folder', 'note', 'terminal', 'script', 'agent', 'specialist'];
   }
 
   register(provider: Provider) {

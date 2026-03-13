@@ -69,6 +69,7 @@ export {
   REMOTE_FS_CHANNELS,
   TESTING_CHANNELS,
   SKILLS_CHANNELS,
+  SCRIPTS_CHANNELS,
   ALL_CHANNELS,
   type ChannelName,
   createChannelName,

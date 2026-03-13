@@ -121,6 +121,12 @@ export const mentionIconMap = {
   // Terminal type
   terminal: 'terminal',
 
+  // Script types
+  script: 'play',
+  'script-running': 'play',
+  'script-stopped': 'square',
+  'script-failed': 'circle-exclamation',
+
   // Command types
   command: 'terminal',
   'command-run': 'play',

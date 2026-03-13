@@ -2,12 +2,16 @@
   import { cn } from '$lib/utils';
   import type { HTMLAttributes } from 'svelte/elements';
   import Fa from 'svelte-fa';
+  import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import Button from '../button/button.svelte';
+  import { slide } from 'svelte/transition';
+  import Header from '../Header.svelte';
 
   interface Props extends HTMLAttributes<HTMLDivElement> {
     class?: string;
     title?: string;
     titleClass?: string;
+    contentClass?: string;
     icon?: any; // FontAwesome icon
     actionIcon?: any; // FontAwesome icon for action button
     actionLabel?: string;
@@ -23,6 +27,7 @@
     class: className,
     title,
     titleClass,
+    contentClass,
     icon,
     actionIcon,
     actionLabel,
@@ -48,28 +53,25 @@
       <button
         type="button"
         class={cn(
-          'flex items-center justify-between px-2 py-0 mb-1 group',
-          'text-xs font-medium text-subtle',
+          'flex items-center justify-between px-2 py-0 gap-1 group',
+          'text-xs font-medium text-muted-foreground',
           'cursor-pointer hover:text-foreground',
           titleClass,
         )}
         onclick={handleToggle}
       >
-        <div class="flex items-center gap-1.5">
-          <Fa
-            icon={icon || 'chevron-right'}
-            size="14"
-            class={cn(
-              'text-subtle transition-transform duration-200',
-              !collapsed && 'rotate-90',
-            )}
-          />
-          <span>{title}</span>
+        <div class="flex items-center gap-1.5 flex-1">
+          {#if icon}
+            <Fa {icon} size="12" class="text-muted-foreground/50" />
+          {/if}
+          <Header size={6} class="flex-1 text-left">{title}</Header>
         </div>
 
         <div class="flex items-center gap-1">
           {#if actions}
-            {@render actions()}
+            <div class="flex items-center" onclick={(e) => e.stopPropagation()}>
+              {@render actions()}
+            </div>
           {:else if actionIcon && onAction}
             <Button
               variant="ghost-light"
@@ -85,6 +87,15 @@
             </Button>
           {/if}
         </div>
+
+        <Fa
+          icon={faChevronDown}
+          size={13}
+          class={cn(
+            'text-muted-foreground/50 transition-transform duration-200', /* a11y-ignore */
+            collapsed && 'rotate-90',
+          )}
+        />
       </button>
     {:else}
       <div
@@ -94,12 +105,10 @@
           titleClass,
         )}
       >
-        <div class="flex items-center gap-1.5">
-          {#if icon}
-            <Fa {icon} size="14" class="text-ghost" />
-          {/if}
-          <span>{title}</span>
-        </div>
+        <span
+          class="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60 flex-1 text-left a11y-ignore"
+          >{title}</span
+        >
 
         <div class="flex items-center gap-1">
           {#if actions}
@@ -124,7 +133,7 @@
   {/if}
 
   {#if !collapsed}
-    <div class="flex flex-col">
+    <div class={cn('flex flex-col', contentClass)} transition:slide={{ duration: 150 }}>
       {@render children?.()}
     </div>
   {/if}

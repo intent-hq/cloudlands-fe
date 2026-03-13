@@ -53,6 +53,10 @@ export function toPromptToken(
       const terminalName = stripLeadingAt(item.label || item.id || 'terminal');
       return `@terminal/${terminalName}`;
     }
+    case 'script': {
+      const scriptName = stripLeadingAt(item.label || item.id || 'script');
+      return `@script/${scriptName}`;
+    }
     case 'specialist': {
       const rawToken = meta.promptToken || item.id || item.label || 'specialist';
       const token = stripLeadingAt(rawToken);
