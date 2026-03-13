@@ -34,7 +34,7 @@
     currentVote?: 'up' | 'down' | null;
     showOnHover?: boolean;
     class?: string;
-    /** Request ID for this message (used for debugging) */
+    /** Session ID for this message (used for debugging) */
     requestId?: string;
     /** Called when user wants to scroll to previous user message */
     onScrollToPrevious?: () => void;
@@ -55,17 +55,17 @@
   }: Props = $props();
 
   let copied = $state(false);
-  let copiedRequestId = $state(false);
+  let copiedSessionId = $state(false);
 
   const isMac = isMacPlatform();
   const shiftSymbol = isMac ? '⇧' : 'Shift';
 
   async function handleCopy(event: MouseEvent) {
     if (event.shiftKey && requestId) {
-      // Shift+click: copy request ID
+      // Shift+click: copy session ID
       await navigator.clipboard.writeText(requestId);
-      copiedRequestId = true;
-      setTimeout(() => (copiedRequestId = false), 2000);
+      copiedSessionId = true;
+      setTimeout(() => (copiedSessionId = false), 2000);
     } else {
       // Normal click: copy message content
       onCopy?.();
@@ -156,9 +156,9 @@
           variant="ghost-light"
           size="icon-xs"
           onclick={handleCopy}
-          aria-label="Copy message (Shift+click to copy request ID)"
+          aria-label="Copy message (Shift+click to copy session ID)"
         >
-          {#if copied || copiedRequestId}
+          {#if copied || copiedSessionId}
             <div in:slide={{ axis: 'x', duration: 150 }}>
               <Fa icon={faCheck} class="w-2.5! h-2.5! text-green-500" />
             </div>
@@ -176,7 +176,7 @@
         </div>
         {#if requestId}
           <div class="text-subtle text-sm">
-            Hold Shift to copy request ID
+            Hold Shift to copy session ID
           </div>
         {/if}
         </div>
