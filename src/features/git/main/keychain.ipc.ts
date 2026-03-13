@@ -1,7 +1,7 @@
 /**
  * Keychain Access IPC Handlers
  *
- * Bridges keychain access consent requests from GitService to the renderer process.
+ * Handles the main-process side of the keychain consent flow used by GitService.
  *
  * Flow:
  * 1. GitService detects keychain access risk before network operation
@@ -22,6 +22,12 @@ const logger = new Logger('KeychainIPC');
 
 export type KeychainConsentOutcome = 'allow' | 'deny' | 'cancelled';
 
+/**
+ * Payload sent on the legacy renderer warning channel.
+ *
+ * The richer shape is retained so any renderer consumer that still listens on
+ * KEYCHAIN_ACCESS_WARNING receives the same contextual data as before.
+ */
 export interface KeychainConsentRequest {
   requestId: string;
   workspaceId: string;
@@ -100,7 +106,10 @@ async function getStoredKeychainPreference(): Promise<'ask' | 'allow' | 'deny'> 
 }
 
 /**
- * Request keychain access consent from the user via renderer process
+ * Request keychain access consent using the current main-process IPC flow.
+ *
+ * This path still emits the legacy renderer warning event, but callers should
+ * not assume an interactive renderer modal is active.
  */
 export async function requestKeychainConsentViaIPC(
   workspaceId: WorkspaceId,
@@ -139,7 +148,7 @@ export async function requestKeychainConsentViaIPC(
   const targetWindow = focusedWindow || allWindows[0];
 
   if (!targetWindow || targetWindow.isDestroyed()) {
-    logger.warn('No window available for keychain consent dialog, allowing by default');
+    logger.warn('No window available for keychain consent flow, allowing by default');
     return 'allow';
   }
 
@@ -169,7 +178,7 @@ export async function requestKeychainConsentViaIPC(
     // Show desktop notification
     showKeychainNotification(operation, targetWindow);
 
-    // Send to renderer
+    // Emit the legacy renderer warning event for any registered consumer.
     targetWindow.webContents.send(IPC_CHANNELS.GIT.KEYCHAIN_ACCESS_WARNING, requestData);
     logger.info('Sent keychain consent request to renderer', { requestId });
   });
@@ -181,7 +190,7 @@ export async function requestKeychainConsentViaIPC(
 export function setupKeychainIPC(): void {
   logger.info('Setting up keychain IPC handlers');
 
-  // Handle consent response from renderer
+  // Handle legacy renderer consent responses if a renderer consumer invokes them.
   ipcMain.handle(
     IPC_CHANNELS.GIT.KEYCHAIN_CONSENT_RESPOND,
     async (

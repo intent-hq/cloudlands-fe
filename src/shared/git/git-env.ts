@@ -794,8 +794,8 @@ export function isGcmCredentialHelper(helper: string | null): boolean {
 /**
  * Detect if a git network operation will likely trigger keychain access.
  *
- * This is useful for showing a warning modal before operations like push/pull/fetch
- * that might trigger a macOS keychain access dialog.
+ * This is used by the git services to decide whether a network operation should
+ * enter the keychain consent path before running.
  *
  * @param cwd - The repository path
  * @param operation - The git operation (push, pull, fetch, clone)
@@ -805,7 +805,7 @@ export function isGcmCredentialHelper(helper: string | null): boolean {
  * ```typescript
  * const risk = await detectKeychainAccessRisk('/path/to/repo');
  * if (risk.willTriggerKeychain) {
- *   // Show warning modal to user
+ *   // Route through the keychain consent flow before continuing
  *   console.log(risk.reason);
  * }
  * ```
@@ -880,7 +880,7 @@ export async function detectKeychainAccessRisk(
   }
 
   // Cannot reliably detect when macOS will prompt for keychain access.
-  // Until we can accurately detect this, don't show the warning modal.
+  // Until detection is reliable, do not trigger the preflight consent flow.
   return {
     willTriggerKeychain: false,
     credentialHelper,
