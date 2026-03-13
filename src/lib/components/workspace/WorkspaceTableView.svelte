@@ -7,15 +7,27 @@
   import { WorkspaceStatusEnum } from '$shared/types';
   import { onMount } from 'svelte';
   import { quintOut } from 'svelte/easing';
-  import { crossfade, slide } from 'svelte/transition';
+  import { scale, slide } from 'svelte/transition';
   import WorkspaceTableGroupHeader from './WorkspaceTableGroupHeader.svelte';
   import WorkspaceTableRow from './WorkspaceTableRow.svelte';
 
-  // Crossfade for workspace rows moving between groups
-  const [send, receive] = crossfade({
-    duration: 300,
-    easing: quintOut,
-  });
+  // Safe non-deferred transition functions replacing crossfade.
+  //
+  // crossfade returns *deferred* transitions (functions), and Svelte's internal
+  // facade for deferred transitions calls `a.reset()` on an animation object
+  // that is assigned in a microtask. If called before the microtask runs
+  // (during {#each} reconciliation), it crashes with:
+  //   "Cannot read properties of undefined (reading 'reset')"
+  //
+  // By returning plain AnimationConfig objects, Svelte takes the non-deferred
+  // code path which uses safe no-op handlers.
+  function send(node: Element, _params: { key: any }) {
+    return scale(node, { duration: 200, start: 0.95, easing: quintOut });
+  }
+
+  function receive(node: Element, _params: { key: any }) {
+    return scale(node, { duration: 200, start: 0.95, easing: quintOut });
+  }
 
   // Local agent display info with computed avatar state
   interface AgentDisplayInfo {

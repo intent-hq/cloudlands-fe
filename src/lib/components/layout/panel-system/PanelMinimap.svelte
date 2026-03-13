@@ -10,9 +10,6 @@
 
   import type { PanelLayoutNode } from '$features/layout/panel-layout-manager.svelte';
   import { cn } from '$lib/utils';
-  import { flip } from 'svelte/animate';
-  import { quintOut } from 'svelte/easing';
-  import { crossfade, fade } from 'svelte/transition';
 
   interface Props {
     /** The root node of the panel layout tree */

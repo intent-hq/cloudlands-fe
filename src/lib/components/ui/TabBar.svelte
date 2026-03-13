@@ -1,24 +1,25 @@
 <script lang="ts" module>
-  import { crossfade } from 'svelte/transition';
+  import { scale } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
 
-  // Module-scoped crossfade to persist across component instances
-  // This prevents state corruption when switching workspaces
-  const [send, receive] = crossfade({
-    duration: (d) => Math.sqrt(d * 200),
-    fallback(node, _params) {
-      const style = getComputedStyle(node);
-      const transform = style.transform === 'none' ? '' : style.transform;
-      return {
-        duration: 600,
-        easing: quintOut,
-        css: (t) => `
-          transform: ${transform} scale(${t});
-          opacity: ${t}
-        `,
-      };
-    },
-  });
+  // Safe non-deferred transition functions replacing crossfade.
+  //
+  // crossfade returns *deferred* transitions (functions), and Svelte's internal
+  // facade for deferred transitions calls `a.reset()` / `a.deactivate()` on an
+  // animation object (`a`) that is assigned in a microtask. If the facade methods
+  // are called before the microtask runs (which happens during {#each} block
+  // reconciliation), it crashes with:
+  //   "Cannot read properties of undefined (reading 'reset')"
+  //
+  // By returning plain AnimationConfig objects, Svelte takes the non-deferred
+  // code path which uses safe no-op handlers.
+  function send(node: Element, _params: { key: any }) {
+    return scale(node, { duration: 150, start: 0.97, easing: quintOut });
+  }
+
+  function receive(node: Element, _params: { key: any }) {
+    return scale(node, { duration: 150, start: 0.97, easing: quintOut });
+  }
 </script>
 
 <script lang="ts">
