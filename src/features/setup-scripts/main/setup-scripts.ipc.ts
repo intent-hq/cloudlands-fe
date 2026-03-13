@@ -216,6 +216,7 @@ The following environment variables are available in your script:
 - \`$env:MAIN_CHECKOUT\` - Absolute path to the main repository checkout (where the user cloned the repo)
 - \`$env:WORKTREE_PATH\` - Absolute path to the new worktree directory (also the current working directory)
 - \`$env:BRANCH_NAME\` - Name of the branch for this worktree
+- \`$env:SOURCE_BRANCH\` - Name of the branch this worktree was created from
 
 **Use these variables instead of relative paths like \`..\`** - they are more reliable and explicit.
 
@@ -229,7 +230,7 @@ The following environment variables are available in your script:
 ## Script Requirements
 
 - This is a PowerShell script (no shebang needed)
-- Add a comment listing available variables: \`# Available: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME\`
+- Add a comment listing available variables: \`# Available: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME, $env:SOURCE_BRANCH\`
 - Include helpful comments explaining each section
 - Use \`$ErrorActionPreference = "Stop"\` to exit on errors (optional, include if appropriate)
 - Handle missing files gracefully with \`-ErrorAction SilentlyContinue\`
@@ -243,7 +244,7 @@ You MUST output the script using the \`<setup_script>\` XML tag with these attri
 
 Example:
 <setup_script name="Node.js + pnpm setup" description="Copies .env from $env:MAIN_CHECKOUT and installs dependencies with pnpm">
-# Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME
+# Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME, $env:SOURCE_BRANCH
 
 # Copy environment files from main checkout
 Copy-Item -Path "$env:MAIN_CHECKOUT\\.env" -Destination ".env" -ErrorAction SilentlyContinue
@@ -281,6 +282,7 @@ The following environment variables are available in your script:
 - \`$MAIN_CHECKOUT\` - Absolute path to the main repository checkout (where the user cloned the repo)
 - \`$WORKTREE_PATH\` - Absolute path to the new worktree directory (also the current working directory)
 - \`$BRANCH_NAME\` - Name of the branch for this worktree
+- \`$SOURCE_BRANCH\` - Name of the branch this worktree was created from
 
 **Use these variables instead of relative paths like \`..\`** - they are more reliable and explicit.
 
@@ -294,7 +296,7 @@ The following environment variables are available in your script:
 ## Script Requirements
 
 - Start with a shebang: \`#!/bin/bash\`
-- Add a comment listing available variables: \`# Available: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME\`
+- Add a comment listing available variables: \`# Available: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME, $SOURCE_BRANCH\`
 - Include helpful comments explaining each section
 - Use \`set -e\` to exit on errors (optional, include if appropriate)
 - Handle missing files gracefully with \`|| true\` or \`2>/dev/null\`
@@ -309,7 +311,7 @@ You MUST output the script using the \`<setup_script>\` XML tag with these attri
 Example:
 <setup_script name="Node.js + pnpm setup" description="Copies .env from $MAIN_CHECKOUT and installs dependencies with pnpm">
 #!/bin/bash
-# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME
+# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME, $SOURCE_BRANCH
 
 # Copy environment files from main checkout
 cp "$MAIN_CHECKOUT/.env" .env 2>/dev/null || true

@@ -1759,6 +1759,7 @@ task:
               MAIN_CHECKOUT: effectiveRepositoryPath || '',
               WORKTREE_PATH: worktreePath,
               BRANCH_NAME: branch,
+              SOURCE_BRANCH: request.baseRef || 'main',
             };
 
             const result = await createTerminalFromBackend({

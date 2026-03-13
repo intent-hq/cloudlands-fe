@@ -31,6 +31,11 @@ export const SETUP_SCRIPT_VARIABLES: SetupScriptVariable[] = [
     description: 'Name of the branch for this worktree',
     example: 'feature/my-feature',
   },
+  {
+    name: 'SOURCE_BRANCH',
+    description: 'Name of the branch this worktree was created from',
+    example: 'main',
+  },
 ];
 
 /**
@@ -59,12 +64,14 @@ export function generateVariablesHelpComment(isWindowsOverride?: boolean): strin
 #   $env:MAIN_CHECKOUT  - Path to main repository checkout
 #   $env:WORKTREE_PATH  - Path to this worktree (current directory)
 #   $env:BRANCH_NAME    - Name of this worktree's branch
+#   $env:SOURCE_BRANCH  - Name of the branch this worktree was created from
 `;
   }
   return `# Available variables:
 #   $MAIN_CHECKOUT  - Path to main repository checkout
 #   $WORKTREE_PATH  - Path to this worktree (current directory)
 #   $BRANCH_NAME    - Name of this worktree's branch
+#   $SOURCE_BRANCH  - Name of the branch this worktree was created from
 `;
 }
 
@@ -123,7 +130,7 @@ export const SETUP_SCRIPT_TEMPLATES: SetupScriptTemplate[] = [
     description: 'Copies .env files from $MAIN_CHECKOUT and installs dependencies with pnpm',
     content: `#!/bin/bash
 # Setup script for Node.js project with pnpm
-# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME
+# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME, $SOURCE_BRANCH
 
 # Copy environment files from main checkout
 for envfile in .env .env.local .env.development .env.development.local; do
@@ -137,7 +144,7 @@ done
 echo "Installing dependencies..."
 pnpm install`,
     contentWindows: `# Setup script for Node.js project with pnpm
-# Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME
+# Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME, $env:SOURCE_BRANCH
 $ErrorActionPreference = "Stop"
 
 # Copy environment files from main checkout
@@ -159,7 +166,7 @@ pnpm install`,
     description: 'Copies .env files from $MAIN_CHECKOUT and installs dependencies with npm',
     content: `#!/bin/bash
 # Setup script for Node.js project with npm
-# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME
+# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME, $SOURCE_BRANCH
 
 # Copy environment files from main checkout
 for envfile in .env .env.local .env.development .env.development.local; do
@@ -173,7 +180,7 @@ done
 echo "Installing dependencies..."
 npm install`,
     contentWindows: `# Setup script for Node.js project with npm
-# Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME
+# Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME, $env:SOURCE_BRANCH
 $ErrorActionPreference = "Stop"
 
 # Copy environment files from main checkout
@@ -195,7 +202,7 @@ npm install`,
     description: 'Copies .env files from $MAIN_CHECKOUT and installs dependencies with yarn',
     content: `#!/bin/bash
 # Setup script for Node.js project with yarn
-# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME
+# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME, $SOURCE_BRANCH
 
 # Copy environment files from main checkout
 for envfile in .env .env.local .env.development .env.development.local; do
@@ -209,7 +216,7 @@ done
 echo "Installing dependencies..."
 yarn install`,
     contentWindows: `# Setup script for Node.js project with yarn
-# Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME
+# Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME, $env:SOURCE_BRANCH
 $ErrorActionPreference = "Stop"
 
 # Copy environment files from main checkout
@@ -231,7 +238,7 @@ yarn install`,
     description: 'Copies .env from $MAIN_CHECKOUT, creates venv, and installs requirements',
     content: `#!/bin/bash
 # Setup script for Python project with pip
-# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME
+# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME, $SOURCE_BRANCH
 
 # Copy environment files
 if [ -f "\$MAIN_CHECKOUT/.env" ]; then
@@ -254,7 +261,7 @@ fi
 
 echo "Virtual environment ready. Activate with: source venv/bin/activate"`,
     contentWindows: `# Setup script for Python project with pip
-# Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME
+# Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME, $env:SOURCE_BRANCH
 $ErrorActionPreference = "Stop"
 
 # Copy environment files
@@ -285,7 +292,7 @@ Write-Host "Virtual environment ready. Activate with: .\\venv\\Scripts\\Activate
     description: 'Copies .env from $MAIN_CHECKOUT and installs dependencies with poetry',
     content: `#!/bin/bash
 # Setup script for Python project with poetry
-# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME
+# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME, $SOURCE_BRANCH
 
 # Copy environment files
 if [ -f "\$MAIN_CHECKOUT/.env" ]; then
@@ -297,7 +304,7 @@ fi
 echo "Installing dependencies..."
 poetry install`,
     contentWindows: `# Setup script for Python project with poetry
-# Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME
+# Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME, $env:SOURCE_BRANCH
 $ErrorActionPreference = "Stop"
 
 # Copy environment files
@@ -317,7 +324,7 @@ poetry install`,
     description: 'Copies .env from $MAIN_CHECKOUT and downloads Go module dependencies',
     content: `#!/bin/bash
 # Setup script for Go project
-# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME
+# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME, $SOURCE_BRANCH
 
 # Copy environment files
 if [ -f "\$MAIN_CHECKOUT/.env" ]; then
@@ -331,7 +338,7 @@ go mod download
 
 echo "Go modules ready"`,
     contentWindows: `# Setup script for Go project
-# Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME
+# Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME, $env:SOURCE_BRANCH
 $ErrorActionPreference = "Stop"
 
 # Copy environment files
@@ -353,7 +360,7 @@ Write-Host "Go modules ready"`,
     description: 'Copies .env from $MAIN_CHECKOUT and fetches Cargo dependencies',
     content: `#!/bin/bash
 # Setup script for Rust project
-# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME
+# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME, $SOURCE_BRANCH
 
 # Copy environment files
 if [ -f "\$MAIN_CHECKOUT/.env" ]; then
@@ -367,7 +374,7 @@ cargo fetch
 
 echo "Dependencies ready. Run 'cargo build' when needed."`,
     contentWindows: `# Setup script for Rust project
-# Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME
+# Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME, $env:SOURCE_BRANCH
 $ErrorActionPreference = "Stop"
 
 # Copy environment files
@@ -389,7 +396,7 @@ Write-Host "Dependencies ready. Run 'cargo build' when needed."`,
     description: 'Copies common gitignored config files from $MAIN_CHECKOUT',
     content: `#!/bin/bash
 # Generic setup script
-# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME
+# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME, $SOURCE_BRANCH
 
 # Copy environment and config files
 for file in .env .env.local .envrc .tool-versions; do
@@ -401,7 +408,7 @@ done
 
 echo "Config files copied"`,
     contentWindows: `# Generic setup script
-# Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME
+# Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME, $env:SOURCE_BRANCH
 $ErrorActionPreference = "Stop"
 
 # Copy environment and config files
@@ -422,7 +429,7 @@ Write-Host "Config files copied"`,
       'Recursively copies .env files from $MAIN_CHECKOUT, skipping node_modules, .git, and gitignored directories',
     content: `#!/bin/bash
 # Generic setup script - recursive .env copy
-# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME
+# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME, $SOURCE_BRANCH
 
 set -euo pipefail
 
@@ -450,7 +457,7 @@ find . "\${EXCLUDES[@]}" -name '.env*' -type f | while IFS= read -r file; do
 
 echo "Done - .env files copied recursively"`,
     contentWindows: `# Generic setup script - recursive .env copy
-# Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME
+# Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME, $env:SOURCE_BRANCH
 $ErrorActionPreference = "Stop"
 
 Push-Location \$env:MAIN_CHECKOUT
