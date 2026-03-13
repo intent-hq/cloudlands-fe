@@ -237,20 +237,26 @@ async function discoverPRsForBranch(
         const status = normalizePullRequestStatus(response.data);
         const pr = normalizePullRequestInfo(response.data, null, status);
 
-        // Validate: PR's source branch should match the workspace's own branch.
+        // Validate: PR's source branch should match the workspace's own branch
+        // OR the workspace's baseRef (for review workspaces created off a PR branch).
         // normalizePullRequestInfo extracts headRef from all known field names
         // (head_ref, headRef, sourceBranch, head.ref).
         const prSourceBranch = pr.headRef || '';
 
-        // Only reject if we have a POSITIVE MISMATCH: both sourceBranch and workspace.branch
-        // are non-empty AND they differ. If sourceBranch is empty (YAML parsing issue),
-        // we can't validate, so we keep the stored PR to avoid losing legitimate links.
-        if (prSourceBranch && workspace.branch && prSourceBranch !== workspace.branch) {
-          logger.info('[PRStatusService] Stored PR source branch does not match workspace branch, skipping', {
+        // Only reject if we have a POSITIVE MISMATCH: sourceBranch is non-empty AND
+        // it differs from BOTH workspace.branch and workspace.baseRef.
+        // - workspace.branch match: workspace owns the PR (pushed from this branch)
+        // - workspace.baseRef match: workspace was created to review the PR (branched off the PR branch)
+        // If sourceBranch is empty (YAML parsing issue), we can't validate, so we keep the stored PR.
+        const matchesBranch = !prSourceBranch || !workspace.branch || prSourceBranch === workspace.branch;
+        const matchesBaseRef = prSourceBranch === workspace.baseRef;
+        if (!matchesBranch && !matchesBaseRef) {
+          logger.info('[PRStatusService] Stored PR source branch does not match workspace branch or baseRef, skipping', {
             workspaceId,
             prNumber: workspace.prNumber,
             prSourceBranch,
             workspaceBranch: workspace.branch,
+            workspaceBaseRef: workspace.baseRef,
           });
           // Fall through to step 2 for proper branch-based discovery
         } else {

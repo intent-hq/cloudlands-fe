@@ -2433,15 +2433,15 @@ task:
           try {
             const prDetail = await githubService.getPullRequest(owner, repo, pr.number);
             if (prDetail) {
-              // Validate source branch matches workspace branch before enriching.
-              // Only clear if we have a POSITIVE MISMATCH: both are non-empty and differ.
-              // If sourceBranch is empty (YAML parsing issue), skip validation to avoid
-              // incorrectly clearing legitimate PR links.
-              if (
-                prDetail.sourceBranch &&
-                updatedWorkspace.branch &&
-                prDetail.sourceBranch !== updatedWorkspace.branch
-              ) {
+              // Validate source branch matches workspace branch or baseRef before enriching.
+              // Accept if PR source branch matches either:
+              // - workspace.branch (workspace owns the PR)
+              // - workspace.baseRef (workspace was created to review the PR)
+              // Only clear on POSITIVE MISMATCH against both. If sourceBranch is empty
+              // (YAML parsing issue), skip validation to avoid incorrectly clearing legitimate PR links.
+              const branchMatches = !prDetail.sourceBranch || !updatedWorkspace.branch || prDetail.sourceBranch === updatedWorkspace.branch;
+              const baseRefMatches = prDetail.sourceBranch === updatedWorkspace.baseRef;
+              if (!branchMatches && !baseRefMatches) {
                 logger.info(
                   'Background enrichment: PR source branch does not match workspace, clearing stale link',
                   {
@@ -2682,15 +2682,15 @@ task:
       try {
         const prDetail = await githubService.getPullRequest(owner, repo, pr.number);
         if (prDetail) {
-          // Validate source branch matches workspace branch before using this PR.
-          // Only clear if we have a POSITIVE MISMATCH: both sourceBranch and workspace.branch
-          // are non-empty AND they differ. If sourceBranch is empty (YAML parsing issue),
-          // we can't validate, so we keep the PR to avoid incorrectly clearing legitimate links.
-          if (
-            prDetail.sourceBranch &&
-            workspace.branch &&
-            prDetail.sourceBranch !== workspace.branch
-          ) {
+          // Validate source branch matches workspace branch or baseRef before using this PR.
+          // Accept if PR source branch matches either:
+          // - workspace.branch (workspace owns the PR)
+          // - workspace.baseRef (workspace was created to review the PR)
+          // Only clear on POSITIVE MISMATCH against both. If sourceBranch is empty
+          // (YAML parsing issue), we can't validate, so we keep the PR.
+          const branchMatches = !prDetail.sourceBranch || !workspace.branch || prDetail.sourceBranch === workspace.branch;
+          const baseRefMatches = prDetail.sourceBranch === workspace.baseRef;
+          if (!branchMatches && !baseRefMatches) {
             logger.info(
               'Periodic PR refresh: PR source branch does not match workspace, clearing stale link',
               {

@@ -713,12 +713,15 @@
         }
       });
 
-      if (prWithBranch && !selectedPRBranch) {
+      if (prWithBranch) {
         try {
           const metadata = prWithBranch.metadata ? JSON.parse(prWithBranch.metadata) : null;
           if (metadata?.sourceBranch) {
-            selectedPRBranch = metadata.sourceBranch;
-            // Also extract PR number from identifier
+            // Always update both branch and PR number together to avoid race conditions
+            // where handleContentChange sets selectedPRBranch but not selectedPRNumber
+            if (!selectedPRBranch) {
+              selectedPRBranch = metadata.sourceBranch;
+            }
             const prNumMatch = prWithBranch.identifier?.match(/#(\d+)$/);
             selectedPRNumber = prNumMatch ? parseInt(prNumMatch[1], 10) : null;
             logger.debug('Restored selectedPRBranch from context mention', {
@@ -2122,6 +2125,9 @@
         if (metadata?.sourceBranch && metadata.sourceBranch !== selectedPRBranch) {
           selectedPRBranch = metadata.sourceBranch;
         }
+        // Always extract PR number so workspace creation can store it for PR discovery
+        const prNumMatch = prWithBranch.identifier?.match(/#(\d+)$/);
+        selectedPRNumber = prNumMatch ? parseInt(prNumMatch[1], 10) : null;
       } catch {
         // Ignore parse errors
       }
@@ -2140,6 +2146,7 @@
       if (selectedPRBranch) {
         selectedPRBranch = '';
       }
+      selectedPRNumber = null;
       lastFetchedPRIdentifier = null;
       return;
     }
@@ -2187,6 +2194,7 @@
           });
           if (response?.success && response.data?.sourceBranch) {
             selectedPRBranch = response.data.sourceBranch;
+            selectedPRNumber = number;
           }
         } catch (err) {
           logger.warn('handleContentChange: failed to fetch PR branch info', {

@@ -764,7 +764,9 @@ export class AcceptChangesService {
         if (storedPRNumber) {
           try {
             const storedPR = await githubService.getPullRequest(owner, repo, storedPRNumber);
-            if (storedPR && storedPR.sourceBranch && workspace.branch && storedPR.sourceBranch !== workspace.branch) {
+            const branchMatches = !storedPR?.sourceBranch || !workspace.branch || storedPR.sourceBranch === workspace.branch;
+            const baseRefMatches = storedPR?.sourceBranch === workspace.baseRef;
+            if (storedPR && !branchMatches && !baseRefMatches) {
               // Positive mismatch: PR belongs to a different branch
               logger.info('[AcceptChanges] Stored PR does not match workspace branch, clearing stale link', {
                 storedPRNumber,
