@@ -157,7 +157,10 @@ export class AugmentCLI extends EventEmitter {
       const shellOption: string | boolean =
         process.platform === 'win32' ? true : (process.env.SHELL || '/bin/bash');
 
-      const childProcess = spawn(auggiePath, [command, ...args], {
+      // On Windows with shell: true, quote the path to handle spaces (e.g. C:\Users\John Doe\...)
+      const spawnCommand = process.platform === 'win32' ? `"${auggiePath}"` : auggiePath;
+
+      const childProcess = spawn(spawnCommand, [command, ...args], {
         cwd: cwd || process.cwd(),
         env,
         shell: shellOption,

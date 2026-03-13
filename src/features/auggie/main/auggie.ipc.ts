@@ -6,7 +6,13 @@ import { existsSync, readdirSync, readFileSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { MINIMUM_AUGGIE_VERSION, MINIMUM_NODE_VERSION } from '../../../shared/constants/auggie';
+import * as https from 'https';
+import {
+  AUGGIE_APPLE_TEAM_ID,
+  AUGGIE_BINARY_BASE_URL,
+  MINIMUM_AUGGIE_VERSION,
+  MINIMUM_NODE_VERSION,
+} from '../../../shared/constants/auggie';
 import { execAsync, execAsyncWithRetry, execFileAsyncWithRetry } from '../../../shared/git/git-env';
 
 const rawExec = promisify(exec);
@@ -257,15 +263,15 @@ function getEnhancedPath(): string {
   const npmGlobalPaths =
     process.platform === 'win32'
       ? [path.join(process.env.APPDATA || '', 'npm'), path.join(homeDir, '.npm-global')].filter(
-          Boolean,
-        )
+        Boolean,
+      )
       : [
-          path.join(homeDir, '.npm-global', 'bin'),
-          path.join(homeDir, '.npm-packages', 'bin'),
-          path.join(homeDir, 'npm', 'bin'),
-          '/usr/local/lib/node_modules/npm/bin',
-          '/opt/homebrew/lib/node_modules/npm/bin',
-        ];
+        path.join(homeDir, '.npm-global', 'bin'),
+        path.join(homeDir, '.npm-packages', 'bin'),
+        path.join(homeDir, 'npm', 'bin'),
+        '/usr/local/lib/node_modules/npm/bin',
+        '/opt/homebrew/lib/node_modules/npm/bin',
+      ];
   npmGlobalPaths.forEach((p) => {
     if (existsSync(p)) {
       paths.add(p);
@@ -379,6 +385,18 @@ async function findAuggieInEnhancedPath(): Promise<string | null> {
 }
 
 export async function findAuggiePathAsync(): Promise<string | null> {
+  // 0. Check for Intent-managed binary first (highest priority)
+  const managedBinary = path.join(
+    os.homedir(),
+    '.augment',
+    'bin',
+    process.platform === 'win32' ? 'auggie.exe' : 'auggie',
+  );
+  if (existsSync(managedBinary)) {
+    logger.info('Found Intent-managed auggie binary', { path: managedBinary });
+    return managedBinary;
+  }
+
   // 1. First check if user has configured a custom auggie path in settings
   try {
     const store = getSettingsStore();
@@ -606,7 +624,10 @@ async function executeAuggieWithStdin(
     const isWindowsCmdFile =
       process.platform === 'win32' && (auggiePath.endsWith('.cmd') || auggiePath.endsWith('.bat'));
 
-    const child = spawn(auggiePath, args, {
+    // On Windows with shell: true, quote the path to handle spaces (e.g. C:\Users\John Doe\...)
+    const spawnCommand = isWindowsCmdFile ? `"${auggiePath}"` : auggiePath;
+
+    const child = spawn(spawnCommand, args, {
       env: enhancedEnv,
       shell: isWindowsCmdFile,
       windowsHide: true,
@@ -788,6 +809,23 @@ export function setupAuggieIPC() {
 
   // Get installation/authentication status for Auggie CLI
   ipcMain.handle(AUGGIE_CHANNELS.STATUS, async () => {
+    // Check if the managed binary exists (binary install is always available as fallback)
+    const managedBinaryPath = path.join(
+      os.homedir(),
+      '.augment',
+      'bin',
+      process.platform === 'win32' ? 'auggie.exe' : 'auggie',
+    );
+    const supportedBinaryPlatforms: Record<string, string[]> = {
+      darwin: ['arm64'],
+      linux: ['x64'],
+      win32: ['x64'],
+    };
+    const managedBinaryInstalled = existsSync(managedBinaryPath);
+    const binaryInstallAvailable =
+      managedBinaryInstalled ||
+      (supportedBinaryPlatforms[process.platform]?.includes(process.arch) ?? false);
+
     const status: {
       installed: boolean;
       authenticated: boolean;
@@ -797,12 +835,16 @@ export function setupAuggieIPC() {
       authDetails?: string;
       nodeVersion?: string;
       nodeVersionOk: boolean;
+      binaryInstallAvailable: boolean;
+      managedBinaryInstalled: boolean;
     } = {
       installed: false,
       authenticated: false,
       versionOk: false,
       minimumVersion: MINIMUM_AUGGIE_VERSION,
       nodeVersionOk: false,
+      binaryInstallAvailable,
+      managedBinaryInstalled,
     };
 
     try {
@@ -933,9 +975,192 @@ export function setupAuggieIPC() {
     }
   });
 
+
+  /**
+   * Download a standalone auggie binary when Node.js is not available or is an incompatible version.
+   * Downloads a pre-built binary from GitHub releases and saves it to ~/.augment/bin/auggie.
+   */
+  async function downloadAuggieBinary(): Promise<{ success: boolean }> {
+    const platform = process.platform;
+    const arch = process.arch;
+
+    // Map platform/arch to asset name
+    const assetMap: Record<string, Record<string, string>> = {
+      darwin: {
+        arm64: 'auggie-darwin-arm64',
+      },
+      linux: {
+        x64: 'auggie-linux-x64',
+      },
+      win32: {
+        x64: 'auggie-windows-x64.exe',
+      },
+    };
+
+    const assetName = assetMap[platform]?.[arch];
+    if (!assetName) {
+      throw new Error(`Unsupported platform/arch: ${platform}/${arch}`);
+    }
+
+    const url = `${AUGGIE_BINARY_BASE_URL}/${assetName}`;
+    const binDir = path.join(os.homedir(), '.augment', 'bin');
+    const binaryName = platform === 'win32' ? 'auggie.exe' : 'auggie';
+    const binaryPath = path.join(binDir, binaryName);
+    const downloadTimeoutMs = 60_000;
+
+    logger.info('Auggie install: downloading binary', {
+      url,
+      path: binaryPath,
+    });
+
+    // Create ~/.augment/bin/ directory if it doesn't exist
+    await fs.mkdir(binDir, { recursive: true });
+
+    // Download the binary, following redirects (GitHub releases redirect to S3)
+    await new Promise<void>((resolve, reject) => {
+      const download = (downloadUrl: string, redirectCount = 0) => {
+        if (redirectCount > 5) {
+          reject(new Error('Too many redirects'));
+          return;
+        }
+
+        const request = https.get(downloadUrl, (response) => {
+          // Follow redirects (GitHub releases return 302)
+          if (
+            response.statusCode &&
+            response.statusCode >= 300 &&
+            response.statusCode < 400 &&
+            response.headers.location
+          ) {
+            response.resume();
+            download(response.headers.location, redirectCount + 1);
+            return;
+          }
+
+          if (response.statusCode !== 200) {
+            response.resume();
+            reject(new Error(`Download failed with status ${response.statusCode}`));
+            return;
+          }
+
+          const chunks: Buffer[] = [];
+          response.on('data', (chunk: Buffer) => chunks.push(chunk));
+          response.on('end', async () => {
+            try {
+              await fs.writeFile(binaryPath, Buffer.concat(chunks));
+              resolve();
+            } catch (err) {
+              reject(err);
+            }
+          });
+          response.on('error', reject);
+        });
+
+        request.setTimeout(downloadTimeoutMs, () => {
+          request.destroy(new Error(`Download timed out after ${downloadTimeoutMs}ms`));
+        });
+        request.on('error', reject);
+      };
+
+      download(url);
+    });
+
+    // Set execute permissions on macOS/Linux
+    if (platform !== 'win32') {
+      await fs.chmod(binaryPath, 0o755);
+    }
+
+    // Verify code signature on macOS before running the binary
+    if (platform === 'darwin') {
+      try {
+        await execFileAsyncWithRetry('codesign', ['--verify', '--deep', '--strict', binaryPath], {
+          timeout: 10_000,
+        });
+      } catch (codesignErr) {
+        try {
+          await fs.unlink(binaryPath);
+        } catch {
+          // ignore cleanup errors
+        }
+        throw new Error(
+          `Downloaded binary failed code signature verification: ${(codesignErr as Error).message}`,
+        );
+      }
+
+      // Verify signing identity if Team ID is configured
+      if (AUGGIE_APPLE_TEAM_ID) {
+        try {
+          const { stderr: codesignInfo } = await execAsync(
+            `codesign -d --verbose=2 "${binaryPath}"`,
+            { timeout: 10_000 },
+          );
+          const teamMatch = codesignInfo.match(/TeamIdentifier=(\S+)/);
+          const actualTeamId = teamMatch?.[1];
+          if (actualTeamId !== AUGGIE_APPLE_TEAM_ID) {
+            try {
+              await fs.unlink(binaryPath);
+            } catch {
+              /* ignore */
+            }
+            throw new Error(
+              `Downloaded binary signed by unexpected team: expected ${AUGGIE_APPLE_TEAM_ID}, got ${actualTeamId || 'unknown'}`,
+            );
+          }
+        } catch (identityErr) {
+          if ((identityErr as Error).message.includes('unexpected team')) throw identityErr;
+          // If codesign -d itself fails, treat as verification failure
+          try {
+            await fs.unlink(binaryPath);
+          } catch {
+            /* ignore */
+          }
+          throw new Error(
+            `Failed to verify binary signing identity: ${(identityErr as Error).message}`,
+          );
+        }
+      }
+    }
+
+    let versionOutput: string;
+    try {
+      const result = await execFileAsyncWithRetry(binaryPath, ['--version'], {
+        timeout: 10_000,
+      });
+      versionOutput = (result.stdout || '').trim();
+    } catch (verifyErr) {
+      try {
+        await fs.unlink(binaryPath);
+      } catch {
+        // ignore cleanup errors
+      }
+      throw new Error(`Downloaded binary failed verification: ${(verifyErr as Error).message}`);
+    }
+
+    // Verify downloaded binary meets minimum version requirement
+    if (!meetsMinimumVersion(versionOutput)) {
+      try {
+        await fs.unlink(binaryPath);
+      } catch {
+        // ignore cleanup errors
+      }
+      const parsed = parseVersion(versionOutput);
+      const displayVersion = parsed ? `${parsed.major}.${parsed.minor}.${parsed.patch}` : versionOutput;
+      throw new Error(
+        `Downloaded binary version ${displayVersion} is below minimum required version ${MINIMUM_AUGGIE_VERSION}`,
+      );
+    }
+
+    await saveAuggiePath(binaryPath);
+    logger.info('Auggie install: binary download succeeded', { path: binaryPath });
+
+    return { success: true };
+  }
+
   // Install auggie using npm
   ipcMain.handle(AUGGIE_CHANNELS.INSTALL, async () => {
     try {
+      logger.info('Auggie install: starting');
+
       // Pre-check: ensure Node.js 22+ is available before attempting install
       const nodeCheck = await checkNodeVersion();
       if (!nodeCheck.nodeVersionOk) {
@@ -945,6 +1170,32 @@ export function setupAuggieIPC() {
         logger.warn('Node.js version check failed before install', {
           version: nodeCheck.nodeVersion,
         });
+
+        // No compatible Node.js — try downloading standalone binary instead
+        logger.info('Auggie install: Node.js not available or incompatible, trying binary download path');
+        let binaryDownloadAttempted = false;
+        try {
+          binaryDownloadAttempted = true;
+          const result = await downloadAuggieBinary();
+          if (result.success) return result;
+        } catch (err) {
+          logger.warn('Auggie install: binary download failed', { error: err });
+          // If the error is "Unsupported platform/arch", the download was never actually attempted
+          if (err instanceof Error && err.message.startsWith('Unsupported platform/arch')) {
+            binaryDownloadAttempted = false;
+          }
+        }
+
+        // If binary download was attempted but failed, return a download-specific error
+        if (binaryDownloadAttempted) {
+          return {
+            success: false,
+            error: 'Failed to download or install auggie. Please check your internet connection and try again. If the problem persists, check file permissions on ~/.augment/bin.',
+            errorType: 'binary_download_failed',
+          };
+        }
+
+        // Unsupported platform — binary download was never attempted, return the Node.js error
         return {
           success: false,
           error: `Node.js ${MINIMUM_NODE_VERSION.split('.')[0]}+ is required to install auggie${versionInfo}. Please install Node.js ${MINIMUM_NODE_VERSION.split('.')[0]} or later from https://nodejs.org`,
@@ -952,7 +1203,7 @@ export function setupAuggieIPC() {
         };
       }
 
-      logger.info('Installing auggie via npm');
+      logger.info('Auggie install: Node.js found, using npm install path');
 
       // Try to find npm in common locations - expanded list (platform-specific)
       const npmPaths: string[] = [];
@@ -1161,12 +1412,12 @@ export function setupAuggieIPC() {
         npmPath === 'npm'
           ? await execWithEnhancedPath(npmCommand, { timeout: 60000 })
           : await execAsync(npmCommand, {
-              env: {
-                ...process.env,
-                PATH: getEnhancedPath(),
-              },
-              timeout: 60000,
-            });
+            env: {
+              ...process.env,
+              PATH: getEnhancedPath(),
+            },
+            timeout: 60000,
+          });
 
       logger.info('Auggie installation output', { stdout, stderr });
 
@@ -1403,7 +1654,9 @@ export function setupAuggieIPC() {
             const isWindowsCmdFile =
               process.platform === 'win32' &&
               (auggiePath.endsWith('.cmd') || auggiePath.endsWith('.bat'));
-            loginProcess = spawn(auggiePath, ['login'], {
+            // On Windows with shell: true, quote the path to handle spaces (e.g. C:\Users\John Doe\...)
+            const loginSpawnCommand = isWindowsCmdFile ? `"${auggiePath}"` : auggiePath;
+            loginProcess = spawn(loginSpawnCommand, ['login'], {
               env: { ...process.env, PATH: getAuggieExecPATH(auggiePath) },
               shell: isWindowsCmdFile,
               windowsHide: true,

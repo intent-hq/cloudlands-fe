@@ -41,6 +41,7 @@
     versionOk: boolean;
     minimumVersion: string;
     authDetails?: string;
+    binaryInstallAvailable?: boolean;
   };
 
   const INSTALL_COMMAND = 'npm install -g @augmentcode/auggie';

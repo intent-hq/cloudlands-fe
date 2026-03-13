@@ -34,6 +34,7 @@
     faArrowUpRightFromSquare,
     faArrowUp,
     faArrowRight,
+    faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
@@ -91,6 +92,8 @@
     nodeVersion?: string;
     nodePath?: string;
     nodeVersionOk: boolean;
+    binaryInstallAvailable?: boolean;
+    managedBinaryInstalled?: boolean;
   };
   let auggieStatus: AuggieStatus | null = $state(null);
   let actionInProgress = $state(false);
@@ -598,7 +601,7 @@
           <div class="flex items-center gap-5">
             {#if isInitialLoad}
               <Skeleton class="h-8 w-24 rounded-md" />
-            {:else if !auggieStatus?.installed}
+            {:else if !auggieStatus?.managedBinaryInstalled && (!auggieStatus?.installed || (!auggieStatus?.nodeVersionOk && auggieStatus?.binaryInstallAvailable))}
               <Button
                 onclick={(e) => {
                   e.stopPropagation();
@@ -680,9 +683,23 @@
           </li>
         </ul>
 
-        <!-- Node.js version warning -->
-        {#if auggieStatus && auggieStatus.nodeVersionOk === false}
+        <!-- Node.js version warning (suppress when binary install is available as fallback) -->
+        {#if auggieStatus && auggieStatus.nodeVersionOk === false && !auggieStatus.binaryInstallAvailable && !auggieStatus.installed}
           <NodeVersionWarning nodeVersion={auggieStatus.nodeVersion} class="mt-3" />
+        {/if}
+
+        <!-- Soft warning: Node version is incompatible, binary install available (but not yet installed) -->
+        {#if auggieStatus && !auggieStatus.nodeVersionOk && auggieStatus.binaryInstallAvailable && !auggieStatus.managedBinaryInstalled}
+          <div class="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-md text-amber-600 dark:text-amber-400 mt-3">
+            <Fa icon={faTriangleExclamation} class="w-4 h-4 flex-shrink-0" />
+            <span class="text-xs">
+              {#if auggieStatus.installed}
+                Your current auggie installation requires Node.js 22+, which isn't available. Click <strong>Install</strong> to switch to the standalone binary instead.
+              {:else}
+                Node.js 22+ is not available. Click <strong>Install</strong> to download the standalone binary.
+              {/if}
+            </span>
+          </div>
         {/if}
       </div>
 
@@ -693,9 +710,11 @@
           transition:slide={{ axis: 'y', duration: 200 }}
         >
           <p class="text-xs text-destructive-foreground">{installError}</p>
-          {#if installErrorType === 'permission'}
+          {#if installErrorType === 'binary_download_failed'}
+            <p class="text-xs text-subtle">Download failed — check your connection and file permissions, then try again.</p>
+          {:else if installErrorType === 'permission'}
             <p class="text-xs text-subtle">Try running with sudo or fix npm permissions.</p>
-          {:else if installErrorType === 'node_too_old'}
+          {:else if installErrorType === 'node_too_old' && !auggieStatus?.binaryInstallAvailable}
             <p class="text-xs text-muted-foreground">
               Update <a
                 href="https://nodejs.org"
@@ -710,7 +729,7 @@
               >
               to version {MINIMUM_NODE_VERSION.split('.')[0]} or later.
             </p>
-          {:else if installErrorType === 'missing_npm'}
+          {:else if installErrorType === 'missing_npm' && !auggieStatus?.binaryInstallAvailable}
             <p class="text-xs text-subtle">
               Install <a
                 href="https://nodejs.org"
@@ -725,13 +744,15 @@
               > first.
             </p>
           {/if}
-          <button
-            class="flex items-center gap-1.5 px-2 py-1 bg-muted border border-border rounded text-xs text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-colors w-fit cursor-pointer"
-            onclick={() => copyCommand(INSTALL_COMMAND)}
-          >
-            <code class="font-mono">{INSTALL_COMMAND}</code>
-            <Fa icon={faPaste} size="xs" />
-          </button>
+          {#if !auggieStatus?.binaryInstallAvailable}
+            <button
+              class="flex items-center gap-1.5 px-2 py-1 bg-muted border border-border rounded text-xs text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-colors w-fit cursor-pointer"
+              onclick={() => copyCommand(INSTALL_COMMAND)}
+            >
+              <code class="font-mono">{INSTALL_COMMAND}</code>
+              <Fa icon={faPaste} size="xs" />
+            </button>
+          {/if}
         </div>
       {/if}
 

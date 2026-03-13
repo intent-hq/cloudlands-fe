@@ -210,16 +210,20 @@
   // Node.js version state (checked independently of provider setup)
   let nodeVersionOk = $state<boolean | null>(null);
   let nodeVersion = $state<string | undefined>(undefined);
+  let auggieInstalled = $state<boolean>(false);
+  let binaryInstallAvailable = $state<boolean>(false);
 
   onMount(async () => {
     try {
       const result = await invoke<{
         success: boolean;
-        data?: { nodeVersionOk: boolean; nodeVersion?: string };
+        data?: { nodeVersionOk: boolean; nodeVersion?: string; installed?: boolean; binaryInstallAvailable?: boolean };
       }>(AUGGIE_CHANNELS.STATUS);
       if (result.data) {
         nodeVersionOk = result.data.nodeVersionOk;
         nodeVersion = result.data.nodeVersion;
+        auggieInstalled = result.data.installed ?? false;
+        binaryInstallAvailable = result.data.binaryInstallAvailable ?? false;
       }
     } catch {
       // Silently ignore — the warning just won't show
@@ -625,7 +629,7 @@
         />
 
         <!-- Node.js version warning (shown regardless of provider setup state) -->
-        {#if nodeVersionOk === false}
+        {#if nodeVersionOk === false && !auggieInstalled && !binaryInstallAvailable}
           <NodeVersionWarning {nodeVersion} class="-ml-4 w-[calc(100%+32px)] mt-4" />
         {/if}
       </div>

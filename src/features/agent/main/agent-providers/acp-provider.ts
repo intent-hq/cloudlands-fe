@@ -26,6 +26,7 @@ import { Logger } from '../../../../shared/logger';
 import { WorkspaceConfig } from '../../../../shared/main/config';
 import { killChildProcessTree } from '../../../../shared/main/process-tree-kill';
 import { sshManager } from '../../../../shared/main/ssh-manager';
+import { findAuggiePathAsync } from '../../../auggie/main/auggie.ipc';
 import type { ContentBlock } from '../../../../shared/types';
 import { extractContentFromBlocks } from '../../../../shared/types/agent-message.conversion';
 import type { ACPServerConfig } from '../../../acp-official/main/server/acp-server';
@@ -2562,6 +2563,22 @@ export class ACPProvider extends BaseAgentProvider {
       fs.mkdirSync(agentNpmCachePath, { recursive: true });
     }
 
+    // Resolve the full auggie path for the auggie provider.
+    // The provider config uses bare 'auggie' command, but Electron's PATH
+    // doesn't include ~/.augment/bin/ where the managed binary lives.
+    let spawnCommand = this.config.command;
+    if (caps.id === 'auggie') {
+      const resolvedPath = await findAuggiePathAsync();
+      if (resolvedPath) {
+        logger.info('Resolved auggie path for spawn', { resolvedPath });
+        spawnCommand = resolvedPath;
+      } else {
+        logger.warn('Could not resolve auggie path, falling back to bare command', {
+          command: this.config.command,
+        });
+      }
+    }
+
     // Spawn the agent process using safe spawn with fallback options
     const spawnOptions: SpawnOptions = {
       cwd: workingDirectory,
@@ -2590,7 +2607,7 @@ export class ACPProvider extends BaseAgentProvider {
     logger.info('About to spawn agent process', {
       isExternalProvider,
       providerId: caps.id,
-      command: this.config.command,
+      command: spawnCommand,
       argsCount: args.length,
       cwd: spawnOptions.cwd,
     });
@@ -2606,14 +2623,14 @@ export class ACPProvider extends BaseAgentProvider {
         };
         logger.info('Spawning external provider with piped stdio', {
           providerId: caps.id,
-          command: this.config.command,
+          command: spawnCommand,
           args: args.join(' '),
         });
-        this.agentProcess = spawn(this.config.command, args, externalSpawnOpts);
+        this.agentProcess = spawn(spawnCommand, args, externalSpawnOpts);
 
         if (!this.agentProcess || !this.agentProcess.pid) {
           throw new Error(
-            `Failed to spawn external provider ${caps.id} - the command "${this.config.command}" may not be installed or accessible`,
+            `Failed to spawn external provider ${caps.id} - the command "${spawnCommand}" may not be installed or accessible`,
           );
         }
 
@@ -2625,7 +2642,7 @@ export class ACPProvider extends BaseAgentProvider {
         }
       } else {
         // Use safeSpawn for auggie - it can handle various stdio configs
-        this.agentProcess = this.safeSpawn(this.config.command, args, spawnOptions);
+        this.agentProcess = this.safeSpawn(spawnCommand, args, spawnOptions);
 
         // Verify process spawned successfully
         if (!this.agentProcess || !this.agentProcess.pid) {

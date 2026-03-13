@@ -20,5 +20,14 @@ export const MINIMUM_AUGGIE_VERSION = '0.13.0';
  */
 export const MINIMUM_NODE_VERSION = '22.0.0';
 
+/**
+ * Base URL for downloading pre-built auggie CLI binaries.
+ * Binary assets are expected at: ${AUGGIE_BINARY_BASE_URL}/${assetName}
+ */
+export const AUGGIE_BINARY_BASE_URL = 'https://github.com/augmentcode/auggie/releases/latest/download';
+
+/** Apple Team ID for verifying code-signed auggie binaries on macOS */
+export const AUGGIE_APPLE_TEAM_ID = process.env.INTENT_APPLE_TEAM_ID || '';
+
 /** Error types returned by the auggie install handler */
-export type InstallErrorType = 'permission' | 'missing_npm' | 'node_too_old' | 'unknown';
+export type InstallErrorType = 'permission' | 'missing_npm' | 'node_too_old' | 'binary_download_failed' | 'unknown';
