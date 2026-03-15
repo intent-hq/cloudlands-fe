@@ -1375,10 +1375,11 @@
     // In workspace pages, this is also handled by useDockNavigation, but we register it globally
     // so it works on non-workspace pages too (home, settings, etc.)
     const toggleTerminal = () => {
-      // Check if we're on a workspace page by looking at the current URL
-      // We can't rely on workspaceId from the store because it might not be cleared yet
+      // Use URL-derived currentWorkspaceId rather than workspaceStore.current?.id
+      // because the store value can be null/stale during initial load or navigation,
+      // which would incorrectly route the toggle to ROOT_WORKSPACE_ID.
       const isOnWorkspacePage = $page.url.pathname.startsWith('/workspace/');
-      const terminalContextId = isOnWorkspacePage && workspaceId ? workspaceId : ROOT_WORKSPACE_ID;
+      const terminalContextId = isOnWorkspacePage && currentWorkspaceId ? currentWorkspaceId : ROOT_WORKSPACE_ID;
       dispatch(toggleTerminalOverlay(terminalContextId));
     };
     register({
