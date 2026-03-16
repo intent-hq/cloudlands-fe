@@ -26,11 +26,14 @@ export function isFocusInTerminal(target?: HTMLElement | null): boolean {
     return true;
   }
 
-  // Also check if focus is within the terminal overlay container
-  // (e.g., right after creating a terminal before xterm gets focus)
+  // Also check if focus is within the terminal panel content area
+  // (e.g., right after creating a terminal before xterm gets focus).
+  // Use '.terminal-panel' (the content area) rather than '.terminal-overlay'
+  // (the full container) so that focus on the tab bar doesn't block
+  // app-level keyboard shortcuts like Cmd+J to toggle the terminal.
   if (
     typeof activeElement.closest === 'function' &&
-    activeElement.closest('.terminal-overlay')
+    activeElement.closest('.terminal-panel')
   ) {
     return true;
   }

@@ -1393,7 +1393,7 @@
     // for cycling between application windows and must not be intercepted.
     // Use Ctrl+` or Cmd+J instead to toggle the terminal overlay.
     // Cmd+J (Mac) / Ctrl+J (Win/Linux) -> toggle Quake-style terminal overlay (alternate)
-    // Works both in workspace pages (uses workspaceId) and non-workspace pages (uses ROOT_WORKSPACE_ID)
+    // Works both in workspace pages (uses currentWorkspaceId) and non-workspace pages (uses ROOT_WORKSPACE_ID)
     register({
       key: 'j',
       meta: isMac,
