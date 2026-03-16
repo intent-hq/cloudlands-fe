@@ -63,6 +63,7 @@ import {
   GetDirectoryChangesTool,
   QueryEventsTool,
 } from './event-tools';
+import { EmitNotificationTool } from './notification-tools';
 import {
   AddReferencePrimitiveTool,
   AddCliPrimitiveTool,
@@ -243,6 +244,9 @@ export async function createWorkspaceMCPServer(
   server.registerTool(new GetWorkspaceSummaryTool(workspaceId));
   server.registerTool(new GetDirectoryChangesTool(workspaceId));
   server.registerTool(new QueryEventsTool(workspaceId));
+
+  // Register notification tool for external services to emit events
+  server.registerTool(new EmitNotificationTool(workspaceId));
 
   // Register git tools for version control operations
   server.registerTool(new GitStatusTool(workspaceId));

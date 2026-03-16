@@ -116,6 +116,9 @@ export const WorkspaceEventType = {
 
   // Comment events
   CommentAdded: 'comment:added',
+
+  // MCP events
+  McpNotification: 'mcp:notification',
 } as const;
 
 export type WorkspaceEventType = (typeof WorkspaceEventType)[keyof typeof WorkspaceEventType];
@@ -555,6 +558,18 @@ export interface AgentMessageDeliveryFailedEvent extends WorkspaceEventBase {
   };
 }
 
+/**
+ * Emitted when an MCP push notification is received
+ */
+export interface McpNotificationEvent extends WorkspaceEventBase {
+  type: 'mcp:notification';
+  data: {
+    topic: string;
+    message: string;
+    metadata?: Record<string, any>;
+  };
+}
+
 // Union type for all specific events
 export type SpecificWorkspaceEvent =
   | FileChangedEvent
@@ -585,7 +600,9 @@ export type SpecificWorkspaceEvent =
   | AgentEventDeliveryTimeoutEvent
   | AgentSubscriptionsRestoredEvent
 	  | AgentSubscriptionsChangedEvent
-  | AgentMessageDeliveryFailedEvent;
+  | AgentMessageDeliveryFailedEvent
+  // MCP events
+  | McpNotificationEvent;
 
 // Main WorkspaceEvent type - includes legacy fields for backward compatibility
 export interface WorkspaceEvent extends WorkspaceEventBase {
@@ -846,6 +863,10 @@ export function isAgentMessageDeliveryFailedEvent(
   event: WorkspaceEvent,
 ): event is AgentMessageDeliveryFailedEvent {
   return event.type === 'agent:message:delivery-failed';
+}
+
+export function isMcpNotificationEvent(event: WorkspaceEvent): event is McpNotificationEvent {
+  return event.type === 'mcp:notification';
 }
 
 // ============================================================================
