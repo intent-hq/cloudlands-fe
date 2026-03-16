@@ -590,7 +590,7 @@
       (variant === 'outline' || variant === 'default') && 'w-full justify-between',
       triggerClass,
     )}
-    contentClass="min-w-[220px]"
+    contentClass="min-w-[220px] max-w-[360px]"
     {portal}
   >
     {#snippet trigger({
