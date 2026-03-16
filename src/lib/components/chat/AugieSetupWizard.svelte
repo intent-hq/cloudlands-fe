@@ -5,9 +5,11 @@
   import { faCheckCircle, faExclamationCircle } from '@fortawesome/free-solid-svg-icons';
   import type { Workspace } from '$shared/types';
   import { createLogger } from '$lib/utils/client-logger';
-  import { modelStore } from '$lib/stores/model.store.svelte';
+  import { retryLoadModels } from '$lib/store/slices/model/model-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
 
   const logger = createLogger('AugieSetupWizard');
+  const dispatch = getDispatch();
 
   interface Props {
     workspace: Workspace;
@@ -201,7 +203,7 @@
     if (augieInstalled === true && !hasRefreshedModels) {
       hasRefreshedModels = true;
       logger.info('[AugieSetupWizard] Auggie installed, refreshing model list...');
-      void modelStore.retryLoadModels();
+      dispatch(retryLoadModels());
     }
   });
 </script>

@@ -10,7 +10,8 @@
   import { invoke, shell } from '$lib/electron-bridge';
   import { additionalAgentsStore } from '$lib/stores/additional-agents.store.svelte';
   import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
-  import { modelStore } from '$lib/stores/model.store.svelte';
+  import { retryLoadModels, reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import { ACP_PROVIDERS } from '$shared/config/provider-config';
   import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
   import {
@@ -41,6 +42,7 @@
   import Button from '../ui/button/button.svelte';
 
   const logger = createLogger('ProviderSelector');
+  const dispatch = getDispatch();
 
   const INSTALL_COMMAND = 'npm install -g @augmentcode/auggie';
 
@@ -341,7 +343,7 @@
       providerAvailability = providerResult.data || null;
 
       if (refreshModels) {
-        await modelStore.retryLoadModels();
+        dispatch(retryLoadModels());
       }
     } catch (err) {
       logger.error('Failed to check provider availability', { error: err });
@@ -502,7 +504,7 @@
       if (result.success) {
         toast.success('Auggie installed successfully');
         await checkProviderAvailability();
-        await modelStore.retryLoadModels();
+        dispatch(retryLoadModels());
       } else {
         const message = result.error || 'Installation failed';
         installError = message;
@@ -545,7 +547,7 @@
         if (result.data.authenticated) {
           toast.success('Logged in successfully');
           await checkProviderAvailability();
-          await modelStore.reloadModelsForProvider();
+          dispatch(reloadModelsForProvider());
         } else {
           showAuthInput = true;
         }
@@ -594,7 +596,7 @@
       if (result.success && result.data?.autoCompleted) {
         toast.success('Logged in successfully');
         await checkProviderAvailability();
-        await modelStore.reloadModelsForProvider();
+        dispatch(reloadModelsForProvider());
         return;
       }
 
@@ -665,7 +667,7 @@
         authInput = '';
         authUrl = null;
         await checkProviderAvailability();
-        await modelStore.reloadModelsForProvider();
+        dispatch(reloadModelsForProvider());
       } else {
         await loadAuggieStatus();
         if (auggieStatus?.authenticated) {
@@ -673,7 +675,7 @@
           showAuthInput = false;
           authInput = '';
           authUrl = null;
-          await modelStore.reloadModelsForProvider();
+          dispatch(reloadModelsForProvider());
         } else {
           authError = result.error || 'Authentication failed';
         }
@@ -706,7 +708,7 @@
         to: providerId,
       });
       activeProviderStore.setActiveProvider(providerId);
-      await modelStore.reloadModelsForProvider();
+      dispatch(reloadModelsForProvider());
       toast.success(`Switched to ${ACP_PROVIDERS[providerId]?.displayName || providerId}`);
 
       // Track provider selection

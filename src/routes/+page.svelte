@@ -13,7 +13,8 @@
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
   import ProviderStatusPanel from '$lib/components/ProviderStatusPanel.svelte';
   import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
-  import { modelStore } from '$lib/stores/model.store.svelte';
+  import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import StarterPromptButton from '$lib/components/workspace/StarterPromptButton.svelte';
   import { AUGGIE_CHANNELS } from '$shared/ipc/channels';
   import NodeVersionWarning from '$lib/components/NodeVersionWarning.svelte';
@@ -36,6 +37,8 @@
 
   // Feature flag: mimic empty state for testing (set to true to test empty state UI)
   const MIMIC_EMPTY_STATE = false;
+
+  const dispatch = getDispatch();
 
   let isInitializerExpanded = $state(false);
   let initialRepoForCreate = $state<RepoInfo | undefined>(undefined);
@@ -587,7 +590,7 @@
         <ProviderStatusPanel
           onContinue={async (providerId) => {
             activeProviderStore.setActiveProvider(providerId);
-            await modelStore.reloadModelsForProvider();
+            dispatch(reloadModelsForProvider());
             hasCompletedProviderSetup = true;
           }}
         />

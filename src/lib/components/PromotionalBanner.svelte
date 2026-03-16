@@ -3,7 +3,9 @@
   import { invoke } from '$lib/electron-bridge';
   import { fetchPromotionalBanners } from '$lib/services/promotional-banner';
   import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
-  import { modelStore } from '$lib/stores/model.store.svelte';
+  import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
+  import { selectAvailableModels } from '$lib/store/slices/model/model-selectors';
+  import { getDispatch } from '$lib/store/utils/utils';
   import type {
     PromotionalBanner as PromotionalBannerData,
     PromotionalBannerAction,
@@ -28,6 +30,9 @@
       timestamp: string;
     }>;
   }
+
+  const dispatch = getDispatch();
+  const availableModels$ = selectAvailableModels();
 
   const PROMO_BANNER_STORAGE_KEY = 'promoBannerInteractions';
   const ACTION_SUCCESS_DURATION_MS = 2_000;
@@ -169,7 +174,7 @@
     }
 
     const activeProviderId = activeProviderStore.activeProviderId;
-    const availableModelValues = new Set(modelStore.availableModels.map((model) => model.value));
+    const availableModelValues = new Set($availableModels$.map((model) => model.value));
 
     applicableButtons = banner.buttons.filter((button) => {
       if (button.hideWhen?.type === 'defaultAgentIs'
@@ -195,7 +200,7 @@
     if (!banner) return;
 
     const activeProviderId = activeProviderStore.activeProviderId;
-    const availableModelValues = new Set(modelStore.availableModels.map((model) => model.value));
+    const availableModelValues = new Set($availableModels$.map((model) => model.value));
 
     // Keep buttons we've already completed (indices 0..currentStepIndex),
     // re-filter the rest from the original banner buttons
@@ -340,7 +345,7 @@
         }
 
         activeProviderStore.setActiveProvider(action.agentId);
-        await modelStore.reloadModelsForProvider();
+        dispatch(reloadModelsForProvider());
 
         // Recompute remaining buttons now that models are loaded for the new provider.
         recomputeRemainingButtons();

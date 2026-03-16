@@ -1,5 +1,5 @@
 import { createLogger } from '$lib/utils/client-logger';
-import { SPECIALISTS, GITHUB_DEPENDENT_SPECIALIST_IDS, type Specialist } from '$lib/constants/specialists';
+import { SPECIALISTS, type Specialist } from '$lib/constants/specialists';
 import {
   getDefaultModelForProvider,
   getDefaultProviderId,
@@ -7,11 +7,39 @@ import {
   PROVIDER_MODEL_TIERS,
 } from '$shared/config/provider-config';
 import { activeProviderStore } from './active-provider.store.svelte';
-import { featureCodesStore } from './feature-codes.store.svelte';
 import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
+import { selectIsFeatureEnabled } from '$lib/store/slices/feature-codes/feature-codes-selectors';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { SPECIALISTS_CHANNELS } from '$shared/ipc/channels';
+import { applySpecialistVisibilityFilters } from './specialist-visibility';
 
 const logger = createLogger('SpecialistsStore');
+
+let _isRalphAgentEnabled = $state(false);
+let _featureCodesStoreSubscribed = false;
+
+function ensureFeatureCodesStoreSubscription(): void {
+  if (_featureCodesStoreSubscribed) return;
+
+  try {
+    const store = getReduxStore();
+    _isRalphAgentEnabled = selectIsFeatureEnabled.select(store.getState(), 'ralph-agent');
+
+    store.subscribe(() => {
+      const nextIsRalphAgentEnabled = selectIsFeatureEnabled.select(
+        store.getState(),
+        'ralph-agent',
+      );
+      if (nextIsRalphAgentEnabled !== _isRalphAgentEnabled) {
+        _isRalphAgentEnabled = nextIsRalphAgentEnabled;
+      }
+    });
+
+    _featureCodesStoreSubscribed = true;
+  } catch {
+    // Store bridge may not be initialized yet.
+  }
+}
 
 // Storage key for electron-store
 const SPECIALISTS_OVERRIDES_KEY = 'specialists-overrides';
@@ -82,6 +110,7 @@ class SpecialistsStore {
   // Priority: file-based > bundled > electron-store custom > hardcoded SPECIALISTS (last resort)
   // Deduplicate by ID to prevent Svelte each_key_duplicate errors
   specialists = $derived.by<Specialist[]>(() => {
+    ensureFeatureCodesStoreSubscription();
     const seen = new Set<string>();
     let result: Specialist[] = [];
 
@@ -149,15 +178,10 @@ class SpecialistsStore {
       logger.warn('Using hardcoded SPECIALISTS fallback - file/bundled loading may have failed');
     }
 
-    // Gate ralph behind feature flag
-    if (!featureCodesStore.isFeatureEnabled('ralph-agent')) {
-      result = result.filter((s) => s.id !== 'ralph');
-    }
-
-    // Hide GitHub-dependent specialists when GitHub is not connected
-    if (!githubAuthStore.state.isAuthenticated) {
-      result = result.filter((s) => !GITHUB_DEPENDENT_SPECIALIST_IDS.has(s.id));
-    }
+    result = applySpecialistVisibilityFilters(result, {
+      isRalphAgentEnabled: _isRalphAgentEnabled,
+      isGithubAuthenticated: githubAuthStore.state.isAuthenticated,
+    });
 
     return result;
   });

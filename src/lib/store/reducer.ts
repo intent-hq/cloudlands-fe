@@ -17,6 +17,9 @@ import { noteReadTrackingReducer } from "./slices/note-read-tracking/note-read-t
 import { multiPanelContextReducer } from "./slices/multi-panel-context/multi-panel-context-slice";
 import { permissionReducer } from "./slices/permission/permission-slice";
 import { pipReducer } from "./slices/pip/pip-slice";
+import { installedEditorsReducer } from "./slices/installed-editors/installed-editors-slice";
+import { featureCodesReducer } from "./slices/feature-codes/feature-codes-slice";
+import { modelReducer } from "./slices/model/model-slice";
 import { zoomReducer } from "./slices/zoom/zoom-slice";
 
 export const reducers = {
@@ -36,7 +39,10 @@ export const reducers = {
   noteSpellcheckSettings: noteSpellcheckSettingsReducer,
   noteReadTracking: noteReadTrackingReducer,
   multiPanelContext: multiPanelContextReducer,
+  installedEditors: installedEditorsReducer,
   permission: permissionReducer,
+  featureCodes: featureCodesReducer,
+  model: modelReducer,
   pip: pipReducer,
   workspaceSettings: workspaceSettingsReducer,
   zoom: zoomReducer,

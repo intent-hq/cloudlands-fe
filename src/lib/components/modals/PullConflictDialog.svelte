@@ -15,10 +15,10 @@
     faFolder,
   } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
-  import {
-    installedEditorsStore,
-    type InstalledEditor,
-  } from '$lib/stores/installed-editors.store.svelte';
+  import type { InstalledEditor } from '$lib/store/slices/installed-editors/installed-editors-slice';
+  import { fetchEditors } from '$lib/store/slices/installed-editors/installed-editors-slice';
+  import { selectInstalledEditorsFiltered } from '$lib/store/slices/installed-editors/installed-editors-selectors';
+  import { getDispatch } from '$lib/store/utils/utils';
   import { invoke } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
 
@@ -65,16 +65,19 @@
     onCancel,
   }: Props = $props();
 
+  const dispatch = getDispatch();
+  const installedEditors$ = selectInstalledEditorsFiltered();
+
   // Dropdown open state
   let dropdownOpen = $state(false);
 
   // Fetch installed editors on mount
   onMount(() => {
-    installedEditorsStore.fetch();
+    dispatch(fetchEditors());
   });
 
   // Get all installed editors (combined IDEs and terminals)
-  const installedEditors = $derived(installedEditorsStore.editors.filter((e) => e.installed));
+  const installedEditors = $derived($installedEditors$);
 
   /**
    * Detect the type of pull error based on the error message

@@ -24,7 +24,8 @@
     type InstallErrorType,
   } from '$shared/constants/auggie';
   import NodeVersionWarning from '$lib/components/NodeVersionWarning.svelte';
-  import { modelStore } from '$lib/stores/model.store.svelte';
+  import { retryLoadModels } from '$lib/store/slices/model/model-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import type { ProviderAvailabilityResult } from '$features/providers/main/provider-availability.service';
   import {
     faCircleCheck,
@@ -50,6 +51,8 @@
   }
 
   let { onContinue }: Props = $props();
+
+  const dispatch = getDispatch();
 
   // Loading state for "Start using" buttons
   let startingProviderId = $state<string | null>(null);
@@ -282,7 +285,7 @@
 
       // Refresh model list if requested (e.g., after manual refresh button click)
       if (refreshModels) {
-        await modelStore.retryLoadModels();
+        dispatch(retryLoadModels());
       }
     } catch (err) {
       logger.error('Failed to check provider availability', { error: err });
@@ -349,7 +352,7 @@
         } catch {}
         await checkProviderAvailability();
         // Refresh model list now that auggie is installed
-        await modelStore.retryLoadModels();
+        dispatch(retryLoadModels());
       } else {
         const message = result.error || 'Installation failed';
         installError = message;
@@ -400,7 +403,7 @@
           } catch {}
           toast.success('Logged in successfully');
           await checkProviderAvailability();
-          await modelStore.retryLoadModels();
+          dispatch(retryLoadModels());
         } else {
           showAuthInput = true;
         }
@@ -455,7 +458,7 @@
         } catch {}
         toast.success('Logged in successfully');
         await checkProviderAvailability();
-        await modelStore.retryLoadModels();
+        dispatch(retryLoadModels());
         return;
       }
 
@@ -530,7 +533,7 @@
         authUrl = null;
         await checkProviderAvailability();
         // Refresh model list now that auggie is authenticated
-        await modelStore.retryLoadModels();
+        dispatch(retryLoadModels());
       } else {
         // Try checking status anyway - auth might have succeeded
         await checkAuggieStatus();
@@ -543,7 +546,7 @@
           authInput = '';
           authUrl = null;
           // Refresh model list now that auggie is authenticated
-          await modelStore.retryLoadModels();
+          dispatch(retryLoadModels());
         } else {
           authError = result.error || 'Authentication failed';
         }

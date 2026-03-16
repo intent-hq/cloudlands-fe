@@ -28,6 +28,13 @@ export const selectTerminals = createSelector((state) => {
   return getActiveWs(state).terminals;
 });
 
+/** Select workspace terminal state by workspace ID (parameterized) */
+export const selectWorkspaceTerminalState = createSelector(
+  (state, wsId: string) => {
+    return state.terminalOverlay.workspaces[wsId] || emptyWorkspaceState;
+  }
+);
+
 export const selectTerminalDisplayName = createSelector(
   (state, termId: string): string => {
     const ws = getActiveWs(state);

@@ -45,7 +45,8 @@
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
   import { sessionStore, subscribeToAgent } from '$features/agent/browser';
   import type { AgentSession } from '$shared/types';
-  import { modelStore } from '$lib/stores/model.store.svelte';
+  import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
+  import { get } from 'svelte/store';
   import { specialistsStore } from '$lib/stores/specialists.store.svelte';
 
   interface Props {
@@ -219,7 +220,7 @@
       }
     }
     // Fall back to workspace default model
-    return modelStore.getWorkspaceDefaultModel(workspaceId);
+    return get(selectWorkspaceDefaultModel(workspaceId));
   });
 
   // Update local content when prop changes

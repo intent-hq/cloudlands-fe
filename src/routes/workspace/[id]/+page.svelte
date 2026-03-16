@@ -54,7 +54,8 @@
   import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
   import { PanelVisibilityManager } from '$features/workspace/panel-visibility-manager.svelte';
   import { queryEvents } from '$features/events/events.client';
-  import { modelStore } from '$lib/stores/model.store.svelte';
+  import { get } from 'svelte/store';
+  import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
   import { notesStateManager } from '$features/notes/notes.store.svelte';
   import { notesClient } from '$features/notes/notes.client';
   import { workspaceStorageManager } from '$features/workspace/workspace-storage-manager';
@@ -3573,7 +3574,7 @@
           taskStatus: 'in_progress',
           agentConfig: {
             instruction: taskText,
-            model: modelStore.getWorkspaceDefaultModel(safeWorkspace.id),
+            model: get(selectWorkspaceDefaultModel(safeWorkspace.id)),
             autoStart: true,
             agentId: optimisticAgentId,
           },
@@ -3605,7 +3606,7 @@
             id: agentData.id,
             workspaceId: safeWorkspace.id,
             name: agentData.name || taskText.slice(0, 40),
-            model: agentData.model || modelStore.getWorkspaceDefaultModel(safeWorkspace.id),
+            model: agentData.model || get(selectWorkspaceDefaultModel(safeWorkspace.id)),
             createdAt: agentData.createdAt || new Date().toISOString(),
             backendSessionId: agentData.backendSessionId,
             status: AgentStatus.Active,
@@ -3756,7 +3757,7 @@
     const result = await agentFactory.createAgent(safeWorkspace, {
       name: agentName,
       workspaceId: WorkspaceId(safeWorkspace.id),
-      model: modelStore.getWorkspaceDefaultModel(safeWorkspace.id),
+      model: get(selectWorkspaceDefaultModel(safeWorkspace.id)),
       provider: activeProviderStore.activeProviderId,
       agentType: (agentType && parseAgentTypeId(agentType)) || createAgentTypeId('chat'),
       source: 'keyboard-shortcut',
@@ -3800,7 +3801,7 @@
 
     // Get specialist configuration if provided
     const existingNames = agents.map((a: AgentSession) => a.name).filter(Boolean) as string[];
-    let model = modelStore.getWorkspaceDefaultModel(safeWorkspace.id);
+    let model = get(selectWorkspaceDefaultModel(safeWorkspace.id));
     let provider = activeProviderStore.activeProviderId;
     let behaviorPrompt: string | undefined;
     let specialistBaseName = 'Agent';

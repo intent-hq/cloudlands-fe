@@ -25,7 +25,10 @@ import type { WorkspaceId } from '$shared/types/branded-ids';
 import { AgentStatus, extractAllContent } from '$shared/types';
 import { untrack } from 'svelte';
 import { toast } from 'svelte-sonner';
-import { modelStore } from '$lib/stores/model.store.svelte';
+import { getReduxStore, dispatch } from '$lib/store/redux-dispatch-bridge';
+import { loadModels } from '$lib/store/slices/model/model-slice';
+import { getGroupedModels } from '$lib/store/slices/model/model-utils';
+import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
 import { getModelLabel, generateFallbackChain } from '$lib/utils/model-fallback';
 import { shouldSkipFileForAI } from '$shared/binary-file-extensions';
 import { addDeferredResult } from './deferred-results-cache';
@@ -289,33 +292,65 @@ export class BackgroundAgentExecutor {
    */
   private async ensureModelsLoaded(): Promise<void> {
     // If models are already loaded, return immediately
-    if (modelStore.modelsLoaded && modelStore.availableModels.length > 0) {
-      logger.debug('Models already loaded', { count: modelStore.availableModels.length });
+    const getCurrentProviderModelState = () => {
+      const modelState = getReduxStore().getState().model;
+      const activeProviderId = modelState.activeProviderId ?? activeProviderStore.activeProviderId;
+      const availableModels = modelState.availableModelsByProvider[activeProviderId] ?? [];
+      const modelsLoaded = modelState.modelsLoadedByProvider[activeProviderId] ?? false;
+      const isLoadingModels = modelState.isLoadingByProvider[activeProviderId] ?? false;
+
+      return {
+        activeProviderId,
+        availableModels,
+        isLoadingModels,
+        modelState,
+        modelsLoaded,
+      };
+    };
+
+    let currentProviderModelState = getCurrentProviderModelState();
+    if (
+      currentProviderModelState.modelsLoaded &&
+      currentProviderModelState.availableModels.length > 0
+    ) {
+      logger.debug('Models already loaded', {
+        count: currentProviderModelState.availableModels.length,
+      });
       return;
     }
 
     logger.info('Models not loaded yet, waiting...');
 
     // Trigger model loading if not already in progress
-    if (!modelStore.isLoadingModels) {
+    if (!currentProviderModelState.isLoadingModels) {
       logger.debug('Triggering model load');
-      await modelStore.loadModels();
+      dispatch(loadModels());
     }
 
     // Wait for models to load (max 5 seconds)
     const startTime = Date.now();
     const timeout = 5000;
 
-    while (!modelStore.modelsLoaded || modelStore.availableModels.length === 0) {
+    currentProviderModelState = getCurrentProviderModelState();
+    while (
+      !currentProviderModelState.modelsLoaded ||
+      currentProviderModelState.availableModels.length === 0
+    ) {
       if (Date.now() - startTime > timeout) {
         logger.warn('Timeout waiting for models to load, proceeding with hardcoded fallback');
         break;
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
+      currentProviderModelState = getCurrentProviderModelState();
     }
 
-    if (modelStore.modelsLoaded && modelStore.availableModels.length > 0) {
-      logger.info('Models loaded successfully', { count: modelStore.availableModels.length });
+    if (
+      currentProviderModelState.modelsLoaded &&
+      currentProviderModelState.availableModels.length > 0
+    ) {
+      logger.info('Models loaded successfully', {
+        count: currentProviderModelState.availableModels.length,
+      });
     } else {
       logger.warn('Models not loaded after timeout, will use hardcoded fallback');
     }
@@ -363,10 +398,13 @@ export class BackgroundAgentExecutor {
       const backgroundAgentType = this.config.type as BackgroundAgentType;
 
       // Get available models from all enabled providers and validate the requested model
-      const groupedModels = modelStore.getGroupedModels();
+      const state = getReduxStore().getState();
+      const activeProviderId = state.model.activeProviderId ?? activeProviderStore.activeProviderId;
+      const providerAvailableModels = state.model.availableModelsByProvider[activeProviderId] ?? [];
+      const groupedModels = getGroupedModels(activeProviderId, providerAvailableModels);
       const flattenedModels = groupedModels.flatMap((group) => group.models);
       const availableModels =
-        flattenedModels.length > 0 ? flattenedModels : modelStore.availableModels;
+        flattenedModels.length > 0 ? flattenedModels : providerAvailableModels;
       const modelResult = backgroundAgentSettingsStore.getValidatedModelForType(
         backgroundAgentType,
         availableModels,

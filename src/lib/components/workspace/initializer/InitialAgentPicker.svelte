@@ -3,7 +3,7 @@
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
 
   import { specialistsStore } from '$lib/stores/specialists.store.svelte';
-  import { modelStore } from '$lib/stores/model.store.svelte';
+  import { selectSelectedModel, selectAvailableModels } from '$lib/store/slices/model/model-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { faPlus, faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -26,6 +26,8 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
 
   const logger = createLogger('InitialAgentPicker');
+  const availableModels$ = selectAvailableModels();
+  const selectedModel$ = selectSelectedModel();
 
   interface Props {
     /** Selected specialist ID - null means blank agent */
@@ -216,7 +218,7 @@
   // Uses the local selectedProvider (not activeProviderStore) so the displayed
   // model stays in sync with the provider the user picked in this form.
   function resolveEffectiveModel(specialist: string | null): string {
-    const values = modelStore.availableModels.map((m) => m.value);
+    const values = $availableModels$.map((m) => m.value);
     const valuesSet = new Set(values);
 
     if (specialist) {
@@ -252,7 +254,7 @@
     // For providers without matching preferences (e.g. OpenCode with dynamic models),
     // use the globally selected model if it's valid for this provider. This ensures the
     // user's previous choice carries over instead of always falling back to the first model.
-    if (valuesSet.has(modelStore.selectedModel)) return modelStore.selectedModel;
+    if (valuesSet.has($selectedModel$)) return $selectedModel$;
 
     return values[0];
   }

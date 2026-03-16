@@ -57,7 +57,10 @@
 <RunSaga sagaName="notificationSettingsSaga" />
 <RunSaga sagaName="noteSpellcheckSettingsSaga" />
 <RunSaga sagaName="workspaceSettingsSaga" />
+<RunSaga sagaName="installedEditorsSaga" />
 <RunSaga sagaName="permissionSaga" />
+<RunSaga sagaName="featureCodesSaga" />
+<RunSaga sagaName="modelSaga" />
 <RunSaga sagaName="pipSaga" />
 <RunSaga sagaName="zoomSaga" />
 <RunSaga sagaName="betaUpdatesSaga" />

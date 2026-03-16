@@ -1074,7 +1074,7 @@
 
       <ModelPicker
         bind:this={modelPickerRef}
-        bind:selectedModel
+        {selectedModel}
         providerId={selectedProviderId}
         variant="ghost-light"
         size="xs"

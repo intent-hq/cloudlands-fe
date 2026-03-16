@@ -1,4 +1,4 @@
-import { call, put, select, takeEvery, takeLatest } from "typed-redux-saga";
+import { call, put, takeEvery, takeLatest } from "typed-redux-saga";
 import { invoke } from "$lib/electron-bridge";
 import { USER_ACTIVITY_CHANNELS } from "$shared/ipc/channels";
 import type { NoteReadRecord } from "$shared/types/user-activity.types";
@@ -14,6 +14,7 @@ import {
 import {
   selectCurrentlyViewedNoteId,
   selectNoteReadTrackingWorkspaceId,
+  selectReadRecords,
 } from "../note-read-tracking-selectors";
 
 const logger = createLogger("NoteReadTrackingSaga");
@@ -100,9 +101,7 @@ export function* handleComputeUnreadNotes(action: {
     const notesMap = new Map(notes.map((n) => [n.id, n.updatedAt]));
 
     // Get current read records from state for local filtering
-    const readRecords: Record<string, NoteReadRecord> = yield* select(
-      (state: any) => state.noteReadTracking.readRecords
-    );
+    const readRecords: Record<string, NoteReadRecord> = yield* selectReadRecords.effect();
 
     const filteredUnreadIds = unreadIdsFromBackend.filter((noteId) => {
       // Never mark the currently viewed note as unread

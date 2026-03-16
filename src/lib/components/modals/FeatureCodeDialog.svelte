@@ -3,7 +3,9 @@
   import Fa from 'svelte-fa';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
-  import { featureCodesStore } from '$lib/stores/feature-codes.store.svelte';
+  import { selectActiveFeatures, selectHasActiveFeatures } from '$lib/store/slices/feature-codes/feature-codes-selectors';
+  import { fetchFeatures, deactivateFeature } from '$lib/store/slices/feature-codes/feature-codes-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
 
   interface Props {
     open?: boolean;
@@ -12,6 +14,10 @@
   let {
     open = $bindable(false),
   }: Props = $props();
+
+  const dispatch = getDispatch();
+  const activeFeatures$ = selectActiveFeatures();
+  const hasActiveFeatures$ = selectHasActiveFeatures();
 
   let inputValue = $state('');
   let inputRef: HTMLInputElement | null = $state(null);
@@ -63,7 +69,7 @@
         needsRestart = true;
       }
       // Refresh the renderer-side store so UI gates update immediately
-      await featureCodesStore.refresh();
+      dispatch(fetchFeatures());
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       if (message.toLowerCase().includes('already active') || message.toLowerCase().includes('already_active')) {
@@ -102,7 +108,7 @@
   }
 
   async function removeFeature(featureId: string) {
-    await featureCodesStore.deactivateFeature(featureId);
+    await dispatch(deactivateFeature(featureId));
     needsRestart = true;
     feedback = { message: 'Feature deactivated! Restart to apply.', color: 'text-yellow-400' };
     scheduleFeedbackClear();
@@ -152,11 +158,11 @@
       </div>
 
       <!-- Active Features -->
-      {#if featureCodesStore.activeFeatures.size > 0}
+      {#if $hasActiveFeatures$}
         <div class="px-6 pb-4">
           <p class="text-xs text-subtle mb-2">Active Features</p>
           <ul class="space-y-1">
-            {#each [...featureCodesStore.activeFeatures] as featureId}
+            {#each $activeFeatures$ as featureId}
               <li class="flex items-center justify-between text-sm text-subtle bg-muted/50 rounded px-2 py-1">
                 <span>{featureId}</span>
                 <button

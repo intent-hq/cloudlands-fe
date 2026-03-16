@@ -39,8 +39,6 @@
   import { dispatch } from '$lib/store/redux-dispatch-bridge';
   import { toggleCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import { toggleLineWrapping } from '$lib/store/slices/editor-settings/editor-settings-slice';
-  import { featureCodesStore } from '$lib/stores/feature-codes.store.svelte';
-  import { modelStore } from '$lib/stores/model.store.svelte';
   import {
     toggleTerminalOverlay,
     openTerminalOverlay,
@@ -100,9 +98,7 @@
       });
   }
 
-  // Initialize model store to ensure models are loaded
-  // This ensures the modelStore singleton is created and loads models immediately
-  const _modelStoreInit = modelStore;
+
 
   interface Props {
     children?: import('svelte').Snippet;
@@ -310,8 +306,6 @@
   const shownCredentialsModalForWorkspaces = new Set<string>();
 
   onMount(() => {
-    featureCodesStore.init();
-
     // Hide the splash screen from app.html now that Svelte has mounted
     const splash = document.getElementById('splash');
     if (splash) {

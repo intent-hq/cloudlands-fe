@@ -1,4 +1,4 @@
-import { call, put, select, takeEvery } from "typed-redux-saga";
+import { call, put, takeEvery } from "typed-redux-saga";
 import { invoke } from "$lib/electron-bridge";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
 import { createLogger } from "$lib/utils/client-logger";
@@ -10,13 +10,12 @@ import {
   removePermissionRequest,
   type PermissionRequest,
 } from "../permission-slice";
+import { selectPermissionRequests } from "../permission-selectors";
 
 const logger = createLogger("PermissionSaga");
 
 function* getRequest(requestId: string): Generator<any, PermissionRequest | undefined, any> {
-  const requests: PermissionRequest[] = yield* select(
-    (state: any) => state.permission.requests,
-  );
+  const requests: PermissionRequest[] = yield* selectPermissionRequests.effect();
   return requests.find((r) => r.requestId === requestId);
 }
 

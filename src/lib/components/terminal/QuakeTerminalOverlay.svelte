@@ -30,6 +30,7 @@
     setTerminalOverlayHeight,
     setTerminalOverlayWorkspace,
     renameTerminal,
+    type TerminalTab,
   } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
   import { getDispatch } from '$lib/store/utils/utils';
   import Terminal from './Terminal.svelte';
@@ -499,7 +500,7 @@
   // Header name editing
   function startEditingHeaderName() {
     if (!$activeTerminalId) return;
-    const term = $terminals.find((t) => t.id === $activeTerminalId);
+    const term = $terminals.find((t: TerminalTab) => t.id === $activeTerminalId);
     if (!term) return;
     isEditingHeaderName = true;
     headerEditValue = term.customName || term.name || 'Terminal';
@@ -628,7 +629,7 @@
 
   function cycleTerminal(direction: 1 | -1) {
     if (!$activeTerminalId || $terminals.length <= 1 || !workspaceId) return;
-    const currentIndex = $terminals.findIndex((t) => t.id === $activeTerminalId);
+    const currentIndex = $terminals.findIndex((t: TerminalTab) => t.id === $activeTerminalId);
     const nextIndex = (currentIndex + direction + $terminals.length) % $terminals.length;
     dispatch(selectTerminal(workspaceId, $terminals[nextIndex].id));
   }

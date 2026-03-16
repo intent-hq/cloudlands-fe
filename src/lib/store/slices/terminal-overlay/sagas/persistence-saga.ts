@@ -1,4 +1,4 @@
-import { call, put, select, takeEvery } from "typed-redux-saga";
+import { call, put, takeEvery } from "typed-redux-saga";
 import {
   openTerminalOverlay,
   closeTerminalOverlay,
@@ -10,7 +10,6 @@ import {
   renameTerminal,
   loadWorkspaceTerminals,
   hydrateHeight,
-  emptyWorkspaceState,
   STORAGE_KEY,
   CUSTOM_NAMES_STORAGE_KEY,
   WORKSPACE_STATE_STORAGE_KEY,
@@ -18,6 +17,7 @@ import {
 } from "../terminal-overlay-slice";
 import {
   selectTerminalOverlayHeight,
+  selectWorkspaceTerminalState,
 } from "../terminal-overlay-selectors";
 
 const LEGACY_CUSTOM_NAMES_BUCKET = "__legacy__";
@@ -187,7 +187,7 @@ export function* watchWorkspaceState() {
   yield* takeEvery(WORKSPACE_STATE_ACTIONS, function* (action: { type: string; payload: [string, ...unknown[]] }) {
     const wsId = action.payload[0];
     if (!wsId) return;
-    const ws = yield* select((state) => state.terminalOverlay.workspaces[wsId] || emptyWorkspaceState);
+    const ws = yield* selectWorkspaceTerminalState.effect(wsId);
     yield* call(saveWorkspaceState, wsId, { isOpen: ws.isOpen, activeTerminalId: ws.activeTerminalId });
   });
 }

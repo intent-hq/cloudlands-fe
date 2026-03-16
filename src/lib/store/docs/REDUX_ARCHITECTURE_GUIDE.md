@@ -963,11 +963,15 @@ yield *
 #### `select` - Read from Store
 
 ```typescript
-// Get state using selector
-const value = yield * select(mySelector.select);
+// ✅ PREFERRED: Use selector's .effect() method (typed, cached)
+const value = yield* mySelector.effect();
 
-// Get state using function
-const value = yield * select((state) => state.mySlice.value);
+// ✅ Also good: Use selector's .select method
+const value = yield* select(mySelector.select);
+
+// ❌ BAD: Never use inline lambdas in sagas
+// They bypass caching, lose type safety, and aren't reusable
+// const value = yield* select((state) => state.mySlice.value);
 ```
 
 #### `put` - Dispatch Action
@@ -1125,6 +1129,9 @@ type SagaContext = {
   readableStoreState: Readable<StoreState>;
 };
 ```
+
+### Saga Rules
+- **Always use selector functions** — Never use `yield* select((state) => ...)` inline lambdas. Create a selector in the selectors file and use `.effect()` or `.select`.
 
 ---
 

@@ -2,9 +2,11 @@
   import Fa from 'svelte-fa';
   import { faPlus, faRotateLeft, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { specialistsStore } from '$lib/stores/specialists.store.svelte';
-  import { modelStore } from '$lib/stores/model.store.svelte';
   import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
   import { additionalAgentsStore } from '$lib/stores/additional-agents.store.svelte';
+  import { selectSelectedModel } from '$lib/store/slices/model/model-selectors';
+  import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import Button from '$lib/components/ui/button/button.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
@@ -35,7 +37,6 @@
 
   // Model selection for system prompt
   let selectedProviderValue = $state(activeProviderStore.activeProviderId);
-  let selectedModelValue = $state(modelStore.selectedModel);
   const enabledProviderIds = $derived(additionalAgentsStore.getEnabledProviderIds());
   let usableProviderIds = $state<string[]>([]);
   let usableProviderRequestId = 0;
@@ -55,22 +56,20 @@
     selectedProviderValue = activeProviderStore.activeProviderId;
   });
 
-  // Sync with modelStore
-  $effect(() => {
-    selectedModelValue = modelStore.selectedModel;
-  });
+  const dispatch = getDispatch();
+  const selectedModel = selectSelectedModel();
 
   // Check if all specialists already use the currently selected default model
   const allSpecialistsUseSelectedModel = $derived(
     specialistsStore.specialists.length > 0 &&
       specialistsStore.specialists.every(
-        (s) => specialistsStore.getEffectiveModel(s.id) === selectedModelValue,
+        (s) => specialistsStore.getEffectiveModel(s.id) === $selectedModel,
       ),
   );
 
   // Get the default model for new specialists - use the user's current selection
   function getDefaultModel(): string {
-    return modelStore.selectedModel;
+    return $selectedModel;
   }
 
   // New specialist form state
@@ -167,7 +166,11 @@
     }
   });
 
-  async function resolveModelOrToast(providerId: string, currentModel?: string, fallbackModel?: string) {
+  async function resolveModelOrToast(
+    providerId: string,
+    currentModel?: string,
+    fallbackModel?: string,
+  ) {
     const resolvedModel = await resolveCompatibleModelForProvider(providerId, {
       currentModel,
       fallbackModel,
@@ -184,9 +187,8 @@
     if (!newProvider || newProvider === activeProviderStore.activeProviderId) return;
 
     activeProviderStore.setActiveProvider(newProvider);
-    await modelStore.reloadModelsForProvider();
-    selectedProviderValue = activeProviderStore.activeProviderId;
-    selectedModelValue = modelStore.selectedModel;
+    dispatch(reloadModelsForProvider());
+    selectedProviderValue = newProvider;
   }
 
   async function handleSpecialistCodingAgentChange(newProvider: string) {
@@ -203,7 +205,9 @@
     specialistModelValue = nextModel;
 
     if (isBuiltIn) {
-      const resolvedDefaultProvider = specialistsStore.getResolvedDefaultCodingAgent(currentSpecialist.id);
+      const resolvedDefaultProvider = specialistsStore.getResolvedDefaultCodingAgent(
+        currentSpecialist.id,
+      );
       if (newProvider !== resolvedDefaultProvider) {
         specialistsStore.setCodingAgentOverride(currentSpecialist.id, newProvider);
       } else {
@@ -244,6 +248,8 @@
   // Handle specialist model changes — only called when the user explicitly picks a model
   function handleSpecialistModelChange(newModel: string) {
     if (!currentSpecialist || !newModel) return;
+
+    specialistModelValue = newModel;
 
     if (isBuiltIn) {
       // Get the resolved default model for the current provider (from tier)
@@ -401,7 +407,7 @@
             Default model
           </p>
           <ModelPicker
-            bind:selectedModel={selectedModelValue}
+            selectedModel={$selectedModel}
             providerId={selectedProviderValue}
             showDefaultOption={false}
             variant="default"
@@ -414,8 +420,8 @@
           <button
             type="button"
             onclick={() => {
-              specialistsStore.setModelOverrideForAll(selectedModelValue);
-              track('Used Model for All Specialists', { model_id: selectedModelValue });
+              specialistsStore.setModelOverrideForAll($selectedModel);
+              track('Used Model for All Specialists', { model_id: $selectedModel });
             }}
             class="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           >
@@ -505,7 +511,7 @@
           {/if}
         </div>
         <ModelPicker
-          bind:selectedModel={specialistModelValue}
+          selectedModel={specialistModelValue}
           onModelChange={handleSpecialistModelChange}
           providerId={specialistCodingAgentValue}
           showDefaultOption={false}
@@ -594,7 +600,10 @@
       <div>
         <span class="text-sm font-medium text-foreground block mb-1.5">Default Model</span>
         <ModelPicker
-          bind:selectedModel={newModel}
+          selectedModel={newModel}
+          onModelChange={(model) => {
+            newModel = model;
+          }}
           providerId={newCodingAgent}
           showDefaultOption={false}
           variant="default"

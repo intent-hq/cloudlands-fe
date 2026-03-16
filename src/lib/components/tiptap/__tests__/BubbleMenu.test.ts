@@ -30,11 +30,10 @@ vi.mock('$features/agent/instruction-registry', () => ({
   getAgentTypes: vi.fn().mockReturnValue([]),
 }));
 
-// Mock model store
-vi.mock('$lib/stores/model.store.svelte', () => ({
-  modelStore: {
-    selectedModel: 'test-model',
-  },
+// Mock model selectors
+vi.mock('$lib/store/slices/model/model-selectors', () => ({
+  selectWorkspaceDefaultModel: () => ({ subscribe: (fn: (v: string) => void) => { fn('test-model'); return () => {}; } }),
+  selectSelectedModel: () => ({ subscribe: (fn: (v: string) => void) => { fn('test-model'); return () => {}; } }),
 }));
 
 // Mock UnifiedAgentFactory

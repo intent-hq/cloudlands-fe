@@ -1,4 +1,4 @@
-import { call, select, takeEvery } from "typed-redux-saga";
+import { call, takeEvery } from "typed-redux-saga";
 import { invoke } from "$lib/electron-bridge";
 import { PIP_CHANNELS } from "$shared/ipc/channels";
 import { createLogger } from "$lib/utils/client-logger";
@@ -7,8 +7,9 @@ import {
   closePip,
   closeAllPipForWorkspace,
   closeAllPip,
-  type PipState,
+  type PipWindowState,
 } from "../pip-slice";
+import { selectPipState } from "../pip-selectors";
 
 const logger = createLogger("PipActionsSaga");
 
@@ -51,8 +52,8 @@ function* handleCloseAllPipForWorkspace(
 
 function* handleCloseAllPip() {
   try {
-    const pipState: PipState = yield* select((state: any) => state.pip);
-    const allWindows = Object.values(pipState.openPipWindows);
+    const pipState = yield* selectPipState.effect();
+    const allWindows: PipWindowState[] = Object.values(pipState.openPipWindows);
     for (const win of allWindows) {
       yield* call(invoke, PIP_CHANNELS.CLOSE, {
         workspaceId: win.workspaceId,

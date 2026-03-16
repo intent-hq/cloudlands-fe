@@ -2911,9 +2911,7 @@
           Folding unchanged regions...
         </div>
       {:else if foldingStatus === 'folded'}
-        <div
-          class="absolute top-2 right-2 z-10 px-2 py-1 bg-muted text-subtle text-xs rounded"
-        >
+        <div class="absolute top-2 right-2 z-10 px-2 py-1 bg-muted text-subtle text-xs rounded">
           <Fa icon={faEye} size="sm" class="mr-1" />
           Unchanged regions folded
         </div>

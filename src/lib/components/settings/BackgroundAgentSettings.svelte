@@ -11,11 +11,13 @@
     backgroundAgentSettingsStore,
     BACKGROUND_AGENT_TYPE_INFO,
   } from '$lib/stores/background-agent-settings.store.svelte';
-  import { modelStore } from '$lib/stores/model.store.svelte';
+  import { selectAvailableModels } from '$lib/store/slices/model/model-selectors';
   import { Dropdown, type DropdownOption } from '$lib/components/ui/dropdown';
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import Fa from 'svelte-fa';
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
+
+  const availableModels$ = selectAvailableModels();
 
   const USE_DEFAULT_VALUE = '__default__';
 
@@ -58,7 +60,7 @@
   // Model options for override dropdowns - includes "Use default" option
   const overrideModelOptions = $derived<DropdownOption[]>([
     { value: USE_DEFAULT_VALUE, label: 'Use default quick action model' },
-    ...modelStore.availableModels.map((model) => ({
+    ...$availableModels$.map((model) => ({
       value: model.value,
       label: model.label,
     })),
@@ -67,7 +69,7 @@
   // Get display label for an override value
   function getOverrideLabel(value: string): string {
     if (value === USE_DEFAULT_VALUE) return 'Use default quick action model';
-    return modelStore.getModelLabel(value) || value;
+    return $availableModels$.find(m => m.value === value)?.label || value;
   }
 </script>
 
@@ -78,8 +80,11 @@
   </div>
   <div class="shrink-0 w-72">
     <ModelPicker
-      bind:selectedModel={defaultModelValue}
-      onModelChange={(model) => backgroundAgentSettingsStore.setDefaultModel(model)}
+      selectedModel={defaultModelValue}
+      onModelChange={(model) => {
+        defaultModelValue = model;
+        backgroundAgentSettingsStore.setDefaultModel(model);
+      }}
       showManageLink={false}
       showDefaultOption={false}
       variant="default"

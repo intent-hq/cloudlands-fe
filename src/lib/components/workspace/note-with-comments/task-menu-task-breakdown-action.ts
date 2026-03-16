@@ -1,4 +1,4 @@
-import { modelStore } from '$lib/stores/model.store.svelte';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import type { Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { createAgentTypeId } from '$shared/types/agent.types';
@@ -71,7 +71,7 @@ export async function runTaskBreakdownTaskMenuAction({
       workspaceId: WorkspaceId(workspace.id),
       initialMessage: userMessage, // User message (sent as initial message)
       agentType: createAgentTypeId('task-breakdown'),
-      model: modelStore.getWorkspaceDefaultModel(workspace.id),
+      model: getReduxStore().getState().model.workspaceModels?.[workspace.id] ?? getReduxStore().getState().model.selectedModel,
       contextReferences: context,
       source: 'task-menu',
       metadata: {

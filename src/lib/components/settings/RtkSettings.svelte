@@ -10,8 +10,12 @@
   import { SETTINGS_CHANNELS, SYSTEM_CHANNELS } from '$shared/ipc/channels';
   import { onMount } from 'svelte';
   import { invoke } from '$lib/electron-bridge';
-  import { addTerminal, openTerminalOverlay, toggleTerminalOverlay } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
   import { getDispatch } from '$lib/store/utils/utils';
+  import {
+    addTerminal,
+    openTerminalOverlay,
+    toggleTerminalOverlay,
+  } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
   import { ROOT_WORKSPACE_ID } from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
 
   const dispatch = getDispatch();
@@ -58,7 +62,7 @@
     try {
       // Create a new terminal tab and open the overlay
       const termId = `terminal-${Date.now()}`;
-      dispatch(addTerminal(termId, 'Install RTK'));
+      dispatch(addTerminal(ROOT_WORKSPACE_ID, termId, 'Install RTK'));
       dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, termId));
 
       // Wait briefly for the terminal to initialize, then write the command
@@ -108,7 +112,12 @@
           Agents will prefix supported commands with rtk for compressed, LLM-friendly output.
         {:else}
           <span class="text-muted-foreground">rtk is not installed</span>
-          <button type="button" class="text-primary hover:underline cursor-pointer text-xs ml-1" onclick={recheckRtk} disabled={checking}>{checking ? 'Checking…' : 'Check again'}</button>
+          <button
+            type="button"
+            class="text-primary hover:underline cursor-pointer text-xs ml-1"
+            onclick={recheckRtk}
+            disabled={checking}>{checking ? 'Checking…' : 'Check again'}</button
+          >
         {/if}
       </p>
     </div>
@@ -123,12 +132,19 @@
   </div>
   {#if !rtkAvailable}
     <p class="text-xs text-muted-foreground mt-2">
-      RTK compresses CLI output for faster, cheaper agent interactions.
-      Install with
-      <button type="button" class="text-primary hover:underline cursor-pointer font-mono" onclick={installRtk}>brew install rtk</button>
+      RTK compresses CLI output for faster, cheaper agent interactions. Install with
+      <button
+        type="button"
+        class="text-primary hover:underline cursor-pointer font-mono"
+        onclick={installRtk}>brew install rtk</button
+      >
       or visit
-      <a href="https://github.com/rtk-ai/rtk" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">github.com/rtk-ai/rtk</a>.
+      <a
+        href="https://github.com/rtk-ai/rtk"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="text-primary hover:underline">github.com/rtk-ai/rtk</a
+      >.
     </p>
   {/if}
 {/if}
-

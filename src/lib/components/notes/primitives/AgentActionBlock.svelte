@@ -16,7 +16,8 @@
   import { unifiedStateStore } from '$features/agent/services/unified-state-store';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { parseAgentTypeId } from '$shared/types/agent.types';
-  import { modelStore } from '$lib/stores/model.store.svelte';
+  import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
+  import { get } from 'svelte/store';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
 
@@ -84,7 +85,7 @@
       const result = await agentFactory.createAgent(workspace, {
         name: primitive.goal.length > 40 ? primitive.goal.slice(0, 40) + '...' : primitive.goal,
         workspaceId: WorkspaceId(workspaceId),
-        model: modelStore.getWorkspaceDefaultModel(workspaceId),
+        model: get(selectWorkspaceDefaultModel(workspaceId)),
         agentType: parseAgentTypeId(primitive.agentId || '') || 'chat',
         source: 'agent-action-block',
         initialMessage: primitive.goal,

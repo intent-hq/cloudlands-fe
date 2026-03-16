@@ -25,7 +25,9 @@
   import WarpIcon from '$lib/components/shared/icons/WarpIcon.svelte';
   import XcodeIcon from '$lib/components/shared/icons/XcodeIcon.svelte';
   import { invoke } from '$lib/electron-bridge';
-  import { installedEditorsStore } from '$lib/stores/installed-editors.store.svelte';
+  import { fetchEditors } from '$lib/store/slices/installed-editors/installed-editors-slice';
+  import { selectInstalledEditorsFiltered } from '$lib/store/slices/installed-editors/installed-editors-selectors';
+  import { getDispatch } from '$lib/store/utils/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import { isAbsolutePath, toNativePath, isWindowsPlatform } from '$lib/utils/path-utils';
   import {
@@ -101,6 +103,8 @@
   }: Props = $props();
 
   const logger = createLogger('WorkspaceActionsMenu');
+  const dispatch = getDispatch();
+  const installedEditors$ = selectInstalledEditorsFiltered();
 
   let resolvedPath: string = $state('');
   let resolvedFolderPath: string = $state('');
@@ -108,11 +112,11 @@
 
   // Fetch installed editors when component mounts
   $effect(() => {
-    installedEditorsStore.fetch();
+    dispatch(fetchEditors());
   });
 
   // Get installed editors for dynamic menu
-  const installedEditors = $derived(installedEditorsStore.editors.filter((e) => e.installed));
+  const installedEditors = $derived($installedEditors$);
 
   // Resolve the absolute path
   $effect(() => {

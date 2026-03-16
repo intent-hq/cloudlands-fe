@@ -7,7 +7,9 @@
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
   import { debugConfig } from '$lib/config/debug';
   import type { StarterPrompt } from '$lib/data/starter-prompts';
-  import { modelStore } from '$lib/stores/model.store.svelte';
+  import { selectSelectedModel, selectAvailableModels } from '$lib/store/slices/model/model-selectors';
+  import { setWorkspaceModel } from '$lib/store/slices/model/model-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import { specialistsStore } from '$lib/stores/specialists.store.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import {
@@ -53,6 +55,9 @@
     parseCompoundModelId,
   } from '$shared/config/provider-config';
 
+  const dispatch = getDispatch();
+  const availableModels$ = selectAvailableModels();
+  const selectedModel$ = selectSelectedModel();
   const logger = createLogger('CompactWorkspaceInitializer');
 
   // Constants
@@ -1569,18 +1574,18 @@
       const storeProvider = activeProviderStore.activeProviderId;
       if (
         resolvedModel &&
-        modelStore.availableModels.length > 0 &&
+        $availableModels$.length > 0 &&
         selectedProvider === storeProvider
       ) {
-        const availableModelValues = modelStore.availableModels.map((m) => m.value);
+        const availableModelValues = $availableModels$.map((m) => m.value);
         if (!availableModelValues.includes(resolvedModel)) {
           logger.warn('Tier-resolved model not in available list, using store default', {
             resolvedModel,
-            fallback: modelStore.selectedModel,
+            fallback: $selectedModel$,
             selectedProvider,
             availableCount: availableModelValues.length,
           });
-          resolvedModel = modelStore.selectedModel;
+          resolvedModel = $selectedModel$;
         }
       }
 
@@ -1684,7 +1689,7 @@
       const effectiveModel = resolvedModel;
 
       if (effectiveModel) {
-        modelStore.setWorkspaceDefaultModel(workspace.id, effectiveModel);
+        dispatch(setWorkspaceModel({ workspaceId: workspace.id, model: effectiveModel }));
         logger.info('Set workspace default model', {
           workspaceId: workspace.id,
           effectiveModel,
@@ -2521,7 +2526,10 @@
         <div class="mb-6">
           <InitialAgentPicker
             bind:selectedSpecialist
-            bind:selectedModel
+            selectedModel={selectedModel}
+            onModelChange={(model) => {
+              selectedModel = model;
+            }}
             bind:modelWasOverridden
             bind:isTeamMode
             bind:selectedProvider

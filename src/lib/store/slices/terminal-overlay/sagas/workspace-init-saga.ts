@@ -1,4 +1,4 @@
-import { call, put, takeEvery, select } from "typed-redux-saga";
+import { call, put, takeEvery } from "typed-redux-saga";
 import { terminalManager } from "$features/terminal/terminal-manager.svelte";
 import {
   openTerminalOverlay,
@@ -9,6 +9,7 @@ import {
   type PersistedWorkspaceState,
   WORKSPACE_STATE_STORAGE_KEY,
 } from "../terminal-overlay-slice";
+import { selectWorkspaceTerminalState } from "../terminal-overlay-selectors";
 import { getStoredCustomName } from "./persistence-saga";
 
 // ============================================================================
@@ -54,7 +55,7 @@ export function* watchSetWorkspace() {
     if (typeof window === 'undefined') return;
 
     // Check if this workspace already has terminals loaded in the Record
-    const wsState = yield* select((state) => state.terminalOverlay.workspaces[wsId]);
+    const wsState = yield* selectWorkspaceTerminalState.effect(wsId);
     if (wsState && wsState.terminals.length > 0) return;
 
     // Load terminals for new workspace
@@ -75,8 +76,8 @@ export function* watchOpenWithWorkspace() {
     if (!wsId || typeof window === 'undefined') return;
 
     // Check if this workspace already has terminals in the Record
-    const wsState = yield* select((state) => state.terminalOverlay.workspaces[wsId]);
-    if (wsState && wsState.terminals.length > 0) return;
+    const wsState = yield* selectWorkspaceTerminalState.effect(wsId);
+    if (wsState.terminals.length > 0) return;
 
     const terminals: TerminalTab[] = yield* call(loadTerminalMetadataForWorkspace, wsId);
     if (terminals.length > 0) {

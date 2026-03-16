@@ -11,10 +11,9 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { toast } from '$lib/components/ui/toast';
   import { invoke } from '$lib/electron-bridge';
-  import {
-    installedEditorsStore,
-    type InstalledEditor,
-  } from '$lib/stores/installed-editors.store.svelte';
+  import type { InstalledEditor } from '$lib/store/slices/installed-editors/installed-editors-slice';
+  import { fetchEditors } from '$lib/store/slices/installed-editors/installed-editors-slice';
+  import { selectInstalledEditors } from '$lib/store/slices/installed-editors/installed-editors-selectors';
   import { setOpenAction, type OpenAction } from '$lib/store/slices/open-action/open-action-slice';
   import { selectOpenAction } from '$lib/store/slices/open-action/open-action-selectors';
   import { getDispatch } from '$lib/store/utils/utils';
@@ -102,12 +101,13 @@
 
   const dispatch = getDispatch();
   const openAction = selectOpenAction();
+  const installedEditors$ = selectInstalledEditors();
 
   let dropdownOpen = $state(false);
 
   // Fetch installed editors when component mounts
   $effect(() => {
-    installedEditorsStore.fetch();
+    dispatch(fetchEditors());
   });
 
   /** Convert installed editor to action config */
@@ -127,7 +127,7 @@
 
   // Build actions from installed editors dynamically
   let actions: ActionConfig[] = $derived.by(() => {
-    const installedEditors = installedEditorsStore.editors;
+    const installedEditors = $installedEditors$;
 
     // Convert installed editors to action configs, sorted by priority
     const editorActions: ActionConfig[] = installedEditors

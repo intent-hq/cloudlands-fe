@@ -44,7 +44,8 @@
   import confetti from 'canvas-confetti';
   import { createAgentTypeId } from '$shared/types/agent.types';
   import { unifiedIdService } from '$shared/services/unified-id.service';
-  import { modelStore } from '$lib/stores/model.store.svelte';
+  import { selectSelectedModel } from '$lib/store/slices/model/model-selectors';
+  import { setWorkspaceModel } from '$lib/store/slices/model/model-slice';
   import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
   import {
     parseAllReviewComments,
@@ -63,6 +64,7 @@
   import { getDispatch } from '$lib/store/utils/utils';
 
   const dispatch = getDispatch();
+  const selectedModel$ = selectSelectedModel();
   const logger = createLogger('AcceptChangesPanel');
   const { state: githubAuthState } = githubAuthStore;
 
@@ -1502,7 +1504,7 @@
       const initialAgentId = unifiedIdService.generateAgentId();
 
       // Get model from model store
-      const selectedModel = modelStore.selectedModel || DEFAULT_AGENT_MODEL;
+      const selectedModel = $selectedModel$ || DEFAULT_AGENT_MODEL;
 
       // Prepare the initial agent configuration
       const initialAgent = {
@@ -1551,7 +1553,7 @@
 
       // Save the selected model as the workspace's default model
       if (selectedModel) {
-        modelStore.setWorkspaceDefaultModel(newWorkspace.id, selectedModel);
+        dispatch(setWorkspaceModel({ workspaceId: newWorkspace.id, model: selectedModel }));
       }
 
       // Store the initial agent configuration for the workspace page to pick up

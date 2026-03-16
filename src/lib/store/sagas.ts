@@ -17,8 +17,11 @@ import { noteSpellcheckSettingsSaga } from "./slices/note-spellcheck-settings/sa
 import { workspaceSettingsSaga } from "./slices/workspace-settings/sagas/workspace-settings-saga";
 import { betaUpdatesSaga } from "./slices/beta-updates/sagas/beta-updates-saga";
 import { noteReadTrackingSaga } from "./slices/note-read-tracking/sagas/note-read-tracking-saga";
+import { installedEditorsSaga } from "./slices/installed-editors/sagas/installed-editors-saga";
 import { permissionSaga } from "./slices/permission/sagas/permission-saga";
 import { pipSaga } from "./slices/pip/sagas/pip-saga";
+import { featureCodesSaga } from "./slices/feature-codes/sagas/feature-codes-saga";
+import { modelSaga } from "./slices/model/sagas/model-saga";
 import { zoomSaga } from "./slices/zoom/sagas/zoom-saga";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
@@ -44,7 +47,10 @@ export const sagas = {
   notificationSettingsSaga,
   noteSpellcheckSettingsSaga,
   noteReadTrackingSaga,
+  installedEditorsSaga,
   permissionSaga,
+  featureCodesSaga,
+  modelSaga,
   pipSaga,
   workspaceSettingsSaga,
   zoomSaga,

@@ -40,6 +40,10 @@
     getChatService,
     type ChatState,
   } from '$features/agent/services/chat.service';
+  import {
+    hasChatServiceStateChanged,
+    syncChatStateFromService,
+  } from './chat-panel-state-sync';
   import { agentService, type AgentMessage } from '$features/agent/agent.service';
   import { sessionStore } from '$features/agent/browser';
   import { browser } from '$app/environment';
@@ -63,6 +67,7 @@
   } from '$lib/store/slices/multi-panel-context/multi-panel-context-selectors';
   import { getDispatch } from '$lib/store/utils/utils';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
   import {
     getTasksForAgent,
     type TaskAgentAssociation,
@@ -77,7 +82,6 @@
   import DateSeparator from './DateSeparator.svelte';
   import EventWakeupBanner, { parseAgentEvents } from './EventWakeupBanner.svelte';
   import AgentCard from './AgentCard.svelte';
-  import StickyMessageHeader from './StickyMessageHeader.svelte';
   import StreamingStatus from './StreamingStatus.svelte';
   import RegularAgentWelcome from './RegularAgentWelcome.svelte';
   import SuggestedPrompts from './SuggestedPrompts.svelte';
@@ -128,15 +132,15 @@
   import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
   import AuroraBackground from './AuroraBackground.svelte';
   import { invoke, listenSync } from '$lib/electron-bridge';
-  import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
   import { specialistsStore } from '$lib/stores/specialists.store.svelte';
-  import { additionalAgentsStore } from '$lib/stores/additional-agents.store.svelte';
-  import { resolveUsableProviderIds } from '$lib/utils/provider-model-selection';
-  import { resolveProviderOverlayState } from './provider-overlay';
-  import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
-  import { resolveHydratedInputModel } from './input-hydration';
+  import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
+
   import { getAgentProvider } from '$shared/types/agent-session';
-  import { getProviderConfig } from '$shared/config/provider-config';
+  import {
+    getDefaultProviderId,
+    getProviderConfig,
+    parseCompoundModelId,
+  } from '$shared/config/provider-config';
   import { cleanErrorMessage } from '$shared/errors/messages';
 
   const logger = createLogger('ChatPanel');
@@ -150,6 +154,40 @@
   const FORCE_VISIBLE_TURN_COUNT = 3;
   /** PERF: Minimum turns before enabling lazy loading (overhead not worth it for small conversations) */
   const LAZY_TURN_THRESHOLD = 10;
+
+  /**
+   * Format message content for sticky header display.
+   * Extracts context reference labels and cleans up raw @context[...] patterns.
+   */
+  function formatMessageForStickyHeader(message: AgentMessage): string {
+    const rawText = extractAllContent(message);
+
+    // Get context references from metadata
+    const contextRefs = message.metadata?.contextReferences as
+      | Array<{ provider?: string; identifier?: string; title?: string }>
+      | undefined;
+
+    // Build labels from context references
+    const pillLabels: string[] = [];
+    if (contextRefs && contextRefs.length > 0) {
+      for (const ref of contextRefs) {
+        const label = ref.title || ref.identifier || 'Context';
+        pillLabels.push(`🔗 ${label}`);
+      }
+    }
+
+    // Strip out @context[...] patterns from raw text
+    const cleanText = rawText.replace(/@context\[[^\]]*\]/g, '').trim();
+
+    // Combine pills and clean text
+    if (pillLabels.length > 0 && cleanText) {
+      return `${pillLabels.join(' ')} — ${cleanText}`;
+    } else if (pillLabels.length > 0) {
+      return pillLabels.join(' ');
+    } else {
+      return cleanText || rawText;
+    }
+  }
 
   interface Props {
     workspace: Workspace | null;
@@ -261,80 +299,42 @@
   let hasPendingPermission = $derived(agentPermissionRequests.length > 0);
 
   let hiddenProviders = $state<string[]>([]);
-  let unusableProviders = $state<string[]>([]);
-  let providerUsabilityRequestId = 0;
 
-  // Resolve canonical agent provider from session state.
-  let agentProviderDetails = $derived.by(() => {
-    if (sandboxMode) return null;
+  // Provider mismatch detection — blocks interaction when agent's provider ≠ active provider
+  // Compares resolved/canonical provider IDs to handle aliases (e.g., 'acp' → 'auggie')
+  let isProviderMismatch = $derived.by(() => {
+    if (sandboxMode) return false;
+    const session = chatState.session;
+    if (!session) return false;
+    const agentProvider = getAgentProvider(session);
+    if (!agentProvider) return false; // Legacy agents without provider — allow interaction
+    // Normalize both provider IDs through getProviderConfig to resolve aliases
+    // (e.g., 'acp' and 'auggie' both resolve to the 'auggie' config)
+    const resolvedAgentProvider = getProviderConfig(agentProvider).id;
+    const resolvedActiveProvider = getProviderConfig(activeProviderStore.activeProviderId).id;
+    return resolvedAgentProvider !== resolvedActiveProvider;
+  });
+
+  let matchedProviders = $derived.by(() => {
+    if (!isProviderMismatch) return null;
     const session = chatState.session;
     if (!session) return null;
     const agentProvider = getAgentProvider(session);
     if (!agentProvider) return null;
     const agentProviderConfig = getProviderConfig(agentProvider);
+    const activeProviderName = getProviderConfig(activeProviderStore.activeProviderId).displayName;
     return {
-      id: agentProviderConfig.id,
-      name: agentProviderConfig.displayName,
+      agentProviderName: agentProviderConfig.displayName,
+      agentProviderId: agentProviderConfig.id,
+      activeProviderName,
     };
   });
 
-  // Resolve whether the bound provider is currently usable by trying to load its models.
-  $effect(() => {
-    const providerId = agentProviderDetails?.id;
-    if (!providerId) {
-      unusableProviders = [];
-      return;
-    }
-
-    const requestId = ++providerUsabilityRequestId;
-    void resolveUsableProviderIds([providerId])
-      .then((usableProviderIds) => {
-        if (requestId !== providerUsabilityRequestId) return;
-        unusableProviders = usableProviderIds.includes(providerId) ? [] : [providerId];
-      })
-      .catch(() => {
-        if (requestId !== providerUsabilityRequestId) return;
-        // Keep chat accessible on transient availability lookup failures.
-        unusableProviders = [];
-      });
-  });
-
-  // Provider display name for contextual status messages (e.g. "Claude Code is taking longer than usual...")
-  // Derived from the session's actual provider (not the active selection) so that
-  // switching providers mid-stream doesn't attribute latency to the wrong provider.
-  let providerDisplayName = $derived.by(() => {
-    const session = chatState.session;
-    if (session) {
-      const agentProvider = getAgentProvider(session);
-      if (agentProvider) {
-        return getProviderConfig(agentProvider).displayName;
-      }
-    }
-    // Fallback to active provider if no session/provider info available
-    return getProviderConfig(activeProviderStore.activeProviderId).displayName;
-  });
-
+  // Whether the agent's provider is hidden (env var gate) — used to hide "switch back" button
   let isAgentProviderHidden = $derived.by(() => {
-    if (!agentProviderDetails) return false;
-    return hiddenProviders.includes(agentProviderDetails.id);
+    if (!isProviderMismatch || !matchedProviders) return false;
+    return hiddenProviders.includes(matchedProviders.agentProviderId);
   });
-  let disabledProviderIds = $derived.by(() => {
-    if (!agentProviderDetails) return [];
-    return additionalAgentsStore.isProviderEnabled(agentProviderDetails.id)
-      ? []
-      : [agentProviderDetails.id];
-  });
-  let isAgentProviderDisabled = $derived.by(() => {
-    if (!agentProviderDetails) return false;
-    return disabledProviderIds.includes(agentProviderDetails.id);
-  });
-  let isAgentProviderUnavailable = $derived.by(() => {
-    if (!agentProviderDetails) return false;
-    return unusableProviders.includes(agentProviderDetails.id);
-  });
-  let hydratedInputModel = $derived.by(() =>
-    resolveHydratedInputModel(chatState.session, agentModel),
-  );
 
   // Track previous workspace to detect changes
   let previousWorkspaceId = $state<string | null>(null);
@@ -1140,24 +1140,6 @@
         } as import('$features/agent/agent.service').AgentMessage)
       : null,
   );
-  let canChangeAgentProvider = $derived.by(() =>
-    resolveCanChangeAgentProvider({
-      session: chatState.session,
-      messages: chatState.messages,
-      pendingInitialPrompt,
-      pendingContextReferenceCount: pendingInitialData.contextReferences?.length || 0,
-    }),
-  );
-  let providerOverlayState = $derived.by(() =>
-    resolveProviderOverlayState({
-      agentProviderId: agentProviderDetails?.id,
-      hiddenProviderIds: hiddenProviders,
-      disabledProviderIds,
-      unusableProviderIds: unusableProviders,
-      canChangeAgentProvider,
-    }),
-  );
-  let showProviderMismatchOverlay = $derived(providerOverlayState.show);
 
   // Note: pendingInitialPrompt is cleared in sendInitialMessage() after the message is sent
   // We don't need a reactive effect here as it can cause infinite loops
@@ -1574,15 +1556,7 @@
         // Use the per-agent instance's state directly — it's always for this agent
         const initialState = chatService.getState();
         if (initialState.session) {
-          _chatStateInternal = {
-            ..._chatStateInternal,
-            messages: initialState.messages,
-            isStreaming: initialState.isStreaming,
-            isProcessing: initialState.isProcessing,
-            streamingContent: initialState.streamingContent,
-            session: initialState.session,
-            error: initialState.error,
-          };
+          _chatStateInternal = syncChatStateFromService(_chatStateInternal, initialState);
 
           logger.info('Restored agent state from per-agent ChatService on mount', {
             agentId,
@@ -1666,23 +1640,15 @@
       // Check if anything actually changed to avoid unnecessary updates
       // that could trigger effect loops
       const currentMessages = currentChatState.messages;
-      const messagesChanged =
-        state.messages.length !== currentMessages.length ||
-        state.messages[state.messages.length - 1]?.id !==
-          currentMessages[currentMessages.length - 1]?.id ||
-        // Compare last message's content blocks length for streaming updates
-        state.messages[state.messages.length - 1]?.contentBlocks?.length !==
-          currentMessages[currentMessages.length - 1]?.contentBlocks?.length;
+
+      if (!hasChatServiceStateChanged(currentChatState, state)) {
+        return; // No changes, skip update
+      }
+
       const streamingChanged =
         state.isStreaming !== currentChatState.isStreaming ||
         state.isProcessing !== currentChatState.isProcessing ||
         state.streamingContent !== currentChatState.streamingContent;
-      const sessionChanged = state.session?.id !== currentChatState.session?.id;
-      const errorChanged = state.error !== currentChatState.error;
-
-      if (!messagesChanged && !streamingChanged && !sessionChanged && !errorChanged) {
-        return; // No changes, skip update
-      }
 
       // Per-agent ChatService: state is always for this agent, no session-mismatch guard needed.
 
@@ -1771,61 +1737,11 @@
       }
 
       // Update chat state with new values from service
-      // Only update specific fields to avoid overwriting local state
-      // Preserve streamingStartTime across store updates — the store doesn't track
-      // this value, so we use the previous local state to avoid resetting the timer.
-      // IMPORTANT: use currentChatState (untracked) not _chatStateInternal (tracked)
-      // to avoid creating a reactive dependency that re-triggers this effect.
-      //
-      // Reset the timer whenever visible activity occurs:
-      // - New messages arrive (e.g. prepping steps) — user can see progress
-      // - Streaming content transitions from non-empty to empty (e.g. between phases)
-      // This ensures the 30s "slow" threshold only counts from the last visible activity.
-      const prevContentLength = currentChatState.streamingContent?.length ?? 0;
-      const newContentLength = state.streamingContent?.length ?? 0;
-      const contentCleared = prevContentLength > 0 && newContentLength === 0;
-      const hasNewActivity = messagesChanged || contentCleared;
-
-      // Keep timers alive during both streaming and processing-only periods
-      // (e.g. agent activation where isProcessing=true but isStreaming=false)
-      const isActive = effectiveIsStreaming || effectiveIsProcessing;
-
-      const contentGrew = newContentLength > prevContentLength;
-
-      // When not active, both timers are off
-      let streamingStartTime: number | null = null;
-      let lastChunkTime: number | null = null;
-
-      if (isActive) {
-        if (hasNewActivity) {
-          // Visible activity (messages changed, content cleared) — reset the silence timer
-          // and record that we received data from the server
-          streamingStartTime = Date.now();
-          lastChunkTime = Date.now();
-        } else if (contentGrew) {
-          // New streaming text arrived — keep the existing start time, update last chunk
-          streamingStartTime = currentChatState.streamingStartTime ?? Date.now();
-          lastChunkTime = Date.now();
-        } else {
-          // No new activity — preserve existing timestamps
-          // streamingStartTime falls back to Date.now() because the silence timer always needs a reference point
-          // lastChunkTime falls back to null because null means "no server data received yet" (drives hasReceivedData)
-          streamingStartTime = currentChatState.streamingStartTime ?? Date.now();
-          lastChunkTime = currentChatState.lastChunkTime ?? null;
-        }
-      }
-
-      _chatStateInternal = {
-        ...currentChatState,
-        session: state.session,
-        messages: state.messages,
+      _chatStateInternal = syncChatStateFromService(currentChatState, state, {
         isStreaming: effectiveIsStreaming,
         isProcessing: effectiveIsProcessing,
-        streamingContent: state.streamingContent,
-        error: state.error,
-        streamingStartTime,
-        lastChunkTime,
-      };
+        preserveTransientState: preserveStreamingState,
+      });
 
       // SCROLL FIX: Restore scroll anchor after DOM settles
       if (scrollAnchorChat && scrollContainer) {
@@ -3216,12 +3132,7 @@
     if (!workspace) return;
     try {
       // Per-agent ChatService: always bound to this agent, no re-acquisition needed
-      await chatService.editAndRegenerate(
-        messageId,
-        newText,
-        workspace,
-        model ? { model } : undefined,
-      );
+      await chatService.editAndRegenerate(messageId, newText, workspace, model ? { model } : undefined);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Something went wrong';
       logger.error('Failed to edit message', error);
@@ -3265,13 +3176,6 @@
   // Handle selecting a suggested prompt - sends immediately
   function handleSelectSuggestedPrompt(prompt: string) {
     handleSend(prompt);
-  }
-
-  // Handle editing a suggested prompt - loads into input without sending
-  async function handleEditSuggestedPrompt(prompt: string) {
-    inputValue = prompt;
-    await inputComponent?.setContent?.(prompt);
-    inputComponent?.focus?.();
   }
 
   // Export functions for parent components
@@ -3648,7 +3552,6 @@
                         isStreaming={chatState.isStreaming}
                         isProcessing={chatState.isProcessing}
                         startTime={chatState.streamingStartTime}
-                        lastChunkTime={chatState.lastChunkTime}
                         streamingContentLength={chatState.streamingContent?.length ?? 0}
                         error={chatState.error}
                         isStalled={chatState.isStalled}
@@ -3658,7 +3561,6 @@
                         onRetryWithModel={handleRetryWithModel}
                         onStop={handleStop}
                         seed={agentId}
-                        providerName={providerDisplayName}
                       />
                     </div>
                   {/if}
@@ -3671,7 +3573,6 @@
                       isStreaming={chatState.isStreaming}
                       isProcessing={chatState.isProcessing}
                       startTime={chatState.streamingStartTime}
-                      lastChunkTime={chatState.lastChunkTime}
                       streamingContentLength={chatState.streamingContent?.length ?? 0}
                       error={chatState.error}
                       isStalled={chatState.isStalled}
@@ -3681,7 +3582,6 @@
                       onRetryWithModel={handleRetryWithModel}
                       onStop={handleStop}
                       seed={agentId}
-                      providerName={providerDisplayName}
                     />
                   </div>
                 {/if}
@@ -3720,7 +3620,6 @@
                         isStreaming={chatState.isStreaming}
                         isProcessing={chatState.isProcessing}
                         startTime={chatState.streamingStartTime}
-                        lastChunkTime={chatState.lastChunkTime}
                         streamingContentLength={chatState.streamingContent?.length ?? 0}
                         error={chatState.error}
                         isStalled={chatState.isStalled}
@@ -3730,7 +3629,6 @@
                         onRetryWithModel={handleRetryWithModel}
                         onStop={handleStop}
                         seed={agentId}
-                        providerName={providerDisplayName}
                       />
                     </div>
                   {/if}
@@ -3743,7 +3641,6 @@
                       isStreaming={chatState.isStreaming}
                       isProcessing={chatState.isProcessing}
                       startTime={chatState.streamingStartTime}
-                      lastChunkTime={chatState.lastChunkTime}
                       streamingContentLength={chatState.streamingContent?.length ?? 0}
                       error={chatState.error}
                       isStalled={chatState.isStalled}
@@ -3753,7 +3650,6 @@
                       onRetryWithModel={handleRetryWithModel}
                       onStop={handleStop}
                       seed={agentId}
-                      providerName={providerDisplayName}
                     />
                   </div>
                 {/if}
@@ -3870,35 +3766,13 @@
                             .startsWith('[WORKSPACE EVENTS]'))}
                       <!-- Sticky compact user message header - shows when scrolled past expanded message -->
                       <!-- Positioned BEFORE expanded message in DOM so it's naturally behind it -->
-                      {#if shouldEnableSticky && turn.userMessage && !isEventNotification}
-                        <div
-                          class="sticky -top-px w-full z-10 cursor-pointer h-0 overflow-visible"
-                          onclick={() => {
-                            const targetElement = scrollContainer?.querySelector(
-                              `[data-message-id="${turn.userMessage!.id}"]`,
-                            ) as HTMLElement | null;
-                            if (targetElement) {
-                              smoothScrollTo(targetElement, 'start');
-                            }
-                          }}
-                          role="button"
-                          tabindex="-1"
-                          onkeydown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              const targetElement = scrollContainer?.querySelector(
-                                `[data-message-id="${turn.userMessage!.id}"]`,
-                              ) as HTMLElement | null;
-                              if (targetElement) {
-                                smoothScrollTo(targetElement, 'start');
-                              }
-                            }
-                          }}
-                        >
-                          <StickyMessageHeader
-                            message={turn.userMessage}
-                            onScrollToPrevious={() => scrollToPreviousUserMessage(turn.userMessage!.id)}
-                          />
+	                      {#if shouldEnableSticky && turn.userMessage && !isEventNotification}
+	                        <div class="sticky -top-px w-full z-10 h-0 overflow-visible">
+                          <div
+                            class="h-fit min-w-0 px-2 pt-2 pb-2 text-subtle whitespace-nowrap text-ellipsis leading-normal bg-sidebar rounded-xs w-full max-w-full truncate"
+                          >
+                            {formatMessageForStickyHeader(turn.userMessage)}
+                          </div>
                         </div>
                       {/if}
 
@@ -3914,9 +3788,8 @@
                           <ChatMessage
                             {message}
                             {workspace}
-                            onEditSubmit={(newText, model) =>
-                              handleEditMessage(message.id, newText, model)}
-                            editModel={turn.assistantMessages[0]?.metadata?.model ?? agentModel}
+                            onEditSubmit={(newText, model) => handleEditMessage(message.id, newText, model)}
+                            editModel={turn.assistantMessages[0]?.metadata?.model}
                             enableSticky={shouldEnableSticky}
                             onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
                             backendSessionId={auggieSessionId}
@@ -3931,7 +3804,6 @@
                             isStreaming={chatState.isStreaming}
                             isProcessing={chatState.isProcessing}
                             startTime={chatState.streamingStartTime}
-                            lastChunkTime={chatState.lastChunkTime}
                             streamingContentLength={chatState.streamingContent?.length ?? 0}
                             error={chatState.error}
                             isStalled={chatState.isStalled}
@@ -3941,7 +3813,6 @@
                             onRetryWithModel={handleRetryWithModel}
                             onStop={handleStop}
                             seed={agentId}
-                            providerName={providerDisplayName}
                           />
                         </div>
                       {/if}
@@ -3968,8 +3839,7 @@
                             {message}
                             {workspace}
                             isStreaming={isCurrentlyStreaming}
-                            onEditSubmit={(newText, model) =>
-                              handleEditMessage(message.id, newText, model)}
+                            onEditSubmit={(newText, model) => handleEditMessage(message.id, newText, model)}
                             onRegenerate={() => handleRegenerateFromMessage(message.id)}
                             onFork={() => handleForkFromMessage(message.id)}
                             backendSessionId={auggieSessionId}
@@ -3982,7 +3852,6 @@
                               isStreaming={chatState.isStreaming}
                               isProcessing={chatState.isProcessing}
                               startTime={chatState.streamingStartTime}
-                              lastChunkTime={chatState.lastChunkTime}
                               streamingContentLength={chatState.streamingContent?.length ?? 0}
                               error={chatState.error}
                               isStalled={chatState.isStalled}
@@ -3992,7 +3861,6 @@
                               onRetryWithModel={handleRetryWithModel}
                               onStop={handleStop}
                               seed={agentId}
-                              providerName={providerDisplayName}
                             />
                           </div>
                         {/if}
@@ -4043,7 +3911,6 @@
           <SuggestedPrompts
             prompts={visibleSuggestedPrompts}
             onSelect={handleSelectSuggestedPrompt}
-            onEdit={handleEditSuggestedPrompt}
           />
         </div>
       {/if}
@@ -4131,13 +3998,13 @@
       </div>
     {/if}
 
-    {#if showProviderMismatchOverlay && agentProviderDetails}
+    {#if isProviderMismatch && matchedProviders}
       <div
         class="absolute z-50 w-4/5 inset-x-0 mx-auto top-1/2 -translate-y-1/2 px-3 py-2.5 text-sm text-subtle bg-muted/50 border border-border rounded-lg flex items-center justify-between gap-2"
       >
         <p class="text-balance">
           {#if isAgentProviderHidden}
-            <span class="text-foreground">{agentProviderDetails.name}</span> is no longer
+            <span class="text-foreground">{matchedProviders.agentProviderName}</span> is no longer
             available.
             <button
               class="underline cursor-pointer"
@@ -4148,14 +4015,12 @@
                   }),
                 )}>Create a new agent</button
             > to continue.
-          {:else if isAgentProviderDisabled}
-            <span class="text-foreground">{agentProviderDetails.name}</span> has been disabled in
-            Model Providers.
+          {:else}
+            This agent was started with <span class="text-foreground"
+              >{matchedProviders.agentProviderName}</span
+            >.
             <br />
-            <button
-              class="underline cursor-pointer"
-              onclick={() => navigateToSettings({ hash: 'providers' })}>Re-enable it in settings</button
-            > or
+            To use <span class="text-foreground">{matchedProviders.activeProviderName}</span>,
             <button
               class="underline cursor-pointer"
               onclick={() =>
@@ -4164,22 +4029,15 @@
                     detail: { agentType: chatState.session?.metadata?.agentType },
                   }),
                 )}>create a new agent</button
-            > to continue.
-          {:else if isAgentProviderUnavailable}
-            <span class="text-foreground">{agentProviderDetails.name}</span> is currently
-            unavailable.
-            <br />
-            Provider changes lock after the first prompt.
-            <br />
+            >
+            or
             <button
               class="underline cursor-pointer"
-              onclick={() =>
-                window.dispatchEvent(
-                  new CustomEvent('app:new-agent', {
-                    detail: { agentType: chatState.session?.metadata?.agentType },
-                  }),
-                )}>Create a new agent</button
-            > to continue.
+              onclick={async () => {
+                activeProviderStore.setActiveProvider(matchedProviders.agentProviderId);
+                multiPanelDispatch(reloadModelsForProvider());
+              }}>switch back</button
+            > <span class="text-xs opacity-60 italic whitespace-nowrap">(applies globally).</span>
           {/if}
         </p>
       </div>
@@ -4194,16 +4052,14 @@
       onstop={handleStop}
       onHistoryPrev={handleHistoryPrev}
       onHistoryNext={handleHistoryNext}
-      disabled={!workspace || !chatState.session || showProviderMismatchOverlay}
+      disabled={!workspace || !chatState.session || isProviderMismatch}
       isStreaming={chatState.isStreaming}
       {workspace}
       currentContext={currentMainPanelContext}
       {agentId}
-      selectedModel={hydratedInputModel}
-      providerId={agentProviderDetails?.id || (chatState.session ? getAgentProvider(chatState.session) : undefined)}
-      isProviderChangeLocked={!canChangeAgentProvider}
+      selectedModel={agentModel}
       compactMode={isCompactMode}
-      providerMismatch={showProviderMismatchOverlay}
+      providerMismatch={isProviderMismatch}
     />
   </div>
 </div>

@@ -1,5 +1,6 @@
 import { getProviderConfig, isModelValidForProvider, resolvePreferredModel } from '$shared/config/provider-config';
 import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
+import { getModelsForProvider } from '$lib/store/slices/model/model-utils';
 
 export interface CompatibleModelSelectionInput {
   providerId: string;
@@ -58,10 +59,9 @@ export function shouldShowChatProviderControl({
 }
 
 export async function resolveUsableProviderIds(providerIds: string[]): Promise<string[]> {
-  const { modelStore } = await import('$lib/stores/model.store.svelte');
   const usableProviders = await Promise.all(
     providerIds.map(async (providerId) => {
-      const models = await modelStore.getModelsForProvider(providerId);
+      const models = await getModelsForProvider(providerId);
       return models.length > 0 ? providerId : null;
     }),
   );
@@ -101,8 +101,7 @@ export async function resolveCompatibleModelForProvider(
     fallbackModel?: string;
   } = {},
 ): Promise<string | null> {
-  const { modelStore } = await import('$lib/stores/model.store.svelte');
-  const availableModels = await modelStore.getModelsForProvider(providerId);
+  const availableModels = await getModelsForProvider(providerId);
   return pickCompatibleModelForProvider({
     providerId,
     availableModelValues: availableModels.map((model) => model.value),

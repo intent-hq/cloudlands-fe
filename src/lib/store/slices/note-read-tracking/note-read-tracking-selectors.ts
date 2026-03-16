@@ -30,6 +30,11 @@ export const selectReadRecord = createSelector((state, noteId: string) => {
   return state.noteReadTracking.readRecords[noteId] ?? null;
 });
 
+/** Select all read records */
+export const selectReadRecords = createSelector((state): Record<string, import("$shared/types/user-activity.types").NoteReadRecord> => {
+  return state.noteReadTracking.readRecords;
+});
+
 /** Select the current workspace ID */
 export const selectNoteReadTrackingWorkspaceId = createSelector((state) => {
   return state.noteReadTracking.currentWorkspaceId;

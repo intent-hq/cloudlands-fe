@@ -21,7 +21,8 @@
   import LaunchFromSelectionDialog from './LaunchFromSelectionDialog.svelte';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { createAgentTypeId } from '$shared/types/agent.types';
-  import { modelStore } from '$lib/stores/model.store.svelte';
+  import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
+  import { get } from 'svelte/store';
   // import { getAgentTypes } from '$features/agent/instruction-registry';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
@@ -241,7 +242,7 @@
         workspaceId: WorkspaceId(workspace.id),
         initialMessage: finalUserMessage, // User message (sent as initial message)
         agentType: createAgentTypeId('workspace'), // Backend loads instructions based on this
-        model: modelStore.getWorkspaceDefaultModel(workspace.id),
+        model: get(selectWorkspaceDefaultModel(workspace.id)),
         contextReferences: context,
         source: 'bubble-menu',
         metadata: {

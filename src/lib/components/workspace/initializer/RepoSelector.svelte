@@ -27,7 +27,7 @@
   import { slide } from 'svelte/transition';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import AddRemoteSetupModal from './AddRemoteSetupModal.svelte';
-  import { featureCodesStore } from '$lib/stores/feature-codes.store.svelte';
+  import { selectIsFeatureEnabled } from '$lib/store/slices/feature-codes/feature-codes-selectors';
 
   const logger = createLogger('RepoSelector');
 
@@ -153,7 +153,8 @@
   // ═══════════════════════════════════════════════════════════════════════════
   // REMOTE TAB STATE
   // ═══════════════════════════════════════════════════════════════════════════
-  let enableRemoteWorkspaces = $derived(featureCodesStore.isFeatureEnabled('remote-workspaces'));
+  const remoteWorkspacesEnabled$ = selectIsFeatureEnabled('remote-workspaces');
+  let enableRemoteWorkspaces = $derived($remoteWorkspacesEnabled$);
   let remoteSetups = $state<RemoteSetup[]>([]);
   let showAddRemoteModal = $state(false);
 

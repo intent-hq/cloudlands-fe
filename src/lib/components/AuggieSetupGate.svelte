@@ -4,7 +4,8 @@
   import { toast } from '$lib/components/ui/toast';
   import { invoke, shell } from '$lib/electron-bridge';
   import { identifyUser } from '$lib/services/analytics';
-  import { modelStore } from '$lib/stores/model.store.svelte';
+  import { retryLoadModels } from '$lib/store/slices/model/model-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import { MINIMUM_AUGGIE_VERSION, type InstallErrorType } from '$shared/constants/auggie';
   import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
@@ -24,6 +25,7 @@
   import { fade } from 'svelte/transition';
 
   const logger = createLogger('AuggieSetupGate');
+  const dispatch = getDispatch();
 
   // =============================================================================
   // Feature flags for testing setup UX (set one to true to test that state)
@@ -376,7 +378,7 @@
           // Refresh models now that auggie is fully ready
           // This ensures fresh models are loaded from the newly installed/authenticated CLI
           logger.info('Auggie is ready, refreshing model list...');
-          void modelStore.retryLoadModels();
+          dispatch(retryLoadModels());
         }
       } catch (err) {
         const message = (err as Error).message;

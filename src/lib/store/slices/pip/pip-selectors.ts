@@ -1,5 +1,5 @@
 import { createSelector } from "../../utils/create-selector";
-import { getPipKey, type PipWindowState } from "./pip-slice";
+import { getPipKey, type PipState, type PipWindowState } from "./pip-slice";
 
 /** Select whether a tab has an open PiP window */
 export const selectHasPipWindow = createSelector(
@@ -29,6 +29,13 @@ export const selectPipWindowsForWorkspace = createSelector(
       }
     }
     return result;
+  }
+);
+
+/** Select the entire pip state */
+export const selectPipState = createSelector(
+  (state): PipState => {
+    return state.pip;
   }
 );
 

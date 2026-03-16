@@ -9,7 +9,19 @@
   } from '$lib/components/ui/dropdown';
   import { faSettings } from '$lib/icons/faSettings';
   import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
-  import { modelStore } from '$lib/stores/model.store.svelte';
+  import {
+    selectSelectedModel,
+    selectAvailableModels,
+    selectIsLoadingModels,
+    selectLoadError,
+  } from '$lib/store/slices/model/model-selectors';
+  import {
+    selectModel,
+    retryLoadModels,
+    setWorkspaceModel,
+  } from '$lib/store/slices/model/model-slice';
+  import { getModelsForProvider } from '$lib/store/slices/model/model-utils';
+  import { getDispatch } from '$lib/store/utils/utils';
   import {
     getProviderConfig,
     parseCompoundModelId,
@@ -32,6 +44,12 @@
   import Fa from 'svelte-fa';
 
   const logger = createLogger('ModelPicker');
+
+  const dispatch = getDispatch();
+  const selectedModel$ = selectSelectedModel();
+  const availableModels$ = selectAvailableModels();
+  const isLoadingModels$ = selectIsLoadingModels();
+  const loadError$ = selectLoadError();
 
   interface Props {
     selectedModel?: string;
@@ -64,7 +82,7 @@
   }
 
   let {
-    selectedModel = $bindable(),
+    selectedModel,
     onModelChange = () => {},
     providerId,
     isCompact = false,
@@ -133,8 +151,7 @@
     // Agent provider differs from active — fetch models for the agent's provider
     agentProviderLoading = true;
     agentProviderError = null;
-    modelStore
-      .getModelsForProvider(epid)
+    getModelsForProvider(epid)
       .then((models) => {
         agentProviderModels = models;
         agentProviderLoading = false;
@@ -146,11 +163,11 @@
   });
 
   // Effective model list — agent-specific models when overriding, global otherwise
-  const availableModels = $derived(agentProviderModels ?? modelStore.availableModels);
+  const availableModels = $derived(agentProviderModels ?? $availableModels$);
   const isLoadingModels = $derived(
-    isAgentProviderOverride ? agentProviderLoading : modelStore.isLoadingModels,
+    isAgentProviderOverride ? agentProviderLoading : $isLoadingModels$,
   );
-  const loadError = $derived(isAgentProviderOverride ? agentProviderError : modelStore.loadError);
+  const loadError = $derived(isAgentProviderOverride ? agentProviderError : $loadError$);
 
   // Provider display name for footer — reflects the effective provider, not the global one
   const providerDisplayName = $derived(getProviderConfig(effectiveProviderId).displayName);
@@ -165,14 +182,14 @@
       agentProviderLoading = true;
       agentProviderError = null;
       try {
-        agentProviderModels = await modelStore.getModelsForProvider(effectiveProviderId);
+        agentProviderModels = await getModelsForProvider(effectiveProviderId);
       } catch (err: unknown) {
         agentProviderError = err instanceof Error ? err.message : 'Failed to load models';
       } finally {
         agentProviderLoading = false;
       }
     } else {
-      await modelStore.retryLoadModels();
+      dispatch(retryLoadModels());
     }
   }
 
@@ -182,9 +199,9 @@
     isRefreshing = true;
     try {
       if (isAgentProviderOverride) {
-        agentProviderModels = await modelStore.getModelsForProvider(effectiveProviderId);
+        agentProviderModels = await getModelsForProvider(effectiveProviderId);
       } else {
-        await modelStore.retryLoadModels();
+        dispatch(retryLoadModels());
       }
     } finally {
       isRefreshing = false;
@@ -250,7 +267,7 @@
       updateGlobalStore,
     });
     // Update all state synchronously first (before any async operations)
-    // This ensures the UI updates immediately and bindable props propagate correctly
+    // This ensures the UI updates immediately while the parent syncs via onModelChange
     localModel = model;
     selectedModel = model;
 
@@ -264,11 +281,11 @@
         return;
       }
 
-      modelStore.selectModel(model);
+      dispatch(selectModel(model));
 
       // Also update workspace-specific model if workspaceId is provided
       if (workspaceId) {
-        modelStore.setWorkspaceDefaultModel(workspaceId, model);
+        dispatch(setWorkspaceModel({ workspaceId, model }));
         logger.debug('Updated workspace model:', { workspaceId, model });
       }
 
@@ -441,8 +458,7 @@
     const preferredValue = resolvePreferredModel(MODEL_DEFAULTS.UI_MODEL_PREFERENCE, optionValues);
     const fallbackOption = preferredValue
       ? nonDefaultOptions.find((opt) => opt.value === preferredValue)
-      : nonDefaultOptions.find((opt) => opt.value === modelStore.selectedModel) ??
-        nonDefaultOptions[0];
+      : (nonDefaultOptions.find((opt) => opt.value === $selectedModel$) ?? nonDefaultOptions[0]);
     if (!fallbackOption) return;
 
     const fallbackModelName = fallbackOption.label || fallbackOption.value;
@@ -492,32 +508,6 @@
     }
 
     // Switch to the fallback model
-    handleModelSelect(fallbackOption.value);
-  });
-
-  // Silent fallback for workspace initializer (no agentId)
-  // When a model doesn't exist, fall back to the first available model
-  $effect(() => {
-    if (agentId) return; // Only for workspace initializer (no agentId)
-    if (!isSelectedModelUnavailable) return;
-    if (!isLoadingModels && flatModelOptions.length === 0) return;
-
-    // Find the best fallback: preference list → globally selected model → first available
-    const nonDefaultOptions = flatModelOptions.filter((opt) => opt.value !== USE_DEFAULT_VALUE);
-    const optionValues = nonDefaultOptions.map((opt) => opt.value);
-    const preferredValue = resolvePreferredModel(MODEL_DEFAULTS.UI_MODEL_PREFERENCE, optionValues);
-    const fallbackOption = preferredValue
-      ? nonDefaultOptions.find((opt) => opt.value === preferredValue)
-      : nonDefaultOptions.find((opt) => opt.value === modelStore.selectedModel) ??
-        nonDefaultOptions[0];
-    if (!fallbackOption) return;
-
-    logger.info('Workspace initializer: falling back from unavailable model to preferred default', {
-      unavailableModel: localModel,
-      fallbackModel: fallbackOption.value,
-    });
-
-    // Fall back to preferred model
     handleModelSelect(fallbackOption.value);
   });
 

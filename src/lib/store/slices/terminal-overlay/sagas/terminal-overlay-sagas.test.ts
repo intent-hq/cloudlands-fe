@@ -10,8 +10,8 @@ vi.mock("typed-redux-saga", () => {
   function* put(action: any): Generator<any, any, any> {
     return yield sagaEffects.put(action);
   }
-  function* select(selector: any): Generator<any, any, any> {
-    return yield sagaEffects.select(selector);
+  function* select(selector: any, ...args: any[]): Generator<any, any, any> {
+    return yield sagaEffects.select(selector, ...args);
   }
   function* take(patternOrChannel: any): Generator<any, any, any> {
     return yield sagaEffects.take(patternOrChannel);

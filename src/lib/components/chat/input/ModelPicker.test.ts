@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/svelte';
+import { readable } from 'svelte/store';
 
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
@@ -48,19 +49,16 @@ vi.mock('$lib/stores/active-provider.store.svelte', () => ({
   },
 }));
 
-vi.mock('$lib/stores/model.store.svelte', () => ({
-  modelStore: {
-    availableModels: [{ value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' }],
-    isLoadingModels: false,
-    loadError: null,
-    selectedModel: 'gpt5.4',
-    retryLoadModels: vi.fn(),
-    getModelsForProvider: vi.fn(async () => [
-      { value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' },
-    ]),
-    selectModel: vi.fn(),
-    setWorkspaceDefaultModel: vi.fn(),
-  },
+vi.mock('$lib/store/utils/utils', () => ({
+  getDispatch: () => vi.fn(),
+}));
+
+vi.mock('$lib/store/slices/model/model-selectors', () => ({
+  selectSelectedModel: () => readable('gpt5.4'),
+  selectAvailableModels: () =>
+    readable([{ value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' }]),
+  selectIsLoadingModels: () => readable(false),
+  selectLoadError: () => readable(null),
 }));
 
 vi.mock('$shared/config/provider-config', () => ({
