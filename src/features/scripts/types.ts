@@ -55,6 +55,7 @@ export interface WorkspaceScript {
   autoStart?: boolean; // Start when workspace opens (services only)
   createdAt: string;
   updatedAt?: string;
+  lastRunAt?: string;
 }
 
 /**

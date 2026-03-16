@@ -7,14 +7,14 @@
    * Output streams in real-time via store subscription.
    * On re-open, loads buffered output from the store.
    */
-  import { onMount, onDestroy, untrack } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { Terminal } from '@xterm/xterm';
   import { FitAddon } from '@xterm/addon-fit';
   import { WebLinksAddon } from '@xterm/addon-web-links';
   import '@xterm/xterm/css/xterm.css';
   import Fa from 'svelte-fa';
   import Button from '$lib/components/ui/button/button.svelte';
-  import { faXmark, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons';
+  import { faXmark, faWandMagicSparkles, faPlay } from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
   import { scriptsStore } from '$features/scripts/scripts.store.svelte';
   import { scriptsClient } from '$features/scripts/scripts.client';
@@ -176,6 +176,12 @@
     writtenLineCount = lines.length;
   });
 
+  // ---- Start ----
+
+  async function handleStart(): Promise<void> {
+    await scriptsClient.start(workspaceId, scriptId);
+  }
+
   // ---- Delete ----
 
   async function handleDelete(): Promise<void> {
@@ -227,8 +233,24 @@
 
   // ---- Lifecycle ----
 
-  onMount(() => {
-    initXterm();
+  // Reset xterm when transitioning back to empty state
+  $effect(() => {
+    const isEmptyState = runtime.status === 'idle' && outputLines.length === 0;
+    if (isEmptyState && xterm) {
+      disposeXterm();
+    }
+  });
+
+  // Initialize xterm when the container is visible (not during empty state)
+  $effect(() => {
+    const isEmptyState = runtime.status === 'idle' && outputLines.length === 0;
+    if (!isEmptyState && xtermContainer && !xterm) {
+      // Container just became visible, initialize xterm
+      // Use requestAnimationFrame to ensure DOM has updated
+      requestAnimationFrame(() => {
+        initXterm();
+      });
+    }
   });
 
   onDestroy(() => {
@@ -258,8 +280,29 @@
     </div>
   {/if}
 
-  <!-- xterm output -->
-  <div class="flex-1 relative overflow-hidden">
+  {#if runtime.status === 'idle' && outputLines.length === 0}
+    <!-- Empty state: script hasn't been run yet -->
+    <div class="flex-1 flex items-center justify-center px-4 py-8">
+      <div class="flex items-center gap-3 text-sm">
+        <span class="text-subtle font-mono">$</span>
+        {#if script}
+          <code class="text-muted-foreground font-mono text-xs">{script.command}</code>
+        {/if}
+        <Button
+          variant="ghost"
+          size="xs"
+          onclick={handleStart}
+          class="text-muted-foreground hover:text-foreground"
+        >
+          <Fa icon={faPlay} class="h-3 w-3 mr-1" />
+          Run
+        </Button>
+      </div>
+    </div>
+  {/if}
+
+  <!-- xterm output (hidden when empty state is showing) -->
+  <div class="flex-1 relative overflow-hidden" class:hidden={runtime.status === 'idle' && outputLines.length === 0}>
     <div class="xterm-output" bind:this={xtermContainer}></div>
   </div>
 </div>

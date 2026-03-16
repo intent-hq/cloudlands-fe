@@ -13,7 +13,6 @@ import { WorkspaceConfig } from '../../../shared/main/config';
 import { writeJsonWithSync } from '../../../shared/main/file-sync-utils';
 import { ScriptsFileFormatSchema } from '../schemas';
 import type { WorkspaceScript, ScriptsFileFormat } from '../types';
-import { ensureIntentDir } from '../../workspace/main/repo-config.service';
 import { REPO_INTENT_DIR } from '../../../shared/types/repo-config.types';
 
 const logger = new Logger('ScriptsPersistence');
@@ -197,46 +196,5 @@ export async function readRepoScripts(repoPath: string): Promise<WorkspaceScript
     });
     return [];
   }
-}
-
-/**
- * Write script definitions to the repo-level .intent/scripts.json.
- *
- * Ensures the .intent directory exists before writing.
- * Uses atomic write pattern for durability.
- */
-export async function writeRepoScripts(
-  repoPath: string,
-  scripts: WorkspaceScript[],
-): Promise<void> {
-  await ensureIntentDir(repoPath);
-
-  const scriptsPath = getRepoScriptsPath(repoPath);
-  const data: ScriptsFileFormat = {
-    version: CURRENT_VERSION,
-    scripts,
-  };
-
-  try {
-    await writeJsonWithSync(scriptsPath, data, { spaces: 2 });
-    logger.debug('Repo-level scripts written successfully', {
-      repoPath,
-      count: scripts.length,
-    });
-  } catch (error) {
-    logger.error('Failed to write repo-level scripts.json', error as Error, {
-      repoPath,
-      scriptsPath,
-    });
-    throw error;
-  }
-}
-
-/**
- * Check if repo-level scripts.json exists and has scripts.
- */
-export async function hasRepoScripts(repoPath: string): Promise<boolean> {
-  const scripts = await readRepoScripts(repoPath);
-  return scripts.length > 0;
 }
 

@@ -16,7 +16,7 @@ import { Logger } from '../../../shared/logger';
 import { AugmentCLI } from '../../auggie/main/augment-cli';
 import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
 import type { WorkspaceScript, ScriptCategory, ScriptMode } from '../types';
-import { REPO_INTENT_DIR } from '../../../shared/types/repo-config.types';
+import { WorkspaceConfig } from '../../../shared/main/config';
 
 const logger = new Logger('ScriptScanner');
 
@@ -402,8 +402,8 @@ interface ScriptsCacheFormat {
   }>;
 }
 
-function getCachePath(repoPath: string): string {
-  return path.join(repoPath, REPO_INTENT_DIR, SCRIPTS_CACHE_FILENAME);
+function getCachePath(workspaceId: string): string {
+  return path.join(WorkspaceConfig.paths.cache(workspaceId), SCRIPTS_CACHE_FILENAME);
 }
 
 /**
@@ -423,9 +423,9 @@ async function computeManifestHash(repoPath: string): Promise<string> {
   return hash.digest('hex');
 }
 
-async function readCache(repoPath: string): Promise<ScriptsCacheFormat | null> {
+async function readCache(workspaceId: string): Promise<ScriptsCacheFormat | null> {
   try {
-    const content = await fs.readFile(getCachePath(repoPath), 'utf-8');
+    const content = await fs.readFile(getCachePath(workspaceId), 'utf-8');
     const data = JSON.parse(content);
     if (data.version === 1 && Array.isArray(data.scripts)) {
       return data as ScriptsCacheFormat;
@@ -436,12 +436,12 @@ async function readCache(repoPath: string): Promise<ScriptsCacheFormat | null> {
   return null;
 }
 
-async function writeCache(repoPath: string, cache: ScriptsCacheFormat): Promise<void> {
-  const cachePath = getCachePath(repoPath);
+async function writeCache(workspaceId: string, cache: ScriptsCacheFormat): Promise<void> {
+  const cachePath = getCachePath(workspaceId);
   const dir = path.dirname(cachePath);
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(cachePath, JSON.stringify(cache, null, 2), 'utf-8');
-  logger.debug('Script cache written', { repoPath, count: cache.scripts.length });
+  logger.debug('Script cache written', { workspaceId, count: cache.scripts.length });
 }
 
 // ============================================================================
@@ -461,7 +461,7 @@ export interface ScanResult {
  * 1. Detect package manager from lockfiles
  * 2. Read package.json, Makefile, Cargo.toml, and pyproject.toml from repo root
  * 3. Classify scripts using heuristics (LLM classification is opt-in via skipLLM: false)
- * 4. Cache results at repo level (.intent/detected-scripts.json)
+ * 4. Cache results at workspace level (.workspace/cache/detected-scripts.json)
  * 5. Return WorkspaceScript[] ready for merging
  *
  * By default the interactive detect path passes skipLLM: true so detection
@@ -496,7 +496,7 @@ export async function scanScripts(
 
   // Check repo-level cache (unless forced re-scan)
   if (!options?.skipCache) {
-    const cached = await readCache(repoPath);
+    const cached = await readCache(workspaceId);
     if (cached && cached.packageManager === pm && cached.manifestHash === manifestHash) {
       // Verify cache is still valid (same detected names AND commands)
       const cachedKeys = new Set(cached.scripts.map((s) => `${s.name}::${s.command}`));
@@ -536,7 +536,7 @@ export async function scanScripts(
 
   // Write cache
   try {
-    await writeCache(repoPath, {
+    await writeCache(workspaceId, {
       version: 1,
       detectedAt: new Date().toISOString(),
       packageManager: pm,

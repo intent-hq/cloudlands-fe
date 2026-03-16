@@ -15,6 +15,16 @@
  *
  * All fields are optional — missing fields fall back to global app settings.
  */
+export interface RepoScript {
+  name: string;
+  command: string;
+  mode: 'service' | 'command';
+  category?: 'dev' | 'build' | 'test' | 'lint' | 'typecheck' | 'format' | 'storybook' | 'other';
+  cwd?: string;
+  env?: Record<string, string>;
+  autoStart?: boolean;
+}
+
 export interface RepoConfig {
   /**
    * Branch prefix for new workspaces created from this repo.
@@ -51,6 +61,12 @@ export interface RepoConfig {
    * @example "docker compose down"
    */
   archiveScript?: string;
+
+  /**
+   * Shared script definitions for this repo.
+   * Used to bootstrap workspace scripts from committable repo config.
+   */
+  scripts?: RepoScript[];
 }
 
 /**

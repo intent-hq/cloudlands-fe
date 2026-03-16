@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "detectedAt": "2026-03-12T02:40:03.177Z",
+  "detectedAt": "2026-03-13T23:13:03.493Z",
   "packageManager": "pnpm",
-  "manifestHash": "9e46466836fe97554c559815bd0bceee0efe6d17dd5b8029457115a43a23e90f",
+  "manifestHash": "4985293fee8bb6e88ef5e1585c76706a740fd00dac78b19fee769ad2a51aab64",
   "scripts": [
     {
       "name": "generate:ipc-channels",
