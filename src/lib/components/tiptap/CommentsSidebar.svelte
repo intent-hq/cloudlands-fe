@@ -587,6 +587,8 @@
         tabindex="0"
         data-comment-id={comment.id}
         onkeydown={(e) => {
+          // Only handle when this container itself has focus, not child elements
+          if (e.target !== e.currentTarget) return;
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             focusComment(comment.id);
