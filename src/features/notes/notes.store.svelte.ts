@@ -20,7 +20,8 @@ import { SPEC_NOTE_ID } from '$shared/constants/notes';
 import { Logger } from '$shared/logger';
 import { NotesPrimitivesSerializer } from './notes-primitives-serializer';
 import type { NotePrimitive } from '$shared/types/notes-primitives';
-import { noteReadTrackingStore } from '$lib/stores/note-read-tracking.store.svelte';
+import { dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
+import { markNoteRead } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
 
 const logger = new Logger('NotesStore');
 
@@ -1087,7 +1088,7 @@ class NotesStore {
         // Mark the note as read since the user just edited it
         // This prevents the note from appearing as "unread" after user saves
         if (this.#workspaceId) {
-          noteReadTrackingStore.markNoteRead(this.#workspaceId, noteId);
+          reduxDispatch(markNoteRead(this.#workspaceId, noteId));
         }
 
         logger.debug('Note saved successfully, updated local state');
@@ -1355,7 +1356,7 @@ class NotesStore {
         // Mark the note as read since the user just created it
         // This prevents the note from appearing as "unread" immediately after creation
         if (this.#workspaceId) {
-          noteReadTrackingStore.markNoteRead(this.#workspaceId, result.data.id);
+          reduxDispatch(markNoteRead(this.#workspaceId, result.data.id));
         }
 
         // Select the new note

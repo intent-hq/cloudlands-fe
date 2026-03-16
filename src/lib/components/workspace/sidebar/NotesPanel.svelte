@@ -25,7 +25,7 @@
     faTrash,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { noteReadTrackingStore } from '$lib/stores/note-read-tracking.store.svelte';
+  import { selectUnreadNoteIds } from '$lib/store/slices/note-read-tracking/note-read-tracking-selectors';
   import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import {
@@ -279,11 +279,10 @@
   // Sorted notes
   const sortedNotes = $derived(sortNotes(notes, customNoteOrder));
 
-  // Check if a note has unread changes
+  // Check if a note has unread changes (reactive via store subscription)
   // NOTE: The refresh is triggered by the parent component (WorkspaceDetailSidebar)
   // to avoid duplicate IPC calls from multiple components.
-  // We use the store's hasUnreadChanges method directly for consistency.
-  const hasUnreadChanges = noteReadTrackingStore.hasUnreadChanges;
+  const unreadNoteIds = selectUnreadNoteIds();
 
   // Helper to check if a note can be dragged (only top-level non-spec notes)
   function canDrag(note: Note): boolean {
@@ -493,7 +492,7 @@
             : areChildrenNotStarted
               ? 'not_started'
               : undefined}
-        {@const isUnread = hasUnreadChanges(note.id as string)}
+        {@const isUnread = $unreadNoteIds.includes(note.id as string)}
         {#if !isHidden}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div

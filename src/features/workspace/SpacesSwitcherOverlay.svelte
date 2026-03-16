@@ -16,7 +16,7 @@
   import { pendingAgentsStore } from '$features/agent/services/pending-agents.store.svelte';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
-  import { permissionStore } from '$lib/stores/permission.store.svelte';
+  import { selectPermissionRequests } from '$lib/store/slices/permission/permission-selectors';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import WorkspacePhaseIndicator from '$lib/components/workspace/WorkspacePhaseIndicator.svelte';
@@ -37,6 +37,8 @@
 
   // Scroll container ref
   let scrollContainer: HTMLDivElement | undefined = $state();
+
+  const allPermissionRequests = selectPermissionRequests();
 
   // Reactivity versions for subscriptions
   let activeStreamsVersion = $state(0);
@@ -126,7 +128,7 @@
         const isUnread = unreadAgentIds.has(agent.id);
         const isPending = pendingAgents.some((pa) => pa.id === agent.id);
 
-        const hasPermissionRequest = permissionStore.getPendingCount(agent.id) > 0;
+        const hasPermissionRequest = $allPermissionRequests.some((r) => r.sessionId === agent.id);
         let state: AvatarState = 'idle';
         if (agent.status === 'error' || agent.status === 'failed') {
           state = 'failed';

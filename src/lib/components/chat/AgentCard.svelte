@@ -18,7 +18,7 @@
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
   import SpecialistToolIcon from '../ui/auggie-avatar/SpecialistToolIcon.svelte';
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
-  import { permissionStore } from '$lib/stores/permission.store.svelte';
+  import { selectPendingCount } from '$lib/store/slices/permission/permission-selectors';
   import { slide } from 'svelte/transition';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { sessionStore } from '$features/agent/browser';
@@ -77,6 +77,8 @@
     hidePreview = false,
     workspace = null,
   }: Props = $props();
+
+  const agentPermCount = selectPendingCount(agentId);
 
   // Inline editing state
   let isEditing = $state(false);
@@ -323,7 +325,7 @@
         status: agentData?.status,
       },
       {
-        hasPermissionRequest: permissionStore.getPendingCount(agentId) > 0,
+        hasPermissionRequest: $agentPermCount > 0,
       },
     ),
   );

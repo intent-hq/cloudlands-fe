@@ -107,6 +107,18 @@ describe('Performance Integration Tests', () => {
       const streamCount = 50;
       const chunksPerStream = 100;
 
+      unifiedStateStore.setWorkspace({
+        id: testWorkspaceId,
+        title: 'Performance Test Workspace',
+        branch: 'test',
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        status: WorkspaceStatus.Active,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
       for (let i = 0; i < streamCount; i++) {
         const streamId = streamManager.startStream({
           agentId: createAgentId(randomUUID()),
@@ -124,6 +136,7 @@ describe('Performance Integration Tests', () => {
 
       // Cleanup
       streamManager.cleanup();
+      unifiedStateStore.removeWorkspace(testWorkspaceId);
 
       // Force garbage collection if available
       if (global.gc) {

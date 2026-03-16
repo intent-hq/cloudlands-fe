@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { readable } from 'svelte/store';
 
 const { resolveCompatibleModelForProviderMock, setModelMock } = vi.hoisted(() => ({
   resolveCompatibleModelForProviderMock: vi.fn(),
@@ -58,13 +59,13 @@ vi.mock('$lib/components/ui/tooltip', async () => {
   return { TooltipShortcut: SlotOnly };
 });
 
-vi.mock('$lib/stores/multi-panel-context.store.svelte', () => ({
-  multiPanelContextStore: {
-    panels: [],
-    selections: [],
-    togglePanel: vi.fn(),
-    toggleSelection: vi.fn(),
-  },
+vi.mock('$lib/store/slices/multi-panel-context/multi-panel-context-selectors', () => ({
+  selectPanels: () => readable([]),
+  selectSelections: () => readable([]),
+}));
+
+vi.mock('$lib/store/utils/utils', () => ({
+  getDispatch: () => vi.fn(),
 }));
 
 vi.mock('$lib/stores/additional-agents.store.svelte', () => ({

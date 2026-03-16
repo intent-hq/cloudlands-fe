@@ -16,7 +16,7 @@ import { TerminalStateMachine, TerminalState } from './terminal-state-machine';
 import { TerminalBufferManager } from './terminal-buffer-manager';
 import { TerminalThemeManager } from './terminal-theme-manager';
 import { terminalHistoryTracker } from './terminal-history-tracker';
-import { isGitHubUrl } from '$features/navigation/link-handler';
+import { isGitHubUrl } from '$shared/utils/link-helpers';
 
 const logger = new Logger('TerminalAdapter');
 

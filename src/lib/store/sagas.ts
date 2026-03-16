@@ -16,6 +16,9 @@ import { notificationSettingsSaga } from "./slices/notification-settings/sagas/n
 import { noteSpellcheckSettingsSaga } from "./slices/note-spellcheck-settings/sagas/note-spellcheck-settings-saga";
 import { workspaceSettingsSaga } from "./slices/workspace-settings/sagas/workspace-settings-saga";
 import { betaUpdatesSaga } from "./slices/beta-updates/sagas/beta-updates-saga";
+import { noteReadTrackingSaga } from "./slices/note-read-tracking/sagas/note-read-tracking-saga";
+import { permissionSaga } from "./slices/permission/sagas/permission-saga";
+import { pipSaga } from "./slices/pip/sagas/pip-saga";
 import { zoomSaga } from "./slices/zoom/sagas/zoom-saga";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
@@ -40,6 +43,9 @@ export const sagas = {
   terminalOverlaySaga,
   notificationSettingsSaga,
   noteSpellcheckSettingsSaga,
+  noteReadTrackingSaga,
+  permissionSaga,
+  pipSaga,
   workspaceSettingsSaga,
   zoomSaga,
   // Placeholder sagas for Store.svelte references — will be replaced with real implementations

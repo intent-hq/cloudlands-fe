@@ -8,7 +8,8 @@
   import { ListContainer, ListItem } from '../ui/list';
   import { notesStateManager } from '$features/notes/notes.store.svelte';
   import { notesClient } from '$features/notes/notes.client';
-  import { noteReadTrackingStore } from '$lib/stores/note-read-tracking.store.svelte';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { markNoteRead } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
   import { thirdPartySourcesClient } from '$features/third-party-sources/third-party-sources.client';
   import type { ThirdPartySource } from '$shared/types';
   import { hasUrls, handleThirdPartyDrop } from '$lib/utils/third-party-drag-drop';
@@ -43,6 +44,8 @@
     collapsed?: boolean;
     onCollapse?: () => void;
   } = $props();
+
+  const dispatch = getDispatch();
 
   // Local UI state
   let thirdPartySources: ThirdPartySource[] = $state([]);
@@ -145,7 +148,7 @@
 
       // Mark note as read BEFORE reloading notes to prevent race condition
       // where computeUnreadNotes runs before the read record is persisted
-      await noteReadTrackingStore.markNoteRead(workspaceId, result.data.id);
+      dispatch(markNoteRead(workspaceId, result.data.id));
 
       // Now reload notes - the read record is already persisted
       await notesStateManager.reloadNotes();

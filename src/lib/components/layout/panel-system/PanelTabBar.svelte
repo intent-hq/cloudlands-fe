@@ -53,7 +53,7 @@
   import { useAllAgentsSubscription } from '$lib/utils/agent-subscription.svelte';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import { type AvatarState, getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
-  import { permissionStore } from '$lib/stores/permission.store.svelte';
+  import { selectPermissionRequests } from '$lib/store/slices/permission/permission-selectors';
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import { stripWorkspacePrefix } from '$lib/utils/file-utils';
   import { toNativePath } from '$lib/utils/path-utils';
@@ -132,6 +132,7 @@
 
   const dispatch = getDispatch();
   const isDragging = selectIsDragging();
+  const allPermissionRequests = selectPermissionRequests();
 
   // Access layout manager from context for expand-on-double-click
   const getLayoutManager = getContext<(() => PanelLayoutManager) | undefined>('panelLayoutManager');
@@ -233,7 +234,7 @@
         status: agent.status,
       },
       {
-        hasPermissionRequest: permissionStore.getPendingCount(tab.agentId!) > 0,
+        hasPermissionRequest: $allPermissionRequests.some((r) => r.sessionId === tab.agentId) ,
       },
     );
   }

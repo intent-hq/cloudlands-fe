@@ -13,6 +13,10 @@ import { noteSpellcheckSettingsReducer } from "./slices/note-spellcheck-settings
 import { notificationSettingsReducer } from "./slices/notification-settings/notification-settings-slice";
 import { workspaceSettingsReducer } from "./slices/workspace-settings/workspace-settings-slice";
 import { betaUpdatesReducer } from "./slices/beta-updates/beta-updates-slice";
+import { noteReadTrackingReducer } from "./slices/note-read-tracking/note-read-tracking-slice";
+import { multiPanelContextReducer } from "./slices/multi-panel-context/multi-panel-context-slice";
+import { permissionReducer } from "./slices/permission/permission-slice";
+import { pipReducer } from "./slices/pip/pip-slice";
 import { zoomReducer } from "./slices/zoom/zoom-slice";
 
 export const reducers = {
@@ -30,6 +34,10 @@ export const reducers = {
   terminalOverlay: terminalOverlayReducer,
   notificationSettings: notificationSettingsReducer,
   noteSpellcheckSettings: noteSpellcheckSettingsReducer,
+  noteReadTracking: noteReadTrackingReducer,
+  multiPanelContext: multiPanelContextReducer,
+  permission: permissionReducer,
+  pip: pipReducer,
   workspaceSettings: workspaceSettingsReducer,
   zoom: zoomReducer,
 } as const;

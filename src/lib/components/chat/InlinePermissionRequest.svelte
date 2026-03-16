@@ -1,7 +1,9 @@
 <script lang="ts">
   import { fly } from 'svelte/transition';
   import { onMount, onDestroy } from 'svelte';
-  import { permissionStore, type PermissionRequest } from '$lib/stores/permission.store.svelte';
+  import { selectPermissionOption } from '$lib/store/slices/permission/permission-slice';
+  import type { PermissionRequest } from '$lib/store/slices/permission/permission-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import Fa from 'svelte-fa';
   import { faShieldHalved, faChevronDown, faChevronUp } from '@fortawesome/free-solid-svg-icons';
   import { parsePermissionRequest } from './permission-parser';
@@ -13,6 +15,7 @@
 
   let { request, pendingCount = 1 }: Props = $props();
 
+  const dispatch = getDispatch();
   let showDetails = $state(false);
   let isProcessing = $state(false);
 
@@ -43,10 +46,10 @@
     }
   }
 
-  async function handleSelectOption(optionId: string) {
+  function handleSelectOption(optionId: string) {
     if (isProcessing) return;
     isProcessing = true;
-    await permissionStore.selectOption(request.requestId, optionId);
+    dispatch(selectPermissionOption(request.requestId, optionId));
     isProcessing = false;
   }
 

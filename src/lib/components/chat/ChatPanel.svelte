@@ -49,9 +49,20 @@
   import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
   import { cn } from '$lib/utils';
   import {
-    multiPanelContextStore,
+    setWorkspace as setMultiPanelWorkspace,
+    updatePanels as updateMultiPanels,
+    setSelection as setMultiPanelSelection,
+    clearSelection as clearMultiPanelSelection,
+    uncheckAllSelections,
     type PanelContextItem,
-  } from '$lib/stores/multi-panel-context.store.svelte';
+  } from '$lib/store/slices/multi-panel-context/multi-panel-context-slice';
+  import {
+    selectCheckedPanels,
+    selectPanels,
+    selectCheckedSelections,
+  } from '$lib/store/slices/multi-panel-context/multi-panel-context-selectors';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
     getTasksForAgent,
     type TaskAgentAssociation,
@@ -111,7 +122,8 @@
   import { getProviderAvailability } from '$features/providers/provider-availability.client';
   import LazyTurn from './LazyTurn.svelte';
   import InlinePermissionRequest from './InlinePermissionRequest.svelte';
-  import { permissionStore } from '$lib/stores/permission.store.svelte';
+  import { selectPermissionRequests } from '$lib/store/slices/permission/permission-selectors';
+  import type { PermissionRequest } from '$lib/store/slices/permission/permission-slice';
   import { selectIsAgentMonospace } from '$lib/store/slices/agent-font-settings/agent-font-settings-selectors';
   import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
   import AuroraBackground from './AuroraBackground.svelte';
@@ -129,6 +141,7 @@
 
   const logger = createLogger('ChatPanel');
 
+  const multiPanelDispatch = getDispatch();
   const isAgentMonospace = selectIsAgentMonospace();
 
   // Constants
@@ -241,9 +254,11 @@
 
   // Track if there's a pending permission request for this agent
   // When a permission is pending, we hide the "Thinking" indicator since the permission UI shows instead
-  let hasPendingPermission = $derived(
-    agentId ? permissionStore.getRequestsForSession(agentId).length > 0 : false,
+  const allPermissionRequests = selectPermissionRequests();
+  const agentPermissionRequests = $derived(
+    agentId ? $allPermissionRequests.filter((r) => r.sessionId === agentId) : [],
   );
+  let hasPendingPermission = $derived(agentPermissionRequests.length > 0);
 
   let hiddenProviders = $state<string[]>([]);
   let unusableProviders = $state<string[]>([]);
@@ -990,13 +1005,13 @@
     if (workspace?.id) {
       const panels = availablePanelContexts;
       untrack(() => {
-        multiPanelContextStore.setWorkspace(workspace.id);
-        multiPanelContextStore.updatePanels(panels);
+        multiPanelDispatch(setMultiPanelWorkspace(workspace.id));
+        multiPanelDispatch(updateMultiPanels(panels));
       });
     }
   });
 
-  // Sync selection context from editors to multiPanelContextStore
+  // Sync selection context from editors to multi-panel context Redux store
   // Listen for the custom 'editor:selection-change' event dispatched by CodeEditor and TipTap
   // This is used instead of watching unifiedStateStore.selectionContext because that store
   // uses regular class properties, not Svelte 5 runes, so $effect can't track it
@@ -1014,7 +1029,7 @@
         // Add selection to multi-panel context store
         // Detect if this is from a note (markdown) vs a code file
         const isNote = language === 'markdown' && !file?.includes('/');
-        multiPanelContextStore.setSelection({
+        multiPanelDispatch(setMultiPanelSelection({
           panelId,
           tabId,
           sourceType: isNote ? 'note' : 'file',
@@ -1022,12 +1037,13 @@
           filePath: isNote ? undefined : file,
           text: text,
           language: language,
-        });
+          timestamp: Date.now(),
+        }));
       } else {
         // Clear the selection when text is deselected
         // This event is only dispatched when editor.isFocused is true (user clicked within the editor)
         // so it won't clear when user clicks on chat input to send
-        multiPanelContextStore.clearSelection(panelId, tabId);
+        multiPanelDispatch(clearMultiPanelSelection(panelId, tabId));
       }
     };
 
@@ -1521,8 +1537,7 @@
       sandboxMode,
     });
 
-    // Initialize permission store for inline permission UI
-    permissionStore.initialize();
+    // Permission store is now auto-initialized via Redux saga — no manual initialize() needed
 
     // Trigger provider availability check to correct stale active provider
     // (e.g., if cortex was selected but its feature code is no longer active)
@@ -2579,8 +2594,9 @@
     const parts: string[] = [];
 
     // Add context from checked panels in the multi-panel context store
-    const checkedPanels = multiPanelContextStore.checkedPanels;
-    const allPanels = multiPanelContextStore.panels;
+    const storeState = getReduxStore().getState();
+    const checkedPanels = selectCheckedPanels.select(storeState);
+    const allPanels = selectPanels.select(storeState);
     logger.info('ChatPanel: Building workspace context', {
       agentId,
       checkedPanelsCount: checkedPanels.length,
@@ -2605,7 +2621,7 @@
     }
 
     // Add checked selections from multi-panel context store
-    const checkedSelections = multiPanelContextStore.checkedSelections;
+    const checkedSelections = selectCheckedSelections.select(storeState);
     for (const selection of checkedSelections) {
       const selectedText = selection.text.trim();
       const displayText =
@@ -2865,7 +2881,7 @@
       getTransientStore()?.clearChatDraft(agentId);
       // Clear selection context - it's been captured in workspaceContextStr above
       // This prevents stale selections from being included in subsequent messages
-      multiPanelContextStore.uncheckAllSelections();
+      multiPanelDispatch(uncheckAllSelections());
       unifiedStateStore.selectionContext = null;
       // Re-enable auto-scroll when user submits - the followBottom action will handle scrolling
       // as new content (user message, streaming indicator) is added to the DOM
@@ -3166,7 +3182,7 @@
       getTransientStore()?.clearChatDraft(agentId);
       // Clear selection context - it's been captured in workspaceContextStr above
       // This prevents stale selections from being included in subsequent messages
-      multiPanelContextStore.uncheckAllSelections();
+      multiPanelDispatch(uncheckAllSelections());
       unifiedStateStore.selectionContext = null;
 
       const messageWithContext = workspaceContextStr
@@ -4033,11 +4049,10 @@
       {/if}
 
       <!-- Inline Permission Requests (filtered by current agent) -->
-      {#if agentId && permissionStore.getRequestsForSession(agentId).length > 0}
-        {@const agentRequests = permissionStore.getRequestsForSession(agentId)}
-        {@const currentRequest = agentRequests[0]}
+      {#if agentId && agentPermissionRequests.length > 0}
+        {@const currentRequest = agentPermissionRequests[0]}
         <div class="w-full px-2">
-          <InlinePermissionRequest request={currentRequest} pendingCount={agentRequests.length} />
+          <InlinePermissionRequest request={currentRequest} pendingCount={agentPermissionRequests.length} />
         </div>
       {/if}
 

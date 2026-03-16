@@ -8,7 +8,7 @@
   import { useAgentSubscription } from '$lib/utils/agent-subscription.svelte';
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
-  import { permissionStore } from '$lib/stores/permission.store.svelte';
+  import { selectPendingCount } from '$lib/store/slices/permission/permission-selectors';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import type { Workspace } from '$shared/types';
 
@@ -19,6 +19,8 @@
   }
 
   let { agentId, workspace = null }: Props = $props();
+
+  const permissionCount = selectPendingCount(agentId);
 
   // Subscribe to agent updates for real-time state
   // Pass workspace to scope the subscription to the correct workspace context.
@@ -34,7 +36,7 @@
         status: agentData?.status,
       },
       {
-        hasPermissionRequest: permissionStore.getPendingCount(agentId) > 0,
+        hasPermissionRequest: $permissionCount > 0,
       },
     ),
   );

@@ -61,7 +61,7 @@
   import { buildTaskNoteContent } from '$features/notes/utils/task-agent-message-builder';
   import { unifiedIdService } from '$shared/services/unified-id.service';
   import { stripMarkdownFormatting } from '$shared/utils-client';
-  import { noteReadTrackingStore } from '$lib/stores/note-read-tracking.store.svelte';
+  import { markAsViewed, clearCurrentlyViewed, markNoteRead } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
   import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
   import { getTransientUIStore } from '$features/workspace/transient-ui-state.store.svelte';
   import { track, setAnalyticsContextProvider, getFileExtension } from '$lib/services/analytics';
@@ -3344,10 +3344,10 @@
 
     if (mainPanelType === 'notes' && selectedNoteId) {
       // Mark this note as currently being viewed
-      noteReadTrackingStore.markAsViewed(selectedNoteId);
+      dispatch(markAsViewed(selectedNoteId));
     } else {
       // No note is being viewed in the main panel
-      noteReadTrackingStore.clearCurrentlyViewed();
+      dispatch(clearCurrentlyViewed());
     }
   });
 
@@ -3438,7 +3438,7 @@
 
       // Mark note as read when opened (await to ensure persistence before refresh)
       if (safeWorkspace?.id) {
-        await noteReadTrackingStore.markNoteRead(safeWorkspace.id, noteId);
+        dispatch(markNoteRead(safeWorkspace.id, noteId));
       }
     }
   }
@@ -3456,7 +3456,7 @@
     if (result.ok && result.data) {
       // Mark note as read BEFORE reloading notes to prevent race condition
       // where computeUnreadNotes runs before the read record is persisted
-      await noteReadTrackingStore.markNoteRead(safeWorkspace.id, result.data.id);
+      dispatch(markNoteRead(safeWorkspace.id, result.data.id));
 
       // Now reload notes - the read record is already persisted
       await notesStateManager.reloadNotes();
@@ -4030,7 +4030,7 @@
     logger.debug('Starting workspace page cleanup', { workspaceId });
 
     // Clear currently viewed note state to prevent stale tracking
-    noteReadTrackingStore.clearCurrentlyViewed();
+    dispatch(clearCurrentlyViewed());
 
     // Cancel any pending loads
     workspaceLoader.clearLoadingState();

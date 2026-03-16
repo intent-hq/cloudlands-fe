@@ -16,86 +16,14 @@
 
 import { Logger } from '$shared/logger';
 import type { WorkspaceId } from '$shared/types/branded-ids';
+import {
+  type LinkHandlerOptions,
+  isAuthUrl,
+  isCmdClickModifier,
+  isGitHubUrl,
+} from '$shared/utils/link-helpers';
 
 const logger = new Logger('LinkHandler');
-
-// ============================================================================
-// Types
-// ============================================================================
-
-/** Modifier key flags extracted from a MouseEvent */
-export interface ModifierFlags {
-  metaKey?: boolean;
-  ctrlKey?: boolean;
-}
-
-export interface LinkHandlerOptions {
-  /** Workspace ID for panel layout manager lookup. When undefined, HTTP/HTTPS links fall back to the external browser. */
-  workspaceId?: WorkspaceId;
-  /** The original MouseEvent (used to detect Cmd+Click) */
-  event?: MouseEvent;
-  /** Extracted modifier flags — alternative to passing the full event */
-  modifiers?: ModifierFlags;
-  /** Force external browser even for HTTP/HTTPS links */
-  forceExternal?: boolean;
-  /** Custom handler for specific link types */
-  customHandler?: (url: string) => Promise<boolean> | boolean;
-}
-
-// ============================================================================
-// Auth URL detection
-// ============================================================================
-
-/** Path segments that indicate an OAuth / authentication flow */
-const AUTH_PATH_PATTERNS = ['/oauth', '/authorize', '/login/oauth', '/auth/'];
-
-/**
- * Detect whether a URL is an OAuth / authentication URL.
- * Auth URLs should always open in the external browser so the user has access
- * to their password manager, cookies, 2FA prompts, etc.
- */
-export function isAuthUrl(url: string): boolean {
-  try {
-    const { pathname } = new URL(url);
-    const lower = pathname.toLowerCase();
-    return AUTH_PATH_PATTERNS.some((pattern) => lower.includes(pattern));
-  } catch {
-    return false;
-  }
-}
-
-// ============================================================================
-// GitHub URL detection
-// ============================================================================
-
-/**
- * Detect whether a URL points to GitHub.
- * GitHub URLs should always open in the external browser because the embedded
- * browser panel cannot handle GitHub's authentication and interactive features.
- */
-export function isGitHubUrl(url: string): boolean {
-  try {
-    const { hostname } = new URL(url);
-    return hostname === 'github.com' || hostname.endsWith('.github.com');
-  } catch {
-    return false;
-  }
-}
-
-// ============================================================================
-// Modifier-key helpers
-// ============================================================================
-
-/**
- * Detect whether the platform-appropriate "Cmd" modifier is held.
- * Mac → metaKey, Windows/Linux → ctrlKey.
- */
-function isCmdClickModifier(options: LinkHandlerOptions): boolean {
-  const flags: ModifierFlags = options.modifiers ?? options.event ?? {};
-  const isMac =
-    typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
-  return isMac ? !!flags.metaKey : !!flags.ctrlKey;
-}
 
 // ============================================================================
 // Main handler

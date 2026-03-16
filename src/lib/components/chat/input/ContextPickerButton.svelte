@@ -29,10 +29,11 @@
   import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import {
-    multiPanelContextStore,
+    addSearchedItem,
     type PanelContextItem,
     type SelectionContextItem,
-  } from '$lib/stores/multi-panel-context.store.svelte';
+  } from '$lib/store/slices/multi-panel-context/multi-panel-context-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import {
     getMentionSystem,
     type MentionCandidate,
@@ -66,6 +67,8 @@
     onInsertMention,
     class: className = '',
   }: Props = $props();
+
+  const contextDispatch = getDispatch();
 
   let isOpen = $state(false);
   let triggerRef = $state<HTMLButtonElement | null>(null);
@@ -248,13 +251,13 @@
     }
 
     // Add to the store as a checked context item
-    multiPanelContextStore.addSearchedItem({
+    contextDispatch(addSearchedItem({
       id: result.id,
       type: itemType,
       label: result.label,
       filePath: result.uri || undefined,
       noteId: result.type === 'note' || result.type === 'note-range' ? result.id : undefined,
-    });
+    }));
 
     // Clear search but keep popover open so user can add more items
     searchQuery = '';

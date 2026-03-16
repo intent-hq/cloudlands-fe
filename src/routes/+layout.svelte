@@ -41,7 +41,6 @@
   import { toggleLineWrapping } from '$lib/store/slices/editor-settings/editor-settings-slice';
   import { featureCodesStore } from '$lib/stores/feature-codes.store.svelte';
   import { modelStore } from '$lib/stores/model.store.svelte';
-  import { initPipStore } from '$lib/stores/pip.store.svelte';
   import {
     toggleTerminalOverlay,
     openTerminalOverlay,
@@ -350,9 +349,6 @@
     githubAuthStore.initialize().catch((error) => {
       logger.warn('[+layout] Failed to initialize GitHub auth store', error);
     });
-
-    // Initialize PiP store to listen for pip:opened and pip:closed events
-    initPipStore();
 
     // Initialize release notes store to detect version changes and show release notes
     // We need to fetch the channel directly from main process since autoUpdateStore

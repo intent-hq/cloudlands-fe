@@ -8,7 +8,7 @@
     extractOrderedSpecTaskIds,
     extractSpecTaskIds,
   } from '$shared/utils/task-stats';
-  import { noteReadTrackingStore } from '$lib/stores/note-read-tracking.store.svelte';
+  import { selectUnreadNoteIds } from '$lib/store/slices/note-read-tracking/note-read-tracking-selectors';
   import Fa from 'svelte-fa';
   import {
     faEllipsisV,
@@ -465,11 +465,10 @@
     return unsubscribe;
   });
 
-  // Check if a note has unread changes
+  // Check if a note has unread changes (reactive via store subscription)
   // NOTE: The refresh is triggered by the parent component (WorkspaceDetailSidebar)
   // to avoid duplicate IPC calls from multiple components.
-  // We use the store's hasUnreadChanges method directly for consistency.
-  const hasUnreadChanges = noteReadTrackingStore.hasUnreadChanges;
+  const unreadNoteIds = selectUnreadNoteIds();
 
   // Get spec note
   const specNote = $derived(notes.find((n) => n.id === 'spec' || n.isDefault));
@@ -1103,7 +1102,7 @@
           onCellHover={(noteId) => (hoveredNoteId = noteId)}
           onSpecClick={() => onOpenNote?.('spec')}
           {hoveredNoteId}
-          {hasUnreadChanges}
+          hasUnreadChanges={(noteId) => $unreadNoteIds.includes(noteId)}
         />
       </div>
     {/if}
@@ -1267,7 +1266,7 @@
             onCellHover={(noteId) => (hoveredNoteId = noteId)}
             onSpecClick={() => onOpenNote?.('spec')}
             {hoveredNoteId}
-            {hasUnreadChanges}
+            hasUnreadChanges={(noteId) => $unreadNoteIds.includes(noteId)}
           />
         </div>
         <!-- Summary Section -->

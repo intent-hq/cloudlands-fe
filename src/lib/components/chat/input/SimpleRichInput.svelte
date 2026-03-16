@@ -33,7 +33,6 @@
   import AttachmentPreview from '../AttachmentPreview.svelte';
   import ContextChip from '../ContextChip.svelte';
   import ContextPickerButton from './ContextPickerButton.svelte';
-  import { multiPanelContextStore } from '$lib/stores/multi-panel-context.store.svelte';
   import {
     buildProviderDropdownOptions,
     getSelectableProviderIds,
@@ -41,9 +40,13 @@
     resolveUsableProviderIds,
     shouldShowChatProviderControl,
   } from '$lib/utils/provider-model-selection';
+  import { togglePanel as togglePanelAction, toggleSelection as toggleSelectionAction } from '$lib/store/slices/multi-panel-context/multi-panel-context-slice';
+  import { selectPanels, selectSelections } from '$lib/store/slices/multi-panel-context/multi-panel-context-selectors';
+  import { getDispatch } from '$lib/store/utils/utils';
   import { slide } from 'svelte/transition';
 
   const logger = createLogger('SimpleRichInput');
+  const simpleRichInputDispatch = getDispatch();
 
   type MainPanelContext = {
     type: 'file' | 'note' | 'spec';
@@ -104,7 +107,7 @@
     workspace,
     isStreaming = false,
     contextItems = $bindable([]),
-    currentContext: _currentContext, // Now using multiPanelContextStore instead
+    currentContext: _currentContext, // Now using multi-panel-context Redux slice instead
     editorSelection = $bindable<string | null>(null),
     selectedModel: propSelectedModel,
     isModelLocked = false,
@@ -269,17 +272,19 @@
 
   // Track dismissed main panel context - stores a key that identifies the dismissed context
   // When the main panel changes to something different, we reset this to show the new context
-  // Multi-panel context store data
-  let availablePanels = $derived(multiPanelContextStore.panels);
-  let availableSelections = $derived(multiPanelContextStore.selections);
+  // Multi-panel context store data (Redux selectors as Svelte readables)
+  const panelsReadable = selectPanels();
+  const selectionsReadable = selectSelections();
+  let availablePanels = $derived($panelsReadable);
+  let availableSelections = $derived($selectionsReadable);
 
   // Handlers for picker buttons
   function handleTogglePanel(id: string) {
-    multiPanelContextStore.togglePanel(id);
+    simpleRichInputDispatch(togglePanelAction(id));
   }
 
   function handleToggleSelection(id: string) {
-    multiPanelContextStore.toggleSelection(id);
+    simpleRichInputDispatch(toggleSelectionAction(id));
   }
 
   // Resize functionality
@@ -784,7 +789,7 @@
     }
 
     // Note: Selection changes from editors (CodeEditor/Monaco) are synced to the
-    // multiPanelContextStore via ChatPanel, which watches unifiedStateStore.selectionContext.
+    // multi-panel-context Redux store via ChatPanel, which watches unifiedStateStore.selectionContext.
     // This ensures selections appear in the @ context picker automatically.
   });
 

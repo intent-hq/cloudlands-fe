@@ -146,7 +146,7 @@ export const LOGGING_CONFIG: LoggingConfig = {
     // Agent services - reduce routine log noise
     AgentProxies: LogLevel.WARN,
     AgentSubscriptions: LogLevel.INFO,
-    PermissionStore: LogLevel.WARN,
+    PermissionSaga: LogLevel.WARN,
     'browser/index': LogLevel.WARN,
 
     // Monaco/Editor - reduce noise

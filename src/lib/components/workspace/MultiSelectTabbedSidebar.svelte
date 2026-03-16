@@ -11,7 +11,8 @@
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { faNote } from '$lib/icons/faNote';
   import { getFileExtension, track } from '$lib/services/analytics';
-  import { noteReadTrackingStore } from '$lib/stores/note-read-tracking.store.svelte';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { markNoteRead, refreshUnreadNotes } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { cn } from '$lib/utils';
   import { useAllAgentsSubscription } from '$lib/utils/agent-subscription.svelte';
@@ -112,6 +113,8 @@
   }: Props = $props();
 
   void restProps;
+
+  const dispatch = getDispatch();
 
   // Tab definitions with metadata for tooltips
   interface TabDefinition {
@@ -514,7 +517,7 @@
     });
 
     // Mark note as read when opened to clear unread indicator
-    noteReadTrackingStore.markNoteRead(workspaceId, noteId);
+    dispatch(markNoteRead(workspaceId, noteId));
   }
 
   function handleOpenFileInPanel(filePath: string) {
@@ -811,7 +814,7 @@
         updatedAt: n.updatedAt || n.updated_at || n.createdAt || n.created_at || '',
         createdAt: n.createdAt || n.created_at,
       }));
-      noteReadTrackingStore.refreshUnreadNotes(workspaceId, notesWithTimestamps);
+      dispatch(refreshUnreadNotes(workspaceId, notesWithTimestamps));
     }
   });
 
