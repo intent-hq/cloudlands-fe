@@ -550,19 +550,50 @@ export class ChatService implements IDisposable {
       }
 
       if (!session) {
-        // Session not found in memory or on disk.
+        // Session not found yet — this commonly happens when ChatPanel mounts
+        // before the workspace page finishes restoring agents from disk or
+        // activating the initial agent. Retry a few times with backoff before
+        // giving up, since the session is likely being created concurrently.
         //
         // DO NOT auto-create a new session here. Session creation is the
         // responsibility of explicit user actions (keyboard shortcut, workspace
         // creation, task delegation) — not a side effect of mounting a chat UI.
-        //
-        // This code path is typically hit when panel layout tabs are restored
-        // from localStorage with stale agent IDs (e.g., after the agent was
-        // deleted, or during a race where ChatPanel mounts before the workspace
-        // page finishes restoring agents from disk). Auto-creating a session
-        // here was the root cause of "random blank agents" appearing on
-        // workspace open.
-        logger.warn('No session found for agent, skipping initialization', {
+        const retryDelays = [500, 1000, 2000];
+        for (const delay of retryDelays) {
+          logger.debug('Session not found, retrying after delay', {
+            agentId,
+            workspaceId: workspace.id,
+            retryDelayMs: delay,
+          });
+          await new Promise((resolve) => setTimeout(resolve, delay));
+
+          // Check unified state store first
+          const retryWorkspace = unifiedStateStore.currentWorkspace;
+          session = retryWorkspace?.agents.get(agentId)?.session ?? undefined;
+
+          // Fall back to agent service
+          if (!session) {
+            const tempSession = agentService.getSession(agentId);
+            if (tempSession) {
+              session = tempSession;
+            }
+          }
+
+          if (session) {
+            logger.info('Session found after retry', {
+              agentId,
+              workspaceId: workspace.id,
+              retryDelayMs: delay,
+            });
+            break;
+          }
+        }
+      }
+
+      if (!session) {
+        // Session genuinely doesn't exist after retries — this is a stale tab
+        // referencing a deleted agent, not a race condition.
+        logger.warn('No session found for agent after retries, skipping initialization', {
           agentId,
           workspaceId: workspace.id,
         });

@@ -4470,10 +4470,14 @@ export class ACPProvider extends BaseAgentProvider {
       return;
     }
 
-    // If no streaming handler, log a warning and skip
+    // No streaming handler — this commonly happens during session/load replay where
+    // auggie replays history as session/update notifications before streamMessage()
+    // has been called. These are safe to drop since the UI already has the history
+    // from its own persistence. Downgraded from WARN to DEBUG to reduce log noise
+    // (~20k warnings per session).
     // NOTE: Auggie sends 'update' but ACP spec says 'sessionUpdate' - support both
     const sessionUpdate = params?.update || params?.sessionUpdate;
-    logger.warn('No streaming handler available, skipping session update', {
+    logger.debug('No streaming handler available, skipping session update', {
       sessionId: params?.sessionId,
       updateType: sessionUpdate?.sessionUpdate,
     });

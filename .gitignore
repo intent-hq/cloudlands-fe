@@ -95,3 +95,6 @@ gcp-creds.json
 
 # E2E test reports (screenshots, traces, etc.)
 e2e-reports/
+
+# Auto-generated intent config
+.intent/

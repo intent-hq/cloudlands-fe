@@ -131,6 +131,31 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     // Load real workspace - prefer already-initialized workspace from the store
     let ws = workspaceStore.findById(WorkspaceId(workspaceId));
 
+    // Check if this workspace is already fully loaded and active.
+    // If so, we only need to call the backend open() for monitoring idempotency
+    // and can skip all frontend state re-initialization. This prevents redundant
+    // reactive updates (agent list resets, state re-initialization) when the user
+    // navigates away and back to the same workspace — which would clear streaming
+    // state and cause active streams to appear disconnected.
+    const isAlreadyActive =
+      ws &&
+      workspaceStore.current?.id === workspaceId &&
+      state?.workspaceData?.id === workspaceId;
+
+    if (isAlreadyActive) {
+      logger.info('Workspace already active, sending idempotent open only', {
+        workspaceId,
+        hasWorktreePath: !!ws?.worktreePath,
+      });
+
+      // Fire-and-forget: backend open() is idempotent and ensures monitoring is running.
+      // We don't need to await or process the result since the workspace is already loaded.
+      workspaceClient.open(WorkspaceId(workspaceId)).catch((error) => {
+        logger.warn('Background workspace open failed (non-critical)', { workspaceId, error });
+      });
+      return;
+    }
+
     // NOTE: We previously skipped workspaceClient.open() when the workspace already had a worktreePath.
     // However, this caused a bug where change detection monitoring wouldn't start on revisits.
     // The backend open() call is idempotent and fast if monitoring is already running, so we always call it

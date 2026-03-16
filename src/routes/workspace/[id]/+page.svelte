@@ -1543,6 +1543,13 @@
           }
         }
 
+        // Re-attach IPC stream handlers for any agents that are still streaming.
+        // When navigating away from a workspace and back, the stream handler may have
+        // been cleaned up (e.g., stream completed and a new one started while viewing
+        // another workspace).  registerStreamHandlerForSession is idempotent so this
+        // is safe even if the handler still exists.
+        agentService.reconnectStreamHandlersForWorkspace(capturedWorkspaceId);
+
         // After loading agents, verify streaming states with the backend
         // This clears stale isStreaming flags for agents whose backend streams have completed
         // and returns the list of agent IDs that have active streams

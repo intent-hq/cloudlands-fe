@@ -439,6 +439,51 @@ class RefactoredAgentService extends EventEmitter {
   }
 
   /**
+   * Re-register IPC stream handlers for agents in a specific workspace that
+   * have isStreaming === true.  This is the workspace-scoped equivalent of
+   * the private reconnectActiveStreams() and should be called every time the
+   * user navigates (back) to a workspace so that the frontend IPC layer is
+   * wired up to receive session updates from the backend.
+   *
+   * registerStreamHandlerForSession() is idempotent — it returns early if a
+   * handler already exists — so calling this on every workspace visit is safe.
+   */
+  reconnectStreamHandlersForWorkspace(workspaceId: string): void {
+    const sessions = this.getSessionsForWorkspace(workspaceId);
+    if (!sessions || sessions.length === 0) return;
+
+    const sessionsToReconnect: Array<{ session: AgentSession; message: AgentMessage }> = [];
+
+    for (const session of sessions) {
+      if (!session.messages) continue;
+
+      const streamingMessage = session.messages.find(
+        (m: AgentMessage) => m.role === 'assistant' && m.isStreaming === true,
+      );
+
+      if (streamingMessage) {
+        sessionsToReconnect.push({ session, message: streamingMessage });
+      }
+    }
+
+    if (sessionsToReconnect.length > 0) {
+      logger.info('Re-registering stream handlers on workspace re-visit', {
+        workspaceId,
+        count: sessionsToReconnect.length,
+        agentIds: sessionsToReconnect.map((s) => s.session.id),
+      });
+
+      for (const { session, message } of sessionsToReconnect) {
+        this.registerStreamHandlerForSession(
+          session.id,
+          message,
+          workspaceId,
+        );
+      }
+    }
+  }
+
+  /**
    * Query backend for active streams and re-register IPC handlers.
    * This should be called after loading agents from disk to reconnect to any
    * streams that were active when the page was refreshed/HMR occurred.
