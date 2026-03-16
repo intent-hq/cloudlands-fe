@@ -1106,9 +1106,12 @@
         // Browser open tab request from main process (agent wants to open a browser tab)
         window.electronAPI.on(
           'browser:open-tab',
-          (data: { url: string; position?: 'adjacent' | 'replace' | 'same' }) => {
+          (data: { url: string; position?: 'adjacent' | 'replace' | 'same'; workspaceId?: string }) => {
             logger.info('[+layout] Browser open tab request from main process', data);
-            const wsId = workspaceStore.current?.id;
+            // Prefer the workspaceId from the event payload so the browser tab
+            // opens in the workspace that requested it (e.g. the agent's workspace),
+            // not whichever workspace the user happens to be viewing right now.
+            const wsId = data.workspaceId || workspaceStore.current?.id;
             if (wsId && hasPanelLayoutManager(wsId)) {
               const manager = getPanelLayoutManager(wsId);
               const { url, position = 'adjacent' } = data;

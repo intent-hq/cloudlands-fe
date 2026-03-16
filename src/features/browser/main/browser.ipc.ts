@@ -47,8 +47,11 @@ function openBrowserTab(
     return { success: false, message: msg };
   }
 
-  // Send to workspace windows (falls back to all windows if no workspaceId)
-  sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.OPEN_TAB, { url, position });
+  // Send to workspace windows (falls back to all windows if no workspaceId).
+  // Include workspaceId in the payload so the renderer can open the browser tab
+  // in the correct workspace's panel layout — not just whichever workspace the
+  // user happens to be viewing at the moment.
+  sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.OPEN_TAB, { url, position, workspaceId });
   logger.info('Sent browser:open-tab', { url, position, workspaceId });
   return { success: true, message: `Opening browser tab with URL: ${url}` };
 }
