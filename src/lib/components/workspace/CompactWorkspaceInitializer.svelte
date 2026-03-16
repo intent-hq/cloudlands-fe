@@ -685,6 +685,23 @@
     }, 100);
   });
 
+  // Listen for global enhance prompt shortcut (Cmd+/)
+  $effect(() => {
+    if (!isExpanded) return;
+    if (typeof window === 'undefined') return;
+
+    const handleEnhancePromptEvent = () => {
+      handleEnhancePrompt();
+    };
+
+    window.addEventListener('chat:enhance-prompt', handleEnhancePromptEvent);
+
+    return () => {
+      window.removeEventListener('chat:enhance-prompt', handleEnhancePromptEvent);
+    };
+  });
+
+
   // Check for GitHub PRs with source branches when editor content is restored from sessionStorage
   // This ensures the "Use PR branch" suggestion appears for restored context mentions
   // Also fetches branch info for PRs that are missing it (e.g., from base64 context)

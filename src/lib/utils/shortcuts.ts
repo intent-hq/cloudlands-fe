@@ -223,7 +223,7 @@ export const SHORTCUT_CATEGORIES: Record<
     shortcuts: [
       { key: 'mod+shift+p', label: 'Command Palette', contexts: ['global'] },
       { key: 'mod+,', label: 'Settings', contexts: ['global'] },
-      { key: 'mod+/', label: 'Keyboard Shortcuts', contexts: ['global'] },
+      { key: 'mod+?', label: 'Keyboard Shortcuts', contexts: ['global'] },
       { key: 'mod+k', label: 'Command Palette', contexts: ['global'] },
       { key: 'mod+o', label: 'Toggle Spaces', contexts: ['global'] },
       { key: 'mod+n', label: 'New Agent', contexts: ['global'] },
