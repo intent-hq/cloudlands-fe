@@ -4,7 +4,12 @@
   import { mcpSettingsStore } from './mcp/mcp-settings.store.svelte';
   import type { McpServerConfig, McpServerWithStatus, McpServerFormState } from './mcp/types';
   import { serverToFormState } from './mcp/types';
-  import { mcpOptions, isServerInstalled, normalizeServerName, type McpInstallOption } from './mcp/mcp-options';
+  import {
+    mcpOptions,
+    isServerInstalled,
+    normalizeServerName,
+    type McpInstallOption,
+  } from './mcp/mcp-options';
   import McpServerCard from './mcp/McpServerCard.svelte';
   import McpServerForm from './mcp/McpServerForm.svelte';
   import McpJsonImport from './mcp/McpJsonImport.svelte';
@@ -260,7 +265,9 @@
 
   function getInstalledServerStatus(option: McpInstallOption): string | undefined {
     const server = servers.find(
-      (s) => s.name.toLowerCase().replace(/\s+/g, '-') === option.label.toLowerCase().replace(/\s+/g, '-'),
+      (s) =>
+        s.name.toLowerCase().replace(/\s+/g, '-') ===
+        option.label.toLowerCase().replace(/\s+/g, '-'),
     );
     return server?.status;
   }
@@ -421,7 +428,7 @@
             type="button"
             class="text-primary hover:underline cursor-pointer"
             onclick={(e) => {
-              handleLink('https://docs.augmentcode.com/windsurf/mcp', {
+              handleLink('https://docs.augmentcode.com/setup-augment/mcp', {
                 workspaceId: workspaceStore.current?.id,
                 event: e,
               });
@@ -613,7 +620,7 @@
                   type="button"
                   class="text-primary hover:underline cursor-pointer"
                   onclick={(e) => {
-                    handleLink('https://docs.augmentcode.com/windsurf/mcp', {
+                    handleLink('https://docs.augmentcode.com/setup-augment/mcp', {
                       workspaceId: workspaceStore.current?.id,
                       event: e,
                     });
@@ -645,7 +652,8 @@
                 {@const installed = isInstalled(option)}
                 {@const installing = installingServer === option.label}
                 {@const configuring = activeConfig?.label === option.label}
-                {@const needsAuth = installed && getInstalledServerStatus(option) === 'auth_required'}
+                {@const needsAuth =
+                  installed && getInstalledServerStatus(option) === 'auth_required'}
 
                 <div class="relative">
                   {#if configuring}
@@ -702,7 +710,9 @@
                           <div class="flex items-center gap-2">
                             <span class="text-sm font-medium truncate">{option.label}</span>
                             {#if needsAuth}
-                              <span class="text-ui text-amber-700 dark:text-amber-400 font-medium"> Needs Auth </span>
+                              <span class="text-ui text-amber-700 dark:text-amber-400 font-medium">
+                                Needs Auth
+                              </span>
                             {:else if installed}
                               <span class="text-ui text-green-600 font-medium"> Installed </span>
                             {/if}
