@@ -33,7 +33,7 @@ on:
         type: string
 
 concurrency:
-  group: intent-smoke-test
+  group: intent-smoke-test-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -203,27 +203,14 @@ jobs:
         timeout-minutes: 2
         run: codex exec "Respond with just the word ok" --sandbox read-only
 
-      - name: Detect available codex model
-        if: matrix.provider == 'codex' && env.OPENAI_API_KEY != ''
-        timeout-minutes: 3
-        run: |
-          for model in gpt-5.3-codex gpt-5.2-codex gpt-5.1-codex gpt-5-codex; do
-            echo "Trying model: $model"
-            if codex exec --model "$model" "Respond with just ok" --sandbox read-only 2>&1; then
-              echo "CODEX_SMOKE_MODEL=codex:$model/low" >> $GITHUB_ENV
-              echo "✅ Using model: $model"
-              exit 0
-            fi
-            echo "❌ $model not available"
-          done
-          echo "⚠️ No codex model available — test will likely fail"
-
       - name: Install opencode
         if: matrix.provider == 'opencode' && env.ANTHROPIC_API_KEY != ''
         run: npm install -g opencode-ai
 
       - name: Run smoke tests
         run: npx playwright test --config=e2e/build-smoke.config.ts --grep "${{ matrix.provider }}" --grep-invert "multi-provider"
+        env:
+          RUNNING_IN_TERMINAL: '1'
 
       - name: Upload test artifacts
         uses: actions/upload-artifact@v4
@@ -331,27 +318,14 @@ jobs:
         timeout-minutes: 2
         run: codex exec "Respond with just the word ok" --sandbox read-only
 
-      - name: Detect available codex model
-        if: env.OPENAI_API_KEY != ''
-        timeout-minutes: 3
-        run: |
-          for model in gpt-5.3-codex gpt-5.2-codex gpt-5.1-codex gpt-5-codex; do
-            echo "Trying model: $model"
-            if codex exec --model "$model" "Respond with just ok" --sandbox read-only 2>&1; then
-              echo "CODEX_SMOKE_MODEL=codex:$model/low" >> $GITHUB_ENV
-              echo "✅ Using model: $model"
-              exit 0
-            fi
-            echo "❌ $model not available"
-          done
-          echo "⚠️ No codex model available — test will likely fail"
-
       - name: Install opencode
         if: env.ANTHROPIC_API_KEY != ''
         run: npm install -g opencode-ai
 
       - name: Run smoke tests
         run: npx playwright test --config=e2e/build-smoke.config.ts --grep "multi-provider"
+        env:
+          RUNNING_IN_TERMINAL: '1'
 
       - name: Upload test artifacts
         uses: actions/upload-artifact@v4

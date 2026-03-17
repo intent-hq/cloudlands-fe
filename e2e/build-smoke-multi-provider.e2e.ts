@@ -18,7 +18,6 @@ import {
   createTempRepo,
   getAvailableProviders,
   switchProviderViaLocalStorage,
-  setCodexModelViaSettingsUI,
   createWorkspaceWithPrompt,
   resolveWorktreeReadmePath,
   waitForFileContent,
@@ -41,7 +40,6 @@ const DEFAULT_PROVIDER_TIMEOUT = 4 * 60 * 1000;
 
 /** Some providers need extra time. */
 function getProviderTimeout(providerId: string): number {
-  if (providerId === 'codex') return 6 * 60 * 1000;
   if (providerId === 'claude-code') return 5 * 60 * 1000;
   return DEFAULT_PROVIDER_TIMEOUT;
 }
@@ -178,12 +176,6 @@ test.describe('multi-provider smoke tests', () => {
 
       try {
         await switchProviderViaLocalStorage(page, providerId);
-
-        if (providerId === 'codex') {
-          const codexModel = process.env.CODEX_SMOKE_MODEL || 'codex:gpt-5.2-codex/low';
-          console.log(`🔧 Setting codex model via Settings UI: ${codexModel}`);
-          await setCodexModelViaSettingsUI(page, codexModel);
-        }
 
         // Reset README between providers
         if (results.length > 0) {

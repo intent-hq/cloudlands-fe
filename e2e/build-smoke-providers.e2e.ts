@@ -20,7 +20,6 @@ import {
   createTempRepo,
   getAvailableProviders,
   switchProviderViaLocalStorage,
-  setCodexModelViaSettingsUI,
   setOpencodeModelViaSettingsUI,
   createWorkspaceWithPrompt,
   resolveWorktreeReadmePath,
@@ -37,9 +36,7 @@ const PROMPT =
   'Write a simple spec to add "hello world" to the README.md and then delegate it to an implementor.';
 const DEFAULT_PROVIDER_TIMEOUT = 4 * 60 * 1000;
 
-/** Codex needs extra time: coordinator → approval → delegation → implementor + Settings UI model override. */
 function getProviderTimeout(providerId: string): number {
-  if (providerId === 'codex') return 6 * 60 * 1000;
   return DEFAULT_PROVIDER_TIMEOUT;
 }
 const SCREENSHOT_DIR = path.join(process.cwd(), 'e2e-reports', 'build-smoke');
@@ -178,17 +175,6 @@ test.describe('Build Smoke — Provider Verification', () => {
         // Always explicitly switch provider via localStorage — don't assume any
         // default.  A previous test run may have left a different provider active.
         await switchProviderViaLocalStorage(page, providerId);
-
-        // gpt-5.3-codex may not be available via API key access.  The CI
-        // workflow probes models and exports CODEX_SMOKE_MODEL with the first
-        // one that works.  Set the model via the Settings UI so that the
-        // Svelte reactivity system picks up the change (electron-store IPC
-        // writes are not reflected in the renderer's SpecialistsStore).
-        if (providerId === 'codex') {
-          const codexModel = process.env.CODEX_SMOKE_MODEL || 'codex:gpt-5.2-codex/low';
-          console.log(`🔧 Setting codex model via Settings UI: ${codexModel}`);
-          await setCodexModelViaSettingsUI(page, codexModel);
-        }
 
         // OpenCode models are dynamic (fetched from the CLI at runtime) so
         // they aren't in PROVIDER_MODEL_TIERS.  Without an explicit model

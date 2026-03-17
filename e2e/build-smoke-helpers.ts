@@ -19,7 +19,6 @@ import {
 } from 'fs';
 import { homedir, tmpdir } from 'os';
 import { basename, join } from 'path';
-import { CODEX_MODELS } from '../src/shared/config/open-ai-codex-models';
 
 // ---------------------------------------------------------------------------
 // findPackagedApp
@@ -895,101 +894,6 @@ export async function setSpecialistModelOverrides(
   // Reload so SpecialistsStore.loadOverrides() picks up the new values
   await page.reload();
   await page.waitForLoadState('domcontentloaded');
-}
-
-// ---------------------------------------------------------------------------
-// setCodexModelViaSettingsUI
-// ---------------------------------------------------------------------------
-
-/**
- * Set the codex model for default, Coordinator, and Implementor specialists
- * by navigating through the Settings UI — the same way a real user would.
- *
- * The electron-store IPC approach does not work because the Svelte reactivity
- * system and SpecialistsStore singleton initialization ignore programmatic
- * writes. This function clicks through the actual Settings page instead.
- *
- * @param page  Playwright Page
- * @param model Compound model ID (e.g. `codex:gpt-5.2-codex`)
- */
-export async function setCodexModelViaSettingsUI(page: Page, model: string): Promise<void> {
-  // 1. Parse the model ID: strip the "codex:" prefix and look up the display label
-  const rawModelId = model.startsWith('codex:') ? model.slice('codex:'.length) : model;
-  const modelEntry = CODEX_MODELS[rawModelId];
-  if (!modelEntry) {
-    throw new Error(
-      `Unknown codex model ID "${rawModelId}". Known models: ${Object.keys(CODEX_MODELS).join(', ')}`,
-    );
-  }
-  const modelLabel = modelEntry.label;
-  console.log(`🔧 Setting codex model via Settings UI: ${rawModelId} → "${modelLabel}"`);
-
-  // Helper: select a model from a ModelPicker dropdown within a container
-  async function selectModelInDropdown(
-    container: ReturnType<Page['locator']>,
-    label: string,
-  ): Promise<void> {
-    const trigger = container.locator('button[aria-haspopup="listbox"]').first();
-    await trigger.waitFor({ state: 'visible', timeout: 5_000 });
-    await trigger.click();
-    // Wait for the dropdown options to appear and click the matching one
-    const option = page.getByText(label, { exact: true }).first();
-    await option.waitFor({ state: 'visible', timeout: 5_000 });
-    await option.click();
-    // Small delay for store persistence
-    await page.waitForTimeout(500);
-  }
-
-  // 2. Navigate to Settings
-  const baseUrl = await page.evaluate(() => window.location.origin);
-  await page.goto(`${baseUrl}/settings`);
-  await page.waitForLoadState('domcontentloaded');
-
-  // 3. Click the "Agents" tab
-  const agentsTab = page.locator('button', { hasText: 'Agents' }).first();
-  await agentsTab.waitFor({ state: 'visible', timeout: 5_000 });
-  await agentsTab.click();
-  await page.waitForTimeout(500);
-
-  // 4. Set the Default Model ("All agents" view is selected by default)
-  //    The editor panel has a section with id="default-model" containing the ModelPicker
-  const defaultModelSection = page.locator('#default-model');
-  await defaultModelSection.waitFor({ state: 'visible', timeout: 5_000 });
-  await selectModelInDropdown(defaultModelSection, modelLabel);
-  console.log(`  ✅ Default model set to "${modelLabel}"`);
-
-  // 5. Set Coordinator model
-  const coordinatorBtn = page.locator('button').filter({ hasText: 'Coordinator' }).first();
-  await coordinatorBtn.waitFor({ state: 'visible', timeout: 5_000 });
-  await coordinatorBtn.click();
-  await page.waitForTimeout(500);
-  // Wait for the specialist editor to show "Coordinator"
-  await page
-    .locator('h2', { hasText: 'Coordinator' })
-    .first()
-    .waitFor({ state: 'visible', timeout: 5_000 });
-  // The specialist editor panel is the .editor-container
-  const editorPanel = page.locator('.editor-container');
-  await selectModelInDropdown(editorPanel, modelLabel);
-  console.log(`  ✅ Coordinator model set to "${modelLabel}"`);
-
-  // 6. Set Implementor model
-  const implementorBtn = page.locator('button').filter({ hasText: 'Implementor' }).first();
-  await implementorBtn.waitFor({ state: 'visible', timeout: 5_000 });
-  await implementorBtn.click();
-  await page.waitForTimeout(500);
-  // Wait for the specialist editor to show "Implementor"
-  await page
-    .locator('h2', { hasText: 'Implementor' })
-    .first()
-    .waitFor({ state: 'visible', timeout: 5_000 });
-  await selectModelInDropdown(editorPanel, modelLabel);
-  console.log(`  ✅ Implementor model set to "${modelLabel}"`);
-
-  // 7. Navigate back to home
-  await page.goto(`${baseUrl}/`);
-  await page.waitForLoadState('domcontentloaded');
-  console.log(`  ✅ Navigated back to home`);
 }
 
 // ---------------------------------------------------------------------------
