@@ -76,7 +76,6 @@
     panelFocused?: boolean;
     /** Whether to use compact mode (shorter height for short panels) */
     compactMode?: boolean;
-    providerMismatch?: boolean;
     providerId?: string;
     isProviderChangeLocked?: boolean;
     onsubmit?: (value: string) => void;
@@ -116,7 +115,6 @@
     editMode = false,
     panelFocused: _panelFocused = true, // Reserved for future use
     compactMode: _compactMode = false, // Reserved for future use
-    providerMismatch = false,
     providerId: propProviderId,
     isProviderChangeLocked = false,
     onsubmit,
@@ -885,8 +883,6 @@
     {
       'border-border': !isDragging,
       'border-primary border-dashed': isDragging,
-      "opacity-50 pointer-events-none before:content-[''] before:inset-0 before:absolute before:backdrop-blur-sm before:z-50":
-        providerMismatch,
     },
   )}
   style={isAutoExpand

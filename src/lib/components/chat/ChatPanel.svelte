@@ -67,7 +67,7 @@
   } from '$lib/store/slices/multi-panel-context/multi-panel-context-selectors';
   import { getDispatch } from '$lib/store/utils/utils';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
+
   import {
     getTasksForAgent,
     type TaskAgentAssociation,
@@ -123,7 +123,7 @@
   import { parseSuggestedPrompts } from '$lib/utils/messageParser';
 
   import { getTransientUIStore } from '$features/workspace/transient-ui-state.store.svelte';
-  import { getProviderAvailability } from '$features/providers/provider-availability.client';
+
   import LazyTurn from './LazyTurn.svelte';
   import InlinePermissionRequest from './InlinePermissionRequest.svelte';
   import { selectPermissionRequests } from '$lib/store/slices/permission/permission-selectors';
@@ -133,15 +133,10 @@
   import AuroraBackground from './AuroraBackground.svelte';
   import { invoke, listenSync } from '$lib/electron-bridge';
   import { specialistsStore } from '$lib/stores/specialists.store.svelte';
-  import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
-
   import { getAgentProvider } from '$shared/types/agent-session';
-  import {
-    getDefaultProviderId,
-    getProviderConfig,
-    parseCompoundModelId,
-  } from '$shared/config/provider-config';
   import { cleanErrorMessage } from '$shared/errors/messages';
+  import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
+  import { resolveHydratedInputModel } from './input-hydration';
 
   const logger = createLogger('ChatPanel');
 
@@ -297,44 +292,6 @@
     agentId ? $allPermissionRequests.filter((r) => r.sessionId === agentId) : [],
   );
   let hasPendingPermission = $derived(agentPermissionRequests.length > 0);
-
-  let hiddenProviders = $state<string[]>([]);
-
-  // Provider mismatch detection — blocks interaction when agent's provider ≠ active provider
-  // Compares resolved/canonical provider IDs to handle aliases (e.g., 'acp' → 'auggie')
-  let isProviderMismatch = $derived.by(() => {
-    if (sandboxMode) return false;
-    const session = chatState.session;
-    if (!session) return false;
-    const agentProvider = getAgentProvider(session);
-    if (!agentProvider) return false; // Legacy agents without provider — allow interaction
-    // Normalize both provider IDs through getProviderConfig to resolve aliases
-    // (e.g., 'acp' and 'auggie' both resolve to the 'auggie' config)
-    const resolvedAgentProvider = getProviderConfig(agentProvider).id;
-    const resolvedActiveProvider = getProviderConfig(activeProviderStore.activeProviderId).id;
-    return resolvedAgentProvider !== resolvedActiveProvider;
-  });
-
-  let matchedProviders = $derived.by(() => {
-    if (!isProviderMismatch) return null;
-    const session = chatState.session;
-    if (!session) return null;
-    const agentProvider = getAgentProvider(session);
-    if (!agentProvider) return null;
-    const agentProviderConfig = getProviderConfig(agentProvider);
-    const activeProviderName = getProviderConfig(activeProviderStore.activeProviderId).displayName;
-    return {
-      agentProviderName: agentProviderConfig.displayName,
-      agentProviderId: agentProviderConfig.id,
-      activeProviderName,
-    };
-  });
-
-  // Whether the agent's provider is hidden (env var gate) — used to hide "switch back" button
-  let isAgentProviderHidden = $derived.by(() => {
-    if (!isProviderMismatch || !matchedProviders) return false;
-    return hiddenProviders.includes(matchedProviders.agentProviderId);
-  });
 
   // Track previous workspace to detect changes
   let previousWorkspaceId = $state<string | null>(null);
@@ -1117,6 +1074,27 @@
   // Alias for backward compatibility
   let pendingInitialPrompt = $derived(pendingInitialData.prompt);
 
+  // Provider/model lock — prevents changing provider or model after first user message
+  let canChangeProvider = $derived(
+    resolveCanChangeAgentProvider({
+      session: chatState.session,
+      messages: chatState.messages,
+      pendingInitialPrompt,
+      pendingContextReferenceCount: pendingInitialData.contextReferences?.length ?? 0,
+    }),
+  );
+
+  // Hydrated input model — uses session model when available, falls back to agentModel prop
+  let hydratedInputModel = $derived(
+    resolveHydratedInputModel(chatState.session, agentModel),
+  );
+
+  // Provider ID for the input — resolved from the agent session
+  let inputProviderId = $derived.by(() => {
+    if (!chatState.session) return undefined;
+    return getAgentProvider(chatState.session);
+  });
+
   // Flag to preserve streaming state when message was already sent by workspace initializer.
   // This prevents the ChatService store subscription from overwriting our local streaming state
   // before the actual streaming data arrives from the backend.
@@ -1520,14 +1498,6 @@
     });
 
     // Permission store is now auto-initialized via Redux saga — no manual initialize() needed
-
-    // Trigger provider availability check to correct stale active provider
-    // (e.g., if cortex was selected but its feature code is no longer active)
-    getProviderAvailability()
-      .then((result) => {
-        hiddenProviders = result.hiddenProviders ?? [];
-      })
-      .catch(() => {});
 
     // Skip service initialization in sandbox mode
     if (sandboxMode) {
@@ -4003,51 +3973,6 @@
       </div>
     {/if}
 
-    {#if isProviderMismatch && matchedProviders}
-      <div
-        class="absolute z-50 w-4/5 inset-x-0 mx-auto top-1/2 -translate-y-1/2 px-3 py-2.5 text-sm text-subtle bg-muted/50 border border-border rounded-lg flex items-center justify-between gap-2"
-      >
-        <p class="text-balance">
-          {#if isAgentProviderHidden}
-            <span class="text-foreground">{matchedProviders.agentProviderName}</span> is no longer
-            available.
-            <button
-              class="underline cursor-pointer"
-              onclick={() =>
-                window.dispatchEvent(
-                  new CustomEvent('app:new-agent', {
-                    detail: { agentType: chatState.session?.metadata?.agentType },
-                  }),
-                )}>Create a new agent</button
-            > to continue.
-          {:else}
-            This agent was started with <span class="text-foreground"
-              >{matchedProviders.agentProviderName}</span
-            >.
-            <br />
-            To use <span class="text-foreground">{matchedProviders.activeProviderName}</span>,
-            <button
-              class="underline cursor-pointer"
-              onclick={() =>
-                window.dispatchEvent(
-                  new CustomEvent('app:new-agent', {
-                    detail: { agentType: chatState.session?.metadata?.agentType },
-                  }),
-                )}>create a new agent</button
-            >
-            or
-            <button
-              class="underline cursor-pointer"
-              onclick={async () => {
-                activeProviderStore.setActiveProvider(matchedProviders.agentProviderId);
-                multiPanelDispatch(reloadModelsForProvider());
-              }}>switch back</button
-            > <span class="text-xs opacity-60 italic whitespace-nowrap">(applies globally).</span>
-          {/if}
-        </p>
-      </div>
-    {/if}
-
     <SimpleRichInput
       bind:this={inputComponent}
       bind:contextItems
@@ -4057,14 +3982,15 @@
       onstop={handleStop}
       onHistoryPrev={handleHistoryPrev}
       onHistoryNext={handleHistoryNext}
-      disabled={!workspace || !chatState.session || isProviderMismatch}
+      disabled={!workspace || !chatState.session}
       isStreaming={chatState.isStreaming}
       {workspace}
       currentContext={currentMainPanelContext}
       {agentId}
-      selectedModel={agentModel}
+      selectedModel={hydratedInputModel ?? agentModel}
       compactMode={isCompactMode}
-      providerMismatch={isProviderMismatch}
+      isProviderChangeLocked={!canChangeProvider}
+      providerId={inputProviderId}
     />
   </div>
 </div>

@@ -31,7 +31,7 @@ export function canChangeAgentProvider({
   pendingContextReferenceCount = 0,
 }: ProviderLockStateInput): boolean {
   if (!session) {
-    return false;
+    return true;
   }
 
   return (

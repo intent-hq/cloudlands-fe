@@ -46,6 +46,15 @@ describe('canChangeAgentProvider', () => {
     ).toBe(false);
   });
 
+  it('returns unlocked when session is null (nothing to lock)', () => {
+    expect(
+      canChangeAgentProvider({
+        session: null,
+        messages: [],
+      }),
+    ).toBe(true);
+  });
+
   it('keeps reopened used chats locked based on persisted user messages', () => {
     expect(
       canChangeAgentProvider({
