@@ -8,7 +8,7 @@
  */
 
 import { agentService, type AgentSession } from '$features/agent/agent.service';
-import { sessionStore, subscribeToAgent } from '$features/agent/browser';
+import { publishSessionStoreSnapshot, sessionStore, subscribeToAgent } from '$features/agent/browser';
 import { workspaceStore } from '$features/workspace/workspace.store.svelte';
 import { get } from 'svelte/store';
 import { createLogger } from '$lib/utils/client-logger';
@@ -353,14 +353,27 @@ export function useAllAgentsSubscription(workspaceId?: WorkspaceIdSource) {
 
         // Restore each agent session
         let restoredCount = 0;
-        let skippedCount = 0;
+        let republishedCount = 0;
         for (const diskAgent of diskAgents) {
-          // Check if agent is already in the store
-          const existingSession = agentService.getSession(diskAgent.id);
-          if (!existingSession) {
-            logger.debug('Restoring agent session:', diskAgent.id);
-            // Restore the agent session without backend registration
-            // This is a lightweight restore just to show the agent in the UI
+          // If the agent already exists in the workspace-aware in-memory store,
+          // republish it into sessionStoreData instead of skipping it.
+          // This recovers the sidebar after workspace switches where unifiedStateStore
+          // still has the agents but the global session store snapshot is empty/stale.
+          const existingSession = sessionStore.getSessionForWorkspace(
+            resolvedWorkspaceId,
+            diskAgent.id,
+          );
+          if (existingSession) {
+            logger.debug('Re-publishing existing agent session to session store:', diskAgent.id);
+            sessionStore.addSessionForWorkspace(resolvedWorkspaceId, {
+              ...existingSession,
+              workspaceId: workspace.id,
+            });
+            republishedCount++;
+          } else {
+            logger.debug('Restoring agent session from disk:', diskAgent.id);
+            // Restore the agent session without backend registration.
+            // This is a lightweight restore just to show the agent in the UI.
             const restored = await agentService.restoreSessionWithoutBackend(
               diskAgent.id,
               workspace,
@@ -370,13 +383,18 @@ export function useAllAgentsSubscription(workspaceId?: WorkspaceIdSource) {
             } else {
               logger.warn('[AgentSubscription] Failed to restore agent:', diskAgent.id);
             }
-          } else {
-            skippedCount++;
           }
         }
+
+        // Publish a synchronous snapshot now that the restore/republish loop is complete.
+        // The normal browser store path is RAF-batched for steady-state updates, but after a
+        // workspace restore we want the sidebar-facing sessionStoreData to reflect the full
+        // restored set before loading flips back to false.
+        publishSessionStoreSnapshot();
+
         logger.info('[AgentSubscription] Agent load complete', {
           restoredCount,
-          skippedCount,
+          republishedCount,
           totalOnDisk: diskAgents.length,
         });
       } catch (error) {

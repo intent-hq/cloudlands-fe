@@ -14,6 +14,7 @@
   import { onMount } from 'svelte';
   import { getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import Header from '../ui/Header.svelte';
+  import { getWorkspaceAgentsVisibilitySummary } from './workspace-agents-list-utils';
 
   interface Props {
     agents?: AgentSession[];
@@ -229,6 +230,11 @@
   const shouldUseVirtual = $derived(
     useVirtualScrolling && topLevelForegroundAgents.length > 20 && delegationMap.size === 0,
   );
+  const visibilitySummary = $derived(getWorkspaceAgentsVisibilitySummary(dedupedAgents));
+  const shouldShowVisibilitySummary = $derived(
+    visibilitySummary.totalCount > 0 &&
+      (visibilitySummary.delegatedCount > 0 || visibilitySummary.backgroundCount > 0),
+  );
   const itemHeight = 72;
   const containerHeight = 600;
 
@@ -241,6 +247,20 @@
 {#if onCreate || onCreateWithSpecialist}
   <div class="px-3 mt-0.5">
     <CreateAgentSection {onCreate} {onCreateWithSpecialist} />
+  </div>
+{/if}
+
+{#if !loading && shouldShowVisibilitySummary}
+  <div class="px-3 pb-2 pt-0.5">
+    <p class="text-xs text-subtle">
+      Showing {visibilitySummary.topLevelForegroundCount} top-level of {visibilitySummary.totalCount} total
+      {#if visibilitySummary.delegatedCount > 0}
+        · {visibilitySummary.delegatedCount} delegated
+      {/if}
+      {#if visibilitySummary.backgroundCount > 0}
+        · {visibilitySummary.backgroundCount} background
+      {/if}
+    </p>
   </div>
 {/if}
 

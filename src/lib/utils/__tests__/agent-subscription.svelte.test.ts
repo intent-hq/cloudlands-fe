@@ -5,25 +5,49 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { flushSync } from 'svelte';
-import { get, writable } from 'svelte/store';
+import { writable } from 'svelte/store';
 import type { AgentSession } from '$features/agent/agent.service';
 import { AgentStatus } from '$shared/types';
 
+const mockDiskAgents = vi.hoisted(() => ({
+  agents: [] as Array<{ id: string; name?: string }>,
+}));
+
+const agentServiceMocks = vi.hoisted(() => ({
+  subscribe: vi.fn(),
+  getStore: vi.fn(),
+  getSession: vi.fn(),
+  restoreSessionWithoutBackend: vi.fn(),
+}));
+
+const browserMocks = vi.hoisted(() => ({
+  getStore: vi.fn(),
+  getSessionForWorkspace: vi.fn(),
+  addSession: vi.fn(),
+  addSessionForWorkspace: vi.fn(),
+  publishSessionStoreSnapshot: vi.fn(),
+  subscribeToAgent: vi.fn(),
+}));
+
 // Mock dependencies
 vi.mock('$features/agent/agent.service', () => ({
-  agentService: {
-    subscribe: vi.fn(),
-    getStore: vi.fn(),
-    restoreSessionWithoutBackend: vi.fn(),
-  },
+  agentService: agentServiceMocks,
 }));
 
 // Mock sessionStore and subscribeToAgent - these are what the implementation uses
 vi.mock('$features/agent/browser', () => ({
   sessionStore: {
-    getStore: vi.fn(),
+    getStore: browserMocks.getStore,
+    getSessionForWorkspace: browserMocks.getSessionForWorkspace,
+    addSession: browserMocks.addSession,
+    addSessionForWorkspace: browserMocks.addSessionForWorkspace,
   },
-  subscribeToAgent: vi.fn(),
+  publishSessionStoreSnapshot: browserMocks.publishSessionStoreSnapshot,
+  subscribeToAgent: browserMocks.subscribeToAgent,
+}));
+
+vi.mock('$lib/utils/agent-loader', () => ({
+  getStoredAgentsFromDisk: vi.fn(async () => mockDiskAgents.agents),
 }));
 
 vi.mock('$features/workspace/workspace.store.svelte', () => {
@@ -804,9 +828,37 @@ describe('useAllAgentsSubscription – workspace isolation', () => {
     vi.clearAllMocks();
 
     mockSessions = [];
+    mockDiskAgents.agents = [];
     mockStore = writable({ sessions: mockSessions, activeSessionId: null });
 
-    vi.mocked(sessionStore.getStore).mockReturnValue(mockStore as any);
+    browserMocks.getStore.mockReturnValue(mockStore as any);
+    browserMocks.getSessionForWorkspace.mockImplementation((workspaceId: string, agentId: string) => {
+      return (
+        mockSessions.find((session) => session.id === agentId && String(session.workspaceId) === String(workspaceId)) as
+          | AgentSession
+          | undefined
+      );
+    });
+    browserMocks.addSession.mockImplementation((session: AgentSession) => {
+      const nextSession = session as AgentSession;
+      const existingIndex = mockSessions.findIndex((item) => item.id === nextSession.id);
+      if (existingIndex === -1) {
+        mockSessions.push(nextSession);
+      } else {
+        mockSessions[existingIndex] = nextSession;
+      }
+      mockStore.set({ sessions: [...mockSessions], activeSessionId: null });
+    });
+    browserMocks.addSessionForWorkspace.mockImplementation((workspaceId: string, session: AgentSession) => {
+      const nextSession = { ...session, workspaceId } as AgentSession;
+      const existingIndex = mockSessions.findIndex((item) => item.id === nextSession.id);
+      if (existingIndex === -1) {
+        mockSessions.push(nextSession);
+      } else {
+        mockSessions[existingIndex] = nextSession;
+      }
+      mockStore.set({ sessions: [...mockSessions], activeSessionId: null });
+    });
     vi.mocked(agentService.restoreSessionWithoutBackend).mockResolvedValue(true);
   });
 
@@ -846,6 +898,40 @@ describe('useAllAgentsSubscription – workspace isolation', () => {
       // .all should contain everything
       expect(sub.all).toHaveLength(3);
     });
+
+    cleanup();
+  });
+
+  it('re-publishes existing sessions with the requested workspaceId', async () => {
+    const existingSession = makeAgent('agent-a', 'stale-workspace');
+    mockDiskAgents.agents.splice(0, mockDiskAgents.agents.length, {
+      id: 'agent-a',
+      name: existingSession.name,
+    });
+    browserMocks.getSessionForWorkspace.mockImplementation((workspaceId: string, agentId: string) => {
+      if (workspaceId === 'test-workspace' && agentId === 'agent-a') {
+        return existingSession;
+      }
+      return undefined;
+    });
+
+    const cleanup = $effect.root(() => {
+      useAllAgentsSubscription('test-workspace');
+    });
+
+    flushSync();
+    await vi.waitFor(() => {
+      expect(browserMocks.addSessionForWorkspace).toHaveBeenCalledWith(
+        'test-workspace',
+        expect.objectContaining({
+          id: 'agent-a',
+          workspaceId: 'test-workspace',
+        }),
+      );
+    });
+    expect(browserMocks.publishSessionStoreSnapshot).toHaveBeenCalled();
+    expect(browserMocks.addSession).not.toHaveBeenCalled();
+    expect(agentService.restoreSessionWithoutBackend).not.toHaveBeenCalled();
 
     cleanup();
   });
@@ -922,4 +1008,5 @@ describe('useAllAgentsSubscription – workspace isolation', () => {
 
     cleanup();
   });
+
 });

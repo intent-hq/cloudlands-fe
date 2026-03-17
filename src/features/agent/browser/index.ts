@@ -29,6 +29,11 @@ const deprecationWarningShown = new Set<string>();
 
 export const sessionStoreData = writable<{ sessions: AgentSession[] }>({ sessions: [] });
 
+export function publishSessionStoreSnapshot(): void {
+  const sessions = unifiedStateStore.getAllAgents();
+  sessionStoreData.set({ sessions });
+}
+
 // Per-agent subscribers for efficient updates during streaming
 // Instead of notifying ALL subscribers for ANY agent update, this allows
 // ChatPanel to subscribe to a specific agent and only get notified when
@@ -232,9 +237,7 @@ function scheduleStoreUpdate(forWorkspaceId?: WorkspaceId, forAgentId?: string) 
     // The sidebar's useAllAgentsSubscription expects sessionStoreData to contain all agents,
     // and then filters by workspaceId in the component. If we only include agents from one
     // workspace, the sidebar shows "No agents yet" when switching workspaces.
-    const sessions = unifiedStateStore.getAllAgents();
-
-    sessionStoreData.set({ sessions });
+    publishSessionStoreSnapshot();
   });
 }
 
@@ -455,6 +458,24 @@ export const sessionStore = {
         hasCurrentWorkspace: !!currentWorkspace,
       });
     }
+  },
+  /**
+   * Add a session to a specific workspace.
+   * Unlike addSession(), this works even when the user is viewing a different workspace.
+   */
+  addSessionForWorkspace: (workspaceId: string, session: AgentSession) => {
+    if (!session) {
+      logger.warn('addSessionForWorkspace called with null/undefined session, ignoring');
+      return;
+    }
+
+    const sessionWithWorkspace = {
+      ...session,
+      workspaceId: workspaceId as WorkspaceId,
+    };
+
+    unifiedStateStore.setAgent(workspaceId as WorkspaceId, sessionWithWorkspace);
+    scheduleStoreUpdate(workspaceId as WorkspaceId, session.id);
   },
   /** @deprecated Use workspace-aware alternative. This method uses currentWorkspace which may be incorrect for background agents. */
   removeSession: (agentId: string) => {
