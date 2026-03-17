@@ -217,12 +217,6 @@ function scheduleStoreUpdate(forWorkspaceId?: WorkspaceId, forAgentId?: string) 
     pendingAgentUpdates.clear();
     pendingAgentWorkspaces.clear();
 
-    console.warn('[DIAG RAF] Flushing batched updates', {
-      agentCount: agentIdsToNotify.length,
-      agentIds: agentIdsToNotify,
-      workspaceMap: Object.fromEntries(workspaceSnapshot),
-    });
-
     // Notify per-agent subscribers with the CORRECT workspace for each agent.
     // Previously a single pendingTargetWorkspaceId was used for ALL agents in
     // the batch, so if agent A (workspace-1) and agent B (workspace-2) both
@@ -240,10 +234,6 @@ function scheduleStoreUpdate(forWorkspaceId?: WorkspaceId, forAgentId?: string) 
     // workspace, the sidebar shows "No agents yet" when switching workspaces.
     const sessions = unifiedStateStore.getAllAgents();
 
-    console.warn('[DIAG RAF] Setting sessionStoreData', {
-      sessionCount: sessions.length,
-      sessionIds: sessions.map((s: any) => s?.id).slice(0, 10),
-    });
     sessionStoreData.set({ sessions });
   });
 }

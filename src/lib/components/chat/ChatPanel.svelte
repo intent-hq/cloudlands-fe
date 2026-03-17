@@ -1660,10 +1660,15 @@
         currentMessages.length > 0 &&
         !state.isStreaming
       ) {
-        logger.debug('[ChatPanel] Ignoring chatService update with fewer messages', {
+        // Upgrade to warn so this is visible in console when debugging message loss
+        logger.warn('[ChatPanel] Ignoring chatService update with fewer messages (non-streaming)', {
           agentId,
           currentMessageCount: currentMessages.length,
           incomingMessageCount: state.messages.length,
+          currentLastId: currentMessages[currentMessages.length - 1]?.id,
+          incomingLastId: state.messages[state.messages.length - 1]?.id,
+          currentRoles: currentMessages.map(m => m.role),
+          incomingRoles: state.messages.map(m => m.role),
         });
         return;
       }

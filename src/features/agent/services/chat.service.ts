@@ -2019,6 +2019,47 @@ export class ChatService implements IDisposable {
             seen.add(m.id);
             return true;
           });
+
+          // FIX: Never drop user messages that exist in instance state but not in sessionStore.
+          // This preserves optimistic user messages that were added to ChatService state
+          // but haven't yet been synced to sessionStore (e.g., during force-submit timing).
+          if (deduplicatedMessages.length < s.messages.length) {
+            const sessionIds = new Set(deduplicatedMessages.map(m => m.id));
+            const missingUserMessages = s.messages.filter(
+              m => m.role === 'user' && !sessionIds.has(m.id)
+            );
+            if (missingUserMessages.length > 0) {
+              logger.warn('[ChatService] sessionUpdatedHandler: preserving optimistic user messages not in sessionStore', {
+                sessionId,
+                missingCount: missingUserMessages.length,
+                missingIds: missingUserMessages.map(m => m.id),
+                currentCount: s.messages.length,
+                sessionCount: deduplicatedMessages.length,
+              });
+              // Merge: insert missing user messages at their original positions
+              const mergedMessages = [...deduplicatedMessages];
+              for (const msg of missingUserMessages) {
+                if (!seen.has(msg.id)) {
+                  mergedMessages.push(msg);
+                  seen.add(msg.id);
+                }
+              }
+              // Sort by timestamp to maintain correct order
+              mergedMessages.sort((a, b) => {
+                const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+                const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+                return timeA - timeB;
+              });
+              return {
+                ...s,
+                messages: mergedMessages,
+                isStreaming: newIsStreaming,
+                isProcessing: newIsStreaming,
+                streamingContent: newStreamingContent,
+              };
+            }
+          }
+
           return {
             ...s,
             messages: deduplicatedMessages,
@@ -2192,8 +2233,18 @@ export class ChatService implements IDisposable {
       }
 
       // Get messages from sessionStore (source of truth)
+      // FIX: Fall back to ChatService instance state if sessionStore doesn't have the session.
+      // This prevents wiping optimistic user messages when sessionStore.getSession() returns
+      // undefined due to workspace context mismatches or timing issues during force-submit.
       const session = sessionStore.getSession(sessionId);
-      const existingMessages = session?.messages ?? [];
+      const currentInstanceMessages = get(this.state).messages;
+      const existingMessages = session?.messages ?? currentInstanceMessages;
+      if (!session) {
+        logger.warn('[ChatService] content-blocks: sessionStore.getSession returned undefined — using instance messages as fallback', {
+          sessionId,
+          instanceMessageCount: currentInstanceMessages.length,
+        });
+      }
       const lastMessage = existingMessages[existingMessages.length - 1];
       const hasStreamingAssistantMessage =
         lastMessage?.role === 'assistant' && lastMessage?.isStreaming === true;
@@ -2320,12 +2371,39 @@ export class ChatService implements IDisposable {
       // comment above for full explanation of the race condition this prevents.
 
       // Update instance state
-      this.state.update((s) => ({
-        ...s,
-        messages: updatedMessages,
-        isStreaming: true,
-        streamingContent: hasNewToolUse ? '' : s.streamingContent,
-      }));
+      // FIX: Never reduce message count during content-blocks processing.
+      // This prevents losing optimistic user messages when sessionStore returns
+      // stale data that doesn't include recently added messages.
+      this.state.update((s) => {
+        if (updatedMessages.length < s.messages.length) {
+          logger.warn('[ChatService] content-blocks: would reduce message count — merging instead', {
+            sessionId,
+            currentCount: s.messages.length,
+            incomingCount: updatedMessages.length,
+            currentIds: s.messages.map(m => m.id),
+            incomingIds: updatedMessages.map(m => m.id),
+          });
+          // Merge: replace existing messages with updated versions (to pick up new
+          // content blocks on the streaming assistant), preserve messages only in
+          // s.messages (optimistic user messages), and append any brand-new messages.
+          const updatedById = new Map(updatedMessages.map(m => [m.id, m]));
+          const mergedMessages = s.messages.map(m => updatedById.get(m.id) ?? m);
+          const existingIds = new Set(s.messages.map(m => m.id));
+          const brandNew = updatedMessages.filter(m => !existingIds.has(m.id));
+          return {
+            ...s,
+            messages: [...mergedMessages, ...brandNew],
+            isStreaming: true,
+            streamingContent: hasNewToolUse ? '' : s.streamingContent,
+          };
+        }
+        return {
+          ...s,
+          messages: updatedMessages,
+          isStreaming: true,
+          streamingContent: hasNewToolUse ? '' : s.streamingContent,
+        };
+      });
     } else if (data.type === 'end' || data.type === 'complete') {
       // Handle both 'end' and 'complete' events (different sources may use different names)
       logger.info('[ChatService] Handling complete/end event', {
@@ -2394,7 +2472,17 @@ export class ChatService implements IDisposable {
           }
         }
       }
-      const existingMessages = session?.messages ?? [];
+      // FIX: Fall back to ChatService instance state if no session found anywhere.
+      // This prevents wiping optimistic user messages when the session can't be
+      // found in any workspace (e.g., during force-submit timing edge cases).
+      const currentInstanceMessages = get(this.state).messages;
+      const existingMessages = session?.messages ?? currentInstanceMessages;
+      if (!session) {
+        logger.warn('[ChatService] end: Session not found in any workspace — using instance messages as fallback', {
+          sessionId,
+          instanceMessageCount: currentInstanceMessages.length,
+        });
+      }
       const lastMessage = existingMessages[existingMessages.length - 1];
 
       // Clear streaming state in sessionStore for this session
@@ -2515,15 +2603,37 @@ export class ChatService implements IDisposable {
       }
 
       // Update instance state
-      this.state.update((s) => ({
-        ...s,
-        messages: updatedMessages,
-        isStreaming: false,
-        isProcessing: false,
-        streamingContent: '',
-        streamingStartTime: null,
-        lastAttemptedMessage: null,
-      }));
+      // FIX: Preserve optimistic user messages that may not be in updatedMessages yet
+      this.state.update((s) => {
+        let finalMessages = updatedMessages;
+        if (updatedMessages.length < s.messages.length) {
+          const updatedIds = new Set(updatedMessages.map(m => m.id));
+          const missingUserMessages = s.messages.filter(
+            m => m.role === 'user' && !updatedIds.has(m.id)
+          );
+          if (missingUserMessages.length > 0) {
+            logger.warn('[ChatService] end: preserving optimistic user messages during finalization', {
+              sessionId,
+              missingCount: missingUserMessages.length,
+              missingIds: missingUserMessages.map(m => m.id),
+            });
+            finalMessages = [...updatedMessages, ...missingUserMessages].sort((a, b) => {
+              const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+              const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+              return timeA - timeB;
+            });
+          }
+        }
+        return {
+          ...s,
+          messages: finalMessages,
+          isStreaming: false,
+          isProcessing: false,
+          streamingContent: '',
+          streamingStartTime: null,
+          lastAttemptedMessage: null,
+        };
+      });
     } else if (data.type === 'error') {
       // Stop stall detection on error
       this.stopStallDetection();
