@@ -4,7 +4,7 @@ import { marked } from 'marked';
 import { normalizeAnchorPositions } from './anchor-normalization';
 import { sanitizeMarkdownHTML } from './html-sanitizer';
 import { toPromptToken } from '$lib/services/mentions/format';
-import { NotesPrimitivesSerializer } from '$features/notes/notes-primitives-serializer';
+import { NotesPrimitivesSerializer } from './notes-primitives-serializer';
 import type { MarkdownWorkerResponse } from './markdown-worker';
 
 const logger = new Logger('MarkdownProcessor');

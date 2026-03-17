@@ -6,7 +6,7 @@
 
 import { BaseMCPTool, createInputSchema, stringProperty } from './tool';
 import { ToolCall, ToolResult } from './protocol';
-import { generateCommentId } from '../../../comments/comment-id-generator';
+import { generateCommentId } from '$shared/utils/comment-id-generator';
 
 /**
  * Tool to add comments using text search

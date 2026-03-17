@@ -18,7 +18,7 @@ import { notesClient } from './notes.client';
 import { listenSync } from '$lib/electron-bridge';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
 import { Logger } from '$shared/logger';
-import { NotesPrimitivesSerializer } from './notes-primitives-serializer';
+import { NotesPrimitivesSerializer } from '$lib/utils/notes-primitives-serializer';
 import type { NotePrimitive } from '$shared/types/notes-primitives';
 import { dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
 import { markNoteRead } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';

@@ -81,7 +81,7 @@ import {
   isValidWorkspaceTitle,
   validateBranchName,
   validateRepositoryPath,
-} from './workspace-validation';
+} from '../../../main/utils/workspace-validation';
 import type { WorkspaceRepository } from './workspace.repository';
 import { FileSystemWorkspaceRepository } from './workspace.repository';
 import { getBranchPrefix, getWorktreesLocation } from './app-settings.service';

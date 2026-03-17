@@ -33,7 +33,7 @@ import { trackMain } from '$lib/services/analytics/main';
 import { taskNoteLink } from '../../../shared/constants/intent-links';
 import { editEventsCapturer } from './edit-events.capturer';
 import { editEventsStore } from './edit-events.store';
-import { generateCommentId, isValidCommentId } from '../../comments/comment-id-generator';
+import { generateCommentId, isValidCommentId } from '$shared/utils/comment-id-generator';
 import { getProvenanceContextManager } from '../../workspace/main/provenance/provenance-context-manager';
 import { getWorkspaceEventService } from '../../events/main';
 import { createWorkspaceEvent, type EventActor } from '../../events/types';

@@ -45,7 +45,10 @@ import {
   validateIPCPath,
   validateIPCString,
 } from '../../ipc/ipc-validation';
-import { isValidBranchName, getBranchNameValidationError } from './workspace-validation';
+import {
+  isValidBranchName,
+  getBranchNameValidationError,
+} from '../../../main/utils/workspace-validation';
 import { WORKSPACE_CHANNELS, AGENT_CHANNELS, EDITOR_CHANNELS } from '$shared/ipc/channels';
 import {
   createSafeValidatedHandler,

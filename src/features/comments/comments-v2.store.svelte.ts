@@ -7,7 +7,7 @@
 
 import type { CommentV2 } from './comment-types-v2';
 import { createLogger } from '$lib/utils/client-logger';
-import { generateCommentId } from './comment-id-generator';
+import { generateCommentId } from '$shared/utils/comment-id-generator';
 
 export type { CommentV2 };
 
