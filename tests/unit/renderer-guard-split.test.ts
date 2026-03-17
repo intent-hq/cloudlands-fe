@@ -1133,6 +1133,52 @@ describe('Renderer Guard Split — Main-Process Contract', () => {
       expect(newGuard).toBe(true);
     });
 
+    it('renderer guard should show panel for active delegation groups even when subscriptions are empty', () => {
+      const subscriptions: any[] = [];
+      const delegationGroups = [
+        {
+          groupId: 'group-1',
+          awaitMode: 'all' as const,
+          expectedAgentIds: ['child-1', 'child-2'],
+          completedAgentIds: [],
+          agentStatuses: { 'child-1': 'responding', 'child-2': 'responding' },
+        },
+      ];
+
+      let waitMode: 'all' | 'any' = 'any';
+      for (const group of delegationGroups) {
+        if (group.awaitMode === 'all') {
+          waitMode = 'all';
+        }
+      }
+
+      const watchedAgentIds = new Set<string>();
+      for (const group of delegationGroups) {
+        if (group.awaitMode === 'all') {
+          for (const id of group.expectedAgentIds) {
+            watchedAgentIds.add(id);
+          }
+        }
+      }
+
+      const completionStatus = { completed: 0, total: 2 };
+      const hasActiveTrackedAgents = subscriptions.length > 0 || delegationGroups.length > 0;
+
+      const newGuard =
+        hasActiveTrackedAgents &&
+        watchedAgentIds.size > 0 &&
+        !(waitMode === 'all' && delegationGroups.length === 0) &&
+        !(
+          waitMode === 'all' &&
+          completionStatus.total > 0 &&
+          completionStatus.completed >= completionStatus.total
+        );
+
+      expect(waitMode).toBe('all');
+      expect(watchedAgentIds.size).toBe(2);
+      expect(newGuard).toBe(true);
+    });
+
     it('sequential delegations: second group should only show its own agents (not prior group)', () => {
       // This is the core regression test for the fix:
       // After group 1 completes, subscriptions may still reference group 1's actorIds.

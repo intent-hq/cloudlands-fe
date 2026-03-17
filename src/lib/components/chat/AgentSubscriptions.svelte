@@ -210,6 +210,12 @@
 
   // Determine the wait mode - 'all' if any subscription has after_all mode
   const waitMode = $derived.by(() => {
+    for (const group of delegationGroups) {
+      if (group.awaitMode === 'all') {
+        return 'all';
+      }
+    }
+
     for (const sub of subscriptions) {
       if (sub.delegationGroup?.awaitMode === 'all') {
         return 'all';
@@ -233,9 +239,11 @@
 
   // Whether the subscription row should be visible (independent of wokenUpInfo).
   const showSubscriptionRow = $derived.by(() => {
+    const hasActiveTrackedAgents = subscriptions.length > 0 || delegationGroups.length > 0;
+
     return (
-      subscriptions.length > 0 &&
-      (waitMode === 'all' || watchedAgentIds.length > 0) &&
+      hasActiveTrackedAgents &&
+      watchedAgentIds.length > 0 &&
       !(waitMode === 'all' && delegationGroups.length === 0) &&
       !(
         waitMode === 'all' &&
