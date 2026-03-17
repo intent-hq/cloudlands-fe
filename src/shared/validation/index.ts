@@ -31,6 +31,22 @@ export function sanitizeInput(input: string, maxLength = LIMITS.MAX_MESSAGE_LENG
 }
 
 /**
+ * Remove orphaned Unicode surrogate characters from a string.
+ * Lone surrogates (\uD800–\uDFFF without a valid pair) produce invalid JSON
+ * when serialized with JSON.stringify, causing API 400 errors.
+ * Replaces them with the Unicode replacement character (U+FFFD).
+ */
+export function sanitizeSurrogates(input: string): string {
+  if (typeof input !== 'string') {
+    return '';
+  }
+  // Match a high surrogate not followed by a low surrogate,
+  // or a low surrogate not preceded by a high surrogate.
+  // eslint-disable-next-line no-misleading-character-class
+  return input.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD');
+}
+
+/**
  * Sanitize message content for display
  * Removes control characters and normalizes whitespace
  */

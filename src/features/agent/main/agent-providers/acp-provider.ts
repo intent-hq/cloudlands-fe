@@ -65,6 +65,7 @@ import type { AgentConfig, AgentMessage, Tool } from './base-provider';
 import { BaseAgentProvider } from './base-provider';
 import { ProviderCapabilities, resolveProviderCapabilities } from './provider-capabilities';
 import { trimSession } from './session-trimmer';
+import { sanitizeSurrogates } from '../../../../shared/validation';
 
 // Maximum characters to include in conversation history when sending full context.
 // The 413 "Request Entity Too Large" error we hit is actually ExceedContextLength from
@@ -5260,8 +5261,8 @@ export class ACPProvider extends BaseAgentProvider {
         timeout,
       });
 
-      // Send request
-      const requestStr = `${JSON.stringify(request)}\n`;
+      // Send request — sanitize surrogates to prevent invalid JSON (API 400s)
+      const requestStr = `${sanitizeSurrogates(JSON.stringify(request))}\n`;
       if (this.writeToAgent(requestStr)) {
         logger.debug('Sending request to auggie', {
           method: request.method,
@@ -5272,7 +5273,7 @@ export class ACPProvider extends BaseAgentProvider {
       } else if (this.acpServer) {
         // Direct server call for testing
         this.acpServer
-          .handleMessage(JSON.stringify(request))
+          .handleMessage(sanitizeSurrogates(JSON.stringify(request)))
           .then((response: string | null) => {
             if (response) {
               const parsed = JSON.parse(response);
@@ -6704,7 +6705,7 @@ export class ACPProvider extends BaseAgentProvider {
       timeout,
     });
 
-    const requestStr = `${JSON.stringify(request)}\n`;
+    const requestStr = `${sanitizeSurrogates(JSON.stringify(request))}\n`;
     if (!this.writeToAgent(requestStr)) {
       clearTimeout(timeout);
       this.pendingRequests.delete(request.id);
@@ -7505,7 +7506,8 @@ export class ACPProvider extends BaseAgentProvider {
 
         // Send the prompt request to auggie via stdin (local or remote)
         // Note: We only send once to avoid duplicate processing
-        const requestStr = `${JSON.stringify(request)}\n`;
+        // Sanitize surrogates to prevent invalid JSON causing API 400 errors
+        const requestStr = `${sanitizeSurrogates(JSON.stringify(request))}\n`;
 
         logger.info('Writing prompt request to agent', {
           requestId: request.id,

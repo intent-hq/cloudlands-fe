@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import {
   sanitizeInput,
   sanitizeMessage,
+  sanitizeSurrogates,
   sanitizeHTML,
   sanitizePath,
   sanitizeBranchName,
@@ -63,6 +64,47 @@ describe('Sanitization Functions', () => {
       const input = 'hello\n\n\n\n\nworld';
       const result = sanitizeMessage(input);
       expect(result).toBe('hello\n\n\nworld');
+    });
+  });
+
+  describe('sanitizeSurrogates', () => {
+    it('should return normal strings unchanged', () => {
+      expect(sanitizeSurrogates('hello world')).toBe('hello world');
+    });
+
+    it('should return empty string for non-string input', () => {
+      expect(sanitizeSurrogates(undefined as any)).toBe('');
+      expect(sanitizeSurrogates(null as any)).toBe('');
+    });
+
+    it('should preserve valid surrogate pairs (emoji)', () => {
+      const emoji = '😀🎉';
+      expect(sanitizeSurrogates(emoji)).toBe(emoji);
+    });
+
+    it('should replace lone high surrogate with replacement char', () => {
+      const input = 'before\uD800after';
+      const result = sanitizeSurrogates(input);
+      expect(result).toBe('before\uFFFDafter');
+      // Verify the result is valid JSON
+      expect(() => JSON.parse(JSON.stringify(result))).not.toThrow();
+    });
+
+    it('should replace lone low surrogate with replacement char', () => {
+      const input = 'before\uDC00after';
+      const result = sanitizeSurrogates(input);
+      expect(result).toBe('before\uFFFDafter');
+    });
+
+    it('should handle multiple lone surrogates', () => {
+      const input = '\uD800test\uDBFF\uDC00middle\uDFFF';
+      const result = sanitizeSurrogates(input);
+      // \uD800 = lone high → replaced
+      // \uDBFF\uDC00 = valid pair → preserved
+      // \uDFFF = lone low → replaced
+      expect(result).toContain('\uFFFD');
+      expect(result).toContain('test');
+      expect(result).toContain('middle');
     });
   });
 
