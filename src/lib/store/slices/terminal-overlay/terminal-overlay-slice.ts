@@ -236,7 +236,12 @@ export const terminalOverlayReducer = createReducer<TerminalOverlayState>(initia
       }
     }
 
-    return setWs(state, wsId, { ...ws, terminals: newTerminals, activeTerminalId: newActiveId });
+    // Close the panel when the last terminal is removed — the panel
+    // requires activeTerminalId to render, so isOpen:true with no
+    // terminals creates a stuck state.
+    const isOpen = newTerminals.length > 0 ? ws.isOpen : false;
+
+    return setWs(state, wsId, { ...ws, terminals: newTerminals, activeTerminalId: newActiveId, isOpen });
   })
   .with(setTerminalOverlayHeight, (state, { payload: [height] }) => {
     const clamped = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, height));
@@ -281,7 +286,11 @@ export const terminalOverlayReducer = createReducer<TerminalOverlayState>(initia
       newActiveId = newTerminals.length > 0 ? newTerminals[0].id : null;
     }
 
-    return setWs(state, wsId, { ...ws, terminals: newTerminals, activeTerminalId: newActiveId });
+    // Close the panel when all terminals are gone — same invariant
+    // as removeTerminal: isOpen requires activeTerminalId to render.
+    const isOpen = newTerminals.length > 0 ? ws.isOpen : false;
+
+    return setWs(state, wsId, { ...ws, terminals: newTerminals, activeTerminalId: newActiveId, isOpen });
   })
   .with(loadWorkspaceTerminals, (state, { payload: [wsId, terminals, savedState] }) => {
     let wsState: WorkspaceTerminalState;

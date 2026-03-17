@@ -162,6 +162,39 @@ describe("terminalOverlayReducer", () => {
       expect(ws.activeTerminalId).toBeNull();
     });
 
+    it("should close panel when removing last terminal while open", () => {
+      // Removing the last terminal while the panel is open must also set
+      // isOpen=false to prevent the stuck state (isOpen:true + activeTerminalId:null).
+      const stateWith1Open: TerminalOverlayState = {
+        ...initialState,
+        workspaces: { [WS]: {
+          isOpen: true,
+          terminals: [{ id: "t1", name: "T1" }],
+          activeTerminalId: "t1",
+        }},
+      };
+      const state = terminalOverlayReducer(stateWith1Open, removeTerminal(WS, "t1"));
+      const ws = getWs(state);
+      expect(ws.terminals).toHaveLength(0);
+      expect(ws.activeTerminalId).toBeNull();
+      expect(ws.isOpen).toBe(false);
+    });
+
+    it("should keep panel open when removing non-last terminal", () => {
+      const stateWith2: TerminalOverlayState = {
+        ...initialState,
+        workspaces: { [WS]: {
+          isOpen: true,
+          terminals: [{ id: "t1", name: "T1" }, { id: "t2", name: "T2" }],
+          activeTerminalId: "t1",
+        }},
+      };
+      const state = terminalOverlayReducer(stateWith2, removeTerminal(WS, "t1"));
+      const ws = getWs(state);
+      expect(ws.terminals).toHaveLength(1);
+      expect(ws.isOpen).toBe(true);
+    });
+
     it("should return same state if terminal not found", () => {
       const state = terminalOverlayReducer(initialState, removeTerminal(WS, "nonexistent"));
       expect(state).toBe(initialState);
@@ -282,7 +315,10 @@ describe("terminalOverlayReducer", () => {
       expect(getWs(state).activeTerminalId).toBe("t1");
     });
 
-    it("should handle empty terminals with saved state", () => {
+    it("should force isOpen=false when terminals are empty even if saved state says open", () => {
+      // When there are no terminals, isOpen must be false regardless of saved state.
+      // The panel requires activeTerminalId to render, so isOpen:true with no
+      // terminals creates a stuck state where the toggle appears broken.
       const state = terminalOverlayReducer(
         initialState,
         loadWorkspaceTerminals(WS, [], { isOpen: true, activeTerminalId: null })
@@ -290,7 +326,7 @@ describe("terminalOverlayReducer", () => {
       const ws = getWs(state);
       expect(ws.terminals).toEqual([]);
       expect(ws.activeTerminalId).toBeNull();
-      expect(ws.isOpen).toBe(true);
+      expect(ws.isOpen).toBe(false);
     });
 
     it("should close when no terminals and no saved state", () => {
