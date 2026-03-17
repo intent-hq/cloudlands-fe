@@ -54,6 +54,7 @@
     PROVIDER_MODEL_TIERS,
     parseCompoundModelId,
   } from '$shared/config/provider-config';
+  import { resolvePreferredDefaultModel } from '$lib/utils/provider-model-selection';
 
   const dispatch = getDispatch();
   const availableModels$ = selectAvailableModels();
@@ -1561,6 +1562,15 @@
             resolvedModel = specialist.defaultModel;
           }
         }
+      } else {
+        // No specialist selected (General/blank agent) and user didn't override the model.
+        // Resolve using the same preference list that the UI model picker displays,
+        // so the model the user sees matches the model actually used.
+        // Fall back to the global store selection when models haven't loaded yet.
+        const availableValues = $availableModels$.map((m) => m.value);
+        resolvedModel =
+          resolvePreferredDefaultModel(availableValues, $selectedModel$) ??
+          $selectedModel$;
       }
 
       // Validate resolvedModel against available models. Tier-mapped model IDs

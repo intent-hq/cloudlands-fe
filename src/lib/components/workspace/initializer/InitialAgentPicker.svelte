@@ -17,10 +17,9 @@
     getDefaultProviderId,
     getDefaultModelForProvider,
     PROVIDER_MODEL_TIERS,
-    resolvePreferredModel,
     parseCompoundModelId,
   } from '$shared/config/provider-config';
-  import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
+  import { resolvePreferredDefaultModel } from '$lib/utils/provider-model-selection';
   import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -247,16 +246,7 @@
       // Fallback to hardcoded defaultModel (custom specialists, etc.)
       if (info?.defaultModel) return info.defaultModel;
     }
-    // Try the preference list first (works for Auggie where preference IDs match available values)
-    const preferred = resolvePreferredModel(MODEL_DEFAULTS.UI_MODEL_PREFERENCE, values);
-    if (preferred) return preferred;
-
-    // For providers without matching preferences (e.g. OpenCode with dynamic models),
-    // use the globally selected model if it's valid for this provider. This ensures the
-    // user's previous choice carries over instead of always falling back to the first model.
-    if (valuesSet.has($selectedModel$)) return $selectedModel$;
-
-    return values[0];
+    return resolvePreferredDefaultModel(values, $selectedModel$) ?? values[0];
   }
 
   // Effective model for the team mode card (based on actual selectedSpecialist)
