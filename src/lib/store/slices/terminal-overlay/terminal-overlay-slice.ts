@@ -302,10 +302,15 @@ export const terminalOverlayReducer = createReducer<TerminalOverlayState>(initia
 
       wsState = { terminals, isOpen, activeTerminalId: activeId };
     } else {
+      // Don't restore isOpen when there are no terminals — the panel
+      // requires activeTerminalId to render, so isOpen:true with no
+      // terminals creates a stuck state where the toggle appears broken
+      // (first click closes an invisible panel, second click finally
+      // creates a default terminal and opens it).
       wsState = {
         terminals: [],
         activeTerminalId: null,
-        isOpen: savedState?.isOpen ?? false,
+        isOpen: false,
       };
     }
 
