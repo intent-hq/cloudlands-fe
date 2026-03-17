@@ -3756,6 +3756,19 @@
       return;
     }
 
+    // BUGFIX: Clear stale agent-config from sessionStorage to prevent initial prompt
+    // from a previous agent leaking into this new agent's ChatPanel.
+    // The agent-config key is workspace-scoped, so a config from the initial workspace
+    // agent could still be present and (in edge cases) get picked up by the new agent.
+    const agentConfigKey = `workspace:${safeWorkspace.id}:agent-config`;
+    const staleConfig = sessionStorage.getItem(agentConfigKey);
+    if (staleConfig) {
+      logger.info('[WorkspacePage] Clearing stale agent-config before creating new agent', {
+        workspaceId: safeWorkspace.id,
+      });
+      sessionStorage.removeItem(agentConfigKey);
+    }
+
     const existingNames = agents.map((a: AgentSession) => a.name).filter(Boolean) as string[];
     const agentName = generateSpecialistAgentName('Agent', existingNames);
 
@@ -3802,6 +3815,18 @@
     if (!workspacePath) {
       logger.error('Cannot create agent: workspace missing path');
       return;
+    }
+
+    // BUGFIX: Clear stale agent-config from sessionStorage to prevent initial prompt
+    // from a previous agent leaking into this new agent's ChatPanel.
+    const agentConfigKey = `workspace:${safeWorkspace.id}:agent-config`;
+    const staleConfig = sessionStorage.getItem(agentConfigKey);
+    if (staleConfig) {
+      logger.info('[WorkspacePage] Clearing stale agent-config before creating specialist agent', {
+        workspaceId: safeWorkspace.id,
+        specialistId,
+      });
+      sessionStorage.removeItem(agentConfigKey);
     }
 
     // Get specialist configuration if provided
