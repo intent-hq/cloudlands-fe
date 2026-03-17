@@ -19,8 +19,8 @@ import { notesStateManager } from '$features/notes/notes.store.svelte';
 import { buildTaskAgentInitialMessage } from '$features/notes/utils/task-agent-message-builder';
 import { getAgentProvider } from '$shared/types/agent-session';
 
-import { get } from 'svelte/store';
 import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { specialistsStore } from '$lib/stores/specialists.store.svelte';
 import { SPECIALISTS } from '$lib/constants/specialists';
 import { getDefaultModelForProvider, PROVIDER_MODEL_TIERS } from '$shared/config/provider-config';
@@ -96,7 +96,7 @@ export function useTaskDelegationHandlers(options: UseTaskDelegationHandlersOpti
           const result = await agentFactory.createAgent(workspace, {
             name: noteTitle,
             workspaceId: WorkspaceId(workspace.id),
-            model: get(selectWorkspaceDefaultModel(workspace.id)),
+            model: selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspace.id),
             provider,
             agentType: createAgentTypeId('task-loop'),
             source: 'delegate-task',
@@ -170,7 +170,7 @@ export function useTaskDelegationHandlers(options: UseTaskDelegationHandlersOpti
         const result = await agentFactory.createAgent(workspace, {
           name: noteTitle || 'Task Agent',
           workspaceId: WorkspaceId(workspace.id),
-          model: get(selectWorkspaceDefaultModel(workspace.id)),
+          model: selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspace.id),
           provider,
           agentType: createAgentTypeId('task-loop'),
           source: 'task-metadata-bar',
@@ -269,7 +269,7 @@ export function useTaskDelegationHandlers(options: UseTaskDelegationHandlersOpti
         const result = await agentFactory.createAgent(workspace, {
           name: noteTitle || 'Task Agent',
           workspaceId: WorkspaceId(workspace.id),
-          model: implementorModel || get(selectWorkspaceDefaultModel(workspace.id)),
+          model: implementorModel || selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspace.id),
           provider,
           agentType: createAgentTypeId('task-loop'),
           behaviorPrompt: implementorBehaviorPrompt,

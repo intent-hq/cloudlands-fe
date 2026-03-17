@@ -6,8 +6,8 @@
  */
 
 import { agentFactory } from '$features/agent/services/agent-factory';
-import { get } from 'svelte/store';
 import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { createAgentTypeId } from '$shared/types/agent.types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { createLogger } from '$lib/utils/client-logger';
@@ -147,7 +147,7 @@ export function usePanelActions(options: UsePanelActionsOptions) {
       const result = await agentFactory.createAgent(workspace, {
         name,
         workspaceId: WorkspaceId(workspace.id),
-        model: get(selectWorkspaceDefaultModel(workspace.id)),
+        model: selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspace.id),
         agentType: createAgentTypeId('chat'),
         source: 'progress-card-action',
         metadata: {
