@@ -1,13 +1,11 @@
 <!--
   StreamingStatus.svelte
 
-  Progressive streaming status indicator that shows different states based on
-  silence duration (time since last chunk, or since start if no chunks yet):
+  Streaming status indicator that shows two states based on silence duration
+  (time since last chunk, or since start if no chunks yet):
 
-  - Normal: Pulsing dots (thinking)
-  - Slow (>30s): Contextual message depending on whether data has arrived
-  - Very slow (>60s): Escalated message with Stop button
-  - Stalled (>90s): Warning with status page link
+  - Normal: Spinner with "Thinking"
+  - Stalled (>90s): Warning with status page link and Stop button
   - Error/Timeout: "Connection issue" with Try Again button
 
   Distinguishes between "no data received" (could be network/provider) and
@@ -82,12 +80,10 @@
     class: className = '',
   }: Props = $props();
 
-  // Silence thresholds (in seconds since last chunk, or since start if no chunks yet)
-  const SLOW_THRESHOLD = 30;
-  const VERY_SLOW_THRESHOLD = 60;
+  // Silence threshold (in seconds since last chunk, or since start if no chunks yet)
   const STALLED_THRESHOLD = 90;
 
-  // Provider status page URLs — used in stalled/very-slow messages
+  // Provider status page URLs — used in stalled messages
   const PROVIDER_STATUS_URLS: Record<string, string> = {
     'Augment Auggie': 'https://status.augmentcode.com/',
     'Anthropic Claude Code': 'https://status.anthropic.com/',
@@ -113,16 +109,14 @@
   }
 
   // Determine current status based on silence duration
-  type Status = 'normal' | 'slow' | 'very-slow' | 'stalled' | 'error' | 'model-unavailable';
+  type Status = 'normal' | 'stalled' | 'error' | 'model-unavailable';
 
   let status: Status = $derived.by(() => {
     if (modelUnavailable) return 'model-unavailable';
     if (error) return 'error';
     if (isStalled) return 'stalled'; // External stall detection takes priority
     if (!startTime) return 'normal';
-    if (silenceSeconds >= STALLED_THRESHOLD) return 'stalled';
-    if (silenceSeconds >= VERY_SLOW_THRESHOLD) return 'very-slow';
-    if (silenceSeconds >= SLOW_THRESHOLD) return 'slow';
+    if (silenceSeconds >= STALLED_THRESHOLD && !hasReceivedData) return 'stalled';
     return 'normal';
   });
 
@@ -139,42 +133,21 @@
   // Status message - differentiated by whether we've received data:
   // - No data: neutral messages (could be network, provider, or agent)
   // - Has data: agent-specific messages (connection was working, agent is slow)
-  // Note: stalled status message with status page link is rendered directly in the template
   let statusMessage = $derived.by(() => {
     if (error) {
       return error;
     }
 
-    if (hasReceivedData) {
-      // Mid-stream silence — we know the connection works, agent is the bottleneck
-      if (status === 'stalled') {
-        return providerName
-          ? `${providerName} has not responded for over 90 seconds.`
-          : 'Agent has not responded for over 90 seconds.';
-      }
-      if (status === 'very-slow') {
-        return providerName
-          ? `${providerName} is taking longer than expected. We'll keep trying.`
-          : 'Agent is taking longer than expected...';
-      }
-      if (status === 'slow') {
+    if (status === 'stalled') {
+      if (hasReceivedData) {
         return providerName
           ? `Your model provider, ${providerName}, is taking longer than usual to respond.`
-          : 'Agent is taking longer than usual...';
-      }
-    } else {
-      // No data received — could be network, provider down, or agent hasn't started.
-      // Keep provider name out since we can't pin the blame.
-      if (status === 'stalled') {
+          : 'Agent is taking longer than usual to respond.';
+      } else {
         return 'No response received. Check your network connection or try again.';
       }
-      if (status === 'very-slow') {
-        return 'Still waiting for a response. This could be a network issue.';
-      }
-      if (status === 'slow') {
-        return 'Waiting for a response...';
-      }
     }
+
     return 'Thinking';
   });
 
@@ -194,7 +167,6 @@
       'flex items-center gap-3 py-2 pl-2 pr-3 text-sm',
       status === 'error' && '',
       status === 'stalled' && 'bg-amber-500/5 rounded-lg border border-amber-500/20',
-      status === 'very-slow' && 'bg-amber-500/5 rounded-lg border border-amber-500/20',
       status === 'model-unavailable' && 'bg-amber-500/5 rounded-lg border border-amber-500/20',
       className,
     )}
@@ -228,13 +200,8 @@
             >
           {/if}
         </span>
-      {:else if status === 'very-slow'}
-        <Fa icon={faInfoCircle} class="text-amber-500/70 shrink-0" />
-        <span class="text-amber-600 dark:text-amber-400 text-sm font-family-child"
-          >{statusMessage}</span
-        >
       {:else}
-        <!-- Normal / slow - show spinner -->
+        <!-- Normal - show spinner -->
         <Spinner size={4} {seed} />
         <span class="text-subtle text-sm font-family-child">{statusMessage}</span>
       {/if}
@@ -260,7 +227,7 @@
           Try again
         </Button>
       {/if}
-      {#if (status === 'stalled' || status === 'very-slow' || status === 'slow') && onStop && (isStreaming || isProcessing)}
+      {#if status === 'stalled' && onStop && (isStreaming || isProcessing)}
         <!-- Only show stop when actually streaming/processing -->
         <Button
           variant="ghost"
