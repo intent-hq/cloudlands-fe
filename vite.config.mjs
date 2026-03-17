@@ -396,15 +396,9 @@ export default defineConfig({
       'date-fns', 'canvas-confetti',
       // Terminal emulator
       '@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-search',
-      '@xterm/addon-web-links', '@xterm/addon-unicode11', '@xterm/addon-webgl',
-      // CodeMirror core and essential language modes
-      'codemirror', '@codemirror/state', '@codemirror/view', '@codemirror/commands',
-      '@codemirror/search', '@codemirror/autocomplete', '@codemirror/lint', '@codemirror/merge',
-      '@codemirror/lang-json', '@codemirror/lang-javascript', '@codemirror/lang-css',
-      '@codemirror/lang-html', '@codemirror/lang-python', '@codemirror/lang-rust',
-      // Diff viewer and syntax highlighting
-      '@pierre/diffs', '@shikijs/core', '@shikijs/engine-javascript', '@shikijs/transformers',
-      '@shikijs/langs',
+      '@xterm/addon-web-links', '@xterm/addon-webgl',
+      // Diff viewer
+      '@pierre/diffs',
       // D3 visualization
       'd3', 'd3-delaunay',
       // Mermaid diagram rendering (dynamically imported, must be pre-bundled to avoid reload)
