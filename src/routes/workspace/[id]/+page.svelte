@@ -55,7 +55,7 @@
   import { PanelVisibilityManager } from '$features/workspace/panel-visibility-manager.svelte';
   import { queryEvents } from '$features/events/events.client';
   import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
-  import { getStoreContext } from '$lib/store/utils/utils';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { notesStateManager } from '$features/notes/notes.store.svelte';
   import { notesClient } from '$features/notes/notes.client';
   import { workspaceStorageManager } from '$features/workspace/workspace-storage-manager';
@@ -102,15 +102,9 @@
 
   const dispatch = getDispatch();
 
-  // Capture store context at component init time so selectors can be used in event handlers
-  // (Svelte 5 requires getContext to be called during component initialization)
-  const _storeContext = getStoreContext();
   /** Get the workspace default model from store state directly (safe to call in event handlers) */
   function getWorkspaceDefaultModel(workspaceId: string): string {
-    if (!_storeContext?.store) {
-      throw new Error('Missing redux store context');
-    }
-    return selectWorkspaceDefaultModel.select(_storeContext.store.getState(), workspaceId);
+    return selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspaceId);
   }
 
   // Create unified state for this workspace

@@ -21,7 +21,7 @@
   import { selectAgentFontStyleLabel, selectIsAgentMonospace } from '$lib/store/slices/agent-font-settings/agent-font-settings-selectors';
   import { getDispatch } from '$lib/store/utils/utils';
   import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
-  import { get } from 'svelte/store';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { specialistsStore } from '$lib/stores/specialists.store.svelte';
   import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
@@ -62,7 +62,7 @@
       const session = sessionStore.getSession(tab.agentId);
       if (session?.model) return session.model;
     }
-    return get(selectWorkspaceDefaultModel(workspaceId));
+    return selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspaceId);
   });
 
   // Subscribe to agent session updates

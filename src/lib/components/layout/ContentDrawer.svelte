@@ -46,7 +46,7 @@
   import { sessionStore, subscribeToAgent } from '$features/agent/browser';
   import type { AgentSession } from '$shared/types';
   import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
-  import { get } from 'svelte/store';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { specialistsStore } from '$lib/stores/specialists.store.svelte';
 
   interface Props {
@@ -220,7 +220,7 @@
       }
     }
     // Fall back to workspace default model
-    return get(selectWorkspaceDefaultModel(workspaceId));
+    return selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspaceId);
   });
 
   // Update local content when prop changes

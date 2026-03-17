@@ -17,7 +17,7 @@
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { parseAgentTypeId } from '$shared/types/agent.types';
   import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
-  import { get } from 'svelte/store';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
 
@@ -85,7 +85,7 @@
       const result = await agentFactory.createAgent(workspace, {
         name: primitive.goal.length > 40 ? primitive.goal.slice(0, 40) + '...' : primitive.goal,
         workspaceId: WorkspaceId(workspaceId),
-        model: get(selectWorkspaceDefaultModel(workspaceId)),
+        model: selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspaceId),
         agentType: parseAgentTypeId(primitive.agentId || '') || 'chat',
         source: 'agent-action-block',
         initialMessage: primitive.goal,
