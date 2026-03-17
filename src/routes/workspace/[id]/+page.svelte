@@ -54,8 +54,8 @@
   import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
   import { PanelVisibilityManager } from '$features/workspace/panel-visibility-manager.svelte';
   import { queryEvents } from '$features/events/events.client';
-  import { get } from 'svelte/store';
   import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
+  import { getStoreContext } from '$lib/store/utils/utils';
   import { notesStateManager } from '$features/notes/notes.store.svelte';
   import { notesClient } from '$features/notes/notes.client';
   import { workspaceStorageManager } from '$features/workspace/workspace-storage-manager';
@@ -101,6 +101,17 @@
   // ============================================================================
 
   const dispatch = getDispatch();
+
+  // Capture store context at component init time so selectors can be used in event handlers
+  // (Svelte 5 requires getContext to be called during component initialization)
+  const _storeContext = getStoreContext();
+  /** Get the workspace default model from store state directly (safe to call in event handlers) */
+  function getWorkspaceDefaultModel(workspaceId: string): string {
+    if (!_storeContext?.store) {
+      throw new Error('Missing redux store context');
+    }
+    return selectWorkspaceDefaultModel.select(_storeContext.store.getState(), workspaceId);
+  }
 
   // Create unified state for this workspace
   // @ts-expect-error - Svelte 5 rune scoping issue
@@ -3574,7 +3585,7 @@
           taskStatus: 'in_progress',
           agentConfig: {
             instruction: taskText,
-            model: get(selectWorkspaceDefaultModel(safeWorkspace.id)),
+            model: getWorkspaceDefaultModel(safeWorkspace.id),
             autoStart: true,
             agentId: optimisticAgentId,
           },
@@ -3606,7 +3617,7 @@
             id: agentData.id,
             workspaceId: safeWorkspace.id,
             name: agentData.name || taskText.slice(0, 40),
-            model: agentData.model || get(selectWorkspaceDefaultModel(safeWorkspace.id)),
+            model: agentData.model || getWorkspaceDefaultModel(safeWorkspace.id),
             createdAt: agentData.createdAt || new Date().toISOString(),
             backendSessionId: agentData.backendSessionId,
             status: AgentStatus.Active,
@@ -3757,7 +3768,7 @@
     const result = await agentFactory.createAgent(safeWorkspace, {
       name: agentName,
       workspaceId: WorkspaceId(safeWorkspace.id),
-      model: get(selectWorkspaceDefaultModel(safeWorkspace.id)),
+      model: getWorkspaceDefaultModel(safeWorkspace.id),
       provider: activeProviderStore.activeProviderId,
       agentType: (agentType && parseAgentTypeId(agentType)) || createAgentTypeId('chat'),
       source: 'keyboard-shortcut',
@@ -3801,7 +3812,7 @@
 
     // Get specialist configuration if provided
     const existingNames = agents.map((a: AgentSession) => a.name).filter(Boolean) as string[];
-    let model = get(selectWorkspaceDefaultModel(safeWorkspace.id));
+    let model = getWorkspaceDefaultModel(safeWorkspace.id);
     let provider = activeProviderStore.activeProviderId;
     let behaviorPrompt: string | undefined;
     let specialistBaseName = 'Agent';
