@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.27
+
+- Browser-mode rendering — Intent can now run in a regular browser while Electron is running, with full data access via an HTTP/WebSocket bridge.
+- Notification MCP tool (`emit_notification`) lets external services push notifications into a workspace and wake specific agents.
+- Workspace scripts now persist in `.intent/config.json` so they're shared across sessions.
+- Cmd+/ shortcut wired up for the enhance-prompt action in workspace creation.
+- Codex model list is now dynamic, matching the models your account has access to.
+- Streaming status messages simplified — only the 90-second stalled threshold shows a warning, removing false-alarm "taking longer than usual" messages at 30s/60s.
+- Fixes: agent chat not streaming on workspace revisit, user messages lost during workspace switch, optimistic messages disappearing on force-submit (⌘Enter), space bar not working in spec comments, terminal toggle requiring double-click, browser panels opening in wrong workspace, broken "Learn More" link in MCP settings, preferred model not resolving for general agents, PR not linking to review workspaces, terminal shortcuts blocked when tab bar was focused.
+
 ## 0.2.26
 
 - Workspace Scripts — detect, manage, and run project scripts (dev servers, builds, tests) directly from the workspace.
