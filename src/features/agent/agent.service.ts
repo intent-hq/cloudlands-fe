@@ -2228,6 +2228,16 @@ class RefactoredAgentService extends EventEmitter {
 
           // Dispatch session-updated event so ChatService syncs its messages
           window.dispatchEvent(new CustomEvent(`agent:session-updated:${agentId}`));
+
+          // Persist the queued user message immediately so debug exports and
+          // crash recovery include it even before the stream completes.
+          void this.saveSession(agentId, session.workspaceId, true).catch((error) => {
+            logger.error('Failed to persist queued user message', {
+              agentId,
+              messageId,
+              error,
+            });
+          });
         }
 
         // Remove the stale entry from the Map (the actual IPC listener was already removed)
@@ -2300,6 +2310,16 @@ class RefactoredAgentService extends EventEmitter {
               messageId,
               messagesBeforeRemoval: (session.messages || []).length,
               messagesAfterRemoval: filteredMessages.length,
+            });
+
+            // Keep on-disk session state in sync with the UI when the queued
+            // phantom message is removed.
+            void this.saveSession(agentId, session.workspaceId, true).catch((error) => {
+              logger.error('Failed to persist queued message cancellation cleanup', {
+                agentId,
+                messageId,
+                error,
+              });
             });
           }
 
