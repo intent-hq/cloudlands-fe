@@ -1,49 +1,74 @@
 # Agents
 
-Guidance for AI coding agents working in this codebase.
+Quick routing guide for AI agents. Start here, then open the smallest relevant doc.
 
-## Module Boundaries
+## Tech stack
+- Electron + SvelteKit + TypeScript desktop app
+- Svelte 5 runes in the UI; shared app state uses Redux + sagas
+- Use `pnpm`; create agents via `agentFactory.createAgent()`
 
-Before creating or moving utility modules, read the **[Module Boundary Guide](docs/MODULE_BOUNDARY_GUIDE.md)**.
+## Project layout
+```text
+src/
+├── shared/          # Cross-process utilities (main + renderer)
+├── lib/             # Renderer-only shared utilities & components
+├── main/            # Main-process code & utilities
+├── preload/         # Electron preload scripts
+├── features/        # Feature-first renderer modules
+│   └── <name>/
+│       ├── utils/   # Feature-local utilities
+│       └── main/    # Feature's main-process code
+├── routes/          # SvelteKit pages
+└── test/
+```
 
-Key rules:
+## Where to look
+| Working on… | Open |
+| --- | --- |
+| agents | [`docs/AGENT_ARCHITECTURE.md`](docs/AGENT_ARCHITECTURE.md) |
+| state/store | [`docs/STATE_MANAGEMENT.md`](docs/STATE_MANAGEMENT.md), [`src/lib/store/docs/`](src/lib/store/docs/) |
+| UI components | [`docs/COMPONENT_RESPONSIBILITIES.md`](docs/COMPONENT_RESPONSIBILITIES.md) |
+| panels/layout | [`docs/panel-system-refactoring.md`](docs/panel-system-refactoring.md), [`docs/proposals/PANEL_TAB_UX_SPEC.md`](docs/proposals/PANEL_TAB_UX_SPEC.md) |
+| browser/CDP | [`docs/BROWSER_PANEL_SPEC.md`](docs/BROWSER_PANEL_SPEC.md), [`docs/CDP_MCP_TOOLS.md`](docs/CDP_MCP_TOOLS.md) |
+| module boundaries | [`docs/MODULE_BOUNDARY_GUIDE.md`](docs/MODULE_BOUNDARY_GUIDE.md) |
+| debugging | [`docs/TROUBLESHOOTING_GUIDE.md`](docs/TROUBLESHOOTING_GUIDE.md), [`docs/IPC_DEBUG_GUIDE.md`](docs/IPC_DEBUG_GUIDE.md) |
+| error handling | [`docs/ERROR_HANDLING_SYSTEM.md`](docs/ERROR_HANDLING_SYSTEM.md) |
+| TypeScript/types | [`docs/TYPE_SYSTEM_GUIDE.md`](docs/TYPE_SYSTEM_GUIDE.md) |
+| events/IPC | [`docs/EVENT_SYSTEM.md`](docs/EVENT_SYSTEM.md) |
+| keybindings | [`docs/KEYBINDINGS.md`](docs/KEYBINDINGS.md) |
+| deploying/releasing | [`docs/real/DEPLOYING.md`](docs/real/DEPLOYING.md) |
+| parallel runner | [`parallel-runner/docs/`](parallel-runner/docs/) |
 
-- **Never import from a feature's `main/` subtree in renderer code** (or vice versa)
-- **Place shared utilities in process-safe directories** — see the decision flowchart in the guide
-- **Don't export utility functions from orchestration modules** — extract them to a dedicated `utils/` file
-- **Keep utilities dependency-light** — no stores, services, or side effects
+## Key conventions
+- Use `pnpm`, not `npm`.
+- Put renderer product work in `src/features/`; shared utilities live in `src/lib/`.
+- Create agents via `agentFactory.createAgent()`.
+- Keep shared app state in `src/lib/store/`, not ad-hoc component state.
+- **Never import from a feature's `main/` subtree in renderer code** (or vice-versa).
+- **Don't export utility functions from orchestration modules** — extract to a dedicated `utils/` file.
+- **Keep utilities dependency-light** — no stores, services, or side effects.
+
+## Common commands
+```bash
+pnpm run dev           # Standard development launcher
+pnpm run dev:cdp       # Development with CDP support
+pnpm run build         # Production build
+pnpm run check         # Svelte + TypeScript checks
+pnpm run lint          # ESLint
+pnpm run format        # Prettier
+pnpm run test:unit     # Vitest suite
+pnpm run test:playwright
+```
 
 ## Verification
 
-After any structural change (moving files, changing imports, extracting modules), run:
+After any structural change (moving files, changing imports, extracting modules):
 
 ```bash
-npx vitest run <targeted-test-files>       # tests for touched features
-npx tsc -p tsconfig.json --noEmit          # renderer typecheck
-npx tsc -p tsconfig.main.json --noEmit     # main process typecheck
-npx tsc -p tsconfig.preload.json --noEmit  # preload typecheck
+pnpm vitest run <targeted-test-files>
+pnpm tsc -p tsconfig.json --noEmit          # renderer
+pnpm tsc -p tsconfig.main.json --noEmit     # main process
+pnpm tsc -p tsconfig.preload.json --noEmit  # preload
 ```
 
-All three typechecks must pass. The main typecheck requires `npm run generate:build-config` to have been run at least once.
-
-## Project Structure Quick Reference
-
-```
-src/
-├── shared/          # Cross-process utilities (main + renderer)
-├── lib/utils/       # Renderer-only shared utilities
-├── main/utils/      # Main-process shared utilities
-├── features/
-│   └── <name>/
-│       ├── utils/   # Feature-local utilities
-│       ├── main/    # Feature's main-process code
-│       └── ...      # Feature's renderer code
-├── routes/          # SvelteKit pages
-└── preload/         # Electron preload scripts
-```
-
-## Further Reading
-
-- [Module Boundary Guide](docs/MODULE_BOUNDARY_GUIDE.md) — detailed placement rules and refactoring patterns
-- [Developer Guide](docs/DEVELOPER_GUIDE.md) — setup, commands, and project overview
-- [Component Responsibilities](docs/COMPONENT_RESPONSIBILITIES.md) — UI component organization
+All three typechecks must pass. The main typecheck requires `pnpm run generate:build-config` to have been run at least once.
