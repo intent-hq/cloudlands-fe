@@ -16,6 +16,7 @@
 import * as path from 'path';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
+import { getEnhancedPath } from '../main/find-binary';
 
 // ESM polyfill for __dirname (not available in ES modules)
 const __filename = fileURLToPath(import.meta.url);
@@ -118,69 +119,6 @@ export function isSSHRemote(url: string): boolean {
     trimmed.startsWith('ssh://') ||
     /^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+:/.test(trimmed)
   );
-}
-
-/**
- * Essential system paths that must be in PATH for shell commands to work.
- * This is critical for macOS GUI apps launched from Finder, which may not
- * have /bin or /usr/bin in their PATH, causing "spawn /bin/sh ENOENT" errors.
- */
-const ESSENTIAL_SYSTEM_PATHS: string[] =
-  process.platform === 'win32'
-    ? [
-        // Windows doesn't need these the same way macOS does,
-        // but ensure common locations are present
-        process.env.SystemRoot ? `${process.env.SystemRoot}\\System32` : 'C:\\Windows\\System32',
-        process.env.SystemRoot ? `${process.env.SystemRoot}\\System32\\wbem` : 'C:\\Windows\\System32\\wbem',
-        // Common Git for Windows install locations
-        'C:\\Program Files\\Git\\cmd',
-        'C:\\Program Files (x86)\\Git\\cmd',
-        ...(process.env.LOCALAPPDATA ? [`${process.env.LOCALAPPDATA}\\Programs\\Git\\cmd`] : []),
-        ...(process.env.USERPROFILE ? [`${process.env.USERPROFILE}\\scoop\\shims`] : []),
-        'C:\\ProgramData\\chocolatey\\bin',
-      ]
-    : [
-        '/bin',
-        '/usr/bin',
-        '/usr/local/bin',
-        '/opt/homebrew/bin', // Apple Silicon Homebrew
-        '/usr/sbin',
-        '/sbin',
-      ];
-
-/**
- * Get a PATH that includes essential system directories.
- * Ensures /bin/sh and other core utilities are accessible.
- *
- * IMPORTANT: This function is called dynamically (not cached) to handle cases
- * where process.env.PATH might be empty at module load time in packaged Electron apps.
- */
-function getEnhancedPath(): string {
-  const pathSeparator = process.platform === 'win32' ? ';' : ':';
-  const currentPath = process.env.PATH || '';
-  const pathSet = new Set(currentPath.split(pathSeparator).filter(Boolean));
-
-  // Add essential paths - these MUST be present for shell commands to work
-  for (const p of ESSENTIAL_SYSTEM_PATHS) {
-    pathSet.add(p);
-  }
-
-  // Ensure we always have at least the essential paths even if PATH was empty
-  const result = Array.from(pathSet).join(pathSeparator);
-
-  if (process.platform === 'win32') {
-    // On Windows, ensure System32 is present
-    if (!result.toLowerCase().includes('system32')) {
-      return ESSENTIAL_SYSTEM_PATHS.join(pathSeparator) + (result ? pathSeparator + result : '');
-    }
-  } else {
-    // Fallback: if result is still empty or doesn't include /bin, force it
-    if (!result.includes('/bin')) {
-      return ESSENTIAL_SYSTEM_PATHS.join(':') + (result ? ':' + result : '');
-    }
-  }
-
-  return result;
 }
 
 /**

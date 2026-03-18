@@ -5,11 +5,11 @@
  * Cortex is a Snowflake coding agent that runs as a local binary.
  */
 
-import { spawn } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { Logger } from '../../../shared/logger';
+import { findBinary, getCommonNpmPaths } from '../../../shared/main/find-binary';
 
 const logger = new Logger('CortexResolver');
 
@@ -40,46 +40,6 @@ export function clearCortexCache(): void {
   cachedCortexPath = null;
 }
 
-async function findBinaryInPath(binary: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    const command = process.platform === 'win32' ? 'where' : 'which';
-    const child = spawn(command, [binary], { windowsHide: true });
-
-    let stdout = '';
-    let stderr = '';
-    const timeoutId = setTimeout(() => {
-      child.kill();
-      resolve(null);
-    }, 3000);
-
-    child.stdout.on('data', (data: Buffer) => {
-      stdout += data.toString();
-    });
-
-    child.stderr.on('data', (data: Buffer) => {
-      stderr += data.toString();
-    });
-
-    child.on('error', () => {
-      clearTimeout(timeoutId);
-      resolve(null);
-    });
-
-    child.on('close', (code) => {
-      clearTimeout(timeoutId);
-      if (code === 0 && stdout.trim().length > 0) {
-        const firstPath = stdout.trim().split(/\r?\n/)[0].trim();
-        resolve(firstPath || null);
-        return;
-      }
-      if (stderr) {
-        logger.debug('Path lookup stderr', { stderr });
-      }
-      resolve(null);
-    });
-  });
-}
-
 /**
  * Find the cortex executable path
  */
@@ -88,22 +48,19 @@ async function findCortexPath(): Promise<string | null> {
     return cachedCortexPath;
   }
 
-  const { existsSync } = await import('fs');
+  const result = await findBinary('cortex', {
+    commonPaths: [...CORTEX_PATHS, ...getCommonNpmPaths('cortex')],
+    cache: false,
+    timeout: 3000,
+    useEnhancedPath: false,
+    useLoginShell: false,
+  });
 
-  for (const p of CORTEX_PATHS) {
-    if (existsSync(p)) {
-      cachedCortexPath = p;
-      return p;
-    }
+  if (result) {
+    cachedCortexPath = result;
   }
 
-  const pathFromEnv = await findBinaryInPath('cortex');
-  if (pathFromEnv) {
-    cachedCortexPath = pathFromEnv;
-    return pathFromEnv;
-  }
-
-  return null;
+  return result;
 }
 
 /**

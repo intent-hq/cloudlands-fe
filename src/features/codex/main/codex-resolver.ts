@@ -5,12 +5,9 @@
  * and falling back to npx with auto-approve if needed.
  */
 
-import { spawn } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
-import { Logger } from '../../../shared/logger';
-
-const logger = new Logger('CodexResolver');
+import { findBinary, getCommonNpmPaths } from '../../../shared/main/find-binary';
 
 // Common paths to look for codex-acp
 const CODEX_PATHS = [
@@ -100,99 +97,24 @@ export function clearCodexCache(): void {
   cachedNpxPath = null;
 }
 
-async function findBinaryInPath(binary: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    const command = process.platform === 'win32' ? 'where' : 'which';
-    const child = spawn(command, [binary], { windowsHide: true });
-
-    let stdout = '';
-    let stderr = '';
-    const timeoutId = setTimeout(() => {
-      child.kill();
-      resolve(null);
-    }, 3000);
-
-    child.stdout.on('data', (data: Buffer) => {
-      stdout += data.toString();
-    });
-
-    child.stderr.on('data', (data: Buffer) => {
-      stderr += data.toString();
-    });
-
-    child.on('error', () => {
-      clearTimeout(timeoutId);
-      resolve(null);
-    });
-
-    child.on('close', (code) => {
-      clearTimeout(timeoutId);
-      if (code === 0 && stdout.trim().length > 0) {
-        const firstPath = stdout.trim().split(/\r?\n/)[0].trim();
-        resolve(firstPath || null);
-        return;
-      }
-      if (stderr) {
-        logger.debug('Path lookup stderr', { stderr });
-      }
-      resolve(null);
-    });
-  });
-}
-
-async function findNvmBinary(binary: string): Promise<string | null> {
-  const { existsSync, readdirSync } = await import('fs');
-  const nvmRoot = path.join(os.homedir(), '.nvm', 'versions', 'node');
-  if (!existsSync(nvmRoot)) {
-    return null;
-  }
-
-  try {
-    const entries = readdirSync(nvmRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-
-    for (const versionDir of entries) {
-      const candidate = path.join(nvmRoot, versionDir, 'bin', binary);
-      if (existsSync(candidate)) {
-        return candidate;
-      }
-    }
-  } catch (error) {
-    logger.debug('Failed to scan nvm directories', { error: (error as Error).message });
-  }
-
-  return null;
-}
-
 async function findNpxPath(): Promise<string | null> {
   if (cachedNpxPath) {
     return cachedNpxPath;
   }
 
-  const { existsSync } = await import('fs');
+  const result = await findBinary('npx', {
+    commonPaths: [...NPX_PATHS, ...getCommonNpmPaths('npx')],
+    cache: false,
+    timeout: 3000,
+    useEnhancedPath: false,
+    useLoginShell: false,
+  });
 
-  for (const p of NPX_PATHS) {
-    if (existsSync(p)) {
-      cachedNpxPath = p;
-      return p;
-    }
+  if (result) {
+    cachedNpxPath = result;
   }
 
-  const nvmPath = await findNvmBinary('npx');
-  if (nvmPath) {
-    cachedNpxPath = nvmPath;
-    return nvmPath;
-  }
-
-  const pathFromEnv = await findBinaryInPath('npx');
-  if (pathFromEnv) {
-    cachedNpxPath = pathFromEnv;
-    return pathFromEnv;
-  }
-
-  return null;
+  return result;
 }
 
 /**
@@ -203,28 +125,19 @@ async function findCodexPath(): Promise<string | null> {
     return cachedCodexPath;
   }
 
-  const { existsSync } = await import('fs');
+  const result = await findBinary('codex-acp', {
+    commonPaths: [...CODEX_PATHS, ...getCommonNpmPaths('codex-acp')],
+    cache: false,
+    timeout: 3000,
+    useEnhancedPath: false,
+    useLoginShell: false,
+  });
 
-  for (const p of CODEX_PATHS) {
-    if (existsSync(p)) {
-      cachedCodexPath = p;
-      return p;
-    }
+  if (result) {
+    cachedCodexPath = result;
   }
 
-  const nvmPath = await findNvmBinary('codex-acp');
-  if (nvmPath) {
-    cachedCodexPath = nvmPath;
-    return nvmPath;
-  }
-
-  const pathFromEnv = await findBinaryInPath('codex-acp');
-  if (pathFromEnv) {
-    cachedCodexPath = pathFromEnv;
-    return pathFromEnv;
-  }
-
-  return null;
+  return result;
 }
 
 /**
@@ -235,28 +148,19 @@ async function findCodexCliPath(): Promise<string | null> {
     return cachedCodexCliPath;
   }
 
-  const { existsSync } = await import('fs');
+  const result = await findBinary('codex', {
+    commonPaths: [...CODEX_CLI_PATHS, ...getCommonNpmPaths('codex')],
+    cache: false,
+    timeout: 3000,
+    useEnhancedPath: false,
+    useLoginShell: false,
+  });
 
-  for (const p of CODEX_CLI_PATHS) {
-    if (existsSync(p)) {
-      cachedCodexCliPath = p;
-      return p;
-    }
+  if (result) {
+    cachedCodexCliPath = result;
   }
 
-  const nvmPath = await findNvmBinary('codex');
-  if (nvmPath) {
-    cachedCodexCliPath = nvmPath;
-    return nvmPath;
-  }
-
-  const pathFromEnv = await findBinaryInPath('codex');
-  if (pathFromEnv) {
-    cachedCodexCliPath = pathFromEnv;
-    return pathFromEnv;
-  }
-
-  return null;
+  return result;
 }
 
 /**
@@ -267,28 +171,19 @@ async function findCodexMcpServerPath(): Promise<string | null> {
     return cachedCodexMcpServerPath;
   }
 
-  const { existsSync } = await import('fs');
+  const result = await findBinary('codex-mcp-server', {
+    commonPaths: [...CODEX_MCP_SERVER_PATHS, ...getCommonNpmPaths('codex-mcp-server')],
+    cache: false,
+    timeout: 3000,
+    useEnhancedPath: false,
+    useLoginShell: false,
+  });
 
-  for (const p of CODEX_MCP_SERVER_PATHS) {
-    if (existsSync(p)) {
-      cachedCodexMcpServerPath = p;
-      return p;
-    }
+  if (result) {
+    cachedCodexMcpServerPath = result;
   }
 
-  const nvmPath = await findNvmBinary('codex-mcp-server');
-  if (nvmPath) {
-    cachedCodexMcpServerPath = nvmPath;
-    return nvmPath;
-  }
-
-  const pathFromEnv = await findBinaryInPath('codex-mcp-server');
-  if (pathFromEnv) {
-    cachedCodexMcpServerPath = pathFromEnv;
-    return pathFromEnv;
-  }
-
-  return null;
+  return result;
 }
 
 export type CodexResolvedCommand = {

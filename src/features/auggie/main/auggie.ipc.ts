@@ -19,6 +19,7 @@ const rawExec = promisify(exec);
 import { AUGGIE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { findAuggieAsync } from '../../../shared/main/async-utils';
+import { findBinary, getEnhancedPath } from '../../../shared/main/find-binary';
 
 const logger = new Logger('AuggieIPC');
 
@@ -148,153 +149,6 @@ async function checkNodeVersion(): Promise<{
 // Helper Functions
 // ============================================================================
 
-function getEnhancedPath(): string {
-  const pathSeparator = process.platform === 'win32' ? ';' : ':';
-  const paths = new Set<string>();
-
-  // Start with current PATH
-  if (process.env.PATH) {
-    process.env.PATH.split(pathSeparator).forEach((p) => paths.add(p));
-  }
-
-  const homeDir = os.homedir();
-
-  // Try to read PATH from shell profiles (for macOS GUI apps)
-  if (process.platform === 'darwin') {
-    const shellProfiles = [
-      path.join(homeDir, '.zshrc'),
-      path.join(homeDir, '.bash_profile'),
-      path.join(homeDir, '.bashrc'),
-      path.join(homeDir, '.profile'),
-    ];
-
-    for (const profile of shellProfiles) {
-      if (existsSync(profile)) {
-        try {
-          const content = readFileSync(profile, 'utf8');
-          // Look for PATH exports
-          const pathMatches = content.match(/export\s+PATH=["']?([^"'\n]+)["']?/gm);
-          if (pathMatches) {
-            for (const match of pathMatches) {
-              const pathValue = match.replace(/export\s+PATH=["']?/, '').replace(/["']?$/, '');
-              // Expand $PATH references
-              const expandedPath = pathValue.replace(
-                /\$PATH/g,
-                Array.from(paths).join(pathSeparator),
-              );
-              // Expand $HOME references
-              const finalPath = expandedPath.replace(/\$HOME/g, homeDir).replace(/~/g, homeDir);
-              finalPath.split(pathSeparator).forEach((p) => {
-                if (p && !p.includes('$')) {
-                  paths.add(p);
-                }
-              });
-            }
-          }
-        } catch (e) {
-          // Ignore errors reading shell profiles
-        }
-      }
-    }
-  }
-
-  // Add common npm/node locations (platform-specific)
-  const commonPaths: string[] = [];
-
-  if (process.platform === 'win32') {
-    // Windows-specific paths
-    const appData = process.env.APPDATA || '';
-    const localAppData = process.env.LOCALAPPDATA || '';
-    const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
-    const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
-
-    if (appData) {
-      commonPaths.push(path.join(appData, 'npm')); // npm global bin on Windows
-      commonPaths.push(path.join(appData, 'nvm')); // nvm-windows
-    }
-    if (localAppData) {
-      commonPaths.push(path.join(localAppData, 'Volta', 'bin'));
-      commonPaths.push(path.join(localAppData, 'fnm'));
-    }
-    commonPaths.push(path.join(programFiles, 'nodejs'));
-    commonPaths.push(path.join(programFilesX86, 'nodejs'));
-    commonPaths.push(path.join(homeDir, '.npm-global'));
-  } else {
-    // Unix paths
-    commonPaths.push(
-      '/usr/local/bin',
-      '/usr/bin',
-      '/bin',
-      '/usr/sbin',
-      '/sbin',
-      path.join(homeDir, '.npm-global', 'bin'),
-      path.join(homeDir, '.npm-packages', 'bin'),
-      path.join(homeDir, '.local', 'bin'),
-      '/opt/homebrew/bin', // Apple Silicon Macs
-      '/opt/homebrew/sbin',
-      '/usr/local/opt/node/bin',
-      '/usr/local/opt/node@18/bin',
-      '/usr/local/opt/node@20/bin',
-      '/usr/local/opt/node@22/bin',
-      path.join(homeDir, '.volta', 'bin'),
-      path.join(homeDir, '.fnm', 'aliases', 'default', 'bin'),
-      path.join(homeDir, '.asdf', 'shims'),
-      path.join(homeDir, 'n', 'bin'),
-      '/usr/local/n/versions/node',
-    );
-  }
-
-  // Add NVM paths (Unix-style nvm)
-  if (process.platform !== 'win32') {
-    const nvmDir = path.join(homeDir, '.nvm', 'versions', 'node');
-    if (existsSync(nvmDir)) {
-      try {
-        const nodeDirs = readdirSync(nvmDir);
-        for (const dir of nodeDirs) {
-          paths.add(path.join(nvmDir, dir, 'bin'));
-        }
-      } catch (e) {
-        // Ignore
-      }
-    }
-  }
-
-  // Add common npm global bin directories (without calling npm since it might not be available)
-  const npmGlobalPaths =
-    process.platform === 'win32'
-      ? [path.join(process.env.APPDATA || '', 'npm'), path.join(homeDir, '.npm-global')].filter(
-        Boolean,
-      )
-      : [
-        path.join(homeDir, '.npm-global', 'bin'),
-        path.join(homeDir, '.npm-packages', 'bin'),
-        path.join(homeDir, 'npm', 'bin'),
-        '/usr/local/lib/node_modules/npm/bin',
-        '/opt/homebrew/lib/node_modules/npm/bin',
-      ];
-  npmGlobalPaths.forEach((p) => {
-    if (existsSync(p)) {
-      paths.add(p);
-    }
-  });
-
-  // Add all common paths
-  commonPaths.forEach((p) => paths.add(p));
-
-  const finalPath = Array.from(paths).join(pathSeparator);
-
-  // Log the enhanced PATH for debugging (only log first few paths to avoid clutter)
-  const pathArray = Array.from(paths);
-  logger.debug('Enhanced PATH created', {
-    totalPaths: pathArray.length,
-    samplePaths: pathArray.slice(0, 10),
-    includesHomebrew: pathArray.includes('/opt/homebrew/bin'),
-    includesNvm: pathArray.some((p) => p.includes('.nvm')),
-  });
-
-  return finalPath;
-}
-
 async function execWithEnhancedPath(
   command: string,
   options: { cwd?: string; maxBuffer?: number; timeout?: number } = {},
@@ -348,39 +202,18 @@ async function saveAuggiePath(auggiePath: string): Promise<void> {
 }
 
 async function findAuggieInEnhancedPath(): Promise<string | null> {
-  const enhancedPath = getEnhancedPath();
-  const whichCmd = process.platform === 'win32' ? 'where auggie' : 'which auggie';
+  const foundPath = await findBinary('auggie', {
+    cache: false,
+    useLoginShell: false,
+    retry: true,
+  });
 
-  try {
-    // Use retry-enabled exec to handle transient errors like EAGAIN
-    const { stdout } = await execAsyncWithRetry(whichCmd, {
-      timeout: 10000,
-      env: { ...process.env, PATH: enhancedPath },
-    });
-
-    const lines = stdout
-      .trim()
-      .split(/\r?\n/)
-      .map((p) => p.trim())
-      .filter(Boolean);
-
-    // On Windows, prefer .cmd files since they are the proper executable wrappers
-    let foundPath = lines[0];
-    if (process.platform === 'win32' && lines.length > 1) {
-      const cmdResult = lines.find((l) => l.endsWith('.cmd'));
-      if (cmdResult) {
-        foundPath = cmdResult;
-      }
-    }
-
-    if (foundPath && existsSync(foundPath)) {
-      logger.info('Found auggie via enhanced PATH search', { path: foundPath });
-      return foundPath;
-    }
-  } catch (error) {
-    logger.debug('Enhanced PATH search for auggie failed', { error: (error as Error).message });
+  if (foundPath) {
+    logger.info('Found auggie via enhanced PATH search', { path: foundPath });
+    return foundPath;
   }
 
+  logger.debug('Enhanced PATH search for auggie failed');
   return null;
 }
 
@@ -467,56 +300,37 @@ export async function findAuggiePathAsync(): Promise<string | null> {
     return enhancedPathResult;
   }
 
-  // 5. Run `which auggie` / `where auggie` from a login shell to get the proper PATH
+  // 5. Run shared binary lookup with platform-appropriate PATH/login-shell behavior
   if (process.platform === 'win32') {
-    // On Windows, try 'where auggie' with enhanced PATH (already tried in step 4 via
-    // findAuggieInEnhancedPath, but let's also try common Windows npm global locations directly)
-    try {
-      const appData = process.env.APPDATA || '';
-      const windowsAuggiePaths = [
-        path.join(appData, 'npm', 'auggie.cmd'),
-        path.join(appData, 'npm', 'auggie'),
-        path.join(os.homedir(), '.npm-global', 'auggie.cmd'),
-        path.join(os.homedir(), '.npm-global', 'auggie'),
-      ];
-      for (const candidatePath of windowsAuggiePaths) {
-        if (existsSync(candidatePath)) {
-          logger.info('Found auggie at Windows common path', { path: candidatePath });
-          await saveAuggiePath(candidatePath);
-          return candidatePath;
-        }
-      }
-    } catch (e) {
-      logger.debug('Could not find auggie at Windows common paths', {
-        error: (e as Error).message,
-      });
+    const appData = process.env.APPDATA || '';
+    const windowsAuggiePaths = [
+      path.join(appData, 'npm', 'auggie.cmd'),
+      path.join(appData, 'npm', 'auggie'),
+      path.join(os.homedir(), '.npm-global', 'auggie.cmd'),
+      path.join(os.homedir(), '.npm-global', 'auggie'),
+    ];
+
+    const windowsPathResult = await findBinary('auggie', {
+      commonPaths: windowsAuggiePaths,
+      cache: false,
+      useLoginShell: false,
+      retry: true,
+    });
+
+    if (windowsPathResult) {
+      logger.info('Found auggie at Windows common path', { path: windowsPathResult });
+      await saveAuggiePath(windowsPathResult);
+      return windowsPathResult;
     }
   } else {
-    // Unix: Use -l (login) instead of -i (interactive) for better performance and resource usage.
-    // Login shells source profile files (.zprofile, .bash_profile) without the overhead
-    // of interactive features that can cause resource exhaustion (EAGAIN errors).
-    try {
-      const shell = process.env.SHELL || '/bin/zsh';
-      logger.debug('Trying to find auggie via login shell', { shell });
-      // Use retry-enabled exec and login shell (-l) instead of interactive shell (-i)
-      const { stdout, stderr } = await execAsyncWithRetry(`${shell} -l -c "which auggie"`, {
-        timeout: 10000,
-        env: { ...process.env, PATH: getEnhancedPath() },
-      });
-      const foundPath = stdout.trim();
-      logger.debug('Login shell result', {
-        stdout: foundPath,
-        stderr,
-        exists: foundPath ? existsSync(foundPath) : false,
-      });
-      if (foundPath && existsSync(foundPath)) {
-        logger.info('Found auggie via login shell', { path: foundPath });
-        await saveAuggiePath(foundPath);
-        return foundPath;
-      }
-    } catch (e) {
-      logger.debug('Could not find auggie via login shell', { error: (e as Error).message });
+    const foundPath = await findBinary('auggie', { cache: false, retry: true });
+    if (foundPath) {
+      logger.info('Found auggie via login shell', { path: foundPath });
+      await saveAuggiePath(foundPath);
+      return foundPath;
     }
+
+    logger.debug('Could not find auggie via login shell');
   }
 
   logger.warn('Could not find auggie');
@@ -1495,21 +1309,7 @@ export function setupAuggieIPC() {
       if (!auggiePath) {
         logger.info('Trying to find auggie via shell fallback');
         try {
-          let foundPath: string | null = null;
-          if (process.platform === 'win32') {
-            // On Windows, use 'where auggie' with enhanced PATH
-            const { stdout: whereOutput } = await execWithEnhancedPath('where auggie', {
-              timeout: 10000,
-            });
-            foundPath = whereOutput.trim().split(/\r?\n/)[0]?.trim() || null;
-          } else {
-            const shell = process.env.SHELL || '/bin/zsh';
-            const { stdout: whichOutput } = await execAsync(`${shell} -i -c "which auggie"`, {
-              timeout: 10000,
-              env: { ...process.env, PATH: getEnhancedPath() },
-            });
-            foundPath = whichOutput.trim() || null;
-          }
+          const foundPath = await findBinary('auggie', { cache: false, retry: true });
           logger.info('auggie search result', {
             foundPath,
             exists: foundPath ? existsSync(foundPath) : false,

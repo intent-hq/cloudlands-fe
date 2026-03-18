@@ -50,6 +50,7 @@ import {
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import type { McpServerConfig } from '../../mcp/main/user-mcp-settings';
 import { execAsync } from '../../../shared/git/git-env';
+import { findBinary } from '../../../shared/main/find-binary';
 import {
   APP_CHANNELS,
   DEEP_LINK_CHANNELS,
@@ -2912,9 +2913,8 @@ export function setupSystemIPC() {
   // Check rtk availability
   ipcMain.handle(SYSTEM_CHANNELS.CHECK_RTK, async () => {
     try {
-      const whichCommand = process.platform === 'win32' ? 'where rtk' : 'which rtk';
-      await execAsync(whichCommand, { timeout: 5000 });
-      return { success: true, data: { available: true } };
+      const rtkPath = await findBinary('rtk', { cache: false });
+      return { success: true, data: { available: rtkPath !== null } };
     } catch {
       return { success: true, data: { available: false } };
     }

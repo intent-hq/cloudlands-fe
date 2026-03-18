@@ -7,6 +7,7 @@
  */
 
 import { execAsync } from '../../../shared/main/async-utils';
+import { findBinary } from '../../../shared/main/find-binary';
 import { getSetting } from '../../workspace/main/app-settings.service';
 import { Logger } from '../../../shared/logger';
 
@@ -76,11 +77,13 @@ export async function detectRtk(): Promise<RtkStatus> {
 async function doDetect(): Promise<RtkStatus> {
   try {
     // 1. Check if rtk exists
-    const whichCmd = process.platform === 'win32' ? 'where rtk' : 'which rtk';
-    await execAsync(whichCmd, { timeout: 5000 });
+    const rtkPath = await findBinary('rtk', { cache: false });
+    if (!rtkPath) {
+      throw new Error('rtk not found');
+    }
 
     // 2. Parse subcommands from `rtk help`
-    const { stdout } = await execAsync('rtk help', { timeout: 10000 });
+    const { stdout } = await execAsync(`"${rtkPath}" help`, { timeout: 10000 });
     const subcommands = parseRtkHelp(stdout);
 
     logger.info('rtk detected', { subcommandCount: subcommands.length });

@@ -5,12 +5,9 @@
  * and falling back to npx with auto-approve if needed.
  */
 
-import { spawn } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
-import { Logger } from '../../../shared/logger';
-
-const logger = new Logger('OpenCodeResolver');
+import { findBinary, getCommonNpmPaths } from '../../../shared/main/find-binary';
 
 // Common paths to look for opencode
 const OPENCODE_PATHS = [
@@ -62,99 +59,24 @@ export function clearOpenCodeCache(): void {
   cachedNpxPath = null;
 }
 
-async function findBinaryInPath(binary: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    const command = process.platform === 'win32' ? 'where' : 'which';
-    const child = spawn(command, [binary], { windowsHide: true });
-
-    let stdout = '';
-    let stderr = '';
-    const timeoutId = setTimeout(() => {
-      child.kill();
-      resolve(null);
-    }, 3000);
-
-    child.stdout.on('data', (data: Buffer) => {
-      stdout += data.toString();
-    });
-
-    child.stderr.on('data', (data: Buffer) => {
-      stderr += data.toString();
-    });
-
-    child.on('error', () => {
-      clearTimeout(timeoutId);
-      resolve(null);
-    });
-
-    child.on('close', (code) => {
-      clearTimeout(timeoutId);
-      if (code === 0 && stdout.trim().length > 0) {
-        const firstPath = stdout.trim().split(/\r?\n/)[0].trim();
-        resolve(firstPath || null);
-        return;
-      }
-      if (stderr) {
-        logger.debug('Path lookup stderr', { stderr });
-      }
-      resolve(null);
-    });
-  });
-}
-
-async function findNvmBinary(binary: string): Promise<string | null> {
-  const { existsSync, readdirSync } = await import('fs');
-  const nvmRoot = path.join(os.homedir(), '.nvm', 'versions', 'node');
-  if (!existsSync(nvmRoot)) {
-    return null;
-  }
-
-  try {
-    const entries = readdirSync(nvmRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-
-    for (const versionDir of entries) {
-      const candidate = path.join(nvmRoot, versionDir, 'bin', binary);
-      if (existsSync(candidate)) {
-        return candidate;
-      }
-    }
-  } catch (error) {
-    logger.debug('Failed to scan nvm directories', { error: (error as Error).message });
-  }
-
-  return null;
-}
-
 async function findNpxPath(): Promise<string | null> {
   if (cachedNpxPath) {
     return cachedNpxPath;
   }
 
-  const { existsSync } = await import('fs');
+  const result = await findBinary('npx', {
+    commonPaths: [...NPX_PATHS, ...getCommonNpmPaths('npx')],
+    cache: false,
+    timeout: 3000,
+    useEnhancedPath: false,
+    useLoginShell: false,
+  });
 
-  for (const p of NPX_PATHS) {
-    if (existsSync(p)) {
-      cachedNpxPath = p;
-      return p;
-    }
+  if (result) {
+    cachedNpxPath = result;
   }
 
-  const nvmPath = await findNvmBinary('npx');
-  if (nvmPath) {
-    cachedNpxPath = nvmPath;
-    return nvmPath;
-  }
-
-  const pathFromEnv = await findBinaryInPath('npx');
-  if (pathFromEnv) {
-    cachedNpxPath = pathFromEnv;
-    return pathFromEnv;
-  }
-
-  return null;
+  return result;
 }
 
 /**
@@ -165,28 +87,19 @@ async function findOpenCodePath(): Promise<string | null> {
     return cachedOpenCodePath;
   }
 
-  const { existsSync } = await import('fs');
+  const result = await findBinary('opencode', {
+    commonPaths: [...OPENCODE_PATHS, ...getCommonNpmPaths('opencode')],
+    cache: false,
+    timeout: 3000,
+    useEnhancedPath: false,
+    useLoginShell: false,
+  });
 
-  for (const p of OPENCODE_PATHS) {
-    if (existsSync(p)) {
-      cachedOpenCodePath = p;
-      return p;
-    }
+  if (result) {
+    cachedOpenCodePath = result;
   }
 
-  const nvmPath = await findNvmBinary('opencode');
-  if (nvmPath) {
-    cachedOpenCodePath = nvmPath;
-    return nvmPath;
-  }
-
-  const pathFromEnv = await findBinaryInPath('opencode');
-  if (pathFromEnv) {
-    cachedOpenCodePath = pathFromEnv;
-    return pathFromEnv;
-  }
-
-  return null;
+  return result;
 }
 
 /**

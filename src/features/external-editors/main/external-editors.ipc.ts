@@ -15,6 +15,7 @@ import { access } from 'fs/promises';
 import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { execAsync } from '../../../shared/git/git-env';
+import { findBinary } from '../../../shared/main/find-binary';
 
 const logger = new Logger({ category: 'ExternalEditors-IPC' });
 
@@ -146,16 +147,27 @@ async function findExecutableBinary(editorId: string): Promise<string | null> {
   logger.debug(`[ExternalEditors] Searching for ${editorId} binaries: [${binaries.join(', ')}] in paths: [${searchPaths.join(', ')}]`);
 
   for (const binary of binaries) {
-    for (const searchPath of searchPaths) {
-      const fullPath = `${searchPath}/${binary}`;
-      try {
-        // Check for execute permission, not just existence
-        await access(fullPath, constants.X_OK);
-        logger.info(`[ExternalEditors] Found ${editorId} at ${fullPath}`);
-        return fullPath;
-      } catch {
-        // Not found or not executable at this location
-      }
+    const resolvedPath = await findBinary(binary, {
+      commonPaths: searchPaths.map((searchPath) => `${searchPath}/${binary}`),
+      cache: false,
+      preferExtensions: [],
+      useEnhancedPath: false,
+      useLoginShell: false,
+    });
+
+    if (!resolvedPath) {
+      continue;
+    }
+
+    try {
+      await access(resolvedPath, constants.X_OK);
+      logger.info(`[ExternalEditors] Found ${editorId} at ${resolvedPath}`);
+      return resolvedPath;
+    } catch {
+      logger.debug(`[ExternalEditors] Candidate for ${editorId} is not executable`, {
+        binary,
+        path: resolvedPath,
+      });
     }
   }
 
@@ -186,7 +198,7 @@ async function isAppInstalledLinux(editorId: string): Promise<boolean> {
 }
 
 /**
- * Find the first available Windows binary for an editor using `where`.
+ * Find the first available Windows binary for an editor using shared binary lookup.
  * Returns the binary name if found, null otherwise.
  */
 async function findWindowsBinary(editorId: string): Promise<string | null> {
@@ -194,18 +206,16 @@ async function findWindowsBinary(editorId: string): Promise<string | null> {
   if (!editor?.platforms?.win32?.binaries) return null;
 
   for (const binary of editor.platforms.win32.binaries) {
-    try {
-      await execAsync(`where ${binary}`, { timeout: 5000 });
+    const resolvedPath = await findBinary(binary, { cache: false });
+    if (resolvedPath) {
       return binary;
-    } catch {
-      // Not found on PATH
     }
   }
   return null;
 }
 
 /**
- * Check if an app is installed on Windows by looking for binaries on PATH using `where`
+ * Check if an app is installed on Windows by looking for binaries on PATH.
  */
 async function isAppInstalledWindows(editorId: string): Promise<boolean> {
   return (await findWindowsBinary(editorId)) !== null;
@@ -499,7 +509,7 @@ export function registerExternalEditorsHandlers(): void {
               }
             }
           } else if (process.platform === 'win32') {
-            // Windows: find the first available binary via `where`
+            // Windows: find the first available binary via shared binary lookup
             const binary = (await findWindowsBinary(editorId)) ?? editor.platforms?.win32?.binaries?.[0];
             if (binary) {
               command = binary;

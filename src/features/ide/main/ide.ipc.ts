@@ -17,6 +17,7 @@ import { createSafeValidatedHandler } from '../../../main/ipc-validation-middlew
 import { z } from 'zod';
 import { execAsync } from '../../../shared/git/git-env';
 import { findVSCodeAsync } from '../../../shared/main/async-utils';
+import { findBinary } from '../../../shared/main/find-binary';
 
 const logger = new Logger({ category: 'IDE-IPC' });
 
@@ -79,44 +80,30 @@ async function openInVSCode(
     // Try to find the code command
     let codeCommand: string | null = null;
 
-    // First check if code is in PATH
-    try {
-      const whichCommand = process.platform === 'win32' ? 'where' : 'which';
-      const result = await execAsync(`${whichCommand} code`);
-      codeCommand = 'code';
-      logger.info('[VSCode] Found code in PATH', { result: result.stdout.trim() });
-    } catch (error) {
-      logger.info('[VSCode] code not in PATH, checking common locations');
-      // Not in PATH, try common locations
-      const commonCodePaths = [
-        '/usr/local/bin/code',
-        '/opt/homebrew/bin/code',
-        '/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code',
-        // Linux paths
-        '/usr/bin/code',
-        '/snap/bin/code',
-        // Windows paths
-        ...(process.platform === 'win32' ? [
-          join(homedir(), 'AppData', 'Local', 'Programs', 'Microsoft VS Code', 'bin', 'code.cmd'),
-          join(homedir(), 'AppData', 'Local', 'Programs', 'Microsoft VS Code', 'Code.exe'),
-          'C:\\Program Files\\Microsoft VS Code\\bin\\code.cmd',
-          'C:\\Program Files\\Microsoft VS Code\\Code.exe',
-          join(homedir(), 'scoop', 'apps', 'vscode', 'current', 'bin', 'code.cmd'),
-        ] : []),
-      ];
+    const commonCodePaths = [
+      '/usr/local/bin/code',
+      '/opt/homebrew/bin/code',
+      '/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code',
+      // Linux paths
+      '/usr/bin/code',
+      '/snap/bin/code',
+      // Windows paths
+      ...(process.platform === 'win32'
+        ? [
+            join(homedir(), 'AppData', 'Local', 'Programs', 'Microsoft VS Code', 'bin', 'code.cmd'),
+            join(homedir(), 'AppData', 'Local', 'Programs', 'Microsoft VS Code', 'Code.exe'),
+            'C:\\Program Files\\Microsoft VS Code\\bin\\code.cmd',
+            'C:\\Program Files\\Microsoft VS Code\\Code.exe',
+            join(homedir(), 'scoop', 'apps', 'vscode', 'current', 'bin', 'code.cmd'),
+          ]
+        : []),
+    ];
 
-      logger.info('[VSCode] Checking common paths', { commonCodePaths });
+    logger.info('[VSCode] Checking shared binary lookup', { commonCodePaths });
+    codeCommand = await findBinary('code', { commonPaths: commonCodePaths, cache: false });
 
-      for (const path of commonCodePaths) {
-        try {
-          await access(path);
-          codeCommand = path;
-          logger.info('[VSCode] Found code at common path', { path });
-          break;
-        } catch {
-          logger.info(`[VSCode] code not found at ${path}`);
-        }
-      }
+    if (codeCommand) {
+      logger.info('[VSCode] Found code via shared binary lookup', { codeCommand });
     }
 
     if (!codeCommand) {
@@ -127,7 +114,7 @@ async function openInVSCode(
       logger.info('Attempting to spawn VSCode', { command: codeCommand, args });
 
       // Try to spawn VSCode with the found command
-      // Only use shell: true if we're using 'code' (from PATH), not for full paths
+      // Use shell for PATH-style invocations and Windows .cmd launchers
       const useShell = codeCommand === 'code' || (process.platform === 'win32' && codeCommand.endsWith('.cmd'));
       const child = spawn(codeCommand, args, {
         detached: true,

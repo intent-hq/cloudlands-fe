@@ -52,7 +52,9 @@ export const existsAsync = async (filePath: string): Promise<boolean> => {
 
 /**
  * Find an executable in PATH or common locations asynchronously.
- * Replaces synchronous `which` calls that block the main thread.
+ * Delegates to shared `findBinary()`. Note: common path checks use
+ * synchronous `fs.existsSync` which briefly blocks, but this is
+ * negligible for the small number of paths checked.
  *
  * @param command - The command to find (e.g., 'code', 'auggie')
  * @param commonPaths - Optional list of common paths to check
@@ -62,42 +64,20 @@ export async function findExecutableAsync(
   command: string,
   commonPaths: string[] = [],
 ): Promise<string | null> {
-  // Try using 'which' command first (async)
-  try {
-    const whichCommand = process.platform === 'win32' ? 'where' : 'which';
-    const { stdout } = await execAsync(`${whichCommand} ${command}`, {
-      timeout: 5000,
-      encoding: 'utf-8',
-    });
-    const lines = stdout.trim().split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const { findBinary } = await import('./find-binary');
+  const result = await findBinary(command, {
+    commonPaths,
+    cache: false,
+    timeout: 5000,
+    useEnhancedPath: false,
+    useLoginShell: false,
+  });
 
-    // On Windows, 'where' returns multiple results (e.g., auggie and auggie.cmd).
-    // Prefer .cmd files since they are the proper executable wrappers for npm packages.
-    let result = lines[0];
-    if (process.platform === 'win32' && lines.length > 1) {
-      const cmdResult = lines.find((l) => l.endsWith('.cmd'));
-      if (cmdResult) {
-        result = cmdResult;
-      }
-    }
-
-    if (result) {
-      logger.debug(`Found ${command} via ${whichCommand}`, { path: result });
-      return result;
-    }
-  } catch {
-    // Command not in PATH, try common locations
+  if (result) {
+    logger.debug(`Found ${command} via shared findBinary`, { path: result });
   }
 
-  // Check common paths asynchronously
-  for (const commonPath of commonPaths) {
-    if (await existsAsync(commonPath)) {
-      logger.debug(`Found ${command} at common path`, { path: commonPath });
-      return commonPath;
-    }
-  }
-
-  return null;
+  return result;
 }
 
 /**
@@ -249,7 +229,7 @@ export async function findVSCodeAsync(): Promise<string | null> {
 
 /**
  * Find Auggie CLI asynchronously.
- * First checks saved path in ~/.augment/auggie-path, then tries `which auggie`,
+ * First checks saved path in ~/.augment/auggie-path, then tries shared binary lookup,
  * then checks common hardcoded paths, then dynamically scans nvm and fnm directories.
  */
 export async function findAuggieAsync(): Promise<string | null> {
@@ -267,7 +247,7 @@ export async function findAuggieAsync(): Promise<string | null> {
     // Ignore errors reading saved path
   }
 
-  // Try which command and static common paths
+  // Try shared binary lookup and static common paths
   const result = await findExecutableAsync('auggie', AUGGIE_COMMON_PATHS);
   if (result) {
     return result;
