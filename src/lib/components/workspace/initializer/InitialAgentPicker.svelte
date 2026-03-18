@@ -89,6 +89,7 @@
       'claude-code': 'claudeCode',
       codex: 'codex',
       opencode: 'opencode',
+      cortex: 'cortex',
     };
     const key = keyMap[providerId];
     if (key && providerAvailability.providers[key]) {
@@ -130,41 +131,12 @@
   });
 
   onMount(async () => {
-    // Fetch provider availability for auto-selection
+    // Fetch provider availability — the $effect above handles auto-selection
+    // once providerAvailability is set. This avoids duplicating fallback logic
+    // and ensures the user's explicit provider choice is respected consistently.
     try {
       providerAvailability = await getProviderAvailability();
       logger.debug('Provider availability loaded:', providerAvailability);
-
-      // Auto-select first available provider if none is set or current is unavailable
-      // BUT: Don't override if the provider matches the user's explicit choice from activeProviderStore
-      if (providerAvailability.hasAnyProvider) {
-        const isCurrentAvailable =
-          (selectedProvider === 'auggie' && providerAvailability.providers.auggie.available) ||
-          (selectedProvider === 'claude-code' &&
-            providerAvailability.providers.claudeCode.available) ||
-          (selectedProvider === 'codex' && providerAvailability.providers.codex.available);
-
-        if (!isCurrentAvailable) {
-          // Check if this is the user's explicit choice from the provider store
-          const userExplicitChoice = $activeProviderId$;
-          if (selectedProvider === userExplicitChoice) {
-            // User explicitly selected this provider - don't override even if availability check fails
-            logger.debug('Keeping user-selected provider despite availability check:', {
-              selectedProvider,
-            });
-            return;
-          }
-          // Select first available
-          if (providerAvailability.providers.auggie.available) {
-            selectedProvider = 'auggie';
-          } else if (providerAvailability.providers.claudeCode.available) {
-            selectedProvider = 'claude-code';
-          } else if (providerAvailability.providers.codex.available) {
-            selectedProvider = 'codex';
-          }
-          onProviderChange?.(selectedProvider);
-        }
-      }
     } catch (error) {
       logger.error('Failed to check provider availability:', error);
     }
