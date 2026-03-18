@@ -5,6 +5,7 @@
  * Uses the session.json from ~/.augment/ for authentication.
  */
 
+import { net } from 'electron';
 import { existsSync, readFileSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
@@ -162,7 +163,12 @@ export class AugmentApiClient {
 
     logger.debug('Making Augment API call', { endpoint, url });
 
-    const response = await fetch(url, {
+    // Use Electron's net.fetch() instead of Node.js fetch() so that requests
+    // go through Chromium's networking stack, which reads the OS certificate
+    // store (macOS Keychain, Windows cert store).  This fixes
+    // SELF_SIGNED_CERT_IN_CHAIN errors for users behind corporate proxies
+    // with custom CA certificates.
+    const response = await net.fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
