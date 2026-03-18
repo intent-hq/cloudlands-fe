@@ -8,7 +8,6 @@
     type DropdownOption,
   } from '$lib/components/ui/dropdown';
   import { faSettings } from '$lib/icons/faSettings';
-  import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
   import {
     selectSelectedModel,
     selectAvailableModels,
@@ -20,6 +19,7 @@
     retryLoadModels,
     setWorkspaceModel,
   } from '$lib/store/slices/model/model-slice';
+  import { selectActiveProviderId } from '$lib/store/slices/active-provider/active-provider-selectors';
   import { getModelsForProvider } from '$lib/store/slices/model/model-utils';
   import { getDispatch } from '$lib/store/utils/utils';
   import {
@@ -46,6 +46,7 @@
   const logger = createLogger('ModelPicker');
 
   const dispatch = getDispatch();
+  const activeProviderId$ = selectActiveProviderId();
   const selectedModel$ = selectSelectedModel();
   const availableModels$ = selectAvailableModels();
   const isLoadingModels$ = selectIsLoadingModels();
@@ -121,13 +122,11 @@
         if (provider) return getProviderConfig(provider).id;
       }
     }
-    return activeProviderStore.activeProviderId;
+    return $activeProviderId$;
   });
 
   // Whether the agent's provider differs from the global active provider
-  const isAgentProviderOverride = $derived(
-    effectiveProviderId !== activeProviderStore.activeProviderId,
-  );
+  const isAgentProviderOverride = $derived(effectiveProviderId !== $activeProviderId$);
 
   // --- Model list: use agent-specific models when provider differs ---
   // When the effective provider matches the active provider, use the global model store.
@@ -140,7 +139,7 @@
 
   $effect(() => {
     const epid = effectiveProviderId;
-    if (epid === activeProviderStore.activeProviderId) {
+    if (epid === $activeProviderId$) {
       // Active provider matches — use global model store, clear local override
       agentProviderModels = null;
       agentProviderLoading = false;
@@ -477,7 +476,7 @@
     // lose their model, the provider just changed.
     const { providerId: unavailableProvider, modelId: unavailableBaseId } =
       parseCompoundModelId(unavailableModelName);
-    const activeProvider = getProviderConfig(activeProviderStore.activeProviderId).id;
+    const activeProvider = getProviderConfig($activeProviderId$).id;
     const isProviderSwitch =
       unavailableModelName === MODEL_DEFAULTS.UI_INITIAL_MODEL ||
       unavailableProvider !== activeProvider ||

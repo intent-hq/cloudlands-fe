@@ -21,10 +21,10 @@ import { getAgentProvider } from '$shared/types/agent-session';
 
 import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-import { specialistsStore } from '$lib/stores/specialists.store.svelte';
+import { selectEffectiveModel, selectEffectiveBehaviorPrompt } from '$lib/store/slices/specialists/specialists-selectors';
 import { SPECIALISTS } from '$lib/constants/specialists';
 import { getDefaultModelForProvider, PROVIDER_MODEL_TIERS } from '$shared/config/provider-config';
-import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
+import { selectActiveProviderId } from '$lib/store/slices/active-provider/active-provider-selectors';
 
 const logger = createLogger('task-delegation-handlers');
 
@@ -238,8 +238,8 @@ export function useTaskDelegationHandlers(options: UseTaskDelegationHandlersOpti
 
         // Use implementor specialist for task agents
         // Try store first, fall back to SPECIALISTS constant if store returns empty
-        let implementorModel = specialistsStore.getEffectiveModel('implementor');
-        let implementorBehaviorPrompt = specialistsStore.getEffectiveBehaviorPrompt('implementor');
+        let implementorModel = selectEffectiveModel.select(getReduxStore().getState(), 'implementor');
+        let implementorBehaviorPrompt = selectEffectiveBehaviorPrompt.select(getReduxStore().getState(), 'implementor');
 
         // Fallback to SPECIALISTS constant if store returns empty (can happen in async contexts)
         if (!implementorBehaviorPrompt) {
@@ -248,7 +248,7 @@ export function useTaskDelegationHandlers(options: UseTaskDelegationHandlersOpti
             implementorBehaviorPrompt = implementorSpec.defaultBehaviorPrompt;
             // Resolve model from tier if not already set
             if (!implementorModel) {
-              const activeProvider = activeProviderStore.activeProviderId;
+              const activeProvider = selectActiveProviderId.select(getReduxStore().getState());
               implementorModel =
                 implementorSpec.defaultModelTier && activeProvider in PROVIDER_MODEL_TIERS
                   ? getDefaultModelForProvider(activeProvider, implementorSpec.defaultModelTier)

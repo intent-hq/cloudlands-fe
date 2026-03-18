@@ -1,12 +1,43 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import { faPlus, faRotateLeft, faTrash } from '@fortawesome/free-solid-svg-icons';
-  import { specialistsStore } from '$lib/stores/specialists.store.svelte';
-  import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
-  import { additionalAgentsStore } from '$lib/stores/additional-agents.store.svelte';
+
   import { selectSelectedModel } from '$lib/store/slices/model/model-selectors';
   import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
   import { getDispatch } from '$lib/store/utils/utils';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+    selectSpecialists,
+    selectIsBuiltIn,
+    selectIsFileBased,
+    selectHasOverrides,
+    selectEffectiveModel,
+    selectEffectiveBehaviorPrompt,
+    selectResolvedDefaultModel,
+    selectGetFileSpecialist,
+    selectSpecialistFilePath,
+    selectUserOverrides,
+    selectEffectiveCodingAgent,
+    selectResolvedDefaultCodingAgent,
+  } from '$lib/store/slices/specialists/specialists-selectors';
+  import {
+    setModelOverride,
+    clearModelOverride,
+    setBulkModelOverrides,
+    setBehaviorPromptOverride,
+    clearBehaviorPromptOverride,
+    clearAllOverrides,
+    createCustomSpecialist,
+    updateCustomSpecialist,
+    deleteCustomSpecialist,
+    deleteFileSpecialist as deleteFileSpecialistAction,
+    saveFileSpecialist,
+    setCodingAgentOverride,
+    clearCodingAgentOverride,
+  } from '$lib/store/slices/specialists/specialists-slice';
+  import { selectActiveProviderId } from '$lib/store/slices/active-provider/active-provider-selectors';
+  import { setActiveProvider } from '$lib/store/slices/active-provider/active-provider-slice';
+  import { selectEnabledProviderIds } from '$lib/store/slices/additional-agents/additional-agents-selectors';
   import Button from '$lib/components/ui/button/button.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
@@ -35,9 +66,16 @@
 
   let { activeView, onSpecialistCreated, onSpecialistDeleted, onDiscard }: Props = $props();
 
+  const dispatch = getDispatch();
+  const specialists = selectSpecialists();
+  const userOverrides = selectUserOverrides();
+  const selectedModel = selectSelectedModel();
+  const activeProviderId$ = selectActiveProviderId();
+  const enabledProviderIds$ = selectEnabledProviderIds();
+
   // Model selection for system prompt
-  let selectedProviderValue = $state(activeProviderStore.activeProviderId);
-  const enabledProviderIds = $derived(additionalAgentsStore.getEnabledProviderIds());
+  let selectedProviderValue = $state($activeProviderId$);
+  const enabledProviderIds = $derived($enabledProviderIds$);
   let usableProviderIds = $state<string[]>([]);
   let usableProviderRequestId = 0;
 
@@ -53,19 +91,20 @@
   });
 
   $effect(() => {
-    selectedProviderValue = activeProviderStore.activeProviderId;
+    selectedProviderValue = $activeProviderId$;
   });
 
-  const dispatch = getDispatch();
-  const selectedModel = selectSelectedModel();
-
   // Check if all specialists already use the currently selected default model
-  const allSpecialistsUseSelectedModel = $derived(
-    specialistsStore.specialists.length > 0 &&
-      specialistsStore.specialists.every(
-        (s) => specialistsStore.getEffectiveModel(s.id) === $selectedModel,
-      ),
-  );
+  const allSpecialistsUseSelectedModel = $derived.by(() => {
+    void $userOverrides; // track override changes for reactivity
+    const specs = $specialists;
+    return (
+      specs.length > 0 &&
+      specs.every(
+        (s) => selectEffectiveModel.select(getReduxStore().getState(), s.id) === $selectedModel,
+      )
+    );
+  });
 
   // Get the default model for new specialists - use the user's current selection
   function getDefaultModel(): string {
@@ -75,7 +114,7 @@
   // New specialist form state
   let newName = $state('');
   let newDescription = $state('');
-  let newCodingAgent = $state(activeProviderStore.activeProviderId);
+  let newCodingAgent = $state($activeProviderId$);
   let newModel = $state(getDefaultModel());
   let newPrompt = $state('You are a specialist agent.\n\nYour job is to:\n1. ...\n2. ...\n3. ...');
 
@@ -97,7 +136,7 @@
     if (activeView.type === 'create-specialist') {
       newName = '';
       newDescription = '';
-      newCodingAgent = activeProviderStore.activeProviderId;
+      newCodingAgent = $activeProviderId$;
       newModel = getDefaultModel();
       newPrompt = 'You are a specialist agent.\n\nYour job is to:\n1. ...\n2. ...\n3. ...';
     }
@@ -105,25 +144,32 @@
 
   // Get current specialist if viewing one
   const currentSpecialist = $derived(
-    activeView.type === 'specialist'
-      ? specialistsStore.specialists.find((s) => s.id === activeView.id)
-      : null,
+    activeView.type === 'specialist' ? $specialists.find((s) => s.id === activeView.id) : null,
   );
 
   const isBuiltIn = $derived(
-    currentSpecialist ? specialistsStore.isBuiltIn(currentSpecialist.id) : false,
+    currentSpecialist
+      ? selectIsBuiltIn.select(getReduxStore().getState(), currentSpecialist.id)
+      : false,
   );
 
   const isFileBased = $derived(
-    currentSpecialist ? specialistsStore.isFileBased(currentSpecialist.id) : false,
+    currentSpecialist
+      ? selectIsFileBased.select(getReduxStore().getState(), currentSpecialist.id)
+      : false,
   );
 
-  const hasOverrides = $derived(
-    currentSpecialist ? specialistsStore.hasOverrides(currentSpecialist.id) : false,
-  );
+  const hasOverrides = $derived.by(() => {
+    void $userOverrides; // track override changes for reactivity
+    return currentSpecialist
+      ? selectHasOverrides.select(getReduxStore().getState(), currentSpecialist.id)
+      : false;
+  });
 
   const specialistFilePath = $derived(
-    currentSpecialist ? specialistsStore.getSpecialistFilePath(currentSpecialist.id) : undefined,
+    currentSpecialist
+      ? selectSpecialistFilePath.select(getReduxStore().getState(), currentSpecialist.id)
+      : undefined,
   );
 
   // Local state for specialist model selection
@@ -161,8 +207,12 @@
   // Sync specialist model value when specialist changes or overrides are cleared
   $effect(() => {
     if (currentSpecialist) {
-      specialistCodingAgentValue = specialistsStore.getEffectiveCodingAgent(currentSpecialist.id);
-      specialistModelValue = specialistsStore.getEffectiveModel(currentSpecialist.id);
+      specialistCodingAgentValue = selectEffectiveCodingAgent.select(getReduxStore().getState(), currentSpecialist.id);
+      void $userOverrides; // track override changes
+      specialistModelValue = selectEffectiveModel.select(
+        getReduxStore().getState(),
+        currentSpecialist.id,
+      );
     }
   });
 
@@ -184,9 +234,9 @@
   }
 
   async function handleGlobalProviderChange(newProvider: string) {
-    if (!newProvider || newProvider === activeProviderStore.activeProviderId) return;
+    if (!newProvider || newProvider === $activeProviderId$) return;
 
-    activeProviderStore.setActiveProvider(newProvider);
+    dispatch(setActiveProvider(newProvider));
     dispatch(reloadModelsForProvider());
     selectedProviderValue = newProvider;
   }
@@ -197,7 +247,7 @@
     const nextModel = await resolveModelOrToast(
       newProvider,
       specialistModelValue,
-      specialistsStore.getResolvedDefaultModel(currentSpecialist.id, newProvider),
+      selectResolvedDefaultModel.select(getReduxStore().getState(), currentSpecialist.id, newProvider),
     );
     if (!nextModel) return;
 
@@ -205,43 +255,49 @@
     specialistModelValue = nextModel;
 
     if (isBuiltIn) {
-      const resolvedDefaultProvider = specialistsStore.getResolvedDefaultCodingAgent(
+      const resolvedDefaultProvider = selectResolvedDefaultCodingAgent.select(
+        getReduxStore().getState(),
         currentSpecialist.id,
       );
       if (newProvider !== resolvedDefaultProvider) {
-        specialistsStore.setCodingAgentOverride(currentSpecialist.id, newProvider);
+        dispatch(setCodingAgentOverride(currentSpecialist.id, newProvider));
       } else {
-        specialistsStore.clearCodingAgentOverride(currentSpecialist.id);
+        dispatch(clearCodingAgentOverride(currentSpecialist.id));
       }
 
-      const resolvedDefaultModel = specialistsStore.getResolvedDefaultModel(
+      const resolvedDefaultModel = selectResolvedDefaultModel.select(
+        getReduxStore().getState(),
         currentSpecialist.id,
         newProvider,
       );
       if (resolvedDefaultModel && nextModel === resolvedDefaultModel) {
-        specialistsStore.clearModelOverride(currentSpecialist.id);
+        dispatch(clearModelOverride(currentSpecialist.id));
       } else {
-        specialistsStore.setModelOverride(currentSpecialist.id, nextModel);
+        dispatch(setModelOverride(currentSpecialist.id, nextModel));
       }
     } else if (isFileBased) {
-      const fileSpec = specialistsStore.getFileSpecialist(currentSpecialist.id);
+      const fileSpec = selectGetFileSpecialist.select(getReduxStore().getState(), currentSpecialist.id);
       if (fileSpec) {
-        await specialistsStore.saveFileSpecialist({
-          id: fileSpec.id,
-          name: fileSpec.name,
-          description: fileSpec.description,
-          codingAgent: newProvider,
-          model: nextModel,
-          modelTier: fileSpec.modelTier,
-          roleReminder: fileSpec.roleReminder,
-          behaviorPrompt: fileSpec.behaviorPrompt,
-        });
+        dispatch(
+          saveFileSpecialist({
+            id: fileSpec.id,
+            name: fileSpec.name,
+            description: fileSpec.description,
+            codingAgent: newProvider,
+            model: nextModel,
+            modelTier: fileSpec.modelTier,
+            roleReminder: fileSpec.roleReminder,
+            behaviorPrompt: fileSpec.behaviorPrompt,
+          }),
+        );
       }
     } else {
-      specialistsStore.updateCustomSpecialist(currentSpecialist.id, {
-        codingAgent: newProvider,
-        model: nextModel,
-      });
+      dispatch(
+        updateCustomSpecialist(currentSpecialist.id, {
+          codingAgent: newProvider,
+          model: nextModel,
+        }),
+      );
     }
   }
 
@@ -253,30 +309,40 @@
 
     if (isBuiltIn) {
       // Get the resolved default model for the current provider (from tier)
-      const resolvedDefault = specialistsStore.getResolvedDefaultModel(currentSpecialist.id);
+      const resolvedDefault = selectResolvedDefaultModel.select(
+        getReduxStore().getState(),
+        currentSpecialist.id,
+      );
       if (newModel !== resolvedDefault) {
-        specialistsStore.setModelOverride(currentSpecialist.id, newModel);
+        dispatch(setModelOverride(currentSpecialist.id, newModel));
       } else {
-        specialistsStore.clearModelOverride(currentSpecialist.id);
+        dispatch(clearModelOverride(currentSpecialist.id));
       }
     } else if (isFileBased) {
-      const fileSpec = specialistsStore.getFileSpecialist(currentSpecialist.id);
+      const fileSpec = selectGetFileSpecialist.select(
+        getReduxStore().getState(),
+        currentSpecialist.id,
+      );
       if (fileSpec) {
-        specialistsStore.saveFileSpecialist({
-          id: fileSpec.id,
-          name: fileSpec.name,
-          description: fileSpec.description,
-          codingAgent: fileSpec.codingAgent,
-          model: newModel,
-          modelTier: fileSpec.modelTier,
-          roleReminder: fileSpec.roleReminder,
-          behaviorPrompt: fileSpec.behaviorPrompt,
-        });
+        dispatch(
+          saveFileSpecialist({
+            id: fileSpec.id,
+            name: fileSpec.name,
+            description: fileSpec.description,
+            codingAgent: fileSpec.codingAgent,
+            model: newModel,
+            modelTier: fileSpec.modelTier,
+            roleReminder: fileSpec.roleReminder,
+            behaviorPrompt: fileSpec.behaviorPrompt,
+          }),
+        );
       }
     } else {
-      specialistsStore.updateCustomSpecialist(currentSpecialist.id, {
-        model: newModel,
-      });
+      dispatch(
+        updateCustomSpecialist(currentSpecialist.id, {
+          model: newModel,
+        }),
+      );
     }
   }
 
@@ -284,32 +350,37 @@
     if (!currentSpecialist) return;
     if (isBuiltIn) {
       if (prompt !== currentSpecialist.defaultBehaviorPrompt) {
-        specialistsStore.setBehaviorPromptOverride(currentSpecialist.id, prompt);
+        dispatch(setBehaviorPromptOverride(currentSpecialist.id, prompt));
       } else {
-        specialistsStore.clearBehaviorPromptOverride(currentSpecialist.id);
+        dispatch(clearBehaviorPromptOverride(currentSpecialist.id));
       }
     } else if (isFileBased) {
-      const fileSpec = specialistsStore.getFileSpecialist(currentSpecialist.id);
+      const fileSpec = selectGetFileSpecialist.select(
+        getReduxStore().getState(),
+        currentSpecialist.id,
+      );
       if (fileSpec) {
-        specialistsStore.saveFileSpecialist({
-          id: fileSpec.id,
-          name: fileSpec.name,
-          description: fileSpec.description,
-          codingAgent: fileSpec.codingAgent,
-          model: fileSpec.model,
-          modelTier: fileSpec.modelTier,
-          roleReminder: fileSpec.roleReminder,
-          behaviorPrompt: prompt,
-        });
+        dispatch(
+          saveFileSpecialist({
+            id: fileSpec.id,
+            name: fileSpec.name,
+            description: fileSpec.description,
+            codingAgent: fileSpec.codingAgent,
+            model: fileSpec.model,
+            modelTier: fileSpec.modelTier,
+            roleReminder: fileSpec.roleReminder,
+            behaviorPrompt: prompt,
+          }),
+        );
       }
     } else {
-      specialistsStore.updateCustomSpecialist(currentSpecialist.id, { behaviorPrompt: prompt });
+      dispatch(updateCustomSpecialist(currentSpecialist.id, { behaviorPrompt: prompt }));
     }
   }
 
   function resetAllOverrides() {
     if (!currentSpecialist) return;
-    specialistsStore.clearAllOverrides(currentSpecialist.id);
+    dispatch(clearAllOverrides(currentSpecialist.id));
   }
 
   function deleteSpecialist() {
@@ -320,9 +391,9 @@
     const specialistName = currentSpecialist.name;
     const wasFileBased = isFileBased;
     if (wasFileBased) {
-      specialistsStore.deleteFileSpecialist(specialistId);
+      dispatch(deleteFileSpecialistAction(specialistId));
     } else {
-      specialistsStore.deleteCustomSpecialist(specialistId);
+      dispatch(deleteCustomSpecialist(specialistId));
     }
     onSpecialistDeleted?.();
     track('Deleted Specialist', {
@@ -333,24 +404,31 @@
 
   function createSpecialist() {
     if (!newName.trim() || newPromptIsOverLimit) return;
-    const created = specialistsStore.createCustomSpecialist({
-      name: newName.trim(),
-      description: newDescription.trim() || 'Custom specialist',
-      codingAgent: newCodingAgent,
-      model: newModel,
-      behaviorPrompt: newPrompt,
-    });
+    dispatch(
+      createCustomSpecialist({
+        name: newName.trim(),
+        description: newDescription.trim() || 'Custom specialist',
+        codingAgent: newCodingAgent,
+        model: newModel,
+        behaviorPrompt: newPrompt,
+      }),
+    );
+    // Read the newly created specialist ID from state (reducer generates it)
+    const customSpecialists = getReduxStore().getState().specialists.customSpecialists;
+    const created = customSpecialists[customSpecialists.length - 1];
     track('Created Specialist', {
       specialist_name: newName.trim(),
       has_custom_prompt: newPrompt.trim().length > 0,
     });
-    onSpecialistCreated?.(created.id);
+    if (created) {
+      onSpecialistCreated?.(created.id);
+    }
   }
 
   function discardNewSpecialist() {
     newName = '';
     newDescription = '';
-    newCodingAgent = activeProviderStore.activeProviderId;
+    newCodingAgent = $activeProviderId$;
     newModel = getDefaultModel();
     newPrompt = 'You are a specialist agent.\n\nYour job is to:\n1. ...\n2. ...\n3. ...';
     onDiscard?.();
@@ -358,12 +436,14 @@
 
   function hasCodingAgentOverride(): boolean {
     if (!currentSpecialist) return false;
-    return !!specialistsStore.userOverrides.codingAgentOverrides[currentSpecialist.id];
+    return !!selectUserOverrides.select(getReduxStore().getState()).codingAgentOverrides[currentSpecialist.id];
   }
 
   function hasModelOverride(): boolean {
     if (!currentSpecialist) return false;
-    return !!specialistsStore.userOverrides.modelOverrides[currentSpecialist.id];
+    return !!selectUserOverrides.select(getReduxStore().getState()).modelOverrides[
+      currentSpecialist.id
+    ];
   }
 
   async function handleCreateCodingAgentChange(newProvider: string) {
@@ -420,7 +500,16 @@
           <button
             type="button"
             onclick={() => {
-              specialistsStore.setModelOverrideForAll($selectedModel);
+              // Batch all overrides into a single action to prevent race conditions
+              const overrides = $specialists.reduce(
+                (acc, s) => {
+                  acc[s.id] = $selectedModel;
+                  return acc;
+                },
+                {} as Record<string, string>
+              );
+              // Dispatch a single bulk update action instead of looping
+              dispatch(setBulkModelOverrides(overrides));
               track('Used Model for All Specialists', { model_id: $selectedModel });
             }}
             class="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
@@ -469,7 +558,7 @@
           {#if isBuiltIn && hasCodingAgentOverride()}
             <button
               type="button"
-              onclick={() => specialistsStore.clearCodingAgentOverride(currentSpecialist.id)}
+              onclick={() => dispatch(clearCodingAgentOverride(currentSpecialist.id))}
               class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
             >
               <Fa icon={faRotateLeft} class="w-3 h-3" />
@@ -502,7 +591,7 @@
           {#if isBuiltIn && hasModelOverride()}
             <button
               type="button"
-              onclick={() => specialistsStore.clearModelOverride(currentSpecialist.id)}
+              onclick={() => dispatch(clearModelOverride(currentSpecialist.id))}
               class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
             >
               <Fa icon={faRotateLeft} class="w-3 h-3" />
@@ -524,7 +613,10 @@
     <!-- System Prompt (1fr) -->
     <div class="min-h-0 h-full">
       <AutoSaveTextarea
-        value={specialistsStore.getEffectiveBehaviorPrompt(currentSpecialist.id)}
+        value={selectEffectiveBehaviorPrompt.select(
+          getReduxStore().getState(),
+          currentSpecialist.id,
+        )}
         originalValue={currentSpecialist.defaultBehaviorPrompt}
         label="System Prompt"
         labelClass="text-xs font-medium text-muted-foreground uppercase tracking-wider"
@@ -533,7 +625,7 @@
         maxLength={50000}
         onSave={handlePromptSave}
         onReset={isBuiltIn
-          ? () => specialistsStore.clearBehaviorPromptOverride(currentSpecialist.id)
+          ? () => dispatch(clearBehaviorPromptOverride(currentSpecialist.id))
           : undefined}
       />
     </div>

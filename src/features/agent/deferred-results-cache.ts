@@ -7,7 +7,7 @@
  */
 
 import { createLogger } from '$lib/utils/client-logger';
-import type { BackgroundAgentType } from '$lib/stores/background-agent-settings.store.svelte';
+import type { BackgroundAgentType } from '$lib/store/slices/background-agent-settings/background-agent-settings-slice';
 
 const logger = createLogger('DeferredResultsCache');
 

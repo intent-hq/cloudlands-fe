@@ -87,8 +87,9 @@ export async function getProviderAvailability(
         const visibleIds = Object.keys(ACP_PROVIDERS).filter(
           id => !cachedResult!.hiddenProviders!.includes(id)
         );
-        const { activeProviderStore } = await import('$lib/stores/active-provider.store.svelte');
-        activeProviderStore.validateActiveProvider(visibleIds);
+        const { getReduxDispatch } = await import('$lib/store/redux-dispatch-bridge');
+        const { validateActiveProvider } = await import('$lib/store/slices/active-provider/active-provider-slice');
+        getReduxDispatch()(validateActiveProvider(visibleIds));
       } catch (e) {
         // Non-critical — store validation is best-effort
         logger.debug('Failed to validate active provider against hidden providers', { error: e });

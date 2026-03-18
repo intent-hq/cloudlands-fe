@@ -4,7 +4,10 @@
  * Sagas are started/stopped via the RunSaga component.
  */
 
+import { activeProviderSaga } from "./slices/active-provider/sagas/active-provider-saga";
+import { additionalAgentsSaga } from "./slices/additional-agents/sagas/additional-agents-saga";
 import { agentFontSettingsSaga } from "./slices/agent-font-settings/sagas/agent-font-settings-saga";
+import { backgroundAgentSettingsSaga } from "./slices/background-agent-settings/sagas/background-agent-settings-saga";
 import { noteFontSettingsSaga } from "./slices/note-font-settings/sagas/note-font-settings-saga";
 import { codeFontSettingsSaga } from "./slices/code-font-settings/sagas/code-font-settings-saga";
 import { editorSettingsSaga } from "./slices/editor-settings/sagas/editor-settings-saga";
@@ -22,6 +25,7 @@ import { permissionSaga } from "./slices/permission/sagas/permission-saga";
 import { pipSaga } from "./slices/pip/sagas/pip-saga";
 import { featureCodesSaga } from "./slices/feature-codes/sagas/feature-codes-saga";
 import { modelSaga } from "./slices/model/sagas/model-saga";
+import { specialistsSaga } from "./slices/specialists/sagas/specialists-saga";
 import { zoomSaga } from "./slices/zoom/sagas/zoom-saga";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
@@ -35,6 +39,9 @@ function* noopSaga() {}
  * will be added here as their respective stores are migrated.
  */
 export const sagas = {
+  activeProviderSaga,
+  additionalAgentsSaga,
+  backgroundAgentSettingsSaga,
   betaUpdatesSaga,
   agentFontSettingsSaga,
   noteFontSettingsSaga,
@@ -51,6 +58,7 @@ export const sagas = {
   permissionSaga,
   featureCodesSaga,
   modelSaga,
+  specialistsSaga,
   pipSaga,
   workspaceSettingsSaga,
   zoomSaga,

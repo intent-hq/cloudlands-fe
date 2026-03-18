@@ -10,7 +10,8 @@
   import { selectSelectedModel, selectAvailableModels } from '$lib/store/slices/model/model-selectors';
   import { setWorkspaceModel } from '$lib/store/slices/model/model-slice';
   import { getDispatch } from '$lib/store/utils/utils';
-  import { specialistsStore } from '$lib/stores/specialists.store.svelte';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectSpecialists, selectEffectiveBehaviorPrompt, selectUserOverrides } from '$lib/store/slices/specialists/specialists-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import {
     getGitErrorMessage,
@@ -47,7 +48,7 @@
   import RemoteSetupSelector from './initializer/RemoteSetupSelector.svelte';
   import { noteUrl } from '$shared/constants/intent-links';
   import { getProviderAvailability } from '$features/providers/provider-availability.client';
-  import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
+  import { selectActiveProviderId } from '$lib/store/slices/active-provider/active-provider-selectors';
   import {
     getDefaultModelForProvider,
     getDefaultProviderId,
@@ -59,6 +60,7 @@
   const dispatch = getDispatch();
   const availableModels$ = selectAvailableModels();
   const selectedModel$ = selectSelectedModel();
+  const activeProviderId$ = selectActiveProviderId();
   const logger = createLogger('CompactWorkspaceInitializer');
 
   // Constants
@@ -339,7 +341,7 @@
   // (e.g., 'claude-code:default' when active provider is now 'opencode') should be discarded
   // since they won't exist in the current model list and cause a flash of the wrong model.
   const restoredModel = savedState?.selectedModel ?? lastSubmittedAgent?.selectedModel;
-  const currentProviderAtInit = activeProviderStore.activeProviderId ?? 'auggie';
+  const currentProviderAtInit = $activeProviderId$ ?? 'auggie';
   const isModelForCurrentProvider =
     !restoredModel || parseCompoundModelId(restoredModel).providerId === currentProviderAtInit;
 
@@ -358,7 +360,7 @@
   );
   // Track which provider the user selected for the initial agent
   // Priority: active provider store (set via ProviderStatusPanel) takes precedence since it's the user's explicit choice
-  let selectedProvider = $state<string>(activeProviderStore.activeProviderId ?? 'auggie');
+  let selectedProvider = $state<string>($activeProviderId$ ?? 'auggie');
   let hasSelectedContext = $state(false);
   let hasImages = $state(false);
 
@@ -477,7 +479,7 @@
   // When the active provider changes externally (e.g. user switches in settings),
   // update the form's selected provider and clear the stale model selection.
   $effect(() => {
-    const newProviderId = activeProviderStore.activeProviderId;
+    const newProviderId = $activeProviderId$;
     const currentProvider = untrack(() => selectedProvider);
     if (newProviderId && newProviderId !== currentProvider) {
       selectedProvider = newProviderId;
@@ -1322,7 +1324,7 @@
 
       if (selectedSpecialist) {
         // Direct specialist selected
-        const specialist = specialistsStore.specialists.find((s) => s.id === selectedSpecialist);
+        const specialist = selectSpecialists.select(getReduxStore().getState()).find((s) => s.id === selectedSpecialist);
         agentName = specialist?.name ?? 'Agent';
         specialistId = selectedSpecialist;
       }
@@ -1526,7 +1528,7 @@
       // Resolve behaviorPrompt EARLY so it can be passed to workspace creation IPC
       let resolvedBehaviorPrompt: string | undefined;
       if (selectedSpecialist) {
-        resolvedBehaviorPrompt = specialistsStore.getEffectiveBehaviorPrompt(selectedSpecialist);
+        resolvedBehaviorPrompt = selectEffectiveBehaviorPrompt.select(getReduxStore().getState(), selectedSpecialist);
       }
 
       // Resolve the model for the selected specialist + provider so the agent is created
@@ -1538,8 +1540,9 @@
         resolvedModel = selectedModel;
       } else if (selectedSpecialist) {
         // Check for user model override first (from specialist settings)
+        const reduxState = getReduxStore().getState();
         const specialistOverride =
-          specialistsStore.userOverrides.modelOverrides[selectedSpecialist];
+          selectUserOverrides.select(reduxState).modelOverrides[selectedSpecialist];
         if (specialistOverride) {
           resolvedModel = specialistOverride;
           logger.info('Using specialist model override', {
@@ -1547,7 +1550,7 @@
             override: specialistOverride,
           });
         } else {
-          const specialist = specialistsStore.specialists.find((s) => s.id === selectedSpecialist);
+          const specialist = selectSpecialists.select(reduxState).find((s) => s.id === selectedSpecialist);
           if (specialist?.defaultModelTier && selectedProvider in PROVIDER_MODEL_TIERS) {
             const baseModel = getDefaultModelForProvider(
               selectedProvider,
@@ -1579,9 +1582,9 @@
       // Fall back to the model store's validated selected model if the resolved model
       // doesn't exist in the available list.
       // Only validate when the form's selectedProvider matches the model store's loaded
-      // provider (activeProviderStore) — otherwise the available models are for a
+      // provider (active-provider Redux slice) — otherwise the available models are for a
       // different provider and we can't meaningfully validate.
-      const storeProvider = activeProviderStore.activeProviderId;
+      const storeProvider = $activeProviderId$;
       if (
         resolvedModel &&
         $availableModels$.length > 0 &&

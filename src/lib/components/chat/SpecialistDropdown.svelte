@@ -8,7 +8,8 @@
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
-  import { specialistsStore } from '$lib/stores/specialists.store.svelte';
+  import { selectSpecialists, filterSpecialistsByGitHubAuth } from '$lib/store/slices/specialists/specialists-selectors';
+  import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
 
   interface Props {
     /** Currently selected specialist ID - null means blank agent */
@@ -23,12 +24,15 @@
 
   let dropdownOpen = $state(false);
 
-  // All available specialists (built-in + custom)
-  const allSpecialists = $derived(specialistsStore.specialists);
+  // All available specialists (built-in + custom), filtered by GitHub auth
+  const allSpecialists = selectSpecialists();
+  const visibleSpecialists = $derived.by(() =>
+    filterSpecialistsByGitHubAuth($allSpecialists, githubAuthStore.state.isAuthenticated)
+  );
 
   // Get current specialist info
   const currentSpecialist = $derived(
-    value ? allSpecialists.find((s) => s.id === value) : null,
+    value ? $allSpecialists.find((s) => s.id === value) : null,
   );
 
   // Display label
@@ -81,7 +85,7 @@
       <div class="h-px bg-border my-1"></div>
 
       <!-- Specialists -->
-      {#each allSpecialists as specialist (specialist.id)}
+      {#each visibleSpecialists as specialist (specialist.id)}
         <button
           type="button"
           class={cn(

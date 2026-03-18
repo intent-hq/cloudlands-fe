@@ -64,8 +64,13 @@ vi.mock('$lib/store/slices/multi-panel-context/multi-panel-context-selectors', (
   selectSelections: () => readable([]),
 }));
 
+vi.mock('$lib/store/slices/additional-agents/additional-agents-selectors', () => ({
+  selectEnabledProviderIds: () => readable(['auggie', 'codex']),
+}));
+
 vi.mock('$lib/store/utils/utils', () => ({
   getDispatch: () => vi.fn(),
+  getStoreContext: () => undefined,
 }));
 
 vi.mock('$lib/stores/additional-agents.store.svelte', () => ({

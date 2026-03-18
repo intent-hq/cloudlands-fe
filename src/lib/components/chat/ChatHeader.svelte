@@ -20,7 +20,8 @@
   import { Badge } from '$lib/components/ui/badge';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import { SPECIALISTS } from '$lib/constants/specialists';
-  import { specialistsStore } from '$lib/stores/specialists.store.svelte';
+  import { selectSpecialists, selectSpecialistById, selectOverridesLoaded, selectEffectiveModel, selectUserOverrides } from '$lib/store/slices/specialists/specialists-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 
   interface Props {
     session: AgentSession | PendingAgentSession | null;
@@ -42,21 +43,26 @@
     onSearchToggle,
   }: Props = $props();
 
+  // Reactive store subscriptions for Svelte reactivity
+  const specialists$ = selectSpecialists();
+  const userOverrides$ = selectUserOverrides();
+  $effect(() => { void $specialists$; void $userOverrides$; });
+
   // Get specialist info from session metadata using unified lookup
   // Includes built-in and custom specialists
   const specialistInfo = $derived.by(() => {
     if (!session || isPendingAgentSession(session)) return null;
     const specialistId = session.metadata?.specialist || session.agentMetadata?.specialist;
     if (!specialistId) return null;
-    return specialistsStore.getSpecialistById(specialistId);
+    return selectSpecialistById.select(getReduxStore().getState(), specialistId);
   });
 
   // Get effective model for specialist with proper reactivity
   // Access overridesLoaded to establish reactivity - when overrides load, this will re-evaluate
   const specialistEffectiveModel = $derived.by(() => {
-    const _overridesLoaded = specialistsStore.overridesLoaded;
+    const _overridesLoaded = selectOverridesLoaded.select(getReduxStore().getState());
     if (!specialistInfo) return '';
-    return specialistsStore.getEffectiveModel(specialistInfo.id);
+    return selectEffectiveModel.select(getReduxStore().getState(), specialistInfo.id);
   });
 
   const models = [

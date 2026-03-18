@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/svelte';
+import { readable } from 'svelte/store';
 
 // Avoid pulling heavy editor dependencies (e.g. monaco-editor) into this focused unit test.
 vi.mock('$lib/components/editor/UnifiedDiffViewer.svelte', () => ({
@@ -12,6 +13,16 @@ vi.mock('$lib/components/editor/CodeEditor.svelte', () => ({
 // Keep the render tree minimal (and avoid UI-library context requirements) by stubbing the chat panel.
 vi.mock('$lib/components/chat/ChatPanel.svelte', () => ({
   default: () => '' as unknown as typeof HTMLElement,
+}));
+
+// Mock specialist selectors to avoid Redux store context requirement
+vi.mock('$lib/store/slices/specialists/specialists-selectors', () => ({
+  selectSpecialists: () => readable([]),
+  selectUserOverrides: () => readable({ modelOverrides: {}, behaviorPromptOverrides: {} }),
+  selectOverridesLoaded: { select: () => false },
+  selectEffectiveModel: { select: () => '' },
+  selectSpecialistById: { select: () => null },
+  selectSpecialistName: { select: () => null },
 }));
 
 // Mock the key services that ContentDrawer interacts with during agent opening.

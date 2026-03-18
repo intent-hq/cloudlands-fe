@@ -28,7 +28,8 @@
   } from '$features/layout/panel-layout-manager.svelte';
   import type { Workspace } from '$shared/types';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
-  import { specialistsStore } from '$lib/stores/specialists.store.svelte';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectSpecialists, selectSpecialistName } from '$lib/store/slices/specialists/specialists-selectors';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import {
     faArrowUpRightFromSquare,
@@ -79,6 +80,10 @@
   }: Props = $props();
 
   const agentPermCount = selectPendingCount(agentId);
+
+  // Reactive store subscription for specialist name lookup
+  const specialists$ = selectSpecialists();
+  $effect(() => { void $specialists$; });
 
   // Inline editing state
   let isEditing = $state(false);
@@ -340,7 +345,7 @@
   // Includes built-in and custom specialists
   const specialistDisplayName = $derived.by(() => {
     if (!specialist) return null;
-    return specialistsStore.getSpecialistName(specialist);
+    return selectSpecialistName.select(getReduxStore().getState(), specialist);
   });
 
   // Show streaming content if actively streaming, otherwise show last response

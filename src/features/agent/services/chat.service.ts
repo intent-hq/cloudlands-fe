@@ -18,7 +18,6 @@ import { agentService } from '../agent.service';
 import { unifiedStateStore, sessionStore, notifyAgentSubscribers } from '$features/agent/browser';
 import { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';
 import { getAgentProvider } from '$shared/types/agent-session';
-import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
 import { getProviderConfig } from '$shared/config/provider-config';
 import { cleanErrorMessage } from '$shared/errors/messages';
 

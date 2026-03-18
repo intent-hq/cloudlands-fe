@@ -2,8 +2,16 @@
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
 
-  import { specialistsStore } from '$lib/stores/specialists.store.svelte';
-  import { selectSelectedModel, selectAvailableModels } from '$lib/store/slices/model/model-selectors';
+  import {
+    selectSpecialists,
+    selectCustomSpecialistsLoaded,
+    selectUserOverrides,
+    filterSpecialistsByGitHubAuth,
+  } from '$lib/store/slices/specialists/specialists-selectors';
+  import {
+    selectSelectedModel,
+    selectAvailableModels,
+  } from '$lib/store/slices/model/model-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { faPlus, faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -20,11 +28,19 @@
     parseCompoundModelId,
   } from '$shared/config/provider-config';
   import { resolvePreferredDefaultModel } from '$lib/utils/provider-model-selection';
-  import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
+  import { selectActiveProviderId } from '$lib/store/slices/active-provider/active-provider-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
+  import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
 
   const logger = createLogger('InitialAgentPicker');
+  const specialists$ = selectSpecialists();
+  const visibleSpecialists = $derived.by(() =>
+    filterSpecialistsByGitHubAuth($specialists$, githubAuthStore.state.isAuthenticated)
+  );
+  const customSpecialistsLoaded$ = selectCustomSpecialistsLoaded();
+  const userOverrides$ = selectUserOverrides();
+  const activeProviderId$ = selectActiveProviderId();
   const availableModels$ = selectAvailableModels();
   const selectedModel$ = selectSelectedModel();
 
@@ -54,9 +70,7 @@
     selectedModel = $bindable<string | undefined>(undefined),
     modelWasOverridden = $bindable<boolean>(false),
     isTeamMode = $bindable<boolean>(true),
-    selectedProvider = $bindable<string>(
-      activeProviderStore.activeProviderId ?? getDefaultProviderId(),
-    ),
+    selectedProvider = $bindable<string>($activeProviderId$ ?? getDefaultProviderId()),
     onSpecialistChange,
     onModelChange,
     onTeamModeChange,
@@ -98,7 +112,7 @@
       const isSelectedAvailable = availableProviders.some((p) => p.id === selectedProvider);
       if (!isSelectedAvailable) {
         // Check if this is the user's explicit choice from the provider store
-        const userExplicitChoice = activeProviderStore.activeProviderId;
+        const userExplicitChoice = $activeProviderId$;
         if (selectedProvider === userExplicitChoice) {
           // User explicitly selected this provider - don't override even if availability check fails
           logger.debug('Keeping user-selected provider despite availability check:', {
@@ -132,7 +146,7 @@
 
         if (!isCurrentAvailable) {
           // Check if this is the user's explicit choice from the provider store
-          const userExplicitChoice = activeProviderStore.activeProviderId;
+          const userExplicitChoice = $activeProviderId$;
           if (selectedProvider === userExplicitChoice) {
             // User explicitly selected this provider - don't override even if availability check fails
             logger.debug('Keeping user-selected provider despite availability check:', {
@@ -180,7 +194,7 @@
   // Other built-ins like pr-reviewer and ui-designer should be selectable.
   const builtInSpecialists = ['spec-writer', 'implementor', 'verifier'];
   const customSpecialists = $derived(
-    specialistsStore.specialists.filter((s) => !builtInSpecialists.includes(s.id)),
+    visibleSpecialists.filter((s) => !builtInSpecialists.includes(s.id)),
   );
 
   // Check if selected specialist is a built-in one
@@ -193,14 +207,14 @@
   const selectedSpecialistExists = $derived(
     selectedSpecialist === null ||
       builtInSpecialists.includes(selectedSpecialist) ||
-      specialistsStore.specialists.some((s) => s.id === selectedSpecialist),
+      $specialists$.some((s) => s.id === selectedSpecialist),
   );
 
   // Auto-reset to team mode if selected custom specialist was deleted
   // Only run after custom specialists are loaded to avoid resetting during initial load
   $effect(() => {
     if (
-      specialistsStore.customSpecialistsLoaded &&
+      $customSpecialistsLoaded$ &&
       !isBuiltInSpecialist &&
       !selectedSpecialistExists &&
       selectedSpecialist !== null
@@ -214,7 +228,7 @@
   });
 
   // Helper to resolve the effective model for a given specialist.
-  // Uses the local selectedProvider (not activeProviderStore) so the displayed
+  // Uses the local selectedProvider (not active-provider Redux slice) so the displayed
   // model stays in sync with the provider the user picked in this form.
   function resolveEffectiveModel(specialist: string | null): string {
     const values = $availableModels$.map((m) => m.value);
@@ -222,18 +236,16 @@
 
     if (specialist) {
       // User override takes priority
-      const override = specialistsStore.userOverrides.modelOverrides[specialist];
+      const override = $userOverrides$.modelOverrides[specialist];
       if (override) return override;
 
       // Resolve model tier using the locally-selected provider
-      const info = specialistsStore.specialists.find((s) => s.id === specialist);
+      const info = $specialists$.find((s) => s.id === specialist);
       if (info?.defaultModelTier && selectedProvider in PROVIDER_MODEL_TIERS) {
         const baseModel = getDefaultModelForProvider(selectedProvider, info.defaultModelTier);
         const defaultProviderId = getDefaultProviderId();
         const resolvedModel =
-          selectedProvider !== defaultProviderId
-            ? `${selectedProvider}:${baseModel}`
-            : baseModel;
+          selectedProvider !== defaultProviderId ? `${selectedProvider}:${baseModel}` : baseModel;
         // Validate the tier-resolved model exists in the available models.
         // PROVIDER_MODEL_TIERS may have hardcoded model names that don't match
         // the actual models returned by the provider (e.g. opencode CLI).
@@ -269,7 +281,7 @@
   // Get current specialist info for display
   const currentSpecialistInfo = $derived(
     displayedSpecialist && !builtInSpecialists.includes(displayedSpecialist)
-      ? specialistsStore.specialists.find((s) => s.id === displayedSpecialist)
+      ? $specialists$.find((s) => s.id === displayedSpecialist)
       : null,
   );
 
@@ -469,9 +481,7 @@
                   />
                   <div class="flex flex-col min-w-0">
                     <span class="font-medium text-foreground text-sm">{specialist.name}</span>
-                    <span class="text-xs text-subtle truncate"
-                      >{specialist.description}</span
-                    >
+                    <span class="text-xs text-subtle truncate">{specialist.description}</span>
                   </div>
                 </button>
               {/each}

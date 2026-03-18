@@ -1,7 +1,15 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import { faPlus, faGear } from '@fortawesome/free-solid-svg-icons';
-  import { specialistsStore } from '$lib/stores/specialists.store.svelte';
+  import {
+    filterSpecialistsByGitHubAuth,
+    selectSpecialists,
+    selectIsBuiltIn,
+    selectHasOverrides,
+    selectUserOverrides,
+  } from '$lib/store/slices/specialists/specialists-selectors';
+  import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
 
   // View type definition
@@ -16,6 +24,14 @@
   }
 
   let { activeView, onSelect }: Props = $props();
+
+  const specialists = selectSpecialists();
+  const visibleSpecialists = $derived.by(() =>
+    filterSpecialistsByGitHubAuth($specialists, githubAuthStore.state.isAuthenticated)
+  );
+  const userOverrides$ = selectUserOverrides();
+  // Track override changes to trigger re-render (updates {@const} values in template)
+  $effect(() => { void $userOverrides$; });
 
   // Check if a specialist ID is a built-in type for avatar rendering
   function isBuiltInSpecialistId(
@@ -65,9 +81,9 @@
     >
       Specialists
     </div>
-    {#each specialistsStore.specialists as specialist (specialist.id)}
-      {@const isBuiltIn = specialistsStore.isBuiltIn(specialist.id)}
-      {@const hasOverrides = specialistsStore.hasOverrides(specialist.id)}
+    {#each visibleSpecialists as specialist (specialist.id)}
+      {@const isBuiltIn = selectIsBuiltIn.select(getReduxStore().getState(), specialist.id)}
+      {@const hasOverrides = selectHasOverrides.select(getReduxStore().getState(), specialist.id)}
       {@const isCustomized = isBuiltIn && hasOverrides}
 
       <button

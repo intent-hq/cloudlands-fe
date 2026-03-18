@@ -18,11 +18,17 @@
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
   import { Button } from '$lib/components/ui/button';
   import { cycleFontStyle } from '$lib/store/slices/agent-font-settings/agent-font-settings-slice';
-  import { selectAgentFontStyleLabel, selectIsAgentMonospace } from '$lib/store/slices/agent-font-settings/agent-font-settings-selectors';
+  import {
+    selectAgentFontStyleLabel,
+    selectIsAgentMonospace,
+  } from '$lib/store/slices/agent-font-settings/agent-font-settings-selectors';
   import { getDispatch } from '$lib/store/utils/utils';
   import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { specialistsStore } from '$lib/stores/specialists.store.svelte';
+  import {
+    selectSpecialistName,
+    selectSpecialists,
+  } from '$lib/store/slices/specialists/specialists-selectors';
   import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import { faCheck, faCopy, faTrash } from '@fortawesome/free-solid-svg-icons';
@@ -82,13 +88,17 @@
 
   const agentMessages = $derived(agentSession?.messages || []);
 
+  // Reactive store subscription for specialist names
+  const specialists$ = selectSpecialists();
+
   // Get specialist display name
   const agentSpecialistName = $derived.by(() => {
+    void $specialists$;
     if (!tab.agentId) return null;
     const specialistId =
       agentSession?.metadata?.specialist || (agentSession as any)?.agentMetadata?.specialist;
     if (!specialistId) return null;
-    return specialistsStore.getSpecialistName(specialistId);
+    return selectSpecialistName.select(getReduxStore().getState(), specialistId);
   });
 
   // Get parent agent info
@@ -184,10 +194,7 @@
     tooltip={`Font: ${$fontStyleLabel}`}
     tooltipSide="bottom"
   >
-    <span
-      class="text-xs font-semibold tracking-tight"
-      class:font-mono={$isMonospace}>Aa</span
-    >
+    <span class="text-xs font-semibold tracking-tight" class:font-mono={$isMonospace}>Aa</span>
   </Button>
   <Button
     variant="ghost-light"

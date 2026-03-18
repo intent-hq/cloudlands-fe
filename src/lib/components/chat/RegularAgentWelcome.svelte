@@ -4,7 +4,8 @@
   import { cn } from '$lib/utils';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import type { Specialist } from '$lib/constants/specialists';
-  import { specialistsStore } from '$lib/stores/specialists.store.svelte';
+  import { selectSpecialists, selectEffectiveBehaviorPrompt, selectUserOverrides } from '$lib/store/slices/specialists/specialists-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import type { AgentSession } from '$shared/types/agent-session';
   import { isPendingAgentSession } from '$shared/types/agent-session';
   import AuggieAvatar from '../ui/auggie-avatar/AuggieAvatar.svelte';
@@ -18,17 +19,22 @@
 
   let { onSpecialistChange, session }: Props = $props();
 
+  // Reactive store subscriptions for Svelte reactivity
+  const specialists$ = selectSpecialists();
+  const userOverrides$ = selectUserOverrides();
+  $effect(() => { void $userOverrides$; });
+
   // Get specialist info from session metadata
   const specialistInfo = $derived.by((): Specialist | null => {
     if (!session || isPendingAgentSession(session)) return null;
     const specialistId = session.metadata?.specialist || session.agentMetadata?.specialist;
     if (!specialistId) return null;
-    return specialistsStore.specialists.find((s) => s.id === specialistId) || null;
+    return $specialists$.find((s) => s.id === specialistId) || null;
   });
 
   // Get effective behavior prompt (with user overrides)
   function getEffectiveBehaviorPrompt(specialistId: string): string {
-    return specialistsStore.getEffectiveBehaviorPrompt(specialistId);
+    return selectEffectiveBehaviorPrompt.select(getReduxStore().getState(), specialistId);
   }
 
   // Navigate to settings with specialist expanded
@@ -46,7 +52,7 @@
   // Only hide the core team-mode specialists from the picker
   const builtInSpecialists = ['spec-writer', 'implementor', 'verifier'];
   const customSpecialists = $derived(
-    specialistsStore.specialists.filter((s) => !builtInSpecialists.includes(s.id)),
+    $specialists$.filter((s) => !builtInSpecialists.includes(s.id)),
   );
 
   // Dropdown state for the specialist picker

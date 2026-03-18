@@ -43,11 +43,15 @@
   import ChatMessage from '../chat/ChatMessage.svelte';
   import StreamingTypingIndicator from '../chat/StreamingTypingIndicator.svelte';
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
-  import { sessionStore, subscribeToAgent } from '$features/agent/browser';
+  import { subscribeToAgent } from '$features/agent/browser';
   import type { AgentSession } from '$shared/types';
   import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { specialistsStore } from '$lib/stores/specialists.store.svelte';
+  import {
+    selectEffectiveModel,
+    selectUserOverrides,
+    selectSpecialists,
+  } from '$lib/store/slices/specialists/specialists-selectors';
 
   interface Props {
     isOpen?: boolean;
@@ -190,12 +194,17 @@
     };
   });
 
+  // Reactive store subscriptions for specialist data
+  const userOverrides$ = selectUserOverrides();
+  const specialists$ = selectSpecialists();
+
   // Get agent model from session, falling back to workspace default model
   // This ensures the model picker shows the correct model even if localContent.model is undefined
   // For specialist agents, use the specialist's effective model (which includes user overrides)
   const agentModelForChat = $derived.by(() => {
-    // Access overridesLoaded to establish reactivity - when overrides load, this will re-evaluate
-    const _overridesLoaded = specialistsStore.overridesLoaded;
+    // Track reactive dependencies on specialist store data
+    void $userOverrides$;
+    void $specialists$;
     // Use the reactive agentSessionForChat instead of sessionStore.getSession()
     const session = agentSessionForChat;
 
@@ -209,7 +218,10 @@
       // This reflects user overrides for specialist models
       const specialistId = session?.metadata?.specialist || session?.agentMetadata?.specialist;
       if (specialistId) {
-        const effectiveModel = specialistsStore.getEffectiveModel(specialistId as string);
+        const effectiveModel = selectEffectiveModel.select(
+          getReduxStore().getState(),
+          specialistId as string,
+        );
         if (effectiveModel) {
           return effectiveModel;
         }
@@ -1041,11 +1053,7 @@
               {/if}
             </h2>
             {#if isBackgroundAgent}
-              <div
-                class="px-1 py-0.5 text-ui font-bold bg-muted text-subtle rounded mr-1"
-              >
-                BG
-              </div>
+              <div class="px-1 py-0.5 text-ui font-bold bg-muted text-subtle rounded mr-1">BG</div>
             {/if}
           </div>
 

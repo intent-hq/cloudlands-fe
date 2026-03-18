@@ -184,7 +184,7 @@ export function registerMissingAgentHandlers(): void {
           // Use auggie CLI to enhance the prompt
           // Use a 30 second timeout for prompt enhancement (simple request)
           // Skip MCP servers for faster response - prompt enhancement doesn't need tools
-          // Model is passed from the renderer (from backgroundAgentSettingsStore.getModelForType('fast'))
+          // Model is passed from the renderer (from selectModelForType('fast') Redux selector)
           const response = await augmentCLI.streamChat(
             enhancementPrompt,
             {

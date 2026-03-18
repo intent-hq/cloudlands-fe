@@ -7,6 +7,9 @@ vi.mock("typed-redux-saga", () => ({
       ? sagaEffects.call(fnOrDescriptor as [any, any], ...args)
       : sagaEffects.call(fnOrDescriptor, ...args);
   },
+  select: function* (selector: any, ...args: any[]) {
+    return yield sagaEffects.select(selector, ...args);
+  },
   put: function* (action: any) {
     return yield sagaEffects.put(action);
   },

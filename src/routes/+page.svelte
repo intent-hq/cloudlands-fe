@@ -12,7 +12,7 @@
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
   import ProviderStatusPanel from '$lib/components/ProviderStatusPanel.svelte';
-  import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
+  import { setActiveProvider } from '$lib/store/slices/active-provider/active-provider-slice';
   import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
   import { getDispatch } from '$lib/store/utils/utils';
   import StarterPromptButton from '$lib/components/workspace/StarterPromptButton.svelte';
@@ -589,7 +589,7 @@
       <div class="animate-entry" style="--entry-delay: 0ms">
         <ProviderStatusPanel
           onContinue={async (providerId) => {
-            activeProviderStore.setActiveProvider(providerId);
+            dispatch(setActiveProvider(providerId));
             dispatch(reloadModelsForProvider());
             hasCompletedProviderSetup = true;
           }}

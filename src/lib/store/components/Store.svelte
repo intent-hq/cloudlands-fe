@@ -45,6 +45,9 @@
 <RunSaga sagaName="terminalsSaga" />
 <RunSaga sagaName="autoUpdateSaga" />
 <RunSaga sagaName="workspaceInitializerSaga" />
+<RunSaga sagaName="activeProviderSaga" />
+<RunSaga sagaName="additionalAgentsSaga" />
+<RunSaga sagaName="backgroundAgentSettingsSaga" />
 <RunSaga sagaName="agentFontSettingsSaga" />
 <RunSaga sagaName="noteFontSettingsSaga" />
 <RunSaga sagaName="codeFontSettingsSaga" />
@@ -61,6 +64,7 @@
 <RunSaga sagaName="permissionSaga" />
 <RunSaga sagaName="featureCodesSaga" />
 <RunSaga sagaName="modelSaga" />
+<RunSaga sagaName="specialistsSaga" />
 <RunSaga sagaName="pipSaga" />
 <RunSaga sagaName="zoomSaga" />
 <RunSaga sagaName="betaUpdatesSaga" />

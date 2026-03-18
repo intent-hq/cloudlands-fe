@@ -2,7 +2,8 @@
   import { Button } from '$lib/components/ui/button';
   import { invoke } from '$lib/electron-bridge';
   import { fetchPromotionalBanners } from '$lib/services/promotional-banner';
-  import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
+  import { selectActiveProviderId } from '$lib/store/slices/active-provider/active-provider-selectors';
+  import { setActiveProvider } from '$lib/store/slices/active-provider/active-provider-slice';
   import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
   import { selectAvailableModels } from '$lib/store/slices/model/model-selectors';
   import { getDispatch } from '$lib/store/utils/utils';
@@ -32,6 +33,7 @@
   }
 
   const dispatch = getDispatch();
+  const activeProviderId$ = selectActiveProviderId();
   const availableModels$ = selectAvailableModels();
 
   const PROMO_BANNER_STORAGE_KEY = 'promoBannerInteractions';
@@ -106,7 +108,7 @@
   // only if the user hasn't started the sequential flow yet (no action taken).
   $effect(() => {
     // Read reactive dependencies so Svelte tracks them
-    const _providerId = activeProviderStore.activeProviderId;
+    const _providerId = $activeProviderId$;
 
     // Only recompute if banners are loaded and the user hasn't started clicking buttons
     if (banners.length > 0 && !flowStarted && !allStepsComplete) {
@@ -173,12 +175,12 @@
       return;
     }
 
-    const activeProviderId = activeProviderStore.activeProviderId;
+    const currentActiveProviderId = $activeProviderId$;
     const availableModelValues = new Set($availableModels$.map((model) => model.value));
 
     applicableButtons = banner.buttons.filter((button) => {
       if (button.hideWhen?.type === 'defaultAgentIs'
-        && activeProviderId === button.hideWhen.agentId) {
+        && currentActiveProviderId === button.hideWhen.agentId) {
         // Only hide if the provider is actually usable (has models loaded).
         // If it's set as default but not installed (no models), keep the button
         // visible so the user can trigger the install flow.
@@ -199,7 +201,7 @@
     const banner = visibleBanner;
     if (!banner) return;
 
-    const activeProviderId = activeProviderStore.activeProviderId;
+    const activeProviderId = $activeProviderId$;
     const availableModelValues = new Set($availableModels$.map((model) => model.value));
 
     // Keep buttons we've already completed (indices 0..currentStepIndex),
@@ -344,7 +346,7 @@
           }
         }
 
-        activeProviderStore.setActiveProvider(action.agentId);
+        dispatch(setActiveProvider(action.agentId));
         dispatch(reloadModelsForProvider());
 
         // Recompute remaining buttons now that models are loaded for the new provider.

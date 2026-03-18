@@ -9,7 +9,8 @@
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
   import SpecialistToolIcon from '../ui/auggie-avatar/SpecialistToolIcon.svelte';
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
-  import { specialistsStore } from '$lib/stores/specialists.store.svelte';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectSpecialistName, selectSpecialists } from '$lib/store/slices/specialists/specialists-selectors';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
 
   interface Props {
@@ -33,10 +34,14 @@
     return node.specialist || null;
   });
 
+  // Reactive store subscription for specialist names
+  const specialists$ = selectSpecialists();
+
   // Get specialist display name using unified lookup
   const specialistName = $derived.by(() => {
+    void $specialists$;
     if (!specialist) return null;
-    return specialistsStore.getSpecialistName(specialist);
+    return selectSpecialistName.select(getReduxStore().getState(), specialist);
   });
 </script>
 

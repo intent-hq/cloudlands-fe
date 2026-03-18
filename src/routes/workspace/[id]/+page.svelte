@@ -55,14 +55,17 @@
   import { PanelVisibilityManager } from '$features/workspace/panel-visibility-manager.svelte';
   import { queryEvents } from '$features/events/events.client';
   import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { notesStateManager } from '$features/notes/notes.store.svelte';
   import { notesClient } from '$features/notes/notes.client';
   import { workspaceStorageManager } from '$features/workspace/workspace-storage-manager';
   import { buildTaskNoteContent } from '$features/notes/utils/task-agent-message-builder';
   import { unifiedIdService } from '$shared/services/unified-id.service';
   import { stripMarkdownFormatting } from '$shared/utils-client';
-  import { markAsViewed, clearCurrentlyViewed, markNoteRead } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
+  import {
+    markAsViewed,
+    clearCurrentlyViewed,
+    markNoteRead,
+  } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
   import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
   import { getTransientUIStore } from '$features/workspace/transient-ui-state.store.svelte';
   import { track, setAnalyticsContextProvider, getFileExtension } from '$lib/services/analytics';
@@ -90,9 +93,16 @@
   import { listenSync, extractEventData } from '$lib/electron-bridge';
   import { generateSpecialistAgentName } from '$lib/utils/agent-name-generator';
   import { acquireAgentLoadLock, releaseAgentLoadLock } from '$lib/utils/agent-subscription.svelte';
-  import { specialistsStore } from '$lib/stores/specialists.store.svelte';
-  import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+    selectSpecialists,
+    selectEffectiveModel,
+    selectEffectiveBehaviorPrompt,
+    selectEffectiveCodingAgent,
+  } from '$lib/store/slices/specialists/specialists-selectors';
+  import { selectActiveProviderId } from '$lib/store/slices/active-provider/active-provider-selectors';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
+  import { get } from 'svelte/store';
 
   const logger = createLogger('workspace-page');
 
@@ -101,6 +111,7 @@
   // ============================================================================
 
   const dispatch = getDispatch();
+  const activeProviderId$ = selectActiveProviderId();
 
   /** Get the workspace default model from store state directly (safe to call in event handlers) */
   function getWorkspaceDefaultModel(workspaceId: string): string {
@@ -620,8 +631,6 @@
   let agentsLoaded = $state(false);
   let terminalsLoaded = $state(false);
 
-
-
   // Loading locks for preventing race conditions
   const loadingLocks = new Map<string, Promise<void>>();
 
@@ -744,7 +753,10 @@
     // This prevents setDeferSpecTab(true) from stripping the spec tab when the
     // user navigates away and back.
     if (specSlideInCompleted.has(wsId)) {
-      logger.info('[shouldDeferSpecPanel] NOT deferring — slide-in already completed for this workspace', { wsId });
+      logger.info(
+        '[shouldDeferSpecPanel] NOT deferring — slide-in already completed for this workspace',
+        { wsId },
+      );
       return false;
     }
 
@@ -762,7 +774,10 @@
         const isSpecWriter =
           config.specialist === 'spec-writer' || config.metadata?.specialist === 'spec-writer';
         if (isSpecWriter && (config.isInitialAgent || config.isFirstWorkspaceAgent)) {
-          logger.info('[shouldDeferSpecPanel] Deferring: found spec-writer agent config in sessionStorage', { wsId });
+          logger.info(
+            '[shouldDeferSpecPanel] Deferring: found spec-writer agent config in sessionStorage',
+            { wsId },
+          );
           return true;
         }
       } catch {
@@ -778,7 +793,10 @@
           parsed.config?.specialist === 'spec-writer' ||
           parsed.config?.metadata?.specialist === 'spec-writer';
         if (isSpecWriter) {
-          logger.info('[shouldDeferSpecPanel] Deferring: found spec-writer in initial-agent-pending', { wsId });
+          logger.info(
+            '[shouldDeferSpecPanel] Deferring: found spec-writer in initial-agent-pending',
+            { wsId },
+          );
           return true;
         }
       } catch {
@@ -970,10 +988,8 @@
                 });
 
                 agentService
-                  .activateInitialAgent(
-                    agentId as string,
-                    capturedWorkspace,
-                    () => agentService.restoreSession(agentId as string, capturedWorkspace),
+                  .activateInitialAgent(agentId as string, capturedWorkspace, () =>
+                    agentService.restoreSession(agentId as string, capturedWorkspace),
                   )
                   .then((session) => {
                     if (session) {
@@ -1337,23 +1353,24 @@
               const newSession = await agentService.activateInitialAgent(
                 initialAgentId,
                 capturedWorkspace,
-                () => agentService.createSession(capturedWorkspace, {
-                  agentId: initialAgentId,
-                  name: config.name || 'Agent',
-                  model: config.model,
-                  provider: config.provider, // Pass provider from CompactWorkspaceInitializer
-                  agentType: config.agentType,
-                  initialMessage: config.prompt, // Pass the initial prompt from CompactWorkspaceInitializer
-                  contextReferences: config.contextReferences, // Pass file/issue context references for stdinContext
-                  behaviorPrompt: config.behaviorPrompt, // Pass specialist behavior instructions
-                  metadata: {
-                    ...config.metadata, // Preserve all metadata including specialist
-                    isInitialAgent: config.isInitialAgent,
-                    isFirstWorkspaceAgent: config.isFirstWorkspaceAgent,
-                    specialist: config.specialist || config.metadata?.specialist, // Ensure specialist is included
-                  },
-                  isPending: false,
-                }),
+                () =>
+                  agentService.createSession(capturedWorkspace, {
+                    agentId: initialAgentId,
+                    name: config.name || 'Agent',
+                    model: config.model,
+                    provider: config.provider, // Pass provider from CompactWorkspaceInitializer
+                    agentType: config.agentType,
+                    initialMessage: config.prompt, // Pass the initial prompt from CompactWorkspaceInitializer
+                    contextReferences: config.contextReferences, // Pass file/issue context references for stdinContext
+                    behaviorPrompt: config.behaviorPrompt, // Pass specialist behavior instructions
+                    metadata: {
+                      ...config.metadata, // Preserve all metadata including specialist
+                      isInitialAgent: config.isInitialAgent,
+                      isFirstWorkspaceAgent: config.isFirstWorkspaceAgent,
+                      specialist: config.specialist || config.metadata?.specialist, // Ensure specialist is included
+                    },
+                    isPending: false,
+                  }),
               );
 
               if (newSession) {
@@ -1761,7 +1778,12 @@
             (t) => t.type === 'note' && t.noteId === SPEC_NOTE_ID,
           );
 
-          if (emptyPanel && panels.length >= 2 && !hasSpecAnywhere && !shouldDeferSpecPanel(capturedWorkspaceId)) {
+          if (
+            emptyPanel &&
+            panels.length >= 2 &&
+            !hasSpecAnywhere &&
+            !shouldDeferSpecPanel(capturedWorkspaceId)
+          ) {
             logger.info(
               '[WorkspacePage] Found empty panel in multi-panel layout, opening spec note',
               {
@@ -2445,37 +2467,43 @@
     // (indicating an automated process wrote the spec).
     const FALLBACK_TIMER_MS = isDeferring ? 8000 : 2000;
     const fallbackTimer = setTimeout(() => {
-        if (hasOpened) return;
-        const specNote = notesStateManager.spec;
-        if (!specNote?.content || specNote.content.trim().length === 0) return;
+      if (hasOpened) return;
+      const specNote = notesStateManager.spec;
+      if (!specNote?.content || specNote.content.trim().length === 0) return;
 
-        if (!isDeferring) {
-          // Only auto-open if a background agent (coordinator/PR reviewer) exists
-          // in this workspace — this indicates the spec was written by an automated
-          // process, not manually by the user. Without this guard, we'd reopen the
-          // spec on every visit even if the user deliberately closed the tab.
-          const workspaceAgents = unifiedStateStore.getAgentsForWorkspace(
-            WorkspaceId(capturedWorkspaceId),
-          );
-          const hasBackgroundAgent = workspaceAgents.some(
-            (a: AgentSession) => a.isBackground || a.metadata?.isBackground,
-          );
-          if (!hasBackgroundAgent) {
-            logger.info('[WorkspacePage] Fallback: spec has content but no background agents — skipping auto-open', {
+      if (!isDeferring) {
+        // Only auto-open if a background agent (coordinator/PR reviewer) exists
+        // in this workspace — this indicates the spec was written by an automated
+        // process, not manually by the user. Without this guard, we'd reopen the
+        // spec on every visit even if the user deliberately closed the tab.
+        const workspaceAgents = unifiedStateStore.getAgentsForWorkspace(
+          WorkspaceId(capturedWorkspaceId),
+        );
+        const hasBackgroundAgent = workspaceAgents.some(
+          (a: AgentSession) => a.isBackground || a.metadata?.isBackground,
+        );
+        if (!hasBackgroundAgent) {
+          logger.info(
+            '[WorkspacePage] Fallback: spec has content but no background agents — skipping auto-open',
+            {
               workspaceId: capturedWorkspaceId,
               agentCount: workspaceAgents.length,
-            });
-            return;
-          }
+            },
+          );
+          return;
         }
+      }
 
-        logger.info('[WorkspacePage] Fallback: spec has content but no spec tab open — opening normally', {
+      logger.info(
+        '[WorkspacePage] Fallback: spec has content but no spec tab open — opening normally',
+        {
           workspaceId: capturedWorkspaceId,
           contentLength: specNote.content.trim().length,
           isDeferring,
-        });
-        openSpecNormally();
-      }, FALLBACK_TIMER_MS);
+        },
+      );
+      openSpecNormally();
+    }, FALLBACK_TIMER_MS);
 
     // Agent idle fallback: when the spec-writer agent finishes streaming
     // without ever writing to the spec note, the note:updated event never
@@ -2519,9 +2547,12 @@
     const safetyTimer = isDeferring
       ? setTimeout(() => {
           if (hasOpened) return;
-          logger.info('[WorkspacePage] Safety fallback: clearing stuck deferSpecTab after timeout', {
-            workspaceId: capturedWorkspaceId,
-          });
+          logger.info(
+            '[WorkspacePage] Safety fallback: clearing stuck deferSpecTab after timeout',
+            {
+              workspaceId: capturedWorkspaceId,
+            },
+          );
           openSpecNormally();
         }, 90_000)
       : null;
@@ -3775,8 +3806,8 @@
     const result = await agentFactory.createAgent(safeWorkspace, {
       name: agentName,
       workspaceId: WorkspaceId(safeWorkspace.id),
-      model: getWorkspaceDefaultModel(safeWorkspace.id),
-      provider: activeProviderStore.activeProviderId,
+      model: get(selectWorkspaceDefaultModel(safeWorkspace.id)),
+      provider: $activeProviderId$,
       agentType: (agentType && parseAgentTypeId(agentType)) || createAgentTypeId('chat'),
       source: 'keyboard-shortcut',
     });
@@ -3830,19 +3861,22 @@
     }
 
     // Get specialist configuration if provided
+    const storeState = getReduxStore().getState();
     const existingNames = agents.map((a: AgentSession) => a.name).filter(Boolean) as string[];
     let model = getWorkspaceDefaultModel(safeWorkspace.id);
-    let provider = activeProviderStore.activeProviderId;
+    let provider = $activeProviderId$;
     let behaviorPrompt: string | undefined;
     let specialistBaseName = 'Agent';
 
     if (specialistId) {
-      const specialist = specialistsStore.specialists.find((s) => s.id === specialistId);
+      const specialist = selectSpecialists
+        .select(getReduxStore().getState())
+        .find((s) => s.id === specialistId);
       if (specialist) {
         specialistBaseName = specialist.name;
-        provider = specialistsStore.getEffectiveCodingAgent(specialistId);
-        model = specialistsStore.getEffectiveModel(specialistId);
-        behaviorPrompt = specialistsStore.getEffectiveBehaviorPrompt(specialistId);
+        provider = selectEffectiveCodingAgent.select(storeState, specialistId);
+        model = selectEffectiveModel.select(storeState, specialistId);
+        behaviorPrompt = selectEffectiveBehaviorPrompt.select(storeState, specialistId);
         logger.info('[WorkspacePage] Creating agent with specialist config', {
           specialistId,
           specialistBaseName,

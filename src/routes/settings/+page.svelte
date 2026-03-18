@@ -18,7 +18,7 @@
   import RtkSettings from '$lib/components/settings/RtkSettings.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
-  import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
+  import { selectIsProviderActive } from '$lib/store/slices/active-provider/active-provider-selectors';
   import { resetNotificationSettings } from '$lib/store/slices/notification-settings/notification-settings-slice';
   import { setNoteFontStyle } from '$lib/store/slices/note-font-settings/note-font-settings-slice';
   import { selectNoteFontStyle, selectIsNoteMonospace } from '$lib/store/slices/note-font-settings/note-font-settings-selectors';
@@ -158,7 +158,7 @@
   let colorThemeSettingsRef: ColorThemeSettings | undefined = $state();
 
   // Check if the active provider is Auggie (only Auggie supports integrations and MCP servers)
-  const isAuggieProvider = $derived(activeProviderStore.activeProviderId === 'auggie');
+  const isAuggieProvider$ = selectIsProviderActive('auggie');
 
   // Theme options
   const themeOptions = [
@@ -426,7 +426,7 @@
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
             MCP Servers
           </h2>
-          <McpServersSettings {isAuggieProvider} />
+          <McpServersSettings isAuggieProvider={$isAuggieProvider$} />
         </div>
 
         <!-- Quick Actions -->

@@ -1,4 +1,7 @@
+import { activeProviderReducer } from "./slices/active-provider/active-provider-slice";
+import { additionalAgentsReducer } from "./slices/additional-agents/additional-agents-slice";
 import { agentFontSettingsReducer } from "./slices/agent-font-settings/agent-font-settings-slice";
+import { backgroundAgentSettingsReducer } from "./slices/background-agent-settings/background-agent-settings-slice";
 import { noteFontSettingsReducer } from "./slices/note-font-settings/note-font-settings-slice";
 import { codeFontSettingsReducer } from "./slices/code-font-settings/code-font-settings-slice";
 import { openActionReducer } from "./slices/open-action/open-action-slice";
@@ -20,9 +23,13 @@ import { pipReducer } from "./slices/pip/pip-slice";
 import { installedEditorsReducer } from "./slices/installed-editors/installed-editors-slice";
 import { featureCodesReducer } from "./slices/feature-codes/feature-codes-slice";
 import { modelReducer } from "./slices/model/model-slice";
+import { specialistsReducer } from "./slices/specialists/specialists-slice";
 import { zoomReducer } from "./slices/zoom/zoom-slice";
 
 export const reducers = {
+  activeProvider: activeProviderReducer,
+  additionalAgents: additionalAgentsReducer,
+  backgroundAgentSettings: backgroundAgentSettingsReducer,
   betaUpdates: betaUpdatesReducer,
   agentFontSettings: agentFontSettingsReducer,
   noteFontSettings: noteFontSettingsReducer,
@@ -44,6 +51,7 @@ export const reducers = {
   featureCodes: featureCodesReducer,
   model: modelReducer,
   pip: pipReducer,
+  specialists: specialistsReducer,
   workspaceSettings: workspaceSettingsReducer,
   zoom: zoomReducer,
 } as const;

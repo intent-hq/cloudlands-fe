@@ -40,7 +40,7 @@ let sessionStoreModule: any = null;
 let sessionStoreDataModule: any = null;
 let invokeFunction: any = null;
 let persistenceServiceModule: any = null;
-let activeProviderStoreModule: any = null;
+
 
 // Lazy-load frontend modules only when needed
 async function getUnifiedStateStore() {
@@ -83,12 +83,16 @@ async function getPersistenceService() {
   return persistenceServiceModule;
 }
 
-async function getActiveProviderStore() {
-  if (!activeProviderStoreModule && !isBackend) {
-    const module = await import('$lib/stores/active-provider.store.svelte');
-    activeProviderStoreModule = module.activeProviderStore;
+async function getActiveProviderId(): Promise<string | null> {
+  if (isBackend) return null;
+  try {
+    const { getReduxStore } = await import('$lib/store/redux-dispatch-bridge');
+    const { selectActiveProviderId } = await import('$lib/store/slices/active-provider/active-provider-selectors');
+    const store = getReduxStore();
+    return selectActiveProviderId.select(store.getState());
+  } catch {
+    return null;
   }
-  return activeProviderStoreModule;
 }
 
 // Note: Rules loading is handled differently in main vs renderer process
@@ -424,12 +428,12 @@ export class UnifiedAgentFactory {
       const workspacePath = workspace.worktreePath || workspace.path || workspace.repositoryPath;
 
       // Step 6.5: Determine provider early (needed for model resolution)
-      // Determine provider: use explicit config.provider, or get from activeProviderStore
+      // Determine provider: use explicit config.provider, or get from Redux active-provider slice
       let provider = config.provider;
       if (!provider && !isBackend) {
-        const providerStore = await getActiveProviderStore();
-        if (providerStore) {
-          provider = providerStore.activeProviderId;
+        const activeId = await getActiveProviderId();
+        if (activeId) {
+          provider = activeId;
           logger.debug('Using active provider from store', { provider });
         }
       }

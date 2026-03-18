@@ -69,7 +69,7 @@
   import { cn } from '$lib/utils';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { invoke } from '$lib/electron-bridge';
-  import { backgroundAgentSettingsStore } from '$lib/stores/background-agent-settings.store.svelte';
+  import { selectModelForType } from '$lib/store/slices/background-agent-settings/background-agent-settings-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import { fade, slide } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
@@ -78,6 +78,7 @@
   import { getShortcutDisplay } from '$lib/utils/shortcuts';
 
   const logger = createLogger('PanelLayoutHeader');
+  const fastModel$ = selectModelForType('fast');
 
   interface Props {
     /** Whether back navigation is available */
@@ -212,7 +213,7 @@
       }>('agent:generate-layout', {
         prompt: layoutPrompt,
         workspaceId,
-        modelId: backgroundAgentSettingsStore.getModelForType('fast'),
+        modelId: $fastModel$,
       });
 
       if (result?.success && result.enhanced) {

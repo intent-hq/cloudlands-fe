@@ -1,7 +1,7 @@
 import { call, put, takeLatest } from "typed-redux-saga";
 import { unifiedStateStore } from "$features/agent/services/unified-state-store";
 import { createLogger } from "$lib/utils/client-logger";
-import { activeProviderStore } from "$lib/stores/active-provider.store.svelte";
+import { selectActiveProviderId } from "../../active-provider/active-provider-selectors";
 import { selectProviderModels, selectWorkspaceModels } from "../model-selectors";
 import {
   loadModels,
@@ -83,7 +83,7 @@ export function* initPersistenceSaga() {
 export function* handleReloadModelsForProvider() {
   let newProviderId: string;
   try {
-    newProviderId = yield* call(() => activeProviderStore.activeProviderId);
+    newProviderId = yield* selectActiveProviderId.effect();
   } catch (e) {
     logger.warn(
       "Failed to read activeProviderId during reloadModelsForProvider",

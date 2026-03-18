@@ -1,7 +1,7 @@
 import { call, put, takeLatest } from "typed-redux-saga";
 import { unifiedStateStore } from "$features/agent/services/unified-state-store";
 import { createLogger } from "$lib/utils/client-logger";
-import { activeProviderStore } from "$lib/stores/active-provider.store.svelte";
+import { selectActiveProviderId } from "../../active-provider/active-provider-selectors";
 import {
   selectModel,
   setSelectedModel,
@@ -47,9 +47,7 @@ export function* handleSelectModel(action: ReturnType<typeof selectModel>) {
 
   // Remember this model for the current active provider
   try {
-    const activeProviderId = yield* call(
-      () => activeProviderStore.activeProviderId
-    );
+    const activeProviderId: string = yield* selectActiveProviderId.effect();
     yield* put(setProviderModel({ providerId: activeProviderId, model }));
 
     // Persist provider models

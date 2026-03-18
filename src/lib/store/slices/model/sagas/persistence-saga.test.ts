@@ -58,6 +58,9 @@ describe('persistenceSaga', () => {
         model: {
           providerModels: { codex: savedModel },
         },
+        activeProvider: {
+          activeProviderId: 'codex',
+        },
       })
       .put(clearAllWorkspaceModels())
       .put(setSelectedModel(savedModel))

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
-  import { specialistsStore } from '$lib/stores/specialists.store.svelte';
+  import { selectSpecialists, filterSpecialistsByGitHubAuth } from '$lib/store/slices/specialists/specialists-selectors';
+  import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
 
   interface Props {
     /** Currently selected specialist ID - null means blank agent */
@@ -21,18 +22,23 @@
     class: className,
   }: Props = $props();
 
-  // All available specialists (built-in + custom)
-  const allSpecialists = $derived(specialistsStore.specialists);
+  // All available specialists (built-in + custom), filtered by GitHub auth
+  const allSpecialists = selectSpecialists();
+  const visibleSpecialists = $derived.by(() =>
+    filterSpecialistsByGitHubAuth($allSpecialists, githubAuthStore.state.isAuthenticated)
+  );
 
-  // Options: blank + all specialists
-  const options = $derived<Array<{ id: string | null; name: string; description: string }>>([
-    { id: null, name: 'Blank', description: 'No preset behavior' },
-    ...allSpecialists.map((s) => ({
-      id: s.id,
-      name: s.name,
-      description: s.description,
-    })),
-  ]);
+  // Options: blank + visible specialists
+  const options = $derived.by<Array<{ id: string | null; name: string; description: string }>>(
+    () => [
+      { id: null, name: 'Blank', description: 'No preset behavior' },
+      ...visibleSpecialists.map((s) => ({
+        id: s.id,
+        name: s.name,
+        description: s.description,
+      })),
+    ],
+  );
 
   function handleSelect(id: string | null) {
     if (id !== value) {

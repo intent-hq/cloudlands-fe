@@ -18,7 +18,7 @@
   import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
   import { notesStore } from '$features/notes/notes.store.svelte';
   import { invoke } from '$lib/electron-bridge';
-  import { backgroundAgentSettingsStore } from '$lib/stores/background-agent-settings.store.svelte';
+  import { selectModelForType } from '$lib/store/slices/background-agent-settings/background-agent-settings-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import { toast } from 'svelte-sonner';
   import LayoutPresetDropdown from './LayoutPresetDropdown.svelte';
@@ -26,6 +26,7 @@
   import type { LayoutPresetId } from './types';
 
   const logger = createLogger('PanelLayoutControls');
+  const fastModel$ = selectModelForType('fast');
 
   interface Props {
     /** Current layout tree root node */
@@ -86,7 +87,7 @@
       }>('agent:generate-layout', {
         prompt: layoutPrompt,
         workspaceId,
-        modelId: backgroundAgentSettingsStore.getModelForType('fast'),
+        modelId: $fastModel$,
       });
 
       if (result?.success && result.enhanced) {

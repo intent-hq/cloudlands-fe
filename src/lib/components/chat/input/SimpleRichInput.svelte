@@ -11,7 +11,7 @@
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
   import { unifiedStateStore } from '$features/agent/services/unified-state-store';
-  import { additionalAgentsStore } from '$lib/stores/additional-agents.store.svelte';
+  import { selectEnabledProviderIds } from '$lib/store/slices/additional-agents/additional-agents-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
   import Fa from 'svelte-fa';
   import {
@@ -388,7 +388,8 @@
 
     return providerAndModelLockedTitle;
   });
-  const enabledProviderIds = $derived(additionalAgentsStore.getEnabledProviderIds());
+  const enabledProviderIds$ = selectEnabledProviderIds();
+  const enabledProviderIds = $derived($enabledProviderIds$);
   let usableProviderIds = $state<string[]>([]);
   let usableProviderRequestId = 0;
 

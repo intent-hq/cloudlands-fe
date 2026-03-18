@@ -8,41 +8,46 @@
    */
 
   import {
-    backgroundAgentSettingsStore,
     BACKGROUND_AGENT_TYPE_INFO,
-  } from '$lib/stores/background-agent-settings.store.svelte';
+    setDefaultModel,
+    setTypeOverride,
+  } from '$lib/store/slices/background-agent-settings/background-agent-settings-slice';
+  import {
+    selectBgDefaultModel,
+    selectBgTypeOverrides,
+    selectHasOverride,
+  } from '$lib/store/slices/background-agent-settings/background-agent-settings-selectors';
   import { selectAvailableModels } from '$lib/store/slices/model/model-selectors';
+  import { getDispatch } from '$lib/store/utils/utils';
   import { Dropdown, type DropdownOption } from '$lib/components/ui/dropdown';
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import Fa from 'svelte-fa';
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
 
+  const dispatch = getDispatch();
   const availableModels$ = selectAvailableModels();
+  const defaultModel = selectBgDefaultModel();
+  const typeOverrides$ = selectBgTypeOverrides();
+  const hasCommitOverride$ = selectHasOverride('commit');
+  const hasPrOverride$ = selectHasOverride('pr');
+  const hasFastOverride$ = selectHasOverride('fast');
 
   const USE_DEFAULT_VALUE = '__default__';
 
-  // Local state for default model
-  let defaultModelValue = $state(backgroundAgentSettingsStore.defaultModel);
-
-  // Sync default model from store
-  $effect(() => {
-    defaultModelValue = backgroundAgentSettingsStore.defaultModel;
-  });
-
   // Local state for type overrides - use '__default__' for empty values
-  let commitOverride = $state(backgroundAgentSettingsStore.typeOverrides.commit || USE_DEFAULT_VALUE);
-  let prOverride = $state(backgroundAgentSettingsStore.typeOverrides.pr || USE_DEFAULT_VALUE);
-  let fastOverride = $state(backgroundAgentSettingsStore.typeOverrides.fast || USE_DEFAULT_VALUE);
+  let commitOverride = $state($typeOverrides$.commit || USE_DEFAULT_VALUE);
+  let prOverride = $state($typeOverrides$.pr || USE_DEFAULT_VALUE);
+  let fastOverride = $state($typeOverrides$.fast || USE_DEFAULT_VALUE);
 
   // Sync overrides from store
   $effect(() => {
-    commitOverride = backgroundAgentSettingsStore.typeOverrides.commit || USE_DEFAULT_VALUE;
+    commitOverride = $typeOverrides$.commit || USE_DEFAULT_VALUE;
   });
   $effect(() => {
-    prOverride = backgroundAgentSettingsStore.typeOverrides.pr || USE_DEFAULT_VALUE;
+    prOverride = $typeOverrides$.pr || USE_DEFAULT_VALUE;
   });
   $effect(() => {
-    fastOverride = backgroundAgentSettingsStore.typeOverrides.fast || USE_DEFAULT_VALUE;
+    fastOverride = $typeOverrides$.fast || USE_DEFAULT_VALUE;
   });
 
   // Handle override changes - update both local state and store
@@ -54,7 +59,7 @@
 
     // Update store (convert sentinel value to empty string)
     const storeValue = value === USE_DEFAULT_VALUE ? '' : value;
-    backgroundAgentSettingsStore.setTypeOverride(type, storeValue);
+    dispatch(setTypeOverride({ type, model: storeValue }));
   }
 
   // Model options for override dropdowns - includes "Use default" option
@@ -69,7 +74,7 @@
   // Get display label for an override value
   function getOverrideLabel(value: string): string {
     if (value === USE_DEFAULT_VALUE) return 'Use default quick action model';
-    return $availableModels$.find(m => m.value === value)?.label || value;
+    return $availableModels$.find((m) => m.value === value)?.label || value;
   }
 </script>
 
@@ -80,11 +85,8 @@
   </div>
   <div class="shrink-0 w-72">
     <ModelPicker
-      selectedModel={defaultModelValue}
-      onModelChange={(model) => {
-        defaultModelValue = model;
-        backgroundAgentSettingsStore.setDefaultModel(model);
-      }}
+      selectedModel={$defaultModel}
+      onModelChange={(model) => dispatch(setDefaultModel(model))}
       showManageLink={false}
       showDefaultOption={false}
       variant="default"
@@ -101,9 +103,13 @@
     <div class="flex items-center justify-between gap-4">
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2">
-          <span class="text-sm font-medium text-foreground">{BACKGROUND_AGENT_TYPE_INFO.commit.label}</span>
-          {#if backgroundAgentSettingsStore.hasOverride('commit')}
-            <span class="text-ui px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium">Custom</span>
+          <span class="text-sm font-medium text-foreground"
+            >{BACKGROUND_AGENT_TYPE_INFO.commit.label}</span
+          >
+          {#if $hasCommitOverride$}
+            <span class="text-ui px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium"
+              >Custom</span
+            >
           {/if}
         </div>
         <p class="text-xs text-subtle mt-0.5">{BACKGROUND_AGENT_TYPE_INFO.commit.description}</p>
@@ -129,9 +135,13 @@
     <div class="flex items-center justify-between gap-4">
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2">
-          <span class="text-sm font-medium text-foreground">{BACKGROUND_AGENT_TYPE_INFO.pr.label}</span>
-          {#if backgroundAgentSettingsStore.hasOverride('pr')}
-            <span class="text-ui px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium">Custom</span>
+          <span class="text-sm font-medium text-foreground"
+            >{BACKGROUND_AGENT_TYPE_INFO.pr.label}</span
+          >
+          {#if $hasPrOverride$}
+            <span class="text-ui px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium"
+              >Custom</span
+            >
           {/if}
         </div>
         <p class="text-xs text-subtle mt-0.5">{BACKGROUND_AGENT_TYPE_INFO.pr.description}</p>
@@ -157,9 +167,13 @@
     <div class="flex items-center justify-between gap-4">
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2">
-          <span class="text-sm font-medium text-foreground">{BACKGROUND_AGENT_TYPE_INFO.fast.label}</span>
-          {#if backgroundAgentSettingsStore.hasOverride('fast')}
-            <span class="text-ui px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium">Custom</span>
+          <span class="text-sm font-medium text-foreground"
+            >{BACKGROUND_AGENT_TYPE_INFO.fast.label}</span
+          >
+          {#if $hasFastOverride$}
+            <span class="text-ui px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium"
+              >Custom</span
+            >
           {/if}
         </div>
         <p class="text-xs text-subtle mt-0.5">{BACKGROUND_AGENT_TYPE_INFO.fast.description}</p>

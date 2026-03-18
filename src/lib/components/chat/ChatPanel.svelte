@@ -40,10 +40,7 @@
     getChatService,
     type ChatState,
   } from '$features/agent/services/chat.service';
-  import {
-    hasChatServiceStateChanged,
-    syncChatStateFromService,
-  } from './chat-panel-state-sync';
+  import { hasChatServiceStateChanged, syncChatStateFromService } from './chat-panel-state-sync';
   import { agentService, type AgentMessage } from '$features/agent/agent.service';
   import { sessionStore } from '$features/agent/browser';
   import { browser } from '$app/environment';
@@ -127,12 +124,17 @@
   import LazyTurn from './LazyTurn.svelte';
   import InlinePermissionRequest from './InlinePermissionRequest.svelte';
   import { selectPermissionRequests } from '$lib/store/slices/permission/permission-selectors';
-  import type { PermissionRequest } from '$lib/store/slices/permission/permission-slice';
   import { selectIsAgentMonospace } from '$lib/store/slices/agent-font-settings/agent-font-settings-selectors';
   import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
   import AuroraBackground from './AuroraBackground.svelte';
   import { invoke, listenSync } from '$lib/electron-bridge';
-  import { specialistsStore } from '$lib/stores/specialists.store.svelte';
+  import {
+    selectSpecialists,
+    selectEffectiveBehaviorPrompt,
+    selectEffectiveModel,
+  } from '$lib/store/slices/specialists/specialists-selectors';
+  import { selectActiveProviderId } from '$lib/store/slices/active-provider/active-provider-selectors';
+
   import { getAgentProvider } from '$shared/types/agent-session';
   import { cleanErrorMessage } from '$shared/errors/messages';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
@@ -141,6 +143,7 @@
   const logger = createLogger('ChatPanel');
 
   const multiPanelDispatch = getDispatch();
+  const activeProviderId = selectActiveProviderId();
   const isAgentMonospace = selectIsAgentMonospace();
 
   // Constants
@@ -986,16 +989,18 @@
         // Add selection to multi-panel context store
         // Detect if this is from a note (markdown) vs a code file
         const isNote = language === 'markdown' && !file?.includes('/');
-        multiPanelDispatch(setMultiPanelSelection({
-          panelId,
-          tabId,
-          sourceType: isNote ? 'note' : 'file',
-          sourceLabel: file?.split('/').pop() || 'Selection',
-          filePath: isNote ? undefined : file,
-          text: text,
-          language: language,
-          timestamp: Date.now(),
-        }));
+        multiPanelDispatch(
+          setMultiPanelSelection({
+            panelId,
+            tabId,
+            sourceType: isNote ? 'note' : 'file',
+            sourceLabel: file?.split('/').pop() || 'Selection',
+            filePath: isNote ? undefined : file,
+            text: text,
+            language: language,
+            timestamp: Date.now(),
+          }),
+        );
       } else {
         // Clear the selection when text is deselected
         // This event is only dispatched when editor.isFocused is true (user clicked within the editor)
@@ -1085,9 +1090,7 @@
   );
 
   // Hydrated input model — uses session model when available, falls back to agentModel prop
-  let hydratedInputModel = $derived(
-    resolveHydratedInputModel(chatState.session, agentModel),
-  );
+  let hydratedInputModel = $derived(resolveHydratedInputModel(chatState.session, agentModel));
 
   // Provider ID for the input — resolved from the agent session
   let inputProviderId = $derived.by(() => {
@@ -1637,8 +1640,8 @@
           incomingMessageCount: state.messages.length,
           currentLastId: currentMessages[currentMessages.length - 1]?.id,
           incomingLastId: state.messages[state.messages.length - 1]?.id,
-          currentRoles: currentMessages.map(m => m.role),
-          incomingRoles: state.messages.map(m => m.role),
+          currentRoles: currentMessages.map((m) => m.role),
+          incomingRoles: state.messages.map((m) => m.role),
         });
         return;
       }
@@ -2959,13 +2962,14 @@
 
     if (specialistId) {
       // Direct specialist selected
-      const specialist = specialistsStore.specialists.find((s) => s.id === specialistId);
+      const reduxState = getReduxStore().getState();
+      const specialist = selectSpecialists.select(reduxState).find((s) => s.id === specialistId);
       behaviorPrompt = specialist
-        ? specialistsStore.getEffectiveBehaviorPrompt(specialist.id)
+        ? selectEffectiveBehaviorPrompt.select(reduxState, specialist.id)
         : undefined;
       // Use getEffectiveModel which resolves tier to actual model for current provider
       newModel = specialist
-        ? specialistsStore.getEffectiveModel(specialist.id) || session.model
+        ? selectEffectiveModel.select(reduxState, specialist.id) || session.model
         : session.model;
       specialistName = specialist?.name;
     } else {
@@ -3107,7 +3111,12 @@
     if (!workspace) return;
     try {
       // Per-agent ChatService: always bound to this agent, no re-acquisition needed
-      await chatService.editAndRegenerate(messageId, newText, workspace, model ? { model } : undefined);
+      await chatService.editAndRegenerate(
+        messageId,
+        newText,
+        workspace,
+        model ? { model } : undefined,
+      );
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Something went wrong';
       logger.error('Failed to edit message', error);
@@ -3745,8 +3754,8 @@
                             .startsWith('[WORKSPACE EVENTS]'))}
                       <!-- Sticky compact user message header - shows when scrolled past expanded message -->
                       <!-- Positioned BEFORE expanded message in DOM so it's naturally behind it -->
-	                      {#if shouldEnableSticky && turn.userMessage && !isEventNotification}
-	                        <div class="sticky -top-px w-full z-10 h-0 overflow-visible">
+                      {#if shouldEnableSticky && turn.userMessage && !isEventNotification}
+                        <div class="sticky -top-px w-full z-10 h-0 overflow-visible">
                           <div
                             class="h-fit min-w-0 px-2 pt-2 pb-2 text-subtle whitespace-nowrap text-ellipsis leading-normal bg-sidebar rounded-xs w-full max-w-full truncate"
                           >
@@ -3767,7 +3776,8 @@
                           <ChatMessage
                             {message}
                             {workspace}
-                            onEditSubmit={(newText, model) => handleEditMessage(message.id, newText, model)}
+                            onEditSubmit={(newText, model) =>
+                              handleEditMessage(message.id, newText, model)}
                             editModel={turn.assistantMessages[0]?.metadata?.model}
                             enableSticky={shouldEnableSticky}
                             onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
@@ -3819,7 +3829,8 @@
                             {message}
                             {workspace}
                             isStreaming={isCurrentlyStreaming}
-                            onEditSubmit={(newText, model) => handleEditMessage(message.id, newText, model)}
+                            onEditSubmit={(newText, model) =>
+                              handleEditMessage(message.id, newText, model)}
                             onRegenerate={() => handleRegenerateFromMessage(message.id)}
                             onFork={() => handleForkFromMessage(message.id)}
                             backendSessionId={auggieSessionId}
@@ -3900,7 +3911,10 @@
       {#if agentId && agentPermissionRequests.length > 0}
         {@const currentRequest = agentPermissionRequests[0]}
         <div class="w-full px-2">
-          <InlinePermissionRequest request={currentRequest} pendingCount={agentPermissionRequests.length} />
+          <InlinePermissionRequest
+            request={currentRequest}
+            pendingCount={agentPermissionRequests.length}
+          />
         </div>
       {/if}
 

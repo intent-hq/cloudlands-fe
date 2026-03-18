@@ -8,11 +8,14 @@
    */
   import { onMount } from 'svelte';
   import { invoke, shell } from '$lib/electron-bridge';
-  import { additionalAgentsStore } from '$lib/stores/additional-agents.store.svelte';
-  import { activeProviderStore } from '$lib/stores/active-provider.store.svelte';
+  import { selectActiveProviderId } from '$lib/store/slices/active-provider/active-provider-selectors';
+  import { setActiveProvider } from '$lib/store/slices/active-provider/active-provider-slice';
+  import { selectEnabledProviders, selectIsProviderEnabled } from '$lib/store/slices/additional-agents/additional-agents-selectors';
+  import { setProviderEnabled } from '$lib/store/slices/additional-agents/additional-agents-slice';
   import { retryLoadModels, reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
   import { getDispatch } from '$lib/store/utils/utils';
-  import { ACP_PROVIDERS } from '$shared/config/provider-config';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { ACP_PROVIDERS, getProviderConfig } from '$shared/config/provider-config';
   import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
   import {
     MINIMUM_AUGGIE_VERSION,
@@ -43,6 +46,8 @@
 
   const logger = createLogger('ProviderSelector');
   const dispatch = getDispatch();
+  const activeProviderId = selectActiveProviderId();
+  const enabledProviders$ = selectEnabledProviders();
 
   const INSTALL_COMMAND = 'npm install -g @augmentcode/auggie';
 
@@ -179,18 +184,23 @@
 
   function isProviderReadyForUse(providerId: string): boolean {
     if (providerId === 'auggie') {
-      return !!auggieStatus?.installed &&
+      return (
+        !!auggieStatus?.installed &&
         !!auggieStatus?.authenticated &&
         !needsUpdate &&
-        (auggieStatus?.nodeVersionOk !== false || !!auggieStatus?.managedBinaryInstalled);
+        (auggieStatus?.nodeVersionOk !== false || !!auggieStatus?.managedBinaryInstalled)
+      );
     }
 
     if (!getProviderAvailable(providerId)) return false;
     return getProviderAuthenticated(providerId) !== false;
   }
 
+  // Reactive helper to check if a provider is enabled
   function isProviderEnabled(providerId: string): boolean {
-    return additionalAgentsStore.isProviderEnabled(providerId);
+    const config = getProviderConfig(providerId);
+    if (config.canBeDisabled === false) return true;
+    return $enabledProviders$[providerId] ?? false;
   }
 
   function canManageProviderEnablement(providerId: string): boolean {
@@ -198,7 +208,7 @@
   }
 
   function handleToggleProvider(providerId: string, enabled: boolean) {
-    additionalAgentsStore.setProviderEnabled(providerId, enabled);
+    dispatch(setProviderEnabled({ providerId, enabled }));
   }
 
   onMount(() => {
@@ -701,13 +711,13 @@
 
   async function handleSelectProvider(providerId: string) {
     selectingProviderId = providerId;
-    const previousProviderId = activeProviderStore.activeProviderId;
+    const previousProviderId = $activeProviderId;
     try {
       logger.info('Selecting provider:', {
         from: previousProviderId,
         to: providerId,
       });
-      activeProviderStore.setActiveProvider(providerId);
+      dispatch(setActiveProvider(providerId));
       dispatch(reloadModelsForProvider());
       toast.success(`Switched to ${ACP_PROVIDERS[providerId]?.displayName || providerId}`);
 
@@ -768,7 +778,7 @@
       {@render skeleton('auggie', true)}
     {:else}
       {@const auggieProvider = providerOptions.find((p) => p.id === 'auggie')}
-      {@const isAuggieActive = activeProviderStore.activeProviderId === 'auggie'}
+      {@const isAuggieActive = $activeProviderId === 'auggie'}
       {@const isAuggieEnabled = isProviderEnabled('auggie')}
       {@const isAuggieReady = isProviderReadyForUse('auggie')}
       {@const canManageAuggieEnablement = canManageProviderEnablement('auggie')}
@@ -894,13 +904,18 @@
 
         <!-- Soft warning: Node version is incompatible, binary install available (but not yet installed) -->
         {#if auggieStatus && !auggieStatus.nodeVersionOk && auggieStatus.binaryInstallAvailable && !auggieStatus.managedBinaryInstalled}
-          <div class="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-md text-amber-600 dark:text-amber-400 mt-1">
+          <div
+            class="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-md text-amber-600 dark:text-amber-400 mt-1"
+          >
             <Fa icon={faTriangleExclamation} class="w-4 h-4 flex-shrink-0" />
             <span class="text-xs">
               {#if auggieStatus.installed}
-                Your current auggie installation requires Node.js 22+, which isn't available. Click <strong>Install</strong> to switch to the standalone binary instead.
+                Your current auggie installation requires Node.js 22+, which isn't available. Click <strong
+                  >Install</strong
+                > to switch to the standalone binary instead.
               {:else}
-                Node.js 22+ is not available. Click <strong>Install</strong> to download the standalone binary.
+                Node.js 22+ is not available. Click <strong>Install</strong> to download the standalone
+                binary.
               {/if}
             </span>
           </div>
@@ -1002,7 +1017,9 @@
           >
             <p class="text-xs text-destructive-foreground">{installError}</p>
             {#if installErrorType === 'binary_download_failed'}
-              <p class="text-xs text-subtle">Download failed — check your connection and file permissions, then try again.</p>
+              <p class="text-xs text-subtle">
+                Download failed — check your connection and file permissions, then try again.
+              </p>
             {:else if installErrorType === 'permission'}
               <p class="text-xs text-subtle">Try running with sudo or fix npm permissions.</p>
             {:else if installErrorType === 'node_too_old' && !auggieStatus?.binaryInstallAvailable}
@@ -1056,7 +1073,7 @@
 
     <!-- Other providers -->
     {#each providerOptions.filter((p) => p.id !== 'auggie') as provider (provider.id)}
-      {@const isActive = activeProviderStore.activeProviderId === provider.id}
+      {@const isActive = $activeProviderId === provider.id}
       {@const isEnabled = isProviderEnabled(provider.id)}
       {@const isReady = isProviderReadyForUse(provider.id)}
       {@const canManageEnablement = canManageProviderEnablement(provider.id)}

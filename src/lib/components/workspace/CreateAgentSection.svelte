@@ -3,7 +3,11 @@
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import { faPlus, faGear, faChevronDown } from '@fortawesome/free-solid-svg-icons';
-  import { specialistsStore } from '$lib/stores/specialists.store.svelte';
+  import {
+    filterSpecialistsByGitHubAuth,
+    selectSpecialists,
+  } from '$lib/store/slices/specialists/specialists-selectors';
+  import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { scale } from 'svelte/transition';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
@@ -22,9 +26,13 @@
   let contentRef: HTMLDivElement | null = $state(null);
   let portalStyle = $state('');
 
-  const coordinator = $derived(specialistsStore.specialists.find((s) => s.id === 'spec-writer'));
+  const specialists$ = selectSpecialists();
+  const visibleSpecialists = $derived.by(() =>
+    filterSpecialistsByGitHubAuth($specialists$, githubAuthStore.state.isAuthenticated)
+  );
+  const coordinator = $derived(visibleSpecialists.find((s) => s.id === 'spec-writer'));
   const otherSpecialists = $derived(
-    specialistsStore.specialists.filter((s) => s.id !== 'spec-writer'),
+    visibleSpecialists.filter((s) => s.id !== 'spec-writer'),
   );
 
   // Handle creating agent with specialist

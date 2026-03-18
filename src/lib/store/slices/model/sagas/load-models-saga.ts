@@ -8,7 +8,7 @@ import {
   parseCompoundModelId,
   resolvePreferredModel,
 } from "$shared/config/provider-config";
-import { activeProviderStore } from "$lib/stores/active-provider.store.svelte";
+import { selectActiveProviderId } from "../../active-provider/active-provider-selectors";
 import { fetchModelsForProvider } from "../model-utils";
 import {
   loadModels,
@@ -24,12 +24,12 @@ import {
   RETRY_DELAYS_MS,
 } from "../model-slice";
 import {
-  selectActiveProviderId,
   selectAvailableModelsForProvider,
   selectModelsLoadedForProvider,
   selectIsLoadingModelsForProvider,
   selectSelectedModel,
   selectRetryAttempt,
+  selectModelsLoaded,
 } from "../model-selectors";
 
 const logger = createLogger("LoadModelsSaga");
@@ -40,7 +40,7 @@ const logger = createLogger("LoadModelsSaga");
 function* handleLoadModels() {
   let activeProviderId: string;
   try {
-    activeProviderId = yield* call(() => activeProviderStore.activeProviderId);
+    activeProviderId = yield* selectActiveProviderId.effect();
   } catch (e) {
     logger.warn(
       "Failed to read activeProviderId during loadModels — chunk may not be loaded yet",
@@ -193,9 +193,8 @@ function* autoRetrySaga(forProviderId: string) {
 
   // Only retry if still for the same provider and not yet loaded
   try {
-    const currentModelsLoaded: boolean =
-      yield* selectModelsLoadedForProvider.effect(forProviderId);
-    const currentProviderId = activeProviderStore.activeProviderId;
+    const currentModelsLoaded: boolean = yield* selectModelsLoaded.effect();
+    const currentProviderId: string = yield* selectActiveProviderId.effect();
     if (!currentModelsLoaded && currentProviderId === forProviderId) {
       logger.info(
         `Auto-retrying model load (attempt ${retryAttempt + 1}/${MAX_AUTO_RETRIES})`
@@ -212,9 +211,7 @@ function* autoRetrySaga(forProviderId: string) {
  */
 function* handleRetryLoadModels() {
   logger.debug("Retrying model load...");
-  const stateActiveProviderId: string | null = yield* selectActiveProviderId.effect();
-  const activeProviderId =
-    stateActiveProviderId ?? (yield* call(() => activeProviderStore.activeProviderId));
+  const activeProviderId: string = yield* selectActiveProviderId.effect();
 
   yield* put(setActiveProviderId(activeProviderId));
   yield* put(

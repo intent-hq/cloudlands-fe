@@ -51,6 +51,7 @@ vi.mock('$lib/stores/active-provider.store.svelte', () => ({
 
 vi.mock('$lib/store/utils/utils', () => ({
   getDispatch: () => vi.fn(),
+  getStoreContext: () => undefined,
 }));
 
 vi.mock('$lib/store/slices/model/model-selectors', () => ({
@@ -59,6 +60,10 @@ vi.mock('$lib/store/slices/model/model-selectors', () => ({
     readable([{ value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' }]),
   selectIsLoadingModels: () => readable(false),
   selectLoadError: () => readable(null),
+}));
+
+vi.mock('$lib/store/slices/active-provider/active-provider-selectors', () => ({
+  selectActiveProviderId: () => readable('auggie'),
 }));
 
 vi.mock('$shared/config/provider-config', () => ({

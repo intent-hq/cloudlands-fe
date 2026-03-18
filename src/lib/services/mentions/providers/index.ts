@@ -13,6 +13,8 @@ import { SPECIAL_MENTIONS } from '../types';
 import { FileProvider } from './file-provider';
 import { logger } from '$lib/utils/client-logger';
 import { fuzzyMatch } from '$lib/services/mentions/fuzzy-matcher';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { selectSpecialists, selectSpecialistById } from '$lib/store/slices/specialists/specialists-selectors';
 import { formatRelativeTimeCompact } from '$lib/utils/date';
 import type { Workspace } from '$shared/types';
 
@@ -761,9 +763,7 @@ export class SpecialistProvider implements Provider {
 
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     try {
-      const { specialistsStore } = await import('$lib/stores/specialists.store.svelte');
-
-      const specialists = specialistsStore.specialists;
+      const specialists = selectSpecialists.select(getReduxStore().getState());
       if (!specialists || specialists.length === 0) {
         return [];
       }
@@ -810,8 +810,6 @@ export class AgentProvider implements Provider {
       const { unifiedStateStore } = await import(
         '$features/agent/services/unified-state-store'
       );
-      const { specialistsStore } = await import('$lib/stores/specialists.store.svelte');
-
       const workspaceId = context.workspaceId;
       if (!workspaceId) {
         return [];
@@ -836,7 +834,7 @@ export class AgentProvider implements Provider {
         // Look up specialist name: try session metadata first, then resolve from store
         let specialistName = (session.metadata as any)?.specialistName || '';
         if (specialistId && !specialistName) {
-          const info = specialistsStore.getSpecialistById(specialistId);
+          const info = selectSpecialistById.select(getReduxStore().getState(), specialistId);
           if (info) {
             specialistName = info.name;
           }

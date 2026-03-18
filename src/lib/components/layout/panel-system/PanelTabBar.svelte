@@ -49,7 +49,8 @@
   import { isSpecNote } from '$shared/constants/notes';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { agentService } from '$features/agent/agent.service';
-  import { specialistsStore } from '$lib/stores/specialists.store.svelte';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectSpecialistName, selectSpecialists } from '$lib/store/slices/specialists/specialists-selectors';
   import { useAllAgentsSubscription } from '$lib/utils/agent-subscription.svelte';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import { type AvatarState, getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
@@ -155,6 +156,12 @@
   // This creates a reactive dependency on the agent store
   const agentSubscription = useAllAgentsSubscription(() => workspaceId);
 
+  // Reactive store subscription for specialist names - ensures re-render when specialists change
+  const specialists$ = selectSpecialists();
+  $effect(() => {
+    void $specialists$;
+  });
+
   // Check if any creation callbacks are available
   const hasCreateActions = $derived(
     !!onCreateAgent || !!onCreateNote || !!onCreateTerminal || !!onOpenBrowser,
@@ -212,7 +219,7 @@
     const specialistId = agent?.metadata?.specialist || (agent as any)?.agentMetadata?.specialist;
     if (!specialistId) return null;
     // Use unified specialist lookup from store (includes team specialists like product-voice, dev-partner)
-    return specialistsStore.getSpecialistName(specialistId);
+    return selectSpecialistName.select(getReduxStore().getState(), specialistId);
   }
 
   /**
