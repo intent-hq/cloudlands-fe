@@ -1,18 +1,15 @@
 <!--
   StreamingStatus.svelte
 
-  Streaming status indicator that shows two states based on silence duration
-  (time since last chunk, or since start if no chunks yet):
-
+  Streaming status indicator:
   - Normal: Spinner with "Thinking"
-  - Stalled (>90s): Warning with status page link and Stop button
+  - Stalled: Warning with status page link and Stop button (driven by ChatService)
   - Error/Timeout: "Connection issue" with Try Again button
 
-  Distinguishes between "no data received" (could be network/provider) and
-  "mid-stream silence" (agent is taking long) for more accurate messaging.
+  Stall detection is handled entirely by ChatService (which has context about
+  running tools, stream start time, etc.) and surfaced via the `isStalled` prop.
 -->
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
   import { fade } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
@@ -31,8 +28,6 @@
     isStreaming?: boolean;
     /** Whether processing (waiting for response) */
     isProcessing?: boolean;
-    /** When streaming/processing started (timestamp in ms) */
-    startTime?: number | null;
     /** When the last streaming chunk was received (timestamp in ms) */
     lastChunkTime?: number | null;
     /** Current streaming content length (to know if we've received anything) */
@@ -65,7 +60,6 @@
   let {
     isStreaming = false,
     isProcessing = false,
-    startTime = null,
     lastChunkTime = null,
     streamingContentLength = 0,
     error = null,
@@ -80,9 +74,6 @@
     class: className = '',
   }: Props = $props();
 
-  // Silence threshold (in seconds since last chunk, or since start if no chunks yet)
-  const STALLED_THRESHOLD = 90;
-
   // Provider status page URLs — used in stalled messages
   const PROVIDER_STATUS_URLS: Record<string, string> = {
     'Augment Auggie': 'https://status.augmentcode.com/',
@@ -94,29 +85,13 @@
     providerName ? (PROVIDER_STATUS_URLS[providerName] ?? null) : null,
   );
 
-  /** Seconds of silence — time since last chunk arrived, or since start if no chunks yet */
-  let silenceSeconds = $state(0);
-  let intervalId: ReturnType<typeof setInterval> | null = null;
-
-  function updateSilence() {
-    // Measure from the most recent activity: last chunk if we've received data, otherwise start time
-    const referenceTime = lastChunkTime ?? startTime;
-    if (referenceTime) {
-      silenceSeconds = Math.floor((Date.now() - referenceTime) / 1000);
-    } else {
-      silenceSeconds = 0;
-    }
-  }
-
-  // Determine current status based on silence duration
+  // Determine current status
   type Status = 'normal' | 'stalled' | 'error' | 'model-unavailable';
 
   let status: Status = $derived.by(() => {
     if (modelUnavailable) return 'model-unavailable';
     if (error) return 'error';
-    if (isStalled) return 'stalled'; // External stall detection takes priority
-    if (!startTime) return 'normal';
-    if (silenceSeconds >= STALLED_THRESHOLD && !hasReceivedData) return 'stalled';
+    if (isStalled) return 'stalled'; // All stall detection is handled by ChatService
     return 'normal';
   });
 
@@ -149,15 +124,6 @@
     }
 
     return 'Thinking';
-  });
-
-  onMount(() => {
-    updateSilence();
-    intervalId = setInterval(updateSilence, 1000);
-  });
-
-  onDestroy(() => {
-    if (intervalId) clearInterval(intervalId);
   });
 </script>
 

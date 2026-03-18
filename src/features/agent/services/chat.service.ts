@@ -332,16 +332,34 @@ export class ChatService implements IDisposable {
       const currentState = get(this.state);
 
       // Only check if we're actively streaming
-      if (!currentState.isStreaming || !currentState.lastChunkTime) {
+      if (!currentState.isStreaming) {
         return;
       }
 
-      const timeSinceLastChunk = Date.now() - currentState.lastChunkTime;
+      // Don't flag as stalled while an MCP tool is actively executing.
+      // If the last content block is a tool_use, the tool hasn't returned yet.
+      const lastMsg = currentState.messages[currentState.messages.length - 1];
+      if (lastMsg?.role === 'assistant' && lastMsg?.contentBlocks?.length) {
+        const lastBlock = lastMsg.contentBlocks[lastMsg.contentBlocks.length - 1];
+        if (lastBlock.type === 'tool_use') {
+          return; // Tool is executing — not stalled
+        }
+      }
 
-      if (timeSinceLastChunk >= this.STALL_DETECTION_MS && !currentState.isStalled) {
-        logger.warn('Stream appears stalled - no chunks received', {
-          timeSinceLastChunk,
+      // Determine how long we've been silent.
+      // If we've received chunks, measure from last chunk. Otherwise from stream start.
+      const referenceTime = currentState.lastChunkTime ?? currentState.streamingStartTime;
+      if (!referenceTime) {
+        return;
+      }
+
+      const silenceMs = Date.now() - referenceTime;
+
+      if (silenceMs >= this.STALL_DETECTION_MS && !currentState.isStalled) {
+        logger.warn('Stream appears stalled', {
+          silenceMs,
           threshold: this.STALL_DETECTION_MS,
+          hasReceivedData: currentState.lastChunkTime !== null,
           lastChunkTime: currentState.lastChunkTime,
         });
 
@@ -1132,6 +1150,8 @@ export class ChatService implements IDisposable {
           streamingContent: '',
           error: null,
           streamingStartTime: Date.now(),
+          lastChunkTime: null, // Reset so stall detection treats this as a fresh stream
+          isStalled: false,
           lastAttemptedMessage: { text: message, options },
         };
       }
@@ -1143,6 +1163,8 @@ export class ChatService implements IDisposable {
         streamingContent: '',
         error: null,
         streamingStartTime: Date.now(), // Track when streaming started for debug info
+        lastChunkTime: null, // Reset so stall detection treats this as a fresh stream
+        isStalled: false,
         // Store message for retry functionality
         lastAttemptedMessage: { text: message, options },
       };
