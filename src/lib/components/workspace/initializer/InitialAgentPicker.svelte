@@ -292,6 +292,7 @@
   );
 
   function selectTeamMode() {
+    if (isTeamMode) return;
     // Save the current single-agent state before switching
     if (!isTeamMode) {
       lastSingleAgentSpecialist = selectedSpecialist;
