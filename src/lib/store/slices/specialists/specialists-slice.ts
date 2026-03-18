@@ -148,7 +148,11 @@ export const specialistsReducer = createReducer<SpecialistsState>(initialState)
   }))
   .with(setUserOverrides, (state, { payload: [overrides] }) => ({
     ...state,
-    userOverrides: overrides,
+    userOverrides: {
+      codingAgentOverrides: overrides.codingAgentOverrides ?? {},
+      modelOverrides: overrides.modelOverrides ?? {},
+      behaviorPromptOverrides: overrides.behaviorPromptOverrides ?? {},
+    },
   }))
   .with(setOverridesLoaded, (state, { payload: [loaded] }) => ({
     ...state,

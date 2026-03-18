@@ -10,6 +10,8 @@ import {
   selectFileSpecialistsLoaded,
   selectBundledSpecialistsLoaded,
   selectSpecialistsFolderPath,
+  selectHasOverrides,
+  selectEffectiveCodingAgent,
 } from "./specialists-selectors";
 import { initialState } from "./specialists-slice";
 import type { StoreState } from "../../types";
@@ -139,6 +141,34 @@ describe("specialists selectors", () => {
     it("should return path when set", () => {
       const state = mockState({ specialistsFolderPath: "/path/to/specialists" });
       expect(selectSpecialistsFolderPath.select(state)).toBe("/path/to/specialists");
+    });
+  });
+
+  describe("selectors with missing codingAgentOverrides (legacy electron-store data)", () => {
+    /** Simulate old persisted data where codingAgentOverrides didn't exist yet */
+    function legacyState() {
+      return mockState({
+        userOverrides: {
+          modelOverrides: {},
+          behaviorPromptOverrides: {},
+        } as any,
+      });
+    }
+
+    it("selectHasOverrides should return false without throwing", () => {
+      const state = legacyState();
+      expect(() => selectHasOverrides.select(state, "ui-designer")).not.toThrow();
+      expect(selectHasOverrides.select(state, "ui-designer")).toBe(false);
+    });
+
+    it("selectEffectiveCodingAgent should return a fallback without throwing", () => {
+      const state = {
+        ...legacyState(),
+        activeProvider: { activeProviderId: "auggie" },
+      } as StoreState;
+      expect(() => selectEffectiveCodingAgent.select(state, "nonexistent-specialist")).not.toThrow();
+      const result = selectEffectiveCodingAgent.select(state, "nonexistent-specialist");
+      expect(result).toBe("auggie");
     });
   });
 });

@@ -292,9 +292,9 @@ export const selectIsFileBased = createSelector(
 export const selectHasOverrides = createSelector(
   (state, specialistId: string): boolean => {
     return (
-      !!state.specialists.userOverrides.codingAgentOverrides[specialistId] ||
-      !!state.specialists.userOverrides.modelOverrides[specialistId] ||
-      !!state.specialists.userOverrides.behaviorPromptOverrides[specialistId]
+      !!state.specialists.userOverrides.codingAgentOverrides?.[specialistId] ||
+      !!state.specialists.userOverrides.modelOverrides?.[specialistId] ||
+      !!state.specialists.userOverrides.behaviorPromptOverrides?.[specialistId]
     );
   }
 );
@@ -320,7 +320,7 @@ export const selectSpecialistFilePath = createSelector(
 /** Get the effective coding agent for a specialist (override → specialist default → active provider) */
 export const selectEffectiveCodingAgent = createSelector(
   (state, specialistId: string): string => {
-    const override = state.specialists.userOverrides.codingAgentOverrides[specialistId];
+    const override = state.specialists.userOverrides.codingAgentOverrides?.[specialistId];
     if (override) return override;
 
     return selectResolvedDefaultCodingAgent.select(state, specialistId);
