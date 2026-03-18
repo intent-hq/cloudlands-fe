@@ -5,7 +5,7 @@
 Add an embedded browser feature to the Intent app that allows users to:
 1. Enter URLs and view web pages in the main content area
 2. Access recent URLs quickly from the sidebar
-3. (Future) Capture console logs and provide dev tools access for agents
+3. Toggle embedded DevTools from the browser toolbar; future work can add richer console capture for agents
 
 ## Current State
 
@@ -14,11 +14,13 @@ Add an embedded browser feature to the Intent app that allows users to:
 - `mainContentType` includes `'browser'` - Main content area has conditional for browser type
 - `webviewTag: true` enabled in Electron's BrowserWindow config
 
-### What's Missing
+### Implemented Components
 - `BrowserPanel.svelte` - Sidebar panel for URL input and recent URLs
 - `EmbeddedBrowser.svelte` - Main content component using Electron's `<webview>` tag
 - `browser.store.svelte.ts` - State management for recent URLs
-- Integration with `WorkspaceDetailSidebar`
+- Browser sidebar and main-panel integration are wired into the workspace layout
+
+> Note: Per `docs/STATE_MANAGEMENT.md`, `.store.svelte.ts` modules are transitional; new shared state should use Redux slices in `src/lib/store/`.
 
 ## Architecture
 
@@ -29,8 +31,8 @@ src/features/browser/
 ├── types.ts                   # BrowserSession, RecentUrl types
 
 src/lib/components/browser/
-├── BrowserPanel.svelte        # Sidebar: URL input + recent list (NEW)
-├── EmbeddedBrowser.svelte     # Main content: webview component (NEW)
+├── BrowserPanel.svelte        # Sidebar: URL input + recent list
+├── EmbeddedBrowser.svelte     # Main content: webview component
 ```
 
 ### Key Technical Decisions
@@ -45,6 +47,8 @@ src/lib/components/browser/
 ## Phase 1: Core Browser Feature
 
 ### 1.1 Browser Store (`src/features/browser/browser.store.svelte.ts`)
+
+> Transitional note: Per `docs/STATE_MANAGEMENT.md`, `.store.svelte.ts` modules are transitional; new shared state should use Redux slices in `src/lib/store/`.
 
 ```typescript
 interface RecentUrl {
@@ -96,6 +100,11 @@ Main content component using Electron's webview.
 - URL bar with current URL display
 - Loading indicator
 - Error handling for failed loads
+- Webview partition isolation via `BROWSER_PANEL_PARTITION`
+- Protocol allowlist enforcement via `BROWSER_PROTOCOLS.NAVIGATION_ALLOWED`
+- Browser zoom controls via `browser:zoom` events
+- Embedded DevTools toggle (`webview.openDevTools()` / `closeDevTools()`)
+- Focus propagation and browser-specific shortcut handling for the active panel
 
 **Webview Events to Handle:**
 - `did-start-loading` / `did-stop-loading` - Loading state
@@ -109,8 +118,14 @@ Main content component using Electron's webview.
 interface Props {
   url: string;
   workspaceId: string;
+  tabId?: string;
   onNavigate?: (url: string) => void;
   onClose?: () => void;
+  onTitleChange?: (title: string) => void;
+  onFaviconChange?: (faviconUrl: string) => void;
+  onFocus?: () => void;
+  focusUrlBarOnMount?: boolean;
+  isFocused?: boolean;
 }
 ```
 
@@ -138,11 +153,10 @@ Main Content Area
     ↓ renders EmbeddedBrowser with URL
 ```
 
-## Phase 2: Console & DevTools (Future)
+## Phase 2: Console Capture (Future)
 
 - Capture console logs via `console-message` event
 - Create `BrowserConsolePanel.svelte` for log display
-- Add DevTools toggle via `webview.openDevTools()`
 - Filter logs by level (log, warn, error, info, debug)
 
 ## Phase 3: Agent Integration (Future)
@@ -153,7 +167,9 @@ Main Content Area
 
 ## Implementation Tasks
 
-### Phase 1 Checklist (COMPLETED)
+### Phase 1 Checklist
+
+#### Implementation (completed)
 
 - [x] Create `src/features/browser/types.ts`
 - [x] Create `src/features/browser/browser.store.svelte.ts`
@@ -163,6 +179,9 @@ Main Content Area
 - [x] Wire up event handling in `+page.svelte`
 - [x] Update main content rendering for browser type
 - [x] Enable `webviewTag: true` in BrowserWindow config
+
+#### Verification (pending/manual)
+
 - [ ] Test: URL input opens in main panel
 - [ ] Test: Recent URLs persist across sessions
 - [ ] Test: Navigation controls work (back/forward/refresh)

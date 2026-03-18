@@ -8,21 +8,28 @@ The intent link handler enables internal navigation using `intent://` protocol l
 
 ```
 intent://local/note/{note-id}
+intent://local/task/{note-id}
+intent://local/{workspace-id}/note/{note-id}
+intent://local/{workspace-id}/task/{note-id}
 ```
 
 ### Components
 
 - **Protocol**: `intent://`
 - **Org ID**: `local` (placeholder for future organization support)
-- **Resource Type**: `note` (currently only notes are supported)
-- **Resource ID**: The note ID (e.g., `spec`, `meeting-2024-01-15`, UUIDs)
+- **Workspace Segment**: Optional. When present, the link targets a specific workspace
+- **Resource Type**: `note` or `task`
+- **Resource ID**: The backing note ID (e.g., `spec`, task UUIDs, other note IDs)
 
 ### Examples
 
 ```markdown
 [Spec Note](intent://local/note/spec)
+[Task Note](intent://local/task/550e8400-e29b-41d4-a716-446655440000)
 [Meeting Notes](intent://local/note/meeting-2024-01-15)
 [UUID Note](intent://local/note/550e8400-e29b-41d4-a716-446655440000)
+[Cross-Workspace Note](intent://local/workspace-123/note/spec)
+[Cross-Workspace Task](intent://local/workspace-123/task/550e8400-e29b-41d4-a716-446655440000)
 ```
 
 ## Implementation
@@ -33,9 +40,13 @@ intent://local/note/{note-id}
 
 **Exports**:
 - `parseIntentLink(url: string)` - Parse an intent:// URL
-- `generateNoteLink(noteId: string)` - Generate an intent:// URL for a note
+- `generateNoteLink(noteId: string, workspaceId?: string)` - Deprecated compatibility wrapper around `noteUrl()`
 - `handleIntentLink(url: string)` - Navigate to an intent:// URL
 - `createIntentLinkClickHandler()` - Create a Tiptap click handler
+
+**Preferred helpers**:
+- `noteUrl(noteId, workspaceId?)` from `$shared/constants/intent-links`
+- `taskNoteUrl(noteId)` from `$shared/constants/intent-links` for current-workspace task links
 
 ### Integration Points
 
@@ -52,29 +63,32 @@ intent://local/note/{note-id}
 ### Successful Navigation
 
 When a valid intent:// link is clicked:
-1. URL is parsed to extract org-id and note-id
-2. System checks if note exists in current workspace
-3. If note exists, navigates to it
-4. If note doesn't exist, shows error toast
+1. URL is parsed to extract org-id, optional workspace-id, resource type, and resource ID
+2. `note` and `task` links both resolve to note records (task notes are regular notes with task metadata)
+3. The system checks whether the target note exists in the current or specified workspace
+4. If needed, the app navigates to the target workspace first and opens the note there
+5. If the note doesn't exist, the user sees an error toast
 
 ### Error Handling
 
 - **Invalid URL format**: Shows toast with error message
 - **Note not found**: Shows "Note not found in current workspace" toast
-- **No workspace open**: Shows "No workspace is currently open" toast
+- **Cross-workspace note not found**: Shows which workspace ID was checked
+- **No workspace open for short-form links**: Shows "No space is currently open" toast
 - **Unknown resource type**: Shows "Cannot handle {type} links yet" toast
 
-### Cross-Workspace Navigation
+### Implemented navigation modes
 
-Currently **not supported**. Links only work within the current workspace. Attempting to navigate to a note in a different workspace will show a "not found" error.
-
-This is intentional - cross-workspace navigation is reserved for future enhancement.
+- Current-workspace notes: `intent://local/note/{note-id}`
+- Current-workspace task notes: `intent://local/task/{note-id}`
+- Cross-workspace notes: `intent://local/{workspace-id}/note/{note-id}`
+- Cross-workspace task notes: `intent://local/{workspace-id}/task/{note-id}`
 
 ## Testing
 
 ### Test Files
 
-- `src/lib/utils/workspaces-link-handler.test.ts` - Unit tests (12 tests)
+- `src/lib/utils/workspaces-link-handler.test.ts` - Unit tests (15 tests)
 - `src/lib/utils/workspaces-link-handler.integration.test.ts` - Integration tests (9 tests)
 
 ### Running Tests
@@ -91,6 +105,8 @@ pnpm test src/lib/utils/workspaces-link-handler --run --reporter=verbose
 
 - ✅ URL parsing (valid and invalid formats)
 - ✅ Link generation
+- ✅ Task link parsing
+- ✅ Cross-workspace note/task parsing
 - ✅ Round-trip parsing/generation
 - ✅ Tiptap click handler integration
 - ✅ Error handling
@@ -100,16 +116,19 @@ pnpm test src/lib/utils/workspaces-link-handler --run --reporter=verbose
 
 ### For Agents
 
-Agents can generate links to notes using the `generateNoteLink()` function:
+Agents should generate note links with `noteUrl()` and treat `generateNoteLink()` as a deprecated compatibility wrapper:
 
 ```typescript
-import { generateNoteLink } from '$lib/utils/workspaces-link-handler';
+import { noteUrl, taskNoteUrl } from '$shared/constants/intent-links';
 
-const link = generateNoteLink('spec');
+const noteLink = noteUrl('spec');
 // Returns: "intent://local/note/spec"
 
+const taskLink = taskNoteUrl('550e8400-e29b-41d4-a716-446655440000');
+// Returns: "intent://local/task/550e8400-e29b-41d4-a716-446655440000"
+
 // Use in markdown
-const markdown = `See the [spec note](${link}) for details.`;
+const markdown = `See the [spec note](${noteLink}) or [task](${taskLink}).`;
 ```
 
 ### For Users
@@ -125,9 +144,8 @@ Check out the [spec](intent://local/note/spec) for requirements.
 ### Planned
 
 1. **Organization Support**: Replace `local` placeholder with actual org-id
-2. **Cross-Workspace Navigation**: Navigate to notes in other workspaces
-3. **Additional Resource Types**: Support for files, agents, etc.
-4. **Deep Linking**: Link to specific sections within notes
+2. **Additional Resource Types**: Support for files, agents, etc.
+3. **Deep Linking**: Link to specific sections within notes
 
 ### URL Format Evolution
 

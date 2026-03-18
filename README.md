@@ -10,7 +10,7 @@
 **Build**: ✅ Passing (0 TypeScript errors)
 **Tests**: ✅ 1,295 tests passing (94.5% pass rate)
 **Code Quality**: ✅ Clean, maintainable, well-structured
-**Performance**: Optimized with batch processing and smart caching
+**Performance**: Optimized with direct streaming and smart caching
 **Agent System**: ✅ Fully refactored with single source of truth
 
 ### Clean Architecture (v1.0.0)
@@ -19,7 +19,7 @@ The codebase follows clean architecture principles with consolidated backend:
 
 - ✅ **Consolidated Backend** - Single source of truth for all agent operations
 - ✅ **Agent Factory Pattern** - Guaranteed user rules loading for all agents
-- ✅ **Batch Processing** - Efficient streaming with 16ms batch windows
+- ✅ **Direct Streaming** - Immediate character-by-character streaming with session cleanup
 - ✅ **Repository Pattern** - Complete separation of data access from business logic
 - ✅ **Event Bus** - Properly distributes events to UI components
 - ✅ **Structured Logging** - Centralized logging with context
@@ -38,7 +38,9 @@ The codebase follows clean architecture principles with consolidated backend:
 - **[AGENT_ARCHITECTURE](./docs/AGENT_ARCHITECTURE.md)** - Agent system architecture and design
 - **[COMPONENT_RESPONSIBILITIES](./docs/COMPONENT_RESPONSIBILITIES.md)** - Component structure and ownership
 - **[EVENT_SYSTEM](./docs/EVENT_SYSTEM.md)** - Unified event system architecture
-- **[STATE_MANAGEMENT](./docs/STATE_MANAGEMENT.md)** - State management patterns with Svelte 5 runes
+- **[STATE_MANAGEMENT](./docs/STATE_MANAGEMENT.md)** - State management architecture and Redux migration notes
+
+Per [`docs/STATE_MANAGEMENT.md`](./docs/STATE_MANAGEMENT.md), Redux in `src/lib/store/` is the canonical home for shared or durable app state. Existing `.store.svelte.ts` modules remain transitional adapters during the migration.
 
 ### Technical Guides
 
@@ -202,7 +204,7 @@ src/
 - **Performance First**: Smart caching for expensive operations
 - **Clean Separation**: Business logic in features, UI in lib
 
-For detailed architecture documentation, see [docs/CLEAN_ARCHITECTURE.md](docs/CLEAN_ARCHITECTURE.md).
+For detailed architecture documentation, see [docs/AGENT_ARCHITECTURE.md](docs/AGENT_ARCHITECTURE.md) and [docs/COMPONENT_RESPONSIBILITIES.md](docs/COMPONENT_RESPONSIBILITIES.md).
 
 ## 💻 Development
 

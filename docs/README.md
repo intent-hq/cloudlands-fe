@@ -1,5 +1,43 @@
 # Intent Documentation
 
+This index lists active documentation in `docs/`; obsolete proposal, spike, and investigation docs have been removed.
+
+## 📚 Complete Index
+
+### Top-level docs
+- **[AGENT_ARCHITECTURE.md](./AGENT_ARCHITECTURE.md)** - Agent system architecture and design
+- **[AUGGIE_USAGE_TRACKING_AUDIT.md](./AUGGIE_USAGE_TRACKING_AUDIT.md)** - Audit notes for Auggie usage tracking
+- **[BROWSER_PANEL_SPEC.md](./BROWSER_PANEL_SPEC.md)** - Browser panel product and UX specification
+- **[CDP_MCP_TOOLS.md](./CDP_MCP_TOOLS.md)** - Browser/CDP MCP tools reference
+- **[COMPONENT_RESPONSIBILITIES.md](./COMPONENT_RESPONSIBILITIES.md)** - Component structure and responsibilities
+- **[DEVELOPER_GUIDE.md](./DEVELOPER_GUIDE.md)** - Getting started and development workflow
+- **[ERROR_HANDLING_SYSTEM.md](./ERROR_HANDLING_SYSTEM.md)** - Error handling patterns and system design
+- **[EVENT_SYSTEM.md](./EVENT_SYSTEM.md)** - Event system architecture
+- **[IPC_DEBUG_GUIDE.md](./IPC_DEBUG_GUIDE.md)** - IPC debugging guide
+- **[KEYBINDINGS.md](./KEYBINDINGS.md)** - Keyboard shortcuts and bindings reference
+- **[MULTI_ACP_PROVIDER_SPEC.md](./MULTI_ACP_PROVIDER_SPEC.md)** - Multi-provider ACP specification
+- **[RULES_SYSTEM.md](./RULES_SYSTEM.md)** - Rules and instruction system
+- **[STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md)** - State management architecture and Redux migration notes
+- **[TROUBLESHOOTING_GUIDE.md](./TROUBLESHOOTING_GUIDE.md)** - Debugging and common issues
+- **[TYPE_SYSTEM_GUIDE.md](./TYPE_SYSTEM_GUIDE.md)** - TypeScript and type safety
+- **[chat-session-forking.md](./chat-session-forking.md)** - Chat forking capabilities
+- **[code-review-ui.md](./code-review-ui.md)** - Code review UI notes and behavior
+- **[comment-type-safety-migration.md](./comment-type-safety-migration.md)** - Status of the comment type-safety migration
+- **[line-attribution-dataflow.md](./line-attribution-dataflow.md)** - Line attribution system
+- **[panel-system-refactoring.md](./panel-system-refactoring.md)** - Panel system refactoring notes
+- **[tasks-block-syntax.md](./tasks-block-syntax.md)** - Task block syntax reference
+- **[workspaces-link-handler.md](./workspaces-link-handler.md)** - Workspace link handling behavior
+
+### `proposals/`
+- **[PANEL_TAB_UX_SPEC.md](./proposals/PANEL_TAB_UX_SPEC.md)** - Panel and tab system UX specification
+- **[homepage-progress-cards.md](./proposals/homepage-progress-cards.md)** - Proposal for homepage progress cards
+
+### `investigations/`
+- **[svelte-tiptap-utilities-implementation.md](./investigations/svelte-tiptap-utilities-implementation.md)** - Summary of the shared TipTap utility implementation
+
+### `real/`
+- **[DEPLOYING.md](./real/DEPLOYING.md)** - Deployment notes and operational guidance
+
 ## 📚 Core Documentation
 
 ### Architecture & Design
@@ -13,7 +51,7 @@
 - **[IPC_DEBUG_GUIDE.md](./IPC_DEBUG_GUIDE.md)** - IPC debugging guide
 
 ### Technical Guides
-- **[STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md)** - State management with Svelte 5 runes
+- **[STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md)** - State management architecture and Redux migration notes
 - **[ERROR_HANDLING_SYSTEM.md](./ERROR_HANDLING_SYSTEM.md)** - Error handling patterns
 - **[TROUBLESHOOTING_GUIDE.md](./TROUBLESHOOTING_GUIDE.md)** - Debugging and common issues
 
@@ -28,17 +66,14 @@
 2. Review [AGENT_ARCHITECTURE.md](./AGENT_ARCHITECTURE.md)
 3. Understand [STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md)
 
-### For AI Agents
-1. Check `.augment/rules/` for agent-specific documentation
-2. Review [AGENT_ARCHITECTURE.md](./AGENT_ARCHITECTURE.md)
-3. Use [TROUBLESHOOTING_GUIDE.md](./TROUBLESHOOTING_GUIDE.md) for debugging
+- **[Agents.md](../Agents.md)** - Quick reference for AI agents working in this codebase
 
 ## System Components
 
 ### Frontend (Renderer Process)
 
 - **UI Components** - Svelte 5 components with shadcn-svelte
-- **State Management** - Unified state with reference counting
+- **State Management** - Redux for shared state; `.store.svelte.ts` modules remain transitional where noted
 - **Services** - Business logic layer
 - **IPC Bridge** - Communication with main process
 
@@ -48,11 +83,11 @@
 - **Backend Services** - Core business logic
 - **External Integrations** - Git, file system, agents
 
-### Agent System (v1.0.0)
+### Agent System
 
 - **ConsolidatedBackendService** - Single source of truth for all agent operations
 - **AgentFactory** - Standardized creation with guaranteed user rules
-- **StreamManager** - Efficient batch processing for streaming
+- **StreamManager** - Direct streaming with session management and cleanup
 - **ACP Protocol** - Agent Communication Protocol with Auggie
 - **Session Management** - Agent lifecycle with automatic cleanup
 - **Tool Execution** - Standardized tool interface
@@ -172,17 +207,7 @@ For questions or issues:
 3. Ask in the development chat
 4. Create an issue with detailed description
 
-## Additional Resources
-
-### Agent Rules (in `.augment/rules/`)
-- **error-tracking.md** - Error tracking system
-- **testing-and-debugging.md** - Testing quick reference
-- **type-safety.md** - Type system documentation
-- **system.md** - System rules
-- **user.md** - User preferences
-- **merge-conflict.md** - Merge conflict handling
-
 ---
 
-*Last Updated: January 2026*
+*Last Updated: March 2026*
 *Version: 2.2.0*

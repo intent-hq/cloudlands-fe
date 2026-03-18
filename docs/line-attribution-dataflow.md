@@ -96,7 +96,7 @@ const editEvent = editEventsCapturer.captureEdit(
 e. **Emit note:updated Event** (line 350+):
 
 ```typescript
-this.eventBus.emitEvent('note:updated', {
+this.eventBus.emitDomainEvent('note:updated', {
   workspaceId: existingNote.workspaceId,
   noteId: existingNote.id,
   // ...
@@ -105,46 +105,40 @@ this.eventBus.emitEvent('note:updated', {
 
 ### 5. LineAttributionService Listens for Updates
 
-**Location**: `line-attribution.service.ts` (lines 60-80)
+**Location**: `line-attribution.service.ts`
 
 **Event Listener Setup**:
 
 ```typescript
-this.eventBus.on('note:updated', (data) => {
+this.eventBus.onDomainEvent('note:updated', (data) => {
   const { workspaceId, noteId } = data;
   this.scheduleComputation(workspaceId, noteId);
 });
 ```
 
-**Debounced Computation** (2 second delay):
+**Debounce and Batch Mode**:
 
-- Prevents excessive computation during rapid edits
-- Batches multiple edits into single computation
+- Single-note updates wait `DEBOUNCE_MS = 5000`
+- If `BATCH_THRESHOLD = 2` or more notes are pending, the service switches to batch mode
+- Batch mode waits `BATCH_DEBOUNCE_MS = 8000` and then processes all pending notes together
 
 ### 6. Compute Line Attributions
 
-**Location**: `line-attribution.service.ts` (lines 100-174)
+**Location**: `line-attribution.service.ts`
 
 **Key Steps**:
 
 a. **Load Note and Versions**:
 
 ```typescript
-const note = await this.notesRepository.getNote(workspaceId, noteId);
-const versions = note.versions || [];
+const note = await this.loadNote(workspaceId, noteId);
+if (!note) return;
 ```
 
 b. **Run Attribution Algorithm**:
 
 ```typescript
-const attributions = attributeLines(
-  note.content || '',
-  versions.map((v) => ({
-    content: v.content,
-    timestamp: new Date(v.createdAt).getTime(),
-    author: v.author, // ← Author info from version
-  }))
-);
+const attributions = attributeLines(note.content, note.versions || []);
 ```
 
 c. **Build Attribution Map**:
@@ -158,6 +152,7 @@ for (const attr of attributions) {
         id: attr.version.author.id,
         name: attr.version.author.name,
         type: attr.version.author.type as 'user' | 'agent' | 'system',
+          turnNumber: attr.version.author.turnNumber,
       }
     : undefined;
 
@@ -171,18 +166,13 @@ for (const attr of attributions) {
 d. **Persist to Disk**:
 
 ```typescript
-await this.lineAttributionStore.saveAttributions(workspaceId, noteId, {
-  noteId,
-  workspaceId,
-  computedAt: new Date().toISOString(),
-  attributions: attributionMap,
-});
+await this.persist(workspaceId, noteId, data);
 ```
 
 e. **Emit line-attribution:updated Event** (line 174):
 
 ```typescript
-this.eventBus.emitEvent('line-attribution:updated', {
+this.eventBus.emitDomainEvent('line-attribution:updated', {
   workspaceId,
   noteId,
   attributions: attributionMap,
@@ -191,7 +181,7 @@ this.eventBus.emitEvent('line-attribution:updated', {
 
 ### 7. EventBus Broadcasts to Renderer
 
-**Location**: `event-bus.ts` (lines 208-227)
+**Location**: `unified-event-bus.ts`
 
 **Automatic Broadcasting**:
 
@@ -222,7 +212,9 @@ this.emit = function (event: string | symbol, ...args: any[]): boolean {
 ```typescript
 const allowedChannels = [
   // ... other channels
+  'line-attribution:load',
   'line-attribution:updated', // ← Must be whitelisted!
+  'line-attribution:compute-now',
   // ...
 ];
 
@@ -241,24 +233,18 @@ if (allowedChannels.includes(channel)) {
 
 ```typescript
 $effect(() => {
-  let unsubscribe: (() => void) | null = null;
-
-  listen('line-attribution:updated', (event) => {
-    const payload = (event as any).payload || {};
+  const unsubscribe = listenSync('line-attribution:updated', (event: any) => {
+    const payload = event?.payload || event || {};
     const { workspaceId: eventWorkspaceId, noteId: eventNoteId } = payload;
 
     // Only reload if it's for this workspace and note
     if (eventWorkspaceId === workspaceId && eventNoteId === noteId) {
       loadAttributions(); // ← Reload attribution data
     }
-  }).then((unsub) => {
-    unsubscribe = unsub;
   });
 
   return () => {
-    if (unsubscribe) {
-      unsubscribe();
-    }
+    unsubscribe();
   };
 });
 ```
@@ -269,12 +255,12 @@ $effect(() => {
 
 ```typescript
 async function loadAttributions() {
-  const result = await window.electronAPI.invoke('line-attribution:get-attributions', {
+  const result = await invoke<{ success: boolean; data: any }>('line-attribution:load', {
     workspaceId,
     noteId,
   });
 
-  if (result.ok && result.data) {
+  if (result.success && result.data) {
     const lineAttributions = new Map<number, AttributionInfo>();
 
     for (const [lineNum, attrInfo] of Object.entries(result.data.attributions)) {
@@ -365,6 +351,7 @@ interface LineAuthor {
   id: string; // "user" or agent ID
   name: string; // "User" or agent name
   type: 'user' | 'agent' | 'system';
+  turnNumber?: number;
 }
 ```
 
@@ -384,7 +371,7 @@ interface LineAttributionData {
   noteId: string;
   workspaceId: string;
   computedAt: string;
-  attributions: Record<number, LineAttributionInfo>; // line number → attribution
+  attributions: Record<number, AttributionInfo>; // line number → attribution
 }
 ```
 
@@ -403,14 +390,15 @@ NotesService.updateNote()
   ├─→ ProvenanceContextManager.getCurrentActor() → Get author
   ├─→ Create NoteVersion with author
   ├─→ Capture EditEvent with author
-  └─→ EventBus.emit('note:updated')
+  └─→ eventBus.emitDomainEvent('note:updated')
        ↓
 LineAttributionService (listener)
-  ├─→ Debounce (2 seconds)
+  ├─→ Debounce (`DEBOUNCE_MS = 5000`)
+  ├─→ Batch mode when 2+ notes are pending (`BATCH_DEBOUNCE_MS = 8000`)
   ├─→ attributeLines() algorithm
-  ├─→ Extract author from NoteVersion
-  ├─→ Save to .line-attribution.json
-  └─→ EventBus.emit('line-attribution:updated')
+  ├─→ Extract author + `turnNumber` from NoteVersion
+  ├─→ Persist to `.line-attribution.json` via `persist()` / `fs.writeFile()`
+  └─→ eventBus.emitDomainEvent('line-attribution:updated')
        ↓
 EventBus (automatic broadcast)
   └─→ BrowserWindow.webContents.send()
@@ -443,7 +431,7 @@ Visual Indicators Rendered
 
 4. **Preload Security**: Events must be explicitly whitelisted in the preload script to pass from main process to renderer.
 
-5. **Debounced Computation**: 2-second delay prevents excessive computation during rapid typing, improving performance.
+5. **Debounced Computation**: Single-note updates wait 5 seconds, and multi-note bursts switch to an 8-second batch mode to reduce redundant work.
 
 6. **Real-time Sync**: The event listener ensures the UI stays in sync with backend computations, even if multiple windows are open.
 
@@ -453,7 +441,7 @@ To verify the complete flow:
 
 1. Open a workspace and note in the UI
 2. Make an edit (add/modify text)
-3. Wait 2 seconds for debounced computation
+3. Wait about 5 seconds for single-note debounced computation (or longer if batch mode is active)
 4. Check console logs for:
    - `[LineAttributionService] Line attributions computed and persisted`
    - `[LineAttributionGutter] Received line-attribution:updated event`

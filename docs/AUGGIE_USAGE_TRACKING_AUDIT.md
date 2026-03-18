@@ -1,5 +1,7 @@
 # Auggie Agent Usage Tracking Audit
 
+> ⚠️ This audit was conducted on 2026-03-17. The recommended changes were never implemented. This document is preserved for reference but may not reflect current code.
+
 ## Executive Summary
 
 This document audits the current state of usage tracking for Auggie agents within the WorkSpaces app and provides recommendations for enabling usage benchmarking via BigQuery.

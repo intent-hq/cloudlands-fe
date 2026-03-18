@@ -4,7 +4,7 @@
 
 The `waitFor` saga is a utility function that allows sagas to wait for a specific state value to match an expected condition. It's useful for coordinating async operations that depend on state changes.
 
-**Location**: `clients/common/webviews/src/apps/chat/redux/store/store-utility/sagas/waitFor.ts`
+**Location**: `src/lib/store/slices/store-utility/sagas/waitFor.ts`
 
 ## Purpose
 
@@ -34,7 +34,7 @@ function* waitFor<ARGS extends any[], R>(
 
 ### Return Value
 
-Always returns `true` (see Known Issues below)
+Returns `true` when the expected value is observed. If `timeoutMs` is provided and the timeout wins the race first, it returns `false`.
 
 ## How It Works
 
@@ -128,7 +128,7 @@ function* waitForToolCompletion(toolId: string) {
 - **Use named selectors**: Always create selectors in `*-selectors.ts` files
 - **Keep conditions simple**: Make `isExpectedValue` callbacks straightforward
 - **Add timeouts for safety**: Use `timeoutMs` to prevent infinite waiting
-- **Handle both success and timeout**: Remember that `waitFor` returns `true` in both cases
+- **Check the boolean result**: With `timeoutMs`, `true` means the condition matched and `false` means the timeout fired first
 - **Use for coordination**: Great for ensuring prerequisites before executing logic
 
 ### ❌ DON'T
@@ -136,57 +136,38 @@ function* waitForToolCompletion(toolId: string) {
 - **Don't use inline selectors**: Never pass inline selector functions
 - **Don't perform side effects**: Keep `isExpectedValue` pure (no API calls, no mutations)
 - **Don't wait indefinitely**: Always consider adding a timeout for production code
-- **Don't assume success**: Check state after `waitFor` returns if timeout was used
+- **Don't ignore the return value**: If you pass `timeoutMs`, handle the `false` timeout case explicitly
 - **Don't use for polling**: Use channels or other patterns for continuous monitoring
 
 ## Real-World Examples
 
-### Example 1: Wait for Summarization Before Sending
+### Example 1: Timeout Handling in the Utility
 
-<augment_code_snippet path="clients/common/webviews/src/apps/chat/redux/store/conversations/saga/send-exchange.ts" mode="EXCERPT">
+<augment_code_snippet path="src/lib/store/slices/store-utility/sagas/waitFor.ts" mode="EXCERPT">
 ````typescript
-// Wait until summarization is done for this conversation
-yield* waitFor(selectIsSummarizing, [conversationId], (isSummarizing) => isSummarizing === false);
+const { value } = yield* race({
+  value: callEffect,
+  timeout: delay(timeoutMs),
+});
+return value || false;
 ````
 </augment_code_snippet>
 
-### Example 2: Delayed Action After Status Change
+### Example 2: Selector Arguments in Tests
 
-<augment_code_snippet path="clients/common/webviews/src/apps/chat/redux/store/conversation-history/sagas/history-summarization.ts" mode="EXCERPT">
+<augment_code_snippet path="src/lib/store/slices/store-utility/sagas/waitFor.test.ts" mode="EXCERPT">
 ````typescript
-const addSummarizationNodeSagaDelayed = function* () {
-  const maybeSummarizeAfterMs = params.cacheTTLMs - responseDurationMs - params.bufferTimeBeforeCacheExpirationMs;
-  yield* delay(maybeSummarizeAfterMs);
-  yield* waitFor(selectConversationTurnStatus, [conversationId], (status) => status === AgentExchangeStatus.notRunning);
-  yield* put(addSummarizationNode(conversationId));
-};
+await expectSaga(waitFor, selector, ["test-id"], isExpectedValue)
+  .provide([[matchers.getContext("readableStoreState"), storeState]])
+  .withReducer(createTestReducer(store.getState()))
+  .returns(true)
+  .silentRun(100);
 ````
 </augment_code_snippet>
 
 ## Known Issues and Limitations
 
-### ⚠️ Issue 1: Always Returns True
-
-**Problem**: `waitFor` always returns `true`, even when it times out. This makes it impossible to distinguish between successful match and timeout.
-
-**Impact**: Callers cannot determine if the expected condition was met or if the timeout occurred.
-
-**Workaround**: After `waitFor` returns, manually check the state again:
-
-```typescript
-yield* waitFor(selector, args, isExpectedValue, timeoutMs);
-
-// Check if condition was actually met
-const currentValue = yield* selector.effect(...args);
-if (!isExpectedValue(currentValue, null)) {
-  // Handle timeout case
-  console.warn("waitFor timed out");
-}
-```
-
-**Recommendation**: Consider returning the race result to distinguish timeout from success.
-
-### ⚠️ Issue 2: No Cancellation Support
+### ⚠️ Issue 1: No Cancellation Support
 
 **Problem**: Once `waitFor` starts, it cannot be cancelled externally (except by cancelling the parent saga).
 
@@ -194,15 +175,17 @@ if (!isExpectedValue(currentValue, null)) {
 
 **Workaround**: Use shorter timeouts or implement custom cancellation logic in parent saga.
 
-### ⚠️ Issue 3: Channel Not Closed on Error
+### ⚠️ Issue 2: Selector Errors Propagate
 
-**Problem**: If `selector.effect()` throws an error before the channel is created, the error propagates without cleanup issues. However, if the selector throws during channel monitoring, the channel is properly closed due to the `finally` block.
+**Problem**: If `selector.effect()` throws before the channel is created, the error propagates immediately to the caller.
 
-**Impact**: Minimal - the `finally` block ensures cleanup in most cases.
+**Impact**: Callers need to handle selector errors explicitly when using `waitFor`.
+
+**Workaround**: Wrap the `waitFor` call in a parent `try/catch` when working with selectors that may throw.
 
 ## Testing
 
-See `waitFor.test.ts` for comprehensive test examples covering:
+See `src/lib/store/slices/store-utility/sagas/waitFor.test.ts` for comprehensive test examples covering:
 - Immediate value matches
 - Waiting for value changes
 - Timeout behavior
@@ -212,7 +195,7 @@ See `waitFor.test.ts` for comprehensive test examples covering:
 
 ## Related Utilities
 
-- **`lockReactiveSelectors`**: Temporarily prevents selector updates during batch operations
+- **`lockUpdates` / `unlockUpdates`**: Actions from `src/lib/store/slices/store-utility/store-utility-slice.ts` that pause and resume selector updates
 - **`createSelector`**: Creates selectors with `.effect()` and `.select()` methods
 - **Selector channel effects**: `takeLatestFromSelector`, `takeEveryFromSelector`, `takeLeadingFromSelector` for watching selector changes
 - **`createChannelFromSelector`**: Creates event channels from selectors for complex patterns
@@ -220,4 +203,4 @@ See `waitFor.test.ts` for comprehensive test examples covering:
 
 ---
 
-**Last Updated**: 2026-02-03
+**Last Updated**: 2026-03-17

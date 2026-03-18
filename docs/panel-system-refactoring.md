@@ -8,14 +8,14 @@ This document describes the panel system refactoring work completed to improve c
 
 ### 1. Tab Type Registry System
 
-**Problem**: `PanelContentRenderer.svelte` was a 1800+ line file with a massive if/else chain handling 14+ tab types. This made it hard to maintain, test, and extend.
+**Problem**: `PanelContentRenderer.svelte` was a 1800+ line file with a massive if/else chain handling the app's 14 registered tab types. This made it hard to maintain, test, and extend.
 
 **Solution**: Created a registry-based architecture where each tab type is a standalone component.
 
 **Files Created**:
 - `src/features/layout/tab-types/registry.ts` - Registry infrastructure
 - `src/features/layout/tab-types/register-all.ts` - Registers all tab types at app startup
-- 14 tab type components in `src/features/layout/tab-types/`:
+- 14 registered tab type components in `src/features/layout/tab-types/`:
   - `AgentTabType.svelte` - Chat panel with agent conversations
   - `NoteTabType.svelte` - Note editor with version history
   - `FileTabType.svelte` - Code editor with auto-save
@@ -34,11 +34,14 @@ This document describes the panel system refactoring work completed to improve c
 **How It Works**:
 ```typescript
 // Each tab type is registered with its component, icon, and metadata
-tabTypeRegistry.register('agent', {
+tabTypeRegistry.register({
+  type: 'agent',
   component: AgentTabType,
-  icon: faRobot,
-  getTitle: (tab) => tab.title || 'Agent',
-  getIcon: (tab) => faRobot,
+  icon: faComment,
+  defaultTitle: 'Agent',
+  categoryLabel: 'Agents',
+  sidebarTabId: 'agents',
+  renameable: true,
 });
 
 // PanelContentRenderer now just looks up and renders
@@ -110,11 +113,23 @@ All tab type components implement this interface:
 interface TabTypeComponentProps {
   tab: PanelTab;
   workspaceId: string;
-  isActive?: boolean;
-  isPanelFocused?: boolean;
+  isActive: boolean;
+  isPanelFocused: boolean;
   onFocus?: () => void;
 }
 ```
+
+### Registry metadata
+
+Each tab type definition now includes:
+
+- `type` - unique tab type key
+- `component` - Svelte component for rendering
+- `icon` - icon shown in tab bars and headers
+- `defaultTitle` - title used when creating new tabs of this type
+- `categoryLabel` - grouping label used by the panel system
+- `sidebarTabId?` - optional sidebar target for “Reveal in Sidebar”
+- `renameable?` - whether users can rename tabs of this type
 
 ### Header Actions
 
@@ -151,6 +166,5 @@ After these changes, verify:
 
 ## Future Work
 
-1. **Clean up PanelContentRenderer** - Remove remaining unused state/effects that were for legacy rendering
-2. **Pop-out panels** - Use detachedPanels infrastructure to enable floating windows
-3. **TweetDeck layouts** - Multi-column layouts with independent scrolling
+1. **Pop-out panels** - Use detachedPanels infrastructure to enable floating windows
+2. **TweetDeck layouts** - Multi-column layouts with independent scrolling

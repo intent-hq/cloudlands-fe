@@ -29,7 +29,7 @@
 const agent = await orchestrator.createAgent(workspace, config);
 
 // ✅ CORRECT - Guarantees rules
-import { agentFactory } from '@/features/agent/agent-factory';
+import { agentFactory } from '$features/agent/services/agent-factory';
 const agent = await agentFactory.createAgent(workspace, config);
 ```
 
@@ -59,12 +59,13 @@ try {
 
 #### Problem: Messages appear all at once instead of streaming
 
-**Cause**: BatchProcessor queuing without flush
-**Solution**: In development, messages are batched for efficiency
+**Cause**: The UI is not rendering incremental chunks, or another handler is delaying updates
+**Solution**: `streamManager` processes chunks immediately. Inspect the streaming callbacks and emitted events instead of waiting for a batch flush.
 
 ```typescript
-// Force immediate processing (for debugging)
-await streamManager.flushBatch();
+streamManager.on('stream:chunk', (event) => {
+  console.log('Chunk received:', event.chunk.text);
+});
 ```
 
 #### Problem: Streaming stops unexpectedly
@@ -87,16 +88,12 @@ console.log('Memory usage:', metrics.memoryUsage);
 
 #### Problem: Tests hanging indefinitely
 
-**Cause**: Async batch processing not completing
-**Solution**:
+**Cause**: The test is waiting on the wrong async boundary
+**Solution**: Direct streaming does not have a batch-flush step. Await the real completion point instead, such as stream completion or the specific event your test expects.
 
 ```typescript
-// After any streaming operation in tests
-await streamManager.flushBatch();
-
-// Or use test utilities
-import { waitForBatchProcessing } from '@/test-utils';
-await waitForBatchProcessing();
+const result = await streamManager.completeStream(streamId);
+expect(result.success).toBe(true);
 ```
 
 #### Problem: "Cannot find module" errors in tests
@@ -134,10 +131,10 @@ const agentId = result.agentId; // Already branded
 #### Problem: Missing error codes
 
 **Symptom**: "Property 'X' does not exist on type 'AgentErrorCode'"
-**Solution**: Add to error enum:
+**Solution**: Add to the relevant error enum:
 
 ```typescript
-// src/shared/types/errors.ts
+// src/features/agent/errors/agent-errors.ts
 export enum AgentErrorCode {
   // ... existing codes
   YOUR_NEW_ERROR = 'YOUR_NEW_ERROR',
@@ -210,7 +207,7 @@ ipcMain.handle('agent:create', async (event, data) => {
 # Clean and rebuild
 rm -rf node_modules dist
 pnpm install
-npm run build
+pnpm run build
 ```
 
 #### Problem: "Cannot find module electron" in production
@@ -275,7 +272,7 @@ import { messageManager } from '$features/agent/managers';
 ### Problem: State not reactive
 
 **Symptom**: UI not updating
-**Solution**: Migrate to Svelte 5 runes ($state, $derived)
+**Solution**: Use Svelte 5 runes for component-local state, or Redux selectors/actions for shared application state (see `docs/STATE_MANAGEMENT.md`).
 
 ### Problem: Manager singleton issues
 
@@ -286,19 +283,19 @@ import { messageManager } from '$features/agent/managers';
 
 ```bash
 # Check TypeScript errors
-npm run type-check
+pnpm run type-check
 
 # Run tests
-npm run test
+pnpm run test
 
 # Check for memory leaks
-npm run test:memory
+pnpm run test:memory
 
 # Monitor performance
-npm run dev:debug
+pnpm run dev:debug
 
 # Clean and rebuild
-npm run clean && npm run build
+pnpm run clean && pnpm run build
 ```
 
 ## Error Code Reference
@@ -313,11 +310,8 @@ npm run clean && npm run build
 ## Getting Help
 
 1. Check this troubleshooting guide
-2. Review [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md) for migration issues
-3. See [AGENT_API_REFERENCE.md](./AGENT_API_REFERENCE.md) for API details
-4. Check [AGENT_SYSTEM_EVERGREEN_ARCHITECTURE.md](./AGENT_SYSTEM_EVERGREEN_ARCHITECTURE.md)
-5. Search existing issues in the repository
-6. Ask in #agent-system channel with:
+2. Search existing issues in the repository
+3. Ask in #agent-system channel with:
    - Error messages and codes
    - Steps to reproduce
    - System information

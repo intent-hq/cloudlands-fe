@@ -1,291 +1,239 @@
 # Developer Guide
 
+This guide reflects the current Intent repository layout and APIs as of package version `0.2.29`.
+
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18+ and pnpm
+- Node.js 18+
+- `pnpm`
 - Git
-- Auggie CLI (for agent functionality)
+- Auggie CLI for the default ACP provider workflow
 
-### Installation
+### Install and Run
 
 ```bash
-# Install dependencies
 pnpm install
 
-# Start development server
-pnpm dev:cdp
-
-# The app will be available at http://localhost:5177
+# Start the Electron app with the Chrome DevTools Protocol flow enabled
+pnpm run dev:cdp
 ```
 
-### Development Commands
+### Common Commands
 
 ```bash
-pnpm dev:cdp      # Start with Chrome DevTools Protocol
-pnpm dev          # Start normal development server
-pnpm build        # Build for production
-pnpm preview      # Preview production build
-npm run check     # Type checking (should show 0 errors)
-pnpm lint         # Run ESLint
-pnpm format       # Format with Prettier
-
-# Testing
-npx vitest run    # Run all tests (2500+ tests)
-npx vitest        # Run tests in watch mode
+pnpm run dev           # Standard development launcher
+pnpm run dev:cdp       # Development launcher with CDP support
+pnpm run build         # Production build
+pnpm run check         # Svelte + TypeScript checks
+pnpm run lint          # ESLint
+pnpm run format        # Prettier write pass
+pnpm run test:unit     # Vitest suite
+pnpm run test:playwright
 ```
 
 ## Project Structure
 
-```
-/
+The codebase is split across renderer features, Electron process code, shared types/utilities, and operational scripts.
+
+```text
+.
+├── docs/                     # Product and engineering documentation
+├── scripts/                  # Build, release, migration, and tooling scripts
 ├── src/
-│   ├── features/         # Feature modules
-│   │   ├── agent/       # Agent management
-│   │   ├── workspace/   # Workspace logic
-│   │   ├── git/         # Git integration
-│   │   ├── events/      # Event system
-│   │   └── ...
-│   ├── lib/
-│   │   ├── components/  # UI components
-│   │   │   ├── ui/     # Base UI components
-│   │   │   └── ...     # Feature components
-│   │   └── utils/      # Utility functions
-│   ├── routes/         # SvelteKit routes
-│   │   ├── +layout.svelte
-│   │   ├── +page.svelte
-│   │   └── workspace/
-│   │       └── [id]/
-│   └── shared/         # Shared types & constants
-├── src/main/          # Electron main process
-│   ├── index.ts       # Entry point — app lifecycle, IPC registration, event wiring
-│   ├── state.ts       # Shared mutable state (mainWindow getter/setter)
-│   ├── window.ts      # Window creation, session persistence, window helpers
-│   └── utils/         # Pure utility functions
-└── docs/              # Documentation
+│   ├── features/             # Feature-first renderer modules
+│   │   ├── agent/            # Agent lifecycle, orchestration, background tasks
+│   │   ├── browser/          # Embedded browser tabs and browser tooling
+│   │   ├── cdp/              # Chrome DevTools Protocol integration
+│   │   ├── layout/           # Panel layout system and tab routing
+│   │   ├── rules/            # User rules and rules IPC services
+│   │   └── ...               # Many other product features
+│   ├── lib/                  # Shared renderer utilities, services, stores, components
+│   ├── main/                 # Electron main-process entry points and services
+│   ├── preload/              # Electron preload bridge
+│   ├── routes/               # SvelteKit routes and test pages
+│   ├── shared/               # Cross-process config, types, constants, IPC contracts
+│   └── test/                 # Test helpers, factories, and mocks
+└── package.json              # Scripts, dependencies, and version metadata
 ```
 
-## Key Concepts
+When updating docs or adding features, verify which side of the app owns the behavior:
 
-### 1. Agent System Architecture (v1.0.0)
+- `src/features/` for renderer-facing product logic
+- `src/main/` for Electron and system integration
+- `src/shared/` for contracts used by both sides
+- `scripts/` for operational workflows such as release packaging and uploads
 
-The agent system uses a consolidated backend architecture:
+## Agent Creation and Integration
 
-```typescript
-// ALWAYS use agentFactory for creation (guarantees user rules)
-import { agentFactory } from '@/features/agent/agent-factory';
-const agent = await agentFactory.createAgent(workspace, config);
-
-// ConsolidatedBackendService handles all operations
-import { consolidatedBackend } from '@/features/agent/services/consolidated-backend.service';
-await consolidatedBackend.sendMessage(agentId, content);
-```
-
-**Critical Rule**: NEVER create agents directly via orchestrator. Always use `agentFactory.createAgent()`.
-
-### 2. Workspace Management
-
-Workspaces are the core organizational unit:
+Use `agentFactory.createAgent(...)` for agent creation. The factory is the supported public entry point and normalizes agent config before backend creation.
 
 ```typescript
-interface Workspace {
-  id: string;
-  name: string;
-  repositoryPath: string;
-  branch: string;
-  status: WorkspaceStatus;
-  // ... other fields
-}
-```
+import { agentFactory } from '$features/agent/services/agent-factory';
 
-### 3. State Management with Svelte 5
-
-Using the new runes system for agent state:
-
-```typescript
-// Agent state management (agent-state.svelte.ts)
-class AgentState {
-  sessions = $state<Map<AgentId, AgentSession>>(new Map());
-  streamingSessions = $state<Map<AgentId, StreamingState>>(new Map());
-
-  // Derived values
-  activeAgents = $derived(Array.from(this.sessions.values()));
-
-  // Effects for auto-save
-  $effect(() => {
-    if (this.isDirty) {
-      this.saveToStorage();
-    }
-  });
-}
-```
-
-### 4. IPC Communication
-
-Communication between renderer and main process uses typed channels:
-
-```typescript
-// Renderer side (via IPC client for agents)
-import { ipcClient } from '@/features/agent/ipc-client';
-const agent = await ipcClient.createAgent(workspace, config);
-
-// Standard IPC for other operations
-import { invoke } from '$lib/electron-bridge';
-const result = await invoke('workspace:create', {
-  name: 'My Workspace',
-  path: '/path/to/repo',
-});
-
-// Main process handler (consolidated backend for agents)
-ipcMain.handle('agent:create', async (event, data) => {
-  return await consolidatedBackend.createAgent(data.workspace, data.config);
-});
-
-// Main process handler (standard operations)
-ipcMain.handle('workspace:create', async (event, data) => {
-  // Handle workspace creation
-  return { success: true, workspace };
+const result = await agentFactory.createAgent(workspace, {
+  name: 'Review Changes',
+  agentType: 'task-loop',
+  model: 'haiku4.5',
+  initialMessage: 'Review the current diff and summarize the risks.',
+  source: 'workspace-initializer',
 });
 ```
 
-### 4. Agent Integration
+Important notes:
 
-Agents use the ACP (Agent Communication Protocol) with auggie:
+- Pass `agentType` so the backend can build the correct instructions.
+- `CreateAgentOptions.systemPrompt` is deprecated; do not use it for new code.
+- Valid `AgentTypeId` values include `chat`, `task-loop`, `workspace-agent`, `code-review`, `commit-message`, and `pr-description`.
 
-```typescript
-// Create an agent with specific model
-const agent = await agentService.createAgent(workspace, {
-  name: 'My Agent',
-  model: 'haiku4.5', // Specify the model (e.g., haiku4.5, sonnet4.5, opus4.1)
-  instruction: 'You are a helpful coding assistant',
-  systemPrompt: 'Focus on clean, maintainable code',
-  initialMessage: 'Help me refactor this function', // Optional initial message
-});
+## Panel Layout System
 
-// Send a message
-await agentService.sendMessage(agent.id, 'Hello, agent!', workspace);
-```
+The workspace UI is driven by `PanelLayoutManager` in `src/features/layout/panel-layout-manager.svelte.ts`.
 
-**Available Models:**
+Core ideas:
 
-- `haiku4.5` - Claude Haiku 4.5 (fast, efficient)
-- `sonnet4.5` - Claude Sonnet 4.5 (balanced)
-- `opus4.1` - Claude Opus 4.1 (most capable)
-- `gemini25-pro` - Gemini 2.5 Pro
-- And more - check `auggie --help` for full list
+- Each workspace gets its own cached layout manager instance.
+- Layouts are trees of panel nodes and split nodes.
+- Split nodes can be horizontal or vertical.
+- Each panel can host multiple tabs, with one active tab at a time.
+- State includes focus tracking, pending focus, recently closed tabs, layout history, and focus history.
+- Layout state is persisted so reopened workspaces restore their previous arrangement.
 
-## Best Practices
+The main data model centers on:
 
-### 1. Memory Management
+- `WorkspacePanelLayout` for the full layout state
+- `PanelState` for the tabs inside one panel
+- `PanelTab` for the content metadata a tab needs to render
 
-- Always dispose of resources in `onDestroy` or cleanup functions
-- Use reference counting for shared state
-- Implement cleanup intervals for long-running processes
+`PanelTab` carries type-specific identifiers such as `noteId`, `filePath`, `agentId`, `terminalId`, `diffPath`, and `browserUrl`, which let the UI route a tab to the correct feature component.
 
-### 2. Performance
+## Tab Types and Content Routing
 
-- Use virtual scrolling for large lists
-- Debounce user input and search operations
-- Implement lazy loading for heavy components
-- Use `untrack()` to prevent effect loops
+The tab system is split into two layers:
 
-### 3. Error Handling
+1. `PanelTabType` in the layout manager defines the allowed tab kinds.
+2. `tabTypeRegistry` in `src/features/layout/tab-types/registry.ts` maps a tab type to its renderer component and UI metadata.
 
-- Always wrap async operations in try-catch
-- Use the Logger class instead of console.log
-- Provide user-friendly error messages
-- Implement retry logic for network operations
+Each registered tab type provides:
 
-### 4. Code Style
+- `type`
+- `component`
+- `icon`
+- `defaultTitle`
+- `categoryLabel`
+- optional `sidebarTabId`
+- optional `renameable`
 
-- Use TypeScript strict mode
-- Follow the existing component structure
-- Keep components focused and single-purpose
-- Extract complex logic into services or utilities
+`registerAllTabTypes()` currently registers the main built-in tabs used by the workspace UI:
 
-## Testing
+- `browser`
+- `terminal`
+- `code-review`
+- `agent-overview`
+- `agent`
+- `note`
+- `file`
+- `diff`
+- `changes`
+- `local-changes`
+- `chat-changes`
+- `activity-changes`
+- `settings`
+- `overview`
 
-The app has comprehensive automated testing with 2400+ tests:
+The broader `PanelTabType` union also includes workflow-oriented types such as `activity`, which are part of the routing model even when a specific registry entry is managed elsewhere or added later.
+
+## Background Agents
+
+Background tasks such as commit-message generation, PR description generation, and code review run through `BackgroundAgentExecutor`.
+
+The executor exposes reactive state for:
+
+- `status`
+- `messages`
+- `result`
+- `error`
+- `progress`
+- `agentId`
+
+Its configuration supports:
+
+- `type`
+- `resultTag` or `resultPattern`
+- `timeout`
+- callbacks like `onResult`, `onError`, `onStatusChange`, and `onMessage`
+
+Convenience factories are provided for the common flows:
+
+- `createCommitMessageExecutor()`
+- `createPRDescriptionExecutor()`
+- `createCodeReviewExecutor()`
+- `createWalkthroughExecutor()`
+
+Background model selection is provider-aware. `backgroundAgentSettingsStore` keeps:
+
+- a default background-agent model
+- per-type overrides for `commit`, `pr`, `review`, and `fast`
+
+That allows the app to preserve different background-agent model preferences for different ACP providers.
+
+## Provider System
+
+ACP provider metadata lives in `src/shared/config/provider-config.ts`.
+
+`ACP_PROVIDERS` currently includes:
+
+- `auggie` (default)
+- `claude-code`
+- `codex`
+- `cortex`
+- `opencode`
+
+Each provider config defines the provider identity plus its CLI command, default arguments, model-flag behavior, auth support, MCP/rules-file support, and related provider-specific capabilities.
+
+`activeProviderStore` in `src/lib/stores/active-provider.store.svelte.ts` manages which single provider is active at runtime.
+Per `docs/STATE_MANAGEMENT.md`, this `.store.svelte.ts` module is a transitional adapter; keep shared or durable app state in Redux under `src/lib/store/` when extending this area.
+
+Key behaviors:
+
+- loads the active provider from `localStorage`
+- falls back to `getDefaultProviderId()` when needed
+- validates that stored IDs still exist in `ACP_PROVIDERS`
+- persists provider changes back to `localStorage`
+- switches provider-specific background-agent and specialist-model overrides when the active provider changes
+
+When you add or update provider-sensitive UI, make sure it reads from the active-provider store rather than assuming Auggie is always selected.
+
+## Testing and Validation
+
+Use `pnpm` for all documented test commands.
 
 ```bash
-# Run all tests (completes in ~40 seconds)
-npm run test:unit
-
-# Run tests in watch mode (for development)
-npm run test:unit:watch
-
-# Run specific test file
-npm run test:unit -- src/features/agent/__tests__/agent.test.ts
-
-# Run tests matching a pattern
-npm run test:unit -- --grep "agent creation"
+pnpm run test:unit
+pnpm run test:unit -- src/features/agent/__tests__/agent.test.ts
+pnpm run test:unit:watch
+pnpm run check
+pnpm run lint
 ```
 
-### Test Structure
+Tests and test helpers are spread across several areas of the repo:
 
-Tests are organized alongside their source files in `__tests__` directories:
+- feature-level `__tests__` folders under `src/features/`
+- Electron main-process tests under `src/main/__tests__/`
+- shared tests under `src/shared/__tests__/`
+- reusable mocks/factories under `src/test/`
 
-```
-src/features/agent/
-├── agent.service.ts
-├── __tests__/
-│   ├── agent.test.ts
-│   ├── session-resume-integration.test.ts
-│   └── ...
-```
+## Debugging Notes
 
-### Writing Tests
+- `pnpm run dev:cdp` is the best default when working on browser/CDP features.
+- Renderer-only issues usually live in `src/features/`, `src/lib/`, or `src/routes/`.
+- IPC and desktop integration issues usually involve `src/main/`, `src/preload/`, and `src/shared/ipc` contracts.
+- Release or packaging issues usually trace back to `scripts/` and `package.json` script wiring.
 
-Use Vitest with the following patterns:
+## Contribution Tips
 
-```typescript
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-describe('MyFeature', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('should do something', () => {
-    expect(result).toBe(expected);
-  });
-});
-```
-
-### Manual Testing Checklist
-
-For features not covered by automated tests:
-
-- [ ] UI responsiveness and accessibility
-- [ ] Memory leaks and performance
-- [ ] Cross-platform behavior
-
-## Debugging
-
-### Chrome DevTools
-
-The app runs with Chrome DevTools Protocol enabled:
-
-- Open DevTools: Cmd+Option+I (Mac) / Ctrl+Shift+I (Windows/Linux)
-- Use the Console, Network, and Performance tabs
-- Set breakpoints in source files
-
-### Logging
-
-Use the Logger class for structured logging:
-
-```typescript
-import { Logger } from '$shared/logger';
-
-const logger = new Logger('MyComponent');
-logger.info('Operation started', { data });
-logger.error('Operation failed', error);
-```
-
-## Contributing
-
-1. Create a feature branch from `main`
-2. Make your changes following the code style
-3. Test thoroughly
-4. Submit a pull request with clear description
+1. Verify the owning feature area before editing code.
+2. Use the existing store/service patterns instead of creating parallel abstractions.
+3. Prefer extending typed contracts in `src/shared/` when behavior spans renderer and main.
+4. Run the smallest relevant validation command before sending a change for review.

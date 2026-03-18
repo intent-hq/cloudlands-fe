@@ -1,8 +1,8 @@
-# Comment Type Safety Migration Plan
+# Comment Type Safety Migration Status
 
 ## Problem
 
-Currently, comment types use a "bag of optional properties" approach where all type-specific fields (like `agentId` for session comments, `suggestionDiff` for suggestions) are optional on the base `CommentV2` type. This led to bugs where:
+Historically, comment types used a "bag of optional properties" approach where all type-specific fields (like `agentId` for session comments, `suggestionDiff` for suggestions) were optional on the base `CommentV2` type. This led to bugs where:
 
 1. `agentId` was accidentally omitted during backend-to-store conversion
 2. TypeScript didn't catch the error because the field is optional
@@ -65,31 +65,30 @@ const v2Comment = convertBackendCommentToV2(backendComment, anchor, noteId);
 - Added helper functions for type-safe comment creation
 - Added conversion function with runtime validation
 
-### Phase 2: Update Core Systems (To Do)
+### Phase 2: Update Core Systems (✅ Done)
 1. **Update `comments-v2.store.svelte.ts`**
-   - Import `CommentV2` from `comment-types-v2.ts` instead of local definition
-   - Update `addComment()` to use type-safe helpers
-   - Update `loadComments()` to use conversion helper
+   - `CommentV2` is imported from `comment-types-v2.ts` and re-exported for compatibility
+   - Store state now uses the shared `CommentV2` type instead of a local definition
 
 2. **Update `comment-manager-v2.ts`**
-   - Use `convertBackendCommentToV2()` helper in `loadComments()`
-   - This will catch missing fields at runtime with clear error messages
+   - `loadComments()` uses `convertBackendCommentToV2()`
+   - Missing required fields are validated during backend-to-store conversion
 
 3. **Update `notes.service.ts`**
-   - Keep `NoteComment` interface for backend storage (it's fine as-is)
-   - Add conversion helpers between `NoteComment` and `CommentV2`
+   - Backend storage still keeps its own `NoteComment` shape
+   - Core renderer-side code now converts into shared `CommentV2` types at the boundary
 
-### Phase 3: Update UI Components (To Do)
+### Phase 3: Update UI Components (🟡 Partially Done)
 1. **Update `Comment.svelte`**
-   - Use type guards instead of optional chaining
-   - Example: `if (isSessionComment(comment))` instead of `if (comment.type === "session" && comment.agentId)`
+   - Still uses a local `CommentLike` UI type plus `isSessionCommentWithAgent()` runtime checks
+   - Shared type guards exist, but this component has not fully switched to them yet
 
 2. **Update `CommentsSidebar.svelte`**
-   - Use discriminated union type for better type inference
+   - Uses `CommentV2` from the shared comment store for better type inference
 
 3. **Update `comment-types.ts` (CommentLike)**
-   - Consider creating a discriminated union version for UI components too
-   - Or keep it simple if UI doesn't need type-specific logic
+   - Local `CommentLike`-style UI types still exist in some components
+   - Finishing this phase means wiring shared comment unions and type guards through the remaining UI
 
 ### Phase 4: Add Tests (To Do)
 1. Test conversion function with missing required fields
@@ -114,10 +113,8 @@ If full migration is too risky, we can:
 
 ## Recommendation
 
-**Start with Phase 2, Step 2** - Update `comment-manager-v2.ts` to use the conversion helper. This gives us:
-- ✅ Runtime validation catches missing fields immediately
-- ✅ Clear error messages for debugging
-- ✅ No breaking changes to existing code
-- ✅ Can migrate other parts gradually
-
-Then gradually adopt the discriminated union types in new code and refactor existing code as needed.
+**Next focus: finish Phase 3** by replacing local `CommentLike` UI types with shared `CommentV2` unions and shared type guards. This gives us:
+- ✅ Consistent type narrowing across the comment UI
+- ✅ Fewer duplicated runtime guards
+- ✅ Shared behavior between the store, manager, and UI layers
+- ✅ A cleaner path to the remaining test work in Phase 4

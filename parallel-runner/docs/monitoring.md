@@ -41,7 +41,6 @@ Start the monitor independently to view past or ongoing runs:
 ### Header Section
 - **Title**: The wave title from configuration
 - **Timer**: Live elapsed time counter
-- **Status**: Current execution status
 
 ### Metrics Panel
 Real-time metrics showing:
@@ -65,7 +64,6 @@ Detailed view of all packages:
 - Package name and ID
 - Current status with color coding
 - Wave assignment
-- Execution duration
 
 ## Status Colors
 
@@ -77,28 +75,28 @@ Detailed view of all packages:
 ## WebSocket Connection
 
 The dashboard uses WebSocket for real-time updates:
-- Automatic reconnection on disconnect
+- Initial `state` snapshot on connect
+- Incremental `package_update` and `wave_update` messages
 - Live updates without page refresh
-- Minimal bandwidth usage
+- A 30-second ping/pong keepalive between the browser and server
 
 ## Keyboard Shortcuts
 
-- `R`: Refresh dashboard
-- `C`: Clear completed packages from view
-- `E`: Export current metrics
-- `F`: Toggle fullscreen
+There are currently **no keyboard shortcuts implemented** in `parallel-runner/lib/monitor/monitor.js`. The monitor UI is mouse/browser-driven.
 
 ## Export Options
 
-Export metrics for analysis:
+Export metrics for analysis from the standalone `./monitor` CLI:
 
 ```bash
 # Export to JSON
 ./monitor --export metrics.json
 
-# Continuous export (updates every 2 seconds)
+# Continuous export (writes every 2 seconds by default)
 ./monitor --export metrics.json --refresh 2
 ```
+
+`--export` writes `monitor.getMetrics()` to the specified file as pretty-printed JSON on a repeating interval. `--refresh` controls that export interval and defaults to `2` seconds. It does **not** change how often the dashboard UI redraws, which is driven by WebSocket updates plus the local 1-second timer.
 
 ## Customization
 
@@ -113,10 +111,10 @@ export MONITOR_PORT=8080
 
 ### Refresh Rate
 
-Adjust the refresh interval:
+Adjust the export polling interval used with `--export`:
 
 ```bash
-./monitor --refresh 1  # Update every second
+./monitor --export metrics.json --refresh 1  # Write metrics every second
 ```
 
 ## Troubleshooting
@@ -169,8 +167,8 @@ Run multiple monitors for different runs:
 
 To access the monitor from another machine:
 
-1. Use `0.0.0.0` binding (requires code modification)
-2. Set up SSH tunnel:
+1. Make the monitor port reachable from the remote machine.
+2. Optionally set up an SSH tunnel:
    ```bash
    ssh -L 3456:localhost:3456 user@remote-host
    ```

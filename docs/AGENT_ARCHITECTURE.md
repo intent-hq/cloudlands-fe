@@ -57,7 +57,7 @@ The agent system provides AI-powered assistance within workspaces. It handles ag
 │                                    │                                    │
 │  ┌─────────────────────────────────┼───────────────────────────────┐   │
 │  │                  InstructionService                              │   │
-│  │  • 6-layer system prompt building                                │   │
+│  │  • 9-layer system prompt building                                │   │
 │  │  • 3-tier rule fallback                                          │   │
 │  │  • Mode behavior prompts                                         │   │
 │  └─────────────────────────────────┬───────────────────────────────┘   │
@@ -146,21 +146,29 @@ private interruptedAgents = new Set<string>();
 
 **Location**: `src/features/agent/main/instruction-service.ts`
 
-Builds system prompts using a layered architecture (in order):
+Builds system prompts using a **9-layer** architecture. In the default shared-prefix mode, the order is:
 
-1. **Base System Prompt** - Core identity (bundled + user customizations)
-2. **Agent Behavior Instructions** - Specialist role (placed early for primacy)
-3. **Specialization Rules** - Common → Workspace → Agent-specific instructions
-4. **Specialist Configuration** - Available specialists and their models
-5. **User Rules** - CLAUDE.md, AGENTS.md, .augment/guidelines.md, .augment/rules/
-6. **Workspace Context** - Open panels + linked references
-7. **Runtime Context** - contextReferences
-8. **Mandatory Actions Footer** - Required behaviors for agents with critical first steps
+1. **Base System Prompt** - Core identity and tool guidance for all interactive agents
+2. **Specialization Rules** - `common` → `workspace` → agent-specific instructions
+3. **User Rules** - `CLAUDE.md`, `AGENTS.md`, `.augment/guidelines.md`, `.augment/rules/`
+4. **Skills Catalog** - Skills discovered from `.agents/skills`, `.augment/skills`, and `~/.claude/skills`
+5. **Agent Behavior Instructions** - Specialist behavior prompt supplied at launch time
+6. **Parent-Only Orchestration Layers** - Team context, global knobs, specialists, and branch naming
+7. **Workspace Context** - Open panels + linked references
+8. **Runtime Context** - `contextReferences`
+9. **Mandatory Actions Footer** - End-of-prompt role reminder / required footer actions
+
+When `sharedPromptPrefix` is disabled, the behavior layer moves to the front of the prompt. The mandatory footer remains at the end in both modes, and sub-agents skip the parent-only orchestration layers plus workspace context.
 
 **3-Tier Rule Fallback** (for specialization rules):
 1. User customizations (EndUserRulesManager via electron-store)
 2. Workspace files (.augment/agent-rules/{type}.md)
 3. Bundled defaults (TypeScript constants in instructions/ directory)
+
+**Prompt assembly inputs**:
+
+- Public `buildSystemPrompt()` config fields: `agentType`, `workspacePath`, `contextReferences`, `behaviorPrompt`, `specialistName`, `roleReminder`, `workspaceContext`, `workspaceTitle`, `isInitialAgent`, `isSubAgent`
+- Internal ordering/caching inputs: `sharedPromptPrefix` (from app settings, via `isSharedPromptPrefixEnabled()`) and `prefetchedSkillsCatalog` (internal prefetch used when building cache keys)
 
 ### 4. ConsolidatedBackendService (Backend)
 
@@ -279,24 +287,27 @@ The StreamManager monitors stream health with the following configuration:
 
 ```typescript
 // Health check configuration
-STALLED_TIMEOUT: 30000,      // 30 seconds - stream considered stalled
-HEALTH_CHECK_INTERVAL: 30000, // 30 seconds between health checks
-RECOVERY_TIMEOUT: 5000,       // 5 seconds for recovery attempts
-MAX_RECOVERY_ATTEMPTS: 3,     // Give up after 3 failed recoveries
+STALLED_TIMEOUT: 30000,                 // 30 seconds - stream considered stalled
+TIMEOUT: 10000,                         // 10 seconds - stalled stream cleanup threshold
+RECOVERY_TIMEOUT: 5000,                 // 5 seconds for recovery attempts
+CLEANUP_INTERVAL: 60 * 60 * 1000,       // 1 hour (shared completion-detection window)
+SESSION_TIMEOUT: 30 * 60 * 1000,        // 30 minutes
+HEALTH_CHECK_INTERVAL: 30000,           // 30 seconds between health checks
 
 // Memory limits (to prevent GC pressure)
 MAX_SESSIONS: 10,
 MAX_CHUNK_SIZE: 256 * 1024,         // 256KB per chunk
 MAX_CHUNKS_BEFORE_PRUNE: 200,       // Start pruning at 200 chunks
 MAX_CHUNKS_AFTER_PRUNE: 50,         // Keep only 50 chunks after pruning
-MAX_SESSION_BYTES: 10 * 1024 * 1024 // 10MB max per session
+MAX_SESSION_BYTES: 10 * 1024 * 1024, // 10MB max per session
+MEMORY_LEAK_THRESHOLD: 20 * 1024 * 1024 // 20MB
 ```
 
 **Health Statuses**:
 - `healthy` - Active within timeout, normal operation
 - `degraded` - No activity for half of STALLED_TIMEOUT
 - `stalled` - No activity for full STALLED_TIMEOUT, recovery attempted
-- `error` - Recovery failed after max attempts
+- `error` - Recovery failed and the stream was terminated
 - `recovering` - Currently attempting recovery
 
 ### Stream Channels
@@ -437,23 +448,24 @@ Defined in `src/shared/types/agent.types.ts`:
 
 ```typescript
 type AgentTypeId =
-  | 'chat'              // General chat
-  | 'workspace'         // Workspace coordinator (spec-writer)
-  | 'implement'         // Implementation tasks
-  | 'verify'            // Code verification
-  | 'investigate'       // Code investigation
-  | 'task-focused'      // Focused task execution
-  | 'task-loop'         // Iterative task execution
-  | 'code-review'       // Code review
-  | 'commit-message'    // Commit message generation
-  | 'pr-description'    // PR description generation
-  | 'debug'             // Debugging
-  | 'task-breakdown'    // Task decomposition
-  | 'task-orchestrator' // Task orchestration
-  | ... // See src/shared/types/agent.types.ts for full list
+  | 'chat'
+  | 'code-walkthrough'
+  | 'common'
+  | 'debug'
+  | 'workspace'
+  | 'setup-script-generator'
+  | 'task-breakdown'
+  | 'task-debug'
+  | 'task-focused'
+  | 'task-loop'
+  | 'ralph-loop'
+  | 'workspace-agent'
+  | 'code-review'
+  | 'commit-message'
+  | 'pr-description'
 ```
 
-Each type has corresponding instructions in `src/features/agent/instructions/`.
+Most typed IDs have corresponding instruction sources in `src/features/agent/instructions/`; `common` is the shared instruction layer that gets prepended during specialization assembly.
 
 ## Background Agents
 
@@ -487,12 +499,12 @@ executor.progress; // 0-100
 
 ### Background Agent Types
 
-| Type | Result Tag | Timeout | Purpose |
-|------|------------|---------|---------|
-| `commit` | `COMMIT_MESSAGE` | 60s | Generate commit messages |
-| `pr` | `PR_DESCRIPTION` | 180s | Generate PR descriptions |
-| `review` | `CODE_REVIEW` | 120s | Code review analysis |
-| `walkthrough` | `CODE_WALKTHROUGH` | 120s | Code walkthrough |
+| Trigger Type | Instruction ID | Result Tag | Timeout | Purpose |
+|------|----------------|------------|---------|---------|
+| `commit` | `commit-message` | `COMMIT_MESSAGE` | 120s | Generate commit messages |
+| `pr` | `pr-description` | `PR_DESCRIPTION` | 180s | Generate PR descriptions |
+| `review` | `code-review` | `CODE_REVIEW` | 120s | Code review analysis |
+| `walkthrough` | `code-walkthrough` | `CODE_WALKTHROUGH` | 120s | Code walkthrough |
 
 ### Factory Functions
 
@@ -585,7 +597,7 @@ Tests are located in:
 
 Run tests:
 ```bash
-cd clients/common/webviews && pnpm run vitest --reporter=default
+pnpm run test:unit -- --reporter=default
 ```
 
 ## Related Documentation

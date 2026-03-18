@@ -11,14 +11,14 @@ The CDP (Chrome DevTools Protocol) MCP tools allow **agents** to inspect and int
 pnpm run dev:cdp
 
 # The CDP MCP server is automatically available to agents
-# Tools are suffixed with _cdp-debug (e.g., cdp_hello_cdp-debug)
+# Canonical tool names are plain cdp_* names (for example, cdp_hello)
 ```
 
 ## IMPORTANT: Check Dev Server First
 
 **Before using any CDP tools, always verify the dev server is running:**
 
-1. **Call `cdp_hello_cdp-debug()` first** — If it returns a page title like "Intent", CDP is ready
+1. **Call `cdp_hello()` first** — If it returns a page title like "Intent", CDP is ready
 2. **If CDP fails to connect**: The user needs to run `pnpm dev:cdp` in the Intent directory
 3. **Don't start the dev server yourself** — The user typically runs it in a separate terminal
 
@@ -75,31 +75,94 @@ If `cdp_hello` fails with a connection error, ask the user:
 
 ## Playwright-Style API
 
-The `cdp_run_script` tool provides a `cdp` global object with Playwright-style locators:
+The `cdp_run_script` tool injects `cdp-mcp-server/cdp-helpers.js`, which exposes a lightweight Playwright-inspired `cdp` global. The current helper surface is:
+
+### Locator creation
+
+- `cdp.getByRole(role, { name?, exact? })`
+- `cdp.getByText(text, { exact? })`
+- `cdp.getByTestId(testId)`
+- `cdp.getByLabel(label, { exact? })`
+- `cdp.getByPlaceholder(placeholder, { exact? })`
+- `cdp.locator(selector)`
+
+`exact` matching defaults to `true` in the current helper implementation.
 
 ```javascript
-// Find by role
 await cdp.getByRole('button', { name: 'Submit' }).click();
-
-// Find by text
 await cdp.getByText('Welcome').textContent();
-
-// Find by test ID
 await cdp.getByTestId('status-indicator').isVisible();
-
-// Find by label
 await cdp.getByLabel('Email').fill('user@example.com');
-
-// Find by placeholder
 await cdp.getByPlaceholder('Search...').fill('query');
-
-// CSS selector
 await cdp.locator('.my-class').click();
-
-// Chaining
-const count = await cdp.getByRole('listitem').count();
-const first = await cdp.getByRole('listitem').first().textContent();
 ```
+
+### Locator actions
+
+- `locator.click({ timeout? })`
+- `locator.fill(value, { timeout? })`
+- `locator.clear({ timeout? })`
+
+All locator waits currently default to roughly `5000ms` unless a method documents a smaller timeout.
+
+```javascript
+await cdp.getByRole('textbox', { name: 'Workspace Name' }).fill('Docs QA');
+await cdp.locator('input[name="search"]').clear();
+```
+
+### Waiting helpers
+
+- `locator.waitFor({ state?, timeout? })`
+  - Supported `state` values: `'attached' | 'detached' | 'visible' | 'hidden'`
+- `cdp.waitForURL(pattern, { timeout? })`
+- `cdp.waitForTimeout(milliseconds)`
+
+```javascript
+await cdp.getByRole('dialog').waitFor({ state: 'visible' });
+await cdp.waitForURL(/workspace\/\d+/);
+await cdp.waitForTimeout(250);
+```
+
+### Queries and inspection
+
+- `locator.textContent({ timeout? })`
+- `locator.innerText({ timeout? })`
+- `locator.isVisible({ timeout? })` - uses a shorter `1000ms` default timeout
+- `locator.count()`
+- `locator.getAttribute(name, { timeout? })`
+- `cdp.url()`
+
+```javascript
+const title = await cdp.getByRole('heading').textContent();
+const visible = await cdp.getByTestId('status-indicator').isVisible();
+const href = await cdp.getByRole('link', { name: 'Docs' }).getAttribute('href');
+const currentUrl = cdp.url();
+```
+
+### Chaining API
+
+- `locator.first()`
+- `locator.last()`
+- `locator.nth(index)`
+- `locator.all()`
+
+```javascript
+const firstItem = await cdp.getByRole('listitem').first().textContent();
+const thirdItem = await cdp.locator('li').nth(2).innerText();
+const allButtons = await cdp.getByRole('button').all();
+```
+
+### Storage helpers
+
+- `cdp.storage.getLocal(key)`
+- `cdp.storage.setLocal(key, value)`
+- `cdp.storage.removeLocal(key)`
+- `cdp.storage.clearLocal()`
+- `cdp.storage.keysLocal()`
+
+### Evaluation and unsupported Playwright conveniences
+
+`cdp_run_script` itself is the evaluation primitive: arbitrary JavaScript in the `script` body runs inside the renderer and can `return` structured data. The current helper does **not** expose dedicated `cdp.evaluate()`, `locator.selectOption()`, or `locator.check()` wrappers, so use normal DOM APIs inside the script body when you need those behaviors.
 
 ## Architecture
 
@@ -139,5 +202,6 @@ Renderer Process (UI)
 | File                                                    | Purpose                          |
 | ------------------------------------------------------- | -------------------------------- |
 | `cdp-mcp-server/server.ts`                              | STDIO MCP server implementation  |
-| `cdp-mcp-server/cdp-helpers.js`                         | Playwright-style API helpers     |
+| `cdp-mcp-server/cdp-helpers.js`                         | Source Playwright-style API helpers injected by `cdp_run_script` |
+| `cdp-mcp-server/dist/cdp-helpers.js`                    | Built copy loaded alongside the compiled server |
 | `src/features/agent/instructions/base-system-prompt.ts` | Agent instructions for CDP tools |

@@ -13,11 +13,16 @@
 | `Mod+P` | Quick Open (file picker) | Anywhere (not in terminal) |
 | `Mod+Shift+P` | Open Command Palette | Anywhere (not in terminal) |
 | `Mod+,` | Open Settings | Anywhere |
+| `Mod+O` | Toggle All Spaces | Anywhere |
+| `Mod+N` | New Agent | Anywhere (not in inputs) |
+| `Mod+?` | Toggle Keyboard Shortcuts | Anywhere |
+| `Mod+F` | Search | Focused searchable panel |
+| `Ctrl+Tab` | Next Space | Anywhere in workspace |
+| `Ctrl+Shift+Tab` | Previous Space | Anywhere in workspace |
 | `Alt+Z` | Toggle Word Wrap | In editor |
 | `Mod+J` | Toggle Quake Terminal Overlay | Anywhere |
 | `Ctrl+\`` | Toggle Quake Terminal Overlay | Anywhere (always Ctrl, even Mac) |
 | `Ctrl+Shift+\`` | Create New Terminal | Anywhere (always Ctrl, even Mac) |
-| `Mod+N` | New Space | Anywhere (not in inputs) |
 | `Escape` | Close modal/dialog/cancel | Various contexts |
 
 ---
@@ -28,9 +33,7 @@
 |----------|--------|---------|
 | `Mod+W` | Close Current Tab | In panel |
 | `Mod+Shift+T` | Reopen Last Closed Tab | In panel |
-| `Mod+1-9` | Switch to Tab by Index | In panel (1 = first tab) |
-| `Ctrl+Tab` | Next Tab in Panel | In panel |
-| `Ctrl+Shift+Tab` | Previous Tab in Panel | In panel |
+| `Mod+1-9` | Switch to Tab by Index | In panel (1 = first tab; `Mod+1/2/3` may be preempted by focus navigation) |
 | `Mod+\` | Split Panel Horizontally | In panel |
 | `Mod+Shift+\` | Split Panel Vertically | In panel |
 | `Mod+[` | Go Back in Panel History | In panel |
@@ -55,6 +58,8 @@
 | `Mod+Shift+G` | Focus Git Changes Tab | Anywhere |
 | `Mod+Shift+N` | Focus Notes Tab / New Terminal | Context-dependent |
 | `Mod+Shift+A` | Focus Activity Tab | Anywhere |
+
+`Mod+1/2/3` are registered globally for main-content, drawer, and dock focus. Panel-level numeric tab switching still exists, but those focus shortcuts can take precedence depending on where the event is handled.
 
 ---
 
@@ -81,10 +86,10 @@
 | `j` | Navigate Panel Down | vim-style |
 | `k` | Navigate Panel Up | vim-style |
 | `l` | Navigate Panel Right | vim-style |
-| `Shift+H` | Resize Panel Left | (not yet implemented) |
-| `Shift+J` | Resize Panel Down | (not yet implemented) |
-| `Shift+K` | Resize Panel Up | (not yet implemented) |
-| `Shift+L` | Resize Panel Right | (not yet implemented) |
+| `Shift+H` | Resize Panel Left | Key is mapped; action handler still TODO |
+| `Shift+J` | Resize Panel Down | Key is mapped; action handler still TODO |
+| `Shift+K` | Resize Panel Up | Key is mapped; action handler still TODO |
+| `Shift+L` | Resize Panel Right | Key is mapped; action handler still TODO |
 | `o` | Cycle to Next Panel | tmux-style |
 | `p` | Cycle to Previous Panel | tmux-style |
 | `%` | Split Right | tmux-style |
@@ -108,6 +113,7 @@
 | `Shift+Enter` | Insert New Line | In chat input |
 | `Escape` | Stop Agent Generation | During agent response |
 | `/` | Focus Chat Input | Not in editable element |
+| `Mod+/` | Enhance Prompt | Chat inputs / prompt editors |
 | `Mod+↑` | Navigate to Previous Message | Not in inputs |
 | `Mod+↓` | Navigate to Next Message | Not in inputs |
 
@@ -220,9 +226,9 @@ The `KeyboardShortcutManager` will warn in dev mode if any of these are register
 
 ## Inconsistencies
 
-1. **Leader key shortcuts not fully implemented** - Resize actions (`Shift+H/J/K/L`) and swap actions are marked as "not yet implemented"
+1. **Leader key shortcuts are only partially implemented** - Resize actions (`Shift+H/J/K/L`) are parsed by the leader-key mapper, but the handler still logs a TODO instead of resizing panels; swap actions (`{` / `}`) are also still only suggested/TODO.
 
-2. ~~**`Mod+T`** opens Command Palette instead of new tab~~ ✅ **FIXED** - Now opens file picker (New Tab behavior)
+2. ~~**`Mod+T`** opened the wrong action~~ ✅ **FIXED** - It now dispatches `workspace:new-tab`, which creates a new agent tab.
 
 ---
 
@@ -282,12 +288,12 @@ The `KeyboardShortcutManager` will warn in dev mode if any of these are register
 # 📋 Implementation Priority
 
 ## High Priority (Missing basics)
-- [ ] `Mod+G` - Go to line
-- [ ] `Mod+/` - Toggle comment
+- [x] ~~`Mod+G` - Go to line~~ ✅ **Implemented**
+- [ ] Toggle comment shortcut (currently unassigned)
 - [ ] `Mod+L` - Clear terminal (pass through to xterm)
 
 ## Medium Priority (Power user)
-- [ ] Complete leader key resize shortcuts (`Shift+H/J/K/L`)
+- [ ] Complete leader key resize shortcuts (`Shift+H/J/K/L`) — keys are mapped, but the action handler still logs a TODO
 - [ ] Complete leader key swap shortcuts (`{` / `}`)
 - [x] ~~`F12` - Go to definition~~ ✅ **Implemented**
 - [ ] `Shift+F12` - Find all references

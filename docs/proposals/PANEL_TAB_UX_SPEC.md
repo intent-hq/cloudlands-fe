@@ -207,21 +207,23 @@ Basic accessibility navigation:
 
 ## Implementation Priority
 
+Current implementation note: `PanelTabBar.svelte` already supports inline rename on double-click in addition to the completed checklist items below.
+
 ### Phase 1: Foundation
 1. ✅ Basic tab bar with click-to-activate
 2. ✅ Panel split/resize with handles
-3. ⬜ Tab reordering within panel (drag)
-4. ⬜ Tab close button + middle-click
+3. ✅ Tab reordering within panel (drag)
+4. ✅ Tab close button + middle-click
 
 ### Phase 2: Cross-Panel
-5. ⬜ Drag tab to another panel's tab bar
+5. ✅ Drag tab to another panel's tab bar
 6. ⬜ Drag tab to panel edge → create split
-7. ⬜ Drop zone visualization
+7. ✅ Drop zone visualization
 8. ⬜ Panel focus management + keyboard nav
 
 ### Phase 3: Polish
-9. ⬜ Panel maximize/restore
-10. ⬜ Tab context menu (Close Others, etc.)
+9. ✅ Panel maximize/restore
+10. ✅ Tab context menu (Close Others, etc.)
 11. ⬜ Layout presets
 12. ⬜ Accessibility audit + screen reader testing
 

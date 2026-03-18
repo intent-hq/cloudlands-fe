@@ -7,19 +7,19 @@ The workspace sidebar has a `WorkspaceProgressCard` component that shows real-ti
 - Visual FlameGraph showing per-task status
 - Git/PR status and action buttons
 
-We want to display this same progress information on the **homepage** (`HomeGrid.svelte`) for all workspaces, with real-time updates when task statuses change.
+This proposal originally targeted a `HomeGrid.svelte` homepage component, but that file has since been removed from `src/lib/components/home/`. The homepage-card variant now lives in `WorkspaceProgressCard`'s `compact` mode, and any future homepage wiring should target the current home route (`src/routes/+page.svelte`) rather than `src/lib/components/home/HomeGrid.svelte`.
 
 ### Current Gap
 
-| Data | Available in HomeGrid? | Where it lives now |
-|------|----------------------|-------------------|
-| `Workspace` metadata | ✅ Yes | `workspaceStore.items` |
-| `notes[]` / task data | ❌ No | Loaded per-workspace via IPC on open |
-| `gitStatus` | ❌ No | Computed on-demand via `AcceptChangesClient` |
+| Data | Available on the current home route? | Where it lives now |
+|------|-------------------------------------|-------------------|
+| `Workspace` metadata | ✅ Yes | `workspaceStore.items` in `src/routes/+page.svelte` |
+| `notes[]` / task data | ⚠️ Infrastructure exists, but homepage rendering is not wired up | `workspaceNotesStore` + `notesClient.batchList()` |
+| `gitStatus` | ❌ Intentionally skipped in homepage mode | `WorkspaceProgressCard` avoids Git status loading when `compact` is enabled |
 
 ## Goals
 
-1. **Reuse existing UI components** - `WorkspaceProgressCard` and `FlameGraph` unchanged
+1. **Reuse existing UI components** - `WorkspaceProgressCard` compact mode and `FlameGraph`
 2. **Real-time updates** - Task status changes reflect immediately on homepage
 3. **Efficient loading** - Don't load full notes for archived/inactive workspaces
 4. **Minimal new infrastructure** - Leverage existing event system
@@ -41,7 +41,7 @@ We want to display this same progress information on the **homepage** (`HomeGrid
 │                                    └────────┬─────────┘         │
 │                                             │                   │
 │  ┌──────────────────┐                       │                   │
-│  │ notes.ipc.ts     │◄──── NEW: batchGet ───┤                   │
+│  │ notes.ipc.ts     │◄─ notes:batch-list ───┤                   │
 │  │ (batch endpoint) │                       │                   │
 │  └──────────────────┘                       │                   │
 └─────────────────────────────────────────────┼───────────────────┘
@@ -53,21 +53,21 @@ We want to display this same progress information on the **homepage** (`HomeGrid
 │                     RENDERER (HOMEPAGE)                          │
 │                                                                  │
 │  ┌────────────────────────────────────────────────────────────┐ │
-│  │         workspaceNotesStore (NEW)                          │ │
+│  │         workspaceNotesStore                                │ │
 │  │                                                            │ │
-│  │  State: Map<workspaceId, Note[]>                          │ │
+│  │  State: Record<workspaceId, Note[]>                       │ │
 │  │                                                            │ │
 │  │  • loadForWorkspaces(ids[]) - batch load on mount         │ │
 │  │  • getNotes(workspaceId) - get notes for a workspace      │ │
-│  │  • Listens for task:status-changed to update in place     │ │
+│  │  • Listens for note/task events to update in place        │ │
 │  └────────────────────────────────────────────────────────────┘ │
 │                              │                                   │
 │                              ▼                                   │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │                     HomeGrid.svelte                         ││
+│  │                    src/routes/+page.svelte                 ││
 │  │  ┌─────────────────┐  ┌─────────────────┐                   ││
 │  │  │WorkspaceProgress│  │WorkspaceProgress│  ...              ││
-│  │  │     Card        │  │     Card        │                   ││
+│  │  │ Card (compact)  │  │ Card (compact)  │                   ││
 │  │  │ notes={store.   │  │ notes={store.   │                   ││
 │  │  │   getNotes(id)} │  │   getNotes(id)} │                   ││
 │  │  └─────────────────┘  └─────────────────┘                   ││
@@ -79,66 +79,73 @@ We want to display this same progress information on the **homepage** (`HomeGrid
 
 ### Phase 1: Backend - Batch Notes Endpoint
 
-Add a new IPC endpoint to load notes for multiple workspaces in one call:
+Add a new IPC endpoint to load notes for multiple workspaces in one call. This has since landed as `notes:batch-list`, exposed in the renderer as `notesClient.batchList()`:
 
 ```typescript
-// Channel: 'notes:batch-get'
+// Channel: 'notes:batch-list'
 // Input: { workspaceIds: string[] }
 // Output: { [workspaceId: string]: Note[] }
 ```
 
-**Files to modify:**
-- `src/shared/ipc/channels.ts` - Add `NOTES_CHANNELS.BATCH_GET`
-- `src/features/notes/main/notes.ipc.ts` - Implement handler
-- `src/features/notes/notes.client.ts` - Add client method
+**Relevant files:**
+- `src/shared/ipc/channels.ts` - `NOTES_CHANNELS.BATCH_LIST`
+- `src/features/notes/main/notes.ipc.ts` - Batch notes handler
+- `src/features/notes/notes.client.ts` - `batchList()` client method
 
 ### Phase 2: Frontend - Workspace Notes Store
 
-Create a new store to manage notes across workspaces on the homepage:
+Create a store to manage notes across workspaces on the homepage. The current implementation uses a reactive record rather than a `Map`:
+
+> Transitional note: Per `docs/STATE_MANAGEMENT.md`, `WorkspaceNotesStore` and other `.store.svelte.ts` shared-state modules are transitional; new shared state should use Redux slices in `src/lib/store/`.
 
 ```typescript
 // src/features/workspace/workspace-notes.store.svelte.ts
 class WorkspaceNotesStore {
-  #notesByWorkspace = $state<Map<WorkspaceId, Note[]>>(new Map());
+  notesByWorkspace: Record<string, Note[]> = $state({});
 
   async loadForWorkspaces(workspaceIds: WorkspaceId[]): Promise<void>;
-  getNotes(workspaceId: WorkspaceId): Note[];
+  getNotes(workspaceId: WorkspaceId | string): Note[];
 
   // Real-time update handlers
-  private handleTaskStatusChanged(event: TaskStatusChangedEvent): void;
-  private handleNoteCreated(event: NoteCreatedEvent): void;
-  private handleNoteDeleted(event: NoteDeletedEvent): void;
+  private handleTaskStatusChanged(payload: any): void;
+  private handleNoteCreated(payload: any): void;
+  private handleNoteDeleted(payload: any): void;
+  private handleNoteUpdated(payload: any): void;
 }
 ```
 
-**Files to create:**
+**Implemented file:**
 - `src/features/workspace/workspace-notes.store.svelte.ts`
 
 ### Phase 3: Homepage Integration
 
-Update `HomeGrid.svelte` to use `WorkspaceProgressCard`:
+If homepage cards are rendered again, the integration target is now the home route, using `WorkspaceProgressCard` in `compact` mode:
 
 ```svelte
-<script>
+<script lang="ts">
+  import { onMount } from 'svelte';
   import { workspaceNotesStore } from '$features/workspace/workspace-notes.store.svelte';
+  import WorkspaceProgressCard from '$lib/components/workspace/sidebar/WorkspaceProgressCard.svelte';
 
   onMount(async () => {
-    const workspaceIds = workspaces.map(w => w.id);
+    const workspaceIds = workspaces.map((w) => w.id);
     await workspaceNotesStore.loadForWorkspaces(workspaceIds);
   });
 </script>
 
 {#each workspaces as workspace}
   <WorkspaceProgressCard
-    notes={workspaceNotesStore.getNotes(workspace.id)}
+    compact
     workspace={workspace}
     workspaceId={workspace.id}
+    notes={workspaceNotesStore.getNotes(workspace.id)}
+    onClick={() => openWorkspace(workspace)}
   />
 {/each}
 ```
 
 **Files to modify:**
-- `src/lib/components/home/HomeGrid.svelte`
+- `src/routes/+page.svelte` (or a dedicated home-view component rendered from it)
 
 ### Phase 4: Real-time Event Subscription
 
@@ -152,6 +159,7 @@ Wire up event listeners for live updates:
 - `task:status-changed` - Update note status
 - `note:created` - Add new note (if it's a task)
 - `note:deleted` - Remove note from store
+- `note:updated` - Refresh note data already loaded on the homepage
 
 ## Data Flow: Task Status Change
 
@@ -164,11 +172,11 @@ Wire up event listeners for live updates:
    │
 4. WorkspaceEventBus → UnifiedEventBus → broadcasts to all windows
    │
-5. Homepage receives event via IPC listener
+5. `workspaceNotesStore` receives the event via `listenSync`
    │
-6. workspaceNotesStore updates the note in its Map
+6. workspaceNotesStore updates the note in `notesByWorkspace`
    │
-7. $derived reactivity updates WorkspaceProgressCard
+7. Svelte reactivity updates `WorkspaceProgressCard` compact mode
    │
 8. FlameGraph re-renders with new status color
 ```
@@ -182,7 +190,7 @@ Wire up event listeners for live updates:
 ## Testing Strategy
 
 1. **Unit tests** for `workspaceNotesStore`
-   - `loadForWorkspaces()` populates map correctly
+   - `loadForWorkspaces()` populates the workspace record correctly
    - `handleTaskStatusChanged()` updates correct note
 
 2. **Integration test** for batch endpoint
@@ -190,6 +198,6 @@ Wire up event listeners for live updates:
    - Handles non-existent workspaces gracefully
 
 3. **Manual testing**
-   - Open homepage with multiple workspaces
+   - Render compact `WorkspaceProgressCard` instances from the current home route
    - Change task status in one workspace
-   - Verify homepage card updates immediately
+   - Verify the corresponding card updates immediately

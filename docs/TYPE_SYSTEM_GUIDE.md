@@ -69,16 +69,16 @@ Run these commands to validate types:
 
 ```bash
 # Check all types and handlers
-npm run type-check
+pnpm run type-check
 
 # Check only type contracts
-npm run type-check:validate
+pnpm run type-check:validate
 
 # Check handler registration
-npm run type-check:handlers
+pnpm run type-check:handlers
 
 # Generate detailed report
-npm run type-check:report
+pnpm run type-check:report
 ```
 
 ### Debugging Type Mismatches
@@ -175,7 +175,7 @@ Unrecognized keys in request: extraField
 1. **Always define types in contracts.ts** - Never duplicate type definitions
 2. **Use validation middleware** - Always validate IPC data
 3. **Run type checks before committing** - The pre-commit hook will enforce this
-4. **Generate types after changes** - Run `npm run generate:ipc-types`
+4. **Generate types after changes** - Run `pnpm run generate:ipc-types`
 5. **Check handler registration** - Ensure all channels have handlers
 6. **Use type guards** - Validate data at runtime boundaries
 7. **Handle validation errors gracefully** - Show user-friendly messages
@@ -196,7 +196,7 @@ When working with the codebase:
 1. **Always check contracts.ts first** when dealing with shared types
 2. **Run type-check after making changes** to ensure consistency
 3. **Use the generated client** for type-safe IPC calls
-4. **Check error tracking** for type-related issues: `npm run agent-errors list`
+4. **Check error tracking** for type-related issues: `pnpm run agent-errors list`
 5. **Validate data before sending** to prevent runtime errors
 6. **Use type guards** when receiving external data
 

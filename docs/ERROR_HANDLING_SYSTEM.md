@@ -25,7 +25,7 @@ The Intent app now features a comprehensive error handling system designed to ma
   - **Agent**: Sends error directly to AI agent
   - **Retry**: Attempts automatic recovery (if recoverable)
 - **Auto-dismiss**: Info messages disappear after 5 seconds
-- **Smart Suppression**: Filters out non-critical errors (ResizeObserver, Monaco disposal)
+- **Smart Suppression**: Filters out non-critical errors (ResizeObserver warnings, Monaco disposal/rejection noise, bits-ui cleanup errors, and Svelte effect depth errors)
 
 ### 3. Error Reporter Utility
 
@@ -86,7 +86,7 @@ The Intent app now features a comprehensive error handling system designed to ma
 #### Error Tracking
 
 ```typescript
-import { errorHandler } from '$lib/utils/error-handler.svelte';
+import { errorHandler } from '$features/agent/services/error-handler';
 
 // Handle an error
 errorHandler.handleError(error, {
@@ -101,6 +101,21 @@ errorHandler.handleWarning('API rate limit approaching');
 // Handle info
 errorHandler.handleInfo('Data sync completed');
 ```
+
+#### Reactive subscription model
+
+- `ErrorHandler` no longer uses Svelte `$state` runes internally.
+- It keeps plain internal arrays and notifies UI subscribers via `subscribe(callback)`.
+- This callback-based pattern avoids creating reactive dependencies during module initialization, which helps prevent `effect_update_depth_exceeded` loops.
+
+#### Svelte error resolution
+
+When an error message contains a Svelte docs URL (for example `https://svelte.dev/e/...`), the error handler uses `svelte-error-resolver.ts` to turn it into a richer, developer-friendly message.
+
+- `isSvelteErrorUrl(message)` detects Svelte error URLs.
+- `resolveSvelteError(message)` returns structured `SvelteErrorInfo` metadata.
+- `formatSvelteError(message)` builds the expanded display text shown in the UI.
+- Toast notifications are rendered via `showErrorToast()` from `error-toast.ts`.
 
 #### Custom Error Reports
 
@@ -149,8 +164,9 @@ The system automatically categorizes errors:
 The following errors are automatically suppressed to reduce noise:
 
 1. **ResizeObserver**: "ResizeObserver loop completed with undelivered notifications"
-2. **Svelte Effects**: "effect_update_depth_exceeded" (prevents infinite loops)
-3. **Monaco Editor**: "Canceled" errors during disposal
+2. **Svelte Effects**: `effect_update_depth_exceeded` / `svelte.dev/e/effect_update_depth_exceeded`
+3. **Monaco Editor**: disposal, cancellation, and related unhandled rejection noise handled by `shouldSuppressMonacoUnhandledRejection()`
+4. **bits-ui cleanup**: component-unmount cleanup errors such as `.current is not a function` and minified `*.call is not a function` variants
 
 ## Enhanced Context
 
@@ -209,8 +225,11 @@ Each error includes:
 
 ### Components
 
-- `error-handler.svelte.ts`: Core error handling logic
+- `src/features/agent/services/error-handler.ts`: Core error handling logic and callback-based subscriptions
 - `error-reporter.ts`: Report generation and formatting
+- `error-toast.ts`: Toast UI used for interactive error notifications
+- `monaco-error-suppression.ts`: Utility for suppressing known Monaco disposal/rejection noise
+- `svelte-error-resolver.ts`: Resolves Svelte error URLs into structured `SvelteErrorInfo` output
 
 ### Data Flow
 

@@ -173,15 +173,15 @@ pnpm test src/lib/utils/tiptap --run
 
 ## 🚀 Next Steps
 
-These utilities are now ready to be used for migrating other TipTap extensions:
+These utilities are still available for future TipTap migrations, but the two follow-up items below have **not** been completed yet:
 
-1. **MentionSuggestionWrapper.svelte** (MEDIUM priority)
-   - 167 lines of manual component mounting
-   - Could benefit from similar utility patterns
+1. **MentionSuggestionWrapper.svelte** (still pending)
+   - No current source file with this name exists in the codebase
+   - There is no completed migration to the shared TipTap utilities under this component name
 
-2. **CommentAnchor.ts** (LOW priority)
-   - 25 lines, simple invisible span
-   - May not need utilities
+2. **CommentAnchor.ts** (still pending)
+   - `CommentAnchor.ts` still uses its standalone custom node implementation
+   - It has not been migrated to the shared TipTap utility helpers
 
 ---
 
@@ -214,12 +214,3 @@ These utilities are now ready to be used for migrating other TipTap extensions:
 2. **Utility design**: Clean, focused utilities with single responsibilities are easier to test and maintain
 3. **Test strategy**: Mock editor behavior for unit tests, use real editor for integration tests
 4. **Reactivity workaround**: The `useReactiveNode()` utility is essential until svelte-tiptap fixes its reactivity bug
-
----
-
-## 📚 Related Documentation
-
-- **Original Analysis**: `docs/investigations/svelte-tiptap-migration-analysis.md`
-- **Migration Proposal**: `docs/investigations/custom-task-item-migration-proposal.md`
-- **Implementation Review**: `docs/investigations/svelte-tiptap-implementation-summary.md`
-- **Utilities Proposal**: `docs/investigations/svelte-tiptap-utilities-proposal.md`

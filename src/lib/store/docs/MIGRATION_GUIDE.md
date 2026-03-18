@@ -197,7 +197,7 @@ For each Svelte store, follow this checklist:
 ### 2. Create the Slice Directory
 
 ```
-src/lib/store/store/{slice-name}/
+src/lib/store/slices/{slice-name}/
   {slice-name}-slice.ts          # State type, actions, reducer
   {slice-name}-selectors.ts      # Selectors
   {slice-name}-slice.test.ts     # Reducer tests
@@ -240,7 +240,7 @@ src/lib/store/store/{slice-name}/
 
 ### 8. Register the Slice
 
-- [ ] Add reducer to `reducers.ts`
+- [ ] Add reducer to `reducer.ts`
 - [ ] Add saga to `sagas.ts`
 - [ ] Add `<RunSaga>` component where needed
 
@@ -322,7 +322,7 @@ import { sidebarWidthStore } from '$lib/stores/sidebar-width.store.svelte';
 const width = sidebarWidthStore.effectiveWidth;
 
 // AFTER
-import { selectEffectiveWidth } from '$lib/store/store/sidebar-width/sidebar-width-selectors';
+import { selectEffectiveWidth } from '$lib/store/slices/sidebar-width/sidebar-width-selectors';
 const effectiveWidth = selectEffectiveWidth();
 // Use as: $effectiveWidth
 ```
@@ -636,7 +636,7 @@ Keep effects in components when they:
 Each migrated store follows this directory structure:
 
 ```
-src/lib/store/store/{slice-name}/
+src/lib/store/slices/{slice-name}/
   {slice-name}-slice.ts          # State type, actions, reducer
   {slice-name}-selectors.ts      # Selectors
   {slice-name}-slice.test.ts     # Reducer tests
@@ -651,15 +651,15 @@ This matches the convention documented in the [Architecture Guide — Slice Mana
 
 After creating the slice:
 
-1. **Register reducer** in `reducers.ts`:
+1. **Register reducer** in `reducer.ts`:
    ```typescript
-   import { sidebarWidthReducer } from "./store/sidebar-width/sidebar-width-slice";
+   import { sidebarWidthReducer } from "./slices/sidebar-width/sidebar-width-slice";
    export const reducers = { /* ... */ sidebarWidth: sidebarWidthReducer } as const;
    ```
 
 2. **Register saga** in `sagas.ts`:
    ```typescript
-   import { sidebarWidthSaga } from "./store/sidebar-width/sagas/sidebar-width-saga";
+   import { sidebarWidthSaga } from "./slices/sidebar-width/sagas/sidebar-width-saga";
    export const sagas = { /* ... */ sidebarWidth: sidebarWidthSaga } as const;
    ```
 

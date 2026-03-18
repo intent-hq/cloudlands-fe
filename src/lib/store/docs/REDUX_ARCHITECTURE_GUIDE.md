@@ -2,7 +2,7 @@
 
 > **Comprehensive guide to the Redux architecture in the Augment Chat application**
 
-This guide documents the actual patterns, conventions, and implementations used in this codebase. It is based on analyzing all slices in `/clients/common/webviews/src/apps/chat/redux/store/`.
+This guide documents the actual patterns, conventions, and implementations used in this codebase. It is based on analyzing all slices in `src/lib/store/slices/`.
 
 ---
 
@@ -128,22 +128,20 @@ export const myReducer = createReducer<MyState>(initialState)
 
 ### Message Actions
 
-For communication with the extension host or sidecar:
+For actions that kick off external work handled by sagas:
 
 ```typescript
-import {
-  createAsyncMessageAction,
-  createSidecarAsyncMessageAction,
-} from "../../store/messenger/create-message-action";
+import { createAsyncAction } from "../../utils/create-action";
 
-// For extension host messages (must have type: WebViewMessageType)
-export const postHostMessage = createAsyncMessageAction<{ type: WebViewMessageType; data: any }>(
-  "postHostMessage"
+// Saga performs the actual host/sidecar call
+export const postHostMessage = createAsyncAction<[{ type: WebViewMessageType; data: any }]>(
+  "host/post",
+  "host/postHostMessage"
 );
 
-// For sidecar messages (must have type: MessageConsumerTypes)
-export const getSoundSettings = createSidecarAsyncMessageAction<{ type: "get-sound-settings" }>(
-  "getSoundSettings"
+export const getSoundSettings = createAsyncAction(
+  "sidecar/getSoundSettings",
+  "sidecar/getSoundSettings"
 );
 ```
 
@@ -155,21 +153,21 @@ Components should dispatch actions directly using `getDispatch()`:
 
 ```typescript
 // In a Svelte component
-import { getDispatch } from "$common-webviews/src/apps/chat/redux/utils/utils";
+import { getDispatch } from "$lib/store/utils/utils";
 import {
-  registerCommandAction,
-  triggerShortcutAction
-} from "$common-webviews/src/apps/chat/redux/store/keybindings/keybindings-slice";
+  openCheatSheet,
+  toggleCheatSheet
+} from "$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice";
 
 const dispatch = getDispatch();
 
 // Dispatch actions directly
 $effect(() => {
-  dispatch(registerCommandAction(scope, handler));
+  dispatch(openCheatSheet("panel"));
 });
 
 const handleClick = () => {
-  dispatch(triggerShortcutAction("enter"));
+  dispatch(toggleCheatSheet("global"));
 };
 ```
 
@@ -186,21 +184,21 @@ const handleClick = () => {
 
 ```typescript
 // ❌ BAD: Don't create hooks that wrap dispatch
-export const useKeybindings = () => {
+export const useShortcutCheatSheet = () => {
   const { store } = getContext<ReduxStoreContext>(STORE_CONTEXT);
 
   return {
-    registerCommand: (scope, handler) =>
-      store.dispatch(registerCommandAction(scope, handler)),
-    triggerShortcut: (shortcut) =>
-      store.dispatch(triggerShortcutAction(shortcut)),
+    openPanelShortcuts: () =>
+      store.dispatch(openCheatSheet("panel")),
+    toggleGlobalShortcuts: () =>
+      store.dispatch(toggleCheatSheet("global")),
   };
 };
 
 // ❌ BAD: Don't create wrapper functions
-export const registerCommand = (scope, handler) => {
+export const openPanelShortcuts = () => {
   const dispatch = getDispatch();
-  dispatch(registerCommandAction(scope, handler));
+  dispatch(openCheatSheet("panel"));
 };
 ```
 
@@ -653,22 +651,24 @@ export const selectIsPinned = createSelector((state, id: string) => {
 
 ### Reactive Selector Locking
 
-For batch updates, you can temporarily lock reactive selectors to prevent intermediate updates:
+For batch updates, you can temporarily lock selector emissions to prevent intermediate updates:
 
 ```typescript
-import { lockReactiveSelectors } from "./store/store-utility/sagas/lock-reactive-selectors";
+import { lockUpdates, unlockUpdates } from "./slices/store-utility/store-utility-slice";
 
-// Used inside sagas — it's a saga generator, not a regular function
-yield* lockReactiveSelectors(function* () {
+yield* put(lockUpdates());
+try {
   // Multiple dispatches here won't trigger selector updates
   yield* put(action1());
   yield* put(action2());
   yield* put(action3());
-});
-// Selectors update once after the batch
+} finally {
+  yield* put(unlockUpdates());
+}
+// Selectors update once updates are unlocked
 ```
 
-This is a saga generator used inside other sagas. It temporarily locks reactive selectors to prevent intermediate updates during batch dispatches.
+These actions toggle `storeUtility.updatesLocked` in the store-utility slice and let sagas batch multiple dispatches before selector updates resume.
 
 ### Selector Best Practices
 
@@ -1113,7 +1113,7 @@ Sagas are started using the `<RunSaga>` component:
 
 ```svelte
 <script>
-  import RunSaga from "$common-webviews/src/apps/chat/redux/components/RunSaga.svelte";
+  import RunSaga from "$lib/store/components/RunSaga.svelte";
 </script>
 
 <RunSaga sagaName="context" />
@@ -1245,7 +1245,7 @@ Create a new Redux slice for [FEATURE_NAME] in the chat application.
 
 **Slice Name:** [SLICE_NAME] (e.g., "notifications", "userPreferences", "fileExplorer")
 
-**Location:** clients/common/webviews/src/apps/chat/redux/store/[SLICE_NAME]/
+**Location:** src/lib/store/slices/[SLICE_NAME]/
 
 **State Structure:**
 [Describe the state shape, e.g.:
@@ -1316,7 +1316,7 @@ Create a new Redux slice for notification management in the chat application.
 
 **Slice Name:** notifications
 
-**Location:** clients/common/webviews/src/apps/chat/redux/store/notifications/
+**Location:** src/lib/store/slices/notifications/
 
 **State Structure:**
 - notifications: Collection of Notification with ID field "id"
@@ -1367,7 +1367,7 @@ If you prefer to create the slice manually, follow these steps:
 #### 1. Create Slice Directory
 
 ```
-store/
+slices/
   my-slice/
     my-slice.ts          # State, actions, reducer
     my-selectors.ts # Selectors
@@ -1454,8 +1454,8 @@ export function* mySaga() {
 #### 5. Register Reducer
 
 ```typescript
-// reducers.ts
-import { mySliceReducer } from "./store/my-slice/my-slice";
+// reducer.ts
+import { mySliceReducer } from "./slices/my-slice/my-slice";
 
 export const reducers = {
   // ... other reducers
@@ -1742,18 +1742,20 @@ type State = {
 
 ### 3. Action Batching
 
-**Manual Batching for Reactive Selectors:**
+**Manual Batching for Selector Updates:**
 
 ```typescript
-import { lockReactiveSelectors } from "./store/store-utility/sagas/lock-reactive-selectors";
+import { lockUpdates, unlockUpdates } from "./slices/store-utility/store-utility-slice";
 
-// Used inside sagas — it's a saga generator, not a regular function
-yield* lockReactiveSelectors(function* () {
+yield* put(lockUpdates());
+try {
   yield* put(action1());
   yield* put(action2());
   yield* put(action3());
-});
-// Reactive selectors update once after batch
+} finally {
+  yield* put(unlockUpdates());
+}
+// Reactive selectors update once updates are unlocked
 ```
 
 ### 4. Immutability and Reference Equality
@@ -1868,7 +1870,7 @@ type State = {
 
 - **REDUCERS_GUIDE.md**: Detailed guide on reducer patterns
 - **Existing slices**: Study `context-slice.ts`, `conversations-slice.ts` for patterns
-- **Saga examples**: Check `store/*/sagas/` directories for real-world examples
+- **Saga examples**: Check `slices/*/sagas/` directories for real-world examples
 - **Tests**: Look at `*.test.ts` files for testing patterns
 
 ---

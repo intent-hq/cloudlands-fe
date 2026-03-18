@@ -183,7 +183,7 @@ const WHITELISTED_CHANNELS = [
 IPC errors are also tracked in the main error tracking system:
 ```bash
 # Check general errors including IPC
-npm run agent-errors summary
+pnpm run agent-errors summary
 ```
 
 This provides additional context and stack traces for debugging.

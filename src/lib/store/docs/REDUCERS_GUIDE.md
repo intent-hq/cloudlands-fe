@@ -120,10 +120,10 @@ export const myFeatureReducer = createReducer<MyFeatureState>(initialState)
 
 ### Step 5: Register in Root Reducer
 
-Add your reducer to `clients/common/webviews/src/apps/chat/redux/reducers.ts`:
+Add your reducer to `src/lib/store/reducer.ts`:
 
 ```typescript
-import { myFeatureReducer } from "./store/my-feature/my-feature-slice";
+import { myFeatureReducer } from "./slices/my-feature/my-feature-slice";
 
 export const reducers = {
   // ... existing reducers
@@ -488,7 +488,7 @@ export const contextReducer = createReducer<ContextState>(initialState)
 ### 1. File Organization
 
 ```
-store/
+slices/
   my-feature/
     my-feature-slice.ts       # State, actions, and reducer
     my-feature-slice.test.ts
@@ -704,7 +704,7 @@ describe("myReducer", () => {
 - **Keep derived state in separate maps** - don't modify items directly
 - **Use helper functions** for complex logic
 - **Test reducers thoroughly** - they're easy to test!
-- **Register reducers** in `reducers.ts` to add them to the store
+- **Register reducers** in `reducer.ts` to add them to the store
 
 For more information, see:
 - [collection-utils.ts](./utils/collection-utils.ts) - Collection management utilities
