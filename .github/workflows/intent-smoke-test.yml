@@ -66,7 +66,7 @@ jobs:
         run: npm ci
 
       - name: Save node_modules cache
-        if: always() && steps.cache-deps.outputs.cache-hit != 'true'
+        if: success() && steps.cache-deps.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: node_modules
@@ -89,7 +89,7 @@ jobs:
         run: CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:mac
 
       - name: Save Electron build cache
-        if: always() && steps.cache-build.outputs.cache-hit != 'true'
+        if: success() && steps.cache-build.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: dist-electron/
