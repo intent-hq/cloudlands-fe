@@ -3527,6 +3527,7 @@
                         isStreaming={chatState.isStreaming}
                         isProcessing={chatState.isProcessing}
                         startTime={chatState.streamingStartTime}
+                        lastChunkTime={chatState.lastChunkTime}
                         streamingContentLength={chatState.streamingContent?.length ?? 0}
                         error={chatState.error}
                         isStalled={chatState.isStalled}
@@ -3548,6 +3549,7 @@
                       isStreaming={chatState.isStreaming}
                       isProcessing={chatState.isProcessing}
                       startTime={chatState.streamingStartTime}
+                      lastChunkTime={chatState.lastChunkTime}
                       streamingContentLength={chatState.streamingContent?.length ?? 0}
                       error={chatState.error}
                       isStalled={chatState.isStalled}
@@ -3595,6 +3597,7 @@
                         isStreaming={chatState.isStreaming}
                         isProcessing={chatState.isProcessing}
                         startTime={chatState.streamingStartTime}
+                        lastChunkTime={chatState.lastChunkTime}
                         streamingContentLength={chatState.streamingContent?.length ?? 0}
                         error={chatState.error}
                         isStalled={chatState.isStalled}
@@ -3616,6 +3619,7 @@
                       isStreaming={chatState.isStreaming}
                       isProcessing={chatState.isProcessing}
                       startTime={chatState.streamingStartTime}
+                      lastChunkTime={chatState.lastChunkTime}
                       streamingContentLength={chatState.streamingContent?.length ?? 0}
                       error={chatState.error}
                       isStalled={chatState.isStalled}
@@ -3779,6 +3783,7 @@
                             isStreaming={chatState.isStreaming}
                             isProcessing={chatState.isProcessing}
                             startTime={chatState.streamingStartTime}
+                            lastChunkTime={chatState.lastChunkTime}
                             streamingContentLength={chatState.streamingContent?.length ?? 0}
                             error={chatState.error}
                             isStalled={chatState.isStalled}
@@ -3827,6 +3832,7 @@
                               isStreaming={chatState.isStreaming}
                               isProcessing={chatState.isProcessing}
                               startTime={chatState.streamingStartTime}
+                              lastChunkTime={chatState.lastChunkTime}
                               streamingContentLength={chatState.streamingContent?.length ?? 0}
                               error={chatState.error}
                               isStalled={chatState.isStalled}
