@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.2.31
+
+- Fixes: agents sidebar appearing empty after switching workspaces, crash when creating agents or changing workspace settings.
+
+## 0.2.30
+
+- Agent streaming is now resilient to workspace switching. Responses are no longer lost if you navigate away and come back while an agent is mid-reply.
+- Corporate proxy support. Intent now trusts custom CA certificates from your OS certificate store, fixing connection errors behind corporate proxies.
+- UI Designer specialist upgraded to a higher-quality model for better output and accessibility adherence.
+- Faster startup and smaller install footprint.
+- Fixes: false "stalled" or "no response" warnings while agents run MCP tools, provider selection resetting to the wrong provider during workspace creation, model selector reverting when clicking the Agent card, agent responses failing for conversations containing certain unicode characters, delegated sub-agents not appearing in the sidebar, agent sidebar not restoring after workspace switch, crash in Settings > Agents for workspaces created before the coding-agent override feature, background agents incorrectly waking unrelated coordinators, parent agent resuming too early when a child agent is interrupted.
+
+## 0.2.29
+
+- Agent provider and model locking. Once an agent session starts, the provider and model stay fixed for the duration of the conversation to keep context consistent.
+- Fixes: previously pasted text appearing as the first message when creating a new agent.
+
+## 0.2.28
+
+- Fixes: crashes when creating agents, switching models, or interacting with panels in certain timing conditions, terminal panel getting stuck in an invisible state after closing the last terminal tab.
+
 ## 0.2.27
 
 - Browser-mode rendering — Intent can now run in a regular browser while Electron is running, with full data access via an HTTP/WebSocket bridge.
