@@ -4622,7 +4622,7 @@ export class ACPProvider extends BaseAgentProvider {
             protocolVersion: 1,
             clientInfo: {
               name: 'Intent',
-              version: '1.0.0',
+              version: app.getVersion(),
             },
           },
           id: ++this.requestId,
