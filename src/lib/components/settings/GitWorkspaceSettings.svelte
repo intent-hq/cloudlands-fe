@@ -7,6 +7,8 @@
   import { onMount } from 'svelte';
   import { validateBranchPrefix, sanitizeBranchPrefix } from '$lib/utils/workspace-validation';
 
+  const dispatch = getDispatch();
+
   // Settings state
   let worktreesLocation = $state('');
   let sshKeyPath = $state('');
@@ -71,7 +73,6 @@
         });
 
         // Refresh global autoCommit so workspaces pick up the new setting
-        const dispatch = getDispatch();
         dispatch(refreshAutoCommitSettings());
       } catch (error) {
         logger.error('Failed to save settings:', error);
@@ -170,11 +171,11 @@
   <section class="px-6 py-2">
     <div class="flex items-center justify-between gap-4">
       <div class="shrink-0">
-        <label for="sshKeyPath" class="text-sm font-medium text-foreground">
-          SSH Key Path
-        </label>
+        <label for="sshKeyPath" class="text-sm font-medium text-foreground"> SSH Key Path </label>
         <p class="text-xs text-subtle">
-          SSH key for git operations (e.g., <code class="bg-muted px-1 rounded">~/.ssh/id_ed25519</code>)
+          SSH key for git operations (e.g., <code class="bg-muted px-1 rounded"
+            >~/.ssh/id_ed25519</code
+          >)
         </p>
       </div>
       <div class="flex gap-2 flex-1 max-w-md">

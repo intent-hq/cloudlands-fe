@@ -102,7 +102,6 @@
   } from '$lib/store/slices/specialists/specialists-selectors';
   import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
-  import { get } from 'svelte/store';
 
   const logger = createLogger('workspace-page');
 
@@ -3824,7 +3823,7 @@
     const result = await agentFactory.createAgent(safeWorkspace, {
       name: agentName,
       workspaceId: WorkspaceId(safeWorkspace.id),
-      model: get(selectWorkspaceDefaultModel(safeWorkspace.id)),
+      model: getWorkspaceDefaultModel(safeWorkspace.id),
       provider: $activeProviderId$,
       agentType: (agentType && parseAgentTypeId(agentType)) || createAgentTypeId('chat'),
       source: 'keyboard-shortcut',
