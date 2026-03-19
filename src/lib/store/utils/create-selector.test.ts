@@ -11,6 +11,7 @@ import { init } from "../init";
 import type { StoreState } from "../types";
 import { lockUpdates, unlockUpdates } from "../slices/store-utility/store-utility-slice";
 import { saveScrollPosition } from "../slices/tab-state/tab-state-slice";
+import { getDispatch, getStoreContext } from "./utils";
 
 describe("createSelector", () => {
   describe("Basic selector functionality", () => {
@@ -129,6 +130,28 @@ describe("createSelector", () => {
       void invalidSelectCall;
       void invalidEffectCall;
       void invalidReadableCall;
+    });
+  });
+
+  describe("Lifecycle error messages", () => {
+    it("should throw a helpful error when readable selectors are called outside component init", () => {
+      const selector = createSelector((state: StoreState) => state.storeUtility.updatesLocked);
+
+      expect(() => selector()).toThrowError(
+        "Selector called outside component initialization. The readable form of selectors (e.g., selectFoo()) can only be called during component init (top-level <script> block). For event handlers, callbacks, or async functions, use selector.select(getReduxStore().getState(), ...args) instead."
+      );
+    });
+
+    it("should throw a helpful error when getDispatch is called outside component init", () => {
+      expect(() => getDispatch()).toThrowError(
+        "getDispatch() called outside component initialization. Call getDispatch() during component init (top-level <script> block) and store the returned dispatch function for event handlers, callbacks, or async functions."
+      );
+    });
+
+    it("should throw a helpful error when getStoreContext is called outside component init", () => {
+      expect(() => getStoreContext()).toThrowError(
+        "Store context accessed outside component initialization. Store context helpers can only be called during component init (top-level <script> block)."
+      );
     });
   });
 

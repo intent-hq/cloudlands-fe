@@ -44,6 +44,7 @@ src/
 - Put renderer product work in `src/features/`; shared utilities live in `src/lib/`.
 - Create agents via `agentFactory.createAgent()`.
 - Keep shared app state in `src/lib/store/`, not ad-hoc component state.
+- **Never call `selector()` or `getDispatch()` inside event handlers or callbacks** — they use Svelte's `getContext()` which is only valid at component init time. Use `selector.select(getReduxStore().getState(), ...args)` for one-time reads in handlers. See `docs/STATE_MANAGEMENT.md` for details.
 - **Never import from a feature's `main/` subtree in renderer code** (or vice-versa).
 - **Don't export utility functions from orchestration modules** — extract to a dedicated `utils/` file.
 - **Keep utilities dependency-light** — no stores, services, or side effects.

@@ -3,6 +3,7 @@ import typescript from '@typescript-eslint/eslint-plugin';
 import typescriptParser from '@typescript-eslint/parser';
 import svelte from 'eslint-plugin-svelte';
 import svelteParser from 'svelte-eslint-parser';
+import selectorLifecycleRule from './eslint-rules/selector-lifecycle.js';
 
 export default [
   {
@@ -195,10 +196,16 @@ export default [
     plugins: {
       svelte,
       '@typescript-eslint': typescript,
+      intent: {
+        rules: {
+          'selector-lifecycle': selectorLifecycleRule,
+        },
+      },
     },
     rules: {
       ...svelte.configs.recommended.rules,
       '@typescript-eslint/no-explicit-any': 'off',
+      'intent/selector-lifecycle': 'warn',
     },
   },
 ];

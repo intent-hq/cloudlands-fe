@@ -96,6 +96,41 @@ Selectors should own:
 - view-ready transformations
 - memoized, reusable reads from store state
 
+### Selector Lifecycle Rules
+
+**⚠️ CRITICAL**: Selectors created with `createSelector` have different call modes for different contexts. Using the wrong mode causes runtime crashes.
+
+| Context | Correct Usage | Why |
+|---------|--------------|-----|
+| Component init (top-level `<script>`) | `const value$ = selectFoo()` | Returns a Svelte readable store. Calls `getContext()` internally — only valid during component initialization. |
+| Event handlers, callbacks, async functions | `selectFoo.select(getReduxStore().getState(), ...args)` | Direct state read. No Svelte context needed. |
+| Sagas | `yield* selectFoo.effect(...args)` | Uses redux-saga's `select`. |
+
+**❌ NEVER do this:**
+
+```typescript
+function handleClick() {
+  // CRASHES — getContext() is not available in event handlers
+  const value = get(selectFoo());
+  const model = selectWorkspaceDefaultModel(workspaceId);
+}
+```
+
+**✅ Do this instead:**
+
+```typescript
+// At component init (top-level script)
+const dispatch = getDispatch();
+const foo$ = selectFoo();
+
+// In event handlers — use .select() for one-time reads
+function handleClick() {
+  const value = selectFoo.select(getReduxStore().getState());
+}
+```
+
+**The same rule applies to `getDispatch()`** — it also calls `getContext()` internally and must be called at component init time, not inside event handlers.
+
 ### Sagas
 
 Sagas should own:

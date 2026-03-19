@@ -49,6 +49,15 @@ Per `docs/STATE_MANAGEMENT.md`, Redux in `src/lib/store/` is the canonical home 
 - Treat `.store.svelte.ts` files such as file tracking and line changes as transitional rather than the long-term state architecture.
 - Put cross-component async workflows and persistence logic in sagas or main-process services, not in component `$effect` chains.
 
+## Selector and Dispatch Lifecycle
+
+Both `getDispatch()` and selector readable calls (`selectFoo()`) use Svelte's `getContext()` internally, which is **only available during component initialization** (synchronous top-level `<script>` execution).
+
+**Rules:**
+1. Call `getDispatch()` and selector readables at the top level of `<script>`, never inside event handlers, callbacks, or async functions
+2. For one-time state reads inside event handlers, use `selector.select(getReduxStore().getState(), ...args)`
+3. For dispatching inside event handlers, store the dispatch function at init: `const dispatch = getDispatch()`
+
 ## Current Component Map
 
 ### Event system

@@ -359,6 +359,29 @@ function MyComponent() {
 }
 ```
 
+### ❌ Calling Selector Readable Form Outside Component Init
+
+**Problem:** The default call `selectFoo()` returns a Svelte readable store by calling `getContext()` internally. This only works during component initialization — calling it in event handlers, callbacks, or async functions crashes with `lifecycle_outside_component`.
+
+```typescript
+// BAD - Crashes at runtime!
+function handleCreateAgent() {
+  const model = get(selectWorkspaceDefaultModel(workspaceId));
+}
+```
+
+**Solution:** Use `.select()` for one-time state reads outside component init:
+
+```typescript
+// GOOD - Direct state read, safe anywhere
+function handleCreateAgent() {
+  const model = selectWorkspaceDefaultModel.select(
+    getReduxStore().getState(),
+    workspaceId
+  );
+}
+```
+
 ## Summary
 
 1. **Create selectors** in `*-selectors.ts` files using `createSelector()`

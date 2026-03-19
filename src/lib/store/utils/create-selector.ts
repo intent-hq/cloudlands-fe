@@ -7,7 +7,7 @@ import type {
   StoreSelectorCallback,
   StoreSelectorSelect,
 } from "../types";
-import { getStoreContext } from "./utils";
+import { getStoreContext, isLifecycleOutsideComponentError } from "./utils";
 import { collectionFieldsSet, isCollection, type Collection } from "./collection-utils";
 import { readable, derived, type Readable } from "svelte/store";
 import { shallowEqual } from "fast-equals";
@@ -226,7 +226,24 @@ export const createSelector: CreateSelector = <ARGS extends any[], R>(
   };
 
   const readableSelector: StoreSelector<R, ARGS> = (...restArgs: ReadableArgs<ARGS>) => {
-    const context = getStoreContext();
+    let context: ReturnType<typeof getStoreContext>;
+
+    try {
+      context = getStoreContext();
+    } catch (error) {
+      if (isLifecycleOutsideComponentError(error)) {
+        throw new Error(
+          "Selector called outside component initialization. " +
+            "The readable form of selectors (e.g., selectFoo()) can only be called " +
+            "during component init (top-level <script> block). For event handlers, " +
+            "callbacks, or async functions, use selector.select(getReduxStore().getState(), ...args) instead.",
+          { cause: error }
+        );
+      }
+
+      throw error;
+    }
+
     if (!context) {
       throw new Error("Missing redux store context. Wrap root component into <Store/>");
     }
