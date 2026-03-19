@@ -117,6 +117,10 @@ export const handleAgentMessageSent: EventHandler<AgentMessageSentEvent> = async
             content: formattedMessage,
           });
           if (!queueResult.success) {
+            // Both direct send and queue fallback failed — clear the interrupted flag
+            // so the agent doesn't remain permanently suppressed (no idle events, no
+            // queue processing). The delivery failure event will notify the sender.
+            handler.clearInterruptedFlag(toAgentId);
             await emitMessageDeliveryFailure(
               workspaceId,
               fromAgentId,
@@ -147,6 +151,9 @@ export const handleAgentMessageSent: EventHandler<AgentMessageSentEvent> = async
           content: formattedMessage,
         });
         if (!queueResult.success) {
+          // stopAgent may have set the interrupted flag before throwing — clear it
+          // so the agent doesn't remain permanently suppressed.
+          handler.clearInterruptedFlag(toAgentId);
           await emitMessageDeliveryFailure(
             workspaceId,
             fromAgentId,

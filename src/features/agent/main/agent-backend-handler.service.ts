@@ -6524,6 +6524,20 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     finalMessage?: AgentMessage,
     finishReason?: string,
   ): void {
+    // CRITICAL: Do NOT emit agent:idle when the agent was interrupted and is about to
+    // resume processing. This prevents premature wake-ups of parent agents.
+    // When an agent is interrupted, it will immediately receive the interrupt message
+    // and start streaming again. The parent should not be woken until the child is
+    // truly done (i.e., completes a turn without being interrupted).
+    if (this.interruptedAgents.has(agentId)) {
+      logger.info('Suppressing agent:idle event — agent was interrupted and will resume', {
+        agentId,
+        workspaceId,
+        finishReason,
+      });
+      return;
+    }
+
     // Use a single coordinated async chain instead of three separate
     // fire-and-forget import().then() chains. Previously each operation
     // ran independently, which meant:
