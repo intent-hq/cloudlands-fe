@@ -318,7 +318,7 @@ export const PROVIDER_MODEL_TIERS: Record<
   string,
   { fast: string; balanced: string; smart: string }
 > = {
-  auggie: { fast: 'haiku4.5', balanced: 'sonnet4.5', smart: 'gpt5.4' },
+  auggie: { fast: 'haiku4.5', balanced: 'sonnet4.5', smart: 'opus4.6' },
   'claude-code': {
     fast: 'haiku',
     balanced: 'sonnet',

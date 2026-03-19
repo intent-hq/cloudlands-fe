@@ -224,14 +224,14 @@ export const MODEL_DEFAULTS = {
    * Default model for interactive agents (workspaces, chat).
    * This is the primary model used when users create new agents.
    */
-  AGENT_MODEL: MODEL_IDS.GPT_5_4,
+  AGENT_MODEL: MODEL_IDS.CLAUDE_OPUS_4_6,
 
   /**
    * Default model for the model picker UI initial selection.
    * Used when no model has been previously selected by the user.
    * Should match AGENT_MODEL since this is the default for interactive use.
    */
-  UI_INITIAL_MODEL: MODEL_IDS.GPT_5_4,
+  UI_INITIAL_MODEL: MODEL_IDS.CLAUDE_OPUS_4_6,
 
   /**
    * Ordered preference list for the default interactive model.
@@ -239,7 +239,7 @@ export const MODEL_DEFAULTS = {
    * Used by the model store and model picker to resolve a sane default
    * instead of blindly picking availableModels[0].
    */
-  UI_MODEL_PREFERENCE: [MODEL_IDS.GPT_5_4, MODEL_IDS.CLAUDE_OPUS_4_6, MODEL_IDS.CLAUDE_OPUS_4_5] as readonly string[],
+  UI_MODEL_PREFERENCE: [MODEL_IDS.CLAUDE_OPUS_4_6, MODEL_IDS.GPT_5_4, MODEL_IDS.CLAUDE_OPUS_4_5] as readonly string[],
 
   /**
    * Default model for background agents (commit, PR, review).

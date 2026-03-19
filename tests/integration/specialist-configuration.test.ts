@@ -231,26 +231,26 @@ describe('Specialist Configuration', () => {
   });
 
   // ==========================================================================
-  // Regression: Auggie default model is GPT-5.4
-  // These tests lock in the gpt5.4 default so a revert to opus4.5/opus4.6
+  // Regression: Auggie default model is Opus 4.6
+  // These tests lock in the opus4.6 default so a revert to opus4.5/gpt5.4
   // would be caught immediately.
   // ==========================================================================
 
-  describe('Auggie Default Model Regression (gpt5.4)', () => {
-    it('MODEL_DEFAULTS.AGENT_MODEL is gpt5.4', () => {
-      expect(MODEL_DEFAULTS.AGENT_MODEL).toBe('gpt5.4');
+  describe('Auggie Default Model Regression (opus4.6)', () => {
+    it('MODEL_DEFAULTS.AGENT_MODEL is opus4.6', () => {
+      expect(MODEL_DEFAULTS.AGENT_MODEL).toBe('opus4.6');
     });
 
-    it('MODEL_DEFAULTS.UI_INITIAL_MODEL is gpt5.4', () => {
-      expect(MODEL_DEFAULTS.UI_INITIAL_MODEL).toBe('gpt5.4');
+    it('MODEL_DEFAULTS.UI_INITIAL_MODEL is opus4.6', () => {
+      expect(MODEL_DEFAULTS.UI_INITIAL_MODEL).toBe('opus4.6');
     });
 
-    it('MODEL_DEFAULTS.UI_MODEL_PREFERENCE has gpt5.4 first', () => {
-      expect(MODEL_DEFAULTS.UI_MODEL_PREFERENCE[0]).toBe('gpt5.4');
+    it('MODEL_DEFAULTS.UI_MODEL_PREFERENCE has opus4.6 first', () => {
+      expect(MODEL_DEFAULTS.UI_MODEL_PREFERENCE[0]).toBe('opus4.6');
     });
 
-    it('deprecated DEFAULT_AGENT_MODEL alias is gpt5.4', () => {
-      expect(DEFAULT_AGENT_MODEL).toBe('gpt5.4');
+    it('deprecated DEFAULT_AGENT_MODEL alias is opus4.6', () => {
+      expect(DEFAULT_AGENT_MODEL).toBe('opus4.6');
     });
 
     it('MODEL_IDS.GPT_5_4 is the canonical gpt5.4 string', () => {
@@ -258,40 +258,40 @@ describe('Specialist Configuration', () => {
     });
   });
 
-  describe('Auggie Provider Tier Regression (gpt5.4)', () => {
-    it('auggie smart tier resolves to gpt5.4', () => {
-      expect(PROVIDER_MODEL_TIERS['auggie'].smart).toBe('gpt5.4');
+  describe('Auggie Provider Tier Regression (opus4.6)', () => {
+    it('auggie smart tier resolves to opus4.6', () => {
+      expect(PROVIDER_MODEL_TIERS['auggie'].smart).toBe('opus4.6');
     });
 
-    it('getDefaultModelForProvider(auggie, smart) returns gpt5.4', () => {
-      expect(getDefaultModelForProvider('auggie', 'smart')).toBe('gpt5.4');
+    it('getDefaultModelForProvider(auggie, smart) returns opus4.6', () => {
+      expect(getDefaultModelForProvider('auggie', 'smart')).toBe('opus4.6');
     });
 
-    it('getModelTierFromModel(gpt5.4) returns smart', () => {
-      expect(getModelTierFromModel('gpt5.4')).toBe('smart');
+    it('getModelTierFromModel(opus4.6) returns smart', () => {
+      expect(getModelTierFromModel('opus4.6')).toBe('smart');
     });
 
-    it('getModelTierFromModel(gpt5.4, auggie) returns smart', () => {
-      expect(getModelTierFromModel('gpt5.4', 'auggie')).toBe('smart');
+    it('getModelTierFromModel(opus4.6, auggie) returns smart', () => {
+      expect(getModelTierFromModel('opus4.6', 'auggie')).toBe('smart');
     });
 
     it('default provider is auggie', () => {
       expect(getDefaultProviderId()).toBe('auggie');
     });
 
-    it('smart-tier specialists resolve to gpt5.4 for auggie', () => {
+    it('smart-tier specialists resolve to opus4.6 for auggie', () => {
       const smartSpecialists = SPECIALISTS.filter((s) => s.defaultModelTier === 'smart');
       expect(smartSpecialists.length).toBeGreaterThan(0);
       for (const s of smartSpecialists) {
         const resolved = getDefaultModelForProvider('auggie', s.defaultModelTier!);
-        expect(resolved).toBe('gpt5.4');
+        expect(resolved).toBe('opus4.6');
       }
     });
 
-    it('non-auggie provider tiers are NOT gpt5.4', () => {
+    it('non-auggie provider tiers are NOT opus4.6', () => {
       // Ensure the change is scoped to auggie only
       const claudeCode = PROVIDER_MODEL_TIERS['claude-code'];
-      expect(claudeCode.smart).not.toBe('gpt5.4');
+      expect(claudeCode.smart).not.toBe('opus4.6');
     });
   });
 
