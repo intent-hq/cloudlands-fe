@@ -1631,51 +1631,16 @@
         state.streamingContent !== currentChatState.streamingContent;
 
       // Per-agent ChatService: state is always for this agent, no session-mismatch guard needed.
+      // Monotonicity guards (message count / contentBlocks count) are enforced
+      // at the source in ChatService.safeStateUpdate(), so ChatPanel no longer
+      // needs to reject updates here.
 
-      // CRITICAL FIX: Don't overwrite existing messages with empty messages.
-      // This can happen during initialization race conditions.
-      // Exception: Allow if streaming is active (streaming may start with empty messages)
-      // Exception: Allow if stream just ended (finalization may remove optimistic messages)
-      if (
-        state.messages.length < currentMessages.length &&
-        currentMessages.length > 0 &&
-        !state.isStreaming &&
-        !state.streamJustEnded
-      ) {
-        // Upgrade to warn so this is visible in console when debugging message loss
-        logger.warn('[ChatPanel] Ignoring chatService update with fewer messages (non-streaming)', {
-          agentId,
-          currentMessageCount: currentMessages.length,
-          incomingMessageCount: state.messages.length,
-          currentLastId: currentMessages[currentMessages.length - 1]?.id,
-          incomingLastId: state.messages[state.messages.length - 1]?.id,
-          currentRoles: currentMessages.map((m) => m.role),
-          incomingRoles: state.messages.map((m) => m.role),
-        });
+      // Hydration guard: don't let an empty store emission overwrite messages
+      // already populated from agentService fallback during mount.
+      // This is narrower than the old guard — it only blocks empty→non-empty overwrites,
+      // so it can't cause permanent blocking during streaming.
+      if (state.messages.length === 0 && currentMessages.length > 0 && !state.isStreaming) {
         return;
-      }
-
-      // CRITICAL FIX: Don't overwrite with fewer contentBlocks during streaming.
-      // This prevents intermediate state from flushChunkUpdate() (which reads stale
-      // ChatService state) from removing tool_use blocks that were just added.
-      // This matches the guard that Path B (agentService subscription) already has.
-      if (state.isStreaming && currentMessages.length > 0 && state.messages.length > 0) {
-        const lastCurrentMsg = currentMessages[currentMessages.length - 1];
-        const lastIncomingMsg = state.messages[state.messages.length - 1];
-        if (
-          lastCurrentMsg?.id === lastIncomingMsg?.id &&
-          (lastIncomingMsg?.contentBlocks?.length || 0) <
-            (lastCurrentMsg?.contentBlocks?.length || 0) &&
-          (lastCurrentMsg?.contentBlocks?.length || 0) > 0
-        ) {
-          logger.debug('[ChatPanel] Ignoring chatService update with fewer contentBlocks', {
-            agentId,
-            messageId: lastCurrentMsg?.id,
-            currentBlockCount: lastCurrentMsg?.contentBlocks?.length || 0,
-            incomingBlockCount: lastIncomingMsg?.contentBlocks?.length || 0,
-          });
-          return;
-        }
       }
 
       // Only log actual state transitions (not same-value updates) at debug level

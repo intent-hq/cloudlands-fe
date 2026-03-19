@@ -74,8 +74,6 @@ export interface ChatState {
     text: string;
     options?: SendMessageOptions;
   } | null;
-  /** True for one update cycle after a stream ends, allowing message count decreases through guards */
-  streamJustEnded?: boolean;
   /** Model unavailable info - set when a model fails and user can retry with another */
   modelUnavailable: {
     failedModel: string;
@@ -211,6 +209,65 @@ export class ChatService implements IDisposable {
   }
 
   /**
+   * Monotonicity-safe state update wrapper.
+   *
+   * During active streaming, this prevents regressions where an update would
+   * reduce `messages.length` or reduce `contentBlocks.length` on the last
+   * message. These regressions cause ChatPanel to permanently freeze when
+   * multiple agents stream concurrently.
+   *
+   * Use this for any state update that touches `messages` during streaming.
+   */
+  private safeStateUpdate(updater: (s: ChatState) => ChatState): void {
+    this.state.update((s) => {
+      const next = updater(s);
+
+      // Only enforce monotonicity while actively streaming.
+      // Skip guards when stream is finalizing (isStreaming true→false) so that
+      // legitimate message/block count reductions from stream completion go through.
+      if (!s.isStreaming || !next.isStreaming) return next;
+
+      // Guard 1: never reduce message count during streaming
+      if (next.messages.length < s.messages.length) {
+        logger.warn('[ChatService] safeStateUpdate: prevented message count regression during streaming', {
+          agentId: this.agentId,
+          currentCount: s.messages.length,
+          incomingCount: next.messages.length,
+          currentLastId: s.messages[s.messages.length - 1]?.id,
+          incomingLastId: next.messages[next.messages.length - 1]?.id,
+        });
+        return { ...next, messages: s.messages };
+      }
+
+      // Guard 2: never reduce contentBlocks count on the last message during streaming
+      if (next.messages.length > 0 && s.messages.length > 0) {
+        const lastCurrent = s.messages[s.messages.length - 1];
+        const lastNext = next.messages[next.messages.length - 1];
+        if (
+          lastCurrent?.id === lastNext?.id &&
+          (lastNext?.contentBlocks?.length || 0) < (lastCurrent?.contentBlocks?.length || 0) &&
+          (lastCurrent?.contentBlocks?.length || 0) > 0
+        ) {
+          logger.warn('[ChatService] safeStateUpdate: prevented contentBlocks regression during streaming', {
+            agentId: this.agentId,
+            messageId: lastCurrent?.id,
+            currentBlockCount: lastCurrent?.contentBlocks?.length || 0,
+            incomingBlockCount: lastNext?.contentBlocks?.length || 0,
+            currentBlockTypes: lastCurrent?.contentBlocks?.map((b) => b.type) || [],
+            incomingBlockTypes: lastNext?.contentBlocks?.map((b) => b.type) || [],
+          });
+          const fixedLastMessage = { ...lastNext, contentBlocks: lastCurrent.contentBlocks };
+          const fixedMessages = [...next.messages.slice(0, -1), fixedLastMessage];
+          return { ...next, messages: fixedMessages };
+        }
+      }
+
+      return next;
+    });
+  }
+
+
+  /**
    * PERFORMANCE: Flush pending chunk updates using requestAnimationFrame
    * FIX: Read current messages from state to avoid overwriting content-block updates
    */
@@ -226,7 +283,7 @@ export class ChatService implements IDisposable {
 
       // Compute updated messages from CURRENT state, not cached messages
       // This prevents race conditions where content-blocks updates are overwritten
-      this.state.update((s) => {
+      this.safeStateUpdate((s) => {
         const existingMessages = s.messages;
         const lastMessage = existingMessages[existingMessages.length - 1];
         const hasStreamingAssistantMessage =
@@ -2219,11 +2276,6 @@ export class ChatService implements IDisposable {
         const currentState = get(this.state);
         const newIsStreaming = session.isStreaming ?? currentState.isStreaming;
 
-        // Detect stream completion (isStreaming transitions true→false) at the top level
-        // so it's available for the state update below. When a stream completes through this
-        // handler, we need to set streamJustEnded so ChatPanel's guard allows the message
-        // count decrease.
-        const isStreamCompleting = currentState.isStreaming && !newIsStreaming;
 
         // Even when NOT streaming, don't overwrite instance state that has
         // more messages than the incoming session data. This prevents stale disk data
@@ -2391,7 +2443,7 @@ export class ChatService implements IDisposable {
           }
         }
 
-        this.state.update((s) => {
+        this.safeStateUpdate((s) => {
           // Deduplicate messages to prevent Svelte "duplicate key" error
           // This handles cases where session.messages might already contain duplicates
           const seen = new Set<string>();
@@ -2454,8 +2506,7 @@ export class ChatService implements IDisposable {
                 isStreaming: newIsStreaming,
                 isProcessing: newIsStreaming,
                 streamingContent: newStreamingContent,
-                // Signal stream completion so ChatPanel guard allows message count decrease
-                ...(isStreamCompleting ? { streamJustEnded: true } : {}),
+
               };
             }
           }
@@ -2468,17 +2519,8 @@ export class ChatService implements IDisposable {
             isProcessing: newIsStreaming,
             // Also sync streamingContent if we updated it
             streamingContent: newStreamingContent,
-            // Signal stream completion so ChatPanel guard allows message count decrease
-            ...(isStreamCompleting ? { streamJustEnded: true } : {}),
           };
         });
-
-        // Clear streamJustEnded after one tick when stream completed through this handler
-        if (isStreamCompleting) {
-          requestAnimationFrame(() => {
-            this.state.update((s) => ({ ...s, streamJustEnded: false }));
-          });
-        }
 
         // CRITICAL: Re-setup stream listener if session is streaming but we don't have a handler
         // This happens when stopChat() was called (which removes the handler) and then
@@ -2787,7 +2829,7 @@ export class ChatService implements IDisposable {
       // This prevents losing optimistic user messages when sessionStore returns
       // stale data that doesn't include recently added messages.
       let contentBlocksMissingUserMessages: AgentMessage[] = [];
-      this.state.update((s) => {
+      this.safeStateUpdate((s) => {
         if (updatedMessages.length < s.messages.length) {
           logger.warn('[ChatService] content-blocks: would reduce message count — merging instead', {
             sessionId,
@@ -3043,7 +3085,7 @@ export class ChatService implements IDisposable {
       // Update instance state
       // FIX: Preserve optimistic user messages that may not be in updatedMessages yet
       let endMissingUserMessages: AgentMessage[] = [];
-      this.state.update((s) => {
+      this.safeStateUpdate((s) => {
         let finalMessages = updatedMessages;
         if (updatedMessages.length < s.messages.length) {
           const updatedIds = new Set(updatedMessages.map(m => m.id));
@@ -3073,10 +3115,7 @@ export class ChatService implements IDisposable {
           streamingContent: '',
           streamingStartTime: null,
           lastAttemptedMessage: null,
-          // Signal to ChatPanel that this update is from stream completion,
-          // so the message count guard should allow fewer messages through.
-          // Cleared after one update cycle in the ChatPanel subscriber.
-          streamJustEnded: true,
+
         };
       });
 
@@ -3095,10 +3134,6 @@ export class ChatService implements IDisposable {
         }
       }
 
-      // Clear streamJustEnded after one tick so it only bypasses the guard once
-      requestAnimationFrame(() => {
-        this.state.update((s) => ({ ...s, streamJustEnded: false }));
-      });
     } else if (data.type === 'error') {
       // Stop stall detection on error
       this.stopStallDetection();
