@@ -1,5 +1,6 @@
 import { call, put, takeEvery } from "typed-redux-saga";
 import { createLogger } from "$lib/utils/client-logger";
+import { setLocalStorageItem } from "$lib/store/utils/safe-local-storage-saga";
 import { selectUserOverrides, selectProviderModelOverrides } from "../specialists-selectors";
 import {
   switchModelOverridesForProvider,
@@ -40,7 +41,7 @@ function* handleSwitchModelOverrides(action: ReturnType<typeof switchModelOverri
   yield* put(setProviderModelOverrides(providerModelOverrides));
   try {
     yield* call(
-      [localStorage, localStorage.setItem],
+      setLocalStorageItem,
       PROVIDER_MODEL_OVERRIDES_KEY,
       JSON.stringify(providerModelOverrides)
     );

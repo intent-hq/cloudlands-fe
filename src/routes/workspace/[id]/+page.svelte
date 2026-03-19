@@ -100,7 +100,7 @@
     selectEffectiveBehaviorPrompt,
     selectEffectiveCodingAgent,
   } from '$lib/store/slices/specialists/specialists-selectors';
-  import { selectActiveProviderId } from '$lib/store/slices/active-provider/active-provider-selectors';
+  import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
   import { get } from 'svelte/store';
 

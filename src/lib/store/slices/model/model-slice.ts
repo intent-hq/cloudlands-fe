@@ -1,20 +1,30 @@
 import { createAction } from "../../utils/create-action";
 import { createReducer } from "../../utils/create-reducer";
+import {
+  createCollection,
+  type Collection,
+} from "../../utils/collection-utils";
 import type { AuggieModel } from "$features/auggie/auggie-models.client";
-import { MODEL_DEFAULTS } from "$shared/constants/agent-services";
+import {
+  normalizeModelForProvider,
+  normalizeProviderModels,
+} from "./model-selection-utils";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type ModelState = {
-  selectedModel: string;
-  availableModelsByProvider: Record<string, AuggieModel[]>;
-  isLoadingByProvider: Record<string, boolean>;
-  modelsLoadedByProvider: Record<string, boolean>;
-  loadError: string | null;
-  activeProviderId: string | null;
+export type ModelLoadingStatus = "success" | "loading" | "error";
+
+export type ModelLoadingState = {
+  status: ModelLoadingStatus;
   retryAttempt: number;
+  error?: string;
+};
+
+export type ModelState = {
+  availableModels: Collection<AuggieModel, "value">;
+  loadingState: Record<string, ModelLoadingState>;
   workspaceModels: Record<string, string>;
   providerModels: Record<string, string>;
 };
@@ -30,18 +40,34 @@ export const PROVIDER_MODELS_KEY = "workspaces-provider-models";
 export const MAX_AUTO_RETRIES = 3;
 export const RETRY_DELAYS_MS = [5_000, 15_000, 30_000];
 
+function buildLoadingState(
+  previous: ModelLoadingState | undefined,
+  updates: {
+    status: ModelLoadingStatus;
+    retryAttempt?: number;
+    error?: string;
+  }
+): ModelLoadingState {
+  const nextState: ModelLoadingState = {
+    status: updates.status,
+    retryAttempt: updates.retryAttempt ?? previous?.retryAttempt ?? 0,
+  };
+
+  const error = updates.error ?? previous?.error;
+  if (error !== undefined) {
+    nextState.error = error;
+  }
+
+  return nextState;
+}
+
 // ============================================================================
 // Initial State
 // ============================================================================
 
 export const initialState: ModelState = {
-  selectedModel: MODEL_DEFAULTS.UI_INITIAL_MODEL,
-  availableModelsByProvider: {},
-  isLoadingByProvider: {},
-  modelsLoadedByProvider: {},
-  loadError: null,
-  activeProviderId: null,
-  retryAttempt: 0,
+  availableModels: createCollection<AuggieModel, "value">("value"),
+  loadingState: {},
   workspaceModels: {},
   providerModels: {},
 };
@@ -50,37 +76,34 @@ export const initialState: ModelState = {
 // Reducer Actions (pure state updates)
 // ============================================================================
 
-export const setSelectedModel = createAction<[model: string]>(
+export const setSelectedModel = createAction<
+  [payload: { providerId: string; model: string }]
+>(
   "model/setSelectedModel"
 );
 
-export const setAvailableModels = createAction<
-  [payload: { providerId: string; models: AuggieModel[] }]
+export const setAvailableModels = createAction<[models: AuggieModel[]]>("model/setAvailableModels");
+
+export const setLoadingStateForProvider = createAction<
+  [
+    payload: {
+      providerId: string;
+      status: ModelLoadingStatus;
+      retryAttempt?: number;
+      error?: string;
+    },
+  ]
 >(
-  "model/setAvailableModels"
+  "model/setLoadingStateForProvider"
 );
 
-export const setIsLoadingModels = createAction<
-  [payload: { providerId: string; loading: boolean }]
+export const clearLoadingStateForProvider = createAction<[providerId: string]>(
+  "model/clearLoadingStateForProvider"
+);
+
+export const setRetryAttempt = createAction<
+  [payload: { providerId: string; attempt: number }]
 >(
-  "model/setIsLoadingModels"
-);
-
-export const setModelsLoaded = createAction<
-  [payload: { providerId: string; loaded: boolean }]
->(
-  "model/setModelsLoaded"
-);
-
-export const setLoadError = createAction<[error: string | null]>(
-  "model/setLoadError"
-);
-
-export const setActiveProviderId = createAction<[id: string | null]>(
-  "model/setActiveProviderId"
-);
-
-export const setRetryAttempt = createAction<[attempt: number]>(
   "model/setRetryAttempt"
 );
 
@@ -127,43 +150,53 @@ export const resetToDefaults = createAction("model/resetToDefaults");
 // ============================================================================
 
 export const modelReducer = createReducer<ModelState>(initialState)
-  .with(setSelectedModel, (state, { payload: [model] }) => ({
+  .with(setSelectedModel, (state, { payload: [{ providerId, model }] }) => ({
     ...state,
-    selectedModel: model,
-  }))
-  .with(setAvailableModels, (state, { payload: [{ providerId, models }] }) => ({
-    ...state,
-    availableModelsByProvider: {
-      ...state.availableModelsByProvider,
-      [providerId]: models,
+    providerModels: {
+      ...state.providerModels,
+      [providerId]: normalizeModelForProvider(providerId, model),
     },
   }))
-  .with(setIsLoadingModels, (state, { payload: [{ providerId, loading }] }) => ({
+  .with(setAvailableModels, (state, { payload: [models] }) => ({
     ...state,
-    isLoadingByProvider: {
-      ...state.isLoadingByProvider,
-      [providerId]: loading,
-    },
+    availableModels: createCollection<AuggieModel, "value">("value", models),
   }))
-  .with(setModelsLoaded, (state, { payload: [{ providerId, loaded }] }) => ({
-    ...state,
-    modelsLoadedByProvider: {
-      ...state.modelsLoadedByProvider,
-      [providerId]: loaded,
-    },
-  }))
-  .with(setLoadError, (state, { payload: [error] }) => ({
-    ...state,
-    loadError: error,
-  }))
-  .with(setActiveProviderId, (state, { payload: [id] }) => ({
-    ...state,
-    activeProviderId: id,
-  }))
-  .with(setRetryAttempt, (state, { payload: [attempt] }) => ({
-    ...state,
-    retryAttempt: attempt,
-  }))
+  .with(
+    setLoadingStateForProvider,
+    (state, { payload: [{ providerId, status, retryAttempt, error }] }) => ({
+      ...state,
+      loadingState: {
+        ...state.loadingState,
+        [providerId]: buildLoadingState(state.loadingState[providerId], {
+          status,
+          retryAttempt,
+          error,
+        }),
+      },
+    })
+  )
+  .with(clearLoadingStateForProvider, (state, { payload: [providerId] }) => {
+    const { [providerId]: _removed, ...loadingState } = state.loadingState;
+
+    return {
+      ...state,
+      loadingState,
+    };
+  })
+  .with(setRetryAttempt, (state, { payload: [{ providerId, attempt }] }) => {
+    const previous = state.loadingState[providerId];
+
+    return {
+      ...state,
+      loadingState: {
+        ...state.loadingState,
+        [providerId]: buildLoadingState(previous, {
+          status: previous?.status ?? "loading",
+          retryAttempt: attempt,
+        }),
+      },
+    };
+  })
   .with(setWorkspaceModel, (state, { payload: [{ workspaceId, model }] }) => ({
     ...state,
     workspaceModels: { ...state.workspaceModels, [workspaceId]: model },
@@ -180,7 +213,10 @@ export const modelReducer = createReducer<ModelState>(initialState)
     setProviderModel,
     (state, { payload: [{ providerId, model }] }) => ({
       ...state,
-      providerModels: { ...state.providerModels, [providerId]: model },
+      providerModels: {
+        ...state.providerModels,
+        [providerId]: normalizeModelForProvider(providerId, model),
+      },
     })
   )
   .with(
@@ -194,7 +230,7 @@ export const modelReducer = createReducer<ModelState>(initialState)
     loadProviderModelsFromStorage,
     (state, { payload: [models] }) => ({
       ...state,
-      providerModels: models,
+      providerModels: normalizeProviderModels(models),
     })
   )
   .with(resetModelState, () => initialState);

@@ -35,9 +35,11 @@
     setCodingAgentOverride,
     clearCodingAgentOverride,
   } from '$lib/store/slices/specialists/specialists-slice';
-  import { selectActiveProviderId } from '$lib/store/slices/active-provider/active-provider-selectors';
-  import { setActiveProvider } from '$lib/store/slices/active-provider/active-provider-slice';
-  import { selectEnabledProviderIds } from '$lib/store/slices/additional-agents/additional-agents-selectors';
+  import {
+    selectActiveProviderId,
+    selectEnabledProviderIds,
+  } from '$lib/store/slices/provider-settings/provider-settings-selectors';
+  import { setActiveProvider } from '$lib/store/slices/provider-settings/provider-settings-slice';
   import Button from '$lib/components/ui/button/button.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';

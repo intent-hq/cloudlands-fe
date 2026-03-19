@@ -1,5 +1,6 @@
 import { call, put } from "typed-redux-saga";
 import { createLogger } from "$lib/utils/client-logger";
+import { getLocalStorageItem } from "$lib/store/utils/safe-local-storage-saga";
 import { SPECIALISTS_CHANNELS } from "$shared/ipc/channels";
 import type { Specialist } from "$lib/constants/specialists";
 import {
@@ -151,10 +152,7 @@ function* loadFolderPath() {
 
 function* loadProviderModelOverridesCache() {
   try {
-    const stored: string | null = yield* call(
-      [localStorage, localStorage.getItem],
-      PROVIDER_MODEL_OVERRIDES_KEY
-    );
+    const stored: string | null = yield* call(getLocalStorageItem, PROVIDER_MODEL_OVERRIDES_KEY);
     if (stored) {
       const parsed: Record<string, Record<string, string>> = JSON.parse(stored);
       yield* put(setProviderModelOverrides(parsed));

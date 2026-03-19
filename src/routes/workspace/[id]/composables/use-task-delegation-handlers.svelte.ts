@@ -24,7 +24,7 @@ import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { selectEffectiveModel, selectEffectiveBehaviorPrompt } from '$lib/store/slices/specialists/specialists-selectors';
 import { SPECIALISTS } from '$lib/constants/specialists';
 import { getDefaultModelForProvider, PROVIDER_MODEL_TIERS } from '$shared/config/provider-config';
-import { selectActiveProviderId } from '$lib/store/slices/active-provider/active-provider-selectors';
+import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
 
 const logger = createLogger('task-delegation-handlers');
 

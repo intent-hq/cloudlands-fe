@@ -11,11 +11,16 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { toast } from '$lib/components/ui/toast';
   import { invoke } from '$lib/electron-bridge';
-  import type { InstalledEditor } from '$lib/store/slices/installed-editors/installed-editors-slice';
-  import { fetchEditors } from '$lib/store/slices/installed-editors/installed-editors-slice';
-  import { selectInstalledEditors } from '$lib/store/slices/installed-editors/installed-editors-selectors';
-  import { setOpenAction, type OpenAction } from '$lib/store/slices/open-action/open-action-slice';
-  import { selectOpenAction } from '$lib/store/slices/open-action/open-action-selectors';
+  import {
+    fetchEditors,
+    setOpenAction,
+    type InstalledEditor,
+    type OpenAction,
+  } from '$lib/store/slices/external-editors/external-editors-slice';
+  import {
+    selectInstalledEditors,
+    selectOpenAction,
+  } from '$lib/store/slices/external-editors/external-editors-selectors';
   import { getDispatch } from '$lib/store/utils/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import { toNativePath } from '$lib/utils/path-utils';

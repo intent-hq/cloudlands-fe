@@ -3,6 +3,7 @@ import type { Editor } from '@tiptap/core';
 import { notesClient } from '$features/notes/notes.client';
 import { notesStateManager } from '$features/notes/notes.store.svelte';
 import { buildTaskNoteContent } from '$features/notes/utils/task-agent-message-builder';
+import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import {
   addTaskAgentAssociation,
@@ -158,7 +159,7 @@ export async function runAssignAgentTaskMenuAction({
         peerOrder,
         agentConfig: {
           instruction: taskText,
-          model: getReduxStore().getState().model.workspaceModels?.[workspace.id] ?? getReduxStore().getState().model.selectedModel,
+          model: selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspace.id),
           autoStart: true,
           agentId: optimisticAgentId, // Use pre-generated ID
         },

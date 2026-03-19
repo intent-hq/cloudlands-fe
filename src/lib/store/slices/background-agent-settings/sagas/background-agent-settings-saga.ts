@@ -1,6 +1,10 @@
 import { call, put, fork, takeEvery } from "typed-redux-saga";
 import { createLogger } from "$lib/utils/client-logger";
 import {
+  getLocalStorageItem,
+  setLocalStorageItem,
+} from "$lib/store/utils/safe-local-storage-saga";
+import {
   getDefaultModelForProvider,
   getDefaultProviderId,
   PROVIDER_MODEL_TIERS,
@@ -37,10 +41,7 @@ function* initSaga() {
 
   // Load main settings
   try {
-    const stored: string | null = yield* call(
-      [localStorage, localStorage.getItem],
-      STORAGE_KEY
-    );
+    const stored: string | null = yield* call(getLocalStorageItem, STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
       yield* put(
@@ -57,10 +58,7 @@ function* initSaga() {
 
   // Load per-provider settings cache
   try {
-    const stored: string | null = yield* call(
-      [localStorage, localStorage.getItem],
-      PROVIDER_SETTINGS_KEY
-    );
+    const stored: string | null = yield* call(getLocalStorageItem, PROVIDER_SETTINGS_KEY);
     if (stored) {
       const parsed: Record<string, ProviderBgSettings> = JSON.parse(stored);
       yield* put(hydrateProviderSettings(parsed));
@@ -86,11 +84,7 @@ function* persistMainSettings() {
     const typeOverrides: Record<BackgroundAgentType, string> =
       yield* selectBgTypeOverrides.effect();
     const settings = { defaultModel, typeOverrides };
-    yield* call(
-      [localStorage, localStorage.setItem],
-      STORAGE_KEY,
-      JSON.stringify(settings)
-    );
+    yield* call(setLocalStorageItem, STORAGE_KEY, JSON.stringify(settings));
     logger.debug("Saved background agent settings");
   } catch (error) {
     logger.error("Failed to save background agent settings:", error);
@@ -102,7 +96,7 @@ function* persistProviderSettings(
 ) {
   try {
     yield* call(
-      [localStorage, localStorage.setItem],
+      setLocalStorageItem,
       PROVIDER_SETTINGS_KEY,
       JSON.stringify(providerSettings)
     );

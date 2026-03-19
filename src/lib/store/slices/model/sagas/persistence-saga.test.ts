@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { expectSaga } from 'redux-saga-test-plan';
 import * as sagaEffects from 'redux-saga/effects';
+import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
 
 vi.mock('typed-redux-saga', () => ({
   call: function* (fnOrDescriptor: any, ...args: any[]) {
@@ -22,24 +23,23 @@ vi.mock('typed-redux-saga', () => ({
 vi.mock('$features/agent/services/unified-state-store', () => ({
   unifiedStateStore: {
     selectModel: vi.fn(),
-  },
-}));
-
-vi.mock('$lib/stores/active-provider.store.svelte', () => ({
-  activeProviderStore: {
-    activeProviderId: 'codex',
+    setAvailableModels: vi.fn(),
   },
 }));
 
 import { unifiedStateStore } from '$features/agent/services/unified-state-store';
 import {
+  removeLocalStorageItem,
+  setLocalStorageItem,
+} from '$lib/store/utils/safe-local-storage-saga';
+import { normalizeModelForProvider } from '../model-selection-utils';
+import {
   GLOBAL_MODEL_KEY,
+  WORKSPACE_MODELS_KEY,
+  clearLoadingStateForProvider,
   clearAllWorkspaceModels,
   loadModels,
-  setActiveProviderId,
-  setLoadError,
-  setModelsLoaded,
-  setRetryAttempt,
+  setAvailableModels,
   setSelectedModel,
 } from '../model-slice';
 import { handleReloadModelsForProvider } from './persistence-saga';
@@ -58,20 +58,47 @@ describe('persistenceSaga', () => {
         model: {
           providerModels: { codex: savedModel },
         },
-        activeProvider: {
+        providerSettings: {
           activeProviderId: 'codex',
+          enabledProviders: {},
         },
       })
       .put(clearAllWorkspaceModels())
-      .put(setSelectedModel(savedModel))
-      .call([localStorage, localStorage.setItem], GLOBAL_MODEL_KEY, savedModel)
-      .put(setActiveProviderId('codex'))
-      .put(setModelsLoaded({ providerId: 'codex', loaded: false }))
-      .put(setLoadError(null))
-      .put(setRetryAttempt(0))
+      .call(removeLocalStorageItem, WORKSPACE_MODELS_KEY)
+      .put(setSelectedModel({ providerId: 'codex', model: savedModel }))
+      .call(setLocalStorageItem, GLOBAL_MODEL_KEY, savedModel)
+      .put(clearLoadingStateForProvider('codex'))
+      .put(setAvailableModels([]))
       .put(loadModels())
       .silentRun(0);
 
     expect(unifiedStateStore.selectModel).toHaveBeenCalledWith(savedModel);
+    expect(unifiedStateStore.setAvailableModels).toHaveBeenCalledWith([]);
+  });
+
+  it('resets global and unified selection to a provider default when no saved model exists', async () => {
+    const fallbackModel = normalizeModelForProvider('codex', MODEL_DEFAULTS.UI_INITIAL_MODEL);
+
+    await expectSaga(handleReloadModelsForProvider)
+      .withState({
+        model: {
+          providerModels: {},
+        },
+        providerSettings: {
+          activeProviderId: 'codex',
+          enabledProviders: {},
+        },
+      })
+      .put(clearAllWorkspaceModels())
+      .call(removeLocalStorageItem, WORKSPACE_MODELS_KEY)
+      .put(setSelectedModel({ providerId: 'codex', model: fallbackModel }))
+      .call(setLocalStorageItem, GLOBAL_MODEL_KEY, fallbackModel)
+      .put(clearLoadingStateForProvider('codex'))
+      .put(setAvailableModels([]))
+      .put(loadModels())
+      .silentRun(0);
+
+    expect(unifiedStateStore.selectModel).toHaveBeenCalledWith(fallbackModel);
+    expect(unifiedStateStore.setAvailableModels).toHaveBeenCalledWith([]);
   });
 });

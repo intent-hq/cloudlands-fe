@@ -4,29 +4,22 @@
  * Sagas are started/stopped via the RunSaga component.
  */
 
-import { activeProviderSaga } from "./slices/active-provider/sagas/active-provider-saga";
-import { additionalAgentsSaga } from "./slices/additional-agents/sagas/additional-agents-saga";
-import { agentFontSettingsSaga } from "./slices/agent-font-settings/sagas/agent-font-settings-saga";
+import { providerSettingsSaga } from "./slices/provider-settings/sagas/provider-settings-saga";
 import { backgroundAgentSettingsSaga } from "./slices/background-agent-settings/sagas/background-agent-settings-saga";
-import { noteFontSettingsSaga } from "./slices/note-font-settings/sagas/note-font-settings-saga";
-import { codeFontSettingsSaga } from "./slices/code-font-settings/sagas/code-font-settings-saga";
-import { editorSettingsSaga } from "./slices/editor-settings/sagas/editor-settings-saga";
-import { openActionSaga } from "./slices/open-action/sagas/open-action-saga";
-import { sidebarWidthSaga } from "./slices/sidebar-width/sagas/sidebar-width-saga";
-import { tabScrollSaga } from "./slices/tab-scroll/sagas/tab-scroll-saga";
+import { fontSettingsSaga } from "./slices/font-settings/sagas/font-settings-saga";
+import { externalEditorsSaga } from "./slices/external-editors/sagas/external-editors-saga";
+import { tabStateSaga } from "./slices/tab-state/sagas/tab-state-saga";
 import { terminalOverlaySaga } from "./slices/terminal-overlay/sagas/terminal-overlay-saga";
 import { notificationSettingsSaga } from "./slices/notification-settings/sagas/notification-settings-saga";
-import { noteSpellcheckSettingsSaga } from "./slices/note-spellcheck-settings/sagas/note-spellcheck-settings-saga";
+import { userPreferencesSaga } from "./slices/user-preferences/sagas/user-preferences-saga";
 import { workspaceSettingsSaga } from "./slices/workspace-settings/sagas/workspace-settings-saga";
-import { betaUpdatesSaga } from "./slices/beta-updates/sagas/beta-updates-saga";
 import { noteReadTrackingSaga } from "./slices/note-read-tracking/sagas/note-read-tracking-saga";
-import { installedEditorsSaga } from "./slices/installed-editors/sagas/installed-editors-saga";
 import { permissionSaga } from "./slices/permission/sagas/permission-saga";
 import { pipSaga } from "./slices/pip/sagas/pip-saga";
 import { featureCodesSaga } from "./slices/feature-codes/sagas/feature-codes-saga";
 import { modelSaga } from "./slices/model/sagas/model-saga";
 import { specialistsSaga } from "./slices/specialists/sagas/specialists-saga";
-import { zoomSaga } from "./slices/zoom/sagas/zoom-saga";
+import { uiLayoutSaga } from "./slices/ui-layout/sagas/ui-layout-saga";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 function* noopSaga() {}
@@ -39,29 +32,22 @@ function* noopSaga() {}
  * will be added here as their respective stores are migrated.
  */
 export const sagas = {
-  activeProviderSaga,
-  additionalAgentsSaga,
+  providerSettingsSaga,
   backgroundAgentSettingsSaga,
-  betaUpdatesSaga,
-  agentFontSettingsSaga,
-  noteFontSettingsSaga,
-  codeFontSettingsSaga,
-  editorSettingsSaga,
-  openActionSaga,
-  sidebarWidthSaga,
-  tabScrollSaga,
+  fontSettingsSaga,
+  externalEditorsSaga,
+  uiLayoutSaga,
+  tabStateSaga,
   terminalOverlaySaga,
   notificationSettingsSaga,
-  noteSpellcheckSettingsSaga,
   noteReadTrackingSaga,
-  installedEditorsSaga,
   permissionSaga,
   featureCodesSaga,
   modelSaga,
   specialistsSaga,
   pipSaga,
+  userPreferencesSaga,
   workspaceSettingsSaga,
-  zoomSaga,
   // Placeholder sagas for Store.svelte references — will be replaced with real implementations
   streamingSaga: noopSaga,
   workspaceSaga: noopSaga,

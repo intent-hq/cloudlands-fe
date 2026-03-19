@@ -28,12 +28,16 @@ import { toast } from 'svelte-sonner';
 import { getReduxStore, dispatch } from '$lib/store/redux-dispatch-bridge';
 import { loadModels } from '$lib/store/slices/model/model-slice';
 import { getGroupedModels } from '$lib/store/slices/model/model-utils';
-import { selectActiveProviderId } from '$lib/store/slices/active-provider/active-provider-selectors';
+import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
 import { getModelLabel, generateFallbackChain } from '$lib/utils/model-fallback';
 import { shouldSkipFileForAI } from '$shared/binary-file-extensions';
 import { addDeferredResult } from './deferred-results-cache';
 import { track } from '$lib/services/analytics';
-import { selectAvailableModelsForProvider, selectProviderModels } from '$lib/store/slices/model/model-selectors';
+import {
+  selectAvailableModels,
+  selectIsLoadingModels,
+  selectModelsLoaded,
+} from '$lib/store/slices/model/model-selectors';
 
 const logger = createLogger('BackgroundAgentExecutor');
 
@@ -295,17 +299,15 @@ export class BackgroundAgentExecutor {
     // If models are already loaded, return immediately
     const getCurrentProviderModelState = () => {
       const state = getReduxStore().getState();
-      const modelState = getReduxStore().getState().model;
       const activeProviderId = selectActiveProviderId.select(state);
-      const availableModels = modelState.availableModelsByProvider[activeProviderId] ?? [];
-      const modelsLoaded = modelState.modelsLoadedByProvider[activeProviderId] ?? false;
-      const isLoadingModels = modelState.isLoadingByProvider[activeProviderId] ?? false;
+      const availableModels = selectAvailableModels.select(state);
+      const modelsLoaded = selectModelsLoaded.select(state, activeProviderId);
+      const isLoadingModels = selectIsLoadingModels.select(state, activeProviderId);
 
       return {
         activeProviderId,
         availableModels,
         isLoadingModels,
-        modelState,
         modelsLoaded,
       };
     };
@@ -402,7 +404,7 @@ export class BackgroundAgentExecutor {
       // Get available models from all enabled providers and validate the requested model
       const state = getReduxStore().getState();
       const activeProviderId = selectActiveProviderId.select(state);
-      const providerAvailableModels = selectAvailableModelsForProvider.select(state, activeProviderId);
+      const providerAvailableModels = selectAvailableModels.select(state);
       const groupedModels = getGroupedModels(activeProviderId, providerAvailableModels);
       const flattenedModels = groupedModels.flatMap((group) => group.models);
       const availableModels =

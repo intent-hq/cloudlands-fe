@@ -38,7 +38,7 @@
   import { invoke, listenSync } from '$lib/electron-bridge';
   import { dispatch } from '$lib/store/redux-dispatch-bridge';
   import { toggleCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
-  import { toggleLineWrapping } from '$lib/store/slices/editor-settings/editor-settings-slice';
+  import { toggleLineWrapping } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import {
     toggleTerminalOverlay,
     openTerminalOverlay,

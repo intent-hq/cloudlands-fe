@@ -87,7 +87,7 @@ async function getActiveProviderId(): Promise<string | null> {
   if (isBackend) return null;
   try {
     const { getReduxStore } = await import('$lib/store/redux-dispatch-bridge');
-    const { selectActiveProviderId } = await import('$lib/store/slices/active-provider/active-provider-selectors');
+    const { selectActiveProviderId } = await import('$lib/store/slices/provider-settings/provider-settings-selectors');
     const store = getReduxStore();
     return selectActiveProviderId.select(store.getState());
   } catch {

@@ -2,34 +2,30 @@ import { call, put, takeLatest, delay } from "typed-redux-saga";
 import { unifiedStateStore } from "$features/agent/services/unified-state-store";
 import type { AuggieModel } from "$features/auggie/auggie-models.client";
 import { createLogger } from "$lib/utils/client-logger";
-import { MODEL_DEFAULTS } from "$shared/constants/agent-services";
-import {
-  getDefaultProviderId,
-  parseCompoundModelId,
-  resolvePreferredModel,
-} from "$shared/config/provider-config";
-import { selectActiveProviderId } from "../../active-provider/active-provider-selectors";
+import { selectActiveProviderId } from "../../provider-settings/provider-settings-selectors";
 import { fetchModelsForProvider } from "../model-utils";
+import {
+  findAvailableModelMatch,
+  normalizeModelForProvider,
+  resolvePreferredModelForProvider,
+} from "../model-selection-utils";
 import {
   loadModels,
   retryLoadModels,
   setAvailableModels,
-  setIsLoadingModels,
-  setModelsLoaded,
-  setLoadError,
-  setActiveProviderId,
+  setLoadingStateForProvider,
+  clearLoadingStateForProvider,
   setRetryAttempt,
   selectModel,
   MAX_AUTO_RETRIES,
   RETRY_DELAYS_MS,
 } from "../model-slice";
 import {
-  selectAvailableModelsForProvider,
+  selectAvailableModels,
   selectModelsLoadedForProvider,
   selectIsLoadingModelsForProvider,
   selectSelectedModel,
   selectRetryAttempt,
-  selectModelsLoaded,
 } from "../model-selectors";
 
 const logger = createLogger("LoadModelsSaga");
@@ -37,7 +33,7 @@ const logger = createLogger("LoadModelsSaga");
 /**
  * Handle loading models for the active provider.
  */
-function* handleLoadModels() {
+export function* handleLoadModels() {
   let activeProviderId: string;
   try {
     activeProviderId = yield* selectActiveProviderId.effect();
@@ -49,15 +45,12 @@ function* handleLoadModels() {
     return;
   }
 
-  yield* put(setActiveProviderId(activeProviderId));
-
   // Skip if already loaded for this provider or currently loading
   const modelsLoaded: boolean =
     yield* selectModelsLoadedForProvider.effect(activeProviderId);
   const isLoading: boolean =
     yield* selectIsLoadingModelsForProvider.effect(activeProviderId);
-  const cachedModels: AuggieModel[] =
-    yield* selectAvailableModelsForProvider.effect(activeProviderId);
+  const cachedModels: AuggieModel[] = yield* selectAvailableModels.effect();
 
   if (modelsLoaded || isLoading) {
     logger.debug(
@@ -76,8 +69,12 @@ function* handleLoadModels() {
     return;
   }
 
-  yield* put(setIsLoadingModels({ providerId: activeProviderId, loading: true }));
-  yield* put(setLoadError(null));
+  yield* put(
+    setLoadingStateForProvider({
+      providerId: activeProviderId,
+      status: "loading",
+    })
+  );
   logger.debug("Loading models for active provider:", { activeProviderId });
 
   // Sync loading state with unified store
@@ -91,24 +88,19 @@ function* handleLoadModels() {
     const models = yield* call(fetchModelsForProvider, activeProviderId);
 
     if (models.length > 0) {
-      // Prefix model values with provider ID for non-default providers
-      const defaultProviderId = getDefaultProviderId();
-      const prefixedModels = models.map((model) => {
-        if (activeProviderId !== defaultProviderId) {
-          return { ...model, value: `${activeProviderId}:${model.value}` };
-        }
-        return model;
-      }) as AuggieModel[];
+      const prefixedModels = models.map((model) => ({
+        ...model,
+        value: normalizeModelForProvider(activeProviderId, model.value),
+      })) as AuggieModel[];
 
+      yield* put(setAvailableModels(prefixedModels));
       yield* put(
-        setAvailableModels({ providerId: activeProviderId, models: prefixedModels })
+        setLoadingStateForProvider({
+          providerId: activeProviderId,
+          status: "success",
+          retryAttempt: 0,
+        })
       );
-      yield* put(
-        setModelsLoaded({ providerId: activeProviderId, loaded: true })
-      );
-      yield* put(setActiveProviderId(activeProviderId));
-      yield* put(setLoadError(null));
-      yield* put(setRetryAttempt(0));
 
       // Sync models with unified state store
       try {
@@ -118,32 +110,40 @@ function* handleLoadModels() {
       }
 
       // Validate selected model is in the available list
-      const selectedModel: string = yield* selectSelectedModel.effect();
+      const selectedModel: string = yield* selectSelectedModel.effect(activeProviderId);
       const availableModelValues = prefixedModels.map((m) => m.value);
-      const { providerId: selectedProviderId, modelId } =
-        parseCompoundModelId(selectedModel);
-      const isModelAvailable =
-        availableModelValues.includes(selectedModel) ||
-        (selectedProviderId === activeProviderId &&
-          availableModelValues.some((v) => v.endsWith(modelId)));
+      const matchedModel = findAvailableModelMatch(
+        availableModelValues,
+        activeProviderId,
+        selectedModel
+      );
 
-      if (!isModelAvailable && prefixedModels.length > 0) {
-        const toModel =
-          resolvePreferredModel(
-            MODEL_DEFAULTS.UI_MODEL_PREFERENCE,
-            availableModelValues
-          ) ?? prefixedModels[0].value;
+      if (matchedModel && matchedModel !== selectedModel) {
+        logger.debug("Normalizing selected model for active provider", {
+          activeProviderId,
+          selectedModel,
+          matchedModel,
+        });
+        yield* put(selectModel(matchedModel));
+      } else if (!matchedModel && prefixedModels.length > 0) {
+        const toModel = resolvePreferredModelForProvider(availableModelValues);
         logger.warn(
           "Selected model not available for active provider, using preferred default",
           { selectedModel, activeProviderId, fallbackModel: toModel }
         );
-        yield* put(selectModel(toModel));
+
+        if (toModel) {
+          yield* put(selectModel(toModel));
+        }
       }
     } else {
+      const errorMessage = `No models available for ${activeProviderId}. Please try again.`;
       yield* put(
-        setLoadError(
-          `No models available for ${activeProviderId}. Please try again.`
-        )
+        setLoadingStateForProvider({
+          providerId: activeProviderId,
+          status: "error",
+          error: errorMessage,
+        })
       );
       logger.warn("Model list was empty for provider:", {
         providerId: activeProviderId,
@@ -153,13 +153,16 @@ function* handleLoadModels() {
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Failed to load models";
-    yield* put(setLoadError(errorMessage));
+    yield* put(
+      setLoadingStateForProvider({
+        providerId: activeProviderId,
+        status: "error",
+        error: errorMessage,
+      })
+    );
     logger.error("Failed to load models:", error);
     yield* call(autoRetrySaga, activeProviderId);
   } finally {
-    yield* put(
-      setIsLoadingModels({ providerId: activeProviderId, loading: false })
-    );
     try {
       unifiedStateStore.setModelsLoading(false);
     } catch (e) {
@@ -172,7 +175,7 @@ function* handleLoadModels() {
  * Auto-retry with exponential backoff using saga delay().
  */
 function* autoRetrySaga(forProviderId: string) {
-  const retryAttempt: number = yield* selectRetryAttempt.effect();
+  const retryAttempt: number = yield* selectRetryAttempt.effect(forProviderId);
 
   if (retryAttempt >= MAX_AUTO_RETRIES) {
     logger.warn("Max auto-retries reached for model loading", {
@@ -183,7 +186,9 @@ function* autoRetrySaga(forProviderId: string) {
   }
 
   const delayMs = RETRY_DELAYS_MS[retryAttempt] ?? 30_000;
-  yield* put(setRetryAttempt(retryAttempt + 1));
+  yield* put(
+    setRetryAttempt({ providerId: forProviderId, attempt: retryAttempt + 1 })
+  );
 
   logger.info(
     `Scheduling model load retry ${retryAttempt + 1}/${MAX_AUTO_RETRIES} in ${delayMs / 1000}s`
@@ -193,8 +198,9 @@ function* autoRetrySaga(forProviderId: string) {
 
   // Only retry if still for the same provider and not yet loaded
   try {
-    const currentModelsLoaded: boolean = yield* selectModelsLoaded.effect();
     const currentProviderId: string = yield* selectActiveProviderId.effect();
+    const currentModelsLoaded: boolean =
+      yield* selectModelsLoadedForProvider.effect(forProviderId);
     if (!currentModelsLoaded && currentProviderId === forProviderId) {
       logger.info(
         `Auto-retrying model load (attempt ${retryAttempt + 1}/${MAX_AUTO_RETRIES})`
@@ -213,12 +219,7 @@ function* handleRetryLoadModels() {
   logger.debug("Retrying model load...");
   const activeProviderId: string = yield* selectActiveProviderId.effect();
 
-  yield* put(setActiveProviderId(activeProviderId));
-  yield* put(
-    setModelsLoaded({ providerId: activeProviderId, loaded: false })
-  );
-  yield* put(setLoadError(null));
-  yield* put(setRetryAttempt(0));
+  yield* put(clearLoadingStateForProvider(activeProviderId));
   yield* put(loadModels());
 }
 

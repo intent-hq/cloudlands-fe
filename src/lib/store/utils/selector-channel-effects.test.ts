@@ -5,7 +5,7 @@ import { delay, put } from "typed-redux-saga";
 import { createSelector } from "./create-selector";
 import { init, rootReducer } from "../init";
 import type { StoreState } from "../types";
-import { saveScrollPosition } from "../slices/tab-scroll/tab-scroll-slice";
+import { saveScrollPosition } from "../slices/tab-state/tab-state-slice";
 import {
   takeEveryFromSelector,
   takeLatestFromSelector,
@@ -22,7 +22,7 @@ describe("selector-channel-effects", () => {
   describe("takeEveryFromSelector", () => {
     it("should create channel and spawn worker for each value change", async () => {
       const { store, storeState } = init();
-      const selector = createSelector((state: StoreState) => state.tabScroll.positions);
+      const selector = createSelector((state: StoreState) => state.tabState.scrollPositions);
 
       function* worker({ payload, prevPayload }: SelectorChannelPayload<Record<string, number>>) {
         yield* put(workerCalled(payload, prevPayload));
@@ -49,7 +49,7 @@ describe("selector-channel-effects", () => {
 
     it("should close channel when saga is cancelled", async () => {
       const { storeState } = init();
-      const selector = createSelector((state: StoreState) => state.tabScroll.positions);
+      const selector = createSelector((state: StoreState) => state.tabState.scrollPositions);
 
       function* worker() {
         yield* delay(1000);
@@ -73,7 +73,7 @@ describe("selector-channel-effects", () => {
   describe("takeLatestFromSelector", () => {
     it("should cancel previous task when new value arrives", async () => {
       const { store, storeState } = init();
-      const selector = createSelector((state: StoreState) => state.tabScroll.positions);
+      const selector = createSelector((state: StoreState) => state.tabState.scrollPositions);
       const callOrder: string[] = [];
 
       function* worker({ payload }: SelectorChannelPayload<Record<string, number>>) {
@@ -111,7 +111,7 @@ describe("selector-channel-effects", () => {
   describe("takeLeadingFromSelector", () => {
     it("should ignore new values while task is running", async () => {
       const { store, storeState } = init();
-      const selector = createSelector((state: StoreState) => state.tabScroll.positions);
+      const selector = createSelector((state: StoreState) => state.tabState.scrollPositions);
       const invocations: Record<string, number>[] = [];
 
       function* worker({ payload }: SelectorChannelPayload<Record<string, number>>) {

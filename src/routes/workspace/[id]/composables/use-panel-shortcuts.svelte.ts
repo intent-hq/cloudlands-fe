@@ -32,7 +32,7 @@
 import type { PanelVisibilityManager } from '$features/workspace/panel-visibility-manager.svelte';
 import { createLogger } from '$lib/utils/client-logger';
 import { isFocusInEditableElement } from '$lib/utils/keyboardShortcuts';
-import { toggleSidebar } from '$lib/store/slices/sidebar-width/sidebar-width-slice';
+import { toggleSidebar } from '$lib/store/slices/ui-layout/ui-layout-slice';
 import { getDispatch } from '$lib/store/utils/utils';
 
 const logger = createLogger('PanelShortcuts');

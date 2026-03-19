@@ -23,8 +23,8 @@
   import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import SaveIndicator from '$lib/components/ui/SaveIndicator.svelte';
-  import { selectLineWrapping, selectDiffIndicators } from '$lib/store/slices/editor-settings/editor-settings-selectors';
-  import { toggleLineWrapping, toggleDiffIndicators } from '$lib/store/slices/editor-settings/editor-settings-slice';
+  import { selectLineWrapping, selectDiffIndicators } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import { toggleLineWrapping, toggleDiffIndicators } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { dispatch } from '$lib/store/redux-dispatch-bridge';
   import { untrack } from 'svelte';
   import Fa from 'svelte-fa';

@@ -25,8 +25,8 @@
   import WarpIcon from '$lib/components/shared/icons/WarpIcon.svelte';
   import XcodeIcon from '$lib/components/shared/icons/XcodeIcon.svelte';
   import { invoke } from '$lib/electron-bridge';
-  import { fetchEditors } from '$lib/store/slices/installed-editors/installed-editors-slice';
-  import { selectInstalledEditorsFiltered } from '$lib/store/slices/installed-editors/installed-editors-selectors';
+  import { fetchEditors } from '$lib/store/slices/external-editors/external-editors-slice';
+  import { selectInstalledEditorsFiltered } from '$lib/store/slices/external-editors/external-editors-selectors';
   import { getDispatch } from '$lib/store/utils/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import { isAbsolutePath, toNativePath, isWindowsPlatform } from '$lib/utils/path-utils';

@@ -8,10 +8,12 @@
    */
   import { onMount } from 'svelte';
   import { invoke, shell } from '$lib/electron-bridge';
-  import { selectActiveProviderId } from '$lib/store/slices/active-provider/active-provider-selectors';
-  import { setActiveProvider } from '$lib/store/slices/active-provider/active-provider-slice';
-  import { selectEnabledProviders, selectIsProviderEnabled } from '$lib/store/slices/additional-agents/additional-agents-selectors';
-  import { setProviderEnabled } from '$lib/store/slices/additional-agents/additional-agents-slice';
+  import {
+    selectActiveProviderId,
+    selectEnabledProviders,
+    selectIsProviderEnabled,
+  } from '$lib/store/slices/provider-settings/provider-settings-selectors';
+  import { setActiveProvider, setProviderEnabled } from '$lib/store/slices/provider-settings/provider-settings-slice';
   import { retryLoadModels, reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
   import { getDispatch } from '$lib/store/utils/utils';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';

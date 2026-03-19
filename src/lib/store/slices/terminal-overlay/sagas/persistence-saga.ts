@@ -1,4 +1,8 @@
-import { call, put, takeEvery } from "typed-redux-saga";
+import {
+  getLocalStorageItem,
+  setLocalStorageItem,
+} from "$lib/store/utils/safe-local-storage-saga";
+import { call, put, takeEvery, type SagaGenerator } from "typed-redux-saga";
 import {
   openTerminalOverlay,
   closeTerminalOverlay,
@@ -49,9 +53,9 @@ function pruneEmptyCustomNameBuckets(all: StoredCustomNames): StoredCustomNames 
 // localStorage helpers
 // ============================================================================
 
-function loadHeight(): number {
+function* loadHeight(): SagaGenerator<number> {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = yield* call(getLocalStorageItem, STORAGE_KEY);
     if (stored) {
       const height = parseInt(stored, 10);
       if (!isNaN(height)) return height;
@@ -60,15 +64,15 @@ function loadHeight(): number {
   return 50;
 }
 
-function saveHeight(height: number): void {
+function* saveHeight(height: number): SagaGenerator<void> {
   try {
-    localStorage.setItem(STORAGE_KEY, String(height));
+    yield* call(setLocalStorageItem, STORAGE_KEY, String(height));
   } catch { /* ignore */ }
 }
 
-function loadAllCustomNames(): StoredCustomNames {
+function* loadAllCustomNames(): SagaGenerator<StoredCustomNames> {
   try {
-    const stored = localStorage.getItem(CUSTOM_NAMES_STORAGE_KEY);
+    const stored = yield* call(getLocalStorageItem, CUSTOM_NAMES_STORAGE_KEY);
     if (!stored) return {};
 
     const parsed: unknown = JSON.parse(stored);
@@ -76,24 +80,28 @@ function loadAllCustomNames(): StoredCustomNames {
 
     if (isStringRecord(parsed)) {
       const migrated = { [LEGACY_CUSTOM_NAMES_BUCKET]: parsed };
-      localStorage.setItem(CUSTOM_NAMES_STORAGE_KEY, JSON.stringify(migrated));
+      yield* call(setLocalStorageItem, CUSTOM_NAMES_STORAGE_KEY, JSON.stringify(migrated));
       return migrated;
     }
   } catch { /* ignore */ }
   return {};
 }
 
-function loadCustomNamesForWorkspace(wsId: string): Record<string, string> {
-  const all = loadAllCustomNames();
+function* loadCustomNamesForWorkspace(wsId: string): SagaGenerator<Record<string, string>> {
+  const all = yield* call(loadAllCustomNames);
   return {
     ...(all[LEGACY_CUSTOM_NAMES_BUCKET] || {}),
     ...(all[wsId] || {}),
   };
 }
 
-function saveCustomName(wsId: string, termId: string, customName: string | undefined): void {
+function* saveCustomName(
+  wsId: string,
+  termId: string,
+  customName: string | undefined
+): SagaGenerator<void> {
   try {
-    const all = loadAllCustomNames();
+    const all = yield* call(loadAllCustomNames);
     if (all[LEGACY_CUSTOM_NAMES_BUCKET]) {
       delete all[LEGACY_CUSTOM_NAMES_BUCKET][termId];
     }
@@ -103,33 +111,48 @@ function saveCustomName(wsId: string, termId: string, customName: string | undef
     } else {
       delete all[wsId][termId];
     }
-    localStorage.setItem(CUSTOM_NAMES_STORAGE_KEY, JSON.stringify(pruneEmptyCustomNameBuckets(all)));
+    yield* call(
+      setLocalStorageItem,
+      CUSTOM_NAMES_STORAGE_KEY,
+      JSON.stringify(pruneEmptyCustomNameBuckets(all))
+    );
   } catch { /* ignore */ }
 }
 
-function removeCustomName(wsId: string, termId: string): void {
+function* removeCustomName(wsId: string, termId: string): SagaGenerator<void> {
   try {
-    const all = loadAllCustomNames();
+    const all = yield* call(loadAllCustomNames);
     if (all[LEGACY_CUSTOM_NAMES_BUCKET]) {
       delete all[LEGACY_CUSTOM_NAMES_BUCKET][termId];
     }
     if (all[wsId]) {
       delete all[wsId][termId];
     }
-    localStorage.setItem(CUSTOM_NAMES_STORAGE_KEY, JSON.stringify(pruneEmptyCustomNameBuckets(all)));
+    yield* call(
+      setLocalStorageItem,
+      CUSTOM_NAMES_STORAGE_KEY,
+      JSON.stringify(pruneEmptyCustomNameBuckets(all))
+    );
   } catch { /* ignore */ }
 }
 
-export function getStoredCustomName(wsId: string, termId: string): string | undefined {
-  return loadCustomNamesForWorkspace(wsId)[termId];
+export function* getStoredCustomName(
+  wsId: string,
+  termId: string
+): SagaGenerator<string | undefined> {
+  const customNames = yield* call(loadCustomNamesForWorkspace, wsId);
+  return customNames[termId];
 }
 
-function saveWorkspaceState(wsId: string, state: PersistedWorkspaceState): void {
+function* saveWorkspaceState(
+  wsId: string,
+  state: PersistedWorkspaceState
+): SagaGenerator<void> {
   try {
-    const stored = localStorage.getItem(WORKSPACE_STATE_STORAGE_KEY);
+    const stored = yield* call(getLocalStorageItem, WORKSPACE_STATE_STORAGE_KEY);
     const states = stored ? (JSON.parse(stored) as Record<string, PersistedWorkspaceState>) : {};
     states[wsId] = { isOpen: state.isOpen, activeTerminalId: state.activeTerminalId };
-    localStorage.setItem(WORKSPACE_STATE_STORAGE_KEY, JSON.stringify(states));
+    yield* call(setLocalStorageItem, WORKSPACE_STATE_STORAGE_KEY, JSON.stringify(states));
   } catch { /* ignore */ }
 }
 

@@ -18,8 +18,8 @@
    */
 
   import { cn } from '$lib/utils';
-  import { selectIsDragging } from '$lib/store/slices/tab-drag/tab-drag-selectors';
-  import { setActiveHandleDrop, type HandleDropZoneType, type SerializableRect } from '$lib/store/slices/tab-drag/tab-drag-slice';
+  import { selectIsDragging } from '$lib/store/slices/tab-state/tab-state-selectors';
+  import { setActiveHandleDrop, type HandleDropZoneType, type SerializableRect } from '$lib/store/slices/tab-state/tab-state-slice';
   import { getDispatch } from '$lib/store/utils/utils';
 
   /** Position relative to the split for container-level insertion */

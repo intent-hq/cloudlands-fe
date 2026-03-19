@@ -34,7 +34,7 @@
   import DiffHeader from './DiffHeader.svelte';
   import { getDiffWorkerPool, getSafeDiffLanguage } from '$lib/utils/diff-highlighter-preloader';
   import { themeManager } from '$lib/utils/theme';
-  import { selectCodeFontFamilyCSS } from '$lib/store/slices/code-font-settings/code-font-settings-selectors';
+  import { selectCodeFontFamilyCSS } from '$lib/store/slices/font-settings/font-settings-selectors';
   import Fa from 'svelte-fa';
   import {
     faSearch,

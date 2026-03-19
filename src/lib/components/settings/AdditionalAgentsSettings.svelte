@@ -1,7 +1,7 @@
 <script lang="ts">
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
-  import { selectEnabledProviders } from '$lib/store/slices/additional-agents/additional-agents-selectors';
-  import { toggleProvider } from '$lib/store/slices/additional-agents/additional-agents-slice';
+  import { selectEnabledProviders } from '$lib/store/slices/provider-settings/provider-settings-selectors';
+  import { toggleProvider } from '$lib/store/slices/provider-settings/provider-settings-slice';
   import { getDispatch } from '$lib/store/utils/utils';
   import { ACP_PROVIDERS } from '$shared/config/provider-config';
 

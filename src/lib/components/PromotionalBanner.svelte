@@ -2,8 +2,8 @@
   import { Button } from '$lib/components/ui/button';
   import { invoke } from '$lib/electron-bridge';
   import { fetchPromotionalBanners } from '$lib/services/promotional-banner';
-  import { selectActiveProviderId } from '$lib/store/slices/active-provider/active-provider-selectors';
-  import { setActiveProvider } from '$lib/store/slices/active-provider/active-provider-slice';
+  import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
+  import { setActiveProvider } from '$lib/store/slices/provider-settings/provider-settings-slice';
   import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
   import { selectAvailableModels } from '$lib/store/slices/model/model-selectors';
   import { getDispatch } from '$lib/store/utils/utils';

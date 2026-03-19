@@ -16,7 +16,7 @@
    * - column-right: Vertical strip at right of handle (new column right)
    */
 
-  import { selectActiveHandleDrop } from '$lib/store/slices/tab-drag/tab-drag-selectors';
+  import { selectActiveHandleDrop } from '$lib/store/slices/tab-state/tab-state-selectors';
 
   // Get the active handle drop info from the Redux store
   const activeHandleDrop = selectActiveHandleDrop();

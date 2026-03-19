@@ -11,7 +11,7 @@
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
   import { unifiedStateStore } from '$features/agent/services/unified-state-store';
-  import { selectEnabledProviderIds } from '$lib/store/slices/additional-agents/additional-agents-selectors';
+  import { selectEnabledProviderIds } from '$lib/store/slices/provider-settings/provider-settings-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
   import Fa from 'svelte-fa';
   import {

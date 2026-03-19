@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
-  import { cycleNoteFontStyle } from '$lib/store/slices/note-font-settings/note-font-settings-slice';
-  import { selectNoteFontStyle, selectNoteFontStyleLabel, selectIsNoteMonospace } from '$lib/store/slices/note-font-settings/note-font-settings-selectors';
+  import { cycleNoteFontStyle } from '$lib/store/slices/font-settings/font-settings-slice';
+  import { selectNoteFontStyle, selectNoteFontStyleLabel, selectIsNoteMonospace } from '$lib/store/slices/font-settings/font-settings-selectors';
   import { getDispatch } from '$lib/store/utils/utils';
 
   const dispatch = getDispatch();

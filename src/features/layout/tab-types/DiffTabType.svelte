@@ -19,8 +19,8 @@
   import MonacoDiffViewer from '$lib/components/file-tracking/MonacoDiffViewer.svelte';
   import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
-  import { selectLineWrapping, selectFoldUnchanged, selectDiffSideBySide } from '$lib/store/slices/editor-settings/editor-settings-selectors';
-  import { toggleLineWrapping, toggleFoldUnchanged, toggleDiffSideBySide } from '$lib/store/slices/editor-settings/editor-settings-slice';
+  import { selectLineWrapping, selectFoldUnchanged, selectDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import { toggleLineWrapping, toggleFoldUnchanged, toggleDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { dispatch } from '$lib/store/redux-dispatch-bridge';
   import { toast } from '$lib/components/ui/toast';
   import { createLogger } from '$lib/utils/client-logger';

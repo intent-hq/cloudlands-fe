@@ -32,8 +32,8 @@
   import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
   import { WorkspaceStatusEnum } from '$shared/types';
   import { getLineStats, type LineStats } from '$features/file-tracking/file-tracking.client';
-  import { selectZoomFactor, selectCounterScale } from '$lib/store/slices/zoom/zoom-selectors';
-  import { toggleSidebar } from '$lib/store/slices/sidebar-width/sidebar-width-slice';
+  import { selectZoomFactor, selectCounterScale } from '$lib/store/slices/user-preferences/user-preferences-selectors';
+  import { toggleSidebar } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { getDispatch } from '$lib/store/utils/utils';
   import { layoutSettings } from '$features/layout/layout-settings.svelte';
 

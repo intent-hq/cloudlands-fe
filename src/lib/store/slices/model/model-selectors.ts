@@ -1,62 +1,82 @@
 import { createSelector } from "../../utils/create-selector";
+import {
+  findItem,
+  getItems,
+  type Collection,
+} from "../../utils/collection-utils";
 import type { AuggieModel } from "$features/auggie/auggie-models.client";
+import { MODEL_DEFAULTS } from "$shared/constants/agent-services";
 import {
   ACP_PROVIDERS,
   parseCompoundModelId,
 } from "$shared/config/provider-config";
+import { selectActiveProviderId } from "../provider-settings/provider-settings-selectors";
+import type { ModelLoadingState } from "./model-slice";
+
+function getEffectiveProviderId(state: any, providerId?: string): string {
+  return providerId ?? selectActiveProviderId.select(state);
+}
 
 /** Select the currently selected model value */
 export const selectSelectedModel = createSelector(
-  (state): string => {
-    return state.model.selectedModel;
+  (state, providerId?: string): string => {
+    const effectiveProviderId = getEffectiveProviderId(state, providerId);
+    return state.model.providerModels[effectiveProviderId] ?? MODEL_DEFAULTS.UI_INITIAL_MODEL;
   }
 );
 
-/** Select all available models */
-export const selectAvailableModelsForProvider = createSelector(
-  (state, providerId: string): AuggieModel[] => {
-    return state.model.availableModelsByProvider[providerId] ?? [];
+export const selectAvailableModelsCollection = createSelector(
+  (state): Collection<AuggieModel, "value"> => {
+    return state.model.availableModels;
   }
 );
 
 export const selectAvailableModels = createSelector(
   (state): AuggieModel[] => {
-    return state.model.availableModelsByProvider[state.model.activeProviderId ?? ""] ?? [];
+    return getItems(selectAvailableModelsCollection.select(state));
   }
 );
 
-/** Select whether models are currently loading */
-export const selectIsLoadingModelsForProvider = createSelector(
-  (state, providerId: string): boolean => {
-    return state.model.isLoadingByProvider[providerId] ?? false;
+export const selectProviderLoadingState = createSelector(
+  (state, providerId?: string): ModelLoadingState | null => {
+    const effectiveProviderId = getEffectiveProviderId(state, providerId);
+    return state.model.loadingState[effectiveProviderId] ?? null;
   }
 );
 
 export const selectIsLoadingModels = createSelector(
-  (state): boolean => {
-    return state.model.isLoadingByProvider[state.model.activeProviderId ?? ""] ?? false;
-  }
-);
-
-/** Select whether models have been loaded */
-export const selectModelsLoadedForProvider = createSelector(
-  (state, providerId: string): boolean => {
-    return state.model.modelsLoadedByProvider[providerId] ?? false;
+  (state, providerId?: string): boolean => {
+    return selectProviderLoadingState.select(state, providerId)?.status === "loading";
   }
 );
 
 export const selectModelsLoaded = createSelector(
-  (state): boolean => {
-    return state.model.modelsLoadedByProvider[state.model.activeProviderId ?? ""] ?? false;
+  (state, providerId?: string): boolean => {
+    return selectProviderLoadingState.select(state, providerId)?.status === "success";
   }
 );
 
 /** Select the load error message */
 export const selectLoadError = createSelector(
-  (state): string | null => {
-    return state.model.loadError;
+  (state, providerId?: string): string | null => {
+    const loadingState = selectProviderLoadingState.select(state, providerId);
+    if (loadingState?.status !== "error") {
+      return null;
+    }
+
+    return loadingState.error ?? null;
   }
 );
+
+export const selectRetryAttempt = createSelector(
+  (state, providerId?: string): number => {
+    return selectProviderLoadingState.select(state, providerId)?.retryAttempt ?? 0;
+  }
+);
+
+export const selectIsLoadingModelsForProvider = selectIsLoadingModels;
+
+export const selectModelsLoadedForProvider = selectModelsLoaded;
 
 /** Select all workspace models */
 export const selectWorkspaceModels = createSelector(
@@ -80,11 +100,11 @@ export const selectModelLabel = createSelector(
   (state, modelValue: string): string => {
     if (!modelValue) return modelValue;
 
-    const availableModels =
-      state.model.availableModelsByProvider[state.model.activeProviderId ?? ""] ?? [];
+    const availableModels = selectAvailableModelsCollection.select(state);
     const { modelId } = parseCompoundModelId(modelValue);
-    const model = availableModels.find(
-      (m: AuggieModel) => m.value === modelValue || m.value === modelId
+    const model = findItem(
+      availableModels,
+      (candidate: AuggieModel) => candidate.value === modelValue || candidate.value === modelId
     );
 
     return model?.label || modelValue;
@@ -94,14 +114,15 @@ export const selectModelLabel = createSelector(
 /** Select the label for the currently selected model */
 export const selectCurrentModelLabel = createSelector(
   (state): string => {
-    const selectedModel = state.model.selectedModel;
+    const selectedModel = selectSelectedModel.select(state);
     if (!selectedModel) return selectedModel;
 
-    const availableModels =
-      state.model.availableModelsByProvider[state.model.activeProviderId ?? ""] ?? [];
+    const availableModels = selectAvailableModelsCollection.select(state);
     const { modelId } = parseCompoundModelId(selectedModel);
-    const model = availableModels.find(
-      (m: AuggieModel) => m.value === selectedModel || m.value === modelId
+    const model = findItem(
+      availableModels,
+      (candidate: AuggieModel) =>
+        candidate.value === selectedModel || candidate.value === modelId
     );
 
     return model?.label || selectedModel;
@@ -115,7 +136,7 @@ export const selectCurrentModelLabel = createSelector(
 export const selectWorkspaceDefaultModel = createSelector(
   (state, workspaceId: string): string => {
     const workspaceModel = state.model.workspaceModels[workspaceId];
-    return workspaceModel || state.model.selectedModel;
+    return workspaceModel || selectSelectedModel.select(state);
   }
 );
 
@@ -123,20 +144,6 @@ export const selectWorkspaceDefaultModel = createSelector(
 export const selectHasWorkspaceDefaultModel = createSelector(
   (state, workspaceId: string): boolean => {
     return workspaceId in state.model.workspaceModels;
-  }
-);
-
-/** Select the active provider ID for model lookups */
-export const selectActiveProviderId = createSelector(
-  (state): string | null => {
-    return state.model.activeProviderId;
-  }
-);
-
-/** Select the current retry attempt count */
-export const selectRetryAttempt = createSelector(
-  (state): number => {
-    return state.model.retryAttempt;
   }
 );
 
@@ -154,8 +161,7 @@ export const selectGroupedModels = createSelector(
     models: AuggieModel[];
   }> => {
     const providerConfig = ACP_PROVIDERS[activeProviderId];
-    const availableModels =
-      state.model.availableModelsByProvider[activeProviderId] ?? [];
+    const availableModels = selectAvailableModels.select(state);
 
     if (!providerConfig || availableModels.length === 0) {
       return [];

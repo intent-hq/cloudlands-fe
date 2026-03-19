@@ -15,7 +15,7 @@
   import PanelDropZones from './PanelDropZones.svelte';
   import { createPanelHeaderContext } from './panel-header-context.svelte';
   import { setPanelContext } from './panel-context';
-  import { selectIsDragging } from '$lib/store/slices/tab-drag/tab-drag-selectors';
+  import { selectIsDragging } from '$lib/store/slices/tab-state/tab-state-selectors';
   import { untrack, type Snippet } from 'svelte';
 
   export type DropZone = 'top' | 'bottom' | 'left' | 'right' | 'center';

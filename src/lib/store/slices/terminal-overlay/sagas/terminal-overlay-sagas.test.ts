@@ -99,10 +99,17 @@ describe("terminal overlay sagas", () => {
   });
 
   describe("persistence helpers", () => {
-    it("migrates legacy custom-name storage and preserves lookups", () => {
+    it("migrates legacy custom-name storage and preserves lookups", async () => {
       storage.set(CUSTOM_NAMES_STORAGE_KEY, JSON.stringify({ "term-1": "Legacy Name" }));
 
-      expect(getStoredCustomName("ws-1", "term-1")).toBe("Legacy Name");
+      const storedCustomName = await runSaga(
+        { dispatch: vi.fn(), getState: () => ({}) },
+        getStoredCustomName,
+        "ws-1",
+        "term-1"
+      ).toPromise();
+
+      expect(storedCustomName).toBe("Legacy Name");
       expect(readStorage(CUSTOM_NAMES_STORAGE_KEY)).toEqual({
         __legacy__: { "term-1": "Legacy Name" },
       });

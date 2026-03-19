@@ -14,7 +14,7 @@
   import type { ChangePart } from './types';
   import { mergeChangeParts, buildContentFromMergedHunks } from './unified-diff-merger';
   import MonacoDiffViewer from '../file-tracking/MonacoDiffViewer.svelte';
-  import { selectDiffSideBySide } from '$lib/store/slices/editor-settings/editor-settings-selectors';
+  import { selectDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
 
   interface Props {
     /** The change parts to display (staged, unstaged, committed) */

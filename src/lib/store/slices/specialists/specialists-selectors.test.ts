@@ -24,7 +24,7 @@ function mockState(overrides: Partial<typeof initialState> = {}): StoreState {
   return {
     specialists: { ...initialState, ...overrides },
     featureCodes: { activeFeatures: [], initialized: true },
-    activeProvider: { activeProviderId: "auggie" },
+    providerSettings: { activeProviderId: "auggie", enabledProviders: {} },
   } as unknown as StoreState;
 }
 

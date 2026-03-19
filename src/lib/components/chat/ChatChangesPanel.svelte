@@ -39,7 +39,7 @@
   import { tick, untrack, onMount, onDestroy } from 'svelte';
   import PanelWrapper from '$lib/components/ui/PanelWrapper.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import { selectFoldUnchanged, selectLineWrapping } from '$lib/store/slices/editor-settings/editor-settings-selectors';
+  import { selectFoldUnchanged, selectLineWrapping } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import {
     ChangeSetVisualization,
     type VisualizationLine,

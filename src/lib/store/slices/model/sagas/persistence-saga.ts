@@ -1,18 +1,31 @@
 import { call, put, takeLatest } from "typed-redux-saga";
 import { unifiedStateStore } from "$features/agent/services/unified-state-store";
 import { createLogger } from "$lib/utils/client-logger";
-import { selectActiveProviderId } from "../../active-provider/active-provider-selectors";
-import { selectProviderModels, selectWorkspaceModels } from "../model-selectors";
+import { getItems } from "$lib/store/utils/collection-utils";
+import {
+  getLocalStorageItem,
+  removeLocalStorageItem,
+  setLocalStorageItem,
+} from "$lib/store/utils/safe-local-storage-saga";
+import { MODEL_DEFAULTS } from "$shared/constants/agent-services";
+import { selectActiveProviderId } from "../../provider-settings/provider-settings-selectors";
+import {
+  selectAvailableModelsCollection,
+  selectProviderModels,
+  selectWorkspaceModels,
+} from "../model-selectors";
+import {
+  normalizeModelForProvider,
+  normalizeProviderModels,
+} from "../model-selection-utils";
 import {
   loadModels,
   reloadModelsForProvider,
   setSelectedModel,
-  setActiveProviderId,
-  setLoadError,
-  setModelsLoaded,
-  setRetryAttempt,
   clearAllWorkspaceModels,
+  clearLoadingStateForProvider,
   setWorkspaceModel,
+  setAvailableModels,
   clearWorkspaceModel,
   loadWorkspaceModelsFromStorage,
   loadProviderModelsFromStorage,
@@ -23,32 +36,41 @@ import {
 
 const logger = createLogger("PersistenceSaga");
 
+function parseStoredModels(stored: string | null): Record<string, string> {
+  if (!stored) {
+    return {};
+  }
+
+  return JSON.parse(stored) as Record<string, string>;
+}
+
 /**
  * Init saga: load from localStorage and trigger initial model load.
  */
 export function* initPersistenceSaga() {
   if (typeof window === "undefined") return;
 
-  // Load global selected model
+  let activeProviderId: string;
   try {
-    const stored: string | null = yield* call(
-      [localStorage, localStorage.getItem],
-      GLOBAL_MODEL_KEY
+    activeProviderId = yield* selectActiveProviderId.effect();
+  } catch (e) {
+    logger.warn(
+      "Failed to read activeProviderId during initPersistenceSaga",
+      e
     );
-    if (stored) {
-      yield* put(setSelectedModel(stored));
-      logger.debug("Loaded global model from localStorage:", stored);
-    }
+    return;
+  }
+
+  let legacySelectedModel: string | null = null;
+  try {
+    legacySelectedModel = yield* call(getLocalStorageItem, GLOBAL_MODEL_KEY);
   } catch {
     // Ignore
   }
 
   // Load per-workspace model preferences
   try {
-    const stored: string | null = yield* call(
-      [localStorage, localStorage.getItem],
-      WORKSPACE_MODELS_KEY
-    );
+    const stored: string | null = yield* call(getLocalStorageItem, WORKSPACE_MODELS_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
       yield* put(loadWorkspaceModelsFromStorage(parsed));
@@ -60,17 +82,44 @@ export function* initPersistenceSaga() {
 
   // Load per-provider model preferences
   try {
-    const stored: string | null = yield* call(
-      [localStorage, localStorage.getItem],
-      PROVIDER_MODELS_KEY
-    );
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      yield* put(loadProviderModelsFromStorage(parsed));
-      logger.debug("Loaded provider models");
+    const stored: string | null = yield* call(getLocalStorageItem, PROVIDER_MODELS_KEY);
+    const providerModels = normalizeProviderModels(parseStoredModels(stored));
+    const migratedLegacyModel = legacySelectedModel
+      ? normalizeModelForProvider(activeProviderId, legacySelectedModel)
+      : null;
+
+    if (migratedLegacyModel && !providerModels[activeProviderId]) {
+      providerModels[activeProviderId] = migratedLegacyModel;
+      yield* call(setLocalStorageItem, PROVIDER_MODELS_KEY, JSON.stringify(providerModels));
+      logger.debug("Migrated legacy global model into provider model storage", {
+        activeProviderId,
+        migratedLegacyModel,
+      });
+    }
+
+    yield* put(loadProviderModelsFromStorage(providerModels));
+    logger.debug("Loaded provider models", {
+      count: Object.keys(providerModels).length,
+    });
+
+    const selectedModel = providerModels[activeProviderId];
+    if (selectedModel) {
+      try {
+        unifiedStateStore.selectModel(selectedModel);
+      } catch (e) {
+        logger.warn("Failed to sync stored selected model with unified store", e);
+      }
     }
   } catch (error) {
     logger.error("Failed to load provider models:", error);
+  }
+
+  try {
+    const availableModelsCollection =
+      yield* selectAvailableModelsCollection.effect();
+    unifiedStateStore.setAvailableModels(getItems(availableModelsCollection));
+  } catch (e) {
+    logger.warn("Failed to sync stored available models with unified store", e);
   }
 
   // Trigger initial model load
@@ -99,7 +148,7 @@ export function* handleReloadModelsForProvider() {
   // Clear per-workspace overrides
   yield* put(clearAllWorkspaceModels());
   try {
-    yield* call([localStorage, localStorage.removeItem], WORKSPACE_MODELS_KEY);
+    yield* call(removeLocalStorageItem, WORKSPACE_MODELS_KEY);
   } catch (error) {
     logger.warn("Failed to clear workspace model storage", error);
   }
@@ -107,33 +156,44 @@ export function* handleReloadModelsForProvider() {
   // Restore the user's last-selected model for this provider (if any)
   const providerModels: Record<string, string> = yield* selectProviderModels.effect();
   const savedModel = providerModels[newProviderId];
+  const nextModel =
+    savedModel ??
+    normalizeModelForProvider(newProviderId, MODEL_DEFAULTS.UI_INITIAL_MODEL);
+
   if (savedModel) {
     logger.info("Restoring saved model for provider", {
       providerId: newProviderId,
       savedModel,
     });
-    yield* put(setSelectedModel(savedModel));
-    try {
-      yield* call(
-        [localStorage, localStorage.setItem],
-        GLOBAL_MODEL_KEY,
-        savedModel
-      );
-    } catch (e) {
-      logger.warn("Failed to persist saved model to localStorage", e);
-    }
-    try {
-      unifiedStateStore.selectModel(savedModel);
-    } catch (e) {
-      logger.warn("Failed to sync saved model with unified store", e);
-    }
+  } else {
+    logger.info("No saved model for provider, resetting to provider default", {
+      providerId: newProviderId,
+      fallbackModel: nextModel,
+    });
   }
 
-  // Update active provider context and let loadModels use cached models when available.
-  yield* put(setActiveProviderId(newProviderId));
-  yield* put(setModelsLoaded({ providerId: newProviderId, loaded: false }));
-  yield* put(setLoadError(null));
-  yield* put(setRetryAttempt(0));
+  yield* put(
+    setSelectedModel({ providerId: newProviderId, model: nextModel })
+  );
+  try {
+    yield* call(setLocalStorageItem, GLOBAL_MODEL_KEY, nextModel);
+  } catch (e) {
+    logger.warn("Failed to persist saved model to localStorage", e);
+  }
+  try {
+    unifiedStateStore.selectModel(nextModel);
+  } catch (e) {
+    logger.warn("Failed to sync saved model with unified store", e);
+  }
+
+  yield* put(clearLoadingStateForProvider(newProviderId));
+  yield* put(setAvailableModels([]));
+
+  try {
+    unifiedStateStore.setAvailableModels([]);
+  } catch (e) {
+    logger.warn("Failed to clear available models in unified store", e);
+  }
 
   yield* put(loadModels());
 }
@@ -146,11 +206,7 @@ export function* handleReloadModelsForProvider() {
 function* handleWorkspaceModelChange() {
   try {
     const workspaceModels: Record<string, string> = yield* selectWorkspaceModels.effect();
-    yield* call(
-      [localStorage, localStorage.setItem],
-      WORKSPACE_MODELS_KEY,
-      JSON.stringify(workspaceModels)
-    );
+    yield* call(setLocalStorageItem, WORKSPACE_MODELS_KEY, JSON.stringify(workspaceModels));
   } catch (error) {
     logger.error("Failed to save workspace models:", error);
   }

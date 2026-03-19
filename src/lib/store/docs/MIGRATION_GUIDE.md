@@ -71,11 +71,11 @@ get effectiveWidth() { return isCollapsed ? 0 : sidebarWidth; }
 
 // AFTER: Redux selectors
 export const selectCounterScale = createSelector((state) => {
-  return 1 / state.zoom.zoomFactor;
+  return 1 / state.userPreferences.zoomFactor;
 });
 
 export const selectEffectiveWidth = createSelector((state) => {
-  return state.sidebarWidth.isCollapsed ? 0 : state.sidebarWidth.width;
+  return state.uiLayout.sidebarCollapsed ? 0 : state.uiLayout.sidebarWidth;
 });
 ```
 
@@ -284,7 +284,7 @@ const counterScale = $derived(1 / zoomFactor);
 
 // AFTER
 export const selectCounterScale = createSelector((state) => {
-  return 1 / state.zoom.zoomFactor;
+  return 1 / state.userPreferences.zoomFactor;
 });
 ```
 
@@ -296,8 +296,8 @@ get effectiveWidth() { return isCollapsed ? 0 : sidebarWidth; }
 
 // AFTER
 export const selectEffectiveWidth = createSelector((state) => {
-  const { isCollapsed, width } = state.sidebarWidth;
-  return isCollapsed ? 0 : width;
+  const { sidebarCollapsed, sidebarWidth } = state.uiLayout;
+  return sidebarCollapsed ? 0 : sidebarWidth;
 });
 ```
 
@@ -322,7 +322,7 @@ import { sidebarWidthStore } from '$lib/stores/sidebar-width.store.svelte';
 const width = sidebarWidthStore.effectiveWidth;
 
 // AFTER
-import { selectEffectiveWidth } from '$lib/store/slices/sidebar-width/sidebar-width-selectors';
+import { selectEffectiveWidth } from '$lib/store/slices/ui-layout/ui-layout-selectors';
 const effectiveWidth = selectEffectiveWidth();
 // Use as: $effectiveWidth
 ```
@@ -653,19 +653,19 @@ After creating the slice:
 
 1. **Register reducer** in `reducer.ts`:
    ```typescript
-   import { sidebarWidthReducer } from "./slices/sidebar-width/sidebar-width-slice";
-   export const reducers = { /* ... */ sidebarWidth: sidebarWidthReducer } as const;
+   import { uiLayoutReducer } from "./slices/ui-layout/ui-layout-slice";
+   export const reducers = { /* ... */ uiLayout: uiLayoutReducer } as const;
    ```
 
 2. **Register saga** in `sagas.ts`:
    ```typescript
-   import { sidebarWidthSaga } from "./slices/sidebar-width/sagas/sidebar-width-saga";
-   export const sagas = { /* ... */ sidebarWidth: sidebarWidthSaga } as const;
+   import { uiLayoutSaga } from "./slices/ui-layout/sagas/ui-layout-saga";
+   export const sagas = { /* ... */ uiLayoutSaga } as const;
    ```
 
 3. **Add `<RunSaga>`** in the appropriate layout component:
    ```svelte
-   <RunSaga sagaName="sidebarWidth" />
+   <RunSaga sagaName="uiLayoutSaga" />
    ```
 
 ---

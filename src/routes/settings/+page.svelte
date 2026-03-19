@@ -18,15 +18,15 @@
   import RtkSettings from '$lib/components/settings/RtkSettings.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
-  import { selectIsProviderActive } from '$lib/store/slices/active-provider/active-provider-selectors';
+  import { selectIsProviderActive } from '$lib/store/slices/provider-settings/provider-settings-selectors';
   import { resetNotificationSettings } from '$lib/store/slices/notification-settings/notification-settings-slice';
-  import { setNoteFontStyle } from '$lib/store/slices/note-font-settings/note-font-settings-slice';
-  import { selectNoteFontStyle, selectIsNoteMonospace } from '$lib/store/slices/note-font-settings/note-font-settings-selectors';
-  import { setAgentFontStyle, type AgentFontStyle } from '$lib/store/slices/agent-font-settings/agent-font-settings-slice';
-  import { selectAgentFontStyle } from '$lib/store/slices/agent-font-settings/agent-font-settings-selectors';
+  import { setNoteFontStyle } from '$lib/store/slices/font-settings/font-settings-slice';
+  import { selectNoteFontStyle, selectIsNoteMonospace } from '$lib/store/slices/font-settings/font-settings-selectors';
+  import { setAgentFontStyle, type AgentFontStyle } from '$lib/store/slices/font-settings/font-settings-slice';
+  import { selectAgentFontStyle } from '$lib/store/slices/font-settings/font-settings-selectors';
   import { getDispatch } from '$lib/store/utils/utils';
-  import { setCodeFontFamily } from '$lib/store/slices/code-font-settings/code-font-settings-slice';
-  import { selectCodeFontFamily, selectCodeFontFamilyCSS, selectCodeFontFamilyLabel, selectCodeFontOptions } from '$lib/store/slices/code-font-settings/code-font-settings-selectors';
+  import { setCodeFontFamily } from '$lib/store/slices/font-settings/font-settings-slice';
+  import { selectCodeFontFamily, selectCodeFontFamilyCSS, selectCodeFontFamilyLabel, selectCodeFontOptions } from '$lib/store/slices/font-settings/font-settings-selectors';
   import { Select } from '$lib/components/ui/select';
 
   import { isMacPlatform } from '$lib/utils/shortcuts';

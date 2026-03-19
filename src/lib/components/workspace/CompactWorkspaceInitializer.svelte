@@ -48,7 +48,7 @@
   import RemoteSetupSelector from './initializer/RemoteSetupSelector.svelte';
   import { noteUrl } from '$shared/constants/intent-links';
   import { getProviderAvailability } from '$features/providers/provider-availability.client';
-  import { selectActiveProviderId } from '$lib/store/slices/active-provider/active-provider-selectors';
+  import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
   import {
     getDefaultModelForProvider,
     getDefaultProviderId,

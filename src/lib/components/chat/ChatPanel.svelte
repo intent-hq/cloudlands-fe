@@ -124,7 +124,7 @@
   import LazyTurn from './LazyTurn.svelte';
   import InlinePermissionRequest from './InlinePermissionRequest.svelte';
   import { selectPermissionRequests } from '$lib/store/slices/permission/permission-selectors';
-  import { selectIsAgentMonospace } from '$lib/store/slices/agent-font-settings/agent-font-settings-selectors';
+  import { selectIsAgentMonospace } from '$lib/store/slices/font-settings/font-settings-selectors';
   import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
   import AuroraBackground from './AuroraBackground.svelte';
   import { invoke, listenSync } from '$lib/electron-bridge';
@@ -133,7 +133,7 @@
     selectEffectiveBehaviorPrompt,
     selectEffectiveModel,
   } from '$lib/store/slices/specialists/specialists-selectors';
-  import { selectActiveProviderId } from '$lib/store/slices/active-provider/active-provider-selectors';
+  import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
 
   import { getAgentProvider } from '$shared/types/agent-session';
   import { cleanErrorMessage } from '$shared/errors/messages';

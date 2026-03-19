@@ -1,58 +1,42 @@
-import { activeProviderReducer } from "./slices/active-provider/active-provider-slice";
-import { additionalAgentsReducer } from "./slices/additional-agents/additional-agents-slice";
-import { agentFontSettingsReducer } from "./slices/agent-font-settings/agent-font-settings-slice";
+import { providerSettingsReducer } from "./slices/provider-settings/provider-settings-slice";
 import { backgroundAgentSettingsReducer } from "./slices/background-agent-settings/background-agent-settings-slice";
-import { noteFontSettingsReducer } from "./slices/note-font-settings/note-font-settings-slice";
-import { codeFontSettingsReducer } from "./slices/code-font-settings/code-font-settings-slice";
-import { openActionReducer } from "./slices/open-action/open-action-slice";
-import { sidebarWidthReducer } from "./slices/sidebar-width/sidebar-width-slice";
+import { fontSettingsReducer } from "./slices/font-settings/font-settings-slice";
+import { externalEditorsReducer } from "./slices/external-editors/external-editors-slice";
+import { uiLayoutReducer } from "./slices/ui-layout/ui-layout-slice";
 import { storeUtilityReducer } from "./slices/store-utility/store-utility-slice";
 import { shortcutsCheatSheetReducer } from "./slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice";
-import { tabDragReducer } from "./slices/tab-drag/tab-drag-slice";
-import { tabScrollReducer } from "./slices/tab-scroll/tab-scroll-slice";
+import { tabStateReducer } from "./slices/tab-state/tab-state-slice";
 import { terminalOverlayReducer } from "./slices/terminal-overlay/terminal-overlay-slice";
-import { editorSettingsReducer } from "./slices/editor-settings/editor-settings-slice";
-import { noteSpellcheckSettingsReducer } from "./slices/note-spellcheck-settings/note-spellcheck-settings-slice";
+import { userPreferencesReducer } from "./slices/user-preferences/user-preferences-slice";
 import { notificationSettingsReducer } from "./slices/notification-settings/notification-settings-slice";
 import { workspaceSettingsReducer } from "./slices/workspace-settings/workspace-settings-slice";
-import { betaUpdatesReducer } from "./slices/beta-updates/beta-updates-slice";
 import { noteReadTrackingReducer } from "./slices/note-read-tracking/note-read-tracking-slice";
 import { multiPanelContextReducer } from "./slices/multi-panel-context/multi-panel-context-slice";
 import { permissionReducer } from "./slices/permission/permission-slice";
 import { pipReducer } from "./slices/pip/pip-slice";
-import { installedEditorsReducer } from "./slices/installed-editors/installed-editors-slice";
 import { featureCodesReducer } from "./slices/feature-codes/feature-codes-slice";
 import { modelReducer } from "./slices/model/model-slice";
 import { specialistsReducer } from "./slices/specialists/specialists-slice";
-import { zoomReducer } from "./slices/zoom/zoom-slice";
 
 export const reducers = {
-  activeProvider: activeProviderReducer,
-  additionalAgents: additionalAgentsReducer,
+  providerSettings: providerSettingsReducer,
   backgroundAgentSettings: backgroundAgentSettingsReducer,
-  betaUpdates: betaUpdatesReducer,
-  agentFontSettings: agentFontSettingsReducer,
-  noteFontSettings: noteFontSettingsReducer,
-  codeFontSettings: codeFontSettingsReducer,
-  editorSettings: editorSettingsReducer,
-  openAction: openActionReducer,
-  sidebarWidth: sidebarWidthReducer,
+  fontSettings: fontSettingsReducer,
+  externalEditors: externalEditorsReducer,
+  uiLayout: uiLayoutReducer,
   storeUtility: storeUtilityReducer,
   shortcutsCheatSheet: shortcutsCheatSheetReducer,
-  tabDrag: tabDragReducer,
-  tabScroll: tabScrollReducer,
+  tabState: tabStateReducer,
   terminalOverlay: terminalOverlayReducer,
   notificationSettings: notificationSettingsReducer,
-  noteSpellcheckSettings: noteSpellcheckSettingsReducer,
   noteReadTracking: noteReadTrackingReducer,
   multiPanelContext: multiPanelContextReducer,
-  installedEditors: installedEditorsReducer,
   permission: permissionReducer,
   featureCodes: featureCodesReducer,
   model: modelReducer,
   pip: pipReducer,
   specialists: specialistsReducer,
+  userPreferences: userPreferencesReducer,
   workspaceSettings: workspaceSettingsReducer,
-  zoom: zoomReducer,
 } as const;
 

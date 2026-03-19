@@ -1,4 +1,5 @@
-import { call, put, takeEvery } from "typed-redux-saga";
+import { getLocalStorageItem } from "$lib/store/utils/safe-local-storage-saga";
+import { call, put, takeEvery, type SagaGenerator } from "typed-redux-saga";
 import { terminalManager } from "$features/terminal/terminal-manager.svelte";
 import {
   openTerminalOverlay,
@@ -16,9 +17,9 @@ import { getStoredCustomName } from "./persistence-saga";
 // Helpers
 // ============================================================================
 
-function loadWorkspaceState(wsId: string): PersistedWorkspaceState | null {
+function* loadWorkspaceState(wsId: string): SagaGenerator<PersistedWorkspaceState | null> {
   try {
-    const stored = localStorage.getItem(WORKSPACE_STATE_STORAGE_KEY);
+    const stored = yield* call(getLocalStorageItem, WORKSPACE_STATE_STORAGE_KEY);
     if (stored) {
       const states = JSON.parse(stored) as Record<string, PersistedWorkspaceState>;
       return states[wsId] || null;
@@ -27,14 +28,21 @@ function loadWorkspaceState(wsId: string): PersistedWorkspaceState | null {
   return null;
 }
 
-function loadTerminalMetadataForWorkspace(wsId: string): TerminalTab[] {
+function* loadTerminalMetadataForWorkspace(wsId: string): SagaGenerator<TerminalTab[]> {
   const storedTerminals = terminalManager.loadTerminalMetadata(wsId);
   if (storedTerminals.length === 0) return [];
-  return storedTerminals.map((t) => ({
-    id: t.terminalId,
-    name: t.title || getTerminalName(t.terminalId),
-    customName: getStoredCustomName(wsId, t.terminalId),
-  }));
+
+  const terminals: TerminalTab[] = [];
+
+  for (const terminal of storedTerminals) {
+    terminals.push({
+      id: terminal.terminalId,
+      name: terminal.title || getTerminalName(terminal.terminalId),
+      customName: yield* call(getStoredCustomName, wsId, terminal.terminalId),
+    });
+  }
+
+  return terminals;
 }
 
 // ============================================================================

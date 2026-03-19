@@ -2,6 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 
+const mockModelState = vi.hoisted(() => ({
+  selectedModel: 'gpt5.4',
+  availableModels: [{ value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' }],
+}));
+
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
   return { default: MockFa };
@@ -55,36 +60,40 @@ vi.mock('$lib/store/utils/utils', () => ({
 }));
 
 vi.mock('$lib/store/slices/model/model-selectors', () => ({
-  selectSelectedModel: () => readable('gpt5.4'),
-  selectAvailableModels: () =>
-    readable([{ value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' }]),
+  selectSelectedModel: () => readable(mockModelState.selectedModel),
+  selectAvailableModels: () => readable(mockModelState.availableModels),
   selectIsLoadingModels: () => readable(false),
   selectLoadError: () => readable(null),
 }));
 
-vi.mock('$lib/store/slices/active-provider/active-provider-selectors', () => ({
+vi.mock('$lib/store/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => readable('auggie'),
 }));
 
-vi.mock('$shared/config/provider-config', () => ({
-  getProviderConfig: (providerId?: string) => ({
-    id: providerId ?? 'auggie',
-    displayName: providerId === 'codex' ? 'OpenAI Codex' : 'Augment Auggie',
-  }),
-  parseCompoundModelId: (modelId?: string) => {
-    if (!modelId) {
-      return { providerId: '', modelId: '' };
-    }
+vi.mock('$shared/config/provider-config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$shared/config/provider-config')>();
 
-    const [providerId, ...rest] = modelId.split(':');
-    if (rest.length === 0) {
-      return { providerId: '', modelId };
-    }
+  return {
+    ...actual,
+    getProviderConfig: (providerId?: string) => ({
+      id: providerId ?? 'auggie',
+      displayName: providerId === 'codex' ? 'OpenAI Codex' : 'Augment Auggie',
+    }),
+    parseCompoundModelId: (modelId?: string) => {
+      if (!modelId) {
+        return { providerId: '', modelId: '' };
+      }
 
-    return { providerId, modelId: rest.join(':') };
-  },
-  resolvePreferredModel: () => undefined,
-}));
+      const [providerId, ...rest] = modelId.split(':');
+      if (rest.length === 0) {
+        return { providerId: '', modelId };
+      }
+
+      return { providerId, modelId: rest.join(':') };
+    },
+    resolvePreferredModel: () => undefined,
+  };
+});
 
 vi.mock('$shared/types/agent-session', () => ({
   getAgentProvider: vi.fn(() => 'auggie'),
@@ -106,6 +115,12 @@ import ModelPicker from './ModelPicker.svelte';
 describe('ModelPicker locked state', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockModelState.selectedModel = 'gpt5.4';
+    mockModelState.availableModels = [{
+      value: 'gpt5.4',
+      label: 'GPT 5.4',
+      description: 'Smart model',
+    }];
   });
 
   afterEach(() => {
@@ -128,5 +143,23 @@ describe('ModelPicker locked state', () => {
     expect(button.getAttribute('title')).toBe('Start a new agent to change provider or model.');
     expect(button.textContent).toContain('GPT 5.4');
     expect(button.querySelector('[data-icon="lock"]')).toBeNull();
+  });
+
+  it('uses the selectedModel prop on the first render', () => {
+    mockModelState.selectedModel = 'gpt5.4';
+    mockModelState.availableModels = [
+      { value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' },
+      { value: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5', description: 'Fast model' },
+    ];
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'claude-sonnet-4.5',
+        providerId: 'auggie',
+        isLocked: true,
+      },
+    });
+
+    expect(screen.getByRole('button').textContent).toContain('Claude Sonnet 4.5');
   });
 });

@@ -64,7 +64,7 @@ vi.mock('$lib/store/slices/multi-panel-context/multi-panel-context-selectors', (
   selectSelections: () => readable([]),
 }));
 
-vi.mock('$lib/store/slices/additional-agents/additional-agents-selectors', () => ({
+vi.mock('$lib/store/slices/provider-settings/provider-settings-selectors', () => ({
   selectEnabledProviderIds: () => readable(['auggie', 'codex']),
 }));
 

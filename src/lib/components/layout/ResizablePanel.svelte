@@ -2,8 +2,8 @@
   import { onMount, onDestroy } from 'svelte';
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
-  import { setWidth as setSidebarWidth } from '$lib/store/slices/sidebar-width/sidebar-width-slice';
-  import { selectIsCollapsed } from '$lib/store/slices/sidebar-width/sidebar-width-selectors';
+  import { setWidth as setSidebarWidth } from '$lib/store/slices/ui-layout/ui-layout-slice';
+  import { selectIsCollapsed } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import { getDispatch } from '$lib/store/utils/utils';
 
   let {

@@ -10,7 +10,7 @@ import { createChannelFromSelector } from "./selector-channel-effects";
 import { init } from "../init";
 import type { StoreState } from "../types";
 import { lockUpdates, unlockUpdates } from "../slices/store-utility/store-utility-slice";
-import { saveScrollPosition } from "../slices/tab-scroll/tab-scroll-slice";
+import { saveScrollPosition } from "../slices/tab-state/tab-state-slice";
 
 describe("createSelector", () => {
   describe("Basic selector functionality", () => {
@@ -207,7 +207,7 @@ describe("createSelector", () => {
       const initialResult = get(readableInstance);
       const callCountAfterInit = computeFn.mock.calls.length;
 
-      // Change an unrelated field (tabScroll.positions, not storeUtility.updatesLocked)
+      // Change an unrelated field (tabState.scrollPositions, not storeUtility.updatesLocked)
       store.dispatch(saveScrollPosition("tab-1", 100));
 
       // Should NOT recompute because we only track storeUtility.updatesLocked
@@ -225,7 +225,7 @@ describe("createSelector", () => {
       const { store } = init();
       const computeFn = vi.fn((state: StoreState) => {
         // Access nested property
-        return state.tabScroll.positions;
+        return state.tabState.scrollPositions;
       });
       const selector = createSelector(computeFn);
       const readable = selector.withStore(store);
@@ -235,7 +235,7 @@ describe("createSelector", () => {
       const initialResult = get(readableInstance);
       const callCountAfterInit = computeFn.mock.calls.length;
 
-      // Change unrelated field (storeUtility, not tabScroll)
+      // Change unrelated field (storeUtility, not tabState)
       store.dispatch(lockUpdates());
       store.dispatch(unlockUpdates());
 
@@ -257,7 +257,7 @@ describe("createSelector", () => {
       const { store } = init();
       const computeFn = vi.fn((state: StoreState) => ({
         locked: state.storeUtility.updatesLocked,
-        positions: state.tabScroll.positions,
+        positions: state.tabState.scrollPositions,
       }));
       const selector = createSelector(computeFn);
 
@@ -279,7 +279,7 @@ describe("createSelector", () => {
 
     it("should work with readable store (Svelte store integration)", () => {
       const { store } = init();
-      const selector = createSelector((state: StoreState) => state.tabScroll.positions);
+      const selector = createSelector((state: StoreState) => state.tabState.scrollPositions);
 
       const readable = selector.withStore(store)();
       const value1 = get(readable);
@@ -298,7 +298,7 @@ describe("createSelector", () => {
       // Create a selector that accesses an object property
       const selector = createSelector((state: StoreState) => {
         // Access positions object
-        const positions = state.tabScroll.positions;
+        const positions = state.tabState.scrollPositions;
         return Object.keys(positions).length;
       });
 
@@ -359,7 +359,7 @@ describe("createSelector", () => {
   describe("createChannelFromSelector", () => {
     it("should create an event channel that emits on value changes", async () => {
       const { store, storeState } = init();
-      const selector = createSelector((state: StoreState) => state.tabScroll.positions);
+      const selector = createSelector((state: StoreState) => state.tabState.scrollPositions);
 
       function* testSaga() {
         const channel = yield* createChannelFromSelector(selector);
@@ -386,7 +386,7 @@ describe("createSelector", () => {
 
     it("should include prevPayload in channel emissions", async () => {
       const { store, storeState } = init();
-      const selector = createSelector((state: StoreState) => state.tabScroll.positions);
+      const selector = createSelector((state: StoreState) => state.tabState.scrollPositions);
 
       function* testSaga() {
         const channel = yield* createChannelFromSelector(selector);
@@ -434,7 +434,7 @@ describe("createSelector", () => {
   describe("Edge cases", () => {
     it("should respect updatesLocked flag for lockable selectors", () => {
       const { store } = init();
-      const computeFn = vi.fn((state: StoreState) => state.tabScroll.positions);
+      const computeFn = vi.fn((state: StoreState) => state.tabState.scrollPositions);
       const selector = createSelector(computeFn);
 
       // Create a readable (lockable) selector
@@ -452,7 +452,7 @@ describe("createSelector", () => {
       const value2 = get(readable);
       expect(value2).toEqual({});
       expect(computeFn).toHaveBeenCalledTimes(1);
-      // The selector returns the cached value because the tracked state (tabScroll.positions) hasn't changed
+      // The selector returns the cached value because the tracked state (tabState.scrollPositions) hasn't changed
       // Note: This is a performance optimization for batch updates
 
       // Unlock updates
@@ -496,7 +496,7 @@ describe("createSelector", () => {
     it("should handle array return values", () => {
       const { store } = init();
       const selector = createSelector((_state: StoreState) => {
-        return Object.keys(store.getState().tabScroll.positions);
+        return Object.keys(store.getState().tabState.scrollPositions);
       });
 
       const result = selector.select(store.getState());
@@ -566,7 +566,7 @@ describe("createSelector", () => {
         // Access deeply nested state
         return {
           locked: state.storeUtility.updatesLocked,
-          positions: state.tabScroll.positions,
+          positions: state.tabState.scrollPositions,
         };
       });
 

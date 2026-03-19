@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { agentClient } from '$features/agent/agent.client';
   import { sessionStore } from '$features/agent/browser';
   import Button from '$lib/components/ui/button/button.svelte';
@@ -19,7 +20,7 @@
     retryLoadModels,
     setWorkspaceModel,
   } from '$lib/store/slices/model/model-slice';
-  import { selectActiveProviderId } from '$lib/store/slices/active-provider/active-provider-selectors';
+  import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
   import { getModelsForProvider } from '$lib/store/slices/model/model-utils';
   import { getDispatch } from '$lib/store/utils/utils';
   import {
@@ -31,6 +32,7 @@
   import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
+  import { safeLocalStorage } from '$lib/utils/safe-storage';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { toast } from 'svelte-sonner';
   import {
@@ -212,7 +214,7 @@
 
   // Local model state - undefined means "use default", otherwise syncs with prop
   // When selectedModel is undefined, we show "Default model" instead of falling back to store
-  let localModel = $state<string | undefined>(selectedModel);
+  let localModel = $state<string | undefined>(untrack(() => selectedModel));
 
   // Sync from prop when it changes externally
   $effect(() => {
@@ -382,35 +384,39 @@
 
   type FallbackInfo = { fromModel: string; toModel: string };
 
-  // Load persisted fallback info for this agent on mount
+  // Load persisted fallback info for this agent
   let fallbackInfo = $state<FallbackInfo | null>(null);
-  if (agentId) {
+  $effect(() => {
+    if (!agentId) {
+      fallbackInfo = null;
+      return;
+    }
+
     try {
-      const stored = localStorage.getItem(FALLBACK_KEY_PREFIX + agentId);
+      const stored = safeLocalStorage.getItem(FALLBACK_KEY_PREFIX + agentId);
       if (stored) {
         fallbackInfo = JSON.parse(stored);
         logger.debug('Loaded fallback info from localStorage:', { agentId, fallback: stored });
+      } else {
+        fallbackInfo = null;
       }
     } catch {
-      localStorage.removeItem(FALLBACK_KEY_PREFIX + agentId);
+      fallbackInfo = null;
+      safeLocalStorage.removeItem(FALLBACK_KEY_PREFIX + agentId);
     }
-  }
+  });
 
   function setFallbackInfo(info: FallbackInfo) {
     fallbackInfo = info;
     if (agentId) {
-      try {
-        localStorage.setItem(FALLBACK_KEY_PREFIX + agentId, JSON.stringify(info));
-      } catch {
-        // Ignore storage errors
-      }
+      safeLocalStorage.setJSON(FALLBACK_KEY_PREFIX + agentId, info);
     }
   }
 
   function clearFallbackInfo() {
     fallbackInfo = null;
     if (agentId) {
-      localStorage.removeItem(FALLBACK_KEY_PREFIX + agentId);
+      safeLocalStorage.removeItem(FALLBACK_KEY_PREFIX + agentId);
     }
   }
 

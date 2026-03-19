@@ -5,7 +5,7 @@ import {
   getDefaultProviderId,
   PROVIDER_MODEL_TIERS,
 } from "$shared/config/provider-config";
-import { selectActiveProviderId } from "../active-provider/active-provider-selectors";
+import { selectActiveProviderId } from "../provider-settings/provider-settings-selectors";
 import { selectIsFeatureEnabled } from "../feature-codes/feature-codes-selectors";
 import { createLogger } from "$lib/utils/client-logger";
 import type { CustomSpecialist, FileSpecialist, SpecialistOverrides } from "./specialists-slice";

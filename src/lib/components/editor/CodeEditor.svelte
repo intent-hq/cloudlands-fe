@@ -14,7 +14,7 @@
   import { invoke } from '$lib/electron-bridge';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { WorkspaceId } from '$shared/types/branded-ids';
-  import { selectCodeFontFamilyCSS } from '$lib/store/slices/code-font-settings/code-font-settings-selectors';
+  import { selectCodeFontFamilyCSS } from '$lib/store/slices/font-settings/font-settings-selectors';
 
   const logger = createLogger('CodeEditor');
 

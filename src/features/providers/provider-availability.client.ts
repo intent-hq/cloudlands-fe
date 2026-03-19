@@ -88,7 +88,7 @@ export async function getProviderAvailability(
           id => !cachedResult!.hiddenProviders!.includes(id)
         );
         const { getReduxDispatch } = await import('$lib/store/redux-dispatch-bridge');
-        const { validateActiveProvider } = await import('$lib/store/slices/active-provider/active-provider-slice');
+        const { validateActiveProvider } = await import('$lib/store/slices/provider-settings/provider-settings-slice');
         getReduxDispatch()(validateActiveProvider(visibleIds));
       } catch (e) {
         // Non-critical — store validation is best-effort

@@ -15,9 +15,11 @@
     faFolder,
   } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
-  import type { InstalledEditor } from '$lib/store/slices/installed-editors/installed-editors-slice';
-  import { fetchEditors } from '$lib/store/slices/installed-editors/installed-editors-slice';
-  import { selectInstalledEditorsFiltered } from '$lib/store/slices/installed-editors/installed-editors-selectors';
+  import {
+    fetchEditors,
+    type InstalledEditor,
+  } from '$lib/store/slices/external-editors/external-editors-slice';
+  import { selectInstalledEditorsFiltered } from '$lib/store/slices/external-editors/external-editors-selectors';
   import { getDispatch } from '$lib/store/utils/utils';
   import { invoke } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';

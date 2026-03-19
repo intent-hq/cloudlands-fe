@@ -39,8 +39,8 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { getContext, onMount, tick, type Snippet } from 'svelte';
   import Button from '$lib/components/ui/button/button.svelte';
-  import { selectIsDragging } from '$lib/store/slices/tab-drag/tab-drag-selectors';
-  import { startDrag, endDrag } from '$lib/store/slices/tab-drag/tab-drag-slice';
+  import { selectIsDragging } from '$lib/store/slices/tab-state/tab-state-selectors';
+  import { startDrag, endDrag } from '$lib/store/slices/tab-state/tab-state-slice';
   import { getDispatch } from '$lib/store/utils/utils';
   import { faNote } from '$lib/icons/faNote';
   import { notesStateManager } from '$features/notes/notes.store.svelte';

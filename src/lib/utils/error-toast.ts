@@ -7,6 +7,7 @@ import ErrorToast from '$lib/components/ui/toast/ErrorToast.svelte';
 import { errorReporter } from '$lib/utils/error-reporter';
 import { workspaceStore } from '$features/workspace/workspace.store.svelte';
 import { UnifiedAgentFactory } from '$features/agent/services/agent-factory';
+import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { createAgentTypeId } from '$shared/types/agent.types';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
@@ -71,7 +72,7 @@ ${report.agentPrompt}`;
     workspaceId: WorkspaceId(workspace.id),
     agentType: createAgentTypeId('debug'),
     initialMessage: prompt,
-    model: getReduxStore().getState().model.workspaceModels?.[workspace.id] ?? getReduxStore().getState().model.selectedModel,
+    model: selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspace.id),
     source: 'error-toast',
     metadata: {
       source: 'error-toast',

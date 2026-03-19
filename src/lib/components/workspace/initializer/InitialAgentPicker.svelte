@@ -28,7 +28,7 @@
     parseCompoundModelId,
   } from '$shared/config/provider-config';
   import { resolvePreferredDefaultModel } from '$lib/utils/provider-model-selection';
-  import { selectActiveProviderId } from '$lib/store/slices/active-provider/active-provider-selectors';
+  import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';

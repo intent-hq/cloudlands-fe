@@ -30,7 +30,7 @@
   import { agentService } from '$features/agent/agent.service';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { layoutSettings } from '$features/layout/layout-settings.svelte';
-  import { selectIsCollapsed } from '$lib/store/slices/sidebar-width/sidebar-width-selectors';
+  import { selectIsCollapsed } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import { notesStateManager } from '$features/notes/notes.store.svelte';
   import { NoteId } from '$shared/types/branded-ids';
   import { renameWithUndo } from '$lib/utils/reversible-actions';

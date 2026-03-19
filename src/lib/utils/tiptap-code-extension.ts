@@ -38,7 +38,7 @@ function isMonospaceMode(view: EditorView | null): boolean {
  * - Editing feels natural - no special "mode" to be in/out of
  *
  * ## Technical Notes
- * - The mode is checked at runtime via the noteFontSettings store
+ * - The mode is checked at runtime via the fontSettings store
  * - In monospace mode, input rules are skipped and decorations are used instead
  * - This allows seamless switching between modes without recreating the editor
  */

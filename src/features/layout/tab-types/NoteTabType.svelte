@@ -23,10 +23,10 @@
   import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import NoteFontStyleButton from '$lib/components/notes/NoteFontStyleButton.svelte';
-  import { selectSpellcheckEnabled } from '$lib/store/slices/note-spellcheck-settings/note-spellcheck-settings-selectors';
-  import { toggleSpellcheck } from '$lib/store/slices/note-spellcheck-settings/note-spellcheck-settings-slice';
-  import { selectScrollPosition } from '$lib/store/slices/tab-scroll/tab-scroll-selectors';
-  import { saveScrollPosition } from '$lib/store/slices/tab-scroll/tab-scroll-slice';
+  import { selectSpellcheckEnabled } from '$lib/store/slices/user-preferences/user-preferences-selectors';
+  import { toggleSpellcheck } from '$lib/store/slices/user-preferences/user-preferences-slice';
+  import { selectScrollPosition } from '$lib/store/slices/tab-state/tab-state-selectors';
+  import { saveScrollPosition } from '$lib/store/slices/tab-state/tab-state-slice';
   import { getDispatch } from '$lib/store/utils/utils';
   import Fa from 'svelte-fa';
   import { faCheck, faClockRotateLeft, faCopy, faSpellCheck, faTrash } from '@fortawesome/free-solid-svg-icons';
