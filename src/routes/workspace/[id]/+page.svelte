@@ -48,7 +48,7 @@
   import { workspaceClient } from '$features/workspace/workspace.client';
   import { agentService } from '$features/agent/agent.service'; // Keep for backward compat
   import { agentFactory } from '$features/agent/services/agent-factory';
-  import { sessionStore } from '$features/agent/browser';
+  import { sessionStore, publishSessionStoreSnapshot } from '$features/agent/browser';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { gitStore } from '$features/git/git.store.svelte';
   import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
@@ -1530,6 +1530,19 @@
           isNewlyCreated,
         });
 
+        // CRITICAL: Explicitly publish session store snapshot after loading agents.
+        // The RAF-batched scheduleStoreUpdate may not have fired yet, leaving the
+        // sidebar subscription with stale/empty data. This synchronous publish
+        // ensures the sidebar's useAllAgentsSubscription sees all loaded agents
+        // immediately, preventing the "No agents yet" empty state.
+        publishSessionStoreSnapshot();
+
+        // Safety net: re-publish after a short delay to cover edge cases where
+        // the sidebar's subscription was set up after the synchronous publish
+        // above (e.g. during workspace transitions where component mount order
+        // causes the sidebar to subscribe late).
+        setTimeout(() => publishSessionStoreSnapshot(), 100);
+
         // NOTE: Stale agent-config cleanup is deferred until AFTER the restoration
         // logic below, because shouldDeferSpecPanel() reads from sessionStorage to
         // decide whether to show the spec panel immediately or defer it for the
@@ -1871,6 +1884,11 @@
         }
 
         isLoadingAgents = true;
+
+        // CRITICAL: Acquire the agent load lock SYNCHRONOUSLY before any async work.
+        // This prevents the AgentSubscription's $effect from starting a redundant
+        // concurrent load during the same Svelte flush cycle.
+        acquireAgentLoadLock(capturedWorkspaceId);
 
         void (async () => {
           try {
