@@ -363,6 +363,10 @@ export interface AgentDeletedEvent extends WorkspaceEventBase {
     taskNoteId?: string;
     /** Whether the deletion was user-initiated or system-initiated */
     reason?: 'user_action' | 'workspace_deleted' | 'cleanup';
+    /** Whether this was a background agent (e.g., PR description generator) */
+    isBackground?: boolean;
+    /** ID of the parent agent that created this agent */
+    parentAgentId?: string;
   };
 }
 

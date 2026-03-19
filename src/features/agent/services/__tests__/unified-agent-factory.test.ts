@@ -148,6 +148,33 @@ describe('UnifiedAgentFactory', () => {
       expect(result.error).toContain('path');
     });
 
+    it('should respect explicit isBackground: false and not fall back to metadata', async () => {
+      const config: UnifiedAgentConfig = {
+        name: 'Foreground Agent',
+        workspaceId: mockWorkspace.id as any,
+        isBackground: false,
+        metadata: { isBackground: true },
+      };
+
+      const result = await factory.createAgent(mockWorkspace, config);
+
+      expect(result.success).toBe(true);
+      expect(result.agent?.isBackground).toBe(false);
+    });
+
+    it('should fall back to metadata.isBackground when isBackground is undefined', async () => {
+      const config: UnifiedAgentConfig = {
+        name: 'Background via Metadata',
+        workspaceId: mockWorkspace.id as any,
+        metadata: { isBackground: true },
+      };
+
+      const result = await factory.createAgent(mockWorkspace, config);
+
+      expect(result.success).toBe(true);
+      expect(result.agent?.isBackground).toBe(true);
+    });
+
     it('should include metadata in agent state', async () => {
       const config: UnifiedAgentConfig = {
         name: 'Test Agent',

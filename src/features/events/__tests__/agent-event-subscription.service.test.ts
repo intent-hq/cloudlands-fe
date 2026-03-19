@@ -1801,6 +1801,263 @@ describe('AgentEventSubscriptionService', () => {
   });
 
   // ==========================================================================
+  // Background agent lifecycle filtering (broad subscription guard)
+  // ==========================================================================
+  describe('Background agent lifecycle filtering', () => {
+    it('should skip background agent:idle for broad subscriptions', async () => {
+      let deliveryCount = 0;
+      service.setDeliveryCallback((_agentId, _events) => {
+        deliveryCount++;
+        return { status: 'success' as const };
+      });
+
+      service.setAgentStatus('coordinator-bg-1', 'idle');
+
+      // Broad subscription — no actorIds, not oneShot
+      service.subscribe('coordinator-bg-1', 'Coordinator', {
+        eventTypes: ['agent:*'],
+        priority: 'high',
+      });
+
+      // Background agent idle event (e.g., PR description generator)
+      const bgEvent: WorkspaceEvent = {
+        id: 'bg-idle-1',
+        workspaceId,
+        timestamp: new Date().toISOString(),
+        type: 'agent:idle',
+        actor: { type: 'agent', id: 'bg-pr-gen-1', name: 'PR Description' },
+        data: { agentId: 'bg-pr-gen-1', isBackground: true },
+      };
+
+      eventBus.emitEvent(bgEvent);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(deliveryCount).toBe(0);
+    });
+
+    it('should skip background agent:completed for broad subscriptions', async () => {
+      let deliveryCount = 0;
+      service.setDeliveryCallback((_agentId, _events) => {
+        deliveryCount++;
+        return { status: 'success' as const };
+      });
+
+      service.setAgentStatus('coordinator-bg-2', 'idle');
+
+      service.subscribe('coordinator-bg-2', 'Coordinator', {
+        eventTypes: ['agent:*'],
+        priority: 'high',
+      });
+
+      const bgEvent: WorkspaceEvent = {
+        id: 'bg-completed-1',
+        workspaceId,
+        timestamp: new Date().toISOString(),
+        type: 'agent:completed',
+        actor: { type: 'agent', id: 'bg-commit-gen-1', name: 'Commit Message' },
+        data: { agentId: 'bg-commit-gen-1', isBackground: true },
+      };
+
+      eventBus.emitEvent(bgEvent);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(deliveryCount).toBe(0);
+    });
+
+    it('should deliver background agent events for scoped subscriptions (with actorIds)', async () => {
+      let deliveredEvents: WorkspaceEvent[] = [];
+      service.setDeliveryCallback((_agentId, events) => {
+        deliveredEvents = deliveredEvents.concat(events);
+        return { status: 'success' as const };
+      });
+
+      service.setAgentStatus('coordinator-bg-3', 'idle');
+
+      // Scoped subscription WITH actorIds — background filter should NOT apply
+      service.subscribe('coordinator-bg-3', 'Coordinator', {
+        eventTypes: ['agent:idle'],
+        actorIds: ['bg-pr-gen-2'],
+        priority: 'high',
+      });
+
+      const bgEvent: WorkspaceEvent = {
+        id: 'bg-scoped-idle-1',
+        workspaceId,
+        timestamp: new Date().toISOString(),
+        type: 'agent:idle',
+        actor: { type: 'agent', id: 'bg-pr-gen-2', name: 'PR Description' },
+        data: { agentId: 'bg-pr-gen-2', isBackground: true },
+      };
+
+      eventBus.emitEvent(bgEvent);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Should be delivered because actorIds filter is set (bypass background guard)
+      expect(deliveredEvents.length).toBe(1);
+    });
+
+    it('should still deliver non-background agent:idle with no parentAgentId for broad subscriptions', async () => {
+      let deliveredEvents: WorkspaceEvent[] = [];
+      service.setDeliveryCallback((_agentId, events) => {
+        deliveredEvents = deliveredEvents.concat(events);
+        return { status: 'success' as const };
+      });
+
+      service.setAgentStatus('coordinator-bg-4', 'idle');
+
+      service.subscribe('coordinator-bg-4', 'Coordinator', {
+        eventTypes: ['agent:*'],
+        priority: 'high',
+      });
+
+      // User-created foreground agent with no parentAgentId and no isBackground
+      const fgEvent: WorkspaceEvent = {
+        id: 'fg-idle-1',
+        workspaceId,
+        timestamp: new Date().toISOString(),
+        type: 'agent:idle',
+        actor: { type: 'agent', id: 'user-agent-fg-1', name: 'User Agent' },
+        data: { agentId: 'user-agent-fg-1' },
+      };
+
+      eventBus.emitEvent(fgEvent);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(deliveredEvents.length).toBe(1);
+      expect(deliveredEvents[0].type).toBe('agent:idle');
+    });
+
+    it('should skip background agent:deleted for broad subscriptions', async () => {
+      let deliveryCount = 0;
+      service.setDeliveryCallback((_agentId, _events) => {
+        deliveryCount++;
+        return { status: 'success' as const };
+      });
+
+      service.setAgentStatus('coordinator-bg-5', 'idle');
+
+      // Broad subscription — no actorIds, not oneShot
+      service.subscribe('coordinator-bg-5', 'Coordinator', {
+        eventTypes: ['agent:*'],
+        priority: 'high',
+      });
+
+      // Background agent deleted event (e.g., BackgroundAgentExecutor.cleanupPreviousAgent())
+      const bgDeletedEvent: WorkspaceEvent = {
+        id: 'bg-deleted-1',
+        workspaceId,
+        timestamp: new Date().toISOString(),
+        type: 'agent:deleted',
+        actor: { type: 'agent', id: 'bg-pr-gen-del-1', name: 'PR Description' },
+        data: { agentId: 'bg-pr-gen-del-1', isBackground: true },
+      };
+
+      eventBus.emitEvent(bgDeletedEvent);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(deliveryCount).toBe(0);
+    });
+
+    it('should deliver background agent:deleted for scoped subscriptions (with actorIds)', async () => {
+      let deliveredEvents: WorkspaceEvent[] = [];
+      service.setDeliveryCallback((_agentId, events) => {
+        deliveredEvents = deliveredEvents.concat(events);
+        return { status: 'success' as const };
+      });
+
+      service.setAgentStatus('coordinator-bg-6', 'idle');
+
+      // Scoped subscription WITH actorIds — background filter should NOT apply
+      service.subscribe('coordinator-bg-6', 'Coordinator', {
+        eventTypes: ['agent:deleted'],
+        actorIds: ['bg-pr-gen-del-2'],
+        priority: 'high',
+      });
+
+      const bgDeletedEvent: WorkspaceEvent = {
+        id: 'bg-scoped-deleted-1',
+        workspaceId,
+        timestamp: new Date().toISOString(),
+        type: 'agent:deleted',
+        actor: { type: 'agent', id: 'bg-pr-gen-del-2', name: 'PR Description' },
+        data: { agentId: 'bg-pr-gen-del-2', isBackground: true },
+      };
+
+      eventBus.emitEvent(bgDeletedEvent);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Should be delivered because actorIds filter is set (bypass background guard)
+      expect(deliveredEvents.length).toBe(1);
+      expect(deliveredEvents[0].type).toBe('agent:deleted');
+    });
+
+    it('should skip background agent:failed for broad subscriptions', async () => {
+      let deliveryCount = 0;
+      service.setDeliveryCallback((_agentId, _events) => {
+        deliveryCount++;
+        return { status: 'success' as const };
+      });
+
+      service.setAgentStatus('coordinator-bg-7', 'idle');
+
+      // Broad subscription — no actorIds, not oneShot
+      service.subscribe('coordinator-bg-7', 'Coordinator', {
+        eventTypes: ['agent:*'],
+        priority: 'high',
+      });
+
+      // Background agent failed event (e.g., PR description generator crashes)
+      const bgFailedEvent: WorkspaceEvent = {
+        id: 'bg-failed-1',
+        workspaceId,
+        timestamp: new Date().toISOString(),
+        type: 'agent:failed',
+        actor: { type: 'agent', id: 'bg-pr-gen-fail-1', name: 'PR Description' },
+        data: { agentId: 'bg-pr-gen-fail-1', isBackground: true, error: 'Generation failed' },
+      };
+
+      eventBus.emitEvent(bgFailedEvent);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(deliveryCount).toBe(0);
+    });
+
+    it('should deliver background agent:failed for scoped subscriptions (with actorIds)', async () => {
+      let deliveredEvents: WorkspaceEvent[] = [];
+      service.setDeliveryCallback((_agentId, events) => {
+        deliveredEvents = deliveredEvents.concat(events);
+        return { status: 'success' as const };
+      });
+
+      service.setAgentStatus('coordinator-bg-8', 'idle');
+
+      // Scoped subscription WITH actorIds — background filter should NOT apply
+      service.subscribe('coordinator-bg-8', 'Coordinator', {
+        eventTypes: ['agent:*'],
+        actorIds: ['bg-pr-gen-fail-2'],
+        priority: 'high',
+      });
+
+      const bgFailedEvent: WorkspaceEvent = {
+        id: 'bg-failed-2',
+        workspaceId,
+        timestamp: new Date().toISOString(),
+        type: 'agent:failed',
+        actor: { type: 'agent', id: 'bg-pr-gen-fail-2', name: 'PR Description' },
+        data: { agentId: 'bg-pr-gen-fail-2', isBackground: true, error: 'Generation failed' },
+      };
+
+      eventBus.emitEvent(bgFailedEvent);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Should be delivered because actorIds filter is set (bypass background guard)
+      expect(deliveredEvents.length).toBe(1);
+      expect(deliveredEvents[0].type).toBe('agent:failed');
+    });
+  });
+
+
+  // ==========================================================================
   // Comprehensive scenarios
   // ==========================================================================
   describe('Comprehensive scenarios', () => {

@@ -1342,7 +1342,8 @@ export class AgentEventSubscriptionService {
       (!filter.actorIds || filter.actorIds.length === 0) &&
       !isOneShot
     ) {
-      const eventParentAgentId = (event.data as Record<string, unknown>)?.parentAgentId;
+      const eventData = event.data as Record<string, unknown>;
+      const eventParentAgentId = eventData?.parentAgentId;
       // If the event has a parentAgentId and it's NOT the subscribing agent, skip it.
       // Events without parentAgentId (e.g., user-created agents) are still delivered.
       if (eventParentAgentId && eventParentAgentId !== agentId) {
@@ -1351,6 +1352,22 @@ export class AgentEventSubscriptionService {
           agentId,
           eventActorId: event.actor.id,
           eventParentAgentId,
+          eventType: event.type,
+        });
+        return;
+      }
+
+      // Skip lifecycle events from automated background agents (e.g., PR description
+      // generators, commit message generators) that have no parent relationship to
+      // any coordinator. These agents are created by BackgroundAgentExecutor and carry
+      // isBackground: true in their event data. Without this guard, a coordinator
+      // subscribed broadly to "agent:*" would be woken every time a background
+      // generator finishes, even though it has no delegation relationship with it.
+      if (eventData?.isBackground === true) {
+        logger.debug('Skipping background agent lifecycle event for broad subscription', {
+          subscriptionId: subscription.id,
+          agentId,
+          eventActorId: event.actor.id,
           eventType: event.type,
         });
         return;

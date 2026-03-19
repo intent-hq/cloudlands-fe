@@ -134,6 +134,9 @@ export interface UnifiedAgentConfig {
   // Behavior configuration
   behaviorPrompt?: string; // Custom behavior instructions for the agent (from specialist)
 
+  // Background flag — marks automated/background agents (e.g., commit-message, PR-description generators)
+  isBackground?: boolean;
+
   // Workspace context (open panels + linked references)
   workspaceContext?: {
     openPanels: Array<{ type: string; title: string; id?: string; path?: string }>;
@@ -498,6 +501,9 @@ export class UnifiedAgentFactory {
         updatedAt: new Date(),
         isStreaming: false,
         isProcessing: false,
+        // Propagate isBackground from config or metadata so it persists on the session
+        // and is available for lifecycle event filtering (e.g., suppressing coordinator wakes).
+        isBackground: normalized.isBackground ?? !!normalized.metadata?.isBackground,
         metadata: {
           agentType: normalized.agentType,
           ...(normalized.metadata || {}),
@@ -797,6 +803,7 @@ export class UnifiedAgentFactory {
       source: config.source || 'api',
       agentType: config.agentType,
       behaviorPrompt: config.behaviorPrompt, // Preserve behavior prompt from specialist
+      isBackground: config.isBackground, // Preserve background flag for lifecycle event filtering
     };
   }
 

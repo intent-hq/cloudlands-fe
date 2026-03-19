@@ -3250,6 +3250,7 @@ class RefactoredAgentService extends EventEmitter {
               agentType: options.agentType,
               initialMessage: options.initialMessage,
               behaviorPrompt: options.behaviorPrompt, // Pass specialist behavior instructions for system prompt
+              isBackground: options.metadata?.isBackground, // Propagate background flag for lifecycle event filtering
               metadata: {
                 ...options.metadata,
                 // Preserve isInitialAgent flag if present
@@ -3382,6 +3383,7 @@ class RefactoredAgentService extends EventEmitter {
       initialMessage: options.initialMessage,
       contextReferences: options.contextReferences, // Pass context references for initial message
       behaviorPrompt: options.behaviorPrompt, // Pass specialist behavior instructions
+      isBackground: options.metadata?.isBackground, // Propagate background flag for lifecycle event filtering
       metadata: options.metadata,
     });
 

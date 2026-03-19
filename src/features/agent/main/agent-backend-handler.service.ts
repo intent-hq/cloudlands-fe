@@ -3659,6 +3659,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       // Default to workspace title if agent name is not available
       let agentName = 'Agent';
       let taskNoteId: string | undefined;
+      let isBackground: boolean | undefined;
+      let parentAgentId: string | undefined;
       try {
         const workspaceResult = await workspaceService.getWorkspace(workspaceId as any);
         if (workspaceResult.ok && workspaceResult.data?.title) {
@@ -3673,9 +3675,27 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         if (agent) {
           agentName = agent.name || agentName;
           taskNoteId = agent.taskNoteId?.toString();
+          isBackground = agent.isBackground;
+          parentAgentId = agent.metadata?.createdByAgentId as string | undefined;
         }
       } catch {
         // Ignore - use fallback name
+      }
+      // Fallback: load from persistence if backend session didn't have isBackground
+      // (agent may already be stopped but still persisted on disk)
+      if (isBackground === undefined && workspaceId) {
+        try {
+          const loadResult = await agentPersistence.loadAgent(
+            agentId as AgentId,
+            workspaceId as WorkspaceId,
+          );
+          if (loadResult.success && loadResult.data) {
+            isBackground = loadResult.data.isBackground === true;
+            parentAgentId = parentAgentId || (loadResult.data.metadata?.createdByAgentId as string | undefined);
+          }
+        } catch {
+          // Ignore - metadata enrichment is best-effort
+        }
       }
 
       // CRITICAL: Mark agent as deleted in subscription service FIRST, before any cleanup.
@@ -3752,7 +3772,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
 
       // Emit agent:deleted event so delegation subscriptions can wake up
       if (result.success && workspaceId) {
-        this.emitAgentDeletedEvent(agentId, workspaceId, agentName, taskNoteId);
+        this.emitAgentDeletedEvent(agentId, workspaceId, agentName, taskNoteId, isBackground, parentAgentId);
       }
 
       // Invalidate the persistence list cache since we deleted an agent
@@ -6833,8 +6853,10 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     workspaceId: string,
     agentName: string,
     taskNoteId?: string,
+    isBackground?: boolean,
+    parentAgentId?: string,
   ): void {
-    this._emitAgentDeletedEventAsync(agentId, workspaceId, agentName, taskNoteId).catch((err) => {
+    this._emitAgentDeletedEventAsync(agentId, workspaceId, agentName, taskNoteId, isBackground, parentAgentId).catch((err) => {
       logger.warn('Failed in emitAgentDeletedEvent async chain', { agentId, error: err });
     });
   }
@@ -6844,6 +6866,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     workspaceId: string,
     agentName: string,
     taskNoteId?: string,
+    isBackground?: boolean,
+    parentAgentId?: string,
   ): Promise<void> {
     // Step 1: Clear delegation group (non-critical, don't block on failure)
     // Without this, if an agent is deleted without going idle first,
@@ -6855,6 +6879,9 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       // Ignore - tool may not be loaded
     }
 
+    // Step 2: Emit the agent:deleted event
+    // NOTE: isBackground and parentAgentId are pre-captured by the caller (handleDeleteAgent)
+    // BEFORE persistence deletion, since the agent file is already gone by the time this runs.
     try {
       const { getWorkspaceEventBus } = await import('../../events/main/workspace-event-bus');
       const eventBus = getWorkspaceEventBus(workspaceId);
@@ -6875,12 +6902,16 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           agentName,
           taskNoteId,
           reason: 'user_action',
+          isBackground,
+          parentAgentId,
         },
       });
       logger.info('Emitted agent:deleted event via WorkspaceEventBus', {
         agentId,
         workspaceId,
         agentName,
+        isBackground,
+        parentAgentId,
       });
     } catch (err) {
       logger.warn('Failed to emit agent:deleted event', { agentId, error: err });
@@ -6977,7 +7008,23 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       logger.warn('Failed to set agent status to failed', { agentId, error: err });
     }
 
-    // Step 2: Emit the agent:failed event
+    // Step 2: Load agent metadata for event enrichment (isBackground, parentAgentId)
+    let isBackground: boolean | undefined;
+    let parentAgentId: string | undefined;
+    try {
+      const loadResult = await agentPersistence.loadAgent(
+        agentId as AgentId,
+        workspaceId as WorkspaceId,
+      );
+      if (loadResult.success && loadResult.data) {
+        isBackground = loadResult.data.isBackground === true;
+        parentAgentId = loadResult.data.metadata?.createdByAgentId as string | undefined;
+      }
+    } catch (err) {
+      logger.debug('Could not load agent metadata for failed event', { agentId, error: err });
+    }
+
+    // Step 3: Emit the agent:failed event
     try {
       const { getWorkspaceEventBus } = await import('../../events/main/workspace-event-bus');
       const eventBus = getWorkspaceEventBus(workspaceId);
@@ -6995,6 +7042,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           agentId,
           agentName,
           error,
+          isBackground,
+          parentAgentId,
         },
       });
       logger.debug('Emitted agent:failed event via WorkspaceEventBus', {
@@ -7002,6 +7051,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         workspaceId,
         agentName,
         error,
+        isBackground,
+        parentAgentId,
       });
     } catch (err) {
       logger.warn('Failed to emit agent:failed event', { agentId, error: err });
