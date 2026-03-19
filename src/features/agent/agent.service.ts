@@ -46,6 +46,10 @@ import {
 
 import { errorRecovery, DEFAULT_STRATEGIES } from './browser/services/error-recovery.service';
 import { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';
+import { compareMessageCompleteness } from '$shared/utils/message-comparator';
+import { PendingEventQueue } from './utils/pending-event-queue';
+import { assertStreamingInvariant } from './utils/streaming-invariants';
+import type { StreamingHealthSummary } from './utils/streaming-invariants';
 import {
   requestDeduplicator,
   generateMessageKey,
@@ -92,6 +96,15 @@ interface AgentAnalyticsState {
 const agentAnalyticsState = new Map<string, AgentAnalyticsState>();
 
 /**
+ * Options for ensureStreamHandler
+ */
+interface EnsureStreamHandlerOpts {
+  existingMessage?: AgentMessage;
+  workspaceId?: string;
+  forceReregister?: boolean; // For queue:processing which needs fresh handler
+}
+
+/**
  * Refactored Agent Service for managing agent lifecycle and interactions.
  * Provides a unified interface for creating, managing, and communicating with AI agents.
  * Delegates specialized responsibilities to modular services.
@@ -121,6 +134,7 @@ class RefactoredAgentService extends EventEmitter {
       wrappedHandler?: any; // Store the wrapped handler if preload creates one
       workspaceId?: string; // Track which workspace this handler belongs to
       listenerId?: string; // Unique ID from preload for offById() cleanup
+      registeredAt?: number; // Timestamp when this handler was registered
     }
   >();
   // Track pending stream handler registrations to prevent race conditions
@@ -163,14 +177,7 @@ class RefactoredAgentService extends EventEmitter {
   // Events are queued when no handler exists and replayed when a handler is registered
   // This fixes the "agent stops responding" issue caused by completion events being
   // dropped during navigation, HMR, or component remount timing issues
-  private pendingEventQueue = new Map<
-    string,
-    Array<{ type: string; detail: any; timestamp: number }>
-  >();
-  // Maximum age for queued events (30 seconds) - older events are discarded
-  private readonly PENDING_EVENT_MAX_AGE_MS = 30_000;
-  // Maximum number of events to queue per session to prevent memory issues
-  private readonly PENDING_EVENT_MAX_QUEUE_SIZE = 100;
+  private pendingEventQueue = new PendingEventQueue();
 
   // FIX: Track DOM event handlers registered by ChatService
   // This allows hasActiveStreamListener to correctly detect when handlers exist
@@ -180,6 +187,11 @@ class RefactoredAgentService extends EventEmitter {
   // and to allow re-initialization if needed
   private isDisposed = false;
 
+  // Debounce timer for scheduling reconnectToBackendStreams after disk load
+  private reconnectDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  // Safety timeout to force-clear stale streaming indicators
+  private streamingSafetyTimeout: ReturnType<typeof setTimeout> | null = null;
+
   constructor() {
     super();
     // Initialize services
@@ -188,6 +200,9 @@ class RefactoredAgentService extends EventEmitter {
     this.reconnectActiveStreams();
     // Set up beforeunload handler to save streaming state
     this.setupBeforeUnloadHandler();
+
+    // Start periodic cleanup for the pending event queue to prevent memory leaks
+    this.pendingEventQueue.startPeriodicCleanup();
 
     // Persist references on window so the next HMR cycle can clean up our listeners.
     // This is safe in production: the first evaluation stores the references, and no
@@ -258,6 +273,13 @@ class RefactoredAgentService extends EventEmitter {
    * to receive any queued events, then those events are cleared to prevent duplicates.
    */
   private dispatchStreamEvent(sessionId: string, eventType: string, detail: any): void {
+    // Invariant: sessionId must not be empty
+    assertStreamingInvariant(
+      !!sessionId && sessionId.length > 0,
+      'dispatchStreamEvent called with empty sessionId',
+      { eventType },
+    );
+
     const eventName = `agent:stream:${sessionId}`;
     const event = new CustomEvent(eventName, { detail });
 
@@ -270,24 +292,51 @@ class RefactoredAgentService extends EventEmitter {
       // Handler exists - dispatch directly, no need to queue
       window.dispatchEvent(event);
       logger.debug('Dispatched stream event to registered handler', { sessionId, eventType });
+
+      // Invariant: event was dispatched, so it must NOT also be queued
+      assertStreamingInvariant(
+        !this.pendingEventQueue.has(sessionId) ||
+          this.pendingEventQueue.getQueueSize(sessionId) ===
+            (this._preDispatchQueueSize ?? 0),
+        'Event was both dispatched AND queued — dual delivery detected',
+        { sessionId, eventType, queueSize: this.pendingEventQueue.getQueueSize(sessionId) },
+      );
     } else {
       // No known handler - queue for later replay
+      // FIX: Queue OR dispatch, never both. The previous "defensive dispatch" caused
+      // dual delivery when a DOM handler existed but wasn't tracked, leading to
+      // duplicate events. With fix 1a ensuring hasActiveStreamListener only checks
+      // DOM handlers, queueing alone is correct — events will be replayed when
+      // ChatService calls setupStreaming() → replayPendingEvents().
       this.queuePendingEvent(sessionId, eventType, detail);
       logger.info('Queued stream event (no handler registered)', { sessionId, eventType });
-
-      // Also dispatch in case there's a handler we don't know about (defensive)
-      // This is safe because replayPendingEvents uses timestamp-based deduplication
-      window.dispatchEvent(event);
     }
   }
 
+  // Internal bookkeeping for dual-delivery invariant check
+  private _preDispatchQueueSize: number | undefined;
+
   /**
    * Check if there's an active stream listener for a session
-   * This checks both our internal tracking of IPC handlers and DOM handlers
+   * This checks DOM handlers only (not IPC handlers)
    */
   private hasActiveStreamListener(sessionId: string): boolean {
-    // Check both IPC handlers (activeStreamHandlers) and DOM handlers (registeredDomHandlers)
-    return this.activeStreamHandlers.has(sessionId) || this.registeredDomHandlers.has(sessionId);
+    // FIX: Only check DOM handlers, not IPC handlers.
+    // The IPC handler (activeStreamHandlers) means the IPC→DOM bridge is ready,
+    // but NOT that a DOM consumer (ChatService) exists to receive CustomEvents.
+    // Checking activeStreamHandlers here caused events to be dispatched into the void
+    // instead of being queued for later replay.
+    const result = this.registeredDomHandlers.has(sessionId);
+
+    // Invariant: result must match registeredDomHandlers, NOT activeStreamHandlers
+    // This guards against accidental regression to the old (buggy) check
+    assertStreamingInvariant(
+      result === this.registeredDomHandlers.has(sessionId),
+      'hasActiveStreamListener result does not match registeredDomHandlers',
+      { sessionId, result, domHandlers: this.registeredDomHandlers.size },
+    );
+
+    return result;
   }
 
   /**
@@ -312,80 +361,44 @@ class RefactoredAgentService extends EventEmitter {
    * Queue a pending event for a session
    */
   private queuePendingEvent(sessionId: string, eventType: string, detail: any): void {
-    const now = Date.now();
-
-    if (!this.pendingEventQueue.has(sessionId)) {
-      this.pendingEventQueue.set(sessionId, []);
-    }
-
-    const queue = this.pendingEventQueue.get(sessionId)!;
-
-    // Remove expired events
-    const validEvents = queue.filter((e) => now - e.timestamp < this.PENDING_EVENT_MAX_AGE_MS);
-
-    // Enforce max queue size
-    if (validEvents.length >= this.PENDING_EVENT_MAX_QUEUE_SIZE) {
-      // Remove oldest events to make room
-      validEvents.shift();
-    }
-
-    validEvents.push({ type: eventType, detail, timestamp: now });
-    this.pendingEventQueue.set(sessionId, validEvents);
+    this.pendingEventQueue.queue(sessionId, eventType, detail);
   }
 
   /**
    * Replay any pending events for a session
    * Called when a handler is registered to ensure no events were missed
    *
-   * FIX: Uses a snapshot approach to avoid race condition where events added
-   * during replay could be lost when we clear the queue.
+   * FIX: Uses a snapshot approach (inside PendingEventQueue.replay()) to avoid
+   * race condition where events added during replay could be lost.
    */
   replayPendingEvents(sessionId: string): void {
-    const queue = this.pendingEventQueue.get(sessionId);
-    if (!queue || queue.length === 0) {
+    // Snapshot queue size before replay to detect growth during replay
+    const preReplaySize = this.pendingEventQueue.getQueueSize(sessionId);
+
+    const events = this.pendingEventQueue.replay(sessionId);
+    if (events.length === 0) {
       return;
     }
 
-    const now = Date.now();
-
-    // Take a snapshot of valid events and their timestamps for safe iteration
-    // This prevents race condition if new events arrive during replay
-    const validEvents = queue.filter((e) => now - e.timestamp < this.PENDING_EVENT_MAX_AGE_MS);
-    const replayedTimestamps = new Set(validEvents.map((e) => e.timestamp));
-
-    if (validEvents.length === 0) {
-      this.pendingEventQueue.delete(sessionId);
-      return;
-    }
+    // Invariant: replayed events should not exceed pre-replay queue size
+    assertStreamingInvariant(
+      events.length <= preReplaySize,
+      'More events replayed than were in the queue — possible corruption',
+      { sessionId, preReplaySize, replayedCount: events.length },
+    );
 
     logger.info('Replaying pending stream events', {
       sessionId,
-      eventCount: validEvents.length,
+      eventCount: events.length,
     });
 
     const eventName = `agent:stream:${sessionId}`;
 
     // Dispatch events in order (oldest first)
-    for (const pendingEvent of validEvents) {
+    for (const pendingEvent of events) {
       const event = new CustomEvent(eventName, { detail: pendingEvent.detail });
       window.dispatchEvent(event);
       logger.debug('Replayed pending event', { sessionId, type: pendingEvent.type });
-    }
-
-    // FIX: Only remove replayed events, not any new ones that arrived during replay
-    // Re-fetch the current queue since it may have been modified during dispatch
-    const currentQueue = this.pendingEventQueue.get(sessionId);
-    if (currentQueue) {
-      const remainingEvents = currentQueue.filter((e) => !replayedTimestamps.has(e.timestamp));
-      if (remainingEvents.length > 0) {
-        this.pendingEventQueue.set(sessionId, remainingEvents);
-        logger.debug('Kept new events that arrived during replay', {
-          sessionId,
-          remainingCount: remainingEvents.length,
-        });
-      } else {
-        this.pendingEventQueue.delete(sessionId);
-      }
     }
   }
 
@@ -393,7 +406,75 @@ class RefactoredAgentService extends EventEmitter {
    * Clear pending events for a session (called on cleanup)
    */
   clearPendingEvents(sessionId: string): void {
-    this.pendingEventQueue.delete(sessionId);
+    this.pendingEventQueue.clear(sessionId);
+  }
+
+  /**
+   * Get a diagnostic snapshot of the current streaming state.
+   * Useful for debugging in dev tools and for future monitoring.
+   */
+  getStreamingDiagnostics(): {
+    activeIpcHandlers: Array<{ agentId: string; channel: string; hasTimeout: boolean }>;
+    registeredDomHandlers: string[];
+    pendingQueues: Array<{ sessionId: string; eventCount: number; oldestEventAge: number }>;
+    streamTimeouts: string[];
+    orphanedHandlers: string[];
+    health: {
+      totalActiveStreams: number;
+      totalPendingEvents: number;
+      hasOrphanedHandlers: boolean;
+      oldestPendingEventAge: number | null;
+    };
+  } {
+    const now = Date.now();
+
+    // 1. IPC handler info
+    const activeIpcHandlers = Array.from(this.activeStreamHandlers.entries()).map(
+      ([agentId, info]) => ({
+        agentId,
+        channel: info.channel,
+        hasTimeout: this.streamTimeouts.has(agentId),
+      }),
+    );
+
+    // 2. DOM handler list
+    const registeredDomHandlers = Array.from(this.registeredDomHandlers);
+
+    // 3. Pending queue stats
+    const queueStats = this.pendingEventQueue.getAllSessionStats();
+    const pendingQueues = queueStats.map((s) => ({
+      sessionId: s.sessionId,
+      eventCount: s.eventCount,
+      oldestEventAge: now - s.oldestTimestamp,
+    }));
+
+    // 4. Stream timeouts
+    const streamTimeouts = Array.from(this.streamTimeouts.keys());
+
+    // 5. Orphaned handlers: IPC handlers with no matching DOM handler
+    const ipcAgentIds = new Set(this.activeStreamHandlers.keys());
+    const domHandlerSet = this.registeredDomHandlers;
+    const orphanedHandlers = Array.from(ipcAgentIds).filter((id) => !domHandlerSet.has(id));
+
+    // 6. Health summary
+    const totalPendingEvents = pendingQueues.reduce((sum, q) => sum + q.eventCount, 0);
+    const oldestAge = pendingQueues.length > 0
+      ? Math.max(...pendingQueues.map((q) => q.oldestEventAge))
+      : null;
+
+    return {
+      activeIpcHandlers,
+      registeredDomHandlers,
+      pendingQueues,
+      streamTimeouts,
+      orphanedHandlers,
+      health: {
+        totalActiveStreams: this.activeStreamHandlers.size,
+        totalPendingEvents,
+        hasOrphanedHandlers: orphanedHandlers.length > 0,
+        oldestPendingEventAge: oldestAge,
+      },
+    };
   }
 
   /**
@@ -433,9 +514,32 @@ class RefactoredAgentService extends EventEmitter {
 
       // Register all handlers (synchronous, but batched for clarity)
       for (const { session, message } of sessionsToReconnect) {
-        this.registerStreamHandlerForSession(session.id, message);
+        this.ensureStreamHandler(session.id, { existingMessage: message });
       }
+
+      // Schedule reconnectToBackendStreams with a 500ms debounce.
+      // This verifies streaming states with the backend and clears stale indicators
+      // promptly after sessions with isStreaming=true are loaded from disk.
+      this.scheduleBackendStreamReconnect();
     }
+  }
+
+  /**
+   * Schedule reconnectToBackendStreams() with a 500ms debounce.
+   * Multiple calls within the debounce window are coalesced into one.
+   */
+  private scheduleBackendStreamReconnect(): void {
+    if (this.reconnectDebounceTimer) {
+      clearTimeout(this.reconnectDebounceTimer);
+    }
+
+    this.reconnectDebounceTimer = setTimeout(() => {
+      this.reconnectDebounceTimer = null;
+      logger.info('Debounced reconnectToBackendStreams triggered after disk load');
+      this.reconnectToBackendStreams().catch((error) => {
+        logger.error('Failed to reconnect to backend streams after disk load', error as Error);
+      });
+    }, 500);
   }
 
   /**
@@ -474,11 +578,10 @@ class RefactoredAgentService extends EventEmitter {
       });
 
       for (const { session, message } of sessionsToReconnect) {
-        this.registerStreamHandlerForSession(
-          session.id,
-          message,
+        this.ensureStreamHandler(session.id, {
+          existingMessage: message,
           workspaceId,
-        );
+        });
       }
     }
   }
@@ -528,12 +631,19 @@ class RefactoredAgentService extends EventEmitter {
           const sessionCreatedAt = session.createdAt ? new Date(session.createdAt).getTime() : 0;
           const sessionAge = Date.now() - sessionCreatedAt;
 
-          if (sessionAge < STREAMING_GRACE_PERIOD_MS) {
+          // Also check when streaming started, not just when the agent was created.
+          // For existing agents that start a new stream, createdAt is old but streaming just began.
+          const streamHandler = this.activeStreamHandlers.get(session.id);
+          const streamRegisteredAt = streamHandler?.registeredAt || 0;
+          const streamAge = streamRegisteredAt > 0 ? Date.now() - streamRegisteredAt : Infinity;
+
+          if (sessionAge < STREAMING_GRACE_PERIOD_MS || streamAge < STREAMING_GRACE_PERIOD_MS) {
             logger.debug(
-              'Skipping stale streaming state check for recently created agent (within grace period)',
+              'Skipping stale streaming state check (within grace period)',
               {
                 agentId: session.id,
                 sessionAgeMs: sessionAge,
+                streamAgeMs: streamAge,
                 gracePeriodMs: STREAMING_GRACE_PERIOD_MS,
               },
             );
@@ -544,7 +654,7 @@ class RefactoredAgentService extends EventEmitter {
             agentId: session.id,
           });
 
-          // CRITICAL FIX: Clean up any stale stream handler that was registered by loadAgentsFromDisk
+          // Clean up any stale stream handler that was registered by loadAgentsFromDisk
           // before we queried the backend. This handler has stale state and would cause issues
           // if a new message is sent later.
           const staleHandler = this.activeStreamHandlers.get(session.id);
@@ -581,7 +691,7 @@ class RefactoredAgentService extends EventEmitter {
             sessionStore.setStreaming(session.id, false);
           }
 
-          // CRITICAL FIX: When the stream completed while the user was viewing another workspace,
+          // When the stream completed while the user was viewing another workspace,
           // the backend persisted the complete response to disk. The frontend's in-memory session
           // is stale and doesn't have this response. We must:
           // 1. Load the session from disk (which has the backend's complete data)
@@ -703,7 +813,13 @@ class RefactoredAgentService extends EventEmitter {
           // Dispatch session-updated event so ChatService syncs its streaming state
           // This is critical - without this event, ChatService continues to think
           // the agent is streaming and queues new messages instead of sending them
-          window.dispatchEvent(new CustomEvent(`agent:session-updated:${session.id}`));
+          // Defer dispatch so initializeChat()/setupStreaming() has time
+          // to register the sessionUpdatedHandler. initializeChat is async and may not
+          // have finished calling setupStreaming() when reconnectToBackendStreams runs.
+          const staleSessionId = session.id;
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent(`agent:session-updated:${staleSessionId}`));
+          }, 100);
         }
       }
 
@@ -722,7 +838,8 @@ class RefactoredAgentService extends EventEmitter {
         const { agentId, accumulatedContent, workspaceId: streamWorkspaceId } = stream;
 
         // Check if we already have a handler for this agent
-        const handlerAlreadyExists = this.activeStreamHandlers.has(agentId);
+        // Use let instead of const because we may update this after calling ensureStreamHandler
+        let handlerAlreadyExists = this.activeStreamHandlers.has(agentId);
 
         // Get the session from the store - use workspace-aware lookup since the streaming agent
         // might be in a different workspace than the one currently being viewed
@@ -768,7 +885,7 @@ class RefactoredAgentService extends EventEmitter {
           }
         }
 
-        // CRITICAL FIX: If the backend has accumulated content, use it instead of the on-disk content
+        // If the backend has accumulated content, use it instead of the on-disk content
         // This ensures we don't lose chunks that were sent between page unload and handler re-registration
         if (accumulatedContent && existingMessage) {
           const backendContentBlocksCount = accumulatedContent.contentBlocks?.length || 0;
@@ -897,25 +1014,33 @@ class RefactoredAgentService extends EventEmitter {
           // The session might not be loaded if the user switched workspaces, but the backend
           // always knows which workspace the stream belongs to. This fixes the issue where
           // completing streams would fail to load/update the session because workspaceId was undefined.
-          this.registerStreamHandlerForSession(
-            agentId,
+          const result = this.ensureStreamHandler(agentId, {
             existingMessage,
-            streamWorkspaceId || (session?.workspaceId ? String(session.workspaceId) : undefined),
-          );
+            workspaceId: streamWorkspaceId || (session?.workspaceId ? String(session.workspaceId) : undefined),
+          });
+          handlerAlreadyExists = !result.created;
         } else {
           logger.info('Stream handler already exists, syncing accumulated content only', {
             agentId,
             hasAccumulatedContent: !!accumulatedContent,
             streamWorkspaceId,
           });
+
+          // Even when the handler already exists, we must ensure the unified
+          // state store reflects isStreaming: true. The handler may have been pre-registered
+          // by restoreSession() (with workspaceId: undefined), and the store never got updated.
+          // Without this, ChatPanel mounts and finds isStreaming: false in the store.
+          if (streamWorkspaceId) {
+            sessionStore.setStreamingForWorkspace(streamWorkspaceId, agentId, true);
+          } else {
+            sessionStore.setStreaming(agentId, true);
+          }
         }
 
-        // Only update streaming state and session for new handlers.
-        // For existing handlers, streaming.active is already set correctly,
-        // and calling setStreaming again would trigger unnecessary listener
-        // notifications (e.g., progress increments, store updates).
+        // Only update session object for new handlers.
+        // For existing handlers, the streaming store state is now always set above.
         if (!handlerAlreadyExists) {
-          // CRITICAL FIX: Explicitly set streaming.active via setStreaming/setStreamingForWorkspace.
+          // Explicitly set streaming.active via setStreaming/setStreamingForWorkspace.
           // sessionStore.addSession() calls setAgent() which PRESERVES existing streaming.active
           // to prevent stale disk data from resetting active streams. Since the backend confirmed
           // this agent IS actively streaming, we must explicitly set streaming.active. Without this,
@@ -929,7 +1054,7 @@ class RefactoredAgentService extends EventEmitter {
 
           // Update the session to mark it as streaming if not already
           if (session && !session.isStreaming) {
-            // CRITICAL FIX: Re-read session from store to pick up any message updates
+            // Re-read session from store to pick up any message updates
             // made by updateMessageForWorkspace above. The local `session` variable was
             // read before those updates and has stale message content blocks.
             const freshSession = streamWorkspaceId
@@ -952,8 +1077,22 @@ class RefactoredAgentService extends EventEmitter {
           agentId,
           handlerAlreadyExists,
         });
-        window.dispatchEvent(new CustomEvent(`agent:session-updated:${agentId}`));
+        // Note: ensureStreamHandler already dispatches session-updated, but we dispatch again here
+        // to ensure it's sent after the streaming state updates above.
+        // Defer dispatch so initializeChat()/setupStreaming() has time
+        // to register the sessionUpdatedHandler. initializeChat is async and may not
+        // have finished calling setupStreaming() when reconnectToBackendStreams runs.
+        const activeAgentId = agentId;
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent(`agent:session-updated:${activeAgentId}`));
+        }, 100);
       }
+
+      // Start a 10-second safety timeout to force-clear any remaining stale
+      // streaming indicators. If reconnectToBackendStreams didn't clear isStreaming
+      // for some sessions (e.g., due to timing issues), this ensures the UI
+      // doesn't show a false "thinking" state indefinitely.
+      this.startStreamingSafetyTimeout(activeStreamAgentIds);
 
       // Return the list of agent IDs with active streams
       return Array.from(activeStreamAgentIds);
@@ -964,8 +1103,128 @@ class RefactoredAgentService extends EventEmitter {
   }
 
   /**
+   * Safety timeout: 10 seconds after reconnectToBackendStreams(), re-check all
+   * sessions. If any still have isStreaming=true but the backend confirms no
+   * active stream, force-clear isStreaming to prevent stuck indicators.
+   */
+  private startStreamingSafetyTimeout(confirmedActiveIds: Set<string>): void {
+    // Clear any existing safety timeout
+    if (this.streamingSafetyTimeout) {
+      clearTimeout(this.streamingSafetyTimeout);
+    }
+
+    this.streamingSafetyTimeout = setTimeout(async () => {
+      this.streamingSafetyTimeout = null;
+
+      try {
+        // Re-query the backend for currently active streams
+        const result = await window.electronAPI?.invoke('agent:get-active-streams');
+        const currentlyActive = new Set<string>(
+          result?.success && result?.data ? result.data.map((s: any) => s.agentId) : [],
+        );
+
+        // Check all sessions across workspaces for stale streaming state
+        const allSessions = sessionStore.getAllSessionsAcrossWorkspaces();
+        let clearedCount = 0;
+
+        for (const session of allSessions) {
+          if (session.isStreaming && !currentlyActive.has(session.id)) {
+            logger.info('Safety timeout: force-clearing stale streaming state', {
+              agentId: session.id,
+              workspaceId: session.workspaceId,
+            });
+
+            // Clear streaming state
+            if (session.workspaceId) {
+              sessionStore.setStreamingForWorkspace(session.workspaceId, session.id, false);
+            } else {
+              sessionStore.setStreaming(session.id, false);
+            }
+
+            // Clear streaming flag on session object
+            session.isStreaming = false;
+            sessionStore.addSession(session);
+
+            // Dispatch session-updated event so UI components sync
+            window.dispatchEvent(new CustomEvent(`agent:session-updated:${session.id}`));
+            clearedCount++;
+          }
+        }
+
+        if (clearedCount > 0) {
+          logger.info('Safety timeout: cleared stale streaming states', {
+            clearedCount,
+            activeStreamCount: currentlyActive.size,
+          });
+        }
+      } catch (error) {
+        logger.error('Safety timeout: failed to check streaming states', error as Error);
+      }
+    }, 10_000);
+  }
+
+  /**
+   * Idempotent method to ensure a stream handler is registered for an agent.
+   * This is the primary entry point for all stream handler registration.
+   *
+   * Consolidates common logic from 10 call sites:
+   * - Checks if handler already exists (idempotent)
+   * - Resolves workspaceId from opts or sessionStore
+   * - Registers the IPC handler
+   * - Dispatches agent:session-updated event
+   *
+   * @param agentId - The agent ID to register the handler for
+   * @param opts - Optional configuration
+   * @returns Object with created flag and channel name
+   */
+  ensureStreamHandler(
+    agentId: string,
+    opts?: EnsureStreamHandlerOpts,
+  ): { created: boolean; channel: string } {
+    const { existingMessage, workspaceId: providedWorkspaceId, forceReregister } = opts || {};
+
+    // Validate agentId
+    if (!agentId) {
+      logger.warn('Attempted to ensure stream handler with undefined agentId, ignoring');
+      return { created: false, channel: '' };
+    }
+
+    const streamChannel = `agent:stream:${agentId}`;
+
+    // Check if handler already exists (idempotent)
+    if (this.activeStreamHandlers.has(agentId) && !forceReregister) {
+      logger.debug('Stream handler already exists for agent', { agentId, streamChannel });
+      return { created: false, channel: streamChannel };
+    }
+
+    // If forceReregister, clear the stale entry first
+    if (forceReregister && this.activeStreamHandlers.has(agentId)) {
+      logger.debug('Force-reregistering stream handler, clearing stale entry', { agentId });
+      this.activeStreamHandlers.delete(agentId);
+      this.pendingStreamRegistrations.delete(agentId);
+    }
+
+    // Resolve workspace ID
+    const resolvedWorkspaceId = providedWorkspaceId || sessionStore.getSession(agentId)?.workspaceId;
+
+    // Call the core registration logic
+    this.registerStreamHandlerForSession(agentId, existingMessage, resolvedWorkspaceId);
+
+    // Defer dispatch so initializeChat()/setupStreaming() has time
+    // to register the sessionUpdatedHandler. initializeChat is async and may not
+    // have finished calling setupStreaming() when ensureStreamHandler runs.
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent(`agent:session-updated:${agentId}`));
+    }, 100);
+
+    return { created: true, channel: streamChannel };
+  }
+
+  /**
    * Register a stream handler for a session that was streaming when the page reloaded.
    * This allows the frontend to continue receiving chunks from the backend.
+   *
+   * DEPRECATED: Use ensureStreamHandler() instead. This method is kept for backward compatibility.
    *
    * @param agentId - The agent ID to register the handler for
    * @param existingMessage - Optional existing message to continue streaming into
@@ -1114,7 +1373,7 @@ class RefactoredAgentService extends EventEmitter {
         });
       }
 
-      // CRITICAL FIX: Detect when a new stream starts and reset accumulated state.
+      // Detect when a new stream starts and reset accumulated state.
       // This prevents response duplication when this handler (registered for reconnection
       // with existingMessage content) receives chunks from a NEW message's stream.
       // Without this reset, new response content would be appended to old content.
@@ -1132,7 +1391,7 @@ class RefactoredAgentService extends EventEmitter {
           orderedItems = [];
           chunkCount = 1; // Reset chunk count for the new stream
 
-          // CRITICAL FIX: Clear isStreaming flag on ALL old assistant messages.
+          // Clear isStreaming flag on ALL old assistant messages.
           // Without this, the chunk/content-blocks handlers find the OLD message via
           // `isStreaming === true` and write new stream content into the PREVIOUS response
           // instead of creating a fresh message for the current response.
@@ -1177,33 +1436,62 @@ class RefactoredAgentService extends EventEmitter {
           // Accumulate text
           textBuffer += data.data || '';
 
-          // CRITICAL FIX: Update sessionStore BEFORE dispatching DOM event to ChatService.
+          // Update sessionStore BEFORE dispatching DOM event to ChatService.
           // Previously, the DOM event was dispatched first, causing ChatService's
           // flushChunkUpdate() to read stale sessionStore data and create a streaming
           // message with a different ID than what AgentService creates here.
           let streamSession = getStreamSession();
 
-          // CRITICAL FIX: If no session exists, create a minimal one so stream data
+          // If no session exists, create a minimal one so stream data
           // isn't silently lost. This happens when the agent:created event didn't
           // successfully create a session in the frontend store (e.g., for delegated
           // agents where IPC delivery via mainWindow may fail silently).
           // Without this, textBuffer accumulates data in the closure but the
           // sessionStore is never updated, so the UI shows nothing until refresh.
           if (!streamSession && resolvedWorkspaceId) {
+            // Preserve existing messages from unified state store
+            // before creating minimal session. Without this, creating a session with
+            // messages: [] destroys the full message history (DATA LOSS).
+            let existingMessages: AgentMessage[] = [];
+            let existingName = 'Task Agent';
+            try {
+              const existingAgents = unifiedStateStore.getAgentsForWorkspace(
+                WorkspaceId(resolvedWorkspaceId),
+              );
+              const existingAgent = existingAgents.find((a) => String(a.id) === agentId);
+              if (existingAgent?.messages?.length) {
+                existingMessages = existingAgent.messages;
+                existingName = existingAgent.name || existingName;
+                logger.info(
+                  'Preserved existing messages for minimal session from unified state store',
+                  {
+                    agentId,
+                    messageCount: existingMessages.length,
+                  },
+                );
+              }
+            } catch (err) {
+              logger.warn('Could not load existing messages for minimal session', {
+                agentId,
+                error: err,
+              });
+            }
+
             logger.warn(
               'No session found for streaming agent on chunk, creating minimal session',
               {
                 agentId,
                 resolvedWorkspaceId,
+                preservedMessageCount: existingMessages.length,
               },
             );
             const minimalSession: AgentSession = {
               id: agentId as any,
               backendSessionId: agentId as any,
               workspaceId: WorkspaceId(resolvedWorkspaceId),
-              name: 'Task Agent',
+              name: existingName,
               status: AgentStatus.Active,
-              messages: [],
+              messages: existingMessages,
               createdAt: new Date(),
               updatedAt: new Date(),
               isStreaming: true,
@@ -1241,7 +1529,7 @@ class RefactoredAgentService extends EventEmitter {
               sessionStore.addSession(updatedSession);
             } else {
               // Update existing streaming message
-              // CRITICAL FIX: Use workspace-aware update to handle cross-workspace streaming
+              // Use workspace-aware update to handle cross-workspace streaming
               // Without this, updates fail when user switches away from the chat
               // Find the actively streaming assistant message by isStreaming flag
               // instead of blindly taking the last message (which could be wrong if ordering changes)
@@ -1339,7 +1627,7 @@ class RefactoredAgentService extends EventEmitter {
           }
 
           // Update session using workspace-aware method
-          // CRITICAL FIX: Use updateMessageForWorkspace instead of addSession
+          // Use updateMessageForWorkspace instead of addSession
           // addSession goes through setAgent's preserveStreamingMessages logic which
           // compares message counts. Since adding a tool doesn't change the count
           // (just updates contentBlocks), setAgent would preserve OLD messages without the tool.
@@ -1485,7 +1773,7 @@ class RefactoredAgentService extends EventEmitter {
               } else {
                 sessionStore.setStreaming(agentId, false);
               }
-              // CRITICAL FIX: Also set isStreaming on the session object itself
+              // Also set isStreaming on the session object itself
               // Otherwise, setAgent will see session.isStreaming as true and
               // overwrite the streaming.active state we just set to false
               updatedSession.isStreaming = false;
@@ -1495,9 +1783,16 @@ class RefactoredAgentService extends EventEmitter {
               }
               sessionStore.addSession(updatedSession);
 
-              // CRITICAL FIX: Update unified state store so BackgroundAgentExecutor subscriptions fire
+              // Update unified state store so BackgroundAgentExecutor subscriptions fire
               if (resolvedWorkspaceId) {
                 unifiedStateStore.setAgent(WorkspaceId(resolvedWorkspaceId), updatedSession);
+              }
+
+              // Persist completed session to frontend disk so it survives refresh
+              // The backend has also persisted, but restoreWithoutBackend loads from frontend persistence
+              if (resolvedWorkspaceId) {
+                persistenceService.saveSession(updatedSession, resolvedWorkspaceId, { immediate: true })
+                  .catch((err) => logger.error('Failed to persist completed session', { agentId, error: err }));
               }
             } else if (backendMessage) {
               // No existing assistant message at the end, but we have a backend message
@@ -1532,9 +1827,15 @@ class RefactoredAgentService extends EventEmitter {
               }
               sessionStore.addSession(updatedSession);
 
-              // CRITICAL FIX: Update unified state store so BackgroundAgentExecutor subscriptions fire
+              // Update unified state store so BackgroundAgentExecutor subscriptions fire
               if (resolvedWorkspaceId) {
                 unifiedStateStore.setAgent(WorkspaceId(resolvedWorkspaceId), updatedSession);
+              }
+
+              // Persist completed session to frontend disk so it survives refresh
+              if (resolvedWorkspaceId) {
+                persistenceService.saveSession(updatedSession, resolvedWorkspaceId, { immediate: true })
+                  .catch((err) => logger.error('Failed to persist completed session (no existing msg path)', { agentId, error: err }));
               }
             } else {
               // Use workspace-aware method for cross-workspace stream completion
@@ -1544,7 +1845,7 @@ class RefactoredAgentService extends EventEmitter {
                 sessionStore.setStreaming(agentId, false);
               }
 
-              // CRITICAL FIX: Update unified state store so BackgroundAgentExecutor subscriptions fire
+              // Update unified state store so BackgroundAgentExecutor subscriptions fire
               // Get the session from the store to sync the unified state
               if (resolvedWorkspaceId) {
                 const sessionForUnifiedSync = sessionStore.getSessionForWorkspace(
@@ -1557,8 +1858,8 @@ class RefactoredAgentService extends EventEmitter {
               }
             }
 
-            // NOTE: We do NOT persist here - the backend has already persisted the authoritative data
-            // This avoids race conditions and ensures backend-owned persistence
+            // NOTE: Persistence is now handled in each branch above to ensure
+            // frontend disk has the completed session for restoreWithoutBackend
           } else if (backendMessage) {
             // Session doesn't exist or has no messages, but we have a backend message
             // This can happen when user switches workspaces during streaming
@@ -1610,9 +1911,15 @@ class RefactoredAgentService extends EventEmitter {
                   // Add to the store
                   sessionStore.addSession(loadedSession);
 
-                  // CRITICAL FIX: Update unified state store so BackgroundAgentExecutor subscriptions fire
+                  // Update unified state store so BackgroundAgentExecutor subscriptions fire
                   if (resolvedWorkspaceId) {
                     unifiedStateStore.setAgent(WorkspaceId(resolvedWorkspaceId), loadedSession);
+                  }
+
+                  // Persist loaded session to frontend disk so it survives refresh
+                  if (resolvedWorkspaceId) {
+                    persistenceService.saveSession(loadedSession, resolvedWorkspaceId, { immediate: true })
+                      .catch((err) => logger.error('Failed to persist session loaded from backend', { agentId, error: err }));
                   }
                 } else {
                   logger.warn('Stream complete but session could not be loaded from backend', {
@@ -1634,7 +1941,7 @@ class RefactoredAgentService extends EventEmitter {
             if (resolvedWorkspaceId) {
               sessionStore.setStreamingForWorkspace(resolvedWorkspaceId, agentId, false);
 
-              // CRITICAL FIX: Update unified state store so BackgroundAgentExecutor subscriptions fire
+              // Update unified state store so BackgroundAgentExecutor subscriptions fire
               // Get the session from the store to sync the unified state
               const sessionForUnifiedSync = sessionStore.getSessionForWorkspace(
                 resolvedWorkspaceId,
@@ -1669,7 +1976,7 @@ class RefactoredAgentService extends EventEmitter {
             message: backendMessage,
           });
 
-          // CRITICAL FIX: Also dispatch session-updated event as a fallback
+          // Also dispatch session-updated event as a fallback
           // This ensures ChatService's sessionUpdatedHandler syncs isProcessing
           window.dispatchEvent(new CustomEvent(`agent:session-updated:${handlerSessionId}`));
 
@@ -1692,7 +1999,7 @@ class RefactoredAgentService extends EventEmitter {
             error: data.data?.message || 'The response was interrupted. Please try again.',
           });
 
-          // CRITICAL FIX: Also dispatch session-updated event as a fallback
+          // Also dispatch session-updated event as a fallback
           window.dispatchEvent(new CustomEvent(`agent:session-updated:${handlerSessionId}`));
 
           // Cleanup
@@ -1719,6 +2026,7 @@ class RefactoredAgentService extends EventEmitter {
       wrappedHandler: wrappedHandler || undefined,
       workspaceId: resolvedWorkspaceId,
       listenerId: streamListenerId,
+      registeredAt: Date.now(),
     });
 
     // Register IPC heartbeat ping handler - responds with pong to verify IPC liveness
@@ -1837,19 +2145,18 @@ class RefactoredAgentService extends EventEmitter {
         const { agentId, workspaceId } = data;
         logger.info('Backend stream starting notification received', { agentId, workspaceId });
 
-        if (!this.activeStreamHandlers.has(agentId)) {
-          logger.info(
-            'No stream handler registered for starting stream, registering now (safety net)',
-            {
-              agentId,
-              workspaceId,
-            },
-          );
-          this.registerStreamHandlerForSession(agentId, undefined, workspaceId);
-        } else {
-          logger.debug('Stream handler already registered, no action needed', {
+        // ensureStreamHandler is idempotent - it returns early if handler already exists
+        const result = this.ensureStreamHandler(agentId, { workspaceId });
+        if (result.created) {
+          logger.info('Stream handler registered for starting stream', {
             agentId,
-            existingChannel: this.activeStreamHandlers.get(agentId)?.channel,
+            workspaceId,
+            channel: result.channel,
+          });
+        } else {
+          logger.debug('Stream handler already exists, no action needed', {
+            agentId,
+            existingChannel: result.channel,
           });
         }
 
@@ -1931,7 +2238,7 @@ class RefactoredAgentService extends EventEmitter {
           // Register stream handler FIRST - this is the critical part
           // We do this before signaling ready to ensure no race condition
           // Pass workspaceId so stream completion updates the correct workspace's streaming state
-          this.registerStreamHandlerForSession(agentId, undefined, workspaceId);
+          this.ensureStreamHandler(agentId, { workspaceId });
           logger.info('Stream handler registered for backend-initiated agent', {
             agentId,
             workspaceId,
@@ -2137,9 +2444,8 @@ class RefactoredAgentService extends EventEmitter {
 
           // Still register stream handler in case it's missing
           // Pass workspaceId so stream completion updates the correct workspace's streaming state
-          if (!this.activeStreamHandlers.has(agentId)) {
-            this.registerStreamHandlerForSession(agentId, undefined, workspaceId);
-          }
+          // ensureStreamHandler is idempotent, so this is safe to call unconditionally
+          this.ensureStreamHandler(agentId, { workspaceId });
           return;
         }
 
@@ -2179,7 +2485,8 @@ class RefactoredAgentService extends EventEmitter {
 
         // Register stream handler so we receive streaming events via the IPC→DOM bridge
         // Pass workspaceId so stream completion updates the correct workspace's streaming state
-        this.registerStreamHandlerForSession(agentId, undefined, workspaceId);
+        // ensureStreamHandler dispatches session-updated internally, so we don't need to do it again
+        this.ensureStreamHandler(agentId, { workspaceId });
         logger.debug('Stream handler registered for backend-created agent', {
           agentId,
           workspaceId,
@@ -2189,7 +2496,7 @@ class RefactoredAgentService extends EventEmitter {
       // Listen for queued message processing - add user message and re-register stream handler
       // This is needed because the stream handler is cleaned up after each stream completes,
       // but when a queued message is processed, we need to receive the streaming data
-      registerGlobalListener('agent:queue:processing', (data: any) => {
+      registerGlobalListener('agent:queue:processing', async (data: any) => {
         const { agentId, messageId, content, contextItems } = data;
         logger.debug('Queue processing event received from backend', {
           agentId,
@@ -2229,37 +2536,30 @@ class RefactoredAgentService extends EventEmitter {
           // Dispatch session-updated event so ChatService syncs its messages
           window.dispatchEvent(new CustomEvent(`agent:session-updated:${agentId}`));
 
-          // Persist the queued user message immediately so debug exports and
-          // crash recovery include it even before the stream completes.
-          void this.saveSession(agentId, session.workspaceId, true).catch((error) => {
+          // Persist the queued user message immediately so it survives workspace switches.
+          // Await the save instead of fire-and-forget to ensure the user
+          // message is on disk before the user can navigate away.
+          try {
+            await this.saveSession(agentId, session.workspaceId, true);
+          } catch (error) {
             logger.error('Failed to persist queued user message', {
               agentId,
               messageId,
               error,
             });
-          });
+          }
         }
 
-        // Remove the stale entry from the Map (the actual IPC listener was already removed)
-        // This allows registerStreamHandlerForSession to create a new listener
-        logger.debug('Clearing stale handler entries before re-registration', {
-          agentId,
-          hadActiveHandler: this.activeStreamHandlers.has(agentId),
-          hadPendingRegistration: this.pendingStreamRegistrations.has(agentId),
-          timestamp: Date.now(),
-        });
-        this.activeStreamHandlers.delete(agentId);
-        this.pendingStreamRegistrations.delete(agentId);
-
-        // Re-register the stream handler
+        // Re-register the stream handler with forceReregister flag
+        // This clears stale entries and creates a fresh handler for the queued message
         logger.debug('Re-registering stream handler for queued message', {
           agentId,
           timestamp: Date.now(),
         });
-        this.registerStreamHandlerForSession(agentId);
+        const result = this.ensureStreamHandler(agentId, { forceReregister: true });
         logger.debug('Stream handler re-registered successfully', {
           agentId,
-          newHandlerChannel: this.activeStreamHandlers.get(agentId)?.channel,
+          newHandlerChannel: result.channel,
           timestamp: Date.now(),
         });
 
@@ -2450,7 +2750,7 @@ class RefactoredAgentService extends EventEmitter {
           (m: any) => m.role === 'assistant' && m.isStreaming,
         );
 
-        // CRITICAL FIX: Check if the agent is ACTUALLY streaming (streaming.active === true),
+        // Check if the agent is ACTUALLY streaming (streaming.active === true),
         // not just whether a message has a stale isStreaming flag.
         // When a stream completes, the backend saves the complete session to disk.
         // If we save based on a stale isStreaming flag, we may overwrite the backend's
@@ -2467,7 +2767,7 @@ class RefactoredAgentService extends EventEmitter {
           session.workspaceId;
 
         if (shouldSave) {
-          // CRITICAL FIX: Don't overwrite disk with fewer messages than what was loaded.
+          // Don't overwrite disk with fewer messages than what was loaded.
           // This prevents a stale in-memory session (e.g., from a minimal session created
           // by the stream handler) from overwriting the complete conversation history on disk.
           const currentMessageCount = session.messages?.length ?? 0;
@@ -2980,7 +3280,7 @@ class RefactoredAgentService extends EventEmitter {
             }
             const session = createdSession.agent;
 
-            // CRITICAL FIX: Ensure the session has the workspaceId field
+            // Ensure the session has the workspaceId field
             // This is essential for drawer validation to work correctly
             if (!session.workspaceId) {
               logger.warn('Created session missing workspaceId, adding it now', {
@@ -3157,7 +3457,7 @@ class RefactoredAgentService extends EventEmitter {
         // Try to load from disk
         let session = await persistenceService.loadSession(plainAgentId, workspace.id);
 
-        // CRITICAL FIX: Ensure the loaded session has the workspaceId field
+        // Ensure the loaded session has the workspaceId field
         // This field might be missing from older persisted sessions
         if (session && !session.workspaceId) {
           logger.info('Adding missing workspaceId to loaded session', {
@@ -3173,7 +3473,7 @@ class RefactoredAgentService extends EventEmitter {
           this.diskMessageCounts.set(plainAgentId, session.messages.length);
         }
 
-        // CRITICAL FIX: Handle streaming state when loading from disk
+        // Handle streaming state when loading from disk
         // If the session was streaming, re-register the stream handler to continue receiving chunks
         if (session) {
           // Check for streaming messages and re-register handler if needed
@@ -3199,7 +3499,13 @@ class RefactoredAgentService extends EventEmitter {
 
               // Re-register stream handler to continue receiving chunks from backend
               // Keep isStreaming=true so the UI shows the streaming state
-              this.registerStreamHandlerForSession(plainAgentId, foundStreamingMessage);
+              // Pass workspaceId so the handler knows which workspace this stream
+              // belongs to. Without this, the handler is registered with workspaceId: undefined,
+              // and reconnectToBackendStreams can't properly set streaming state in the store.
+              this.ensureStreamHandler(plainAgentId, {
+                existingMessage: foundStreamingMessage,
+                workspaceId: session.workspaceId ? String(session.workspaceId) : workspace.id,
+              });
             }
           }
 
@@ -3209,7 +3515,7 @@ class RefactoredAgentService extends EventEmitter {
             session.isStreaming = false;
           }
 
-          // CRITICAL FIX: If session has messages but status is 'pending', update to 'active'
+          // If session has messages but status is 'pending', update to 'active'
           // This prevents re-activation which would lose messages
           if (session.messages && session.messages.length > 0 && session.status === 'pending') {
             logger.info('Fixing status for session with messages', {
@@ -3238,7 +3544,7 @@ class RefactoredAgentService extends EventEmitter {
               if (!isOptimisticWorkspace && hasWorkspacePath) {
                 // Activate the pending agent for real workspaces with paths
                 session = await agentIpcProxy.activateAgent(plainAgentId, workspace);
-                // CRITICAL FIX: If activateAgent returns null, create a pending session from config
+                // If activateAgent returns null, create a pending session from config
                 // This prevents agents from disappearing when activation fails
                 if (!session) {
                   logger.warn(
@@ -3300,6 +3606,26 @@ class RefactoredAgentService extends EventEmitter {
               agentId: plainAgentId,
             });
             return null;
+          }
+        }
+
+        // FIX: Before adding to store, check if existing session has richer data.
+        // This prevents resumeSession from overwriting good in-memory data with stale disk data.
+        // Uses shared comparator to also catch equal-count but truncated messages.
+        const existingSession = sessionStore.getSession(plainAgentId);
+        if (existingSession?.messages && session?.messages) {
+          const cmp = compareMessageCompleteness(
+            { messages: existingSession.messages },
+            { messages: session.messages },
+          );
+          if (cmp > 0) {
+            // Existing session is richer — merge disk metadata but keep existing messages
+            logger.info('resumeSession: preserving existing session messages over stale disk data', {
+              agentId: plainAgentId,
+              existingCount: existingSession.messages.length,
+              diskCount: session.messages.length,
+            });
+            session.messages = existingSession.messages;
           }
         }
 
@@ -3552,7 +3878,7 @@ class RefactoredAgentService extends EventEmitter {
                       }
                     }
 
-                    // CRITICAL FIX: Clear isStreaming flag on ALL old assistant messages
+                    // Clear isStreaming flag on ALL old assistant messages
                     // before starting a new stream. Without this, old messages with stale
                     // isStreaming: true cause new stream content to be written into them.
                     const preStreamSession = sessionStore.getSession(agentId);
@@ -3680,7 +4006,7 @@ class RefactoredAgentService extends EventEmitter {
                       // Use workspace-aware method for cross-workspace stream completion
                       sessionStore.setStreamingForWorkspace(workspace.id, agentId, false);
 
-                      // CRITICAL FIX: Dispatch stream end event and session-updated event
+                      // Dispatch stream end event and session-updated event
                       // to ensure ChatService clears isProcessing flag on timeout
                       // FIX: Use dispatchStreamEvent which queues events if no handler registered
                       const handlerSessionId = session.id;
@@ -3776,11 +4102,11 @@ class RefactoredAgentService extends EventEmitter {
                           // Accumulate text in buffer
                           textBuffer += data.data || '';
 
-                          // CRITICAL FIX: Update sessionStore BEFORE dispatching DOM event to ChatService.
+                          // Update sessionStore BEFORE dispatching DOM event to ChatService.
                           // Previously, the DOM event was dispatched first, causing ChatService's
                           // flushChunkUpdate() to read stale sessionStore data.
                           // OPTIMIZED: Use efficient streaming text append without deep copying
-                          // CRITICAL FIX: Use workspace-aware session lookup to handle cross-workspace streaming
+                          // Use workspace-aware session lookup to handle cross-workspace streaming
                           // This ensures streaming continues even when user switches to a different workspace
                           const streamSession = sessionStore.getSessionForWorkspace(
                             workspace.id,
@@ -3831,7 +4157,7 @@ class RefactoredAgentService extends EventEmitter {
                               sessionStore.addSession(updatedSession);
                             } else {
                               // Update the message with the full accumulated buffer
-                              // CRITICAL FIX: Use workspace-aware update for cross-workspace streaming
+                              // Use workspace-aware update for cross-workspace streaming
                               if (streamSession.messages.length > 0) {
                                 // Find the actively streaming assistant message by isStreaming flag
                                 const streamingMsg = streamSession.messages.find(
@@ -3883,7 +4209,7 @@ class RefactoredAgentService extends EventEmitter {
                           }
 
                           // Handle content blocks (tool calls, etc.)
-                          // CRITICAL FIX: Use workspace-aware session lookup for cross-workspace streaming
+                          // Use workspace-aware session lookup for cross-workspace streaming
                           const streamSession = sessionStore.getSessionForWorkspace(
                             workspace.id,
                             agentId,
@@ -3991,7 +4317,7 @@ class RefactoredAgentService extends EventEmitter {
                               (m: any) => m.role === 'assistant' && m.isStreaming,
                             );
 
-                            // CRITICAL FIX: Use updateMessageForWorkspace instead of addSession
+                            // Use updateMessageForWorkspace instead of addSession
                             // when updating an existing message. addSession goes through setAgent's
                             // preserveStreamingMessages logic which compares message counts.
                             // Since adding a tool doesn't change the count (just updates contentBlocks),
@@ -4058,7 +4384,7 @@ class RefactoredAgentService extends EventEmitter {
                             }
 
                             // Mark streaming as complete
-                            // CRITICAL FIX: Use workspace-aware session lookup for cross-workspace streaming
+                            // Use workspace-aware session lookup for cross-workspace streaming
                             const streamSession = sessionStore.getSessionForWorkspace(
                               workspace.id,
                               agentId,
@@ -4154,13 +4480,13 @@ class RefactoredAgentService extends EventEmitter {
                                 // will preserve old streaming messages instead of using our updated messages
                                 // Use workspace-aware method for cross-workspace stream completion
                                 sessionStore.setStreamingForWorkspace(workspace.id, agentId, false);
-                                // CRITICAL FIX: Also set isStreaming on the session object itself
+                                // Also set isStreaming on the session object itself
                                 // Otherwise, setAgent will see session.isStreaming as true and
                                 // overwrite the streaming.active state we just set to false
                                 updatedSession.isStreaming = false;
                                 sessionStore.addSession(updatedSession);
 
-                                // CRITICAL FIX: Update unified state store so BackgroundAgentExecutor subscriptions fire
+                                // Update unified state store so BackgroundAgentExecutor subscriptions fire
                                 unifiedStateStore.setAgent(workspace.id as WorkspaceId, updatedSession);
 
                                 // Dispatch stream end event to ChatService
@@ -4175,7 +4501,7 @@ class RefactoredAgentService extends EventEmitter {
                                   sessionId: handlerSessionId,
                                 });
 
-                                // CRITICAL FIX: Also dispatch session-updated event as a fallback
+                                // Also dispatch session-updated event as a fallback
                                 // This ensures ChatService's sessionUpdatedHandler syncs isProcessing
                                 // even if the stream end event is not received
                                 window.dispatchEvent(
@@ -4243,7 +4569,7 @@ class RefactoredAgentService extends EventEmitter {
                                 // Use workspace-aware method for cross-workspace stream completion
                                 sessionStore.setStreamingForWorkspace(workspace.id, agentId, false);
 
-                                // CRITICAL FIX: Update unified state store so BackgroundAgentExecutor subscriptions fire
+                                // Update unified state store so BackgroundAgentExecutor subscriptions fire
                                 // Get the session from the store to sync the unified state
                                 const sessionForUnifiedSync = sessionStore.getSessionForWorkspace(
                                   workspace.id,
@@ -4263,7 +4589,7 @@ class RefactoredAgentService extends EventEmitter {
                                   message: null,
                                 });
 
-                                // CRITICAL FIX: Also dispatch session-updated event as a fallback
+                                // Also dispatch session-updated event as a fallback
                                 window.dispatchEvent(
                                   new CustomEvent(`agent:session-updated:${handlerSessionId}`),
                                 );
@@ -4276,7 +4602,7 @@ class RefactoredAgentService extends EventEmitter {
                               // Use workspace-aware method for cross-workspace stream completion
                               sessionStore.setStreamingForWorkspace(workspace.id, agentId, false);
 
-                              // CRITICAL FIX: Update unified state store so BackgroundAgentExecutor subscriptions fire
+                              // Update unified state store so BackgroundAgentExecutor subscriptions fire
                               // Get the session from the store to sync the unified state
                               const sessionForUnifiedSync = sessionStore.getSessionForWorkspace(
                                 workspace.id,
@@ -4296,7 +4622,7 @@ class RefactoredAgentService extends EventEmitter {
                                 message: null,
                               });
 
-                              // CRITICAL FIX: Also dispatch session-updated event as a fallback
+                              // Also dispatch session-updated event as a fallback
                               window.dispatchEvent(
                                 new CustomEvent(`agent:session-updated:${handlerSessionId}`),
                               );
@@ -4385,7 +4711,7 @@ class RefactoredAgentService extends EventEmitter {
                             error: data.data?.message || 'The response was interrupted. Please try again.',
                           });
 
-                          // CRITICAL FIX: Also dispatch session-updated event as a fallback
+                          // Also dispatch session-updated event as a fallback
                           window.dispatchEvent(
                             new CustomEvent(`agent:session-updated:${handlerSessionId}`),
                           );
@@ -4453,7 +4779,7 @@ class RefactoredAgentService extends EventEmitter {
                     const existingHandler = this.activeStreamHandlers.get(agentId);
 
                     if (existingHandler) {
-                      // CRITICAL FIX: Always clean up existing handler when sending a NEW message.
+                      // Always clean up existing handler when sending a NEW message.
                       // The old handler has stale state (orderedItems, textBuffer) that would cause
                       // the new response content to be incorrectly appended to old content.
                       // This commonly happens when:
@@ -4473,7 +4799,7 @@ class RefactoredAgentService extends EventEmitter {
                       // Clear map entry for existing handler
                       this.activeStreamHandlers.delete(agentId);
 
-                      // CRITICAL FIX: Also clear pending stream registrations to prevent
+                      // Also clear pending stream registrations to prevent
                       // a concurrent registerStreamHandlerForSession from completing after
                       // this cleanup and re-registering a stale handler with old state.
                       this.pendingStreamRegistrations.delete(agentId);
@@ -4526,6 +4852,7 @@ class RefactoredAgentService extends EventEmitter {
                       wrappedHandler: wrappedHandler || undefined,
                       workspaceId: workspace.id,
                       listenerId: streamListenerId,
+                      registeredAt: Date.now(),
                     });
 
                     // Register IPC heartbeat ping handler - responds with pong to verify IPC liveness
@@ -4745,7 +5072,7 @@ class RefactoredAgentService extends EventEmitter {
             );
 
             if (!result.success) {
-              // CRITICAL FIX: Dispatch error event to ChatService AFTER all retries are
+              // Dispatch error event to ChatService AFTER all retries are
               // exhausted. This ensures ChatService receives the error and clears
               // isStreaming/isProcessing even if the backend's stream error event
               // (sent via one-way IPC) was dropped due to handler cleanup.
@@ -5068,7 +5395,7 @@ class RefactoredAgentService extends EventEmitter {
     if (agentStateValue) {
       const session = agentStateValue.session;
 
-      // CRITICAL FIX: Ensure the session has workspaceId
+      // Ensure the session has workspaceId
       // This can be missing if the session was created without proper workspace context
       if (session && !session.workspaceId) {
         // Try to infer workspaceId from other sessions or current context
@@ -5089,7 +5416,7 @@ class RefactoredAgentService extends EventEmitter {
     // Fall back to sessionStore (secondary source)
     const session = sessionStore.getSession(plainAgentId);
 
-    // CRITICAL FIX: Ensure the session has workspaceId
+    // Ensure the session has workspaceId
     if (session && !session.workspaceId) {
       // Try to infer workspaceId from other sessions or current context
       const allSessions = this.getAllSessions();
@@ -5337,7 +5664,28 @@ class RefactoredAgentService extends EventEmitter {
       // Try to load session first
       let session = await persistenceService.loadSession(plainAgentId, workspace?.id);
 
-      // CRITICAL FIX: Ensure the loaded session has the workspaceId field
+      // Check if the unified state store has richer data (e.g., from a background
+      // agent stream that completed after the last disk persist).
+      // Uses shared comparator to also catch equal-count but truncated messages.
+      const inMemoryAgents = unifiedStateStore.getAgentsForWorkspace(workspace.id);
+      const inMemoryAgent = inMemoryAgents.find((a) => String(a.id) === plainAgentId);
+      if (inMemoryAgent && inMemoryAgent.messages && inMemoryAgent.messages.length > 0) {
+        const diskMessages = session?.messages || [];
+        const cmp = compareMessageCompleteness(
+          { messages: inMemoryAgent.messages },
+          { messages: diskMessages },
+        );
+        if (cmp > 0) {
+          logger.info('Using in-memory agent data (richer than disk)', {
+            agentId: plainAgentId,
+            inMemoryMessages: inMemoryAgent.messages.length,
+            diskMessages: diskMessages.length,
+          });
+          session = inMemoryAgent;
+        }
+      }
+
+      // Ensure the loaded session has the workspaceId field
       // This field might be missing from older persisted sessions
       if (session && !session.workspaceId) {
         logger.info('Adding missing workspaceId to loaded session (restoreWithoutBackend)', {
@@ -5353,7 +5701,7 @@ class RefactoredAgentService extends EventEmitter {
         this.diskMessageCounts.set(plainAgentId, session.messages.length);
       }
 
-      // CRITICAL FIX: Handle streaming state when loading from disk
+      // Handle streaming state when loading from disk
       // If the session was streaming, re-register the stream handler to continue receiving chunks
       let foundStreamingMessage: AgentMessage | undefined;
       if (session) {
@@ -5378,7 +5726,12 @@ class RefactoredAgentService extends EventEmitter {
 
             // Re-register stream handler to continue receiving chunks from backend
             // Keep isStreaming=true so the UI shows the streaming state
-            this.registerStreamHandlerForSession(plainAgentId, foundStreamingMessage);
+            // Pass workspaceId so the handler knows which workspace this stream
+            // belongs to. Without this, the handler is registered with workspaceId: undefined.
+            this.ensureStreamHandler(plainAgentId, {
+              existingMessage: foundStreamingMessage,
+              workspaceId: session.workspaceId ? String(session.workspaceId) : workspace.id,
+            });
           }
         }
 
@@ -5421,9 +5774,16 @@ class RefactoredAgentService extends EventEmitter {
         // Normalize stale "active"/"Processing" status when restoring from disk without a backend.
         // If the session was persisted as active but there is no streaming message in progress,
         // the backend process is gone and the agent is actually idle.
+        // FIX: Also skip normalization if an IPC stream handler is already registered for this
+        // agent (e.g. from ensureStreamHandler above). This prevents a race condition on workspace
+        // switch where we normalize Active→Idle before reconnectToBackendStreams() can discover
+        // that the agent IS actively streaming on the backend (~50ms later).
+        // reconnectToBackendStreams() will clean up any stale streaming states for agents that
+        // are NOT actually streaming on the backend.
         if (
           (session.status === AgentStatus.Active || session.status === AgentStatus.Processing) &&
-          !foundStreamingMessage
+          !foundStreamingMessage &&
+          !this.activeStreamHandlers.has(plainAgentId)
         ) {
           logger.warn(
             'Normalizing stale active status to Idle on restore from disk (no active stream)',
@@ -5431,6 +5791,7 @@ class RefactoredAgentService extends EventEmitter {
               agentId: session.id,
               previousStatus: session.status,
               newStatus: AgentStatus.Idle,
+              hasStreamHandler: false,
             },
           );
           session.status = AgentStatus.Idle;
@@ -5474,7 +5835,7 @@ class RefactoredAgentService extends EventEmitter {
       // Try to load from disk
       const session = await persistenceService.loadSession(sessionOrId, workspaceId);
 
-      // CRITICAL FIX: Ensure the loaded session has the workspaceId field
+      // Ensure the loaded session has the workspaceId field
       // This field might be missing from older persisted sessions
       if (session && !session.workspaceId && workspaceId) {
         logger.info('Adding missing workspaceId to restored deleted session', {
@@ -5549,6 +5910,29 @@ class RefactoredAgentService extends EventEmitter {
       cache: cacheStats,
       activeStreamHandlers: this.activeStreamHandlers.size,
       streamTimeouts: this.streamTimeouts.size,
+    };
+  }
+
+  /**
+   * Get streaming health summary for debugging and monitoring.
+   * Returns a snapshot of handler/queue state to detect orphaned handlers,
+   * stuck queues, or mismatched IPC/DOM handler counts.
+   */
+  getStreamingHealth(): StreamingHealthSummary {
+    const ipcHandlerKeys = Array.from(this.activeStreamHandlers.keys());
+    const domHandlerKeys = Array.from(this.registeredDomHandlers);
+
+    // Orphaned = IPC handler exists but no matching DOM handler
+    const orphanedHandlers = ipcHandlerKeys.filter(
+      (key) => !this.registeredDomHandlers.has(key),
+    );
+
+    return {
+      activeIpcHandlers: this.activeStreamHandlers.size,
+      activeDomHandlers: this.registeredDomHandlers.size,
+      pendingQueueSessions: this.pendingEventQueue.getSessionCount(),
+      totalPendingEvents: this.pendingEventQueue.getTotalEventCount(),
+      orphanedHandlers,
     };
   }
 
@@ -5689,12 +6073,23 @@ class RefactoredAgentService extends EventEmitter {
     }
     this.activePingHandlers.clear();
 
-    // Clear pending event queue and DOM handler registry
-    this.pendingEventQueue.clear();
+    // Stop periodic cleanup and clear pending event queue and DOM handler registry
+    this.pendingEventQueue.stopPeriodicCleanup();
+    this.pendingEventQueue.clearAll();
     this.registeredDomHandlers.clear();
 
     // Clear analytics tracking state
     agentAnalyticsState.clear();
+
+    // Clear reconnect debounce and safety timeout timers
+    if (this.reconnectDebounceTimer) {
+      clearTimeout(this.reconnectDebounceTimer);
+      this.reconnectDebounceTimer = null;
+    }
+    if (this.streamingSafetyTimeout) {
+      clearTimeout(this.streamingSafetyTimeout);
+      this.streamingSafetyTimeout = null;
+    }
 
     // Clear activation and deduplication maps
     this.initialAgentActivationLocks.clear();

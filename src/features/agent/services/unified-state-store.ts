@@ -33,6 +33,7 @@ import type {
 import { AgentStatus } from '$shared/types';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { MODEL_IDS, MODEL_DEFAULTS } from '$shared/constants/agent-services';
+import { compareMessageCompleteness } from '$shared/utils/message-comparator';
 
 const logger = new Logger('UnifiedStateStore');
 
@@ -717,12 +718,31 @@ class UnifiedStateStore {
       (existingMessageCount > sessionMessageCount ||
         existingLastMsgBlockCount >= sessionLastMsgBlockCount);
 
+    // Defense-in-depth: Also preserve existing messages when NOT streaming but existing
+    // has richer data than incoming. This prevents stale disk data from overwriting
+    // a completed response that the store already has.
+    // Uses shared comparator to also catch equal-count but truncated data.
+    const existingIsRicher = !isActivelyStreaming && !!existingAgent && existingMessageCount > 0 &&
+      compareMessageCompleteness(
+        { messages: existingAgent.messages || [] },
+        { messages: session.messages || [] },
+      ) > 0;
+    const preserveExistingMessages = preserveStreamingMessages || existingIsRicher;
+
+    if (preserveExistingMessages && !isActivelyStreaming) {
+      logger.info('[setAgent] Preserving existing messages over stale incoming data (not streaming)', {
+        agentId: session.id,
+        existingCount: existingMessageCount,
+        sessionCount: sessionMessageCount,
+      });
+    }
+
     let sourceMessages: AgentMessage[];
-    if (preserveStreamingMessages) {
-      // CRITICAL FIX: When preserving streaming messages, MERGE unique messages
-      // from session.messages into the existing messages. This prevents losing
+    if (preserveExistingMessages && existingAgent) {
+      // When preserving messages (streaming or stale-data protection), MERGE unique
+      // messages from session.messages into the existing messages. This prevents losing
       // user messages or earlier responses that exist in disk data but not in
-      // the existing streaming state. Without this, switching workspaces during
+      // the existing state. Without this, switching workspaces during
       // streaming drops the user prompt because the existing store only has the
       // streaming assistant message, and the disk data (with the user message)
       // is ignored entirely.
@@ -731,7 +751,7 @@ class UnifiedStateStore {
         (m: AgentMessage) => !existingIds.has(m.id),
       );
       if (missingMessages.length > 0) {
-        logger.info('[setAgent] Merging missing messages during active streaming', {
+        logger.info('[setAgent] Merging missing messages while preserving existing', {
           agentId: session.id,
           existingCount: existingAgent.messages.length,
           sessionCount: session.messages?.length || 0,
@@ -754,7 +774,7 @@ class UnifiedStateStore {
         : existingAgent?.messages || [];
     }
 
-    // CRITICAL FIX: Deduplicate messages to prevent duplicate message IDs in the state.
+    // Deduplicate messages to prevent duplicate message IDs in the state.
     // Persisted session data may contain duplicates due to race conditions during saving.
     // Without this deduplication, ChatPanel will log "DUPLICATE MESSAGE IDS DETECTED!" warnings.
     const seenIds = new Set<string>();
@@ -772,8 +792,8 @@ class UnifiedStateStore {
     }
     const messages: AgentMessage[] = deduplicatedMessages;
 
-    if (isActivelyStreaming) {
-      logger.debug('[setAgent] Streaming message decision', {
+    if (isActivelyStreaming || preserveExistingMessages) {
+      logger.debug('[setAgent] Message preservation decision', {
         agentId: session.id,
         isActivelyStreaming,
         existingMessageCount,
@@ -781,7 +801,8 @@ class UnifiedStateStore {
         existingLastMsgBlockCount,
         sessionLastMsgBlockCount,
         preserveStreamingMessages,
-        usingSource: preserveStreamingMessages ? 'existing' : 'session',
+        preserveExistingMessages,
+        usingSource: preserveExistingMessages ? 'existing' : 'session',
       });
     }
     // Rebuild messageIdSet from the final deduplicated messages to stay in sync.
@@ -824,7 +845,7 @@ class UnifiedStateStore {
         ? {
             ...existingAgent.streaming,
             // Only update specific streaming fields if provided
-            // CRITICAL FIX: Don't turn off streaming based on stale session data.
+            // Don't turn off streaming based on stale session data.
             // When resumeSession() loads from disk, session.isStreaming is set to false
             // because disk data doesn't have streaming messages. But the ChatService
             // singleton may be actively streaming. Only setStreaming() should turn off

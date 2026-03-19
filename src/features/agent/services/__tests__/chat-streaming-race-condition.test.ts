@@ -21,6 +21,7 @@ vi.mock('../../agent.service', () => ({
     sendMessage: vi.fn().mockResolvedValue({ messageId: 'test-msg-id' }),
     activateAgent: vi.fn(),
     getSession: vi.fn(),
+    saveSession: vi.fn().mockResolvedValue(undefined),
   },
   AgentService: {
     getInstance: vi.fn(() => ({
@@ -42,6 +43,7 @@ vi.mock('$features/agent/browser', () => ({
     setActiveSession: vi.fn(),
     updateMessages: vi.fn(),
     addMessage: vi.fn(),
+    addMessageForWorkspace: vi.fn(),
     setStreaming: vi.fn(),
     setStreamingForWorkspace: vi.fn(),
     getStore: vi.fn(),
@@ -83,6 +85,7 @@ vi.stubGlobal('window', {
   },
   addEventListener: vi.fn(),
   removeEventListener: vi.fn(),
+  dispatchEvent: vi.fn(),
 });
 
 import { ChatService } from '../chat.service';
@@ -1016,6 +1019,220 @@ describe('ChatService Streaming Race Conditions', () => {
 
       // localStreamingContent should be cleared after stream end
       expect((chatService as any).localStreamingContent).toBe('');
+    });
+  });
+
+  describe('Background tab visibility handler', () => {
+    it('should flush pending chunks when tab becomes visible during streaming', () => {
+      const sessionId = 'test-session-visibility';
+      setupSession(sessionId);
+
+      // Start streaming and send a chunk
+      simulateStreamEvent(sessionId, { type: 'start' });
+      simulateStreamEvent(sessionId, { type: 'chunk', content: 'Hello' });
+
+      // Simulate that RAF hasn't fired yet (content is pending)
+      // Set pendingStreamingContent directly to simulate accumulated but unflushed content
+      (chatService as any).pendingStreamingContent = 'Hello world from background';
+
+      // Mark as processing (which streaming does)
+      chatService.getStore().update((s) => ({ ...s, isProcessing: true }));
+
+      // Simulate tab becoming visible
+      Object.defineProperty(document, 'visibilityState', {
+        value: 'visible',
+        writable: true,
+        configurable: true,
+      });
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      // The pending content should have been flushed
+      expect((chatService as any).pendingStreamingContent).toBeNull();
+
+      // The store should have the flushed content
+      const state = get(chatService.getStore());
+      expect(state.streamingContent).toBe('Hello world from background');
+    });
+
+    it('should NOT flush when tab becomes visible but not processing', () => {
+      const sessionId = 'test-session-visibility-idle';
+      setupSession(sessionId);
+
+      // Set some pending content but NOT processing
+      (chatService as any).pendingStreamingContent = 'stale content';
+
+      Object.defineProperty(document, 'visibilityState', {
+        value: 'visible',
+        writable: true,
+        configurable: true,
+      });
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      // Content should NOT have been flushed (still pending)
+      expect((chatService as any).pendingStreamingContent).toBe('stale content');
+    });
+
+    it('should remove visibility listener on dispose', () => {
+      const removeSpy = vi.spyOn(document, 'removeEventListener');
+
+      const service = new ChatService('test-agent-dispose');
+      const handler = (service as any).visibilityChangeHandler;
+      expect(handler).not.toBeNull();
+
+      service.dispose();
+
+      expect(removeSpy).toHaveBeenCalledWith('visibilitychange', handler);
+      expect((service as any).visibilityChangeHandler).toBeNull();
+
+      removeSpy.mockRestore();
+    });
+  });
+
+  describe('Message send idempotency', () => {
+    let mockWorkspace: any;
+
+    beforeEach(() => {
+      mockWorkspace = { id: 'test-workspace' };
+
+      // Set up session in sessionStore mock so sendMessage doesn't fail
+      vi.mocked(sessionStore.getSession).mockReturnValue({
+        id: 'test-session',
+        backendSessionId: 'test-session',
+        workspaceId: 'test-workspace',
+        name: 'Test',
+        status: 'active',
+        model: 'test',
+        systemPrompt: '',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        isStreaming: false,
+        messages: [],
+      } as any);
+    });
+
+    it('should reject duplicate sends within the same second', async () => {
+      const sessionId = 'test-session';
+      setupSession(sessionId);
+
+      // Fix the clock so both sends happen in the same second
+      const fixedTime = 1700000000000; // A fixed timestamp
+      vi.spyOn(Date, 'now').mockReturnValue(fixedTime);
+
+      // First send should succeed (agentService.sendMessage is called)
+      vi.mocked(agentService.sendMessage).mockResolvedValue({ messageId: 'msg-1' } as any);
+
+      // Need to reset lastMessageTime so rate limiting doesn't interfere
+      (chatService as any).lastMessageTime = 0;
+
+      await chatService.sendMessage('Hello world', mockWorkspace);
+
+      // Reset lastMessageTime again so rate limiting doesn't block the second call
+      (chatService as any).lastMessageTime = 0;
+
+      // Second send with same content in same second should be rejected (idempotency)
+      await chatService.sendMessage('Hello world', mockWorkspace);
+
+      // agentService.sendMessage should only have been called once
+      expect(agentService.sendMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('should allow sends with different content', async () => {
+      const sessionId = 'test-session';
+      setupSession(sessionId);
+
+      const fixedTime = 1700000000000;
+      vi.spyOn(Date, 'now').mockReturnValue(fixedTime);
+      vi.mocked(agentService.sendMessage).mockResolvedValue({ messageId: 'msg-1' } as any);
+
+      (chatService as any).lastMessageTime = 0;
+      await chatService.sendMessage('Hello', mockWorkspace);
+
+      (chatService as any).lastMessageTime = 0;
+      await chatService.sendMessage('Goodbye', mockWorkspace);
+
+      // Both should go through since content is different
+      expect(agentService.sendMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it('should allow resend after key expires (different second)', async () => {
+      const sessionId = 'test-session';
+      setupSession(sessionId);
+
+      let currentTime = 1700000000000;
+      vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
+      vi.mocked(agentService.sendMessage).mockResolvedValue({ messageId: 'msg-1' } as any);
+
+      (chatService as any).lastMessageTime = 0;
+      await chatService.sendMessage('Hello', mockWorkspace);
+
+      // Advance time to next second (different idempotency key)
+      currentTime += 1000;
+      (chatService as any).lastMessageTime = 0;
+      await chatService.sendMessage('Hello', mockWorkspace);
+
+      // Both should go through since they're in different seconds
+      expect(agentService.sendMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it('should clear send keys when stream completes', async () => {
+      const sessionId = 'test-session';
+      setupSession(sessionId);
+
+      const fixedTime = 1700000000000;
+      vi.spyOn(Date, 'now').mockReturnValue(fixedTime);
+      vi.mocked(agentService.sendMessage).mockResolvedValue({ messageId: 'msg-1' } as any);
+
+      (chatService as any).lastMessageTime = 0;
+      await chatService.sendMessage('Hello', mockWorkspace);
+
+      // Verify key is tracked
+      expect((chatService as any).recentSendKeys.size).toBe(1);
+
+      // Simulate stream end — this should clear send keys
+      simulateStreamEvent(sessionId, { type: 'end' });
+
+      // Keys should be cleared
+      expect((chatService as any).recentSendKeys.size).toBe(0);
+
+      // Now the same message should be sendable again
+      (chatService as any).lastMessageTime = 0;
+      await chatService.sendMessage('Hello', mockWorkspace);
+
+      expect(agentService.sendMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it('should clear send keys when stream errors', async () => {
+      const sessionId = 'test-session';
+      setupSession(sessionId);
+
+      const fixedTime = 1700000000000;
+      vi.spyOn(Date, 'now').mockReturnValue(fixedTime);
+      vi.mocked(agentService.sendMessage).mockResolvedValue({ messageId: 'msg-1' } as any);
+
+      (chatService as any).lastMessageTime = 0;
+      await chatService.sendMessage('Hello', mockWorkspace);
+
+      expect((chatService as any).recentSendKeys.size).toBe(1);
+
+      // Simulate stream error — this should also clear send keys
+      simulateStreamEvent(sessionId, { type: 'error', error: 'Something went wrong' });
+
+      expect((chatService as any).recentSendKeys.size).toBe(0);
+    });
+
+    it('should clean up send keys on dispose', () => {
+      // Add some keys manually
+      (chatService as any).recentSendKeys.add('key1');
+      (chatService as any).recentSendKeys.add('key2');
+      const timer1 = setTimeout(() => {}, 5000);
+      const timer2 = setTimeout(() => {}, 5000);
+      (chatService as any).sendKeyTimers.set('key1', timer1);
+      (chatService as any).sendKeyTimers.set('key2', timer2);
+
+      chatService.dispose();
+
+      expect((chatService as any).recentSendKeys.size).toBe(0);
+      expect((chatService as any).sendKeyTimers.size).toBe(0);
     });
   });
 

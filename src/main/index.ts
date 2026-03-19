@@ -1609,7 +1609,7 @@ app.whenReady().then(async () => {
     memoryMonitor.onPressure((level) => {
       if (level === 'warning' || level === 'critical') {
         logger.warn('Memory pressure detected, triggering cleanup', { level });
-        performMemoryCleanup(`memory-pressure-${level}`, { forceGC: level === 'critical' });
+        performMemoryCleanup(`memory-pressure-${level}`, { forceGC: level === 'critical', skipStreamCleanup: true });
       }
       // Stop all native @parcel/watcher subscriptions on ANY memory pressure.
       // Under high memory pressure the native C++ layer can throw an unrecoverable

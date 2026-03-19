@@ -20,6 +20,7 @@ import { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';
 import { getAgentProvider } from '$shared/types/agent-session';
 import { getProviderConfig } from '$shared/config/provider-config';
 import { cleanErrorMessage } from '$shared/errors/messages';
+import { assertStreamingInvariant } from '../utils/streaming-invariants';
 
 const logger = createLogger('ChatService');
 
@@ -73,6 +74,8 @@ export interface ChatState {
     text: string;
     options?: SendMessageOptions;
   } | null;
+  /** True for one update cycle after a stream ends, allowing message count decreases through guards */
+  streamJustEnded?: boolean;
   /** Model unavailable info - set when a model fails and user can retry with another */
   modelUnavailable: {
     failedModel: string;
@@ -122,8 +125,16 @@ export class ChatService implements IDisposable {
   // to prevent agents from appearing stuck when backend stops responding
   private readonly STREAM_TIMEOUT_MS = AGENT_STREAMING_CONFIG.BACKEND_STREAM_TIMEOUT_MS;
   private lastMessageTime = 0; // Track last message send time for rate limiting
+  // Idempotency: prevent duplicate sends from double-clicks or rapid retries
+  private recentSendKeys = new Set<string>();
+  private sendKeyTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private static readonly SEND_KEY_TTL_MS = 5000; // Auto-expire keys after 5 seconds
   private connectionHandler: ((e: Event) => void) | null = null;
   private disposed = false;
+
+  // PERFORMANCE: When the tab is backgrounded, RAF callbacks are paused by the browser.
+  // This handler force-flushes any accumulated streaming content when the user returns.
+  private visibilityChangeHandler: (() => void) | null = null;
 
   // PERFORMANCE: Throttle streaming chunk updates to reduce re-renders
   // FIX: Only store streamingContent, not messages - messages are computed fresh during flush
@@ -153,13 +164,23 @@ export class ChatService implements IDisposable {
   // This prevents false positives from transient IPC delays or backend timing issues
   private stateReconciliationFailureCount = 0;
   private readonly STATE_RECONCILIATION_FAILURE_THRESHOLD = 2; // Reset after 2 consecutive failures (20 seconds)
+  // Safety timeout: if isProcessing has been true for this long without any chunks
+  // AND the session is not streaming, auto-clear the stuck state
+  private readonly STUCK_PROCESSING_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
-  // HMR message protection: timestamp of last HMR recovery where messages were preserved
-  // from instance state. During the cooldown period, sessionUpdatedHandler will reject
-  // updates that would reduce message count, preventing stale disk data from overwriting
-  // optimistic user messages that haven't been persisted to disk yet.
-  private hmrMessageProtectionUntil = 0;
-  private readonly HMR_MESSAGE_PROTECTION_MS = 10_000; // 10 seconds
+  // Track when this instance was last destroyed/paused (ChatPanel unmount).
+  // Used to distinguish layout-driven remounts from actual HMR reloads.
+  // HMR does NOT call destroy/pauseBackgroundTimers before re-init, so if
+  // lastDestroyTimestamp is recent, this is a layout remount, not HMR.
+  // IMPORTANT: Always use isRecentRemount() instead of checking `> 0` directly,
+  // because the timestamp becomes permanently non-zero after the first unmount.
+  private lastDestroyTimestamp = 0;
+  private static readonly RECENT_REMOUNT_THRESHOLD_MS = 5000;
+
+  // Track when the last chunk was received for reconciliation.
+  // If chunks were received recently, the stream is alive and reconciliation
+  // should not count failures even if getActiveStreams doesn't find it.
+  private lastChunkReceivedAt = 0;
 
   constructor(agentId?: string) {
     this.agentId = agentId;
@@ -177,6 +198,16 @@ export class ChatService implements IDisposable {
       isStalled: false,
       modelUnavailable: null,
     });
+
+    // PERFORMANCE: When the browser tab is backgrounded, RAF callbacks are paused.
+    // This means streaming content accumulates in pendingStreamingContent but never
+    // gets flushed to the UI. When the user returns, force-flush so content appears immediately.
+    this.visibilityChangeHandler = () => {
+      if (document.visibilityState === 'visible' && get(this.state).isProcessing) {
+        this.flushChunkUpdate();
+      }
+    };
+    document.addEventListener('visibilitychange', this.visibilityChangeHandler);
   }
 
   /**
@@ -418,6 +449,43 @@ export class ChatService implements IDisposable {
         return;
       }
 
+      // Safety timeout: if isProcessing has been true for > 5 minutes without any chunks
+      // AND the session is not streaming according to sessionStore, auto-clear the stuck state.
+      // This catches permanently stuck states that the normal reconciliation might miss.
+      if (currentState.streamingStartTime) {
+        const processingDuration = Date.now() - currentState.streamingStartTime;
+        const hasRecentChunks = currentState.lastChunkTime
+          && (Date.now() - currentState.lastChunkTime) < this.STUCK_PROCESSING_TIMEOUT_MS;
+        const sessionData = sessionStore.getSession(currentSessionId);
+        const sessionSaysStreaming = sessionData?.isStreaming ?? false;
+
+        if (
+          processingDuration >= this.STUCK_PROCESSING_TIMEOUT_MS
+          && !hasRecentChunks
+          && !sessionSaysStreaming
+        ) {
+          logger.warn('State reconciliation: permanently stuck isProcessing detected (>5 min, no chunks, session not streaming)', {
+            sessionId: currentSessionId,
+            processingDurationMs: processingDuration,
+            lastChunkTime: currentState.lastChunkTime,
+            streamingStartTime: currentState.streamingStartTime,
+          });
+
+          this.state.update((s) => ({
+            ...s,
+            isProcessing: false,
+            isStreaming: false,
+            isStalled: false,
+            streamingStartTime: null,
+            lastChunkTime: null,
+          }));
+
+          this.stateReconciliationFailureCount = 0;
+          this.stopStateReconciliation();
+          return;
+        }
+      }
+
       // Query the backend to check if there's actually an active stream
       try {
         if (window.electronAPI) {
@@ -445,6 +513,17 @@ export class ChatService implements IDisposable {
               activeStreams: activeStreams.length,
             });
           } else {
+            // If chunks were received recently (< 30s), the stream is alive
+            // even if getActiveStreams doesn't list it (transient IPC timing).
+            // Skip the failure count to avoid false resets.
+            const timeSinceLastChunk = this.lastChunkReceivedAt ? Date.now() - this.lastChunkReceivedAt : Infinity;
+            if (timeSinceLastChunk < 30_000) {
+              logger.debug('State reconciliation: skipping failure count - chunks received recently', {
+                sessionId: currentSessionId,
+                timeSinceLastChunkMs: timeSinceLastChunk,
+              });
+              this.stateReconciliationFailureCount = 0;
+            } else {
             // UI thinks we're processing, but backend has no active stream
             this.stateReconciliationFailureCount++;
 
@@ -455,6 +534,7 @@ export class ChatService implements IDisposable {
               isProcessing: stateAfterCheck.isProcessing,
               isStreaming: stateAfterCheck.isStreaming,
               backendActiveStreams: activeStreams.length,
+              timeSinceLastChunkMs: timeSinceLastChunk,
             });
 
             // Only reset after consecutive failures to avoid false positives
@@ -479,6 +559,7 @@ export class ChatService implements IDisposable {
               this.stateReconciliationFailureCount = 0;
               this.stopStateReconciliation();
             }
+            } // end: timeSinceLastChunk >= 30s
           }
         }
       } catch (error) {
@@ -506,6 +587,8 @@ export class ChatService implements IDisposable {
    * Record that a chunk was received (resets stall detection)
    */
   private recordChunkReceived(): void {
+    // Track chunk receipt time on the instance for reconciliation checks
+    this.lastChunkReceivedAt = Date.now();
     this.state.update((s) => ({
       ...s,
       lastChunkTime: Date.now(),
@@ -513,7 +596,115 @@ export class ChatService implements IDisposable {
     }));
   }
 
+  /**
+   * Public method to pause background timers (state reconciliation, stall detection).
+   * Called when ChatPanel unmounts (e.g., workspace switch) to prevent the reconciliation
+   * timer from falsely resetting streaming state while the panel is not visible.
+   * Timers are restarted when streaming resumes via setupStreaming().
+   */
+  public pauseBackgroundTimers(): void {
+    this.stopStateReconciliation();
+    this.stopStallDetection();
+    // Record destroy timestamp so initializeChat() can distinguish
+    // layout remounts (recent destroy) from HMR (no destroy before re-init)
+    this.lastDestroyTimestamp = Date.now();
+    logger.debug('Background timers paused (ChatPanel unmounted)', { agentId: this.agentId });
+  }
 
+  /**
+   * Check if the last destroy/unmount was recent (within threshold).
+   * Returns false if pauseBackgroundTimers was never called or was called long ago.
+   * Use this instead of `lastDestroyTimestamp > 0` which becomes permanently true.
+   */
+  private isRecentRemount(): boolean {
+    return (
+      this.lastDestroyTimestamp > 0 &&
+      Date.now() - this.lastDestroyTimestamp < ChatService.RECENT_REMOUNT_THRESHOLD_MS
+    );
+  }
+
+  /**
+   * Public method to reconcile streaming state after mount.
+   *
+   * When ChatPanel mounts after the backend has already started streaming,
+   * the DOM handler may not be registered yet. This method checks the
+   * session/unified-state stores and, if the agent is actively streaming
+   * but ChatService has no handler, sets one up so chunks are displayed
+   * immediately.
+   *
+   * @returns true if reconciliation was needed (handler was missing)
+   */
+  public reconcileStreamingState(sessionId: string): boolean {
+    // Invariant: sessionId must be valid
+    assertStreamingInvariant(
+      !!sessionId && sessionId.length > 0,
+      'reconcileStreamingState called with empty sessionId',
+      { agentId: this.agentId },
+    );
+
+    // Invariant: session should match this ChatService instance's agentId
+    assertStreamingInvariant(
+      !this.agentId || sessionId === this.agentId,
+      'reconcileStreamingState sessionId does not match ChatService agentId',
+      { sessionId, agentId: this.agentId },
+    );
+
+    // Check if the session is currently streaming via sessionStore or unifiedStateStore
+    const sessionData = sessionStore.getSession(sessionId);
+    const currentState = get(this.state);
+
+    let isActivelyStreaming = sessionData?.isStreaming ?? false;
+
+    // Also check unified state store for the most up-to-date streaming state
+    if (!isActivelyStreaming && currentState.session?.workspaceId) {
+      const workspaceState = unifiedStateStore.getWorkspace(
+        currentState.session.workspaceId as WorkspaceId,
+      );
+      const agentFromStore = workspaceState?.agents.get(sessionId);
+      if (agentFromStore?.streaming?.active) {
+        isActivelyStreaming = true;
+      }
+    }
+
+    if (!isActivelyStreaming) {
+      return false;
+    }
+
+    let reconciled = false;
+
+    // If streaming but no DOM handler exists, set one up
+    if (!this.streamHandlers.has(sessionId)) {
+      logger.info('[ChatService] reconcileStreamingState: setting up missing stream handler', {
+        sessionId,
+        isProcessing: currentState.isProcessing,
+        isStreaming: currentState.isStreaming,
+      });
+      this.setupStreaming(sessionId);
+      reconciled = true;
+    }
+
+    // If streaming but isProcessing is false, update state to reflect streaming
+    if (!currentState.isProcessing || !currentState.isStreaming) {
+      logger.info('[ChatService] reconcileStreamingState: updating state to reflect active streaming', {
+        sessionId,
+        wasProcessing: currentState.isProcessing,
+        wasStreaming: currentState.isStreaming,
+      });
+      this.state.update((s) => ({
+        ...s,
+        isProcessing: true,
+        isStreaming: true,
+        streamingStartTime: s.streamingStartTime ?? Date.now(),
+      }));
+      reconciled = true;
+    }
+
+    if (reconciled) {
+      logger.info('[ChatService] reconcileStreamingState: reconciliation complete', { sessionId });
+    }
+
+    return reconciled;
+  }
 
   /**
    * Initialize or switch to a chat session
@@ -610,10 +801,52 @@ export class ChatService implements IDisposable {
       if (!session) {
         // Session genuinely doesn't exist after retries — this is a stale tab
         // referencing a deleted agent, not a race condition.
-        logger.warn('No session found for agent after retries, skipping initialization', {
+        // However, we still register a sessionUpdatedHandler so that if the session
+        // appears later (e.g., backend creates it asynchronously), we can pick up
+        // streaming events instead of missing them entirely.
+        logger.warn('No session found for agent after retries, registering deferred handler', {
           agentId,
           workspaceId: workspace.id,
         });
+
+        // Clean up any existing handler for this agent before registering a new one
+        const existingCleanup = this.sessionUpdatedCleanups.get(agentId);
+        if (existingCleanup) {
+          existingCleanup();
+          this.sessionUpdatedCleanups.delete(agentId);
+        }
+
+        const deferredSessionHandler = () => {
+          const newSession = sessionStore.getSession(agentId);
+          if (!newSession) return;
+
+          logger.info('[ChatService] Deferred handler: session appeared', {
+            agentId,
+            isStreaming: newSession.isStreaming,
+          });
+
+          // Session now exists — run full initialization
+          // Remove this deferred handler first to avoid re-entry
+          const cleanup = this.sessionUpdatedCleanups.get(agentId);
+          if (cleanup) {
+            cleanup();
+            this.sessionUpdatedCleanups.delete(agentId);
+          }
+
+          // Re-initialize now that the session exists
+          this.initializeChat(workspace, agentId, options).catch((err) => {
+            logger.error('[ChatService] Deferred handler: re-initialization failed', err);
+          });
+        };
+
+        const deferredCleanup = memoryManager.registerListener(
+          window,
+          `agent:session-updated:${agentId}`,
+          deferredSessionHandler,
+          this,
+        );
+        this.sessionUpdatedCleanups.set(agentId, deferredCleanup);
+
         return;
       }
 
@@ -631,26 +864,74 @@ export class ChatService implements IDisposable {
         if (hasActiveStream) {
           // Use this instance's messages - they're the most up-to-date during streaming
           messages = currentState.messages;
-          // Activate HMR message protection: during this cooldown window, sessionUpdatedHandler
-          // will reject updates that would reduce message count. This prevents stale disk data
-          // (loaded by loadAgentsFromDisk → resumeSession) from overwriting optimistic user
-          // messages that were added to state but not yet persisted to disk.
-          this.hmrMessageProtectionUntil = Date.now() + this.HMR_MESSAGE_PROTECTION_MS;
-          logger.info('Using instance state messages during active stream (HMR recovery)', {
+          logger.info('Using instance state messages during active stream', {
             agentId,
             count: messages.length,
             lastMessageBlocks: messages[messages.length - 1]?.contentBlocks?.length || 0,
-            hmrProtectionUntil: this.hmrMessageProtectionUntil,
           });
         } else {
-          // Normal case: check sessionStore first for latest state
+          // Normal case: check multiple sources for latest state
           const sessionStoreSession = sessionStore.getSession(agentId);
+          const sessionStoreMessages =
+            sessionStoreSession?.messages && Array.isArray(sessionStoreSession.messages)
+              ? sessionStoreSession.messages
+              : [];
+
+          // If instance state has more messages than sessionStore,
+          // prefer instance state. This happens when a stream completes while the user
+          // is on a different workspace — the instance processed the end event and has
+          // the completed response, but sessionStore may have been overwritten by
+          // restoreSessionWithoutBackend with stale disk data.
           if (
-            sessionStoreSession &&
-            sessionStoreSession.messages &&
-            Array.isArray(sessionStoreSession.messages)
+            currentState.messages.length > 0 &&
+            currentState.messages.length > sessionStoreMessages.length
           ) {
-            messages = sessionStoreSession.messages;
+            messages = currentState.messages;
+            logger.info('Using instance state messages (more complete than sessionStore)', {
+              agentId,
+              instanceCount: currentState.messages.length,
+              sessionStoreCount: sessionStoreMessages.length,
+            });
+          } else if (
+            currentState.messages.length > 0 &&
+            currentState.messages.length === sessionStoreMessages.length &&
+            sessionStoreMessages.length > 0
+          ) {
+            // Content-richness tiebreaker: same message count, prefer richer final message
+            const currentLast = currentState.messages[currentState.messages.length - 1];
+            const sessionLast = sessionStoreMessages[sessionStoreMessages.length - 1];
+            if (currentLast?.id === sessionLast?.id) {
+              const getTextLength = (blocks: ContentBlock[]) =>
+                blocks?.reduce((sum: number, b: ContentBlock) => {
+                  if (b.type === 'text' && 'text' in b) return sum + ((b as any).text?.length || 0);
+                  return sum;
+                }, 0) || 0;
+              const currentTextLength = getTextLength(currentLast?.contentBlocks || []);
+              const sessionTextLength = getTextLength(sessionLast?.contentBlocks || []);
+              if (currentTextLength > sessionTextLength) {
+                messages = currentState.messages;
+                logger.info(
+                  '[ChatService] initializeChat: preferring instance state (richer final message content)',
+                  {
+                    currentTextLength,
+                    sessionTextLength,
+                    messageCount: currentState.messages.length,
+                  },
+                );
+              } else {
+                messages = sessionStoreMessages;
+                logger.debug('Got messages from sessionStore', {
+                  agentId,
+                  count: messages.length,
+                });
+              }
+            } else {
+              // Different last message IDs — fall through to sessionStore
+              messages = sessionStoreMessages;
+              logger.debug('Got messages from sessionStore', { agentId, count: messages.length });
+            }
+          } else if (sessionStoreMessages.length > 0) {
+            messages = sessionStoreMessages;
             logger.debug('Got messages from sessionStore', { agentId, count: messages.length });
           } else if (session.messages && Array.isArray(session.messages)) {
             // Fall back to messages from session
@@ -717,7 +998,7 @@ export class ChatService implements IDisposable {
         });
       }
 
-      // CRITICAL FIX: During HMR, the session and unified state store may be reset while
+      // During HMR, the session and unified state store may be reset while
       // the ChatService singleton's own state still correctly reflects streaming=true.
       // If we detected an active stream from the instance state (hasActiveStream above),
       // trust it — it's the most up-to-date source during HMR. Without this, isCurrentlyStreaming
@@ -726,7 +1007,7 @@ export class ChatService implements IDisposable {
       // optimistic user messages that haven't been persisted to disk yet).
       if (hasActiveStream && !isCurrentlyStreaming) {
         isCurrentlyStreaming = true;
-        logger.info('Preserving streaming state from instance during HMR recovery', {
+        logger.info('Preserving streaming state from instance', {
           agentId,
           sessionIsStreaming: session?.isStreaming,
           storeStreamingActive: agentFromStore?.streaming?.active,
@@ -789,7 +1070,7 @@ export class ChatService implements IDisposable {
         this.localStreamingContent = existingStreamingContent;
       }
 
-      // CRITICAL FIX: Deduplicate messages loaded from disk to prevent Svelte "duplicate key" error
+      // Deduplicate messages loaded from disk to prevent Svelte "duplicate key" error
       // This handles cases where persisted session data already contains duplicate messages
       const seen = new Set<string>();
       const deduplicatedMessages = messages.filter((m) => {
@@ -901,7 +1182,7 @@ export class ChatService implements IDisposable {
       throw new Error('No active chat session');
     }
 
-    // CRITICAL FIX: ALWAYS fetch the session from sessionStore to get fresh isStreaming state.
+    // ALWAYS fetch the session from sessionStore to get fresh isStreaming state.
     // The internal state copy can become stale. The sessionStore reflects the true state from
     // unifiedStateStore, which is updated when setStreamingForWorkspace() is called on stream
     // completion. Without always refreshing, we might check a stale isStreaming=true and block sends.
@@ -967,6 +1248,23 @@ export class ChatService implements IDisposable {
       return;
     }
     this.lastMessageTime = now;
+
+    // Idempotency check: prevent duplicate sends from double-clicks
+    const sendKey = `${session.id}:${message}:${Math.floor(now / 1000)}`;
+    if (this.recentSendKeys.has(sendKey)) {
+      logger.warn('Duplicate message send detected (idempotency), ignoring', {
+        sessionId: session.id,
+        messageLength: message.length,
+      });
+      return;
+    }
+    this.recentSendKeys.add(sendKey);
+    // Auto-expire the key after TTL so legitimate resends work
+    const timer = setTimeout(() => {
+      this.recentSendKeys.delete(sendKey);
+      this.sendKeyTimers.delete(sendKey);
+    }, ChatService.SEND_KEY_TTL_MS);
+    this.sendKeyTimers.set(sendKey, timer);
 
     logger.info('Sending message', {
       sessionId: session.id,
@@ -1136,7 +1434,7 @@ export class ChatService implements IDisposable {
     this.localStreamingContent = '';
 
     this.state.update((s) => {
-      // CRITICAL FIX: Check for duplicate message ID before adding
+      // Check for duplicate message ID before adding
       // This prevents the Svelte "duplicate key" error in keyed each blocks
       const isDuplicate = s.messages.some((m) => m.id === userMessage.id);
       if (isDuplicate) {
@@ -1170,7 +1468,7 @@ export class ChatService implements IDisposable {
       };
     });
 
-    // CRITICAL FIX: Sync user message to sessionStore IMMEDIATELY after adding to local state
+    // Sync user message to sessionStore IMMEDIATELY after adding to local state
     // This prevents duplicate messages. AgentService.sendMessage() checks sessionStore for
     // existing messages with the same content (content-based deduplication). Without this sync,
     // there's a race condition where AgentService doesn't see the optimistic message and adds
@@ -1243,6 +1541,16 @@ export class ChatService implements IDisposable {
       });
     } catch (error) {
       logger.error('Failed to send message', error as Error);
+
+      // Clear idempotency key so retries aren't silently ignored.
+      // Without this, a transient failure would leave the sendKey in the set,
+      // causing retries within the TTL to be dropped as "duplicates".
+      this.recentSendKeys.delete(sendKey);
+      const sendKeyTimer = this.sendKeyTimers.get(sendKey);
+      if (sendKeyTimer) {
+        clearTimeout(sendKeyTimer);
+        this.sendKeyTimers.delete(sendKey);
+      }
 
       const errorMessage = error instanceof Error ? error.message : 'Failed to send message';
       const isInterrupted = errorMessage.includes('Agent interrupted');
@@ -1843,6 +2151,21 @@ export class ChatService implements IDisposable {
    * Set up streaming for a session
    */
   private setupStreaming(sessionId: string): void {
+    // Invariant: sessionId must exist (session must be initialized before streaming)
+    assertStreamingInvariant(
+      !!sessionId && sessionId.length > 0,
+      'setupStreaming called with empty sessionId',
+      { agentId: this.agentId },
+    );
+
+    // Invariant: session should exist in the store
+    const sessionCheck = sessionStore.getSession(sessionId);
+    assertStreamingInvariant(
+      !!sessionCheck,
+      'setupStreaming called but session not found in store',
+      { sessionId, agentId: this.agentId },
+    );
+
     logger.debug('[ChatService] setupStreaming called', {
       sessionId,
       eventName: `agent:stream:${sessionId}`,
@@ -1873,6 +2196,20 @@ export class ChatService implements IDisposable {
     // This catches events that arrived during navigation, HMR, or component remount timing issues
     agentService.replayPendingEvents(sessionId);
 
+    // FIX: Dispatch synthetic 'start' event for backend-initiated streams.
+    // ChatService only arms stall detection and state reconciliation in the
+    // data.type === 'start' branch of handleStreamEvent. Backend-initiated streams
+    // (delegated agents, woken agents) never get a 'start' event because the stream
+    // was already started by the backend before ChatService mounted. Without this,
+    // stall detection and reconciliation timers never activate for these streams.
+    const session = sessionStore.getSession(sessionId);
+    if (session?.isStreaming) {
+      logger.info('[ChatService] Dispatching synthetic start event for backend-initiated stream', {
+        sessionId,
+      });
+      this.handleStreamEvent(sessionId, new CustomEvent('synthetic', { detail: { type: 'start' } }));
+    }
+
     // Also listen for session-updated events to sync after agent-factory updates
     // This is especially important for queued messages that start streaming from the backend
     const sessionUpdatedHandler = () => {
@@ -1882,32 +2219,58 @@ export class ChatService implements IDisposable {
         const currentState = get(this.state);
         const newIsStreaming = session.isStreaming ?? currentState.isStreaming;
 
-        // HMR MESSAGE PROTECTION: After HMR recovery, loadAgentsFromDisk loads stale disk
-        // data into sessionStore, which triggers this handler. The disk data is missing
-        // optimistic user messages that were added to ChatService state but not yet persisted.
-        // During the protection window, reject any update that would reduce message count.
-        // This is safe because:
-        // 1. Stream completion uses handleStreamEvent 'end' handler directly, not this handler
-        // 2. The protection window is short (10s) and only activates during HMR
-        // 3. Legitimate message additions (more messages) still go through
-        if (this.hmrMessageProtectionUntil > Date.now() && currentState.messages.length > 0) {
-          const currentMessageCount = currentState.messages.length;
+        // Detect stream completion (isStreaming transitions true→false) at the top level
+        // so it's available for the state update below. When a stream completes through this
+        // handler, we need to set streamJustEnded so ChatPanel's guard allows the message
+        // count decrease.
+        const isStreamCompleting = currentState.isStreaming && !newIsStreaming;
+
+        // Even when NOT streaming, don't overwrite instance state that has
+        // more messages than the incoming session data. This prevents stale disk data
+        // (loaded by loadAgentsFromDisk → restoreSessionWithoutBackend → setAgent)
+        // from overwriting a completed response that the ChatService instance already has.
+        if (!currentState.isStreaming && currentState.messages.length > 0) {
           const sessionMessageCount = session.messages.length;
+          const currentMessageCount = currentState.messages.length;
           if (sessionMessageCount < currentMessageCount) {
             logger.info(
-              '[ChatService] sessionUpdatedHandler: HMR protection - rejecting update with fewer messages',
+              '[ChatService] sessionUpdatedHandler: skipping - would overwrite completed response with fewer messages (not streaming)',
               {
                 sessionId,
                 currentMessageCount,
                 sessionMessageCount,
-                protectionRemainingMs: this.hmrMessageProtectionUntil - Date.now(),
               },
             );
             return;
           }
+          // Also check: same message count but last message has less content
+          if (sessionMessageCount === currentMessageCount && currentMessageCount > 0) {
+            const currentLast = currentState.messages[currentMessageCount - 1];
+            const sessionLast = session.messages[sessionMessageCount - 1];
+            if (currentLast?.id === sessionLast?.id) {
+              const getTextLength = (blocks: ContentBlock[]) =>
+                blocks?.reduce((sum: number, b: ContentBlock) => {
+                  if (b.type === 'text' && 'text' in b) return sum + ((b as any).text?.length || 0);
+                  return sum;
+                }, 0) || 0;
+              const currentTextLength = getTextLength(currentLast?.contentBlocks || []);
+              const sessionTextLength = getTextLength(sessionLast?.contentBlocks || []);
+              if (sessionTextLength < currentTextLength) {
+                logger.info(
+                  '[ChatService] sessionUpdatedHandler: skipping - would overwrite completed response with less content (not streaming)',
+                  {
+                    sessionId,
+                    currentTextLength,
+                    sessionTextLength,
+                  },
+                );
+                return;
+              }
+            }
+          }
         }
 
-        // CRITICAL FIX: Don't overwrite ChatService messages with stale data during active streaming.
+        // Don't overwrite ChatService messages with stale data during active streaming.
         // When switching workspaces, resumeSession() loads stale disk data into sessionStore,
         // then reconnectToBackendStreams() dispatches agent:session-updated which triggers this handler.
         // The sessionStore data is stale because flushChunkUpdate() (the streaming content accumulator)
@@ -1991,7 +2354,7 @@ export class ChatService implements IDisposable {
           });
         }
 
-        // CRITICAL FIX: If streaming and the session has messages with content,
+        // If streaming and the session has messages with content,
         // sync the localStreamingContent from the last assistant message.
         // This handles the case where page refresh happens during streaming:
         // AgentService fetches accumulated content from backend and updates sessionStore,
@@ -2071,12 +2434,28 @@ export class ChatService implements IDisposable {
                 const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
                 return timeA - timeB;
               });
+
+              // FIX: Write missing messages back to sessionStore so they survive ChatService destruction.
+              // addMessageForWorkspace is idempotent (uses messageIdSet for O(1) dedup).
+              const workspaceId = session?.workspaceId;
+              if (workspaceId) {
+                for (const msg of missingUserMessages) {
+                  sessionStore.addMessageForWorkspace(workspaceId, sessionId, msg);
+                }
+                // Debounced save to disk so messages survive page refresh
+                agentService.saveSession(sessionId, workspaceId, true).catch(err =>
+                  logger.warn('Failed to persist write-back of optimistic messages', { sessionId, error: err })
+                );
+              }
+
               return {
                 ...s,
                 messages: mergedMessages,
                 isStreaming: newIsStreaming,
                 isProcessing: newIsStreaming,
                 streamingContent: newStreamingContent,
+                // Signal stream completion so ChatPanel guard allows message count decrease
+                ...(isStreamCompleting ? { streamJustEnded: true } : {}),
               };
             }
           }
@@ -2089,8 +2468,17 @@ export class ChatService implements IDisposable {
             isProcessing: newIsStreaming,
             // Also sync streamingContent if we updated it
             streamingContent: newStreamingContent,
+            // Signal stream completion so ChatPanel guard allows message count decrease
+            ...(isStreamCompleting ? { streamJustEnded: true } : {}),
           };
         });
+
+        // Clear streamJustEnded after one tick when stream completed through this handler
+        if (isStreamCompleting) {
+          requestAnimationFrame(() => {
+            this.state.update((s) => ({ ...s, streamJustEnded: false }));
+          });
+        }
 
         // CRITICAL: Re-setup stream listener if session is streaming but we don't have a handler
         // This happens when stopChat() was called (which removes the handler) and then
@@ -2261,7 +2649,10 @@ export class ChatService implements IDisposable {
       const currentInstanceMessages = get(this.state).messages;
       const existingMessages = session?.messages ?? currentInstanceMessages;
       if (!session) {
-        logger.warn('[ChatService] content-blocks: sessionStore.getSession returned undefined — using instance messages as fallback', {
+        // Downgrade from WARN to DEBUG. This is expected behavior for
+        // cross-workspace agents — the session doesn't exist in the store for the
+        // other workspace. The fallback to instance messages handles it correctly.
+        logger.debug('[ChatService] content-blocks: sessionStore.getSession returned undefined — using instance messages as fallback', {
           sessionId,
           instanceMessageCount: currentInstanceMessages.length,
         });
@@ -2395,6 +2786,7 @@ export class ChatService implements IDisposable {
       // FIX: Never reduce message count during content-blocks processing.
       // This prevents losing optimistic user messages when sessionStore returns
       // stale data that doesn't include recently added messages.
+      let contentBlocksMissingUserMessages: AgentMessage[] = [];
       this.state.update((s) => {
         if (updatedMessages.length < s.messages.length) {
           logger.warn('[ChatService] content-blocks: would reduce message count — merging instead', {
@@ -2411,6 +2803,13 @@ export class ChatService implements IDisposable {
           const mergedMessages = s.messages.map(m => updatedById.get(m.id) ?? m);
           const existingIds = new Set(s.messages.map(m => m.id));
           const brandNew = updatedMessages.filter(m => !existingIds.has(m.id));
+
+          // FIX: Capture missing user messages for write-back to sessionStore
+          const incomingIds = new Set(updatedMessages.map(m => m.id));
+          contentBlocksMissingUserMessages = s.messages.filter(
+            m => m.role === 'user' && !incomingIds.has(m.id)
+          );
+
           return {
             ...s,
             messages: [...mergedMessages, ...brandNew],
@@ -2425,6 +2824,21 @@ export class ChatService implements IDisposable {
           streamingContent: hasNewToolUse ? '' : s.streamingContent,
         };
       });
+
+      // FIX: Write missing user messages back to sessionStore so they survive ChatService destruction.
+      if (contentBlocksMissingUserMessages.length > 0) {
+        const cbSession = sessionStore.getSession(sessionId);
+        const cbWorkspaceId = cbSession?.workspaceId;
+        if (cbWorkspaceId) {
+          for (const msg of contentBlocksMissingUserMessages) {
+            sessionStore.addMessageForWorkspace(cbWorkspaceId, sessionId, msg);
+          }
+          // Debounced save to disk
+          agentService.saveSession(sessionId, cbWorkspaceId, true).catch(err =>
+            logger.warn('Failed to persist write-back of optimistic messages (content-blocks)', { sessionId, error: err })
+          );
+        }
+      }
     } else if (data.type === 'end' || data.type === 'complete') {
       // Handle both 'end' and 'complete' events (different sources may use different names)
       logger.info('[ChatService] Handling complete/end event', {
@@ -2520,6 +2934,9 @@ export class ChatService implements IDisposable {
       // Clean up per-instance accumulator
       this.localStreamingContent = '';
       this.pendingStreamingContent = null;
+
+      // Clear idempotency keys so user can resend after stream completes (e.g., after error)
+      this.clearSendKeys();
 
       // Finalize the streaming message by removing the isStreaming flag
       let updatedMessages = existingMessages;
@@ -2625,24 +3042,27 @@ export class ChatService implements IDisposable {
 
       // Update instance state
       // FIX: Preserve optimistic user messages that may not be in updatedMessages yet
+      let endMissingUserMessages: AgentMessage[] = [];
       this.state.update((s) => {
         let finalMessages = updatedMessages;
         if (updatedMessages.length < s.messages.length) {
           const updatedIds = new Set(updatedMessages.map(m => m.id));
-          const missingUserMessages = s.messages.filter(
+          const missing = s.messages.filter(
             m => m.role === 'user' && !updatedIds.has(m.id)
           );
-          if (missingUserMessages.length > 0) {
+          if (missing.length > 0) {
             logger.warn('[ChatService] end: preserving optimistic user messages during finalization', {
               sessionId,
-              missingCount: missingUserMessages.length,
-              missingIds: missingUserMessages.map(m => m.id),
+              missingCount: missing.length,
+              missingIds: missing.map(m => m.id),
             });
-            finalMessages = [...updatedMessages, ...missingUserMessages].sort((a, b) => {
+            finalMessages = [...updatedMessages, ...missing].sort((a, b) => {
               const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
               const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
               return timeA - timeB;
             });
+            // Capture for write-back after state update
+            endMissingUserMessages = missing;
           }
         }
         return {
@@ -2653,7 +3073,31 @@ export class ChatService implements IDisposable {
           streamingContent: '',
           streamingStartTime: null,
           lastAttemptedMessage: null,
+          // Signal to ChatPanel that this update is from stream completion,
+          // so the message count guard should allow fewer messages through.
+          // Cleared after one update cycle in the ChatPanel subscriber.
+          streamJustEnded: true,
         };
+      });
+
+      // FIX: Write missing user messages back to sessionStore so they survive ChatService destruction.
+      if (endMissingUserMessages.length > 0) {
+        const endSession = sessionStore.getSession(sessionId);
+        const endWorkspaceId = endSession?.workspaceId;
+        if (endWorkspaceId) {
+          for (const msg of endMissingUserMessages) {
+            sessionStore.addMessageForWorkspace(endWorkspaceId, sessionId, msg);
+          }
+          // Debounced save to disk
+          agentService.saveSession(sessionId, endWorkspaceId, true).catch(err =>
+            logger.warn('Failed to persist write-back of optimistic messages (end)', { sessionId, error: err })
+          );
+        }
+      }
+
+      // Clear streamJustEnded after one tick so it only bypasses the guard once
+      requestAnimationFrame(() => {
+        this.state.update((s) => ({ ...s, streamJustEnded: false }));
       });
     } else if (data.type === 'error') {
       // Stop stall detection on error
@@ -2664,6 +3108,9 @@ export class ChatService implements IDisposable {
       // Reset local accumulator on error to prevent stale data in next stream
       this.localStreamingContent = '';
       this.pendingStreamingContent = null;
+
+      // Clear idempotency keys so user can resend after error
+      this.clearSendKeys();
 
       // Clear streaming state in unifiedStateStore on error
       const errorState = get(this.state);
@@ -2774,9 +3221,13 @@ export class ChatService implements IDisposable {
       // This enables proper event queuing for future events that arrive after cleanup
       agentService.unregisterDomHandler(sessionId);
 
-      // FIX: Clear any pending events since the stream has completed/cleaned up
-      // This prevents stale events from being replayed on a future stream
-      agentService.clearPendingEvents(sessionId);
+      // FIX: Only clear pending events when the stream is actually ending (preserveContent=false).
+      // When preserveContent=true (called from setupStreaming for re-registration), we must NOT
+      // clear the queue because replayPendingEvents() runs AFTER this cleanup and needs the
+      // queued events. Previously, clearing here erased events before they could be replayed.
+      if (!preserveContent) {
+        agentService.clearPendingEvents(sessionId);
+      }
 
       this.streamHandlers.delete(sessionId);
     }
@@ -3174,6 +3625,18 @@ export class ChatService implements IDisposable {
   }
 
   /**
+   * Clear all idempotency send keys and their expiry timers.
+   * Called on stream completion/error so the user can resend.
+   */
+  private clearSendKeys(): void {
+    for (const timer of this.sendKeyTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.recentSendKeys.clear();
+    this.sendKeyTimers.clear();
+  }
+
+  /**
    * Dispose of all resources and cleanup
    */
   public dispose(): void {
@@ -3193,6 +3656,15 @@ export class ChatService implements IDisposable {
       this.chunkUpdateRafId = null;
     }
     this.pendingStreamingContent = null;
+
+    // Clean up idempotency keys
+    this.clearSendKeys();
+
+    // Clean up visibility change handler
+    if (this.visibilityChangeHandler) {
+      document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
+      this.visibilityChangeHandler = null;
+    }
 
     // Clean up with memory manager
     memoryManager.cleanup(this);

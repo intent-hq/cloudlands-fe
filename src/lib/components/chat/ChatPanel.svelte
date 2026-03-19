@@ -1526,6 +1526,13 @@
         });
         logger.info('Per-agent ChatService initialized on mount', { agentId });
 
+        // Reconcile streaming state: if the backend is already streaming for this agent
+        // but ChatPanel just mounted, ensure the stream handler is set up and state reflects it.
+        const wasReconciled = chatService.reconcileStreamingState(agentId);
+        if (wasReconciled) {
+          logger.info('Streaming state reconciled after mount', { agentId });
+        }
+
         // Use the per-agent instance's state directly — it's always for this agent
         const initialState = chatService.getState();
         if (initialState.session) {
@@ -1628,10 +1635,12 @@
       // CRITICAL FIX: Don't overwrite existing messages with empty messages.
       // This can happen during initialization race conditions.
       // Exception: Allow if streaming is active (streaming may start with empty messages)
+      // Exception: Allow if stream just ended (finalization may remove optimistic messages)
       if (
         state.messages.length < currentMessages.length &&
         currentMessages.length > 0 &&
-        !state.isStreaming
+        !state.isStreaming &&
+        !state.streamJustEnded
       ) {
         // Upgrade to warn so this is visible in console when debugging message loss
         logger.warn('[ChatPanel] Ignoring chatService update with fewer messages (non-streaming)', {
@@ -2395,6 +2404,11 @@
     unsubscribe?.();
     waitForSessionUnsub?.();
     queueListenerCleanup?.();
+    // Pause background timers (state reconciliation, stall detection) to prevent
+    // false positives during workspace switches. The timers would otherwise keep
+    // running and falsely reset streaming state when the backend query returns
+    // no active streams (because the query runs in the wrong workspace context).
+    chatService.pauseBackgroundTimers();
     // Note: followBottom action cleanup is handled automatically by Svelte
     // Don't clear chat data - just cleanup listeners
     // The service will persist data for when the panel is reopened

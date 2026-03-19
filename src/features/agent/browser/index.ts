@@ -233,7 +233,7 @@ function scheduleStoreUpdate(forWorkspaceId?: WorkspaceId, forAgentId?: string) 
     }
 
     // Also update the global store for backward compatibility
-    // CRITICAL FIX: Always get ALL agents from ALL workspaces, not just the target workspace.
+    // Always get ALL agents from ALL workspaces, not just the target workspace.
     // The sidebar's useAllAgentsSubscription expects sessionStoreData to contain all agents,
     // and then filters by workspaceId in the component. If we only include agents from one
     // workspace, the sidebar shows "No agents yet" when switching workspaces.
@@ -297,7 +297,7 @@ export const sessionStore = {
     // FIX: Check array length, not just truthiness, because empty arrays are truthy
     // and would prevent falling through to agent.session.messages
     //
-    // CRITICAL FIX: Use agent.streaming.active as the authoritative source for isStreaming.
+    // Use agent.streaming.active as the authoritative source for isStreaming.
     // The agent.session.isStreaming can become stale in some timing scenarios because
     // updates are batched via requestAnimationFrame. The agent.streaming.active is
     // updated synchronously by setStreaming/setStreamingForWorkspace.
@@ -420,7 +420,7 @@ export const sessionStore = {
       deprecationWarningShown.add('addSession');
       logger.warn('sessionStore.addSession is deprecated — consider using workspace-aware alternative');
     }
-    // CRITICAL FIX: Guard against null/undefined session to prevent errors
+    // Guard against null/undefined session to prevent errors
     if (!session) {
       logger.warn('addSession called with null/undefined session, ignoring');
       return;
