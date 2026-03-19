@@ -91,7 +91,7 @@
   let status: Status = $derived.by(() => {
     if (modelUnavailable) return 'model-unavailable';
     if (error) return 'error';
-    if (isStalled) return 'stalled'; // All stall detection is handled by ChatService
+    // if (isStalled) return 'stalled'; // All stall detection is handled by ChatService
     return 'normal';
   });
 
@@ -113,15 +113,15 @@
       return error;
     }
 
-    if (status === 'stalled') {
-      if (hasReceivedData) {
-        return providerName
-          ? `Your model provider, ${providerName}, is taking longer than usual to respond.`
-          : 'Agent is taking longer than usual to respond.';
-      } else {
-        return 'No response received. Check your network connection or try again.';
-      }
-    }
+    // if (status === 'stalled') {
+    //   if (hasReceivedData) {
+    //     return providerName
+    //       ? `Your model provider, ${providerName}, is taking longer than usual to respond.`
+    //       : 'Agent is taking longer than usual to respond.';
+    //   } else {
+    //     return 'No response received. Check your network connection or try again.';
+    //   }
+    // }
 
     return 'Thinking';
   });
@@ -132,7 +132,7 @@
     class={cn(
       'flex items-center gap-3 py-2 pl-2 pr-3 text-sm',
       status === 'error' && '',
-      status === 'stalled' && 'bg-amber-500/5 rounded-lg border border-amber-500/20',
+      // status === 'stalled' && 'bg-amber-500/5 rounded-lg border border-amber-500/20',
       status === 'model-unavailable' && 'bg-amber-500/5 rounded-lg border border-amber-500/20',
       className,
     )}
@@ -151,8 +151,8 @@
       {:else if status === 'error' && error}
         <Fa icon={faExclamationTriangle} class="text-destructive/70 shrink-0" />
         <span class="text-destructive-foreground text-sm">{statusMessage}</span>
+        <!--
       {:else if status === 'stalled'}
-        <!-- Stalled means no chunks for 90s -->
         <Fa icon={faInfoCircle} class="text-amber-500/70 shrink-0" />
         <Spinner size={4} {seed} />
         <span class="text-amber-600 dark:text-amber-400 text-sm font-family-child">
@@ -166,6 +166,7 @@
             >
           {/if}
         </span>
+        -->
       {:else}
         <!-- Normal - show spinner -->
         <Spinner size={4} {seed} />
@@ -193,8 +194,7 @@
           Try again
         </Button>
       {/if}
-      {#if status === 'stalled' && onStop && (isStreaming || isProcessing)}
-        <!-- Only show stop when actually streaming/processing -->
+      <!-- {#if status === 'stalled' && onStop && (isStreaming || isProcessing)}
         <Button
           variant="ghost"
           size="sm"
@@ -203,7 +203,7 @@
         >
           <Fa icon={faStop} class="size-3" />
         </Button>
-      {/if}
+      {/if} -->
     </div>
   </div>
 {/if}
