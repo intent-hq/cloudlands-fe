@@ -224,7 +224,7 @@
     style:width="{100 * $zoomFactor}%"
   >
     <!-- Left column -->
-    <div class="flex items-center app-no-drag min-w-0">
+    <div class="flex items-center min-w-0">
       {#if !isHomePage && layoutSettings.sidebarSide === 'left'}
         <Tooltip side="bottom" delayDuration={300}>
           {#snippet content()}
@@ -245,7 +245,7 @@
 
     <!-- Center: Search bar (workspace pages only) -->
     {#if isWorkspacePage && workspaceId}
-      <div class="flex items-center justify-center px-4 gap-1 app-no-drag">
+      <div class="flex items-center justify-center px-4 gap-1" style="-webkit-app-region: no-drag">
         <!-- Search bar -->
         <button class="search-bar" onclick={handleSearchClick} type="button">
           <!-- Search icon -->
@@ -267,7 +267,7 @@
     {/if}
 
     <!-- Right column: Layout controls + sidebar toggle (when sidebar is on right) -->
-    <div class="flex items-center justify-end pr-4 app-no-drag gap-1">
+    <div class="flex items-center justify-end pr-4 gap-1">
       {#if isWorkspacePage && workspaceId && layoutManager}
         <PanelLayoutControls
           layoutRoot={layoutManager.layout.root}
