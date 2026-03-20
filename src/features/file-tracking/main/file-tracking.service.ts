@@ -214,11 +214,25 @@ export class FileTrackingService {
 
       // Save cleaned changes if different
       if (cleanedChanges.length < changes.length) {
+        // Count entries per file before and after cleanup
+        const beforeCounts = new Map<string, number>();
+        for (const c of changes) {
+          beforeCounts.set(c.file, (beforeCounts.get(c.file) ?? 0) + 1);
+        }
+        const afterCounts = new Map<string, number>();
+        for (const c of cleanedChanges) {
+          afterCounts.set(c.file, (afterCounts.get(c.file) ?? 0) + 1);
+        }
+        // Files that had any entries removed (partial trim or full eviction)
+        const affectedFiles = [...beforeCounts.keys()].filter(
+          (f) => (afterCounts.get(f) ?? 0) < beforeCounts.get(f)!
+        );
         await this.storage.saveTrackedChanges(cleanedChanges);
         logger.info('Cleaned up old tracked changes', {
           before: changes.length,
           after: cleanedChanges.length,
           removed: changes.length - cleanedChanges.length,
+          sampleAffectedFiles: affectedFiles.slice(0, 5),
         });
       }
     } catch (error) {
@@ -1005,19 +1019,22 @@ export class FileTrackingService {
     // If we have more than the max, trigger cleanup and apply limit
     if (changes.length > this.MAX_TRACKED_FILES) {
       truncated = true;
+      // Sort by timestamp (newest first) and take the most recent
+      const sorted = changes.sort((a, b) => b.attribution.timestamp - a.attribution.timestamp);
+      const truncatedChanges = sorted.slice(this.MAX_TRACKED_FILES);
+      const sampleTruncatedFiles = [...new Set(truncatedChanges.map((c) => c.file))].slice(0, 5);
       logger.warn('Too many tracked changes, applying limit', {
         workspaceId: this.workspaceId,
         count: changes.length,
         limit: this.MAX_TRACKED_FILES,
+        sampleTruncatedFiles,
       });
       // Trigger async cleanup to persist the reduced list
       this.cleanupOldChanges().catch((error) => {
         logger.error('Failed to cleanup old changes during getChanges', error as Error);
       });
-      // Sort by timestamp (newest first) and take the most recent
-      changes = changes
-        .sort((a, b) => b.attribution.timestamp - a.attribution.timestamp)
-        .slice(0, this.MAX_TRACKED_FILES);
+      // Take the most recent
+      changes = sorted.slice(0, this.MAX_TRACKED_FILES);
     }
 
     if (!filter) return { changes, truncated, totalCount };
