@@ -41,9 +41,8 @@ jobs:
           echo "alpha=$ALPHA_VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
           echo "Using alpha tag: $LATEST_TAG (version: $ALPHA_VERSION)"
-
-          # Checkout the exact tagged commit so dependencies match the tagged source
           git checkout "$LATEST_TAG"
+
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -72,38 +71,20 @@ jobs:
         run: npm run dist:win
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
-          CSC_LINK: ${{ secrets.INTENT_WIN_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.INTENT_WIN_CSC_KEY_PASSWORD }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check if Windows signing was configured
-        id: signing
-        shell: bash
-        run: |
-          if [ -n "$CSC_LINK" ]; then
-            echo "signed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "signed=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Windows code signing not configured — skipping upload of unsigned binaries"
-          fi
-        env:
-          CSC_LINK: ${{ secrets.INTENT_WIN_CSC_LINK }}
-
       - name: Setup Google Cloud SDK
-        if: steps.signing.outputs.signed == 'true'
         uses: google-github-actions/setup-gcloud@v2
         with:
           version: 'latest'
 
       - name: Authenticate with GCP
-        if: steps.signing.outputs.signed == 'true'
         id: auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.INTENT_GCP_SERVICE_ACCOUNT_KEY }}
 
       - name: Upload to GCP alpha channel
-        if: steps.signing.outputs.signed == 'true'
         shell: bash
         run: bash scripts/upload-release-windows-gcp.sh alpha
         env:
@@ -114,7 +95,6 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
 
       - name: Post summary
-        if: steps.signing.outputs.signed == 'true'
         shell: bash
         run: |
           ALPHA_VERSION="${{ steps.version.outputs.alpha }}"

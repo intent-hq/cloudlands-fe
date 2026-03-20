@@ -7,6 +7,11 @@ on:
         description: 'Version number (e.g., 1.0.0)'
         required: true
         type: string
+      integrated_signing:
+        description: 'Enable DigiCert code signing'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -60,26 +65,57 @@ jobs:
           SEGMENT_WRITE_KEY="${{ secrets.INTENT_SEGMENT_WRITE_KEY }}"
           EOF
 
+      # ── DigiCert signing setup ──────────────────────────────────────
+      - name: Decode DigiCert client certificate
+        if: ${{ inputs.integrated_signing && vars.INTENT_WINDOWS_SM_HOST != '' }}
+        shell: bash
+        run: |
+          echo "${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 }}" | base64 --decode > /d/Certificate_pkcs12.p12
+
+      - name: Setup DigiCert Software Trust Manager
+        if: ${{ inputs.integrated_signing && vars.INTENT_WINDOWS_SM_HOST != '' }}
+        uses: digicert/code-signing-software-trust-action@v1
+        with:
+          simple-signing-mode: true
+        env:
+          SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
+          SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: D:\\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
+
       - name: Build and package Windows app
         run: npm run dist:win
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
-          CSC_LINK: ${{ secrets.INTENT_WIN_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.INTENT_WIN_CSC_KEY_PASSWORD }}
+          INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING: ${{ inputs.integrated_signing && vars.INTENT_WINDOWS_SM_HOST != '' && 'true' || '' }}
+          INTENT_WINDOWS_SM_KEYPAIR_ALIAS: ${{ vars.INTENT_WINDOWS_SM_KEYPAIR_ALIAS }}
+          SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
+          SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: D:\\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check if Windows signing was configured
+      - name: Verify Authenticode signature
         id: signing
-        shell: bash
+        shell: pwsh
         run: |
-          if [ -n "$CSC_LINK" ]; then
-            echo "signed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "signed=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Windows code signing not configured — skipping upload of unsigned binaries"
-          fi
-        env:
-          CSC_LINK: ${{ secrets.INTENT_WIN_CSC_LINK }}
+          $exe = Get-ChildItem -Path dist-electron -Filter '*.exe' | Where-Object { $_.Name -match 'Setup' } | Select-Object -First 1
+          if (-not $exe) {
+            echo "::warning::No installer .exe found in dist-electron"
+            echo "signed=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $sig = Get-AuthenticodeSignature -FilePath $exe.FullName
+          echo "Installer: $($exe.Name)"
+          echo "Signature status: $($sig.Status)"
+          echo "Signer: $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -eq 'Valid') {
+            echo "signed=true" >> $env:GITHUB_OUTPUT
+          } else {
+            echo "::warning::Installer is not signed or signature is invalid (status: $($sig.Status)) — skipping upload"
+            echo "signed=false" >> $env:GITHUB_OUTPUT
+          }
+
 
       - name: Setup Google Cloud SDK
         if: steps.signing.outputs.signed == 'true'

@@ -89,10 +89,10 @@ dmg:
 win:
   icon: src/assets/icons/icon.ico
   publisherName: "Augment Code, Inc."
-  # Code signing is automatic when CSC_LINK (path/URL to .pfx) and
-  # CSC_KEY_PASSWORD env vars are set. No signing occurs without them.
-  # An EV (Extended Validation) certificate is recommended for immediate
-  # Microsoft SmartScreen reputation.
+  # Custom sign hook: uses DigiCert smctl when INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING=true,
+  # silently skips for local dev builds.
+  signtoolOptions:
+    sign: scripts/windows-sign.cjs
   signingHashAlgorithms: [sha256]
   signDlls: false
   target:

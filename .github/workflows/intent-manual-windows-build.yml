@@ -2,6 +2,12 @@ name: Intent - Manual Windows Build
 
 on:
   workflow_dispatch:
+    inputs:
+      integrated_signing:
+        description: 'Enable integrated DigiCert/KeyLocker signing during Electron Builder packaging'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -36,21 +42,126 @@ jobs:
           SEGMENT_WRITE_KEY=""
           EOF
 
+      # ── DigiCert signing setup (official action) ──────────────────────
+      - name: Check integrated signing configuration
+        id: integrated_signing
+        if: ${{ inputs.integrated_signing }}
+        shell: bash
+        run: |
+          missing=""
+          for name in INTENT_WINDOWS_SM_HOST INTENT_WINDOWS_SM_KEYPAIR_ALIAS INTENT_WINDOWS_SM_API_KEY INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              missing="${missing:+$missing, }${name}"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Integrated signing requested but missing: $missing"
+            exit 1
+          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+        env:
+          INTENT_WINDOWS_SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
+          INTENT_WINDOWS_SM_KEYPAIR_ALIAS: ${{ vars.INTENT_WINDOWS_SM_KEYPAIR_ALIAS }}
+          INTENT_WINDOWS_SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
+          INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 }}
+          INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
+
+      - name: Decode DigiCert client certificate
+        if: ${{ steps.integrated_signing.outputs.enabled == 'true' }}
+        shell: bash
+        run: |
+          echo "${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 }}" | base64 --decode > /d/Certificate_pkcs12.p12
+
+      - name: Setup DigiCert Software Trust Manager
+        if: ${{ steps.integrated_signing.outputs.enabled == 'true' }}
+        uses: digicert/code-signing-software-trust-action@v1
+        with:
+          simple-signing-mode: true
+        env:
+          SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
+          SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: D:\\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
+
+      # ── Build ─────────────────────────────────────────────────────────
       - name: Build Windows
-        run: npm run dist:win
+        id: build_windows
+        shell: pwsh
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING: ${{ steps.integrated_signing.outputs.enabled == 'true' && 'true' || '' }}
+          INTENT_WINDOWS_SM_KEYPAIR_ALIAS: ${{ vars.INTENT_WINDOWS_SM_KEYPAIR_ALIAS }}
+          SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
+          SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: D:\\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
+        run: |
+          npm run dist:win
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Post summary
+      # ── Post-build validation (when signing is enabled) ───────────────
+      - name: Validate latest.yml matches signed installer
+        if: ${{ steps.integrated_signing.outputs.enabled == 'true' && steps.build_windows.outcome == 'success' }}
+        id: latest_yml_check
         shell: bash
         run: |
-          echo "## Windows Test Build" >> "$GITHUB_STEP_SUMMARY"
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const crypto = require('crypto');
+          const yaml = require('js-yaml');
+
+          const distDir = 'dist-electron';
+          const latest = yaml.load(fs.readFileSync(path.join(distDir, 'latest.yml'), 'utf8'));
+          const exeEntry = (latest.files || []).find(f => String(f.url || '').toLowerCase().endsWith('.exe'));
+          const installerName = path.basename((exeEntry && exeEntry.url) || latest.path || '');
+          if (!installerName) throw new Error('No installer found in latest.yml');
+
+          const installerPath = path.join(distDir, installerName);
+          const actualSha512 = crypto.createHash('sha512').update(fs.readFileSync(installerPath)).digest('base64');
+
+          console.log(`Installer: ${installerName}`);
+          console.log(`latest.yml sha512: ${exeEntry?.sha512 || latest.sha512}`);
+          console.log(`Actual sha512:     ${actualSha512}`);
+
+          const match = (exeEntry?.sha512 || latest.sha512) === actualSha512;
+          if (!match) throw new Error('latest.yml sha512 does not match signed installer.');
+          console.log('✅ Hash match confirmed.');
+
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `installer_path=${installerPath}\n`);
+          NODE
+
+      - name: Verify Authenticode signature
+        if: ${{ steps.integrated_signing.outputs.enabled == 'true' && steps.latest_yml_check.outcome == 'success' }}
+        shell: pwsh
+        env:
+          INSTALLER_PATH: ${{ steps.latest_yml_check.outputs.installer_path }}
+        run: |
+          $sig = Get-AuthenticodeSignature -FilePath $env:INSTALLER_PATH
+          Write-Host "Status: $($sig.Status)"
+          Write-Host "Subject: $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') {
+            throw "Authenticode signature is not valid: $($sig.Status)"
+          }
+          Write-Host "✅ Authenticode signature is valid."
+
+      # ── Summary & artifacts ───────────────────────────────────────────
+      - name: Post summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## Windows Manual Build" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Build Artifacts" >> "$GITHUB_STEP_SUMMARY"
-          ls -la dist-electron/ >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "No dist-electron/ directory found" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.build_windows.outcome }}" != "success" ]; then
+            echo "❌ Build failed." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.integrated_signing.outputs.enabled }}" != "true" ]; then
+            echo "⚠️ Unsigned build completed (signing not requested)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "✅ Signed build completed." >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "⚠️ This is an unsigned test build — not uploaded or distributed." >> "$GITHUB_STEP_SUMMARY"
+          ls -la dist-electron/ >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "No dist-electron/ directory." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

@@ -90,8 +90,11 @@ url_encode_manifest() {
 }
 
 # Create temp directory for modified manifests
-MANIFEST_TEMP_DIR=$(mktemp -d)
-trap "rm -rf $MANIFEST_TEMP_DIR" EXIT
+# Use a subdirectory of the workspace instead of system temp to avoid
+# Windows 8.3 short-path issues (e.g. RUNNER~1) that break gcloud.
+MANIFEST_TEMP_DIR="${DIST_DIR}/.manifest-tmp"
+mkdir -p "$MANIFEST_TEMP_DIR"
+trap "rm -rf '$MANIFEST_TEMP_DIR'" EXIT
 
 # Upload update manifest (with URL-encoded filenames)
 echo "📤 Uploading update manifest..."
