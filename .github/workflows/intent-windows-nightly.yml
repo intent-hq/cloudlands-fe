@@ -126,3 +126,12 @@ jobs:
           echo "### Download URLs" >> "$GITHUB_STEP_SUMMARY"
           echo "- [Windows Installer](https://cdn.augmentcode.com/alpha/Intent-latest-Setup.exe)" >> "$GITHUB_STEP_SUMMARY"
 
+  smoke-test:
+    name: Smoke Test
+    needs: nightly-windows
+    uses: ./.github/workflows/intent-windows-smoke-test.yml
+    with:
+      build_source: cdn
+      cdn_channel: alpha
+    secrets: inherit
+

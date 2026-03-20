@@ -123,9 +123,18 @@ jobs:
 
           echo "Windows installer smoke test passed"
 
+  playwright-smoke-test:
+    name: Playwright Smoke Test
+    needs: validate
+    uses: ./.github/workflows/intent-windows-smoke-test.yml
+    with:
+      build_source: cdn
+      cdn_channel: beta
+    secrets: inherit
+
   promote:
     name: Promote Windows to stable
-    needs: [validate, smoke-test]
+    needs: [validate, smoke-test, playwright-smoke-test]
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
