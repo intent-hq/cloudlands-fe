@@ -25,8 +25,10 @@ import { validateAgentSession } from '$shared/schemas';
 import { AgentStatus } from '$shared/types/agent.types';
 import { WorkspaceConfig } from '$shared/main/config';
 import { fsyncFile, renameWithRetry } from '$shared/main/file-sync-utils';
+import { SESSION_CONFIG } from '$shared/constants/agent-services';
 import type { IMetadataFS } from '../../metadata-fs/main/metadata-fs';
 import { LocalMetadataFS } from '../../metadata-fs/main/local-metadata-fs';
+import { truncateLargeFields } from './persistence-truncation';
 
 const logger = new Logger('UnifiedPersistence');
 
@@ -569,10 +571,14 @@ export class UnifiedPersistence {
       deduplicatedMessages = uniqueMessages;
     }
 
+    // Truncate large tool call results before persisting to prevent JSON bloat.
+    // This only affects the persisted copy — the in-memory agent retains full data.
+    const truncatedMessages = truncateLargeFields(deduplicatedMessages);
+
     // Ensure createdAt and updatedAt are set
     const agentToSave = {
       ...agent,
-      messages: deduplicatedMessages,
+      messages: truncatedMessages,
       createdAt: agent.createdAt || new Date().toISOString(),
       updatedAt: agent.updatedAt || new Date().toISOString(),
       // Merge preserved config (includes behaviorPrompt, specialist, etc.)
@@ -1129,7 +1135,7 @@ export class UnifiedPersistence {
       }
 
       // Write to temp file
-      const jsonData = JSON.stringify(data, null, 2);
+      const jsonData = JSON.stringify(data);
 
       // Use debug level for routine atomic write operations
       logger.debug('performAtomicWrite - data to be written', {

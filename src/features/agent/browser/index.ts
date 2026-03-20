@@ -1169,16 +1169,23 @@ export class PersistenceService {
   private async doSaveSession(session: AgentSession, workspaceId: string, allowTruncation?: boolean): Promise<void> {
     try {
       // Ensure session is serializable for IPC
-      // Use try-catch to handle "Maximum call stack size exceeded" errors
-      // that can occur with deeply nested message content blocks
+      // Use structuredClone for deep cloning — faster than JSON round-trip
+      // and doesn't create an intermediate string representation
       let serializableSession: AgentSession;
+
+      const estimatedSize = session.messages?.length ?? 0;
+      agentProxiesLogger.debug('Saving session', {
+        agentId: session.id,
+        messageCount: estimatedSize,
+      });
+
       try {
-        serializableSession = JSON.parse(JSON.stringify(session));
+        serializableSession = structuredClone(session);
       } catch (serializeError) {
-        // If serialization fails (e.g., stack overflow), try with truncated messages
-        agentProxiesLogger.warn('Session serialization failed, trying minimal save:', {
+        // If clone fails (e.g., non-cloneable values), try with truncated messages
+        agentProxiesLogger.warn('Session clone failed, trying minimal save:', {
           agentId: session.id,
-          messageCount: session.messages?.length,
+          messageCount: estimatedSize,
           error: serializeError instanceof Error ? serializeError.message : String(serializeError),
         });
 
@@ -1189,17 +1196,22 @@ export class PersistenceService {
         } as AgentSession;
 
         try {
-          serializableSession = JSON.parse(JSON.stringify(serializableSession));
+          serializableSession = structuredClone(serializableSession);
         } catch (retryError) {
           // If even truncated version fails, save without messages
-          agentProxiesLogger.error('Cannot serialize session even with truncation:', {
+          agentProxiesLogger.error('Cannot clone session even with truncation:', {
             agentId: session.id,
           });
           serializableSession = {
             ...session,
             messages: [],
           } as AgentSession;
-          serializableSession = JSON.parse(JSON.stringify(serializableSession));
+          try {
+            serializableSession = structuredClone(serializableSession);
+          } catch {
+            // Last resort: JSON round-trip handles most non-cloneable values
+            serializableSession = JSON.parse(JSON.stringify(serializableSession));
+          }
         }
       }
 
