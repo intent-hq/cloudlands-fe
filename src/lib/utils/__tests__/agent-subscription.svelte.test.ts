@@ -987,7 +987,9 @@ describe('useAllAgentsSubscription – workspace isolation', () => {
     const agentB = makeAgent('agent-b', 'workspace-B');
     mockSessions.push(agentA, agentB);
 
-    let activeWorkspace = 'workspace-A';
+    // Use $state so the $derived resolvedWsId inside useAllAgentsSubscription
+    // re-evaluates when we change the workspace.
+    let activeWorkspace = $state('workspace-A');
 
     const cleanup = $effect.root(() => {
       // Pass a getter so filtering is dynamic
@@ -997,13 +999,181 @@ describe('useAllAgentsSubscription – workspace isolation', () => {
 
       expect(sub.current.map((s: AgentSession) => s.id)).toEqual(['agent-a']);
 
-      // Switch workspace
+      // Switch workspace — $state assignment triggers $derived re-evaluation
       activeWorkspace = 'workspace-B';
       // Re-trigger store to force re-evaluation
       mockStore.set({ sessions: mockSessions, activeSessionId: null });
       flushSync();
 
       expect(sub.current.map((s: AgentSession) => s.id)).toEqual(['agent-b']);
+    });
+
+    cleanup();
+  });
+
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// useAllAgentsSubscription – loading state during session recovery
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('useAllAgentsSubscription – loading state', () => {
+  let mockStore: ReturnType<typeof writable>;
+  let mockSessions: AgentSession[];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    mockSessions = [];
+    mockStore = writable({ sessions: mockSessions, activeSessionId: null });
+
+    vi.mocked(sessionStore.getStore).mockReturnValue(mockStore as any);
+    vi.mocked(agentService.restoreSessionWithoutBackend).mockResolvedValue(true);
+  });
+
+  function makeAgent(id: string, workspaceId: string): AgentSession {
+    return {
+      id: id as any,
+      backendSessionId: id as any,
+      workspaceId: workspaceId as any,
+      name: `Agent ${id}`,
+      status: AgentStatus.Active,
+      messages: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      lastActivity: new Date(),
+      isProcessing: false,
+    };
+  }
+
+  it('loading starts true when workspaceId is provided and store is empty', () => {
+    // Simulate session recovery: store is empty initially
+    const cleanup = $effect.root(() => {
+      const sub = useAllAgentsSubscription('test-workspace');
+
+      flushSync();
+
+      // loading should be true because we haven't confirmed agents yet
+      expect(sub.loading).toBe(true);
+      // current should be empty
+      expect(sub.current).toHaveLength(0);
+    });
+
+    cleanup();
+  });
+
+  it('loading becomes false when agents exist in store', () => {
+    // Simulate normal state: agents already exist
+    const agent = makeAgent('agent-1', 'test-workspace');
+    mockSessions.push(agent);
+
+    const cleanup = $effect.root(() => {
+      const sub = useAllAgentsSubscription('test-workspace');
+
+      flushSync();
+
+      // loading should become false because agents exist
+      expect(sub.loading).toBe(false);
+      expect(sub.current).toHaveLength(1);
+    });
+
+    cleanup();
+  });
+
+  it('loading is false when no workspaceId is provided', () => {
+    // Without workspaceId, we don't need to show loading
+    const cleanup = $effect.root(() => {
+      const sub = useAllAgentsSubscription();
+
+      flushSync();
+
+      // loading should be false since no workspace filtering needed
+      expect(sub.loading).toBe(false);
+    });
+
+    cleanup();
+  });
+
+  it('prevents "No agents yet" flash during session recovery', () => {
+    // This is the key regression test for the bug fix.
+    // During session recovery, the store may briefly be empty.
+    // The sidebar should show skeleton loader, NOT "No agents yet".
+
+    // Start with empty store (simulates recovery state)
+    const cleanup = $effect.root(() => {
+      const sub = useAllAgentsSubscription('test-workspace');
+
+      flushSync();
+
+      // At this point, we should be in loading state
+      // UI should show skeleton loader because:
+      // - loading is true (prevents "No agents yet")
+      // - current is empty (no agents to render)
+      expect(sub.loading).toBe(true);
+      expect(sub.current).toHaveLength(0);
+
+      // When loading=true AND current.length=0, UI shows skeleton (correct)
+      // Previously, loading would start as false, causing "No agents yet" flash
+    });
+
+    cleanup();
+  });
+
+  it('loading transitions to true when workspace changes to one without agents', () => {
+    // Regression: when the resolved workspace ID changes (e.g. workspace restore/switch),
+    // initialStateChecked must reset so the new workspace gets its own loading cycle.
+    // Uses $state to simulate reactive workspace ID changes as in real components.
+    const agent = makeAgent('agent-1', 'ws-1');
+    mockSessions.push(agent);
+    mockStore.set({ sessions: mockSessions, activeSessionId: null });
+
+    const cleanup = $effect.root(() => {
+      // First subscription: ws-1 has agents
+      const sub1 = useAllAgentsSubscription('ws-1');
+      flushSync();
+      expect(sub1.loading).toBe(false);
+      expect(sub1.current).toHaveLength(1);
+
+      // Second subscription: ws-2 has no agents — loading should be true
+      const sub2 = useAllAgentsSubscription('ws-2');
+      flushSync();
+      expect(sub2.loading).toBe(true);
+      expect(sub2.current).toHaveLength(0);
+    });
+
+    cleanup();
+  });
+
+  it('loading starts false when no workspaceId and stays consistent', () => {
+    // When workspaceId starts undefined, loading should be false.
+    // This verifies the initial state is correct for the no-workspace case.
+    const cleanup = $effect.root(() => {
+      const sub = useAllAgentsSubscription(undefined);
+      flushSync();
+      expect(sub.loading).toBe(false);
+
+      // Adding agents to the store shouldn't change loading state
+      const agent = makeAgent('agent-1', 'some-workspace');
+      mockSessions.push(agent);
+      mockStore.set({ sessions: mockSessions, activeSessionId: null });
+      flushSync();
+      expect(sub.loading).toBe(false);
+    });
+
+    cleanup();
+  });
+
+  it('loading does not stay stuck true when getter always returns undefined', () => {
+    // Regression: when workspaceId is a getter that resolves to undefined,
+    // isLoading was initialized to true (function source) but the workspace-change
+    // effect never fired because resolvedWsId and lastCheckedWorkspaceId both
+    // started as undefined. This left loading stuck true indefinitely.
+    const cleanup = $effect.root(() => {
+      const sub = useAllAgentsSubscription(() => undefined);
+      flushSync();
+      // After the first effect cycle, loading should be false since there's
+      // no workspace to load agents for.
+      expect(sub.loading).toBe(false);
     });
 
     cleanup();

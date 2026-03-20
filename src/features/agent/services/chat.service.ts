@@ -73,6 +73,11 @@ export interface ChatState {
   lastAttemptedMessage: {
     text: string;
     options?: SendMessageOptions;
+    /** ID of the optimistic user message created during sendMessage().
+     *  Used for safe retry cleanup: we match on this ID instead of text content
+     *  to avoid accidentally deleting a legitimate historical message when the
+     *  user repeats the same prompt. */
+    optimisticMessageId?: string;
   } | null;
   /** Model unavailable info - set when a model fails and user can retry with another */
   modelUnavailable: {
@@ -179,6 +184,12 @@ export class ChatService implements IDisposable {
   // If chunks were received recently, the stream is alive and reconciliation
   // should not count failures even if getActiveStreams doesn't find it.
   private lastChunkReceivedAt = 0;
+
+  // Generation counter for initializeChat calls. Each call increments this and
+  // captures the value; before mutating shared state the call checks whether it
+  // is still the latest generation, preventing a slower/older initializeChat
+  // from overwriting the store with stale data during rapid workspace switches.
+  private _initGeneration = 0;
 
   constructor(agentId?: string) {
     this.agentId = agentId;
@@ -300,7 +311,14 @@ export class ChatService implements IDisposable {
           let streamingMessageId: ReturnType<typeof createMessageId> | undefined;
           const sessionId = s.session?.id;
           if (sessionId) {
-            const storeSession = sessionStore.getSession(sessionId);
+            // FIX: Use workspace-aware session lookup instead of the deprecated
+            // sessionStore.getSession() which depends on currentWorkspace. For
+            // background/cross-workspace streaming, currentWorkspace may point to a
+            // different workspace, causing the lookup to return the wrong session.
+            const instanceWsId = s.session?.workspaceId;
+            const storeSession = instanceWsId
+              ? sessionStore.getSessionForWorkspace(instanceWsId as string, sessionId)
+              : sessionStore.getSession(sessionId);
             const storeLastMsg = storeSession?.messages?.[storeSession.messages.length - 1];
             if (storeLastMsg?.role === 'assistant' && storeLastMsg?.isStreaming) {
               streamingMessageId = createMessageId(storeLastMsg.id);
@@ -776,12 +794,18 @@ export class ChatService implements IDisposable {
       isInitialWorkspaceAgent?: boolean;
     },
   ): Promise<void> {
-    logger.info('Initializing chat', { workspaceId: workspace.id, agentId });
+    // Bump the generation counter so any in-flight older initializeChat call
+    // can detect it has been superseded and bail out before mutating state.
+    const myGeneration = ++this._initGeneration;
+    logger.info('Initializing chat', { workspaceId: workspace.id, agentId, initGeneration: myGeneration });
 
     try {
       // Get or create session
-      const currentWorkspace = unifiedStateStore.currentWorkspace;
-      const agentState = currentWorkspace?.agents.get(agentId);
+      // CROSS-WORKSPACE FIX: Use workspace-scoped lookup instead of currentWorkspace,
+      // which reflects the UI's active workspace and may differ from the workspace
+      // that owns this agent (e.g., background init, restore, or rebind scenarios).
+      const targetWorkspace = unifiedStateStore.getWorkspace(workspace.id as any);
+      const agentState = targetWorkspace?.agents.get(agentId);
       let session = agentState?.session;
 
       if (!session) {
@@ -832,8 +856,8 @@ export class ChatService implements IDisposable {
           });
           await new Promise((resolve) => setTimeout(resolve, delay));
 
-          // Check unified state store first
-          const retryWorkspace = unifiedStateStore.currentWorkspace;
+          // Check unified state store first — use workspace-scoped lookup
+          const retryWorkspace = unifiedStateStore.getWorkspace(workspace.id as any);
           session = retryWorkspace?.agents.get(agentId)?.session ?? undefined;
 
           // Fall back to agent service
@@ -866,6 +890,17 @@ export class ChatService implements IDisposable {
           workspaceId: workspace.id,
         });
 
+        // RACE GUARD: Bail out if a newer initializeChat() call has already started.
+        // Without this, a slower superseded init can reach this point after a newer
+        // call has registered its own deferred handler, and overwrite that handler
+        // with one that re-initializes against the wrong (older) workspace.
+        if (this._initGeneration !== myGeneration) {
+          logger.info('[ChatService] initializeChat superseded before deferred handler registration', {
+            agentId, myGeneration, currentGeneration: this._initGeneration,
+          });
+          return;
+        }
+
         // Clean up any existing handler for this agent before registering a new one
         const existingCleanup = this.sessionUpdatedCleanups.get(agentId);
         if (existingCleanup) {
@@ -873,8 +908,34 @@ export class ChatService implements IDisposable {
           this.sessionUpdatedCleanups.delete(agentId);
         }
 
+        // Capture the generation at registration time so the handler can detect
+        // if it has been superseded by a newer initializeChat() call.
+        const registeredGeneration = myGeneration;
+
         const deferredSessionHandler = () => {
-          const newSession = sessionStore.getSession(agentId);
+          // RACE GUARD: If a newer initializeChat() has started since this handler
+          // was registered, this handler is stale — bail out and let the newer one
+          // handle the session appearance.
+          if (this._initGeneration !== registeredGeneration) {
+            logger.info('[ChatService] Deferred handler: superseded, skipping re-init', {
+              agentId,
+              registeredGeneration,
+              currentGeneration: this._initGeneration,
+            });
+            // Clean up this stale handler
+            const staleCleanup = this.sessionUpdatedCleanups.get(agentId);
+            if (staleCleanup) {
+              staleCleanup();
+              this.sessionUpdatedCleanups.delete(agentId);
+            }
+            return;
+          }
+
+          // CROSS-WORKSPACE FIX: Use workspace-aware lookup so the deferred handler
+          // finds the session in the correct workspace, not whichever workspace the
+          // user happens to be viewing when the event fires.
+          const newSession = sessionStore.getSessionForWorkspace(workspace.id as string, agentId)
+            ?? sessionStore.getSession(agentId);
           if (!newSession) return;
 
           logger.info('[ChatService] Deferred handler: session appeared', {
@@ -928,7 +989,11 @@ export class ChatService implements IDisposable {
           });
         } else {
           // Normal case: check multiple sources for latest state
-          const sessionStoreSession = sessionStore.getSession(agentId);
+          // CROSS-WORKSPACE FIX: Use workspace-aware lookup so we hydrate from
+          // the correct workspace's session, not whichever the user is viewing.
+          const sessionStoreSession = sessionStore.getSessionForWorkspace(
+            workspace.id as string, agentId,
+          ) ?? sessionStore.getSession(agentId);
           const sessionStoreMessages =
             sessionStoreSession?.messages && Array.isArray(sessionStoreSession.messages)
               ? sessionStoreSession.messages
@@ -995,14 +1060,18 @@ export class ChatService implements IDisposable {
             messages = session.messages;
             logger.debug('Got messages from session', { agentId, count: messages.length });
           } else {
-            // Try to get from unified state store
-            const currentWorkspace = unifiedStateStore.currentWorkspace;
-            const agent = currentWorkspace?.agents.get(agentId);
+            // Try to get from unified state store using the workspace passed to
+            // initializeChat (not currentWorkspace, which reflects the UI and can
+            // differ during restore/rebind/background init).
+            const allWorkspaces = unifiedStateStore.getAllWorkspaces();
+            const targetWs = allWorkspaces.find((w) => w.workspace?.id === workspace.id);
+            const agent = targetWs?.agents.get(agentId);
             if (agent?.messages) {
               messages = agent.messages;
-              logger.debug('Got messages from unified state store', {
+              logger.debug('Got messages from unified state store (workspace-aware)', {
                 agentId,
                 count: messages.length,
+                workspaceId: workspace.id,
               });
             }
           }
@@ -1019,6 +1088,13 @@ export class ChatService implements IDisposable {
               restoredSession.messages.length > 0
             ) {
               messages = restoredSession.messages;
+              // Guard: bail if a newer initializeChat started while we were doing disk I/O
+              if (this._initGeneration !== myGeneration) {
+                logger.info('[ChatService] initializeChat superseded before session.messages mutation', {
+                  agentId, myGeneration, currentGeneration: this._initGeneration,
+                });
+                return;
+              }
               // Update the session with restored messages
               session.messages = messages;
               logger.info('Successfully restored messages from disk', {
@@ -1123,6 +1199,13 @@ export class ChatService implements IDisposable {
             usingLastTextBlockOnly: true,
           });
         }
+        // Guard: bail if a newer initializeChat started while we were doing async work
+        if (this._initGeneration !== myGeneration) {
+          logger.info('[ChatService] initializeChat superseded before localStreamingContent mutation', {
+            agentId, myGeneration, currentGeneration: this._initGeneration,
+          });
+          return;
+        }
         // Initialize local accumulator with existing content (if streaming)
         this.localStreamingContent = existingStreamingContent;
       }
@@ -1169,6 +1252,18 @@ export class ChatService implements IDisposable {
             break;
           }
         }
+      }
+
+      // STALE-INIT GUARD: A newer initializeChat call has started while this one
+      // was doing async work (session lookups, retries, disk restores). Bail out
+      // to avoid overwriting the store with data from an older workspace.
+      if (this._initGeneration !== myGeneration) {
+        logger.info('[ChatService] initializeChat superseded by newer call, skipping state update', {
+          agentId,
+          myGeneration,
+          currentGeneration: this._initGeneration,
+        });
+        return;
       }
 
       // Update state - ensure isStreaming has a default value
@@ -1224,6 +1319,12 @@ export class ChatService implements IDisposable {
       throw new Error('Message cannot be empty');
     }
 
+    // Normalize: trim whitespace/newlines so that sendKey, optimistic message text,
+    // and the downstream agentService.sendMessage all use the same canonical form.
+    // Without this, trailing whitespace can bypass content-based deduplication
+    // (AgentService compares stored message text verbatim).
+    message = message?.trim() ?? '';
+
     // Check message length (only if message is provided)
     if (message && message.length > MAX_MESSAGE_LENGTH) {
       throw new Error(`Message too long. Maximum length is ${MAX_MESSAGE_LENGTH} characters`);
@@ -1243,8 +1344,13 @@ export class ChatService implements IDisposable {
     // The internal state copy can become stale. The sessionStore reflects the true state from
     // unifiedStateStore, which is updated when setStreamingForWorkspace() is called on stream
     // completion. Without always refreshing, we might check a stale isStreaming=true and block sends.
+    // CROSS-WORKSPACE FIX: Use workspace-aware lookup so the overlap guard consults the
+    // correct session even when the user is viewing a different workspace.
     const agentId = options?.agentId || currentState.session.id;
-    let session = sessionStore.getSession(agentId);
+    const sendWorkspaceId = currentState.session.workspaceId;
+    let session = sendWorkspaceId
+      ? sessionStore.getSessionForWorkspace(sendWorkspaceId as string, agentId)
+      : sessionStore.getSession(agentId);
 
     if (!session) {
       // Fallback to the cached state if sessionStore doesn't have it (shouldn't happen normally)
@@ -1288,12 +1394,18 @@ export class ChatService implements IDisposable {
     // }
 
     // Prevent sending while already processing.
-    // We check the per-session isStreaming property from sessionStore as the source of truth
-    // for whether this specific agent is processing.
-    if (session.isStreaming) {
+    // Check BOTH sessionStore (source of truth once streaming is fully set up) AND the
+    // in-memory ChatService state. There is a window after the pending-agent first-send
+    // where this instance has already set isProcessing/isStreaming=true but sessionStore
+    // hasn't been updated yet (activation is in progress). Without checking both, a second
+    // send could overlap the in-flight activation/request.
+    const instanceState = get(this.state);
+    if (session.isStreaming || instanceState.isProcessing || instanceState.isStreaming) {
       logger.warn('Already processing a message for this agent, ignoring new send request', {
         agentId: session.id,
         sessionIsStreaming: session.isStreaming,
+        instanceIsProcessing: instanceState.isProcessing,
+        instanceIsStreaming: instanceState.isStreaming,
       });
       return;
     }
@@ -1329,44 +1441,8 @@ export class ChatService implements IDisposable {
       hasContext: !!options?.contextItems?.length,
     });
 
-    // Lazy activation: if agent is pending, activate it now on first message
-    if (session.status === 'pending' || !session.backendSessionId) {
-      logger.info('Agent is pending, activating on first message', {
-        agentId: session.id,
-        status: session.status,
-      });
-
-      // Show processing indicator immediately so the user sees activity
-      // during the activation wait (which can take several seconds)
-      this.state.update((s) => ({
-        ...s,
-        isProcessing: true,
-        streamingStartTime: Date.now(),
-      }));
-
-      try {
-        const activatedAgent = await agentService.activateAgent(session.id, workspace.id);
-        if (!activatedAgent) {
-          throw new Error('Failed to activate agent');
-        }
-
-        // Update state with activated agent
-        this.state.update((s) => ({
-          ...s,
-          session: activatedAgent,
-        }));
-      } catch (error) {
-        logger.error('Failed to activate agent on first message', error as Error);
-        this.state.update((s) => ({
-          ...s,
-          isProcessing: false,
-          isStreaming: false,
-          streamingStartTime: null,
-          error: error instanceof Error ? error.message : 'Failed to activate agent',
-        }));
-        throw error;
-      }
-    }
+    // Track whether this agent needs activation (pending/no backend session)
+    const needsActivation = session.status === 'pending' || !session.backendSessionId;
 
     // Build content blocks for user message
     const contentBlocks: ContentBlock[] = [{ type: 'text' as const, text: message.trim() }];
@@ -1507,7 +1583,7 @@ export class ChatService implements IDisposable {
           streamingStartTime: Date.now(),
           lastChunkTime: null, // Reset so stall detection treats this as a fresh stream
           isStalled: false,
-          lastAttemptedMessage: { text: message, options },
+          lastAttemptedMessage: { text: message.trim(), options, optimisticMessageId: userMessage.id },
         };
       }
       return {
@@ -1521,7 +1597,7 @@ export class ChatService implements IDisposable {
         lastChunkTime: null, // Reset so stall detection treats this as a fresh stream
         isStalled: false,
         // Store message for retry functionality
-        lastAttemptedMessage: { text: message, options },
+        lastAttemptedMessage: { text: message.trim(), options, optimisticMessageId: userMessage.id },
       };
     });
 
@@ -1530,7 +1606,13 @@ export class ChatService implements IDisposable {
     // existing messages with the same content (content-based deduplication). Without this sync,
     // there's a race condition where AgentService doesn't see the optimistic message and adds
     // another user message with a different ID, resulting in duplicates.
-    sessionStore.addMessage(session.id, userMessage);
+    // FIX: Use workspace-aware write path so the optimistic message lands in the correct
+    // workspace even if the user switches workspaces during activation/send.
+    // CROSS-WORKSPACE FIX: Use the session's own workspaceId (not the passed-in workspace
+    // param which reflects the *current* UI workspace) so the optimistic message lands in
+    // the correct workspace even if the user switched workspaces during send.
+    const optimisticWorkspaceId = (currentState.session?.workspaceId ?? workspace.id) as string;
+    sessionStore.addMessageForWorkspace(optimisticWorkspaceId, session.id, userMessage);
 
     // Dispatch event so UI components can show running state immediately
     if (typeof window !== 'undefined') {
@@ -1539,6 +1621,48 @@ export class ChatService implements IDisposable {
           detail: { agentId: session.id },
         }),
       );
+    }
+
+    // Lazy activation: if agent is pending, activate it now on first message.
+    // This runs AFTER the optimistic user message is added to state so the user
+    // sees their message immediately while activation (which can take seconds) proceeds.
+    if (needsActivation) {
+      logger.info('Agent is pending, activating on first message', {
+        agentId: session.id,
+        status: session.status,
+      });
+
+      try {
+        const activatedAgent = await agentService.activateAgent(session.id, optimisticWorkspaceId);
+        if (!activatedAgent) {
+          throw new Error('Failed to activate agent');
+        }
+
+        // Update state with activated agent
+        this.state.update((s) => ({
+          ...s,
+          session: activatedAgent,
+        }));
+      } catch (error) {
+        logger.error('Failed to activate agent on first message', error as Error);
+
+        // Clean up idempotency entry so an immediate retry isn't suppressed as a duplicate.
+        this.recentSendKeys.delete(sendKey);
+        const activationSendKeyTimer = this.sendKeyTimers.get(sendKey);
+        if (activationSendKeyTimer) {
+          clearTimeout(activationSendKeyTimer);
+          this.sendKeyTimers.delete(sendKey);
+        }
+
+        this.state.update((s) => ({
+          ...s,
+          isProcessing: false,
+          isStreaming: false,
+          streamingStartTime: null,
+          error: error instanceof Error ? error.message : 'Failed to activate agent',
+        }));
+        throw error;
+      }
     }
 
     // CRITICAL: Ensure stream handler is set up before sending
@@ -1587,7 +1711,22 @@ export class ChatService implements IDisposable {
       const allContextReferences = [...contextItemRefs, ...(options?.contextReferences || [])];
 
       // Send message through agent service
-      await agentService.sendMessage(session.id, message, workspace, {
+      // WORKSPACE ALIGNMENT FIX: Use the same workspace identity that was used for
+      // activation and optimistic message sync. If the user switched workspaces between
+      // creating the agent and sending, `workspace` (from the UI) may have a different
+      // id than `optimisticWorkspaceId` (from the session). Passing the wrong workspace
+      // would cause agentService to activate/resume in the wrong workspace context.
+      //
+      // METADATA FIX: Look up the full workspace from unifiedStateStore instead of
+      // spreading the UI workspace with an overridden ID. Spreading keeps stale metadata
+      // (worktreePath, repositoryPath, etc.) from the UI workspace, which can mis-target
+      // activation or workspace-ready checks in agentService.sendMessage().
+      let sendWorkspace = workspace;
+      if (optimisticWorkspaceId !== workspace.id) {
+        const targetWsState = unifiedStateStore.getWorkspace(optimisticWorkspaceId as WorkspaceId);
+        sendWorkspace = targetWsState?.workspace ?? { ...workspace, id: optimisticWorkspaceId as WorkspaceId };
+      }
+      await agentService.sendMessage(session.id, message, sendWorkspace, {
         contextReferences: allContextReferences,
         imageBlocks: imageBlocksForBackend.length > 0 ? imageBlocksForBackend : undefined,
         fileBlocks: fileBlocksForBackend.length > 0 ? fileBlocksForBackend : undefined,
@@ -2002,14 +2141,70 @@ export class ChatService implements IDisposable {
 
     if (currentState.lastAttemptedMessage) {
       // Standard path: retry from stored message
-      const { text, options } = currentState.lastAttemptedMessage;
+      const { text, options, optimisticMessageId } = currentState.lastAttemptedMessage;
 
-      // Clear error state before retrying
+      // Remove the previous optimistic user message before retrying.
+      // When activation fails, the optimistic user message from the original
+      // sendMessage() call remains in local state and sessionStore. If we call
+      // sendMessage() again without removing it, a second user message (with a
+      // new ID) is appended, creating a duplicate. We remove the optimistic
+      // message here so sendMessage() can cleanly add a fresh one.
+      //
+      // SAFETY: Prefer matching by optimisticMessageId (the exact ID created
+      // during sendMessage). This avoids false positives when the user repeats
+      // the same prompt — text-only matching would delete a legitimate
+      // historical message if the real optimistic message was already removed.
+      // Fall back to text matching only when no ID is available (legacy state).
+      let optimisticMessage: AgentMessage | undefined;
+      if (optimisticMessageId) {
+        optimisticMessage = currentState.messages.find(
+          (m) => m.id === optimisticMessageId && m.role === 'user',
+        );
+      } else {
+        // Legacy fallback: match by text (pre-existing lastAttemptedMessage without ID)
+        const lastUserMessage = [...currentState.messages]
+          .reverse()
+          .find((m) => m.role === 'user');
+        const lastUserMessageText = lastUserMessage?.contentBlocks
+          ?.find((b: ContentBlock) => b.type === 'text' && 'text' in b);
+        if (
+          lastUserMessage &&
+          lastUserMessageText && 'text' in lastUserMessageText &&
+          lastUserMessageText.text === text
+        ) {
+          optimisticMessage = lastUserMessage;
+        }
+      }
+      const isOptimisticMessage = !!optimisticMessage;
+
+      // Clear error state and remove the stale optimistic message before retrying
       this.state.update((s) => ({
         ...s,
         error: null,
         lastAttemptedMessage: null,
+        messages: isOptimisticMessage
+          ? s.messages.filter((m) => m.id !== optimisticMessage!.id)
+          : s.messages,
       }));
+
+      // Also remove from sessionStore so the re-sent message doesn't create a
+      // duplicate in the store (sendMessage calls addMessageForWorkspace).
+      // FIX: Use workspace-aware write path so cleanup targets the correct
+      // workspace even if the user switched workspaces before retrying.
+      if (isOptimisticMessage && currentState.session) {
+        const agentId = currentState.session.id;
+        const workspaceId = currentState.session.workspaceId ?? workspace.id;
+        const storeSession = sessionStore.getSessionForWorkspace(
+          workspaceId as string,
+          agentId,
+        );
+        if (storeSession) {
+          const filtered = (storeSession.messages || []).filter(
+            (m: any) => m.id !== optimisticMessage!.id,
+          );
+          sessionStore.updateMessagesForWorkspace(workspaceId as string, agentId, filtered);
+        }
+      }
 
       logger.info('Retrying last message', { messageLength: text.length });
 
@@ -2043,15 +2238,62 @@ export class ChatService implements IDisposable {
 
     if (currentState.lastAttemptedMessage) {
       // Standard path: retry from stored message with new model
-      const { text, options } = currentState.lastAttemptedMessage;
+      const { text, options, optimisticMessageId } = currentState.lastAttemptedMessage;
 
-      // Clear error and modelUnavailable state before retrying
+      // Remove the previous optimistic user message before retrying (same
+      // rationale as retryLastMessage — prevents duplicate user messages when
+      // the original send failed during activation).
+      //
+      // SAFETY: Prefer ID-based matching. See retryLastMessage for rationale.
+      let optimisticMessage: AgentMessage | undefined;
+      if (optimisticMessageId) {
+        optimisticMessage = currentState.messages.find(
+          (m) => m.id === optimisticMessageId && m.role === 'user',
+        );
+      } else {
+        // Legacy fallback: match by text
+        const lastUserMessage = [...currentState.messages]
+          .reverse()
+          .find((m) => m.role === 'user');
+        const lastUserMessageText = lastUserMessage?.contentBlocks
+          ?.find((b: ContentBlock) => b.type === 'text' && 'text' in b);
+        if (
+          lastUserMessage &&
+          lastUserMessageText && 'text' in lastUserMessageText &&
+          lastUserMessageText.text === text
+        ) {
+          optimisticMessage = lastUserMessage;
+        }
+      }
+      const isOptimisticMessage = !!optimisticMessage;
+
+      // Clear error, modelUnavailable, and remove the stale optimistic message
       this.state.update((s) => ({
         ...s,
         error: null,
         modelUnavailable: null,
         lastAttemptedMessage: null,
+        messages: isOptimisticMessage
+          ? s.messages.filter((m) => m.id !== optimisticMessage!.id)
+          : s.messages,
       }));
+
+      // FIX: Use workspace-aware write path so cleanup targets the correct
+      // workspace even if the user switched workspaces before retrying.
+      if (isOptimisticMessage && currentState.session) {
+        const agentId = currentState.session.id;
+        const workspaceId = currentState.session.workspaceId ?? workspace.id;
+        const storeSession = sessionStore.getSessionForWorkspace(
+          workspaceId as string,
+          agentId,
+        );
+        if (storeSession) {
+          const filtered = (storeSession.messages || []).filter(
+            (m: any) => m.id !== optimisticMessage!.id,
+          );
+          sessionStore.updateMessagesForWorkspace(workspaceId as string, agentId, filtered);
+        }
+      }
 
       logger.info('Retrying last message with different model', {
         messageLength: text.length,
@@ -2159,12 +2401,15 @@ export class ChatService implements IDisposable {
     }));
 
     // Sync truncated messages to sessionStore so they persist
+    // FIX: Use workspace-aware write path so cleanup targets the correct
+    // workspace even if the user switched workspaces before retrying.
     const sessionId = currentState.session?.id;
     if (sessionId) {
-      sessionStore.updateMessages(sessionId, messagesBeforeRetry);
+      const workspaceId = (currentState.session?.workspaceId ?? workspace.id) as string;
+      sessionStore.updateMessagesForWorkspace(workspaceId, sessionId, messagesBeforeRetry);
 
       // Persist truncated messages to disk
-      agentService.saveSession(sessionId, workspace.id, false, { allowTruncation: true }).catch((err) => {
+      agentService.saveSession(sessionId, workspaceId, false, { allowTruncation: true }).catch((err) => {
         logger.warn('Failed to persist truncated messages after retry fallback', {
           sessionId,
           error: err instanceof Error ? err.message : String(err),
@@ -2216,7 +2461,13 @@ export class ChatService implements IDisposable {
     );
 
     // Invariant: session should exist in the store
-    const sessionCheck = sessionStore.getSession(sessionId);
+    // CROSS-WORKSPACE FIX: Use workspace-aware lookup so the invariant doesn't
+    // fail when the user has switched to a different workspace while this agent
+    // streams in the background.
+    const setupWorkspaceId = get(this.state).session?.workspaceId;
+    const sessionCheck = setupWorkspaceId
+      ? sessionStore.getSessionForWorkspace(setupWorkspaceId as string, sessionId)
+      : sessionStore.getSession(sessionId);
     assertStreamingInvariant(
       !!sessionCheck,
       'setupStreaming called but session not found in store',
@@ -2259,7 +2510,11 @@ export class ChatService implements IDisposable {
     // (delegated agents, woken agents) never get a 'start' event because the stream
     // was already started by the backend before ChatService mounted. Without this,
     // stall detection and reconciliation timers never activate for these streams.
-    const session = sessionStore.getSession(sessionId);
+    // CROSS-WORKSPACE FIX: Re-use the workspace-aware lookup from the invariant above
+    // so the synthetic start fires correctly for background/cross-workspace agents.
+    const session = setupWorkspaceId
+      ? sessionStore.getSessionForWorkspace(setupWorkspaceId as string, sessionId)
+      : sessionStore.getSession(sessionId);
     if (session?.isStreaming) {
       logger.info('[ChatService] Dispatching synthetic start event for backend-initiated stream', {
         sessionId,
@@ -2271,7 +2526,12 @@ export class ChatService implements IDisposable {
     // This is especially important for queued messages that start streaming from the backend
     const sessionUpdatedHandler = () => {
       logger.debug('[ChatService] sessionUpdatedHandler called', { sessionId });
-      const session = sessionStore.getSession(sessionId);
+      // CROSS-WORKSPACE FIX: Use workspace-aware lookup so session-updated events
+      // are correctly processed even when the user has switched workspaces.
+      const updHandlerWorkspaceId = get(this.state).session?.workspaceId;
+      const session = updHandlerWorkspaceId
+        ? sessionStore.getSessionForWorkspace(updHandlerWorkspaceId as string, sessionId)
+        : sessionStore.getSession(sessionId);
       if (session && session.messages) {
         const currentState = get(this.state);
         const newIsStreaming = session.isStreaming ?? currentState.isStreaming;
@@ -2625,13 +2885,27 @@ export class ChatService implements IDisposable {
       // After HMR/page refresh, streaming.active is initialized to false from disk data,
       // and without this explicit setStreaming call, it stays false even though the backend
       // is actively streaming. This allows users to bypass the isStreaming guard in sendMessage().
-      sessionStore.setStreaming(sessionId, true);
-      const session = sessionStore.getSession(sessionId);
-      if (session) {
-        sessionStore.addSession({
-          ...session,
-          isStreaming: true,
-        });
+      // CROSS-WORKSPACE FIX: Use workspace-aware streaming state update so the
+      // correct session is updated even when the user has switched workspaces.
+      const startWorkspaceId = get(this.state).session?.workspaceId;
+      if (startWorkspaceId) {
+        sessionStore.setStreamingForWorkspace(startWorkspaceId as string, sessionId, true);
+        const session = sessionStore.getSessionForWorkspace(startWorkspaceId as string, sessionId);
+        if (session) {
+          sessionStore.addSessionForWorkspace(startWorkspaceId as string, {
+            ...session,
+            isStreaming: true,
+          });
+        }
+      } else {
+        sessionStore.setStreaming(sessionId, true);
+        const session = sessionStore.getSession(sessionId);
+        if (session) {
+          sessionStore.addSession({
+            ...session,
+            isStreaming: true,
+          });
+        }
       }
 
       // Update instance state
@@ -2683,13 +2957,38 @@ export class ChatService implements IDisposable {
         this.pendingStreamingContent = null;
       }
 
-      // Get messages from sessionStore (source of truth)
-      // FIX: Fall back to ChatService instance state if sessionStore doesn't have the session.
-      // This prevents wiping optimistic user messages when sessionStore.getSession() returns
-      // undefined due to workspace context mismatches or timing issues during force-submit.
-      const session = sessionStore.getSession(sessionId);
-      const currentInstanceMessages = get(this.state).messages;
-      const existingMessages = session?.messages ?? currentInstanceMessages;
+      // FIX: Always use instance state as the base for content-blocks processing.
+      // sessionStore.getSession() uses currentWorkspace, which may point to a different
+      // workspace if the user switched while this agent streams in the background.
+      // The instance state is the authoritative source for THIS agent's messages.
+      //
+      // We only consult sessionStore to pick up any messages that may have been added
+      // externally (e.g., queued message delivery), but we NEVER reduce message count.
+      //
+      // FIX: Prefer currentInstanceMessages unless sessionStore has strictly MORE messages.
+      // Previously, sessionStore was always preferred when available, but if its snapshot is
+      // stale or missing the streaming assistant message, the later merge guard
+      // (updatedMessages.length < s.messages.length) would drop newly-applied tool blocks
+      // because message IDs between the stale snapshot and the live instance don't overlap.
+      // By basing on instance state by default, tool_use/tool_result blocks always attach
+      // to the streaming assistant being rendered.
+      const currentState = get(this.state);
+      const currentInstanceMessages = currentState.messages;
+      // FIX: Use workspace-aware session lookup instead of the deprecated
+      // sessionStore.getSession() which depends on currentWorkspace. For
+      // background/cross-workspace streaming, currentWorkspace may point to a
+      // different workspace, causing the lookup to miss the session entirely
+      // and the later write-back to be skipped or mis-targeted.
+      const instanceWorkspaceId = currentState.session?.workspaceId;
+      const session = instanceWorkspaceId
+        ? sessionStore.getSessionForWorkspace(instanceWorkspaceId as string, sessionId)
+        : sessionStore.getSession(sessionId);
+      let existingMessages = currentInstanceMessages;
+      if (session?.messages && session.messages.length > currentInstanceMessages.length) {
+        // sessionStore has strictly more messages (e.g., queued message delivery added
+        // messages externally) — use it to avoid losing those.
+        existingMessages = session.messages;
+      }
       if (!session) {
         // Downgrade from WARN to DEBUG. This is expected behavior for
         // cross-workspace agents — the session doesn't exist in the store for the
@@ -2830,21 +3129,24 @@ export class ChatService implements IDisposable {
       // stale data that doesn't include recently added messages.
       let contentBlocksMissingUserMessages: AgentMessage[] = [];
       this.safeStateUpdate((s) => {
+        // CROSS-WORKSPACE FIX: If current state has significantly more messages,
+        // this likely indicates we got stale data from a different workspace/session.
+        // In this case, only update the last assistant message with new content blocks,
+        // preserving all other messages from instance state.
         if (updatedMessages.length < s.messages.length) {
-          logger.warn('[ChatService] content-blocks: would reduce message count — merging instead', {
+          logger.warn('[ChatService] content-blocks: would reduce message count — preserving instance state', {
             sessionId,
             currentCount: s.messages.length,
             incomingCount: updatedMessages.length,
-            currentIds: s.messages.map(m => m.id),
-            incomingIds: updatedMessages.map(m => m.id),
           });
+
           // Merge: replace existing messages with updated versions (to pick up new
           // content blocks on the streaming assistant), preserve messages only in
-          // s.messages (optimistic user messages), and append any brand-new messages.
+          // s.messages (optimistic user messages). Do NOT append brand-new messages here
+          // because updatedMessages may come from a cross-workspace session and those
+          // "new" messages belong to a different agent.
           const updatedById = new Map(updatedMessages.map(m => [m.id, m]));
           const mergedMessages = s.messages.map(m => updatedById.get(m.id) ?? m);
-          const existingIds = new Set(s.messages.map(m => m.id));
-          const brandNew = updatedMessages.filter(m => !existingIds.has(m.id));
 
           // FIX: Capture missing user messages for write-back to sessionStore
           const incomingIds = new Set(updatedMessages.map(m => m.id));
@@ -2854,29 +3156,35 @@ export class ChatService implements IDisposable {
 
           return {
             ...s,
-            messages: [...mergedMessages, ...brandNew],
-            isStreaming: true,
+            messages: mergedMessages,
+            // FIX: Preserve current isStreaming state — a late content-blocks event
+            // arriving after stream end/error must not flip isStreaming back to true.
+            isStreaming: s.isStreaming,
             streamingContent: hasNewToolUse ? '' : s.streamingContent,
           };
         }
+
         return {
           ...s,
           messages: updatedMessages,
-          isStreaming: true,
+          // FIX: Preserve current isStreaming state — a late content-blocks event
+          // arriving after stream end/error must not flip isStreaming back to true.
+          isStreaming: s.isStreaming,
           streamingContent: hasNewToolUse ? '' : s.streamingContent,
         };
       });
 
       // FIX: Write missing user messages back to sessionStore so they survive ChatService destruction.
+      // Use the instance's workspaceId (tied to this session) instead of sessionStore.getSession()
+      // which depends on currentWorkspace and may miss the session during cross-workspace streaming.
       if (contentBlocksMissingUserMessages.length > 0) {
-        const cbSession = sessionStore.getSession(sessionId);
-        const cbWorkspaceId = cbSession?.workspaceId;
+        const cbWorkspaceId = instanceWorkspaceId ?? sessionStore.getSession(sessionId)?.workspaceId;
         if (cbWorkspaceId) {
           for (const msg of contentBlocksMissingUserMessages) {
-            sessionStore.addMessageForWorkspace(cbWorkspaceId, sessionId, msg);
+            sessionStore.addMessageForWorkspace(cbWorkspaceId as string, sessionId, msg);
           }
           // Debounced save to disk
-          agentService.saveSession(sessionId, cbWorkspaceId, true).catch(err =>
+          agentService.saveSession(sessionId, cbWorkspaceId as string, true).catch(err =>
             logger.warn('Failed to persist write-back of optimistic messages (content-blocks)', { sessionId, error: err })
           );
         }
@@ -3063,12 +3371,23 @@ export class ChatService implements IDisposable {
       }
 
       // ALWAYS sync finalized messages to sessionStore
+      // CROSS-WORKSPACE FIX: Use workspace-aware write so the completion snapshot
+      // lands in the correct workspace even if the user switched workspaces.
       if (session) {
-        sessionStore.addSession({
-          ...session,
-          messages: updatedMessages,
-          isStreaming: false,
-        });
+        const endWorkspaceId = session.workspaceId as string | undefined;
+        if (endWorkspaceId) {
+          sessionStore.addSessionForWorkspace(endWorkspaceId, {
+            ...session,
+            messages: updatedMessages,
+            isStreaming: false,
+          });
+        } else {
+          sessionStore.addSession({
+            ...session,
+            messages: updatedMessages,
+            isStreaming: false,
+          });
+        }
 
         // SAFETY NET: Force a direct notification after a short delay.
         // This catches cases where the RAF-based notification from addSession()
@@ -3120,15 +3439,17 @@ export class ChatService implements IDisposable {
       });
 
       // FIX: Write missing user messages back to sessionStore so they survive ChatService destruction.
+      // Use the instance's workspaceId (tied to this session) instead of sessionStore.getSession()
+      // which depends on currentWorkspace and may miss the session during cross-workspace streaming.
       if (endMissingUserMessages.length > 0) {
-        const endSession = sessionStore.getSession(sessionId);
-        const endWorkspaceId = endSession?.workspaceId;
+        const endInstanceWorkspaceId = get(this.state).session?.workspaceId;
+        const endWorkspaceId = endInstanceWorkspaceId ?? session?.workspaceId;
         if (endWorkspaceId) {
           for (const msg of endMissingUserMessages) {
-            sessionStore.addMessageForWorkspace(endWorkspaceId, sessionId, msg);
+            sessionStore.addMessageForWorkspace(endWorkspaceId as string, sessionId, msg);
           }
           // Debounced save to disk
-          agentService.saveSession(sessionId, endWorkspaceId, true).catch(err =>
+          agentService.saveSession(sessionId, endWorkspaceId as string, true).catch(err =>
             logger.warn('Failed to persist write-back of optimistic messages (end)', { sessionId, error: err })
           );
         }

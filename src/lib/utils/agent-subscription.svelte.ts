@@ -262,8 +262,48 @@ export function useAllAgentsSubscription(workspaceId?: WorkspaceIdSource) {
   // Store ALL agents from the session store - filtering happens at the component level
   let allAgents = $state<AgentSession[]>([]);
   let lastAgentsFingerprint = '';
-  // Track loading state reactively
-  let isLoading = $state(false);
+
+  // Track loading state reactively.
+  // CRITICAL: Start with true if workspaceId is provided to avoid the "No agents yet" flash
+  // during session recovery. We'll set it to false once we've confirmed state (either agents
+  // exist in store, or disk load completed).
+  // FIX: When workspaceId is a getter that becomes defined later, resolveWorkspaceId() returns
+  // undefined initially, causing isLoading to start as false and briefly showing the empty state.
+  // Treat function sources as "will resolve" and default to true so the loading skeleton shows
+  // until the effect confirms the actual state.
+  let isLoading = $state(
+    typeof workspaceId === 'function' ? true : resolveWorkspaceId(workspaceId) !== undefined,
+  );
+
+  // Track whether we've completed the initial state check for a given workspace.
+  // Reset when the resolved workspace ID changes so a new workspace gets its own check.
+  let initialStateChecked = false;
+  let lastCheckedWorkspaceId: string | undefined;
+
+  // FIX: workspaceId can be a getter (WorkspaceIdSource). Resolve it via $derived so
+  // downstream $effects re-run when the resolved value becomes defined or changes
+  // (e.g. during workspace restore/switch). Without this, isLoading and
+  // initialStateChecked become stale and reintroduce the "No agents yet" flash.
+  const resolvedWsId = $derived(resolveWorkspaceId(workspaceId));
+
+  // React to workspace ID changes: reset loading/check state for the new workspace.
+  $effect(() => {
+    const currentWsId = resolvedWsId; // tracked reactive dependency
+    if (currentWsId !== lastCheckedWorkspaceId) {
+      initialStateChecked = false;
+      lastCheckedWorkspaceId = currentWsId;
+      // If we now have a workspace ID (getter became defined), start loading.
+      // If it became undefined, stop loading.
+      isLoading = !!currentWsId;
+    } else if (!currentWsId && isLoading) {
+      // FIX: When workspaceId is a getter that resolves to undefined, both
+      // resolvedWsId and lastCheckedWorkspaceId start as undefined, so the
+      // !== check above never fires. But isLoading may have been initialized
+      // to true (for function sources). Clear it so loading doesn't stay
+      // stuck indefinitely.
+      isLoading = false;
+    }
+  });
 
   // Use $effect for subscription management with automatic cleanup
   $effect(() => {
@@ -284,6 +324,21 @@ export function useAllAgentsSubscription(workspaceId?: WorkspaceIdSource) {
     lastAgentsFingerprint = agentsFingerprint(nextAgents);
     allAgents = nextAgents;
 
+    // After initial store read, check if we already have agents for this workspace.
+    // If so, we can immediately set isLoading = false since there's no need for disk sync.
+    const resolvedWorkspaceId = resolvedWsId; // use the $derived value
+    if (resolvedWorkspaceId && !initialStateChecked) {
+      const workspaceAgents = nextAgents.filter((s) => {
+        const agentWsId = s.workspaceId ? String(s.workspaceId) : '';
+        return agentWsId === resolvedWorkspaceId;
+      });
+      if (workspaceAgents.length > 0) {
+        // Agents already exist in store - no loading needed
+        isLoading = false;
+        initialStateChecked = true;
+      }
+    }
+
     // Return cleanup function - $effect will call this when the effect is destroyed
     return () => {
       unsubscribe();
@@ -295,7 +350,12 @@ export function useAllAgentsSubscription(workspaceId?: WorkspaceIdSource) {
   // The load trigger uses the global agentsLoadingForWorkspace set to prevent
   // duplicate loads.
   $effect(() => {
-    const resolvedWorkspaceId = resolveWorkspaceId(workspaceId);
+    // FIX: Use the $derived resolvedWsId instead of calling resolveWorkspaceId(workspaceId)
+    // directly. When workspaceId is a getter, resolveWorkspaceId(workspaceId) inside an
+    // $effect doesn't create a reactive dependency on the getter's underlying value, so the
+    // effect won't retrigger on workspace restore/switch. resolvedWsId is $derived and
+    // properly tracks the getter, ensuring loading/recovery behavior stays correct.
+    const resolvedWorkspaceId = resolvedWsId;
     // Early exit if no workspace ID provided
     if (!resolvedWorkspaceId) return;
 
@@ -330,11 +390,15 @@ export function useAllAgentsSubscription(workspaceId?: WorkspaceIdSource) {
     // The real-time updates come from agent:created events
     if (workspaceAgents.length > 0) {
       // Already have agents, trust real-time updates
+      // Mark initial state as checked and ensure loading is false
+      initialStateChecked = true;
+      isLoading = false;
       return;
     }
 
     logger.debug('Triggering agent load from disk for workspace:', resolvedWorkspaceId);
     agentsLoadingForWorkspace.add(resolvedWorkspaceId);
+    // isLoading should already be true from initialization, but ensure it's set
     isLoading = true;
 
     // Dynamically import and load agents from disk
@@ -402,7 +466,13 @@ export function useAllAgentsSubscription(workspaceId?: WorkspaceIdSource) {
       } finally {
         // Clear the loading flag after loading is done (success or failure)
         agentsLoadingForWorkspace.delete(workspaceIdKey);
-        isLoading = false;
+        // Guard against stale completions: if the workspace changed while this
+        // async load was in flight, don't clobber the loading state for the new
+        // workspace — the newer effect invocation will handle its own flags.
+        if (resolvedWsId === workspaceIdKey) {
+          initialStateChecked = true;
+          isLoading = false;
+        }
       }
     })();
   });
@@ -415,11 +485,14 @@ export function useAllAgentsSubscription(workspaceId?: WorkspaceIdSource) {
   // every time a component reads .current, it gets the filtered result.
   return {
     get current() {
-      const resolvedWorkspaceId = resolveWorkspaceId(workspaceId);
-      if (!resolvedWorkspaceId) return [];
+      // Use the reactive $derived resolvedWsId instead of calling resolveWorkspaceId()
+      // directly. For getter-based workspaceId sources, resolveWorkspaceId() can diverge
+      // from the derived value that the subscription and loading effects use, making
+      // filtering/loading behavior inconsistent.
+      if (!resolvedWsId) return [];
       return allAgents.filter((s) => {
         const agentWsId = s.workspaceId ? String(s.workspaceId) : '';
-        return agentWsId === resolvedWorkspaceId;
+        return agentWsId === resolvedWsId;
       });
     },
     // Also expose all agents for components that want to do their own filtering.

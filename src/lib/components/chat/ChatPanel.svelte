@@ -41,6 +41,7 @@
     type ChatState,
   } from '$features/agent/services/chat.service';
   import { hasChatServiceStateChanged, syncChatStateFromService } from './chat-panel-state-sync';
+  import { WorkspaceRebindTracker } from './workspace-rebind-tracker';
   import { agentService, type AgentMessage } from '$features/agent/agent.service';
   import { sessionStore } from '$features/agent/browser';
   import { browser } from '$app/environment';
@@ -296,8 +297,9 @@
   );
   let hasPendingPermission = $derived(agentPermissionRequests.length > 0);
 
-  // Track previous workspace to detect changes
-  let previousWorkspaceId = $state<string | null>(null);
+  // Track previous workspace to detect changes — extracted into a helper so
+  // the race-prevention logic can be unit-tested against production code.
+  const rebindTracker = new WorkspaceRebindTracker();
 
   // DEBUG: Unique instance ID to detect duplicate ChatPanel mounts
   const instanceId = Math.random().toString(36).substring(2, 8);
@@ -1518,32 +1520,47 @@
     // Each ChatPanel owns its own ChatService instance (via getChatService(agentId)),
     // so there are no singleton race conditions — no need for session-mismatch guards.
     if (workspace && agentId) {
+      // Record the workspace ID BEFORE the async initializeChat call so the reactive
+      // workspace-rebind $effect can detect a change that arrives while we are awaiting.
+      const mountWorkspaceId = rebindTracker.recordMount(workspace.id);
+
       try {
         await chatService.initializeChat(workspace, agentId, {
           agentName,
           agentModel,
           isInitialWorkspaceAgent,
         });
-        logger.info('Per-agent ChatService initialized on mount', { agentId });
 
-        // Reconcile streaming state: if the backend is already streaming for this agent
-        // but ChatPanel just mounted, ensure the stream handler is set up and state reflects it.
-        const wasReconciled = chatService.reconcileStreamingState(agentId);
-        if (wasReconciled) {
-          logger.info('Streaming state reconciled after mount', { agentId });
-        }
-
-        // Use the per-agent instance's state directly — it's always for this agent
-        const initialState = chatService.getState();
-        if (initialState.session) {
-          _chatStateInternal = syncChatStateFromService(_chatStateInternal, initialState);
-
-          logger.info('Restored agent state from per-agent ChatService on mount', {
+        // If the workspace changed while we were awaiting, skip applying stale state —
+        // the reactive $effect will (or already did) re-initialize with the new workspace.
+        if (rebindTracker.wasWorkspaceChangedDuringMount(mountWorkspaceId)) {
+          logger.info('Workspace changed during initial mount initializeChat, skipping stale state', {
             agentId,
-            messageCount: initialState.messages?.length || 0,
-            isStreaming: initialState.isStreaming,
-            hasStreamingContent: (initialState.streamingContent?.length || 0) > 0,
+            mountWorkspaceId,
+            currentWorkspaceId: rebindTracker.trackedWorkspaceId,
           });
+        } else {
+          // Reconcile streaming state: if the backend is already streaming for this agent
+          // but ChatPanel just mounted, ensure the stream handler is set up and state reflects it.
+          const wasReconciled = chatService.reconcileStreamingState(agentId);
+          if (wasReconciled) {
+            logger.info('Streaming state reconciled after mount', { agentId });
+          }
+
+          logger.info('Per-agent ChatService initialized on mount', { agentId });
+
+          // Use the per-agent instance's state directly — it's always for this agent
+          const initialState = chatService.getState();
+          if (initialState.session) {
+            _chatStateInternal = syncChatStateFromService(_chatStateInternal, initialState);
+
+            logger.info('Restored agent state from per-agent ChatService on mount', {
+              agentId,
+              messageCount: initialState.messages?.length || 0,
+              isStreaming: initialState.isStreaming,
+              hasStreamingContent: (initialState.streamingContent?.length || 0) > 0,
+            });
+          }
         }
       } catch (error) {
         logger.error('Failed to initialize per-agent ChatService', error);
@@ -1727,7 +1744,7 @@
 
     // Initialize chat session (skip if already done above)
     if (workspace && agentId) {
-      previousWorkspaceId = workspace.id;
+      // rebindTracker.recordMount() is already called above before the initializeChat await
 
       (async () => {
         try {
@@ -1846,6 +1863,90 @@
         }
       }
     });
+  });
+
+  // WORKSPACE REBIND FIX: Reactively re-initialize the ChatService when the workspace
+  // changes underneath an already-mounted ChatPanel. Without this, the panel stays stuck
+  // on the pre-send conversation snapshot because initializeChat only runs on mount and
+  // inside handleSendMessage. During workspace restore/rebind the workspace prop changes
+  // but the component does not remount (AgentTabType keys by agentId only).
+  $effect(() => {
+    const currentWorkspaceId = workspace?.id;
+    if (!currentWorkspaceId || !agentId || sandboxMode) return;
+
+    // Check if workspace actually changed (also handles null/first-run guard)
+    if (!untrack(() => rebindTracker.shouldRebind(currentWorkspaceId))) return;
+
+    logger.info('[ChatPanel] Workspace changed underneath mounted panel, re-initializing chat', {
+      instanceId,
+      agentId,
+      previousWorkspaceId: rebindTracker.trackedWorkspaceId,
+      newWorkspaceId: currentWorkspaceId,
+    });
+
+    // Save previous workspace ID so we can revert on failure.
+    // Update tracking variable (untracked to avoid re-triggering this effect).
+    const previousWorkspaceId = untrack(() => rebindTracker.trackedWorkspaceId);
+    untrack(() => {
+      rebindTracker.recordRebind(currentWorkspaceId);
+    });
+
+    // Re-initialize the ChatService with the new workspace so the panel picks up
+    // the current session state (messages, streaming progress, etc.)
+    //
+    // STALE-RESULT GUARD: Capture the workspace ID at call time so we can detect
+    // if another rebind happened while this async init was in flight. Without this,
+    // a slower older init can resolve last and overwrite the store with stale data.
+    const ws = workspace; // capture for async closure
+    const rebindWorkspaceId = currentWorkspaceId;
+    // Mark rebind as in-flight so the send path can detect and wait for it.
+    // Capture the generation so only the latest rebind's endRebind clears the flag.
+    const rebindGeneration = untrack(() => rebindTracker.startRebind());
+    (async () => {
+      try {
+        await chatService.initializeChat(ws!, agentId, {
+          agentName,
+          agentModel,
+          isInitialWorkspaceAgent,
+        });
+
+        // Check if workspace changed again while we were awaiting
+        if (rebindTracker.hasWorkspaceChanged(rebindWorkspaceId)) {
+          logger.info('[ChatPanel] Workspace changed during rebind initializeChat, discarding stale result', {
+            agentId,
+            rebindWorkspaceId,
+            currentWorkspaceId: rebindTracker.trackedWorkspaceId,
+          });
+          return;
+        }
+
+        logger.info('[ChatPanel] ChatService re-initialized after workspace change', {
+          agentId,
+          workspaceId: currentWorkspaceId,
+        });
+      } catch (error) {
+        // FIX: Revert the tracker so a subsequent rebind attempt for the same
+        // workspace ID is not suppressed. Without this, a thrown/aborted init
+        // leaves the tracker advanced and shouldRebind() returns false, permanently
+        // preventing re-initialization.
+        // Only revert if no OTHER rebind happened while we were awaiting — if
+        // another rebind already advanced the tracker, reverting would be wrong.
+        if (!rebindTracker.hasWorkspaceChanged(rebindWorkspaceId)) {
+          rebindTracker.recordRebind(previousWorkspaceId ?? '');
+        }
+        logger.error('[ChatPanel] Failed to re-initialize chat after workspace change', {
+          agentId,
+          workspaceId: currentWorkspaceId,
+          error,
+          revertedTracker: !rebindTracker.hasWorkspaceChanged(previousWorkspaceId ?? ''),
+        });
+      } finally {
+        // Clear the in-flight flag only if this is still the latest rebind.
+        // If a newer rebind started while we were awaiting, its generation
+        // owns the flag and we must not clear it prematurely.
+        rebindTracker.endRebind(rebindGeneration);
+      }
+    })();
   });
 
   // Message navigation state
@@ -2712,18 +2813,66 @@
       return;
     }
 
-    // Check if workspace has changed
-    if (workspace.id !== previousWorkspaceId) {
-      logger.warn('Workspace has changed, reinitializing chat');
-      previousWorkspaceId = workspace.id;
+    // If a workspace rebind is currently in flight (the $effect started
+    // initializeChat but it hasn't resolved yet), wait for it to finish
+    // before sending. Without this, the send would go against the old
+    // workspace's session even though the tracker already recorded the
+    // new workspace ID.
+    if (rebindTracker.isRebinding) {
+      logger.info('Waiting for in-flight workspace rebind before sending', { agentId });
+      const rebindCompleted = await rebindTracker.waitForRebind(5000);
+      if (!rebindCompleted) {
+        // The rebind timed out or never resolved. Since the tracker already
+        // recorded the new workspace ID (recordRebind ran before startRebind),
+        // hasWorkspaceChanged below would return false and skip re-init,
+        // letting the send proceed against a stale/partially-initialized
+        // chatService. Abort the send instead.
+        logger.error('Workspace rebind timed out, aborting send to prevent stale session', {
+          agentId,
+          isStillRebinding: rebindTracker.isRebinding,
+        });
+        toast.error('Chat session is still initializing. Please try again.');
+        return;
+      }
+      // After the rebind completes, the session should be ready.
+      // Fall through to the hasWorkspaceChanged check below in case
+      // the rebind failed and we need to re-initialize.
+    }
 
-      await chatService.initializeChat(workspace, agentId!, {
-        agentName,
-        agentModel,
-        isInitialWorkspaceAgent,
-      });
-      // Wait for the session to be ready before sending
-      await waitForSessionReady(2000);
+    // Check if workspace has changed
+    if (rebindTracker.hasWorkspaceChanged(workspace.id)) {
+      logger.warn('Workspace has changed, reinitializing chat');
+      rebindTracker.recordRebind(workspace.id);
+
+      // Mark rebind as in-flight so concurrent handleSendMessage calls
+      // see isRebinding=true and wait instead of sending against a
+      // stale/partially-initialized chatService session.
+      const sendRebindGeneration = rebindTracker.startRebind();
+      try {
+        await chatService.initializeChat(workspace, agentId!, {
+          agentName,
+          agentModel,
+          isInitialWorkspaceAgent,
+        });
+        // Wait for the session to be ready before sending
+        await waitForSessionReady(2000);
+      } catch (error) {
+        // FIX: If initializeChat throws or aborts, revert the tracker so a
+        // subsequent send/rebind attempt for the same workspace ID is not
+        // suppressed. Without this, recordRebind() above leaves the tracker
+        // advanced and hasWorkspaceChanged() returns false, permanently
+        // skipping re-init on future sends.
+        logger.error('Failed to reinitialize chat in send path, reverting tracker', {
+          agentId,
+          workspaceId: workspace.id,
+          error,
+        });
+        rebindTracker.recordRebind(''); // Reset so next attempt re-triggers
+        toast.error('Failed to initialize chat session. Please try again.');
+        return;
+      } finally {
+        rebindTracker.endRebind(sendRebindGeneration);
+      }
     }
 
     try {
@@ -3619,6 +3768,29 @@
               </div>
             </div>
           {/if}
+        {/if}
+
+        <!-- Fallback: Show streaming/processing status when no messages and no pending message -->
+        <!-- This covers the window where the backend starts processing before the user message echo arrives -->
+        {#if !pendingCondition && !messagesCondition && (chatState.isProcessing || chatState.isStreaming || chatState.error || chatState.modelUnavailable)}
+          <div class="w-full">
+            <div class="mb-4">
+              <StreamingStatus
+                isStreaming={chatState.isStreaming}
+                isProcessing={chatState.isProcessing}
+                lastChunkTime={chatState.lastChunkTime}
+                streamingContentLength={chatState.streamingContent?.length ?? 0}
+                error={chatState.error}
+                isStalled={chatState.isStalled}
+                modelUnavailable={chatState.modelUnavailable}
+                {hasPendingPermission}
+                onRetry={handleRetry}
+                onRetryWithModel={handleRetryWithModel}
+                onStop={handleStop}
+                seed={agentId}
+              />
+            </div>
+          </div>
         {/if}
 
         <!-- IMPORTANT: Only show messages when NOT showing pending message to avoid duplicate display -->

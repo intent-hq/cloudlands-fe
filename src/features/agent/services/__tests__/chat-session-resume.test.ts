@@ -50,6 +50,9 @@ describe('Chat Session Resume', () => {
     mockSessionStore = {
       getSession: vi.fn(),
       addSession: vi.fn(),
+      addSessionForWorkspace: vi.fn(),
+      addMessage: vi.fn(),
+      addMessageForWorkspace: vi.fn(),
       setActiveSession: vi.fn(),
     };
     Object.assign(sessionStore, mockSessionStore);
@@ -238,6 +241,141 @@ describe('Chat Session Resume', () => {
         mockWorkspace,
         expect.any(Object),
       );
+    });
+
+    it('should have user message in state BEFORE activateAgent is called (regression)', async () => {
+      // REGRESSION: Previously the user message was added AFTER activation,
+      // meaning the first message could be lost if activation failed or the
+      // backend didn't see it. The fix ensures the optimistic user message is
+      // in local state and sessionStore BEFORE activateAgent runs.
+      const agentId = 'pending-ordering';
+
+      const pendingSession: AgentSession = {
+        id: agentId as any,
+        backendSessionId: null,
+        workspaceId: mockWorkspace.id,
+        name: 'Pending Ordering Agent',
+        status: 'pending' as AgentStatus,
+        messages: [],
+        model: 'claude-3-5-sonnet-latest',
+        systemPrompt: 'You are a helpful assistant',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        isStreaming: false,
+      };
+
+      const activatedSession: AgentSession = {
+        ...pendingSession,
+        backendSessionId: 'backend-ordering' as any,
+        status: 'active' as AgentStatus,
+      };
+
+      mockSessionStore.getSession.mockReturnValue(pendingSession);
+
+      // Capture the messages present in chatService state at the moment
+      // activateAgent is invoked. If the user message is missing here,
+      // the old (broken) ordering is in effect.
+      let messagesAtActivation: any[] | null = null;
+      let sessionStoreAddMessageCalledBeforeActivation = false;
+
+      mockAgentService.activateAgent.mockImplementation(async () => {
+        messagesAtActivation = chatService.getState().messages.slice();
+        return activatedSession;
+      });
+
+      // Track whether sessionStore.addMessageForWorkspace was called before activateAgent.
+      // Production code uses the workspace-aware write path (addMessageForWorkspace) so the
+      // optimistic message lands in the correct workspace even during workspace switches.
+      const activateAgentCallOrder: string[] = [];
+
+      // Wrap addMessageForWorkspace to track call order
+      const originalAddMessageForWorkspace = sessionStore.addMessageForWorkspace;
+      (sessionStore as any).addMessageForWorkspace = vi.fn((...args: any[]) => {
+        activateAgentCallOrder.push('addMessageForWorkspace');
+        return (originalAddMessageForWorkspace as any)(...args);
+      });
+
+      mockAgentService.activateAgent.mockImplementation(async () => {
+        activateAgentCallOrder.push('activateAgent');
+        messagesAtActivation = chatService.getState().messages.slice();
+        return activatedSession;
+      });
+
+      await chatService.loadSession(agentId, mockWorkspace);
+      await chatService.sendMessage('First message ever', mockWorkspace);
+
+      // CRITICAL ASSERTION: The user message must be in local state
+      // at the time activateAgent is called.
+      expect(messagesAtActivation).not.toBeNull();
+      expect(messagesAtActivation!.length).toBeGreaterThanOrEqual(1);
+      const userMsg = messagesAtActivation!.find(
+        (m: any) =>
+          m.role === 'user' &&
+          m.contentBlocks?.some((b: any) => b.text === 'First message ever'),
+      );
+      expect(userMsg).toBeDefined();
+
+      // sessionStore.addMessageForWorkspace must be called BEFORE activateAgent
+      const addIdx = activateAgentCallOrder.indexOf('addMessageForWorkspace');
+      const activateIdx = activateAgentCallOrder.indexOf('activateAgent');
+      expect(addIdx).toBeGreaterThanOrEqual(0);
+      expect(activateIdx).toBeGreaterThanOrEqual(0);
+      expect(addIdx).toBeLessThan(activateIdx);
+
+      // Verify addMessageForWorkspace was called with the correct workspace ID
+      expect(sessionStore.addMessageForWorkspace).toHaveBeenCalledWith(
+        mockWorkspace.id,
+        expect.any(String),
+        expect.objectContaining({
+          role: 'user',
+          contentBlocks: expect.arrayContaining([
+            expect.objectContaining({ text: 'First message ever' }),
+          ]),
+        }),
+      );
+    });
+
+    it('should keep user message visible when activation fails (regression)', async () => {
+      // REGRESSION: If activateAgent throws, the user message must still be
+      // present in local state so the user sees what they typed.
+      const agentId = 'pending-fail';
+
+      const pendingSession: AgentSession = {
+        id: agentId as any,
+        backendSessionId: null,
+        workspaceId: mockWorkspace.id,
+        name: 'Failing Pending Agent',
+        status: 'pending' as AgentStatus,
+        messages: [],
+        model: 'claude-3-5-sonnet-latest',
+        systemPrompt: 'You are a helpful assistant',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        isStreaming: false,
+      };
+
+      mockSessionStore.getSession.mockReturnValue(pendingSession);
+      mockAgentService.activateAgent.mockRejectedValue(new Error('Activation failed'));
+
+      await chatService.loadSession(agentId, mockWorkspace);
+
+      // sendMessage should throw because activation failed
+      await expect(
+        chatService.sendMessage('My important message', mockWorkspace),
+      ).rejects.toThrow('Activation failed');
+
+      // CRITICAL: The user message must still be in local state
+      const state = chatService.getState();
+      const userMsg = state.messages.find(
+        (m) =>
+          m.role === 'user' &&
+          m.contentBlocks?.some((b: any) => b.text === 'My important message'),
+      );
+      expect(userMsg).toBeDefined();
+
+      // Error state should be set
+      expect(state.error).toBeTruthy();
+      expect(state.isProcessing).toBe(false);
     });
 
     it('should preserve message history when activating pending agent', async () => {

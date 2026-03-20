@@ -40,6 +40,7 @@ vi.mock('$features/agent/browser', () => ({
     getSession: vi.fn(),
     getSessionForWorkspace: vi.fn(),
     addSession: vi.fn(),
+    addSessionForWorkspace: vi.fn(),
     setActiveSession: vi.fn(),
     updateMessages: vi.fn(),
     addMessage: vi.fn(),
@@ -56,6 +57,7 @@ vi.mock('$features/agent/browser', () => ({
     setAgent: vi.fn(),
     getAgent: vi.fn(),
   },
+  notifyAgentSubscribers: vi.fn(),
 }));
 
 vi.mock('../../../shared/utils/logger', () => ({
@@ -67,13 +69,15 @@ vi.mock('../../../shared/utils/logger', () => ({
   })),
 }));
 
-vi.mock('../../../shared/utils/memory-manager', () => ({
+vi.mock('../memory-manager', () => ({
   memoryManager: {
-    registerTimer: vi.fn((callback) => {
+    registerTimer: vi.fn((callback: () => void) => {
       const id = setTimeout(callback, 1200000);
-      return { cleanup: () => clearTimeout(id) };
+      return () => clearTimeout(id);
     }),
-    registerListener: vi.fn(() => ({ cleanup: vi.fn() })),
+    registerListener: vi.fn(() => vi.fn()),
+    registerSubscription: vi.fn(),
+    cleanup: vi.fn(),
   },
 }));
 
@@ -930,8 +934,10 @@ describe('ChatService Streaming Race Conditions', () => {
       simulateStreamEvent(sessionId, { type: 'start' });
 
       // Configure sessionStore to return a session with an existing streaming assistant message
+      // FIX: Use getSessionForWorkspace — flushChunkUpdate now uses workspace-aware lookup
+      // via s.session.workspaceId ('test-workspace' from setupSession).
       const knownStreamingId = 'msg_known-streaming-id';
-      vi.mocked(sessionStore.getSession).mockReturnValue({
+      const sessionData = {
         id: sessionId,
         backendSessionId: sessionId,
         workspaceId: 'test-workspace',
@@ -951,7 +957,9 @@ describe('ChatService Streaming Race Conditions', () => {
             isStreaming: true,
           },
         ],
-      } as any);
+      } as any;
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(sessionData);
+      vi.mocked(sessionStore.getSession).mockReturnValue(sessionData);
 
       // Send a chunk — flushChunkUpdate fires immediately (throttle elapsed)
       simulateStreamEvent(sessionId, { type: 'chunk', content: 'Hello' });
@@ -972,6 +980,7 @@ describe('ChatService Streaming Race Conditions', () => {
       setupSession(sessionId);
 
       // sessionStore returns undefined (default mock behavior)
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(undefined as any);
       vi.mocked(sessionStore.getSession).mockReturnValue(undefined as any);
 
       // Start streaming
@@ -1019,6 +1028,353 @@ describe('ChatService Streaming Race Conditions', () => {
 
       // localStreamingContent should be cleared after stream end
       expect((chatService as any).localStreamingContent).toBe('');
+    });
+  });
+
+  describe('Regression: completion clears streaming/processing state', () => {
+    /**
+     * REGRESSION TEST: This test ensures that when a stream completes ('end' event),
+     * the chat service correctly clears both isStreaming and isProcessing flags.
+     *
+     * Without this cleanup, the chat UI would stay stuck in a "processing" state,
+     * preventing features like suggested prompts from becoming visible.
+     */
+    it('should clear isStreaming and isProcessing on stream end event', () => {
+      const sessionId = 'test-completion-cleanup';
+      setupSession(sessionId);
+
+      // Manually set processing/streaming state as sendMessage() would
+      // (The test setup doesn't call sendMessage, so we initialize state directly)
+      (chatService as any).state.update((s: any) => ({
+        ...s,
+        isStreaming: true,
+        isProcessing: true,
+        streamingStartTime: Date.now(),
+      }));
+
+      // Start streaming and add content
+      simulateStreamEvent(sessionId, { type: 'start' });
+      simulateStreamEvent(sessionId, { type: 'chunk', content: 'Hello world' });
+
+      // Verify streaming state is active
+      const stateBeforeEnd = get(chatService.getStore());
+      expect(stateBeforeEnd.isStreaming).toBe(true);
+      expect(stateBeforeEnd.isProcessing).toBe(true);
+
+      // Complete the stream
+      simulateStreamEvent(sessionId, {
+        type: 'end',
+        message: {
+          id: 'msg_completion_test',
+          role: 'assistant',
+          contentBlocks: [{ type: 'text', text: 'Hello world' }],
+        },
+      });
+
+      // CRITICAL: Both flags must be cleared after completion
+      const stateAfterEnd = get(chatService.getStore());
+      expect(stateAfterEnd.isStreaming).toBe(false);
+      expect(stateAfterEnd.isProcessing).toBe(false);
+      expect(stateAfterEnd.streamingContent).toBe('');
+    });
+
+    it('should clear isStreaming and isProcessing on error event', () => {
+      const sessionId = 'test-error-cleanup';
+      setupSession(sessionId);
+
+      // Manually set processing/streaming state as sendMessage() would
+      (chatService as any).state.update((s: any) => ({
+        ...s,
+        isStreaming: true,
+        isProcessing: true,
+        streamingStartTime: Date.now(),
+      }));
+
+      // Start streaming
+      simulateStreamEvent(sessionId, { type: 'start' });
+      simulateStreamEvent(sessionId, { type: 'chunk', content: 'Partial content' });
+
+      // Verify streaming state is active
+      const stateBeforeError = get(chatService.getStore());
+      expect(stateBeforeError.isStreaming).toBe(true);
+      expect(stateBeforeError.isProcessing).toBe(true);
+
+      // Simulate an error event
+      simulateStreamEvent(sessionId, {
+        type: 'error',
+        error: 'Connection lost',
+      });
+
+      // Both flags must be cleared after error
+      const stateAfterError = get(chatService.getStore());
+      expect(stateAfterError.isStreaming).toBe(false);
+      expect(stateAfterError.isProcessing).toBe(false);
+    });
+
+    it('should clear streamingStartTime on completion to allow timer reset', () => {
+      const sessionId = 'test-timer-cleanup';
+      setupSession(sessionId);
+
+      // Manually set streaming state with startTime as sendMessage() would
+      (chatService as any).state.update((s: any) => ({
+        ...s,
+        isStreaming: true,
+        isProcessing: true,
+        streamingStartTime: Date.now(),
+      }));
+
+      // Start streaming
+      simulateStreamEvent(sessionId, { type: 'start' });
+
+      const stateBeforeEnd = get(chatService.getStore());
+      expect(stateBeforeEnd.streamingStartTime).not.toBeNull();
+
+      // Complete the stream
+      simulateStreamEvent(sessionId, {
+        type: 'end',
+        message: {
+          id: 'msg_timer_test',
+          role: 'assistant',
+          contentBlocks: [{ type: 'text', text: 'Done' }],
+        },
+      });
+
+      // streamingStartTime should be cleared
+      const stateAfterEnd = get(chatService.getStore());
+      expect(stateAfterEnd.streamingStartTime).toBeNull();
+    });
+  });
+
+  describe('Content-blocks message reconciliation during streaming', () => {
+    /**
+     * These tests verify the fix for the message count mismatch issue during streaming.
+     *
+     * The bug: When content-blocks events arrive during streaming, the handler would
+     * fetch messages from sessionStore.getSession(). If the user switched workspaces,
+     * sessionStore.getSession() could return stale data from a different workspace
+     * (e.g., 501 messages instead of the current agent's 870 messages). The merge logic
+     * would then incorrectly use this stale data.
+     *
+     * The fix: Always use instance state as the authoritative source for messages.
+     * Only consult sessionStore to pick up externally-added messages (more messages).
+     * Never reduce message count during content-blocks processing.
+     */
+
+    it('should preserve instance messages when sessionStore has fewer messages', () => {
+      const sessionId = 'test-session';
+      setupSession(sessionId);
+
+      // Set up instance state with many messages
+      const existingMessages = [
+        { id: 'msg_user_1', role: 'user', contentBlocks: [{ type: 'text', text: 'Q1' }], timestamp: new Date().toISOString() },
+        { id: 'msg_assistant_1', role: 'assistant', contentBlocks: [{ type: 'text', text: 'A1' }], timestamp: new Date().toISOString() },
+        { id: 'msg_user_2', role: 'user', contentBlocks: [{ type: 'text', text: 'Q2' }], timestamp: new Date().toISOString() },
+        { id: 'msg_streaming', role: 'assistant', contentBlocks: [{ type: 'text', text: 'Streaming...' }], timestamp: new Date().toISOString(), isStreaming: true },
+      ];
+
+      (chatService as any).state.update((s: any) => ({
+        ...s,
+        isStreaming: true,
+        messages: existingMessages,
+      }));
+
+      // Mock sessionStore to return fewer messages (stale data from different workspace)
+      // FIX: Use getSessionForWorkspace — the content-blocks handler now uses workspace-aware
+      // lookup via currentState.session.workspaceId ('test-workspace' from setupSession).
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue({
+        id: sessionId,
+        messages: [
+          { id: 'msg_different_1', role: 'user', contentBlocks: [{ type: 'text', text: 'Different' }] },
+        ],
+      } as any);
+
+      // Send a content-blocks event
+      simulateStreamEvent(sessionId, {
+        type: 'content-blocks',
+        data: [{ type: 'tool_use', id: 'tool_1', name: 'test', input: {} }],
+      });
+
+      // Flush RAF if pending
+      if (rafCallback) rafCallback();
+
+      // Instance state should preserve all 4 original messages.
+      // The merge logic does NOT append brand-new messages from the incoming set
+      // because they may come from a cross-workspace session and belong to a
+      // different agent. Only existing messages are updated in-place.
+      const state = get(chatService.getStore());
+      expect(state.messages.length).toBe(4);
+      expect(state.messages[0].id).toBe('msg_user_1');
+      expect(state.messages[1].id).toBe('msg_assistant_1');
+    });
+
+    it('should update streaming assistant content blocks without losing history', () => {
+      const sessionId = 'test-session';
+      setupSession(sessionId);
+
+      // Set up instance state with conversation history + streaming message
+      const existingMessages = [
+        { id: 'msg_user_1', role: 'user', contentBlocks: [{ type: 'text', text: 'Question' }], timestamp: new Date().toISOString() },
+        { id: 'msg_streaming', role: 'assistant', contentBlocks: [{ type: 'text', text: 'Thinking...' }], timestamp: new Date().toISOString(), isStreaming: true },
+      ];
+
+      (chatService as any).state.update((s: any) => ({
+        ...s,
+        isStreaming: true,
+        messages: existingMessages,
+      }));
+
+      // Mock sessionStore to return the same session
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue({
+        id: sessionId,
+        messages: existingMessages,
+      } as any);
+
+      // Send a content-blocks event with a tool_use block
+      simulateStreamEvent(sessionId, {
+        type: 'content-blocks',
+        data: [{ type: 'tool_use', id: 'tool_1', name: 'search', input: { query: 'test' } }],
+      });
+
+      // Flush RAF if pending
+      if (rafCallback) rafCallback();
+
+      // Should have 2 messages - user question and streaming assistant
+      const state = get(chatService.getStore());
+      expect(state.messages.length).toBe(2);
+
+      // The streaming assistant should now have the tool_use block
+      const lastMessage = state.messages[state.messages.length - 1];
+      expect(lastMessage.role).toBe('assistant');
+      expect(lastMessage.contentBlocks.some((b: any) => b.type === 'tool_use')).toBe(true);
+    });
+
+    it('should handle cross-workspace scenario where sessionStore has completely different messages', () => {
+      const sessionId = 'test-session';
+      setupSession(sessionId);
+
+      // Set up instance state with agent A's conversation (many messages)
+      const agentAMessages = Array.from({ length: 100 }, (_, i) => ({
+        id: `msg_${i}`,
+        role: i % 2 === 0 ? 'user' : 'assistant',
+        contentBlocks: [{ type: 'text', text: `Message ${i}` }],
+        timestamp: new Date().toISOString(),
+        isStreaming: i === 99, // Last message is streaming
+      }));
+
+      (chatService as any).state.update((s: any) => ({
+        ...s,
+        isStreaming: true,
+        messages: agentAMessages,
+      }));
+
+      // Mock sessionStore returning agent B's conversation (fewer, different IDs)
+      // This simulates user having switched to a different workspace
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue({
+        id: sessionId, // Same session ID but from different workspace context
+        messages: [
+          { id: 'msg_b_1', role: 'user', contentBlocks: [{ type: 'text', text: 'Agent B Q1' }] },
+          { id: 'msg_b_2', role: 'assistant', contentBlocks: [{ type: 'text', text: 'Agent B A1' }] },
+        ],
+      } as any);
+
+      // Send a content-blocks event
+      simulateStreamEvent(sessionId, {
+        type: 'content-blocks',
+        data: [{ type: 'tool_result', tool_use_id: 'tool_1', content: 'Result' }],
+      });
+
+      // Flush RAF
+      if (rafCallback) rafCallback();
+
+      // Should preserve all 100 messages from agent A.
+      // The merge logic does NOT append brand-new messages from the incoming set
+      // because they belong to a different workspace/agent.
+      const state = get(chatService.getStore());
+      expect(state.messages.length).toBe(100);
+      expect(state.messages[0].id).toBe('msg_0');
+      expect(state.messages[99].id).toBe('msg_99');
+    });
+
+    it('should not introduce duplicates when merging sessionStore data', () => {
+      const sessionId = 'test-session';
+      setupSession(sessionId);
+
+      // Set up instance state
+      const existingMessages = [
+        { id: 'msg_user_1', role: 'user', contentBlocks: [{ type: 'text', text: 'Q1' }], timestamp: new Date().toISOString() },
+        { id: 'msg_streaming', role: 'assistant', contentBlocks: [{ type: 'text', text: 'Answer' }], timestamp: new Date().toISOString(), isStreaming: true },
+      ];
+
+      (chatService as any).state.update((s: any) => ({
+        ...s,
+        isStreaming: true,
+        messages: existingMessages,
+      }));
+
+      // Mock sessionStore with same messages (no extra, no fewer)
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue({
+        id: sessionId,
+        messages: existingMessages,
+      } as any);
+
+      // Send multiple content-blocks events
+      for (let i = 0; i < 5; i++) {
+        simulateStreamEvent(sessionId, {
+          type: 'content-blocks',
+          data: [{ type: 'tool_use', id: `tool_${i}`, name: 'test', input: {} }],
+        });
+      }
+
+      // Flush RAF
+      if (rafCallback) rafCallback();
+
+      // Should still have exactly 2 messages (no duplicates)
+      const state = get(chatService.getStore());
+      expect(state.messages.length).toBe(2);
+
+      // Check for duplicate message IDs
+      const ids = state.messages.map((m: any) => m.id);
+      const uniqueIds = new Set(ids);
+      expect(uniqueIds.size).toBe(ids.length);
+    });
+
+    it('should preserve ordering of messages during content-blocks reconciliation', () => {
+      const sessionId = 'test-session';
+      setupSession(sessionId);
+
+      // Set up ordered conversation
+      const orderedMessages = [
+        { id: 'msg_1', role: 'user', contentBlocks: [{ type: 'text', text: 'First' }], timestamp: '2024-01-01T10:00:00Z' },
+        { id: 'msg_2', role: 'assistant', contentBlocks: [{ type: 'text', text: 'Second' }], timestamp: '2024-01-01T10:01:00Z' },
+        { id: 'msg_3', role: 'user', contentBlocks: [{ type: 'text', text: 'Third' }], timestamp: '2024-01-01T10:02:00Z' },
+        { id: 'msg_4', role: 'assistant', contentBlocks: [{ type: 'text', text: 'Fourth' }], timestamp: '2024-01-01T10:03:00Z', isStreaming: true },
+      ];
+
+      (chatService as any).state.update((s: any) => ({
+        ...s,
+        isStreaming: true,
+        messages: orderedMessages,
+      }));
+
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue({
+        id: sessionId,
+        messages: orderedMessages,
+      } as any);
+
+      // Send content-blocks event
+      simulateStreamEvent(sessionId, {
+        type: 'content-blocks',
+        data: [{ type: 'tool_use', id: 'tool_1', name: 'test', input: {} }],
+      });
+
+      if (rafCallback) rafCallback();
+
+      // Verify order is preserved
+      const state = get(chatService.getStore());
+      expect(state.messages[0].id).toBe('msg_1');
+      expect(state.messages[1].id).toBe('msg_2');
+      expect(state.messages[2].id).toBe('msg_3');
+      expect(state.messages[3].id).toBe('msg_4');
     });
   });
 
@@ -1094,8 +1450,14 @@ describe('ChatService Streaming Race Conditions', () => {
     beforeEach(() => {
       mockWorkspace = { id: 'test-workspace' };
 
-      // Set up session in sessionStore mock so sendMessage doesn't fail
-      vi.mocked(sessionStore.getSession).mockReturnValue({
+      // Set up session in sessionStore mock so sendMessage doesn't fail.
+      // IMPORTANT: Mock BOTH getSession AND getSessionForWorkspace because
+      // sendMessage uses the workspace-aware lookup when session.workspaceId
+      // is set.  Earlier tests may leave a stale mockReturnValue on
+      // getSessionForWorkspace (vi.clearAllMocks only clears call history,
+      // not mock implementations), which can return a session without
+      // backendSessionId — triggering the activation path and failing.
+      const sessionData = {
         id: 'test-session',
         backendSessionId: 'test-session',
         workspaceId: 'test-workspace',
@@ -1107,7 +1469,9 @@ describe('ChatService Streaming Race Conditions', () => {
         updatedAt: new Date(),
         isStreaming: false,
         messages: [],
-      } as any);
+      } as any;
+      vi.mocked(sessionStore.getSession).mockReturnValue(sessionData);
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(sessionData);
     });
 
     it('should reject duplicate sends within the same second', async () => {
@@ -1147,6 +1511,12 @@ describe('ChatService Streaming Race Conditions', () => {
       (chatService as any).lastMessageTime = 0;
       await chatService.sendMessage('Hello', mockWorkspace);
 
+      // Reset processing/streaming state so the overlap guard doesn't block the second send
+      (chatService as any).state.update((s: any) => ({
+        ...s,
+        isProcessing: false,
+        isStreaming: false,
+      }));
       (chatService as any).lastMessageTime = 0;
       await chatService.sendMessage('Goodbye', mockWorkspace);
 
@@ -1165,6 +1535,12 @@ describe('ChatService Streaming Race Conditions', () => {
       (chatService as any).lastMessageTime = 0;
       await chatService.sendMessage('Hello', mockWorkspace);
 
+      // Reset processing/streaming state so the overlap guard doesn't block the second send
+      (chatService as any).state.update((s: any) => ({
+        ...s,
+        isProcessing: false,
+        isStreaming: false,
+      }));
       // Advance time to next second (different idempotency key)
       currentTime += 1000;
       (chatService as any).lastMessageTime = 0;

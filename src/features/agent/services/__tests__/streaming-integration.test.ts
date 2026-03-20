@@ -68,6 +68,7 @@ vi.mock('$features/agent/browser', () => ({
     getSession: vi.fn(),
     getSessionForWorkspace: vi.fn(),
     addSession: vi.fn(),
+    addSessionForWorkspace: vi.fn(),
     setActiveSession: vi.fn(),
     updateMessages: vi.fn(),
     addMessage: vi.fn(),
@@ -84,6 +85,7 @@ vi.mock('$features/agent/browser', () => ({
     setAgent: vi.fn(),
     getAgent: vi.fn(),
   },
+  notifyAgentSubscribers: vi.fn(),
 }));
 
 vi.mock('../../../shared/utils/logger', () => ({
@@ -95,23 +97,25 @@ vi.mock('../../../shared/utils/logger', () => ({
   })),
 }));
 
-vi.mock('../../../shared/utils/memory-manager', () => ({
+vi.mock('../memory-manager', () => ({
   memoryManager: {
-    registerTimer: vi.fn((callback) => {
+    registerTimer: vi.fn((callback: () => void) => {
       const id = setTimeout(callback, 1200000);
-      return { cleanup: () => clearTimeout(id) };
+      return () => clearTimeout(id);
     }),
-    registerListener: vi.fn((_target, _event, handler) => {
+    registerListener: vi.fn((_target: EventTarget, _event: string, handler: EventListener) => {
       // Actually register the listener so events work
       if (_target === window && typeof _event === 'string') {
         window.addEventListener(_event, handler);
       }
-      return { cleanup: () => {
+      return () => {
         if (_target === window && typeof _event === 'string') {
           window.removeEventListener(_event, handler);
         }
-      }};
+      };
     }),
+    registerSubscription: vi.fn(),
+    cleanup: vi.fn(),
   },
 }));
 
@@ -414,11 +418,15 @@ describe('Streaming Integration Tests', () => {
       setupSession(sessionId);
 
       // Mock sessionStore to return a streaming session (backend already started)
-      vi.mocked(sessionStore.getSession).mockReturnValue({
+      // Use workspace-aware lookup since setupStreaming now prefers getSessionForWorkspace
+      // when the instance has a workspaceId ('test-workspace' from setupSession).
+      const streamingSession = {
         id: sessionId,
         isStreaming: true,
         messages: [],
-      } as any);
+      } as any;
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(streamingSession);
+      vi.mocked(sessionStore.getSession).mockReturnValue(streamingSession);
 
       // Call setupStreaming which dispatches synthetic 'start' event
       // for backend-initiated streams (session.isStreaming === true)

@@ -724,6 +724,30 @@ export const sessionStore = {
       }
     }
   },
+  /**
+   * Update all messages for an agent in a specific workspace.
+   * Unlike updateMessages(), this works even when the user is viewing a different workspace.
+   * Use this when handling retry/cleanup that may occur while user is on another workspace.
+   */
+  updateMessagesForWorkspace: (workspaceId: string, agentId: string, messages: any[]) => {
+    const workspace = unifiedStateStore
+      .getAllWorkspaces()
+      .find((w) => w.workspace?.id === workspaceId);
+    if (workspace) {
+      const agent = workspace.agents.get(agentId as any);
+      if (agent) {
+        // Use separate array copies to prevent shared-reference bug.
+        agent.messages = [...messages];
+        if (agent.session) {
+          agent.session.messages = [...messages];
+        }
+        // Also rebuild messageIdSet to match the new messages
+        agent.messageIdSet = new Set(messages.map((m: any) => m.id));
+        // Schedule batched store update with the target workspace ID and agent ID
+        scheduleStoreUpdate(workspaceId as WorkspaceId, agentId);
+      }
+    }
+  },
   /** @deprecated Use workspace-aware alternative. This method uses currentWorkspace which may be incorrect for background agents. */
   getStats: () => {
     if (import.meta.env.DEV && !deprecationWarningShown.has('getStats')) {
