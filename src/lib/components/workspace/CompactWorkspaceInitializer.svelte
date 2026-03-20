@@ -1874,7 +1874,10 @@
       clearForm({ preserveRepo: stayOnHomePage });
 
       // Notify parent (e.g. modal) that creation succeeded
-      oncreate?.();
+      // Skip if in rapid fire mode — the user wants to stay in the modal to create more workspaces
+      if (!stayOnHomePage) {
+        oncreate?.();
+      }
 
       // Re-focus the text input if staying on the home page
       if (stayOnHomePage) {
