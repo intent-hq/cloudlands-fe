@@ -3850,6 +3850,7 @@ class RefactoredAgentService extends EventEmitter {
                     };
 
                     sessionStore.addMessage(session.id, userMessage);
+                    window.dispatchEvent(new CustomEvent(`agent:session-updated:${session.id}`));
 
                     // Save the session immediately after adding the user message
                     // This ensures the message persists even if the app crashes or refreshes

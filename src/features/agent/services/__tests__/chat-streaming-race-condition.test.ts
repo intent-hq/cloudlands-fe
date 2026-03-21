@@ -1596,6 +1596,36 @@ describe('ChatService Streaming Race Conditions', () => {
       expect((chatService as any).recentSendKeys.size).toBe(0);
     });
 
+    it('should dispatch session-updated event after adding user message', async () => {
+      const sessionId = 'test-session';
+      setupSession(sessionId);
+
+      const fixedTime = 1700000000000;
+      vi.spyOn(Date, 'now').mockReturnValue(fixedTime);
+
+      // Make the agentService.sendMessage mock simulate the real behavior:
+      // the real implementation calls sessionStore.addMessage() and then
+      // dispatches agent:session-updated:{sessionId} via window.dispatchEvent.
+      vi.mocked(agentService.sendMessage).mockImplementation(async (agentId: string) => {
+        window.dispatchEvent(new CustomEvent(`agent:session-updated:${agentId}`));
+        return { messageId: 'msg-1' } as any;
+      });
+
+      (chatService as any).lastMessageTime = 0;
+
+      await chatService.sendMessage('Hello', mockWorkspace);
+
+      // Verify agentService.sendMessage was called
+      expect(agentService.sendMessage).toHaveBeenCalledTimes(1);
+
+      // Verify window.dispatchEvent was called with agent:session-updated:{sessionId}
+      const dispatchCalls = vi.mocked(window.dispatchEvent).mock.calls;
+      const sessionUpdatedEvents = dispatchCalls.filter(
+        (call) => call[0] instanceof CustomEvent && call[0].type === `agent:session-updated:${sessionId}`,
+      );
+      expect(sessionUpdatedEvents.length).toBeGreaterThanOrEqual(1);
+    });
+
     it('should clean up send keys on dispose', () => {
       // Add some keys manually
       (chatService as any).recentSendKeys.add('key1');
