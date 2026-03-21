@@ -2564,8 +2564,9 @@ export class ChatService implements IDisposable {
             ...s,
             messages: deduplicatedMessages,
             // Sync streaming state from session - critical for queued messages
-            isStreaming: newIsStreaming,
-            isProcessing: newIsStreaming,
+            // Use || s.isStreaming to preserve true state during race condition
+            isStreaming: newIsStreaming || s.isStreaming,
+            isProcessing: newIsStreaming || s.isProcessing,
             // Also sync streamingContent if we updated it
             streamingContent: newStreamingContent,
           };

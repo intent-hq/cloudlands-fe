@@ -719,6 +719,98 @@ describe('Streaming Integration Tests', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════
+  // 15. isProcessing preserved when session-updated fires before setStreaming
+  // ═══════════════════════════════════════════════════════════════════════
+  describe('Scenario 15: isProcessing preserved when session-updated fires before setStreaming', () => {
+    it('should not reset isProcessing to false when sessionStore has isStreaming=false due to race', () => {
+      // BUG SCENARIO: sendMessage() sets isProcessing=true and isStreaming=true on the
+      // ChatService instance state. However, sessionStore.setStreaming(true) hasn't been
+      // called yet. Meanwhile, an agent:session-updated event fires (e.g., because the
+      // user message was added to sessionStore). The sessionStore session has isStreaming=false
+      // (stale). Without the fix, sessionUpdatedHandler would set isProcessing=newIsStreaming
+      // which is false, losing the processing indicator. The fix uses:
+      //   isProcessing: newIsStreaming || s.isProcessing
+      // so isProcessing stays true.
+
+      const sessionId = 'session-15';
+      setupSession(sessionId);
+
+      // Register the sessionUpdatedHandler by calling setupStreaming.
+      // Mock sessionStore to return a non-streaming session initially so setupStreaming
+      // doesn't dispatch a synthetic start event.
+      vi.mocked(sessionStore.getSession).mockReturnValue({
+        id: sessionId,
+        backendSessionId: sessionId,
+        workspaceId: 'test-workspace',
+        name: 'Test',
+        status: 'active',
+        messages: [],
+        model: 'test',
+        systemPrompt: '',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        isStreaming: false,
+      } as any);
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue({
+        id: sessionId,
+        isStreaming: false,
+        messages: [],
+      } as any);
+      (chatService as any).setupStreaming(sessionId);
+
+      // Step 1: Simulate sendMessage() having just been called.
+      // sendMessage sets isProcessing=true and starts streaming (which sets isStreaming=true).
+      chatService.getStore().update((s) => ({
+        ...s,
+        isProcessing: true,
+        isStreaming: true,
+      }));
+
+      // Verify initial state
+      const stateBefore = get(chatService.getStore());
+      expect(stateBefore.isProcessing).toBe(true);
+      expect(stateBefore.isStreaming).toBe(true);
+
+      // Step 2: Mock sessionStore to return a session where isStreaming is still false
+      // (setStreaming hasn't been called yet) but a new user message has been added.
+      // The sessionUpdatedHandler uses workspace-aware lookup (getSessionForWorkspace)
+      // when the session has a workspaceId, so we mock both.
+      const userMessage = {
+        id: 'user-msg-1',
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: 'Hello, agent!' }],
+      };
+      const staleSession = {
+        id: sessionId,
+        backendSessionId: sessionId,
+        workspaceId: 'test-workspace',
+        name: 'Test',
+        status: 'active',
+        messages: [userMessage],
+        model: 'test',
+        systemPrompt: '',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        isStreaming: false, // <-- stale: setStreaming(true) hasn't been called yet
+      } as any;
+      vi.mocked(sessionStore.getSession).mockReturnValue(staleSession);
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(staleSession);
+
+      // Step 3: Dispatch session-updated event (triggers sessionUpdatedHandler)
+      window.dispatchEvent(new CustomEvent(`agent:session-updated:${sessionId}`));
+
+      // Step 4: Assert isProcessing and isStreaming are preserved (not reset to false)
+      const stateAfter = get(chatService.getStore());
+      expect(stateAfter.isProcessing).toBe(true);
+      expect(stateAfter.isStreaming).toBe(true);
+
+      // Step 5: Assert messages were updated (user message arrived)
+      expect(stateAfter.messages.length).toBe(1);
+      expect(stateAfter.messages[0].id).toBe('user-msg-1');
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
   // 14. Stuck state auto-recovery (5 minute timeout)
   // ═══════════════════════════════════════════════════════════════════════
   describe('Scenario 14: Stuck state auto-recovery', () => {
