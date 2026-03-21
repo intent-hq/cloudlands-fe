@@ -2577,7 +2577,7 @@ class RefactoredAgentService extends EventEmitter {
       // Listen for queue processing cancellation - undo the effects of agent:queue:processing
       // This fires when the backend's re-check guard detects that a concurrent stream started
       // while waiting for the frontend handler, so it aborts queue processing. We need to
-      // remove the phantom user message that was optimistically added.
+      // remove the phantom user message added by queue processing.
       //
       // IMPORTANT: Do NOT call addSession() here. sessionStore.getSession() returns a copy,
       // and addSession() runs setAgent(), which has message-preservation logic that compares
@@ -3826,59 +3826,38 @@ class RefactoredAgentService extends EventEmitter {
                     // Add to store after validation
                     sessionStore.addSession(session);
 
-                    // Check if this user message already exists in recent messages
-                    // Look through all messages (not just the last one) because an assistant
-                    // message may have been added after the user message during streaming
-                    const recentMessages = session.messages?.slice(-5) || [];
-                    const incomingImageCount = options.imageBlocks?.length || 0;
-                    const incomingFileCount = options.fileBlocks?.length || 0;
-                    const existingUserMessage = recentMessages.find((msg: AgentMessage) => {
-                      if (msg.role !== 'user') return false;
-                      const msgText = msg.contentBlocks?.find((b: any) => b.type === 'text')?.text;
-                      // Compare both text AND attachment counts to avoid false dedup
-                      // of different image-only messages (where text is both "")
-                      const msgImageCount = msg.contentBlocks?.filter((b: any) => b.type === 'image')?.length || 0;
-                      const msgFileCount = msg.contentBlocks?.filter((b: any) => b.type === 'file')?.length || 0;
-                      return msgText === content && msgImageCount === incomingImageCount && msgFileCount === incomingFileCount;
-                    });
-
-                    if (!existingUserMessage) {
-                      // Add user message only if not already present
-                      // Include image and file blocks alongside text so the UI shows attachments
-                      const userContentBlocks: ContentBlock[] = [{ type: 'text' as const, text: content }];
-                      if (options.imageBlocks) {
-                        for (const img of options.imageBlocks) {
-                          userContentBlocks.push({ type: 'image' as const, data: img.data, mimeType: img.mimeType });
-                        }
-                      }
-                      if (options.fileBlocks) {
-                        for (const file of options.fileBlocks) {
-                          userContentBlocks.push({ type: 'file' as const, data: file.data, mimeType: file.mimeType, fileName: file.fileName });
-                        }
-                      }
-                      const userMessage: AgentMessage = {
-                        id: createMessageId(uuidv4()),
-                        role: 'user',
-                        contentBlocks: userContentBlocks,
-                        timestamp: new Date().toISOString(),
-                        metadata: {},
-                      };
-
-                      sessionStore.addMessage(session.id, userMessage);
-
-                      // Save the session immediately after adding the user message
-                      // This ensures the message persists even if the app crashes or refreshes
-                      // For edit/regenerate flows (resetHistory), allow truncation since messages
-                      // were intentionally removed before this save
-                      await this.saveSession(agentId, workspace.id, true, {
-                        allowTruncation: options.resetHistory,
-                      });
-                    } else {
-                      // Remove the optimistic flag from the existing message if present
-                      if (existingUserMessage.metadata) {
-                        delete (existingUserMessage.metadata as any).optimistic;
+                    // Add user message
+                    // Include image and file blocks alongside text so the UI shows attachments
+                    const userContentBlocks: ContentBlock[] = [{ type: 'text' as const, text: content }];
+                    if (options.imageBlocks) {
+                      for (const img of options.imageBlocks) {
+                        userContentBlocks.push({ type: 'image' as const, data: img.data, mimeType: img.mimeType });
                       }
                     }
+                    if (options.fileBlocks) {
+                      for (const file of options.fileBlocks) {
+                        userContentBlocks.push({ type: 'file' as const, data: file.data, mimeType: file.mimeType, fileName: file.fileName });
+                      }
+                    }
+                    const userMessage: AgentMessage = {
+                      id: createMessageId(uuidv4()),
+                      role: 'user',
+                      contentBlocks: userContentBlocks,
+                      timestamp: new Date().toISOString(),
+                      metadata: options.contextReferences?.length
+                        ? { contextReferences: options.contextReferences }
+                        : {},
+                    };
+
+                    sessionStore.addMessage(session.id, userMessage);
+
+                    // Save the session immediately after adding the user message
+                    // This ensures the message persists even if the app crashes or refreshes
+                    // For edit/regenerate flows (resetHistory), allow truncation since messages
+                    // were intentionally removed before this save
+                    await this.saveSession(agentId, workspace.id, true, {
+                      allowTruncation: options.resetHistory,
+                    });
 
                     // Clear isStreaming flag on ALL old assistant messages
                     // before starting a new stream. Without this, old messages with stale
@@ -5104,14 +5083,6 @@ class RefactoredAgentService extends EventEmitter {
         // No timeout - let the agent take as long as it needs
       },
     );
-  }
-
-  /**
-   * Add an optimistic message to the session
-   * This is used to immediately show user messages in the UI before backend processing
-   */
-  addOptimisticMessage(agentId: string, message: AgentMessage): void {
-    sessionStore.addMessage(agentId, message);
   }
 
   /**

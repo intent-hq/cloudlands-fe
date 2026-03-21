@@ -73,11 +73,6 @@ export interface ChatState {
   lastAttemptedMessage: {
     text: string;
     options?: SendMessageOptions;
-    /** ID of the optimistic user message created during sendMessage().
-     *  Used for safe retry cleanup: we match on this ID instead of text content
-     *  to avoid accidentally deleting a legitimate historical message when the
-     *  user repeats the same prompt. */
-    optimisticMessageId?: string;
   } | null;
   /** Model unavailable info - set when a model fails and user can retry with another */
   modelUnavailable: {
@@ -1137,7 +1132,7 @@ export class ChatService implements IDisposable {
       // trust it — it's the most up-to-date source during HMR. Without this, isCurrentlyStreaming
       // would be false after HMR, causing the sessionUpdatedHandler guard to fail, which allows
       // stale disk data from loadAgentsFromDisk to overwrite in-memory messages (including
-      // optimistic user messages that haven't been persisted to disk yet).
+      // user messages that haven't been persisted to disk yet).
       if (hasActiveStream && !isCurrentlyStreaming) {
         isCurrentlyStreaming = true;
         logger.info('Preserving streaming state from instance', {
@@ -1319,10 +1314,8 @@ export class ChatService implements IDisposable {
       throw new Error('Message cannot be empty');
     }
 
-    // Normalize: trim whitespace/newlines so that sendKey, optimistic message text,
-    // and the downstream agentService.sendMessage all use the same canonical form.
-    // Without this, trailing whitespace can bypass content-based deduplication
-    // (AgentService compares stored message text verbatim).
+    // Normalize: trim whitespace/newlines so that sendKey and the downstream
+    // agentService.sendMessage all use the same canonical form.
     message = message?.trim() ?? '';
 
     // Check message length (only if message is provided)
@@ -1551,68 +1544,26 @@ export class ChatService implements IDisposable {
       });
     }
 
-    // Add optimistic user message with unique ID
-    const userMessage: AgentMessage = {
-      id: createMessageId(`msg_${uuidv4()}`),
-      role: 'user',
-      contentBlocks,
-      timestamp: new Date().toISOString(),
-      // Store context references in metadata for display in ChatMessage
-      metadata: options?.contextReferences?.length
-        ? { contextReferences: options.contextReferences }
-        : undefined,
-    };
-
     // Reset local accumulator when sending a new message
     this.localStreamingContent = '';
 
-    this.state.update((s) => {
-      // Check for duplicate message ID before adding
-      // This prevents the Svelte "duplicate key" error in keyed each blocks
-      const isDuplicate = s.messages.some((m) => m.id === userMessage.id);
-      if (isDuplicate) {
-        logger.debug('Skipping duplicate user message in ChatService state', {
-          messageId: userMessage.id,
-        });
-        return {
-          ...s,
-          isProcessing: true,
-          isStreaming: true,
-          streamingContent: '',
-          error: null,
-          streamingStartTime: Date.now(),
-          lastChunkTime: null, // Reset so stall detection treats this as a fresh stream
-          isStalled: false,
-          lastAttemptedMessage: { text: message.trim(), options, optimisticMessageId: userMessage.id },
-        };
-      }
-      return {
-        ...s,
-        messages: [...s.messages, userMessage],
-        isProcessing: true,
-        isStreaming: true, // Set streaming immediately when sending
-        streamingContent: '',
-        error: null,
-        streamingStartTime: Date.now(), // Track when streaming started for debug info
-        lastChunkTime: null, // Reset so stall detection treats this as a fresh stream
-        isStalled: false,
-        // Store message for retry functionality
-        lastAttemptedMessage: { text: message.trim(), options, optimisticMessageId: userMessage.id },
-      };
-    });
+    this.state.update((s) => ({
+      ...s,
+      isProcessing: true,
+      isStreaming: true,
+      streamingContent: '',
+      error: null,
+      streamingStartTime: Date.now(),
+      lastChunkTime: null, // Reset so stall detection treats this as a fresh stream
+      isStalled: false,
+      // Store message for retry functionality
+      lastAttemptedMessage: { text: message.trim(), options },
+    }));
 
-    // Sync user message to sessionStore IMMEDIATELY after adding to local state
-    // This prevents duplicate messages. AgentService.sendMessage() checks sessionStore for
-    // existing messages with the same content (content-based deduplication). Without this sync,
-    // there's a race condition where AgentService doesn't see the optimistic message and adds
-    // another user message with a different ID, resulting in duplicates.
-    // FIX: Use workspace-aware write path so the optimistic message lands in the correct
-    // workspace even if the user switches workspaces during activation/send.
-    // CROSS-WORKSPACE FIX: Use the session's own workspaceId (not the passed-in workspace
-    // param which reflects the *current* UI workspace) so the optimistic message lands in
-    // the correct workspace even if the user switched workspaces during send.
-    const optimisticWorkspaceId = (currentState.session?.workspaceId ?? workspace.id) as string;
-    sessionStore.addMessageForWorkspace(optimisticWorkspaceId, session.id, userMessage);
+    // Resolve the workspace identity for activation and send.
+    // Use the session's own workspaceId (not the passed-in workspace param which
+    // reflects the *current* UI workspace) so activation targets the correct workspace.
+    const sessionWorkspaceId = (currentState.session?.workspaceId ?? workspace.id) as string;
 
     // Dispatch event so UI components can show running state immediately
     if (typeof window !== 'undefined') {
@@ -1624,8 +1575,6 @@ export class ChatService implements IDisposable {
     }
 
     // Lazy activation: if agent is pending, activate it now on first message.
-    // This runs AFTER the optimistic user message is added to state so the user
-    // sees their message immediately while activation (which can take seconds) proceeds.
     if (needsActivation) {
       logger.info('Agent is pending, activating on first message', {
         agentId: session.id,
@@ -1633,7 +1582,7 @@ export class ChatService implements IDisposable {
       });
 
       try {
-        const activatedAgent = await agentService.activateAgent(session.id, optimisticWorkspaceId);
+        const activatedAgent = await agentService.activateAgent(session.id, sessionWorkspaceId);
         if (!activatedAgent) {
           throw new Error('Failed to activate agent');
         }
@@ -1712,9 +1661,9 @@ export class ChatService implements IDisposable {
 
       // Send message through agent service
       // WORKSPACE ALIGNMENT FIX: Use the same workspace identity that was used for
-      // activation and optimistic message sync. If the user switched workspaces between
-      // creating the agent and sending, `workspace` (from the UI) may have a different
-      // id than `optimisticWorkspaceId` (from the session). Passing the wrong workspace
+      // activation. If the user switched workspaces between creating the agent and
+      // sending, `workspace` (from the UI) may have a different id than
+      // `sessionWorkspaceId` (from the session). Passing the wrong workspace
       // would cause agentService to activate/resume in the wrong workspace context.
       //
       // METADATA FIX: Look up the full workspace from unifiedStateStore instead of
@@ -1722,9 +1671,9 @@ export class ChatService implements IDisposable {
       // (worktreePath, repositoryPath, etc.) from the UI workspace, which can mis-target
       // activation or workspace-ready checks in agentService.sendMessage().
       let sendWorkspace = workspace;
-      if (optimisticWorkspaceId !== workspace.id) {
-        const targetWsState = unifiedStateStore.getWorkspace(optimisticWorkspaceId as WorkspaceId);
-        sendWorkspace = targetWsState?.workspace ?? { ...workspace, id: optimisticWorkspaceId as WorkspaceId };
+      if (sessionWorkspaceId !== workspace.id) {
+        const targetWsState = unifiedStateStore.getWorkspace(sessionWorkspaceId as WorkspaceId);
+        sendWorkspace = targetWsState?.workspace ?? { ...workspace, id: sessionWorkspaceId as WorkspaceId };
       }
       await agentService.sendMessage(session.id, message, sendWorkspace, {
         contextReferences: allContextReferences,
@@ -1752,8 +1701,7 @@ export class ChatService implements IDisposable {
       const isInterrupted = errorMessage.includes('Agent interrupted');
 
       if (isInterrupted) {
-        // Agent was interrupted (user pressed stop) - don't remove the user message
-        // The message was sent and there may be partial response, just clear streaming state
+        // Agent was interrupted (user pressed stop) - just clear streaming state
         logger.debug(
           '[ChatService] Agent interrupted - keeping messages, clearing streaming state',
         );
@@ -1765,10 +1713,9 @@ export class ChatService implements IDisposable {
           // Don't set error for interruptions - it's user-initiated
         }));
       } else {
-        // Real error - remove optimistic message
+        // Real error - clear streaming state and set error
         this.state.update((s) => ({
           ...s,
-          messages: s.messages.filter((m) => m.id !== userMessage.id),
           isProcessing: false,
           isStreaming: false,
           streamingStartTime: null,
@@ -2141,70 +2088,14 @@ export class ChatService implements IDisposable {
 
     if (currentState.lastAttemptedMessage) {
       // Standard path: retry from stored message
-      const { text, options, optimisticMessageId } = currentState.lastAttemptedMessage;
+      const { text, options } = currentState.lastAttemptedMessage;
 
-      // Remove the previous optimistic user message before retrying.
-      // When activation fails, the optimistic user message from the original
-      // sendMessage() call remains in local state and sessionStore. If we call
-      // sendMessage() again without removing it, a second user message (with a
-      // new ID) is appended, creating a duplicate. We remove the optimistic
-      // message here so sendMessage() can cleanly add a fresh one.
-      //
-      // SAFETY: Prefer matching by optimisticMessageId (the exact ID created
-      // during sendMessage). This avoids false positives when the user repeats
-      // the same prompt — text-only matching would delete a legitimate
-      // historical message if the real optimistic message was already removed.
-      // Fall back to text matching only when no ID is available (legacy state).
-      let optimisticMessage: AgentMessage | undefined;
-      if (optimisticMessageId) {
-        optimisticMessage = currentState.messages.find(
-          (m) => m.id === optimisticMessageId && m.role === 'user',
-        );
-      } else {
-        // Legacy fallback: match by text (pre-existing lastAttemptedMessage without ID)
-        const lastUserMessage = [...currentState.messages]
-          .reverse()
-          .find((m) => m.role === 'user');
-        const lastUserMessageText = lastUserMessage?.contentBlocks
-          ?.find((b: ContentBlock) => b.type === 'text' && 'text' in b);
-        if (
-          lastUserMessage &&
-          lastUserMessageText && 'text' in lastUserMessageText &&
-          lastUserMessageText.text === text
-        ) {
-          optimisticMessage = lastUserMessage;
-        }
-      }
-      const isOptimisticMessage = !!optimisticMessage;
-
-      // Clear error state and remove the stale optimistic message before retrying
+      // Clear error state before retrying
       this.state.update((s) => ({
         ...s,
         error: null,
         lastAttemptedMessage: null,
-        messages: isOptimisticMessage
-          ? s.messages.filter((m) => m.id !== optimisticMessage!.id)
-          : s.messages,
       }));
-
-      // Also remove from sessionStore so the re-sent message doesn't create a
-      // duplicate in the store (sendMessage calls addMessageForWorkspace).
-      // FIX: Use workspace-aware write path so cleanup targets the correct
-      // workspace even if the user switched workspaces before retrying.
-      if (isOptimisticMessage && currentState.session) {
-        const agentId = currentState.session.id;
-        const workspaceId = currentState.session.workspaceId ?? workspace.id;
-        const storeSession = sessionStore.getSessionForWorkspace(
-          workspaceId as string,
-          agentId,
-        );
-        if (storeSession) {
-          const filtered = (storeSession.messages || []).filter(
-            (m: any) => m.id !== optimisticMessage!.id,
-          );
-          sessionStore.updateMessagesForWorkspace(workspaceId as string, agentId, filtered);
-        }
-      }
 
       logger.info('Retrying last message', { messageLength: text.length });
 
@@ -2238,62 +2129,15 @@ export class ChatService implements IDisposable {
 
     if (currentState.lastAttemptedMessage) {
       // Standard path: retry from stored message with new model
-      const { text, options, optimisticMessageId } = currentState.lastAttemptedMessage;
+      const { text, options } = currentState.lastAttemptedMessage;
 
-      // Remove the previous optimistic user message before retrying (same
-      // rationale as retryLastMessage — prevents duplicate user messages when
-      // the original send failed during activation).
-      //
-      // SAFETY: Prefer ID-based matching. See retryLastMessage for rationale.
-      let optimisticMessage: AgentMessage | undefined;
-      if (optimisticMessageId) {
-        optimisticMessage = currentState.messages.find(
-          (m) => m.id === optimisticMessageId && m.role === 'user',
-        );
-      } else {
-        // Legacy fallback: match by text
-        const lastUserMessage = [...currentState.messages]
-          .reverse()
-          .find((m) => m.role === 'user');
-        const lastUserMessageText = lastUserMessage?.contentBlocks
-          ?.find((b: ContentBlock) => b.type === 'text' && 'text' in b);
-        if (
-          lastUserMessage &&
-          lastUserMessageText && 'text' in lastUserMessageText &&
-          lastUserMessageText.text === text
-        ) {
-          optimisticMessage = lastUserMessage;
-        }
-      }
-      const isOptimisticMessage = !!optimisticMessage;
-
-      // Clear error, modelUnavailable, and remove the stale optimistic message
+      // Clear error and modelUnavailable state before retrying
       this.state.update((s) => ({
         ...s,
         error: null,
         modelUnavailable: null,
         lastAttemptedMessage: null,
-        messages: isOptimisticMessage
-          ? s.messages.filter((m) => m.id !== optimisticMessage!.id)
-          : s.messages,
       }));
-
-      // FIX: Use workspace-aware write path so cleanup targets the correct
-      // workspace even if the user switched workspaces before retrying.
-      if (isOptimisticMessage && currentState.session) {
-        const agentId = currentState.session.id;
-        const workspaceId = currentState.session.workspaceId ?? workspace.id;
-        const storeSession = sessionStore.getSessionForWorkspace(
-          workspaceId as string,
-          agentId,
-        );
-        if (storeSession) {
-          const filtered = (storeSession.messages || []).filter(
-            (m: any) => m.id !== optimisticMessage!.id,
-          );
-          sessionStore.updateMessagesForWorkspace(workspaceId as string, agentId, filtered);
-        }
-      }
 
       logger.info('Retrying last message with different model', {
         messageLength: text.length,
@@ -2716,61 +2560,6 @@ export class ChatService implements IDisposable {
             return true;
           });
 
-          // FIX: Never drop user messages that exist in instance state but not in sessionStore.
-          // This preserves optimistic user messages that were added to ChatService state
-          // but haven't yet been synced to sessionStore (e.g., during force-submit timing).
-          if (deduplicatedMessages.length < s.messages.length) {
-            const sessionIds = new Set(deduplicatedMessages.map(m => m.id));
-            const missingUserMessages = s.messages.filter(
-              m => m.role === 'user' && !sessionIds.has(m.id)
-            );
-            if (missingUserMessages.length > 0) {
-              logger.warn('[ChatService] sessionUpdatedHandler: preserving optimistic user messages not in sessionStore', {
-                sessionId,
-                missingCount: missingUserMessages.length,
-                missingIds: missingUserMessages.map(m => m.id),
-                currentCount: s.messages.length,
-                sessionCount: deduplicatedMessages.length,
-              });
-              // Merge: insert missing user messages at their original positions
-              const mergedMessages = [...deduplicatedMessages];
-              for (const msg of missingUserMessages) {
-                if (!seen.has(msg.id)) {
-                  mergedMessages.push(msg);
-                  seen.add(msg.id);
-                }
-              }
-              // Sort by timestamp to maintain correct order
-              mergedMessages.sort((a, b) => {
-                const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
-                const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-                return timeA - timeB;
-              });
-
-              // FIX: Write missing messages back to sessionStore so they survive ChatService destruction.
-              // addMessageForWorkspace is idempotent (uses messageIdSet for O(1) dedup).
-              const workspaceId = session?.workspaceId;
-              if (workspaceId) {
-                for (const msg of missingUserMessages) {
-                  sessionStore.addMessageForWorkspace(workspaceId, sessionId, msg);
-                }
-                // Debounced save to disk so messages survive page refresh
-                agentService.saveSession(sessionId, workspaceId, true).catch(err =>
-                  logger.warn('Failed to persist write-back of optimistic messages', { sessionId, error: err })
-                );
-              }
-
-              return {
-                ...s,
-                messages: mergedMessages,
-                isStreaming: newIsStreaming,
-                isProcessing: newIsStreaming,
-                streamingContent: newStreamingContent,
-
-              };
-            }
-          }
-
           return {
             ...s,
             messages: deduplicatedMessages,
@@ -3124,46 +2913,7 @@ export class ChatService implements IDisposable {
       // comment above for full explanation of the race condition this prevents.
 
       // Update instance state
-      // FIX: Never reduce message count during content-blocks processing.
-      // This prevents losing optimistic user messages when sessionStore returns
-      // stale data that doesn't include recently added messages.
-      let contentBlocksMissingUserMessages: AgentMessage[] = [];
       this.safeStateUpdate((s) => {
-        // CROSS-WORKSPACE FIX: If current state has significantly more messages,
-        // this likely indicates we got stale data from a different workspace/session.
-        // In this case, only update the last assistant message with new content blocks,
-        // preserving all other messages from instance state.
-        if (updatedMessages.length < s.messages.length) {
-          logger.warn('[ChatService] content-blocks: would reduce message count — preserving instance state', {
-            sessionId,
-            currentCount: s.messages.length,
-            incomingCount: updatedMessages.length,
-          });
-
-          // Merge: replace existing messages with updated versions (to pick up new
-          // content blocks on the streaming assistant), preserve messages only in
-          // s.messages (optimistic user messages). Do NOT append brand-new messages here
-          // because updatedMessages may come from a cross-workspace session and those
-          // "new" messages belong to a different agent.
-          const updatedById = new Map(updatedMessages.map(m => [m.id, m]));
-          const mergedMessages = s.messages.map(m => updatedById.get(m.id) ?? m);
-
-          // FIX: Capture missing user messages for write-back to sessionStore
-          const incomingIds = new Set(updatedMessages.map(m => m.id));
-          contentBlocksMissingUserMessages = s.messages.filter(
-            m => m.role === 'user' && !incomingIds.has(m.id)
-          );
-
-          return {
-            ...s,
-            messages: mergedMessages,
-            // FIX: Preserve current isStreaming state — a late content-blocks event
-            // arriving after stream end/error must not flip isStreaming back to true.
-            isStreaming: s.isStreaming,
-            streamingContent: hasNewToolUse ? '' : s.streamingContent,
-          };
-        }
-
         return {
           ...s,
           messages: updatedMessages,
@@ -3173,22 +2923,6 @@ export class ChatService implements IDisposable {
           streamingContent: hasNewToolUse ? '' : s.streamingContent,
         };
       });
-
-      // FIX: Write missing user messages back to sessionStore so they survive ChatService destruction.
-      // Use the instance's workspaceId (tied to this session) instead of sessionStore.getSession()
-      // which depends on currentWorkspace and may miss the session during cross-workspace streaming.
-      if (contentBlocksMissingUserMessages.length > 0) {
-        const cbWorkspaceId = instanceWorkspaceId ?? sessionStore.getSession(sessionId)?.workspaceId;
-        if (cbWorkspaceId) {
-          for (const msg of contentBlocksMissingUserMessages) {
-            sessionStore.addMessageForWorkspace(cbWorkspaceId as string, sessionId, msg);
-          }
-          // Debounced save to disk
-          agentService.saveSession(sessionId, cbWorkspaceId as string, true).catch(err =>
-            logger.warn('Failed to persist write-back of optimistic messages (content-blocks)', { sessionId, error: err })
-          );
-        }
-      }
     } else if (data.type === 'end' || data.type === 'complete') {
       // Handle both 'end' and 'complete' events (different sources may use different names)
       logger.info('[ChatService] Handling complete/end event', {
@@ -3258,7 +2992,7 @@ export class ChatService implements IDisposable {
         }
       }
       // FIX: Fall back to ChatService instance state if no session found anywhere.
-      // This prevents wiping optimistic user messages when the session can't be
+      // This prevents wiping user messages when the session can't be
       // found in any workspace (e.g., during force-submit timing edge cases).
       const currentInstanceMessages = get(this.state).messages;
       const existingMessages = session?.messages ?? currentInstanceMessages;
@@ -3402,58 +3136,17 @@ export class ChatService implements IDisposable {
       }
 
       // Update instance state
-      // FIX: Preserve optimistic user messages that may not be in updatedMessages yet
-      let endMissingUserMessages: AgentMessage[] = [];
       this.safeStateUpdate((s) => {
-        let finalMessages = updatedMessages;
-        if (updatedMessages.length < s.messages.length) {
-          const updatedIds = new Set(updatedMessages.map(m => m.id));
-          const missing = s.messages.filter(
-            m => m.role === 'user' && !updatedIds.has(m.id)
-          );
-          if (missing.length > 0) {
-            logger.warn('[ChatService] end: preserving optimistic user messages during finalization', {
-              sessionId,
-              missingCount: missing.length,
-              missingIds: missing.map(m => m.id),
-            });
-            finalMessages = [...updatedMessages, ...missing].sort((a, b) => {
-              const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
-              const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-              return timeA - timeB;
-            });
-            // Capture for write-back after state update
-            endMissingUserMessages = missing;
-          }
-        }
         return {
           ...s,
-          messages: finalMessages,
+          messages: updatedMessages,
           isStreaming: false,
           isProcessing: false,
           streamingContent: '',
           streamingStartTime: null,
           lastAttemptedMessage: null,
-
         };
       });
-
-      // FIX: Write missing user messages back to sessionStore so they survive ChatService destruction.
-      // Use the instance's workspaceId (tied to this session) instead of sessionStore.getSession()
-      // which depends on currentWorkspace and may miss the session during cross-workspace streaming.
-      if (endMissingUserMessages.length > 0) {
-        const endInstanceWorkspaceId = get(this.state).session?.workspaceId;
-        const endWorkspaceId = endInstanceWorkspaceId ?? session?.workspaceId;
-        if (endWorkspaceId) {
-          for (const msg of endMissingUserMessages) {
-            sessionStore.addMessageForWorkspace(endWorkspaceId as string, sessionId, msg);
-          }
-          // Debounced save to disk
-          agentService.saveSession(sessionId, endWorkspaceId as string, true).catch(err =>
-            logger.warn('Failed to persist write-back of optimistic messages (end)', { sessionId, error: err })
-          );
-        }
-      }
 
     } else if (data.type === 'error') {
       // Stop stall detection on error
@@ -3709,7 +3402,7 @@ export class ChatService implements IDisposable {
   }
 
   /**
-   * Update messages directly (for optimistic updates, etc.)
+   * Update messages directly.
    */
   updateMessages(messages: AgentMessage[]): void {
     this.state.update((s) => ({

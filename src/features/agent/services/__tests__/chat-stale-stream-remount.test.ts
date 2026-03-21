@@ -294,9 +294,9 @@ describe('Stale-stream remount and workspace rebind', () => {
     });
 
     /**
-     * REGRESSION: User message sent before workspace rebind must survive.
+     * REGRESSION: User message present before workspace rebind must survive.
      */
-    it('should preserve optimistic user message through workspace rebind', async () => {
+    it('should preserve user message through workspace rebind', async () => {
       const wsOld = makeWorkspace('ws-old');
       const wsNew = makeWorkspace('ws-new');
 
@@ -307,7 +307,7 @@ describe('Stale-stream remount and workspace rebind', () => {
       expect(get(chatService.getStore()).messages).toHaveLength(0);
 
       // Rebind to new workspace where the user message exists
-      const userMsg = createMessage('msg_user_optimistic', 'user', 'My important question');
+      const userMsg = createMessage('msg_user_1', 'user', 'My important question');
       const sessionWithMsg = makeSession(AGENT_ID, 'ws-new', [userMsg], true);
       configureMocks('ws-new', sessionWithMsg, { streamingActive: true });
 
@@ -315,7 +315,7 @@ describe('Stale-stream remount and workspace rebind', () => {
 
       const state = get(chatService.getStore());
       expect(state.messages).toHaveLength(1);
-      expect(state.messages[0].id).toBe('msg_user_optimistic');
+      expect(state.messages[0].id).toBe('msg_user_1');
       expect(state.messages[0].role).toBe('user');
       expect(state.isStreaming).toBe(true);
     });
