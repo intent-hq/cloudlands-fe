@@ -1726,14 +1726,6 @@ export class AugmentApiClient {
       parsed.merged === true ||
       (mergedAtValue !== undefined && mergedAtValue !== null && mergedAtValue !== 'null');
 
-    logger.info('PR state determination (DEBUG)', {
-      originalState: parsed.state,
-      merged: parsed.merged,
-      merged_at: parsed.merged_at,
-      isMerged,
-      finalState: isMerged ? 'merged' : state,
-    });
-
     if (isMerged) {
       state = 'merged';
     } else if (parsed.draft === true && state === 'open') {
