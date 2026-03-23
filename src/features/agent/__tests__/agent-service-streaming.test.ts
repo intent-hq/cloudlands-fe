@@ -400,6 +400,7 @@ describe('AgentService dispatch/handler methods', () => {
       electronAPI: {
         on: mockOn,
         off: mockOff,
+        offById: vi.fn(),
         removeAllListeners: vi.fn(),
         invoke: vi.fn(),
         send: vi.fn(),
@@ -648,6 +649,118 @@ describe('AgentService dispatch/handler methods', () => {
       totalPendingEvents: 0,
       hasOrphanedHandlers: false,
       oldestPendingEventAge: null,
+    });
+  });
+
+  // ─── forceReregister IPC listener cleanup (regression tests) ───────────
+  describe('forceReregister IPC listener cleanup', () => {
+    const agentId = 'agent-force-reregister';
+    let originalGetSession: any;
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+
+      // Clear state that may leak from prior scenarios
+      (agentService as any).activeStreamHandlers.clear();
+      (agentService as any).activePingHandlers.clear();
+      (agentService as any).pendingEventQueue.clearAll();
+
+      // Mock sessionStore.getSession to return a session with workspaceId
+      originalGetSession = mockSessionStore.getSession;
+      mockSessionStore.getSession = vi.fn(() => ({ workspaceId: 'ws-1' }));
+
+      // Mock registerStreamHandlerForSession to avoid its heavy dependencies
+      vi.spyOn(agentService as any, 'registerStreamHandlerForSession').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      mockSessionStore.getSession = originalGetSession;
+    });
+
+    it('ensureStreamHandler with forceReregister calls offById to remove old IPC listener', () => {
+      // Seed an existing handler with a listenerId
+      (agentService as any).activeStreamHandlers.set(agentId, {
+        channel: `agent:stream:${agentId}`,
+        handler: vi.fn(),
+        listenerId: 'old-listener-123',
+        registeredAt: Date.now(),
+      });
+
+      agentService.ensureStreamHandler(agentId, { forceReregister: true });
+
+      // offById should have been called with the old handler's channel and listenerId
+      expect(window.electronAPI.offById).toHaveBeenCalledWith(
+        `agent:stream:${agentId}`,
+        'old-listener-123',
+      );
+    });
+
+    it('ensureStreamHandler with forceReregister cleans up ping handler', () => {
+      // Seed existing stream handler
+      (agentService as any).activeStreamHandlers.set(agentId, {
+        channel: `agent:stream:${agentId}`,
+        handler: vi.fn(),
+        listenerId: 'stream-lid',
+        registeredAt: Date.now(),
+      });
+      // Seed existing ping handler
+      (agentService as any).activePingHandlers.set(agentId, {
+        channel: `agent:stream:ping:${agentId}`,
+        handler: vi.fn(),
+        listenerId: 'ping-lid',
+      });
+
+      agentService.ensureStreamHandler(agentId, { forceReregister: true });
+
+      // Both stream and ping listeners should be cleaned up via offById
+      expect(window.electronAPI.offById).toHaveBeenCalledWith(
+        `agent:stream:${agentId}`,
+        'stream-lid',
+      );
+      expect(window.electronAPI.offById).toHaveBeenCalledWith(
+        `agent:stream:ping:${agentId}`,
+        'ping-lid',
+      );
+      // Ping handler should be removed from the map
+      expect((agentService as any).activePingHandlers.has(agentId)).toBe(false);
+    });
+
+    it('ensureStreamHandler with forceReregister clears pending events', () => {
+      // Seed existing handler
+      (agentService as any).activeStreamHandlers.set(agentId, {
+        channel: `agent:stream:${agentId}`,
+        handler: vi.fn(),
+        listenerId: 'lid',
+        registeredAt: Date.now(),
+      });
+      // Queue some pending events
+      (agentService as any).pendingEventQueue.queue(agentId, 'chunk', { data: 'a' });
+      (agentService as any).pendingEventQueue.queue(agentId, 'chunk', { data: 'b' });
+      expect((agentService as any).pendingEventQueue.has(agentId)).toBe(true);
+
+      agentService.ensureStreamHandler(agentId, { forceReregister: true });
+
+      // Pending events should be cleared
+      expect((agentService as any).pendingEventQueue.has(agentId)).toBe(false);
+    });
+
+    it('ensureStreamHandler without forceReregister does not remove existing handler', () => {
+      const existingHandler = {
+        channel: `agent:stream:${agentId}`,
+        handler: vi.fn(),
+        listenerId: 'keep-me',
+        registeredAt: Date.now(),
+      };
+      (agentService as any).activeStreamHandlers.set(agentId, existingHandler);
+
+      const result = agentService.ensureStreamHandler(agentId);
+
+      // Should return early without cleaning up
+      expect(result).toEqual({ created: false, channel: `agent:stream:${agentId}` });
+      expect(window.electronAPI.offById).not.toHaveBeenCalled();
+      // Handler should still be in the map
+      expect((agentService as any).activeStreamHandlers.get(agentId)).toBe(existingHandler);
     });
   });
 });

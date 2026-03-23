@@ -1197,11 +1197,10 @@ class RefactoredAgentService extends EventEmitter {
       return { created: false, channel: streamChannel };
     }
 
-    // If forceReregister, clear the stale entry first
+    // If forceReregister, clean up the old handler first (including IPC listener)
     if (forceReregister && this.activeStreamHandlers.has(agentId)) {
-      logger.debug('Force-reregistering stream handler, clearing stale entry', { agentId });
-      this.activeStreamHandlers.delete(agentId);
-      this.pendingStreamRegistrations.delete(agentId);
+      logger.info('Force-reregistering stream handler, cleaning up old handler first', { agentId });
+      this.cleanupStreamHandler(agentId);
     }
 
     // Resolve workspace ID
