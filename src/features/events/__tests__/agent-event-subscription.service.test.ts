@@ -3096,4 +3096,67 @@ describe('AgentEventSubscriptionService', () => {
     });
   });
 
+  describe('Duplicate wake-up prevention (immediateDeliveryEventIds)', () => {
+    it('should deliver exactly once when both a high-priority oneShot and a normal subscription match the same event', async () => {
+      // Regression: before the fix, a single agent:idle event could match
+      // (1) a high-priority oneShot delegation subscription → immediate delivery, AND
+      // (2) a normal-priority broad subscription → queued delivery,
+      // resulting in the parent agent receiving two wake-up notifications.
+      //
+      // We use fake timers so we can advance past the default 500ms batch window
+      // and prove no second delivery fires from the queue.
+      vi.useFakeTimers();
+      try {
+        const delivery = vi.fn().mockReturnValue({ status: 'success' as const });
+        service.setDeliveryCallback(delivery);
+        service.setAgentStatus('parent-dup', 'idle');
+
+        // 1. High-priority oneShot subscription (delegation pattern)
+        service.subscribe('parent-dup', 'Parent Agent', {
+          eventTypes: ['agent:idle'],
+          actorIds: ['child-dup'],
+          oneShot: true,
+          priority: 'high',
+        });
+
+        // 2. Normal-priority broad subscription (e.g. subscribe_to_events "agent:*")
+        service.subscribe('parent-dup', 'Parent Agent', {
+          eventTypes: ['agent:idle'],
+          actorIds: ['child-dup'],
+        });
+
+        // Child goes idle — single event emitted
+        const idleEvent: WorkspaceEvent = {
+          id: `dup-wake-${crypto.randomUUID()}`,
+          workspaceId,
+          timestamp: new Date().toISOString(),
+          type: 'agent:idle',
+          actor: { type: 'agent', id: 'child-dup', name: 'Child Agent' },
+          data: { agentId: 'child-dup', parentAgentId: 'parent-dup' },
+        };
+
+        eventBus.emitEvent(idleEvent);
+
+        // Immediate delivery is synchronous — resolve its microtask / promise
+        await vi.advanceTimersByTimeAsync(0);
+
+        // (a) The event should NOT have been queued at all (the fix skips queuing)
+        expect(service.getPendingEventCount('parent-dup')).toBe(0);
+
+        // (b) Advance past the default 500ms batch window to drain any residual timer
+        await vi.advanceTimersByTimeAsync(600);
+
+        // Parent should have been woken exactly once, not twice
+        const parentCalls = delivery.mock.calls.filter(
+          (c: [string, WorkspaceEvent[]]) => c[0] === 'parent-dup',
+        );
+        expect(parentCalls.length).toBe(1);
+        expect(parentCalls[0][1]).toHaveLength(1);
+        expect(parentCalls[0][1][0].id).toBe(idleEvent.id);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
 });

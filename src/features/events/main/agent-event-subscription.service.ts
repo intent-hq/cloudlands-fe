@@ -151,6 +151,14 @@ export class AgentEventSubscriptionService {
   private delegationGroups: Map<string, DelegationGroupTracker> = new Map();
   /** Guards against double-delivery of oneShot subscriptions */
   private firedOneShotSubscriptions: Set<string> = new Set();
+  /**
+   * Tracks event IDs currently being delivered immediately per agent.
+   * When multiple subscriptions match the same event, the first (high-priority)
+   * subscription delivers immediately while the second would be queued.
+   * This set prevents the queued copy from producing a duplicate wake-up
+   * notification when the queue drains after the immediate delivery completes.
+   */
+  private immediateDeliveryEventIds: Map<string, Set<string>> = new Map();
   /** Monotonically increasing version counter — increments on every subscribe/unsubscribe/group change */
   private _version: number = 0;
 
@@ -1054,6 +1062,7 @@ export class AgentEventSubscriptionService {
     this.agentQueues.delete(agentId);
     this.agentStatuses.delete(agentId);
     this.recentDeliveries.delete(agentId);
+    this.immediateDeliveryEventIds.delete(agentId);
 
     if (orphanedGroupIds.length > 0) {
       // Bump version so renderer converges to the clean state
@@ -1409,16 +1418,53 @@ export class AgentEventSubscriptionService {
 
     // High priority events are delivered immediately if agent is idle
     if (priority === 'high' && status === 'idle') {
+      // Track this event as in-flight for immediate delivery.
+      // Other subscriptions matching the same event (called synchronously by the
+      // event bus) will see this and skip both immediate and queued delivery,
+      // preventing duplicate wake-up notifications.
+      let inFlight = this.immediateDeliveryEventIds.get(agentId);
+      if (!inFlight) {
+        inFlight = new Set();
+        this.immediateDeliveryEventIds.set(agentId, inFlight);
+      }
+
+      // If another high-priority subscription already claimed this event, skip
+      if (event.id && inFlight.has(event.id)) {
+        logger.info('Skipping immediate delivery — event already being delivered by another high-priority subscription', {
+          subscriptionId: subscription.id,
+          agentId,
+          eventType: event.type,
+          eventId: event.id,
+        });
+        return;
+      }
+
+      if (event.id) {
+        inFlight.add(event.id);
+      }
+
       // Mark oneShot as fired BEFORE delivery to prevent any re-entrant delivery
       if (isOneShot) {
         this.firedOneShotSubscriptions.add(subscription.id);
       }
+
       // IMPORTANT: Cleanup (oneShot unsubscribe) only happens on known success or timeout.
       // Timeout means the message was sent but completion couldn't be confirmed — retrying
       // would send duplicate notifications. On other non-success, rollback the fired guard
       // so future matching events can retry.
       this.deliverEvents(agentId, [event])
         .then((result) => {
+          // Clear in-flight tracking now that delivery resolved
+          if (event.id) {
+            const inFlightSet = this.immediateDeliveryEventIds.get(agentId);
+            if (inFlightSet) {
+              inFlightSet.delete(event.id);
+              if (inFlightSet.size === 0) {
+                this.immediateDeliveryEventIds.delete(agentId);
+              }
+            }
+          }
+
           if (result.status === 'success' || result.status === 'timeout') {
             if (isOneShot) {
               this.unsubscribe(subscription.id, 'oneshot-fired');
@@ -1448,6 +1494,17 @@ export class AgentEventSubscriptionService {
           });
         })
         .catch((err) => {
+          // Clear in-flight tracking on error
+          if (event.id) {
+            const inFlightSetErr = this.immediateDeliveryEventIds.get(agentId);
+            if (inFlightSetErr) {
+              inFlightSetErr.delete(event.id);
+              if (inFlightSetErr.size === 0) {
+                this.immediateDeliveryEventIds.delete(agentId);
+              }
+            }
+          }
+
           // Should be rare: deliverEvents normalizes to DeliveryResult.
           if (isOneShot) {
             this.firedOneShotSubscriptions.delete(subscription.id);
@@ -1460,6 +1517,18 @@ export class AgentEventSubscriptionService {
             error: String(err),
           });
         });
+      return;
+    }
+
+    // Skip queuing if this event is already being delivered immediately
+    // by another subscription (prevents duplicate wake-up notifications).
+    if (event.id && this.immediateDeliveryEventIds.get(agentId)?.has(event.id)) {
+      logger.info('Skipping queue — event already being delivered immediately by another subscription', {
+        subscriptionId: subscription.id,
+        agentId,
+        eventType: event.type,
+        eventId: event.id,
+      });
       return;
     }
 
@@ -2433,6 +2502,7 @@ export class AgentEventSubscriptionService {
     this.agentStatuses.clear();
     this.delegationGroups.clear();
     this.firedOneShotSubscriptions.clear();
+    this.immediateDeliveryEventIds.clear();
     this.recentDeliveries.clear();
     this.deletedAgents.clear();
 
