@@ -40,6 +40,12 @@
   import { ChatServiceManager } from '$features/agent/services/chat.service';
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import type { WorkspaceGitStatus } from '$features/accept-changes/types';
+  import {
+    shouldClearGitStatusBeforeLoad,
+    shouldApplyGitStatusResult,
+    shouldClearGitStatusOnError,
+    isFetchCurrent,
+  } from './git-status-refresh-utils';
   import FlameGraph from './FlameGraph.svelte';
   import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';
   import { hasRunningAgents, getRunningAgentNames } from '$lib/utils/delete-warning-utils';
@@ -71,28 +77,51 @@
   // Git status state for workflow awareness
   let gitStatus = $state<WorkspaceGitStatus | null>(null);
   let gitStatusLoading = $state(false);
+  let lastLoadedWorkspaceId: string | undefined;
+  // Monotonic counter to guard against overlapping fetches for the same workspace.
+  // Incremented at the start of each loadGitStatus() call; only the most recent
+  // fetch's result is applied.
+  let fetchGeneration = 0;
 
   // Load git status when workspace is available
   async function loadGitStatus() {
     if (!workspaceId) return;
 
     const capturedWorkspaceId = workspaceId; // Capture for async guard
+    fetchGeneration++;
+    const capturedGeneration = fetchGeneration;
     gitStatusLoading = true;
-    gitStatus = null; // Clear stale data from previous workspace immediately
+
+    // Only clear stale data when switching to a different workspace
+    if (shouldClearGitStatusBeforeLoad(workspaceId, lastLoadedWorkspaceId)) {
+      gitStatus = null;
+    }
 
     try {
       const result = await AcceptChangesClient.getStatus(WorkspaceId(capturedWorkspaceId));
-      // Guard: only apply if workspace hasn't changed during async call
-      if (workspaceId === capturedWorkspaceId) {
+      // Guard: only apply if workspace hasn't changed AND this is still the latest fetch
+      if (
+        shouldApplyGitStatusResult(workspaceId, capturedWorkspaceId) &&
+        isFetchCurrent(capturedGeneration, fetchGeneration)
+      ) {
         gitStatus = result;
+        lastLoadedWorkspaceId = capturedWorkspaceId;
       }
     } catch {
       // Silently handle errors - git status is optional
-      if (workspaceId === capturedWorkspaceId) {
+      // For same-workspace refresh, keep existing data instead of nulling it out
+      if (
+        shouldApplyGitStatusResult(workspaceId, capturedWorkspaceId) &&
+        isFetchCurrent(capturedGeneration, fetchGeneration) &&
+        shouldClearGitStatusOnError(workspaceId, capturedWorkspaceId, lastLoadedWorkspaceId)
+      ) {
         gitStatus = null;
       }
     } finally {
-      if (workspaceId === capturedWorkspaceId) {
+      if (
+        shouldApplyGitStatusResult(workspaceId, capturedWorkspaceId) &&
+        isFetchCurrent(capturedGeneration, fetchGeneration)
+      ) {
         gitStatusLoading = false;
       }
     }
