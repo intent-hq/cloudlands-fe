@@ -240,6 +240,7 @@ vi.mock('$shared/types/branded-ids', () => ({
 
 vi.mock('../services/unified-state-store', () => ({
   unifiedStateStore: {
+    currentWorkspace: { workspace: { id: 'ws-1' } },
     getSession: vi.fn(),
     getAllSessionsAcrossWorkspaces: vi.fn(() => []),
     addSession: vi.fn(),

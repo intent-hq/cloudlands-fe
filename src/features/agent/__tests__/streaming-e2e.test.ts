@@ -36,15 +36,14 @@ vi.mock('$shared/types/branded-ids', () => ({
 const mockSessionStore = new Proxy(
   {
     getStore: () => ({ subscribe: vi.fn(), set: vi.fn(), update: vi.fn() }),
-    getSession: vi.fn(),
     getSessionForWorkspace: vi.fn(),
-    addSession: vi.fn(),
-    setActiveSession: vi.fn(),
-    updateMessages: vi.fn(),
-    addMessage: vi.fn(),
-    setStreaming: vi.fn(),
+    addSessionForWorkspace: vi.fn(),
+    setActiveSessionForWorkspace: vi.fn(),
+    updateMessagesForWorkspace: vi.fn(),
+    addMessageForWorkspace: vi.fn(),
     setStreamingForWorkspace: vi.fn(),
-    getAllSessions: vi.fn(() => []),
+    getAllSessionsForWorkspace: vi.fn(() => []),
+    getAllSessionsAcrossWorkspaces: vi.fn(() => []),
   },
   {
     get(target: any, prop: string) {
@@ -543,8 +542,8 @@ describe('E2E Streaming: AgentService → DOM → ChatService → Store', () => 
       messages: [],
     }));
 
-    // Mock sessionStore.getSession to return streaming session (for reconcileStreamingState)
-    mockSessionStore.getSession.mockReturnValue({
+    // Mock sessionStore.getSessionForWorkspace to return streaming session (for reconcileStreamingState)
+    mockSessionStore.getSessionForWorkspace.mockReturnValue({
       id: sessionId, isStreaming: true, messages: [],
       workspaceId: 'test-workspace',
     });
@@ -571,6 +570,6 @@ describe('E2E Streaming: AgentService → DOM → ChatService → Store', () => 
     expect(state.streamingContent).toBe('Already streaming');
 
     // Clean up mock
-    mockSessionStore.getSession.mockReset();
+    mockSessionStore.getSessionForWorkspace.mockReset();
   });
 });

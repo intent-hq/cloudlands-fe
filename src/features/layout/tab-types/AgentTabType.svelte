@@ -65,7 +65,7 @@
   // Get agent model from session, falling back to workspace default
   const agentModel = $derived.by(() => {
     if (tab.agentId) {
-      const session = sessionStore.getSession(tab.agentId);
+      const session = sessionStore.getSessionForWorkspace(workspaceId, tab.agentId);
       if (session?.model) return session.model;
     }
     return selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspaceId);

@@ -105,11 +105,10 @@
   // Save the edited name
   function saveEdit() {
     if (editingValue.trim() && editingValue.trim() !== displayName) {
-      sessionStore.updateSession(agentId, { name: editingValue.trim() });
-      // Persist the name change to disk
-      const session = sessionStore.getSession(agentId);
-      if (session?.workspaceId) {
-        agentService.saveSession(agentId, session.workspaceId, true);
+      const wsId = workspace?.id ? String(workspace.id) : undefined;
+      if (wsId) {
+        sessionStore.updateSessionForWorkspace(wsId, agentId, { name: editingValue.trim() });
+        agentService.saveSession(agentId, wsId, true);
       }
     }
     cancelEdit();
@@ -209,8 +208,7 @@
       destructive: true,
       onClick: async () => {
         // Close related panel tabs before deleting
-        const session = sessionStore.getSession(agentId);
-        const sessionWorkspaceId = session?.workspaceId;
+        const sessionWorkspaceId = workspace?.id ? String(workspace.id) : undefined;
         if (sessionWorkspaceId && hasPanelLayoutManager(sessionWorkspaceId)) {
           const layoutManager = getPanelLayoutManager(sessionWorkspaceId);
           layoutManager.closeTabsMatching((tab) => tab.type === 'agent' && tab.agentId === agentId);

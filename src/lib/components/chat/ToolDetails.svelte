@@ -12,7 +12,7 @@
   import MarkdownRenderer from '$lib/components/editor/MarkdownRenderer.svelte';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import AgentCard from './AgentCard.svelte';
-  import { sessionStore } from '$features/agent/browser';
+  import { sessionStore, unifiedStateStore } from '$features/agent/browser';
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
 
@@ -528,7 +528,8 @@
           {:else if parsedResult.type === 'agent-message' && parsedResult.messageContent}
             <!-- Agent message - show "Sent message to [agent]" with clickable link, then the message -->
             {@const agentId = parsedResult.toAgentId}
-            {@const session = agentId ? sessionStore.getSession(agentId) : null}
+            {@const toolWsId = unifiedStateStore.currentWorkspace?.workspace?.id}
+            {@const session = agentId && toolWsId ? sessionStore.getSessionForWorkspace(String(toolWsId), agentId) : null}
             {@const agentName =
               session?.name && !isGenericAgentName(session.name)
                 ? session.name

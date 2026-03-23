@@ -117,8 +117,8 @@
       return getProviderConfig(providerId).id;
     }
 
-    if (agentId) {
-      const session = sessionStore.getSession(agentId);
+    if (agentId && workspaceId) {
+      const session = sessionStore.getSessionForWorkspace(workspaceId, agentId);
       if (session) {
         const provider = getAgentProvider(session);
         if (provider) return getProviderConfig(provider).id;
@@ -293,7 +293,7 @@
       // If agentId is provided, update the active agent's model
       if (agentId && workspaceId) {
         // Always update local session store so model persists when drawer reopens
-        sessionStore.updateSession(agentId, { model });
+        sessionStore.updateSessionForWorkspace(workspaceId, agentId, { model });
         logger.debug('Updated local session model:', { agentId, model });
 
         // If deferUpdate is true (streaming), defer the IPC call until streaming ends

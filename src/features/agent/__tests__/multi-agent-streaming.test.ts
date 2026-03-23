@@ -27,6 +27,7 @@ vi.mock('$shared/types/branded-ids', () => ({
 }));
 vi.mock('../services/unified-state-store', () => ({
   unifiedStateStore: {
+    currentWorkspace: { workspace: { id: 'ws-1' } },
     getSession: vi.fn(), getAllSessionsAcrossWorkspaces: vi.fn(() => []),
     addSession: vi.fn(), setStreaming: vi.fn(),
     updateMessage: vi.fn(), updateMessageForWorkspace: vi.fn(),
@@ -320,7 +321,7 @@ describe('AgentService multi-agent streaming & delegation', () => {
     const handler = queueProcessingCall![1];
 
     // Set up a session that exists
-    mockSessionStore.getSession = vi.fn(() => ({
+    mockSessionStore.getSessionForWorkspace = vi.fn(() => ({
       id: 'agent-q',
       name: 'Queue Agent',
       messages: [],
@@ -349,8 +350,8 @@ describe('AgentService multi-agent streaming & delegation', () => {
     // Should have sent handler-ready
     expect(sendSpy).toHaveBeenCalledWith('agent:handler-ready', { agentId: 'agent-q' });
 
-    // Should have added user message
-    expect(mockSessionStore.addMessage).toHaveBeenCalled();
+    // Should have added user message (via workspace-aware method)
+    expect(mockSessionStore.addMessageForWorkspace).toHaveBeenCalled();
   });
 
   // ── Scenario 8: Delegated agent completes → no streaming state leak ──

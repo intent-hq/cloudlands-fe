@@ -297,7 +297,7 @@
     if (!group.agentId) return 'Manual Changes';
 
     // Try to find the session by ID first
-    const sessions = sessionStore.getAllSessions();
+    const sessions = sessionStore.getAllSessionsForWorkspace(workspaceId);
     const session = sessions.find((s) => {
       const id = typeof s.id === 'object' ? (s.id as any).id || String(s.id) : String(s.id);
       return id === group.agentId;
@@ -329,7 +329,7 @@
 
     // If it doesn't look like a UUID, try to find the agent by name
     if (!isUUID) {
-      const sessions = sessionStore.getAllSessions();
+      const sessions = sessionStore.getAllSessionsForWorkspace(workspaceId);
       const matchingAgent = sessions.find((s) => s.name === agentIdOrName);
       if (matchingAgent) {
         // Handle both string IDs and object IDs (e.g., Proxy objects)

@@ -39,7 +39,6 @@ vi.mock('$features/agent/browser', () => ({
   sessionStore: {
     getStore: browserMocks.getStore,
     getSessionForWorkspace: browserMocks.getSessionForWorkspace,
-    addSession: browserMocks.addSession,
     addSessionForWorkspace: browserMocks.addSessionForWorkspace,
   },
   publishSessionStoreSnapshot: browserMocks.publishSessionStoreSnapshot,

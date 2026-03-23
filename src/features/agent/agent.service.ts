@@ -68,6 +68,19 @@ import {
 
 const logger = createLogger('AgentService');
 
+/**
+ * Require a workspace ID from the current workspace, throwing if unavailable.
+ * Replaces non-null assertions (`workspace?.id!`) that silently pass `undefined`
+ * to workspace-aware sessionStore methods, corrupting state.
+ */
+function requireWorkspaceId(context: string): string {
+  const wsId = unifiedStateStore.currentWorkspace?.workspace?.id;
+  if (!wsId) {
+    throw new Error(`[AgentService] workspaceId required but not available: ${context}`);
+  }
+  return wsId;
+}
+
 import { eventCollector, AgentEventType } from '../observability/event-collector-client';
 import { workspaceMetrics } from '../workspace/workspace-metrics';
 import { agentFileTracker } from './agent-file-tracker';
@@ -256,7 +269,12 @@ class RefactoredAgentService extends EventEmitter {
    */
   private updateSession(agentId: string, session: AgentSession): void {
     // Direct update
-    sessionStore.addSession(session);
+    const wsId = session.workspaceId || unifiedStateStore.currentWorkspace?.workspace?.id;
+    if (!wsId) {
+      logger.warn('[AgentService] updateSession: no workspaceId available, session update dropped', { agentId });
+      return;
+    }
+    sessionStore.addSessionForWorkspace(wsId, session);
   }
 
   /**
@@ -482,7 +500,7 @@ class RefactoredAgentService extends EventEmitter {
    */
   private reconnectActiveStreams() {
     // Check all sessions for incomplete streaming messages
-    const allSessions = sessionStore.getAllSessions();
+    const allSessions = sessionStore.getAllSessionsAcrossWorkspaces();
 
     if (!allSessions || allSessions.length === 0) {
       logger.debug('No sessions found in store for stream recovery');
@@ -688,7 +706,14 @@ class RefactoredAgentService extends EventEmitter {
           if (session.workspaceId) {
             sessionStore.setStreamingForWorkspace(session.workspaceId, session.id, false);
           } else {
-            sessionStore.setStreaming(session.id, false);
+            const fallbackWsId = unifiedStateStore.currentWorkspace?.workspace?.id;
+            if (fallbackWsId) {
+              sessionStore.setStreamingForWorkspace(fallbackWsId, session.id, false);
+            } else {
+              logger.warn('Cannot clear streaming state: no workspaceId available', {
+                agentId: session.id,
+              });
+            }
           }
 
           // When the stream completed while the user was viewing another workspace,
@@ -757,7 +782,11 @@ class RefactoredAgentService extends EventEmitter {
               }
 
               // Update the frontend's in-memory store with the loaded data
-              sessionStore.addSession(diskSession);
+              const wsIdForDiskSession = diskSession.workspaceId || session.workspaceId;
+              if (!wsIdForDiskSession) {
+                throw new Error(`[AgentService] Cannot add disk session without workspaceId: ${session.id}`);
+              }
+              sessionStore.addSessionForWorkspace(wsIdForDiskSession, diskSession);
 
               // Persist the updated session (with cleared streaming flags)
               await persistenceService.saveSession(diskSession, diskSession.workspaceId, {
@@ -779,7 +808,10 @@ class RefactoredAgentService extends EventEmitter {
               });
 
               session.isStreaming = false;
-              sessionStore.addSession(session);
+              if (!session.workspaceId) {
+                throw new Error(`[AgentService] Cannot update session without workspaceId: ${session.id}`);
+              }
+              sessionStore.addSessionForWorkspace(session.workspaceId, session);
 
               if (session.messages) {
                 for (const message of session.messages) {
@@ -788,7 +820,7 @@ class RefactoredAgentService extends EventEmitter {
                       agentId: session.id,
                       messageId: message.id,
                     });
-                    sessionStore.updateMessage(session.id, message.id, {
+                    sessionStore.updateMessageForWorkspace(session.workspaceId, session.id, message.id, {
                       isStreaming: false,
                     });
                   }
@@ -807,7 +839,10 @@ class RefactoredAgentService extends EventEmitter {
 
             // Fallback: clear streaming state in memory only
             session.isStreaming = false;
-            sessionStore.addSession(session);
+            if (!session.workspaceId) {
+              throw new Error(`[AgentService] Cannot update session without workspaceId: ${session.id}`);
+            }
+            sessionStore.addSessionForWorkspace(session.workspaceId, session);
           }
 
           // Dispatch session-updated event so ChatService syncs its streaming state
@@ -855,7 +890,9 @@ class RefactoredAgentService extends EventEmitter {
         }
         // Fallback to current workspace lookup if no workspace ID provided
         if (!session) {
-          session = sessionStore.getSession(agentId);
+          // Fallback: look across all workspaces since the agent may be in a different workspace
+          const allSessions = sessionStore.getAllSessionsAcrossWorkspaces();
+          session = allSessions.find(s => s.id === agentId);
         }
 
         // Find the streaming message if it exists, or fall back to the last assistant message
@@ -961,7 +998,11 @@ class RefactoredAgentService extends EventEmitter {
                 },
               );
             } else {
-              sessionStore.updateMessage(agentId, existingMessage.id, {
+              const wsIdForUpdate = session?.workspaceId || streamWorkspaceId;
+              if (!wsIdForUpdate) {
+                throw new Error(`[AgentService] Cannot update message without workspaceId: ${agentId}`);
+              }
+              sessionStore.updateMessageForWorkspace(wsIdForUpdate, agentId, existingMessage.id, {
                 contentBlocks: accumulatedContent.contentBlocks,
                 isStreaming: true,
               });
@@ -1004,7 +1045,11 @@ class RefactoredAgentService extends EventEmitter {
               agentId,
               messageId: existingMessage.id,
             });
-            sessionStore.updateMessage(agentId, existingMessage.id, {
+            const wsIdForMark = streamWorkspaceId || session?.workspaceId;
+            if (!wsIdForMark) {
+              throw new Error(`[AgentService] Cannot mark message as streaming without workspaceId: ${agentId}`);
+            }
+            sessionStore.updateMessageForWorkspace(wsIdForMark, agentId, existingMessage.id, {
               isStreaming: true,
             });
           }
@@ -1033,7 +1078,7 @@ class RefactoredAgentService extends EventEmitter {
           if (streamWorkspaceId) {
             sessionStore.setStreamingForWorkspace(streamWorkspaceId, agentId, true);
           } else {
-            sessionStore.setStreaming(agentId, true);
+            sessionStore.setStreamingForWorkspace(requireWorkspaceId('setStreaming:existingHandler'), agentId, true);
           }
         }
 
@@ -1049,7 +1094,11 @@ class RefactoredAgentService extends EventEmitter {
           if (streamWorkspaceId) {
             sessionStore.setStreamingForWorkspace(streamWorkspaceId, agentId, true);
           } else {
-            sessionStore.setStreaming(agentId, true);
+            const wsIdForStreaming = streamWorkspaceId || session?.workspaceId;
+            if (!wsIdForStreaming) {
+              throw new Error(`[AgentService] Cannot set streaming without workspaceId: ${agentId}`);
+            }
+            sessionStore.setStreamingForWorkspace(wsIdForStreaming, agentId, true);
           }
 
           // Update the session to mark it as streaming if not already
@@ -1057,12 +1106,14 @@ class RefactoredAgentService extends EventEmitter {
             // Re-read session from store to pick up any message updates
             // made by updateMessageForWorkspace above. The local `session` variable was
             // read before those updates and has stale message content blocks.
-            const freshSession = streamWorkspaceId
-              ? sessionStore.getSessionForWorkspace(streamWorkspaceId, agentId)
-              : sessionStore.getSession(agentId);
+            const wsIdForFresh = streamWorkspaceId || session?.workspaceId;
+            if (!wsIdForFresh) {
+              throw new Error(`[AgentService] Cannot update session streaming without workspaceId: ${agentId}`);
+            }
+            const freshSession = sessionStore.getSessionForWorkspace(wsIdForFresh, agentId);
             const sessionToUpdate = freshSession || session;
             sessionToUpdate.isStreaming = true;
-            sessionStore.addSession(sessionToUpdate);
+            sessionStore.addSessionForWorkspace(wsIdForFresh, sessionToUpdate);
           }
         }
 
@@ -1138,12 +1189,23 @@ class RefactoredAgentService extends EventEmitter {
             if (session.workspaceId) {
               sessionStore.setStreamingForWorkspace(session.workspaceId, session.id, false);
             } else {
-              sessionStore.setStreaming(session.id, false);
+              const fallbackWsId = unifiedStateStore.currentWorkspace?.workspace?.id;
+              if (fallbackWsId) {
+                sessionStore.setStreamingForWorkspace(fallbackWsId, session.id, false);
+              } else {
+                logger.warn('Cannot clear streaming state: no workspaceId available', {
+                  agentId: session.id,
+                });
+              }
             }
 
             // Clear streaming flag on session object
             session.isStreaming = false;
-            sessionStore.addSession(session);
+            const addWsId = session.workspaceId || unifiedStateStore.currentWorkspace?.workspace?.id;
+            if (!addWsId) {
+              throw new Error(`[AgentService] Cannot add session without workspaceId: ${session.id}`);
+            }
+            sessionStore.addSessionForWorkspace(addWsId, session);
 
             // Dispatch session-updated event so UI components sync
             window.dispatchEvent(new CustomEvent(`agent:session-updated:${session.id}`));
@@ -1204,7 +1266,7 @@ class RefactoredAgentService extends EventEmitter {
     }
 
     // Resolve workspace ID
-    const resolvedWorkspaceId = providedWorkspaceId || sessionStore.getSession(agentId)?.workspaceId;
+    const resolvedWorkspaceId = providedWorkspaceId || sessionStore.getSessionForWorkspace(requireWorkspaceId('ensureStreamHandler:resolve'), agentId)?.workspaceId;
 
     // Call the core registration logic
     this.registerStreamHandlerForSession(agentId, existingMessage, resolvedWorkspaceId);
@@ -1241,7 +1303,7 @@ class RefactoredAgentService extends EventEmitter {
     }
 
     // Resolve workspace ID for cross-workspace stream handling
-    const resolvedWorkspaceId = workspaceId || sessionStore.getSession(agentId)?.workspaceId;
+    const resolvedWorkspaceId = workspaceId || sessionStore.getSessionForWorkspace(requireWorkspaceId('registerStreamHandler:resolve'), agentId)?.workspaceId;
     const streamChannel = `agent:stream:${agentId}`;
 
     logger.debug('Registering stream handler for restored session', {
@@ -1396,7 +1458,7 @@ class RefactoredAgentService extends EventEmitter {
           // instead of creating a fresh message for the current response.
           const resetSession = resolvedWorkspaceId
             ? sessionStore.getSessionForWorkspace(resolvedWorkspaceId, agentId)
-            : sessionStore.getSession(agentId);
+            : sessionStore.getSessionForWorkspace(resolvedWorkspaceId || requireWorkspaceId('resetStreamingMessages'), agentId);
           if (resetSession?.messages) {
             for (const msg of resetSession.messages) {
               if (msg.role === 'assistant' && msg.isStreaming) {
@@ -1410,7 +1472,7 @@ class RefactoredAgentService extends EventEmitter {
                     isStreaming: false,
                   });
                 } else {
-                  sessionStore.updateMessage(agentId, msg.id, {
+                  sessionStore.updateMessageForWorkspace(resolvedWorkspaceId || requireWorkspaceId('clearMessageStreaming'), agentId, msg.id, {
                     isStreaming: false,
                   });
                 }
@@ -1428,7 +1490,7 @@ class RefactoredAgentService extends EventEmitter {
       const getStreamSession = () =>
         resolvedWorkspaceId
           ? sessionStore.getSessionForWorkspace(resolvedWorkspaceId, agentId)
-          : sessionStore.getSession(agentId);
+          : sessionStore.getSessionForWorkspace(resolvedWorkspaceId || requireWorkspaceId('getStreamSession'), agentId);
 
       try {
         if (data.type === 'chunk') {
@@ -1495,7 +1557,7 @@ class RefactoredAgentService extends EventEmitter {
               updatedAt: new Date(),
               isStreaming: true,
             };
-            sessionStore.addSession(minimalSession);
+            sessionStore.addSessionForWorkspace(resolvedWorkspaceId, minimalSession);
             streamSession = getStreamSession();
           }
 
@@ -1525,7 +1587,11 @@ class RefactoredAgentService extends EventEmitter {
                 updatedMessageRoles: updatedSession.messages.map((m) => m.role),
               });
 
-              sessionStore.addSession(updatedSession);
+              const wsIdForNewMsg = resolvedWorkspaceId || updatedSession.workspaceId;
+              if (!wsIdForNewMsg) {
+                throw new Error(`[AgentService] Cannot add session without workspaceId: ${agentId}`);
+              }
+              sessionStore.addSessionForWorkspace(wsIdForNewMsg, updatedSession);
             } else {
               // Update existing streaming message
               // Use workspace-aware update to handle cross-workspace streaming
@@ -1548,7 +1614,7 @@ class RefactoredAgentService extends EventEmitter {
                     },
                   );
                 } else {
-                  sessionStore.updateMessage(agentId, lastMessage.id, {
+                  sessionStore.updateMessageForWorkspace(resolvedWorkspaceId || requireWorkspaceId('updateContentBlocks:text'), agentId, lastMessage.id, {
                     contentBlocks: buildOrderedContentBlocks(orderedItems, textBuffer),
                   });
                 }
@@ -1648,7 +1714,7 @@ class RefactoredAgentService extends EventEmitter {
                   },
                 );
               } else {
-                sessionStore.updateMessage(agentId, lastMessage.id, {
+                sessionStore.updateMessageForWorkspace(resolvedWorkspaceId || requireWorkspaceId('updateContentBlocks:toolResult'), agentId, lastMessage.id, {
                   contentBlocks: buildOrderedContentBlocks(orderedItems, textBuffer),
                 });
               }
@@ -1767,11 +1833,11 @@ class RefactoredAgentService extends EventEmitter {
               // Otherwise, unifiedStateStore.setAgent's preserveStreamingMessages logic
               // will preserve old streaming messages instead of using our updated messages
               // Use workspace-aware method for cross-workspace stream completion
-              if (resolvedWorkspaceId) {
-                sessionStore.setStreamingForWorkspace(resolvedWorkspaceId, agentId, false);
-              } else {
-                sessionStore.setStreaming(agentId, false);
+              const wsIdForEnd = resolvedWorkspaceId || updatedSession.workspaceId;
+              if (!wsIdForEnd) {
+                throw new Error(`[AgentService] Cannot complete stream without workspaceId: ${agentId}`);
               }
+              sessionStore.setStreamingForWorkspace(wsIdForEnd, agentId, false);
               // Also set isStreaming on the session object itself
               // Otherwise, setAgent will see session.isStreaming as true and
               // overwrite the streaming.active state we just set to false
@@ -1780,7 +1846,7 @@ class RefactoredAgentService extends EventEmitter {
               if (resolvedWorkspaceId && !updatedSession.workspaceId) {
                 updatedSession.workspaceId = WorkspaceId(resolvedWorkspaceId);
               }
-              sessionStore.addSession(updatedSession);
+              sessionStore.addSessionForWorkspace(wsIdForEnd, updatedSession);
 
               // Update unified state store so BackgroundAgentExecutor subscriptions fire
               if (resolvedWorkspaceId) {
@@ -1813,18 +1879,17 @@ class RefactoredAgentService extends EventEmitter {
               };
 
               updatedSession.messages.push(newAssistantMessage);
-              // Use workspace-aware method for cross-workspace stream completion
-              if (resolvedWorkspaceId) {
-                sessionStore.setStreamingForWorkspace(resolvedWorkspaceId, agentId, false);
-              } else {
-                sessionStore.setStreaming(agentId, false);
+              const wsIdForNewAssistant = resolvedWorkspaceId || updatedSession.workspaceId;
+              if (!wsIdForNewAssistant) {
+                throw new Error(`[AgentService] Cannot complete stream without workspaceId: ${agentId}`);
               }
+              sessionStore.setStreamingForWorkspace(wsIdForNewAssistant, agentId, false);
               updatedSession.isStreaming = false;
               // Ensure the session has the correct workspaceId for addSession to work correctly
               if (resolvedWorkspaceId && !updatedSession.workspaceId) {
                 updatedSession.workspaceId = WorkspaceId(resolvedWorkspaceId);
               }
-              sessionStore.addSession(updatedSession);
+              sessionStore.addSessionForWorkspace(wsIdForNewAssistant, updatedSession);
 
               // Update unified state store so BackgroundAgentExecutor subscriptions fire
               if (resolvedWorkspaceId) {
@@ -1837,12 +1902,7 @@ class RefactoredAgentService extends EventEmitter {
                   .catch((err) => logger.error('Failed to persist completed session (no existing msg path)', { agentId, error: err }));
               }
             } else {
-              // Use workspace-aware method for cross-workspace stream completion
-              if (resolvedWorkspaceId) {
-                sessionStore.setStreamingForWorkspace(resolvedWorkspaceId, agentId, false);
-              } else {
-                sessionStore.setStreaming(agentId, false);
-              }
+              sessionStore.setStreamingForWorkspace(resolvedWorkspaceId || requireWorkspaceId('streamEnd:noExistingMsg'), agentId, false);
 
               // Update unified state store so BackgroundAgentExecutor subscriptions fire
               // Get the session from the store to sync the unified state
@@ -1908,7 +1968,11 @@ class RefactoredAgentService extends EventEmitter {
                   loadedSession.isStreaming = false;
 
                   // Add to the store
-                  sessionStore.addSession(loadedSession);
+                  const wsIdForLoaded = resolvedWorkspaceId || loadedSession.workspaceId;
+                  if (!wsIdForLoaded) {
+                    throw new Error(`[AgentService] Cannot add loaded session without workspaceId: ${agentId}`);
+                  }
+                  sessionStore.addSessionForWorkspace(wsIdForLoaded, loadedSession);
 
                   // Update unified state store so BackgroundAgentExecutor subscriptions fire
                   if (resolvedWorkspaceId) {
@@ -1950,7 +2014,7 @@ class RefactoredAgentService extends EventEmitter {
                 unifiedStateStore.setAgent(WorkspaceId(resolvedWorkspaceId), sessionForUnifiedSync);
               }
             } else {
-              sessionStore.setStreaming(agentId, false);
+              sessionStore.setStreamingForWorkspace(requireWorkspaceId('streamEnd:interrupted'), agentId, false);
             }
           }
 
@@ -1984,12 +2048,7 @@ class RefactoredAgentService extends EventEmitter {
         } else if (data.type === 'error') {
           logger.error('Restored stream error', { agentId, error: data.data });
 
-          // Use workspace-aware method for cross-workspace stream completion
-          if (resolvedWorkspaceId) {
-            sessionStore.setStreamingForWorkspace(resolvedWorkspaceId, agentId, false);
-          } else {
-            sessionStore.setStreaming(agentId, false);
-          }
+          sessionStore.setStreamingForWorkspace(resolvedWorkspaceId || requireWorkspaceId('streamError'), agentId, false);
 
           // Forward to ChatService
           // FIX: Use dispatchStreamEvent which queues events if no handler registered
@@ -2108,7 +2167,11 @@ class RefactoredAgentService extends EventEmitter {
   private setupEventListeners() {
     // Set up unread tracking cleanup callback to prune stale agent IDs from localStorage
     unreadTrackingService.setAgentExistsCallback(
-      (agentId: string) => sessionStore.getSession(agentId) !== null,
+      (agentId: string) => {
+        const wsId = unifiedStateStore.currentWorkspace?.workspace?.id;
+        if (!wsId) return false;
+        return sessionStore.getSessionForWorkspace(wsId, agentId) != null;
+      },
     );
 
     if (typeof window !== 'undefined' && window.electronAPI) {
@@ -2126,9 +2189,11 @@ class RefactoredAgentService extends EventEmitter {
 
       registerGlobalListener('agent:stream:disconnected', (data: any) => {
         logger.warn('Stream disconnected', { agentId: data.agentId });
-        const eventSession = sessionStore.getSession(data.agentId);
+        const wsId = unifiedStateStore.currentWorkspace?.workspace?.id;
+        if (!wsId) return;
+        const eventSession = sessionStore.getSessionForWorkspace(wsId, data.agentId);
         if (eventSession) {
-          sessionStore.setStreaming(eventSession.id, false);
+          sessionStore.setStreamingForWorkspace(eventSession.workspaceId || wsId, eventSession.id, false);
         }
       });
 
@@ -2165,9 +2230,12 @@ class RefactoredAgentService extends EventEmitter {
         // silently drop all stream data because getStreamSession() returns null.
         // Try loading from persistence first (has full agent data with name, metadata, etc.),
         // falling back to a minimal session if persistence load fails.
-        const existingSession = workspaceId
-          ? sessionStore.getSessionForWorkspace(workspaceId, agentId)
-          : sessionStore.getSession(agentId);
+        const wsIdForLookup = workspaceId || unifiedStateStore.currentWorkspace?.workspace?.id;
+        if (!wsIdForLookup) {
+          logger.warn('Cannot look up session: no workspaceId available', { agentId });
+          return;
+        }
+        const existingSession = sessionStore.getSessionForWorkspace(wsIdForLookup, agentId);
 
         if (!existingSession && workspaceId) {
           logger.warn(
@@ -2178,9 +2246,7 @@ class RefactoredAgentService extends EventEmitter {
             .loadSession(agentId, workspaceId)
             .then((loadedSession) => {
               // Check again - session might have been created while we were loading
-              const currentSession = workspaceId
-                ? sessionStore.getSessionForWorkspace(workspaceId, agentId)
-                : sessionStore.getSession(agentId);
+              const currentSession = sessionStore.getSessionForWorkspace(wsIdForLookup, agentId);
               if (currentSession) {
                 logger.debug(
                   'Session appeared while loading from persistence at stream-starting, skipping',
@@ -2197,12 +2263,12 @@ class RefactoredAgentService extends EventEmitter {
                 // then set streaming via the canonical setStreamingForWorkspace path.
                 // This avoids relying on the confusing dual-layer isStreaming behavior
                 // in setAgent where session.isStreaming and streaming.active diverge.
-                sessionStore.addSession(loadedSession);
-                if (workspaceId) {
-                  sessionStore.setStreamingForWorkspace(workspaceId, agentId, true);
-                } else {
-                  sessionStore.setStreaming(agentId, true);
+                const wsIdForStreamStart = workspaceId || loadedSession.workspaceId;
+                if (!wsIdForStreamStart) {
+                  throw new Error(`[AgentService] Cannot start streaming session without workspaceId: ${agentId}`);
                 }
+                sessionStore.addSessionForWorkspace(wsIdForStreamStart, loadedSession);
+                sessionStore.setStreamingForWorkspace(wsIdForStreamStart, agentId, true);
                 logger.info('Created session from persistence for streaming agent (stream-starting)', {
                   agentId,
                   sessionName: loadedSession.name,
@@ -2245,7 +2311,11 @@ class RefactoredAgentService extends EventEmitter {
 
           // CRITICAL: Set streaming state immediately so UI shows streaming indicator
           // This is especially important for woken-up agents where the session already exists
-          const existingSession = sessionStore.getSession(agentId);
+          const prepareWsId = workspaceId || unifiedStateStore.currentWorkspace?.workspace?.id;
+          if (!prepareWsId) {
+            throw new Error(`[AgentService] Cannot prepare handler without workspaceId: ${agentId}`);
+          }
+          const existingSession = sessionStore.getSessionForWorkspace(prepareWsId, agentId);
           if (existingSession) {
             // If we have a wake message (e.g., from event subscription), add it to the session
             // This is critical for showing the EventWakeupBanner in the chat history
@@ -2262,14 +2332,10 @@ class RefactoredAgentService extends EventEmitter {
               });
               // Use workspace-aware method to ensure message is added even if user is viewing
               // a different workspace when the wake event occurs
-              if (workspaceId) {
-                sessionStore.addMessageForWorkspace(workspaceId, agentId, wakeMessage);
-              } else {
-                sessionStore.addMessage(agentId, wakeMessage);
-              }
+              sessionStore.addMessageForWorkspace(prepareWsId, agentId, wakeMessage);
 
               // Verify the message was added correctly
-              const updatedSession = sessionStore.getSession(agentId);
+              const updatedSession = sessionStore.getSessionForWorkspace(prepareWsId, agentId);
               const addedMessage = updatedSession?.messages?.find(
                 (m: any) => m.id === wakeMessage.id,
               );
@@ -2282,12 +2348,7 @@ class RefactoredAgentService extends EventEmitter {
               });
             }
 
-            // Use workspace-aware method for cross-workspace streaming state
-            if (workspaceId) {
-              sessionStore.setStreamingForWorkspace(workspaceId, agentId, true);
-            } else {
-              sessionStore.setStreaming(agentId, true);
-            }
+            sessionStore.setStreamingForWorkspace(prepareWsId, agentId, true);
             logger.info('Set streaming state for woken-up agent', { agentId, workspaceId });
 
             // Dispatch session-updated event so UI components (like WorkspaceDock) update
@@ -2385,7 +2446,12 @@ class RefactoredAgentService extends EventEmitter {
         });
 
         // Check if we already have a session for this agent
-        const existingSession = sessionStore.getSession(agentId);
+        const wsIdForLookup2 = workspaceId || unifiedStateStore.currentWorkspace?.workspace?.id;
+        if (!wsIdForLookup2) {
+          logger.warn('Cannot look up session: no workspaceId available', { agentId });
+          return;
+        }
+        const existingSession = sessionStore.getSessionForWorkspace(wsIdForLookup2, agentId);
         if (existingSession) {
           logger.debug('Session already exists for backend-created agent', { agentId });
 
@@ -2411,7 +2477,11 @@ class RefactoredAgentService extends EventEmitter {
               // accidentally toggling streaming state during a metadata update.
               isStreaming: existingSession.isStreaming,
             };
-            sessionStore.addSession(updatedSession);
+            const wsIdForCreatedUpdate = workspaceId || updatedSession.workspaceId;
+            if (!wsIdForCreatedUpdate) {
+              throw new Error(`[AgentService] Cannot update session without workspaceId: ${agentId}`);
+            }
+            sessionStore.addSessionForWorkspace(wsIdForCreatedUpdate, updatedSession);
             logger.debug('Updated existing session with agent:created metadata', {
               agentId,
               oldName: existingSession.name,
@@ -2436,7 +2506,11 @@ class RefactoredAgentService extends EventEmitter {
 
               // Add each new message to the session
               for (const message of newMessages) {
-                sessionStore.addMessage(agentId, message);
+                const wsIdForMsg = workspaceId || existingSession.workspaceId;
+                if (!wsIdForMsg) {
+                  throw new Error(`[AgentService] Cannot add message without workspaceId: ${agentId}`);
+                }
+                sessionStore.addMessageForWorkspace(wsIdForMsg, agentId, message);
               }
             }
           }
@@ -2467,13 +2541,17 @@ class RefactoredAgentService extends EventEmitter {
             metadata: agent.metadata,
           };
 
-          console.warn('[DIAG agent:created] Calling sessionStore.addSession', {
+          console.warn('[DIAG agent:created] Calling sessionStore.addSessionForWorkspace', {
             agentId,
             workspaceId: newSession.workspaceId,
             name: newSession.name,
             isBackground: newSession.isBackground,
           });
-          sessionStore.addSession(newSession);
+          const wsIdForNewSession = workspaceId || newSession.workspaceId;
+          if (!wsIdForNewSession) {
+            throw new Error(`[AgentService] Cannot create session without workspaceId: ${agentId}`);
+          }
+          sessionStore.addSessionForWorkspace(wsIdForNewSession, newSession);
           logger.debug('Created session for backend-created agent', {
             agentId,
             sessionName: newSession.name,
@@ -2507,7 +2585,12 @@ class RefactoredAgentService extends EventEmitter {
         });
 
         // Get the session
-        let session = sessionStore.getSession(agentId);
+        const wsId = unifiedStateStore.currentWorkspace?.workspace?.id;
+        if (!wsId) {
+          logger.warn('No workspace ID available for queued message processing', { agentId });
+          return;
+        }
+        let session = sessionStore.getSessionForWorkspace(wsId, agentId);
         if (!session) {
           logger.warn('No session found for queued message processing', { agentId });
           return;
@@ -2523,14 +2606,14 @@ class RefactoredAgentService extends EventEmitter {
             contextItems: contextItems || [],
           },
         };
-        sessionStore.addMessage(agentId, userMessage);
+        sessionStore.addMessageForWorkspace(session?.workspaceId || wsId, agentId, userMessage);
 
         // Re-get the session AFTER adding the message since getSession returns a snapshot
-        session = sessionStore.getSession(agentId);
+        session = sessionStore.getSessionForWorkspace(session?.workspaceId || wsId, agentId);
 
         if (session) {
           session.isStreaming = true;
-          sessionStore.addSession(session);
+          sessionStore.addSessionForWorkspace(session.workspaceId || wsId, session);
 
           // Dispatch session-updated event so ChatService syncs its messages
           window.dispatchEvent(new CustomEvent(`agent:session-updated:${agentId}`));
@@ -2598,12 +2681,14 @@ class RefactoredAgentService extends EventEmitter {
         // 1. Remove the phantom user message that was added by agent:queue:processing
         // Use updateMessages which directly sets agent.messages in the store without
         // going through setAgent's message-preservation logic.
-        const session = sessionStore.getSession(agentId);
+        const qcWsId = unifiedStateStore.currentWorkspace?.workspace?.id;
+        if (!qcWsId) return;
+        const session = sessionStore.getSessionForWorkspace(qcWsId, agentId);
         if (session) {
           const filteredMessages = (session.messages || []).filter((m: any) => m.id !== messageId);
           // Only update if we actually removed a message
           if (filteredMessages.length !== (session.messages || []).length) {
-            sessionStore.updateMessages(agentId, filteredMessages);
+            sessionStore.updateMessagesForWorkspace(session.workspaceId || qcWsId, agentId, filteredMessages);
             logger.debug('Removed phantom user message from session', {
               agentId,
               messageId,
@@ -2656,7 +2741,7 @@ class RefactoredAgentService extends EventEmitter {
       logger.info('Page unloading - saving all streaming sessions to disk');
 
       // Get all sessions from the store
-      const allSessions = sessionStore.getAllSessions();
+      const allSessions = sessionStore.getAllSessionsAcrossWorkspaces();
 
       if (!allSessions || allSessions.length === 0) {
         logger.debug('No sessions to save on page unload');
@@ -2899,7 +2984,7 @@ class RefactoredAgentService extends EventEmitter {
     const key = `${workspace.id}:${agentId}`;
 
     // If already activated, return existing session
-    const existing = sessionStore.getSession(agentId);
+    const existing = sessionStore.getSessionForWorkspace(workspace.id, agentId);
     if (existing?.backendSessionId) {
       logger.info('activateInitialAgent: already activated', { agentId, workspaceId: workspace.id });
       return existing;
@@ -2937,7 +3022,7 @@ class RefactoredAgentService extends EventEmitter {
    */
   async activateAgent(agentId: string, workspaceId: string): Promise<AgentSession | null> {
     // Get current session to check if already active
-    const currentSession = sessionStore.getSession(agentId);
+    const currentSession = sessionStore.getSessionForWorkspace(workspaceId, agentId);
     if (currentSession?.backendSessionId && currentSession.status === 'active') {
       logger.info('Agent already active, returning existing session', {
         agentId,
@@ -2981,7 +3066,7 @@ class RefactoredAgentService extends EventEmitter {
 
     // Mark as activating
     if (currentSession) {
-      sessionStore.addSession({
+      sessionStore.addSessionForWorkspace(workspaceId, {
         ...currentSession,
         activationState: AgentActivationState.ACTIVATING,
         activationAttempts: (currentSession.activationAttempts || 0) + 1,
@@ -3006,7 +3091,7 @@ class RefactoredAgentService extends EventEmitter {
           logger.error('Cannot activate agent - workspace not found', { agentId, workspaceId });
           // Mark as error
           if (currentSession) {
-            sessionStore.addSession({
+            sessionStore.addSessionForWorkspace(workspaceId, {
               ...currentSession,
               activationState: AgentActivationState.ERROR,
               lastActivationError: 'Space not found',
@@ -3041,7 +3126,7 @@ class RefactoredAgentService extends EventEmitter {
           });
 
           // Update the session in stores
-          sessionStore.addSession(finalSession);
+          sessionStore.addSessionForWorkspace(workspaceId, finalSession);
 
           // Also update unified state store
           const { unifiedStateStore } = await import('./services/unified-state-store');
@@ -3092,7 +3177,7 @@ class RefactoredAgentService extends EventEmitter {
 
     // Mark as error
     if (currentSession) {
-      sessionStore.addSession({
+      sessionStore.addSessionForWorkspace(workspaceId, {
         ...currentSession,
         activationState: AgentActivationState.ERROR,
         lastActivationError: lastError?.message || 'Unknown error',
@@ -3161,7 +3246,7 @@ class RefactoredAgentService extends EventEmitter {
         // Deduplication guard: if an agentId is provided, check for existing session or in-flight creation
         if (options.agentId) {
           // Part 1: Check if a session already exists with a backendSessionId
-          const existingSession = sessionStore.getSession(options.agentId);
+          const existingSession = sessionStore.getSessionForWorkspace(workspace.id, options.agentId);
           if (existingSession?.backendSessionId) {
             logger.warn('createSession dedup: session already exists for agentId, returning existing', {
               agentId: options.agentId,
@@ -3308,8 +3393,8 @@ class RefactoredAgentService extends EventEmitter {
               hasMetadataFlag: (session.metadata as any)?.isInitialAgent,
               isPending: !session.id,
             });
-            sessionStore.addSession(session);
-            sessionStore.setActiveSession(agentId);
+            sessionStore.addSessionForWorkspace(workspace.id, session);
+            sessionStore.setActiveSessionForWorkspace(workspace.id, agentId);
 
             // CRITICAL: Also add to unified state store so background agents can be found
             const { unifiedStateStore } = await import('./services/unified-state-store');
@@ -3402,8 +3487,8 @@ class RefactoredAgentService extends EventEmitter {
     }
 
     // Add to store
-    sessionStore.addSession(activatedSession);
-    sessionStore.setActiveSession(agentId);
+    sessionStore.addSessionForWorkspace(workspace.id, activatedSession);
+    sessionStore.setActiveSessionForWorkspace(workspace.id, agentId);
 
     // CRITICAL: Also add to unified state store so background agents can be found
     const { unifiedStateStore } = await import('./services/unified-state-store');
@@ -3613,7 +3698,7 @@ class RefactoredAgentService extends EventEmitter {
         // FIX: Before adding to store, check if existing session has richer data.
         // This prevents resumeSession from overwriting good in-memory data with stale disk data.
         // Uses shared comparator to also catch equal-count but truncated messages.
-        const existingSession = sessionStore.getSession(plainAgentId);
+        const existingSession = sessionStore.getSessionForWorkspace(workspace.id, plainAgentId);
         if (existingSession?.messages && session?.messages) {
           const cmp = compareMessageCompleteness(
             { messages: existingSession.messages },
@@ -3631,8 +3716,8 @@ class RefactoredAgentService extends EventEmitter {
         }
 
         // Add to store
-        sessionStore.addSession(session);
-        sessionStore.setActiveSession(plainAgentId);
+        sessionStore.addSessionForWorkspace(workspace.id, session);
+        sessionStore.setActiveSessionForWorkspace(workspace.id, plainAgentId);
 
         // Track event
         eventCollector.track(AgentEventType.SESSION_RESUMED, {
@@ -3689,7 +3774,7 @@ class RefactoredAgentService extends EventEmitter {
         });
 
         // Track message sent (privacy-safe: only length, not content)
-        const existingSession = sessionStore.getSession(agentId);
+        const existingSession = sessionStore.getSessionForWorkspace(workspace.id, agentId);
         track('Sent Agent Message', {
           agent_id: agentId,
           workspace_id: workspace.id,
@@ -3713,7 +3798,7 @@ class RefactoredAgentService extends EventEmitter {
             turnStartTime: Date.now(),
             prevToolCallCount,
           });
-          sessionStore.addSession(existingSession);
+          sessionStore.addSessionForWorkspace(workspace.id, existingSession);
         }
 
         // Generate deduplication key for this message
@@ -3737,7 +3822,7 @@ class RefactoredAgentService extends EventEmitter {
                 errorBoundary.wrap(
                   async () => {
                     // Get or activate session
-                    let session = sessionStore.getSession(agentId);
+                    let session = sessionStore.getSessionForWorkspace(workspace.id, agentId);
 
                     if (!session) {
                       const resumedSession = await this.resumeSession(agentId, workspace);
@@ -3815,7 +3900,7 @@ class RefactoredAgentService extends EventEmitter {
                         status: AgentStatus.Active,
                         activationState: AgentActivationState.ACTIVE,
                       };
-                      sessionStore.addSession(session);
+                      sessionStore.addSessionForWorkspace(workspace.id, session);
                     }
 
                     if (!session) {
@@ -3823,46 +3908,69 @@ class RefactoredAgentService extends EventEmitter {
                     }
 
                     // Add to store after validation
-                    sessionStore.addSession(session);
+                    sessionStore.addSessionForWorkspace(workspace.id, session);
 
-                    // Add user message
-                    // Include image and file blocks alongside text so the UI shows attachments
-                    const userContentBlocks: ContentBlock[] = [{ type: 'text' as const, text: content }];
-                    if (options.imageBlocks) {
-                      for (const img of options.imageBlocks) {
-                        userContentBlocks.push({ type: 'image' as const, data: img.data, mimeType: img.mimeType });
-                      }
-                    }
-                    if (options.fileBlocks) {
-                      for (const file of options.fileBlocks) {
-                        userContentBlocks.push({ type: 'file' as const, data: file.data, mimeType: file.mimeType, fileName: file.fileName });
-                      }
-                    }
-                    const userMessage: AgentMessage = {
-                      id: createMessageId(uuidv4()),
-                      role: 'user',
-                      contentBlocks: userContentBlocks,
-                      timestamp: new Date().toISOString(),
-                      metadata: options.contextReferences?.length
-                        ? { contextReferences: options.contextReferences }
-                        : {},
-                    };
-
-                    sessionStore.addMessage(session.id, userMessage);
-                    window.dispatchEvent(new CustomEvent(`agent:session-updated:${session.id}`));
-
-                    // Save the session immediately after adding the user message
-                    // This ensures the message persists even if the app crashes or refreshes
-                    // For edit/regenerate flows (resetHistory), allow truncation since messages
-                    // were intentionally removed before this save
-                    await this.saveSession(agentId, workspace.id, true, {
-                      allowTruncation: options.resetHistory,
+                    // Check if this user message already exists in recent messages
+                    // Look through all messages (not just the last one) because an assistant
+                    // message may have been added after the user message during streaming
+                    const recentMessages = session.messages?.slice(-5) || [];
+                    const incomingImageCount = options.imageBlocks?.length || 0;
+                    const incomingFileCount = options.fileBlocks?.length || 0;
+                    const existingUserMessage = recentMessages.find((msg: AgentMessage) => {
+                      if (msg.role !== 'user') return false;
+                      const msgText = msg.contentBlocks?.find((b: any) => b.type === 'text')?.text;
+                      // Compare both text AND attachment counts to avoid false dedup
+                      // of different image-only messages (where text is both "")
+                      const msgImageCount = msg.contentBlocks?.filter((b: any) => b.type === 'image')?.length || 0;
+                      const msgFileCount = msg.contentBlocks?.filter((b: any) => b.type === 'file')?.length || 0;
+                      return msgText === content && msgImageCount === incomingImageCount && msgFileCount === incomingFileCount;
                     });
+
+                    if (!existingUserMessage) {
+                      // Add user message only if not already present
+                      // Include image and file blocks alongside text so the UI shows attachments
+                      const userContentBlocks: ContentBlock[] = [{ type: 'text' as const, text: content }];
+                      if (options.imageBlocks) {
+                        for (const img of options.imageBlocks) {
+                          userContentBlocks.push({ type: 'image' as const, data: img.data, mimeType: img.mimeType });
+                        }
+                      }
+                      if (options.fileBlocks) {
+                        for (const file of options.fileBlocks) {
+                          userContentBlocks.push({ type: 'file' as const, data: file.data, mimeType: file.mimeType, fileName: file.fileName });
+                        }
+                      }
+                      const userMessage: AgentMessage = {
+                        id: createMessageId(uuidv4()),
+                        role: 'user',
+                        contentBlocks: userContentBlocks,
+                        timestamp: new Date().toISOString(),
+                        metadata: options.contextReferences?.length
+                          ? { contextReferences: options.contextReferences }
+                          : {},
+                      };
+
+                      sessionStore.addMessageForWorkspace(workspace.id, session.id, userMessage);
+                      window.dispatchEvent(new CustomEvent(`agent:session-updated:${session.id}`));
+
+                      // Save the session immediately after adding the user message
+                      // This ensures the message persists even if the app crashes or refreshes
+                      // For edit/regenerate flows (resetHistory), allow truncation since messages
+                      // were intentionally removed before this save
+                      await this.saveSession(agentId, workspace.id, true, {
+                        allowTruncation: options.resetHistory,
+                      });
+                    } else {
+                      // Remove the optimistic flag from the existing message if present
+                      if (existingUserMessage.metadata) {
+                        delete (existingUserMessage.metadata as any).optimistic;
+                      }
+                    }
 
                     // Clear isStreaming flag on ALL old assistant messages
                     // before starting a new stream. Without this, old messages with stale
                     // isStreaming: true cause new stream content to be written into them.
-                    const preStreamSession = sessionStore.getSession(agentId);
+                    const preStreamSession = sessionStore.getSessionForWorkspace(workspace.id, agentId);
                     if (preStreamSession?.messages) {
                       for (const msg of preStreamSession.messages) {
                         if (msg.role === 'assistant' && msg.isStreaming) {
@@ -3879,12 +3987,12 @@ class RefactoredAgentService extends EventEmitter {
                     }
 
                     // Mark as streaming
-                    sessionStore.setStreaming(session.id, true);
+                    sessionStore.setStreamingForWorkspace(workspace.id, session.id, true);
 
                     // Add an empty assistant message with isStreaming: true
                     // This ensures the UI shows the streaming indicator immediately
                     // Check if this is the first message (no assistant messages yet)
-                    const currentSession = sessionStore.getSession(agentId);
+                    const currentSession = sessionStore.getSessionForWorkspace(workspace.id, agentId);
                     const hasAssistantMessage = currentSession?.messages?.some(
                       (m: any) => m.role === 'assistant',
                     );
@@ -3900,7 +4008,7 @@ class RefactoredAgentService extends EventEmitter {
                         isStreaming: true,
                         metadata: {},
                       };
-                      sessionStore.addMessage(session.id, assistantMessage);
+                      sessionStore.addMessageForWorkspace(workspace.id, session.id, assistantMessage);
                     }
 
                     // Subscribe to session-specific stream events
@@ -3950,7 +4058,7 @@ class RefactoredAgentService extends EventEmitter {
                         );
 
                         // Ensure the session is properly saved in the store
-                        sessionStore.addSession(currentSession);
+                        sessionStore.addSessionForWorkspace(workspace.id, currentSession);
                         // Note: Backend handles persistence - no need to save from frontend
                       }
 
@@ -4135,7 +4243,7 @@ class RefactoredAgentService extends EventEmitter {
                                 ...streamSession,
                                 messages: [...streamSession.messages, assistantMessage],
                               };
-                              sessionStore.addSession(updatedSession);
+                              sessionStore.addSessionForWorkspace(workspace.id, updatedSession);
                             } else {
                               // Update the message with the full accumulated buffer
                               // Use workspace-aware update for cross-workspace streaming
@@ -4315,7 +4423,7 @@ class RefactoredAgentService extends EventEmitter {
                                     textBuffer,
                                   ),
                                 };
-                                sessionStore.addSession(updatedSession);
+                                sessionStore.addSessionForWorkspace(workspace.id, updatedSession);
                               } else {
                                 // Existing message - use direct update to avoid preserveStreamingMessages issue
                                 sessionStore.updateMessageForWorkspace(
@@ -4465,7 +4573,7 @@ class RefactoredAgentService extends EventEmitter {
                                 // Otherwise, setAgent will see session.isStreaming as true and
                                 // overwrite the streaming.active state we just set to false
                                 updatedSession.isStreaming = false;
-                                sessionStore.addSession(updatedSession);
+                                sessionStore.addSessionForWorkspace(workspace.id, updatedSession);
 
                                 // Update unified state store so BackgroundAgentExecutor subscriptions fire
                                 unifiedStateStore.setAgent(workspace.id as WorkspaceId, updatedSession);
@@ -4880,7 +4988,7 @@ class RefactoredAgentService extends EventEmitter {
 
                       if (options.resetHistory) {
                         // Edit/regenerate flow: pass truncated messages from sessionStore
-                        const currentSession = sessionStore.getSession(agentId);
+                        const currentSession = sessionStore.getSessionForWorkspace(workspace.id, agentId);
                         const currentMessages = currentSession?.messages || [];
 
                         // Filter out empty streaming placeholder assistant messages.
@@ -5086,6 +5194,16 @@ class RefactoredAgentService extends EventEmitter {
   }
 
   /**
+   * Add an optimistic message to the session
+   * This is used to immediately show user messages in the UI before backend processing
+   */
+  addOptimisticMessage(agentId: string, message: AgentMessage): void {
+    const wsId = unifiedStateStore.currentWorkspace?.workspace?.id;
+    if (!wsId) return;
+    sessionStore.addMessageForWorkspace(wsId, agentId, message);
+  }
+
+  /**
    * Save a session to disk (explicit save)
    *
    * NOTE: This is generally not needed - the backend automatically persists
@@ -5093,7 +5211,7 @@ class RefactoredAgentService extends EventEmitter {
    * outside of the normal streaming flow (e.g., manual metadata updates).
    */
   async saveSession(agentId: string, workspaceId: string, immediate = false, options?: { allowTruncation?: boolean }): Promise<void> {
-    const session = sessionStore.getSession(agentId);
+    const session = sessionStore.getSessionForWorkspace(workspaceId, agentId);
     if (!session) {
       logger.warn('Cannot save session - session not found', { agentId });
       return;
@@ -5132,13 +5250,15 @@ class RefactoredAgentService extends EventEmitter {
     requestDeduplicator.clearKeysForAgent(agentId);
 
     // Streaming is handled by ConsolidatedBackendService
-    const tempSession = sessionStore.getSession(agentId);
+    const wsId = unifiedStateStore.currentWorkspace?.workspace?.id;
+    if (!wsId) return;
+    const tempSession = sessionStore.getSessionForWorkspace(wsId, agentId);
     if (tempSession) {
-      sessionStore.setStreaming(tempSession.id, false);
+      sessionStore.setStreamingForWorkspace(tempSession.workspaceId || wsId, tempSession.id, false);
     }
 
     // Stop backend
-    const session = sessionStore.getSession(agentId);
+    const session = sessionStore.getSessionForWorkspace(wsId, agentId);
     if (session?.id) {
       const response = await invoke<any>(AGENT_BACKEND_CHANNELS.STOP, {
         agentId,
@@ -5168,7 +5288,9 @@ class RefactoredAgentService extends EventEmitter {
    * This is kept for internal use only.
    */
   async softDeleteSession(agentId: string): Promise<AgentSession | null> {
-    const session = sessionStore.getSession(agentId);
+    const wsId = unifiedStateStore.currentWorkspace?.workspace?.id;
+    if (!wsId) return null;
+    const session = sessionStore.getSessionForWorkspace(wsId, agentId);
     if (!session) return null;
 
     // Stop streaming if active
@@ -5177,7 +5299,7 @@ class RefactoredAgentService extends EventEmitter {
     // No state machine cleanup needed with new architecture
 
     // Remove from store but keep the session object for undo
-    sessionStore.removeSession(agentId);
+    sessionStore.removeSessionForWorkspace(session.workspaceId || wsId, agentId);
 
     // Clean up analytics tracking state
     agentAnalyticsState.delete(agentId);
@@ -5243,7 +5365,11 @@ class RefactoredAgentService extends EventEmitter {
           onClick: () => {
             undoClicked = true;
             this.pendingDeletions.delete(agentId);
-            sessionStore.addSession(savedSession);
+            const wsIdForUndo = savedSession.workspaceId || effectiveWorkspaceId;
+            if (!wsIdForUndo) {
+              throw new Error(`[AgentService] Cannot undo delete without workspaceId: ${agentId}`);
+            }
+            sessionStore.addSessionForWorkspace(wsIdForUndo, savedSession);
             toast.dismiss(toastId);
           },
         },
@@ -5295,7 +5421,12 @@ class RefactoredAgentService extends EventEmitter {
    * Delete a session
    */
   async deleteSession(agentId: string, workspaceId?: string): Promise<void> {
-    const session = sessionStore.getSession(agentId);
+    const wsId = workspaceId || unifiedStateStore.currentWorkspace?.workspace?.id;
+    if (!wsId) {
+      logger.warn('No workspace ID available for deleteSession', { agentId });
+      return;
+    }
+    const session = sessionStore.getSessionForWorkspace(wsId, agentId);
 
     // Even if session is not found in memory, we should still try to delete from disk
     // This can happen if the agent was already soft-deleted but needs permanent deletion
@@ -5336,7 +5467,11 @@ class RefactoredAgentService extends EventEmitter {
 
     // Remove from store if session exists
     if (session) {
-      sessionStore.removeSession(agentId);
+      const wsIdForRemove = session.workspaceId || effectiveWorkspaceId || wsId;
+      if (!wsIdForRemove) {
+        throw new Error(`[AgentService] Cannot remove session without workspaceId: ${agentId}`);
+      }
+      sessionStore.removeSessionForWorkspace(wsIdForRemove, agentId);
     }
 
     // Clean up analytics tracking state
@@ -5387,7 +5522,7 @@ class RefactoredAgentService extends EventEmitter {
     }
 
     // Fall back to sessionStore (secondary source)
-    const session = sessionStore.getSession(plainAgentId);
+    const session = workspace?.workspace?.id ? sessionStore.getSessionForWorkspace(workspace.workspace.id, plainAgentId) : null;
 
     // Ensure the session has workspaceId
     if (session && !session.workspaceId) {
@@ -5413,7 +5548,9 @@ class RefactoredAgentService extends EventEmitter {
    * Get all sessions
    */
   getAllSessions(): AgentSession[] {
-    return sessionStore.getAllSessions();
+    const wsId = unifiedStateStore.currentWorkspace?.workspace?.id;
+    if (!wsId) return [];
+    return sessionStore.getAllSessionsForWorkspace(wsId);
   }
 
   /**
@@ -5455,7 +5592,9 @@ class RefactoredAgentService extends EventEmitter {
    */
   setActiveSession(agentId: string | null): void {
     if (agentId) {
-      sessionStore.setActiveSession(agentId);
+      const wsId = unifiedStateStore.currentWorkspace?.workspace?.id;
+      if (!wsId) return;
+      sessionStore.setActiveSessionForWorkspace(wsId, agentId);
     }
   }
 
@@ -5463,7 +5602,9 @@ class RefactoredAgentService extends EventEmitter {
    * Get active session
    */
   getActiveSession(): AgentSession | null {
-    return sessionStore.getActiveSession() ?? null;
+    const wsId = unifiedStateStore.currentWorkspace?.workspace?.id;
+    if (!wsId) return null;
+    return sessionStore.getActiveSessionForWorkspace(wsId) ?? null;
   }
 
   /**
@@ -5565,8 +5706,8 @@ class RefactoredAgentService extends EventEmitter {
         });
 
         // Add to sessionStore (secondary source)
-        sessionStore.addSession(session);
-        sessionStore.setActiveSession(session.id);
+        sessionStore.addSessionForWorkspace(session.workspaceId || workspace.id, session);
+        sessionStore.setActiveSessionForWorkspace(session.workspaceId || workspace.id, session.id);
 
         // Track agent creation
         track('Created Agent', {
@@ -5598,7 +5739,9 @@ class RefactoredAgentService extends EventEmitter {
    * Add a session to the store
    */
   addSession(session: AgentSession): void {
-    sessionStore.addSession(session);
+    const wsId = session.workspaceId || unifiedStateStore.currentWorkspace?.workspace?.id;
+    if (!wsId) return;
+    sessionStore.addSessionForWorkspace(wsId, session);
   }
 
   /**
@@ -5777,7 +5920,7 @@ class RefactoredAgentService extends EventEmitter {
         unifiedStateStore.setAgent(workspace.id as any, session);
 
         // Also add to sessionStore (secondary source)
-        sessionStore.addSession(session);
+        sessionStore.addSessionForWorkspace(workspace.id, session);
 
         logger.debug('Session restored to stores', {
           agentId: session.id,
@@ -5819,12 +5962,21 @@ class RefactoredAgentService extends EventEmitter {
       }
 
       if (session) {
-        sessionStore.addSession(session);
+        const wsIdForRestore = workspaceId || session.workspaceId;
+        if (!wsIdForRestore) {
+          throw new Error(`[AgentService] Cannot restore session without workspaceId: ${session.id}`);
+        }
+        sessionStore.addSessionForWorkspace(wsIdForRestore, session);
       }
       return session;
     } else {
       // Restore the provided session object
-      sessionStore.addSession(sessionOrId);
+      const wsId = sessionOrId.workspaceId || workspaceId || unifiedStateStore.currentWorkspace?.workspace?.id;
+      if (!wsId) {
+        logger.warn('No workspace ID available for restoreSessionHelper', { sessionId: sessionOrId.id });
+        return sessionOrId;
+      }
+      sessionStore.addSessionForWorkspace(wsId, sessionOrId);
       return sessionOrId;
     }
   }
@@ -5879,7 +6031,7 @@ class RefactoredAgentService extends EventEmitter {
     const cacheStats = await configCache.getStats();
 
     return {
-      sessions: sessionStore.getStats(),
+      sessions: sessionStore.getStatsForWorkspace(requireWorkspaceId('getStats')),
       cache: cacheStats,
       activeStreamHandlers: this.activeStreamHandlers.size,
       streamTimeouts: this.streamTimeouts.size,
@@ -6147,7 +6299,9 @@ class RefactoredAgentService extends EventEmitter {
     }
 
     // Update session
-    sessionStore.updateSession(agentId, session);
+    const wsId = session.workspaceId || unifiedStateStore.currentWorkspace?.workspace?.id;
+    if (!wsId) return;
+    sessionStore.updateSessionForWorkspace(wsId, agentId, session);
   }
 
   /**
@@ -6165,7 +6319,9 @@ class RefactoredAgentService extends EventEmitter {
       isStreaming: false,
     };
 
-    sessionStore.updateSession(params.agentId, session);
+    const wsId = session.workspaceId || unifiedStateStore.currentWorkspace?.workspace?.id;
+    if (!wsId) return;
+    sessionStore.updateSessionForWorkspace(wsId, params.agentId, session);
 
     // Track agent errored event
     track('Agent Errored', {
@@ -6224,9 +6380,13 @@ class RefactoredAgentService extends EventEmitter {
     // Keep only the most recent MAX_SESSIONS
     const toRemove = sorted.slice(MAX_SESSIONS);
 
+    const cleanupWsId = unifiedStateStore.currentWorkspace?.workspace?.id;
     for (const session of toRemove) {
       agentAnalyticsState.delete(session.id);
-      sessionStore.removeAgent(session.id);
+      const removeWsId = session.workspaceId || cleanupWsId;
+      if (removeWsId) {
+        sessionStore.removeSessionForWorkspace(removeWsId, session.id);
+      }
     }
   }
 }

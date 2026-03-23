@@ -363,7 +363,9 @@
       return getProviderConfig(getDefaultProviderId()).id;
     }
 
-    const session = sessionStore.getSession(agentId);
+    const session = workspace?.id
+      ? sessionStore.getSessionForWorkspace(String(workspace.id), agentId)
+      : undefined;
     const provider = session ? getAgentProvider(session) : undefined;
     return provider ? getProviderConfig(provider).id : undefined;
   });
@@ -441,7 +443,9 @@
       return;
     }
 
-    const previousSession = agentId ? sessionStore.getSession(agentId) : undefined;
+    const previousSession = agentId && workspace?.id
+      ? sessionStore.getSessionForWorkspace(String(workspace.id), agentId)
+      : undefined;
     const previousProvider = selectedProviderId;
     const previousModel = selectedModel;
     const nextModel = await resolveCompatibleModelForProvider(newProvider, {
@@ -459,7 +463,7 @@
     selectedModel = nextModel;
     lastNotifiedModel = nextModel;
 
-    sessionStore.updateSession(agentId, {
+    sessionStore.updateSessionForWorkspace(String(workspace.id), agentId, {
       provider: newProvider,
       model: nextModel,
       metadata: {
@@ -481,7 +485,7 @@
       selectedModel = previousModel;
       lastNotifiedModel = previousModel;
       userChangedModel = false;
-      sessionStore.updateSession(agentId, {
+      sessionStore.updateSessionForWorkspace(String(workspace.id), agentId, {
         provider: previousProvider,
         model: previousModel,
         metadata: {

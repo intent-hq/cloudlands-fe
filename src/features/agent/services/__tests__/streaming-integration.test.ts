@@ -65,18 +65,15 @@ vi.mock('../../agent.service', () => {
 
 vi.mock('$features/agent/browser', () => ({
   sessionStore: {
-    getSession: vi.fn(),
     getSessionForWorkspace: vi.fn(),
-    addSession: vi.fn(),
     addSessionForWorkspace: vi.fn(),
-    setActiveSession: vi.fn(),
-    updateMessages: vi.fn(),
-    addMessage: vi.fn(),
+    setActiveSessionForWorkspace: vi.fn(),
+    updateMessagesForWorkspace: vi.fn(),
     addMessageForWorkspace: vi.fn(),
-    setStreaming: vi.fn(),
     setStreamingForWorkspace: vi.fn(),
     getStore: vi.fn(),
-    getAllSessions: vi.fn(() => []),
+    getAllSessionsForWorkspace: vi.fn(() => []),
+    getAllSessionsAcrossWorkspaces: vi.fn(() => []),
   },
   unifiedStateStore: {
     currentWorkspace: null,
@@ -363,7 +360,7 @@ describe('Streaming Integration Tests', () => {
       // ChatService's sessionUpdatedHandler should pick up the new session
 
       // Mock sessionStore to return a streaming session
-      vi.mocked(sessionStore.getSession).mockReturnValue({
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue({
         id: sessionId,
         backendSessionId: sessionId,
         workspaceId: 'test-workspace',
@@ -418,15 +415,12 @@ describe('Streaming Integration Tests', () => {
       setupSession(sessionId);
 
       // Mock sessionStore to return a streaming session (backend already started)
-      // Use workspace-aware lookup since setupStreaming now prefers getSessionForWorkspace
-      // when the instance has a workspaceId ('test-workspace' from setupSession).
       const streamingSession = {
         id: sessionId,
         isStreaming: true,
         messages: [],
       } as any;
       vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(streamingSession);
-      vi.mocked(sessionStore.getSession).mockReturnValue(streamingSession);
 
       // Call setupStreaming which dispatches synthetic 'start' event
       // for backend-initiated streams (session.isStreaming === true)
@@ -455,7 +449,7 @@ describe('Streaming Integration Tests', () => {
       setupSession(sessionId);
 
       // Mock sessionStore to show agent is actively streaming
-      vi.mocked(sessionStore.getSession).mockReturnValue({
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue({
         id: sessionId,
         isStreaming: true,
         messages: [
@@ -493,7 +487,7 @@ describe('Streaming Integration Tests', () => {
       chatService.getStore().update((s) => ({ ...s, isProcessing: true }));
 
       // Mock sessionStore
-      vi.mocked(sessionStore.getSession).mockReturnValue({
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue({
         id: sessionId,
         isStreaming: true,
         messages: [],
@@ -674,7 +668,7 @@ describe('Streaming Integration Tests', () => {
       // Simulate sessionUpdatedHandler receiving stream end from backend
       // The guard should let through isStreaming=false even if message count is lower
       // because the stream is ending and we need to clear the state
-      vi.mocked(sessionStore.getSession).mockReturnValue({
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue({
         id: sessionId,
         isStreaming: false, // Stream ended
         messages: [], // Fewer messages (backend may have cleaned up)
@@ -704,7 +698,7 @@ describe('Streaming Integration Tests', () => {
       expect(messageCountDuring).toBeGreaterThan(0);
 
       // Simulate stale sessionStore update with fewer messages while still streaming
-      vi.mocked(sessionStore.getSession).mockReturnValue({
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue({
         id: sessionId,
         isStreaming: true, // Still streaming
         messages: [], // Fewer messages (stale data)
@@ -738,19 +732,6 @@ describe('Streaming Integration Tests', () => {
       // Register the sessionUpdatedHandler by calling setupStreaming.
       // Mock sessionStore to return a non-streaming session initially so setupStreaming
       // doesn't dispatch a synthetic start event.
-      vi.mocked(sessionStore.getSession).mockReturnValue({
-        id: sessionId,
-        backendSessionId: sessionId,
-        workspaceId: 'test-workspace',
-        name: 'Test',
-        status: 'active',
-        messages: [],
-        model: 'test',
-        systemPrompt: '',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        isStreaming: false,
-      } as any);
       vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue({
         id: sessionId,
         isStreaming: false,
@@ -793,7 +774,6 @@ describe('Streaming Integration Tests', () => {
         updatedAt: new Date(),
         isStreaming: false, // <-- stale: setStreaming(true) hasn't been called yet
       } as any;
-      vi.mocked(sessionStore.getSession).mockReturnValue(staleSession);
       vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(staleSession);
 
       // Step 3: Dispatch session-updated event (triggers sessionUpdatedHandler)

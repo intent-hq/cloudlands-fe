@@ -29,20 +29,21 @@ vi.mock('../browser', () => ({
   persistenceService: { saveSession: vi.fn() },
   sessionStore: {
     getStore: vi.fn(() => writable({ sessions: [] })),
-    getAllSessions: vi.fn(() => []),
-    getSession: vi.fn((agentId: string) => {
+    getAllSessionsForWorkspace: vi.fn(() => []),
+    getAllSessionsAcrossWorkspaces: vi.fn(() => []),
+    getSessionForWorkspace: vi.fn((_workspaceId: string, agentId: string) => {
       if (!state.session || state.session.id !== agentId) return undefined;
       return { ...state.session, messages: [...state.session.messages] };
     }),
-    addMessage: vi.fn((_agentId: string, message: any) => state.session?.messages.push(message)),
-    addSession: vi.fn((session: any) => {
+    addMessageForWorkspace: vi.fn((_workspaceId: string, _agentId: string, message: any) => state.session?.messages.push(message)),
+    addSessionForWorkspace: vi.fn((_workspaceId: string, session: any) => {
       state.session = { ...session, messages: [...(session.messages || [])] };
     }),
-    updateMessages: vi.fn((_agentId: string, messages: any[]) => {
+    updateMessagesForWorkspace: vi.fn((_workspaceId: string, _agentId: string, messages: any[]) => {
       if (state.session) state.session.messages = [...messages];
     }),
-    setStreaming: vi.fn(),
-    removeAgent: vi.fn(),
+    setStreamingForWorkspace: vi.fn(),
+    removeSessionForWorkspace: vi.fn(),
   },
 }));
 
@@ -50,7 +51,7 @@ vi.mock('$lib/electron-bridge', () => ({ invoke: vi.fn() }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
-vi.mock('$features/agent/services/unified-state-store', () => ({ unifiedStateStore: { currentWorkspace: null, getAgentsForWorkspace: vi.fn(() => []) } }));
+vi.mock('$features/agent/services/unified-state-store', () => ({ unifiedStateStore: { currentWorkspace: { workspace: { id: 'ws-1' } }, getAgentsForWorkspace: vi.fn(() => []) } }));
 vi.mock('$features/agent/services/performance-optimizer', () => ({ performanceOptimizer: {} }));
 vi.mock('$features/agent/services/agent-factory', () => ({ agentFactory: {} }));
 vi.mock('../browser/services/error-recovery.service', () => ({ errorRecovery: {}, DEFAULT_STRATEGIES: {} }));

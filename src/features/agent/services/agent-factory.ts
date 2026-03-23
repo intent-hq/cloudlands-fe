@@ -589,16 +589,16 @@ export class UnifiedAgentFactory {
 
       // Step 8: Update frontend state
       const stateUpdateStart = Date.now();
-      // Note: AgentState wrapper is created internally by sessionStore.addSession()
+      // Note: AgentState wrapper is created internally by sessionStore.addSessionForWorkspace()
       // which calls unifiedStateStore.setAgent with the proper structure
 
       // Only update frontend state if we're in the frontend
       if (!isBackend) {
         const sessionStore = await getSessionStore();
-        // Only use sessionStore.addSession - it internally calls unifiedStateStore.setAgent
+        // Only use sessionStore.addSessionForWorkspace - it internally calls unifiedStateStore.setAgent
         // and also notifies subscribers. Calling both would cause duplicate updates.
         if (sessionStore) {
-          sessionStore.addSession(agent);
+          sessionStore.addSessionForWorkspace(agent.workspaceId, agent);
         }
       }
       metrics.stateUpdateTime = Date.now() - stateUpdateStart;
@@ -651,7 +651,7 @@ export class UnifiedAgentFactory {
               ? { contextReferences: normalized.contextReferences }
               : {},
           };
-          sessionStore.addMessage(agent.id, userMessage);
+          sessionStore.addMessageForWorkspace(agent.workspaceId, agent.id, userMessage);
           logger.info('Added user message to state before sending', {
             agentId: agent.id,
             messageId: userMessage.id,
@@ -661,7 +661,7 @@ export class UnifiedAgentFactory {
           // Save the session immediately after adding the user message
           // This ensures the message persists even if the app crashes or refreshes
           try {
-            const session = sessionStore.getSession(agent.id);
+            const session = sessionStore.getSessionForWorkspace(agent.workspaceId, agent.id);
             if (session) {
               const persistenceService = await getPersistenceService();
               if (persistenceService) {
@@ -946,11 +946,11 @@ export class UnifiedAgentFactory {
         if (!isBackend) {
           const sessionStore = await getSessionStore();
           if (sessionStore) {
-            const session = sessionStore.getSession(agent.id);
+            const session = sessionStore.getSessionForWorkspace(agent.workspaceId, agent.id);
             if (session && session.messages) {
               // Remove the last message (the user message we just added)
               session.messages.pop();
-              sessionStore.updateMessages(agent.id, session.messages);
+              sessionStore.updateMessagesForWorkspace(agent.workspaceId, agent.id, session.messages);
             }
           }
         }

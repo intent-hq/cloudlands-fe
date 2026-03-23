@@ -37,18 +37,15 @@ vi.mock('../../agent.service', () => ({
 // This properly intercepts the real import from '$features/agent/browser'.
 vi.mock('$features/agent/browser', () => ({
   sessionStore: {
-    getSession: vi.fn(),
     getSessionForWorkspace: vi.fn(),
-    addSession: vi.fn(),
     addSessionForWorkspace: vi.fn(),
-    setActiveSession: vi.fn(),
-    updateMessages: vi.fn(),
-    addMessage: vi.fn(),
+    setActiveSessionForWorkspace: vi.fn(),
+    updateMessagesForWorkspace: vi.fn(),
     addMessageForWorkspace: vi.fn(),
-    setStreaming: vi.fn(),
     setStreamingForWorkspace: vi.fn(),
     getStore: vi.fn(),
-    getAllSessions: vi.fn(() => []),
+    getAllSessionsForWorkspace: vi.fn(() => []),
+    getAllSessionsAcrossWorkspaces: vi.fn(() => []),
   },
   unifiedStateStore: {
     currentWorkspace: null,
@@ -959,7 +956,6 @@ describe('ChatService Streaming Race Conditions', () => {
         ],
       } as any;
       vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(sessionData);
-      vi.mocked(sessionStore.getSession).mockReturnValue(sessionData);
 
       // Send a chunk — flushChunkUpdate fires immediately (throttle elapsed)
       simulateStreamEvent(sessionId, { type: 'chunk', content: 'Hello' });
@@ -981,7 +977,6 @@ describe('ChatService Streaming Race Conditions', () => {
 
       // sessionStore returns undefined (default mock behavior)
       vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(undefined as any);
-      vi.mocked(sessionStore.getSession).mockReturnValue(undefined as any);
 
       // Start streaming
       simulateStreamEvent(sessionId, { type: 'start' });
@@ -1450,13 +1445,7 @@ describe('ChatService Streaming Race Conditions', () => {
     beforeEach(() => {
       mockWorkspace = { id: 'test-workspace' };
 
-      // Set up session in sessionStore mock so sendMessage doesn't fail.
-      // IMPORTANT: Mock BOTH getSession AND getSessionForWorkspace because
-      // sendMessage uses the workspace-aware lookup when session.workspaceId
-      // is set.  Earlier tests may leave a stale mockReturnValue on
-      // getSessionForWorkspace (vi.clearAllMocks only clears call history,
-      // not mock implementations), which can return a session without
-      // backendSessionId — triggering the activation path and failing.
+      // Set up session in sessionStore mock so sendMessage doesn't fail
       const sessionData = {
         id: 'test-session',
         backendSessionId: 'test-session',
@@ -1470,7 +1459,6 @@ describe('ChatService Streaming Race Conditions', () => {
         isStreaming: false,
         messages: [],
       } as any;
-      vi.mocked(sessionStore.getSession).mockReturnValue(sessionData);
       vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(sessionData);
     });
 

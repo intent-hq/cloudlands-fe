@@ -98,7 +98,7 @@ vi.mock('$features/agent/agent.service', () => ({
 }));
 
 vi.mock('$features/agent/browser', () => ({
-  sessionStore: { getAllSessions: vi.fn().mockReturnValue([]) },
+  sessionStore: { getAllSessionsForWorkspace: vi.fn().mockReturnValue([]), getAllSessionsAcrossWorkspaces: vi.fn().mockReturnValue([]) },
   unifiedStateStore: { getWorkspaceState: vi.fn().mockReturnValue(null) },
 }));
 

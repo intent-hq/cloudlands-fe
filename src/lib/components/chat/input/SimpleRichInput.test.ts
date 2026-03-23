@@ -165,12 +165,12 @@ describe('SimpleRichInput provider switch sync', () => {
     });
 
     unifiedStateStore.setCurrentWorkspace('ws-1' as any);
-    sessionStore.addSession(createSession());
+    sessionStore.addSessionForWorkspace('ws-1', createSession());
   });
 
   afterEach(() => {
     cleanup();
-    sessionStore.removeSession('agent-1');
+    sessionStore.removeSessionForWorkspace('ws-1', 'agent-1');
     vi.unstubAllGlobals();
     document.body.innerHTML = '';
   });
@@ -260,8 +260,8 @@ describe('SimpleRichInput provider switch sync', () => {
   });
 
   it('hydrates the persisted provider from session state instead of showing the default provider on reopen', async () => {
-    sessionStore.removeSession('agent-1');
-    sessionStore.addSession(
+    sessionStore.removeSessionForWorkspace('ws-1', 'agent-1');
+    sessionStore.addSessionForWorkspace('ws-1',
       createSession({
         model: 'codex:gpt-5-codex',
         provider: 'codex',
@@ -296,8 +296,8 @@ describe('SimpleRichInput provider switch sync', () => {
   });
 
   it('locks provider and model together with shared hover copy and no extra model lock icon', async () => {
-    sessionStore.removeSession('agent-1');
-    sessionStore.addSession(
+    sessionStore.removeSessionForWorkspace('ws-1', 'agent-1');
+    sessionStore.addSessionForWorkspace('ws-1',
       createSession({
         metadata: {
           provider: 'auggie',
@@ -362,8 +362,8 @@ describe('SimpleRichInput provider switch sync', () => {
   });
 
   it('keeps the provider control visible when the current provider is non-default', async () => {
-    sessionStore.removeSession('agent-1');
-    sessionStore.addSession(
+    sessionStore.removeSessionForWorkspace('ws-1', 'agent-1');
+    sessionStore.addSessionForWorkspace('ws-1',
       createSession({
         model: 'codex:gpt-5-codex',
         provider: 'codex',

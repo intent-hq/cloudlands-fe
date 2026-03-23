@@ -3115,10 +3115,12 @@
     };
 
     // Update the session via sessionStore
-    sessionStore.updateSession(agentId, {
-      metadata: newMetadata,
-      model: newModel,
-    });
+    if (workspace?.id) {
+      sessionStore.updateSessionForWorkspace(String(workspace.id), agentId, {
+        metadata: newMetadata,
+        model: newModel,
+      });
+    }
 
     // Also update the internal chat state to reflect immediately
     _chatStateInternal = {
@@ -3132,7 +3134,7 @@
 
     // Try to persist the session to disk for future sessions.
     // NOTE: This may fail for sessions with no messages (which is fine), because:
-    // 1. The in-memory metadata is updated via sessionStore.updateSession above
+    // 1. The in-memory metadata is updated via sessionStore.updateSessionForWorkspace above
     // 2. When sending a message, the metadata is passed directly in the request
     // 3. The backend will read from request.metadata (priority) before disk
     // If persistence succeeds, the specialist will be remembered for future sessions.

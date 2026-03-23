@@ -15,6 +15,7 @@
   import { getPanelIdFromEvent } from '$lib/components/layout/panel-system/panel-context';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { sessionStore } from '$features/agent/browser';
+  import { unifiedStateStore } from '$features/agent/services/unified-state-store';
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
 
   interface Props {
@@ -73,7 +74,10 @@
   );
   const targetAgentName = $derived.by(() => {
     if (!isAgentMessage || !parsedResult?.toAgentId) return null;
-    const session = sessionStore?.getSession(parsedResult.toAgentId);
+    const workspaceId = unifiedStateStore.currentWorkspace?.workspace?.id;
+    const session = workspaceId
+      ? sessionStore.getSessionForWorkspace(workspaceId, parsedResult.toAgentId)
+      : undefined;
     if (session?.name && !isGenericAgentName(session.name)) {
       return session.name;
     }

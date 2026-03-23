@@ -64,7 +64,7 @@
   import type { ChangeCategory, LocalFileChange, DiffHunk } from './types';
   import { getDirectoryPath, getFileName, stripWorkspacePrefix, pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
   import { formatRelativeTime } from '$lib/utils/timeFormatting';
-  import { sessionStore } from '$features/agent/browser';
+  import { sessionStore, unifiedStateStore } from '$features/agent/browser';
 
   /**
    * Get the category for a change, with consistent fallback logic.
@@ -2290,8 +2290,9 @@
           <div class="flex items-center gap-2.5 min-w-0">
             {#if commitInfo?.agentId || agentId}
               {@const displayAgentId = commitInfo?.agentId || agentId}
-              {@const agentSession = displayAgentId
-                ? sessionStore.getSession(displayAgentId)
+              {@const currentWsId = unifiedStateStore.currentWorkspace?.workspace?.id}
+              {@const agentSession = displayAgentId && currentWsId
+                ? sessionStore.getSessionForWorkspace(String(currentWsId), displayAgentId)
                 : undefined}
               {@const agentName =
                 agentSession?.name && agentSession.name !== 'New Workspace Agent'

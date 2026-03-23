@@ -639,7 +639,7 @@
   // Check if the initial agent is currently working (streaming/processing)
   let isInitialAgentWorking = $derived.by(() => {
     if (!initialAgentId) return false;
-    const session = sessionStore.getSession(initialAgentId);
+    const session = sessionStore.getSessionForWorkspace(workspaceId, initialAgentId);
     if (!session) return false;
     return session.isStreaming || session.isProcessing || session.isResponding || false;
   });
@@ -3157,7 +3157,7 @@
 
         // Also remove from session store to ensure sidebar and other components are updated
         // This handles the race condition where the IPC event arrives before deleteSession completes
-        sessionStore.removeSession(agentId);
+        sessionStore.removeSessionForWorkspace(workspaceId, agentId);
       };
 
       const unsubscribe = listenSync('agent:deleted', (event: any) => {
@@ -3203,7 +3203,7 @@
         });
 
         // Update session store
-        sessionStore.updateSession(data.agentId, { name: data.name });
+        sessionStore.updateSessionForWorkspace(workspaceId, data.agentId, { name: data.name });
       };
 
       const unsubscribe = listenSync('agent:renamed', (event: any) => {

@@ -33,7 +33,7 @@ const logger = createLogger('task-delegation-handlers');
  * Returns undefined if no initial agent exists (legacy workspaces).
  */
 function getWorkspaceInitialAgentProvider(workspaceId: string): string | undefined {
-  const sessions = sessionStore.getAllSessions();
+  const sessions = sessionStore.getAllSessionsForWorkspace(workspaceId);
   const initialAgent = sessions.find(
     (s) => String(s.workspaceId) === workspaceId && s.isInitialAgent,
   );

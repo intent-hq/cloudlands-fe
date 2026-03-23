@@ -292,13 +292,13 @@
         oldName,
         newName,
         () => {
-          sessionStore.updateSession(agentId, { name: newName });
+          sessionStore.updateSessionForWorkspace(workspaceId, agentId, { name: newName });
           layoutManager.updateTabTitle(tab.id, newName);
           // Save the session to persist the name change
           agentService.saveSession(agentId, workspaceId, true);
         },
         () => {
-          sessionStore.updateSession(agentId, { name: oldName });
+          sessionStore.updateSessionForWorkspace(workspaceId, agentId, { name: oldName });
           layoutManager.updateTabTitle(tab.id, oldName);
           agentService.saveSession(agentId, workspaceId, true);
         },

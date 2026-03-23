@@ -52,9 +52,9 @@ vi.mock('../agent-state.svelte', () => ({
     updateSession: vi.fn(),
   },
   sessionStore: {
-    addSession: vi.fn(),
-    updateMessages: vi.fn(),
-    setStreaming: vi.fn(),
+    addSessionForWorkspace: vi.fn(),
+    updateMessagesForWorkspace: vi.fn(),
+    setStreamingForWorkspace: vi.fn(),
   },
 }));
 

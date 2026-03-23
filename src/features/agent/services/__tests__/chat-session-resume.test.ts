@@ -48,12 +48,9 @@ describe('Chat Session Resume', () => {
 
     // Mock session store
     mockSessionStore = {
-      getSession: vi.fn(),
-      addSession: vi.fn(),
+      getSessionForWorkspace: vi.fn(),
       addSessionForWorkspace: vi.fn(),
-      addMessage: vi.fn(),
-      addMessageForWorkspace: vi.fn(),
-      setActiveSession: vi.fn(),
+      setActiveSessionForWorkspace: vi.fn(),
     };
     Object.assign(sessionStore, mockSessionStore);
 
@@ -110,7 +107,7 @@ describe('Chat Session Resume', () => {
       };
 
       // Mock sessionStore returns the session
-      mockSessionStore.getSession.mockReturnValue(existingSession);
+      mockSessionStore.getSessionForWorkspace.mockReturnValue(existingSession);
 
       // Load the session
       await chatService.loadSession(agentId, mockWorkspace);
@@ -164,7 +161,7 @@ describe('Chat Session Resume', () => {
       };
 
       // Set up the session in chat service
-      mockSessionStore.getSession.mockReturnValue(activeSession);
+      mockSessionStore.getSessionForWorkspace.mockReturnValue(activeSession);
       await chatService.loadSession(agentId, mockWorkspace);
 
       // Send a new message
@@ -221,7 +218,7 @@ describe('Chat Session Resume', () => {
       };
 
       // Set up mocks
-      mockSessionStore.getSession.mockReturnValue(pendingSession);
+      mockSessionStore.getSessionForWorkspace.mockReturnValue(pendingSession);
       mockAgentService.activateAgent.mockResolvedValue(activatedSession);
 
       // Load the session
@@ -371,7 +368,7 @@ describe('Chat Session Resume', () => {
       };
 
       // Set up mocks
-      mockSessionStore.getSession.mockReturnValue(pendingSession);
+      mockSessionStore.getSessionForWorkspace.mockReturnValue(pendingSession);
       mockAgentService.activateAgent.mockResolvedValue(activatedSession);
 
       // Load the session

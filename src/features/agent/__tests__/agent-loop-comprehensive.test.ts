@@ -47,9 +47,6 @@ describe('Agent Loop Comprehensive Tests', () => {
     testAgentId = `test-agent-${Date.now()}`;
     testWorkspaceId = `test-workspace-${Date.now()}`;
 
-    // Clear session store
-    sessionStore.clear();
-
     // Create a test workspace so sessionStore operations work
     unifiedStateStore.setWorkspace({
       id: testWorkspaceId as any,
@@ -62,6 +59,9 @@ describe('Agent Loop Comprehensive Tests', () => {
       lastOpened: new Date().toISOString(),
     });
     unifiedStateStore.setCurrentWorkspace(testWorkspaceId as any);
+
+    // Clear session store
+    sessionStore.clearForWorkspace(testWorkspaceId);
   });
 
   afterEach(() => {
@@ -225,10 +225,10 @@ describe('Agent Loop Comprehensive Tests', () => {
         systemPrompt: 'Test prompt',
       };
 
-      sessionStore.addSession(session);
+      sessionStore.addSessionForWorkspace(testWorkspaceId, session);
 
       // Verify session was added
-      const addedSession = sessionStore.getSession(testAgentId);
+      const addedSession = sessionStore.getSessionForWorkspace(testWorkspaceId, testAgentId);
       expect(addedSession).toBeDefined();
 
       // Add user message
@@ -238,11 +238,11 @@ describe('Agent Loop Comprehensive Tests', () => {
         content: 'Hello, agent!',
         timestamp: new Date().toISOString(),
       };
-      sessionStore.addMessage(testAgentId, userMessage);
+      sessionStore.addMessageForWorkspace(testWorkspaceId, testAgentId, userMessage);
 
       // Start streaming
-      sessionStore.setStreaming(testAgentId, true);
-      const streamingSession = sessionStore.getSession(testAgentId);
+      sessionStore.setStreamingForWorkspace(testWorkspaceId, testAgentId, true);
+      const streamingSession = sessionStore.getSessionForWorkspace(testWorkspaceId, testAgentId);
       expect(streamingSession?.isStreaming).toBe(true);
 
       // Add assistant message during streaming
@@ -253,24 +253,89 @@ describe('Agent Loop Comprehensive Tests', () => {
         timestamp: new Date().toISOString(),
         isStreaming: true,
       };
-      sessionStore.addMessage(testAgentId, assistantMessage);
+      sessionStore.addMessageForWorkspace(testWorkspaceId, testAgentId, assistantMessage);
 
       // Update message content during streaming
-      sessionStore.updateMessage(testAgentId, 'msg-assistant-1', {
+      sessionStore.updateMessageForWorkspace(testWorkspaceId, testAgentId, 'msg-assistant-1', {
         content: 'Hello! How can I help you today?',
       });
 
       // Complete streaming
-      sessionStore.setStreaming(testAgentId, false);
-      sessionStore.updateMessage(testAgentId, 'msg-assistant-1', {
+      sessionStore.setStreamingForWorkspace(testWorkspaceId, testAgentId, false);
+      sessionStore.updateMessageForWorkspace(testWorkspaceId, testAgentId, 'msg-assistant-1', {
         isStreaming: false,
       });
 
       // Verify final state
-      const finalSession = sessionStore.getSession(testAgentId);
+      const finalSession = sessionStore.getSessionForWorkspace(testWorkspaceId, testAgentId);
       expect(finalSession?.messages).toHaveLength(2);
       expect(finalSession?.messages[1].content).toBe('Hello! How can I help you today?');
       expect(finalSession?.messages[1].isStreaming).toBe(false);
+    });
+
+    it('rebuilds message dedup state when replacing session messages', () => {
+      const session: AgentSession = {
+        id: testAgentId as any,
+        backendSessionId: testSessionId as any,
+        workspaceId: testWorkspaceId as WorkspaceId,
+        name: 'Dedup Test Agent',
+        status: AgentStatus.Active,
+        messages: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        model: 'test-model',
+        systemPrompt: 'Test prompt',
+      };
+
+      const replacementMessage: AgentMessage = {
+        id: 'msg-replaced-1',
+        role: 'assistant',
+        content: 'Replacement message',
+        timestamp: new Date().toISOString(),
+      };
+
+      sessionStore.addSessionForWorkspace(testWorkspaceId, session);
+      sessionStore.updateSessionForWorkspace(testWorkspaceId, testAgentId, {
+        messages: [replacementMessage],
+      });
+
+      sessionStore.addMessageForWorkspace(testWorkspaceId, testAgentId, replacementMessage);
+
+      const updatedSession = sessionStore.getSessionForWorkspace(testWorkspaceId, testAgentId);
+      expect(updatedSession?.messages).toHaveLength(1);
+      expect(updatedSession?.messages[0].id).toBe(replacementMessage.id);
+
+      const workspace = unifiedStateStore.getWorkspace(testWorkspaceId as any);
+      const agent = workspace?.agents.get(testAgentId as any);
+      expect(agent?.messageIdSet.has(replacementMessage.id)).toBe(true);
+      expect(agent?.messageIdSet.size).toBe(1);
+    });
+
+    it('clears the active agent pointer when clearing a workspace', () => {
+      const session: AgentSession = {
+        id: testAgentId as any,
+        backendSessionId: testSessionId as any,
+        workspaceId: testWorkspaceId as WorkspaceId,
+        name: 'Active Agent Test',
+        status: AgentStatus.Active,
+        messages: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        model: 'test-model',
+        systemPrompt: 'Test prompt',
+      };
+
+      sessionStore.addSessionForWorkspace(testWorkspaceId, session);
+      sessionStore.setActiveSessionForWorkspace(testWorkspaceId, testAgentId);
+
+      expect(sessionStore.getActiveSessionForWorkspace(testWorkspaceId)?.id).toBe(testAgentId);
+
+      sessionStore.clearForWorkspace(testWorkspaceId);
+
+      const workspace = unifiedStateStore.getWorkspace(testWorkspaceId as any);
+      expect(sessionStore.getActiveSessionForWorkspace(testWorkspaceId)).toBeUndefined();
+      expect(workspace?.activeAgentId).toBeNull();
+      expect(workspace?.agents.size).toBe(0);
     });
 
     it('should handle concurrent sessions', async () => {
@@ -290,7 +355,7 @@ describe('Agent Loop Comprehensive Tests', () => {
           model: 'test-model',
           systemPrompt: 'Test prompt',
         };
-        sessionStore.addSession(session);
+        sessionStore.addSessionForWorkspace(testWorkspaceId, session);
 
         // Start accumulation for each
         accumulator.startAccumulation(id, {
