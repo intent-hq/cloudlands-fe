@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.32
+
+- Claude Opus 4.6 is now the default model for Auggie agents.
+- Rich model metadata in the model picker — badges (Auto, Free), cost tier indicators ($, $$, $$$), and smarter sorting by priority.
+- Terminal auto-recovery — frozen terminals now self-heal instead of requiring a manual page navigation.
+- Prevents out-of-memory crashes when loading large agent conversations.
+- Spec panel only opens when an agent is actively writing to it, instead of reopening on every workspace visit.
+- Fixes: sent messages not appearing without a refresh, chat panel freezing during concurrent agent streaming, duplicate stream chunks from leaked IPC listeners, delayed user message display, thinking indicator not showing on follow-up messages, sidebar progress card flickering between PR and task status, agent list stuck in skeleton loading state after navigation, duplicate agent wake-up messages.
+
 ## 0.2.31
 
 - Fixes: agents sidebar appearing empty after switching workspaces, crash when creating agents or changing workspace settings.
