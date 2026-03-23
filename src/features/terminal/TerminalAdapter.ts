@@ -69,6 +69,8 @@ export class TerminalAdapter {
 
   private eventListeners: Array<() => void> = [];
   private resizeObserver: ResizeObserver | null = null;
+  private visibilityObserver: IntersectionObserver | null = null;
+  private wasVisible: boolean = true;
   private resizeDebounceTimer: NodeJS.Timeout | null = null;
   private bufferSaveTimer: NodeJS.Timeout | null = null;
   private dataDisposable: IDisposable | null = null;
@@ -76,9 +78,27 @@ export class TerminalAdapter {
   private selectionDisposable: IDisposable | null = null;
   private ipcCleanup: (() => void) | null = null; // Cleanup function for IPC handlers
   private themeCleanup: (() => void) | null = null; // Cleanup function for theme handler
+  private webglContextLostCleanup: (() => void) | null = null; // Cleanup for WebGL context loss listener
 
   private isDisposed: boolean = false;
   private isXtermOpened: boolean = false; // Track if xterm.open() has been called
+
+  // Auto-reconnect state
+  private autoReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private autoReconnectAttempts: number = 0;
+  private static readonly MAX_RECONNECT_ATTEMPTS = 5;
+  private static readonly BASE_RECONNECT_DELAY_MS = 1000; // 1s, 2s, 4s, 8s, 16s
+
+  // IPC health check / heartbeat
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private static readonly HEARTBEAT_INTERVAL_MS = 30_000; // 30 seconds
+  private static readonly HEARTBEAT_TIMEOUT_MS = 10_000; // 10 seconds
+
+  // WebGL context loss recovery
+  private webglRecoveryAttempts: number = 0;
+  private static readonly MAX_WEBGL_RECOVERY_ATTEMPTS = 3;
+
+  private exitedNormally: boolean = false; // Track normal shell exit vs unexpected disconnect
 
   private lastCwd: string | undefined;
   private isExecuting: boolean = false;
@@ -181,6 +201,22 @@ export class TerminalAdapter {
       if (to === TerminalState.ERROR) {
         this.handleError(new Error(`Terminal entered error state from ${from}`));
       }
+
+      // Auto-reconnect when entering DISCONNECTED or ERROR state
+      if (to === TerminalState.DISCONNECTED || to === TerminalState.ERROR) {
+        this.stopHeartbeat();
+        // Don't auto-reconnect if the shell exited normally
+        if (!this.exitedNormally) {
+          this.scheduleAutoReconnect();
+        }
+      }
+
+      // Reset reconnect attempts on successful connection and start heartbeat
+      if (to === TerminalState.CONNECTED) {
+        this.autoReconnectAttempts = 0;
+        this.cancelAutoReconnect();
+        this.startHeartbeat();
+      }
     });
 
     // Listen for errors
@@ -220,14 +256,7 @@ export class TerminalAdapter {
       // WebGL uses greyscale anti-aliasing which looks poor on light backgrounds
       const currentTheme = this.themeManager.getCurrentTheme();
       if (currentTheme.isDark) {
-        try {
-          this.webglAddon = new WebglAddon();
-          this.xterm.loadAddon(this.webglAddon);
-          logger.info('[WebGL] Loaded WebGL addon for dark theme');
-        } catch (error) {
-          logger.warn('Failed to load WebGL renderer, falling back to Canvas renderer:', error);
-          this.webglAddon = null;
-        }
+        this.loadWebglAddon();
       } else {
         logger.debug('[Renderer] Using Canvas renderer for light theme (better anti-aliasing)');
       }
@@ -537,6 +566,7 @@ export class TerminalAdapter {
     // Handle exit
     const handleExit = (data: { terminalId: string; exitCode: number }) => {
       if (data && data.terminalId === this.terminalId && !this.isDisposed) {
+        this.exitedNormally = true;
         this.callbacks.onExit?.(data.exitCode);
         this.stateMachine.transition('disconnect');
       }
@@ -658,7 +688,151 @@ export class TerminalAdapter {
     });
 
     this.resizeObserver.observe(this.container);
+
+    // Setup visibility observer to reconnect ResizeObserver when container becomes visible
+    this.setupVisibilityObserver();
   }
+
+  /**
+   * Setup IntersectionObserver to detect when the terminal container becomes visible.
+   * When the container transitions from hidden → visible, we reconnect the ResizeObserver
+   * and call fitAddon.fit() so PTY dimensions stay in sync.
+   */
+  private setupVisibilityObserver(): void {
+    // Clean up existing observer
+    if (this.visibilityObserver) {
+      this.visibilityObserver.disconnect();
+      this.visibilityObserver = null;
+    }
+
+    this.visibilityObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const isVisible = entry.isIntersecting;
+
+        if (isVisible && !this.wasVisible) {
+          // Container transitioned from hidden → visible
+          logger.debug(`[visibility] Terminal ${this.terminalId} became visible, reconnecting ResizeObserver`);
+
+          // Reconnect ResizeObserver if it was disconnected
+          if (!this.resizeObserver) {
+            this.resizeObserver = new ResizeObserver(() => {
+              if (this.resizeDebounceTimer) {
+                clearTimeout(this.resizeDebounceTimer);
+              }
+              this.resizeDebounceTimer = setTimeout(() => {
+                if (!this.isDisposed && this.stateMachine?.canAcceptInput()) {
+                  this.fitAddon.fit();
+                }
+              }, 100);
+            });
+            this.resizeObserver.observe(this.container);
+          }
+
+          // Fit immediately to sync PTY dimensions
+          if (!this.isDisposed && this.stateMachine?.canAcceptInput()) {
+            this.fitAddon.fit();
+          }
+        }
+
+        this.wasVisible = isVisible;
+      }
+    });
+
+    this.visibilityObserver.observe(this.container);
+  }
+
+  /**
+   * Load the WebGL addon and attach a context loss recovery listener.
+   * On context loss, the addon is disposed and recreated automatically.
+   * Falls back to Canvas renderer if recreation fails.
+   */
+  private loadWebglAddon(): void {
+    // Clean up any existing WebGL addon and listener first
+    this.disposeWebglAddon();
+
+    try {
+      this.webglAddon = new WebglAddon();
+      this.xterm.loadAddon(this.webglAddon);
+
+      // Listen for WebGL context loss on the canvas element
+      const canvas = this.xterm.element?.querySelector('canvas');
+      if (canvas) {
+        const handleContextLost = (event: Event) => {
+          event.preventDefault();
+          logger.warn(
+            `[WebGL] Context lost for terminal ${this.terminalId}, recovering...`,
+          );
+
+          if (this.isDisposed) return;
+
+          // Dispose the broken addon
+          this.disposeWebglAddon();
+
+          // Attempt to recreate after a short delay to let the GPU recover
+          setTimeout(() => {
+            if (this.isDisposed) return;
+
+            const currentTheme = this.themeManager.getCurrentTheme();
+            if (!currentTheme.isDark) {
+              logger.info(
+                '[WebGL] Skipping WebGL recovery on light theme, using Canvas renderer',
+              );
+              return;
+            }
+
+            // Guard against infinite recovery loops
+            if (this.webglRecoveryAttempts >= TerminalAdapter.MAX_WEBGL_RECOVERY_ATTEMPTS) {
+              logger.warn(
+                `[WebGL] Max recovery attempts (${TerminalAdapter.MAX_WEBGL_RECOVERY_ATTEMPTS}) reached for terminal ${this.terminalId}, staying on Canvas renderer`,
+              );
+              return;
+            }
+
+            this.webglRecoveryAttempts++;
+
+            try {
+              this.loadWebglAddon();
+              logger.info(`[WebGL] Successfully recovered from context loss (attempt ${this.webglRecoveryAttempts})`);
+            } catch (error) {
+              logger.warn(
+                '[WebGL] Failed to recover from context loss, falling back to Canvas renderer:',
+                error,
+              );
+              this.webglAddon = null;
+            }
+          }, 100);
+        };
+
+        canvas.addEventListener('webglcontextlost', handleContextLost);
+        this.webglContextLostCleanup = () => {
+          canvas.removeEventListener('webglcontextlost', handleContextLost);
+        };
+      }
+    } catch (error) {
+      logger.warn('Failed to load WebGL renderer, falling back to Canvas renderer:', error);
+      this.webglAddon = null;
+    }
+  }
+
+  /**
+   * Dispose the WebGL addon and its context loss listener.
+   */
+  private disposeWebglAddon(): void {
+    if (this.webglContextLostCleanup) {
+      this.webglContextLostCleanup();
+      this.webglContextLostCleanup = null;
+    }
+
+    if (this.webglAddon) {
+      try {
+        this.webglAddon.dispose();
+      } catch (error) {
+        logger.warn('Error disposing WebGL addon:', error);
+      }
+      this.webglAddon = null;
+    }
+  }
+
 
   /**
    * Setup theme change listener
@@ -689,26 +863,13 @@ export class TerminalAdapter {
         if (newTheme.isDark) {
           // Enable WebGL for dark themes if not already loaded
           if (!this.webglAddon) {
-            try {
-              this.webglAddon = new WebglAddon();
-              this.xterm.loadAddon(this.webglAddon);
-              logger.info('[WebGL] Loaded WebGL addon for dark theme');
-            } catch (error) {
-              logger.warn('Failed to load WebGL renderer for dark theme:', error);
-              this.webglAddon = null;
-            }
+            this.loadWebglAddon();
           }
         } else {
           // Dispose WebGL for light themes to use Canvas renderer with proper anti-aliasing
           if (this.webglAddon) {
-            try {
-              this.webglAddon.dispose();
-              this.webglAddon = null;
-              logger.info('[WebGL] Disposed WebGL addon for light theme (using Canvas renderer)');
-            } catch (error) {
-              // Keep the reference to prevent loading a duplicate addon
-              logger.warn('Error disposing WebGL addon, keeping reference to prevent duplicate:', error);
-            }
+            this.disposeWebglAddon();
+            logger.info('[WebGL] Disposed WebGL addon for light theme (using Canvas renderer)');
           }
         }
       }
@@ -1127,6 +1288,12 @@ export class TerminalAdapter {
       throw new Error('Cannot reattach disposed terminal');
     }
 
+    // Cancel any pending auto-reconnect since we're manually reattaching
+    this.cancelAutoReconnect();
+    this.autoReconnectAttempts = 0;
+    this.webglRecoveryAttempts = 0;
+    this.exitedNormally = false;
+
     // Ensure IPC handlers are set up (they may have been cleaned up on detach or during refresh)
     this.setupIpcEventHandlers();
 
@@ -1173,14 +1340,7 @@ export class TerminalAdapter {
       this.container = container;
 
       // Dispose and recreate WebGL addon (it loses context when moved)
-      if (this.webglAddon) {
-        try {
-          this.webglAddon.dispose();
-        } catch (error) {
-          logger.warn('Error disposing old WebGL addon:', error);
-        }
-        this.webglAddon = null;
-      }
+      this.disposeWebglAddon();
 
       // Re-apply theme
       this.themeManager.applyTheme(this.xterm);
@@ -1188,14 +1348,7 @@ export class TerminalAdapter {
       // Re-initialize WebGL addon only for dark themes (light themes use Canvas renderer)
       const currentTheme = this.themeManager.getCurrentTheme();
       if (currentTheme.isDark) {
-        try {
-          this.webglAddon = new WebglAddon();
-          this.xterm.loadAddon(this.webglAddon);
-          logger.debug('[WebGL] Re-initialized WebGL addon after move (dark theme)');
-        } catch (error) {
-          logger.warn('Failed to re-initialize WebGL renderer after move:', error);
-          this.webglAddon = null;
-        }
+        this.loadWebglAddon();
       } else {
         logger.debug('[Renderer] Using Canvas renderer after move (light theme)');
       }
@@ -1224,6 +1377,9 @@ export class TerminalAdapter {
       this.currentLineBuffer = '';
       this.isAtPrompt = false;
 
+      // Restart heartbeat since reattach doesn't trigger a state transition to CONNECTED
+      this.startHeartbeat();
+
       // Focus the terminal - use requestAnimationFrame to ensure DOM is ready
       requestAnimationFrame(() => {
         if (!this.isDisposed) {
@@ -1244,14 +1400,7 @@ export class TerminalAdapter {
     }
 
     // Dispose old WebGL addon if it exists
-    if (this.webglAddon) {
-      try {
-        this.webglAddon.dispose();
-      } catch (error) {
-        logger.warn('Error disposing old WebGL addon:', error);
-      }
-      this.webglAddon = null;
-    }
+    this.disposeWebglAddon();
 
     // Remove old data handler if it exists
     if (this.dataDisposable) {
@@ -1277,14 +1426,7 @@ export class TerminalAdapter {
     // Re-initialize WebGL addon only for dark themes (light themes use Canvas renderer)
     const currentTheme = this.themeManager.getCurrentTheme();
     if (currentTheme.isDark) {
-      try {
-        this.webglAddon = new WebglAddon();
-        this.xterm.loadAddon(this.webglAddon);
-        logger.debug('[WebGL] Re-initialized WebGL addon on reattach (dark theme)');
-      } catch (error) {
-        logger.warn('Failed to re-initialize WebGL renderer on reattach:', error);
-        this.webglAddon = null;
-      }
+      this.loadWebglAddon();
     } else {
       logger.debug('[Renderer] Using Canvas renderer on reattach (light theme)');
     }
@@ -1302,6 +1444,9 @@ export class TerminalAdapter {
     this.commandBuffer = '';
     this.currentLineBuffer = '';
     this.isAtPrompt = false;
+
+    // Restart heartbeat since reattach doesn't trigger a state transition to CONNECTED
+    this.startHeartbeat();
 
     // Focus the terminal - use requestAnimationFrame to ensure DOM is ready
     requestAnimationFrame(() => {
@@ -1382,6 +1527,196 @@ export class TerminalAdapter {
     };
   }
 
+
+  /**
+   * Start the periodic IPC heartbeat.
+   * Only runs while the terminal is in CONNECTED state.
+   * Pings the backend PTY at regular intervals; on failure or timeout,
+   * transitions to DISCONNECTED which triggers auto-reconnect.
+   */
+  private startHeartbeat(): void {
+    // Don't start if already running or disposed
+    if (this.heartbeatTimer || this.isDisposed) {
+      return;
+    }
+
+    logger.debug(`[heartbeat] Starting for terminal ${this.terminalId} (every ${TerminalAdapter.HEARTBEAT_INTERVAL_MS}ms)`);
+
+    this.heartbeatTimer = setInterval(() => {
+      this.performHealthCheck();
+    }, TerminalAdapter.HEARTBEAT_INTERVAL_MS);
+  }
+
+  /**
+   * Stop the periodic IPC heartbeat.
+   */
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+      logger.debug(`[heartbeat] Stopped for terminal ${this.terminalId}`);
+    }
+  }
+
+  /**
+   * Perform a single health check by pinging the backend PTY via terminal:professional:info.
+   * If the ping fails or times out, transition to DISCONNECTED to trigger auto-reconnect.
+   */
+  private async performHealthCheck(): Promise<void> {
+    // Only check while CONNECTED and IPC handlers are set up
+    if (this.isDisposed || !this.ipcCleanup || this.stateMachine.getState() !== TerminalState.CONNECTED) {
+      return;
+    }
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    try {
+      // Race the info call against a timeout
+      const result = await Promise.race([
+        window.electronAPI.invoke('terminal:professional:info', {
+          terminalId: this.terminalId,
+        }),
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Heartbeat timeout')), TerminalAdapter.HEARTBEAT_TIMEOUT_MS);
+        }),
+      ]);
+
+      if (timeoutId) clearTimeout(timeoutId);
+
+      if (this.isDisposed) return;
+
+      // Check if the PTY is still alive
+      if (!result.success || !result.info) {
+        logger.warn(
+          `[heartbeat] Terminal ${this.terminalId}: PTY not found on backend, transitioning to DISCONNECTED`,
+        );
+        this.stopHeartbeat();
+        this.stateMachine.transition('disconnect');
+      }
+    } catch (error) {
+      if (timeoutId) clearTimeout(timeoutId);
+
+      if (this.isDisposed) return;
+
+      logger.warn(
+        `[heartbeat] Terminal ${this.terminalId}: health check failed:`,
+        error,
+      );
+      this.stopHeartbeat();
+      this.stateMachine.transition('disconnect');
+    }
+  }
+
+
+  /**
+   * Schedule an auto-reconnect attempt with exponential backoff.
+   * Called when the terminal enters DISCONNECTED or ERROR state.
+   */
+  private scheduleAutoReconnect(): void {
+    // Don't reconnect if disposed or already at max attempts
+    if (this.isDisposed) {
+      return;
+    }
+
+    if (this.autoReconnectAttempts >= TerminalAdapter.MAX_RECONNECT_ATTEMPTS) {
+      logger.warn(
+        `[auto-reconnect] Terminal ${this.terminalId}: max reconnect attempts (${TerminalAdapter.MAX_RECONNECT_ATTEMPTS}) reached, giving up`,
+      );
+      return;
+    }
+
+    // Cancel any existing reconnect timer
+    this.cancelAutoReconnect();
+
+    const delay = TerminalAdapter.BASE_RECONNECT_DELAY_MS * Math.pow(2, this.autoReconnectAttempts);
+    this.autoReconnectAttempts++;
+
+    logger.info(
+      `[auto-reconnect] Terminal ${this.terminalId}: scheduling attempt ${this.autoReconnectAttempts}/${TerminalAdapter.MAX_RECONNECT_ATTEMPTS} in ${delay}ms`,
+    );
+
+    this.autoReconnectTimer = setTimeout(() => {
+      this.autoReconnectTimer = null;
+      this.attemptAutoReconnect();
+    }, delay);
+  }
+
+  /**
+   * Cancel any pending auto-reconnect timer.
+   */
+  private cancelAutoReconnect(): void {
+    if (this.autoReconnectTimer) {
+      clearTimeout(this.autoReconnectTimer);
+      this.autoReconnectTimer = null;
+    }
+  }
+
+  /**
+   * Attempt to auto-reconnect the terminal.
+   * Checks if the PTY still exists on the backend and re-establishes the connection.
+   */
+  private async attemptAutoReconnect(): Promise<void> {
+    if (this.isDisposed) {
+      return;
+    }
+
+    const currentState = this.stateMachine.getState();
+    // Only reconnect from DISCONNECTED or ERROR states
+    if (currentState !== TerminalState.DISCONNECTED && currentState !== TerminalState.ERROR) {
+      logger.debug(
+        `[auto-reconnect] Terminal ${this.terminalId}: skipping, state is ${currentState}`,
+      );
+      return;
+    }
+
+    this.exitedNormally = false;
+
+    logger.info(
+      `[auto-reconnect] Terminal ${this.terminalId}: attempting reconnect (attempt ${this.autoReconnectAttempts})`,
+    );
+
+    try {
+      // Check if PTY still exists on backend
+      const info = await window.electronAPI.invoke('terminal:professional:info', {
+        terminalId: this.terminalId,
+      });
+
+      if (this.isDisposed) return; // Check again after async call
+
+      if (info.success && info.info) {
+        // PTY exists — re-setup IPC handlers and transition back to CONNECTED
+        logger.info(
+          `[auto-reconnect] Terminal ${this.terminalId}: PTY exists on backend, re-establishing connection`,
+        );
+
+        this.setupIpcEventHandlers();
+        this.stateMachine.transition('reconnect');
+        this.stateMachine.transition('reconnected');
+
+        // Resize to match current xterm dimensions
+        if (this.xterm.cols && this.xterm.rows) {
+          this.resize(this.xterm.cols, this.xterm.rows);
+        }
+
+        this.callbacks.onReady?.();
+        logger.info(`[auto-reconnect] Terminal ${this.terminalId}: reconnected successfully`);
+      } else {
+        // PTY doesn't exist — try to create a new one via the existing reconnect() method
+        logger.info(
+          `[auto-reconnect] Terminal ${this.terminalId}: PTY not found, creating new PTY`,
+        );
+        await this.reconnect();
+        logger.info(`[auto-reconnect] Terminal ${this.terminalId}: new PTY created successfully`);
+      }
+    } catch (error) {
+      logger.error(
+        `[auto-reconnect] Terminal ${this.terminalId}: attempt ${this.autoReconnectAttempts} failed:`,
+        error,
+      );
+      // Explicitly re-schedule — the state listener may not trigger if no transition occurred
+      this.scheduleAutoReconnect();
+    }
+  }
+
   /**
    * Handle errors
    */
@@ -1445,6 +1780,7 @@ export class TerminalAdapter {
       throw new Error(`Cannot reconnect in state ${this.stateMachine.getState()}`);
     }
 
+    this.exitedNormally = false;
     this.stateMachine.transition('reconnect');
 
     try {
@@ -1481,10 +1817,26 @@ export class TerminalAdapter {
    * Detach terminal from container (for reuse)
    */
   detach(): void {
+    // Clean up IPC handlers to prevent stale handlers during detach
+    if (this.ipcCleanup) {
+      this.ipcCleanup();
+      this.ipcCleanup = null;
+    }
+
+    // Stop heartbeat and cancel auto-reconnect to prevent IPC calls on detached terminal
+    this.stopHeartbeat();
+    this.cancelAutoReconnect();
+
     // Disconnect resize observer for the current container
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
+    }
+
+    // Disconnect visibility observer
+    if (this.visibilityObserver) {
+      this.visibilityObserver.disconnect();
+      this.visibilityObserver = null;
     }
 
     // Clear resize timer if active
@@ -1515,6 +1867,10 @@ export class TerminalAdapter {
     // Mark as disposed first
     this.isDisposed = true;
 
+    // Cancel any pending auto-reconnect and heartbeat
+    this.cancelAutoReconnect();
+    this.stopHeartbeat();
+
     // Transition to disposed state
     this.stateMachine.transition('dispose');
 
@@ -1536,6 +1892,12 @@ export class TerminalAdapter {
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
+    }
+
+    // Disconnect visibility observer
+    if (this.visibilityObserver) {
+      this.visibilityObserver.disconnect();
+      this.visibilityObserver = null;
     }
 
     // Dispose XTerm event handlers
@@ -1618,10 +1980,8 @@ export class TerminalAdapter {
         this.webLinksAddon.dispose();
       }
 
-      // Dispose WebGL addon
-      if (this.webglAddon?.dispose) {
-        this.webglAddon.dispose();
-      }
+      // Dispose WebGL addon and context loss listener
+      this.disposeWebglAddon();
 
       // Dispose fit addon
       if (this.fitAddon?.dispose) {

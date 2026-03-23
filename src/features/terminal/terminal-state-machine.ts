@@ -72,7 +72,7 @@ export class TerminalStateMachine {
 
     // Error handling
     {
-      from: [TerminalState.INITIALIZING, TerminalState.CONNECTING, TerminalState.RECONNECTING],
+      from: [TerminalState.INITIALIZING, TerminalState.CONNECTING, TerminalState.CONNECTED, TerminalState.RECONNECTING],
       to: TerminalState.ERROR,
       action: 'error',
     },

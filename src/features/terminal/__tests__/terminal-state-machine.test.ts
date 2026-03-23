@@ -99,6 +99,52 @@ describe('TerminalStateMachine', () => {
       expect(machine.getState()).toBe(TerminalState.ERROR);
     });
 
+    it('should transition from CONNECTED to ERROR (for heartbeat failures)', () => {
+      machine.transition('initialize');
+      machine.transition('connect');
+      machine.transition('connected');
+      expect(machine.getState()).toBe(TerminalState.CONNECTED);
+
+      machine.transition('error');
+      expect(machine.getState()).toBe(TerminalState.ERROR);
+    });
+
+    it('should allow reconnection from ERROR state', () => {
+      machine.transition('initialize');
+      machine.transition('connect');
+      machine.transition('connected');
+      machine.transition('error');
+
+      machine.transition('reconnect');
+      expect(machine.getState()).toBe(TerminalState.RECONNECTING);
+
+      machine.transition('reconnected');
+      expect(machine.getState()).toBe(TerminalState.CONNECTED);
+    });
+
+    it('should transition from RECONNECTING to ERROR', () => {
+      machine.transition('initialize');
+      machine.transition('connect');
+      machine.transition('connected');
+      machine.transition('disconnect');
+      machine.transition('reconnect');
+      expect(machine.getState()).toBe(TerminalState.RECONNECTING);
+
+      machine.transition('error');
+      expect(machine.getState()).toBe(TerminalState.ERROR);
+    });
+
+    it('should not be healthy in ERROR state', () => {
+      machine.transition('initialize');
+      machine.transition('connect');
+      machine.transition('connected');
+      expect(machine.isHealthy()).toBe(true);
+
+      machine.transition('error');
+      expect(machine.isHealthy()).toBe(false);
+      expect(machine.canAcceptInput()).toBe(false);
+    });
+
     it('should call error handlers', () => {
       const errorHandler = vi.fn();
       machine.onError(errorHandler);
