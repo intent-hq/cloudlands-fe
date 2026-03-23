@@ -2475,52 +2475,28 @@
     // NOTE_UPDATE_DEBOUNCE_MS (5s). Handles returning visits with stale
     // sessionStorage keys.
     //
-    // When NOT deferring (existing workspace): 2s delay. Handles the case
-    // where a coordinator/background agent wrote the spec while the user was
-    // away (on a different workspace or with the app closed). The spec has
-    // content but the spec tab was never persisted in the layout.
-    // To avoid reopening the spec when the user deliberately closed it, we
-    // only trigger this when a background agent exists in the workspace
-    // (indicating an automated process wrote the spec).
-    const FALLBACK_TIMER_MS = isDeferring ? 8000 : 2000;
-    const fallbackTimer = setTimeout(() => {
-      if (hasOpened) return;
-      const specNote = notesStateManager.spec;
-      if (!specNote?.content || specNote.content.trim().length === 0) return;
+    // Fallback timer only applies when deferring (new workspace with spec-writer).
+    // For existing workspaces (isDeferring=false), we rely solely on note:updated
+    // events to open the spec — this prevents reopening the spec tab when the user
+    // deliberately closed it.
+    const FALLBACK_TIMER_MS = 8000;
+    const fallbackTimer = isDeferring
+      ? setTimeout(() => {
+          if (hasOpened) return;
+          const specNote = notesStateManager.spec;
+          if (!specNote?.content || specNote.content.trim().length === 0) return;
 
-      if (!isDeferring) {
-        // Only auto-open if a background agent (coordinator/PR reviewer) exists
-        // in this workspace — this indicates the spec was written by an automated
-        // process, not manually by the user. Without this guard, we'd reopen the
-        // spec on every visit even if the user deliberately closed the tab.
-        const workspaceAgents = unifiedStateStore.getAgentsForWorkspace(
-          WorkspaceId(capturedWorkspaceId),
-        );
-        const hasBackgroundAgent = workspaceAgents.some(
-          (a: AgentSession) => a.isBackground || a.metadata?.isBackground,
-        );
-        if (!hasBackgroundAgent) {
           logger.info(
-            '[WorkspacePage] Fallback: spec has content but no background agents — skipping auto-open',
+            '[WorkspacePage] Fallback: spec has content but no spec tab open — opening normally',
             {
               workspaceId: capturedWorkspaceId,
-              agentCount: workspaceAgents.length,
+              contentLength: specNote.content.trim().length,
+              isDeferring,
             },
           );
-          return;
-        }
-      }
-
-      logger.info(
-        '[WorkspacePage] Fallback: spec has content but no spec tab open — opening normally',
-        {
-          workspaceId: capturedWorkspaceId,
-          contentLength: specNote.content.trim().length,
-          isDeferring,
-        },
-      );
-      openSpecNormally();
-    }, FALLBACK_TIMER_MS);
+          openSpecNormally();
+        }, FALLBACK_TIMER_MS)
+      : null;
 
     // Agent idle fallback: when the spec-writer agent finishes streaming
     // without ever writing to the spec note, the note:updated event never
