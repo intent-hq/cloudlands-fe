@@ -9,10 +9,31 @@ import { createLogger } from '$lib/utils/client-logger';
 
 const logger = createLogger('AuggieModelsClient');
 
+export interface AuggieModelBadge {
+  color: string;
+  label: string;
+  variant?: string;
+}
+
 export interface AuggieModel {
   value: string;
   label: string;
   description?: string;
+  /** Ordering priority within the model list. Lower = higher priority. Models with priority 1 are primary, 2 are secondary. */
+  modelGroupPriority?: number;
+  /** Whether this is a legacy/deprecated model - should be hidden from the picker */
+  isLegacyModel?: boolean;
+  /** Cost tier: 1 = cheap ($), 2 = moderate ($$), 3 = expensive ($$$) */
+  costTier?: number;
+  /** Badges to display next to the model name (e.g., "Auto", "Free") */
+  badges?: AuggieModelBadge[];
+  /** Supported effort levels for this model */
+  effortLevels?: string[];
+
+  /** Whether this is the default model */
+  isDefault?: boolean;
+  /** Within-group ordering priority. Lower = higher in the list. */
+  priority?: number;
 }
 
 /**

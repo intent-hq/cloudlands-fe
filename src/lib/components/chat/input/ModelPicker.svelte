@@ -356,6 +356,14 @@
     description: 'Let the specialist choose the best model',
   };
 
+  // Helper: format cost tier as dollar signs
+  function formatCostTier(tier: number | undefined): string | undefined {
+    if (tier === 1) return '$';
+    if (tier === 2) return '$$';
+    if (tier === 3) return '$$$';
+    return undefined;
+  }
+
   // Flat model options - optionally include "Default model" at the top
   const flatModelOptions = $derived<DropdownOption[]>([
     ...(showDefaultOption ? [useDefaultOption] : []),
@@ -363,6 +371,13 @@
       value: m.value,
       label: m.label,
       description: m.description,
+      data: {
+        badges: m.badges,
+        costTier: m.costTier,
+        costTierLabel: formatCostTier(m.costTier),
+        effortLevels: m.effortLevels,
+        isDefault: m.isDefault,
+      },
     })),
   ]);
 
@@ -652,17 +667,64 @@
           </div>
         </div>
       {:else}
-        <div class="flex items-center gap-2 w-full">
-          <div class="flex-1 min-w-0">
-            <div class="truncate" class:italic={option.value === USE_DEFAULT_VALUE}>
+        {@const badges = option.data?.badges as
+          | Array<{ color: string; label: string; variant?: string }>
+          | undefined}
+        {@const costTierLabel = option.data?.costTierLabel as string | undefined}
+        {@const isDefaultModel = option.data?.isDefault as boolean | undefined}
+        {@const effortLevels = option.data?.effortLevels as string[] | undefined}
+        {@const hasRightBadges = (badges && badges.length > 0) || costTierLabel || isDefaultModel}
+        <div class="flex flex-col gap-0.5 w-full">
+          <!-- Name row: model name left, badges + check right -->
+          <div class="flex items-baseline justify-between gap-2">
+            <span class="truncate" class:italic={option.value === USE_DEFAULT_VALUE}>
               {option.label}
-            </div>
-            {#if option.description}
-              <div class="text-xs text-subtle truncate">{option.description}</div>
+            </span>
+            {#if hasRightBadges || selected}
+              <div class="flex items-center gap-1.5 shrink-0">
+                {#if badges && badges.length > 0}
+                  {#each badges as badge}
+                    <span
+                      class="inline-flex items-center px-1.5 py-0 text-xs font-medium rounded-full leading-4
+                        {badge.color === 'info' || badge.color === 'blue'
+                        ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                        : ''}
+                        {badge.color === 'success' || badge.color === 'green'
+                        ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                        : ''}
+                        {badge.color === 'warning' || badge.color === 'yellow' || badge.color === 'amber'
+                        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                        : ''}
+                        {!(
+                          ['info', 'blue', 'success', 'green', 'warning', 'yellow', 'amber'].includes(badge.color)
+                        )
+                        ? 'bg-gray-500/15 text-gray-600 dark:text-gray-400'
+                        : ''}"
+                    >
+                      {badge.label}
+                    </span>
+                  {/each}
+                {/if}
+                {#if isDefaultModel}
+                  <span class="text-xs text-subtle italic">default</span>
+                {/if}
+                {#if selected}
+                  <Fa icon={faCheck} class="text-xs text-ghost" />
+                {/if}
+                {#if costTierLabel}
+                  <span class="text-xs text-subtle font-mono">{costTierLabel}</span>
+                {/if}
+              </div>
             {/if}
           </div>
-          {#if selected}
-            <Fa icon={faCheck} class="text-xs text-ghost shrink-0" />
+          <!-- Description row -->
+          {#if option.description}
+            <div class="text-xs text-subtle truncate">{option.description}</div>
+          {/if}
+          {#if effortLevels && effortLevels.length > 0}
+            <div class="text-xs text-subtle/60 truncate hidden">
+              Effort: {effortLevels.join(' · ')}
+            </div>
           {/if}
         </div>
       {/if}

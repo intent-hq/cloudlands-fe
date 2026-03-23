@@ -19,7 +19,7 @@ const rawExec = promisify(exec);
 import { AUGGIE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { findAuggieAsync } from '../../../shared/main/async-utils';
-import { findBinary, getEnhancedPath } from '../../../shared/main/find-binary';
+import { findBinary } from '../../../shared/main/find-binary';
 
 const logger = new Logger('AuggieIPC');
 
@@ -120,7 +120,11 @@ async function checkNodeVersion(): Promise<{
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const { stdout } = await rawExec('node --version', { timeout: 5000, env: process.env, windowsHide: true });
+      const { stdout } = await rawExec('node --version', {
+        timeout: 5000,
+        env: process.env,
+        windowsHide: true,
+      });
       const version = (stdout || '').trim();
       if (version) {
         const versionOk = meetsMinimumVersion(version, MINIMUM_NODE_VERSION);
@@ -131,7 +135,9 @@ async function checkNodeVersion(): Promise<{
       lastError = err;
       const code = (err as NodeJS.ErrnoException).code;
       if (code === 'EAGAIN' || code === 'EBADF') {
-        logger.warn(`Node version check attempt ${attempt}/${MAX_RETRIES} failed with ${code}, retrying...`);
+        logger.warn(
+          `Node version check attempt ${attempt}/${MAX_RETRIES} failed with ${code}, retrying...`,
+        );
         await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
         continue;
       }
@@ -149,6 +155,152 @@ async function checkNodeVersion(): Promise<{
 // Helper Functions
 // ============================================================================
 
+function getEnhancedPath(): string {
+  const pathSeparator = process.platform === 'win32' ? ';' : ':';
+  const paths = new Set<string>();
+
+  // Start with current PATH
+  if (process.env.PATH) {
+    process.env.PATH.split(pathSeparator).forEach((p) => paths.add(p));
+  }
+
+  const homeDir = os.homedir();
+
+  // Try to read PATH from shell profiles (for macOS GUI apps)
+  if (process.platform === 'darwin') {
+    const shellProfiles = [
+      path.join(homeDir, '.zshrc'),
+      path.join(homeDir, '.bash_profile'),
+      path.join(homeDir, '.bashrc'),
+      path.join(homeDir, '.profile'),
+    ];
+
+    for (const profile of shellProfiles) {
+      if (existsSync(profile)) {
+        try {
+          const content = readFileSync(profile, 'utf8');
+          // Look for PATH exports
+          const pathMatches = content.match(/export\s+PATH=["']?([^"'\n]+)["']?/gm);
+          if (pathMatches) {
+            for (const match of pathMatches) {
+              const pathValue = match.replace(/export\s+PATH=["']?/, '').replace(/["']?$/, '');
+              // Expand $PATH references
+              const expandedPath = pathValue.replace(
+                /\$PATH/g,
+                Array.from(paths).join(pathSeparator),
+              );
+              // Expand $HOME references
+              const finalPath = expandedPath.replace(/\$HOME/g, homeDir).replace(/~/g, homeDir);
+              finalPath.split(pathSeparator).forEach((p) => {
+                if (p && !p.includes('$')) {
+                  paths.add(p);
+                }
+              });
+            }
+          }
+        } catch (e) {
+          // Ignore errors reading shell profiles
+        }
+      }
+    }
+  }
+
+  // Add common npm/node locations (platform-specific)
+  const commonPaths: string[] = [];
+
+  if (process.platform === 'win32') {
+    // Windows-specific paths
+    const appData = process.env.APPDATA || '';
+    const localAppData = process.env.LOCALAPPDATA || '';
+    const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+    const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+
+    if (appData) {
+      commonPaths.push(path.join(appData, 'npm')); // npm global bin on Windows
+      commonPaths.push(path.join(appData, 'nvm')); // nvm-windows
+    }
+    if (localAppData) {
+      commonPaths.push(path.join(localAppData, 'Volta', 'bin'));
+      commonPaths.push(path.join(localAppData, 'fnm'));
+    }
+    commonPaths.push(path.join(programFiles, 'nodejs'));
+    commonPaths.push(path.join(programFilesX86, 'nodejs'));
+    commonPaths.push(path.join(homeDir, '.npm-global'));
+  } else {
+    // Unix paths
+    commonPaths.push(
+      '/usr/local/bin',
+      '/usr/bin',
+      '/bin',
+      '/usr/sbin',
+      '/sbin',
+      path.join(homeDir, '.npm-global', 'bin'),
+      path.join(homeDir, '.npm-packages', 'bin'),
+      path.join(homeDir, '.local', 'bin'),
+      '/opt/homebrew/bin', // Apple Silicon Macs
+      '/opt/homebrew/sbin',
+      '/usr/local/opt/node/bin',
+      '/usr/local/opt/node@18/bin',
+      '/usr/local/opt/node@20/bin',
+      '/usr/local/opt/node@22/bin',
+      path.join(homeDir, '.volta', 'bin'),
+      path.join(homeDir, '.fnm', 'aliases', 'default', 'bin'),
+      path.join(homeDir, '.asdf', 'shims'),
+      path.join(homeDir, 'n', 'bin'),
+      '/usr/local/n/versions/node',
+    );
+  }
+
+  // Add NVM paths (Unix-style nvm)
+  if (process.platform !== 'win32') {
+    const nvmDir = path.join(homeDir, '.nvm', 'versions', 'node');
+    if (existsSync(nvmDir)) {
+      try {
+        const nodeDirs = readdirSync(nvmDir);
+        for (const dir of nodeDirs) {
+          paths.add(path.join(nvmDir, dir, 'bin'));
+        }
+      } catch (e) {
+        // Ignore
+      }
+    }
+  }
+
+  // Add common npm global bin directories (without calling npm since it might not be available)
+  const npmGlobalPaths =
+    process.platform === 'win32'
+      ? [path.join(process.env.APPDATA || '', 'npm'), path.join(homeDir, '.npm-global')].filter(
+          Boolean,
+        )
+      : [
+          path.join(homeDir, '.npm-global', 'bin'),
+          path.join(homeDir, '.npm-packages', 'bin'),
+          path.join(homeDir, 'npm', 'bin'),
+          '/usr/local/lib/node_modules/npm/bin',
+          '/opt/homebrew/lib/node_modules/npm/bin',
+        ];
+  npmGlobalPaths.forEach((p) => {
+    if (existsSync(p)) {
+      paths.add(p);
+    }
+  });
+
+  // Add all common paths
+  commonPaths.forEach((p) => paths.add(p));
+
+  const finalPath = Array.from(paths).join(pathSeparator);
+
+  // Log the enhanced PATH for debugging (only log first few paths to avoid clutter)
+  const pathArray = Array.from(paths);
+  logger.debug('Enhanced PATH created', {
+    totalPaths: pathArray.length,
+    samplePaths: pathArray.slice(0, 10),
+    includesHomebrew: pathArray.includes('/opt/homebrew/bin'),
+    includesNvm: pathArray.some((p) => p.includes('.nvm')),
+  });
+
+  return finalPath;
+}
 async function execWithEnhancedPath(
   command: string,
   options: { cwd?: string; maxBuffer?: number; timeout?: number } = {},
@@ -548,6 +700,56 @@ function parseModelListOutput(
   return models;
 }
 
+/**
+ * Parse auggie model list --json output.
+ * Returns an array of models with rich metadata, or null if parsing fails.
+ */
+function parseModelListJson(
+  stdout: string,
+): Array<{
+  value: string;
+  label: string;
+  description?: string;
+  modelGroupPriority?: number;
+  isLegacyModel?: boolean;
+  costTier?: number;
+  badges?: Array<{ color: string; label: string; variant?: string }>;
+  effortLevels?: string[];
+  isDefault?: boolean;
+  priority?: number;
+}> | null {
+  try {
+    const parsed = JSON.parse(stdout);
+    if (!parsed || !Array.isArray(parsed.models)) {
+      return null;
+    }
+
+    return parsed.models
+      .filter(
+        (m: Record<string, unknown>) =>
+          typeof m.shortName === 'string' && typeof m.displayName === 'string',
+      )
+      .map((m: Record<string, unknown>) => ({
+        value: m.shortName as string,
+        label: m.displayName as string,
+        ...(m.description ? { description: m.description as string } : {}),
+        ...(m.modelGroupPriority != null
+          ? { modelGroupPriority: m.modelGroupPriority as number }
+          : {}),
+        ...(m.isLegacyModel ? { isLegacyModel: true } : {}),
+        ...(m.costTier != null ? { costTier: m.costTier as number } : {}),
+        ...(Array.isArray(m.badges) && m.badges.length > 0 ? { badges: m.badges } : {}),
+        ...(Array.isArray(m.effortLevels) && m.effortLevels.length > 0
+          ? { effortLevels: m.effortLevels }
+          : {}),
+        ...(m.isDefault ? { isDefault: true } : {}),
+        ...(m.priority != null ? { priority: m.priority as number } : {}),
+      }));
+  } catch {
+    return null;
+  }
+}
+
 // ============================================================================
 // Main Process Handlers
 // ============================================================================
@@ -789,7 +991,6 @@ export function setupAuggieIPC() {
     }
   });
 
-
   /**
    * Download a standalone auggie binary when Node.js is not available or is an incompatible version.
    * Downloads a pre-built binary from GitHub releases and saves it to ~/.augment/bin/auggie.
@@ -958,7 +1159,9 @@ export function setupAuggieIPC() {
         // ignore cleanup errors
       }
       const parsed = parseVersion(versionOutput);
-      const displayVersion = parsed ? `${parsed.major}.${parsed.minor}.${parsed.patch}` : versionOutput;
+      const displayVersion = parsed
+        ? `${parsed.major}.${parsed.minor}.${parsed.patch}`
+        : versionOutput;
       throw new Error(
         `Downloaded binary version ${displayVersion} is below minimum required version ${MINIMUM_AUGGIE_VERSION}`,
       );
@@ -986,7 +1189,9 @@ export function setupAuggieIPC() {
         });
 
         // No compatible Node.js — try downloading standalone binary instead
-        logger.info('Auggie install: Node.js not available or incompatible, trying binary download path');
+        logger.info(
+          'Auggie install: Node.js not available or incompatible, trying binary download path',
+        );
         let binaryDownloadAttempted = false;
         try {
           binaryDownloadAttempted = true;
@@ -1004,7 +1209,8 @@ export function setupAuggieIPC() {
         if (binaryDownloadAttempted) {
           return {
             success: false,
-            error: 'Failed to download or install auggie. Please check your internet connection and try again. If the problem persists, check file permissions on ~/.augment/bin.',
+            error:
+              'Failed to download or install auggie. Please check your internet connection and try again. If the problem persists, check file permissions on ~/.augment/bin.',
             errorType: 'binary_download_failed',
           };
         }
@@ -1226,12 +1432,12 @@ export function setupAuggieIPC() {
         npmPath === 'npm'
           ? await execWithEnhancedPath(npmCommand, { timeout: 60000 })
           : await execAsync(npmCommand, {
-            env: {
-              ...process.env,
-              PATH: getEnhancedPath(),
-            },
-            timeout: 60000,
-          });
+              env: {
+                ...process.env,
+                PATH: getEnhancedPath(),
+              },
+              timeout: 60000,
+            });
 
       logger.info('Auggie installation output', { stdout, stderr });
 
@@ -1700,21 +1906,24 @@ export function setupAuggieIPC() {
           if (authArgs.state && oauthState.state !== authArgs.state) {
             return {
               success: false,
-              error: 'State parameter mismatch. Please make sure you pasted the response from the correct login session.',
+              error:
+                'State parameter mismatch. Please make sure you pasted the response from the correct login session.',
             };
           }
 
           if (!authArgs.code) {
             return {
               success: false,
-              error: 'No authorization code found. Please paste the full JSON response from the browser.',
+              error:
+                'No authorization code found. Please paste the full JSON response from the browser.',
             };
           }
 
           if (!authArgs.tenant_url) {
             return {
               success: false,
-              error: 'No tenant URL found. Please paste the full JSON response from the browser (must include tenant_url).',
+              error:
+                'No tenant URL found. Please paste the full JSON response from the browser (must include tenant_url).',
             };
           }
 
@@ -1815,30 +2024,77 @@ export function setupAuggieIPC() {
       const auggiePath = await findAuggiePathAsync();
       logger.info('Found auggie path for model list', { auggiePath });
 
-      // Try to run auggie model list command
+      // Try to run auggie model list --json first (richer metadata), fall back to plain text
       try {
-        const { stdout, stderr } = await executeAuggieCommand('model list');
+        let models: Array<{
+          value: string;
+          label: string;
+          description?: string;
+          modelGroupPriority?: number;
+          isLegacyModel?: boolean;
+          costTier?: number;
+          badges?: Array<{ color: string; label: string; variant?: string }>;
+          effortLevels?: string[];
+          isDefault?: boolean;
+          priority?: number;
+        }> | null = null;
 
-        if (stderr) {
-          logger.warn('Auggie model list stderr output', { stderr });
+        // Try JSON format first
+        try {
+          const { stdout: jsonStdout, stderr: jsonStderr } =
+            await executeAuggieCommand('model list --json');
+          if (jsonStderr) {
+            logger.warn('Auggie model list --json stderr output', { stderr: jsonStderr });
+          }
+          logger.info('Auggie model list --json stdout', { length: jsonStdout?.length });
+          models = parseModelListJson(jsonStdout);
+          if (models) {
+            logger.info(`Parsed ${models.length} models from JSON output`);
+          }
+        } catch (jsonError) {
+          logger.warn('Auggie model list --json failed, falling back to plain text', {
+            error: (jsonError as Error).message,
+          });
         }
 
-        logger.info('Auggie model list stdout', { stdout, length: stdout?.length });
+        // Fall back to plain text format
+        if (!models) {
+          const { stdout, stderr } = await executeAuggieCommand('model list');
+          if (stderr) {
+            logger.warn('Auggie model list stderr output', { stderr });
+          }
+          logger.info('Auggie model list stdout', { stdout, length: stdout?.length });
+          models = parseModelListOutput(stdout);
+        }
 
-        // Parse the output to extract model information
-        const models = parseModelListOutput(stdout);
+        // If we successfully parsed models, filter and sort them
+        if (models && models.length > 0) {
+          // Filter out legacy models
+          const filteredModels = models.filter((m) => !m.isLegacyModel);
 
-        // If we successfully parsed models, return them
-        if (models.length > 0) {
-          logger.info(`Successfully retrieved ${models.length} models from auggie CLI`);
+          // Sort by modelGroupPriority (1 first, 2 second, undefined last),
+          // then by priority within each group (lower = higher in list),
+          // then by display name as a stable tie-breaker to match prod ordering
+          const sortedModels = filteredModels.sort((a, b) => {
+            const aGroup = a.modelGroupPriority ?? 999;
+            const bGroup = b.modelGroupPriority ?? 999;
+            if (aGroup !== bGroup) return aGroup - bGroup;
+            const aPriority = a.priority ?? 999;
+            const bPriority = b.priority ?? 999;
+            if (aPriority !== bPriority) return aPriority - bPriority;
+            return a.label.localeCompare(b.label);
+          });
+
+          logger.info(
+            `Successfully retrieved ${sortedModels.length} models from auggie CLI (${models.length} total, ${models.length - sortedModels.length} filtered)`,
+          );
           return {
             success: true,
-            data: models,
+            data: sortedModels,
           };
         }
 
         // If no models were parsed but command succeeded, report failure
-        // so the UI can show a retry option instead of a stale hardcoded list
         logger.warn('Auggie model list returned no parseable models');
         return {
           success: false,
