@@ -2915,12 +2915,24 @@ export class ChatService implements IDisposable {
 
       // Update instance state
       this.safeStateUpdate((s) => {
+        if (!s.isStreaming || !s.isProcessing) {
+          logger.warn('[ChatService] content-blocks: streaming flags were incorrect during active content-blocks processing — forcing back to true (stale sessionUpdatedHandler likely set them)', {
+            sessionId,
+            wasStreaming: s.isStreaming,
+            wasProcessing: s.isProcessing,
+            messageCount: updatedMessages.length,
+          });
+        }
+
         return {
           ...s,
           messages: updatedMessages,
-          // FIX: Preserve current isStreaming state — a late content-blocks event
-          // arriving after stream end/error must not flip isStreaming back to true.
-          isStreaming: s.isStreaming,
+          // SELF-HEALING: Always set isStreaming and isProcessing to true during
+          // content-blocks processing. Content-blocks events only arrive during active
+          // streaming, so true is always correct here. If a stale sessionUpdatedHandler
+          // set either flag to false, this corrects it.
+          isStreaming: true,
+          isProcessing: true,
           streamingContent: hasNewToolUse ? '' : s.streamingContent,
         };
       });
