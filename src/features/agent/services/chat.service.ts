@@ -1673,6 +1673,76 @@ export class ChatService implements IDisposable {
         resetHistory: options?.resetHistory,
         model: options?.model,
       });
+
+      // SAFETY-NET SYNC: Verify the user message we just sent reached ChatService state.
+      // The normal flow relies on an event chain:
+      //   agentService.sendMessage → addMessageForWorkspace → agent:session-updated event
+      //   → sessionUpdatedHandler → safeStateUpdate → store subscription → ChatPanel
+      // If ANY link fails (race with initializeChat, guard conditions in sessionUpdatedHandler,
+      // deferred handler timing, generation guards), the message exists in sessionStore but
+      // never reaches the UI — the user sees a blank chat until page refresh.
+      //
+      // This safety net ONLY appends the specific missing user message. It never replaces
+      // the full message array, so it cannot overwrite streaming assistant content that
+      // may have arrived concurrently via handleStreamEvent.
+      const postSendSession = sessionStore.getSessionForWorkspace(sessionWorkspaceId, session.id);
+      if (postSendSession?.messages) {
+        // Find the user message we just sent in the sessionStore.
+        // Search from the END to get the MOST RECENT match — if the user sent the same
+        // text in a previous turn, searching from the start would return the old message
+        // (already in state), causing the safety net to no-op and miss the new one.
+        const trimmedMessage = message.trim();
+        let sentUserMessage: AgentMessage | undefined;
+        for (let i = postSendSession.messages.length - 1; i >= 0; i--) {
+          const m = postSendSession.messages[i];
+          if (
+            m.role === 'user' &&
+            m.contentBlocks?.some(
+              (b: ContentBlock) => b.type === 'text' && 'text' in b && (b as any).text === trimmedMessage,
+            )
+          ) {
+            sentUserMessage = m;
+            break;
+          }
+        }
+
+        if (sentUserMessage) {
+          // Use safeStateUpdate so monotonicity guards still apply
+          this.safeStateUpdate((s) => {
+            // Check if this specific message is already present (by ID)
+            if (s.messages.some((m) => m.id === sentUserMessage.id)) {
+              return s; // Already synced via normal event chain — no-op
+            }
+
+            logger.warn('[ChatService] Safety-net sync: user message missing from ChatService state after sendMessage, appending', {
+              sessionId: session.id,
+              missingMessageId: sentUserMessage.id,
+              currentMessageCount: s.messages.length,
+            });
+
+            // Insert before any assistant messages that appeared after this send.
+            // In the normal case there are no assistant messages yet (streaming hasn't
+            // started), so this appends at the end. In the edge case where streaming
+            // chunks arrived before the safety net ran, insert before the first
+            // assistant message to maintain correct user→assistant ordering.
+            const firstNewAssistantIdx = s.messages.findIndex(
+              (m) =>
+                m.role === 'assistant' &&
+                new Date(m.timestamp).getTime() >= new Date(sentUserMessage.timestamp).getTime(),
+            );
+            const insertIdx = firstNewAssistantIdx >= 0 ? firstNewAssistantIdx : s.messages.length;
+
+            return {
+              ...s,
+              messages: [
+                ...s.messages.slice(0, insertIdx),
+                sentUserMessage,
+                ...s.messages.slice(insertIdx),
+              ],
+            };
+          });
+        }
+      }
     } catch (error) {
       logger.error('Failed to send message', error as Error);
 
