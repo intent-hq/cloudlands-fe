@@ -350,47 +350,47 @@ export function useAllAgentsSubscription(workspaceId?: WorkspaceIdSource) {
   // The load trigger uses the global agentsLoadingForWorkspace set to prevent
   // duplicate loads.
   $effect(() => {
-    // FIX: Use the $derived resolvedWsId instead of calling resolveWorkspaceId(workspaceId)
-    // directly. When workspaceId is a getter, resolveWorkspaceId(workspaceId) inside an
-    // $effect doesn't create a reactive dependency on the getter's underlying value, so the
-    // effect won't retrigger on workspace restore/switch. resolvedWsId is $derived and
-    // properly tracks the getter, ensuring loading/recovery behavior stays correct.
     const resolvedWorkspaceId = resolvedWsId;
-    // Early exit if no workspace ID provided
     if (!resolvedWorkspaceId) return;
 
-    // Look up the workspace by its resolved ID rather than using
-    // workspaceStore.current. workspaceStore.current points to whichever
-    // workspace the user is actively viewing, which may differ from the
-    // workspace this subscription was created for (e.g. when multiple
-    // workspace tabs are open). Using findById ensures we pass the correct
-    // workspace object to restoreSessionWithoutBackend below.
-    // Reading workspaceStore.items keeps this as a reactive dependency so
-    // the effect re-runs when the items list changes (e.g. after load).
     const _items = workspaceStore.items; // reactive dependency
     const workspace = workspaceStore.findById(resolvedWorkspaceId as any);
-    if (!workspace) {
-      logger.debug('Workspace not ready, will retry when available', { resolvedWorkspaceId });
-      return;
-    }
 
-    // Prevent concurrent loads for the same workspace
-    if (agentsLoadingForWorkspace.has(resolvedWorkspaceId)) {
-      return;
-    }
+    // CRITICAL: Read allAgents UNCONDITIONALLY so Svelte 5 always tracks it
+    // as a dependency. Previously, early returns (lock check, workspace check)
+    // prevented this read, causing the effect to never re-run when agents
+    // were loaded by the page's loadAgentsFromDisk.
+    const currentAgents = allAgents;
 
-    // Track loaded workspaces to only do initial sync once per page session
-    // But allow re-sync if there are no agents (handles initial empty state)
-    const workspaceAgents = allAgents.filter((s) => {
+    // Filter workspace agents early (used in multiple checks below)
+    const workspaceAgents = currentAgents.filter((s) => {
       const agentWsId = s.workspaceId ? String(s.workspaceId) : '';
       return agentWsId === resolvedWorkspaceId;
     });
 
-    // Only trigger initial load on mount or when store is empty for this workspace
-    // The real-time updates come from agent:created events
+    if (!workspace) {
+      logger.debug('Workspace not ready, will retry when available', { resolvedWorkspaceId });
+      // Even if workspace isn't ready, check if agents appeared in the store
+      // (e.g., from the page's loadAgentsFromDisk publishing a snapshot)
+      if (workspaceAgents.length > 0) {
+        initialStateChecked = true;
+        isLoading = false;
+      }
+      return;
+    }
+
+    if (agentsLoadingForWorkspace.has(resolvedWorkspaceId)) {
+      // Lock is held by another loader, but if agents already appeared
+      // in the store, we can stop showing the skeleton
+      if (workspaceAgents.length > 0) {
+        initialStateChecked = true;
+        isLoading = false;
+      }
+      return;
+    }
+
     if (workspaceAgents.length > 0) {
       // Already have agents, trust real-time updates
-      // Mark initial state as checked and ensure loading is false
       initialStateChecked = true;
       isLoading = false;
       return;
