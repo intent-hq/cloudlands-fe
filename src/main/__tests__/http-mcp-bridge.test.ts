@@ -238,7 +238,6 @@ describe('HttpMcpBridge', () => {
       // Should register for workspace:deleting and workspace:deleted
       expect(eventHandlers['workspace:deleting']).toBeDefined();
       expect(eventHandlers['workspace:deleted']).toBeDefined();
-      expect(eventHandlers['workspace:updated']).toBeDefined();
     });
   });
 
@@ -356,6 +355,117 @@ describe('HttpMcpBridge', () => {
       expect(result.checked).toBe(0);
     });
   });
+
+  // ── Route Handler Tests (adapted from integration tests) ────────
+
+  describe('Health Check (route handler)', () => {
+    beforeEach(() => {
+      bridge = new HttpMcpBridge(5179);
+    });
+
+    it('should respond to health check via route handler', async () => {
+      await startBridge(bridge);
+
+      // Extract the /health GET handler registered on the mock express app
+      const healthCall = mockExpressApp.get.mock.calls.find(
+        (call: any[]) => call[0] === '/health',
+      );
+      expect(healthCall).toBeDefined();
+      const healthHandler = healthCall![1];
+
+      const res: any = { json: vi.fn(), status: vi.fn().mockReturnThis() };
+      await healthHandler({}, res);
+
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'ok',
+          service: 'http-mcp-bridge',
+          timestamp: expect.any(String),
+          tools: expect.any(Array),
+        }),
+      );
+    });
+  });
+
+  describe('MCP Protocol (route handler)', () => {
+    beforeEach(() => {
+      bridge = new HttpMcpBridge(5179);
+    });
+
+    it('should handle tools/list request via route handler', async () => {
+      await startBridge(bridge);
+
+      // Extract the /mcp POST handler
+      const mcpCall = mockExpressApp.post.mock.calls.find(
+        (call: any[]) => call[0] === '/mcp',
+      );
+      expect(mcpCall).toBeDefined();
+      const mcpHandler = mcpCall![1];
+
+      const req = {
+        body: { jsonrpc: '2.0', method: 'tools/list', id: 1 },
+        headers: { 'x-workspace-id': 'test-ws' },
+        header: vi.fn().mockReturnValue('test-ws'),
+      };
+      const res: any = { json: vi.fn(), status: vi.fn().mockReturnThis() };
+      await mcpHandler(req, res);
+
+      // The handler should respond (either with result or error)
+      expect(res.json).toHaveBeenCalled();
+      const responseData = res.json.mock.calls[0][0];
+      expect(responseData.jsonrpc).toBe('2.0');
+    });
+  });
+
+  describe('Tool Execution (route handler)', () => {
+    beforeEach(() => {
+      bridge = new HttpMcpBridge(5179);
+    });
+
+    it('should handle workspace_api tool call via route handler', async () => {
+      await startBridge(bridge);
+
+      const mcpCall = mockExpressApp.post.mock.calls.find(
+        (call: any[]) => call[0] === '/mcp',
+      );
+      expect(mcpCall).toBeDefined();
+      const mcpHandler = mcpCall![1];
+
+      const req = {
+        body: {
+          jsonrpc: '2.0',
+          method: 'tools/call',
+          params: {
+            name: 'workspace_api',
+            arguments: { code: 'return await ws.workspace.info()' },
+          },
+          id: 2,
+        },
+        headers: { 'x-workspace-id': 'test-ws' },
+        header: vi.fn().mockReturnValue('test-ws'),
+      };
+      const res: any = { json: vi.fn(), status: vi.fn().mockReturnThis() };
+      await mcpHandler(req, res);
+
+      // The handler should respond (either with result or error)
+      expect(res.json).toHaveBeenCalled();
+      const responseData = res.json.mock.calls[0][0];
+      expect(responseData.jsonrpc).toBe('2.0');
+    });
+  });
+
+  describe('MCP Server Cache Management', () => {
+    beforeEach(() => {
+      bridge = new HttpMcpBridge(5179);
+    });
+
+    it('should provide cache stats', () => {
+      const stats = bridge.getMcpServerCacheStats();
+      expect(stats.total).toBeGreaterThanOrEqual(0);
+      expect(Array.isArray(stats.servers)).toBe(true);
+    });
+  });
+
 
   // ── getPort ─────────────────────────────────────────────────────
 

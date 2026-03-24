@@ -269,6 +269,7 @@ export class InstructionService {
     workspaceTitle?: string; // Current workspace title (empty or slug means needs renaming)
     isInitialAgent?: boolean; // True if this is the first agent in the workspace (should rename workspace)
     isSubAgent?: boolean; // True if this is a delegated/background sub-agent (gets lighter prompt)
+    autoCommitEnabled?: boolean; // Whether auto-commit is enabled for this workspace
   }): Promise<string> {
     const useSharedPrefix = isSharedPromptPrefixEnabled();
     const hasBehaviorPrompt = !!config.behaviorPrompt && config.behaviorPrompt.trim().length > 0;
@@ -617,6 +618,23 @@ The instructions in <specialist_role> define your primary function. Prioritize t
       await addParentOnlyLayers();
       await addUserRulesLayer();
       await addSkillsLayer();
+    }
+
+    // Layer 4.4: Auto-commit setting
+    // Tells agents whether auto-commit is enabled so they don't suggest manual commits
+    if (config.autoCommitEnabled !== undefined) {
+      const autoCommitLine = config.autoCommitEnabled
+        ? 'Auto-commit is enabled for this workspace. Changes are committed automatically when tasks complete. Do not suggest committing changes.'
+        : 'Auto-commit is disabled for this workspace. The user must commit changes manually or ask you to commit.';
+      parts.push({
+        name: 'auto-commit-setting',
+        content: `## Workspace Settings\n\n${autoCommitLine}`,
+        priority: 4,
+        canTruncate: true,
+      });
+      logger.debug('Layer 4.4: Auto-commit setting added', {
+        autoCommitEnabled: config.autoCommitEnabled,
+      });
     }
 
     // Layer 4.5: Workspace context (open panels + linked references)

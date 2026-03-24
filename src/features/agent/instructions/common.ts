@@ -33,6 +33,7 @@ Run the tests to verify the implementation.
 Review changes before committing.
 -->
 \`\`\`
+If auto-commit is enabled, do not include prompts about committing or reviewing changes before committing.
 
 ## Note Editing
 

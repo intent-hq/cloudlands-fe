@@ -14,12 +14,7 @@ import { app } from 'electron';
 import { createServer } from 'http';
 
 import { Logger } from '../shared/logger';
-import {
-  createWorkspaceMCPServer,
-  registerPRTools,
-  unregisterPRTools,
-} from '../features/mcp/main/mcp/index';
-import { type PRContext } from '../features/mcp/main/mcp/pr-comment-tools';
+import { createWorkspaceMCPServer } from '../features/mcp/main/mcp/index';
 import { protocolAdapter } from '../features/protocol/main/protocol-adapter';
 import { unifiedEventBus, type UnifiedEventBus } from '../features/events/main/unified-event-bus';
 import { findAvailablePort } from '../utils/port-utils';
@@ -664,56 +659,6 @@ export class HttpMcpBridge {
       });
       this.clearMcpServersForWorkspace(data.workspaceId);
     });
-
-    // Listen for workspace updates to dynamically register/unregister PR tools
-    this.eventBus.on(
-      'workspace:updated',
-      async (data: { workspaceId: string; changes?: { activePullRequest?: any } }) => {
-        if (!data.changes || !('activePullRequest' in data.changes)) return; // No PR change in this event
-
-        const workspaceId = data.workspaceId;
-        const pr = data.changes.activePullRequest;
-        const isOpenPR = pr && (pr.status === 'Open' || pr.status === 'Draft');
-
-        // Find all cached servers for this workspace
-        for (const [key, cached] of this.mcpServers.entries()) {
-          if (!key.startsWith(`${workspaceId}:`)) continue;
-          const server = cached.server;
-
-          try {
-            if (isOpenPR) {
-              // Get owner/repo from workspace
-              const workspace = await protocolAdapter.getWorkspace(workspaceId);
-              if (workspace?.repositoryOwner && workspace?.repositoryName) {
-                const prContext: PRContext = {
-                  owner: workspace.repositoryOwner,
-                  repo: workspace.repositoryName,
-                  prNumber: pr.number,
-                };
-                // Unregister first (idempotent) then register with fresh context
-                unregisterPRTools(server);
-                registerPRTools(server, prContext);
-                server.notifyToolsListChanged();
-                this.logger.info('Registered PR comment tools for workspace', {
-                  workspaceId,
-                  prNumber: pr.number,
-                });
-              }
-            } else {
-              // PR closed/merged or cleared — remove tools
-              unregisterPRTools(server);
-              server.notifyToolsListChanged();
-              this.logger.info('Unregistered PR comment tools for workspace', {
-                workspaceId,
-                prStatus: pr?.status ?? 'cleared',
-              });
-            }
-          } catch (error) {
-            this.logger.warn(`Failed to update PR tools for workspace ${workspaceId}`, error as Error);
-          }
-        }
-      },
-    );
 
     this.logger.info('Workspace cleanup listeners set up');
   }

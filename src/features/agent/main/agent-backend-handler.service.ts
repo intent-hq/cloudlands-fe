@@ -808,6 +808,10 @@ export class AgentBackendHandler {
       // Detect sub-agents (delegated/background) to give them lighter prompts
       const isSubAgent = !!(request.metadata?.createdByAgentId || request.metadata?.isBackground);
 
+      const { isAutoCommitEnabled } = await import(
+        '../../workspace/main/workspace-settings.service'
+      );
+
       const systemPrompt = await instructionService.buildSystemPrompt({
         agentType,
         workspacePath: request.workspacePath,
@@ -821,6 +825,7 @@ export class AgentBackendHandler {
         isInitialAgent: request.metadata?.isInitialAgent || false,
         workspaceTitle: workspace?.title,
         isSubAgent,
+        autoCommitEnabled: isAutoCommitEnabled(request.workspaceId),
       });
 
       logger.debug('System prompt built from agentType', {
@@ -1264,6 +1269,10 @@ export class AgentBackendHandler {
             const { InstructionService } = await import('./instruction-service');
             const instructionService = InstructionService.getInstance();
 
+            const { isAutoCommitEnabled: isAutoCommitEnabled2 } = await import(
+              '../../workspace/main/workspace-settings.service'
+            );
+
             systemPrompt = await instructionService.buildSystemPrompt({
               agentType: effectiveAgentType,
               workspacePath,
@@ -1272,6 +1281,7 @@ export class AgentBackendHandler {
               roleReminder: agentRoleReminder, // Pass role reminder from specialist config
               isInitialAgent,
               workspaceTitle: workspace?.title, // Pass workspace title for rename check
+              autoCommitEnabled: isAutoCommitEnabled2(request.workspaceId),
             });
 
             logger.info('System prompt built from agentType', {
@@ -1380,6 +1390,10 @@ export class AgentBackendHandler {
             const { InstructionService } = await import('./instruction-service');
             const instructionService = InstructionService.getInstance();
 
+            const { isAutoCommitEnabled: isAutoCommitEnabled3 } = await import(
+              '../../workspace/main/workspace-settings.service'
+            );
+
             systemPrompt = await instructionService.buildSystemPrompt({
               agentType: requestAgentType,
               workspacePath,
@@ -1388,6 +1402,7 @@ export class AgentBackendHandler {
               roleReminder: requestRoleReminder, // Pass role reminder from request
               isInitialAgent: requestIsInitialAgent,
               workspaceTitle: workspace?.title, // Pass workspace title for rename check
+              autoCommitEnabled: isAutoCommitEnabled3(request.workspaceId),
             });
 
             logger.info('System prompt built from agentType (from request)', {
@@ -1410,6 +1425,10 @@ export class AgentBackendHandler {
             const { InstructionService } = await import('./instruction-service');
             const instructionService = InstructionService.getInstance();
 
+            const { isAutoCommitEnabled: isAutoCommitEnabled4 } = await import(
+              '../../workspace/main/workspace-settings.service'
+            );
+
             systemPrompt = await instructionService.buildSystemPrompt({
               agentType: 'workspace',
               workspacePath,
@@ -1418,6 +1437,7 @@ export class AgentBackendHandler {
               roleReminder: requestRoleReminder, // Pass role reminder from request
               isInitialAgent: requestIsInitialAgent,
               workspaceTitle: workspace?.title, // Pass workspace title for rename check
+              autoCommitEnabled: isAutoCommitEnabled4(request.workspaceId),
             });
 
             logger.info('System prompt built with default workspace type', {

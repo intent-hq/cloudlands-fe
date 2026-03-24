@@ -211,16 +211,12 @@ describe('MCP STDIO Proxy Integration Tests', () => {
       expect(response.result).toBeDefined();
       expect(response.result.tools).toBeDefined();
       expect(Array.isArray(response.result.tools)).toBe(true);
-      expect(response.result.tools.length).toBeGreaterThan(0);
-
-      // Check for expected tools
+      // Workspace MCP is now a single consolidated JS API tool.
       const toolNames = response.result.tools.map((tool: any) => tool.name);
-      expect(toolNames).toContain('read_file');
-      expect(toolNames).toContain('list_files');
-      expect(toolNames).toContain('view_workspace');
+      expect(toolNames).toEqual(['workspace_api']);
     }, 10000);
 
-    it('should handle view_workspace tool call via STDIO', async () => {
+    it('should handle workspace_api tool call via STDIO', async () => {
       if (!stdioProcess || stdioProcess.killed) {
         throw new Error('STDIO process not running');
       }
@@ -229,8 +225,10 @@ describe('MCP STDIO Proxy Integration Tests', () => {
         jsonrpc: '2.0',
         method: 'tools/call',
         params: {
-          name: 'view_workspace',
-          arguments: {},
+          name: 'workspace_api',
+          arguments: {
+            code: 'return await ws.workspace.info()',
+          },
         },
         id: 2,
       };
