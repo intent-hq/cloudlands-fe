@@ -4,7 +4,8 @@ Quick routing guide for AI agents. Start here, then open the smallest relevant d
 
 ## Tech stack
 - Electron + SvelteKit + TypeScript desktop app
-- Svelte 5 runes in the UI; shared app state uses Redux + sagas
+- Svelte 5 runes for UI rendering only; ALL shared/domain state MUST use Redux + sagas
+- Svelte stores (`*.store.svelte.ts`) are **DEPRECATED** — do not create new ones
 - Use `pnpm`; create agents via `agentFactory.createAgent()`
 
 ## Project layout
@@ -40,6 +41,7 @@ src/
 | parallel runner | [`parallel-runner/docs/`](parallel-runner/docs/) |
 
 ## Key conventions
+- **Svelte stores are DEPRECATED** — All `.store.svelte.ts` files are migration targets. New shared/domain state MUST use Redux slices + sagas (ephemeral component-local UI state is fine without Redux). If refactoring encounters `.store.svelte.ts` usage, do not expand or entrench it — follow the [Migration Guide](src/lib/store/docs/MIGRATION_GUIDE.md) to move toward complete store removal. See `docs/STATE_MANAGEMENT.md`.
 - Use `pnpm`, not `npm`.
 - Put renderer product work in `src/features/`; shared utilities live in `src/lib/`.
 - Create agents via `agentFactory.createAgent()`.

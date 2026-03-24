@@ -1,5 +1,7 @@
 # State Management Guide
 
+> ⚠️ **POLICY**: Svelte stores (`*.store.svelte.ts`) are DEPRECATED. All new shared/domain state MUST use Redux slices (ephemeral component-local UI state is fine without Redux). If refactoring encounters `.store.svelte.ts` usage, do not expand or entrench it — follow the [Migration Guide](../src/lib/store/docs/MIGRATION_GUIDE.md) to move toward complete store removal.
+
 ## Overview
 
 State should be kept out of Svelte components as much as possible. The canonical home for shared or durable application state in this codebase is Redux under `src/lib/store/`.
@@ -55,18 +57,20 @@ Acceptable `$effect` usage is narrow:
 
 Do **not** use component `$effect` for application workflows, persistence, shared-state coordination, or async business logic when saga-based handling is possible.
 
-### 4. Treat Svelte store classes as migration targets
+### 4. Svelte stores are DEPRECATED — migrate to Redux
 
-State in Svelte store classes should also be implemented as Redux slices. Existing Svelte stores are transitional and should be migrated into `src/lib/store/slices/` over time.
+Svelte store classes (`*.store.svelte.ts`) are **DEPRECATED** and MUST NOT be used for new code. No new `$state`-based store classes may be created under any circumstances.
 
-The migration direction in this repository is explicit:
+Any refactoring or feature work that encounters `.store.svelte.ts` usage MUST NOT expand or entrench it. Follow the [Migration Guide](../src/lib/store/docs/MIGRATION_GUIDE.md) to move toward complete store removal (update all consumers and delete the old store). Partial split-ownership — where some consumers use Redux and others still use the Svelte store — is not acceptable as a final state.
 
-- each Svelte store maps to one Redux slice
-- side effects move to sagas
-- getters / `$derived` values move to selectors
-- old store files are eventually deleted once migration is complete
+The migration path is:
 
-Do not introduce new long-lived app/domain state in `.store.svelte.ts` classes unless there is a very strong, temporary reason.
+- `$state` → Redux slice state
+- `$derived` → selectors
+- methods → actions + reducers
+- side effects → sagas
+
+See [Migration Guide](../src/lib/store/docs/MIGRATION_GUIDE.md) for the step-by-step process.
 
 ## Recommended Architecture
 
@@ -214,11 +218,15 @@ This guidance matches the current store architecture in the repository:
 
 ## Migration Direction
 
-The long-term direction is to consolidate state management around Redux.
+All state management MUST consolidate around Redux. This is mandatory, not aspirational.
 
-- New shared state should be implemented as Redux slices
-- New side effects should be implemented as sagas
-- Existing Svelte store classes should be migrated rather than expanded
-- Components should get thinner over time, with business logic moving out of the view layer
+- All new shared state MUST be implemented as Redux slices
+- All new side effects that matter beyond a single component MUST be implemented as sagas (narrow instance-local DOM/focus/widget effects may use component `$effect`)
+- Existing Svelte store classes MUST be migrated, not expanded
+- Components MUST get thinner over time, with business logic moving out of the view layer
 
-In short: keep state and business logic out of components whenever possible, use Redux for shared state, use sagas for side effects, and treat remaining Svelte stores as temporary migration candidates.
+### Mandatory Refactoring Rule
+
+When refactoring encounters `.store.svelte.ts` usage, do not expand or entrench it. Follow the [Migration Guide](../src/lib/store/docs/MIGRATION_GUIDE.md) to move the work toward complete store removal (update all consumers and delete the old store). Partial split-ownership — where some consumers use Redux and others still use the Svelte store — is not acceptable as a final state.
+
+In short: keep state and business logic out of components, use Redux for shared state, use sagas for side effects, and migrate all remaining Svelte stores on contact.
