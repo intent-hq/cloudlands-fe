@@ -69,13 +69,19 @@ export class UnifiedIdService {
    * @returns A branded WorkspaceId
    */
   generateWorkspaceId(): Branded.WorkspaceId {
-    const baseSlug = generateWorkspaceSlug();
-    const id = this.resolveWorkspaceSlugCollision(baseSlug);
-
-    this.generatedIds.add(id);
-    this.cleanupIfNeeded();
-
-    return Branded.WorkspaceId(id);
+    let attempts = 0;
+    while (attempts < 10) {
+      const baseSlug = generateWorkspaceSlug();
+      if (isValidWorkspaceSlug(baseSlug)) {
+        const id = this.resolveWorkspaceSlugCollision(baseSlug);
+        this.generatedIds.add(id);
+        this.cleanupIfNeeded();
+        return Branded.WorkspaceId(id);
+      }
+      attempts++;
+    }
+    // Should never happen with filtered dictionaries, but just in case
+    throw new Error('Failed to generate valid workspace slug after 10 attempts');
   }
 
   /**

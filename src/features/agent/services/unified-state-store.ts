@@ -197,6 +197,8 @@ export interface UIState {
  * store.addContextItem({ type: 'file', path: '/src/app.ts' });
  * ```
  */
+const UNIFIED_STATE_STORE_HMR_KEY = '__unifiedStateStore_hmr';
+
 class UnifiedStateStore {
   /** @property {UnifiedStateStore} instance - Singleton instance */
   private static instance: UnifiedStateStore;
@@ -380,8 +382,16 @@ class UnifiedStateStore {
    * ```
    */
   static getInstance(): UnifiedStateStore {
+    // Survive HMR: reuse instance stored on window if available
+    if (typeof window !== 'undefined' && (window as any)[UNIFIED_STATE_STORE_HMR_KEY]) {
+      UnifiedStateStore.instance = (window as any)[UNIFIED_STATE_STORE_HMR_KEY];
+      return UnifiedStateStore.instance;
+    }
     if (!UnifiedStateStore.instance) {
       UnifiedStateStore.instance = new UnifiedStateStore();
+      if (typeof window !== 'undefined') {
+        (window as any)[UNIFIED_STATE_STORE_HMR_KEY] = UnifiedStateStore.instance;
+      }
     }
     return UnifiedStateStore.instance;
   }

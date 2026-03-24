@@ -190,14 +190,24 @@ export interface CreateAgentResult {
  * Consolidates all creation methods (createAgent, createInitialAgent, createContextualAgent)
  * into one unified interface with proper validation and error handling.
  */
+const AGENT_FACTORY_HMR_KEY = '__agentFactory_hmr';
+
 export class UnifiedAgentFactory {
   private static instance: UnifiedAgentFactory;
 
   private constructor() {}
 
   static getInstance(): UnifiedAgentFactory {
+    // Survive HMR: reuse instance stored on window if available
+    if (typeof window !== 'undefined' && (window as any)[AGENT_FACTORY_HMR_KEY]) {
+      UnifiedAgentFactory.instance = (window as any)[AGENT_FACTORY_HMR_KEY];
+      return UnifiedAgentFactory.instance;
+    }
     if (!UnifiedAgentFactory.instance) {
       UnifiedAgentFactory.instance = new UnifiedAgentFactory();
+      if (typeof window !== 'undefined') {
+        (window as any)[AGENT_FACTORY_HMR_KEY] = UnifiedAgentFactory.instance;
+      }
     }
     return UnifiedAgentFactory.instance;
   }

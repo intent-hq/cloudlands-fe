@@ -92,7 +92,10 @@ export class WorkspaceConfigConstants {
     if (id.startsWith('optimistic-')) {
       // Optimistic IDs have format: optimistic-{timestamp}-{random}
       const optimisticPattern = /^optimistic-\d+-[a-z0-9]+$/;
-      return optimisticPattern.test(id);
+      if (optimisticPattern.test(id)) {
+        return true;
+      }
+      // Fall through to slug/UUID checks for regular slugs that happen to start with "optimistic-"
     }
 
     // Check for new slug format: word-word or word-word-N (numeric suffix)

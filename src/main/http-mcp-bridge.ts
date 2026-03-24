@@ -33,6 +33,14 @@ const DUMMY_WORKSPACE_PATH = process.platform === 'win32'
   ? path.join(os.tmpdir(), 'dummy-workspace')
   : '/tmp/dummy-workspace';
 
+// WeakSet to track synthetic senders created by the /ipc bridge.
+// Used by the one-time BrowserWindow.fromWebContents patch so concurrent
+// requests don't stomp each other's monkey-patches.
+const syntheticSenders = new WeakSet<object>();
+
+// Whether BrowserWindow.fromWebContents has already been patched (once).
+let fromWebContentsPatched = false;
+
 // Default TTL for cached MCP servers (30 minutes)
 const DEFAULT_MCP_SERVER_TTL_MS = 30 * 60 * 1000;
 
@@ -341,18 +349,6 @@ export class HttpMcpBridge {
       }
     });
 
-    // Legacy settings endpoints (for backward compatibility with POC)
-    this.app.get('/settings', (req: Request, res: Response) => {
-      const settings = this.settingsStore.store;
-      res.json({ success: true, data: settings });
-    });
-
-    this.app.get('/settings/:key', (req: Request, res: Response) => {
-      const key = req.params.key;
-      const value = this.settingsStore.get(key);
-      res.json({ success: true, key, data: value });
-    });
-
     // ---------------------------------------------------------------
     // IPC-over-HTTP bridge for browser-mode rendering
     // Allows the browser (non-Electron) renderer to call real IPC handlers
@@ -403,23 +399,26 @@ export class HttpMcpBridge {
           __isBrowserBridge: true,
         };
 
-        // Temporarily patch BrowserWindow.fromWebContents so it returns null
-        // for our synthetic sender instead of throwing a TypeError.
-        // Many IPC handlers call BrowserWindow.fromWebContents(event.sender).
-        const { BrowserWindow } = await import('electron');
-        const origFromWebContents = BrowserWindow.fromWebContents;
-        BrowserWindow.fromWebContents = (wc: any) => {
-          if (wc && wc.__isBrowserBridge) return null as any;
-          return origFromWebContents.call(BrowserWindow, wc);
-        };
+        // Track this synthetic sender so the one-time BrowserWindow.fromWebContents
+        // patch can recognise it and return null instead of throwing a TypeError.
+        syntheticSenders.add(syntheticSender);
 
-        try {
-          const handler = handlers.get(channel)!;
-          const result = await handler(syntheticEvent, data);
-          res.json(result);
-        } finally {
-          BrowserWindow.fromWebContents = origFromWebContents;
+        // Patch BrowserWindow.fromWebContents exactly once (idempotent).
+        // This avoids the concurrency bug where per-request patching/unpatching
+        // causes concurrent requests to stomp each other's patches.
+        if (!fromWebContentsPatched) {
+          const { BrowserWindow } = await import('electron');
+          const orig = BrowserWindow.fromWebContents;
+          BrowserWindow.fromWebContents = (wc: any) => {
+            if (syntheticSenders.has(wc)) return null as any;
+            return orig.call(BrowserWindow, wc);
+          };
+          fromWebContentsPatched = true;
         }
+
+        const handler = handlers.get(channel)!;
+        const result = await handler(syntheticEvent, data);
+        res.json(result);
       } catch (error) {
         this.logger.error(`IPC bridge error on channel "${channel}"`, error as Error);
         res.status(500).json({
@@ -935,6 +934,7 @@ export class HttpMcpBridge {
 
       // Add error handler before listening - this is the ONLY error handler
       // to avoid duplicate handlers causing race conditions
+      const startPort = this.port;
       this.server.on('error', (error: any) => {
         this.logger.error('HTTP MCP Bridge server error', {
           error: error.message,
@@ -942,7 +942,7 @@ export class HttpMcpBridge {
         });
 
         // If address in use, try next port (up to a reasonable limit)
-        if (error.code === 'EADDRINUSE' && this.port < this.port + 10) {
+        if (error.code === 'EADDRINUSE' && this.port < startPort + 10) {
           this.logger.warn(`Port ${this.port} in use, trying next port...`);
           this.port++;
           setTimeout(() => {

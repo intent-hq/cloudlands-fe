@@ -53,6 +53,7 @@ const STOP_WORDS = new Set([
   'can',
   'need',
   'dare',
+  'optimistic',
   'ought',
   'used',
   'that',

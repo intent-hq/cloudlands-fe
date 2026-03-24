@@ -155,6 +155,14 @@ class RefactoredAgentService extends EventEmitter {
   // when multiple agent:created events arrive in quick succession
   private pendingStreamRegistrations = new Set<string>();
 
+  // FIX: Track agents whose sendMessage() is in the middle of cleaning up and
+  // re-registering a stream handler.  While this set contains an agentId the
+  // global `agent:stream-starting` listener must NOT call ensureStreamHandler()
+  // for that agent — sendMessage() will register its own handler momentarily.
+  // Without this guard the two registrations race and both dispatch DOM events,
+  // doubling every streamed chunk.
+  private sendMessageStreamSetup = new Set<string>();
+
   // Mutex for agent activation - prevents duplicate concurrent activations for the same agentId.
   // When a second caller arrives while activation is in progress, it awaits the first caller's promise.
   private activationMutex = new Map<string, Promise<AgentSession | null>>();
@@ -2239,6 +2247,17 @@ class RefactoredAgentService extends EventEmitter {
         const { agentId, workspaceId } = data;
         logger.info('Backend stream starting notification received', { agentId, workspaceId });
 
+        // FIX: If sendMessage() is currently setting up the stream handler for this agent,
+        // skip registration here to avoid creating a duplicate IPC listener that would
+        // cause every streamed chunk to be dispatched twice (doubled text).
+        if (this.sendMessageStreamSetup.has(agentId)) {
+          logger.info(
+            'Skipping ensureStreamHandler — sendMessage is setting up stream handler for this agent',
+            { agentId, workspaceId },
+          );
+          return;
+        }
+
         // ensureStreamHandler is idempotent - it returns early if handler already exists
         const result = this.ensureStreamHandler(agentId, { workspaceId });
         if (result.created) {
@@ -3158,9 +3177,7 @@ class RefactoredAgentService extends EventEmitter {
           // Update the session in stores
           sessionStore.addSessionForWorkspace(workspaceId, finalSession);
 
-          // Also update unified state store
-          const { unifiedStateStore } = await import('./services/unified-state-store');
-          unifiedStateStore.setAgent(workspace.id as any, finalSession);
+          // sessionStore.addSessionForWorkspace handles unified state store update internally
 
           // Persist the activated session to disk to ensure status is saved
           try {
@@ -3426,9 +3443,7 @@ class RefactoredAgentService extends EventEmitter {
             sessionStore.addSessionForWorkspace(workspace.id, session);
             sessionStore.setActiveSessionForWorkspace(workspace.id, agentId);
 
-            // CRITICAL: Also add to unified state store so background agents can be found
-            const { unifiedStateStore } = await import('./services/unified-state-store');
-            unifiedStateStore.setAgent(workspace.id as any, session);
+            // sessionStore.addSessionForWorkspace handles unified state store update internally
 
             // Skip cleanup since we're not tracking initialization status
 
@@ -3520,9 +3535,7 @@ class RefactoredAgentService extends EventEmitter {
     sessionStore.addSessionForWorkspace(workspace.id, activatedSession);
     sessionStore.setActiveSessionForWorkspace(workspace.id, agentId);
 
-    // CRITICAL: Also add to unified state store so background agents can be found
-    const { unifiedStateStore } = await import('./services/unified-state-store');
-    unifiedStateStore.setAgent(workspace.id as any, activatedSession);
+    // sessionStore.addSessionForWorkspace handles unified state store update internally
 
     // Skip cleanup since we're not tracking initialization status
 
@@ -4908,6 +4921,11 @@ class RefactoredAgentService extends EventEmitter {
                       throw new Error('Electron API not available');
                     }
 
+                    // FIX: Mark this agent as being set up by sendMessage so the global
+                    // `agent:stream-starting` listener skips ensureStreamHandler() and
+                    // doesn't create a duplicate IPC listener (which would double chunks).
+                    this.sendMessageStreamSetup.add(agentId);
+
                     // Clean up any existing handler for this agent before registering a new one
                     logger.info('Checking for existing stream handler', {
                       agentId,
@@ -4994,6 +5012,10 @@ class RefactoredAgentService extends EventEmitter {
                       listenerId: streamListenerId,
                       registeredAt: Date.now(),
                     });
+
+                    // FIX: sendMessage's handler is now registered — allow the global
+                    // `agent:stream-starting` listener to act normally again for this agent.
+                    this.sendMessageStreamSetup.delete(agentId);
 
                     // Register IPC heartbeat ping handler - responds with pong to verify IPC liveness
                     const pingChannel = `agent:stream:ping:${agentId}`;
@@ -5162,6 +5184,10 @@ class RefactoredAgentService extends EventEmitter {
                       // Track metrics
                       workspaceMetrics.incrementMessageSent(workspace.id);
                     } catch (error) {
+                      // FIX: Ensure the guard flag is cleared on error so the global
+                      // `agent:stream-starting` listener isn't permanently blocked.
+                      this.sendMessageStreamSetup.delete(agentId);
+
                       // NOTE: Do NOT dispatch error events here — this catch block fires on
                       // EVERY error-boundary retry attempt. Dispatching here would cause
                       // isStreaming to flash false→true→false on each retry, creating a
@@ -5984,19 +6010,12 @@ class RefactoredAgentService extends EventEmitter {
           session.status = AgentStatus.Idle;
         }
 
-        // Add to sessionStore - but we need to ensure the workspace is set
-        // Since addSession relies on currentWorkspace being set, we need to add it directly
-        // to the unified state store with the workspace ID
-        const { unifiedStateStore } = await import('./services/unified-state-store');
-        unifiedStateStore.setAgent(workspace.id as any, session);
-
-        // Also add to sessionStore (secondary source)
+        // Add to sessionStore (addSessionForWorkspace internally calls setAgent on unified state store)
         sessionStore.addSessionForWorkspace(workspace.id, session);
 
         logger.debug('Session restored to stores', {
           agentId: session.id,
           workspaceId: session.workspaceId,
-          addedToUnifiedStore: true,
         });
 
         return session;

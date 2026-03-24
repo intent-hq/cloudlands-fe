@@ -34,16 +34,13 @@ vi.mock('../../agent.service', () => ({
 
 vi.mock('$features/agent/browser', () => ({
   sessionStore: {
-    getSession: vi.fn(),
     getSessionForWorkspace: vi.fn(),
     addSession: vi.fn(),
     addSessionForWorkspace: vi.fn(),
     setActiveSession: vi.fn(),
     updateMessages: vi.fn(),
     updateMessagesForWorkspace: vi.fn(),
-    addMessage: vi.fn(),
     addMessageForWorkspace: vi.fn(),
-    setStreaming: vi.fn(),
     setStreamingForWorkspace: vi.fn(),
     getStore: vi.fn(),
     getAllSessions: vi.fn(() => []),
@@ -131,7 +128,7 @@ describe('Pending-agent first-send regression', () => {
     const pending = makePendingSession(agentId);
     const activated = { ...pending, backendSessionId: 'backend-3', status: 'active' };
 
-    vi.mocked(sessionStore.getSession).mockReturnValue(pending);
+    vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(pending);
     vi.mocked(agentService.activateAgent).mockResolvedValue(activated);
 
     chatService['state'].update((s) => ({ ...s, session: pending }));
@@ -149,7 +146,7 @@ describe('Pending-agent first-send regression', () => {
       status: 'active',
     };
 
-    vi.mocked(sessionStore.getSession).mockReturnValue(activeSession);
+    vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(activeSession);
 
     chatService['state'].update((s) => ({ ...s, session: activeSession }));
     await chatService.sendMessage('No activation needed', mockWorkspace);
@@ -181,7 +178,7 @@ describe('Pending-agent first-send regression', () => {
         status: 'active',
       };
 
-      vi.mocked(sessionStore.getSession).mockReturnValue(activeSession);
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(activeSession);
 
       // Set up state with messages but NO lastAttemptedMessage (triggers fallback path)
       const userMsg = {
@@ -263,8 +260,6 @@ describe('Pending-agent first-send regression', () => {
       // A stale session in the "wrong" workspace that is streaming
       const staleSession = { ...correctSession, isStreaming: true };
 
-      // getSession (current-workspace-dependent) would return the stale streaming session
-      vi.mocked(sessionStore.getSession).mockReturnValue(staleSession);
       // getSessionForWorkspace with the correct workspace returns the real non-streaming session
       vi.mocked(sessionStore.getSessionForWorkspace).mockImplementation(
         (wsId: string, _agentId: string) => {
@@ -307,7 +302,6 @@ describe('Pending-agent first-send regression', () => {
       const agent2 = 'agent-second';
 
       // Neither agent has a session in the store — both will hit the deferred path
-      vi.mocked(sessionStore.getSession).mockReturnValue(undefined as any);
       vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(undefined as any);
 
       // Mock restoreSession to return null (no persisted session)

@@ -70,6 +70,8 @@ class ClientEventDeduplicator {
  * Provides the same interface as the main process event bus
  * but communicates via IPC.
  */
+const UNIFIED_EVENT_BUS_CLIENT_HMR_KEY = '__unifiedEventBusClient_hmr';
+
 export class UnifiedEventBusClient extends EventEmitter {
   private static instance: UnifiedEventBusClient;
   private subscribers: Map<string, EventSubscription> = new Map();
@@ -86,8 +88,16 @@ export class UnifiedEventBusClient extends EventEmitter {
    * Get singleton instance
    */
   static getInstance(): UnifiedEventBusClient {
+    // Survive HMR: reuse instance stored on window if available
+    if (typeof window !== 'undefined' && (window as any)[UNIFIED_EVENT_BUS_CLIENT_HMR_KEY]) {
+      UnifiedEventBusClient.instance = (window as any)[UNIFIED_EVENT_BUS_CLIENT_HMR_KEY];
+      return UnifiedEventBusClient.instance;
+    }
     if (!UnifiedEventBusClient.instance) {
       UnifiedEventBusClient.instance = new UnifiedEventBusClient();
+      if (typeof window !== 'undefined') {
+        (window as any)[UNIFIED_EVENT_BUS_CLIENT_HMR_KEY] = UnifiedEventBusClient.instance;
+      }
     }
     return UnifiedEventBusClient.instance;
   }

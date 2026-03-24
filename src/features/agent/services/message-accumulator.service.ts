@@ -95,6 +95,8 @@ export interface AccumulatorStats {
  *
  * Uses Wave 1 type system for type safety and consistency.
  */
+const MESSAGE_ACCUMULATOR_HMR_KEY = '__messageAccumulator_hmr';
+
 export class MessageAccumulatorService extends EventEmitter implements IDisposable {
   private static instance: MessageAccumulatorService;
 
@@ -201,8 +203,16 @@ export class MessageAccumulatorService extends EventEmitter implements IDisposab
    * Get or create the singleton instance
    */
   static getInstance(config?: AccumulatorConfig): MessageAccumulatorService {
+    // Survive HMR: reuse instance stored on window if available
+    if (typeof window !== 'undefined' && (window as any)[MESSAGE_ACCUMULATOR_HMR_KEY]) {
+      MessageAccumulatorService.instance = (window as any)[MESSAGE_ACCUMULATOR_HMR_KEY];
+      return MessageAccumulatorService.instance;
+    }
     if (!MessageAccumulatorService.instance) {
       MessageAccumulatorService.instance = new MessageAccumulatorService(config);
+      if (typeof window !== 'undefined') {
+        (window as any)[MESSAGE_ACCUMULATOR_HMR_KEY] = MessageAccumulatorService.instance;
+      }
     }
     return MessageAccumulatorService.instance;
   }
@@ -216,6 +226,10 @@ export class MessageAccumulatorService extends EventEmitter implements IDisposab
       MessageAccumulatorService.instance.removeAllListeners();
     }
     MessageAccumulatorService.instance = null as any;
+    // Clear HMR survival key so getInstance() doesn't reuse a disposed instance
+    if (typeof window !== 'undefined') {
+      delete (window as any)[MESSAGE_ACCUMULATOR_HMR_KEY];
+    }
   }
 
   /**

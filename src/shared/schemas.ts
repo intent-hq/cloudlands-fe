@@ -22,13 +22,16 @@ import { AgentStatus, AuthorType, ContentType, NoteVisibility, WorkspaceStatus }
  * - Legacy slug format with alphanumeric suffix: word-word-xxxx (backward compatibility)
  * - Optimistic workspace IDs
  */
-const workspaceIdSchema = z.string().refine(
+export const workspaceIdSchema = z.string().refine(
   (id) => {
     // Check if it's an optimistic workspace ID
     if (id.startsWith('optimistic-')) {
       // Optimistic IDs have format: optimistic-{timestamp}-{random}
       const optimisticPattern = /^optimistic-\d+-[a-z0-9]+$/;
-      return optimisticPattern.test(id);
+      if (optimisticPattern.test(id)) {
+        return true;
+      }
+      // Fall through to slug/UUID checks for regular slugs that happen to start with "optimistic-"
     }
 
     // Check for new slug format: word-word or word-word-N (numeric suffix)

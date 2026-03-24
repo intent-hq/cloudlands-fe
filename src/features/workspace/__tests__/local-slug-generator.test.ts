@@ -81,6 +81,15 @@ describe('extractLocalSlug', () => {
       expect(slug).toBeNull();
     });
 
+    it('should treat "optimistic" as a stop word and exclude it from slugs', () => {
+      const slug = extractLocalSlug('Optimistic update handler');
+      expect(slug).not.toBeNull();
+      expect(slug).not.toMatch(/optimistic/i);
+      expect(VALID_SLUG_PATTERN.test(slug!)).toBe(true);
+      // Should produce "update-handler" since "optimistic" is filtered and "update" is an action word
+      expect(slug).toBe('handler-update');
+    });
+
     it('should strip context mentions', () => {
       const slug = extractLocalSlug('@context[some/file.ts] fix the bug');
       expect(slug).toBe('bug-fix');

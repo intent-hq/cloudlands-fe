@@ -142,6 +142,8 @@ export interface StreamMetrics {
  * This eliminates the need for complex ID mapping between streamId, sessionId,
  * frontendSessionId, and backendSessionId.
  */
+const STREAM_MANAGER_HMR_KEY = '__streamManager_hmr';
+
 export class StreamManager extends EventEmitter implements IDisposable {
   private static instance: StreamManager;
   // Sessions keyed by agentId - only one stream per agent at a time
@@ -170,8 +172,22 @@ export class StreamManager extends EventEmitter implements IDisposable {
   }
 
   static getInstance(): StreamManager {
-    if (!StreamManager.instance) {
+    // Survive HMR: reuse instance stored on window if available
+    if (typeof window !== 'undefined' && (window as any)[STREAM_MANAGER_HMR_KEY]) {
+      const cached = (window as any)[STREAM_MANAGER_HMR_KEY] as StreamManager;
+      // Guard against returning a disposed instance — create a fresh one instead
+      if (!cached.disposed) {
+        StreamManager.instance = cached;
+        return StreamManager.instance;
+      }
+      // Disposed instance found; discard it and fall through to create a new one
+      delete (window as any)[STREAM_MANAGER_HMR_KEY];
+    }
+    if (!StreamManager.instance || StreamManager.instance.disposed) {
       StreamManager.instance = new StreamManager();
+      if (typeof window !== 'undefined') {
+        (window as any)[STREAM_MANAGER_HMR_KEY] = StreamManager.instance;
+      }
     }
     return StreamManager.instance;
   }

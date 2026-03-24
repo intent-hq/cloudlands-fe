@@ -49,14 +49,12 @@ vi.mock('../../agent.service', () => ({
 
 vi.mock('$features/agent/browser', () => ({
   sessionStore: {
-    getSession: vi.fn(),
     getSessionForWorkspace: vi.fn(),
     addSession: vi.fn(),
     addSessionForWorkspace: vi.fn(),
     setActiveSession: vi.fn(),
     updateMessages: vi.fn(),
-    addMessage: vi.fn(),
-    setStreaming: vi.fn(),
+    addMessageForWorkspace: vi.fn(),
     setStreamingForWorkspace: vi.fn(),
     getStore: vi.fn(),
     getAllSessions: vi.fn(() => []),
@@ -176,7 +174,7 @@ describe('Stale-stream remount and workspace rebind', () => {
     opts?: { streamingActive?: boolean },
   ) {
     vi.mocked(agentService.getSession).mockReturnValue(session);
-    vi.mocked(sessionStore.getSession).mockReturnValue(session);
+    vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(session);
     const agentEntry: any = { session, messages: session?.messages ?? [] };
     if (opts?.streamingActive) agentEntry.streaming = { active: true };
     (unifiedStateStore as any).currentWorkspace = {
@@ -509,7 +507,7 @@ describe('Stale-stream remount and workspace rebind', () => {
 
       // No session available anywhere
       vi.mocked(agentService.getSession).mockReturnValue(undefined as any);
-      vi.mocked(sessionStore.getSession).mockReturnValue(undefined as any);
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(undefined as any);
       vi.mocked(agentService.restoreSession).mockResolvedValue(undefined as any);
       configureMocks('ws-error', null);
 
@@ -553,7 +551,7 @@ describe('Stale-stream remount and workspace rebind', () => {
 
       // First call: configure for old workspace with a slow restoreSession
       vi.mocked(agentService.getSession).mockReturnValue(undefined as any);
-      vi.mocked(sessionStore.getSession).mockReturnValue(undefined as any);
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(undefined as any);
       vi.mocked(agentService.restoreSession).mockReturnValue(oldRestorePromise);
       configureMocks('ws-old', null);
 
@@ -562,7 +560,7 @@ describe('Stale-stream remount and workspace rebind', () => {
 
       // Now immediately start a new (fast) init for a different workspace
       vi.mocked(agentService.getSession).mockReturnValue(newSession);
-      vi.mocked(sessionStore.getSession).mockReturnValue(newSession);
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(newSession);
       vi.mocked(agentService.restoreSession).mockResolvedValue(undefined as any);
       configureMocks('ws-new', newSession);
 
@@ -637,7 +635,7 @@ describe('Stale-stream remount and workspace rebind', () => {
       });
 
       // Force the "no messages" path so restoreSession is called
-      vi.mocked(sessionStore.getSession).mockReturnValue({
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue({
         ...session,
         messages: [],
       } as any);
@@ -673,7 +671,7 @@ describe('Stale-stream remount and workspace rebind', () => {
       const oldRestorePromise = new Promise<any>((r) => { resolveOldRestore = r; });
 
       vi.mocked(agentService.getSession).mockReturnValue(undefined as any);
-      vi.mocked(sessionStore.getSession).mockReturnValue(undefined as any);
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(undefined as any);
       vi.mocked(agentService.restoreSession).mockReturnValue(oldRestorePromise);
       configureMocks('ws-old-lam', null);
 
@@ -681,7 +679,7 @@ describe('Stale-stream remount and workspace rebind', () => {
 
       // Now start the new (fast) init — this bumps _initGeneration
       vi.mocked(agentService.getSession).mockReturnValue(newSession);
-      vi.mocked(sessionStore.getSession).mockReturnValue(newSession);
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(newSession);
       vi.mocked(agentService.restoreSession).mockResolvedValue(undefined as any);
       configureMocks('ws-new-lam', newSession);
 
@@ -772,7 +770,7 @@ describe('Stale-stream remount and workspace rebind', () => {
           return undefined;
         },
       );
-      vi.mocked(sessionStore.getSession).mockReturnValue(undefined);
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(undefined);
 
       await chatService.initializeChat(wsA, AGENT_ID);
       const state = chatService.getState();
@@ -811,7 +809,7 @@ describe('Stale-stream remount and workspace rebind', () => {
       } as any;
 
       vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(session);
-      vi.mocked(sessionStore.getSession).mockReturnValue(session);
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(session);
 
       // Set up internal state as if stream already completed
       chatService['state'].update((s) => ({

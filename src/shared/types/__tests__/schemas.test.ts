@@ -19,6 +19,7 @@ import {
   safeValidateAgentMessage,
   safeValidateContentBlock,
   safeValidateToolCall,
+  workspaceIdSchema,
 } from '../../schemas';
 
 describe('Zod Schemas', () => {
@@ -204,6 +205,44 @@ describe('Zod Schemas', () => {
       };
       const result = validateAgentSession(session);
       expect(result).toEqual(session);
+    });
+  });
+
+  describe('workspaceIdSchema', () => {
+    it('should accept valid slug format', () => {
+      expect(() => workspaceIdSchema.parse('amber-forest')).not.toThrow();
+    });
+
+    it('should accept slug with collision suffix', () => {
+      expect(() => workspaceIdSchema.parse('amber-forest-2')).not.toThrow();
+    });
+
+    it('should accept valid optimistic workspace ID', () => {
+      expect(() => workspaceIdSchema.parse('optimistic-1711000000000-abc123')).not.toThrow();
+    });
+
+    it('should accept slug starting with "optimistic" (regression: optimistic-remove-4)', () => {
+      // Regression test: slugs that happen to start with "optimistic-" should pass
+      // as regular slugs, not be rejected by the optimistic pattern check
+      expect(() => workspaceIdSchema.parse('optimistic-remove-4')).not.toThrow();
+    });
+
+    it('should accept slug starting with "optimistic" (regression: optimistic-update)', () => {
+      expect(() => workspaceIdSchema.parse('optimistic-update')).not.toThrow();
+    });
+
+    it('should reject empty string', () => {
+      expect(() => workspaceIdSchema.parse('')).toThrow();
+    });
+
+    it('should reject string with spaces', () => {
+      expect(() => workspaceIdSchema.parse('amber forest')).toThrow();
+    });
+
+    it('should accept valid UUID', () => {
+      expect(() =>
+        workspaceIdSchema.parse('550e8400-e29b-41d4-a716-446655440000'),
+      ).not.toThrow();
     });
   });
 

@@ -2425,12 +2425,33 @@ export class ChatService implements IDisposable {
     // This is especially important for queued messages that start streaming from the backend
     const sessionUpdatedHandler = () => {
       logger.debug('[ChatService] sessionUpdatedHandler called', { sessionId });
+      // CROSS-WORKSPACE FIX: Use workspace-aware lookup so session-updated events
+      // are correctly processed even when the user has switched workspaces.
+      // If no workspace ID is available from instance state or currentWorkspace,
+      // search all workspaces to avoid silently dropping the event.
       const updatedHandlerWsId = get(this.state).session?.workspaceId || unifiedStateStore.currentWorkspace?.workspace?.id;
-      const session = updatedHandlerWsId
+      let session = updatedHandlerWsId
         ? sessionStore.getSessionForWorkspace(updatedHandlerWsId, sessionId)
         : undefined;
+      if (!session) {
+        // Search all workspaces for this session
+        const allWorkspaces = unifiedStateStore.getAllWorkspaces();
+        for (const ws of allWorkspaces) {
+          const wsId = ws.workspace?.id;
+          if (wsId) {
+            session = sessionStore.getSessionForWorkspace(wsId, sessionId) ?? undefined;
+            if (session) {
+              logger.warn('[ChatService] sessionUpdatedHandler: session found via cross-workspace lookup', {
+                sessionId,
+                foundInWorkspaceId: wsId,
+              });
+              break;
+            }
+          }
+        }
+      }
+      const currentState = get(this.state);
       if (session && session.messages) {
-        const currentState = get(this.state);
         const newIsStreaming = session.isStreaming ?? currentState.isStreaming;
 
 
@@ -2604,7 +2625,7 @@ export class ChatService implements IDisposable {
           // Deduplicate messages to prevent Svelte "duplicate key" error
           // This handles cases where session.messages might already contain duplicates
           const seen = new Set<string>();
-          const deduplicatedMessages = session.messages.filter((m) => {
+          const deduplicatedMessages = session.messages.filter((m: any) => {
             if (seen.has(m.id)) {
               logger.debug('Removing duplicate message during session sync', { messageId: m.id });
               return false;
@@ -2728,13 +2749,40 @@ export class ChatService implements IDisposable {
       // After HMR/page refresh, streaming.active is initialized to false from disk data,
       // and without this explicit setStreaming call, it stays false even though the backend
       // is actively streaming. This allows users to bypass the isStreaming guard in sendMessage().
-      const startWsId = get(this.state).session?.workspaceId;
+      // CROSS-WORKSPACE FIX: Search all workspaces to find the session owner, so the
+      // correct session is updated even when the user has switched workspaces.
+      // First try the fast path (instance state or currentWorkspace), then search all.
+      const candidateWsId = get(this.state).session?.workspaceId || unifiedStateStore.currentWorkspace?.workspace?.id;
+      let startWsId: string | undefined;
+      let startSession = candidateWsId
+        ? sessionStore.getSessionForWorkspace(candidateWsId, sessionId)
+        : undefined;
+      if (startSession) {
+        startWsId = candidateWsId;
+      } else {
+        // Search all workspaces for this session (handles cross-workspace switches
+        // and cases where candidateWsId is falsy or points to the wrong workspace).
+        const allWorkspaces = unifiedStateStore.getAllWorkspaces();
+        for (const ws of allWorkspaces) {
+          const wsId = ws.workspace?.id;
+          if (wsId) {
+            startSession = sessionStore.getSessionForWorkspace(wsId, sessionId) ?? undefined;
+            if (startSession) {
+              logger.warn('[ChatService] handleStreamEvent start: session found via cross-workspace lookup', {
+                sessionId,
+                foundInWorkspaceId: wsId,
+              });
+              startWsId = wsId;
+              break;
+            }
+          }
+        }
+      }
       if (startWsId) {
         sessionStore.setStreamingForWorkspace(startWsId, sessionId, true);
-        const session = sessionStore.getSessionForWorkspace(startWsId, sessionId);
-        if (session) {
+        if (startSession) {
           sessionStore.addSessionForWorkspace(startWsId, {
-            ...session,
+            ...startSession,
             isStreaming: true,
           });
         }
@@ -3763,13 +3811,23 @@ export class ChatService implements IDisposable {
  *   // service.agentId === agentId
  *   // Calling getChatService(agentId) again returns the same instance
  */
+const CHAT_SERVICE_HMR_KEY = '__chatServiceManager_hmr';
+
 export class ChatServiceManager {
   private static managerInstance: ChatServiceManager;
   private services = new Map<string, ChatService>();
 
   static getInstance(): ChatServiceManager {
+    // Survive HMR: reuse instance stored on window if available
+    if (typeof window !== 'undefined' && (window as any)[CHAT_SERVICE_HMR_KEY]) {
+      this.managerInstance = (window as any)[CHAT_SERVICE_HMR_KEY];
+      return this.managerInstance;
+    }
     if (!this.managerInstance) {
       this.managerInstance = new ChatServiceManager();
+      if (typeof window !== 'undefined') {
+        (window as any)[CHAT_SERVICE_HMR_KEY] = this.managerInstance;
+      }
     }
     return this.managerInstance;
   }

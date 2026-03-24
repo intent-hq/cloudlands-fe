@@ -19,6 +19,15 @@ import { uniqueNamesGenerator, adjectives, animals } from 'unique-names-generato
 export const WORKSPACE_SLUG_PATTERN = /^[a-z]{2,15}-[a-z]{2,15}(-[0-9]+)?$/;
 
 /**
+ * Pre-filtered dictionaries that only contain words matching the workspace slug pattern.
+ * Some entries in the raw dictionaries have words >15 characters or contain non-lowercase-alpha
+ * characters, which would produce slugs that fail WORKSPACE_SLUG_PATTERN validation.
+ */
+const validWordPattern = /^[a-z]{2,15}$/;
+const filteredAdjectives = adjectives.filter((w) => validWordPattern.test(w));
+const filteredAnimals = animals.filter((w) => validWordPattern.test(w));
+
+/**
  * Generate a base workspace slug (without suffix).
  *
  * Uses unique-names-generator for adjective-noun combinations.
@@ -33,7 +42,7 @@ export const WORKSPACE_SLUG_PATTERN = /^[a-z]{2,15}-[a-z]{2,15}(-[0-9]+)?$/;
  */
 export function generateWorkspaceSlug(): string {
   return uniqueNamesGenerator({
-    dictionaries: [adjectives, animals],
+    dictionaries: [filteredAdjectives, filteredAnimals],
     separator: '-',
     style: 'lowerCase',
     length: 2,
@@ -63,9 +72,9 @@ export function extractBaseSlug(slug: string): string {
   return match ? match[1] : slug;
 }
 
-// Create Sets for O(1) lookup of adjectives and animals
-const adjectivesSet = new Set(adjectives);
-const animalsSet = new Set(animals);
+// Create Sets for O(1) lookup using filtered dictionaries
+const adjectivesSet = new Set(filteredAdjectives);
+const animalsSet = new Set(filteredAnimals);
 
 // Registry of known workspace slugs (for intent-based slugs that don't match adjective-animal pattern)
 // This is populated by the workspace service when workspaces are loaded/created

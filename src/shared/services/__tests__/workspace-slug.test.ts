@@ -201,4 +201,42 @@ describe('WorkspaceSlug', () => {
       expect(formatWorkspaceIdForDisplay('')).toBe('');
     });
   });
+
+  describe('dictionary pre-filtering (regression)', () => {
+    const WORD_PATTERN = /^[a-z]{2,15}$/;
+
+    it('generates 200 slugs that all match WORKSPACE_SLUG_PATTERN', () => {
+      for (let i = 0; i < 200; i++) {
+        const slug = generateWorkspaceSlug();
+        expect(slug).toMatch(WORKSPACE_SLUG_PATTERN);
+      }
+    });
+
+    it('generates 200 slugs where every word part matches /^[a-z]{2,15}$/', () => {
+      for (let i = 0; i < 200; i++) {
+        const slug = generateWorkspaceSlug();
+        const parts = slug.split('-');
+        // Should have exactly 2 word parts (adjective-animal)
+        expect(parts).toHaveLength(2);
+        for (const part of parts) {
+          expect(part).toMatch(WORD_PATTERN);
+        }
+      }
+    });
+
+    it('never produces words shorter than 2 or longer than 15 characters', () => {
+      const allWords = new Set<string>();
+      for (let i = 0; i < 200; i++) {
+        const slug = generateWorkspaceSlug();
+        for (const part of slug.split('-')) {
+          allWords.add(part);
+        }
+      }
+      for (const word of allWords) {
+        expect(word.length).toBeGreaterThanOrEqual(2);
+        expect(word.length).toBeLessThanOrEqual(15);
+        expect(word).toMatch(/^[a-z]+$/);
+      }
+    });
+  });
 });
