@@ -56,6 +56,7 @@ import {
 } from './browser/services/request-deduplicator.service';
 import { unreadTrackingService } from './services/unread-tracking.service';
 import { track } from '$lib/services/analytics';
+import { logger as rendererLogger, LogCategory } from '$lib/logging/logger.svelte';
 
 // Import unified error handler
 import {
@@ -638,6 +639,13 @@ class RefactoredAgentService extends EventEmitter {
         activeBackendStreams: activeStreamAgentIds.size,
       });
 
+      // [RendererLogger] Point 1: reconnectToBackendStreams start
+      rendererLogger.info(LogCategory.AGENT, 'reconnectToBackendStreams: queried backend', {
+        totalSessions: allSessions.length,
+        sessionsWithStreaming: allSessions.filter((s) => s.isStreaming).map((s) => s.id),
+        activeBackendStreams: Array.from(activeStreamAgentIds),
+      });
+
       // Grace period for newly created agents - don't clear streaming state if agent was created recently
       // This prevents race conditions where the backend stream hasn't started yet but the frontend
       // has already set isStreaming=true in anticipation
@@ -670,6 +678,14 @@ class RefactoredAgentService extends EventEmitter {
 
           logger.info('Clearing stale streaming state for agent (no active backend stream)', {
             agentId: session.id,
+          });
+
+          // [RendererLogger] Point 2: Stale stream cleanup
+          rendererLogger.warn(LogCategory.AGENT, 'Stale stream cleanup: clearing streaming state', {
+            agentId: session.id,
+            previousStatus: session.status,
+            previousIsStreaming: session.isStreaming,
+            workspaceId: session.workspaceId,
           });
 
           // Clean up any stale stream handler that was registered by loadAgentsFromDisk
@@ -852,6 +868,13 @@ class RefactoredAgentService extends EventEmitter {
           // to register the sessionUpdatedHandler. initializeChat is async and may not
           // have finished calling setupStreaming() when reconnectToBackendStreams runs.
           const staleSessionId = session.id;
+
+          // [RendererLogger] Point 5: Deferred session-updated dispatch for stale session
+          rendererLogger.info(LogCategory.AGENT, 'Dispatching deferred session-updated for stale session', {
+            agentId: staleSessionId,
+            workspaceId: session.workspaceId,
+          });
+
           setTimeout(() => {
             window.dispatchEvent(new CustomEvent(`agent:session-updated:${staleSessionId}`));
           }, 100);
@@ -1183,6 +1206,13 @@ class RefactoredAgentService extends EventEmitter {
             logger.info('Safety timeout: force-clearing stale streaming state', {
               agentId: session.id,
               workspaceId: session.workspaceId,
+            });
+
+            // [RendererLogger] Point 4: Safety timeout fired
+            rendererLogger.warn(LogCategory.AGENT, 'Safety timeout fired: clearing stale streaming', {
+              agentId: session.id,
+              workspaceId: session.workspaceId,
+              currentlyActiveStreamsCount: currentlyActive.size,
             });
 
             // Clear streaming state
@@ -3564,6 +3594,17 @@ class RefactoredAgentService extends EventEmitter {
         if (session) {
           // Check for streaming messages and re-register handler if needed
           let foundStreamingMessage: AgentMessage | undefined;
+
+          // [RendererLogger] Point 3: Session-level isStreaming check
+          if (session.isStreaming) {
+            rendererLogger.info(LogCategory.AGENT, 'Session loaded from disk with isStreaming=true', {
+              agentId: plainAgentId,
+              status: session.status,
+              hasStreamingMessage: !!session.messages?.find((msg: any) => msg.isStreaming),
+              messageCount: session.messages?.length || 0,
+            });
+          }
+
           if (session.messages) {
             foundStreamingMessage = session.messages.find((msg: any) => msg.isStreaming);
             if (foundStreamingMessage) {
@@ -3582,6 +3623,16 @@ class RefactoredAgentService extends EventEmitter {
                   isPartialMessage,
                 },
               );
+
+              // [RendererLogger] Point 3: Session loaded from disk with streaming state
+              rendererLogger.info(LogCategory.AGENT, 'Session loaded from disk with active streaming', {
+                agentId: plainAgentId,
+                messageId: foundStreamingMessage.id,
+                contentBlocksCount: foundStreamingMessage.contentBlocks?.length || 0,
+                isStreaming: session.isStreaming,
+                wasSavedDuringUnload,
+                isPartialMessage,
+              });
 
               // Re-register stream handler to continue receiving chunks from backend
               // Keep isStreaming=true so the UI shows the streaming state
@@ -5821,6 +5872,16 @@ class RefactoredAgentService extends EventEmitter {
       // If the session was streaming, re-register the stream handler to continue receiving chunks
       let foundStreamingMessage: AgentMessage | undefined;
       if (session) {
+        // [RendererLogger] Point 3b: Session-level isStreaming check (restoreWithoutBackend)
+        if (session.isStreaming) {
+          rendererLogger.info(LogCategory.AGENT, 'Session loaded from disk with isStreaming=true', {
+            agentId: plainAgentId,
+            status: session.status,
+            hasStreamingMessage: !!session.messages?.find((msg: any) => msg.isStreaming),
+            messageCount: session.messages?.length || 0,
+          });
+        }
+
         // Check for streaming messages and re-register handler if needed
         if (session.messages) {
           foundStreamingMessage = session.messages.find((msg: any) => msg.isStreaming);
@@ -5839,6 +5900,16 @@ class RefactoredAgentService extends EventEmitter {
                 isPartialMessage,
               },
             );
+
+            // [RendererLogger] Point 3b: Session loaded from disk with streaming (restoreWithoutBackend)
+            rendererLogger.info(LogCategory.AGENT, 'Session loaded from disk with active streaming (restoreWithoutBackend)', {
+              agentId: plainAgentId,
+              messageId: foundStreamingMessage.id,
+              contentBlocksCount: foundStreamingMessage.contentBlocks?.length || 0,
+              isStreaming: session.isStreaming,
+              wasSavedDuringUnload,
+              isPartialMessage,
+            });
 
             // Re-register stream handler to continue receiving chunks from backend
             // Keep isStreaming=true so the UI shows the streaming state
