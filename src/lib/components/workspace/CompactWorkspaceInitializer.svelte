@@ -1933,6 +1933,39 @@
     pendingBranchStatusRequest = null;
     // Note: intentionally not resetting stayOnHomePage or shouldPullBeforeCreate - user preferences should persist
 
+    // Immediately write the cleaned form state to localStorage so that even if
+    // the $effect doesn't fire before the component unmounts (e.g. navigation
+    // happens right after oncreate?.()), stale repo fields won't be restored.
+    const cleanedState: Record<string, unknown> = {
+      // Agent prefs — always preserved
+      selectedSpecialist,
+      selectedModel,
+      modelWasOverridden,
+      isTeamMode,
+      selectedProvider,
+      stayOnHomePage,
+      skipWorktree,
+      remoteSetup, // null at this point, but keeps parity with $effect's formState
+      // Setup script fields — already cleared above (or restored via restoreLastUsedSetupScript)
+      setupScript,
+      showSetupScript,
+      setupScriptName,
+      isCustomSetupScript,
+    };
+    if (preserveRepo) {
+      // Keep repo fields in localStorage when staying on the home page
+      cleanedState.repoPath = repoPath;
+      cleanedState.repoType = repoType;
+      cleanedState.githubUrl = githubUrl;
+      cleanedState.clonePath = clonePath;
+      cleanedState.branch = branch;
+      cleanedState.isNewRepo = isNewRepo;
+      cleanedState.isValidPath = isValidPath;
+      cleanedState.scope = scope;
+      cleanedState.scopeRepoPath = scope ? repoPath : undefined;
+    }
+    localStorage.setItem(FORM_STATE_KEY, JSON.stringify(cleanedState));
+
     // Generate a new agent ID for the next workspace creation
     // This is critical for "stay on page" mode to prevent agent ID reuse
     const newAgentId = unifiedIdService.generateAgentId();
