@@ -12,7 +12,7 @@ import * as path from 'path';
 import express, { Request, Response } from 'express';
 import { app } from 'electron';
 import { createServer } from 'http';
-import { WebSocketServer, WebSocket } from 'ws';
+
 import { Logger } from '../shared/logger';
 import {
   createWorkspaceMCPServer,
@@ -27,6 +27,14 @@ import ElectronStore from 'electron-store';
 import { storeMcpToolParams } from '../shared/services/mcp-tool-params-cache';
 
 const require = createRequire(import.meta.url);
+
+// Import types for ws (ESM named import fails inside Electron's asar archive at runtime)
+import type { WebSocketServer as WebSocketServerType } from 'ws';
+// Use require() for the runtime value to avoid ESM/CJS resolution issues inside asar
+const { WebSocketServer, WebSocket } = require('ws') as {
+  WebSocketServer: typeof WebSocketServerType;
+  WebSocket: typeof import('ws').WebSocket;
+};
 
 // Cross-platform dummy workspace path (Windows doesn't have /tmp/)
 const DUMMY_WORKSPACE_PATH = process.platform === 'win32'
@@ -54,7 +62,7 @@ interface CachedMcpServer {
 export class HttpMcpBridge {
   private app: express.Application;
   private server: any;
-  private wss: WebSocketServer | null = null;
+  private wss: InstanceType<typeof WebSocketServer> | null = null;
   private mcpServers: Map<string, CachedMcpServer> = new Map(); // Workspace-specific MCP servers with metadata
   private logger: Logger;
   private settingsStore: any;
@@ -915,7 +923,7 @@ export class HttpMcpBridge {
 
       // Setup WebSocket server for browser-mode event push (shares the HTTP server)
       this.wss = new WebSocketServer({ server: this.server, path: '/ipc-events' });
-      this.wss.on('connection', (ws) => {
+      this.wss.on('connection', (ws: InstanceType<typeof WebSocket>) => {
         this.logger.info('Browser IPC WebSocket client connected');
         ws.on('close', () => this.logger.debug('Browser IPC WebSocket client disconnected'));
       });

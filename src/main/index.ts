@@ -334,6 +334,8 @@ import { setupRemoteFileSystemIPC } from '../features/remote-fs/main/remote-fs.i
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
 import { setupSkillsIPC } from '../features/agent/main/skills.ipc';
 import { setupSpecialistsIPC } from '../features/specialists/main/specialists.ipc';
+import { setupPermissionIPC } from '../features/acp-official/main/permission.ipc';
+import { setupAutoUpdateIPC } from '../features/auto-update/main/auto-update.ipc';
 import { setupUserRulesIPC as setupWorkspaceRulesIPC } from '../features/rules/main/user-rules.ipc';
 import { setupSandboxIPC } from '../features/sandbox/main/sandbox.ipc';
 import { setupSentryAuthIPC } from '../features/sentry-auth/main/sentry-auth.ipc';
@@ -1379,6 +1381,11 @@ app.whenReady().then(async () => {
   // Pass the shared ConfigManager to workspace rules service
   const configManager = getConfigManager();
   await setupWorkspaceRulesIPC(configManager || undefined); // Needed for initial agent system prompt
+  setupGitTrackingIPC(); // Needed for renderer git tracking on startup
+  setupBannerIPC(); // Needed for promotional banner CDN fetch
+  setupSpecialistsIPC(); // Needed for specialist selection on startup
+  setupPermissionIPC(); // Needed for ACP agent tool approvals
+  setupAutoUpdateIPC(); // Needed for auto-update IPC on startup
   startupMetrics.end('criticalIPC');
 
   logger.info('Critical IPC handlers registered, creating window');
@@ -1421,14 +1428,14 @@ app.whenReady().then(async () => {
     // setupAuggieIPC(); // Already called in critical IPC setup
     setupRemoteFileSystemIPC();
     // setupEventsIPC(); // Already called in critical IPC setup
-    setupGitTrackingIPC();
+    // setupGitTrackingIPC(); // Already called in critical IPC setup
     // registerAcceptChangesHandlers(); // Already called in critical IPC setup
     setupObservabilityIPC();
     setupMemoriesIPC();
-    setupBannerIPC(); // Needed for promotional banner CDN fetch
+    // setupBannerIPC(); // Already called in critical IPC setup
     setupRulesIPC();
     setupRepoConfigIPC();
-    setupSpecialistsIPC();
+    // setupSpecialistsIPC(); // Already called in critical IPC setup
     setupSkillsIPC();
     // setupWorkspaceRulesIPC(); // Already called in critical IPC setup
     registerLineChangesIPC();
@@ -1438,9 +1445,7 @@ app.whenReady().then(async () => {
     // Setup notification IPC handlers
     setupNotificationIPC();
 
-    // Setup permission IPC handlers for ACP agent tool approvals
-    const { setupPermissionIPC } = await import('../features/acp-official/main/permission.ipc');
-    setupPermissionIPC();
+    // setupPermissionIPC(); // Already called in critical IPC setup
 
     // Setup keychain consent IPC handlers for git network operations
     const { setupKeychainIPC } = await import('../features/git/main/keychain.ipc');
@@ -1450,10 +1455,10 @@ app.whenReady().then(async () => {
     const { registerBrowserHandlers } = await import('../features/browser/main/browser.ipc');
     registerBrowserHandlers();
 
-    // Setup auto-update IPC handlers and initialize auto-updater in production
-    const { setupAutoUpdateIPC, initializeAutoUpdater } =
+    // setupAutoUpdateIPC(); // Already called in critical IPC setup
+    // Initialize auto-updater in production (not needed at startup, depends on mainWindow)
+    const { initializeAutoUpdater } =
       await import('../features/auto-update/main/auto-update.ipc');
-    setupAutoUpdateIPC();
     const mainWindow = getMainWindow();
     if (process.env.NODE_ENV !== 'development' && mainWindow) {
       initializeAutoUpdater(mainWindow);
