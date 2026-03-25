@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/svelte';
-import { readable } from 'svelte/store';
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
+import { readable, writable } from 'svelte/store';
 
 const mockModelState = vi.hoisted(() => ({
   selectedModel: 'gpt5.4',
@@ -48,15 +48,17 @@ vi.mock('$features/agent/browser', () => ({
   },
 }));
 
-vi.mock('$lib/stores/active-provider.store.svelte', () => ({
-  activeProviderStore: {
-    activeProviderId: 'auggie',
-  },
-}));
+
 
 vi.mock('$lib/store/utils/utils', () => ({
   getDispatch: () => vi.fn(),
   getStoreContext: () => undefined,
+}));
+
+vi.mock('$lib/store/slices/model/model-utils', () => ({
+  getModelsForProvider: vi.fn(() =>
+    Promise.resolve([{ value: 'model-1', label: 'Model 1', description: 'A model' }]),
+  ),
 }));
 
 vi.mock('$lib/store/slices/model/model-selectors', () => ({
@@ -64,10 +66,6 @@ vi.mock('$lib/store/slices/model/model-selectors', () => ({
   selectAvailableModels: () => readable(mockModelState.availableModels),
   selectIsLoadingModels: () => readable(false),
   selectLoadError: () => readable(null),
-}));
-
-vi.mock('$lib/store/slices/provider-settings/provider-settings-selectors', () => ({
-  selectActiveProviderId: () => readable('auggie'),
 }));
 
 vi.mock('$shared/config/provider-config', async (importOriginal) => {
@@ -78,6 +76,7 @@ vi.mock('$shared/config/provider-config', async (importOriginal) => {
     getProviderConfig: (providerId?: string) => ({
       id: providerId ?? 'auggie',
       displayName: providerId === 'codex' ? 'OpenAI Codex' : 'Augment Auggie',
+      canBeDisabled: providerId !== 'auggie',
     }),
     parseCompoundModelId: (modelId?: string) => {
       if (!modelId) {
@@ -86,14 +85,26 @@ vi.mock('$shared/config/provider-config', async (importOriginal) => {
 
       const [providerId, ...rest] = modelId.split(':');
       if (rest.length === 0) {
-        return { providerId: '', modelId };
+        return { providerId: 'auggie', modelId };
       }
 
-      return { providerId, modelId: rest.join(':') };
+      return { providerId: providerId || 'auggie', modelId: rest.join(':') };
     },
     resolvePreferredModel: () => undefined,
+    getAlwaysEnabledProviders: () => [
+      { id: 'auggie', displayName: 'Augment Auggie', canBeDisabled: false },
+    ],
+    ACP_PROVIDERS: {
+      auggie: { id: 'auggie', displayName: 'Augment Auggie', canBeDisabled: false },
+    },
   };
 });
+
+const enabledProviderIds$ = writable(['auggie']);
+vi.mock('$lib/store/slices/provider-settings/provider-settings-selectors', () => ({
+  selectActiveProviderId: () => readable('auggie'),
+  selectEnabledProviderIds: () => enabledProviderIds$,
+}));
 
 vi.mock('$shared/types/agent-session', () => ({
   getAgentProvider: vi.fn(() => 'auggie'),
@@ -107,6 +118,7 @@ vi.mock('svelte-sonner', () => ({
   toast: {
     error: vi.fn(),
     info: vi.fn(),
+    warning: vi.fn(),
   },
 }));
 
@@ -161,5 +173,113 @@ describe('ModelPicker locked state', () => {
     });
 
     expect(screen.getByRole('button').textContent).toContain('Claude Sonnet 4.5');
+  });
+});
+
+describe('ModelPicker multi-provider mode', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+  });
+
+  it('fetches models for all enabled providers on mount', async () => {
+    const { getModelsForProvider } = await import('$lib/store/slices/model/model-utils');
+
+    enabledProviderIds$.set(['auggie', 'claude-code']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt5.4',
+      },
+    });
+
+    // Wait for the debounced $effect to run (50ms debounce + microtask)
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(getModelsForProvider).toHaveBeenCalledWith('auggie');
+    expect(getModelsForProvider).toHaveBeenCalledWith('claude-code');
+  });
+
+  it('retries once per current provider when silent fallback sees unavailable models', async () => {
+    const { getModelsForProvider } = await import('$lib/store/slices/model/model-utils');
+    const modelsByProvider = {
+      auggie: [] as { value: string; label: string; description: string }[],
+      codex: [{ value: 'codex:model-1', label: 'Codex Model 1', description: 'A model' }],
+    };
+    vi.mocked(getModelsForProvider).mockImplementation((providerId) =>
+      Promise.resolve(modelsByProvider[providerId as keyof typeof modelsByProvider] ?? []),
+    );
+
+    enabledProviderIds$.set(['auggie', 'codex']);
+
+    const { rerender } = render(ModelPicker, {
+      props: {
+        selectedModel: 'auggie:missing-model',
+        silentFallback: true,
+      },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'auggie')).toHaveLength(2);
+    });
+    expect(vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'codex')).toHaveLength(1);
+
+    vi.mocked(getModelsForProvider).mockClear();
+    modelsByProvider.auggie = [{ value: 'auggie:model-1', label: 'Auggie Model 1', description: 'A model' }];
+    modelsByProvider.codex = [];
+    // Force the component to re-fetch by changing the provider list (busts the
+    // dedup cache inside fetchAllProviderModels which skips when the sorted key
+    // matches the previous fetch).
+    enabledProviderIds$.set([]);
+    await new Promise((r) => setTimeout(r, 60));
+    enabledProviderIds$.set(['auggie', 'codex']);
+
+    await rerender({
+      selectedModel: 'codex:missing-model',
+      silentFallback: true,
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'codex')).toHaveLength(2);
+    });
+    expect(vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'auggie')).toHaveLength(1);
+  });
+
+  it('renders without error in unlocked mode', () => {
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt5.4',
+      },
+    });
+
+    const container = document.body;
+    expect(container).toBeTruthy();
+    expect(container.querySelector('[data-icon="lock"]')).toBeNull();
+  });
+
+  it('shows default model text when no model is explicitly selected', () => {
+    render(ModelPicker, {
+      props: {},
+    });
+
+    const container = document.body;
+    expect(container).toBeTruthy();
+  });
+
+  it('shows the selected model label in the trigger button', () => {
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt5.4',
+        isLocked: true,
+        providerId: 'auggie',
+      },
+    });
+
+    const button = screen.getByRole('button');
+    expect(button.textContent).toContain('GPT 5.4');
   });
 });

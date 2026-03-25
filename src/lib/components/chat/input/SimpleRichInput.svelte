@@ -2,20 +2,18 @@
   import { onMount, tick } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { createLogger } from '$lib/utils/client-logger';
-  import { agentClient } from '$features/agent/agent.client';
-  import { sessionStore } from '$features/agent/browser';
-
   import type { Workspace } from '$shared/types';
-  import { getDefaultProviderId, getProviderConfig } from '$shared/config/provider-config';
+  import { getDefaultProviderId, getProviderConfig, parseCompoundModelId } from '$shared/config/provider-config';
   import { invoke } from '$lib/electron-bridge';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
   import { unifiedStateStore } from '$features/agent/services/unified-state-store';
-  import { selectEnabledProviderIds } from '$lib/store/slices/provider-settings/provider-settings-selectors';
+  import { sessionStore } from '$features/agent/browser';
+  import { agentClient } from '$features/agent/agent.client';
+
   import { getAgentProvider } from '$shared/types/agent-session';
   import Fa from 'svelte-fa';
   import {
-    faChevronDown,
     faMagicWandSparkles,
     faPaperclip,
     faPaperPlane,
@@ -23,23 +21,16 @@
     faXmark,
     faLayerGroup,
     faStop,
-    faLock,
   } from '@fortawesome/free-solid-svg-icons';
   import Button from '../../ui/button/button.svelte';
   import TipTapEditor from './TipTapEditor.svelte';
   import ModelPicker from './ModelPicker.svelte';
-  import { Dropdown } from '$lib/components/ui/dropdown';
   import Header from '$lib/components/ui/Header.svelte';
   import AttachmentPreview from '../AttachmentPreview.svelte';
   import ContextChip from '../ContextChip.svelte';
   import ContextPickerButton from './ContextPickerButton.svelte';
-  import {
-    buildProviderDropdownOptions,
-    getSelectableProviderIds,
-    resolveCompatibleModelForProvider,
-    resolveUsableProviderIds,
-    shouldShowChatProviderControl,
-  } from '$lib/utils/provider-model-selection';
+
+
   import { togglePanel as togglePanelAction, toggleSelection as toggleSelectionAction } from '$lib/store/slices/multi-panel-context/multi-panel-context-slice';
   import { selectPanels, selectSelections } from '$lib/store/slices/multi-panel-context/multi-panel-context-selectors';
   import { getDispatch } from '$lib/store/utils/utils';
@@ -68,6 +59,8 @@
     editorSelection?: string | null;
     selectedModel?: string;
     isModelLocked?: boolean;
+    providerId?: string;
+    isProviderChangeLocked?: boolean;
     agentId?: string;
     autoFocus?: boolean;
     /** Edit mode - shows cancel button and changes submit label */
@@ -76,8 +69,6 @@
     panelFocused?: boolean;
     /** Whether to use compact mode (shorter height for short panels) */
     compactMode?: boolean;
-    providerId?: string;
-    isProviderChangeLocked?: boolean;
     onsubmit?: (value: string) => void;
     onforcesubmit?: (value: string) => void; // Interrupt streaming and send immediately
     onenhance?: () => void | Promise<void>;
@@ -110,13 +101,13 @@
     editorSelection = $bindable<string | null>(null),
     selectedModel: propSelectedModel,
     isModelLocked = false,
+    providerId: propProviderId,
+    isProviderChangeLocked = false,
     agentId,
     autoFocus = false,
     editMode = false,
     panelFocused: _panelFocused = true, // Reserved for future use
     compactMode: _compactMode = false, // Reserved for future use
-    providerId: propProviderId,
-    isProviderChangeLocked = false,
     onsubmit,
     onforcesubmit,
     onenhance,
@@ -134,7 +125,8 @@
   let enhanceRequestId = $state(0); // Increment for each request
   let cancelledRequestId = $state(-1); // Track which request was cancelled
   let tiptap: any = $state(null);
-  let modelPickerRef: { open: () => void; clearFallbackWarning: () => void } | null = $state(null);
+  let modelPickerRef: { open: () => void; clearFallbackWarning: () => void; clearPendingUpdate: () => void } | null =
+    $state(null);
   let previousDisabled = $state(disabled);
   let hasInlineImages = $state(false);
 
@@ -390,82 +382,27 @@
 
     return providerAndModelLockedTitle;
   });
-  const enabledProviderIds$ = selectEnabledProviderIds();
-  const enabledProviderIds = $derived($enabledProviderIds$);
-  let usableProviderIds = $state<string[]>([]);
-  let usableProviderRequestId = 0;
-
-  $effect(() => {
-    const providerIds = enabledProviderIds;
-    const requestId = ++usableProviderRequestId;
-
-    void resolveUsableProviderIds(providerIds).then((nextUsableProviderIds) => {
-      if (requestId === usableProviderRequestId) {
-        usableProviderIds = nextUsableProviderIds;
-      }
-    });
-  });
-
-  const selectableProviderIds = $derived.by(() => {
-    return getSelectableProviderIds({
-      enabledProviderIds,
-      usableProviderIds,
-      selectedProviderId,
-    });
-  });
-  const providerOptions = $derived.by(() => {
-    return buildProviderDropdownOptions(selectableProviderIds);
-  });
-  const showProviderControl = $derived.by(() => {
-    if (!agentId) {
-      return false;
-    }
-
-    return shouldShowChatProviderControl({
-      defaultProviderId: getDefaultProviderId(),
-      selectableProviderIds,
-      selectedProviderId,
-    });
-  });
-  const selectedProviderLabel = $derived(
-    selectedProviderId ? getProviderConfig(selectedProviderId).displayName : '',
-  );
   let isChangingProvider = $state(false);
 
-  async function handleProviderChange(newProvider: string) {
-    if (
-      !agentId ||
-      !workspace?.id ||
-      !newProvider ||
-      newProvider === selectedProviderId ||
-      providerChangeLocked
-    ) {
-      return;
-    }
+  async function handleProviderChangeFromModel(newProvider: string, newModel: string) {
+    if (!agentId || !workspace?.id || providerChangeLocked) return;
+    if (isChangingProvider) return; // prevent re-entry during in-flight switch
 
     const previousSession = agentId && workspace?.id
       ? sessionStore.getSessionForWorkspace(String(workspace.id), agentId)
       : undefined;
     const previousProvider = selectedProviderId;
     const previousModel = selectedModel;
-    const nextModel = await resolveCompatibleModelForProvider(newProvider, {
-      currentModel: selectedModel,
-    });
-
-    if (!nextModel) {
-      toast.error(`No models available for ${getProviderConfig(newProvider).displayName}.`);
-      return;
-    }
 
     isChangingProvider = true;
     localProviderId = newProvider;
     userChangedModel = true;
-    selectedModel = nextModel;
-    lastNotifiedModel = nextModel;
+    selectedModel = newModel;
+    lastNotifiedModel = newModel;
 
     sessionStore.updateSessionForWorkspace(String(workspace.id), agentId, {
       provider: newProvider,
-      model: nextModel,
+      model: newModel,
       metadata: {
         ...(previousSession?.metadata || {}),
         provider: newProvider,
@@ -473,30 +410,34 @@
     });
 
     try {
-      const result = await agentClient.setModel(agentId, nextModel, workspace.id);
+      const result = await agentClient.setModel(agentId, newModel, workspace.id);
       if (!result.ok || !result.data.success) {
         throw new Error(result.ok ? result.data.error : result.error);
       }
-
-      onmodelChange?.(nextModel);
+      onmodelChange?.(newModel);
     } catch (error) {
-      logger.error('Failed to switch agent provider', { error, agentId, newProvider });
+      logger.error('Failed to switch agent provider via model change', { error, agentId, newProvider });
       localProviderId = previousProvider === hydratedPropProviderId ? undefined : previousProvider;
       selectedModel = previousModel;
       lastNotifiedModel = previousModel;
       userChangedModel = false;
-      sessionStore.updateSessionForWorkspace(String(workspace.id), agentId, {
-        provider: previousProvider,
-        model: previousModel,
-        metadata: {
-          ...(previousSession?.metadata || {}),
-          provider: previousProvider,
-        },
-      });
+      const rollbackProvider = previousProvider ?? previousSession?.provider ?? previousSession?.metadata?.provider as string | undefined;
+      const rollbackModel = previousModel ?? previousSession?.model;
+      if (rollbackProvider && rollbackModel) {
+        sessionStore.updateSessionForWorkspace(String(workspace.id), agentId, {
+          provider: rollbackProvider,
+          model: rollbackModel,
+          metadata: {
+            ...(previousSession?.metadata || {}),
+            provider: rollbackProvider,
+          },
+        });
+      }
       toast.error(
-        error instanceof Error ? error.message : `Failed to switch to ${newProvider}.`,
+        error instanceof Error ? error.message : `Failed to switch to ${getProviderConfig(newProvider).displayName}.`,
       );
     } finally {
+      modelPickerRef?.clearPendingUpdate();
       isChangingProvider = false;
     }
   }
@@ -1037,62 +978,36 @@
     class="action-bar flex items-end justify-between px-1 pt-0 pb-0.5 opacity-0 pointer-events-none group-[.focused]/panel:opacity-100 group-[.focused]/panel:pointer-events-auto transition-opacity duration-150"
   >
     <div class="flex items-end gap-1 min-w-0 mb-0.5">
-      {#if showProviderControl}
-        {#if providerChangeLocked}
-          <Button
-            variant="ghost-light"
-            size="xs"
-            disabled
-            title={providerAndModelLockedTitle}
-            tooltip={providerAndModelLockedTitle}
-            class="gap-1 max-w-[11rem]"
-          >
-            <Fa icon={faLock} class="w-3 h-3 shrink-0" />
-            <span class="truncate">{selectedProviderLabel}</span>
-          </Button>
-        {:else}
-          <Dropdown
-            value={selectedProviderId}
-            options={providerOptions}
-            onchange={(value) => void handleProviderChange(value as string)}
-            searchable={false}
-            variant="ghost"
-            size="xs"
-            class="max-w-[11rem]"
-            triggerClass="max-w-full"
-            contentClass="min-w-[180px]"
-            portal
-          >
-            {#snippet trigger()}
-              <span class="inline-flex items-center gap-1 truncate min-w-0" title={selectedProviderLabel}>
-                <span class="truncate">{selectedProviderLabel}</span>
-              </span>
-              <Fa icon={faChevronDown} class="h-2 w-2 opacity-50 shrink-0" />
-            {/snippet}
-          </Dropdown>
-        {/if}
-      {/if}
-
       <ModelPicker
         bind:this={modelPickerRef}
         {selectedModel}
-        providerId={selectedProviderId}
+        providerId={providerChangeLocked ? selectedProviderId : undefined}
         variant="ghost-light"
         size="xs"
         isLocked={effectiveModelLocked}
         lockedTitle={modelLockedTitle}
         showLockIconWhenLocked={!providerChangeLocked}
-        deferUpdate={isStreaming || isChangingProvider}
+        deferUpdate={isStreaming}
         workspaceId={workspace?.id}
         {agentId}
         portal
         updateGlobalStore
         onModelChange={(newModel) => {
-          // Set this flag FIRST to prevent the prop-sync effect from overwriting our change
-          userChangedModel = true;
-          lastNotifiedModel = newModel;
-          selectedModel = newModel;
-          onmodelChange?.(newModel);
+          if (!newModel) return;
+
+          // Check if the model is from a different provider
+          const rawProvider = parseCompoundModelId(newModel).providerId;
+          const newProvider = getProviderConfig(rawProvider).id;
+          if (agentId && newProvider !== selectedProviderId) {
+            // Provider is changing — run the full provider switch flow
+            void handleProviderChangeFromModel(newProvider, newModel);
+          } else {
+            // Same provider — just update the model
+            userChangedModel = true;
+            lastNotifiedModel = newModel;
+            selectedModel = newModel;
+            onmodelChange?.(newModel);
+          }
         }}
       />
 

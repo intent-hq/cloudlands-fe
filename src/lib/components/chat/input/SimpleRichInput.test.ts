@@ -1,11 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
-
-const { resolveCompatibleModelForProviderMock, setModelMock } = vi.hoisted(() => ({
-  resolveCompatibleModelForProviderMock: vi.fn(),
-  setModelMock: vi.fn(),
-}));
 
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
@@ -13,7 +8,6 @@ vi.mock('svelte-fa', async () => {
 });
 
 vi.mock('@fortawesome/free-solid-svg-icons', () => ({
-  faChevronDown: { iconName: 'chevron-down' },
   faMagicWandSparkles: { iconName: 'magic-wand' },
   faPaperclip: { iconName: 'paperclip' },
   faPaperPlane: { iconName: 'paper-plane' },
@@ -21,7 +15,6 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faXmark: { iconName: 'xmark' },
   faLayerGroup: { iconName: 'layer-group' },
   faStop: { iconName: 'stop' },
-  faLock: { iconName: 'lock' },
   faCheck: { iconName: 'check' },
   faChevronRight: { iconName: 'chevron-right' },
 }));
@@ -64,10 +57,6 @@ vi.mock('$lib/store/slices/multi-panel-context/multi-panel-context-selectors', (
   selectSelections: () => readable([]),
 }));
 
-vi.mock('$lib/store/slices/provider-settings/provider-settings-selectors', () => ({
-  selectEnabledProviderIds: () => readable(['auggie', 'codex']),
-}));
-
 vi.mock('$lib/store/utils/utils', () => ({
   getDispatch: () => vi.fn(),
   getStoreContext: () => undefined,
@@ -85,6 +74,9 @@ vi.mock('$lib/stores/specialists.store.svelte', () => ({
       specialistId === 'implementor' ? 'Implementor' : null,
   },
 }));
+
+
+const resolveCompatibleModelForProviderMock = vi.hoisted(() => vi.fn());
 
 vi.mock('$lib/utils/provider-model-selection', () => ({
   buildProviderDropdownOptions: (providerIds: string[]) =>
@@ -127,6 +119,8 @@ vi.mock('$lib/utils/provider-model-selection', () => ({
   resolveCompatibleModelForProvider: resolveCompatibleModelForProviderMock,
   resolveUsableProviderIds: async (providerIds: string[]) => providerIds,
 }));
+
+const setModelMock = vi.hoisted(() => vi.fn());
 
 vi.mock('$features/agent/agent.client', () => ({
   agentClient: {
@@ -175,46 +169,6 @@ describe('SimpleRichInput provider switch sync', () => {
     document.body.innerHTML = '';
   });
 
-  it('keeps the visible provider and model picker in sync after a successful switch even before parent props catch up', async () => {
-    const onmodelChange = vi.fn();
-    const workspace = {
-      id: 'ws-1',
-      name: 'Workspace',
-      path: '/tmp/workspace',
-      createdAt: new Date().toISOString(),
-    } as any;
-
-    const { container } = render(SimpleRichInput, {
-      props: {
-        value: '',
-        contextItems: [],
-        workspace,
-        agentId: 'agent-1',
-        selectedModel: 'gpt5.4',
-        providerId: 'auggie',
-        onmodelChange,
-      },
-    });
-
-    const triggerText = await within(container).findByText('Augment Auggie');
-    const trigger = triggerText.closest('button');
-    expect(trigger).toBeTruthy();
-
-    await fireEvent.click(trigger!);
-    await fireEvent.click(await screen.findByText('OpenAI Codex'));
-
-    await waitFor(() => {
-      expect(resolveCompatibleModelForProviderMock).toHaveBeenCalledWith('codex', {
-        currentModel: 'gpt5.4',
-      });
-      expect(setModelMock).toHaveBeenCalledWith('agent-1', 'codex:gpt-5-codex', 'ws-1');
-      expect(within(container).getByText('OpenAI Codex')).toBeTruthy();
-      expect(screen.getByTestId('model-picker-provider').textContent).toBe('codex');
-      expect(screen.getByTestId('model-picker-model').textContent).toBe('codex:gpt-5-codex');
-      expect(onmodelChange).toHaveBeenCalledWith('codex:gpt-5-codex');
-    });
-  });
-
   it('waits for hydrated model props instead of seeding a fallback model on reopen', async () => {
     const onmodelChange = vi.fn();
     const workspace = {
@@ -231,6 +185,7 @@ describe('SimpleRichInput provider switch sync', () => {
         workspace,
         agentId: 'agent-1',
         providerId: 'codex',
+        isProviderChangeLocked: true,
         onmodelChange,
       },
     });
@@ -246,6 +201,7 @@ describe('SimpleRichInput provider switch sync', () => {
       workspace,
       agentId: 'agent-1',
       providerId: 'codex',
+      isProviderChangeLocked: true,
       selectedModel: 'codex:gpt-5-codex',
       onmodelChange,
     });
@@ -283,12 +239,11 @@ describe('SimpleRichInput provider switch sync', () => {
         workspace,
         agentId: 'agent-1',
         selectedModel: 'codex:gpt-5-codex',
+        isProviderChangeLocked: true,
       },
     });
 
     await waitFor(() => {
-      expect(screen.getByText('OpenAI Codex')).toBeTruthy();
-      expect(screen.queryByText('Augment Auggie')).toBeNull();
       expect(screen.getByTestId('model-picker-provider').textContent).toBe('codex');
     });
 
@@ -330,11 +285,50 @@ describe('SimpleRichInput provider switch sync', () => {
     expect(modelPicker.getAttribute('title')).toBe('Start a new agent to change provider or model.');
 
     await waitFor(() => {
-      expect(screen.getAllByTitle('Start a new agent to change provider or model.')).toHaveLength(2);
+      expect(screen.getAllByTitle('Start a new agent to change provider or model.')).toHaveLength(1);
     });
+
   });
 
-  it('hides the provider control when only the default provider is selectable', async () => {
+  it('calls agentClient.setModel exactly once during a cross-provider model switch', async () => {
+    const onmodelChange = vi.fn();
+    const workspace = {
+      id: 'ws-1',
+      name: 'Workspace',
+      path: '/tmp/workspace',
+      createdAt: new Date().toISOString(),
+    } as any;
+
+    render(SimpleRichInput, {
+      props: {
+        value: '',
+        contextItems: [],
+        workspace,
+        agentId: 'agent-1',
+        selectedModel: 'gpt5.4',
+        onmodelChange,
+      },
+    });
+
+    // Simulate a cross-provider model change via the ModelPicker mock's trigger
+    const triggerInput = screen.getByTestId('model-picker-trigger-input');
+    const triggerButton = screen.getByTestId('model-picker-trigger');
+
+    // Set the new model value (different provider prefix triggers cross-provider flow)
+    fireEvent.input(triggerInput, { target: { value: 'codex:gpt-5-codex' } });
+    await fireEvent.click(triggerButton);
+
+    // Wait for the async handleProviderChangeFromModel to complete
+    await waitFor(() => {
+      expect(setModelMock).toHaveBeenCalledTimes(1);
+    });
+
+    expect(setModelMock).toHaveBeenCalledWith('agent-1', 'codex:gpt-5-codex', 'ws-1');
+    expect(onmodelChange).toHaveBeenCalledWith('codex:gpt-5-codex');
+  });
+
+  it('treats default-provider aliases as the same provider during model selection', async () => {
+    const onmodelChange = vi.fn();
     const workspace = {
       id: 'ws-1',
       name: 'Workspace',
@@ -350,15 +344,22 @@ describe('SimpleRichInput provider switch sync', () => {
         agentId: 'agent-1',
         selectedModel: 'gpt5.4',
         providerId: 'auggie',
+        onmodelChange,
       },
     });
 
+    const triggerInput = screen.getByTestId('model-picker-trigger-input');
+    const triggerButton = screen.getByTestId('model-picker-trigger');
+
+    fireEvent.input(triggerInput, { target: { value: 'augment:sonnet4.5' } });
+    await fireEvent.click(triggerButton);
+
     await waitFor(() => {
-      expect(screen.queryByText('OpenAI Codex')).toBeNull();
-      expect(screen.queryByText('Augment Auggie')).toBeNull();
-      expect(screen.getByTestId('model-picker-provider').textContent).toBe('auggie');
-      expect(screen.getByTestId('model-picker-model').textContent).toBe('gpt5.4');
+      expect(screen.getByTestId('model-picker-model').textContent).toBe('augment:sonnet4.5');
     });
+
+    expect(setModelMock).not.toHaveBeenCalled();
+    expect(onmodelChange).toHaveBeenCalledWith('augment:sonnet4.5');
   });
 
   it('keeps the provider control visible when the current provider is non-default', async () => {
@@ -390,8 +391,9 @@ describe('SimpleRichInput provider switch sync', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('OpenAI Codex')).toBeTruthy();
-      expect(screen.getByTestId('model-picker-provider').textContent).toBe('codex');
+      // The mock ModelPicker renders the selectedModel prop; the real ModelPicker
+      // would extract and display the provider from the compound model ID.
+      expect(screen.getByTestId('model-picker-model').textContent).toBe('codex:gpt-5-codex');
     });
   });
 });

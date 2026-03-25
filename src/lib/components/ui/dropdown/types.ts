@@ -63,6 +63,7 @@ export interface DropdownItemProps {
  */
 export interface DropdownGroupProps {
   group: DropdownGroup;
+  groupIndex: number;
 }
 
 /**

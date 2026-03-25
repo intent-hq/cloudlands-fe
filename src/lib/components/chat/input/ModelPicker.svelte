@@ -1,29 +1,35 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
+  import { fade } from 'svelte/transition';
+
   import { agentClient } from '$features/agent/agent.client';
   import { sessionStore } from '$features/agent/browser';
   import Button from '$lib/components/ui/button/button.svelte';
   import {
     Dropdown,
+    type DropdownGroup,
+    type DropdownGroupProps,
     type DropdownItemProps,
     type DropdownOption,
   } from '$lib/components/ui/dropdown';
+  import ProviderIcon from '$lib/components/ui/ProviderIcon.svelte';
   import { faSettings } from '$lib/icons/faSettings';
+
   import {
     selectSelectedModel,
     selectAvailableModels,
     selectIsLoadingModels,
     selectLoadError,
   } from '$lib/store/slices/model/model-selectors';
+  import { selectModel, setWorkspaceModel } from '$lib/store/slices/model/model-slice';
   import {
-    selectModel,
-    retryLoadModels,
-    setWorkspaceModel,
-  } from '$lib/store/slices/model/model-slice';
-  import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
+    selectActiveProviderId,
+    selectEnabledProviderIds,
+  } from '$lib/store/slices/provider-settings/provider-settings-selectors';
   import { getModelsForProvider } from '$lib/store/slices/model/model-utils';
   import { getDispatch } from '$lib/store/utils/utils';
   import {
+    ACP_PROVIDERS,
     getProviderConfig,
     parseCompoundModelId,
     resolvePreferredModel,
@@ -39,7 +45,7 @@
     faCheck,
     faChevronDown,
     faLock,
-    faRotateRight,
+    faArrowsRotate,
     faExclamationTriangle,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
@@ -49,6 +55,7 @@
 
   const dispatch = getDispatch();
   const activeProviderId$ = selectActiveProviderId();
+  const enabledProviderIds$ = selectEnabledProviderIds();
   const selectedModel$ = selectSelectedModel();
   const availableModels$ = selectAvailableModels();
   const isLoadingModels$ = selectIsLoadingModels();
@@ -82,6 +89,8 @@
     showDefaultOption?: boolean;
     /** Update global model store when selection changes - opt-in for places that should affect the main chat model */
     updateGlobalStore?: boolean;
+    /** When true, silently falls back to a default model if the selected model is unavailable. Used by workspace initializer. */
+    silentFallback?: boolean;
   }
 
   let {
@@ -103,6 +112,7 @@
     defaultModelId,
     showDefaultOption = false,
     updateGlobalStore = false,
+    silentFallback = false,
   }: Props = $props();
 
   // Track pending model update when deferUpdate is true
@@ -139,6 +149,52 @@
   let agentProviderLoading = $state(false);
   let agentProviderError = $state<string | null>(null);
 
+  // --- All-provider models for multi-provider display ---
+  let allProviderModels = $state<Record<string, DropdownOption[]>>({});
+  let fetchGeneration = 0;
+  let allProvidersLoaded = $state(false);
+  let lastFetchedProviderIds = '';
+
+  /** Fetch models for all enabled providers, with generation tracking to discard stale results. */
+  async function fetchAllProviderModels(enabledIds: string[]) {
+    const key = enabledIds.slice().sort().join(',');
+    if (key === lastFetchedProviderIds && allProvidersLoaded) return;
+    lastFetchedProviderIds = key;
+
+    // Don't clear existing models — keep them visible while refreshing
+    allProvidersLoaded = false;
+    const currentGen = ++fetchGeneration;
+
+    if (enabledIds.length === 0) {
+      allProvidersLoaded = true;
+      return;
+    }
+
+    const results = await Promise.allSettled(
+      enabledIds.map(async (pid) => {
+        const normalizedId = getProviderConfig(pid).id;
+        const models = await getModelsForProvider(normalizedId);
+        return [normalizedId, toDropdownOptions(models)] as const;
+      }),
+    );
+
+    // Discard stale results if a newer fetch was triggered
+    if (fetchGeneration !== currentGen) return;
+
+    const models: Record<string, DropdownOption[]> = {};
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        const [pid, options] = result.value;
+        if (options.length > 0) {
+          models[pid] = options;
+        }
+      }
+    }
+
+    allProviderModels = models;
+    allProvidersLoaded = true;
+  }
+
   $effect(() => {
     const epid = effectiveProviderId;
     if (epid === $activeProviderId$) {
@@ -163,17 +219,88 @@
       });
   });
 
+  // --- Fetch models for ALL enabled providers when not locked to an agent provider ---
+  let fetchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    if (isAgentProviderOverride) return;
+    const providerIds = $enabledProviderIds$;
+    // Debounce rapid provider changes (e.g., enabling multiple providers at once)
+    clearTimeout(fetchDebounceTimer);
+    fetchDebounceTimer = setTimeout(() => fetchAllProviderModels(providerIds), 50);
+  });
+
   // Effective model list — agent-specific models when overriding, global otherwise
-  const availableModels = $derived(agentProviderModels ?? $availableModels$);
+  const availableModels = $derived(
+    isAgentProviderOverride
+      ? agentProviderLoading
+        ? []
+        : (agentProviderModels ?? (agentProviderError ? [] : $availableModels$))
+      : (agentProviderModels ?? $availableModels$),
+  );
   const isLoadingModels = $derived(
-    isAgentProviderOverride ? agentProviderLoading : $isLoadingModels$,
+    isAgentProviderOverride ? agentProviderLoading : $isLoadingModels$ || !allProvidersLoaded,
   );
   const loadError = $derived(isAgentProviderOverride ? agentProviderError : $loadError$);
 
   // Provider display name for footer — reflects the effective provider, not the global one
   const providerDisplayName = $derived(getProviderConfig(effectiveProviderId).displayName);
 
-  // Refreshing state for the refresh button
+  // Track which provider groups are collapsed in the dropdown (persisted globally)
+  const COLLAPSED_GROUPS_KEY = 'model-picker-collapsed-groups';
+
+  function loadCollapsedGroups(): Set<string> {
+    try {
+      const stored = localStorage.getItem(COLLAPSED_GROUPS_KEY);
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  }
+
+  let collapsedGroups = $state<Set<string>>(loadCollapsedGroups());
+
+  function toggleGroup(key: string) {
+    collapsedGroups = new Set(collapsedGroups);
+    if (collapsedGroups.has(key)) {
+      collapsedGroups.delete(key);
+    } else {
+      collapsedGroups.add(key);
+    }
+    try {
+      localStorage.setItem(COLLAPSED_GROUPS_KEY, JSON.stringify([...collapsedGroups]));
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  // Refreshing state for per-provider refresh buttons in group headers
+  let refreshingProviders = $state<Set<string>>(new Set());
+
+  async function handleRefreshProvider(providerId: string) {
+    if (refreshingProviders.has(providerId)) return;
+    refreshingProviders = new Set([...refreshingProviders, providerId]);
+    const gen = fetchGeneration;
+    try {
+      const models = await getModelsForProvider(providerId);
+      if (fetchGeneration !== gen) return;
+      if (isAgentProviderOverride && providerId === effectiveProviderId) {
+        agentProviderModels = models;
+      } else {
+        allProviderModels = {
+          ...allProviderModels,
+          [providerId]: toDropdownOptions(models),
+        };
+      }
+    } catch (err) {
+      logger.warn('Failed to refresh models for provider', { providerId, error: err });
+    } finally {
+      const next = new Set(refreshingProviders);
+      next.delete(providerId);
+      refreshingProviders = next;
+    }
+  }
+
+  // Legacy refreshing state for the refresh button (kept for handleRetry/handleRefreshModels)
   let isRefreshing = $state(false);
 
   /** Handle retry button click */
@@ -190,7 +317,8 @@
         agentProviderLoading = false;
       }
     } else {
-      dispatch(retryLoadModels());
+      lastFetchedProviderIds = '';
+      fetchAllProviderModels($enabledProviderIds$);
     }
   }
 
@@ -202,7 +330,8 @@
       if (isAgentProviderOverride) {
         agentProviderModels = await getModelsForProvider(effectiveProviderId);
       } else {
-        dispatch(retryLoadModels());
+        lastFetchedProviderIds = '';
+        fetchAllProviderModels($enabledProviderIds$);
       }
     } finally {
       isRefreshing = false;
@@ -277,6 +406,9 @@
       // Always call the onModelChange callback
       onModelChange?.(model);
 
+      // Allow Svelte to flush prop updates (e.g., deferUpdate may have changed in the callback)
+      await tick();
+
       // Only update global store if explicitly opted in
       if (!updateGlobalStore) {
         return;
@@ -318,10 +450,45 @@
       parseCompoundModelId(localModel).modelId !== 'default',
   );
 
+  // Helper: format cost tier as dollar signs
+  function formatCostTier(tier: number | undefined): string | undefined {
+    if (tier === 1) return '$';
+    if (tier === 2) return '$$';
+    if (tier === 3) return '$$$';
+    return undefined;
+  }
+
+  function toDropdownOptions(
+    models: { value: string; label: string; description?: string; badges?: { color: string; label: string; variant?: string }[]; costTier?: number; effortLevels?: string[]; isDefault?: boolean }[],
+  ): DropdownOption[] {
+    return models.map((m) => ({
+      value: m.value,
+      label: m.label,
+      description: m.description,
+      data: {
+        badges: m.badges,
+        costTier: m.costTier,
+        costTierLabel: formatCostTier(m.costTier),
+        effortLevels: m.effortLevels,
+        isDefault: m.isDefault,
+      },
+    }));
+  }
+
   // Get the label for a model ID from available models list
   function getModelLabel(modelId: string | undefined): string | undefined {
     if (!modelId) return undefined;
-    return availableModels.find((m) => m.value === modelId)?.label || modelId;
+    // Search all provider models when in multi-provider mode
+    if (!isAgentProviderOverride) {
+      for (const models of Object.values(allProviderModels)) {
+        const found = models.find((m) => m.value === modelId);
+        if (found) return found.label;
+      }
+    }
+    return (
+      availableModels.find((m) => m.value === modelId)?.label ||
+      parseCompoundModelId(modelId).modelId
+    );
   }
 
   // Get the current model label from local reactive state, with fallback mapping
@@ -333,6 +500,28 @@
           'Default model'
       : getModelLabel(localModel) || 'Default model',
   );
+
+  // Provider ID for the trigger icon — derived from the current model
+  const triggerProviderId = $derived.by(() => {
+    if (!localModel || !hasExplicitModel) return effectiveProviderId;
+    const { providerId: modelProvider } = parseCompoundModelId(localModel);
+    return modelProvider;
+  });
+
+  // Whether the trigger label has been resolved to a real model name (vs raw ID fallback)
+  const isTriggerLabelResolved = $derived.by(() => {
+    if (!hasExplicitModel || !localModel) return true; // "Default model" text, no need for skeleton
+    // Once loading has settled, always show the label (even raw ID fallback) rather than shimmer forever
+    if (!isLoadingModels && (isAgentProviderOverride || allProvidersLoaded)) return true;
+    // Check if the model exists in any provider's loaded models
+    if (!isAgentProviderOverride) {
+      for (const models of Object.values(allProviderModels)) {
+        if (models.some((m) => m.value === localModel)) return true;
+      }
+    }
+    return availableModels.some((m) => m.value === localModel);
+  });
+
   const lockedButtonTitle = $derived(lockedTitle?.trim() || `Model locked: ${currentModelLabel}`);
   const shouldShowLockIconWhenLocked = $derived(isCompact || showLockIconWhenLocked);
 
@@ -356,36 +545,72 @@
     description: 'Let the specialist choose the best model',
   };
 
-  // Helper: format cost tier as dollar signs
-  function formatCostTier(tier: number | undefined): string | undefined {
-    if (tier === 1) return '$';
-    if (tier === 2) return '$$';
-    if (tier === 3) return '$$$';
-    return undefined;
-  }
-
-  // Flat model options - optionally include "Default model" at the top
+  // Flat model options - used for non-UI logic (fallback checks, etc.)
   const flatModelOptions = $derived<DropdownOption[]>([
     ...(showDefaultOption ? [useDefaultOption] : []),
-    ...availableModels.map((m) => ({
-      value: m.value,
-      label: m.label,
-      description: m.description,
-      data: {
-        badges: m.badges,
-        costTier: m.costTier,
-        costTierLabel: formatCostTier(m.costTier),
-        effortLevels: m.effortLevels,
-        isDefault: m.isDefault,
-      },
-    })),
+    ...(isAgentProviderOverride
+      ? toDropdownOptions(availableModels)
+      : $enabledProviderIds$.flatMap((pid) => allProviderModels[getProviderConfig(pid).id] ?? [])),
   ]);
+
+  // Grouped model options for dropdown display
+  const groupedModelOptions = $derived.by<DropdownGroup[]>(() => {
+    const groups: DropdownGroup[] = [];
+
+    // Add "Default model" as its own group at the top
+    if (showDefaultOption) {
+      groups.push({
+        key: 'default',
+        label: '',
+        options: [useDefaultOption],
+      });
+    }
+
+    if (isAgentProviderOverride) {
+      // Agent locked to specific provider — show only that provider's models
+      const providerConfig = getProviderConfig(effectiveProviderId);
+      if (availableModels.length > 0) {
+        groups.push({
+          key: effectiveProviderId,
+          label: providerConfig.displayName,
+          options: toDropdownOptions(availableModels),
+        });
+      }
+    } else if (allProvidersLoaded) {
+      // Show all enabled providers only after ALL have loaded
+      // (prevents flash where partial results cause wrong highlight)
+      // Use ACP_PROVIDERS key order for consistent ordering
+      const providerOrder = Object.keys(ACP_PROVIDERS);
+      for (const pid of providerOrder) {
+        const models = allProviderModels[pid];
+        if (models && models.length > 0) {
+          const providerConfig = getProviderConfig(pid);
+          groups.push({
+            key: pid,
+            label: providerConfig.displayName,
+            options: models,
+          });
+        }
+      }
+    }
+
+    return groups;
+  });
 
   // The value to bind to the dropdown (convert undefined to USE_DEFAULT_VALUE)
   const dropdownValue = $derived(localModel ?? USE_DEFAULT_VALUE);
 
+  // Display groups — same as groupedModelOptions but with collapsed groups' options hidden
+  const displayGroups = $derived(
+    groupedModelOptions.map((group) => ({
+      ...group,
+      options: collapsedGroups.has(group.key) ? [] : group.options,
+    })),
+  );
+
   const isSelectedModelUnavailable = $derived.by(() => {
     if (isLoadingModels) return false;
+    if (!isAgentProviderOverride && !allProvidersLoaded) return false;
     if (!hasExplicitModel) return false;
     if (!localModel) return false;
 
@@ -459,6 +684,24 @@
     return null;
   });
 
+  /** Find the best fallback option: preference list → globally selected model → first available */
+  function findFallbackOption(restrictToProvider?: string): DropdownOption | undefined {
+    let candidates = flatModelOptions.filter((opt) => opt.value !== USE_DEFAULT_VALUE);
+
+    if (restrictToProvider) {
+      candidates = candidates.filter((opt) => {
+        const { providerId: optProvider } = parseCompoundModelId(opt.value);
+        return optProvider === restrictToProvider;
+      });
+    }
+
+    const optionValues = candidates.map((opt) => opt.value);
+    const preferredValue = resolvePreferredModel(MODEL_DEFAULTS.UI_MODEL_PREFERENCE, optionValues);
+    return preferredValue
+      ? candidates.find((opt) => opt.value === preferredValue)
+      : (candidates.find((opt) => opt.value === $selectedModel$) ?? candidates[0]);
+  }
+
   // Auto-fallback: When the selected model becomes unavailable, automatically switch to an available model.
   // Only applies to pickers tied to an existing agent — the workspace initializer doesn't need this.
   $effect(() => {
@@ -469,16 +712,13 @@
     // Get the name of the unavailable model for the notification
     const unavailableModelName = localModel || 'Selected model';
 
-    // Find a fallback model using the preference list, then the globally selected model,
-    // then first available as a last resort. The preference list only contains Auggie model
-    // IDs, so for other providers (e.g. OpenCode) it returns undefined — in that case, prefer
-    // the user's current global selection if it's available for this provider.
-    const nonDefaultOptions = flatModelOptions.filter((opt) => opt.value !== USE_DEFAULT_VALUE);
-    const optionValues = nonDefaultOptions.map((opt) => opt.value);
-    const preferredValue = resolvePreferredModel(MODEL_DEFAULTS.UI_MODEL_PREFERENCE, optionValues);
-    const fallbackOption = preferredValue
-      ? nonDefaultOptions.find((opt) => opt.value === preferredValue)
-      : (nonDefaultOptions.find((opt) => opt.value === $selectedModel$) ?? nonDefaultOptions[0]);
+    const unavailableProvider = localModel
+      ? parseCompoundModelId(localModel).providerId
+      : effectiveProviderId;
+
+    // Find a same-provider fallback using the preference list, then the globally selected model,
+    // then first available as a last resort.
+    const fallbackOption = findFallbackOption(unavailableProvider);
     if (!fallbackOption) return;
 
     const fallbackModelName = fallbackOption.label || fallbackOption.value;
@@ -495,12 +735,12 @@
     // model, the model is just the default initial model, or the model's provider
     // prefix differs from the active provider, skip the warning — the user didn't
     // lose their model, the provider just changed.
-    const { providerId: unavailableProvider, modelId: unavailableBaseId } =
+    const { providerId: unavailableModelProvider, modelId: unavailableBaseId } =
       parseCompoundModelId(unavailableModelName);
     const activeProvider = getProviderConfig($activeProviderId$).id;
     const isProviderSwitch =
       unavailableModelName === MODEL_DEFAULTS.UI_INITIAL_MODEL ||
-      unavailableProvider !== activeProvider ||
+      unavailableModelProvider !== activeProvider ||
       flatModelOptions.some((opt) => {
         const { modelId: optBaseId } = parseCompoundModelId(opt.value);
         return optBaseId === unavailableBaseId;
@@ -531,7 +771,78 @@
     handleModelSelect(fallbackOption.value);
   });
 
+  let silentRetryAttemptedForProvider: string | null = null;
+
+  // Silent fallback for workspace initializer (no agentId)
+  // When a model doesn't exist, fall back to a same-provider model (with one retry)
+  // Guard to prevent the retry fetch from re-firing indefinitely if the model
+  // remains unavailable after the retry (e.g., provider ID normalization mismatch).
+  let silentFallbackRetried = $state(false);
+
+  // Reset the retry guard when the user picks a new model
+  $effect(() => {
+    void localModel; // track localModel
+    silentFallbackRetried = false;
+  });
+
+  $effect(() => {
+    if (!silentFallback) return;
+    if (!isSelectedModelUnavailable) return;
+    if (!isLoadingModels && flatModelOptions.length === 0) return;
+
+    const rawCurrentProvider = localModel
+      ? parseCompoundModelId(localModel).providerId
+      : effectiveProviderId;
+    const currentProvider = getProviderConfig(rawCurrentProvider).id;
+
+    // Try same-provider fallback first
+    const fallbackOption = findFallbackOption(currentProvider);
+    if (fallbackOption) {
+      logger.info('Workspace initializer: falling back to same-provider model', {
+        unavailableModel: localModel,
+        fallbackModel: fallbackOption.value,
+        provider: currentProvider,
+      });
+      handleModelSelect(fallbackOption.value);
+      return;
+    }
+
+    // Only retry the fetch once per unavailable-model episode
+    if (silentFallbackRetried) return;
+    silentFallbackRetried = true;
+
+    // No same-provider model available — retry the fetch once, then warn
+    if (silentRetryAttemptedForProvider === currentProvider) return;
+    silentRetryAttemptedForProvider = currentProvider;
+
+    void (async () => {
+      try {
+        const models = await getModelsForProvider(currentProvider);
+        if (models.length > 0) {
+          const normalizedId = getProviderConfig(currentProvider).id;
+          allProviderModels = {
+            ...allProviderModels,
+            [normalizedId]: toDropdownOptions(models),
+          };
+          return;
+        }
+      } catch (err) {
+        logger.warn('Retry fetch failed for provider', { provider: currentProvider, error: err });
+      }
+
+      const providerName = getProviderConfig(currentProvider).displayName;
+      toast.warning(`No models available for ${providerName}`, {
+        description: 'Try refreshing or switch to another provider.',
+      });
+    })();
+  });
+
   let dropdownOpen = $state(false);
+
+  /** Clear any pending deferred model update. Used when the parent handles the IPC call itself. */
+  export function clearPendingUpdate() {
+    pendingModelUpdate = null;
+  }
 
   /** Clear the fallback warning - call when user sends a message or explicitly selects a model */
   export function clearFallbackWarning() {
@@ -585,14 +896,75 @@
     {/if}
   </Button>
 {:else}
+  {#snippet groupHeader({ group, groupIndex }: DropdownGroupProps)}
+    {#if group.label}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class={cn(
+          'group/header px-3 text-xs font-medium text-muted-foreground flex items-center gap-2 cursor-pointer select-none',
+          groupIndex > 0 && 'pt-1.5',
+        )}
+        role="button"
+        tabindex="-1"
+        aria-label="{group.label} models"
+        aria-expanded={!collapsedGroups.has(group.key)}
+        onclick={() => toggleGroup(group.key)}
+        onkeydown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggleGroup(group.key);
+          }
+        }}
+      >
+        <span>{group.label}</span>
+        <span class="ml-auto flex items-center gap-0.5">
+          <Button
+            variant="ghost-light"
+            size="xs"
+            class={cn(
+              'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:opacity-100',
+              refreshingProviders.has(group.key) && 'opacity-50! cursor-not-allowed',
+            )}
+            onclick={(e) => {
+              e.stopPropagation();
+              handleRefreshProvider(group.key);
+            }}
+            title="Refresh {group.label} models"
+            aria-label="Refresh {group.label} models"
+            disabled={refreshingProviders.has(group.key)}
+          >
+            <Fa
+              icon={faArrowsRotate}
+              size={10}
+              class={cn(
+                'text-subtle transition-transform duration-500',
+                refreshingProviders.has(group.key) && 'animate-spin',
+              )}
+            />
+          </Button>
+          <Fa
+            icon={faChevronDown}
+            class={cn(
+              'text-subtle transition-transform duration-150',
+              collapsedGroups.has(group.key) && 'rotate-90',
+            )}
+            size={12}
+          />
+        </span>
+      </div>
+    {/if}
+  {/snippet}
+
   <Dropdown
     value={dropdownValue}
+    defaultHighlightValue={defaultModelId}
     bind:open={dropdownOpen}
-    options={flatModelOptions}
+    groups={displayGroups}
     onchange={handleModelChange}
     variant={variant === 'outline' ? 'outline' : variant === 'default' ? 'default' : 'ghost'}
     size={size === 'xs' ? 'xs' : 'sm'}
-    searchable={false}
+    searchable={true}
+    placeholder="Search models..."
     class="min-w-0"
     headerClass="border-b-0!"
     triggerClass={cn(
@@ -600,8 +972,9 @@
       (variant === 'outline' || variant === 'default') && 'w-full justify-between',
       triggerClass,
     )}
-    contentClass="min-w-[220px] max-w-[360px]"
+    contentClass="w-[332px] max-w-[calc(100vw-32px)]"
     {portal}
+    {groupHeader}
   >
     {#snippet trigger({
       open: _open,
@@ -615,15 +988,18 @@
           'inline-flex items-center gap-1 truncate min-w-0',
           (variant === 'outline' || variant === 'default') && 'flex-1',
         )}
-        title={currentModelLabel}
+        title={isTriggerLabelResolved ? currentModelLabel : ''}
       >
         {#if isCompact}
           <Fa icon={faSettings} class="h-4 w-4" />
-        {:else}
+        {:else if isTriggerLabelResolved}
           {#if showModelWarning}
             <Fa icon={faTriangleExclamation} class="h-3 w-3 text-amber-600 shrink-0" />
           {/if}
+          <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
           <span class="truncate">{currentModelLabel}</span>
+        {:else}
+          <div class="h-3.5 w-24 bg-muted/50 rounded-sm animate-pulse"></div>
         {/if}
       </span>
       {#if variant === 'outline' || variant === 'default'}
@@ -633,14 +1009,17 @@
 
     {#snippet header()}
       {#if showModelWarning && warningMessage}
-        <div class="px-2.5 py-2 border-b border-border">
-          <div class="flex items-start gap-2">
-            <Fa icon={faTriangleExclamation} class="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+        <div class="px-3 py-2.5 border-b border-border bg-warning/5">
+          <div class="flex items-start gap-2" role="alert">
+            <Fa
+              icon={faTriangleExclamation}
+              class="h-3.5 w-3.5 text-warning-foreground mt-0.5 shrink-0"
+            />
             <div class="min-w-0">
-              <div class="text-xs font-medium text-foreground">
+              <div class="text-xs font-medium text-foreground leading-tight">
                 {warningMessage.title}
               </div>
-              <div class="text-ui text-subtle mt-0.5">
+              <div class="text-xs text-subtle mt-0.5 leading-tight">
                 {warningMessage.description}
               </div>
             </div>
@@ -650,34 +1029,29 @@
     {/snippet}
 
     {#snippet item({ option, selected }: DropdownItemProps)}
-      {#if isLoadingModels}
-        <!-- Skeleton shimmer per-item during refresh -->
-        <div class="flex items-center gap-2 w-full pointer-events-none">
-          <div class="flex-1 min-w-0 flex flex-col gap-1">
-            <div
-              class="h-3.5 bg-muted/40 rounded animate-pulse"
-              style="width: {55 + ((option.value.charCodeAt(0) || 0) % 4) * 12}%"
-            ></div>
-            {#if option.description}
-              <div
-                class="h-2.5 bg-muted/30 rounded animate-pulse"
-                style="width: {35 + ((option.value.charCodeAt(1) || 0) % 3) * 12}%"
-              ></div>
-            {/if}
-          </div>
-        </div>
-      {:else}
-        {@const badges = option.data?.badges as
-          | Array<{ color: string; label: string; variant?: string }>
-          | undefined}
-        {@const costTierLabel = option.data?.costTierLabel as string | undefined}
-        {@const isDefaultModel = option.data?.isDefault as boolean | undefined}
-        {@const effortLevels = option.data?.effortLevels as string[] | undefined}
-        {@const hasRightBadges = (badges && badges.length > 0) || costTierLabel || isDefaultModel}
-        <div class="flex flex-col gap-0.5 w-full">
-          <!-- Name row: model name left, badges + check right -->
+      {@const badges = option.data?.badges as
+        | Array<{ color: string; label: string; variant?: string }>
+        | undefined}
+      {@const costTierLabel = option.data?.costTierLabel as string | undefined}
+      {@const isDefaultModel = option.data?.isDefault as boolean | undefined}
+      {@const effortLevels = option.data?.effortLevels as string[] | undefined}
+      {@const hasRightBadges = (badges && badges.length > 0) || costTierLabel || isDefaultModel}
+      <div class="flex gap-2 w-full min-w-0">
+        {#if option.value !== USE_DEFAULT_VALUE}
+          <ProviderIcon
+            providerId={parseCompoundModelId(option.value).providerId}
+            class="size-3.5 shrink-0 mt-0.5"
+          />
+        {/if}
+        <div class="flex-1 min-w-0">
           <div class="flex items-baseline justify-between gap-2">
-            <span class="truncate" class:italic={option.value === USE_DEFAULT_VALUE}>
+            <span
+              class={cn(
+                'truncate text-sm font-medium',
+                option.value === USE_DEFAULT_VALUE && 'italic text-muted-foreground',
+                selected && 'font-medium',
+              )}
+            >
               {option.label}
             </span>
             {#if hasRightBadges || selected}
@@ -717,9 +1091,8 @@
               </div>
             {/if}
           </div>
-          <!-- Description row -->
           {#if option.description}
-            <div class="text-xs text-subtle truncate">{option.description}</div>
+            <div class="text-xs text-subtle truncate mt-0.5">{option.description}</div>
           {/if}
           {#if effortLevels && effortLevels.length > 0}
             <div class="text-xs text-subtle/60 truncate hidden">
@@ -727,72 +1100,82 @@
             </div>
           {/if}
         </div>
-      {/if}
+        {#if selected}
+          <Fa icon={faCheck} class="text-xs text-primary shrink-0" />
+        {/if}
+      </div>
     {/snippet}
 
     {#snippet footer()}
-      {#if showManageLink}
-        <div class="flex items-center w-full pl-3 pr-1.5 gap-2">
-          <Button
-            variant="plain"
-            size="xs"
-            class="flex-1 min-w-0 font-normal"
-            onclick={() => {
-              dropdownOpen = false;
-              navigateToSettings({ hash: 'providers' });
-            }}
-            title="Change agent provider"
-          >
-            <span class="truncate"
-              >Models from <span class="font-medium">{providerDisplayName}</span></span
-            >
-          </Button>
-          <Button
-            variant="ghost-light"
-            size="icon-xs"
-            onclick={handleRefreshModels}
-            title="Refresh models"
-            disabled={isRefreshing}
-          >
-            <Fa icon={faRotateRight} size={10} class={isRefreshing ? 'animate-spin' : ''} />
-          </Button>
+      {#if !allProvidersLoaded && Object.keys(allProviderModels).length > 0}
+        <div class="px-3 py-2 flex items-center gap-2 text-xs text-muted-foreground">
+          <div
+            class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin"
+          ></div>
+          <span>Loading more models…</span>
         </div>
       {/if}
     {/snippet}
 
     {#snippet empty()}
-      <div class="px-3 py-3">
+      <div class="px-1 py-1" transition:fade={{ duration: 150 }}>
         {#if isLoadingModels}
-          <!-- Skeleton loader for initial load (no items yet) -->
-          <div class="flex flex-col gap-1">
-            {#each Array(5) as _}
-              <div class="h-8 bg-muted/50 rounded-md animate-pulse"></div>
-            {/each}
-          </div>
+          <!-- Grouped skeleton loader mimicking provider groups -->
+          {#each [4, 3] as itemCount, i}
+            <div>
+              <!-- Skeleton group header -->
+              <div class="px-3 pt-3 pb-1 flex items-center gap-2">
+                <div class="size-3.5 rounded bg-muted/60 animate-pulse"></div>
+                <div class="h-3 w-16 bg-muted/60 rounded animate-pulse"></div>
+              </div>
+              <!-- Skeleton items -->
+              {#each Array(itemCount) as _, j}
+                <div class="px-3 py-2 flex items-center gap-2">
+                  <div class="flex-1 min-w-0">
+                    <div
+                      class="h-3.5 rounded bg-muted/40 animate-pulse"
+                      style="width: {60 + ((j * 17 + i * 23) % 30)}%; animation-delay: {(i *
+                        itemCount +
+                        j) *
+                        75}ms"
+                    ></div>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {/each}
         {:else if loadError}
-          <div class="flex flex-col items-center gap-2">
+          <div class="flex flex-col items-center gap-2.5 py-4 px-3">
             <div class="flex items-center gap-1.5 text-destructive-foreground">
-              <Fa icon={faExclamationTriangle} class="h-3 w-3" />
-              <span class="text-xs">Failed to load models</span>
+              <Fa icon={faExclamationTriangle} class="h-3.5 w-3.5" />
+              <span class="text-sm font-medium">Failed to load models</span>
             </div>
             <button
               type="button"
-              class="flex items-center gap-1.5 px-2 py-1 text-xs rounded-md bg-muted hover:bg-muted/80 text-foreground transition-colors"
+              class={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md',
+                'bg-muted hover:bg-muted/80 text-foreground transition-colors',
+                'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+              )}
               onclick={handleRetry}
             >
-              <Fa icon={faRotateRight} class="h-3 w-3" />
+              <Fa icon={faArrowsRotate} class="h-3 w-3" />
               Retry
             </button>
           </div>
         {:else}
-          <div class="flex flex-col items-center gap-2 text-subtle">
-            <span class="text-xs">No models available</span>
+          <div class="flex flex-col items-center gap-2.5 py-4 px-3 text-muted-foreground">
+            <span class="text-sm">No models available</span>
             <button
               type="button"
-              class="flex items-center gap-1.5 px-2 py-1 text-xs rounded-md bg-muted hover:bg-muted/80 text-foreground transition-colors"
+              class={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md',
+                'bg-muted hover:bg-muted/80 text-foreground transition-colors',
+                'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+              )}
               onclick={handleRetry}
             >
-              <Fa icon={faRotateRight} class="h-3 w-3" />
+              <Fa icon={faArrowsRotate} class="h-3 w-3" />
               Retry
             </button>
           </div>

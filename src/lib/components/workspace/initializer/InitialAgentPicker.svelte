@@ -107,7 +107,7 @@
   });
 
   // Auto-select first available provider if current selection is unavailable
-  // BUT: Don't override if the provider matches the user's explicit choice from activeProviderStore
+  // BUT: Don't override if the provider matches the user's explicit choice from the active provider selector
   $effect(() => {
     if (providerAvailability && availableProviders.length > 0) {
       const isSelectedAvailable = availableProviders.some((p) => p.id === selectedProvider);
@@ -242,13 +242,32 @@
   // Specialist dropdown state
   let specialistDropdownOpen = $state(false);
 
-  // Track the last single-agent specialist/model so switching to team mode and back preserves them
-  let lastSingleAgentSpecialist = $state<string | null>(null);
-  let lastSingleAgentModel = $state<string | undefined>(undefined);
-  let lastSingleAgentModelOverridden = $state<boolean>(false);
+  // Snapshot of mode-specific state so switching modes preserves selections
+  interface ModeSnapshot {
+    model: string | undefined;
+    provider: string;
+    modelOverridden: boolean;
+    specialist: string | null; // only used by single-agent mode, but keep it uniform
+  }
+
+  const defaultProvider = $activeProviderId$ ?? getDefaultProviderId();
+
+  let lastTeamMode = $state<ModeSnapshot>({
+    model: undefined,
+    provider: defaultProvider,
+    modelOverridden: false,
+    specialist: 'spec-writer',
+  });
+
+  let lastSingleAgent = $state<ModeSnapshot>({
+    model: undefined,
+    provider: defaultProvider,
+    modelOverridden: false,
+    specialist: null,
+  });
 
   // The specialist to display in the single-agent card — uses the saved value when in team mode
-  const displayedSpecialist = $derived(isTeamMode ? lastSingleAgentSpecialist : selectedSpecialist);
+  const displayedSpecialist = $derived(isTeamMode ? lastSingleAgent.specialist : selectedSpecialist);
 
   // Get current specialist info for display
   const currentSpecialistInfo = $derived(
@@ -265,32 +284,49 @@
 
   function selectTeamMode() {
     if (isTeamMode) return;
-    // Save the current single-agent state before switching
-    if (!isTeamMode) {
-      lastSingleAgentSpecialist = selectedSpecialist;
-      lastSingleAgentModel = selectedModel;
-      lastSingleAgentModelOverridden = modelWasOverridden;
-    }
+    // Save single-agent state
+    lastSingleAgent = {
+      model: selectedModel,
+      provider: selectedProvider,
+      modelOverridden: modelWasOverridden,
+      specialist: selectedSpecialist,
+    };
+
     isTeamMode = true;
     selectedSpecialist = 'spec-writer';
-    // Always reset model when switching cards — let defaultModelId drive the display
-    selectedModel = undefined;
-    modelWasOverridden = false;
+    // Restore provider BEFORE model to prevent the provider-mismatch $effect from clearing it
+    selectedProvider = lastTeamMode.provider;
+    selectedModel = lastTeamMode.modelOverridden ? lastTeamMode.model : undefined;
+    modelWasOverridden = lastTeamMode.modelOverridden;
     onTeamModeChange?.(true);
     onSpecialistChange?.('spec-writer');
+    if (lastTeamMode.modelOverridden) {
+      onModelChange?.(selectedModel);
+      onProviderChange?.(selectedProvider);
+    }
   }
 
   function selectSingleAgentMode() {
     if (isTeamMode) {
-      // Switching from team mode — restore the previously selected specialist and model
+      // Save team mode state
+      lastTeamMode = {
+        model: selectedModel,
+        provider: selectedProvider,
+        modelOverridden: modelWasOverridden,
+        specialist: 'spec-writer',
+      };
+
       isTeamMode = false;
-      selectedSpecialist = lastSingleAgentSpecialist;
-      selectedModel = lastSingleAgentModel;
-      modelWasOverridden = lastSingleAgentModelOverridden;
+      selectedSpecialist = lastSingleAgent.specialist;
+      // Restore provider BEFORE model
+      selectedProvider = lastSingleAgent.provider;
+      selectedModel = lastSingleAgent.model;
+      modelWasOverridden = lastSingleAgent.modelOverridden;
       onTeamModeChange?.(false);
       onSpecialistChange?.(selectedSpecialist);
-      if (lastSingleAgentModelOverridden) {
+      if (lastSingleAgent.modelOverridden) {
         onModelChange?.(selectedModel);
+        onProviderChange?.(selectedProvider);
       }
     }
     // If already in single-agent mode, do nothing (specialist dropdown handles changes)
@@ -299,10 +335,16 @@
   function handleSpecialistSelect(specialistId: string | null) {
     isTeamMode = false;
     selectedSpecialist = specialistId;
-    lastSingleAgentSpecialist = specialistId;
+    lastSingleAgent.specialist = specialistId;
     // Always reset model when switching specialists — let defaultModelId drive the display
     selectedModel = undefined;
     modelWasOverridden = false;
+    // Reset provider to default when clearing model override
+    const defaultProv = $activeProviderId$ ?? getDefaultProviderId();
+    if (selectedProvider !== defaultProv) {
+      selectedProvider = defaultProv;
+      onProviderChange?.(defaultProv);
+    }
     onTeamModeChange?.(false);
     onSpecialistChange?.(specialistId);
     specialistDropdownOpen = false;
@@ -311,6 +353,16 @@
   function handleModelChange(model: string | undefined) {
     selectedModel = model;
     modelWasOverridden = true;
+
+    // Update provider to match the selected model's provider
+    if (model) {
+      const { providerId } = parseCompoundModelId(model);
+      if (providerId !== selectedProvider) {
+        selectedProvider = providerId;
+        onProviderChange?.(providerId);
+      }
+    }
+
     onModelChange?.(model);
   }
 
@@ -354,6 +406,7 @@
           showManageLink={true}
           defaultModelId={teamModeModel}
           updateGlobalStore
+          silentFallback
         />
       {/key}
     </div>
@@ -493,6 +546,7 @@
           showManageLink={true}
           defaultModelId={singleAgentModel}
           updateGlobalStore
+          silentFallback
         />
       {/key}
     </div>

@@ -3,7 +3,6 @@
   import { faPlus, faRotateLeft, faTrash } from '@fortawesome/free-solid-svg-icons';
 
   import { selectSelectedModel } from '$lib/store/slices/model/model-selectors';
-  import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
   import { getDispatch } from '$lib/store/utils/utils';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
@@ -40,24 +39,17 @@
     selectEnabledProviderIds,
   } from '$lib/store/slices/provider-settings/provider-settings-selectors';
   import { setActiveProvider } from '$lib/store/slices/provider-settings/provider-settings-slice';
+  import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
   import Button from '$lib/components/ui/button/button.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
-  import { Dropdown } from '$lib/components/ui/dropdown';
   import AgentRulesEditor from './AgentRulesEditor.svelte';
   import AutoSaveTextarea from './AutoSaveTextarea.svelte';
   import type { AIBehaviorView } from './AIBehaviorSidebar.svelte';
   import Header from '../ui/Header.svelte';
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
-  import {
-    buildProviderDropdownOptions,
-    getSelectableProviderIds,
-    resolveCompatibleModelForProvider,
-    resolveUsableProviderIds,
-  } from '$lib/utils/provider-model-selection';
   import { track } from '$lib/services/analytics';
-  import { getProviderConfig } from '$shared/config/provider-config';
-  import { toast } from 'svelte-sonner';
+  import { parseCompoundModelId } from '$shared/config/provider-config';
 
   interface Props {
     activeView: AIBehaviorView;
@@ -73,28 +65,6 @@
   const userOverrides = selectUserOverrides();
   const selectedModel = selectSelectedModel();
   const activeProviderId$ = selectActiveProviderId();
-  const enabledProviderIds$ = selectEnabledProviderIds();
-
-  // Model selection for system prompt
-  let selectedProviderValue = $state($activeProviderId$);
-  const enabledProviderIds = $derived($enabledProviderIds$);
-  let usableProviderIds = $state<string[]>([]);
-  let usableProviderRequestId = 0;
-
-  $effect(() => {
-    const providerIds = enabledProviderIds;
-    const requestId = ++usableProviderRequestId;
-
-    void resolveUsableProviderIds(providerIds).then((nextUsableProviderIds) => {
-      if (requestId === usableProviderRequestId) {
-        usableProviderIds = nextUsableProviderIds;
-      }
-    });
-  });
-
-  $effect(() => {
-    selectedProviderValue = $activeProviderId$;
-  });
 
   // Check if all specialists already use the currently selected default model
   const allSpecialistsUseSelectedModel = $derived.by(() => {
@@ -178,34 +148,6 @@
   let specialistCodingAgentValue = $state('');
   let specialistModelValue = $state('');
 
-  const globalProviderOptions = $derived(
-    buildProviderDropdownOptions(
-      getSelectableProviderIds({
-        enabledProviderIds,
-        usableProviderIds,
-        selectedProviderId: selectedProviderValue,
-      }),
-    ),
-  );
-  const specialistProviderOptions = $derived(
-    buildProviderDropdownOptions(
-      getSelectableProviderIds({
-        enabledProviderIds,
-        usableProviderIds,
-        selectedProviderId: specialistCodingAgentValue,
-      }),
-    ),
-  );
-  const createProviderOptions = $derived(
-    buildProviderDropdownOptions(
-      getSelectableProviderIds({
-        enabledProviderIds,
-        usableProviderIds,
-        selectedProviderId: newCodingAgent,
-      }),
-    ),
-  );
-
   // Sync specialist model value when specialist changes or overrides are cleared
   $effect(() => {
     if (currentSpecialist) {
@@ -218,45 +160,24 @@
     }
   });
 
-  async function resolveModelOrToast(
-    providerId: string,
-    currentModel?: string,
-    fallbackModel?: string,
-  ) {
-    const resolvedModel = await resolveCompatibleModelForProvider(providerId, {
-      currentModel,
-      fallbackModel,
-    });
-
-    if (!resolvedModel) {
-      toast.error(`No models available for ${getProviderConfig(providerId).displayName}.`);
+  function handleGlobalModelChange(compoundModelId: string) {
+    if (!compoundModelId) return;
+    const { providerId } = parseCompoundModelId(compoundModelId);
+    if (providerId && providerId !== $activeProviderId$) {
+      dispatch(setActiveProvider(providerId));
+      dispatch(reloadModelsForProvider());
     }
-
-    return resolvedModel;
   }
 
-  async function handleGlobalProviderChange(newProvider: string) {
-    if (!newProvider || newProvider === $activeProviderId$) return;
+  function handleSpecialistModelChange(compoundModelId: string) {
+    if (!currentSpecialist || !compoundModelId) return;
 
-    dispatch(setActiveProvider(newProvider));
-    dispatch(reloadModelsForProvider());
-    selectedProviderValue = newProvider;
-  }
-
-  async function handleSpecialistCodingAgentChange(newProvider: string) {
-    if (!currentSpecialist || !newProvider) return;
-
-    const nextModel = await resolveModelOrToast(
-      newProvider,
-      specialistModelValue,
-      selectResolvedDefaultModel.select(getReduxStore().getState(), currentSpecialist.id, newProvider),
-    );
-    if (!nextModel) return;
-
+    const { providerId: newProvider } = parseCompoundModelId(compoundModelId);
     specialistCodingAgentValue = newProvider;
-    specialistModelValue = nextModel;
+    specialistModelValue = compoundModelId;
 
     if (isBuiltIn) {
+      // Update coding agent override
       const resolvedDefaultProvider = selectResolvedDefaultCodingAgent.select(
         getReduxStore().getState(),
         currentSpecialist.id,
@@ -267,56 +188,14 @@
         dispatch(clearCodingAgentOverride(currentSpecialist.id));
       }
 
+      // Update model override
       const resolvedDefaultModel = selectResolvedDefaultModel.select(
         getReduxStore().getState(),
         currentSpecialist.id,
         newProvider,
       );
-      if (resolvedDefaultModel && nextModel === resolvedDefaultModel) {
-        dispatch(clearModelOverride(currentSpecialist.id));
-      } else {
-        dispatch(setModelOverride(currentSpecialist.id, nextModel));
-      }
-    } else if (isFileBased) {
-      const fileSpec = selectGetFileSpecialist.select(getReduxStore().getState(), currentSpecialist.id);
-      if (fileSpec) {
-        dispatch(
-          saveFileSpecialist({
-            id: fileSpec.id,
-            name: fileSpec.name,
-            description: fileSpec.description,
-            codingAgent: newProvider,
-            model: nextModel,
-            modelTier: fileSpec.modelTier,
-            roleReminder: fileSpec.roleReminder,
-            behaviorPrompt: fileSpec.behaviorPrompt,
-          }),
-        );
-      }
-    } else {
-      dispatch(
-        updateCustomSpecialist(currentSpecialist.id, {
-          codingAgent: newProvider,
-          model: nextModel,
-        }),
-      );
-    }
-  }
-
-  // Handle specialist model changes — only called when the user explicitly picks a model
-  function handleSpecialistModelChange(newModel: string) {
-    if (!currentSpecialist || !newModel) return;
-
-    specialistModelValue = newModel;
-
-    if (isBuiltIn) {
-      // Get the resolved default model for the current provider (from tier)
-      const resolvedDefault = selectResolvedDefaultModel.select(
-        getReduxStore().getState(),
-        currentSpecialist.id,
-      );
-      if (newModel !== resolvedDefault) {
-        dispatch(setModelOverride(currentSpecialist.id, newModel));
+      if (compoundModelId !== resolvedDefaultModel) {
+        dispatch(setModelOverride(currentSpecialist.id, compoundModelId));
       } else {
         dispatch(clearModelOverride(currentSpecialist.id));
       }
@@ -331,8 +210,8 @@
             id: fileSpec.id,
             name: fileSpec.name,
             description: fileSpec.description,
-            codingAgent: fileSpec.codingAgent,
-            model: newModel,
+            codingAgent: newProvider,
+            model: compoundModelId,
             modelTier: fileSpec.modelTier,
             roleReminder: fileSpec.roleReminder,
             behaviorPrompt: fileSpec.behaviorPrompt,
@@ -342,10 +221,18 @@
     } else {
       dispatch(
         updateCustomSpecialist(currentSpecialist.id, {
-          model: newModel,
+          codingAgent: newProvider,
+          model: compoundModelId,
         }),
       );
     }
+  }
+
+  function handleCreateModelChange(compoundModelId: string) {
+    if (!compoundModelId) return;
+    const { providerId } = parseCompoundModelId(compoundModelId);
+    newCodingAgent = providerId;
+    newModel = compoundModelId;
   }
 
   function handlePromptSave(prompt: string) {
@@ -436,26 +323,13 @@
     onDiscard?.();
   }
 
-  function hasCodingAgentOverride(): boolean {
+  function hasAnyModelOverride(): boolean {
     if (!currentSpecialist) return false;
-    return !!selectUserOverrides.select(getReduxStore().getState()).codingAgentOverrides[currentSpecialist.id];
-  }
-
-  function hasModelOverride(): boolean {
-    if (!currentSpecialist) return false;
-    return !!selectUserOverrides.select(getReduxStore().getState()).modelOverrides[
-      currentSpecialist.id
-    ];
-  }
-
-  async function handleCreateCodingAgentChange(newProvider: string) {
-    if (!newProvider || newProvider === newCodingAgent) return;
-
-    const nextModel = await resolveModelOrToast(newProvider, newModel);
-    if (!nextModel) return;
-
-    newCodingAgent = newProvider;
-    newModel = nextModel;
+    const overrides = selectUserOverrides.select(getReduxStore().getState());
+    return (
+      !!overrides.codingAgentOverrides?.[currentSpecialist.id] ||
+      !!overrides.modelOverrides[currentSpecialist.id]
+    );
   }
 </script>
 
@@ -468,34 +342,17 @@
     <!-- Global defaults -->
     <div id="default-model" class="mb-6">
       <Header size={3} class="mb-3">Global defaults</Header>
-      <div class="grid gap-4 sm:grid-cols-2">
-        <div class="space-y-2">
-          <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            Default coding agent
-          </p>
-          <Dropdown
-            value={selectedProviderValue}
-            options={globalProviderOptions}
-            onchange={(value) => void handleGlobalProviderChange(value as string)}
-            searchable={false}
-            variant="default"
-            size="sm"
-            class="w-full"
-          />
-        </div>
-
-        <div class="space-y-2">
-          <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            Default model
-          </p>
-          <ModelPicker
-            selectedModel={$selectedModel}
-            providerId={selectedProviderValue}
-            showDefaultOption={false}
-            variant="default"
-            updateGlobalStore
-          />
-        </div>
+      <div class="space-y-2">
+        <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          Default coding agent
+        </p>
+        <ModelPicker
+          selectedModel={$selectedModel}
+          onModelChange={handleGlobalModelChange}
+          showDefaultOption={false}
+          variant="default"
+          updateGlobalStore
+        />
       </div>
       <div class="flex flex-col items-start gap-2 mt-3">
         {#if !allSpecialistsUseSelectedModel}
@@ -550,66 +407,35 @@
       <p class="text-xs text-subtle mt-1">{currentSpecialist.description}</p>
     </div>
 
-    <!-- Coding Agent + Model Picker -->
+    <!-- Coding Agent -->
     <div class="mb-6">
-      <div class="mb-6">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            Coding Agent
-          </h2>
-          {#if isBuiltIn && hasCodingAgentOverride()}
-            <button
-              type="button"
-              onclick={() => dispatch(clearCodingAgentOverride(currentSpecialist.id))}
-              class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
-            >
-              <Fa icon={faRotateLeft} class="w-3 h-3" />
-              Reset
-            </button>
-          {/if}
-        </div>
-        <Dropdown
-          value={specialistCodingAgentValue}
-          options={specialistProviderOptions}
-          onchange={(value) => void handleSpecialistCodingAgentChange(value as string)}
-          searchable={false}
-          variant="default"
-          size="sm"
-          class="w-full"
-        />
-        {#if isBuiltIn && !hasCodingAgentOverride()}
-          <p class="text-xs text-subtle mt-2">
-            Uses the global default unless you override it here.
-          </p>
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          Coding Agent
+        </h2>
+        {#if isBuiltIn && hasAnyModelOverride()}
+          <button
+            type="button"
+            onclick={resetAllOverrides}
+            class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
+          >
+            <Fa icon={faRotateLeft} class="w-3 h-3" />
+            Reset
+          </button>
         {/if}
       </div>
-
-      <!-- Model Picker -->
-      <div>
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            Default Model
-          </h2>
-          {#if isBuiltIn && hasModelOverride()}
-            <button
-              type="button"
-              onclick={() => dispatch(clearModelOverride(currentSpecialist.id))}
-              class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
-            >
-              <Fa icon={faRotateLeft} class="w-3 h-3" />
-              Reset
-            </button>
-          {/if}
-        </div>
-        <ModelPicker
-          selectedModel={specialistModelValue}
-          onModelChange={handleSpecialistModelChange}
-          providerId={specialistCodingAgentValue}
-          showDefaultOption={false}
-          size="sm"
-          variant="default"
-        />
-      </div>
+      <ModelPicker
+        selectedModel={specialistModelValue}
+        onModelChange={handleSpecialistModelChange}
+        showDefaultOption={false}
+        size="sm"
+        variant="default"
+      />
+      {#if isBuiltIn && !hasAnyModelOverride()}
+        <p class="text-xs text-subtle mt-2">
+          Uses the global default unless you override it here.
+        </p>
+      {/if}
     </div>
 
     <!-- System Prompt (1fr) -->
@@ -680,25 +506,9 @@
 
       <div>
         <span class="text-sm font-medium text-foreground block mb-1.5">Coding Agent</span>
-        <Dropdown
-          value={newCodingAgent}
-          options={createProviderOptions}
-          onchange={(value) => void handleCreateCodingAgentChange(value as string)}
-          searchable={false}
-          variant="default"
-          size="sm"
-          class="w-full"
-        />
-      </div>
-
-      <div>
-        <span class="text-sm font-medium text-foreground block mb-1.5">Default Model</span>
         <ModelPicker
           selectedModel={newModel}
-          onModelChange={(model) => {
-            newModel = model;
-          }}
-          providerId={newCodingAgent}
+          onModelChange={handleCreateModelChange}
           showDefaultOption={false}
           variant="default"
           size="sm"

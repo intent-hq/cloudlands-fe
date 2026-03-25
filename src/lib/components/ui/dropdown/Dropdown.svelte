@@ -61,6 +61,8 @@
     footer?: Snippet;
     /** Empty state when no results */
     empty?: Snippet;
+    /** Fallback value to highlight when the current value doesn't match any option */
+    defaultHighlightValue?: string;
   }
 
   let {
@@ -87,16 +89,19 @@
     header,
     footer,
     empty,
+    defaultHighlightValue,
   }: Props = $props();
 
   // For portal positioning, we need to track trigger position
   let triggerRef = $state.raw<HTMLButtonElement | null>(null);
   let portalContentRef = $state.raw<HTMLDivElement | null>(null);
   let portalStyle = $state('');
-
   let searchValue = $state('');
   let containerRef = $state.raw<HTMLDivElement | null>(null);
   let inputRef = $state.raw<HTMLInputElement | null>(null);
+
+  // Keyboard navigation state
+  let highlightedIndex = $state(-1);
 
   // Track which submenu is currently open (by option value)
   let openSubmenu = $state<string | null>(null);
@@ -114,27 +119,80 @@
   // Filter options based on search
   const filteredOptions = $derived.by(() => {
     if (!searchValue) return options;
-    const query = searchValue.toLowerCase();
-    return options.filter(
-      (opt) =>
-        opt.label.toLowerCase().includes(query) || opt.description?.toLowerCase().includes(query),
-    );
+    const terms = searchValue.toLowerCase().split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return options;
+    return options.filter((opt) => {
+      const haystack = `${opt.label} ${opt.description ?? ''}`.toLowerCase();
+      return terms.every((term) => haystack.includes(term));
+    });
   });
 
   // Filter groups based on search
   const filteredGroups = $derived.by(() => {
     if (!searchValue) return groups;
-    const query = searchValue.toLowerCase();
+    const terms = searchValue.toLowerCase().split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return groups;
     return groups
       .map((group) => ({
         ...group,
-        options: group.options.filter(
-          (opt) =>
-            opt.label.toLowerCase().includes(query) ||
-            opt.description?.toLowerCase().includes(query),
-        ),
+        options: group.options.filter((opt) => {
+          const haystack =
+            `${group.label ?? ''} ${opt.label} ${opt.description ?? ''}`.toLowerCase();
+          return terms.every((term) => haystack.includes(term));
+        }),
       }))
       .filter((group) => group.options.length > 0);
+  });
+
+  // Flat list of selectable options (for keyboard navigation indexing)
+  const selectableOptions = $derived.by(() => {
+    if (groups.length > 0) {
+      return filteredGroups.flatMap((g) =>
+        g.options.filter((o) => o.type !== 'separator' && o.type !== 'submenu' && !o.disabled),
+      );
+    }
+    return filteredOptions.filter(
+      (o) => o.type !== 'separator' && o.type !== 'submenu' && !o.disabled,
+    );
+  });
+
+  /** Find the index in selectableOptions that matches value or defaultHighlightValue */
+  function findHighlightIndex(): number {
+    let idx = -1;
+    if (typeof value === 'string') {
+      idx = selectableOptions.findIndex((o) => o.value === value);
+    } else if (Array.isArray(value) && value.length === 1) {
+      const first = value[0];
+      if (first != null) {
+        idx = selectableOptions.findIndex((o) => o.value === first);
+      }
+    }
+    if (idx < 0 && defaultHighlightValue) {
+      idx = selectableOptions.findIndex((o) => o.value === defaultHighlightValue);
+    }
+    return idx >= 0 ? idx : 0;
+  }
+
+  // Set highlight when dropdown opens, search changes, or options update
+  $effect(() => {
+    // Track dependencies
+    const currentSearch = searchValue;
+    selectableOptions; // track options changes
+
+    if (!open) return;
+
+    if (currentSearch) {
+      highlightedIndex = 0;
+      scrollHighlightedIntoView();
+      return;
+    }
+
+    const idx = findHighlightIndex();
+    highlightedIndex = idx;
+
+    if (idx > 0) {
+      scrollHighlightedIntoView();
+    }
   });
 
   // Get display label for current value
@@ -153,15 +211,21 @@
 
   async function handleOpen() {
     if (disabled || open) return;
+
+    // Pre-compute highlight so the first render is correct
+    highlightedIndex = findHighlightIndex();
+
     open = true;
     onopenchange?.(true);
 
-    // Calculate portal position if using portal
     if (portal && triggerRef) {
       updatePortalPosition();
     }
 
     await tick();
+
+    scrollHighlightedIntoView();
+
     if (searchable) {
       inputRef?.focus();
     }
@@ -170,21 +234,26 @@
   function updatePortalPosition() {
     if (!triggerRef || !open || !portal) return;
     const rect = triggerRef.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
     const padding = 8; // Minimum padding from viewport edge
     const spaceBelow = viewportHeight - rect.bottom - padding;
     const spaceAbove = rect.top - padding;
     const estimatedDropdownHeight = 300; // max-h-[300px] + some padding
 
+    // Clamp horizontal position so dropdown doesn't overflow the viewport
+    const dropdownWidth = portalContentRef?.offsetWidth ?? 432;
+    const left = Math.max(padding, Math.min(rect.left, viewportWidth - dropdownWidth - padding));
+
     // If not enough space below, position above the trigger
     if (spaceBelow < estimatedDropdownHeight && spaceAbove > spaceBelow) {
       // Position above - dropdown will grow upward, constrained to available space
       const maxHeight = Math.min(estimatedDropdownHeight, spaceAbove);
-      portalStyle = `position: fixed; bottom: ${viewportHeight - rect.top + 4}px; left: ${rect.left}px; min-width: ${rect.width}px; max-height: ${maxHeight}px;`;
+      portalStyle = `position: fixed; bottom: ${viewportHeight - rect.top + 4}px; left: ${left}px; min-width: ${rect.width}px; max-height: ${maxHeight}px;`;
     } else {
       // Position below (default), constrained to available space
       const maxHeight = Math.min(estimatedDropdownHeight, spaceBelow);
-      portalStyle = `position: fixed; top: ${rect.bottom + 4}px; left: ${rect.left}px; min-width: ${rect.width}px; max-height: ${maxHeight}px;`;
+      portalStyle = `position: fixed; top: ${rect.bottom + 4}px; left: ${left}px; min-width: ${rect.width}px; max-height: ${maxHeight}px;`;
     }
   }
 
@@ -193,6 +262,7 @@
     open = false;
     searchValue = '';
     openSubmenu = null;
+    highlightedIndex = -1;
     onopenchange?.(false);
   }
 
@@ -276,11 +346,50 @@
     }
   }
 
+  // Scroll highlighted option into view
+  function scrollHighlightedIntoView() {
+    tick().then(() => {
+      const container = portalContentRef ?? containerRef;
+      if (!container || highlightedIndex < 0) return;
+      const options = container.querySelectorAll('[role="option"]');
+      const el = options[highlightedIndex] as HTMLElement | undefined;
+      el?.scrollIntoView?.({ block: 'nearest' });
+    });
+  }
+
   // Handle keyboard
   function handleKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      handleClose();
+    if (!open) return;
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        e.stopPropagation();
+        if (selectableOptions.length > 0) {
+          highlightedIndex = Math.min(highlightedIndex + 1, selectableOptions.length - 1);
+          scrollHighlightedIntoView();
+        }
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        e.stopPropagation();
+        if (selectableOptions.length > 0) {
+          highlightedIndex = Math.max(highlightedIndex - 1, 0);
+          scrollHighlightedIntoView();
+        }
+        break;
+      case 'Enter':
+        e.preventDefault();
+        e.stopPropagation();
+        if (highlightedIndex >= 0 && highlightedIndex < selectableOptions.length) {
+          handleSelect(selectableOptions[highlightedIndex]);
+        }
+        break;
+      case 'Escape':
+        e.preventDefault();
+        e.stopPropagation();
+        handleClose();
+        break;
     }
   }
 
@@ -325,6 +434,27 @@
   const hasResults = $derived(
     groups.length > 0 ? filteredGroups.length > 0 : filteredOptions.length > 0,
   );
+
+  // Preserve scroll position when groups/options update while dropdown is open
+  // (e.g., when a provider refreshes its models)
+  $effect(() => {
+    // Subscribe to reactive data that can change while open
+    filteredGroups;
+    filteredOptions;
+
+    if (!open) return;
+
+    const container = portalContentRef ?? containerRef;
+    const scrollEl = container?.querySelector('[data-scroll-container]');
+    if (!scrollEl) return;
+
+    const scrollTop = scrollEl.scrollTop;
+    tick().then(() => {
+      if (open && scrollEl) {
+        scrollEl.scrollTop = scrollTop;
+      }
+    });
+  });
 </script>
 
 <div bind:this={containerRef} class={cn('relative inline-block', className)}>
@@ -370,77 +500,7 @@
       tabindex="-1"
       onkeydown={handleKeyDown}
     >
-      <!-- Header -->
-      {#if header}
-        <div class={cn('border-b border-border', headerClass)}>
-          {@render header()}
-        </div>
-      {/if}
-
-      <!-- Search Input -->
-      {#if searchable}
-        <div class="border-b border-border w-full">
-          <input
-            bind:this={inputRef}
-            type="text"
-            class="w-full bg-transparent px-2.5 py-2 text-sm placeholder:text-muted-foreground/50 outline-none border-none ring-0 focus:ring-0! focus:outline-none!"
-            {placeholder}
-            value={searchValue}
-            oninput={(e) => (searchValue = e.currentTarget.value)}
-            onkeydown={handleKeyDown}
-          />
-        </div>
-      {/if}
-
-      <!-- Options -->
-      <div class="max-h-[300px] overflow-y-auto py-1x">
-        {#if groups.length > 0}
-          <!-- Grouped options -->
-          {#each filteredGroups as group, groupIndex (group.key)}
-            <div>
-              {#if groupHeader}
-                {@render groupHeader({ group })}
-              {:else if group.label}
-                <div
-                  class="px-3 {groupIndex === 0
-                    ? ''
-                    : 'pt-3 border-t border-border'} py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider"
-                >
-                  {#if group.icon}
-                    <Fa icon={group.icon} class="inline-block mr-1.5 h-3 w-3" />
-                  {/if}
-                  {group.label}
-                </div>
-              {/if}
-
-              {#each group.options as option (option.value)}
-                {@render optionItem(option)}
-              {/each}
-            </div>
-          {/each}
-        {:else}
-          <!-- Flat options -->
-          {#each filteredOptions as option (option.value)}
-            {@render optionItem(option)}
-          {/each}
-        {/if}
-
-        <!-- Empty state -->
-        {#if !hasResults}
-          {#if empty}
-            {@render empty()}
-          {:else}
-            <div class="px-2 py-4 text-center text-sm text-subtle">No results found</div>
-          {/if}
-        {/if}
-      </div>
-
-      <!-- Footer -->
-      {#if footer}
-        <div class="border-t border-border px-2 py-2.5">
-          {@render footer()}
-        </div>
-      {/if}
+      {@render dropdownContent(false)}
     </div>
   {/if}
 </div>
@@ -461,82 +521,112 @@
       tabindex="-1"
       onkeydown={handleKeyDown}
     >
-      <!-- Header -->
-      {#if header}
-        <div class={cn('border-b border-border shrink-0', headerClass)}>
-          {@render header()}
-        </div>
-      {/if}
-
-      <!-- Search Input -->
-      {#if searchable}
-        <div class="border-b border-border w-full shrink-0">
-          <input
-            bind:this={inputRef}
-            type="text"
-            class="w-full bg-transparent px-2.5 py-2 text-sm placeholder:text-muted-foreground/50 outline-none border-none ring-0 focus:ring-0! focus:outline-none!"
-            {placeholder}
-            value={searchValue}
-            oninput={(e) => (searchValue = e.currentTarget.value)}
-            onkeydown={handleKeyDown}
-          />
-        </div>
-      {/if}
-
-      <!-- Options -->
-      <div class="flex-1 min-h-0 overflow-y-auto py-1x">
-        {#if groups.length > 0}
-          <!-- Grouped options -->
-          {#each filteredGroups as group, groupIndex (group.key)}
-            <div>
-              {#if groupHeader}
-                {@render groupHeader({ group })}
-              {:else if group.label}
-                <div
-                  class="px-3 {groupIndex === 0
-                    ? ''
-                    : 'pt-3 border-t border-border'} py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider"
-                >
-                  {#if group.icon}
-                    <Fa icon={group.icon} class="inline-block mr-1.5 h-3 w-3" />
-                  {/if}
-                  {group.label}
-                </div>
-              {/if}
-
-              {#each group.options as option (option.value)}
-                {@render optionItem(option)}
-              {/each}
-            </div>
-          {/each}
-        {:else}
-          <!-- Flat options -->
-          {#each filteredOptions as option (option.value)}
-            {@render optionItem(option)}
-          {/each}
-        {/if}
-
-        <!-- Empty state -->
-        {#if !hasResults}
-          {#if empty}
-            {@render empty()}
-          {:else}
-            <div class="px-2 py-4 text-center text-sm text-subtle">No results found</div>
-          {/if}
-        {/if}
-      </div>
-
-      <!-- Footer -->
-      {#if footer}
-        <div class="border-t border-border shrink-0">
-          {@render footer()}
-        </div>
-      {/if}
+      {@render dropdownContent(true)}
     </div>
   </Portal>
 {/if}
 
+{#snippet dropdownContent(isPortal: boolean)}
+  <!-- Header -->
+  {#if header}
+    <div class={cn('border-b border-border', isPortal && 'shrink-0', headerClass)}>
+      {@render header()}
+    </div>
+  {/if}
+
+  <!-- Search Input -->
+  {#if searchable}
+    <div class={cn('w-full', isPortal && 'shrink-0')}>
+      <input
+        bind:this={inputRef}
+        type="text"
+        class="w-full bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground/50 outline-none border-none ring-0 focus:ring-0! focus:outline-none!"
+        {placeholder}
+        role="searchbox"
+        aria-label="Search options"
+        aria-activedescendant={highlightedIndex >= 0
+          ? `dropdown-option-${highlightedIndex}`
+          : undefined}
+        value={searchValue}
+        oninput={(e) => (searchValue = e.currentTarget.value)}
+        onkeydown={handleKeyDown}
+      />
+    </div>
+    <!-- Screen reader announcement for filtered results -->
+    {#if searchValue}
+      <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {selectableOptions.length}
+        {selectableOptions.length === 1 ? 'result' : 'results'} found
+      </div>
+    {/if}
+  {/if}
+
+  <!-- Options -->
+  <div
+    data-scroll-container
+    class={cn(isPortal ? 'flex-1 min-h-0' : 'max-h-[300px]', 'overflow-y-auto pb-1')}
+  >
+    {#if groups.length > 0}
+      <!-- Grouped options -->
+      {#each filteredGroups as group, groupIndex (group.key)}
+        <div>
+          {#if groupHeader}
+            {@render groupHeader({ group, groupIndex })}
+          {:else if group.label}
+            <div
+              class="px-3 {groupIndex === 0
+                ? ''
+                : 'pt-3 border-t border-border'} py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider sticky top-0 z-10 bg-popover"
+            >
+              {#if group.icon}
+                <Fa icon={group.icon} class="inline-block mr-1.5 h-3 w-3" />
+              {/if}
+              {group.label}
+            </div>
+          {/if}
+
+          {#each group.options as option (option.value)}
+            {@render optionItem(option)}
+          {/each}
+        </div>
+      {/each}
+    {:else}
+      <!-- Flat options -->
+      {#each filteredOptions as option (option.value)}
+        {@render optionItem(option)}
+      {/each}
+    {/if}
+
+    <!-- Empty state -->
+    {#if !hasResults}
+      {#if searchValue && allOptions.length > 0}
+        <!-- Search yielded no results but there are options available -->
+        <div class="flex flex-col items-center gap-1 py-6 px-3 text-muted-foreground">
+          <span class="text-sm">No results for &ldquo;{searchValue}&rdquo;</span>
+          <span class="text-xs text-subtle">Try a different search term</span>
+        </div>
+      {:else if empty}
+        {@render empty()}
+      {:else}
+        <div class="px-2 py-4 text-center text-sm text-subtle">No results found</div>
+      {/if}
+    {/if}
+  </div>
+
+  <!-- Footer -->
+  {#if footer}
+    <div class={cn('border-t border-border', isPortal ? 'shrink-0' : 'px-2 py-2.5')}>
+      {@render footer()}
+    </div>
+  {/if}
+{/snippet}
+
 {#snippet optionItem(option: DropdownOption)}
+  {@const optionIndex = selectableOptions.findIndex((o) => o.value === option.value)}
+  {@const isHighlighted =
+    highlightedIndex >= 0 &&
+    highlightedIndex < selectableOptions.length &&
+    selectableOptions[highlightedIndex]?.value === option.value}
   <!-- Separator type -->
   {#if option.type === 'separator'}
     <div class="my-1 h-px bg-border"></div>
@@ -550,13 +640,20 @@
     >
       <button
         type="button"
+        id={optionIndex >= 0 ? `dropdown-option-${optionIndex}` : undefined}
         onclick={(e) => handleSelect(option, e)}
+        onmouseenter={() => {
+          if (optionIndex >= 0) highlightedIndex = optionIndex;
+        }}
         disabled={option.disabled}
+        data-highlighted={isHighlighted ? 'true' : undefined}
+        style="scroll-margin-top: 32px"
         class={cn(
-          'relative flex items-center gap-1.5 px-3 py-2 text-sm w-full text-left',
-          'cursor-pointer select-none transition-colors',
-          'hover:bg-muted/40 focus:bg-muted/40 focus:outline-none',
+          'relative flex items-center gap-1.5 px-3 py-2 text-sm w-full text-left min-w-0 overflow-hidden',
+          'cursor-pointer select-none transition-colors duration-100',
+          'focus:bg-muted/40 focus:outline-none',
           'disabled:pointer-events-none disabled:opacity-50',
+          isHighlighted && 'bg-muted/40',
           option.class,
         )}
         role={option.type === 'submenu' ? 'menuitem' : 'option'}
@@ -565,7 +662,7 @@
         aria-expanded={option.type === 'submenu' ? openSubmenu === option.value : undefined}
       >
         {#if item}
-          {@render item({ option, selected: isSelected(option.value), highlighted: false })}
+          {@render item({ option, selected: isSelected(option.value), highlighted: isHighlighted })}
         {:else}
           <!-- Toggle checkbox -->
           {#if option.type === 'toggle'}
