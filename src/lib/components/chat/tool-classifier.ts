@@ -477,14 +477,17 @@ export function classifyTool(
   // Extract metadata from result for enhanced display
   const resultMetadata = extractResultMetadata(result);
 
-  // workspace_api: prefer _acpTitle over summary to avoid duplicate display text
+  // workspace_api: prefer human-readable label over raw tool names
   const cleanedForSummary = cleanToolName(toolName);
   if (cleanedForSummary.toLowerCase() === 'workspace_api') {
     const acpTitle =
       typeof input._acpTitle === 'string' ? input._acpTitle.trim() : '';
     const summary =
       typeof input.summary === 'string' ? input.summary.trim() : '';
-    const label = acpTitle || summary;
+    // Skip _acpTitle if it resolves to a raw tool name after cleaning
+    // (catches all variants: mcp__*__workspace_api, //local/mcp/workspace_api, etc.)
+    const isRawName = !acpTitle || cleanToolName(acpTitle).toLowerCase() === 'workspace_api';
+    const label = isRawName ? summary || acpTitle : acpTitle || summary;
     if (label) {
       return {
         category: 'workspace',

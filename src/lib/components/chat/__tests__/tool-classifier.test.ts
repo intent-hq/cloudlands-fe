@@ -608,4 +608,71 @@ describe('tool-classifier', () => {
       expect(result.isDirectory).toBe(true);
     });
   });
+
+  describe('workspace_api tool display', () => {
+    it('should prefer summary over raw mcp__ tool name in _acpTitle', () => {
+      const result = classifyTool('mcp__workspace-mcp__workspace_api', {
+        code: 'return await ws.note.listTasks("spec")',
+        summary: 'List task notes from spec',
+        _acpTitle: 'mcp__workspace-mcp__workspace_api',
+      });
+
+      expect(result.category).toBe('workspace');
+      expect(result.verb).toBe('List task notes from spec');
+    });
+
+    it('should prefer summary when _acpTitle equals workspace_api', () => {
+      const result = classifyTool('workspace_api', {
+        code: 'return await ws.note.read("spec")',
+        summary: 'Reading spec note',
+        _acpTitle: 'workspace_api',
+      });
+
+      expect(result.category).toBe('workspace');
+      expect(result.verb).toBe('Reading spec note');
+    });
+
+    it('should use human-readable _acpTitle when it is not a raw tool name', () => {
+      const result = classifyTool('mcp__workspace-mcp__workspace_api', {
+        code: 'return await ws.note.read("spec")',
+        summary: 'Reading spec note',
+        _acpTitle: 'Read spec note',
+      });
+
+      expect(result.category).toBe('workspace');
+      expect(result.verb).toBe('Read spec note');
+    });
+
+    it('should fall back to summary when _acpTitle is empty', () => {
+      const result = classifyTool('mcp__workspace-mcp__workspace_api', {
+        code: 'return await ws.note.read("spec")',
+        summary: 'Reading spec note',
+      });
+
+      expect(result.category).toBe('workspace');
+      expect(result.verb).toBe('Reading spec note');
+    });
+
+    it('should prefer summary when _acpTitle is workspace-mcp_workspace_api', () => {
+      const result = classifyTool('workspace_api', {
+        code: 'return await ws.note.read("spec")',
+        summary: 'Reading spec note',
+        _acpTitle: 'workspace-mcp_workspace_api',
+      });
+
+      expect(result.category).toBe('workspace');
+      expect(result.verb).toBe('Reading spec note');
+    });
+
+    it('should prefer summary when _acpTitle is URL format //local/mcp/workspace_api', () => {
+      const result = classifyTool('workspace_api', {
+        code: 'return await ws.note.read("spec")',
+        summary: 'Reading spec note',
+        _acpTitle: '//local/mcp/workspace_api',
+      });
+
+      expect(result.category).toBe('workspace');
+      expect(result.verb).toBe('Reading spec note');
+    });
+  });
 });
