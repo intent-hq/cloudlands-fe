@@ -898,7 +898,7 @@
             }}
           >
             <!-- Context pills from metadata (e.g., PR references, Linear issues) -->
-            {#each parsedMessage.pills as pill (`${pill.type}-${pill.label}`)}
+            {#each parsedMessage.pills as pill, i (`${pill.type}-${pill.label}-${i}`)}
               {@const isClickable = !!(
                 pill.path ||
                 pill.noteId ||
