@@ -713,25 +713,22 @@ describe('Streaming Integration Tests', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 15. isProcessing preserved when session-updated fires before setStreaming
+  // 15. SessionStore is the source of truth for streaming state
   // ═══════════════════════════════════════════════════════════════════════
-  describe('Scenario 15: isProcessing preserved when session-updated fires before setStreaming', () => {
-    it('should not reset isProcessing to false when sessionStore has isStreaming=false due to race', () => {
-      // BUG SCENARIO: sendMessage() sets isProcessing=true and isStreaming=true on the
-      // ChatService instance state. However, sessionStore.setStreaming(true) hasn't been
-      // called yet. Meanwhile, an agent:session-updated event fires (e.g., because the
-      // user message was added to sessionStore). The sessionStore session has isStreaming=false
-      // (stale). Without the fix, sessionUpdatedHandler would set isProcessing=newIsStreaming
-      // which is false, losing the processing indicator. The fix uses:
-      //   isProcessing: newIsStreaming || s.isProcessing
-      // so isProcessing stays true.
+  describe('Scenario 15: sessionStore is source of truth for streaming state', () => {
+    it('should faithfully reflect sessionStore streaming state (no OR-latch)', () => {
+      // The sessionStore is the source of truth for streaming state. The
+      // sessionUpdatedHandler should faithfully reflect what the sessionStore says,
+      // NOT use an OR-latch that keeps isStreaming/isProcessing stuck at true.
+      //
+      // This test verifies that when sessionStore says isStreaming=false, the
+      // ChatService state also becomes isStreaming=false.
 
       const sessionId = 'session-15';
       setupSession(sessionId);
 
       // Register the sessionUpdatedHandler by calling setupStreaming.
-      // Mock sessionStore to return a non-streaming session initially so setupStreaming
-      // doesn't dispatch a synthetic start event.
+      // Mock sessionStore to return a non-streaming session initially.
       vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue({
         id: sessionId,
         isStreaming: false,
@@ -739,8 +736,7 @@ describe('Streaming Integration Tests', () => {
       } as any);
       (chatService as any).setupStreaming(sessionId);
 
-      // Step 1: Simulate sendMessage() having just been called.
-      // sendMessage sets isProcessing=true and starts streaming (which sets isStreaming=true).
+      // Step 1: Simulate ChatService being in streaming state
       chatService.getStore().update((s) => ({
         ...s,
         isProcessing: true,
@@ -752,16 +748,14 @@ describe('Streaming Integration Tests', () => {
       expect(stateBefore.isProcessing).toBe(true);
       expect(stateBefore.isStreaming).toBe(true);
 
-      // Step 2: Mock sessionStore to return a session where isStreaming is still false
-      // (setStreaming hasn't been called yet) but a new user message has been added.
-      // The sessionUpdatedHandler uses workspace-aware lookup (getSessionForWorkspace)
-      // when the session has a workspaceId, so we mock both.
+      // Step 2: Mock sessionStore to return a session where isStreaming is false
+      // (streaming has ended according to the backend/sessionStore)
       const userMessage = {
         id: 'user-msg-1',
         role: 'user',
         contentBlocks: [{ type: 'text', text: 'Hello, agent!' }],
       };
-      const staleSession = {
+      const sessionWithStreamingFalse = {
         id: sessionId,
         backendSessionId: sessionId,
         workspaceId: 'test-workspace',
@@ -772,19 +766,20 @@ describe('Streaming Integration Tests', () => {
         systemPrompt: '',
         createdAt: new Date(),
         updatedAt: new Date(),
-        isStreaming: false, // <-- stale: setStreaming(true) hasn't been called yet
+        isStreaming: false, // sessionStore says streaming is done
       } as any;
-      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(staleSession);
+      vi.mocked(sessionStore.getSessionForWorkspace).mockReturnValue(sessionWithStreamingFalse);
 
       // Step 3: Dispatch session-updated event (triggers sessionUpdatedHandler)
       window.dispatchEvent(new CustomEvent(`agent:session-updated:${sessionId}`));
 
-      // Step 4: Assert isProcessing and isStreaming are preserved (not reset to false)
+      // Step 4: Assert ChatService faithfully reflects the sessionStore state.
+      // NO OR-latch: isStreaming should be false because sessionStore says so.
       const stateAfter = get(chatService.getStore());
-      expect(stateAfter.isProcessing).toBe(true);
-      expect(stateAfter.isStreaming).toBe(true);
+      expect(stateAfter.isProcessing).toBe(false);
+      expect(stateAfter.isStreaming).toBe(false);
 
-      // Step 5: Assert messages were updated (user message arrived)
+      // Step 5: Assert messages were updated
       expect(stateAfter.messages.length).toBe(1);
       expect(stateAfter.messages[0].id).toBe('user-msg-1');
     });

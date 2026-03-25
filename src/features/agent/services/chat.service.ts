@@ -2637,10 +2637,10 @@ export class ChatService implements IDisposable {
           return {
             ...s,
             messages: deduplicatedMessages,
-            // Sync streaming state from session - critical for queued messages
-            // Use || s.isStreaming to preserve true state during race condition
-            isStreaming: newIsStreaming || s.isStreaming,
-            isProcessing: newIsStreaming || s.isProcessing,
+            // Sync streaming state from session - faithfully reflect session state
+            // The session is the source of truth for streaming status
+            isStreaming: newIsStreaming,
+            isProcessing: newIsStreaming,
             // Also sync streamingContent if we updated it
             streamingContent: newStreamingContent,
           };

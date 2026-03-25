@@ -2077,6 +2077,17 @@ class RefactoredAgentService extends EventEmitter {
             message: backendMessage,
           });
 
+          // Fallback: if no DOM handler was registered to receive the 'end' event,
+          // clear streaming state directly in sessionStore to prevent stale isStreaming=true
+          if (!this.hasActiveStreamListener(handlerSessionId)) {
+            const wsIdForFallback = resolvedWorkspaceId || requireWorkspaceId('streamEnd:fallbackClear');
+            sessionStore.setStreamingForWorkspace(wsIdForFallback, agentId, false);
+            logger.info('Cleared streaming state via fallback (no DOM handler)', {
+              agentId,
+              workspaceId: wsIdForFallback,
+            });
+          }
+
           // Also dispatch session-updated event as a fallback
           // This ensures ChatService's sessionUpdatedHandler syncs isProcessing
           window.dispatchEvent(new CustomEvent(`agent:session-updated:${handlerSessionId}`));
@@ -4015,6 +4026,8 @@ class RefactoredAgentService extends EventEmitter {
                       };
 
                       sessionStore.addMessageForWorkspace(workspace.id, session.id, userMessage);
+                      // Set streaming flag BEFORE dispatching session-updated event so handlers see isStreaming=true
+                      sessionStore.setStreamingForWorkspace(workspace.id, session.id, true);
                       window.dispatchEvent(new CustomEvent(`agent:session-updated:${session.id}`));
 
                       // Save the session immediately after adding the user message
