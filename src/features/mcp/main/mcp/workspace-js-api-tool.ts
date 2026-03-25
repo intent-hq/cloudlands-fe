@@ -36,7 +36,7 @@ const TOOL_DESCRIPTION = [
   '',
   'Parameters:',
   '  code (required): JavaScript code to execute.',
-  '  summary (optional): Short description of what this call does, shown in the UI.',
+  '  summary (required): Short description of what this call does, shown in the UI.',
   '',
   'API:',
   '  ws.workspace.info() → { id, path }  // Current workspace ID + absolute path.',
@@ -198,7 +198,7 @@ export class WorkspaceJsApiTool extends BaseMCPTool {
             'Short human-readable summary of what this call does, shown in the UI (e.g., "Reading spec and listing tasks")',
           ),
         },
-        ['code'],
+        ['code', 'summary'],
       ),
     );
   }
