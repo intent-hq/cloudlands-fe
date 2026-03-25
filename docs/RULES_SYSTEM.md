@@ -4,7 +4,7 @@ The rules system is assembled in the backend by `InstructionService` and sourced
 
 ## System Prompt Layers
 
-In the default shared-prefix mode, `buildSystemPrompt()` assembles **9 layers** in this order:
+`buildSystemPrompt()` assembles **9 layers** in this order:
 
 | Order | Layer | Source | Notes |
 |------|-------|--------|-------|
@@ -17,11 +17,6 @@ In the default shared-prefix mode, `buildSystemPrompt()` assembles **9 layers** 
 | 7 | Workspace context | `workspaceContext` parameter | Open panels + linked references; skipped for sub-agents |
 | 8 | Runtime context | `contextReferences` parameter | Per-launch dynamic context |
 | 9 | Mandatory footer | `getMandatoryActionsFooter()` | Keeps role reminder at the end for recency |
-
-### Shared-prefix vs. legacy ordering
-
-- **Default (`sharedPromptPrefix=true`)**: base → specialization → user rules → skills → behavior → parent-only layers → workspace context → runtime → footer
-- **Legacy (`sharedPromptPrefix=false`)**: behavior → base → specialization → parent-only layers → user rules → skills → workspace context → runtime → footer
 
 Sub-agents skip the parent-only orchestration layers and workspace-context layer to keep delegated prompts lighter.
 
@@ -42,7 +37,6 @@ Sub-agents skip the parent-only orchestration layers and workspace-context layer
 
 ### Internal controls that also affect the final prompt
 
-- `sharedPromptPrefix` - app setting read through `isSharedPromptPrefixEnabled()` to choose ordering mode
 - `prefetchedSkillsCatalog` - internal prefetch/cache optimization used when hashing prompt cache keys
 
 ## Specialization Resolution
@@ -66,7 +60,7 @@ Sub-agents skip the parent-only orchestration layers and workspace-context layer
 
 | File | Purpose |
 |------|---------|
-| `src/features/agent/main/instruction-service.ts` | Builds complete prompts, manages caches, applies ordering logic |
+| `src/features/agent/main/instruction-service.ts` | Builds complete prompts, manages caches, and assembles prompt layers |
 | `src/features/agent/instructions/index.ts` | Source of truth for instruction IDs, aliases, and helper exports |
 | `src/features/agent/instructions/common.ts` | Shared instruction layer prepended to most agents |
 | `src/features/agent/instructions/workspace.ts` | Shared workspace-operating guidance |
@@ -178,4 +172,4 @@ Rule files in `.augment/rules/` may declare YAML frontmatter with `type: always_
 | Full system prompt cache | 30 seconds, max 20 entries | Reuses fully assembled prompts for repeated launches |
 | File watchers | invalidates on change | Clears workspace-derived specialization entries when watched files change |
 
-Prompt caching is disabled when runtime context or workspace context is present, and the cache key also incorporates ordering mode, behavior prompt, role reminder, workspace-title status, sub-agent state, and the hashed skills catalog content.
+Prompt caching is disabled when runtime context or workspace context is present, and the cache key also incorporates behavior prompt, role reminder, workspace-title status, sub-agent state, and the hashed skills catalog content.

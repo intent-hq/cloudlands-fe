@@ -12,7 +12,7 @@
  * - Caching with TTL and LRU eviction
  * - File watching for auto-invalidation
  *
- * System prompt layers (default order when sharedPromptPrefix=true):
+ * System prompt layers:
  * 1. Base system prompt (identity and tools)
  * 2. Specialization rules (common → workspace → agent-specific instructions)
  * 3. User rules (CLAUDE.md, AGENTS.md, .augment/guidelines.md, .augment/rules/)
@@ -23,8 +23,7 @@
  * 8. Runtime context (contextReferences)
  * 9. Mandatory actions footer (includes specialist role reminder for recency)
  *
- * Legacy mode (`sharedPromptPrefix=false`) moves the behavior instructions back to
- * the front of the prompt. In both modes, the role reminder remains at the end.
+ * The role reminder remains at the end for recency reinforcement.
  * Modes (ask, plan, agent) are only used for tool filtering.
  *
  * 3-tier fallback for specialization rules:
@@ -50,10 +49,7 @@ import {
   formatGlobalKnobsForPrompt,
   initAgentTeamsService,
 } from './agent-teams.service';
-import {
-  getBranchPrefix,
-  isSharedPromptPrefixEnabled,
-} from '../../workspace/main/app-settings.service';
+import { getBranchPrefix } from '../../workspace/main/app-settings.service';
 import { getRepoBranchPrefix } from '../../workspace/main/repo-config.service';
 
 const logger = new Logger('InstructionService');
@@ -241,11 +237,10 @@ export class InstructionService {
   /**
    * Build complete system prompt with all layers
    *
-   * Combines layers using either:
-   * - Shared-prefix mode (default): base → specialization → user rules → skills → behavior → parent-only layers → workspace context → runtime → footer
-   * - Legacy mode (`sharedPromptPrefix=false`): behavior → base → specialization → parent-only layers → user rules → skills → workspace context → runtime → footer
+   * Combines layers in this order:
+   * base → specialization → user rules → skills → behavior → parent-only layers → workspace context → runtime → footer
    *
-   * In both modes, the mandatory footer keeps the role reminder at the end for recency reinforcement.
+   * The mandatory footer keeps the role reminder at the end for recency reinforcement.
    *
    * @param config - Configuration for building the system prompt
    * @returns The complete system prompt
@@ -271,7 +266,6 @@ export class InstructionService {
     isSubAgent?: boolean; // True if this is a delegated/background sub-agent (gets lighter prompt)
     autoCommitEnabled?: boolean; // Whether auto-commit is enabled for this workspace
   }): Promise<string> {
-    const useSharedPrefix = isSharedPromptPrefixEnabled();
     const hasBehaviorPrompt = !!config.behaviorPrompt && config.behaviorPrompt.trim().length > 0;
 
     // Build cache key for prompts WITHOUT context references (context references are unique per agent)
@@ -323,10 +317,8 @@ export class InstructionService {
       isCacheable && (config.specialistName || config.roleReminder)
         ? `:role:${this.hashString(`${config.specialistName ?? ''}\n${config.roleReminder ?? ''}`)}`
         : '';
-    const promptOrderingSuffix = isCacheable ? `:ordering:${useSharedPrefix ? 'shared' : 'legacy'}` : '';
-
     const cacheKey = isCacheable
-      ? `prompt:${config.agentType || 'default'}:${config.workspacePath || 'default'}${initialAgentSuffix}${subAgentSuffix}:${titleStatus}${skillsCatalogSuffix}${behaviorPromptSuffix}${roleReminderSuffix}${promptOrderingSuffix}`
+      ? `prompt:${config.agentType || 'default'}:${config.workspacePath || 'default'}${initialAgentSuffix}${subAgentSuffix}:${titleStatus}${skillsCatalogSuffix}${behaviorPromptSuffix}${roleReminderSuffix}`
       : null;
 
     // Check cache for frequently-used prompts (e.g., bulk task delegation)
@@ -348,7 +340,6 @@ export class InstructionService {
       hasContextReferences: !!config.contextReferences,
       contextReferencesCount: config.contextReferences?.length || 0,
       isCacheable,
-      useSharedPrefix,
       hasBehaviorPrompt,
     });
 
@@ -573,10 +564,6 @@ The instructions in <specialist_role> define your primary function. Prioritize t
       }
     };
 
-    if (!useSharedPrefix) {
-      addBehaviorSection('Layer 1', 'legacy primacy position');
-    }
-
     // Layer 2: Base system prompt (identity and tools)
     const basePrompt = this.getBaseSystemPrompt();
     parts.push({
@@ -609,16 +596,10 @@ The instructions in <specialist_role> define your primary function. Prioritize t
       logger.warn('No agentType provided, skipping specialization rules');
     }
 
-    if (useSharedPrefix) {
-      await addUserRulesLayer();
-      await addSkillsLayer();
-      addBehaviorSection('Layer 4.8', 'shared-prefix boundary');
-      await addParentOnlyLayers();
-    } else {
-      await addParentOnlyLayers();
-      await addUserRulesLayer();
-      await addSkillsLayer();
-    }
+    await addUserRulesLayer();
+    await addSkillsLayer();
+    addBehaviorSection('Layer 4.8', 'shared-prefix boundary');
+    await addParentOnlyLayers();
 
     // Layer 4.4: Auto-commit setting
     // Tells agents whether auto-commit is enabled so they don't suggest manual commits

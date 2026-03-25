@@ -22,7 +22,6 @@ declare global {
         toggleReduxLogs?: () => void;
         toggleStateReferenceChecks?: () => void;
         toggleStructuredCloneChecks?: () => void;
-        toggleSharedPromptPrefix?: () => Promise<boolean>;
       };
       exposeStore?: (() => void) | undefined;
     };

@@ -53,7 +53,6 @@ vi.mock('../../../workspace/main/app-settings.service', () => ({
   getBranchPrefix: vi.fn(() => ''),
   getWorktreesLocation: vi.fn(() => ''),
   getSshKeyPath: vi.fn(() => ''),
-  isSharedPromptPrefixEnabled: vi.fn(() => true),
 }));
 
 
@@ -76,7 +75,6 @@ describe('InstructionService', () => {
 
   beforeEach(async () => {
     vi.mocked(appSettingsService.getBranchPrefix).mockReturnValue('feature/');
-    vi.mocked(appSettingsService.isSharedPromptPrefixEnabled).mockReturnValue(true);
 
     // Create temporary directory for testing
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'instruction-service-test-'));
@@ -383,47 +381,14 @@ describe('InstructionService', () => {
       expect(workspaceIndex).toBeGreaterThan(behaviorIndex);
     });
 
-    it('should keep legacy behavior-first ordering when shared prefix is disabled', async () => {
-      vi.mocked(appSettingsService.isSharedPromptPrefixEnabled).mockReturnValue(false);
-
-      await fs.writeFile(path.join(workspacePath, 'AGENTS.md'), '# Project Rules\n\nAlways test changes.');
-
-      const skillDir = path.join(workspacePath, '.agents', 'skills', 'legacy-skill');
-      await fs.mkdir(skillDir, { recursive: true });
-      await fs.writeFile(
-        path.join(skillDir, 'SKILL.md'),
-        `---\nname: legacy-skill\ndescription: Verifies legacy ordering.\n---\n# Legacy Skill\nUse this skill for ordering tests.\n`,
-      );
-
-      const behaviorMarker = '## Specialist Behavior\n\nLegacy ordering.';
-
-      const prompt = await service.buildSystemPrompt({
-        agentType: 'task-loop',
-        workspacePath,
-        behaviorPrompt: behaviorMarker,
-        specialistName: 'Implementor',
-        roleReminder: 'Stay within task scope.',
-      });
-
-      const behaviorIndex = prompt.indexOf(behaviorMarker);
-      const baseIndex = prompt.indexOf('Augment Agent');
-      const userRulesIndex = prompt.indexOf('## User Rules & Guidelines');
-      const skillsIndex = prompt.indexOf('<available_skills>');
-
-      expect(behaviorIndex).toBeGreaterThanOrEqual(0);
-      expect(baseIndex).toBeGreaterThan(behaviorIndex);
-      expect(userRulesIndex).toBeGreaterThan(baseIndex);
-      expect(skillsIndex).toBeGreaterThan(userRulesIndex);
-    });
-
     it('should share an identical parent/sub-agent prefix up to the behavior boundary', async () => {
       await fs.writeFile(path.join(workspacePath, 'AGENTS.md'), '# Project Rules\n\nAlways test changes.');
 
-      const skillDir = path.join(workspacePath, '.agents', 'skills', 'shared-prefix-skill');
+      const skillDir = path.join(workspacePath, '.agents', 'skills', 'prefix-test-skill');
       await fs.mkdir(skillDir, { recursive: true });
       await fs.writeFile(
         path.join(skillDir, 'SKILL.md'),
-        `---\nname: shared-prefix-skill\ndescription: Verifies shared prompt prefixes.\n---\n# Shared Prefix Skill\nUse this skill for prefix tests.\n`,
+        `---\nname: prefix-test-skill\ndescription: Verifies prompt prefix consistency.\n---\n# Prefix Test Skill\nUse this skill for prefix consistency tests.\n`,
       );
 
       const parentPrompt = await service.buildSystemPrompt({
@@ -457,7 +422,7 @@ describe('InstructionService', () => {
       expect(parentPrefix).toContain('<available_skills>');
     });
 
-    describe('shared prompt prefix integration', () => {
+    describe('prompt prefix consistency', () => {
       const getCommonPrefix = (left: string, right: string): string => {
         let index = 0;
 
@@ -468,14 +433,14 @@ describe('InstructionService', () => {
         return left.slice(0, index);
       };
 
-      it('should keep the entire shared prefix identical until the behavior prompts begin', async () => {
+      it('should keep the full parent/sub-agent prefix identical until the behavior prompts begin', async () => {
         await fs.writeFile(path.join(workspacePath, 'AGENTS.md'), '# Project Rules\n\nAlways test changes.');
 
         const skillDir = path.join(workspacePath, '.agents', 'skills', 'integration-prefix-skill');
         await fs.mkdir(skillDir, { recursive: true });
         await fs.writeFile(
           path.join(skillDir, 'SKILL.md'),
-          `---\nname: integration-prefix-skill\ndescription: Verifies shared prompt prefix integration.\n---\n# Integration Prefix Skill\nUse this skill for prompt prefix integration tests.\n`,
+          `---\nname: integration-prefix-skill\ndescription: Verifies prompt prefix consistency.\n---\n# Integration Prefix Skill\nUse this skill for prompt prefix consistency tests.\n`,
         );
 
         const agentType = 'task-loop';
@@ -522,59 +487,6 @@ describe('InstructionService', () => {
         expect(commonPrefix).toContain('<available_skills>');
       });
 
-      it('should lose the base and specialization shared prefix when legacy ordering is enabled', async () => {
-        vi.mocked(appSettingsService.isSharedPromptPrefixEnabled).mockReturnValue(false);
-
-        await fs.writeFile(path.join(workspacePath, 'AGENTS.md'), '# Project Rules\n\nAlways test changes.');
-
-        const skillDir = path.join(workspacePath, '.agents', 'skills', 'legacy-prefix-skill');
-        await fs.mkdir(skillDir, { recursive: true });
-        await fs.writeFile(
-          path.join(skillDir, 'SKILL.md'),
-          `---\nname: legacy-prefix-skill\ndescription: Verifies legacy prompt prefix behavior.\n---\n# Legacy Prefix Skill\nUse this skill for legacy prefix tests.\n`,
-        );
-
-        const agentType = 'task-loop';
-        const specializationRules = await service.getSpecializationRules(agentType, workspacePath);
-        const specializationMarker = specializationRules
-          .split('\n')
-          .find((line) => line.trim().length > 0);
-        const parentBehaviorPrompt = 'PARENT_ONLY_BEHAVIOR\nCoordinate parent execution.';
-        const subAgentBehaviorPrompt = 'SUBAGENT_ONLY_BEHAVIOR\nExecute the delegated task.';
-
-        expect(specializationMarker).toBeTruthy();
-
-        const parentPrompt = await service.buildSystemPrompt({
-          agentType,
-          workspacePath,
-          behaviorPrompt: parentBehaviorPrompt,
-          specialistName: 'Implementor',
-          roleReminder: 'Stay within task scope.',
-        });
-
-        const subAgentPrompt = await service.buildSystemPrompt({
-          agentType,
-          workspacePath,
-          behaviorPrompt: subAgentBehaviorPrompt,
-          specialistName: 'Implementor',
-          roleReminder: 'Stay within task scope.',
-          isSubAgent: true,
-        });
-
-        const commonPrefix = getCommonPrefix(parentPrompt, subAgentPrompt);
-        const parentBehaviorIndex = parentPrompt.indexOf(parentBehaviorPrompt);
-        const subAgentBehaviorIndex = subAgentPrompt.indexOf(subAgentBehaviorPrompt);
-        const parentBaseIndex = parentPrompt.indexOf('Augment Agent');
-        const subAgentBaseIndex = subAgentPrompt.indexOf('Augment Agent');
-
-        expect(parentBehaviorIndex).toBeGreaterThanOrEqual(0);
-        expect(subAgentBehaviorIndex).toBeGreaterThanOrEqual(0);
-        expect(parentBehaviorIndex).toBeLessThan(parentBaseIndex);
-        expect(subAgentBehaviorIndex).toBeLessThan(subAgentBaseIndex);
-        expect(commonPrefix.length).toBeLessThan(parentBaseIndex);
-        expect(commonPrefix).not.toContain('Augment Agent');
-        expect(commonPrefix).not.toContain(specializationMarker!);
-      });
     });
 
     it('should include the skills catalog for sub-agents', async () => {
@@ -685,7 +597,7 @@ describe('InstructionService', () => {
       expect(Math.max(...hitCounts)).toBeGreaterThan(0);
     });
 
-    it('should keep cache entries distinct across ordering modes without behavior prompts', async () => {
+    it('should reuse a single cache entry for repeated cacheable prompts without behavior prompts', async () => {
       await fs.writeFile(path.join(workspacePath, 'AGENTS.md'), '# Project Rules\n\nAlways test changes.');
 
       const skillDir = path.join(workspacePath, '.agents', 'skills', 'cache-ordering-skill');
@@ -695,14 +607,12 @@ describe('InstructionService', () => {
         `---\nname: cache-ordering-skill\ndescription: Verifies ordering cache keys.\n---\n# Cache Ordering Skill\nUse this skill for cache ordering tests.\n`,
       );
 
-      const sharedPrompt = await service.buildSystemPrompt({
+      const firstPrompt = await service.buildSystemPrompt({
         agentType: 'task-loop',
         workspacePath,
       });
 
-      vi.mocked(appSettingsService.isSharedPromptPrefixEnabled).mockReturnValue(false);
-
-      const legacyPrompt = await service.buildSystemPrompt({
+      const secondPrompt = await service.buildSystemPrompt({
         agentType: 'task-loop',
         workspacePath,
       });
@@ -711,12 +621,14 @@ describe('InstructionService', () => {
         string,
         { content: string; timestamp: number; hits: number }
       >;
+      const hitCounts = Array.from(systemPromptCache.values()).map((entry) => entry.hits);
 
-      expect(sharedPrompt).not.toBe(legacyPrompt);
-      expect(systemPromptCache.size).toBe(2);
+      expect(secondPrompt).toBe(firstPrompt);
+      expect(systemPromptCache.size).toBe(1);
+      expect(Math.max(...hitCounts)).toBeGreaterThan(0);
     });
 
-    it('should truncate shared-prefix layers by priority before dropping behavior instructions', () => {
+    it('should truncate layers by priority before dropping behavior instructions', () => {
       const makeLayer = (
         name: string,
         marker: string,

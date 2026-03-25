@@ -146,7 +146,7 @@ private interruptedAgents = new Set<string>();
 
 **Location**: `src/features/agent/main/instruction-service.ts`
 
-Builds system prompts using a **9-layer** architecture. In the default shared-prefix mode, the order is:
+Builds system prompts using a **9-layer** architecture. The order is:
 
 1. **Base System Prompt** - Core identity and tool guidance for all interactive agents
 2. **Specialization Rules** - `common` → `workspace` → agent-specific instructions
@@ -158,7 +158,7 @@ Builds system prompts using a **9-layer** architecture. In the default shared-pr
 8. **Runtime Context** - `contextReferences`
 9. **Mandatory Actions Footer** - End-of-prompt role reminder / required footer actions
 
-When `sharedPromptPrefix` is disabled, the behavior layer moves to the front of the prompt. The mandatory footer remains at the end in both modes, and sub-agents skip the parent-only orchestration layers plus workspace context.
+The mandatory footer remains at the end, and sub-agents skip the parent-only orchestration layers plus workspace context.
 
 **3-Tier Rule Fallback** (for specialization rules):
 1. User customizations (EndUserRulesManager via electron-store)
@@ -168,7 +168,7 @@ When `sharedPromptPrefix` is disabled, the behavior layer moves to the front of 
 **Prompt assembly inputs**:
 
 - Public `buildSystemPrompt()` config fields: `agentType`, `workspacePath`, `contextReferences`, `behaviorPrompt`, `specialistName`, `roleReminder`, `workspaceContext`, `workspaceTitle`, `isInitialAgent`, `isSubAgent`
-- Internal ordering/caching inputs: `sharedPromptPrefix` (from app settings, via `isSharedPromptPrefixEnabled()`) and `prefetchedSkillsCatalog` (internal prefetch used when building cache keys)
+- Internal caching inputs: `prefetchedSkillsCatalog` (internal prefetch used when building cache keys)
 
 ### 4. ConsolidatedBackendService (Backend)
 
