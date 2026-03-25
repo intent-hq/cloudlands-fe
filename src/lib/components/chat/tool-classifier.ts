@@ -478,8 +478,13 @@ export function classifyTool(
   const resultMetadata = extractResultMetadata(result);
 
   // workspace_api: prefer human-readable label over raw tool names
+  // Also detect by input shape: if input has both `code` and `summary`, it's workspace_api
+  // regardless of the tool name (which may be a human-readable title)
   const cleanedForSummary = cleanToolName(toolName);
-  if (cleanedForSummary.toLowerCase() === 'workspace_api') {
+  if (
+    cleanedForSummary.toLowerCase() === 'workspace_api' ||
+    (typeof input.code === 'string' && typeof input.summary === 'string')
+  ) {
     const acpTitle =
       typeof input._acpTitle === 'string' ? input._acpTitle.trim() : '';
     const summary =
@@ -1796,9 +1801,16 @@ function genericDisplay(toolName: string, input: Record<string, any>): ToolDispl
 
   // Combine: prefer input-derived subject, fall back to name-derived subject
   // If we have both, show name-derived as context: "Find organizations · my-org"
+  // But if one contains the other, just use the longer one to avoid duplication
   let subject: string | null;
   if (inputSubject && nameSubject) {
-    subject = `${nameSubject} · ${inputSubject}`;
+    const inputLower = inputSubject.toLowerCase();
+    const nameLower = nameSubject.toLowerCase();
+    if (inputLower.includes(nameLower) || nameLower.includes(inputLower)) {
+      subject = inputSubject.length >= nameSubject.length ? inputSubject : nameSubject;
+    } else {
+      subject = `${nameSubject} · ${inputSubject}`;
+    }
   } else {
     subject = inputSubject || nameSubject;
   }
