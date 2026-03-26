@@ -11,35 +11,131 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
-    name: Type Check & Test
+  typecheck-renderer:
+    name: Type Check (renderer)
     runs-on: macos-14
     timeout-minutes: 30
     env:
       GIT_TERMINAL_PROMPT: '0'
       NODE_OPTIONS: '--max-old-space-size=4096'
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: 'npm'
           cache-dependency-path: package-lock.json
-
       - name: Install dependencies
         run: npm ci
-
+      - name: Svelte check
+        run: npm run check
       - name: Type check
-        run: |
-          npm run check
-          npm run type-check
+        run: npm run type-check
 
+  typecheck-main:
+    name: Type Check (main process)
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Generate build config
+        run: npm run generate:build-config
+      - name: Type check (main process)
+        run: npx tsc --noEmit -p tsconfig.main.json
+
+  typecheck-preload:
+    name: Type Check (preload)
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Generate IPC channels
+        run: npm run generate:ipc-channels
+      - name: Type check (preload)
+        run: npx tsc --noEmit -p tsconfig.preload.json
+
+  test:
+    name: Unit Tests
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Unit tests
+        run: npm run test:unit
+
+  accessibility:
+    name: Accessibility Lint
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
       - name: Accessibility lint
         run: bash scripts/check-accessibility.sh
 
-      - name: Unit tests
-        run: npm run test:unit
+
+  gate:
+    name: Type Check & Test
+    runs-on: macos-14
+    if: always()
+    needs: [typecheck-renderer, typecheck-main, typecheck-preload, test, accessibility]
+    steps:
+      - name: Check results
+        run: |
+          if [ "${{ needs.typecheck-renderer.result }}" != "success" ] || \
+             [ "${{ needs.typecheck-main.result }}" != "success" ] || \
+             [ "${{ needs.typecheck-preload.result }}" != "success" ] || \
+             [ "${{ needs.test.result }}" != "success" ] || \
+             [ "${{ needs.accessibility.result }}" != "success" ]; then
+            echo "One or more jobs failed"
+            exit 1
+          fi
