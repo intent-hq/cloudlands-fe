@@ -244,6 +244,7 @@ vi.mock('../services/unified-state-store', () => ({
     getSession: vi.fn(),
     getAllSessionsAcrossWorkspaces: vi.fn(() => []),
     addSession: vi.fn(),
+    setAgent: vi.fn(),
     setStreaming: vi.fn(),
     updateMessage: vi.fn(),
     updateMessageForWorkspace: vi.fn(),
@@ -335,6 +336,7 @@ vi.mock('../services/unread-tracking.service', () => ({
     markAsUnread: vi.fn(),
     getUnreadCount: vi.fn(() => 0),
     setAgentExistsCallback: vi.fn(),
+    onNewAssistantMessage: vi.fn(),
   },
 }));
 
@@ -763,6 +765,90 @@ describe('AgentService dispatch/handler methods', () => {
       // Handler should still be in the map
       expect((agentService as any).activeStreamHandlers.get(agentId)).toBe(existingHandler);
     });
+  });
+
+  // ── Race condition regression test ─────────────────────────────────────
+  // REGRESSION: Prevents reintroduction of the fallback that called
+  // sessionStore.setStreamingForWorkspace(wsId, agentId, false) inside the
+  // IPC handler's "no DOM handler" branch. That fallback raced with
+  // initializeChat() which reads isStreaming from sessionStore — clearing it
+  // too early caused initializeChat to load stale state and lose the response.
+  // The fix removed that fallback: the IPC handler already clears streaming
+  // state in its session-processing branches (lines ~1878/1924/1943), so the
+  // additional clear after dispatchStreamEvent was redundant and harmful.
+  // This test exercises the ACTUAL IPC handler path (registerStreamHandlerForSession)
+  // rather than calling dispatchStreamEvent directly, so it would fail if the
+  // fallback were accidentally reintroduced.
+  it('REGRESSION: IPC handler end-event path should NOT double-clear streaming state when no DOM handler', () => {
+    const agentId = 'agent-race-condition';
+    const workspaceId = 'ws-race-test';
+
+    // Step 1: Clear state and set up mocks for registerStreamHandlerForSession
+    (agentService as any).activeStreamHandlers.clear();
+    (agentService as any).pendingStreamRegistrations.clear();
+    (agentService as any).pendingEventQueue.clearAll();
+    mockOn.mockClear();
+    mockSessionStore.setStreamingForWorkspace.mockClear();
+    // Return a session with a user message but no streaming assistant message.
+    // This makes the IPC handler's 'complete' path enter the session-processing branch
+    // and reach the else clause that calls setStreamingForWorkspace(false).
+    mockSessionStore.getSessionForWorkspace.mockReturnValue({
+      id: agentId,
+      messages: [{ role: 'user', content: 'test' }],
+      workspaceId: workspaceId,
+    });
+
+    // Step 2: Register the IPC stream handler (this is what happens in production
+    // when reconnectStreamHandlersForWorkspace or ensureStreamHandler runs)
+    agentService.registerStreamHandlerForSession(agentId, undefined, workspaceId);
+
+    // Step 3: Extract the IPC handler that was registered via window.electronAPI.on
+    const streamChannel = `agent:stream:${agentId}`;
+    const onCall = mockOn.mock.calls.find((c: any[]) => c[0] === streamChannel);
+    expect(onCall).toBeDefined();
+    const ipcHandler = onCall![1];
+
+    // Step 4: Ensure NO DOM handler is registered (simulating ChatPanel destroyed during remount)
+    agentService.unregisterDomHandler(agentId);
+    expect((agentService as any).hasActiveStreamListener(agentId)).toBe(false);
+
+    // Step 5: Simulate the backend sending a 'complete' event through the IPC handler
+    // while no DOM handler is registered — this is the exact race condition scenario.
+    // No backendMessage means the handler enters the final else branch that calls
+    // setStreamingForWorkspace(false) once from session processing.
+    mockSessionStore.setStreamingForWorkspace.mockClear();
+    mockSessionStore.getSessionForWorkspace.mockClear();
+    dispatchSpy.mockClear();
+    ipcHandler({ type: 'complete' });
+
+    // Step 6: FIX VERIFICATION — setStreamingForWorkspace(false) should be called
+    // exactly ONCE from the session-processing branch (line ~1943 in agent.service.ts),
+    // NOT a second time from the fallback after dispatchStreamEvent queues the end event.
+    // The old buggy code had an additional setStreamingForWorkspace(false) call in the
+    // "no DOM handler" branch that raced with initializeChat().
+    const falseCalls = mockSessionStore.setStreamingForWorkspace.mock.calls.filter(
+      (call: any[]) => call[2] === false,
+    );
+    expect(falseCalls).toHaveLength(1);
+    expect(falseCalls[0]).toEqual([workspaceId, agentId, false]);
+
+    // Step 7: Verify the call came from the session-processing branch, not a fallback.
+    // The session-processing else branch (~line 1943) clears streaming state BEFORE
+    // getStreamSession() is called for unread tracking (~line 2062). A fallback
+    // reintroduced after dispatchStreamEvent (~line 2089) would clear it AFTER that
+    // getStreamSession() call. Checking relative invocation order proves provenance.
+    const falseCallIndex = mockSessionStore.setStreamingForWorkspace.mock.calls.findIndex(
+      (call: any[]) => call[2] === false,
+    );
+    const setStreamingCallOrder =
+      mockSessionStore.setStreamingForWorkspace.mock.invocationCallOrder[falseCallIndex];
+    const getSessionCallOrders =
+      mockSessionStore.getSessionForWorkspace.mock.invocationCallOrder;
+    const lastGetSessionCallOrder = getSessionCallOrders[getSessionCallOrders.length - 1];
+    expect(setStreamingCallOrder).toBeLessThan(lastGetSessionCallOrder);
+
+    // Clean up mock to not affect other tests
+    mockSessionStore.getSessionForWorkspace.mockReset();
   });
 });
 

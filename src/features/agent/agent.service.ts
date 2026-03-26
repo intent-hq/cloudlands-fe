@@ -2077,14 +2077,19 @@ class RefactoredAgentService extends EventEmitter {
             message: backendMessage,
           });
 
-          // Fallback: if no DOM handler was registered to receive the 'end' event,
-          // clear streaming state directly in sessionStore to prevent stale isStreaming=true
+          // FIX: Do NOT clear streaming state here when the end event was queued.
+          // Streaming state in sessionStore is already cleared above in the session-
+          // processing branches (lines ~1878/1924/1943). The queued end event will be
+          // replayed by ChatService's replayPendingEvents() to keep the ChatService UI
+          // state (isProcessing, etc.) consistent — but isStreaming in sessionStore is
+          // NOT dependent on that replay.
+          // The removed fallback (setStreamingForWorkspace(false)) was redundant and
+          // raced with initializeChat() which reads isStreaming from sessionStore,
+          // causing it to load stale state and lose the response.
           if (!this.hasActiveStreamListener(handlerSessionId)) {
-            const wsIdForFallback = resolvedWorkspaceId || requireWorkspaceId('streamEnd:fallbackClear');
-            sessionStore.setStreamingForWorkspace(wsIdForFallback, agentId, false);
-            logger.info('Cleared streaming state via fallback (no DOM handler)', {
+            logger.info('End event queued for replay — skipping immediate streaming-state clear', {
               agentId,
-              workspaceId: wsIdForFallback,
+              workspaceId: resolvedWorkspaceId,
             });
           }
 
