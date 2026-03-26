@@ -24,6 +24,12 @@ export type ToolResultType =
   | 'comment-list'
   | 'note-list'
   | 'browser'
+  | 'figma'
+  | 'sentry-issue'
+  | 'sentry-search'
+  | 'github-issues'
+  | 'github-pr-files'
+  | 'github-checks'
   | 'confirmation'
   | 'unknown';
 
@@ -102,6 +108,61 @@ export interface ParsedToolResult {
   }>;
   evaluateResult?: string;
   accessibilityTree?: string;
+  // For figma results
+  figmaScreenshot?: string; // base64 image data
+  figmaScreenshotUrl?: string; // URL to image
+  figmaScreenshotMimeType?: string; // e.g. 'image/png'
+  figmaCode?: string; // code snippet from design context
+  figmaAssets?: Array<{ name: string; url: string }>; // asset download URLs
+  figmaNodeName?: string; // name of the Figma node
+  // For sentry-issue
+  sentryIssue?: {
+    title: string;
+    shortId: string;
+    status: string;
+    level: string;
+    count: number;
+    userCount: number;
+    project: string;
+    url: string;
+    firstSeen?: string;
+    lastSeen?: string;
+    stacktraceSummary?: string;
+  };
+  // For sentry-search
+  sentryIssues?: Array<{
+    title: string;
+    shortId: string;
+    status: string;
+    level: string;
+    count: number;
+    userCount: number;
+    project?: string;
+    url?: string;
+  }>;
+  // For github-issues
+  githubIssues?: Array<{
+    number: number;
+    title: string;
+    state: string;
+    isPR: boolean;
+    labels?: Array<{ name: string; color?: string }>;
+    url?: string;
+  }>;
+  // For github-pr-files
+  githubFiles?: Array<{
+    filename: string;
+    status: string;
+    additions: number;
+    deletions: number;
+  }>;
+  // For github-checks
+  githubChecks?: Array<{
+    name: string;
+    status: string;
+    conclusion?: string;
+  }>;
+  githubOverallStatus?: string;
   // Meta
   lineCount?: number;
   truncated?: boolean;
@@ -284,6 +345,11 @@ export function parseToolResult(
     return parseSaveResult(input, resultText);
   }
 
+  // ── Sentry tools → rich preview (BEFORE search to avoid search_issues_Sentry misrouting) ──
+  if (name.includes('sentry')) {
+    return parseSentryResult(name, input, resultText);
+  }
+
   // Search/retrieval tools (including context engine tools)
   if (
     name.includes('codebase-retrieval') ||
@@ -423,11 +489,20 @@ export function parseToolResult(
     return { type: 'note-view' as const, content: resultText || undefined };
   }
 
-  // ── API tools (web-fetch, github, linear, glean) → content display ──
+  // ── Figma tools → rich preview with screenshots ──
+  if (name.includes('figma')) {
+    return parseFigmaResult(name, input, result);
+  }
+
+  // ── GitHub API tools → rich preview ──
+  if (name.includes('github')) {
+    return parseGitHubResult(input, resultText);
+  }
+
+  // ── API tools (web-fetch, linear, glean) → content display ──
   if (
     name.includes('web-fetch') ||
     name.includes('web_fetch') ||
-    name.includes('github') ||
     name.includes('linear') ||
     name.includes('glean')
   ) {
@@ -1786,4 +1861,590 @@ function parseAgentStatusResult(
   }
 
   return parsed;
+}
+
+/**
+ * Parse Sentry tool results into structured data for rich preview.
+ *
+ * Handles:
+ * - get_issue_details_Sentry → sentry-issue card
+ * - search_issues_Sentry → sentry-search list
+ * - Other Sentry tools → confirmation fallback
+ */
+function parseSentryResult(
+  name: string,
+  _input: Record<string, unknown>,
+  result: string | null | undefined,
+): ParsedToolResult {
+  if (!result) {
+    return { type: 'confirmation' as const, content: undefined };
+  }
+
+  // get_issue_details → sentry-issue card
+  if (name.includes('get_issue_details')) {
+    return parseSentryIssueDetails(result);
+  }
+
+  // search_issues → sentry-search list
+  if (name.includes('search_issues') && !name.includes('search_issue_events')) {
+    return parseSentrySearchResults(result);
+  }
+
+  // Other Sentry tools (search_events, analyze_issue, etc.) → confirmation
+  return { type: 'confirmation' as const, content: result };
+}
+
+// Pre-compiled regex constants for Sentry text format parsing (used in parseSentryIssueDetails)
+const SENTRY_TITLE_RE = /(?:Issue|Title):\s*(?:(\S+-\d+)\s*[-–—]\s*)?(.+?)(?:\n|$)/i;
+const SENTRY_STATUS_RE = /Status:\s*(\S+)/i;
+const SENTRY_LEVEL_RE = /Level:\s*(\S+)/i;
+const SENTRY_EVENTS_RE = /Events?:\s*([\d,]+)/i;
+const SENTRY_USERS_RE = /Users?:\s*([\d,]+)/i;
+const SENTRY_PROJECT_RE = /Project:\s*(.+?)(?:\n|$)/i;
+const SENTRY_URL_RE = /URL:\s*(https?:\/\/\S+)/i;
+const SENTRY_FIRST_SEEN_RE = /First\s*Seen:\s*(.+?)(?:\n|$)/i;
+const SENTRY_LAST_SEEN_RE = /Last\s*Seen:\s*(.+?)(?:\n|$)/i;
+const SENTRY_SHORT_ID_RE = /(?:Short\s*ID|Issue):\s*(\S+-\d+)/i;
+
+/**
+ * Parse get_issue_details_Sentry result into a structured issue card.
+ *
+ * The result is typically a text summary with fields like:
+ *   Issue: PROJ-123 - Error title
+ *   Status: unresolved
+ *   Level: error
+ *   Events: 1234
+ *   Users: 56
+ *   Project: my-project
+ *   URL: https://sentry.io/...
+ *   First Seen: 2024-01-01T00:00:00Z
+ *   Last Seen: 2024-01-02T00:00:00Z
+ *   ...stacktrace...
+ */
+function parseSentryIssueDetails(result: string): ParsedToolResult {
+  const parsed: ParsedToolResult = { type: 'sentry-issue' };
+
+  // Try JSON parse first (some results may be JSON)
+  let data: any = null;
+  try {
+    data = JSON.parse(result);
+  } catch {
+    // Not JSON — parse text format below
+  }
+
+  if (data && typeof data === 'object') {
+    parsed.sentryIssue = {
+      title: data.title || data.metadata?.title || data.culprit || 'Unknown Issue',
+      shortId: data.shortId || data.short_id || '',
+      status: data.status || 'unknown',
+      level: data.level || 'error',
+      count: parseInt(data.count, 10) || 0,
+      userCount: parseInt(data.userCount || data.user_count, 10) || 0,
+      project: data.project?.slug || data.project?.name || data.projectSlug || '',
+      url: data.permalink || data.url || '',
+      firstSeen: data.firstSeen || data.first_seen,
+      lastSeen: data.lastSeen || data.last_seen,
+    };
+
+    // Extract stacktrace summary from latest event
+    const stacktrace = extractStacktraceSummary(data);
+    if (stacktrace) {
+      parsed.sentryIssue.stacktraceSummary = stacktrace;
+    }
+
+    parsed.content = result;
+    return parsed;
+  }
+
+  // Text format parsing (using pre-compiled module-level regex constants)
+  const titleMatch = result.match(SENTRY_TITLE_RE);
+  const statusMatch = result.match(SENTRY_STATUS_RE);
+  const levelMatch = result.match(SENTRY_LEVEL_RE);
+  const eventsMatch = result.match(SENTRY_EVENTS_RE);
+  const usersMatch = result.match(SENTRY_USERS_RE);
+  const projectMatch = result.match(SENTRY_PROJECT_RE);
+  const urlMatch = result.match(SENTRY_URL_RE);
+  const firstSeenMatch = result.match(SENTRY_FIRST_SEEN_RE);
+  const lastSeenMatch = result.match(SENTRY_LAST_SEEN_RE);
+  const shortIdMatch = result.match(SENTRY_SHORT_ID_RE);
+
+  if (titleMatch || statusMatch || levelMatch) {
+    parsed.sentryIssue = {
+      title: titleMatch?.[2]?.trim() || 'Unknown Issue',
+      shortId: shortIdMatch?.[1] || titleMatch?.[1] || '',
+      status: statusMatch?.[1]?.toLowerCase() || 'unknown',
+      level: levelMatch?.[1]?.toLowerCase() || 'error',
+      count: parseInt((eventsMatch?.[1] || '0').replace(/,/g, ''), 10),
+      userCount: parseInt((usersMatch?.[1] || '0').replace(/,/g, ''), 10),
+      project: projectMatch?.[1]?.trim() || '',
+      url: urlMatch?.[1] || '',
+      firstSeen: firstSeenMatch?.[1]?.trim(),
+      lastSeen: lastSeenMatch?.[1]?.trim(),
+    };
+  }
+
+  parsed.content = result;
+  return parsed;
+}
+
+/**
+ * Extract a brief stacktrace summary from Sentry issue JSON data.
+ */
+function extractStacktraceSummary(data: any): string | null {
+  try {
+    // Navigate to the latest event's exception values
+    const event = data.latestEvent || data.latest_event || data;
+    const entries = event?.entries || [];
+    for (const entry of entries) {
+      if (entry.type === 'exception' && entry.data?.values) {
+        const frames = entry.data.values
+          .flatMap((v: any) => v.stacktrace?.frames || [])
+          .filter((f: any) => f.inApp !== false)
+          .slice(-3); // Last 3 in-app frames
+        if (frames.length > 0) {
+          return frames
+            .map((f: any) => {
+              const file = f.filename || f.absPath || f.module || '?';
+              const line = f.lineNo || f.lineno || '?';
+              const func = f.function || '?';
+              return `${file}:${line} in ${func}`;
+            })
+            .join('\n');
+        }
+      }
+    }
+  } catch {
+    // Ignore extraction errors
+  }
+  return null;
+}
+
+/**
+ * Parse search_issues_Sentry result into a compact list.
+ *
+ * The result may be JSON array or text with issue summaries.
+ */
+function parseSentrySearchResults(result: string): ParsedToolResult {
+  const parsed: ParsedToolResult = { type: 'sentry-search', sentryIssues: [] };
+
+  // Try JSON parse
+  let data: any = null;
+  try {
+    data = JSON.parse(result);
+  } catch {
+    // Not JSON
+  }
+
+  if (data) {
+    // Could be { issues: [...] } or direct array
+    const issues = Array.isArray(data) ? data : (data.issues || data.results || []);
+    if (Array.isArray(issues)) {
+      parsed.sentryIssues = issues.slice(0, 20).map((issue: any) => ({
+        title: issue.title || issue.metadata?.title || 'Unknown',
+        shortId: issue.shortId || issue.short_id || '',
+        status: issue.status || 'unknown',
+        level: issue.level || 'error',
+        count: parseInt(issue.count, 10) || 0,
+        userCount: parseInt(issue.userCount || issue.user_count, 10) || 0,
+        project: issue.project?.slug || issue.project?.name || issue.projectSlug || '',
+        url: issue.permalink || issue.url || '',
+      }));
+    }
+  }
+
+  // Text format fallback: parse lines like "PROJ-123 | Error title | unresolved | error | 42 events"
+  if (!parsed.sentryIssues?.length) {
+    const issuePattern = /(\S+-\d+)\s*[-|]\s*(.+?)(?:\s*[-|]\s*(\w+))?(?:\s*[-|]\s*(\w+))?(?:\s*[-|]\s*(\d+)\s*events?)?/gi;
+    let match;
+    const issues: ParsedToolResult['sentryIssues'] = [];
+    while ((match = issuePattern.exec(result)) !== null) {
+      issues.push({
+        title: match[2]?.trim() || 'Unknown',
+        shortId: match[1],
+        status: match[3]?.toLowerCase() || 'unknown',
+        level: match[4]?.toLowerCase() || 'error',
+        count: parseInt(match[5] || '0', 10),
+        userCount: 0,
+      });
+    }
+    if (issues.length > 0) {
+      parsed.sentryIssues = issues;
+    }
+  }
+
+  parsed.content = result;
+  return parsed;
+}
+
+/**
+ * Extract image content items from an MCP result (ContentItem[] format).
+ * Returns array of { data, mimeType } for image items.
+ */
+function extractResultImages(result: unknown): Array<{ data: string; mimeType: string }> {
+  if (!Array.isArray(result)) {
+    if (result && typeof result === 'object' && Array.isArray((result as any).content)) {
+      return extractResultImages((result as any).content);
+    }
+    return [];
+  }
+  return result
+    .filter(
+      (item: any) =>
+        item && typeof item === 'object' && item.type === 'image' && item.data && item.mimeType,
+    )
+    .map((item: any) => ({ data: item.data as string, mimeType: item.mimeType as string }));
+}
+
+/**
+ * Parse Figma tool results into structured data for rich preview.
+ *
+ * Handles:
+ * - get_screenshot_figma → inline screenshot image
+ * - get_design_context_figma → screenshot + code snippet + assets
+ * - get_metadata_figma → XML metadata display
+ * - Other Figma tools → confirmation fallback
+ *
+ * Figma MCP tools return ContentItem[] arrays with:
+ * - { type: 'image', data: base64, mimeType: 'image/png' } for screenshots
+ * - { type: 'text', text: '...' } for code/metadata
+ */
+function parseFigmaResult(
+  name: string,
+  _input: Record<string, unknown>,
+  result: unknown,
+): ParsedToolResult {
+  const parsed: ParsedToolResult = {
+    type: 'figma',
+  };
+
+  // Extract images from MCP content items
+  const images = extractResultImages(result);
+  if (images.length > 0) {
+    parsed.figmaScreenshot = images[0].data;
+    parsed.figmaScreenshotMimeType = images[0].mimeType;
+  }
+
+  // Extract text content
+  const resultText = extractResultText(result);
+
+  // Parse based on specific tool
+  if (name.includes('get_design_context') || name.includes('design_context')) {
+    // Design context returns code + screenshot + asset URLs
+    if (resultText) {
+      // Extract code snippet (often wrapped in code blocks)
+      const codeMatch = resultText.match(/```[\w]*\n([\s\S]*?)```/);
+      if (codeMatch) {
+        parsed.figmaCode = codeMatch[1].trim();
+      }
+
+      // Extract asset download URLs (JSON object with URLs)
+      const assetsMatch = resultText.match(/download URLs?[^{]*(\{[\s\S]*?\})/i);
+      if (assetsMatch) {
+        try {
+          const assetsObj = JSON.parse(assetsMatch[1]);
+          parsed.figmaAssets = Object.entries(assetsObj).map(([assetName, url]) => ({
+            name: assetName,
+            url: url as string,
+          }));
+        } catch {
+          // Not valid JSON
+        }
+      }
+
+      // Store full text as content for expanded view
+      parsed.content = resultText;
+    }
+  } else if (name.includes('get_screenshot')) {
+    // Screenshot tool - image is the primary content
+    if (resultText) {
+      parsed.content = resultText;
+    }
+  } else if (name.includes('get_metadata')) {
+    // Metadata tool returns XML structure
+    if (resultText) {
+      parsed.content = resultText;
+    }
+  } else {
+    // Other Figma tools (generate_diagram, add_code_connect, etc.)
+    if (resultText) {
+      parsed.content = resultText;
+    }
+  }
+
+  // If no image was found in content items, check if there's a base64 image in the text
+  if (!parsed.figmaScreenshot && resultText) {
+    const base64Match = resultText.match(/data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)/);
+    if (base64Match) {
+      parsed.figmaScreenshotMimeType = `image/${base64Match[1]}`;
+      parsed.figmaScreenshot = base64Match[2];
+    }
+  }
+
+  return parsed;
+}
+
+
+/**
+ * Parse GitHub API tool results into rich preview data.
+ *
+ * The github-api tool returns YAML-formatted responses. We detect the API path
+ * from the input and parse accordingly:
+ * - /repos/.../issues or /search/issues → issue/PR list
+ * - /repos/.../pulls/.../files → changed files list
+ * - /repos/.../commits/.../check-runs or .../status → CI status
+ */
+function parseGitHubResult(
+  input: Record<string, any>,
+  result: string | null | undefined,
+): ParsedToolResult {
+  if (!result) {
+    return { type: 'confirmation' as const, content: undefined };
+  }
+
+  const apiPath = typeof input.path === 'string' ? input.path : '';
+
+  // Detect API path type
+  if (apiPath.match(/\/search\/issues/) || apiPath.match(/\/repos\/[^/]+\/[^/]+\/issues(?:\?|$)/)) {
+    return parseGitHubIssues(result);
+  }
+
+  if (apiPath.match(/\/repos\/[^/]+\/[^/]+\/pulls\/\d+\/files/)) {
+    return parseGitHubPRFiles(result);
+  }
+
+  if (apiPath.match(/\/repos\/[^/]+\/[^/]+\/commits\/[^/]+\/(check-runs|status)/)) {
+    return parseGitHubChecks(result);
+  }
+
+  // Fallback: try to auto-detect from result content
+  return parseGitHubAutoDetect(result);
+}
+
+/**
+ * Parse GitHub issues/PRs list from YAML result.
+ */
+function parseGitHubIssues(result: string): ParsedToolResult {
+  const parsed: ParsedToolResult = {
+    type: 'github-issues',
+    githubIssues: [],
+    content: result,
+  };
+
+  const items = extractGitHubYamlItems(result);
+
+  for (const item of items) {
+    const number = extractGitHubYamlField(item, 'number');
+    const title = extractGitHubYamlField(item, 'title');
+    const state = extractGitHubYamlField(item, 'state');
+    const pullRequest = item.includes('pull_request') || item.includes('draft:');
+
+    if (number && title) {
+      const labels: Array<{ name: string; color?: string }> = [];
+      const labelsSection = item.match(/labels:\s*\n((?:\s+[^\n]*\n?)*)/);
+      if (labelsSection) {
+        const labelMatches = labelsSection[1].matchAll(/name:\s*(.+?)(?:\n|$)/g);
+        for (const lm of labelMatches) {
+          const labelName = lm[1].trim().replace(/^['"]|['"]$/g, '');
+          // Find color by position: locate the label name, then search forward for color:
+          // within the same label block (up to the next "- " list item)
+          let color: string | undefined;
+          const labelIdx = labelsSection[1].indexOf(`name: ${lm[1].trim()}`);
+          if (labelIdx >= 0) {
+            const afterLabel = labelsSection[1].slice(labelIdx);
+            const nextLabelIdx = afterLabel.indexOf('\n- ', 1);
+            const labelBlock = nextLabelIdx >= 0 ? afterLabel.slice(0, nextLabelIdx) : afterLabel;
+            const colorMatch = labelBlock.match(/color:\s*['"]?([0-9a-fA-F]{6})['"]?/);
+            if (colorMatch) {
+              color = colorMatch[1];
+            }
+          }
+          labels.push({
+            name: labelName,
+            color,
+          });
+        }
+      }
+
+      const htmlUrl = extractGitHubYamlField(item, 'html_url') || extractGitHubYamlField(item, 'url');
+
+      parsed.githubIssues!.push({
+        number: parseInt(number, 10),
+        title: title.replace(/^['"]|['"]$/g, ''),
+        state: state || 'open',
+        isPR: pullRequest,
+        labels: labels.length > 0 ? labels : undefined,
+        url: htmlUrl || undefined,
+      });
+    }
+  }
+
+  if (parsed.githubIssues!.length === 0) {
+    return { type: 'confirmation' as const, content: result };
+  }
+
+  return parsed;
+}
+
+/**
+ * Parse GitHub PR files list from YAML result.
+ */
+function parseGitHubPRFiles(result: string): ParsedToolResult {
+  const parsed: ParsedToolResult = {
+    type: 'github-pr-files',
+    githubFiles: [],
+    content: result,
+  };
+
+  const items = extractGitHubYamlItems(result);
+
+  for (const item of items) {
+    const filename = extractGitHubYamlField(item, 'filename');
+    const status = extractGitHubYamlField(item, 'status') || 'modified';
+    const additions = extractGitHubYamlField(item, 'additions') || '0';
+    const deletions = extractGitHubYamlField(item, 'deletions') || '0';
+
+    if (filename) {
+      parsed.githubFiles!.push({
+        filename: filename.replace(/^['"]|['"]$/g, ''),
+        status,
+        additions: parseInt(additions, 10),
+        deletions: parseInt(deletions, 10),
+      });
+    }
+  }
+
+  if (parsed.githubFiles!.length === 0) {
+    return { type: 'confirmation' as const, content: result };
+  }
+
+  return parsed;
+}
+
+/**
+ * Parse GitHub check runs / commit status from YAML result.
+ */
+function parseGitHubChecks(result: string): ParsedToolResult {
+  const parsed: ParsedToolResult = {
+    type: 'github-checks',
+    githubChecks: [],
+    content: result,
+  };
+
+  const items = extractGitHubYamlItems(result);
+
+  for (const item of items) {
+    const name = extractGitHubYamlField(item, 'name') || extractGitHubYamlField(item, 'context');
+    const status = extractGitHubYamlField(item, 'status') || extractGitHubYamlField(item, 'state') || 'unknown';
+    const conclusion = extractGitHubYamlField(item, 'conclusion');
+
+    if (name) {
+      parsed.githubChecks!.push({
+        name: name.replace(/^['"]|['"]$/g, ''),
+        status,
+        conclusion: conclusion || undefined,
+      });
+    }
+  }
+
+  // Extract overall status if present
+  const overallState = extractGitHubYamlField(result, 'state');
+  if (overallState) {
+    parsed.githubOverallStatus = overallState;
+  }
+
+  if (parsed.githubChecks!.length === 0) {
+    return { type: 'confirmation' as const, content: result };
+  }
+
+  return parsed;
+}
+
+/**
+ * Auto-detect GitHub result type from content when API path is not available.
+ */
+function parseGitHubAutoDetect(result: string): ParsedToolResult {
+  // Check for issue/PR patterns
+  if (result.includes('pull_request:') || (result.includes('number:') && result.includes('state:') && result.includes('title:'))) {
+    return parseGitHubIssues(result);
+  }
+
+  // Check for PR files patterns
+  if (result.includes('filename:') && (result.includes('additions:') || result.includes('deletions:'))) {
+    return parseGitHubPRFiles(result);
+  }
+
+  // Check for check runs patterns
+  if (result.includes('check_runs:') || (result.includes('conclusion:') && result.includes('status:'))) {
+    return parseGitHubChecks(result);
+  }
+
+  // Fallback to confirmation
+  return { type: 'confirmation' as const, content: result };
+}
+
+/**
+ * Extract top-level YAML list items from a GitHub API YAML response.
+ * Splits on top-level "- " markers.
+ */
+function extractGitHubYamlItems(yaml: string): string[] {
+  // Handle "items:" wrapper (search results)
+  const itemsMatch = yaml.match(/items:\s*\n([\s\S]*)/);
+  const content = itemsMatch ? itemsMatch[1] : yaml;
+
+  // Handle "check_runs:" wrapper
+  const checkRunsMatch = content.match(/check_runs:\s*\n([\s\S]*)/);
+  // Handle "statuses:" wrapper (commit status)
+  const statusesMatch = content.match(/statuses:\s*\n([\s\S]*)/);
+  let listContent = checkRunsMatch ? checkRunsMatch[1] : statusesMatch ? statusesMatch[1] : content;
+
+  // Dedent: if content came from a wrapper key, items are indented
+  const indentMatch = listContent.match(/^(\s+)-\s/m);
+  if (indentMatch) {
+    const indent = indentMatch[1];
+    listContent = listContent.split('\n').map(line =>
+      line.startsWith(indent) ? line.slice(indent.length) : line
+    ).join('\n');
+  }
+
+  // Split on top-level list items (lines starting with "- ")
+  const items: string[] = [];
+  const lines = listContent.split('\n');
+  let currentItem = '';
+
+  for (const line of lines) {
+    if (line.match(/^- /)) {
+      if (currentItem) items.push(currentItem);
+      currentItem = line + '\n';
+    } else if (currentItem && (line.startsWith('  ') || line.trim() === '')) {
+      currentItem += line + '\n';
+    }
+  }
+  if (currentItem) items.push(currentItem);
+
+  return items;
+}
+
+/**
+ * Extract a field value from a YAML item string.
+ * Uses string scanning instead of dynamic RegExp for performance.
+ */
+function extractGitHubYamlField(item: string, field: string): string | null {
+  const fieldPrefix = field + ':';
+  const lines = item.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith(fieldPrefix)) {
+      const value = trimmed.slice(fieldPrefix.length).trim();
+      if (!value || value === 'null' || value === '~') return null;
+      return value;
+    }
+  }
+  return null;
+}
+
+/**
+ * Escape special regex characters in a string for GitHub YAML parsing.
+ */
+function escapeGitHubRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

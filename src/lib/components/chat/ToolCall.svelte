@@ -14,9 +14,16 @@
   import { handleIntentLink } from '$lib/utils/workspaces-link-handler';
   import { getPanelIdFromEvent } from '$lib/components/layout/panel-system/panel-context';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import McpIcon from '$lib/components/settings/mcp/McpIcon.svelte';
   import { sessionStore } from '$features/agent/browser';
   import { unifiedStateStore } from '$features/agent/services/unified-state-store';
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
+
+  /** MCP sources that have brand icons in McpIcon */
+  const BRANDED_MCP_ICONS = new Set([
+    'figma', 'sentry', 'playwright', 'github', 'linear',
+    'slack', 'context7',
+  ]);
 
   interface Props {
     toolUse: ToolUseBlock;
@@ -95,29 +102,7 @@
     return slide(node, { duration: 150 });
   }
 
-  // Category colors for left border accent
-  const CATEGORY_COLORS: Record<string, string> = {
-    'file-read': 'var(--color-blue-500, #3b82f6)',
-    'file-write': 'var(--color-amber-500, #f59e0b)',
-    'file-delete': 'var(--color-red-500, #ef4444)',
-    terminal: 'var(--color-emerald-500, #10b981)',
-    search: 'var(--color-violet-500, #8b5cf6)',
-    api: 'var(--color-cyan-500, #06b6d4)',
-    workspace: 'var(--color-pink-500, #ec4899)',
-    note: 'var(--color-purple-500, #a855f7)',
-    meta: 'var(--color-orange-500, #f97316)',
-    agent: 'var(--color-indigo-500, #6366f1)',
-    task: 'var(--color-teal-500, #14b8a6)',
-    browser: 'var(--color-sky-500, #0ea5e9)',
-    generic: 'var(--color-slate-500, #64748b)',
-  };
 
-  // Use red border for error state, otherwise use category color
-  const borderColor = $derived(
-    toolState === 'error'
-      ? 'var(--color-red-500, #ef4444)'
-      : CATEGORY_COLORS[toolDisplay.category] || CATEGORY_COLORS.generic,
-  );
 </script>
 
 <!-- Special rendering for Augment Context Engine tools -->
@@ -125,13 +110,18 @@
   <ContextEngineToolCall {toolUse} {toolState} {result} />
 {:else}
   <div
-    class="tool-call-container group relative w-full text-base rounded-md transition-all duration-150 ease-out -ml-2 overflow-hidden block font-family-child"
-    style:border-left="2px solid {borderColor}"
+    class="tool-call-container group relative w-full text-base rounded-md transition-all duration-150 ease-out overflow-hidden block font-family-child"
   >
-    <!-- Running state: border-left shimmer is sufficient — no overlay needed -->
+    <!-- Running state: animate-pulse on the icon indicates running state -->
     <div class="flex items-center w-full min-w-0 gap-2 px-1 py-0.5 relative min-h-6">
-      <!-- Category icon (subtle pulse when running) -->
-      <Fa icon={toolDisplay.icon} size="xs" class="w-4 text-ghost shrink-0 {toolState === 'running' ? 'animate-pulse' : ''}" />
+      <!-- Category icon: show MCP brand logo for known MCPs, otherwise generic FA icon -->
+      {#if toolDisplay.mcpSource && BRANDED_MCP_ICONS.has(toolDisplay.mcpSource)}
+        <div class="w-4 shrink-0 flex items-center justify-center {toolState === 'running' ? 'animate-pulse' : ''}">
+          <McpIcon iconName={toolDisplay.mcpSource} label={toolDisplay.mcpSource} size={14} />
+        </div>
+      {:else}
+        <Fa icon={toolDisplay.icon} size="xs" class="w-4 text-ghost shrink-0 {toolState === 'running' ? 'animate-pulse' : ''}" />
+      {/if}
 
       <!-- Clickable text area for expand/collapse -->
       <button
@@ -264,7 +254,7 @@
       <!-- Status indicator and chevron -->
       <div class="ml-auto flex items-center gap-2 shrink-0">
         {#if toolState === 'running'}
-          <!-- No spinner — the border-left shimmer indicates running state -->
+          <!-- No spinner — the animate-pulse on the icon indicates running state -->
         {:else if toolState === 'completed' && expanded}
           <Fa icon={faCheckCircle} size="xs" class="text-emerald-500 opacity-60" />
         {:else if toolState === 'error'}
@@ -276,6 +266,24 @@
     </div>
 
   </div>
+
+  <!-- Inline image preview for Figma screenshots (always visible, not just when expanded) -->
+  {#if !expanded && parsedResult?.type === 'figma' && parsedResult.figmaScreenshot && toolState === 'completed'}
+    <button
+      type="button"
+      class="block w-full px-2 pb-1 cursor-pointer bg-transparent border-0 p-0 text-left"
+      onclick={() => { if (isExpandable) expanded = !expanded; }}
+    >
+      <div class="overflow-hidden rounded border border-border/40">
+        <img
+          src={`data:${parsedResult.figmaScreenshotMimeType || 'image/png'};base64,${parsedResult.figmaScreenshot}`}
+          alt="Figma design"
+          class="w-full h-auto object-contain bg-white"
+          style="max-height: 200px; max-width: 400px"
+        />
+      </div>
+    </button>
+  {/if}
 
   {#if expanded}
     <div class="ml-1" transition:expand>

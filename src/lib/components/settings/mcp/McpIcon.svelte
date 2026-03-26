@@ -28,6 +28,8 @@
     snowflake: 'snowflake',
     sentry: 'sentry',
     figma: 'figma',
+    github: 'github',
+    linear: 'linear',
   };
 
   // Map specific icon names to custom image URLs (for icons that need color)
@@ -43,7 +45,7 @@
   };
 
   // Icons that should be inverted in dark mode (e.g., black logos)
-  const invertInDarkMode = new Set(['context7']);
+  const invertInDarkMode = new Set(['context7', 'github', 'linear']);
 
   // Map icon names to FontAwesome icons as fallback
   const faIconMap: Record<string, typeof faServer> = {
@@ -99,7 +101,7 @@
     <img
       src={iconUrl}
       alt={label}
-      class="w-full h-full object-contain"
+      class="w-full h-full object-contain {needsInvert ? 'dark:invert' : ''}"
       class:opacity-0={!imageLoaded}
       onload={handleLoad}
       onerror={handleError}

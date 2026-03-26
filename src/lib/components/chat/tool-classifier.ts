@@ -53,6 +53,8 @@ export interface ToolDisplay {
   fileLine?: number | null;
   /** Whether the path refers to a directory (optional) */
   isDirectory?: boolean;
+  /** MCP server source name, e.g. "figma", "sentry", "playwright" (optional) */
+  mcpSource?: string;
 }
 
 /**
@@ -83,6 +85,36 @@ export const CATEGORY_ICONS: Record<ToolCategory, IconDefinition> = {
   generic: faWrench,
 };
 
+// Known MCP prefixes to strip from tool names (checked via case-insensitive startsWith)
+const CLEAN_PREFIXES_TO_STRIP = [
+  'workspace-mcp_',
+  'workspace_mcp_',
+  'filesystem_',
+  'browser-mcp_',
+  'browser_mcp_',
+];
+
+// Known MCP suffixes to strip from tool names (checked via case-insensitive endsWith)
+const CLEAN_SUFFIXES_TO_STRIP = [
+  '_workspace-mcp',
+  '-workspace-mcp',
+  '_playwright',
+  '_browser_mcp',
+  '_context_7',
+  '_svelte',
+  '_augment',
+  '-augment',
+  '_npx',
+  '_sequential_thinking',
+  '_figma',
+  '_slack',
+  '_sentry',
+  '_github',
+  '_linear',
+  '_notion',
+  '_jira',
+];
+
 // Helper functions
 function cleanToolName(name: string | undefined | null): string {
   // Handle undefined or null values gracefully
@@ -96,32 +128,167 @@ function cleanToolName(name: string | undefined | null): string {
   name = name.replace(/^mcp__[^_]+__/, '');
 
   // Strip common MCP server name prefixes (e.g., "workspace-mcp_read_note" → "read_note")
-  name = name
-    .replace(/^workspace-mcp_/, '')
-    .replace(/^workspace_mcp_/, '')
-    .replace(/^filesystem_/, '')
-    .replace(/^browser-mcp_/, '')
-    .replace(/^browser_mcp_/, '');
+  const lowerForPrefix = name.toLowerCase();
+  for (const prefix of CLEAN_PREFIXES_TO_STRIP) {
+    if (lowerForPrefix.startsWith(prefix)) {
+      name = name.slice(prefix.length);
+      break;
+    }
+  }
 
   // Strip common suffixes (MCP server names appended to tool names)
-  return name
-    .replace(/_workspace-mcp$/, '')
-    .replace(/-workspace-mcp$/, '')
-    .replace(/_Playwright$/, '')
-    .replace(/_Browser_MCP$/, '')
-    .replace(/_Context_7$/, '')
-    .replace(/_svelte$/, '')
-    .replace(/_augment$/, '')
-    .replace(/-augment$/, '')
-    .replace(/_npx$/, '')
-    .replace(/_Sequential_thinking$/, '')
-    .replace(/_figma$/i, '')
-    .replace(/_slack$/i, '')
-    .replace(/_sentry$/i, '')
-    .replace(/_github$/i, '')
-    .replace(/_linear$/i, '')
-    .replace(/_notion$/i, '')
-    .replace(/_jira$/i, '');
+  const lowerForSuffix = name.toLowerCase();
+  for (const suffix of CLEAN_SUFFIXES_TO_STRIP) {
+    if (lowerForSuffix.endsWith(suffix)) {
+      return name.slice(0, -suffix.length);
+    }
+  }
+
+  return name;
+}
+
+/**
+ * Known MCP server suffixes mapped to their normalized source names.
+ * Suffixes are lowercase for case-insensitive matching via endsWith.
+ * Order matters: longer/more-specific patterns should come first.
+ */
+const MCP_SUFFIX_MAP: Array<{ suffix: string; source: string }> = [
+  { suffix: '_workspace-mcp', source: 'workspace-mcp' },
+  { suffix: '-workspace-mcp', source: 'workspace-mcp' },
+  { suffix: '_browser_mcp', source: 'browser-mcp' },
+  { suffix: '_playwright', source: 'playwright' },
+  { suffix: '_sequential_thinking', source: 'sequential-thinking' },
+  { suffix: '_context_7', source: 'context7' },
+  { suffix: '_figma', source: 'figma' },
+  { suffix: '_sentry', source: 'sentry' },
+  { suffix: '_github', source: 'github' },
+  { suffix: '_linear', source: 'linear' },
+  { suffix: '_slack', source: 'slack' },
+  { suffix: '_notion', source: 'notion' },
+  { suffix: '_jira', source: 'jira' },
+  { suffix: '_svelte', source: 'svelte' },
+  { suffix: '_augment', source: 'augment' },
+  { suffix: '-augment', source: 'augment' },
+  { suffix: '_npx', source: 'npx' },
+];
+
+/**
+ * Known MCP server prefixes mapped to their normalized source names.
+ * Prefixes are lowercase for case-insensitive matching via startsWith.
+ * Note: the dynamic mcp__<server>__ prefix is handled separately with a regex.
+ */
+const MCP_PREFIX_MAP: Array<{ prefix: string; source: string }> = [
+  { prefix: 'workspace-mcp_', source: 'workspace-mcp' },
+  { prefix: 'workspace_mcp_', source: 'workspace-mcp' },
+  { prefix: 'browser-mcp_', source: 'browser-mcp' },
+  { prefix: 'browser_mcp_', source: 'browser-mcp' },
+  { prefix: 'filesystem_', source: 'filesystem' },
+];
+
+/**
+ * Tool names that are themselves MCP tools (no suffix/prefix, the whole name IS the tool).
+ * Maps exact cleaned names to their MCP source.
+ */
+const MCP_STANDALONE_TOOLS: Record<string, string> = {
+  'github-api': 'github',
+  linear: 'linear',
+  glean: 'glean',
+};
+
+/**
+ * Built-in tool names that should never get an mcpSource.
+ */
+const BUILTIN_TOOLS = new Set([
+  'view',
+  'codebase-retrieval',
+  'codebase_retrieval',
+  'launch-process',
+  'launch_process',
+  'read-process',
+  'read_process',
+  'write-process',
+  'write_process',
+  'kill-process',
+  'kill_process',
+  'list-processes',
+  'list_processes',
+  'str-replace-editor',
+  'str_replace_editor',
+  'save-file',
+  'save_file',
+  'remove-files',
+  'remove_files',
+  'web-search',
+  'web_search',
+  'web-fetch',
+  'web_fetch',
+  'conversation-retrieval',
+  'conversation_retrieval',
+  'git-commit-retrieval',
+  'git_commit_retrieval',
+  'bash',
+  'read',
+  'edit',
+  'run',
+  'find',
+  'grep',
+]);
+
+/**
+ * Extract the MCP server source name from a raw tool name.
+ * Returns the normalized lowercase source name, or undefined for built-in tools.
+ *
+ * Examples:
+ *   "get_screenshot_figma" → "figma"
+ *   "search_issues_Sentry" → "sentry"
+ *   "browser_click_Playwright" → "playwright"
+ *   "read_note_workspace-mcp" → "workspace-mcp"
+ *   "mcp__workspace-mcp__read_note" → "workspace-mcp"
+ *   "github-api" → "github"
+ *   "launch-process" → undefined
+ *   "view" → undefined
+ */
+export function extractMcpSource(rawName: string | undefined | null): string | undefined {
+  if (!rawName) return undefined;
+
+  // Handle MCP URL formats first
+  const mcpUrlMatch = rawName.match(
+    /(?:\/\/local\/mcp\/|workspaces\.augmentcode\.com\/mcp\/)(.+)$/,
+  );
+  if (mcpUrlMatch) rawName = mcpUrlMatch[1];
+
+  // Check for mcp__<server>__ prefix (dynamic extraction)
+  const mcpPrefixMatch = rawName.match(/^mcp__([^_]+)__/);
+  if (mcpPrefixMatch) {
+    return mcpPrefixMatch[1].toLowerCase();
+  }
+
+  // Check known prefixes (case-insensitive via lowercase comparison)
+  const lowerName = rawName.toLowerCase();
+  for (const { prefix, source } of MCP_PREFIX_MAP) {
+    if (lowerName.startsWith(prefix)) {
+      return source;
+    }
+  }
+
+  // Check known suffixes (case-insensitive via lowercase comparison)
+  for (const { suffix, source } of MCP_SUFFIX_MAP) {
+    if (lowerName.endsWith(suffix)) {
+      return source;
+    }
+  }
+
+  // Check standalone tool names (after stripping any URL prefix)
+  if (MCP_STANDALONE_TOOLS[lowerName]) {
+    return MCP_STANDALONE_TOOLS[lowerName];
+  }
+
+  // Check if it's a known built-in tool
+  if (BUILTIN_TOOLS.has(lowerName)) {
+    return undefined;
+  }
+
+  return undefined;
 }
 
 /**
@@ -203,6 +370,7 @@ function dirname(path: unknown): string {
 /**
  * Context Engine tool names - tools that use Augment's proprietary context engine.
  * These get special treatment with Augment branding.
+ * Both hyphenated and underscore variants are included for exact matching.
  */
 const CONTEXT_ENGINE_TOOLS = [
   'codebase-retrieval',
@@ -213,15 +381,21 @@ const CONTEXT_ENGINE_TOOLS = [
   'conversation_retrieval',
 ] as const;
 
+/** Pre-computed underscore variants for includes() checks (avoids .replace() per call) */
+const CONTEXT_ENGINE_TOOLS_UNDERSCORE = [
+  'codebase_retrieval',
+  'git_commit_retrieval',
+  'conversation_retrieval',
+];
+
 /**
  * Check if a tool is powered by Augment's Context Engine
  */
 export function isContextEngineTool(toolName: string | undefined | null): boolean {
   if (!toolName) return false;
   const cleanName = cleanToolName(toolName).toLowerCase();
-  return CONTEXT_ENGINE_TOOLS.some(
-    (tool) => cleanName === tool || cleanName.includes(tool.replace(/-/g, '_')),
-  );
+  return CONTEXT_ENGINE_TOOLS.some((tool) => cleanName === tool) ||
+    CONTEXT_ENGINE_TOOLS_UNDERSCORE.some((tool) => cleanName.includes(tool));
 }
 
 /**
@@ -474,9 +648,27 @@ export function classifyTool(
   // Guard against null/undefined tool names (can happen with malformed content blocks)
   toolName = toolName || '';
 
+  // Extract MCP source from the raw tool name BEFORE cleaning strips it
+  const mcpSource = extractMcpSource(toolName);
+
   // Extract metadata from result for enhanced display
   const resultMetadata = extractResultMetadata(result);
 
+  // Classify the tool, then attach mcpSource if detected
+  const display = classifyToolInner(toolName, input, result, resultMetadata);
+  if (mcpSource) display.mcpSource = mcpSource;
+  return display;
+}
+
+/**
+ * Inner classification logic (without mcpSource attachment)
+ */
+function classifyToolInner(
+  toolName: string,
+  input: Record<string, any>,
+  result: any,
+  resultMetadata: ResultMetadata | null,
+): ToolDisplay {
   // workspace_api: prefer human-readable label over raw tool names
   // Also detect by input shape: if input has both `code` and `summary`, it's workspace_api
   // regardless of the tool name (which may be a human-readable title)

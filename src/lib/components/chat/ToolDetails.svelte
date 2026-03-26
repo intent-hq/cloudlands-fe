@@ -26,6 +26,10 @@
   const { input, result, parsedResult, isError = false }: Props = $props();
 
   let copied = $state(false);
+  let showRaw = $state(false);
+
+  // Whether this tool call has a rich (non-raw) preview available
+  const hasRichPreview = $derived(parsedResult != null && parsedResult.type !== 'unknown');
 
   // Special input keys that should be shown at the top of output (not hidden)
   // These are the "query" or "request" that provides important context
@@ -146,22 +150,52 @@
           </div>
         {/if}
 
-        <!-- Copy button (appears on hover, top-right of content area) -->
-        <!-- Skip for file-view since CodeBlock has its own copy button -->
-        {#if (parsedResult?.content || parsedResult?.newContent) && parsedResult?.type !== 'file-view'}
-          <button
-            class="absolute top-2 right-2 p-1.5 rounded bg-muted/80 border border-border/50 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer transition-all opacity-0 group-hover/details:opacity-100 z-10"
-            onclick={() =>
-              copyToClipboard(
-                input.content || parsedResult?.newContent || parsedResult?.content || '',
-              )}
-            title="Copy content"
-          >
-            <Fa icon={copied ? faCheck : faCopy} size="xs" />
-          </button>
-        {/if}
+        <!-- Top-right action buttons (appear on hover) -->
+        <div class="absolute top-2 right-2 flex items-center gap-1 transition-all z-10 {showRaw ? 'opacity-100' : 'opacity-0 group-hover/details:opacity-100'}">
+          <!-- Raw/Formatted toggle - only when rich preview exists -->
+          {#if hasRichPreview}
+            <button
+              class="px-1.5 py-0.5 rounded text-ui font-medium bg-muted/80 border border-border/50 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
+              onclick={() => (showRaw = !showRaw)}
+              title={showRaw ? 'Show formatted view' : 'Show raw data'}
+            >
+              {showRaw ? 'Formatted' : 'Raw'}
+            </button>
+          {/if}
+          <!-- Copy button - Skip for file-view since CodeBlock has its own copy button -->
+          {#if (parsedResult?.content || parsedResult?.newContent) && parsedResult?.type !== 'file-view'}
+            <button
+              class="p-1.5 rounded bg-muted/80 border border-border/50 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
+              onclick={() => copyToClipboard(input.content || parsedResult?.newContent || parsedResult?.content || '')}
+              title="Copy content"
+            >
+              <Fa icon={copied ? faCheck : faCopy} size="xs" />
+            </button>
+          {/if}
+        </div>
 
-        {#if parsedResult && parsedResult.type !== 'unknown'}
+        {#if showRaw && hasRichPreview}
+          <!-- Raw data view (toggled) -->
+          <div class="overflow-hidden rounded flex flex-col gap-2">
+            {#if input && Object.keys(input).length > 0}
+              <div>
+                <div class="text-xs font-medium text-subtle mb-1">Input</div>
+                <pre
+                  class="m-0 p-2 font-mono text-xs leading-relaxed overflow-x-auto max-h-48 overflow-y-auto text-subtle bg-muted/30 rounded">{JSON.stringify(input, null, 2)}</pre>
+              </div>
+            {/if}
+            {#if result != null}
+              <div>
+                <div class="text-xs font-medium text-subtle mb-1">Result</div>
+                <pre
+                  class="m-0 p-2 font-mono text-xs leading-relaxed overflow-x-auto max-h-72 overflow-y-auto text-subtle bg-muted/30 rounded">{typeof result ===
+                    'string'
+                      ? result
+                      : JSON.stringify(result, null, 2)}</pre>
+              </div>
+            {/if}
+          </div>
+        {:else if parsedResult && parsedResult.type !== 'unknown'}
           {#if (parsedResult.type === 'file-edit' || parsedResult.type === 'note-edit') && parsedResult.oldContent && parsedResult.newContent}
             <!-- Diff view using DiffViewer component -->
             <DiffViewer
@@ -680,6 +714,55 @@
                 <span class="text-sm text-subtle p-2">No notes found</span>
               {/if}
             </div>
+          {:else if parsedResult.type === 'figma'}
+            <!-- Figma tool results - screenshot + code -->
+            <div class="flex flex-col gap-2">
+              {#if parsedResult.figmaScreenshot}
+                <!-- Inline Figma screenshot -->
+                <div class="overflow-hidden rounded border border-border/40">
+                  <img
+                    src={`data:${parsedResult.figmaScreenshotMimeType || 'image/png'};base64,${parsedResult.figmaScreenshot}`}
+                    alt="Figma design screenshot"
+                    class="w-full h-auto max-h-96 object-contain bg-white"
+                    style="max-width: 600px"
+                  />
+                </div>
+              {/if}
+              {#if parsedResult.figmaCode}
+                <!-- Code snippet from design context -->
+                <CodeBlock
+                  code={parsedResult.figmaCode}
+                  language="typescript"
+                  showLineNumbers={false}
+                  maxHeight={200}
+                  noBorder
+                  noMargin
+                />
+              {/if}
+              {#if parsedResult.figmaAssets && parsedResult.figmaAssets.length > 0}
+                <!-- Asset download URLs -->
+                <div class="flex flex-col gap-0.5 text-xs">
+                  <span class="text-subtle font-medium">Assets</span>
+                  {#each parsedResult.figmaAssets as asset}
+                    <a
+                      href={asset.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="text-primary hover:underline truncate"
+                    >
+                      {asset.name}
+                    </a>
+                  {/each}
+                </div>
+              {/if}
+              {#if parsedResult.content && !parsedResult.figmaScreenshot && !parsedResult.figmaCode}
+                <!-- Fallback: show raw content when no screenshot or code -->
+                <div class="overflow-hidden rounded">
+                  <pre
+                    class="m-0 p-2 font-mono text-sm leading-relaxed overflow-x-auto max-h-72 overflow-y-auto text-muted-foreground whitespace-pre-wrap">{parsedResult.content}</pre>
+                </div>
+              {/if}
+            </div>
           {:else if parsedResult.type === 'browser'}
             <!-- Browser tool results -->
             <div class="flex flex-col gap-2">
@@ -768,6 +851,213 @@
                 <!-- Fallback content for other browser actions -->
                 <div class="overflow-hidden rounded">
                   <pre class="m-0 p-2 font-mono text-sm leading-relaxed overflow-x-auto max-h-48 overflow-y-auto text-muted-foreground">{parsedResult.content}</pre>
+                </div>
+              {/if}
+            </div>
+          {:else if parsedResult.type === 'sentry-issue' && parsedResult.sentryIssue}
+            <!-- Sentry issue detail card -->
+            {@const issue = parsedResult.sentryIssue}
+            {@const levelColor =
+              issue.level === 'fatal' ? 'bg-red-600 text-white' :
+              issue.level === 'error' ? 'bg-red-500/20 text-red-600 dark:text-red-400' :
+              issue.level === 'warning' ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400' :
+              issue.level === 'info' ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400' :
+              'bg-muted text-subtle'}
+            {@const statusColor =
+              issue.status === 'resolved' ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
+              issue.status === 'ignored' ? 'bg-muted text-subtle' :
+              'bg-orange-500/20 text-orange-600 dark:text-orange-400'}
+            <div class="rounded-md border border-border overflow-hidden">
+              <!-- Header with title and badges -->
+              <div class="px-3 py-2.5 flex flex-col gap-1.5">
+                <div class="flex items-start gap-2">
+                  <div class="flex-1 min-w-0">
+                    {#if issue.shortId}
+                      <span class="text-xs text-subtle font-mono mr-1.5">{issue.shortId}</span>
+                    {/if}
+                    <span class="text-sm font-medium text-foreground">{issue.title}</span>
+                  </div>
+                </div>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="px-1.5 py-0.5 text-ui font-medium rounded {statusColor}">{issue.status}</span>
+                  <span class="px-1.5 py-0.5 text-ui font-medium rounded {levelColor}">{issue.level}</span>
+                  {#if issue.project}
+                    <span class="text-ui text-subtle">{issue.project}</span>
+                  {/if}
+                </div>
+              </div>
+              <!-- Stats row -->
+              <div class="px-3 py-2 border-t border-border/50 bg-muted/20 flex items-center gap-4 text-xs">
+                <div class="flex items-center gap-1">
+                  <span class="text-subtle">Events</span>
+                  <span class="font-medium text-foreground">{issue.count.toLocaleString()}</span>
+                </div>
+                <div class="flex items-center gap-1">
+                  <span class="text-subtle">Users</span>
+                  <span class="font-medium text-foreground">{issue.userCount.toLocaleString()}</span>
+                </div>
+                {#if issue.lastSeen}
+                  <div class="flex items-center gap-1 ml-auto">
+                    <span class="text-subtle">Last seen</span>
+                    <span class="text-muted-foreground">{new Date(issue.lastSeen).toLocaleDateString()}</span>
+                  </div>
+                {/if}
+              </div>
+              <!-- Stacktrace summary (if available) -->
+              {#if issue.stacktraceSummary}
+                <div class="px-3 py-2 border-t border-border/50 bg-muted/10">
+                  <pre class="m-0 font-mono text-ui leading-relaxed text-subtle overflow-x-auto">{issue.stacktraceSummary}</pre>
+                </div>
+              {/if}
+              <!-- Link to Sentry -->
+              {#if issue.url}
+                <div class="px-3 py-1.5 border-t border-border/50 bg-muted/10">
+                  <a href={issue.url} target="_blank" rel="noopener noreferrer" class="text-ui text-primary hover:underline">
+                    View in Sentry ↗
+                  </a>
+                </div>
+              {/if}
+            </div>
+          {:else if parsedResult.type === 'sentry-search' && parsedResult.sentryIssues?.length}
+            <!-- Sentry search results - compact issue list -->
+            <div class="flex flex-col gap-1 max-h-80 overflow-y-auto">
+              {#each parsedResult.sentryIssues as issue}
+                {@const levelDot =
+                  issue.level === 'fatal' ? 'bg-red-600' :
+                  issue.level === 'error' ? 'bg-red-500' :
+                  issue.level === 'warning' ? 'bg-amber-500' :
+                  issue.level === 'info' ? 'bg-blue-500' :
+                  'bg-muted-foreground'}
+                {@const statusText =
+                  issue.status === 'resolved' ? 'text-emerald-600 dark:text-emerald-400' :
+                  issue.status === 'ignored' ? 'text-subtle' :
+                  'text-orange-600 dark:text-orange-400'}
+                <div class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/30 transition-colors">
+                  <span class="w-2 h-2 rounded-full shrink-0 {levelDot}"></span>
+                  <div class="flex-1 min-w-0 flex items-center gap-1.5">
+                    {#if issue.shortId}
+                      <span class="text-ui text-subtle font-mono shrink-0">{issue.shortId}</span>
+                    {/if}
+                    {#if issue.url}
+                      <a href={issue.url} target="_blank" rel="noopener noreferrer" class="text-sm text-foreground truncate hover:underline">{issue.title}</a>
+                    {:else}
+                      <span class="text-sm text-foreground truncate">{issue.title}</span>
+                    {/if}
+                  </div>
+                  <span class="text-ui {statusText} shrink-0">{issue.status}</span>
+                  {#if issue.count > 0}
+                    <span class="text-ui text-subtle shrink-0">{issue.count.toLocaleString()}</span>
+                  {/if}
+                </div>
+              {/each}
+              <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1">
+                {parsedResult.sentryIssues.length} issue{parsedResult.sentryIssues.length === 1 ? '' : 's'}
+              </div>
+            </div>
+          {:else if parsedResult.type === 'github-issues' && parsedResult.githubIssues?.length}
+            <!-- GitHub Issues/PRs list -->
+            <div class="flex flex-col gap-1 max-h-72 overflow-y-auto">
+              {#each parsedResult.githubIssues as issue}
+                {@const stateColor = issue.state === 'open' ? 'text-green-600 dark:text-green-400' : issue.state === 'closed' ? 'text-purple-600 dark:text-purple-400' : 'text-subtle'}
+                {@const stateIcon = issue.state === 'open' ? '●' : issue.state === 'closed' ? '✓' : '○'}
+                <div class="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-muted/30 transition-colors">
+                  <span class="shrink-0 text-xs mt-0.5 {stateColor}" title={issue.state}>{stateIcon}</span>
+                  <div class="flex flex-col gap-0.5 min-w-0 flex-1">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                      <span class="text-subtle text-xs font-mono shrink-0">#{issue.number}</span>
+                      {#if issue.url}
+                        <a href={issue.url} target="_blank" rel="noopener noreferrer" class="text-sm text-foreground hover:underline truncate">{issue.title}</a>
+                      {:else}
+                        <span class="text-sm text-foreground truncate">{issue.title}</span>
+                      {/if}
+                      {#if issue.isPR}
+                        <span class="text-ui px-1 py-0.5 rounded bg-blue-500/15 text-blue-600 dark:text-blue-400 shrink-0">PR</span>
+                      {/if}
+                    </div>
+                    {#if issue.labels && issue.labels.length > 0}
+                      <div class="flex gap-1 flex-wrap">
+                        {#each issue.labels as label}
+                          <span
+                            class="text-ui px-1.5 py-0.5 rounded-full font-medium"
+                            style={label.color ? `background-color: #${label.color}20; color: #${label.color}; border: 1px solid #${label.color}40` : ''}
+                            class:bg-muted={!label.color}
+                            class:text-subtle={!label.color}
+                          >{label.name}</span>
+                        {/each}
+                      </div>
+                    {/if}
+                  </div>
+                </div>
+              {/each}
+              <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1">
+                {parsedResult.githubIssues.length} result{parsedResult.githubIssues.length === 1 ? '' : 's'}
+              </div>
+            </div>
+          {:else if parsedResult.type === 'github-pr-files' && parsedResult.githubFiles?.length}
+            <!-- GitHub PR Changed Files -->
+            <div class="flex flex-col gap-0.5 max-h-72 overflow-y-auto">
+              {#each parsedResult.githubFiles as file}
+                {@const statusIcon = file.status === 'added' ? '+' : file.status === 'removed' ? '−' : file.status === 'renamed' ? '→' : '~'}
+                {@const statusColor = file.status === 'added' ? 'text-green-600 dark:text-green-400' : file.status === 'removed' ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}
+                <div class="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/30 transition-colors">
+                  <span class="shrink-0 text-xs font-mono w-3 text-center {statusColor}">{statusIcon}</span>
+                  <span class="text-sm text-foreground truncate flex-1 font-mono">{file.filename}</span>
+                  <div class="flex items-center gap-1.5 shrink-0 text-xs font-mono">
+                    {#if file.additions > 0}
+                      <span class="text-green-600 dark:text-green-400">+{file.additions}</span>
+                    {/if}
+                    {#if file.deletions > 0}
+                      <span class="text-red-600 dark:text-red-400">−{file.deletions}</span>
+                    {/if}
+                  </div>
+                </div>
+              {/each}
+              {#if parsedResult.githubFiles.length}
+                {@const totalAdditions = parsedResult.githubFiles.reduce((s, f) => s + f.additions, 0)}
+                {@const totalDeletions = parsedResult.githubFiles.reduce((s, f) => s + f.deletions, 0)}
+                <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1 flex gap-2">
+                  <span>{parsedResult.githubFiles.length} file{parsedResult.githubFiles.length === 1 ? '' : 's'} changed</span>
+                  {#if totalAdditions > 0}
+                    <span class="text-green-600 dark:text-green-400">+{totalAdditions}</span>
+                  {/if}
+                  {#if totalDeletions > 0}
+                    <span class="text-red-600 dark:text-red-400">−{totalDeletions}</span>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {:else if parsedResult.type === 'github-checks' && parsedResult.githubChecks?.length}
+            <!-- GitHub CI Check Runs -->
+            <div class="flex flex-col gap-0.5 max-h-72 overflow-y-auto">
+              {#if parsedResult.githubOverallStatus}
+                {@const overallColor = parsedResult.githubOverallStatus === 'success' ? 'text-green-600 dark:text-green-400' : parsedResult.githubOverallStatus === 'failure' || parsedResult.githubOverallStatus === 'error' ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}
+                <div class="flex items-center gap-2 px-2 py-1.5 mb-1 border-b border-border/30">
+                  <span class="text-sm font-medium {overallColor}">Overall: {parsedResult.githubOverallStatus}</span>
+                </div>
+              {/if}
+              {#each parsedResult.githubChecks as check}
+                {@const conclusion = check.conclusion || check.status}
+                {@const checkIcon = conclusion === 'success' ? '✓' : conclusion === 'failure' || conclusion === 'error' || conclusion === 'timed_out' ? '✗' : conclusion === 'in_progress' || conclusion === 'queued' || conclusion === 'pending' ? '⏳' : conclusion === 'skipped' || conclusion === 'neutral' ? '–' : '○'}
+                {@const checkColor = conclusion === 'success' ? 'text-green-600 dark:text-green-400' : conclusion === 'failure' || conclusion === 'error' || conclusion === 'timed_out' ? 'text-red-600 dark:text-red-400' : conclusion === 'in_progress' || conclusion === 'queued' || conclusion === 'pending' ? 'text-amber-600 dark:text-amber-400' : 'text-subtle'}
+                <div class="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/30 transition-colors">
+                  <span class="shrink-0 text-sm {checkColor}">{checkIcon}</span>
+                  <span class="text-sm text-foreground truncate flex-1">{check.name}</span>
+                  {#if check.conclusion && check.conclusion !== check.status}
+                    <span class="text-xs text-subtle shrink-0">{check.conclusion}</span>
+                  {/if}
+                </div>
+              {/each}
+              {#if parsedResult.githubChecks.length}
+                {@const passed = parsedResult.githubChecks.filter(c => (c.conclusion || c.status) === 'success').length}
+                {@const failed = parsedResult.githubChecks.filter(c => ['failure', 'error', 'timed_out'].includes(c.conclusion || c.status)).length}
+                <div class="text-xs text-subtle pt-1 border-t border-border/30 mt-1 flex gap-2">
+                  <span>{parsedResult.githubChecks.length} check{parsedResult.githubChecks.length === 1 ? '' : 's'}</span>
+                  {#if passed > 0}
+                    <span class="text-green-600 dark:text-green-400">{passed} passed</span>
+                  {/if}
+                  {#if failed > 0}
+                    <span class="text-red-600 dark:text-red-400">{failed} failed</span>
+                  {/if}
                 </div>
               {/if}
             </div>

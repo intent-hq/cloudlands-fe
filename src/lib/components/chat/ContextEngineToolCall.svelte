@@ -8,8 +8,6 @@
   import type { ToolUseBlock } from '$shared/types';
   import {
     faCheckCircle,
-    faChevronDown,
-    faSpinner,
     faFile,
     faExclamationTriangle,
     faCodeCommit,
@@ -217,7 +215,7 @@
         <!-- <div class="shrink-0 pt-1.25 pr-1.5 text-subtle">
           <Fa icon={faMagnifyingGlass} size={12} />
         </div> -->
-        <span class="shrink-0 text-primary/80">
+        <span class="shrink-0 text-primary/80 {toolState === 'running' ? 'animate-pulse' : ''}">
           Search {sourceLabel}
         </span>
 
@@ -228,25 +226,10 @@
             Augment Context Engine
           </div>
 
-          <!-- Status indicator (always shown for error, only when expanded otherwise) -->
-          {#if ['running', 'error'].includes(toolState)}
+          <!-- Status indicator -->
+          {#if toolState === 'error'}
             <div class="flex items-center gap-2 shrink-0">
-              {#if toolState === 'running'}
-                <Fa icon={faSpinner} size="xs" class="text-ghost animate-spin" />
-                <!-- {:else if toolState === 'completed'}
-                <Fa icon={faCheckCircle} size="xs" class="text-emerald-500/60" /> -->
-              {:else if toolState === 'error'}
-                <Fa icon={faExclamationTriangle} size="xs" class="text-red-500" />
-              {/if}
-
-              {#if expanded}
-                <!-- <div
-              class="p-0.5 bg-transparent border-0 cursor-pointer text-subtle"
-              aria-label={expanded ? 'Collapse details' : 'Expand details'}
-            >
-              <Fa icon={faChevronDown} size="xs" />
-            </div> -->
-              {/if}
+              <Fa icon={faExclamationTriangle} size="xs" class="text-red-500" />
             </div>
           {/if}
         </div>
@@ -292,7 +275,7 @@
                     <Fa
                       icon={isCommitRetrieval ? faCodeCommit : faFile}
                       size="xs"
-                      class="text-foreground/20"
+                      class="text-ghost"
                     />
                   </span>
                 {/snippet}
