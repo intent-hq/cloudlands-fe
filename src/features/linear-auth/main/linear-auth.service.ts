@@ -210,28 +210,34 @@ export class LinearAuthService {
     // Note: Explicitly request fields since not all are included by default
     const fieldsToInclude =
       'Include the following fields for each issue: description, assignee, creator, labels, project, state, priority, createdAt, updatedAt.';
-    const filterQueries: Record<string, { summary: string; query: string }> = {
-      assigned: {
-        summary: 'Fetch issues assigned to current user with full details',
-        query: `List all issues assigned to me that are not completed or canceled. ${fieldsToInclude}`,
-      },
-      created: {
-        summary: 'Fetch issues created by current user with full details',
-        query: `List all issues I created that are not completed or canceled. ${fieldsToInclude}`,
-      },
-      subscribed: {
-        summary: 'Fetch issues user is subscribed to with full details',
-        query: `List all issues I am subscribed to that are not completed or canceled. ${fieldsToInclude}`,
-      },
-      team: {
-        summary: 'Fetch all active issues from user teams with full details',
-        query: `List all active issues from my teams that are not completed or canceled. ${fieldsToInclude}`,
-      },
-      all: {
-        summary: 'Fetch all accessible issues with full details',
-        query: `List all issues I have access to that are not completed or canceled. ${fieldsToInclude}`,
-      },
-    };
+    const filterQueries: Record<string, { summary: string; query: string; is_read_only: boolean }> =
+      {
+        assigned: {
+          summary: 'Fetch issues assigned to current user with full details',
+          query: `List all issues assigned to me that are not completed or canceled. ${fieldsToInclude}`,
+          is_read_only: true,
+        },
+        created: {
+          summary: 'Fetch issues created by current user with full details',
+          query: `List all issues I created that are not completed or canceled. ${fieldsToInclude}`,
+          is_read_only: true,
+        },
+        subscribed: {
+          summary: 'Fetch issues user is subscribed to with full details',
+          query: `List all issues I am subscribed to that are not completed or canceled. ${fieldsToInclude}`,
+          is_read_only: true,
+        },
+        team: {
+          summary: 'Fetch all active issues from user teams with full details',
+          query: `List all active issues from my teams that are not completed or canceled. ${fieldsToInclude}`,
+          is_read_only: true,
+        },
+        all: {
+          summary: 'Fetch all accessible issues with full details',
+          query: `List all issues I have access to that are not completed or canceled. ${fieldsToInclude}`,
+          is_read_only: true,
+        },
+      };
 
     const filterConfig = filterQueries[filter] || filterQueries.assigned;
 
@@ -285,6 +291,7 @@ export class LinearAuthService {
       const query = JSON.stringify({
         summary: `Search Linear issues for: ${searchQuery}`,
         query: `Search for issues matching: ${searchQuery}. ${fieldsToInclude}`,
+        is_read_only: true,
       });
 
       const result = await augmentApiClient.runLinearTool<LinearToolResponse>(query);

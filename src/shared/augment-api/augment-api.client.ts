@@ -475,33 +475,43 @@ export class AugmentApiClient {
       logger.info('Running Linear tool', { toolInputJson });
 
       const response = await this.callEndpoint<{
+        tool_output: string;
+        tool_result_message: string;
+        status: number;
         result?: T;
-        tool_output?: string;
-        error?: string;
       }>('agents/run-remote-tool', {
+        tool_name: 'linear',
         tool_id: LINEAR_TOOL_ID,
         tool_input_json: toolInputJson,
       });
 
       logger.info('Linear tool raw response', {
-        hasResult: !!response.result,
+        status: response.status,
+        message: response.tool_result_message,
         hasToolOutput: !!response.tool_output,
-        hasError: !!response.error,
         responseKeys: Object.keys(response),
         response: JSON.stringify(response).substring(0, 500),
       });
 
-      if (response.error) {
-        logger.error('Linear tool error', { error: response.error });
+      // Status 1 = TOOL_EXECUTION_OK, anything else is an error
+      if (response.status !== 1) {
+        const errorMessage =
+          response.tool_output || response.tool_result_message || 'Unknown error';
+        logger.error('Linear tool error', { status: response.status, output: errorMessage });
         return null;
       }
 
-      // The response may have tool_output instead of result
+      // The response has tool_output as a string
       if (response.tool_output) {
         return response.tool_output as unknown as T;
       }
 
-      return response.result ?? null;
+      // Fallback: some responses may use result instead of tool_output
+      if (response.result) {
+        return response.result;
+      }
+
+      return null;
     } catch (error) {
       logger.error('Failed to run Linear tool', error as Error);
       return null;
