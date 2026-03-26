@@ -45,13 +45,18 @@ export function normalizeWorkspacePaths(ws: Workspace): Workspace {
  * }
  * ```
  */
-class WorkspaceClient {
+export class WorkspaceClient {
   // Request deduplication - prevent duplicate concurrent requests
   private pendingRequests = new Map<string, Promise<any>>();
 
   // Simple cache for GET operations
   private cache = new Map<string, { data: any; timestamp: number }>();
   private readonly CACHE_TTL = 5000; // 5 seconds cache for GET operations
+
+  // Monotonic counter to prevent stale in-flight responses from being cached.
+  // Incremented on every mutation (clearCache). Requests capture the counter at start
+  // and only cache if it hasn't changed (no mutation occurred during the request).
+  private mutationCounter: number = 0;
 
   /**
    * Generate a cache key for request deduplication and caching.
@@ -73,6 +78,7 @@ class WorkspaceClient {
    */
   private async invoke<T>(channel: string, data?: any): Promise<Result<T, string>> {
     try {
+      const requestMutationCounter = this.mutationCounter;
       // Check for pending request (deduplication)
       const cacheKey = this.getCacheKey(channel, data);
       const pending = this.pendingRequests.get(cacheKey);
@@ -128,9 +134,11 @@ class WorkspaceClient {
           // Handle both Result and CommandResponse formats
           const result = this.normalizeResponse<T>(response);
 
-          // Cache successful GET operations
+          // Cache successful GET operations only if no mutation occurred during this request
           if (result.ok && (channel.includes(':get') || channel.includes(':list'))) {
-            this.cache.set(cacheKey, { data: result.data, timestamp: Date.now() });
+            if (requestMutationCounter === this.mutationCounter) {
+              this.cache.set(cacheKey, { data: result.data, timestamp: Date.now() });
+            }
           }
 
           return result;
@@ -171,6 +179,7 @@ class WorkspaceClient {
    * ```
    */
   clearCache(workspaceId?: string) {
+    this.mutationCounter++;
     if (workspaceId) {
       // Clear cache entries related to this workspace
       for (const [key] of this.cache) {
@@ -178,9 +187,17 @@ class WorkspaceClient {
           this.cache.delete(key);
         }
       }
+      // Also clear pending requests for this workspace so in-flight stale
+      // requests aren't reused by subsequent callers
+      for (const [key] of this.pendingRequests) {
+        if (key.includes(workspaceId)) {
+          this.pendingRequests.delete(key);
+        }
+      }
     } else {
-      // Clear all cache
+      // Clear all cache and pending requests
       this.cache.clear();
+      this.pendingRequests.clear();
     }
   }
 
@@ -273,6 +290,8 @@ class WorkspaceClient {
     // Clear cache for this workspace after update
     if (result.ok) {
       this.clearCache(request.id);
+      // Also clear list cache since this operation changes which/how workspaces are returned
+      this.clearCache();
       return { ok: true, data: normalizeWorkspacePaths(result.data) };
     }
     return result;
@@ -283,6 +302,8 @@ class WorkspaceClient {
     // Clear cache for this workspace after deletion
     if (result.ok) {
       this.clearCache(id);
+      // Also clear list cache since this operation changes which/how workspaces are returned
+      this.clearCache();
     }
     return result;
   }
@@ -325,6 +346,8 @@ class WorkspaceClient {
     // Clear cache for this workspace after rename
     if (result.ok) {
       this.clearCache(id);
+      // Also clear list cache since this operation changes which/how workspaces are returned
+      this.clearCache();
       return { ok: true, data: normalizeWorkspacePaths(result.data) };
     }
     return result;

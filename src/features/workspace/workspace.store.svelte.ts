@@ -41,6 +41,7 @@ class WorkspaceStore {
   #loadPromise: Promise<void> | null = null; // Track active load promise
   #pendingDeletions: Set<WorkspaceId> = new Set(); // Track workspaces pending deletion
   #pendingArchives: Set<WorkspaceId> = new Set(); // Track workspaces pending archive (prevents load() from restoring non-archived status)
+  #pendingArchiveTimeouts: Map<WorkspaceId, ReturnType<typeof setTimeout>> = new Map(); // Safety timeouts for pending archives
   #pendingDeletionTimeouts: Map<WorkspaceId, ReturnType<typeof setTimeout>> = new Map(); // Track undo timeout handles
   #pendingCreations: Map<WorkspaceId, Workspace> = new Map(); // Track workspaces pending creation (not yet in backend)
   #hasLoaded = $state(false); // Track if initial load has completed at least once
@@ -126,6 +127,15 @@ class WorkspaceStore {
       const useLiteMode = true;
       const result = await workspaceClient.list({ lite: useLiteMode });
       if (result.ok) {
+        // Capture original statuses from backend response BEFORE mutation,
+        // so the confirmation check below can compare against unmutated data.
+        const originalStatuses = new Map<string, string>();
+        for (const workspace of result.data) {
+          if (workspace && workspace.id) {
+            originalStatuses.set(workspace.id, workspace.status);
+          }
+        }
+
         // Deduplicate workspaces by ID to prevent duplicate key errors
         const uniqueWorkspaces = new Map<string, Workspace>();
         for (const workspace of result.data) {
@@ -201,6 +211,22 @@ class WorkspaceStore {
                   activePullRequest,
                 });
               }
+            }
+          }
+        }
+
+        // Confirm pending archives: if the backend ORIGINALLY returned Archived status
+        // (before our mutation) for a workspace in #pendingArchives, it's safe to remove
+        // the guard. We must check originalStatuses (not uniqueWorkspaces) because the
+        // mutation loop above already forced Archived status for pending archives.
+        if (this.#pendingArchives.size > 0) {
+          for (const pendingId of [...this.#pendingArchives]) {
+            const originalStatus = originalStatuses.get(pendingId);
+            if (originalStatus === WorkspaceStatusEnum.Archived) {
+              this.#pendingArchives.delete(pendingId);
+              const confirmedTimeout = this.#pendingArchiveTimeouts.get(pendingId);
+              if (confirmedTimeout) { clearTimeout(confirmedTimeout); this.#pendingArchiveTimeouts.delete(pendingId); }
+              logger.debug('Pending archive confirmed by backend', { id: pendingId });
             }
           }
         }
@@ -1029,6 +1055,18 @@ class WorkspaceStore {
     // Track pending archive to prevent load() from restoring non-archived status
     this.#pendingArchives.add(workspaceId);
 
+    // Safety timeout: remove from #pendingArchives after 30s to prevent memory leaks
+    // if _doLoad() never runs or never returns.
+    const existingTimeout = this.#pendingArchiveTimeouts.get(workspaceId);
+    if (existingTimeout) clearTimeout(existingTimeout);
+    this.#pendingArchiveTimeouts.set(
+      workspaceId,
+      setTimeout(() => {
+        this.#pendingArchives.delete(workspaceId);
+        this.#pendingArchiveTimeouts.delete(workspaceId);
+      }, 30_000),
+    );
+
     // Optimistically update local state immediately for better UX
     const workspaceIndex = this.#items.findIndex((w) => w.id === workspaceId);
     logger.info('[WorkspaceStore] archive called', {
@@ -1068,6 +1106,8 @@ class WorkspaceStore {
         if (!result.ok) {
           // Rollback on failure - restore original workspace
           this.#pendingArchives.delete(workspaceId);
+          const rollbackTimeout = this.#pendingArchiveTimeouts.get(workspaceId);
+          if (rollbackTimeout) { clearTimeout(rollbackTimeout); this.#pendingArchiveTimeouts.delete(workspaceId); }
           const rollbackWorkspace = { ...updatedWorkspace, status: originalStatus };
           this.#items = [
             ...this.#items.slice(0, workspaceIndex),
@@ -1078,8 +1118,9 @@ class WorkspaceStore {
           return result;
         }
 
-        // Backend has persisted the archive, safe to clear pending
-        this.#pendingArchives.delete(workspaceId);
+        // Do NOT clear #pendingArchives here — an in-flight load() may still
+        // return stale Active data. _doLoad() will clear it once the backend
+        // confirms Archived status.
 
         // Clean up workspace-scoped caches to prevent memory leaks
         clearDeferredResults(workspaceId);
@@ -1089,6 +1130,8 @@ class WorkspaceStore {
       } catch (err) {
         // Rollback on error - restore original workspace
         this.#pendingArchives.delete(workspaceId);
+        const catchTimeout = this.#pendingArchiveTimeouts.get(workspaceId);
+        if (catchTimeout) { clearTimeout(catchTimeout); this.#pendingArchiveTimeouts.delete(workspaceId); }
         const rollbackWorkspace = { ...updatedWorkspace, status: originalStatus };
         const currentIndex = this.#items.findIndex((w) => w.id === workspaceId);
         if (currentIndex !== -1) {
@@ -1108,10 +1151,12 @@ class WorkspaceStore {
     // If workspace not found locally, still try to archive via backend
     try {
       const result = await workspaceClient.archive(workspaceId);
-      this.#pendingArchives.delete(workspaceId);
+      // Do NOT clear #pendingArchives here — _doLoad() will confirm.
       return result;
     } catch (err) {
       this.#pendingArchives.delete(workspaceId);
+      const fallbackTimeout = this.#pendingArchiveTimeouts.get(workspaceId);
+      if (fallbackTimeout) { clearTimeout(fallbackTimeout); this.#pendingArchiveTimeouts.delete(workspaceId); }
       const error = err instanceof Error ? err.message : 'Failed to archive workspace';
       return { ok: false, error };
     }
@@ -1120,6 +1165,8 @@ class WorkspaceStore {
   async unarchive(workspaceId: WorkspaceId): Promise<Result<void, string>> {
     // Clear pending archive so a quick archive→unarchive sequence works correctly
     this.#pendingArchives.delete(workspaceId);
+    const unarchiveTimeout = this.#pendingArchiveTimeouts.get(workspaceId);
+    if (unarchiveTimeout) { clearTimeout(unarchiveTimeout); this.#pendingArchiveTimeouts.delete(workspaceId); }
 
     // Optimistically update local state immediately for better UX
     const workspaceIndex = this.#items.findIndex((w) => w.id === workspaceId);
