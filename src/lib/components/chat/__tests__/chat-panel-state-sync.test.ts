@@ -21,6 +21,7 @@ function createChatState(overrides: Partial<ChatState> = {}): ChatState {
     lastChunkTime: null,
     isStalled: false,
     modelUnavailable: null,
+    statusEvents: [],
     ...overrides,
   };
 }
@@ -88,6 +89,75 @@ describe('chat panel state sync helpers', () => {
     expect(hasChatServiceStateChanged(currentState, incomingState)).toBe(true);
   });
 
+  describe('statusEvents handling', () => {
+    it('detects statusEvents changes as meaningful', () => {
+      const currentState = createChatState();
+      const events = [
+        {
+          phase: 'launch',
+          message: 'Launching…',
+          level: 'info' as const,
+          timestamp: Date.now(),
+        },
+      ];
+      const incomingState = createChatState({ statusEvents: events });
+      expect(hasChatServiceStateChanged(currentState, incomingState)).toBe(true);
+    });
+
+    it('does not flag identical statusEvents reference as changed', () => {
+      const events = [
+        {
+          phase: 'launch',
+          message: 'Launching…',
+          level: 'info' as const,
+          timestamp: Date.now(),
+        },
+      ];
+      const state = createChatState({ statusEvents: events });
+      expect(hasChatServiceStateChanged(state, state)).toBe(false);
+    });
+
+    it('syncs statusEvents from incoming state', () => {
+      const events = [
+        { phase: 'launch', message: 'Launching…', level: 'info' as const, timestamp: 1000 },
+        { phase: 'init', message: 'Initializing…', level: 'info' as const, timestamp: 2000 },
+      ];
+      const incoming = createChatState({ statusEvents: events });
+      const synced = syncChatStateFromService(createChatState(), incoming);
+      expect(synced.statusEvents).toEqual(events);
+      expect(synced.statusEvents).toBe(events); // same reference
+    });
+
+    it('clears statusEvents when incoming state has empty array', () => {
+      const events = [
+        { phase: 'launch', message: 'Launching…', level: 'info' as const, timestamp: 1000 },
+      ];
+      const current = createChatState({ statusEvents: events });
+      const incoming = createChatState({ statusEvents: [] });
+      const synced = syncChatStateFromService(current, incoming);
+      expect(synced.statusEvents).toEqual([]);
+    });
+
+    it('passes through statusEvents even when preserveTransientState is true', () => {
+      const events = [
+        { phase: 'prompt', message: 'Sent prompt…', level: 'info' as const, timestamp: 1000 },
+      ];
+      const current = createChatState({
+        statusEvents: events,
+        isStreaming: true,
+        isProcessing: true,
+        streamingStartTime: 100,
+      });
+      const incoming = createChatState({ statusEvents: [] });
+      const synced = syncChatStateFromService(current, incoming, {
+        isStreaming: true,
+        isProcessing: true,
+        preserveTransientState: true,
+      });
+      // statusEvents should use incoming (empty), not be preserved
+      expect(synced.statusEvents).toEqual([]);
+    });
+  });
 
   describe('stream-ending merge with ID-rewrite reconciliation', () => {
     // This exercises the same merge logic used in ChatPanel's store subscription

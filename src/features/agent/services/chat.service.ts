@@ -21,6 +21,7 @@ import { getAgentProvider } from '$shared/types/agent-session';
 import { getProviderConfig } from '$shared/config/provider-config';
 import { cleanErrorMessage } from '$shared/errors/messages';
 import { assertStreamingInvariant } from '../utils/streaming-invariants';
+import { shouldAppendStreamingEvent } from '$lib/components/chat/streaming-status-utils';
 
 const logger = createLogger('ChatService');
 
@@ -66,6 +67,8 @@ export interface ChatState {
   /** Timestamp when streaming/processing started (for long-running debug info) */
   /** Timestamp of the last received chunk (for stall detection) */
   lastChunkTime: number | null;
+  /** Whether we've received the first real chunk (distinct from lastChunkTime which is set on 'start') */
+  receivedFirstChunk: boolean;
   /** Whether the stream appears stalled (no chunks for STALL_DETECTION_MS) */
   isStalled: boolean;
   streamingStartTime: number | null;
@@ -79,6 +82,8 @@ export interface ChatState {
     failedModel: string;
     nextAvailableModel: string;
   } | null;
+  /** Transient lifecycle status events from the backend */
+  statusEvents: Array<{ phase: string; message: string; level: 'info' | 'warn' | 'error'; timestamp: number }>;
 }
 
 export interface SendMessageOptions {
@@ -188,6 +193,16 @@ export class ChatService implements IDisposable {
 
   constructor(agentId?: string) {
     this.agentId = agentId;
+
+    // Restore status events and streamingStartTime from localStorage so they survive tab switches and HMR reloads
+    const restored = this.loadStatusEventsFromStorage();
+
+    // If the restored statusEvents already contain a 'streaming' phase event, the first
+    // real chunk was already received before the HMR/remount. Setting receivedFirstChunk
+    // to true prevents recordChunkReceived() from appending a duplicate synthetic
+    // "Streaming response…" marker and restarting the lifecycle timer on recovery.
+    const restoredReceivedFirstChunk = restored.events.some((e) => e.phase === 'streaming');
+
     this.state = writable<ChatState>({
       session: null,
       messages: [],
@@ -196,11 +211,13 @@ export class ChatService implements IDisposable {
       isInterrupting: false,
       streamingContent: '',
       error: null,
-      streamingStartTime: null,
+      streamingStartTime: restored.streamingStartTime,
       lastAttemptedMessage: null,
       lastChunkTime: null,
+      receivedFirstChunk: restoredReceivedFirstChunk,
       isStalled: false,
       modelUnavailable: null,
+      statusEvents: restored.events,
     });
 
     // PERFORMANCE: When the browser tab is backgrounded, RAF callbacks are paused.
@@ -212,6 +229,91 @@ export class ChatService implements IDisposable {
       }
     };
     document.addEventListener('visibilitychange', this.visibilityChangeHandler);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Status Events Storage Helpers
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Generate localStorage key for status events.
+   * Uses agentId to scope storage per agent.
+   * Returns null if agentId is not available to avoid shared 'default' key collisions.
+   */
+  private getStatusEventsStorageKey(): string | null {
+    if (!this.agentId) {
+      return null;
+    }
+    return `intent:statusEvents:${this.agentId}`;
+  }
+
+  /**
+   * Save status events to localStorage so they survive tab switches and HMR reloads.
+   * No-ops if agentId is not available (to avoid shared key collisions).
+   */
+  private saveStatusEventsToStorage(statusEvents: ChatState['statusEvents']): void {
+    const key = this.getStatusEventsStorageKey();
+    if (!key) {
+      return; // Skip persistence when agentId is not available
+    }
+    try {
+      const currentState = get(this.state);
+      localStorage.setItem(key, JSON.stringify({
+        events: statusEvents,
+        streamingStartTime: currentState.streamingStartTime,
+      }));
+    } catch (e) {
+      // Ignore storage errors (e.g., quota exceeded)
+      logger.debug('[ChatService] Failed to save status events to localStorage', { error: e });
+    }
+  }
+
+  /**
+   * Load status events from localStorage.
+   * Returns events and streamingStartTime, or defaults if not stored or on error.
+   * Returns defaults if agentId is not available (to avoid shared key collisions).
+   */
+  private loadStatusEventsFromStorage(): { events: ChatState['statusEvents']; streamingStartTime: number | null } {
+    const key = this.getStatusEventsStorageKey();
+    if (!key) {
+      return { events: [], streamingStartTime: null }; // Skip loading when agentId is not available
+    }
+    try {
+      const stored = localStorage.getItem(key);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        // Handle old format (array) for backwards compatibility
+        if (Array.isArray(parsed)) {
+          return { events: parsed, streamingStartTime: null };
+        }
+        // Handle new format (object with events + streamingStartTime)
+        if (parsed && Array.isArray(parsed.events)) {
+          return { events: parsed.events, streamingStartTime: parsed.streamingStartTime ?? null };
+        }
+      }
+    } catch (e) {
+      // Ignore parse errors
+      logger.debug('[ChatService] Failed to load status events from localStorage', { error: e });
+    }
+    return { events: [], streamingStartTime: null };
+  }
+
+  /**
+   * Clear status events from localStorage.
+   * Called when a stream ends (end/error) or chat is cleared.
+   * No-ops if agentId is not available (to avoid shared key collisions).
+   */
+  private clearStatusEventsStorage(): void {
+    const key = this.getStatusEventsStorageKey();
+    if (!key) {
+      return; // Skip clearing when agentId is not available
+    }
+    try {
+      localStorage.removeItem(key);
+    } catch (e) {
+      // Ignore storage errors
+      logger.debug('[ChatService] Failed to clear status events from localStorage', { error: e });
+    }
   }
 
   /**
@@ -545,6 +647,7 @@ export class ChatService implements IDisposable {
             isStalled: false,
             streamingStartTime: null,
             lastChunkTime: null,
+            receivedFirstChunk: false,
           }));
 
           this.stateReconciliationFailureCount = 0;
@@ -620,6 +723,7 @@ export class ChatService implements IDisposable {
                 isStalled: false,
                 streamingStartTime: null,
                 lastChunkTime: null,
+                receivedFirstChunk: false,
               }));
 
               // Reset counter and stop the reconciliation since we've recovered
@@ -651,16 +755,57 @@ export class ChatService implements IDisposable {
   }
 
   /**
-   * Record that a chunk was received (resets stall detection)
+   * Record that a chunk was received (resets stall detection).
+   *
+   * @param isTextChunk - true for actual text/content chunks, false for
+   *   content-blocks (tool-use updates). When false, the method still updates
+   *   stall-detection timestamps but does NOT flip `receivedFirstChunk` or
+   *   append the synthetic "Streaming response…" status event. This prevents
+   *   a tool-use content block from consuming the first-chunk marker and
+   *   blocking the streaming phase event from ever being appended when real
+   *   text arrives later.
    */
-  private recordChunkReceived(): void {
+  private recordChunkReceived(isTextChunk: boolean = true): void {
     // Track chunk receipt time on the instance for reconciliation checks
     this.lastChunkReceivedAt = Date.now();
-    this.state.update((s) => ({
-      ...s,
-      lastChunkTime: Date.now(),
-      isStalled: false,
-    }));
+    const now = Date.now();
+    this.state.update((s) => {
+      // For non-text chunks (tool-use content blocks), only update stall detection
+      // timestamps — do NOT flip receivedFirstChunk or append the streaming event.
+      if (!isTextChunk) {
+        return {
+          ...s,
+          lastChunkTime: now,
+          isStalled: false,
+        };
+      }
+
+      const shouldAppend = shouldAppendStreamingEvent(s.receivedFirstChunk, s.statusEvents);
+
+      const newStatusEvents = shouldAppend
+        ? [
+            ...s.statusEvents,
+            { phase: 'streaming', message: 'Streaming response…', level: 'info' as const, timestamp: now },
+          ]
+        : s.statusEvents;
+
+      // Persist the updated status events if they changed
+      if (shouldAppend) {
+        this.saveStatusEventsToStorage(newStatusEvents);
+      }
+
+      return {
+        ...s,
+        lastChunkTime: now,
+        receivedFirstChunk: true,
+        isStalled: false,
+        // On first chunk, append a synthetic "streaming" event to close off the previous phase
+        // (e.g., "Sent prompt") with a fixed duration. This event itself is not shown inline
+        // (the UI switches to elapsed-time-only mode once hasReceivedChunk is true),
+        // but it ensures the expanded history shows accurate durations.
+        statusEvents: newStatusEvents,
+      };
+    });
   }
 
   /**
@@ -1544,7 +1689,9 @@ export class ChatService implements IDisposable {
       error: null,
       streamingStartTime: Date.now(),
       lastChunkTime: null, // Reset so stall detection treats this as a fresh stream
+      receivedFirstChunk: false, // Reset for new message
       isStalled: false,
+      statusEvents: [], // Clear status events for new message
       // Store message for retry functionality
       lastAttemptedMessage: { text: message.trim(), options },
     }));
@@ -2671,6 +2818,19 @@ export class ChatService implements IDisposable {
         });
       }
 
+      // Clear status events storage for new turn, but preserve restored events on reconnection
+      // (same pattern as streaming content preservation above)
+      const currentState = get(this.state);
+      const hasRestoredStatusEvents = currentState.statusEvents.length > 0;
+      if (!hasRestoredStatusEvents) {
+        this.clearStatusEventsStorage();
+      } else {
+        logger.info('Preserving restored status events on start event', {
+          sessionId,
+          preservedEventCount: currentState.statusEvents.length,
+        });
+      }
+
       // Start stall detection for unresponsive streams
       this.startStallDetection();
       // Start state reconciliation to detect and recover from stuck states
@@ -2751,8 +2911,11 @@ export class ChatService implements IDisposable {
       // Handle content blocks (tool calls, etc.)
       // Add the content blocks to the current streaming message
 
-      // Record chunk received for stall detection
-      this.recordChunkReceived();
+      // Record chunk received for stall detection (but NOT as a text chunk —
+      // tool-use content blocks must not flip receivedFirstChunk or append the
+      // synthetic "Streaming response…" event, so the marker is still available
+      // when the first real text chunk arrives later).
+      this.recordChunkReceived(/* isTextChunk */ false);
 
       // Cancel pending chunk update.
       // IMPORTANT: Do NOT call flushChunkUpdate() here. flushChunkUpdate() reads from
@@ -3148,6 +3311,9 @@ export class ChatService implements IDisposable {
         }, 50);
       }
 
+      // Clear status events storage on stream end - events are transient per-stream
+      this.clearStatusEventsStorage();
+
       // Update instance state
       this.safeStateUpdate((s) => {
         return {
@@ -3158,6 +3324,7 @@ export class ChatService implements IDisposable {
           streamingContent: '',
           streamingStartTime: null,
           lastAttemptedMessage: null,
+          statusEvents: [], // Clear status events on stream end - they're transient per-stream
         };
       });
 
@@ -3173,6 +3340,9 @@ export class ChatService implements IDisposable {
 
       // Clear idempotency keys so user can resend after error
       this.clearSendKeys();
+
+      // Clear status events storage on error - events are transient per-stream
+      this.clearStatusEventsStorage();
 
       // Clear streaming state in unifiedStateStore on error
       const errorState = get(this.state);
@@ -3214,6 +3384,7 @@ export class ChatService implements IDisposable {
             isProcessing: false,
             streamingContent: '',
             streamingStartTime: null,
+            statusEvents: [], // Clear status events on error - they're transient per-stream
             error: cleanErrorMessage(data.error || 'The response was interrupted. Please try again.'),
           };
         });
@@ -3224,8 +3395,32 @@ export class ChatService implements IDisposable {
           isProcessing: false,
           streamingContent: '',
           streamingStartTime: null,
+          statusEvents: [], // Clear status events on error - they're transient per-stream
           error: cleanErrorMessage(data.error || 'The response was interrupted. Please try again.'),
         }));
+      }
+    } else if (data.type === 'status') {
+      const statusData = data.statusData || data.data;
+      logger.info('[ChatService] Received status event', {
+        sessionId,
+        phase: statusData?.phase,
+        message: statusData?.message,
+      });
+      if (statusData) {
+        this.state.update((s) => {
+          const newStatusEvents = [...s.statusEvents, { ...statusData, timestamp: statusData.timestamp || Date.now() }];
+          // Persist to localStorage so events survive tab switches and HMR reloads
+          this.saveStatusEventsToStorage(newStatusEvents);
+          return {
+            ...s,
+            statusEvents: newStatusEvents,
+            // Reset receivedFirstChunk when entering a tool phase so that
+            // the next text chunk after tool completion appends "Streaming response…"
+            receivedFirstChunk: statusData.phase === 'tool-call' || statusData.phase === 'tool-waiting'
+              ? false
+              : s.receivedFirstChunk,
+          };
+        });
       }
     }
 
@@ -3382,6 +3577,9 @@ export class ChatService implements IDisposable {
     // FIX: Stop state reconciliation when clearing
     this.stopStateReconciliation();
 
+    // Clear status events from localStorage
+    this.clearStatusEventsStorage();
+
     this.state.set({
       session: null,
       messages: [],
@@ -3393,8 +3591,10 @@ export class ChatService implements IDisposable {
       streamingStartTime: null,
       lastAttemptedMessage: null,
       lastChunkTime: null,
+      receivedFirstChunk: false,
       isStalled: false,
       modelUnavailable: null,
+      statusEvents: [],
     });
   }
 
@@ -3679,8 +3879,10 @@ export class ChatService implements IDisposable {
       streamingStartTime: null,
       lastAttemptedMessage: null,
       lastChunkTime: null,
+      receivedFirstChunk: false,
       isStalled: false,
       modelUnavailable: null,
+      statusEvents: [],
     });
   }
 

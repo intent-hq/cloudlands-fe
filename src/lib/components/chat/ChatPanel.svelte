@@ -264,8 +264,10 @@
     streamingStartTime: null,
     lastAttemptedMessage: null,
     lastChunkTime: null,
+    receivedFirstChunk: false,
     isStalled: false,
     modelUnavailable: null,
+    statusEvents: [],
   });
 
   // Effective chat state - uses sandbox data when in sandbox mode
@@ -282,8 +284,10 @@
         streamingStartTime: sandboxIsStreaming ? Date.now() : null,
         lastAttemptedMessage: null,
         lastChunkTime: null,
+        receivedFirstChunk: false,
         isStalled: false,
         modelUnavailable: null,
+        statusEvents: [],
       };
     }
     return _chatStateInternal;
@@ -3666,6 +3670,7 @@
                         isStreaming={chatState.isStreaming}
                         isProcessing={chatState.isProcessing}
                         lastChunkTime={chatState.lastChunkTime}
+                        receivedFirstChunk={chatState.receivedFirstChunk}
                         streamingContentLength={chatState.streamingContent?.length ?? 0}
                         error={chatState.error}
                         isStalled={chatState.isStalled}
@@ -3675,6 +3680,8 @@
                         onRetryWithModel={handleRetryWithModel}
                         onStop={handleStop}
                         seed={agentId}
+                        statusEvents={chatState.statusEvents}
+                        streamingStartTime={chatState.streamingStartTime}
                       />
                     </div>
                   {/if}
@@ -3687,6 +3694,7 @@
                       isStreaming={chatState.isStreaming}
                       isProcessing={chatState.isProcessing}
                       lastChunkTime={chatState.lastChunkTime}
+                      receivedFirstChunk={chatState.receivedFirstChunk}
                       streamingContentLength={chatState.streamingContent?.length ?? 0}
                       error={chatState.error}
                       isStalled={chatState.isStalled}
@@ -3696,6 +3704,8 @@
                       onRetryWithModel={handleRetryWithModel}
                       onStop={handleStop}
                       seed={agentId}
+                      statusEvents={chatState.statusEvents}
+                      streamingStartTime={chatState.streamingStartTime}
                     />
                   </div>
                 {/if}
@@ -3734,6 +3744,7 @@
                         isStreaming={chatState.isStreaming}
                         isProcessing={chatState.isProcessing}
                         lastChunkTime={chatState.lastChunkTime}
+                        receivedFirstChunk={chatState.receivedFirstChunk}
                         streamingContentLength={chatState.streamingContent?.length ?? 0}
                         error={chatState.error}
                         isStalled={chatState.isStalled}
@@ -3743,6 +3754,8 @@
                         onRetryWithModel={handleRetryWithModel}
                         onStop={handleStop}
                         seed={agentId}
+                        statusEvents={chatState.statusEvents}
+                        streamingStartTime={chatState.streamingStartTime}
                       />
                     </div>
                   {/if}
@@ -3755,6 +3768,7 @@
                       isStreaming={chatState.isStreaming}
                       isProcessing={chatState.isProcessing}
                       lastChunkTime={chatState.lastChunkTime}
+                      receivedFirstChunk={chatState.receivedFirstChunk}
                       streamingContentLength={chatState.streamingContent?.length ?? 0}
                       error={chatState.error}
                       isStalled={chatState.isStalled}
@@ -3764,6 +3778,8 @@
                       onRetryWithModel={handleRetryWithModel}
                       onStop={handleStop}
                       seed={agentId}
+                      statusEvents={chatState.statusEvents}
+                      streamingStartTime={chatState.streamingStartTime}
                     />
                   </div>
                 {/if}
@@ -3781,6 +3797,7 @@
                 isStreaming={chatState.isStreaming}
                 isProcessing={chatState.isProcessing}
                 lastChunkTime={chatState.lastChunkTime}
+                receivedFirstChunk={chatState.receivedFirstChunk}
                 streamingContentLength={chatState.streamingContent?.length ?? 0}
                 error={chatState.error}
                 isStalled={chatState.isStalled}
@@ -3790,6 +3807,8 @@
                 onRetryWithModel={handleRetryWithModel}
                 onStop={handleStop}
                 seed={agentId}
+                statusEvents={chatState.statusEvents}
+                streamingStartTime={chatState.streamingStartTime}
               />
             </div>
           </div>
@@ -3942,6 +3961,7 @@
                             isStreaming={chatState.isStreaming}
                             isProcessing={chatState.isProcessing}
                             lastChunkTime={chatState.lastChunkTime}
+                            receivedFirstChunk={chatState.receivedFirstChunk}
                             streamingContentLength={chatState.streamingContent?.length ?? 0}
                             error={chatState.error}
                             isStalled={chatState.isStalled}
@@ -3951,6 +3971,8 @@
                             onRetryWithModel={handleRetryWithModel}
                             onStop={handleStop}
                             seed={agentId}
+                            statusEvents={chatState.statusEvents}
+                            streamingStartTime={chatState.streamingStartTime}
                           />
                         </div>
                       {/if}
@@ -3991,6 +4013,7 @@
                               isStreaming={chatState.isStreaming}
                               isProcessing={chatState.isProcessing}
                               lastChunkTime={chatState.lastChunkTime}
+                              receivedFirstChunk={chatState.receivedFirstChunk}
                               streamingContentLength={chatState.streamingContent?.length ?? 0}
                               error={chatState.error}
                               isStalled={chatState.isStalled}
@@ -4000,6 +4023,8 @@
                               onRetryWithModel={handleRetryWithModel}
                               onStop={handleStop}
                               seed={agentId}
+                              statusEvents={chatState.statusEvents}
+                              streamingStartTime={chatState.streamingStartTime}
                             />
                           </div>
                         {/if}

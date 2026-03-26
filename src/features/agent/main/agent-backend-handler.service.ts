@@ -2749,6 +2749,19 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         }
       }
 
+      // Set up status callback on the provider BEFORE streamMessage so we capture
+      // early lifecycle events (launchAgent, initializeProtocol) that fire before streaming starts.
+      if (typeof (provider as any).setStatusCallback === 'function') {
+        (provider as any).setStatusCallback((statusData: { phase: string; message: string; level: 'info' | 'warn' | 'error'; timestamp: number }) => {
+          this.sendStreamToRenderer(request.agentId, `agent:stream:${request.agentId}`, {
+            type: 'status',
+            data: statusData,
+            streamId: request.streamId,
+            sessionId: request.agentId,
+          });
+        });
+      }
+
       // Use messagesForAgent which includes the mode prompt, not the original messages
       await provider.streamMessage(messagesForAgent, {
         frontendSessionId: request.agentId, // Pass the agentId as frontendSessionId

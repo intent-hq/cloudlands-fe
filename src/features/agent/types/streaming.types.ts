@@ -73,7 +73,8 @@ export type StreamEventType =
   | 'tool-call'
   | 'error'
   | 'complete'
-  | 'abort';
+  | 'abort'
+  | 'status';
 
 /**
  * Streaming event data
@@ -149,8 +150,18 @@ export interface StreamOptions extends StreamCallbacks {
  */
 export interface IPCStreamData {
   sessionId: string;
-  type: 'chunk' | 'content-blocks' | 'complete' | 'error';
-  data: StreamChunk | ContentBlock[] | StreamMessage | Error;
+  type: 'chunk' | 'content-blocks' | 'complete' | 'error' | 'status';
+  data: StreamChunk | ContentBlock[] | StreamMessage | Error | StatusEventData;
+}
+
+/**
+ * Status event data for agent lifecycle phases
+ */
+export interface StatusEventData {
+  phase: string;
+  message: string;
+  level: 'info' | 'warn' | 'error';
+  timestamp: number;
 }
 
 /**

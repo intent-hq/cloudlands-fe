@@ -45,6 +45,7 @@ export function hasChatServiceStateChanged(
   const errorChanged = incomingState.error !== currentState.error;
   const retryChanged = incomingState.lastAttemptedMessage !== currentState.lastAttemptedMessage;
   const modelUnavailableChanged = incomingState.modelUnavailable !== currentState.modelUnavailable;
+  const statusEventsChanged = incomingState.statusEvents !== currentState.statusEvents;
 
   return (
     messagesChanged ||
@@ -52,7 +53,8 @@ export function hasChatServiceStateChanged(
     sessionChanged ||
     errorChanged ||
     retryChanged ||
-    modelUnavailableChanged
+    modelUnavailableChanged ||
+    statusEventsChanged
   );
 }
 

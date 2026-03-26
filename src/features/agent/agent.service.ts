@@ -2099,6 +2099,16 @@ class RefactoredAgentService extends EventEmitter {
 
           // Cleanup
           this.cleanupStreamHandler(agentId);
+        } else if (data.type === 'status') {
+          // Use dispatchStreamEvent() so status events go through the queuing/replay
+          // mechanism. If ChatService is temporarily unavailable (HMR, tab switch,
+          // workspace rebind), the events will be replayed when it reconnects.
+          this.dispatchStreamEvent(handlerSessionId, 'status', {
+            type: 'status',
+            statusData: data.data,
+            streamId: data.streamId,
+            sessionId: handlerSessionId,
+          });
         } else if (data.type === 'error') {
           logger.error('Restored stream error', { agentId, error: data.data });
 
@@ -4864,6 +4874,16 @@ class RefactoredAgentService extends EventEmitter {
                               streamChannel,
                             });
                           }
+                        } else if (data.type === 'status') {
+                          // Use dispatchStreamEvent() so status events go through the queuing/replay
+                          // mechanism. If ChatService is temporarily unavailable (HMR, tab switch,
+                          // workspace rebind), the events will be replayed when it reconnects.
+                          this.dispatchStreamEvent(handlerSessionId, 'status', {
+                            type: 'status',
+                            statusData: data.data,
+                            streamId: data.streamId,
+                            sessionId: handlerSessionId,
+                          });
                         } else if (data.type === 'error') {
                           // Handle error
                           const error = new AgentError(data.data?.message || 'The response was interrupted. Please try again.', {

@@ -59,7 +59,7 @@ import {
 import { resolveSpecialistForAgent } from '../specialists.service';
 import { messageAccumulator } from '../../services/message-accumulator.service';
 import { streamingConfig } from '../../streaming-config.service';
-import type { StreamMessage, StreamToolCall } from '../../types/streaming.types';
+import type { StatusEventData, StreamMessage, StreamToolCall } from '../../types/streaming.types';
 import { ACPProviderStreaming } from './acp-provider-streaming';
 import type { AgentConfig, AgentMessage, Tool } from './base-provider';
 import { BaseAgentProvider } from './base-provider';
@@ -1072,6 +1072,22 @@ export class ACPProvider extends BaseAgentProvider {
   // Promise chain for sequential message processing - ensures permission requests block subsequent messages
   private messageProcessingChain: Promise<void> = Promise.resolve();
 
+  // Status callback for lifecycle phase events (set before streamMessage to capture early events)
+  private statusCallback?: (data: StatusEventData) => void;
+
+  /**
+   * Set the status callback for lifecycle phase events.
+   * Must be called before streamMessage() because status events fire during
+   * launchAgent/initializeProtocol which happen before the stream starts.
+   */
+  setStatusCallback(callback: (data: StatusEventData) => void): void {
+    this.statusCallback = callback;
+  }
+
+  private emitStatus(phase: string, message: string, level: StatusEventData['level'] = 'info'): void {
+    this.statusCallback?.({ phase, message, level, timestamp: Date.now() });
+  }
+
   constructor(config: AgentConfig) {
     super(config);
     this.providerCapabilities = resolveProviderCapabilities(config);
@@ -1130,6 +1146,7 @@ export class ACPProvider extends BaseAgentProvider {
    * Returns true if session/load succeeded, false if it failed (caller should fall back to session/new).
    */
   private async tryLoadPreviousSession(): Promise<boolean> {
+    // Check guards BEFORE emitting status, so brand-new sessions don't show "Resuming session…"
     if (!this.previousSessionId || !this.supportsSessionLoad()) {
       logger.info('Skipping session/load attempt', {
         hasPreviousSessionId: !!this.previousSessionId,
@@ -1143,6 +1160,9 @@ export class ACPProvider extends BaseAgentProvider {
       logger.warn('Cannot try session/load without sessionCreationParams');
       return false;
     }
+
+    // Only emit status when we're actually going to attempt session/load
+    this.emitStatus('session-load', 'Resuming session…');
 
     try {
       const loadRequest = {
@@ -1789,6 +1809,7 @@ export class ACPProvider extends BaseAgentProvider {
   }
 
   private async launchAgent(): Promise<void> {
+    this.emitStatus('launch', 'Launching agent…');
     this.hasRemoteMcpServers = false;
     if (!this.config.command) {
       throw new Error('No agent command specified');
@@ -2874,6 +2895,12 @@ export class ACPProvider extends BaseAgentProvider {
                   command,
                   errorMessage,
                 });
+
+                this.emitStatus(
+                  'mcp-error',
+                  `MCP server '${serverName || '(unknown)'}' failed: ${errorMessage}`,
+                  'warn',
+                );
 
                 // Broadcast to all renderer windows
                 BrowserWindow.getAllWindows().forEach((window) => {
@@ -4485,6 +4512,7 @@ export class ACPProvider extends BaseAgentProvider {
   }
 
   private async initializeProtocol(): Promise<void> {
+    this.emitStatus('init', 'Initializing protocol…');
     const caps = this.providerCapabilities;
     const isExternalProvider = caps.id !== 'auggie';
 
@@ -4774,6 +4802,7 @@ export class ACPProvider extends BaseAgentProvider {
    */
   private async waitForMcpInitIfNeeded(): Promise<void> {
     if (!this.hasSentFirstMessage && this.tempMcpConfigPath) {
+      this.emitStatus('mcp-init', 'Waiting for MCP servers to initialize…');
       const MCP_INIT_WAIT_MS = this.hasRemoteMcpServers ? 15000 : 5000;
       logger.info('Waiting for MCP servers to initialize before first message', {
         waitMs: MCP_INIT_WAIT_MS,
@@ -4786,6 +4815,7 @@ export class ACPProvider extends BaseAgentProvider {
   }
 
   private async createSession(): Promise<void> {
+    this.emitStatus('session-create', 'Creating session…');
     this.hasSentFirstMessage = false;
 
     logger.info('Creating new ACP session', {
@@ -5424,6 +5454,7 @@ export class ACPProvider extends BaseAgentProvider {
     await this.waitForMcpInitIfNeeded();
 
     // Send prompt request - auggie expects an array of content blocks
+    this.emitStatus('prompt', 'Sent prompt…');
     const promptRequest = {
       jsonrpc: '2.0',
       method: 'session/prompt',
@@ -6567,6 +6598,7 @@ export class ACPProvider extends BaseAgentProvider {
     // Send the prompt request
     // Claude Code: ensure selected model is actually applied to the current session before prompting.
     await this.ensureClaudeCodeModelApplied();
+    this.emitStatus('prompt', 'Sent prompt…');
     const request = {
       jsonrpc: '2.0' as const,
       method: 'session/prompt',
@@ -7102,6 +7134,9 @@ export class ACPProvider extends BaseAgentProvider {
           });
         }
       },
+      onStatus: (phase: string, message: string, level?: 'info' | 'warn' | 'error') => {
+        this.emitStatus(phase, message, level || 'info');
+      },
     });
 
     // Proceed immediately with the message
@@ -7489,6 +7524,7 @@ export class ACPProvider extends BaseAgentProvider {
         // Send prompt request to agent - auggie expects an array of content blocks
         // Claude Code: ensure selected model is actually applied to the current session before prompting.
         await this.ensureClaudeCodeModelApplied();
+        this.emitStatus('prompt', 'Sent prompt…');
         const request = {
           jsonrpc: '2.0' as const,
           method: 'session/prompt',

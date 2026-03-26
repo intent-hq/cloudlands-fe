@@ -169,6 +169,7 @@ export interface StreamingOptions {
   onComplete?: (message: any) => void;
   onError?: (error: Error) => void;
   onCleanup?: (sessionId: string) => void; // Called before cleanup to allow parent to clean up its own state
+  onStatus?: (phase: string, message: string, level?: 'info' | 'warn' | 'error') => void;
 }
 
 /**
@@ -650,6 +651,8 @@ export class ACPProviderStreaming {
   // This handles ACP providers (like Codex) that send tool_call events but never send
   // tool_call_update completion events.
   private lastPendingToolId?: string;
+  // Status callback for emitting tool-call lifecycle events to the thinking indicator
+  private onStatus?: StreamingOptions['onStatus'];
 
   // DUAL TOOL_CALL MERGE: ACP protocol sends two tool_call events per tool invocation:
   // 1st: "skeleton" with tool name/title but empty rawInput
@@ -722,6 +725,9 @@ export class ACPProviderStreaming {
       }
     }
 
+    // Emit "Calling tool" status for deferred skeleton
+    this.onStatus?.('tool-call', 'Calling tool');
+
     // Create the tool_use block with the skeleton's tool name.
     // The classifier's cleanToolName() will strip workspace-mcp_ prefixes/suffixes.
     const toolUseBlock: ContentBlock = {
@@ -731,6 +737,9 @@ export class ACPProviderStreaming {
       input: enrichedInput,
     };
     streamSessionManager.addContentBlock(session.agentId, toolUseBlock);
+
+    // Tool is executing — emit "Awaiting tool response" so the thinking indicator shows elapsed time
+    this.onStatus?.('tool-waiting', 'Awaiting tool response');
 
     // Track as pending so we can auto-complete when the next tool_call or stream completion arrives
     this.lastPendingToolId = skeleton.toolId;
@@ -810,6 +819,8 @@ export class ACPProviderStreaming {
 
     // Store frontend session ID if provided
     this.frontendSessionId = options.frontendSessionId;
+    // Store status callback for tool-call lifecycle events
+    this.onStatus = options.onStatus;
 
     // Start stream with StreamManager
     streamSessionManager.startStream(
@@ -1590,6 +1601,12 @@ export class ACPProviderStreaming {
       `[ACPProviderStreaming] Tool derivation: title="${toolName}" -> name="${actualToolName}" inputKeys=[${inputKeysList}] noteId=${input.noteId || 'none'} rawInputType=${typeof update?.rawInput}`,
     );
 
+    // Emit "Calling tool" status so the thinking indicator shows real-time tool usage
+    // Only emit for new tool calls, not follow-up updates to an already-emitted skeleton
+    if (!isFollowUpForEmittedSkeleton) {
+      this.onStatus?.('tool-call', 'Calling tool');
+    }
+
     const toolBlock: ContentBlock = {
       type: 'tool_use',
       id: toolId, // Must be 'id' to match ToolUseBlock interface
@@ -1774,6 +1791,12 @@ export class ACPProviderStreaming {
       });
       this.lastPendingToolId = undefined;
     } else {
+      // Tool is executing — emit "Awaiting tool response" so the thinking indicator shows elapsed time
+      // Only emit for new tool calls, not follow-up updates to an already-emitted skeleton
+      if (!isFollowUpForEmittedSkeleton) {
+        this.onStatus?.('tool-waiting', 'Awaiting tool response');
+      }
+
       // For Codex workspace-mcp read-only tools, proactively fetch the result from notesService.
       // Codex never sends tool_call_update events, so without this the auto-complete mechanism
       // would create a synthetic empty tool_result and the UI would show "Completed" instead of
