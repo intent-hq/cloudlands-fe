@@ -3,15 +3,12 @@
 
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { sessionStoreData } from '$features/agent/browser';
-  import { track, trackGitOp, isGitOp, setAnalyticsContextProvider } from '$lib/services/analytics';
+  import { track, setAnalyticsContextProvider } from '$lib/services/analytics';
   import type { AnalyticsUIContext } from '$lib/services/analytics';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
 
-  import { autoUpdateStore } from '$features/auto-update/auto-update.store.svelte';
   import { releaseNotesStore } from '$features/auto-update/release-notes.store.svelte';
   import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
-  import type { GitHubAuthRequiredEvent } from '$features/github-auth/types';
   import { globalCleanupService } from '$features/memory/browser/global-cleanup.service';
   import { paletteStore } from '$features/palette/palette.store.svelte';
   import {
@@ -35,43 +32,51 @@
   import { TooltipProvider } from '$lib/components/ui/tooltip';
   import LinkTooltip from '$lib/components/ui/tooltip/LinkTooltip.svelte';
   import UpdateDownloadIndicator from '$lib/components/UpdateDownloadIndicator.svelte';
-  import { invoke, listenSync } from '$lib/electron-bridge';
-  import { dispatch } from '$lib/store/redux-dispatch-bridge';
+  import { invoke } from '$lib/electron-bridge';
+  import { dispatch, getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+    closeGitCredentialsModal,
+    closeGitHubAuthModal,
+    closeNewSpaceModal,
+    openNewSpaceModal,
+  } from '$lib/store/slices/global-modals/global-modals-slice';
+  import {
+    selectGitCredentialsError,
+    selectGlobalModals,
+    selectPendingGitHubAuth,
+  } from '$lib/store/slices/global-modals/global-modals-selectors';
+  import { selectFeatureCodeDialogOpen } from '$lib/store/slices/feature-codes/feature-codes-selectors';
+  import { toggleFeatureCodeDialog } from '$lib/store/slices/feature-codes/feature-codes-slice';
   import { toggleCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import { toggleLineWrapping } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import {
     toggleTerminalOverlay,
     openTerminalOverlay,
-  } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
-  import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
+  } from '$lib/store/slices/terminals/terminals-slice';
+  import { createAgentRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
   import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
   import { configureMonacoWorkers } from '$lib/utils/monaco-workers';
   import { themeManager } from '$lib/utils/theme';
-  import { WorkspaceStatus, type AgentSession, type Workspace } from '$shared/types';
+  import { WorkspaceStatus, type Workspace } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
-  import { onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
 
   import { createLinkTooltipHandler } from '$features/navigation/link-handler';
   import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
-  import {
-    getPanelLayoutManager,
-    hasPanelLayoutManager,
-  } from '$features/layout/panel-layout-manager.svelte';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import RootQuakeTerminalOverlay, {
     ROOT_WORKSPACE_ID,
   } from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import FeatureCodeDialog from '$lib/components/modals/FeatureCodeDialog.svelte';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
-  import type { InitialRepoInfo } from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
   import { SidebarNav, sidebarNavStore, SidebarPanel } from '$lib/components/layout/sidebar-nav';
-  import Store from '$lib/store/components/Store.svelte';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { selectSoundEnabled, selectSoundOnlyWhenUnfocused, selectNotificationVolume } from '$lib/store/slices/notification-settings/notification-settings-selectors';
-
+  import Store, { initStore } from '$lib/store/components/Store.svelte';
   const logger = createLogger('+layout');
+
+  const disposeStore = initStore();
+  onDestroy(disposeStore);
 
   // Register all tab types early
   // This must happen before any panels are rendered
@@ -98,8 +103,6 @@
       });
   }
 
-
-
   interface Props {
     children?: import('svelte').Snippet;
   }
@@ -111,10 +114,10 @@
     configureMonacoWorkers();
   }
 
-  let agents: AgentSession[] = $state([]);
-  let previousAgentsJson = $state('');
   let currentWorkspaceId = $derived($page.params.id as string | undefined);
   let isHome = $derived($page.route.id === '/');
+  const globalModals = selectGlobalModals();
+  const featureCodeDialogOpen = selectFeatureCodeDialogOpen();
 
   // Svelte 5: Use $derived for computed values from stores
   let workspaces = $derived(workspaceStore.items);
@@ -216,39 +219,6 @@
     (window as any).__app_goto = goto;
   }
 
-  // Subscribe to agent service state changes
-  $effect(() => {
-    // Use sessionStoreData directly - it's a simple Svelte writable that's always available
-    // This avoids timing issues with agentService initialization
-    const unsubscribe = sessionStoreData.subscribe((state: any) => {
-      // Use untrack to prevent reactive updates from triggering the effect again
-      untrack(() => {
-        // Get agents from state
-        const newAgents = state.sessions || [];
-        const newAgentsJson = JSON.stringify(newAgents);
-        if (newAgentsJson !== previousAgentsJson) {
-          // Filter out any invalid agents, terminal IDs, and background agents from the dock
-          agents = newAgents.filter((a: any) => {
-            // Filter out invalid agents
-            if (!a || !a.id) return false;
-            // Filter out terminal IDs - they should not appear in the agents list
-            if (String(a.id).startsWith('terminal-')) return false;
-            // Filter out background agents from the dock
-            if (a.metadata?.isBackground || a.isBackground) return false;
-            return true;
-          });
-
-          const filteredCount = newAgents.length - agents.length;
-          if (filteredCount > 0) {
-            logger.debug(`Filtered out ${filteredCount} agents (invalid or background)`);
-          }
-          previousAgentsJson = newAgentsJson;
-        }
-      });
-    });
-    return () => unsubscribe();
-  });
-
   // Track last non-settings path for cmd+, toggle behavior
   let lastNonSettingsPath = $state('/');
 
@@ -278,32 +248,6 @@
       .map((id) => byId.get(id))
       .filter((w): w is Workspace => w != null);
   });
-
-  let showGitHubAuthModal = $state(false);
-  let pendingGitHubAuth = $state<GitHubAuthRequiredEvent | null>(null);
-  let githubAuthModalKey = $state(0);
-
-  // Feature code dialog state
-  let showFeatureCodeDialog = $state(false);
-
-  // New Workspace modal state
-  let showNewSpaceModal = $state(false);
-  let newSpaceInitialRepo = $state<InitialRepoInfo | undefined>(undefined);
-
-  // Git credentials modal state (for git push/pull auth errors)
-  let showGitCredentialsModal = $state(false);
-  let gitCredentialsError = $state<{
-    workspaceId?: string;
-    message: string;
-    operation: string;
-    command?: string;
-    cwd?: string;
-    /** The raw error output from git (stderr) for debugging */
-    rawError?: string;
-  } | null>(null);
-  // Track workspaces that have already shown the credentials modal this session
-  // to avoid repeatedly showing it for the same workspace
-  const shownCredentialsModalForWorkspaces = new Set<string>();
 
   onMount(() => {
     // Hide the splash screen from app.html now that Svelte has mounted
@@ -463,738 +407,6 @@
         }
       }
     } catch {}
-
-    // Listen for workspace updates
-    // workspace:updated is the format from EventBus
-    const unsubscribeWorkspaceColon = listenSync('workspace:updated', (event) => {
-      logger.info('[+layout] Received workspace:updated event:', event.payload);
-      const { workspaceId, changes } = event.payload as { workspaceId: string; changes: any };
-
-      // Update the workspace in local state only (no API call)
-      workspaceStore.updateLocalWorkspace(WorkspaceId(workspaceId), changes);
-    });
-
-    // Listen for background agent spawned events (for toast notifications)
-    const setupBackgroundAgentListener = () => {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        window.electronAPI.on(
-          'background-agent:spawned',
-          (data: {
-            workspaceId: string;
-            agentId: string;
-            taskTitle: string;
-            agentType: string;
-          }) => {
-            logger.info('[+layout] Background agent spawned:', data);
-            // Import toast dynamically to avoid SSR issues
-            import('svelte-sonner')
-              .then(({ toast }) => {
-                // Find the workspace that spawned this agent
-                const eventWorkspace = workspaceStore.items.find((w) => w.id === data.workspaceId);
-                const currentWorkspace = workspaceStore.current;
-                const workspaceTitle = eventWorkspace?.title || 'Space';
-
-                // Only show "Open" action if event is from a different workspace
-                const shouldShowOpenAction =
-                  currentWorkspace && currentWorkspace.id !== data.workspaceId;
-
-                const toastOptions: {
-                  description: string;
-                  duration: number;
-                  action?: { label: string; onClick: () => Promise<void> };
-                } = {
-                  description: `Working on: ${data.taskTitle}`,
-                  duration: 5000,
-                };
-
-                // Add "Open" action only if viewing a different workspace
-                if (shouldShowOpenAction) {
-                  toastOptions.action = {
-                    label: 'Open',
-                    onClick: async () => {
-                      await goto(`/workspace/${data.workspaceId}`);
-                    },
-                  };
-                }
-
-                toast.info(`🤖 Task orchestrator started in "${workspaceTitle}"`, toastOptions);
-              })
-              .catch(() => {
-                // Toast not available - not critical
-              });
-          },
-        );
-      }
-    };
-
-    setupBackgroundAgentListener();
-
-    // Listen for git operation completed events (for cross-workspace toast notifications)
-    let gitOpCompletedListenerId: string | null = null;
-    const setupGitOpCompletedListener = () => {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        gitOpCompletedListenerId = window.electronAPI.on(
-          'git:op-completed',
-          (data: {
-            operationId: string;
-            workspaceId: string;
-            operationType: 'commit' | 'push' | 'create-pr' | 'auto-commit';
-            result?: {
-              commitHash?: string;
-              prNumber?: number;
-              prUrl?: string;
-              noChanges?: boolean;
-              reason?: string;
-            };
-            metadata?: {
-              message?: string;
-              prTitle?: string;
-              agentId?: string;
-              agentName?: string;
-            };
-          }) => {
-            logger.info('[+layout] Git operation completed', {
-              operationId: data.operationId,
-              workspaceId: data.workspaceId,
-              operationType: data.operationType,
-            });
-
-            // Skip no-change commits (they're noise - nothing actually happened)
-            if (
-              (data.operationType === 'auto-commit' || data.operationType === 'commit') &&
-              data.result?.noChanges
-            ) {
-              return;
-            }
-
-            // Import toast dynamically to avoid SSR issues
-            import('svelte-sonner')
-              .then(({ toast }) => {
-                // Find the workspace where this operation happened
-                const eventWorkspace = workspaceStore.items.find((w) => w.id === data.workspaceId);
-                const currentWorkspace = workspaceStore.current;
-                const workspaceName = eventWorkspace?.title || 'Space';
-
-                // Build toast message based on operation type
-                let message: string;
-                switch (data.operationType) {
-                  case 'commit':
-                    message = `✅ Changes committed in "${workspaceName}"`;
-                    break;
-                  case 'push':
-                    message = `✅ Changes pushed in "${workspaceName}"`;
-                    break;
-                  case 'create-pr':
-                    message = data.result?.prNumber
-                      ? `✅ PR #${data.result.prNumber} created in "${workspaceName}"`
-                      : `✅ PR created in "${workspaceName}"`;
-                    break;
-                  case 'auto-commit':
-                    message = `✅ Auto-committed in "${workspaceName}"`;
-                    break;
-                  default:
-                    message = `✅ Git operation completed in "${workspaceName}"`;
-                }
-
-                // Only show "Open" action if event is from a different workspace
-                const shouldShowOpenAction =
-                  currentWorkspace && currentWorkspace.id !== data.workspaceId;
-
-                const toastOptions: {
-                  description?: string;
-                  duration: number;
-                  action?: { label: string; onClick: () => Promise<void> };
-                } = {
-                  duration: 5000,
-                };
-
-                // For PR creation, add description with PR title if available
-                if (data.operationType === 'create-pr' && data.metadata?.prTitle) {
-                  toastOptions.description = data.metadata.prTitle;
-                }
-
-                // Add "Open" action only if viewing a different workspace
-                if (shouldShowOpenAction) {
-                  toastOptions.action = {
-                    label: 'Open',
-                    onClick: async () => {
-                      await goto(`/workspace/${data.workspaceId}`);
-                    },
-                  };
-                }
-
-                toast.success(message, toastOptions);
-              })
-              .catch(() => {
-                // Toast not available - not critical
-              });
-
-            // Track agent-initiated git operations in analytics
-            // Manual operations are tracked at their UI call sites (SidebarChangesPanel, AcceptChangesPanel)
-            // so we only track here when agentId is present to avoid double-tracking
-            if (data.metadata?.agentId) {
-              const trigger = data.operationType === 'auto-commit' ? 'auto_commit' : 'agent';
-              const op = data.operationType === 'auto-commit' ? 'commit' : data.operationType;
-              if (isGitOp(op)) {
-                trackGitOp(op, {
-                  workspaceId: data.workspaceId,
-                  success: true,
-                  trigger,
-                  agentId: data.metadata.agentId,
-                });
-              }
-            }
-          },
-        );
-      }
-    };
-
-    setupGitOpCompletedListener();
-
-    // Listen for git operation failed events (for cross-workspace toast notifications)
-    let gitOpFailedListenerId: string | null = null;
-    const setupGitOpFailedListener = () => {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        gitOpFailedListenerId = window.electronAPI.on(
-          'git:op-failed',
-          (data: {
-            operationId: string;
-            workspaceId: string;
-            operationType: 'commit' | 'push' | 'create-pr' | 'auto-commit';
-            error: string;
-            metadata?: {
-              message?: string;
-              prTitle?: string;
-              agentId?: string;
-              agentName?: string;
-            };
-          }) => {
-            logger.info('[+layout] Git operation failed', {
-              operationId: data.operationId,
-              workspaceId: data.workspaceId,
-              operationType: data.operationType,
-            });
-
-            // Skip toast for auto-commit hook failures - they have their own more specific toast
-            // via the 'git:auto-commit-hook-failure' event
-            if (
-              data.operationType === 'auto-commit' &&
-              (data.error.toLowerCase().includes('pre-commit hook') ||
-                data.error.toLowerCase().includes('hook') ||
-                data.error.includes('woken to retry'))
-            ) {
-              logger.debug(
-                '[+layout] Skipping toast for auto-commit hook failure (handled by git:auto-commit-hook-failure)',
-              );
-              return;
-            }
-
-            // Import toast dynamically to avoid SSR issues
-            import('svelte-sonner')
-              .then(({ toast }) => {
-                // Find the workspace where this operation happened
-                const eventWorkspace = workspaceStore.items.find((w) => w.id === data.workspaceId);
-                const currentWorkspace = workspaceStore.current;
-                const workspaceName = eventWorkspace?.title || 'Space';
-
-                // Skip toast if user is already viewing the failing workspace
-                // (SidebarChangesPanel shows its own contextual error toasts)
-                // Exception: auto-commit failures always show a toast (no in-workspace equivalent)
-                const isViewingFailingWorkspace =
-                  currentWorkspace && currentWorkspace.id === data.workspaceId;
-                if (isViewingFailingWorkspace && data.operationType !== 'auto-commit') {
-                  return;
-                }
-
-                // Build error toast message based on operation type
-                let message: string;
-                switch (data.operationType) {
-                  case 'commit':
-                    message = `❌ Commit failed in "${workspaceName}"`;
-                    break;
-                  case 'push':
-                    message = `❌ Push failed in "${workspaceName}"`;
-                    break;
-                  case 'create-pr':
-                    message = `❌ PR creation failed in "${workspaceName}"`;
-                    break;
-                  case 'auto-commit':
-                    message = `❌ Auto-commit failed in "${workspaceName}"`;
-                    break;
-                  default:
-                    message = `❌ Git operation failed in "${workspaceName}"`;
-                }
-
-                const toastOptions: {
-                  description: string;
-                  duration: number;
-                  action?: { label: string; onClick: () => Promise<void> };
-                } = {
-                  description:
-                    data.error && data.error.length > 200
-                      ? data.error.slice(0, 200) + '…'
-                      : data.error,
-                  duration: 10000, // Longer duration for errors
-                };
-
-                // Only show "Open" action if viewing a different workspace
-                const shouldShowOpenAction =
-                  currentWorkspace && currentWorkspace.id !== data.workspaceId;
-                if (shouldShowOpenAction) {
-                  toastOptions.action = {
-                    label: 'Open',
-                    onClick: async () => {
-                      await goto(`/workspace/${data.workspaceId}`);
-                    },
-                  };
-                }
-
-                toast.error(message, toastOptions);
-              })
-              .catch(() => {
-                // Toast not available - not critical
-              });
-
-            // Track agent-initiated git operation failures in analytics
-            if (data.metadata?.agentId) {
-              const trigger = data.operationType === 'auto-commit' ? 'auto_commit' : 'agent';
-              const op = data.operationType === 'auto-commit' ? 'commit' : data.operationType;
-              if (isGitOp(op)) {
-                trackGitOp(op, {
-                  workspaceId: data.workspaceId,
-                  success: false,
-                  trigger,
-                  agentId: data.metadata.agentId,
-                });
-              }
-            }
-          },
-        );
-      }
-    };
-
-    setupGitOpFailedListener();
-
-    const setupGitHubAuthListener = () => {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        window.electronAPI.on('github:auth-required', (data: GitHubAuthRequiredEvent) => {
-          logger.warn('[+layout] GitHub authentication required:', data);
-          pendingGitHubAuth = data;
-          showGitHubAuthModal = true;
-          githubAuthModalKey += 1;
-        });
-      }
-    };
-
-    setupGitHubAuthListener();
-
-    // Listen for git authentication required events
-    // Note: Git push/pull requires local credentials (SSH keys or credential manager).
-    // GitHub API operations (PRs, repos) work through Augment's backend.
-    const setupGitAuthListener = () => {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        window.electronAPI.on(
-          'git:auth-required',
-          (data: {
-            workspaceId?: string;
-            operation: string;
-            remote?: string;
-            message: string;
-            command?: string;
-            cwd?: string;
-            rawError?: string;
-          }) => {
-            logger.warn('[+layout] Git credentials required:', data);
-
-            // Only show the modal once per workspace per session
-            // This prevents repeatedly showing the same modal for background git operations
-            if (data.workspaceId && shownCredentialsModalForWorkspaces.has(data.workspaceId)) {
-              logger.info(
-                '[+layout] Skipping credentials modal - already shown for workspace:',
-                data.workspaceId,
-              );
-              return;
-            }
-
-            // Mark this workspace as having shown the modal
-            if (data.workspaceId) {
-              shownCredentialsModalForWorkspaces.add(data.workspaceId);
-            }
-
-            // Show the git credentials modal with setup instructions and retry option
-            gitCredentialsError = {
-              workspaceId: data.workspaceId,
-              message: data.message,
-              operation: data.operation,
-              command: data.command,
-              cwd: data.cwd,
-              rawError: data.rawError,
-            };
-            showGitCredentialsModal = true;
-          },
-        );
-      }
-    };
-
-    setupGitAuthListener();
-
-    // Listen for agent authentication required events (e.g., auggie login needed on remote)
-    const setupAgentAuthListener = () => {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        window.electronAPI.on(
-          'agent:auth-required',
-          (data: {
-            workspaceId?: string;
-            agentId?: string;
-            isRemote: boolean;
-            host?: string;
-            message: string;
-          }) => {
-            logger.warn('[+layout] Agent authentication required:', data);
-            import('svelte-sonner')
-              .then(({ toast }) => {
-                toast.warning('Agent Authentication Required', {
-                  description: data.message,
-                  duration: 15000,
-                  action: {
-                    label: 'Open Terminal',
-                    onClick: () => {
-                      // Navigate to workspace terminal if we have a workspace ID
-                      if (data.workspaceId) {
-                        goto(`/workspace/${data.workspaceId}?panel=terminal`);
-                      }
-                    },
-                  },
-                });
-              })
-              .catch(() => {
-                // Toast not available - not critical
-              });
-          },
-        );
-      }
-    };
-
-    setupAgentAuthListener();
-
-    // Listen for agent plan-required events (e.g., enterprise user without Intent access)
-    const setupAgentPlanRequiredListener = () => {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        window.electronAPI.on(
-          'agent:plan-required',
-          (data: { workspaceId?: string; agentId?: string; message: string; helpUrl?: string }) => {
-            logger.warn('[+layout] Agent plan required:', data);
-            import('svelte-sonner')
-              .then(({ toast }) => {
-                toast.error('Intent: Plan Upgrade Required', {
-                  description: data.message,
-                  duration: 20000,
-                });
-              })
-              .catch(() => {
-                // Toast not available - not critical
-              });
-          },
-        );
-      }
-    };
-
-    setupAgentPlanRequiredListener();
-
-    // Listen for auto-commit pre-commit hook failure events
-    const setupAutoCommitHookFailureListener = () => {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        window.electronAPI.on(
-          'git:auto-commit-hook-failure',
-          (data: {
-            workspaceId: string;
-            agentId: string;
-            agentName?: string;
-            status: 'waking-agent' | 'retries-exhausted';
-            hookOutput: string;
-            retryCount: number;
-          }) => {
-            import('svelte-sonner')
-              .then(({ toast }) => {
-                const name = data.agentName || 'Agent';
-                if (data.status === 'waking-agent') {
-                  toast.warning('Auto-commit: pre-commit hooks failed', {
-                    description: `Asking ${name} to fix the issues (attempt ${data.retryCount})`,
-                    duration: 8000,
-                  });
-                } else {
-                  toast.error('Auto-commit failed: pre-commit hooks', {
-                    description: `${name} couldn't fix the hook failures after ${data.retryCount} attempts. Please commit manually.`,
-                    duration: 15000,
-                  });
-                }
-              })
-              .catch(() => {
-                // Toast not available - not critical
-              });
-          },
-        );
-      }
-    };
-
-    setupAutoCommitHookFailureListener();
-
-    // Listen for notification:show events to play sound in renderer
-    const setupNotificationSoundListener = () => {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        window.electronAPI.on(
-          'notification:show',
-          async (data: { agentName: string; timestamp: string }) => {
-            try {
-              const { playNotificationSound } = await import('$lib/utils/notification-sound');
-              const state = getReduxStore().getState();
-
-              // Check if sound is enabled
-              const soundEnabled = selectSoundEnabled.select(state);
-              if (!soundEnabled) {
-                logger.debug('[+layout] Notification sound disabled');
-                return;
-              }
-
-              // Check if we should only play when unfocused
-              const soundOnlyWhenUnfocused = selectSoundOnlyWhenUnfocused.select(state);
-              if (soundOnlyWhenUnfocused && document.hasFocus()) {
-                logger.debug('[+layout] Window focused, skipping notification sound');
-                return;
-              }
-
-              // Play the notification sound
-              const volume = selectNotificationVolume.select(state);
-              await playNotificationSound(volume);
-              logger.debug('[+layout] Played notification sound for agent:', data.agentName);
-            } catch (error) {
-              logger.error('[+layout] Failed to play notification sound:', error);
-            }
-          },
-        );
-      }
-    };
-
-    setupNotificationSoundListener();
-
-    // Listen for notification:navigate events to navigate to the correct workspace on click
-    const setupNotificationNavigateListener = () => {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        window.electronAPI.on('notification:navigate', (data: { workspaceId: string }) => {
-          if (data?.workspaceId) {
-            goto(`/workspace/${data.workspaceId}`);
-          }
-        });
-      }
-    };
-
-    setupNotificationNavigateListener();
-
-    // Listen for "up to date" notifications from auto-update (manual check)
-    const setupAutoUpdateListener = () => {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        logger.info('[+layout] Setting up auto-update:up-to-date listener');
-        window.electronAPI.on(
-          'auto-update:up-to-date',
-          (data: { version: string; isDev?: boolean }) => {
-            logger.info('[+layout] App is up to date:', data);
-            // If the update toast UI is already visible, don't show a duplicate toast here.
-            if (autoUpdateStore.toastVisible) {
-              logger.info('[+layout] Skipping up-to-date toast (update toast already visible)');
-              return;
-            }
-
-            import('svelte-sonner')
-              .then(({ toast }) => {
-                const message = data.isDev
-                  ? "You're running a development build"
-                  : `You're running the latest version (${data.version})`;
-                toast.success('Up to Date', {
-                  description: message,
-                  duration: 4000,
-                });
-              })
-              .catch((err) => {
-                logger.error('[+layout] Failed to show toast:', err);
-              });
-          },
-        );
-      } else {
-        logger.warn('[+layout] electronAPI not available for auto-update listener');
-      }
-    };
-
-    setupAutoUpdateListener();
-
-    // Listen for navigation events from main process (e.g., menu items)
-    const setupNavigateListener = () => {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        window.electronAPI.on('navigate', (path: string) => {
-          logger.info('[+layout] Navigate event received:', path);
-          // Intercept /?create=true to open the modal instead of navigating
-          if (path === '/?create=true') {
-            newSpaceInitialRepo = undefined;
-            showNewSpaceModal = true;
-            return;
-          }
-          goto(path);
-        });
-      }
-    };
-
-    setupNavigateListener();
-
-    // Listen for navigate-to-settings from macOS menu (Cmd+,)
-    const setupNavigateToSettingsListener = () => {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        window.electronAPI.on('navigate-to-settings', () => {
-          logger.info('[+layout] Navigate to settings from menu');
-          const isOnSettings = window.location.pathname.startsWith('/settings');
-          if (isOnSettings) {
-            goto(lastNonSettingsPath);
-          } else {
-            navigateToSettings();
-          }
-        });
-      }
-    };
-
-    setupNavigateToSettingsListener();
-
-    // Listen for menu events from main process (macOS menu bar)
-    const setupMenuEventListeners = () => {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        // New Agent - dispatch event for workspace page to handle
-        window.electronAPI.on('menu:new-agent', () => {
-          // When focus is in the terminal area, create a new terminal instead
-          if (isFocusInTerminal()) {
-            window.dispatchEvent(new CustomEvent('terminal:create-new'));
-            return;
-          }
-          logger.info('[+layout] New agent from menu');
-          window.dispatchEvent(new CustomEvent('app:new-agent'));
-        });
-
-        // New Note - dispatch event for workspace page to handle
-        window.electronAPI.on('menu:new-note', () => {
-          logger.info('[+layout] New note from menu');
-          window.dispatchEvent(new CustomEvent('app:new-note'));
-        });
-
-        // New Terminal - dispatch event for workspace page to handle
-        window.electronAPI.on('menu:new-terminal', () => {
-          logger.info('[+layout] New terminal from menu');
-          window.dispatchEvent(new CustomEvent('app:new-terminal'));
-        });
-
-        // New Browser - open browser panel directly via panel layout manager
-        window.electronAPI.on('menu:new-browser', () => {
-          logger.info('[+layout] New browser from menu');
-          const wsId = workspaceStore.current?.id;
-          if (wsId && hasPanelLayoutManager(wsId)) {
-            const manager = getPanelLayoutManager(wsId);
-            manager.openBrowserPanel();
-          }
-        });
-
-        // Browser open tab request from main process (agent wants to open a browser tab)
-        window.electronAPI.on(
-          'browser:open-tab',
-          (data: { url: string; position?: 'adjacent' | 'replace' | 'same'; workspaceId?: string }) => {
-            logger.info('[+layout] Browser open tab request from main process', data);
-            // Prefer the workspaceId from the event payload so the browser tab
-            // opens in the workspace that requested it (e.g. the agent's workspace),
-            // not whichever workspace the user happens to be viewing right now.
-            const wsId = data.workspaceId || workspaceStore.current?.id;
-            if (wsId && hasPanelLayoutManager(wsId)) {
-              const manager = getPanelLayoutManager(wsId);
-              const { url, position = 'adjacent' } = data;
-
-              if (position === 'replace') {
-                // Find existing browser tab and update its URL, or create new if none exists
-                const existingBrowserTab = manager.allOpenTabs.find((t) => t.type === 'browser');
-                if (existingBrowserTab) {
-                  manager.updateTabBrowserUrl(existingBrowserTab.id, url);
-                  manager.setActiveTab(existingBrowserTab.id);
-                  logger.info('[+layout] Replaced existing browser tab URL', {
-                    tabId: existingBrowserTab.id,
-                    url,
-                  });
-                } else {
-                  manager.openBrowserPanel(url);
-                }
-              } else if (position === 'adjacent') {
-                // Open in adjacent panel (or create split if needed)
-                manager.openTabInAdjacentOrSplit({
-                  type: 'browser',
-                  title: 'Browser',
-                  browserUrl: url,
-                  closable: true,
-                });
-              } else {
-                // 'same' - open in current/focused panel
-                manager.openBrowserPanel(url);
-              }
-            }
-          },
-        );
-
-        // Close Tab - close the active tab in the focused panel
-        window.electronAPI.on('menu:close-tab', () => {
-          logger.info('[+layout] Close tab from menu');
-          const wsId = workspaceStore.current?.id;
-          if (wsId && hasPanelLayoutManager(wsId)) {
-            const manager = getPanelLayoutManager(wsId);
-            manager.closeActiveTab();
-          }
-        });
-
-        // Reopen Closed Tab - reopen the most recently closed tab
-        window.electronAPI.on('menu:reopen-closed-tab', () => {
-          logger.info('[+layout] Reopen closed tab from menu');
-          const wsId = workspaceStore.current?.id;
-          if (wsId && hasPanelLayoutManager(wsId)) {
-            const manager = getPanelLayoutManager(wsId);
-            manager.reopenClosedTab();
-          }
-        });
-
-        // Select Previous Tab - switch to the previous tab in the focused panel
-        window.electronAPI.on('menu:select-previous-tab', () => {
-          logger.info('[+layout] Select previous tab from menu');
-          const wsId = workspaceStore.current?.id;
-          if (wsId && hasPanelLayoutManager(wsId)) {
-            const manager = getPanelLayoutManager(wsId);
-            manager.selectPreviousTab();
-          }
-        });
-
-        // Select Next Tab - switch to the next tab in the focused panel
-        window.electronAPI.on('menu:select-next-tab', () => {
-          logger.info('[+layout] Select next tab from menu');
-          const wsId = workspaceStore.current?.id;
-          if (wsId && hasPanelLayoutManager(wsId)) {
-            const manager = getPanelLayoutManager(wsId);
-            manager.selectNextTab();
-          }
-        });
-
-        // Zoom events - forwarded from main process when browser panel is focused
-        // Dispatched as CustomEvents for the active EmbeddedBrowser to handle
-        window.electronAPI.on('menu:zoom-in', () => {
-          window.dispatchEvent(new CustomEvent('browser:zoom', { detail: { action: 'in' } }));
-        });
-        window.electronAPI.on('menu:zoom-out', () => {
-          window.dispatchEvent(new CustomEvent('browser:zoom', { detail: { action: 'out' } }));
-        });
-        window.electronAPI.on('menu:reset-zoom', () => {
-          window.dispatchEvent(new CustomEvent('browser:zoom', { detail: { action: 'reset' } }));
-        });
-      }
-    };
-
-    setupMenuEventListeners();
-
     // Register global palette shortcuts (config-driven later)
     paletteShortcuts = new KeyboardShortcutManager();
     const isMac =
@@ -1309,8 +521,10 @@
     }
     // Cmd+T (Mac) / Ctrl+T (Win/Linux) - New Tab (creates new agent, like browser new tab)
     const newTab = () => {
-      // Dispatch event for workspace page to handle (creates new agent)
-      window.dispatchEvent(new CustomEvent('workspace:new-tab'));
+      const wsId = workspaceStore.current?.id;
+      if (wsId) {
+        dispatch(createAgentRequested(wsId));
+      }
     };
     register({ key: 't', meta: true, description: 'New Tab (Mac)', action: newTab });
     if (!isMac) {
@@ -1369,14 +583,14 @@
       action: () => dispatch(toggleLineWrapping()),
     });
     // Ctrl+` -> toggle terminal overlay (matches VS Code behavior - Ctrl on all platforms including Mac)
-    // In workspace pages, this is also handled by useDockNavigation, but we register it globally
-    // so it works on non-workspace pages too (home, settings, etc.)
+    // Registered globally so it works on workspace and non-workspace pages alike.
     const toggleTerminal = () => {
       // Use URL-derived currentWorkspaceId rather than workspaceStore.current?.id
       // because the store value can be null/stale during initial load or navigation,
       // which would incorrectly route the toggle to ROOT_WORKSPACE_ID.
       const isOnWorkspacePage = $page.url.pathname.startsWith('/workspace/');
-      const terminalContextId = isOnWorkspacePage && currentWorkspaceId ? currentWorkspaceId : ROOT_WORKSPACE_ID;
+      const terminalContextId =
+        isOnWorkspacePage && currentWorkspaceId ? currentWorkspaceId : ROOT_WORKSPACE_ID;
       dispatch(toggleTerminalOverlay(terminalContextId));
     };
     register({
@@ -1454,7 +668,7 @@
       global: true,
       description: 'Feature Code Entry',
       action: () => {
-        showFeatureCodeDialog = !showFeatureCodeDialog;
+        dispatch(toggleFeatureCodeDialog());
       },
     });
 
@@ -1565,42 +779,7 @@
     window.addEventListener('keyup', handleSpacesSwitcherKeyUp, true);
     window.addEventListener('spaces-switcher:select', handleSpacesSwitcherSelect);
 
-    // Listen for workspace:create-for-repo events from SidebarChangesPanel
-    // This event is dispatched when user clicks "Start New Space" after merging
-    const handleCreateForRepo = (event: Event) => {
-      const customEvent = event as CustomEvent<{
-        repositoryPath: string;
-        workspaceId?: string;
-        workspaceTitle?: string;
-      }>;
-      const { repositoryPath, workspaceId, workspaceTitle } = customEvent.detail;
-
-      // Get the current workspace to carry over environment config
-      const currentWorkspace = workspaceStore.current;
-
-      newSpaceInitialRepo = repositoryPath
-        ? {
-            repoPath: repositoryPath,
-            environmentType: currentWorkspace?.environmentConfig?.type,
-            sshConfig: currentWorkspace?.environmentConfig?.ssh,
-            previousWorkspaceId: workspaceId,
-            previousWorkspaceTitle: workspaceTitle,
-          }
-        : undefined;
-      showNewSpaceModal = true;
-    };
-    window.addEventListener('workspace:create-for-repo', handleCreateForRepo);
-
-    // Listen for app:open-new-space-modal events (from overlay, sidebar, etc.)
-    const handleOpenNewSpaceModal = (event: Event) => {
-      const customEvent = event as CustomEvent<{ initialRepo?: InitialRepoInfo }>;
-      newSpaceInitialRepo = customEvent.detail?.initialRepo;
-      showNewSpaceModal = true;
-    };
-    window.addEventListener('app:open-new-space-modal', handleOpenNewSpaceModal);
-
     return () => {
-      unsubscribeWorkspaceColon?.();
       paletteShortcuts?.detach();
       paletteShortcuts?.destroy();
       paletteShortcuts = null;
@@ -1616,37 +795,21 @@
       );
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       cleanupLinkTooltip();
-      window.removeEventListener('workspace:create-for-repo', handleCreateForRepo);
-      window.removeEventListener('app:open-new-space-modal', handleOpenNewSpaceModal);
       window.removeEventListener('keydown', handleBrowserNavigation);
       window.removeEventListener('keydown', handleSpacesSwitcherKeyDown, true);
       window.removeEventListener('keyup', handleSpacesSwitcherKeyUp, true);
       window.removeEventListener('spaces-switcher:select', handleSpacesSwitcherSelect);
 
-      // Clean up git operation listeners (prevents duplicate toasts on HMR/remount)
-      if (gitOpCompletedListenerId && window.electronAPI) {
-        window.electronAPI.offById('git:op-completed', gitOpCompletedListenerId);
-        gitOpCompletedListenerId = null;
-      }
-      if (gitOpFailedListenerId && window.electronAPI) {
-        window.electronAPI.offById('git:op-failed', gitOpFailedListenerId);
-        gitOpFailedListenerId = null;
-      }
     };
   });
 
-  // Don't use reactive statement for loading as it can cause loops
-  // The agents are already loaded on mount and via event listeners
-
   function handleCreateWorkspace() {
-    newSpaceInitialRepo = undefined;
-    showNewSpaceModal = true;
+    dispatch(openNewSpaceModal(undefined));
   }
 
   function handleGitHubAuthSuccess() {
-    const pendingAuth = pendingGitHubAuth;
-    pendingGitHubAuth = null;
-    showGitHubAuthModal = false;
+    const pendingAuth = selectPendingGitHubAuth.select(getReduxStore().getState());
+    dispatch(closeGitHubAuthModal());
 
     // Emit event to notify components that auth succeeded and they should retry their pending action
     if (pendingAuth?.operation && pendingAuth?.workspaceId) {
@@ -1673,6 +836,8 @@
 
   // Handle retry in terminal for git credentials errors (auth failures)
   async function handleCredentialsRetryInTerminal() {
+    const gitCredentialsError = selectGitCredentialsError.select(getReduxStore().getState());
+
     if (
       !gitCredentialsError?.command ||
       !gitCredentialsError?.cwd ||
@@ -1701,20 +866,20 @@
       logger.error('[+layout] Failed to create terminal for credentials retry:', err);
     }
 
-    showGitCredentialsModal = false;
-    gitCredentialsError = null;
+    dispatch(closeGitCredentialsModal());
   }
 
-  function handleCreateWorkspaceForRepo(repoName: string, lastWorkspace: Workspace) {
-    newSpaceInitialRepo = {
-      repoPath: lastWorkspace.repositoryPath || '',
-      isGithub: !!(lastWorkspace.repositoryOwner && lastWorkspace.repositoryName),
-      owner: lastWorkspace.repositoryOwner || undefined,
-      name: lastWorkspace.repositoryName || undefined,
-      environmentType: lastWorkspace.environmentConfig?.type,
-      sshConfig: lastWorkspace.environmentConfig?.ssh,
-    };
-    showNewSpaceModal = true;
+  function handleCreateWorkspaceForRepo(lastWorkspace: Workspace) {
+    dispatch(
+      openNewSpaceModal({
+        repoPath: lastWorkspace.repositoryPath || '',
+        isGithub: !!(lastWorkspace.repositoryOwner && lastWorkspace.repositoryName),
+        owner: lastWorkspace.repositoryOwner || undefined,
+        name: lastWorkspace.repositoryName || undefined,
+        environmentType: lastWorkspace.environmentConfig?.type,
+        sshConfig: lastWorkspace.environmentConfig?.ssh,
+      }),
+    );
   }
 
   // Set currentWorkspaceId when navigating to workspace pages
@@ -1912,31 +1077,29 @@
       <UpdateNotification />
     {/await}
 
-    {#if showGitHubAuthModal}
-      {#key githubAuthModalKey}
+    {#if $globalModals.githubAuth.open}
+      {#key $globalModals.githubAuth.modalKey}
         <GitHubAuthModal
           open={true}
-          autoStart={pendingGitHubAuth !== null}
+          autoStart={$globalModals.githubAuth.pendingAuth !== null}
           onClose={() => {
-            showGitHubAuthModal = false;
-            pendingGitHubAuth = null;
+            dispatch(closeGitHubAuthModal());
           }}
           onSuccess={handleGitHubAuthSuccess}
         />
       {/key}
     {/if}
 
-    {#if showGitCredentialsModal}
+    {#if $globalModals.gitCredentials.open}
       <GitCredentialsModal
         open={true}
-        errorMessage={gitCredentialsError?.message ?? ''}
-        rawError={gitCredentialsError?.rawError}
-        operation={gitCredentialsError?.operation ?? 'push'}
-        command={gitCredentialsError?.command}
-        cwd={gitCredentialsError?.cwd}
+        errorMessage={$globalModals.gitCredentials.error?.message ?? ''}
+        rawError={$globalModals.gitCredentials.error?.rawError}
+        operation={$globalModals.gitCredentials.error?.operation ?? 'push'}
+        command={$globalModals.gitCredentials.error?.command}
+        cwd={$globalModals.gitCredentials.error?.cwd}
         onClose={() => {
-          showGitCredentialsModal = false;
-          gitCredentialsError = null;
+          dispatch(closeGitCredentialsModal());
         }}
         onRetryInTerminal={handleCredentialsRetryInTerminal}
       />
@@ -1951,16 +1114,22 @@
 
     <!-- New Workspace Modal -->
     <NewSpaceModal
-      bind:open={showNewSpaceModal}
-      initialRepo={newSpaceInitialRepo}
+      open={$globalModals.newSpace.open}
+      initialRepo={$globalModals.newSpace.initialRepo}
       onClose={() => {
-        showNewSpaceModal = false;
-        newSpaceInitialRepo = undefined;
+        dispatch(closeNewSpaceModal());
       }}
     />
 
     <!-- Feature Code Dialog (hidden, activated via Ctrl+Shift+F12) -->
-    <FeatureCodeDialog bind:open={showFeatureCodeDialog} />
+    <FeatureCodeDialog
+      open={$featureCodeDialogOpen}
+      onClose={() => {
+        if ($featureCodeDialogOpen) {
+          dispatch(toggleFeatureCodeDialog());
+        }
+      }}
+    />
 
     <!-- Debug Panel (only in dev mode) -->
     {#if import.meta.env.DEV}

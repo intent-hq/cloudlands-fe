@@ -76,7 +76,11 @@
     // This is handled by the workspace page and ensures proper panel focus
     window.dispatchEvent(
       new CustomEvent('workspace:open-agent', {
-        detail: { agentId, sourcePanelId, openInAdjacentPanel },
+        detail: {
+          agentId,
+          sourcePanelId,
+          openInAdjacentPanel,
+        },
       }),
     );
   }

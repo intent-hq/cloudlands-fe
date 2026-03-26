@@ -30,7 +30,7 @@
   import { toast } from '$lib/components/ui/toast';
   import * as Diff from 'diff';
   import { stripWorkspacePrefix, pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
-  import { selectCodeFontFamilyCSS } from '$lib/store/slices/font-settings/font-settings-selectors';
+  import { selectCodeFontFamilyCSS } from '$lib/store/slices/user-preferences/user-preferences-selectors';
 
   // Content size limits to prevent freezes with massive files
   const MAX_CONTENT_SIZE_BYTES = 500 * 1024; // 500KB

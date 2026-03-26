@@ -168,11 +168,7 @@
         label: 'Open',
         icon: faArrowUpRightFromSquare,
         onClick: () => {
-          window.dispatchEvent(
-            new CustomEvent('workspace:open-agent', {
-              detail: { agentId },
-            }),
-          );
+          window.dispatchEvent(new CustomEvent('workspace:open-agent', { detail: { agentId } }));
           closeContextMenu();
         },
       },
@@ -386,7 +382,11 @@
       const openInAdjacentPanel = event.metaKey || event.ctrlKey;
       window.dispatchEvent(
         new CustomEvent('workspace:open-agent', {
-          detail: { agentId, sourcePanelId, openInAdjacentPanel },
+          detail: {
+            agentId,
+            sourcePanelId,
+            openInAdjacentPanel,
+          },
         }),
       );
     }

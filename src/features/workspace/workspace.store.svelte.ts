@@ -27,7 +27,6 @@ import { unifiedStateStore } from '$features/agent/services/unified-state-store'
 import { clearTransientUIStore } from './transient-ui-state.store.svelte';
 import { lineChangesStore } from '$features/line-changes/line-changes.store.svelte';
 import { workspaceStorageManager } from './workspace-storage-manager';
-import { firstVisitManager } from './first-visit-manager.svelte';
 
 const logger = new Logger('WorkspaceStore');
 
@@ -864,7 +863,6 @@ class WorkspaceStore {
           clearTransientUIStore(id);
           lineChangesStore.clearWorkspaceStats(id);
           workspaceStorageManager.clearState(id);
-          firstVisitManager.cleanupWorkspace(id);
         } catch (cleanupErr) {
           logger.warn('Non-critical cleanup error during workspace deletion', {
             workspaceId: id,

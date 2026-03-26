@@ -1,4 +1,4 @@
-import type { SagaName } from "../../types";
+import type { SagaName } from "../../sagas";
 import { createAction } from "../../utils/create-action";
 
 /*

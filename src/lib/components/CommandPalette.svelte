@@ -27,6 +27,26 @@
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { browserStore } from '$features/browser/browser.store.svelte';
   import { createLogger } from '$lib/utils/client-logger';
+  import { dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
+  import { createAgentRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import { createTerminalRequested } from '$lib/store/slices/terminals/terminals-slice';
+  import { createNoteRequested } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
+  import {
+    type WorkspaceObject,
+    type WorkspaceObjectType,
+    FILTER_PREFIXES,
+    fuzzyScore,
+    formatRelativeTime,
+    parseQueryFilter,
+    buildNoteBreadcrumbs,
+    recordMRUItem,
+    buildRecentItems,
+    getMRUEntries,
+  } from '$lib/store/slices/command-palette/command-palette-utils';
+  import {
+    computeResults,
+    type PaletteCommand,
+  } from '$lib/store/slices/command-palette/command-palette-results';
   import { Skeleton } from './ui/skeleton';
   import { sessionStoreData } from '$features/agent/browser';
   import { notesStore } from '$features/notes/notes.store.svelte';
@@ -40,44 +60,6 @@
 
   const logger = createLogger('CommandPalette');
 
-  // Helper to build breadcrumbs for a note
-  function buildNoteBreadcrumbs(note: Note, allNotes: Note[]): string {
-    const noteMap = new Map(allNotes.map((n) => [n.id as string, n]));
-    const breadcrumbs: string[] = [];
-    let currentNote: Note | undefined = note;
-    const visited = new Set<string>();
-
-    // Walk up the parent chain
-    while (currentNote?.parentId && !visited.has(currentNote.id as string)) {
-      visited.add(currentNote.id as string);
-      const parent = noteMap.get(currentNote.parentId as string);
-      if (parent) {
-        breadcrumbs.unshift(parent.title || 'Untitled');
-        currentNote = parent;
-      } else {
-        break;
-      }
-    }
-
-    return breadcrumbs.join(' / ');
-  }
-
-  // Types for workspace objects
-  type WorkspaceObjectType = 'agent' | 'note' | 'change' | 'terminal' | 'file' | 'browser';
-
-  interface WorkspaceObject {
-    id: string;
-    type: WorkspaceObjectType;
-    label: string;
-    description?: string;
-    icon: any;
-    timestamp?: number;
-    path?: string;
-    url?: string; // For browser URLs
-    _time?: string;
-    breadcrumbs?: string; // For notes with parent hierarchy
-  }
-
   interface Props {
     isOpen: boolean;
     initialQuery?: string;
@@ -87,7 +69,13 @@
     onSelectFile?: (detail: { path: string; line?: number; openInAdjacentPanel?: boolean }) => void;
   }
 
-  let { isOpen = $bindable(false), initialQuery = '', workspaceId, onClose, onSelectFile }: Props = $props();
+  let {
+    isOpen = $bindable(false),
+    initialQuery = '',
+    workspaceId,
+    onClose,
+    onSelectFile,
+  }: Props = $props();
 
   let searchQuery = $state('');
   let selectedIndex = $state(0);
@@ -96,32 +84,8 @@
   let isLoadingFiles = $state(false);
   let activeFilter: WorkspaceObjectType | 'workspace' | null = $state(null); // Filter by type
 
-  // Prefix mapping for filtering
-  const FILTER_PREFIXES: Record<string, WorkspaceObjectType | 'workspace'> = {
-    '@': 'agent',
-    '#': 'note',
-    '>': 'terminal',
-    '~': 'change',
-    '/': 'file',
-    '*': 'workspace',
-    '^': 'browser',
-  };
-
-  // Derived: parse search query for filter prefix
-  let parsedQuery = $derived.by(() => {
-    const query = searchQuery.trim();
-    if (!query) return { filter: null, searchTerm: '' };
-
-    const firstChar = query[0];
-    if (FILTER_PREFIXES[firstChar]) {
-      return {
-        filter: FILTER_PREFIXES[firstChar],
-        searchTerm: query.slice(1).trim(),
-      };
-    }
-
-    return { filter: null, searchTerm: query };
-  });
+  // Derived: parse search query for filter prefix (uses extracted pure function)
+  let parsedQuery = $derived(parseQueryFilter(searchQuery));
 
   // Go to Line mode: detect when query starts with ':'
   let isGoToLineMode = $derived(searchQuery.trimStart().startsWith(':'));
@@ -159,65 +123,13 @@
     { id: 'new-agent', label: 'New Agent Chat', icon: faCommentDots },
     { id: 'new-terminal', label: 'New Terminal', icon: faTerminal },
     { id: 'new-note', label: 'New Note', icon: faFileAlt },
+    { id: 'new-file', label: 'New File', icon: faFile, shortcut: '⌘N' },
     { id: 'open-url', label: 'Open URL in Browser', icon: faGlobe },
   ];
 
-  // MRU (Most Recently Used) tracking for all object types
-  const MRU_STORAGE_KEY = 'palette-mru-all';
-  const MAX_RECENT_ITEMS = 3;
-
-  interface MRUEntry {
-    type: WorkspaceObjectType;
-    id: string;
-    timestamp: number;
-  }
-
-  function getMRUEntries(): MRUEntry[] {
-    try {
-      const raw = localStorage.getItem(MRU_STORAGE_KEY);
-      if (!raw) return [];
-      return JSON.parse(raw) as MRUEntry[];
-    } catch {
-      return [];
-    }
-  }
-
-  function saveMRUEntries(entries: MRUEntry[]) {
-    try {
-      localStorage.setItem(MRU_STORAGE_KEY, JSON.stringify(entries));
-    } catch {}
-  }
-
-  function recordMRUItem(type: WorkspaceObjectType, id: string) {
-    const entries = getMRUEntries();
-    // Remove existing entry for this item
-    const filtered = entries.filter((e) => !(e.type === type && e.id === id));
-    // Add new entry at the beginning
-    filtered.unshift({ type, id, timestamp: Date.now() });
-    // Keep only latest 50 entries
-    const trimmed = filtered.slice(0, 50);
-    saveMRUEntries(trimmed);
-  }
-
-  // Format relative time (e.g., "2h ago", "yesterday", "Dec 5")
-  function formatRelativeTime(dateStr: string | undefined): string {
-    if (!dateStr) return '';
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays === 1) return 'yesterday';
-    if (diffDays < 7) return `${diffDays}d ago`;
-
-    // For older dates, show the date
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  }
+  // MRU, formatRelativeTime, buildNoteBreadcrumbs, fuzzyScore, parseQueryFilter,
+  // FILTER_PREFIXES, and WorkspaceObject types are now imported from
+  // '$lib/store/slices/command-palette/command-palette-utils'
 
   // Load workspace objects when workspace changes
   $effect(() => {
@@ -364,7 +276,7 @@
     };
   });
 
-  // Build recent items from MRU - separate derived state to avoid infinite loop
+  // Build recent items from MRU - uses extracted buildRecentItems utility
   $effect(() => {
     if (!workspaceId) {
       untrack(() => {
@@ -373,7 +285,6 @@
       return;
     }
 
-    const mruEntries = getMRUEntries();
     // Use untrack to read the reactive state without creating dependencies
     const allObjects = untrack(() => [
       ...agents,
@@ -382,42 +293,14 @@
       ...terminals,
       ...browserUrls,
     ]);
-    const newRecentItems = mruEntries
-      .slice(0, MAX_RECENT_ITEMS)
-      .map((entry) => allObjects.find((obj) => obj.type === entry.type && obj.id === entry.id))
-      .filter((obj): obj is WorkspaceObject => obj !== undefined);
+    const newRecentItems = buildRecentItems(allObjects);
     // Update state in untrack to avoid effect loops
     untrack(() => {
       recentItems = newRecentItems;
     });
   });
 
-  // Lightweight fuzzy scorer: returns -Infinity if not a subsequence match
-  function fuzzyScore(haystackRaw: string, needleRaw: string): number {
-    const haystack = (haystackRaw || '').toLowerCase();
-    const needle = (needleRaw || '').toLowerCase();
-    if (!needle) return 0;
-    if (haystack === needle) return 1000;
-    if (haystack.startsWith(needle)) return 200 + Math.max(0, 20 - needle.length);
-
-    let i = 0;
-    let score = 0;
-    let streak = 0;
-    for (const ch of needle) {
-      const idx = haystack.indexOf(ch, i);
-      if (idx === -1) return -Infinity;
-      // Word boundary bonus
-      const prev = idx > 0 ? haystack[idx - 1] : ' ';
-      if (prev === ' ' || prev === '/' || prev === '-' || prev === '_' || prev === '.') score += 5;
-      // Consecutive match bonus
-      streak = idx === i ? streak + 1 : 1;
-      score += streak * 2;
-      // Prefer earlier matches slightly
-      score += Math.max(0, 3 - idx);
-      i = idx + 1;
-    }
-    return score;
-  }
+  // fuzzyScore is now imported from command-palette-utils
 
   // Grouped results state (only files need async loading)
   let groupFiles: any[] = $state([]);
@@ -533,173 +416,42 @@
     };
   });
 
-  // Compute results - extracted to function so it can be called deferred
-  function computeResults(q: string, files: any[]) {
-    const flat: any[] = [];
-    let idx = 0;
-    const MAX_ITEMS_PER_GROUP = 3;
+  // computeResults is now imported from command-palette-results.
+  // This wrapper bridges component state to the pure function's input interface.
+  function buildResults(q: string, files: any[]) {
+    // Build workspace items from workspaceStore (still a Svelte store for now)
+    const wsItems = (workspaceStore.items || [])
+      .filter((w: any) => w.id !== workspaceId)
+      .sort((a: any, b: any) => {
+        const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        return bTime - aTime;
+      })
+      .map((w: any) => ({
+        id: w.id,
+        label: w.title || w.id,
+        icon: faFolderOpen,
+        description: w.repositoryPath
+          ? w.repositoryPath.split('/').pop() || w.repositoryPath
+          : undefined,
+        _workspace: true as const,
+        _time: formatRelativeTime(w.updatedAt),
+      }));
 
-    // Helper to add items with index and optional limit
-    const addItems = (
-      items: any[],
-      groupLabel?: string,
-      shortcutKey?: string,
-      itemType?: WorkspaceObjectType,
-    ) => {
-      if (groupLabel && items.length > 0) {
-        flat.push({ _groupLabel: groupLabel, _shortcutKey: shortcutKey, _idx: idx++ });
-      }
-
-      // Apply limit if not searching and not filtered to this type
-      const shouldLimit = !q && (!activeFilter || activeFilter !== itemType);
-      const itemsToShow = shouldLimit ? items.slice(0, MAX_ITEMS_PER_GROUP) : items;
-
-      for (const item of itemsToShow) {
-        item._idx = idx++;
-        flat.push(item);
-      }
-
-      // Add "show more" button if items were limited
-      if (shouldLimit && items.length > MAX_ITEMS_PER_GROUP && itemType) {
-        flat.push({
-          _showMore: true,
-          _itemType: itemType,
-          _count: items.length - MAX_ITEMS_PER_GROUP,
-          _idx: idx++,
-        });
-      }
-    };
-
-    // If searching, show filtered results across all types
-    if (q) {
-      // Filter all items by query
-      const allItems = [
-        ...commands.filter((c) => c.id !== 'new-workspace'),
-        ...agents,
-        ...notes,
-        ...changes,
-        ...terminals,
-        ...browserUrls,
-        ...files,
-        ...(workspaceStore.items || [])
-          .filter((w: any) => w.id !== workspaceId)
-          .map((w: any) => ({
-            id: w.id,
-            label: w.title || w.id,
-            icon: faFolderOpen,
-            description: w.repositoryPath
-              ? w.repositoryPath.split('/').pop() || w.repositoryPath
-              : undefined,
-            _workspace: true,
-            _time: formatRelativeTime(w.updatedAt),
-          })),
-      ];
-
-      const filtered = allItems
-        .map((item: any) => ({
-          ...item,
-          _score: fuzzyScore(`${item.label} ${item.description || ''}`, q),
-        }))
-        .filter((item: any) => item._score !== -Infinity)
-        .sort((a: any, b: any) => (b._score as number) - (a._score as number))
-        .map(({ _score, ...rest }: any) => rest)
-        .slice(0, 20);
-
-      addItems(filtered);
-      return flat;
-    }
-
-    // Not searching - show organized groups
-    // 1. New actions row (horizontal pills) with New Workspace on the right - no label
-    const newWs = commands.find((c) => c.id === 'new-workspace');
-    const newActions = workspaceId
-      ? commands.filter((c) => ['new-agent', 'new-terminal', 'new-note'].includes(c.id))
-      : [];
-
-    // Show "New" row if we have workspace-specific actions OR new workspace button
-    if (!activeFilter && (newActions.length > 0 || newWs)) {
-      flat.push({ _newActionsRow: true, _idx: idx++ });
-
-      // Add workspace-specific new actions
-      for (const action of newActions) {
-        const actionItem = action as any;
-        actionItem._idx = idx++;
-        actionItem._newAction = true;
-        flat.push(actionItem);
-      }
-
-      // Add New Workspace on the right
-      if (newWs) {
-        const wsItem = newWs as any;
-        wsItem._idx = idx++;
-        wsItem._newAction = true;
-        wsItem._newWorkspace = true; // Special flag to style it differently
-        flat.push(wsItem);
-      }
-    }
-
-    // 3. Recent items (3 most recent)
-    if (recentItems.length > 0 && !activeFilter) {
-      addItems(recentItems, 'Recent');
-    }
-
-    // 4. Agents (separate group)
-    if (agents.length > 0 && (!activeFilter || activeFilter === 'agent')) {
-      addItems(agents, 'Agents', '@', 'agent');
-    }
-
-    // 5. Context / Notes (separate group)
-    if (notes.length > 0 && (!activeFilter || activeFilter === 'note')) {
-      addItems(notes, 'Context', '#', 'note');
-    }
-
-    // 6. Changes (separate group)
-    if (changes.length > 0 && (!activeFilter || activeFilter === 'change')) {
-      addItems(changes, 'Changes', '~', 'change');
-    }
-
-    // 7. Terminals (separate group)
-    if (terminals.length > 0 && (!activeFilter || activeFilter === 'terminal')) {
-      addItems(terminals, 'Terminals', '>', 'terminal');
-    }
-
-    // 8. Browser URLs (separate group)
-    if (browserUrls.length > 0 && (!activeFilter || activeFilter === 'browser')) {
-      addItems(browserUrls, 'Browser', '^', 'browser');
-    }
-
-    // 9. Files (separate group)
-    if (files.length > 0 && (!activeFilter || activeFilter === 'file')) {
-      addItems(files, 'Files', '/', 'file');
-    }
-
-    // 10. Other Spaces (with border above) - only show when not filtering or filtering for workspaces
-    if (!activeFilter || activeFilter === 'workspace') {
-      const wsItems = (workspaceStore.items || [])
-        .filter((w: any) => w.id !== workspaceId)
-        .sort((a: any, b: any) => {
-          const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-          const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-          return bTime - aTime;
-        })
-        .map((w: any) => ({
-          id: w.id,
-          label: w.title || w.id,
-          icon: faFolderOpen,
-          description: w.repositoryPath
-            ? w.repositoryPath.split('/').pop() || w.repositoryPath
-            : undefined,
-          _workspace: true,
-          _time: formatRelativeTime(w.updatedAt),
-        }));
-      if (wsItems.length > 0) {
-        // Add a border marker before the group
-        flat.push({ _borderAbove: true, _idx: idx++ });
-        addItems(wsItems, 'Other Spaces', '*');
-      }
-    }
-
-    return flat;
+    return computeResults({
+      query: q,
+      activeFilter,
+      workspaceId,
+      agents,
+      notes,
+      changes,
+      terminals,
+      browserUrls,
+      recentItems,
+      files,
+      commands,
+      workspaceItems: wsItems,
+    });
   }
 
   // PERF: Debounce timer for rapid typing
@@ -745,15 +497,18 @@
       searchDebounceTimer = null;
       resultComputeRaf = requestAnimationFrame(() => {
         resultComputeRaf = null;
-        const flat = computeResults(q, files);
+        const flat = buildResults(q, files);
         // Use untrack for all state updates to avoid effect loops
         untrack(() => {
           searchResults = flat;
-          // Keep selection within bounds
-          const currentIdx = selectedIndex;
-          const clampedIdx = Math.max(0, Math.min(currentIdx, flat.length - 1));
-          if (clampedIdx !== currentIdx) {
-            selectedIndex = clampedIdx;
+          // Keep selection on an actionable item.
+          const currentIdx = Math.max(0, Math.min(selectedIndex, flat.length - 1));
+          const nextSelectableIdx = findSelectableIndex(flat, currentIdx, 1);
+          const prevSelectableIdx = findSelectableIndex(flat, currentIdx, -1);
+          const resolvedIdx = nextSelectableIdx !== -1 ? nextSelectableIdx : prevSelectableIdx;
+
+          if (resolvedIdx !== -1 && resolvedIdx !== selectedIndex) {
+            selectedIndex = resolvedIdx;
           }
         });
       });
@@ -815,6 +570,26 @@
     });
   }
 
+  function isSelectableResult(item: any): boolean {
+    return (
+      Boolean(item) &&
+      !item._groupLabel &&
+      !item._newActionsRow &&
+      !item._borderAbove &&
+      !item._showMore
+    );
+  }
+
+  function findSelectableIndex(items: any[], startIndex: number, direction: 1 | -1): number {
+    for (let index = startIndex; index >= 0 && index < items.length; index += direction) {
+      if (isSelectableResult(items[index])) {
+        return index;
+      }
+    }
+
+    return -1;
+  }
+
   function handleKeyDown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -827,31 +602,17 @@
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       if (isGoToLineMode) return;
-      // Skip group labels and new action items
-      let nextIndex = selectedIndex + 1;
-      while (
-        nextIndex < searchResults.length &&
-        (searchResults[nextIndex]._groupLabel ||
-          searchResults[nextIndex]._newAction ||
-          searchResults[nextIndex]._showMore)
-      ) {
-        nextIndex++;
+      const nextIndex = findSelectableIndex(searchResults, selectedIndex + 1, 1);
+      if (nextIndex !== -1) {
+        selectedIndex = nextIndex;
       }
-      selectedIndex = Math.min(nextIndex, searchResults.length - 1);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       if (isGoToLineMode) return;
-      // Skip group labels and new action items
-      let prevIndex = selectedIndex - 1;
-      while (
-        prevIndex >= 0 &&
-        (searchResults[prevIndex]._groupLabel ||
-          searchResults[prevIndex]._newAction ||
-          searchResults[prevIndex]._showMore)
-      ) {
-        prevIndex--;
+      const prevIndex = findSelectableIndex(searchResults, selectedIndex - 1, -1);
+      if (prevIndex !== -1) {
+        selectedIndex = prevIndex;
       }
-      selectedIndex = Math.max(prevIndex, 0);
     } else if (e.key === 'Enter') {
       e.preventDefault();
       // Handle Go to Line mode
@@ -866,7 +627,10 @@
       }
       // Cmd+Enter opens in adjacent panel
       const openInAdjacentPanel = e.metaKey || e.ctrlKey;
-      selectItem(searchResults[selectedIndex], { openInAdjacentPanel });
+      const selectedItem = searchResults[selectedIndex];
+      if (isSelectableResult(selectedItem)) {
+        selectItem(selectedItem, { openInAdjacentPanel });
+      }
     }
   }
 
@@ -928,14 +692,20 @@
         case 'agent':
           window.dispatchEvent(
             new CustomEvent('workspace:open-agent', {
-              detail: { agentId: item.id, openInAdjacentPanel },
+              detail: {
+                agentId: item.id,
+                openInAdjacentPanel,
+              },
             }),
           );
           break;
         case 'note':
           window.dispatchEvent(
             new CustomEvent('workspace:open-note', {
-              detail: { noteId: item.id, openInAdjacentPanel },
+              detail: {
+                noteId: item.id,
+                openInAdjacentPanel,
+              },
             }),
           );
           break;
@@ -990,13 +760,19 @@
             if (result?.success) {
               window.dispatchEvent(
                 new CustomEvent('app:show-toast', {
-                  detail: { message: result.message || 'CLI installed successfully', type: 'success' },
+                  detail: {
+                    message: result.message || 'CLI installed successfully',
+                    type: 'success',
+                  },
                 }),
               );
             } else {
               window.dispatchEvent(
                 new CustomEvent('app:show-toast', {
-                  detail: { message: result?.message || 'Failed to install CLI', type: 'error' },
+                  detail: {
+                    message: result?.message || 'Failed to install CLI',
+                    type: 'error',
+                  },
                 }),
               );
             }
@@ -1004,27 +780,39 @@
           .catch((err: any) => {
             window.dispatchEvent(
               new CustomEvent('app:show-toast', {
-                detail: { message: 'Failed to install CLI: ' + err.message, type: 'error' },
+                detail: {
+                  message: 'Failed to install CLI: ' + err.message,
+                  type: 'error',
+                },
               }),
             );
           });
         return true;
       case 'new-agent':
-        window.dispatchEvent(new CustomEvent('app:new-agent'));
+        if (workspaceId) {
+          reduxDispatch(createAgentRequested(workspaceId));
+        }
         return true;
       case 'new-terminal':
-        window.dispatchEvent(new CustomEvent('app:new-terminal'));
+        if (workspaceId) {
+          reduxDispatch(createTerminalRequested(workspaceId));
+        }
         return true;
       case 'new-note':
-        window.dispatchEvent(new CustomEvent('app:new-note'));
+        if (workspaceId) {
+          reduxDispatch(createNoteRequested(workspaceId));
+        }
+        return true;
+      case 'new-file':
+        if (workspaceId) {
+          window.dispatchEvent(new CustomEvent('app:new-file'));
+        }
         return true;
       case 'open-url':
         // Open a browser panel with default URL
         if (workspaceId) {
           window.dispatchEvent(
-            new CustomEvent('workspace:open-browser-url', {
-              detail: { url: 'about:blank' },
-            }),
+            new CustomEvent('workspace:open-browser-url', { detail: { url: 'about:blank' } }),
           );
         }
         return true;
@@ -1128,7 +916,9 @@
           bind:value={searchQuery}
           onkeydown={handleKeyDown}
           type="text"
-          placeholder={isGoToLineMode ? 'Type a line number to go to...' : 'Type @ # > ~ / * to filter...'}
+          placeholder={isGoToLineMode
+            ? 'Type a line number to go to...'
+            : 'Type @ # > ~ / * to filter...'}
           class="flex-1 bg-transparent outline-none text-[15px] text-foreground placeholder:text-foreground/35 focus:outline-none! focus:ring-0!"
           autocorrect="off"
           autocapitalize="off"
@@ -1167,14 +957,16 @@
                   onClose?.();
                 }}
               >
-                <span class="text-[14px] font-medium text-foreground">Go to line {goToLineNumber}</span>
+                <span class="text-[14px] font-medium text-foreground"
+                  >Go to line {goToLineNumber}</span
+                >
               </button>
             {:else}
               <p class="text-[13px] text-subtle px-3">Enter a valid line number</p>
             {/if}
           </div>
         </div>
-      <!-- Results -->
+        <!-- Results -->
       {:else if searchResults.length > 0 || isLoadingFiles}
         <div class="max-h-[480px] overflow-y-auto py-1">
           {#each searchResults as item, index (item._idx !== undefined ? item._idx : `fallback-${index}`)}
@@ -1188,10 +980,12 @@
                 <div class="flex gap-2">
                   {#each searchResults.filter((r) => r._newAction && !r._newWorkspace) as action}
                     <button
-                      class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-foreground/[0.08]
-                             bg-foreground/[0.02] hover:bg-foreground/[0.04] hover:border-foreground/[0.12]
-                             transition-colors duration-100"
+                      class="flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-colors duration-100
+                             {selectedIndex === action._idx
+                        ? 'border-foreground/[0.12] bg-foreground/[0.04]'
+                        : 'border-foreground/[0.08] bg-foreground/[0.02] hover:bg-foreground/[0.04] hover:border-foreground/[0.12]'}"
                       onclick={() => selectItem(action)}
+                      onmouseenter={() => (selectedIndex = action._idx)}
                     >
                       <Fa icon={faPlus} class="text-ui text-subtle" />
                       <span class="text-[13px] font-medium text-subtle">
@@ -1204,10 +998,12 @@
                 <!-- Right side: New Workspace -->
                 {#each searchResults.filter((r) => r._newWorkspace) as wsAction}
                   <button
-                    class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-foreground/[0.08]
-                           bg-foreground/[0.02] hover:bg-foreground/[0.04] hover:border-foreground/[0.12]
-                           transition-colors duration-100"
+                    class="flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-colors duration-100
+                           {selectedIndex === wsAction._idx
+                      ? 'border-foreground/[0.12] bg-foreground/[0.04]'
+                      : 'border-foreground/[0.08] bg-foreground/[0.02] hover:bg-foreground/[0.04] hover:border-foreground/[0.12]'}"
                     onclick={() => selectItem(wsAction)}
+                    onmouseenter={() => (selectedIndex = wsAction._idx)}
                   >
                     <Fa icon={faPlus} class="text-ui text-subtle" />
                     <span class="text-[13px] font-medium text-subtle">
@@ -1265,13 +1061,11 @@
                 <div class="flex-1 min-w-0 flex flex-col gap-0.5">
                   <!-- First line: label and time -->
                   <div class="flex items-center gap-2.5">
-                    <span class="text-[14px] font-medium text-foreground/80 truncate"
+                    <span class="text-[14px] font-medium text-foreground truncate"
                       >{item.label}</span
                     >
                     {#if item._time}
-                      <span class="text-ui text-subtle flex-none ml-auto"
-                        >{item._time}</span
-                      >
+                      <span class="text-ui text-subtle flex-none ml-auto">{item._time}</span>
                     {/if}
                   </div>
 
@@ -1328,22 +1122,19 @@
       <div class="h-px bg-foreground/[0.05]"></div>
       <div class="px-3 h-[30px] flex items-center gap-5 text-ui text-subtle">
         <span class="flex items-center gap-1.5">
-          <kbd
-            class="px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.04] text-subtle font-medium"
+          <kbd class="px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.04] text-subtle font-medium"
             >↑↓</kbd
           >
           <span>Navigate</span>
         </span>
         <span class="flex items-center gap-1.5">
-          <kbd
-            class="px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.04] text-subtle font-medium"
+          <kbd class="px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.04] text-subtle font-medium"
             >↵</kbd
           >
           <span>Select</span>
         </span>
         <span class="flex items-center gap-1.5">
-          <kbd
-            class="px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.04] text-subtle font-medium"
+          <kbd class="px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.04] text-subtle font-medium"
             >ESC</kbd
           >
           <span>Close</span>

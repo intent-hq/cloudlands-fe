@@ -12,10 +12,19 @@ import { unifiedStateStore } from '$features/agent/services/unified-state-store'
 import { createLogger } from '$lib/utils/client-logger';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { track } from '$lib/services/analytics';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import {
+  selectInitialAgentConfig,
+  selectInitialAgentId,
+} from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+import { setInitialAgentId } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
 import type {
   UnifiedWorkspaceState,
   createUnifiedWorkspaceState,
 } from '$features/workspace/workspace-unified-state.svelte';
+import { workspaceMounted } from '$lib/store/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
+import { getDispatch } from '$lib/store/utils/utils';
 
 /** Type alias for the unified workspace state manager */
 export type UnifiedWorkspaceStateManager = ReturnType<typeof createUnifiedWorkspaceState>;
@@ -30,9 +39,34 @@ export interface UseWorkspaceLoaderOptions {
 }
 
 export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
+  const dispatch = getDispatch();
+
   // Track loading state more robustly
   let loadingWorkspaceId: string | null = $state(null);
   let loadingPromise: Promise<void> | null = $state(null);
+
+  // Track the last workspace ID for which workspaceMounted was dispatched.
+  // This prevents the isAlreadyActive guard from short-circuiting during
+  // workspace-to-workspace navigation: pre-population by initializeWorkspaceState
+  // makes workspaceData.id match the new workspace before the loader runs,
+  // but workspaceMounted hasn't been dispatched yet for the new workspace.
+  let lastMountedWorkspaceId: string | null = null;
+
+  function hydrateInitialAgentIdBeforeMount(workspaceId: string) {
+    const state = getReduxStore().getState();
+    const initialAgentId = selectInitialAgentId.select(state, workspaceId);
+
+    if (initialAgentId) {
+      return;
+    }
+
+    const pendingConfig = selectInitialAgentConfig.select(state, workspaceId);
+    if (!pendingConfig?.agentId) {
+      return;
+    }
+
+    dispatch(setInitialAgentId(workspaceId, pendingConfig.agentId));
+  }
 
   async function loadWorkspace() {
     const { workspaceId, workspaceState, state } = options;
@@ -140,7 +174,8 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     const isAlreadyActive =
       ws &&
       workspaceStore.current?.id === workspaceId &&
-      state?.workspaceData?.id === workspaceId;
+      state?.workspaceData?.id === workspaceId &&
+      lastMountedWorkspaceId === workspaceId;
 
     if (isAlreadyActive) {
       logger.info('Workspace already active, sending idempotent open only', {
@@ -167,6 +202,33 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       existsInStore: !!ws,
       hasWorktreePath: !!ws?.worktreePath,
     });
+
+    // FIX: When the workspace is already cached in the store (e.g. after
+    // workspaceStore.create()), populate Redux and Svelte state immediately
+    // BEFORE the async open() call. This eliminates the blank-page flash
+    // that occurs when safeWorkspace is null during the open() round-trip,
+    // and lets workspaceMounted sagas (agent loading, terminal init, etc.)
+    // start without waiting for backend confirmation.
+    let alreadyMounted = false;
+    if (ws) {
+      logger.info('Pre-populating workspace state from cache before open()', { workspaceId });
+      unifiedStateStore.setWorkspace(ws);
+      unifiedStateStore.setCurrentWorkspace(ws.id);
+      workspaceState.updateState({
+        workspaceData: ws,
+        workspace: { id: ws.id, status: 'ready' },
+      });
+      workspaceState.markInitialized();
+      dispatch(setWorkspaceEntity(ws));
+      hydrateInitialAgentIdBeforeMount(ws.id);
+      dispatch(workspaceMounted(ws.id));
+      lastMountedWorkspaceId = ws.id;
+      alreadyMounted = true;
+
+      if (!workspaceStore.current || workspaceStore.current.id !== ws.id) {
+        workspaceStore.setCurrentWorkspace(ws);
+      }
+    }
 
     let openResult = await workspaceClient.open(WorkspaceId(workspaceId));
 
@@ -203,7 +265,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     }
 
     if (ws) {
-      // Ensure workspace is set in unifiedStateStore
+      // Update workspace state with potentially fresher data from the backend.
       unifiedStateStore.setWorkspace(ws);
       unifiedStateStore.setCurrentWorkspace(ws.id);
 
@@ -212,6 +274,17 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
         workspace: { id: ws.id, status: 'ready' },
       });
       workspaceState.markInitialized();
+
+      // Hydrate Redux with the (potentially fresher) workspace entity.
+      dispatch(setWorkspaceEntity(ws));
+
+      // Dispatch workspaceMounted only if we haven't already done so above
+      // from cached data. This prevents duplicate saga forks.
+      if (!alreadyMounted) {
+        hydrateInitialAgentIdBeforeMount(ws.id);
+        dispatch(workspaceMounted(ws.id));
+        lastMountedWorkspaceId = ws.id;
+      }
 
       // Ensure it's set as current in store
       if (!workspaceStore.current || workspaceStore.current.id !== ws.id) {

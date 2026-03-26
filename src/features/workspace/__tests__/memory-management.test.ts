@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { stopCleanupInterval } from '../workspace-unified-state.svelte';
 import { lineChangesStore } from '$features/line-changes/line-changes.store.svelte';
-import { firstVisitManager } from '../first-visit-manager.svelte';
 
 describe('Memory Management', () => {
   describe('Cleanup Intervals', () => {
@@ -41,23 +40,7 @@ describe('Memory Management', () => {
       clearInterval(intervalId);
     });
 
-    it('should clean up first visit manager resources', () => {
-      // Test that cleanup methods exist
-      expect(firstVisitManager.cleanupWorkspace).toBeDefined();
-      expect(typeof firstVisitManager.cleanupWorkspace).toBe('function');
 
-      expect(firstVisitManager.dispose).toBeDefined();
-      expect(typeof firstVisitManager.dispose).toBe('function');
-
-      // Test cleanup doesn't throw
-      expect(() => {
-        firstVisitManager.cleanupWorkspace('test-workspace-id');
-      }).not.toThrow();
-
-      expect(() => {
-        firstVisitManager.dispose();
-      }).not.toThrow();
-    });
   });
 
   describe('WeakMap Reference Counting', () => {
@@ -204,7 +187,7 @@ describe('Memory Management', () => {
   describe('Store Disposal', () => {
     it('should have dispose methods on all major stores', () => {
       // List of stores that should have dispose methods
-      const storesWithDispose = [lineChangesStore, firstVisitManager];
+      const storesWithDispose = [lineChangesStore];
 
       storesWithDispose.forEach((store) => {
         expect(store.dispose).toBeDefined();

@@ -125,7 +125,7 @@
   import LazyTurn from './LazyTurn.svelte';
   import InlinePermissionRequest from './InlinePermissionRequest.svelte';
   import { selectPermissionRequests } from '$lib/store/slices/permission/permission-selectors';
-  import { selectIsAgentMonospace } from '$lib/store/slices/font-settings/font-settings-selectors';
+  import { selectIsAgentMonospace } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
   import AuroraBackground from './AuroraBackground.svelte';
   import { invoke, listenSync } from '$lib/electron-bridge';
@@ -2446,7 +2446,7 @@
   // Track unread status - mark agent as viewed when this panel is active
   // This prevents the workspace from being shown as "unread" in the spaces list
   // when the user is actively viewing the agent in the panel layout.
-  // (ContentDrawer handles this for drawer layout; this handles panel layout.)
+  // This handles the panel layout case.
   $effect(() => {
     if (agentId && isActive) {
       unreadTrackingService.markAsViewed(agentId);

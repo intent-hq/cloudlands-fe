@@ -1,4 +1,7 @@
-import { setLocalStorageItem } from "$lib/store/utils/safe-local-storage-saga";
+import {
+  setLocalStorageItem,
+  setLocalStorageJSON,
+} from "$lib/store/utils/safe-local-storage-saga";
 import { call, takeEvery, type SagaGenerator } from "typed-redux-saga";
 import {
   selectDiffIndicators,
@@ -29,19 +32,11 @@ function* persistEditorSettings(settings: {
   diffSideBySide: boolean;
   diffIndicators: boolean;
 }): SagaGenerator<void> {
-  try {
-    yield* call(setLocalStorageItem, EDITOR_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-  } catch {
-    // Ignore storage errors
-  }
+  yield* call(setLocalStorageJSON, EDITOR_SETTINGS_STORAGE_KEY, settings);
 }
 
 function* persistSidebarCollapsed(collapsed: boolean): SagaGenerator<void> {
-  try {
-    yield* call(setLocalStorageItem, SIDEBAR_COLLAPSED_STORAGE_KEY, collapsed ? "true" : "false");
-  } catch {
-    // Ignore storage errors
-  }
+  yield* call(setLocalStorageItem, SIDEBAR_COLLAPSED_STORAGE_KEY, collapsed ? "true" : "false");
 }
 
 function* watchEditorSettingsPersistence() {

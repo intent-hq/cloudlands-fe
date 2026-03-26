@@ -7,7 +7,7 @@ function dispatchSidebarEvent(collapsed: boolean, restoreWidth: number): void {
     window.dispatchEvent(
       new CustomEvent("workspace:toggle-left-sidebar", {
         detail: { collapsed, restoreWidth },
-      })
+      }),
     );
   }
 }

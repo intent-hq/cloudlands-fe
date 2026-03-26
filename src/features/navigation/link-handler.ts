@@ -60,6 +60,11 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
       return await handleIntentLink(url);
     }
 
+    // Handle devspace:// links (internal resources like terminals)
+    if (url.startsWith('devspace://')) {
+      return await handleDevspaceLink(url);
+    }
+
     // Handle HTTP/HTTPS links
     if (url.startsWith('http://') || url.startsWith('https://')) {
       // Auth URLs always go to external browser
@@ -110,6 +115,34 @@ async function handleIntentLink(url: string): Promise<boolean> {
     return await handleIntent(url);
   } catch (error) {
     logger.error('Failed to handle intent link', { url, error });
+    return false;
+  }
+}
+
+/**
+ * Handle devspace:// links (internal resources)
+ *
+ * Currently supports:
+ * - devspace://terminal/{id} → open terminal tab
+ */
+async function handleDevspaceLink(url: string): Promise<boolean> {
+  try {
+    const terminalMatch = url.match(/^devspace:\/\/terminal\/(.+)$/);
+    if (terminalMatch) {
+      const terminalId = decodeURIComponent(terminalMatch[1]);
+      logger.debug('Opening terminal from devspace link', { terminalId });
+      window.dispatchEvent(
+        new CustomEvent('workspace:open-terminal', {
+          detail: { terminalId },
+        }),
+      );
+      return true;
+    }
+
+    logger.warn('Unhandled devspace:// link type', { url });
+    return false;
+  } catch (error) {
+    logger.error('Failed to handle devspace link', { url, error });
     return false;
   }
 }
@@ -286,7 +319,7 @@ export function createLinkTooltipHandler(container: HTMLElement): () => void {
     const target = event.target as HTMLElement;
     const anchor = target.closest('a');
 
-    if (anchor?.href && !anchor.href.startsWith('intent://')) {
+    if (anchor?.href && !anchor.href.startsWith('intent://') && !anchor.href.startsWith('devspace://')) {
       if (anchor === currentAnchor) return; // Already tracking this anchor
       currentAnchor = anchor;
 

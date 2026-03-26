@@ -11,15 +11,22 @@ Per `docs/STATE_MANAGEMENT.md`, Redux in `src/lib/store/` is the canonical home 
 │ UI Layer                                                        │
 │ CodeChangesPanel, FileChangesList, activity surfaces            │
 └─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
+                              ▲
+                              │ selectors + render
 ┌─────────────────────────────────────────────────────────────────┐
 │ State Layer                                                     │
 │ Redux in src/lib/store/ is canonical for shared/durable state   │
 │ .store.svelte.ts files are transitional migration targets       │
 └─────────────────────────────────────────────────────────────────┘
+                              ▲
+                              │ Redux actions
+┌─────────────────────────────────────────────────────────────────┐
+│ Saga Event Channels                                             │
+│ `takeEveryFromElectronChannel`, `takeEveryFromListenSync`,      │
+│ and related saga watchers bridge IPC/window events into Redux   │
+└─────────────────────────────────────────────────────────────────┘
+                              ▲
                               │ IPC
-                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │ IPC Handlers                                                    │
 │ src/features/file-tracking/main/file-tracking.ipc.ts            │
@@ -42,12 +49,40 @@ Per `docs/STATE_MANAGEMENT.md`, Redux in `src/lib/store/` is the canonical home 
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+For IPC-driven updates, the ownership path is now: **Main Process → IPC → Saga Event Channels → Redux Actions → State → UI**.
+
 ## State Ownership Rules
 
 - Put shared, durable, or workflow-driving state in Redux under `src/lib/store/`.
 - Keep Svelte components focused on rendering, interaction, and minimal instance-local UI state.
 - Treat `.store.svelte.ts` files such as file tracking and line changes as transitional rather than the long-term state architecture.
 - Put cross-component async workflows and persistence logic in sagas or main-process services, not in component `$effect` chains.
+
+## Redux Saga Domains
+
+The root saga registry in `src/lib/store/sagas.ts` now owns many responsibilities that previously lived in components. Components should render state and dispatch user intent; sagas should own IPC listeners, workflow coordination, and persistence.
+
+| Domain | Ownership |
+| --- | --- |
+| `app-layout-saga` | Menu events, navigation events, zoom, file creation, and dock navigation. |
+| `workspace-agents-saga` | Agent creation, agent loading, lifecycle coordination, and delegation flows. |
+| `workspace-terminals-saga` | Terminal creation, terminal loading, and terminal-related IPC event handling. |
+| `git-operations-saga` | Git operation completed/failed toasts plus related analytics/reporting hooks. |
+| `global-modals-saga` | GitHub auth, git credentials, and new space modal flows. In practice, the `global-modals` slice owns modal state while IPC-triggered watcher sagas dispatch into it. |
+| `workspace-sync-saga` | `workspace:updated` IPC events and renderer-side workspace synchronization. |
+| `user-preferences/ipc-saga` | Notification sound playback and IPC-based preference synchronization. |
+
+## What Belongs Where
+
+| Concern | Owner | NOT in |
+| --- | --- | --- |
+| IPC event listeners | Sagas (via `takeEveryFrom*`) | Components (`onMount`, `$effect`) |
+| Modal open/close state | `global-modals` slice | Component `$state` |
+| Agent lifecycle | `workspace-agents` saga | Page component |
+| Terminal lifecycle | `workspace-terminals` saga | Page component |
+| localStorage reads/writes | Saga helpers (`safe-local-storage-saga`) | Component code |
+| Dock navigation (Alt+Up/Down) | `app-layout-saga` | Component composable |
+| Deep link handling | `deep-links` slice + saga | Component `onMount` |
 
 ## Selector and Dispatch Lifecycle
 

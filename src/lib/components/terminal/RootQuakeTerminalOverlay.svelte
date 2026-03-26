@@ -24,10 +24,10 @@
   import {
     selectIsTerminalOverlayOpen,
     selectTerminalOverlayHeight,
-    selectTerminalOverlayWorkspaceId,
     selectActiveTerminalId,
     selectTerminals,
-  } from '$lib/store/slices/terminal-overlay/terminal-overlay-selectors';
+  } from '$lib/store/slices/terminals/terminals-selectors';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import {
     openTerminalOverlay,
     closeTerminalOverlay,
@@ -38,7 +38,7 @@
     setTerminalOverlayHeight,
     renameTerminal,
     type TerminalTab,
-  } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
+  } from '$lib/store/slices/terminals/terminals-slice';
   // RootQuakeTerminalOverlay uses ROOT_WORKSPACE_ID as its workspace ID
   import { getDispatch } from '$lib/store/utils/utils';
   import Terminal from './Terminal.svelte';
@@ -61,7 +61,7 @@
   const dispatch = getDispatch();
   const isOpen = selectIsTerminalOverlayOpen();
   const height = selectTerminalOverlayHeight();
-  const storeWorkspaceId = selectTerminalOverlayWorkspaceId();
+  const storeWorkspaceId = selectActiveWorkspaceId();
   const activeTerminalId = selectActiveTerminalId();
   const terminals = selectTerminals();
 

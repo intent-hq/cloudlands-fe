@@ -1,13 +1,10 @@
 import { call, put, takeLatest, takeEvery } from "typed-redux-saga";
 import { invoke } from "$lib/electron-bridge";
-import { createLogger } from "$lib/utils/client-logger";
 import {
   fetchFeatures,
   fetchFeaturesSuccess,
   deactivateFeature,
 } from "../feature-codes-slice";
-
-const logger = createLogger("FeatureCodesSaga");
 
 /**
  * Fetch active features from the main process via IPC.
@@ -19,10 +16,8 @@ function* handleFetchFeatures() {
     };
     if (result?.features && Array.isArray(result.features)) {
       yield* put(fetchFeaturesSuccess(result.features));
-      logger.debug("Loaded active features", { features: result.features });
     }
-  } catch (error) {
-    logger.error("Failed to fetch active features", { error });
+  } catch {
   }
 }
 
@@ -37,8 +32,7 @@ function* handleDeactivateFeature(
     yield* call(invoke, "feature-codes:deactivate", { featureId });
     // Refresh the full list after deactivation
     yield* put(fetchFeatures());
-  } catch (error) {
-    logger.error("Failed to deactivate feature", { error, featureId });
+  } catch {
   }
 }
 

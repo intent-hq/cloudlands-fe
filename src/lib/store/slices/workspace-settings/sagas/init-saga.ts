@@ -1,6 +1,12 @@
-import { call, put } from "typed-redux-saga";
-import { loadAutoCommitSettings, initialState } from "../workspace-settings-slice";
+import { call } from "typed-redux-saga";
+import { emptyWorkspaceSettings } from "../workspace-settings-slice";
 import { SETTINGS_CHANNELS } from "$shared/ipc/channels";
+
+let _globalAutoCommitDefault = emptyWorkspaceSettings.autoCommitEnabled;
+
+export function getGlobalAutoCommitDefault(): boolean {
+  return _globalAutoCommitDefault;
+}
 
 async function loadFromIPC(): Promise<boolean> {
   try {
@@ -12,16 +18,14 @@ async function loadFromIPC(): Promise<boolean> {
   } catch {
     // Ignore load errors, fall back to default
   }
-  return initialState.autoCommitEnabled;
+  return emptyWorkspaceSettings.autoCommitEnabled;
 }
 
 /**
- * Loads workspace settings from IPC on startup.
- * Dispatches loadAutoCommitSettings (not setAutoCommitEnabled) so the
- * persistence saga does not trigger on init.
+ * Loads the global autoCommit default from IPC on startup.
+ * Individual workspaces get their settings loaded when synced.
  */
 export function* initSaga() {
-  const autoCommitEnabled: boolean = yield* call(loadFromIPC);
-  yield* put(loadAutoCommitSettings(autoCommitEnabled));
+  _globalAutoCommitDefault = yield* call(loadFromIPC);
 }
 

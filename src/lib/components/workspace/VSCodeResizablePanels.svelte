@@ -11,27 +11,21 @@
   import WorkspaceSidebarHeader from './WorkspaceSidebarHeader.svelte';
   import { faTimeline } from '@fortawesome/free-solid-svg-icons';
   import { fly } from 'svelte/transition';
-  import type { PanelVisibilityManager } from '$features/workspace/panel-visibility-manager.svelte';
+  import { selectPanelVisibilityFlag } from '$lib/store/slices/workspace/workspace-selectors';
 
   interface Props {
     workspace: any;
     workspaceId: string;
     selectedNoteId?: string | null;
     selectedFile?: string;
-    selectedChangeId?: string;
-    selectedActivityEvent?: any;
-    hasCodeChanges?: boolean;
-    hasActivityEvents?: boolean;
     loading?: boolean;
     showCodeDiff?: (change: any) => void;
     onOpenNote?: (noteId: string) => void;
     onOpenFile?: (file: string) => void;
     onOpenSource?: (sourceId: string) => void;
     onSelectAgent?: (agentId: string) => void;
-    onCreatePR?: () => void;
     handleFileSelect?: (file: string) => void;
     fileTreeView?: any;
-    panelVisibilityManager?: PanelVisibilityManager;
   }
 
   let {
@@ -39,20 +33,14 @@
     workspaceId,
     selectedNoteId = null,
     selectedFile = '',
-    selectedChangeId,
-    selectedActivityEvent = null,
-    hasCodeChanges = false,
-    hasActivityEvents = false,
     loading = false,
     showCodeDiff,
     onOpenNote = () => {},
     onOpenFile = () => {},
     onOpenSource = () => {},
     onSelectAgent,
-    onCreatePR = () => {},
     handleFileSelect = () => {},
     fileTreeView = $bindable(),
-    panelVisibilityManager,
   }: Props = $props();
 
   // Panel configuration
@@ -217,10 +205,10 @@
 
   function getShownPanels() {
     return panels.filter((p) => {
-      if (p.id === 'notes') return showNotes;
-      if (p.id === 'source-control') return showSourceControl;
-      if (p.id === 'explorer') return showExplorer;
-      if (p.id === 'activity') return showActivity;
+      if (p.id === 'notes') return $showNotes;
+      if (p.id === 'source-control') return $showSourceControl;
+      if (p.id === 'explorer') return $showExplorer;
+      if (p.id === 'activity') return $showActivity;
       return false;
     });
   }
@@ -375,13 +363,11 @@
     return heights;
   });
 
-  // Determine which panels should be shown
-  // PanelVisibilityManager is the single source of truth for panel visibility
-  // All visibility logic is coordinated by FirstVisitManager and PanelVisibilityManager
-  let showNotes = $derived(panelVisibilityManager?.showNotesPanel ?? false);
-  let showSourceControl = $derived(panelVisibilityManager?.showCodeChangesPanel ?? false);
-  let showExplorer = $derived(panelVisibilityManager?.showFilesPanel ?? false);
-  let showActivity = $derived(panelVisibilityManager?.showActivityLogPanel ?? false);
+  // Determine which panels should be shown — reactive readable selectors at init
+  const showNotes = selectPanelVisibilityFlag(workspaceId, 'showNotesPanel');
+  const showSourceControl = selectPanelVisibilityFlag(workspaceId, 'showCodeChangesPanel');
+  const showExplorer = selectPanelVisibilityFlag(workspaceId, 'showFilesPanel');
+  const showActivity = selectPanelVisibilityFlag(workspaceId, 'showActivityLogPanel');
 
   // Helper to check if a divider should be shown
   function shouldShowDivider(panelId: string): boolean {
@@ -408,7 +394,7 @@
   <!-- Panels Container -->
   <div bind:this={containerRef} class="vscode-resizable-panels">
     <!-- Notes Panel -->
-    {#if showNotes}
+    {#if $showNotes}
       <div
         class="panel-container"
         data-sidebar-panel="notes"
@@ -443,7 +429,7 @@
     {/if}
 
     <!-- Code Changes Panel -->
-    {#if showSourceControl}
+    {#if $showSourceControl}
       <div
         class="panel-container"
         data-sidebar-panel="source-control"
@@ -478,7 +464,7 @@
     {/if}
 
     <!-- Explorer Panel -->
-    {#if showExplorer}
+    {#if $showExplorer}
       <div
         class="panel-container"
         data-sidebar-panel="explorer"
@@ -517,7 +503,7 @@
     {/if}
 
     <!-- Activity Panel -->
-    {#if showActivity}
+    {#if $showActivity}
       <div
         class="panel-container"
         data-sidebar-panel="activity"

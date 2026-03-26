@@ -63,7 +63,7 @@
   import { unifiedStateStore } from '$features/agent/services/unified-state-store';
   import { invoke } from '$lib/electron-bridge';
   import { getUnifiedWorkspaceState } from '$features/workspace/workspace-unified-state.svelte';
-  import { selectNoteFontStyle } from '$lib/store/slices/font-settings/font-settings-selectors';
+  import { selectNoteFontStyle } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { selectSpellcheckEnabled } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { createTiptapTaskListMarked } from '$lib/utils/tiptap-task-list-extension';
   import { track } from '$lib/services/analytics';

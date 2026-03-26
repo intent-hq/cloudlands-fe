@@ -1,19 +1,54 @@
-import { setLocalStorageItem } from "$lib/store/utils/safe-local-storage-saga";
-import { call, fork, takeEvery, takeLatest, type SagaGenerator } from "typed-redux-saga";
+import { setLocalStorageJSON } from "$lib/store/utils/safe-local-storage-saga";
+import { call, delay, fork, takeEvery, takeLatest, type SagaGenerator } from "typed-redux-saga";
 import {
+  cycleFontStyle,
+  cycleNoteFontStyle,
+  resetNotificationSettings,
+  setAgentFontStyle,
+  setGroupByRepo,
+  setHasCompletedProviderSetup,
+  setCodeFontFamily,
+  setNotificationEnabled,
+  setNoteFontStyle,
+  setShowArchived,
   setBetaUpdatesEnabled,
   setSpellcheckEnabled,
+  setSoundEnabled,
+  setSoundOnlyWhenUnfocused,
+  setVolume,
+  toggleGroupByRepo,
+  toggleHasCompletedProviderSetup,
+  toggleShowArchived,
   toggleBetaUpdates,
   toggleSpellcheck,
+  type FontStyle,
+  type NotificationSettingsState,
 } from "../user-preferences-slice";
 import {
+  selectAgentFontStyle,
+  selectCodeFontFamily,
+  selectGroupByRepo,
+  selectHasCompletedProviderSetup,
+  selectNotificationEnabled,
+  selectNotificationVolume,
+  selectNoteFontStyle,
+  selectShowArchived,
   selectBetaUpdatesEnabled,
   selectSpellcheckEnabled,
+  selectSoundEnabled,
+  selectSoundOnlyWhenUnfocused,
 } from "../user-preferences-selectors";
 import { applyChannel } from "./apply-channel";
 
 const BETA_UPDATES_STORAGE_KEY = "betaUpdatesEnabled";
 const SPELLCHECK_STORAGE_KEY = "note-spellcheck-settings";
+const SHOW_ARCHIVED_STORAGE_KEY = "workspace-list:showArchived";
+const GROUP_BY_REPO_STORAGE_KEY = "workspace-list:groupByRepo";
+const COMPLETED_PROVIDER_SETUP_STORAGE_KEY = "workspace-list:completedProviderSetup";
+const AGENT_STORAGE_KEY = "agent-font-settings";
+const NOTE_STORAGE_KEY = "note-font-settings";
+const CODE_STORAGE_KEY = "code-font-settings";
+const NOTIFICATION_STORAGE_KEY = "notificationSettings";
 
 async function persistBetaUpdatesToIPC(enabled: boolean): Promise<void> {
   try {
@@ -29,10 +64,33 @@ async function persistBetaUpdatesToIPC(enabled: boolean): Promise<void> {
 }
 
 function* persistSpellcheckSettings(enabled: boolean): SagaGenerator<void> {
+  yield* call(setLocalStorageJSON, SPELLCHECK_STORAGE_KEY, { enabled });
+}
+
+function* persistBooleanPreference(key: string, value: boolean): SagaGenerator<void> {
+  yield* call(setLocalStorageJSON, key, value);
+}
+
+function* persistFontStyle(storageKey: string, fontStyle: FontStyle): SagaGenerator<void> {
+  yield* call(setLocalStorageJSON, storageKey, { fontStyle });
+}
+
+function* persistCodeFontFamily(fontFamily: string): SagaGenerator<void> {
+  yield* call(setLocalStorageJSON, CODE_STORAGE_KEY, { fontFamily });
+}
+
+async function persistNotificationSettingsToIPC(
+  settings: NotificationSettingsState
+): Promise<void> {
   try {
-    yield* call(setLocalStorageItem, SPELLCHECK_STORAGE_KEY, JSON.stringify({ enabled }));
+    if (typeof window !== "undefined" && window.electronAPI) {
+      await window.electronAPI.invoke("settings:set", {
+        key: NOTIFICATION_STORAGE_KEY,
+        value: settings,
+      });
+    }
   } catch {
-    // Ignore storage errors
+    // Ignore save errors
   }
 }
 
@@ -57,7 +115,88 @@ function* watchSpellcheckPersistence() {
   );
 }
 
+function* watchShowArchivedPersistence() {
+  yield* takeEvery([setShowArchived.type, toggleShowArchived.type], function* () {
+    const showArchived = yield* selectShowArchived.effect();
+    yield* call(persistBooleanPreference, SHOW_ARCHIVED_STORAGE_KEY, showArchived);
+  });
+}
+
+function* watchGroupByRepoPersistence() {
+  yield* takeEvery([setGroupByRepo.type, toggleGroupByRepo.type], function* () {
+    const groupByRepo = yield* selectGroupByRepo.effect();
+    yield* call(persistBooleanPreference, GROUP_BY_REPO_STORAGE_KEY, groupByRepo);
+  });
+}
+
+function* watchHasCompletedProviderSetupPersistence() {
+  yield* takeEvery(
+    [setHasCompletedProviderSetup.type, toggleHasCompletedProviderSetup.type],
+    function* () {
+      const hasCompletedProviderSetup = yield* selectHasCompletedProviderSetup.effect();
+      yield* call(
+        persistBooleanPreference,
+        COMPLETED_PROVIDER_SETUP_STORAGE_KEY,
+        hasCompletedProviderSetup
+      );
+    }
+  );
+}
+
+function* watchAgentFontStylePersistence() {
+  yield* takeEvery([setAgentFontStyle.type, cycleFontStyle.type], function* () {
+    const fontStyle = yield* selectAgentFontStyle.effect();
+    yield* call(persistFontStyle, AGENT_STORAGE_KEY, fontStyle);
+  });
+}
+
+function* watchNoteFontStylePersistence() {
+  yield* takeEvery([setNoteFontStyle.type, cycleNoteFontStyle.type], function* () {
+    const fontStyle = yield* selectNoteFontStyle.effect();
+    yield* call(persistFontStyle, NOTE_STORAGE_KEY, fontStyle);
+  });
+}
+
+function* watchCodeFontFamilyPersistence() {
+  yield* takeEvery(setCodeFontFamily.type, function* () {
+    const fontFamily = yield* selectCodeFontFamily.effect();
+    yield* call(persistCodeFontFamily, fontFamily);
+  });
+}
+
+function* watchNotificationSettingsPersistence() {
+  yield* takeLatest(
+    [
+      setNotificationEnabled.type,
+      setSoundEnabled.type,
+      setSoundOnlyWhenUnfocused.type,
+      setVolume.type,
+      resetNotificationSettings.type,
+    ],
+    function* () {
+      yield* delay(100);
+      const enabled = yield* selectNotificationEnabled.effect();
+      const soundEnabled = yield* selectSoundEnabled.effect();
+      const soundOnlyWhenUnfocused = yield* selectSoundOnlyWhenUnfocused.effect();
+      const volume = yield* selectNotificationVolume.effect();
+      yield* call(persistNotificationSettingsToIPC, {
+        enabled,
+        soundEnabled,
+        soundOnlyWhenUnfocused,
+        volume,
+      });
+    }
+  );
+}
+
 export function* persistenceUserPreferencesSaga() {
   yield* fork(watchBetaUpdatesPersistence);
   yield* fork(watchSpellcheckPersistence);
+  yield* fork(watchShowArchivedPersistence);
+  yield* fork(watchGroupByRepoPersistence);
+  yield* fork(watchHasCompletedProviderSetupPersistence);
+  yield* fork(watchAgentFontStylePersistence);
+  yield* fork(watchNoteFontStylePersistence);
+  yield* fork(watchCodeFontFamilyPersistence);
+  yield* fork(watchNotificationSettingsPersistence);
 }

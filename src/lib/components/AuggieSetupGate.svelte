@@ -10,7 +10,7 @@
   import { MINIMUM_AUGGIE_VERSION, type InstallErrorType } from '$shared/constants/auggie';
   import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
   import { ACP_PROVIDERS } from '$shared/config/provider-config';
-  import type { ProviderAvailabilityResult } from '$features/providers/main/provider-availability.service';
+  import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
   import {
     faArrowUp,
     faArrowUpRightFromSquare,

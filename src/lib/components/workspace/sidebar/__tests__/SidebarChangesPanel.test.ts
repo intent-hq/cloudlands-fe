@@ -155,9 +155,9 @@ vi.mock('$features/navigation/link-handler', () => ({
   handleLink: vi.fn(),
 }));
 
-vi.mock('$lib/store/slices/terminal-overlay/terminal-overlay-slice', () => ({
-  addTerminal: vi.fn((...args: any[]) => ({ type: 'terminalOverlay/addTerminal', payload: args })),
-  openTerminalOverlay: vi.fn((...args: any[]) => ({ type: 'terminalOverlay/open', payload: args })),
+vi.mock('$lib/store/slices/terminals/terminals-slice', () => ({
+  addTerminal: vi.fn((...args: any[]) => ({ type: 'terminals/addTerminal', payload: args })),
+  openTerminalOverlay: vi.fn((...args: any[]) => ({ type: 'terminals/open', payload: args })),
 }));
 
 vi.mock('$lib/store/slices/workspace-settings/workspace-settings-selectors', () => {

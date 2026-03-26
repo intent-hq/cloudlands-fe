@@ -312,15 +312,16 @@ export async function navigateToTask(
 
   // Dispatch scroll-to-task event with retries to handle editor mount timing
   const dispatchScrollEvent = () => {
-    const event = new CustomEvent('scroll-to-task', {
-      detail: {
-        noteId,
-        taskPosition,
-        taskText,
-      },
-      bubbles: true,
-    });
-    window.dispatchEvent(event);
+    window.dispatchEvent(
+      new CustomEvent('scroll-to-task', {
+        detail: {
+          noteId,
+          taskPosition,
+          taskText,
+        },
+        bubbles: true,
+      }),
+    );
     logger.debug('[navigateToTask] Dispatched scroll-to-task event', { noteId, taskPosition });
   };
 

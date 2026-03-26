@@ -33,7 +33,7 @@ import {
   createWorkspaceId,
   createMessageId,
 } from '$shared/types/branded-ids';
-import { type UnifiedAgentConfig } from '../services/agent-factory';
+import { type UnifiedAgentConfig } from '$shared/types/agent.types';
 import { StreamManager } from '../services/stream-manager';
 import { agentValidator } from '../services/agent-validator';
 import { errorHandler } from '../services/error-handler';

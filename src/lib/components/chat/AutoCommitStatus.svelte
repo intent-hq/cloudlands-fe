@@ -26,7 +26,10 @@
     if (status?.state === 'committed') {
       window.dispatchEvent(
         new CustomEvent('workspace:open-commit-changeset', {
-          detail: { commitHash: status.hash, commitMessage: status.message },
+          detail: {
+            commitHash: status.hash,
+            commitMessage: status.message,
+          },
         }),
       );
     }

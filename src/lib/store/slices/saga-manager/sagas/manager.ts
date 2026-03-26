@@ -2,13 +2,7 @@ import * as Sentry from "@sentry/electron/renderer";
 import { call, delay, takeEvery, fork, setContext, put } from "typed-redux-saga";
 import { startSaga, stopSaga } from "../saga-manager-slice";
 import { type Task } from "redux-saga";
-import type {
-  ReduxStoreContext,
-  SagaCrashRecord,
-  SagaName,
-  SagaStatusRecord,
-  StoreState,
-} from "../../../types";
+import type { ReduxStoreContext, SagaCrashRecord, SagaName, SagaStatusRecord, StoreState } from "../../../types";
 import { sagas } from "../../../sagas";
 import { type SagaReturnType } from "redux-saga/effects";
 import type { Readable } from "svelte/store";

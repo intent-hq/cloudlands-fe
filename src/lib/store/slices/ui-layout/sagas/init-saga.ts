@@ -1,4 +1,7 @@
-import { getLocalStorageItem } from "$lib/store/utils/safe-local-storage-saga";
+import {
+  getLocalStorageItem,
+  getLocalStorageJSON,
+} from "$lib/store/utils/safe-local-storage-saga";
 import { call, put, type SagaGenerator } from "typed-redux-saga";
 import {
   DEFAULT_WIDTH,
@@ -29,34 +32,25 @@ function percentToPixels(percent: number): number {
 }
 
 function* loadEditorSettingsFromLocalStorage(): SagaGenerator<typeof defaultEditorSettings> {
-  try {
-    const stored = yield* call(getLocalStorageItem, EDITOR_SETTINGS_STORAGE_KEY);
-    if (stored) {
-      return { ...defaultEditorSettings, ...JSON.parse(stored) };
-    }
-  } catch {
-    // Ignore parse errors
-  }
-
-  return defaultEditorSettings;
+  const stored = yield* call(
+    getLocalStorageJSON<Partial<typeof defaultEditorSettings>>,
+    EDITOR_SETTINGS_STORAGE_KEY
+  );
+  return stored ? { ...defaultEditorSettings, ...stored } : defaultEditorSettings;
 }
 
 function* loadSidebarWidth(): SagaGenerator<number> {
   if (typeof window === "undefined") return DEFAULT_WIDTH;
 
-  try {
-    const stored = yield* call(getLocalStorageItem, SIDEBAR_WIDTH_STORAGE_KEY);
-    if (stored) {
-      const value = parseFloat(stored);
-      if (!isNaN(value) && value > 0) {
-        const pixels = percentToPixels(value);
-        if (pixels >= MIN_WIDTH && pixels <= MAX_WIDTH) {
-          return Math.round(pixels);
-        }
+  const stored = yield* call(getLocalStorageItem, SIDEBAR_WIDTH_STORAGE_KEY);
+  if (stored) {
+    const value = parseFloat(stored);
+    if (!isNaN(value) && value > 0) {
+      const pixels = percentToPixels(value);
+      if (pixels >= MIN_WIDTH && pixels <= MAX_WIDTH) {
+        return Math.round(pixels);
       }
     }
-  } catch {
-    // Ignore errors
   }
 
   return DEFAULT_WIDTH;
@@ -65,12 +59,8 @@ function* loadSidebarWidth(): SagaGenerator<number> {
 function* loadSidebarCollapsed(): SagaGenerator<boolean> {
   if (typeof window === "undefined") return false;
 
-  try {
-    const stored = yield* call(getLocalStorageItem, SIDEBAR_COLLAPSED_STORAGE_KEY);
-    return stored === "true";
-  } catch {
-    return false;
-  }
+  const stored = yield* call(getLocalStorageItem, SIDEBAR_COLLAPSED_STORAGE_KEY);
+  return stored === "true";
 }
 
 export function* initSaga() {

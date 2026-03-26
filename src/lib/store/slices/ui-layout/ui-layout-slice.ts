@@ -1,5 +1,6 @@
 import { createAction } from "../../utils/create-action";
 import { createReducer } from "../../utils/create-reducer";
+import { createBooleanPreference } from "../../utils/boolean-preference";
 
 export const DEFAULT_WIDTH = 350;
 export const MIN_WIDTH = 180;
@@ -30,15 +31,43 @@ export const initialState: UiLayoutState = {
   sidebarCollapsed: false,
 };
 
-export const setLineWrapping = createAction<[value: boolean]>("uiLayout/setLineWrapping");
-export const setFoldUnchanged = createAction<[value: boolean]>("uiLayout/setFoldUnchanged");
-export const setDiffSideBySide = createAction<[value: boolean]>("uiLayout/setDiffSideBySide");
-export const setDiffIndicators = createAction<[value: boolean]>("uiLayout/setDiffIndicators");
+const lineWrappingPreference = createBooleanPreference<UiLayoutState>({
+  sliceName: "uiLayout",
+  field: "lineWrapping",
+  setActionName: "setLineWrapping",
+  toggleActionName: "toggleLineWrapping",
+});
 
-export const toggleLineWrapping = createAction("uiLayout/toggleLineWrapping");
-export const toggleFoldUnchanged = createAction("uiLayout/toggleFoldUnchanged");
-export const toggleDiffSideBySide = createAction("uiLayout/toggleDiffSideBySide");
-export const toggleDiffIndicators = createAction("uiLayout/toggleDiffIndicators");
+const foldUnchangedPreference = createBooleanPreference<UiLayoutState>({
+  sliceName: "uiLayout",
+  field: "foldUnchanged",
+  setActionName: "setFoldUnchanged",
+  toggleActionName: "toggleFoldUnchanged",
+});
+
+const diffSideBySidePreference = createBooleanPreference<UiLayoutState>({
+  sliceName: "uiLayout",
+  field: "diffSideBySide",
+  setActionName: "setDiffSideBySide",
+  toggleActionName: "toggleDiffSideBySide",
+});
+
+const diffIndicatorsPreference = createBooleanPreference<UiLayoutState>({
+  sliceName: "uiLayout",
+  field: "diffIndicators",
+  setActionName: "setDiffIndicators",
+  toggleActionName: "toggleDiffIndicators",
+});
+
+export const setLineWrapping = lineWrappingPreference.setAction;
+export const setFoldUnchanged = foldUnchangedPreference.setAction;
+export const setDiffSideBySide = diffSideBySidePreference.setAction;
+export const setDiffIndicators = diffIndicatorsPreference.setAction;
+
+export const toggleLineWrapping = lineWrappingPreference.toggleAction;
+export const toggleFoldUnchanged = foldUnchangedPreference.toggleAction;
+export const toggleDiffSideBySide = diffSideBySidePreference.toggleAction;
+export const toggleDiffIndicators = diffIndicatorsPreference.toggleAction;
 
 export const loadEditorSettings = createAction<[settings: EditorSettingsFields]>(
   "uiLayout/loadEditorSettings"
@@ -51,39 +80,13 @@ export const loadSidebarState = createAction<[width: number, collapsed: boolean]
   "uiLayout/loadSidebarState"
 );
 
-export const uiLayoutReducer = createReducer<UiLayoutState>(initialState)
-  .with(setLineWrapping, (state, { payload: [value] }) => ({
-    ...state,
-    lineWrapping: value,
-  }))
-  .with(setFoldUnchanged, (state, { payload: [value] }) => ({
-    ...state,
-    foldUnchanged: value,
-  }))
-  .with(setDiffSideBySide, (state, { payload: [value] }) => ({
-    ...state,
-    diffSideBySide: value,
-  }))
-  .with(setDiffIndicators, (state, { payload: [value] }) => ({
-    ...state,
-    diffIndicators: value,
-  }))
-  .with(toggleLineWrapping, (state) => ({
-    ...state,
-    lineWrapping: !state.lineWrapping,
-  }))
-  .with(toggleFoldUnchanged, (state) => ({
-    ...state,
-    foldUnchanged: !state.foldUnchanged,
-  }))
-  .with(toggleDiffSideBySide, (state) => ({
-    ...state,
-    diffSideBySide: !state.diffSideBySide,
-  }))
-  .with(toggleDiffIndicators, (state) => ({
-    ...state,
-    diffIndicators: !state.diffIndicators,
-  }))
+export const uiLayoutReducer = diffIndicatorsPreference.register(
+  diffSideBySidePreference.register(
+    foldUnchangedPreference.register(
+      lineWrappingPreference.register(createReducer<UiLayoutState>(initialState))
+    )
+  )
+)
   .with(loadEditorSettings, (state, { payload: [settings] }) => ({
     ...state,
     ...settings,

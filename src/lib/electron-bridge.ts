@@ -1,9 +1,12 @@
 // Electron bridge to replace Tauri API calls
 // This provides a compatibility layer for the Tauri API
 
+import type { DynamicElectronEventName, ElectronEventName } from '$shared/ipc-registry';
 import { Logger } from '$shared/logger';
 
 const logger = new Logger('ElectronBridge');
+
+type ElectronListenerEventName = ElectronEventName | DynamicElectronEventName;
 
 /**
  * Extract event data from IPC events in a consistent way.
@@ -203,7 +206,19 @@ export async function invokeWithTimeout<T>(
  * });
  */
 export function listenSync<T>(
-  event: string,
+  event: ElectronEventName,
+  handler: (payload: { payload: T }) => void,
+): () => void;
+export function listenSync<T>(
+  event: DynamicElectronEventName,
+  handler: (payload: { payload: T }) => void,
+): () => void;
+export function listenSync<T>(
+  event: ElectronListenerEventName,
+  handler: (payload: { payload: T }) => void,
+): () => void;
+export function listenSync<T>(
+  event: ElectronListenerEventName,
   handler: (payload: { payload: T }) => void,
 ): () => void {
   if (typeof window !== 'undefined' && (window as any).electronAPI) {
@@ -237,7 +252,7 @@ export function listenSync<T>(
  * component unmounts before the promise resolves.
  */
 export async function listen<T>(
-  event: string,
+  event: ElectronListenerEventName,
   handler: (payload: { payload: T }) => void,
 ): Promise<() => void> {
   // Just call the sync version - no actual async work is needed

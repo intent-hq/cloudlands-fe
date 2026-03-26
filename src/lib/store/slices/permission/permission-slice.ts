@@ -1,5 +1,12 @@
 import { createAction } from "../../utils/create-action";
 import { createReducer } from "../../utils/create-reducer";
+import {
+  addItem,
+  addItems,
+  createCollection,
+  removeItem,
+  type Collection,
+} from "../../utils/collection-utils";
 
 // ============================================================================
 // Types
@@ -23,7 +30,7 @@ export interface PermissionRequest {
 
 export type PermissionState = {
   /** All pending permission requests */
-  requests: PermissionRequest[];
+  requests: Collection<PermissionRequest, "requestId">;
 };
 
 // ============================================================================
@@ -31,7 +38,7 @@ export type PermissionState = {
 // ============================================================================
 
 export const initialState: PermissionState = {
-  requests: [],
+  requests: createCollection<PermissionRequest, "requestId">("requestId"),
 };
 
 // ============================================================================
@@ -78,22 +85,37 @@ export const selectPermissionOption = createAction<[requestId: string, optionId:
 // ============================================================================
 
 export const permissionReducer = createReducer<PermissionState>(initialState)
-  .with(permissionRequestReceived, (state, { payload: [request] }) => ({
-    ...state,
-    requests: [...state.requests, request],
-  }))
-  .with(setPendingRequests, (state, { payload: [requests] }) => {
-    // Add requests, avoiding duplicates
-    const existingIds = new Set(state.requests.map((r) => r.requestId));
-    const newRequests = requests.filter((r) => !existingIds.has(r.requestId));
-    if (newRequests.length === 0) return state;
+  .with(permissionRequestReceived, (state, { payload: [request] }) => {
+    const requests = addItem(state.requests, request);
+    if (requests === state.requests) {
+      return state;
+    }
+
     return {
       ...state,
-      requests: [...state.requests, ...newRequests],
+      requests,
     };
   })
-  .with(removePermissionRequest, (state, { payload: [requestId] }) => ({
-    ...state,
-    requests: state.requests.filter((r) => r.requestId !== requestId),
-  }));
+  .with(setPendingRequests, (state, { payload: [requests] }) => {
+    const nextRequests = addItems(state.requests, requests);
+    if (nextRequests === state.requests) {
+      return state;
+    }
+
+    return {
+      ...state,
+      requests: nextRequests,
+    };
+  })
+  .with(removePermissionRequest, (state, { payload: [requestId] }) => {
+    const requests = removeItem(state.requests, requestId);
+    if (requests === state.requests) {
+      return state;
+    }
+
+    return {
+      ...state,
+      requests,
+    };
+  });
 

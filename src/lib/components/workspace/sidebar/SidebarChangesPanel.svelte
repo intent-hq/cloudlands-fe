@@ -30,7 +30,7 @@
   import { handleLink } from '$features/navigation/link-handler';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { getTransientUIStore } from '$features/workspace/transient-ui-state.store.svelte';
-  import { addTerminal, openTerminalOverlay } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
+  import { addTerminal, openTerminalOverlay } from '$lib/store/slices/terminals/terminals-slice';
   import { getDispatch } from '$lib/store/utils/utils';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
@@ -224,7 +224,7 @@
   const stagedChanges = $derived(workingChanges?.staged ?? []);
 
   // Auto-commit settings from Redux
-  const autoCommitEnabled = selectAutoCommitEnabled();
+  const autoCommitEnabled = selectAutoCommitEnabled(workspaceId);
 
   // Sync workspace settings when workspaceId is available
   $effect(() => {

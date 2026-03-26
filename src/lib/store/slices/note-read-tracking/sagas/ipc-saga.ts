@@ -2,7 +2,6 @@ import { call, put, takeEvery, takeLatest } from "typed-redux-saga";
 import { invoke } from "$lib/electron-bridge";
 import { USER_ACTIVITY_CHANNELS } from "$shared/ipc/channels";
 import type { NoteReadRecord } from "$shared/types/user-activity.types";
-import { createLogger } from "$lib/utils/client-logger";
 import {
   markNoteRead,
   loadNoteReadStatus,
@@ -17,8 +16,6 @@ import {
   selectReadRecords,
 } from "../note-read-tracking-selectors";
 
-const logger = createLogger("NoteReadTrackingSaga");
-
 /**
  * Handle markNoteRead IPC call (fire-and-forget after optimistic update in reducer)
  */
@@ -30,11 +27,7 @@ function* handleMarkNoteRead(action: ReturnType<typeof markNoteRead>) {
       USER_ACTIVITY_CHANNELS.MARK_NOTE_READ,
       { workspaceId, noteId }
     );
-    if (!result.success) {
-      logger.error("Failed to mark note as read on backend", { error: result.error });
-    }
-  } catch (error) {
-    logger.error("Error marking note as read", { error });
+  } catch {
   }
 }
 
@@ -50,14 +43,12 @@ function* handleLoadNoteReadStatus(action: ReturnType<typeof loadNoteReadStatus>
       { workspaceId, noteId }
     );
     if (!result.success) {
-      logger.error("Failed to get note read status", { error: result.error });
       return;
     }
     if (result.data) {
       yield* put(loadNoteReadStatusSuccess(noteId, result.data));
     }
-  } catch (error) {
-    logger.error("Error getting note read status", { error });
+  } catch {
   }
 }
 
@@ -89,7 +80,6 @@ export function* handleComputeUnreadNotes(action: {
     );
 
     if (!result.success) {
-      logger.error("Failed to compute unread notes", { error: result.error });
       yield* put(setLoading(false));
       return;
     }
@@ -119,8 +109,7 @@ export function* handleComputeUnreadNotes(action: {
     });
 
     yield* put(computeUnreadNotesSuccess(filteredUnreadIds));
-  } catch (error) {
-    logger.error("Error computing unread notes", { error });
+  } catch {
     yield* put(setLoading(false));
   }
 }

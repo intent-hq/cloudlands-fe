@@ -19,7 +19,7 @@
     selectTerminalOverlayHeight,
     selectActiveTerminalId,
     selectTerminals,
-  } from '$lib/store/slices/terminal-overlay/terminal-overlay-selectors';
+  } from '$lib/store/slices/terminals/terminals-selectors';
   import {
     openTerminalOverlay,
     closeTerminalOverlay,
@@ -28,10 +28,9 @@
     addTerminal,
     removeTerminal,
     setTerminalOverlayHeight,
-    setTerminalOverlayWorkspace,
     renameTerminal,
     type TerminalTab,
-  } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
+  } from '$lib/store/slices/terminals/terminals-slice';
   import { getDispatch } from '$lib/store/utils/utils';
   import Terminal from './Terminal.svelte';
   import SetupScriptBanner from './SetupScriptBanner.svelte';
@@ -199,8 +198,12 @@
 
   // ---- Script header state (for top header bar when script is selected) ----
 
-  const selectedScript = $derived(selectedScriptId ? scriptsStore.scripts.get(selectedScriptId) : null);
-  const selectedScriptRuntime = $derived(selectedScriptId ? scriptsStore.getRuntime(selectedScriptId) : null);
+  const selectedScript = $derived(
+    selectedScriptId ? scriptsStore.scripts.get(selectedScriptId) : null,
+  );
+  const selectedScriptRuntime = $derived(
+    selectedScriptId ? scriptsStore.getRuntime(selectedScriptId) : null,
+  );
 
   const STATUS_CONFIG: Record<string, { label: string; colorClass: string }> = {
     idle: { label: 'Idle', colorClass: 'text-zinc-400' },
@@ -209,7 +212,9 @@
   };
 
   const selectedScriptStatusInfo = $derived(
-    selectedScriptRuntime ? STATUS_CONFIG[selectedScriptRuntime.status] ?? STATUS_CONFIG.idle : null,
+    selectedScriptRuntime
+      ? (STATUS_CONFIG[selectedScriptRuntime.status] ?? STATUS_CONFIG.idle)
+      : null,
   );
 
   function startEditingScriptName(): void {
@@ -307,13 +312,6 @@
     return () => {
       scriptsStore.dispose();
     };
-  });
-
-  // Sync workspace ID to store (also loads terminals for the new workspace)
-  $effect(() => {
-    if (propWorkspaceId) {
-      dispatch(setTerminalOverlayWorkspace(propWorkspaceId));
-    }
   });
 
   // Update CSS custom property for layout bottom padding
@@ -707,7 +705,11 @@
 {#if workspaceId}
   <!-- Terminal Overlay Container - rendered within layout's terminal-overlay-container -->
   <!-- tabindex=-1 allows programmatic focus for keyboard shortcut routing -->
-  <div bind:this={overlayContainer} tabindex="-1" class="terminal-overlay flex flex-col w-full outline-none">
+  <div
+    bind:this={overlayContainer}
+    tabindex="-1"
+    class="terminal-overlay flex flex-col w-full outline-none"
+  >
     <!-- Expanded Terminal Panel -->
     {#if $isOpen && ($activeTerminalId || selectedScriptId)}
       <div
@@ -789,7 +791,9 @@
               {/if}
 
               <!-- Status badge -->
-              <span class="{selectedScriptStatusInfo.colorClass} flex items-center gap-1 text-xs whitespace-nowrap flex-shrink-0">
+              <span
+                class="{selectedScriptStatusInfo.colorClass} flex items-center gap-1 text-xs whitespace-nowrap flex-shrink-0"
+              >
                 <Fa icon={faCircle} size="0.45em" />
                 {selectedScriptStatusInfo.label}
               </span>
@@ -1217,9 +1221,7 @@
                   {/each}
                 </ListContainer>
               {:else}
-                <div class="text-xs text-muted-foreground italic p-2">
-                  No scripts detected yet
-                </div>
+                <div class="text-xs text-muted-foreground italic p-2">No scripts detected yet</div>
               {/if}
             </div>
           {/snippet}
@@ -1236,7 +1238,6 @@
         >
           <Fa icon={$isOpen ? faChevronDown : faChevronUp} size="xs" />
         </Button>
-
       </div>
     </div>
   </div>

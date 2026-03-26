@@ -1,11 +1,5 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
-  import { page } from '$app/state';
-  import { deepLinkStore } from '$features/deeplink/deeplink.store.svelte';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { invoke } from '$lib/electron-bridge';
-  import { IPC_CHANNELS } from '$shared/ipc-registry';
-  import type { KnownRepo } from '$features/workspace/main/repo-registry';
   import Button from '$lib/components/ui/button/button.svelte';
 
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -14,25 +8,74 @@
   import ProviderStatusPanel from '$lib/components/ProviderStatusPanel.svelte';
   import { setActiveProvider } from '$lib/store/slices/provider-settings/provider-settings-slice';
   import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
+  import {
+    loadKnownRepos,
+  } from '$lib/store/slices/known-repos/known-repos-slice';
+  import {
+    selectKnownRepos,
+    selectKnownReposLoaded,
+  } from '$lib/store/slices/known-repos/known-repos-selectors';
+  import {
+    setHasCompletedProviderSetup,
+    toggleGroupByRepo,
+    toggleShowArchived,
+  } from '$lib/store/slices/user-preferences/user-preferences-slice';
+  import {
+    selectGroupByRepo,
+    selectHasCompletedProviderSetup,
+    selectShowArchived,
+    selectShowProviderPanel,
+  } from '$lib/store/slices/user-preferences/user-preferences-selectors';
+  import { clearHomePageInitializerRequest } from '$lib/store/slices/deep-links/deep-links-slice';
+  import { selectHomePageInitializerRequest } from '$lib/store/slices/deep-links/deep-links-selectors';
+  import {
+    selectNodeVersion,
+    selectShowNodeWarning,
+  } from '$lib/store/slices/system-status/system-status-selectors';
+  import {
+    closeBulkArchiveConfirm,
+    closeBulkDeleteArchivedConfirm,
+    closeBulkDeleteWarningConfirm,
+    closeDeleteWarning,
+    closeRemoveRepoConfirm,
+    confirmBulkArchive,
+    confirmBulkDeleteArchived,
+    confirmBulkDeleteWarning,
+    confirmDeleteWorkspace,
+    confirmRemoveRepo,
+    openBulkArchiveConfirm,
+    openBulkDeleteArchivedConfirm,
+    openRemoveRepoConfirm,
+    requestArchiveWorkspace,
+    requestDeleteWorkspace,
+    requestOpenWorkspace,
+    requestUnarchiveWorkspace,
+  } from '$lib/store/slices/workspace-operations/workspace-operations-slice';
+  import {
+    selectBulkDeleteWorkspaceCount,
+    selectPendingBulkRepoKey,
+    selectPendingDeleteWorkspace,
+    selectPendingRemoveRepoPath,
+    selectRunningAgentNamesForDelete,
+    selectShowBulkArchiveConfirm,
+    selectShowBulkDeleteArchivedConfirm,
+    selectShowBulkDeleteWarningConfirm,
+    selectShowDeleteWarning,
+    selectShowRemoveRepoConfirm,
+  } from '$lib/store/slices/workspace-operations/workspace-operations-selectors';
   import { getDispatch } from '$lib/store/utils/utils';
   import StarterPromptButton from '$lib/components/workspace/StarterPromptButton.svelte';
-  import { AUGGIE_CHANNELS } from '$shared/ipc/channels';
   import NodeVersionWarning from '$lib/components/NodeVersionWarning.svelte';
   import WorkspaceTableView, {
     type RepoInfo,
   } from '$lib/components/workspace/WorkspaceTableView.svelte';
 
   import type { StarterPrompt } from '$lib/data/starter-prompts';
-  import { type Workspace, WorkspaceStatusEnum } from '$shared/types';
-  import type { WorkspaceId } from '$shared/types/branded-ids';
   import { faSearch, faXmark } from '@fortawesome/free-solid-svg-icons';
-  import { onMount, tick } from 'svelte';
+  import { tick } from 'svelte';
   import Fa from 'svelte-fa';
   import { fly } from 'svelte/transition';
-  import { replaceState } from '$app/navigation';
-  import { hasRunningAgents, getRunningAgentNames } from '$lib/utils/delete-warning-utils';
   import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';
-  import { sidebarNavStore } from '$lib/components/layout/sidebar-nav/sidebar-nav.store.svelte';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
 
   // Feature flag: mimic empty state for testing (set to true to test empty state UI)
@@ -44,30 +87,16 @@
   let initialRepoForCreate = $state<RepoInfo | undefined>(undefined);
   let workspaceInitializer: CompactWorkspaceInitializer | null = $state(null);
 
-  // Delete warning dialog state
-  let showDeleteWarning = $state(false);
-  let pendingDeleteWorkspace = $state<Workspace | null>(null);
-  let runningAgentNamesForDelete = $state<string[]>([]);
-
-  // Bulk archive dialog state
-  let showBulkArchiveConfirm = $state(false);
-
-  // Bulk delete archived dialog state
-  let showBulkDeleteArchivedConfirm = $state(false);
-
-  // Track which repo group the bulk action applies to
-  let pendingBulkRepoKey = $state<string | undefined>(undefined);
-
-  // Track pending bulk delete when showing warning dialog
-  let pendingBulkDeleteRepoKey = $state<string | null>(null);
-
-  // Bulk delete with running agents warning dialog state
-  let showBulkDeleteWarningConfirm = $state(false);
-  let bulkDeleteWorkspaceCount = $state(0);
-
-  // Remove repo dialog state
-  let showRemoveRepoConfirm = $state(false);
-  let pendingRemoveRepoPath = $state<string | null>(null);
+  const showDeleteWarning = selectShowDeleteWarning();
+  const pendingDeleteWorkspace = selectPendingDeleteWorkspace();
+  const runningAgentNamesForDelete = selectRunningAgentNamesForDelete();
+  const showBulkArchiveConfirm = selectShowBulkArchiveConfirm();
+  const showBulkDeleteArchivedConfirm = selectShowBulkDeleteArchivedConfirm();
+  const pendingBulkRepoKey = selectPendingBulkRepoKey();
+  const showBulkDeleteWarningConfirm = selectShowBulkDeleteWarningConfirm();
+  const bulkDeleteWorkspaceCount = selectBulkDeleteWorkspaceCount();
+  const showRemoveRepoConfirm = selectShowRemoveRepoConfirm();
+  const pendingRemoveRepoPath = selectPendingRemoveRepoPath();
 
   // Handler for creating a workspace for a specific repo (from table group + button)
   function handleCreateForRepo(repo: RepoInfo) {
@@ -101,20 +130,13 @@
   const workspaces = $derived(workspaceStore.items);
 
   // Known repos from persistent registry (survive workspace deletion)
-  let knownRepos = $state<KnownRepo[]>([]);
+  const knownRepos = selectKnownRepos();
+  const knownReposLoaded = selectKnownReposLoaded();
+  const homePageInitializerRequest = selectHomePageInitializerRequest();
 
-  // Load known repos on mount
-  onMount(async () => {
-    try {
-      const result = await invoke<{ success: boolean; data?: KnownRepo[] }>(
-        IPC_CHANNELS.WORKSPACE.GET_RECENT_REPOSITORIES,
-        {},
-      );
-      if (result?.success && Array.isArray(result.data)) {
-        knownRepos = result.data;
-      }
-    } catch {
-      // Silently ignore - known repos are a nice-to-have
+  $effect(() => {
+    if (!$knownReposLoaded) {
+      dispatch(loadKnownRepos());
     }
   });
 
@@ -130,155 +152,33 @@
     }
   });
 
-  // Expand form when navigating with ?create=true param
   $effect(() => {
-    if (page.url.searchParams.has('create')) {
+    const request = $homePageInitializerRequest;
+    if (request) {
       isInitializerExpanded = true;
-      // Explicitly focus the form (handles the case where it's already expanded)
+      dispatch(clearHomePageInitializerRequest());
       tick().then(() => {
-        workspaceInitializer?.focus();
-      });
-      // Clean up the URL param
-      const url = new URL(window.location.href);
-      url.searchParams.delete('create');
-      replaceState(url.pathname + url.search, {});
-    }
-  });
-
-  // Clear current workspace when on home page
-  $effect(() => {
-    workspaceStore.close();
-  });
-
-  // Reactive effect for deep link actions (fires when pendingAction changes)
-  $effect(() => {
-    const pendingAction = deepLinkStore.pendingAction;
-    if (pendingAction && pendingAction.type === 'create') {
-      if (pendingAction.params) {
-        sessionStorage.setItem(
-          'workspace-prefill',
-          JSON.stringify({
-            repoPath: pendingAction.params.repo || '',
-            branch: pendingAction.params.branch || 'main',
-          }),
-        );
-      }
-      // Expand the form and apply prefill data
-      isInitializerExpanded = true;
-      // Use tick to ensure the component is mounted, then apply prefill
-      tick().then(() => {
-        if (workspaceInitializer) {
-          workspaceInitializer.applyPrefill?.();
-        }
-      });
-      deepLinkStore.clearPendingAction();
-    }
-  });
-
-  // Handle deep link from URL query parameter (avoids IPC timing race)
-  onMount(async () => {
-    const deepLinkParam = page.url.searchParams.get('deepLink');
-    if (deepLinkParam) {
-      try {
-        const action = JSON.parse(decodeURIComponent(deepLinkParam));
-        if (action && action.type === 'create' && action.params) {
-          sessionStorage.setItem(
-            'workspace-prefill',
-            JSON.stringify({
-              repoPath: action.params.repo || '',
-              branch: action.params.branch || 'main',
-            }),
-          );
-          isInitializerExpanded = true;
-          await tick();
+        if (request.applyPrefill) {
           workspaceInitializer?.applyPrefill?.();
         }
-      } catch (e) {
-        console.error('Failed to parse deep link from URL:', e);
-      }
-      // Clean up the URL to remove the query parameter
-      replaceState('/', {});
+        if (request.focus) {
+          workspaceInitializer?.focus();
+        }
+      });
     }
   });
 
-  // Event listener for open-create-workspace-modal
-  onMount(() => {
-    const handleOpenForm = () => {
-      isInitializerExpanded = true;
-    };
-    window.addEventListener('open-create-workspace-modal', handleOpenForm);
-    return () => window.removeEventListener('open-create-workspace-modal', handleOpenForm);
-  });
-
-  // Node.js version state (checked independently of provider setup)
-  let nodeVersionOk = $state<boolean | null>(null);
-  let nodeVersion = $state<string | undefined>(undefined);
-  let auggieInstalled = $state<boolean>(false);
-  let binaryInstallAvailable = $state<boolean>(false);
-
-  onMount(async () => {
-    try {
-      const result = await invoke<{
-        success: boolean;
-        data?: { nodeVersionOk: boolean; nodeVersion?: string; installed?: boolean; binaryInstallAvailable?: boolean };
-      }>(AUGGIE_CHANNELS.STATUS);
-      if (result.data) {
-        nodeVersionOk = result.data.nodeVersionOk;
-        nodeVersion = result.data.nodeVersion;
-        auggieInstalled = result.data.installed ?? false;
-        binaryInstallAvailable = result.data.binaryInstallAvailable ?? false;
-      }
-    } catch {
-      // Silently ignore — the warning just won't show
-    }
-  });
-
-  // Preference keys for localStorage
-  const PREF_SHOW_ARCHIVED = 'workspace-list:showArchived';
-  const PREF_GROUP_BY_REPO = 'workspace-list:groupByRepo';
-  const PREF_COMPLETED_PROVIDER_SETUP = 'workspace-list:completedProviderSetup';
-  const PREF_COMPLETED_ONBOARDING = 'workspace-list:completedOnboarding';
-
-  // Load persisted preferences
-  function loadPref<T>(key: string, defaultValue: T): T {
-    if (typeof window === 'undefined') return defaultValue;
-    try {
-      const stored = localStorage.getItem(key);
-      if (stored === null) return defaultValue;
-      return JSON.parse(stored) as T;
-    } catch {
-      return defaultValue;
-    }
-  }
-
-  // UI State with persisted defaults
-  let showArchived = $state(loadPref(PREF_SHOW_ARCHIVED, false));
-  let groupByRepo = $state(loadPref(PREF_GROUP_BY_REPO, true));
-  let hasCompletedProviderSetup = $state(loadPref(PREF_COMPLETED_PROVIDER_SETUP, false));
+  const showArchived = selectShowArchived();
+  const groupByRepo = selectGroupByRepo();
+  const hasCompletedProviderSetup = selectHasCompletedProviderSetup();
+  const showProviderPanelPreference = selectShowProviderPanel();
+  const nodeVersion = selectNodeVersion();
+  const showNodeWarning = selectShowNodeWarning();
 
   // True when the provider setup panel should be shown (first-time users with no workspaces).
   // Wait for workspaces to load before deciding — avoids flashing the panel for users who have spaces.
   // Only show after onboarding is complete.
-  const showProviderPanel = $derived(!hasCompletedProviderSetup && isEmpty);
-
-  // Hide sidebar nav during provider onboarding
-  $effect(() => {
-    sidebarNavStore.setOnboardingActive(showProviderPanel);
-    return () => {
-      sidebarNavStore.setOnboardingActive(false);
-    };
-  });
-
-  // Persist preferences when they change
-  $effect(() => {
-    localStorage.setItem(PREF_SHOW_ARCHIVED, JSON.stringify(showArchived));
-  });
-  $effect(() => {
-    localStorage.setItem(PREF_GROUP_BY_REPO, JSON.stringify(groupByRepo));
-  });
-  $effect(() => {
-    localStorage.setItem(PREF_COMPLETED_PROVIDER_SETUP, JSON.stringify(hasCompletedProviderSetup));
-  });
+  const showProviderPanel = $derived($showProviderPanelPreference && isEmpty);
 
   let searchQuery = $state('');
   let searchExpanded = $state(false);
@@ -316,274 +216,19 @@
     Math.max(1, Math.floor((skeletonContainerWidth + GAP) / (MIN_COLUMN_WIDTH + GAP))),
   );
 
-  async function openWorkspace(workspace: Workspace, event?: MouseEvent) {
-    const route = `/workspace/${workspace.id}`;
-
-    // Command-click (or Ctrl-click on non-Mac) opens in new window
-    if (event?.metaKey || event?.ctrlKey) {
-      try {
-        await invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route });
-      } catch (error) {
-        // Fallback to regular navigation if IPC fails
-        console.warn('Failed to open new window, navigating instead:', error);
-        goto(route);
-      }
-      return;
-    }
-
-    // Small delay to ensure any pending store updates are complete
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    await workspaceStore.setCurrentWorkspace(workspace.id);
-    goto(route);
-  }
-
-  async function deleteWorkspace(workspace: Workspace) {
-    // Check if workspace has running agents
-    if (hasRunningAgents(workspace.id)) {
-      // Show warning dialog instead of deleting immediately
-      pendingDeleteWorkspace = workspace;
-      runningAgentNamesForDelete = getRunningAgentNames(workspace.id);
-      showDeleteWarning = true;
-      return;
-    }
-
-    // No running agents, proceed with deletion
-    await performDelete(workspace);
-  }
-
-  async function performDelete(workspace: Workspace) {
-    await workspaceStore.deleteWithUndo(workspace.id, workspace.title);
-  }
-
-  async function archiveWorkspace(workspace: Workspace) {
-    const { toast } = await import('svelte-sonner');
-
-    const workspaceTitle = workspace.title || 'space';
-    const workspaceId = workspace.id;
-
-    // Let the store's archive() method handle the optimistic update by changing status to Archived.
-    // The WorkspaceTableView filter will hide it since showArchived is false by default.
-    const result = await workspaceStore.archive(workspaceId);
-    if (result.ok) {
-      toast.warning(`Archived space ${workspaceTitle}`, {
-        duration: 15000,
-        action: {
-          label: 'Undo',
-          onClick: async () => {
-            await workspaceStore.unarchive(workspaceId);
-          },
-        },
-      });
-    } else {
-      toast.error('Failed to archive space');
-    }
-  }
-
-  async function unarchiveWorkspace(workspace: Workspace) {
-    const { toast } = await import('svelte-sonner');
-
-    const workspaceTitle = workspace.title || 'space';
-    const workspaceId = workspace.id;
-
-    const result = await workspaceStore.unarchive(workspaceId);
-    if (result.ok) {
-      toast.success(`Unarchived space ${workspaceTitle}`);
-      await workspaceStore.load();
-    } else {
-      toast.error('Failed to unarchive space');
-    }
-  }
-
-  // Helper to check if a workspace matches a repo key (used for per-repo bulk actions)
-  function workspaceMatchesRepoKey(ws: Workspace, repoKey: string): boolean {
-    if (ws.repositoryOwner && ws.repositoryName) {
-      return `${ws.repositoryOwner}/${ws.repositoryName}` === repoKey;
-    } else if (ws.repositoryPath) {
-      return ws.repositoryPath === repoKey;
-    }
-    return repoKey === 'unknown';
-  }
-
-  async function archiveAllWorkspaces() {
-    // Snapshot repo key before any await to prevent race conditions
-    const repoKey = pendingBulkRepoKey;
-    if (!repoKey) {
-      console.error('archiveAllWorkspaces called without a repo key');
-      return;
-    }
-
-    const { toast } = await import('svelte-sonner');
-
-    // Find all non-archived workspaces, filtered by repo
-    const toArchive = workspaces.filter(
-      (ws) =>
-        ws.status !== WorkspaceStatusEnum.Archived &&
-        ws.status !== WorkspaceStatusEnum.Deleted &&
-        workspaceMatchesRepoKey(ws, repoKey),
-    );
-
-    if (toArchive.length === 0) {
-      toast.info('No active spaces to archive');
-      return;
-    }
-
-    // Archive all workspaces in parallel
-    const results = await Promise.allSettled(
-      toArchive.map((ws) =>
-        workspaceStore.archive(ws.id).then((result) => ({ id: ws.id, result })),
-      ),
-    );
-
-    const archivedIds: string[] = [];
-    let failCount = 0;
-
-    for (const settled of results) {
-      if (settled.status === 'fulfilled' && settled.value.result.ok) {
-        archivedIds.push(settled.value.id);
-      } else {
-        failCount++;
-      }
-    }
-
-    if (archivedIds.length > 0) {
-      toast.warning(`Archived ${archivedIds.length} space${archivedIds.length === 1 ? '' : 's'}`, {
-        duration: 15000,
-        action: {
-          label: 'Undo',
-          onClick: async () => {
-            for (const id of archivedIds) {
-              await workspaceStore.unarchive(id as WorkspaceId);
-            }
-          },
-        },
-      });
-    }
-
-    if (failCount > 0) {
-      toast.error(`Failed to archive ${failCount} space${failCount === 1 ? '' : 's'}`);
-    }
-  }
-
-  // Perform the actual bulk delete of archived workspaces (no agent check)
-  // Called directly when user confirms "Delete anyway" after warning
-  // Accepts explicit repo key to avoid race conditions with global state
-  async function performBulkDeleteArchivedForRepo(repoKey: string | null) {
-    if (!repoKey) {
-      console.error('performBulkDeleteArchivedForRepo called without a repo key');
-      return;
-    }
-
-    const { toast } = await import('svelte-sonner');
-
-    // Find all archived workspaces, filtered by repo
-    const toDelete = workspaces.filter(
-      (ws) => ws.status === WorkspaceStatusEnum.Archived && workspaceMatchesRepoKey(ws, repoKey),
-    );
-
-    if (toDelete.length === 0) {
-      toast.info('No archived spaces to delete');
-      return;
-    }
-
-    // Delete all archived workspaces permanently in parallel (no undo)
-    const results = await Promise.allSettled(toDelete.map((ws) => workspaceStore.delete(ws.id)));
-
-    let deleteCount = 0;
-    let failCount = 0;
-    const failedIds: string[] = [];
-
-    for (let i = 0; i < results.length; i++) {
-      const settled = results[i];
-      if (settled.status === 'fulfilled' && settled.value.ok) {
-        deleteCount++;
-      } else {
-        failCount++;
-        failedIds.push(toDelete[i].id);
-      }
-    }
-
-    if (deleteCount > 0) {
-      toast.success(
-        `Permanently deleted ${deleteCount} archived space${deleteCount === 1 ? '' : 's'}`,
-      );
-    }
-
-    if (failCount > 0) {
-      toast.error(`Failed to delete ${failCount} space${failCount === 1 ? '' : 's'}`);
-      // Clear pending deletion flags for failed deletes so load() can restore them
-      for (const id of failedIds) {
-        workspaceStore.restoreToUI(id as WorkspaceId);
-      }
-      // Reload to restore failed deletes in the UI
-      await workspaceStore.load();
-    }
-  }
-
-  async function deleteAllArchivedWorkspaces() {
-    // Snapshot repo key before any await to prevent race conditions
-    const repoKey = pendingBulkRepoKey;
-    if (!repoKey) {
-      console.error('deleteAllArchivedWorkspaces called without a repo key');
-      return;
-    }
-
-    const { toast } = await import('svelte-sonner');
-
-    // Find all archived workspaces, filtered by repo
-    const toDelete = workspaces.filter(
-      (ws) => ws.status === WorkspaceStatusEnum.Archived && workspaceMatchesRepoKey(ws, repoKey),
-    );
-
-    if (toDelete.length === 0) {
-      toast.info('No archived spaces to delete');
-      return;
-    }
-
-    // Check if any archived workspaces have running agents
-    const workspacesWithAgents = toDelete.filter((ws) => hasRunningAgents(ws.id));
-    if (workspacesWithAgents.length > 0) {
-      // Use bulk-specific warning dialog (not single-space DeleteWarningDialog)
-      bulkDeleteWorkspaceCount = toDelete.length;
-      pendingBulkDeleteRepoKey = repoKey;
-      showBulkDeleteWarningConfirm = true;
-      return;
-    }
-
-    // No agents running, proceed with delete directly
-    await performBulkDeleteArchivedForRepo(repoKey);
-  }
-
-  async function openRepo() {
-    if (typeof window !== 'undefined' && window.electronAPI) {
-      const result = await window.electronAPI.invoke('dialog:open', {
-        directory: true,
-        title: 'Select Repository Folder',
-      });
-      if (
-        result?.success &&
-        result.data &&
-        !result.data.canceled &&
-        result.data.filePaths?.length > 0
-      ) {
-        const repoPath = result.data.filePaths[0];
-        sessionStorage.setItem('workspace-prefill', JSON.stringify({ repoPath }));
-        isInitializerExpanded = true;
-      }
-    }
-  }
 </script>
 
 <div class="h-full flex flex-col">
   <div
     class="home-layout flex-1 w-full min-h-0
-      {isEmpty || showProviderPanel || (!workspaceStore.hasLoaded && !hasCompletedProviderSetup)
+      {isEmpty || showProviderPanel || (!workspaceStore.hasLoaded && !$hasCompletedProviderSetup)
       ? 'flex items-center justify-center overflow-auto px-[clamp(2rem,6.25rem,6%)]'
       : 'grid gap-15 lg:grid-cols-[minmax(40rem,1fr)_2fr] px-[clamp(2rem,6.25rem,6%)] lg:pl-[clamp(2rem,6.25rem,6%)] lg:pr-0'}"
   >
     <!-- Wait for workspaces to load before rendering for users who haven't completed setup.
          This prevents flashing onboarding/provider setup before we know if they're a new user.
          The splash screen in app.html covers this loading period. -->
-    {#if !workspaceStore.hasLoaded && !hasCompletedProviderSetup}
+    {#if !workspaceStore.hasLoaded && !$hasCompletedProviderSetup}
       <!-- Empty: splash screen / bg-sidebar visible while workspaces load -->
     {:else if showProviderPanel}
       <div class="animate-entry" style="--entry-delay: 0ms">
@@ -591,7 +236,7 @@
           onContinue={async (providerId) => {
             dispatch(setActiveProvider(providerId));
             dispatch(reloadModelsForProvider());
-            hasCompletedProviderSetup = true;
+            dispatch(setHasCompletedProviderSetup(true));
           }}
         />
       </div>
@@ -632,14 +277,14 @@
         />
 
         <!-- Node.js version warning (shown regardless of provider setup state) -->
-        {#if nodeVersionOk === false && !auggieInstalled && !binaryInstallAvailable}
-          <NodeVersionWarning {nodeVersion} class="-ml-4 w-[calc(100%+32px)] mt-4" />
+        {#if $showNodeWarning}
+          <NodeVersionWarning nodeVersion={$nodeVersion} class="-ml-4 w-[calc(100%+32px)] mt-4" />
         {/if}
       </div>
     {/if}
 
     <!-- Header + Controls Bar (hidden when empty, showing provider setup, onboarding, or still loading for new users) -->
-    {#if !isEmpty && !showProviderPanel && (workspaceStore.hasLoaded || hasCompletedProviderSetup)}
+    {#if !isEmpty && !showProviderPanel && (workspaceStore.hasLoaded || $hasCompletedProviderSetup)}
       <div
         class="right-column animate-entry min-w-0 lg:pr-[clamp(2rem,6.25rem,6%)]"
         style="--entry-delay: 120ms"
@@ -653,20 +298,20 @@
             <Toggle
               variant="indicator"
               size="xs"
-              pressed={groupByRepo}
+              pressed={$groupByRepo}
               onLabel="Grouped by repo"
               offLabel="Not grouped"
-              onclick={() => (groupByRepo = !groupByRepo)}
+              onclick={() => dispatch(toggleGroupByRepo())}
             />
 
             <!-- Archive toggle -->
             <Toggle
               variant="indicator"
               size="xs"
-              pressed={showArchived}
+              pressed={$showArchived}
               onLabel="Showing Archived"
               offLabel="Show Archived"
-              onclick={() => (showArchived = !showArchived)}
+              onclick={() => dispatch(toggleShowArchived())}
             />
 
             <!-- Search - icon that expands -->
@@ -725,7 +370,7 @@
         <!-- Workspace Grid -->
         <div class="pb-32">
           {#if showSkeleton}
-            {#if groupByRepo}
+            {#if $groupByRepo}
               <!-- Skeleton loader matching masonry grid layout - use CSS columns like the real view -->
               <div
                 style="columns: {skeletonColumnCount}; column-gap: {GAP}px;"
@@ -779,27 +424,24 @@
           {:else}
             <WorkspaceTableView
               {workspaces}
-              {showArchived}
-              {groupByRepo}
+                showArchived={$showArchived}
+                groupByRepo={$groupByRepo}
               {searchQuery}
-              {knownRepos}
-              onOpen={openWorkspace}
-              onDelete={deleteWorkspace}
-              onArchive={archiveWorkspace}
-              onUnarchive={unarchiveWorkspace}
+              knownRepos={$knownRepos}
+              onOpen={(workspace, event) =>
+                dispatch(
+                  requestOpenWorkspace({
+                    workspaceId: workspace.id,
+                    openInNewWindow: !!(event?.metaKey || event?.ctrlKey),
+                  })
+                )}
+              onDelete={(workspace) => dispatch(requestDeleteWorkspace(workspace))}
+              onArchive={(workspace) => dispatch(requestArchiveWorkspace(workspace))}
+              onUnarchive={(workspace) => dispatch(requestUnarchiveWorkspace(workspace))}
               onCreateForRepo={handleCreateForRepo}
-              onBulkArchive={(repoKey) => {
-                pendingBulkRepoKey = repoKey;
-                showBulkArchiveConfirm = true;
-              }}
-              onBulkDeleteArchived={(repoKey) => {
-                pendingBulkRepoKey = repoKey;
-                showBulkDeleteArchivedConfirm = true;
-              }}
-              onRemoveRepo={(repoPath) => {
-                pendingRemoveRepoPath = repoPath;
-                showRemoveRepoConfirm = true;
-              }}
+              onBulkArchive={(repoKey) => dispatch(openBulkArchiveConfirm(repoKey))}
+              onBulkDeleteArchived={(repoKey) => dispatch(openBulkDeleteArchivedConfirm(repoKey))}
+              onRemoveRepo={(repoPath) => dispatch(openRemoveRepoConfirm(repoPath))}
             />
           {/if}
         </div>
@@ -810,89 +452,53 @@
 
 <!-- Delete Warning Dialog (single workspace only) -->
 <DeleteWarningDialog
-  bind:open={showDeleteWarning}
-  agentNames={runningAgentNamesForDelete}
-  onDeleteAnyway={async () => {
-    if (pendingDeleteWorkspace) {
-      await performDelete(pendingDeleteWorkspace);
-      pendingDeleteWorkspace = null;
-    }
-  }}
-  onCancel={() => {
-    pendingDeleteWorkspace = null;
-  }}
+  open={$showDeleteWarning}
+  agentNames={$runningAgentNamesForDelete}
+  onDeleteAnyway={() => dispatch(confirmDeleteWorkspace())}
+  onCancel={() => dispatch(closeDeleteWarning())}
 />
 
 <!-- Bulk Archive Confirmation Dialog -->
 <BulkActionConfirmDialog
-  bind:open={showBulkArchiveConfirm}
+  open={$showBulkArchiveConfirm}
   title="Archive All Spaces"
-  description={`Are you sure you want to archive all active spaces in ${pendingBulkRepoKey ?? 'this repo'}? You can unarchive them later.`}
+  description={`Are you sure you want to archive all active spaces in ${$pendingBulkRepoKey ?? 'this repo'}? You can unarchive them later.`}
   confirmText="Archive All"
-  onConfirm={archiveAllWorkspaces}
+  onConfirm={() => dispatch(confirmBulkArchive())}
+  onCancel={() => dispatch(closeBulkArchiveConfirm())}
 />
 
 <!-- Bulk Delete Archived Confirmation Dialog -->
 <BulkActionConfirmDialog
-  bind:open={showBulkDeleteArchivedConfirm}
+  open={$showBulkDeleteArchivedConfirm}
   title="Delete All Archived Spaces"
-  description={`This will permanently delete all archived spaces in ${pendingBulkRepoKey ?? 'this repo'}. This action cannot be undone.`}
+  description={`This will permanently delete all archived spaces in ${$pendingBulkRepoKey ?? 'this repo'}. This action cannot be undone.`}
   confirmText="Delete All"
   variant="destructive"
-  onConfirm={deleteAllArchivedWorkspaces}
+  onConfirm={() => dispatch(confirmBulkDeleteArchived())}
+  onCancel={() => dispatch(closeBulkDeleteArchivedConfirm())}
 />
 
 <!-- Bulk Delete Warning Dialog (when archived spaces have running agents) -->
 <BulkActionConfirmDialog
-  bind:open={showBulkDeleteWarningConfirm}
+  open={$showBulkDeleteWarningConfirm}
   title="Delete Archived Spaces?"
-  description={`${bulkDeleteWorkspaceCount} archived space${bulkDeleteWorkspaceCount === 1 ? '' : 's'} will be permanently deleted. Some have running agents that will be stopped.`}
+  description={`${$bulkDeleteWorkspaceCount} archived space${$bulkDeleteWorkspaceCount === 1 ? '' : 's'} will be permanently deleted. Some have running agents that will be stopped.`}
   confirmText="Delete Anyway"
   variant="destructive"
-  onConfirm={async () => {
-    // Snapshot state before clearing to avoid race conditions
-    const repoKeyToDelete = pendingBulkDeleteRepoKey;
-
-    // Clear state synchronously before async work
-    showBulkDeleteWarningConfirm = false;
-    pendingBulkDeleteRepoKey = null;
-
-    // Now do the async work using the snapshot
-    await performBulkDeleteArchivedForRepo(repoKeyToDelete);
-  }}
-  onCancel={() => {
-    pendingBulkDeleteRepoKey = null;
-  }}
+  onConfirm={() => dispatch(confirmBulkDeleteWarning())}
+  onCancel={() => dispatch(closeBulkDeleteWarningConfirm())}
 />
 
 <!-- Remove Repo Confirmation Dialog -->
 <BulkActionConfirmDialog
-  bind:open={showRemoveRepoConfirm}
+  open={$showRemoveRepoConfirm}
   title="Remove Repository"
-  description={`Remove "${pendingRemoveRepoPath ?? 'this repository'}" from the home page? This won't delete any files or spaces.`}
+  description={`Remove "${$pendingRemoveRepoPath ?? 'this repository'}" from the home page? This won't delete any files or spaces.`}
   confirmText="Remove"
   variant="destructive"
-  onConfirm={async () => {
-    const repoPath = pendingRemoveRepoPath;
-    showRemoveRepoConfirm = false;
-    pendingRemoveRepoPath = null;
-    if (repoPath) {
-      try {
-        const result = await invoke<{ success: boolean; data?: { removed: boolean } }>(
-          IPC_CHANNELS.WORKSPACE.REMOVE_RECENT_REPOSITORY,
-          { repository: repoPath },
-        );
-        if (result?.data?.removed) {
-          knownRepos = knownRepos.filter((r) => r.path !== repoPath);
-        }
-      } catch {
-        // Silently ignore - best effort
-      }
-    }
-  }}
-  onCancel={() => {
-    pendingRemoveRepoPath = null;
-  }}
+  onConfirm={() => dispatch(confirmRemoveRepo())}
+  onCancel={() => dispatch(closeRemoveRepoConfirm())}
 />
 
 <style>

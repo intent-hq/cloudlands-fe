@@ -1,9 +1,8 @@
 import { invoke } from "$lib/electron-bridge";
-import { createLogger } from "$lib/utils/client-logger";
 import { getItems, isCollection } from "$lib/store/utils/collection-utils";
 import {
-  getLocalStorageItem,
-  setLocalStorageItem,
+  getLocalStorageJSON,
+  setLocalStorageJSON,
 } from "$lib/store/utils/safe-local-storage-saga";
 import { call, put, takeLatest } from "typed-redux-saga";
 import { selectInstalledEditors, selectLastFetched } from "../external-editors-selectors";
@@ -17,8 +16,6 @@ import {
   setLoading,
   type InstalledEditor,
 } from "../external-editors-slice";
-
-const logger = createLogger("ExternalEditorsSaga");
 
 export function normalizeEditorsCacheData(cachedEditors: unknown): InstalledEditor[] | null {
   if (Array.isArray(cachedEditors)) {
@@ -39,21 +36,16 @@ export function normalizeEditorsCacheData(cachedEditors: unknown): InstalledEdit
 export function* loadCachedEditors() {
   if (typeof window === "undefined") return;
 
-  try {
-    const cached: string | null = yield* call(getLocalStorageItem, STORAGE_KEY);
-    if (cached) {
-      const parsed = JSON.parse(cached) as {
-        editors?: unknown;
-        timestamp?: unknown;
-      };
-      const editors = normalizeEditorsCacheData(parsed.editors);
+  const cached = yield* call(
+    getLocalStorageJSON<{ editors?: unknown; timestamp?: unknown }>,
+    STORAGE_KEY
+  );
+  if (cached) {
+    const editors = normalizeEditorsCacheData(cached.editors);
 
-      if (editors && typeof parsed.timestamp === "number") {
-        yield* put(fetchEditorsSuccess(editors, parsed.timestamp));
-      }
+    if (editors && typeof cached.timestamp === "number") {
+      yield* put(fetchEditorsSuccess(editors, cached.timestamp));
     }
-  } catch {
-    // Ignore cache errors
   }
 }
 
@@ -88,15 +80,7 @@ export function* handleFetchEditors(action: ReturnType<typeof fetchEditors>) {
 
       // Persist to localStorage
       if (typeof window !== "undefined") {
-        try {
-          yield* call(
-            setLocalStorageItem,
-            STORAGE_KEY,
-            JSON.stringify({ editors: result.data, timestamp: now })
-          );
-        } catch {
-          // Ignore storage errors
-        }
+        yield* call(setLocalStorageJSON, STORAGE_KEY, { editors: result.data, timestamp: now });
       }
     } else if (result?.error) {
       yield* put(fetchEditorsFailure(result.error));
@@ -104,7 +88,6 @@ export function* handleFetchEditors(action: ReturnType<typeof fetchEditors>) {
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Failed to detect editors";
-    logger.error("Failed to fetch installed editors", { error });
     yield* put(fetchEditorsFailure(errorMessage));
   } finally {
     yield* put(setLoading(false));

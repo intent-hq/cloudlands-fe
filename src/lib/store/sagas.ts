@@ -6,20 +6,29 @@
 
 import { providerSettingsSaga } from "./slices/provider-settings/sagas/provider-settings-saga";
 import { backgroundAgentSettingsSaga } from "./slices/background-agent-settings/sagas/background-agent-settings-saga";
-import { fontSettingsSaga } from "./slices/font-settings/sagas/font-settings-saga";
 import { externalEditorsSaga } from "./slices/external-editors/sagas/external-editors-saga";
 import { tabStateSaga } from "./slices/tab-state/sagas/tab-state-saga";
-import { terminalOverlaySaga } from "./slices/terminal-overlay/sagas/terminal-overlay-saga";
-import { notificationSettingsSaga } from "./slices/notification-settings/sagas/notification-settings-saga";
+import { terminalsSaga } from "./slices/terminals/sagas/terminals-saga";
 import { userPreferencesSaga } from "./slices/user-preferences/sagas/user-preferences-saga";
 import { workspaceSettingsSaga } from "./slices/workspace-settings/sagas/workspace-settings-saga";
 import { noteReadTrackingSaga } from "./slices/note-read-tracking/sagas/note-read-tracking-saga";
 import { permissionSaga } from "./slices/permission/sagas/permission-saga";
 import { pipSaga } from "./slices/pip/sagas/pip-saga";
 import { featureCodesSaga } from "./slices/feature-codes/sagas/feature-codes-saga";
+import { gitOperationsSaga } from "./slices/git-operations/sagas/git-operations-saga";
+import { knownReposSaga } from "./slices/known-repos/sagas/known-repos-saga";
+import { deepLinksSaga } from "./slices/deep-links/sagas/deep-links-saga";
 import { modelSaga } from "./slices/model/sagas/model-saga";
 import { specialistsSaga } from "./slices/specialists/sagas/specialists-saga";
+import { systemStatusSaga } from "./slices/system-status/sagas/system-status-saga";
 import { uiLayoutSaga } from "./slices/ui-layout/sagas/ui-layout-saga";
+import { uiSaga } from "./slices/ui-notifications/sagas/ui-notifications-saga";
+import { workspaceOperationsSaga } from "./slices/workspace-operations/sagas/workspace-operations-saga";
+import { workspaceSaga } from "./slices/workspace/sagas/workspace-saga";
+import { workspaceAgentsSaga } from "./slices/workspace-agents/sagas/workspace-agents-saga";
+import { authSaga } from "./slices/auth/sagas/auth-saga";
+import { autoUpdateSaga } from "./slices/auto-update/sagas/auto-update-saga";
+import { appLayoutSaga } from "./slices/app-layout/sagas/app-layout-saga";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 function* noopSaga() {}
@@ -34,40 +43,53 @@ function* noopSaga() {}
 export const sagas = {
   providerSettingsSaga,
   backgroundAgentSettingsSaga,
-  fontSettingsSaga,
   externalEditorsSaga,
   uiLayoutSaga,
   tabStateSaga,
-  terminalOverlaySaga,
-  notificationSettingsSaga,
+  terminalsSaga,
   noteReadTrackingSaga,
   permissionSaga,
   featureCodesSaga,
+  knownReposSaga,
+  deepLinksSaga,
   modelSaga,
   specialistsSaga,
+  systemStatusSaga,
   pipSaga,
   userPreferencesSaga,
+  workspaceOperationsSaga,
   workspaceSettingsSaga,
   // Placeholder sagas for Store.svelte references — will be replaced with real implementations
   streamingSaga: noopSaga,
-  workspaceSaga: noopSaga,
-  gitSaga: noopSaga,
+  workspaceSaga,
+  gitSaga: gitOperationsSaga,
   fileTrackingSaga: noopSaga,
   notesSaga: noopSaga,
-  agentsSaga: noopSaga,
+  agentsSaga: workspaceAgentsSaga,
   messagesSaga: noopSaga,
   contextSaga: noopSaga,
   browserSaga: noopSaga,
   mcpSaga: noopSaga,
   diffsSaga: noopSaga,
   settingsSaga: noopSaga,
-  authSaga: noopSaga,
-  uiSaga: noopSaga,
-  layoutSaga: noopSaga,
-  terminalsSaga: noopSaga,
-  autoUpdateSaga: noopSaga,
+  authSaga,
+  uiSaga,
+  layoutSaga: appLayoutSaga,
+  autoUpdateSaga,
   workspaceInitializerSaga: noopSaga,
 } as const;
 
-export type SagaName = keyof typeof sagas;
+// SagaName is defined in ./types.ts as an explicit string literal union to
+// avoid a transitive import chain that pulls renderer-only modules into the
+// main-process typecheck.  Re-export it here for backward compatibility.
+export type { SagaName } from './types';
+
+// Compile-time assertion: ensure the keys of `sagas` match `SagaName` exactly.
+// If a saga is added/removed from the object above without updating the
+// SagaName union in types.ts, one of these lines will produce a type error.
+import type { SagaName as _SagaName } from './types';
+type _AssertSagasExtendsName = Record<_SagaName, unknown> extends Record<keyof typeof sagas, unknown> ? true : never;
+type _AssertNameExtendsSagas = Record<keyof typeof sagas, unknown> extends Record<_SagaName, unknown> ? true : never;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _assertSync: _AssertSagasExtendsName & _AssertNameExtendsSagas = true;
 

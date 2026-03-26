@@ -438,7 +438,10 @@
                   onclick={(e) => {
                     window.dispatchEvent(
                       new CustomEvent('workspace:open-agent', {
-                        detail: { agentId: agent.agentId, openInAdjacentPanel: e.metaKey || e.ctrlKey },
+                        detail: {
+                          agentId: agent.agentId,
+                          openInAdjacentPanel: e.metaKey || e.ctrlKey,
+                        },
                       }),
                     );
                   }}
@@ -547,7 +550,10 @@
                     onclick={(e) => {
                       window.dispatchEvent(
                         new CustomEvent('workspace:open-agent', {
-                          detail: { agentId, openInAdjacentPanel: e.metaKey || e.ctrlKey },
+                          detail: {
+                            agentId,
+                            openInAdjacentPanel: e.metaKey || e.ctrlKey,
+                          },
                         }),
                       );
                     }}
@@ -638,7 +644,11 @@
                         panelElement?.getAttribute('data-panel-id') ?? undefined;
                       window.dispatchEvent(
                         new CustomEvent('workspace:open-note', {
-                          detail: { noteId: note.id, openInAdjacentPanel, sourcePanelId },
+                          detail: {
+                            noteId: note.id,
+                            openInAdjacentPanel,
+                            sourcePanelId,
+                          },
                         }),
                       );
                     }}
@@ -697,7 +707,9 @@
                       class="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-muted/30 rounded cursor-pointer text-left w-full"
                       onclick={() => {
                         if (tab.tabId) {
-                          window.dispatchEvent(new CustomEvent('browser:focus-tab', { detail: { tabId: tab.tabId } }));
+                          window.dispatchEvent(
+                            new CustomEvent('browser:focus-tab', { detail: { tabId: tab.tabId } }),
+                          );
                         }
                       }}
                       title="Click to focus this tab"

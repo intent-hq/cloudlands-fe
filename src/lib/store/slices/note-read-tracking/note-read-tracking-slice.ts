@@ -9,8 +9,8 @@ import type { NoteReadRecord } from "$shared/types/user-activity.types";
 export type NoteReadTrackingState = {
   /** Map of noteId -> read record (serializable Record instead of Map) */
   readRecords: Record<string, NoteReadRecord>;
-  /** Array of noteIds that have unread changes (serializable array instead of Set) */
-  unreadNoteIds: string[];
+  /** Record of unread note IDs for O(1) membership checks/removal */
+  unreadNoteIds: Record<string, boolean>;
   /** Loading state for compute operations */
   isLoading: boolean;
   /** Currently viewed note ID (main panel is showing this note) */
@@ -25,11 +25,30 @@ export type NoteReadTrackingState = {
 
 export const initialState: NoteReadTrackingState = {
   readRecords: {},
-  unreadNoteIds: [],
+  unreadNoteIds: {},
   isLoading: false,
   currentlyViewedNoteId: null,
   currentWorkspaceId: null,
 };
+
+function withoutUnreadNoteId(
+  unreadNoteIds: Record<string, boolean>,
+  noteId: string
+): Record<string, boolean> {
+  if (!noteId || !unreadNoteIds[noteId]) {
+    return unreadNoteIds;
+  }
+
+  const { [noteId]: _removed, ...rest } = unreadNoteIds;
+  return rest;
+}
+
+function toUnreadNoteIdRecord(unreadIds: string[]): Record<string, boolean> {
+  return unreadIds.reduce<Record<string, boolean>>((acc, unreadId) => {
+    acc[unreadId] = true;
+    return acc;
+  }, {});
+}
 
 // ============================================================================
 // Actions
@@ -80,6 +99,11 @@ export const clearUnread = createAction<[noteId: string]>(
   "noteReadTracking/clearUnread"
 );
 
+/** Request to create a new note (handled by saga) */
+export const createNoteRequested = createAction<[wsId: string]>(
+  "noteReadTracking/createNoteRequested"
+);
+
 /** Load note read status from IPC (trigger saga) */
 export const loadNoteReadStatus = createAction<[workspaceId: string, noteId: string]>(
   "noteReadTracking/loadNoteReadStatus"
@@ -105,7 +129,7 @@ export const noteReadTrackingReducer = createReducer<NoteReadTrackingState>(init
     return {
       ...state,
       currentlyViewedNoteId: noteId,
-      unreadNoteIds: state.unreadNoteIds.filter((id) => id !== noteId),
+      unreadNoteIds: withoutUnreadNoteId(state.unreadNoteIds, noteId),
     };
   })
   .with(clearCurrentlyViewed, (state) => {
@@ -124,12 +148,12 @@ export const noteReadTrackingReducer = createReducer<NoteReadTrackingState>(init
           readCount: (existing?.readCount ?? 0) + 1,
         },
       },
-      unreadNoteIds: state.unreadNoteIds.filter((id) => id !== noteId),
+      unreadNoteIds: withoutUnreadNoteId(state.unreadNoteIds, noteId),
     };
   })
   .with(computeUnreadNotesSuccess, (state, { payload: [unreadIds] }) => ({
     ...state,
-    unreadNoteIds: unreadIds,
+    unreadNoteIds: toUnreadNoteIdRecord(unreadIds),
     isLoading: false,
   }))
   .with(setLoading, (state, { payload: [isLoading] }) => ({
@@ -139,7 +163,7 @@ export const noteReadTrackingReducer = createReducer<NoteReadTrackingState>(init
   .with(clearCache, () => ({ ...initialState }))
   .with(clearUnread, (state, { payload: [noteId] }) => ({
     ...state,
-    unreadNoteIds: state.unreadNoteIds.filter((id) => id !== noteId),
+    unreadNoteIds: withoutUnreadNoteId(state.unreadNoteIds, noteId),
     currentlyViewedNoteId:
       state.currentlyViewedNoteId === noteId ? null : state.currentlyViewedNoteId,
   }))

@@ -1,13 +1,14 @@
-import { call, join, takeEvery } from "typed-redux-saga";
+import { call, join, put, takeEvery } from "typed-redux-saga";
 import type { Task } from "redux-saga";
 import {
   syncWorkspaceSettings,
   refreshAutoCommitSettings,
+  loadAutoCommitSettings,
 } from "../workspace-settings-slice";
 import { selectAutoCommitEnabled } from "../workspace-settings-selectors";
 import { invoke } from "$lib/electron-bridge";
 import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
-import { initSaga } from "./init-saga";
+import { initSaga, getGlobalAutoCommitDefault } from "./init-saga";
 
 /**
  * Track which workspaces have been synced this session.
@@ -45,7 +46,9 @@ export function* syncSaga(initTask: Task) {
       if (syncedWorkspaces.has(workspaceId)) return;
       syncedWorkspaces.add(workspaceId);
       yield* join(initTask);
-      const autoCommitEnabled = yield* selectAutoCommitEnabled.effect();
+      // Initialize this workspace's settings from the global default
+      yield* put(loadAutoCommitSettings(workspaceId, getGlobalAutoCommitDefault()));
+      const autoCommitEnabled = yield* selectAutoCommitEnabled.effect(workspaceId);
       yield* call(syncToWorkspace, workspaceId, autoCommitEnabled);
     }
   );
@@ -59,9 +62,10 @@ export function* syncSaga(initTask: Task) {
       // Reload from IPC
       yield* call(initSaga);
 
-      const autoCommitEnabled = yield* selectAutoCommitEnabled.effect();
       for (const workspaceId of previouslySynced) {
         syncedWorkspaces.add(workspaceId);
+        yield* put(loadAutoCommitSettings(workspaceId, getGlobalAutoCommitDefault()));
+        const autoCommitEnabled = yield* selectAutoCommitEnabled.effect(workspaceId);
         yield* call(syncToWorkspace, workspaceId, autoCommitEnabled);
       }
     }

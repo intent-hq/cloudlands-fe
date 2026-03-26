@@ -1202,6 +1202,7 @@ export const EVENT_CHANNELS = [
   'events:new',
   'events:cleared',
   'observability:event',
+  'permission:event',
   'app:ready',
   'window:ready',
   'window:focus',
@@ -1209,8 +1210,11 @@ export const EVENT_CHANNELS = [
   'window:fullscreen',
   'window:zoom-changed',
   'navigate-to-settings', // Navigation to settings from menu
+  'git:status-changed',
   'file-tracking:listener-ready',
   'file-tracking:changes-updated',
+  'file-tracking:agent-file-changed',
+  'line-attribution:updated',
   'setup-scripts:stream-chunk',
   'setup-scripts:stream-complete',
   'setup-scripts:stream-error',
@@ -1297,6 +1301,9 @@ export const DYNAMIC_CHANNEL_PATTERNS = [
   'agent:session:',
   'events:',
 ] as const;
+
+export type ElectronEventName = (typeof EVENT_CHANNELS)[number];
+export type DynamicElectronEventName = `${(typeof DYNAMIC_CHANNEL_PATTERNS)[number]}${string}`;
 
 // Helper function to get all static channels
 export function getAllChannels(): string[] {

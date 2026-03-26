@@ -17,11 +17,11 @@
   import { navigateToNote } from '$lib/utils/workspace-navigation';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { cycleFontStyle } from '$lib/store/slices/font-settings/font-settings-slice';
+  import { cycleFontStyle } from '$lib/store/slices/user-preferences/user-preferences-slice';
   import {
     selectAgentFontStyleLabel,
     selectIsAgentMonospace,
-  } from '$lib/store/slices/font-settings/font-settings-selectors';
+  } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { getDispatch } from '$lib/store/utils/utils';
   import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';

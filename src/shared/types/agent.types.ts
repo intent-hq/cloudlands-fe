@@ -326,3 +326,84 @@ export interface StreamHandlerConfig {
 
 // Re-export AgentSession for backward compatibility
 export type { AgentSession } from './agent-session';
+
+// Import branded ID types needed by UnifiedAgentConfig / CreateAgentResult
+import type { AgentId, WorkspaceId as BrandedWorkspaceId } from './branded-ids';
+import type { AgentSession } from './agent-session';
+
+/**
+ * Unified agent creation configuration.
+ *
+ * Moved here from `agent-factory.ts` so that both renderer and main-process
+ * code can reference the type without pulling in renderer-only modules.
+ *
+ * The backend builds the complete system prompt from agentType via InstructionService.
+ *
+ * Agent naming follows the VS Code webview pattern:
+ * - If `name` is provided, it's used (with sanitization)
+ * - If `name` is empty but `initialMessage` is present, name is derived from the message
+ * - Otherwise, a default name is generated based on workspace title
+ */
+export interface UnifiedAgentConfig {
+  // Required
+  workspaceId: BrandedWorkspaceId;
+
+  // Optional - name is derived from initialMessage if not provided
+  name?: string;
+
+  // Optional
+  id?: string; // Allow passing in a pre-generated agent ID
+  model?: string;
+  provider?: string; // Provider ID (e.g., 'auggie', 'claude-code', 'codex') - from activeProviderStore.activeProviderId
+  systemPrompt?: string; // System prompt for the agent (built from agentType)
+  initialMessage?: string;
+  contextReferences?: any[];
+  metadata?: Record<string, any>;
+  messages?: any[]; // For resuming existing sessions with message history
+
+  // Behavior configuration
+  behaviorPrompt?: string; // Custom behavior instructions for the agent (from specialist)
+
+  // Background flag — marks automated/background agents (e.g., commit-message, PR-description generators)
+  isBackground?: boolean;
+
+  // Workspace context (open panels + linked references)
+  workspaceContext?: {
+    openPanels: Array<{ type: string; title: string; id?: string; path?: string }>;
+    linkedReferences: Array<{
+      type: string;
+      title: string;
+      identifier?: string;
+      url?: string;
+    }>;
+  };
+
+  // Source tracking
+  source?:
+    | 'workspace-initializer'
+    | 'contextual-menu'
+    | 'chat-panel'
+    | 'api'
+    | 'background-agent-trigger'
+    | 'workspace-page'
+    | 'workspace-sidebar'
+    | 'error-console'
+    | 'error-notification'
+    | 'agent-launch-menu'
+    | 'bubble-menu'
+    | 'specialist-picker'
+    | string; // Allow any string for flexibility
+  agentType?: AgentTypeId; // Must be branded type
+}
+
+/**
+ * Result of agent creation
+ * Note: streamId is no longer included - agentId is the canonical key for streams
+ */
+export interface CreateAgentResult {
+  success: boolean;
+  agent?: AgentSession;
+  error?: string;
+  agentId?: AgentId;
+  sessionId?: AgentId;
+}

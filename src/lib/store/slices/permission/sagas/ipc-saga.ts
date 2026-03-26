@@ -1,15 +1,12 @@
-import { call, put, take } from "typed-redux-saga";
+import { call, put } from "typed-redux-saga";
 import { invoke } from "$lib/electron-bridge";
-import { createListenSyncChannel } from "$lib/store/utils/ipc-channel";
+import { takeEveryFromListenSync } from "$lib/store/utils/ipc-channel";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
-import { createLogger } from "$lib/utils/client-logger";
 import {
   permissionRequestReceived,
   setPendingRequests,
   type PermissionRequest,
 } from "../permission-slice";
-
-const logger = createLogger("PermissionSaga");
 
 /**
  * Fetch pending permission requests from main process on startup.
@@ -22,13 +19,9 @@ export function* fetchPendingRequestsSaga() {
       IPC_CHANNELS.PERMISSION.GET_PENDING,
     );
     if (result.success && result.requests && result.requests.length > 0) {
-      logger.info("Recovered pending permission requests after page refresh", {
-        count: result.requests.length,
-      });
       yield* put(setPendingRequests(result.requests));
     }
-  } catch (error) {
-    logger.error("Failed to fetch pending permission requests", { error });
+  } catch {
   }
 }
 
@@ -39,23 +32,9 @@ export function* fetchPendingRequestsSaga() {
 export function* watchPermissionEventsSaga() {
   if (typeof window === "undefined") return;
 
-  const channel = createListenSyncChannel<PermissionRequest>(
-    IPC_CHANNELS.PERMISSION.EVENT,
-  );
-
-  try {
-    while (true) {
-      const request: PermissionRequest = yield* take(channel);
-      logger.info("Received permission request", {
-        requestId: request.requestId,
-        sessionId: request.sessionId,
-        title: request.title,
-      });
+  yield* takeEveryFromListenSync<PermissionRequest>(IPC_CHANNELS.PERMISSION.EVENT, function* (request) {
       yield* put(permissionRequestReceived(request));
-    }
-  } finally {
-    channel.close();
-  }
+    });
 }
 
 /**

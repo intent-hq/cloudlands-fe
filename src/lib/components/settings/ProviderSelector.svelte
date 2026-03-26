@@ -26,7 +26,7 @@
   } from '$shared/constants/auggie';
   import { createLogger } from '$lib/utils/client-logger';
   import { track } from '$lib/services/analytics';
-  import type { ProviderAvailabilityResult } from '$features/providers/main/provider-availability.service';
+  import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
   import {
     faCheck,
     faCircleNotch,

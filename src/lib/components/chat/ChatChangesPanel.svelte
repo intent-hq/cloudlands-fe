@@ -1613,9 +1613,7 @@
   // Handle opening a commit changeset view
   function handleOpenCommit(commitHash: string) {
     window.dispatchEvent(
-      new CustomEvent('workspace:open-commit-changeset', {
-        detail: { commitHash },
-      }),
+      new CustomEvent('workspace:open-commit-changeset', { detail: { commitHash } }),
     );
   }
 

@@ -1,27 +1,41 @@
+import { getItems, type Collection } from "../../utils/collection-utils";
 import { createSelector } from "../../utils/create-selector";
+import type { PanelContextItem, SelectionContextItem } from "./multi-panel-context-slice";
+
+export const selectPanelsCollection = createSelector(
+  (state): Collection<PanelContextItem, "id"> => {
+    return state.multiPanelContext.panels;
+  }
+);
 
 export const selectPanels = createSelector((state) => {
-  return state.multiPanelContext.panels;
+  return getItems(selectPanelsCollection.select(state));
 });
 
 export const selectCheckedPanels = createSelector((state) => {
-  return state.multiPanelContext.panels.filter((p) => p.checked);
+  return selectPanels.select(state).filter((p) => p.checked);
 });
 
+export const selectSelectionsCollection = createSelector(
+  (state): Collection<SelectionContextItem, "id"> => {
+    return state.multiPanelContext.selections;
+  }
+);
+
 export const selectSelections = createSelector((state) => {
-  return state.multiPanelContext.selections;
+  return getItems(selectSelectionsCollection.select(state));
 });
 
 export const selectCheckedSelections = createSelector((state) => {
-  return state.multiPanelContext.selections.filter((s) => s.checked);
+  return selectSelections.select(state).filter((s) => s.checked);
 });
 
 export const selectHasSelections = createSelector((state) => {
-  return state.multiPanelContext.selections.length > 0;
+  return state.multiPanelContext.selections.ids.length > 0;
 });
 
 export const selectSelectionCount = createSelector((state) => {
-  return state.multiPanelContext.selections.length;
+  return state.multiPanelContext.selections.ids.length;
 });
 
 export const selectWorkspaceId = createSelector((state) => {

@@ -163,7 +163,15 @@ class DeepLinkStore {
       processing: false,
     };
 
-    // Navigation to home page will be handled by component
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('app:deep-link-create', {
+          detail: { params },
+        }),
+      );
+    }
+
+    // Navigation to home page / initializer expansion is handled by sagas
   }
 
   clearPendingAction(): void {

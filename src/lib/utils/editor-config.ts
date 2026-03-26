@@ -1105,7 +1105,11 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
             if (mentionId) {
               window.dispatchEvent(
                 new CustomEvent('workspace:open-note', {
-                  detail: { noteId: mentionId, openInAdjacentPanel, sourcePanelId },
+                  detail: {
+                    noteId: mentionId,
+                    openInAdjacentPanel,
+                    sourcePanelId,
+                  },
                 }),
               );
             }

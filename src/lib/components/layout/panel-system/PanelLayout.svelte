@@ -20,7 +20,7 @@
   import HandleDropOverlay from './HandleDropOverlay.svelte';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
-  import { selectIsTerminalOverlayOpen } from '$lib/store/slices/terminal-overlay/terminal-overlay-selectors';
+  import { selectIsTerminalOverlayOpen } from '$lib/store/slices/terminals/terminals-selectors';
   import { get } from 'svelte/store';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import { createLogger } from '$lib/utils/client-logger';

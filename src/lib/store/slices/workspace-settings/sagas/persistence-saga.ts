@@ -50,7 +50,7 @@ export function* persistenceSaga() {
     setAutoCommitEnabled.type,
     function* (action: ReturnType<typeof setAutoCommitEnabled>) {
       const [workspaceId] = action.payload;
-      const autoCommitEnabled = yield* selectAutoCommitEnabled.effect();
+      const autoCommitEnabled = yield* selectAutoCommitEnabled.effect(workspaceId);
       yield* call(syncToMainProcess, workspaceId, autoCommitEnabled);
     }
   );
@@ -59,7 +59,7 @@ export function* persistenceSaga() {
     toggleAutoCommit.type,
     function* (action: ReturnType<typeof toggleAutoCommit>) {
       const [workspaceId] = action.payload;
-      const autoCommitEnabled = yield* selectAutoCommitEnabled.effect();
+      const autoCommitEnabled = yield* selectAutoCommitEnabled.effect(workspaceId);
       yield* call(syncToMainProcess, workspaceId, autoCommitEnabled);
     }
   );

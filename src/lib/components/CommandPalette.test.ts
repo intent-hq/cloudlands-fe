@@ -1,0 +1,217 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { gotoMock, navigateToSettingsMock, invokeMock, trackMock, browserStore, workspaceStore, sessionSessions, reduxDispatchMock } = vi.hoisted(() => ({
+  gotoMock: vi.fn(),
+  navigateToSettingsMock: vi.fn(),
+  invokeMock: vi.fn().mockResolvedValue({ files: [] }),
+  trackMock: vi.fn(),
+  browserStore: { initialize: vi.fn(), recentUrls: [] as Array<{ url: string; lastVisitedAt?: string }> },
+  workspaceStore: { items: [] as any[] },
+  sessionSessions: { value: [] as any[] },
+  reduxDispatchMock: vi.fn(),
+}));
+
+vi.mock('$app/navigation', () => ({ goto: gotoMock }));
+vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: navigateToSettingsMock }));
+vi.mock('$lib/electron-bridge', () => ({ invoke: invokeMock }));
+vi.mock('$features/workspace/workspace.store.svelte', () => ({ workspaceStore }));
+vi.mock('$features/browser/browser.store.svelte', () => ({ browserStore }));
+vi.mock('$features/agent/browser', () => ({ sessionStoreData: { subscribe: (fn: (value: any) => void) => { fn({ sessions: sessionSessions.value }); return () => {}; } } }));
+vi.mock('$features/notes/notes.store.svelte', () => ({ notesStore: { notes: new Map() } }));
+vi.mock('$features/file-tracking/file-tracking.store.svelte', () => ({ fileTrackingStore: { changes: [] } }));
+vi.mock('$features/terminal/terminal-manager.svelte', () => ({ terminalManager: { loadTerminalMetadata: vi.fn(() => []) } }));
+vi.mock('$features/terminal/terminal-history-tracker', () => ({ terminalHistoryTracker: { getLastCommand: vi.fn(() => undefined) } }));
+vi.mock('$shared/types/agent-message.conversion', () => ({ extractContentFromBlocks: vi.fn(() => '') }));
+vi.mock('$lib/services/analytics', () => ({ track: trackMock }));
+vi.mock('$lib/utils/client-logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) }));
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({ dispatch: reduxDispatchMock }));
+vi.mock('$lib/store/slices/workspace-agents/workspace-agents-slice', () => ({
+  createAgentRequested: vi.fn((...args: any[]) => ({ type: 'workspaceAgents/createAgentRequested', payload: args })),
+}));
+vi.mock('$lib/store/slices/terminals/terminals-slice', () => ({
+  createTerminalRequested: vi.fn((...args: any[]) => ({ type: 'terminals/createTerminalRequested', payload: args })),
+}));
+vi.mock('$lib/store/slices/note-read-tracking/note-read-tracking-slice', () => ({
+  createNoteRequested: vi.fn((...args: any[]) => ({ type: 'noteReadTracking/createNoteRequested', payload: args })),
+}));
+
+vi.mock('svelte-fa', async () => {
+  const MockFa = (await import('./ui/__tests__/mocks/Fa.svelte')).default;
+  return { default: MockFa };
+});
+
+vi.mock('./ui/skeleton', async () => {
+  const MockSimple = (await import('./workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default;
+  return { Skeleton: MockSimple };
+});
+
+vi.mock('$lib/components/ui/auggie-avatar/AuggieAvatar.svelte', async () => {
+  const MockSimple = (await import('./workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default;
+  return { default: MockSimple };
+});
+
+vi.mock('@fortawesome/free-solid-svg-icons', () => ({
+  faSearch: { iconName: 'search' },
+  faFile: { iconName: 'file' },
+  faCog: { iconName: 'cog' },
+  faFolderOpen: { iconName: 'folder-open' },
+  faTerminal: { iconName: 'terminal' },
+  faCommentDots: { iconName: 'comment-dots' },
+  faFileAlt: { iconName: 'file-alt' },
+  faCodeBranch: { iconName: 'code-branch' },
+  faPlus: { iconName: 'plus' },
+  faGlobe: { iconName: 'globe' },
+}));
+
+import CommandPalette from './CommandPalette.svelte';
+import { createAgentRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+import { createTerminalRequested } from '$lib/store/slices/terminals/terminals-slice';
+import { createNoteRequested } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
+
+// Actions that dispatch Redux actions directly (no window event intermediary)
+const reduxActions = [
+  { label: 'Agent Chat', actionCreator: createAgentRequested },
+  { label: 'Terminal', actionCreator: createTerminalRequested },
+  { label: 'Note', actionCreator: createNoteRequested },
+] as const;
+
+// Actions that still use window events
+const windowEventActions = [
+  { label: 'File', eventType: 'app:new-file' },
+  { label: 'Workspace', eventType: 'app:open-new-space-modal' },
+] as const;
+
+describe('CommandPalette new actions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    workspaceStore.items = [];
+    browserStore.recentUrls = [];
+    sessionSessions.value = [];
+    localStorage.clear();
+  });
+
+  it('dispatches Redux actions for agent, terminal, and note from keyboard', async () => {
+    const onClose = vi.fn();
+
+    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose } });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Agent Chat' }).className).toContain('bg-foreground/[0.04]');
+    });
+
+    const input = screen.getByRole('textbox');
+
+    for (const [index, action] of reduxActions.entries()) {
+      reduxDispatchMock.mockClear();
+      if (index > 0) {
+        await fireEvent.keyDown(input, { key: 'ArrowDown' });
+      }
+
+      await fireEvent.keyDown(input, { key: 'Enter' });
+      expect(reduxDispatchMock).toHaveBeenCalledWith(action.actionCreator('ws-1'));
+    }
+  });
+
+  it('dispatches window events for file and workspace from keyboard', async () => {
+    const onClose = vi.fn();
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose } });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Agent Chat' }).className).toContain('bg-foreground/[0.04]');
+    });
+
+    const input = screen.getByRole('textbox');
+
+    // Navigate past the 3 Redux actions (Agent Chat, Terminal, Note)
+    for (let i = 0; i < 3; i++) {
+      await fireEvent.keyDown(input, { key: 'ArrowDown' });
+    }
+
+    for (const [index, action] of windowEventActions.entries()) {
+      dispatchSpy.mockClear();
+      if (index > 0) {
+        await fireEvent.keyDown(input, { key: 'ArrowDown' });
+      }
+
+      await fireEvent.keyDown(input, { key: 'Enter' });
+      expect(dispatchSpy).toHaveBeenLastCalledWith(expect.objectContaining({ type: action.eventType }));
+    }
+  });
+
+  it('dispatches Redux actions for agent, terminal, and note from clicks', async () => {
+    const onClose = vi.fn();
+
+    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose } });
+
+    for (const action of reduxActions) {
+      reduxDispatchMock.mockClear();
+      const button = await screen.findByRole('button', { name: action.label });
+      await fireEvent.click(button);
+      expect(reduxDispatchMock).toHaveBeenCalledWith(action.actionCreator('ws-1'));
+    }
+  });
+
+  it('dispatches window events for file and workspace from clicks', async () => {
+    const onClose = vi.fn();
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose } });
+
+    for (const action of windowEventActions) {
+      dispatchSpy.mockClear();
+      const button = await screen.findByRole('button', { name: action.label });
+      await fireEvent.click(button);
+      expect(dispatchSpy).toHaveBeenLastCalledWith(expect.objectContaining({ type: action.eventType }));
+    }
+  });
+});
+
+describe('CommandPalette duplicate-key regression', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    workspaceStore.items = [];
+    browserStore.recentUrls = [];
+    sessionSessions.value = [];
+    localStorage.clear();
+  });
+
+  it('renders without throwing when the same item appears in Recent and its source group', async () => {
+    // Set up an agent session so it appears in the Agents group
+    const agentId = 'agent-dup-test';
+    sessionSessions.value = [
+      {
+        id: agentId,
+        workspaceId: 'ws-1',
+        name: 'Duplicate Agent',
+        messages: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ];
+
+    // Seed MRU so the same agent also appears in the Recent group
+    localStorage.setItem(
+      'palette-mru-all',
+      JSON.stringify([{ type: 'agent', id: agentId, timestamp: Date.now() }]),
+    );
+
+    const onClose = vi.fn();
+
+    // Should not throw a duplicate-key error
+    expect(() => {
+      render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose } });
+    }).not.toThrow();
+
+    // Verify the agent label appears (at least once, possibly twice: Recent + Agents)
+    await waitFor(() => {
+      const buttons = screen.getAllByRole('button', { name: /Duplicate Agent/i });
+      expect(buttons.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+});

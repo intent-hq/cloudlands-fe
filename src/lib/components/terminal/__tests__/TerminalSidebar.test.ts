@@ -42,7 +42,7 @@ vi.mock('$features/scripts/scripts.client', () => ({
 vi.mock('$features/scripts/scripts.store.svelte', () => ({ scriptsStore }));
 vi.mock('$features/workspace/workspace.store.svelte', () => ({ workspaceStore }));
 vi.mock('$lib/stores/terminal-overlay.store.svelte', () => ({
-  terminalOverlayStore: { terminals: [], activeTerminalId: null },
+  terminalsStore: { terminals: [], activeTerminalId: null },
 }));
 vi.mock('$lib/components/ui/toast', () => ({ toast }));
 vi.mock('$lib/utils/client-logger', () => ({
@@ -67,11 +67,12 @@ vi.mock('$lib/hooks/use-background-agent.svelte', () => ({
 vi.mock('$lib/store/utils/utils', () => ({
   getDispatch: () => vi.fn(),
 }));
-vi.mock('$lib/store/slices/terminal-overlay/terminal-overlay-selectors', () => ({
+vi.mock('$lib/store/slices/terminals/terminals-selectors', () => ({
   selectTerminals: () => ({ subscribe: (fn: any) => { fn([]); return () => {}; } }),
+  selectUserTerminals: () => ({ subscribe: (fn: any) => { fn([]); return () => {}; } }),
   selectActiveTerminalId: () => ({ subscribe: (fn: any) => { fn(null); return () => {}; } }),
 }));
-vi.mock('$lib/store/slices/terminal-overlay/terminal-overlay-slice', () => ({
+vi.mock('$lib/store/slices/terminals/terminals-slice', () => ({
   removeTerminal: vi.fn(),
 }));
 

@@ -27,7 +27,7 @@ vi.mock("$features/agent/services/unified-state-store", () => ({
 
 import { unifiedStateStore } from "$features/agent/services/unified-state-store";
 import {
-  getLocalStorageItem,
+  setLocalStorageJSON,
   setLocalStorageItem,
 } from "$lib/store/utils/safe-local-storage-saga";
 import {
@@ -59,7 +59,7 @@ describe("selectModelSaga", () => {
         setSelectedModel({ providerId: "codex", model: normalizedModel })
       )
       .call(setLocalStorageItem, GLOBAL_MODEL_KEY, normalizedModel)
-      .call(setLocalStorageItem, PROVIDER_MODELS_KEY, JSON.stringify({ codex: normalizedModel }))
+      .call(setLocalStorageJSON, PROVIDER_MODELS_KEY, { codex: normalizedModel })
       .silentRun(0);
 
     expect(unifiedStateStore.selectModel).toHaveBeenCalledWith(normalizedModel);

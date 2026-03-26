@@ -61,7 +61,7 @@ export interface UseTaskDelegationHandlersOptions {
   /** Current workspace for the page (safeWorkspace) */
   workspace: () => any | null;
   /** Fallback for creating a new task note+agent when noteId is not provided */
-  delegateTask: (taskText: string) => Promise<string | null>;
+  delegateTask: (taskText: string, openAgent?: boolean) => Promise<string | null>;
   /** Open the created/selected agent in the drawer */
   onOpenAgent: (agentId: string) => void;
 }
@@ -140,10 +140,8 @@ export function useTaskDelegationHandlers(options: UseTaskDelegationHandlersOpti
       }
 
       // No noteId - create a new task note and agent via provided delegateTask
-      const createdAgentId = await options.delegateTask(taskText);
-      if (shouldOpenAgent && createdAgentId) {
-        options.onOpenAgent(createdAgentId);
-      }
+      // The saga handles opening the agent when shouldOpenAgent is true
+      await options.delegateTask(taskText, shouldOpenAgent);
     };
 
     const handleCreateAgentForNoteEvent = async (event: Event) => {

@@ -1,6 +1,6 @@
 import { isElectron } from "$lib/electron-bridge";
-import { put, take } from "typed-redux-saga";
-import { createListenSyncChannel } from "$lib/store/utils/ipc-channel";
+import { put } from "typed-redux-saga";
+import { takeEveryFromListenSync } from "$lib/store/utils/ipc-channel";
 import { setZoomFactor } from "../user-preferences-slice";
 
 interface ZoomChangedEvent {
@@ -10,16 +10,9 @@ interface ZoomChangedEvent {
 export function* ipcZoomSaga() {
   if (!isElectron()) return;
 
-  const channel = createListenSyncChannel<ZoomChangedEvent>("window:zoom-changed");
-
-  try {
-    while (true) {
-      const data: ZoomChangedEvent = yield* take(channel);
+  yield* takeEveryFromListenSync<ZoomChangedEvent>("window:zoom-changed", function* (data) {
       if (typeof data?.zoomFactor === "number" && data.zoomFactor > 0) {
         yield* put(setZoomFactor(data.zoomFactor));
       }
-    }
-  } finally {
-    channel.close();
-  }
+    });
 }

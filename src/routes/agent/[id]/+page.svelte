@@ -4,6 +4,7 @@
   import { page } from '$app/state';
   import { tick } from 'svelte';
   import { invoke, listenSync } from '$lib/electron-bridge';
+  import type { DynamicElectronEventName } from '$shared/ipc-registry';
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import MessageContent from '$lib/components/chat/MessageContent.svelte';
   import { agentService } from '$features/agent/agent.service';
@@ -151,8 +152,8 @@
 
     try {
       // Set up stream listeners
-      const streamEventName = `agent-stream-${agentId}`;
-      const completeEventName = `agent-stream-complete-${agentId}`;
+      const streamEventName = `agent-stream-${agentId}` as DynamicElectronEventName;
+      const completeEventName = `agent-stream-complete-${agentId}` as DynamicElectronEventName;
 
       // Direct DOM update function - bypasses Svelte reactivity for performance
       let rafId: number | null = null;

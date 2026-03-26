@@ -11,7 +11,6 @@
 export { useSidebarState, type UseSidebarStateOptions } from './use-sidebar-state.svelte';
 export { useTabManagement, type UseTabManagementOptions } from './use-tab-management.svelte';
 export { useWorkspaceLoader, type UseWorkspaceLoaderOptions } from './use-workspace-loader.svelte';
-export { useDockNavigation, type UseDockNavigationOptions } from './use-dock-navigation.svelte';
 export { usePanelActions, type UsePanelActionsOptions } from './use-panel-actions.svelte';
 export { useCloseHandlers, type UseCloseHandlersOptions } from './use-close-handlers.svelte';
 export {

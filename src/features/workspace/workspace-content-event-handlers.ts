@@ -7,6 +7,7 @@
 import { createLogger } from '$lib/utils/client-logger';
 import { emit, listenSync } from '$lib/electron-bridge';
 import { pathsMatch } from '$lib/utils/file-utils';
+import type { DynamicElectronEventName } from '$shared/ipc-registry';
 import type { Workspace } from '$shared/types';
 
 const logger = createLogger('WorkspaceContentEventHandlers');
@@ -68,7 +69,7 @@ export class WorkspaceContentEventHandlers {
         }
       };
 
-      const eventName = `file:content-changed:${workspaceId}`;
+      const eventName: DynamicElectronEventName = `file:content-changed:${workspaceId}`;
       this.unsubscribers.set(
         eventName,
         listenSync(eventName, ({ payload }) => {
@@ -90,7 +91,7 @@ export class WorkspaceContentEventHandlers {
         }
       };
 
-      const eventName = `file:deleted:${workspaceId}`;
+      const eventName: DynamicElectronEventName = `file:deleted:${workspaceId}`;
       this.unsubscribers.set(
         eventName,
         listenSync(eventName, ({ payload }) => {
@@ -142,7 +143,7 @@ export class WorkspaceContentEventHandlers {
         }
       };
 
-      const eventName = `note:content-changed:${workspaceId}`;
+      const eventName: DynamicElectronEventName = `note:content-changed:${workspaceId}`;
       this.unsubscribers.set(
         eventName,
         listenSync(eventName, ({ payload }) => {
@@ -164,7 +165,7 @@ export class WorkspaceContentEventHandlers {
         }
       };
 
-      const eventName = `note:deleted:${workspaceId}`;
+      const eventName: DynamicElectronEventName = `note:deleted:${workspaceId}`;
       this.unsubscribers.set(
         eventName,
         listenSync(eventName, ({ payload }) => {
@@ -183,7 +184,7 @@ export class WorkspaceContentEventHandlers {
       this.callbacks.onDirectoryCreated?.(data.path);
     };
 
-    const eventName = `directory:created:${workspaceId}`;
+    const eventName: DynamicElectronEventName = `directory:created:${workspaceId}`;
     this.unsubscribers.set(
       eventName,
       listenSync(eventName, ({ payload }) => {

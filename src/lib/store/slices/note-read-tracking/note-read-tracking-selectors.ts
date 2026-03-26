@@ -2,17 +2,17 @@ import { createSelector } from "../../utils/create-selector";
 
 /** Select all unread note IDs */
 export const selectUnreadNoteIds = createSelector((state) => {
-  return state.noteReadTracking.unreadNoteIds;
+  return Object.keys(state.noteReadTracking.unreadNoteIds);
 });
 
 /** Check if a specific note has unread changes */
 export const selectHasUnreadChanges = createSelector((state, noteId: string) => {
-  return state.noteReadTracking.unreadNoteIds.includes(noteId);
+  return !!state.noteReadTracking.unreadNoteIds[noteId];
 });
 
 /** Select the count of unread notes */
 export const selectUnreadCount = createSelector((state) => {
-  return state.noteReadTracking.unreadNoteIds.length;
+  return Object.keys(state.noteReadTracking.unreadNoteIds).length;
 });
 
 /** Select the loading state */

@@ -214,7 +214,11 @@
     } else if (binding.type === 'note') {
       window.dispatchEvent(
         new CustomEvent('workspace:open-note', {
-          detail: { noteId: binding.target, openInAdjacentPanel, sourcePanelId },
+          detail: {
+            noteId: binding.target,
+            openInAdjacentPanel,
+            sourcePanelId,
+          },
         }),
       );
     }

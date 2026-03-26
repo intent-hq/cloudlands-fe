@@ -114,7 +114,11 @@
       const openInAdjacentPanel = event.metaKey || event.ctrlKey;
       window.dispatchEvent(
         new CustomEvent('workspace:open-agent', {
-          detail: { agentId: agent.id, sourcePanelId, openInAdjacentPanel },
+          detail: {
+            agentId: agent.id,
+            sourcePanelId,
+            openInAdjacentPanel,
+          },
         }),
       );
     }

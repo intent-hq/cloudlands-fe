@@ -1,9 +1,70 @@
-import type { Middleware, Store, UnknownAction } from "redux";
-import type { Readable } from "svelte/store";
-import type { Saga, Task } from "redux-saga";
-import type { SagaGenerator } from "typed-redux-saga";
-import type { reducers } from "./reducer";
-import type { sagas } from "./sagas";
+import type { Middleware, Store, UnknownAction } from 'redux';
+import type { Readable } from 'svelte/store';
+import type { Saga, Task } from 'redux-saga';
+import type { SagaGenerator } from 'typed-redux-saga';
+import type { reducers } from './reducer';
+
+/**
+ * SagaName is declared as an explicit string literal union to avoid importing
+ * from `./sagas`, which would transitively pull every saga module (and their
+ * renderer-only dependencies like `$app/navigation`) into any compilation
+ * unit that touches store types — including the main-process typecheck.
+ *
+ * To keep this in sync with the `sagas` registry, `sagas.ts` includes a
+ * compile-time assertion that ensures the keys of the `sagas` object match
+ * this type exactly.
+ */
+export type SagaName =
+  | 'providerSettingsSaga'
+  | 'backgroundAgentSettingsSaga'
+  | 'externalEditorsSaga'
+  | 'uiLayoutSaga'
+  | 'tabStateSaga'
+  | 'terminalsSaga'
+  | 'noteReadTrackingSaga'
+  | 'permissionSaga'
+  | 'featureCodesSaga'
+  | 'knownReposSaga'
+  | 'deepLinksSaga'
+  | 'modelSaga'
+  | 'specialistsSaga'
+  | 'systemStatusSaga'
+  | 'pipSaga'
+  | 'userPreferencesSaga'
+  | 'workspaceOperationsSaga'
+  | 'workspaceSettingsSaga'
+  | 'streamingSaga'
+  | 'workspaceSaga'
+  | 'gitSaga'
+  | 'fileTrackingSaga'
+  | 'notesSaga'
+  | 'agentsSaga'
+  | 'messagesSaga'
+  | 'contextSaga'
+  | 'browserSaga'
+  | 'mcpSaga'
+  | 'diffsSaga'
+  | 'settingsSaga'
+  | 'authSaga'
+  | 'uiSaga'
+  | 'layoutSaga'
+  | 'autoUpdateSaga'
+  | 'workspaceInitializerSaga';
+
+// ============================================================================
+// Saga Status Types
+// ============================================================================
+
+export type SagaCrashRecord = {
+  crashedAt: Date;
+  error: Error;
+};
+
+export type SagaStatusRecord = {
+  isRunning: boolean;
+  launchedAtTs: number | null;
+  crashes: SagaCrashRecord[];
+};
 
 // ============================================================================
 // Action Types
@@ -76,19 +137,6 @@ export type StoreState = {
 export type PreloadedStoreState = Partial<StoreState>;
 
 export type ReduxStore = Store<StoreState, UnknownAction>;
-
-export type SagaName = keyof typeof sagas;
-
-export type SagaCrashRecord = {
-  crashedAt: Date;
-  error: Error;
-};
-
-export type SagaStatusRecord = {
-  isRunning: boolean;
-  launchedAtTs: number | null;
-  crashes: SagaCrashRecord[];
-};
 
 export type ReduxStoreContext = {
   store: ReduxStore;

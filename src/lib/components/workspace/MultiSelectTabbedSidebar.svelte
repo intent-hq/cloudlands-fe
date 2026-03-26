@@ -1,7 +1,5 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { agentService } from '$features/agent/agent.service';
-  import { sessionStore } from '$features/agent/browser';
   import { contextStore } from '$features/context/context.store.svelte';
   import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
@@ -12,10 +10,17 @@
   import { faNote } from '$lib/icons/faNote';
   import { getFileExtension, track } from '$lib/services/analytics';
   import { getDispatch } from '$lib/store/utils/utils';
-  import { markNoteRead, refreshUnreadNotes } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
+  import {
+    markNoteRead,
+    refreshUnreadNotes,
+  } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
+  import {
+    selectAllWorkspaceAgents,
+    selectForegroundWorkspaceAgents,
+    selectIsLoadingAgents,
+  } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { cn } from '$lib/utils';
-  import { useAllAgentsSubscription } from '$lib/utils/agent-subscription.svelte';
   import type { Note, Workspace } from '$shared/types';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import {
@@ -48,15 +53,6 @@
   } from './workspace-phase';
   import WorkspaceAgentsList from './WorkspaceAgentsList.svelte';
 
-  interface Terminal {
-    id: string;
-    type: 'terminal' | 'chat';
-    title?: string;
-    name?: string;
-    createdAt: number | string;
-    workspaceId?: string;
-  }
-
   interface Props {
     workspace: Workspace;
     workspaceId: string;
@@ -80,7 +76,6 @@
     onCreateAgentWithSpecialist?: (specialistId: string | null) => void;
     onCreateAgentWithPrompt?: (prompt: string, name: string) => void;
     onShowAgent?: (agentId: string) => void;
-    terminals?: Terminal[];
     onOpenTerminal?: (terminalId: string) => void;
     onCreateTerminal?: () => void;
     onOpenAcceptChanges?: () => void;
@@ -104,7 +99,6 @@
     isNewWorkspaceSession = false,
     onCreateAgent,
     onCreateAgentWithSpecialist,
-    terminals = [],
     onCreateTerminal,
     onOpenAcceptChanges,
     onAcceptChanges,
@@ -431,7 +425,7 @@
         subtitle: 'Describe what you want to build',
         isActive: false,
       };
-    const hasActiveAgents = workspaceAgents.some(
+    const hasActiveAgents = $allWorkspaceAgents.some(
       (a) => a.isStreaming || a.isProcessing || a.isResponding,
     );
     return deriveWorkspacePhase(workspace, { hasActiveAgents });
@@ -494,7 +488,7 @@
 
   // Panel open handlers
   function handleOpenAgentInPanel(agentId: string) {
-    const agent = workspaceAgents.find((a) => a.id === agentId);
+    const agent = $allWorkspaceAgents.find((a) => a.id === agentId);
     if (!agent) return;
     panelLayoutManager.openTab({
       type: 'agent',
@@ -563,20 +557,12 @@
   );
   const allCommits = $derived(storeHasCorrectWorkspace ? (fileTrackingStore.commits ?? []) : []);
 
-  // Agent subscription
-  // NOTE: agentStateTick is written but not read — the subscribe callback below
-  // increments it, but no $derived or template expression consumes it. Kept as a hook point.
-  let agentStateTick = $state(0);
-  const agentSubscription = useAllAgentsSubscription(() => workspaceId);
-  const workspaceAgents = $derived.by(() => {
-    const all = agentSubscription.all;
-    if (!workspaceId) return all;
-    return all.filter((s) => s.workspaceId === workspaceId);
-  });
-  const agentsLoading = $derived(agentSubscription.loading);
+  const allWorkspaceAgents = $derived(selectAllWorkspaceAgents(workspaceId));
+  const foregroundWorkspaceAgents = $derived(selectForegroundWorkspaceAgents(workspaceId));
+  const agentsLoading = $derived(selectIsLoadingAgents(workspaceId));
 
   const activeAgents = $derived.by(() => {
-    return workspaceAgents
+    return $allWorkspaceAgents
       .map((agent) => {
         const state = getAvatarState(
           {
@@ -603,9 +589,10 @@
     notes.some((n) => isSpecNote(n.id as string) && n.content && n.content.trim().length > 0),
   );
   const coordinatorAgent = $derived(
-    workspaceAgents.find(
+    $foregroundWorkspaceAgents.find(
       (a) => a.metadata?.isInitialAgent === true || a.metadata?.isInitialWorkspaceAgent === true,
-    ) || (workspaceAgents.length === 1 ? workspaceAgents[0] : null),
+    ) ||
+      ($foregroundWorkspaceAgents.length === 1 ? $foregroundWorkspaceAgents[0] : null),
   );
   const isCoordinatorRunning = $derived(
     coordinatorAgent
@@ -622,8 +609,8 @@
       case 'show-coordinator':
         if (coordinatorAgent) {
           handleOpenAgentInPanel(coordinatorAgent.id);
-        } else if (workspaceAgents.length > 0) {
-          handleOpenAgentInPanel(workspaceAgents[0].id);
+        } else if ($foregroundWorkspaceAgents.length > 0) {
+          handleOpenAgentInPanel($foregroundWorkspaceAgents[0].id);
         }
         break;
       case 'view-spec': {
@@ -695,10 +682,6 @@
   // Sidebar element ref
   let sidebarElement: HTMLDivElement | null = $state(null);
 
-  // Agent state tracking
-  let previousStreamingState = new Map<string, boolean>();
-  let previousAgentCount = 0;
-
   // Map registry sidebar tab IDs to MultiSelectTabbedSidebar tab IDs
   function mapSidebarTabId(registryTabId: string): TabId | null {
     const mapping: Record<string, TabId> = {
@@ -713,32 +696,6 @@
   }
 
   onMount(() => {
-    const unsubscribeAgent = sessionStore.getStore().subscribe(() => {
-      const workspaceSessions = agentService.getSessionsForWorkspace(workspaceId);
-      let hasRelevantChange = false;
-
-      if (workspaceSessions.length !== previousAgentCount) {
-        hasRelevantChange = true;
-        previousAgentCount = workspaceSessions.length;
-      }
-
-      // Only track streaming state for agents in THIS workspace
-      // Previously this iterated allSessions, causing cross-workspace
-      // streaming changes to trigger unnecessary re-renders.
-      for (const session of workspaceSessions) {
-        const isRunning = session.isStreaming || session.isResponding || session.isProcessing;
-        const wasRunning = previousStreamingState.get(session.id) ?? false;
-        if (isRunning !== wasRunning) {
-          hasRelevantChange = true;
-          previousStreamingState.set(session.id, !!isRunning);
-        }
-      }
-
-      if (hasRelevantChange) {
-        agentStateTick++;
-      }
-    });
-
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.metaKey && e.shiftKey && e.key === 'c') {
         e.preventDefault();
@@ -798,8 +755,6 @@
     window.addEventListener('sidebar:locate-item', handleLocateItem);
 
     return () => {
-      unsubscribeAgent();
-      previousStreamingState.clear();
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('sidebar:locate-item', handleLocateItem);
     };
@@ -1034,7 +989,7 @@
             {#key workspaceId}
               <div class="h-full pt-2 pb-6">
                 {#if tabId === 'overview'}
-                  {@const overviewAgents = workspaceAgents.map((agent) => {
+                  {@const overviewAgents = $foregroundWorkspaceAgents.map((agent) => {
                     const state = getAvatarState(
                       {
                         isStreaming: agent.isStreaming,
@@ -1115,7 +1070,7 @@
                     selectedFilePath={effectiveSelectedFile}
                     activeFilePath={effectiveActiveFilePath}
                     activeCommitHash={effectiveActiveCommitHash}
-                    {agentsLoading}
+                    agentsLoading={$agentsLoading}
                     {notesLoading}
                     changesLoading={!storeHasCorrectWorkspace}
                     onSwitchTab={switchToTab}
@@ -1143,8 +1098,8 @@
                 {:else if tabId === 'agents'}
                   <div class="px-3 transition-all duration-200">
                     <WorkspaceAgentsList
-                      agents={workspaceAgents}
-                      loading={agentsLoading}
+                      agents={$allWorkspaceAgents}
+                      loading={$agentsLoading}
                       selectedAgentId={effectiveSelectedAgentId}
                       onSelect={({ agentId }) => handleOpenAgentInPanel(agentId)}
                       onOpenAgentOverview={handleOpenAgentOverview}

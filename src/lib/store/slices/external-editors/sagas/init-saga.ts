@@ -6,13 +6,9 @@ const STORAGE_KEY = "open-combo-button-last-action";
 const DEFAULT_ACTION = "vscode";
 
 function* loadFromLocalStorage(): SagaGenerator<string> {
-  try {
-    const stored = yield* call(getLocalStorageItem, STORAGE_KEY);
-    if (stored) {
-      return stored;
-    }
-  } catch {
-    // Ignore parse errors
+  const stored = yield* call(getLocalStorageItem, STORAGE_KEY);
+  if (stored) {
+    return stored;
   }
   return DEFAULT_ACTION;
 }

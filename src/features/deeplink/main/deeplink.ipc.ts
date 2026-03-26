@@ -70,7 +70,7 @@ export function registerDeepLinkHandlers(): void {
     ),
   );
 
-  // Write file (used by ContentDrawer)
+  // Write file
   ipcMain.handle(
     'write_file',
     createSafeValidatedHandler(

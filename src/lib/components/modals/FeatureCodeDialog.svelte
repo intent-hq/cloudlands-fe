@@ -9,10 +9,12 @@
 
   interface Props {
     open?: boolean;
+    onClose?: () => void;
   }
 
   let {
     open = $bindable(false),
+    onClose,
   }: Props = $props();
 
   const dispatch = getDispatch();
@@ -52,6 +54,7 @@
     feedback = null;
     isActivating = false;
     needsRestart = false;
+    onClose?.();
   }
 
   async function confirm() {

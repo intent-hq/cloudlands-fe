@@ -211,10 +211,12 @@ The Redux documentation already living in `src/lib/store/docs/` should be treate
 
 This guidance matches the current store architecture in the repository:
 
-- `src/lib/store/init.ts` creates the Redux store and runs sagas
-- `src/lib/store/components/Store.svelte` installs the store context and starts registered sagas
+- `src/lib/store/components/Store.svelte` exports `initStore()`, which creates the store context by calling `src/lib/store/init.ts`, and the component mounts the registered `RunSaga` instances
+- `src/lib/store/init.ts` creates the Redux store, initializes the dispatch/store bridges, and starts the saga manager runtime
 - `src/lib/store/utils/utils.ts` exposes `getDispatch()` for components to dispatch actions
 - `src/lib/store/sagas.ts` is the registry for saga-based side effects
+- `src/lib/store/utils/ipc-channel.ts` provides channel helpers so Electron IPC and window events are handled in sagas instead of component lifecycle hooks
+- workspace-scoped slices use `createWorkspaceScopedHelpers()` from `src/lib/store/utils/workspace-scoped.ts` to manage per-workspace state under `byWorkspaceId`
 
 ## Migration Direction
 
@@ -230,3 +232,189 @@ All state management MUST consolidate around Redux. This is mandatory, not aspir
 When refactoring encounters `.store.svelte.ts` usage, do not expand or entrench it. Follow the [Migration Guide](../src/lib/store/docs/MIGRATION_GUIDE.md) to move the work toward complete store removal (update all consumers and delete the old store). Partial split-ownership — where some consumers use Redux and others still use the Svelte store — is not acceptable as a final state.
 
 In short: keep state and business logic out of components, use Redux for shared state, use sagas for side effects, and migrate all remaining Svelte stores on contact.
+- New shared state should be implemented as Redux slices
+- New side effects should be implemented as sagas
+- Existing Svelte store classes should be migrated rather than expanded
+- Components should get thinner over time, with business logic moving out of the view layer
+- `font-settings` and `notification-settings` have been merged into `user-preferences`
+- `listenSync(...)` and `window.electronAPI.on(...)` listeners should move out of components and into sagas via the IPC channel helpers
+
+In short: keep state and business logic out of components whenever possible, use Redux for shared state, use sagas for side effects, and treat remaining Svelte stores as temporary migration candidates.
+
+## IPC Event Handling in Sagas
+
+Electron IPC listeners and application window event listeners belong in sagas, not in component `onMount` or `$effect` blocks.
+
+Use the channel helpers from `src/lib/store/utils/ipc-channel.ts`:
+
+- `takeEveryFromElectronChannel(eventName, handler)` for `window.electronAPI.on(...)` events
+- `takeEveryFromListenSync(eventName, handler)` for `listenSync(...)` events
+- `takeEveryFromWindowEvent(eventName, handler, options?)` for `window.dispatchEvent(...)` / `CustomEvent` flows
+
+This keeps subscription setup, cancellation, and action dispatching inside saga ownership, where handlers can safely `put`, `select`, and `call`.
+
+### Before: listener owned by a component
+
+```typescript
+import { onMount } from "svelte";
+
+onMount(() => {
+  return listenSync<WorkspaceUpdatedEvent>("workspace:updated", ({ payload }) => {
+    dispatch(setLastWorkspaceUpdate(payload.workspaceId, payload.timestamp));
+  });
+});
+```
+
+### After: listener owned by a saga
+
+```typescript
+import { put } from "typed-redux-saga";
+import { takeEveryFromListenSync } from "$lib/store/utils/ipc-channel";
+
+export function* watchWorkspaceUpdatedSaga() {
+  yield* takeEveryFromListenSync<WorkspaceUpdatedEvent>("workspace:updated", function* (data) {
+    yield* put(setLastWorkspaceUpdate(data.workspaceId, data.timestamp));
+  });
+}
+```
+
+For `window.electronAPI.on(...)`, use `takeEveryFromElectronChannel(...)` instead of wiring listeners inside components. For app-level `CustomEvent` flows dispatched on `window`, use `takeEveryFromWindowEvent(...)` so the saga owns the listener lifecycle too.
+
+## Workspace-Scoped State
+
+When state belongs to a workspace, model it as a `byWorkspaceId` map instead of a single shared object:
+
+```typescript
+type WorkspaceScopedState<T> = {
+  byWorkspaceId: Record<string, T>;
+};
+```
+
+Use `createWorkspaceScopedHelpers()` from `src/lib/store/utils/workspace-scoped.ts` to generate the standard helpers:
+
+- `getWorkspaceState(state, wsId)`
+- `setWorkspaceState(state, wsId, workspaceState)`
+- `clearWorkspaceState(state, wsId)`
+
+This is the standard pattern for slices that need isolated state per workspace. It prevents cross-workspace leakage, keeps reducers consistent, and makes workspace cleanup explicit.
+
+### Example: `workspace-terminals-slice.ts`
+
+```typescript
+export interface WorkspaceTerminalsState {
+  byWorkspaceId: Record<string, WorkspaceTerminalState>;
+}
+
+const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
+  createWorkspaceScopedHelpers(emptyWorkspaceTerminalState);
+```
+
+Reducers then read-modify-write one workspace entry at a time:
+
+```typescript
+.with(setTerminals, (state, { payload: [wsId, terminals] }) =>
+  setWorkspaceState(state, wsId, {
+    ...getWorkspaceState(state, wsId),
+    terminals: createCollection<WorkspaceTerminal, "id">("id", terminals),
+  })
+)
+```
+
+## Collection Data Structure
+
+Entity lists in Redux state should use `Collection<T, K>` from `src/lib/store/utils/collection-utils.ts`, not raw arrays.
+
+`Collection<T, K>` stores:
+
+- `ids` for stable ordering
+- `map` for O(1) lookup by ID
+- `refsCount` for reference-counted workflows
+- `idField` so utilities know which property is the entity key
+
+Create and update collections with the collection helpers:
+
+- `createCollection(idField, items?)`
+- `addItem(collection, item)`
+- `removeItem(collection, itemId)`
+- `updateItem(collection, partialItem)`
+- `getItem(collection, itemId)`
+- `getItems(collection)` for ordered list reads
+
+Prefer collections over arrays because arrays force O(n) lookups for ID-based access and make it too easy to rely on index position or whole-array reference changes for entity updates. Collections normalize entity storage while preserving order for rendering.
+
+### Example
+
+```typescript
+const terminals = createCollection<WorkspaceTerminal, "id">("id", initialTerminals);
+const next = addItem(terminals, terminal);
+const current = getItem(next, terminal.id);
+```
+
+If a selector or component needs an ordered array, derive it from the collection at the edge instead of storing the array as the canonical source of truth.
+
+## Boolean Preference Utility
+
+For boolean preference fields, use `createBooleanPreference()` from `src/lib/store/utils/boolean-preference.ts` instead of hand-writing repetitive `setX` / `toggleX` pairs.
+
+The utility takes:
+
+- `sliceName`
+- `field`
+- `setActionName`
+- `toggleActionName`
+
+It returns:
+
+- `setAction` — a typed setter action accepting `[value: boolean]`
+- `toggleAction` — a typed toggle action with no payload
+- `register(builder)` — a helper that adds both reducer handlers to an existing reducer builder
+
+### Example
+
+```typescript
+const spellcheckPreference = createBooleanPreference<UserPreferencesState>({
+  sliceName: "userPreferences",
+  field: "spellcheckEnabled",
+  setActionName: "setSpellcheckEnabled",
+  toggleActionName: "toggleSpellcheck",
+});
+
+export const setSpellcheckEnabled = spellcheckPreference.setAction;
+export const toggleSpellcheck = spellcheckPreference.toggleAction;
+```
+
+Register the reducer handlers by chaining `register(...)` on the reducer builder:
+
+```typescript
+export const userPreferencesReducer = spellcheckPreference.register(
+  createReducer<UserPreferencesState>(initialState)
+);
+```
+
+## Safe localStorage in Sagas
+
+Never access `localStorage` directly inside sagas. Use the helpers from `src/lib/store/utils/safe-local-storage-saga.ts` instead:
+
+- `getLocalStorageJSON<T>(key)`
+- `setLocalStorageJSON(key, value)`
+- `getLocalStorageItem(key)`
+- `setLocalStorageItem(key, value)`
+- `removeLocalStorageItem(key)`
+
+These helpers keep storage access testable and consistent by routing reads/writes through saga effects and centralizing error handling.
+
+- `getLocalStorageItem()` returns `string | null`
+- `getLocalStorageJSON<T>()` returns `T | undefined`
+- write/remove helpers swallow storage failures so sagas stay resilient
+
+### Example
+
+```typescript
+import { call } from "typed-redux-saga";
+import { getLocalStorageJSON, setLocalStorageJSON } from "$lib/store/utils/safe-local-storage-saga";
+
+const stored = yield* call(getLocalStorageJSON<Record<string, string>>, WORKSPACE_MODELS_KEY);
+yield* call(setLocalStorageJSON, WORKSPACE_MODELS_KEY, nextWorkspaceModels);
+```
+
+Mocking these helpers in saga tests is much easier than mocking direct `localStorage` access scattered across multiple sagas.

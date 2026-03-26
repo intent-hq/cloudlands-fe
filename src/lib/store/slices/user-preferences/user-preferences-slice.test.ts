@@ -1,15 +1,53 @@
 import { describe, expect, it } from "vitest";
 import {
+  cycleFontStyle,
+  cycleNoteFontStyle,
   initialState,
   loadBetaUpdatesSettings,
+  resetNotificationSettings,
+  setAgentFontStyle,
+  setCodeFontFamily,
+  setGroupByRepo,
+  setHasCompletedProviderSetup,
+  setNotificationEnabled,
+  setNoteFontStyle,
+  setShowArchived,
   setBetaUpdatesEnabled,
   setSpellcheckEnabled,
+  setSoundEnabled,
+  setSoundOnlyWhenUnfocused,
+  setSystemFonts,
+  setVolume,
   setZoomFactor,
+  type AgentFontStyle,
+  toggleGroupByRepo,
+  toggleHasCompletedProviderSetup,
+  toggleShowArchived,
   toggleBetaUpdates,
   toggleSpellcheck,
   type UserPreferencesState,
   userPreferencesReducer,
 } from "./user-preferences-slice";
+import {
+  selectAgentFontStyle,
+  selectAgentFontStyleLabel,
+  selectCodeFontFamily,
+  selectCodeFontFamilyCSS,
+  selectCodeFontFamilyLabel,
+  selectCodeFontOptions,
+  selectGroupByRepo,
+  selectHasCompletedProviderSetup,
+  selectIsAgentMonospace,
+  selectIsNoteMonospace,
+  selectNoteFontStyle,
+  selectNoteFontStyleLabel,
+  selectNotificationEnabled,
+  selectNotificationVolume,
+  selectShowArchived,
+  selectShowProviderPanel,
+  selectSoundEnabled,
+  selectSoundOnlyWhenUnfocused,
+} from "./user-preferences-selectors";
 
 describe("userPreferencesReducer", () => {
   it("should return initial state", () => {
@@ -107,6 +145,208 @@ describe("userPreferencesReducer", () => {
     it("should accept valid zoom factors", () => {
       expect(userPreferencesReducer(state, setZoomFactor(0.5)).zoomFactor).toBe(0.5);
       expect(userPreferencesReducer(state, setZoomFactor(3.0)).zoomFactor).toBe(3.0);
+    });
+  });
+
+  describe("home page preference actions", () => {
+    it("should set showArchived", () => {
+      const state = userPreferencesReducer(initialState, setShowArchived(true));
+      expect(state.showArchived).toBe(true);
+    });
+
+    it("should toggle showArchived", () => {
+      const state = userPreferencesReducer(initialState, toggleShowArchived());
+      expect(state.showArchived).toBe(true);
+    });
+
+    it("should set groupByRepo", () => {
+      const state = userPreferencesReducer(initialState, setGroupByRepo(false));
+      expect(state.groupByRepo).toBe(false);
+    });
+
+    it("should toggle groupByRepo", () => {
+      const state = userPreferencesReducer(initialState, toggleGroupByRepo());
+      expect(state.groupByRepo).toBe(false);
+    });
+
+    it("should set hasCompletedProviderSetup", () => {
+      const state = userPreferencesReducer(initialState, setHasCompletedProviderSetup(true));
+      expect(state.hasCompletedProviderSetup).toBe(true);
+    });
+
+    it("should toggle hasCompletedProviderSetup", () => {
+      const state = userPreferencesReducer(initialState, toggleHasCompletedProviderSetup());
+      expect(state.hasCompletedProviderSetup).toBe(true);
+    });
+  });
+
+  describe("font settings actions", () => {
+    it("keeps action type prefixes under fontSettings", () => {
+      expect(setAgentFontStyle.type).toBe("fontSettings/setAgentFontStyle");
+      expect(cycleFontStyle.type).toBe("fontSettings/cycleFontStyle");
+      expect(setNoteFontStyle.type).toBe("fontSettings/setNoteFontStyle");
+      expect(cycleNoteFontStyle.type).toBe("fontSettings/cycleNoteFontStyle");
+      expect(setCodeFontFamily.type).toBe("fontSettings/setCodeFontFamily");
+      expect(setSystemFonts.type).toBe("fontSettings/setSystemFonts");
+    });
+
+    it("updates and cycles agent font style", () => {
+      expect(userPreferencesReducer(initialState, setAgentFontStyle("monospace")).agentFontStyle).toBe(
+        "monospace"
+      );
+      expect(userPreferencesReducer(initialState, cycleFontStyle()).agentFontStyle).toBe("monospace");
+      expect(
+        userPreferencesReducer(
+          { ...initialState, agentFontStyle: "monospace" },
+          cycleFontStyle()
+        ).agentFontStyle
+      ).toBe("sans");
+    });
+
+    it("updates and cycles note font style", () => {
+      expect(userPreferencesReducer(initialState, setNoteFontStyle("monospace")).noteFontStyle).toBe(
+        "monospace"
+      );
+      expect(userPreferencesReducer(initialState, cycleNoteFontStyle()).noteFontStyle).toBe(
+        "monospace"
+      );
+      expect(
+        userPreferencesReducer(
+          { ...initialState, noteFontStyle: "monospace" },
+          cycleNoteFontStyle()
+        ).noteFontStyle
+      ).toBe("sans");
+    });
+
+    it("updates code font family and system fonts", () => {
+      const withCodeFont = userPreferencesReducer(initialState, setCodeFontFamily("Fira Code"));
+      const withSystemFonts = userPreferencesReducer(
+        withCodeFont,
+        setSystemFonts(["JetBrains Mono", "Cascadia Code"])
+      );
+
+      expect(withSystemFonts.codeFontFamily).toBe("Fira Code");
+      expect(withSystemFonts.systemFonts).toEqual(["JetBrains Mono", "Cascadia Code"]);
+    });
+  });
+
+  describe("notification settings actions", () => {
+    it("keeps action type prefixes under notificationSettings", () => {
+      expect(setNotificationEnabled.type).toBe("notificationSettings/setNotificationEnabled");
+      expect(setSoundEnabled.type).toBe("notificationSettings/setSoundEnabled");
+      expect(setSoundOnlyWhenUnfocused.type).toBe(
+        "notificationSettings/setSoundOnlyWhenUnfocused"
+      );
+      expect(setVolume.type).toBe("notificationSettings/setVolume");
+      expect(resetNotificationSettings.type).toBe(
+        "notificationSettings/resetNotificationSettings"
+      );
+    });
+
+    it("updates notification booleans", () => {
+      let state = userPreferencesReducer(initialState, setNotificationEnabled(false));
+      expect(state.enabled).toBe(false);
+
+      state = userPreferencesReducer(state, setSoundEnabled(false));
+      expect(state.soundEnabled).toBe(false);
+
+      state = userPreferencesReducer(state, setSoundOnlyWhenUnfocused(false));
+      expect(state.soundOnlyWhenUnfocused).toBe(false);
+    });
+
+    it("clamps notification volume", () => {
+      expect(userPreferencesReducer(initialState, setVolume(-0.5)).volume).toBe(0);
+      expect(userPreferencesReducer(initialState, setVolume(1.5)).volume).toBe(1);
+      expect(userPreferencesReducer(initialState, setVolume(0.8)).volume).toBe(0.8);
+    });
+
+    it("resets notification settings without affecting other preferences", () => {
+      const modified = userPreferencesReducer(
+        {
+          ...initialState,
+          enabled: false,
+          soundEnabled: false,
+          soundOnlyWhenUnfocused: false,
+          volume: 0.2,
+          noteFontStyle: "monospace",
+        },
+        resetNotificationSettings()
+      );
+
+      expect(modified.enabled).toBe(true);
+      expect(modified.soundEnabled).toBe(true);
+      expect(modified.soundOnlyWhenUnfocused).toBe(true);
+      expect(modified.volume).toBe(0.5);
+      expect(modified.noteFontStyle).toBe("monospace");
+    });
+  });
+
+  describe("selectors", () => {
+    const state = {
+      userPreferences: {
+        ...initialState,
+        agentFontStyle: "monospace" as AgentFontStyle,
+        noteFontStyle: "monospace",
+        codeFontFamily: "JetBrains Mono",
+        systemFonts: ["JetBrains Mono"],
+        enabled: false,
+        soundEnabled: false,
+        soundOnlyWhenUnfocused: false,
+        volume: 0.25,
+        showArchived: true,
+        groupByRepo: false,
+        hasCompletedProviderSetup: true,
+      },
+    } as any;
+
+    it("selects home page preference values", () => {
+      expect(selectShowArchived.select(state)).toBe(true);
+      expect(selectGroupByRepo.select(state)).toBe(false);
+      expect(selectHasCompletedProviderSetup.select(state)).toBe(true);
+    });
+
+    it("selects font settings from userPreferences", () => {
+      expect(selectAgentFontStyle.select(state)).toBe("monospace");
+      expect(selectAgentFontStyleLabel.select(state)).toBe("Monospace");
+      expect(selectIsAgentMonospace.select(state)).toBe(true);
+      expect(selectNoteFontStyle.select(state)).toBe("monospace");
+      expect(selectNoteFontStyleLabel.select(state)).toBe("Monospace");
+      expect(selectIsNoteMonospace.select(state)).toBe(true);
+      expect(selectCodeFontFamily.select(state)).toBe("JetBrains Mono");
+      expect(selectCodeFontFamilyCSS.select(state)).toBe("'JetBrains Mono', monospace");
+      expect(selectCodeFontFamilyLabel.select(state)).toBe("JetBrains Mono");
+      expect(selectCodeFontOptions.select(state)).toEqual([
+        {
+          value: "system-default",
+          label: "System Default",
+          fontFamily:
+            "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace",
+        },
+        {
+          value: "JetBrains Mono",
+          label: "JetBrains Mono",
+          fontFamily: "'JetBrains Mono', monospace",
+        },
+      ]);
+    });
+
+    it("selects notification settings from userPreferences", () => {
+      expect(selectNotificationEnabled.select(state)).toBe(false);
+      expect(selectSoundEnabled.select(state)).toBe(false);
+      expect(selectSoundOnlyWhenUnfocused.select(state)).toBe(false);
+      expect(selectNotificationVolume.select(state)).toBe(0.25);
+    });
+
+    it("derives provider panel visibility from provider setup state", () => {
+      expect(selectShowProviderPanel.select(state)).toBe(false);
+      expect(
+        selectShowProviderPanel.select({
+          userPreferences: {
+            ...initialState,
+            hasCompletedProviderSetup: false,
+          },
+        } as any)
+      ).toBe(true);
     });
   });
 });

@@ -36,6 +36,7 @@ vi.mock('../file-tracking.store.svelte', () => ({
 
 vi.mock('$lib/store/slices/workspace-settings/workspace-settings-slice', () => ({
   syncWorkspaceSettings: syncWorkspaceSettingsMock,
+  emptyWorkspaceSettings: { autoCommitEnabled: true },
 }));
 
 vi.mock('$lib/store/redux-dispatch-bridge', () => ({

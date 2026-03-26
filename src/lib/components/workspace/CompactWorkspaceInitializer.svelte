@@ -9,6 +9,11 @@
   import type { StarterPrompt } from '$lib/data/starter-prompts';
   import { selectSelectedModel, selectAvailableModels } from '$lib/store/slices/model/model-selectors';
   import { setWorkspaceModel } from '$lib/store/slices/model/model-slice';
+  import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
+  import {
+    setInitialAgentConfig,
+    setInitialAgentId,
+  } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { getDispatch } from '$lib/store/utils/utils';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectSpecialists, selectEffectiveBehaviorPrompt, selectUserOverrides } from '$lib/store/slices/specialists/specialists-selectors';
@@ -1711,6 +1716,10 @@
         });
       }
 
+      // Pre-populate Redux with the workspace entity so the workspace page
+      // has data on the very first render frame (before sagas/effects run).
+      dispatch(setWorkspaceEntity(workspace));
+
       // Save the setup script to the store for future reuse
       if (setupScript.trim()) {
         setupScriptStore.save({
@@ -1744,6 +1753,10 @@
         `workspace:${workspace.id}:initial-agent-pending`,
         JSON.stringify(agentConfigData),
       );
+
+      // Also dispatch into Redux so the workspace page can read it without sessionStorage
+      dispatch(setInitialAgentConfig(workspace.id, agentConfigData));
+      dispatch(setInitialAgentId(workspace.id, initialAgent.agentId));
 
       // Store agent config for AuggieChatPanel to pick up
       sessionStorage.setItem(

@@ -4,8 +4,15 @@ import {
   fetchFeaturesSuccess,
   deactivateFeatureSuccess,
   initialState,
+  toggleFeatureCodeDialog,
   type FeatureCodesState,
 } from "./feature-codes-slice";
+import {
+  selectActiveFeatures,
+  selectFeatureCodeDialogOpen,
+  selectHasActiveFeatures,
+  selectIsFeatureEnabled,
+} from "./feature-codes-selectors";
 
 describe("featureCodesReducer", () => {
   it("should return initial state", () => {
@@ -27,6 +34,7 @@ describe("featureCodesReducer", () => {
     it("should replace existing features on subsequent fetch", () => {
       const prev: FeatureCodesState = {
         activeFeatures: ["old-feature"],
+        dialogOpen: false,
         initialized: true,
       };
       const state = featureCodesReducer(
@@ -39,6 +47,7 @@ describe("featureCodesReducer", () => {
     it("should handle empty features array", () => {
       const prev: FeatureCodesState = {
         activeFeatures: ["feature-a"],
+        dialogOpen: false,
         initialized: true,
       };
       const state = featureCodesReducer(prev, fetchFeaturesSuccess([]));
@@ -61,6 +70,7 @@ describe("featureCodesReducer", () => {
     it("should remove the specified feature", () => {
       const prev: FeatureCodesState = {
         activeFeatures: ["feature-a", "feature-b", "feature-c"],
+        dialogOpen: false,
         initialized: true,
       };
       const state = featureCodesReducer(
@@ -73,6 +83,7 @@ describe("featureCodesReducer", () => {
     it("should return same state if feature not found", () => {
       const prev: FeatureCodesState = {
         activeFeatures: ["feature-a"],
+        dialogOpen: false,
         initialized: true,
       };
       const state = featureCodesReducer(
@@ -85,6 +96,7 @@ describe("featureCodesReducer", () => {
     it("should handle empty features array", () => {
       const prev: FeatureCodesState = {
         activeFeatures: [],
+        dialogOpen: false,
         initialized: true,
       };
       const state = featureCodesReducer(
@@ -97,6 +109,7 @@ describe("featureCodesReducer", () => {
     it("should not mutate previous state", () => {
       const prev: FeatureCodesState = {
         activeFeatures: ["feature-a", "feature-b"],
+        dialogOpen: false,
         initialized: true,
       };
       const state = featureCodesReducer(
@@ -105,6 +118,42 @@ describe("featureCodesReducer", () => {
       );
       expect(prev.activeFeatures).toEqual(["feature-a", "feature-b"]);
       expect(state.activeFeatures).toEqual(["feature-b"]);
+    });
+  });
+
+  describe("toggleFeatureCodeDialog", () => {
+    it("should open the dialog when closed", () => {
+      const state = featureCodesReducer(initialState, toggleFeatureCodeDialog());
+      expect(state.dialogOpen).toBe(true);
+    });
+
+    it("should close the dialog when open", () => {
+      const state = featureCodesReducer(
+        { ...initialState, dialogOpen: true },
+        toggleFeatureCodeDialog()
+      );
+      expect(state.dialogOpen).toBe(false);
+    });
+  });
+
+  describe("selectors", () => {
+    const state = {
+      featureCodes: {
+        activeFeatures: ["feature-a", "feature-b"],
+        dialogOpen: true,
+        initialized: true,
+      },
+    } as any;
+
+    it("selects active feature data", () => {
+      expect(selectActiveFeatures.select(state)).toEqual(["feature-a", "feature-b"]);
+      expect(selectHasActiveFeatures.select(state)).toBe(true);
+      expect(selectIsFeatureEnabled.select(state, "feature-a")).toBe(true);
+      expect(selectIsFeatureEnabled.select(state, "feature-c")).toBe(false);
+    });
+
+    it("selects the feature dialog state", () => {
+      expect(selectFeatureCodeDialogOpen.select(state)).toBe(true);
     });
   });
 });

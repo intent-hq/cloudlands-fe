@@ -1,21 +1,33 @@
 import { createAction } from "../../utils/create-action";
 import { createReducer } from "../../utils/create-reducer";
+import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type WorkspaceSettingsState = {
+export type SingleWorkspaceSettings = {
   autoCommitEnabled: boolean;
+};
+
+export type WorkspaceSettingsState = {
+  byWorkspaceId: Record<string, SingleWorkspaceSettings>;
 };
 
 // ============================================================================
 // Initial State
 // ============================================================================
 
-export const initialState: WorkspaceSettingsState = {
+export const emptyWorkspaceSettings: SingleWorkspaceSettings = {
   autoCommitEnabled: true,
 };
+
+export const initialState: WorkspaceSettingsState = {
+  byWorkspaceId: {},
+};
+
+const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
+  createWorkspaceScopedHelpers(emptyWorkspaceSettings);
 
 // ============================================================================
 // Actions
@@ -37,8 +49,12 @@ export const syncWorkspaceSettings = createAction<[workspaceId: string]>(
   "workspaceSettings/syncWorkspaceSettings"
 );
 
-export const loadAutoCommitSettings = createAction<[enabled: boolean]>(
+export const loadAutoCommitSettings = createAction<[workspaceId: string, enabled: boolean]>(
   "workspaceSettings/loadAutoCommitSettings"
+);
+
+export const clearWorkspaceSettings = createAction<[workspaceId: string]>(
+  "workspaceSettings/clearWorkspaceSettings"
 );
 
 // ============================================================================
@@ -46,16 +62,28 @@ export const loadAutoCommitSettings = createAction<[enabled: boolean]>(
 // ============================================================================
 
 export const workspaceSettingsReducer = createReducer<WorkspaceSettingsState>(initialState)
-  .with(setAutoCommitEnabled, (state, { payload: [, enabled] }) => ({
-    ...state,
-    autoCommitEnabled: enabled,
-  }))
-  .with(toggleAutoCommit, (state) => ({
-    ...state,
-    autoCommitEnabled: !state.autoCommitEnabled,
-  }))
-  .with(loadAutoCommitSettings, (state, { payload: [enabled] }) => ({
-    ...state,
-    autoCommitEnabled: enabled,
-  }));
+  .with(setAutoCommitEnabled, (state, { payload: [workspaceId, enabled] }) => {
+    const wsState = getWorkspaceState(state, workspaceId);
+    return setWorkspaceState(state, workspaceId, {
+      ...wsState,
+      autoCommitEnabled: enabled,
+    });
+  })
+  .with(toggleAutoCommit, (state, { payload: [workspaceId] }) => {
+    const wsState = getWorkspaceState(state, workspaceId);
+    return setWorkspaceState(state, workspaceId, {
+      ...wsState,
+      autoCommitEnabled: !wsState.autoCommitEnabled,
+    });
+  })
+  .with(loadAutoCommitSettings, (state, { payload: [workspaceId, enabled] }) => {
+    const wsState = getWorkspaceState(state, workspaceId);
+    return setWorkspaceState(state, workspaceId, {
+      ...wsState,
+      autoCommitEnabled: enabled,
+    });
+  })
+  .with(clearWorkspaceSettings, (state, { payload: [workspaceId] }) =>
+    clearWorkspaceState(state, workspaceId)
+  );
 

@@ -30,6 +30,7 @@ src/
 | state/store | [`docs/STATE_MANAGEMENT.md`](docs/STATE_MANAGEMENT.md), [`src/lib/store/docs/`](src/lib/store/docs/) |
 | UI components | [`docs/COMPONENT_RESPONSIBILITIES.md`](docs/COMPONENT_RESPONSIBILITIES.md) |
 | panels/layout | [`docs/panel-system-refactoring.md`](docs/panel-system-refactoring.md), [`docs/proposals/PANEL_TAB_UX_SPEC.md`](docs/proposals/PANEL_TAB_UX_SPEC.md) |
+| PR descriptions | [`docs/PR_DESCRIPTION_GUIDE.md`](docs/PR_DESCRIPTION_GUIDE.md) |
 | browser/CDP | [`docs/BROWSER_PANEL_SPEC.md`](docs/BROWSER_PANEL_SPEC.md), [`docs/CDP_MCP_TOOLS.md`](docs/CDP_MCP_TOOLS.md) |
 | module boundaries | [`docs/MODULE_BOUNDARY_GUIDE.md`](docs/MODULE_BOUNDARY_GUIDE.md) |
 | debugging | [`docs/TROUBLESHOOTING_GUIDE.md`](docs/TROUBLESHOOTING_GUIDE.md), [`docs/IPC_DEBUG_GUIDE.md`](docs/IPC_DEBUG_GUIDE.md) |

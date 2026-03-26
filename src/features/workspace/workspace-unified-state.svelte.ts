@@ -11,7 +11,7 @@ import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.s
 import type { TrackedChange } from '$features/file-tracking/types';
 import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
 import { createLogger } from '$lib/utils/client-logger';
-import type { AgentSession, TerminalSession, Workspace } from '$shared/types';
+import type { Workspace } from '$shared/types';
 import { WorkspaceId as WorkspaceIdFn } from '$shared/types/branded-ids';
 import { untrack } from 'svelte';
 import { optimisticWorkspaceManager } from './optimistic-workspace-manager';
@@ -81,8 +81,6 @@ export interface UnifiedWorkspaceState {
 
   // Runtime state (not persisted)
   workspaceData: Workspace | null;
-  agentsList: AgentSession[];
-  terminalsList: TerminalSession[];
   workspaceEvents: WorkspaceEvent[];
 
   // UI flags
@@ -97,8 +95,6 @@ export interface UnifiedWorkspaceState {
   isComponentMounted: boolean;
   agentsLoadingInProgress: boolean;
 
-  // New workspace tracking
-  isNewlyCreatedWorkspace: boolean; // True when workspace was just created and hasn't fully loaded
 }
 
 // Memory cache for workspace states to improve performance
@@ -383,8 +379,6 @@ export function createUnifiedWorkspaceState(workspaceId: string) {
 
     // Runtime state (always fresh)
     workspaceData: null,
-    agentsList: [],
-    terminalsList: [],
     workspaceEvents: [],
 
     // UI flags (always fresh)
@@ -399,9 +393,7 @@ export function createUnifiedWorkspaceState(workspaceId: string) {
     isComponentMounted: true,
     agentsLoadingInProgress: false,
 
-    // New workspace tracking - check if this is a newly created workspace
-    // A workspace is considered "newly created" if it has no agents yet
-    isNewlyCreatedWorkspace: false, // Will be set based on agent count
+
   });
 
   // Initialize reference count
@@ -2057,8 +2049,6 @@ function createStateManager(
       Object.assign(state, {
         ...newState,
         workspace: null,
-        agentsList: [],
-        terminalsList: [],
         workspaceEvents: [],
         isEditingTitle: false,
         editingTitle: '',
@@ -2116,8 +2106,6 @@ function createStateManager(
 
           // Clear all state to free memory
           state.workspaceData = null;
-          state.agentsList = [];
-          state.terminalsList = [];
           state.workspaceEvents = [];
 
           // Clear navigation history to free memory

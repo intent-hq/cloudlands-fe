@@ -14,27 +14,35 @@ import { unifiedStateStore } from '$features/agent/browser';
 import { agentService } from '$features/agent/agent.service';
 import { notesStateManager } from '$features/notes/notes.store.svelte';
 import { fileTrackingStore } from './file-tracking.store.svelte';
-import { syncWorkspaceSettings } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
+import { syncWorkspaceSettings, emptyWorkspaceSettings } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
 import { dispatch as reduxDispatch, getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 
-// Module-level reactive state mirroring Redux autoCommitEnabled.
+// Module-level reactive state mirroring Redux autoCommitEnabled for the current workspace.
 // This keeps $derived blocks reactive (just like the old module-level $state).
 let _autoCommitEnabled = $state(true);
-let _storeSubscribed = false;
+let _subscribedWorkspaceId: string | undefined;
+let _unsubscribe: (() => void) | undefined;
 
-function ensureStoreSubscription(): void {
-  if (_storeSubscribed) return;
+function ensureStoreSubscription(workspaceId: string | undefined): void {
+  if (_subscribedWorkspaceId === workspaceId) return;
+  _subscribedWorkspaceId = workspaceId;
+  _unsubscribe?.();
+  _unsubscribe = undefined;
+  if (!workspaceId) return;
   try {
     const store = getReduxStore();
-    _autoCommitEnabled = store.getState().workspaceSettings.autoCommitEnabled;
-    store.subscribe(() => {
-      const nextAutoCommitEnabled = store.getState().workspaceSettings.autoCommitEnabled;
-      if (nextAutoCommitEnabled !== _autoCommitEnabled) {
-        _autoCommitEnabled = nextAutoCommitEnabled;
+    const getAutoCommit = () => {
+      const wsState = store.getState().workspaceSettings.byWorkspaceId[workspaceId];
+      return wsState?.autoCommitEnabled ?? emptyWorkspaceSettings.autoCommitEnabled;
+    };
+    _autoCommitEnabled = getAutoCommit();
+    _unsubscribe = store.subscribe(() => {
+      const next = getAutoCommit();
+      if (next !== _autoCommitEnabled) {
+        _autoCommitEnabled = next;
       }
     });
-    _storeSubscribed = true;
   } catch {
     // Store not initialized yet — will use default
   }
@@ -81,7 +89,7 @@ function isAgentActivelyWorking(agentId: string): boolean {
  */
 export function createAgentLockStore(workspaceId: WorkspaceId | string | undefined) {
   // Ensure we're subscribed to Redux store for autoCommit changes
-  ensureStoreSubscription();
+  ensureStoreSubscription(workspaceId as string | undefined);
 
   // Sync workspace settings on first access per workspace
   if (workspaceId) {

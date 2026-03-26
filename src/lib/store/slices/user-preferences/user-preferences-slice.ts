@@ -1,65 +1,234 @@
 import { createAction } from "../../utils/create-action";
 import { createReducer } from "../../utils/create-reducer";
+import { createBooleanPreference } from "../../utils/boolean-preference";
+
+export const SYSTEM_DEFAULT_FONT =
+  "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace";
+
+export type FontStyle = "sans" | "monospace";
+export type AgentFontStyle = FontStyle;
+export type NoteFontStyle = FontStyle;
+
+export const FONT_STYLES: FontStyle[] = ["sans", "monospace"];
+
+export interface FontOption {
+  value: string;
+  label: string;
+  fontFamily: string;
+}
 
 export type UserPreferencesState = {
   betaUpdatesEnabled: boolean;
   spellcheckEnabled: boolean;
   zoomFactor: number;
+  showArchived: boolean;
+  groupByRepo: boolean;
+  hasCompletedProviderSetup: boolean;
+  agentFontStyle: AgentFontStyle;
+  noteFontStyle: NoteFontStyle;
+  codeFontFamily: string;
+  systemFonts: string[];
+  enabled: boolean;
+  soundEnabled: boolean;
+  soundOnlyWhenUnfocused: boolean;
+  volume: number;
+};
+
+export type FontSettingsState = Pick<
+  UserPreferencesState,
+  "agentFontStyle" | "noteFontStyle" | "codeFontFamily" | "systemFonts"
+>;
+
+export type NotificationSettingsState = Pick<
+  UserPreferencesState,
+  "enabled" | "soundEnabled" | "soundOnlyWhenUnfocused" | "volume"
+>;
+
+const fontSettingsInitialState: FontSettingsState = {
+  agentFontStyle: "sans",
+  noteFontStyle: "sans",
+  codeFontFamily: "system-default",
+  systemFonts: [],
+};
+
+const notificationSettingsInitialState: NotificationSettingsState = {
+  enabled: true,
+  soundEnabled: true,
+  soundOnlyWhenUnfocused: true,
+  volume: 0.5,
 };
 
 export const initialState: UserPreferencesState = {
   betaUpdatesEnabled: false,
   spellcheckEnabled: false,
   zoomFactor: 1.0,
+  showArchived: false,
+  groupByRepo: true,
+  hasCompletedProviderSetup: false,
+  ...fontSettingsInitialState,
+  ...notificationSettingsInitialState,
 };
 
-export const setBetaUpdatesEnabled = createAction<[value: boolean]>(
-  "userPreferences/setBetaUpdatesEnabled"
-);
+const betaUpdatesPreference = createBooleanPreference<UserPreferencesState>({
+  sliceName: "userPreferences",
+  field: "betaUpdatesEnabled",
+  setActionName: "setBetaUpdatesEnabled",
+  toggleActionName: "toggleBetaUpdates",
+});
 
-export const toggleBetaUpdates = createAction(
-  "userPreferences/toggleBetaUpdates"
-);
+export const setBetaUpdatesEnabled = betaUpdatesPreference.setAction;
+
+export const toggleBetaUpdates = betaUpdatesPreference.toggleAction;
 
 export const loadBetaUpdatesSettings = createAction<[enabled: boolean]>(
   "userPreferences/loadBetaUpdatesSettings"
 );
 
-export const setSpellcheckEnabled = createAction<[enabled: boolean]>(
-  "userPreferences/setSpellcheckEnabled"
-);
+const spellcheckPreference = createBooleanPreference<UserPreferencesState>({
+  sliceName: "userPreferences",
+  field: "spellcheckEnabled",
+  setActionName: "setSpellcheckEnabled",
+  toggleActionName: "toggleSpellcheck",
+});
 
-export const toggleSpellcheck = createAction(
-  "userPreferences/toggleSpellcheck"
-);
+export const setSpellcheckEnabled = spellcheckPreference.setAction;
+
+export const toggleSpellcheck = spellcheckPreference.toggleAction;
 
 export const setZoomFactor = createAction<[factor: number]>(
   "userPreferences/setZoomFactor"
 );
 
-export const userPreferencesReducer = createReducer<UserPreferencesState>(initialState)
-  .with(setBetaUpdatesEnabled, (state, { payload: [value] }) => ({
-    ...state,
-    betaUpdatesEnabled: value,
-  }))
-  .with(toggleBetaUpdates, (state) => ({
-    ...state,
-    betaUpdatesEnabled: !state.betaUpdatesEnabled,
-  }))
+export const setAgentFontStyle = createAction<[style: AgentFontStyle]>(
+  "fontSettings/setAgentFontStyle"
+);
+
+export const cycleFontStyle = createAction("fontSettings/cycleFontStyle");
+
+export const setNoteFontStyle = createAction<[style: NoteFontStyle]>(
+  "fontSettings/setNoteFontStyle"
+);
+
+export const cycleNoteFontStyle = createAction("fontSettings/cycleNoteFontStyle");
+
+export const setCodeFontFamily = createAction<[fontFamily: string]>(
+  "fontSettings/setCodeFontFamily"
+);
+
+export const setSystemFonts = createAction<[fonts: string[]]>("fontSettings/setSystemFonts");
+
+export const setNotificationEnabled = createAction<[value: boolean]>(
+  "notificationSettings/setNotificationEnabled"
+);
+
+export const setSoundEnabled = createAction<[value: boolean]>(
+  "notificationSettings/setSoundEnabled"
+);
+
+export const setSoundOnlyWhenUnfocused = createAction<[value: boolean]>(
+  "notificationSettings/setSoundOnlyWhenUnfocused"
+);
+
+export const setVolume = createAction<[value: number]>(
+  "notificationSettings/setVolume"
+);
+
+export const resetNotificationSettings = createAction(
+  "notificationSettings/resetNotificationSettings"
+);
+
+const showArchivedPreference = createBooleanPreference<UserPreferencesState>({
+  sliceName: "userPreferences",
+  field: "showArchived",
+  setActionName: "setShowArchived",
+  toggleActionName: "toggleShowArchived",
+});
+
+export const setShowArchived = showArchivedPreference.setAction;
+
+export const toggleShowArchived = showArchivedPreference.toggleAction;
+
+const groupByRepoPreference = createBooleanPreference<UserPreferencesState>({
+  sliceName: "userPreferences",
+  field: "groupByRepo",
+  setActionName: "setGroupByRepo",
+  toggleActionName: "toggleGroupByRepo",
+});
+
+export const setGroupByRepo = groupByRepoPreference.setAction;
+
+export const toggleGroupByRepo = groupByRepoPreference.toggleAction;
+
+const hasCompletedProviderSetupPreference = createBooleanPreference<UserPreferencesState>({
+  sliceName: "userPreferences",
+  field: "hasCompletedProviderSetup",
+  setActionName: "setHasCompletedProviderSetup",
+  toggleActionName: "toggleHasCompletedProviderSetup",
+});
+
+export const setHasCompletedProviderSetup = hasCompletedProviderSetupPreference.setAction;
+
+export const toggleHasCompletedProviderSetup = hasCompletedProviderSetupPreference.toggleAction;
+
+export const userPreferencesReducer = hasCompletedProviderSetupPreference.register(
+  groupByRepoPreference.register(
+    showArchivedPreference.register(
+      spellcheckPreference.register(
+        betaUpdatesPreference.register(createReducer<UserPreferencesState>(initialState))
+      )
+    )
+  )
+)
   .with(loadBetaUpdatesSettings, (state, { payload: [enabled] }) => ({
     ...state,
     betaUpdatesEnabled: enabled,
-  }))
-  .with(setSpellcheckEnabled, (state, { payload: [enabled] }) => ({
-    ...state,
-    spellcheckEnabled: enabled,
-  }))
-  .with(toggleSpellcheck, (state) => ({
-    ...state,
-    spellcheckEnabled: !state.spellcheckEnabled,
   }))
   .with(setZoomFactor, (state, { payload: [factor] }) => {
     if (!Number.isFinite(factor) || factor <= 0) return state;
     if (factor === state.zoomFactor) return state;
     return { ...state, zoomFactor: factor };
-  });
+	})
+	.with(setAgentFontStyle, (state, { payload: [style] }) => ({
+	  ...state,
+	  agentFontStyle: style,
+	}))
+	.with(cycleFontStyle, (state) => ({
+	  ...state,
+	  agentFontStyle: FONT_STYLES[(FONT_STYLES.indexOf(state.agentFontStyle) + 1) % FONT_STYLES.length],
+	}))
+	.with(setNoteFontStyle, (state, { payload: [style] }) => ({
+	  ...state,
+	  noteFontStyle: style,
+	}))
+	.with(cycleNoteFontStyle, (state) => ({
+	  ...state,
+	  noteFontStyle: FONT_STYLES[(FONT_STYLES.indexOf(state.noteFontStyle) + 1) % FONT_STYLES.length],
+	}))
+	.with(setCodeFontFamily, (state, { payload: [fontFamily] }) => ({
+	  ...state,
+	  codeFontFamily: fontFamily,
+	}))
+	.with(setSystemFonts, (state, { payload: [fonts] }) => ({
+	  ...state,
+	  systemFonts: fonts,
+	}))
+	.with(setNotificationEnabled, (state, { payload: [value] }) => ({
+	  ...state,
+	  enabled: value,
+	}))
+	.with(setSoundEnabled, (state, { payload: [value] }) => ({
+	  ...state,
+	  soundEnabled: value,
+	}))
+	.with(setSoundOnlyWhenUnfocused, (state, { payload: [value] }) => ({
+	  ...state,
+	  soundOnlyWhenUnfocused: value,
+	}))
+	.with(setVolume, (state, { payload: [value] }) => ({
+	  ...state,
+	  volume: Math.max(0, Math.min(1, value)),
+	}))
+	.with(resetNotificationSettings, (state) => ({
+	  ...state,
+	  ...notificationSettingsInitialState,
+	}));

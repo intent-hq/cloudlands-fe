@@ -8,6 +8,8 @@ import { createReducer } from "../../utils/create-reducer";
 export type FeatureCodesState = {
   /** Currently active feature IDs */
   activeFeatures: string[];
+  /** Whether the feature code dialog is open */
+  dialogOpen: boolean;
   /** Whether the store has been initialized */
   initialized: boolean;
 };
@@ -18,6 +20,7 @@ export type FeatureCodesState = {
 
 export const initialState: FeatureCodesState = {
   activeFeatures: [],
+  dialogOpen: false,
   initialized: false,
 };
 
@@ -43,6 +46,9 @@ export const deactivateFeatureSuccess = createAction<[featureId: string]>(
   "featureCodes/deactivateFeatureSuccess"
 );
 
+/** Toggle the feature code dialog open state */
+export const toggleFeatureCodeDialog = createAction("featureCodes/toggleFeatureCodeDialog");
+
 // ============================================================================
 // Reducer
 // ============================================================================
@@ -56,5 +62,9 @@ export const featureCodesReducer = createReducer<FeatureCodesState>(initialState
   .with(deactivateFeatureSuccess, (state, { payload: [featureId] }) => ({
     ...state,
     activeFeatures: state.activeFeatures.filter((id) => id !== featureId),
+  }))
+  .with(toggleFeatureCodeDialog, (state) => ({
+    ...state,
+    dialogOpen: !state.dialogOpen,
   }));
 

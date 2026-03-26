@@ -536,7 +536,11 @@
                   });
                   window.dispatchEvent(
                     new CustomEvent('file:changed', {
-                      detail: { workspaceId, type: 'create', filePath: pathToDelete },
+                      detail: {
+                        workspaceId,
+                        type: 'create',
+                        filePath: pathToDelete,
+                      },
                     }),
                   );
                   toast.dismiss(toastId);

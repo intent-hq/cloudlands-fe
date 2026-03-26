@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { getItem, getItems } from "../../utils/collection-utils";
 import {
   specialistsReducer,
   initialState,
@@ -103,9 +104,10 @@ describe("specialistsReducer", () => {
         model: "gpt-4",
         behaviorPrompt: "Be helpful",
       }));
-      expect(state.customSpecialists).toHaveLength(1);
-      expect(state.customSpecialists[0].name).toBe("My Custom");
-      expect(state.customSpecialists[0].id).toMatch(/^custom-/);
+      const customSpecialists = getItems(state.customSpecialists);
+      expect(customSpecialists).toHaveLength(1);
+      expect(customSpecialists[0].name).toBe("My Custom");
+      expect(customSpecialists[0].id).toMatch(/^custom-/);
     });
 
     it("should generate ID in action creator (pure reducer)", () => {
@@ -140,9 +142,9 @@ describe("specialistsReducer", () => {
       let state = specialistsReducer(initialState, createCustomSpecialist({
         name: "Original", description: "desc", model: "gpt-4", behaviorPrompt: "prompt",
       }));
-      const id = state.customSpecialists[0].id;
+      const id = getItems(state.customSpecialists)[0].id;
       state = specialistsReducer(state, updateCustomSpecialist(id, { name: "Updated" }));
-      expect(state.customSpecialists[0].name).toBe("Updated");
+      expect(getItem(state.customSpecialists, id)?.name).toBe("Updated");
     });
 
     it("should return same state for non-existent specialist", () => {
@@ -156,9 +158,9 @@ describe("specialistsReducer", () => {
       let state = specialistsReducer(initialState, createCustomSpecialist({
         name: "ToDelete", description: "desc", model: "gpt-4", behaviorPrompt: "prompt",
       }));
-      const id = state.customSpecialists[0].id;
+      const id = getItems(state.customSpecialists)[0].id;
       state = specialistsReducer(state, deleteCustomSpecialist(id));
-      expect(state.customSpecialists).toHaveLength(0);
+      expect(getItems(state.customSpecialists)).toHaveLength(0);
     });
   });
 
@@ -189,7 +191,7 @@ describe("specialistsReducer", () => {
         },
       ];
       const state = specialistsReducer(initialState, setFileSpecialists(fileSpecs));
-      expect(state.fileSpecialists).toEqual(fileSpecs);
+      expect(getItems(state.fileSpecialists)).toEqual(fileSpecs);
     });
 
     it("should preserve codingAgent when reloading file specialists", () => {
@@ -207,7 +209,7 @@ describe("specialistsReducer", () => {
         },
       ];
       let state = specialistsReducer(initialState, setFileSpecialists(initialFileSpecs));
-      expect(state.fileSpecialists[0].codingAgent).toBe("claude-code");
+      expect(getItems(state.fileSpecialists)[0].codingAgent).toBe("claude-code");
 
       // Reload with updated name/description but no codingAgent in frontmatter
       // (simulating a reload where frontmatter was updated but codingAgent was omitted)
@@ -226,8 +228,8 @@ describe("specialistsReducer", () => {
       state = specialistsReducer(state, setFileSpecialists(reloadedSpecs));
       // Note: The reducer itself doesn't preserve - the saga does before calling setFileSpecialists
       // This test documents the expected behavior that the saga should preserve codingAgent
-      expect(state.fileSpecialists[0].id).toBe("file-1");
-      expect(state.fileSpecialists[0].name).toBe("Updated Name");
+      expect(getItems(state.fileSpecialists)[0].id).toBe("file-1");
+      expect(getItems(state.fileSpecialists)[0].name).toBe("Updated Name");
     });
   });
 });

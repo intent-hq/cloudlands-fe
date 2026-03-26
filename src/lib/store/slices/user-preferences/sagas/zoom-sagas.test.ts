@@ -22,24 +22,34 @@ vi.mock("$lib/electron-bridge", () => ({
   isElectron: vi.fn(() => false),
 }));
 
-vi.mock("$lib/store/utils/ipc-channel", () => ({
-  createListenSyncChannel: vi.fn(),
-}));
+vi.mock("$lib/store/utils/ipc-channel", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("$lib/store/utils/ipc-channel")>();
+  return {
+    ...actual,
+    takeEveryFromListenSync: vi.fn(function* () {}),
+  };
+});
 
 vi.mock("./init-saga", () => ({
   fetchZoomFactor: vi.fn(async () => 1.0),
 }));
 
 import { isElectron } from "$lib/electron-bridge";
-import { createListenSyncChannel } from "$lib/store/utils/ipc-channel";
+import { takeEveryFromListenSync } from "$lib/store/utils/ipc-channel";
 import { fetchZoomFactor } from "./init-saga";
 import { ipcZoomSaga } from "./ipc-saga";
 import { resizeZoomSaga } from "./resize-saga";
 import { setZoomFactor } from "../user-preferences-slice";
 
 const mockedIsElectron = vi.mocked(isElectron);
-const mockedCreateListenSyncChannel = vi.mocked(createListenSyncChannel);
+const mockedTakeEveryFromListenSync = vi.mocked(takeEveryFromListenSync);
 const mockedFetchZoomFactor = vi.mocked(fetchZoomFactor);
+
+function getListenSyncHandler(eventName: string) {
+  const call = mockedTakeEveryFromListenSync.mock.calls.find(([name]) => name === eventName);
+  expect(call).toBeDefined();
+  return call![1] as (data: any) => Generator;
+}
 
 describe("user preferences zoom sagas", () => {
   beforeEach(() => {
@@ -56,7 +66,23 @@ describe("user preferences zoom sagas", () => {
     const iterator = ipcZoomSaga();
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
-    expect(mockedCreateListenSyncChannel).not.toHaveBeenCalled();
+    expect(mockedTakeEveryFromListenSync).not.toHaveBeenCalled();
+  });
+
+  it("registers the IPC listener in Electron and updates zoom factor for valid payloads", () => {
+    mockedIsElectron.mockReturnValue(true);
+
+    const iterator = ipcZoomSaga();
+
+    expect(iterator.next()).toEqual({ value: undefined, done: true });
+    expect(mockedTakeEveryFromListenSync).toHaveBeenCalledWith(
+      "window:zoom-changed",
+      expect.any(Function),
+    );
+    expect(getListenSyncHandler("window:zoom-changed")({ zoomFactor: 1.25 }).next()).toEqual({
+      value: sagaEffects.put(setZoomFactor(1.25)),
+      done: false,
+    });
   });
 
   it("skips the resize listener outside Electron", () => {

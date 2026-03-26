@@ -17,7 +17,7 @@ interface ManagedTerminal {
   container: HTMLElement | null;
 }
 
-interface TerminalMetadata {
+export interface TerminalMetadata {
   terminalId: string;
   workspaceId: string;
   createdAt: string;

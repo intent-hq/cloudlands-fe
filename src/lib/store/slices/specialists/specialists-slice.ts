@@ -1,5 +1,12 @@
 import { createAction } from "../../utils/create-action";
 import { createReducer } from "../../utils/create-reducer";
+import {
+  addItem,
+  createCollection,
+  removeItem,
+  updateItem,
+  type Collection,
+} from "../../utils/collection-utils";
 
 // ============================================================================
 // Types (re-exported for consumers)
@@ -40,8 +47,8 @@ export interface FileSpecialist {
 
 export type SpecialistsState = {
   bundledSpecialists: import('$lib/constants/specialists').Specialist[];
-  customSpecialists: CustomSpecialist[];
-  fileSpecialists: FileSpecialist[];
+  customSpecialists: Collection<CustomSpecialist, "id">;
+  fileSpecialists: Collection<FileSpecialist, "id">;
   userOverrides: SpecialistOverrides;
   providerModelOverrides: Record<string, Record<string, string>>;
   overridesLoaded: boolean;
@@ -65,8 +72,8 @@ export const PROVIDER_MODEL_OVERRIDES_KEY = 'specialists-model-overrides-per-pro
 
 export const initialState: SpecialistsState = {
   bundledSpecialists: [],
-  customSpecialists: [],
-  fileSpecialists: [],
+  customSpecialists: createCollection<CustomSpecialist, "id">("id"),
+  fileSpecialists: createCollection<FileSpecialist, "id">("id"),
   userOverrides: {
     codingAgentOverrides: {},
     modelOverrides: {},
@@ -140,11 +147,11 @@ export const specialistsReducer = createReducer<SpecialistsState>(initialState)
   }))
   .with(setCustomSpecialists, (state, { payload: [specialists] }) => ({
     ...state,
-    customSpecialists: specialists,
+    customSpecialists: createCollection<CustomSpecialist, "id">("id", specialists),
   }))
   .with(setFileSpecialists, (state, { payload: [specialists] }) => ({
     ...state,
-    fileSpecialists: specialists,
+    fileSpecialists: createCollection<FileSpecialist, "id">("id", specialists),
   }))
   .with(setUserOverrides, (state, { payload: [overrides] }) => ({
     ...state,
@@ -244,18 +251,24 @@ export const specialistsReducer = createReducer<SpecialistsState>(initialState)
     const newSpecialist: CustomSpecialist = { id, ...specialist };
     return {
       ...state,
-      customSpecialists: [...state.customSpecialists, newSpecialist],
+      customSpecialists: addItem(state.customSpecialists, newSpecialist),
     };
   })
   .with(updateCustomSpecialist, (state, { payload: [specialistId, updates] }) => {
-    const index = state.customSpecialists.findIndex((s) => s.id === specialistId);
-    if (index === -1) return state;
-    const updated = [...state.customSpecialists];
-    updated[index] = { ...updated[index], ...updates };
-    return { ...state, customSpecialists: updated };
+    const customSpecialists = updateItem(state.customSpecialists, { id: specialistId, ...updates });
+    if (customSpecialists === state.customSpecialists) {
+      return state;
+    }
+    return { ...state, customSpecialists };
   })
-  .with(deleteCustomSpecialist, (state, { payload: [specialistId] }) => ({
-    ...state,
-    customSpecialists: state.customSpecialists.filter((s) => s.id !== specialistId),
-  }));
+  .with(deleteCustomSpecialist, (state, { payload: [specialistId] }) => {
+    const customSpecialists = removeItem(state.customSpecialists, specialistId);
+    if (customSpecialists === state.customSpecialists) {
+      return state;
+    }
+    return {
+      ...state,
+      customSpecialists,
+    };
+  });
 

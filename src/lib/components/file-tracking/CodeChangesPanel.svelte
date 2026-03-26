@@ -86,7 +86,7 @@
 
   // Auto-commit settings from Redux
   const dispatch = getDispatch();
-  const autoCommitEnabled = selectAutoCommitEnabled();
+  const autoCommitEnabled = selectAutoCommitEnabled(workspaceId ?? "");
 
   // Sync workspace settings when workspaceId is available
   $effect(() => {

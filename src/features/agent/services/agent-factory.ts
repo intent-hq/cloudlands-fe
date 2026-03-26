@@ -114,75 +114,16 @@ async function getActiveProviderId(): Promise<string | null> {
  * - If `name` is empty but `initialMessage` is present, name is derived from the message
  * - Otherwise, a default name is generated based on workspace title
  */
-export interface UnifiedAgentConfig {
-  // Required
-  workspaceId: BrandedWorkspaceId;
 
-  // Optional - name is derived from initialMessage if not provided
-  name?: string;
-
-  // Optional
-  id?: string; // Allow passing in a pre-generated agent ID
-  model?: string;
-  provider?: string; // Provider ID (e.g., 'auggie', 'claude-code', 'codex') - from activeProviderStore.activeProviderId
-  systemPrompt?: string; // System prompt for the agent (built from agentType)
-  initialMessage?: string;
-  contextReferences?: any[];
-  metadata?: Record<string, any>;
-  messages?: any[]; // For resuming existing sessions with message history
-
-  // Behavior configuration
-  behaviorPrompt?: string; // Custom behavior instructions for the agent (from specialist)
-
-  // Background flag — marks automated/background agents (e.g., commit-message, PR-description generators)
-  isBackground?: boolean;
-
-  // Workspace context (open panels + linked references)
-  workspaceContext?: {
-    openPanels: Array<{ type: string; title: string; id?: string; path?: string }>;
-    linkedReferences: Array<{
-      type: string;
-      title: string;
-      identifier?: string;
-      url?: string;
-    }>;
-  };
-
-  // Source tracking
-  source?:
-    | 'workspace-initializer'
-    | 'contextual-menu'
-    | 'chat-panel'
-    | 'api'
-    | 'background-agent-trigger'
-    | 'workspace-page'
-    | 'workspace-sidebar'
-    | 'error-console'
-    | 'error-notification'
-    | 'agent-launch-menu'
-    | 'bubble-menu'
-    | 'specialist-picker'
-    | string; // Allow any string for flexibility
-  agentType?: import('$shared/types/agent.types').AgentTypeId; // Must be branded type
-}
+// Re-export from shared for backward compatibility
+export type { UnifiedAgentConfig, CreateAgentResult } from '$shared/types/agent.types';
+import type { UnifiedAgentConfig, CreateAgentResult } from '$shared/types/agent.types';
 
 /**
  * Normalized agent configuration with guaranteed name
  * This is the result of normalizeConfig() which always provides a name
  */
 type NormalizedAgentConfig = Omit<UnifiedAgentConfig, 'name'> & { name: string };
-
-/**
- * Result of agent creation
- * Note: streamId is no longer included - agentId is the canonical key for streams
- */
-export interface CreateAgentResult {
-  success: boolean;
-  agent?: AgentSession;
-  error?: string;
-  agentId?: AgentId;
-  sessionId?: AgentId;
-}
 
 /**
  * Unified Agent Factory - Single, clean agent creation service

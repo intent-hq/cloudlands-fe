@@ -66,7 +66,6 @@ export const LOGGING_CONFIG: LoggingConfig = {
     TerminalManager: LogLevel.INFO,
 
     // UI components - reduce noise
-    PanelVisibilityManager: LogLevel.WARN,
     LineChangesStore: LogLevel.WARN,
     CodeChangesPanel: LogLevel.WARN,
 

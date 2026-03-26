@@ -19,14 +19,23 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { selectIsProviderActive } from '$lib/store/slices/provider-settings/provider-settings-selectors';
-  import { resetNotificationSettings } from '$lib/store/slices/notification-settings/notification-settings-slice';
-  import { setNoteFontStyle } from '$lib/store/slices/font-settings/font-settings-slice';
-  import { selectNoteFontStyle, selectIsNoteMonospace } from '$lib/store/slices/font-settings/font-settings-selectors';
-  import { setAgentFontStyle, type AgentFontStyle } from '$lib/store/slices/font-settings/font-settings-slice';
-  import { selectAgentFontStyle } from '$lib/store/slices/font-settings/font-settings-selectors';
+  import {
+    resetNotificationSettings,
+    setAgentFontStyle,
+    setCodeFontFamily,
+    setNoteFontStyle,
+    type AgentFontStyle,
+  } from '$lib/store/slices/user-preferences/user-preferences-slice';
+  import {
+    selectAgentFontStyle,
+    selectCodeFontFamily,
+    selectCodeFontFamilyCSS,
+    selectCodeFontFamilyLabel,
+    selectCodeFontOptions,
+    selectIsNoteMonospace,
+    selectNoteFontStyle,
+  } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { getDispatch } from '$lib/store/utils/utils';
-  import { setCodeFontFamily } from '$lib/store/slices/font-settings/font-settings-slice';
-  import { selectCodeFontFamily, selectCodeFontFamilyCSS, selectCodeFontFamilyLabel, selectCodeFontOptions } from '$lib/store/slices/font-settings/font-settings-selectors';
   import { Select } from '$lib/components/ui/select';
 
   import { isMacPlatform } from '$lib/utils/shortcuts';

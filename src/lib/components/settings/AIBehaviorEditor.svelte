@@ -6,6 +6,7 @@
   import { getDispatch } from '$lib/store/utils/utils';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
+    selectCustomSpecialists,
     selectSpecialists,
     selectIsBuiltIn,
     selectIsFileBased,
@@ -303,7 +304,7 @@
       }),
     );
     // Read the newly created specialist ID from state (reducer generates it)
-    const customSpecialists = getReduxStore().getState().specialists.customSpecialists;
+    const customSpecialists = selectCustomSpecialists.select(getReduxStore().getState());
     const created = customSpecialists[customSpecialists.length - 1];
     track('Created Specialist', {
       specialist_name: newName.trim(),

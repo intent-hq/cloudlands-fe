@@ -60,7 +60,7 @@
   import {
     addTerminal,
     openTerminalOverlay,
-  } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
+  } from '$lib/store/slices/terminals/terminals-slice';
   import { getDispatch } from '$lib/store/utils/utils';
 
   const dispatch = getDispatch();

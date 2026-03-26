@@ -21,3 +21,10 @@ export const selectHasActiveFeatures = createSelector(
   }
 );
 
+/** Select whether the feature code dialog is open */
+export const selectFeatureCodeDialogOpen = createSelector(
+  (state): boolean => {
+    return state.featureCodes.dialogOpen;
+  }
+);
+

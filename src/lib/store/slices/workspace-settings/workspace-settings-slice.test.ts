@@ -6,12 +6,13 @@ import {
   refreshAutoCommitSettings,
   syncWorkspaceSettings,
   loadAutoCommitSettings,
+  clearWorkspaceSettings,
   type WorkspaceSettingsState,
 } from "./workspace-settings-slice";
 
 describe("workspaceSettingsReducer", () => {
   const initialState: WorkspaceSettingsState = {
-    autoCommitEnabled: true,
+    byWorkspaceId: {},
   };
 
   it("should return initial state", () => {
@@ -22,26 +23,33 @@ describe("workspaceSettingsReducer", () => {
   describe("setAutoCommitEnabled", () => {
     it("should set autoCommitEnabled to false", () => {
       const state = workspaceSettingsReducer(initialState, setAutoCommitEnabled("ws-1", false));
-      expect(state.autoCommitEnabled).toBe(false);
+      expect(state.byWorkspaceId["ws-1"]?.autoCommitEnabled).toBe(false);
     });
 
     it("should set autoCommitEnabled to true", () => {
-      const disabled = { ...initialState, autoCommitEnabled: false };
+      const disabled: WorkspaceSettingsState = {
+        byWorkspaceId: { "ws-1": { autoCommitEnabled: false } },
+      };
       const state = workspaceSettingsReducer(disabled, setAutoCommitEnabled("ws-1", true));
-      expect(state.autoCommitEnabled).toBe(true);
+      expect(state.byWorkspaceId["ws-1"]?.autoCommitEnabled).toBe(true);
     });
   });
 
   describe("toggleAutoCommit", () => {
     it("should toggle autoCommitEnabled from true to false", () => {
-      const state = workspaceSettingsReducer(initialState, toggleAutoCommit("ws-1"));
-      expect(state.autoCommitEnabled).toBe(false);
+      const withEnabled: WorkspaceSettingsState = {
+        byWorkspaceId: { "ws-1": { autoCommitEnabled: true } },
+      };
+      const state = workspaceSettingsReducer(withEnabled, toggleAutoCommit("ws-1"));
+      expect(state.byWorkspaceId["ws-1"]?.autoCommitEnabled).toBe(false);
     });
 
     it("should toggle autoCommitEnabled from false to true", () => {
-      const disabled = { ...initialState, autoCommitEnabled: false };
+      const disabled: WorkspaceSettingsState = {
+        byWorkspaceId: { "ws-1": { autoCommitEnabled: false } },
+      };
       const state = workspaceSettingsReducer(disabled, toggleAutoCommit("ws-1"));
-      expect(state.autoCommitEnabled).toBe(true);
+      expect(state.byWorkspaceId["ws-1"]?.autoCommitEnabled).toBe(true);
     });
   });
 
@@ -61,14 +69,31 @@ describe("workspaceSettingsReducer", () => {
 
   describe("loadAutoCommitSettings", () => {
     it("should set autoCommitEnabled to false", () => {
-      const state = workspaceSettingsReducer(initialState, loadAutoCommitSettings(false));
-      expect(state.autoCommitEnabled).toBe(false);
+      const state = workspaceSettingsReducer(initialState, loadAutoCommitSettings("ws-1", false));
+      expect(state.byWorkspaceId["ws-1"]?.autoCommitEnabled).toBe(false);
     });
 
     it("should set autoCommitEnabled to true", () => {
-      const disabled = { ...initialState, autoCommitEnabled: false };
-      const state = workspaceSettingsReducer(disabled, loadAutoCommitSettings(true));
-      expect(state.autoCommitEnabled).toBe(true);
+      const disabled: WorkspaceSettingsState = {
+        byWorkspaceId: { "ws-1": { autoCommitEnabled: false } },
+      };
+      const state = workspaceSettingsReducer(disabled, loadAutoCommitSettings("ws-1", true));
+      expect(state.byWorkspaceId["ws-1"]?.autoCommitEnabled).toBe(true);
+    });
+  });
+
+  describe("clearWorkspaceSettings", () => {
+    it("should remove workspace state", () => {
+      const withWs: WorkspaceSettingsState = {
+        byWorkspaceId: { "ws-1": { autoCommitEnabled: false } },
+      };
+      const state = workspaceSettingsReducer(withWs, clearWorkspaceSettings("ws-1"));
+      expect(state.byWorkspaceId["ws-1"]).toBeUndefined();
+    });
+
+    it("should not change state if workspace not present", () => {
+      const state = workspaceSettingsReducer(initialState, clearWorkspaceSettings("ws-1"));
+      expect(state).toBe(initialState);
     });
   });
 });

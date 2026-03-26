@@ -24,11 +24,11 @@ describe("noteReadTrackingReducer", () => {
     it("should set currently viewed note and remove from unread", () => {
       const prev: NoteReadTrackingState = {
         ...initialState,
-        unreadNoteIds: ["note-1", "note-2"],
+        unreadNoteIds: { "note-1": true, "note-2": true },
       };
       const state = noteReadTrackingReducer(prev, markAsViewed("note-1"));
       expect(state.currentlyViewedNoteId).toBe("note-1");
-      expect(state.unreadNoteIds).toEqual(["note-2"]);
+      expect(state.unreadNoteIds).toEqual({ "note-2": true });
     });
 
     it("should return same state for empty noteId", () => {
@@ -60,14 +60,14 @@ describe("noteReadTrackingReducer", () => {
 
       const prev: NoteReadTrackingState = {
         ...initialState,
-        unreadNoteIds: ["note-1", "note-2"],
+        unreadNoteIds: { "note-1": true, "note-2": true },
       };
       const state = noteReadTrackingReducer(prev, markNoteRead("ws-1", "note-1"));
 
       expect(state.readRecords["note-1"]).toBeDefined();
       expect(state.readRecords["note-1"].lastReadAt).toBe("2025-01-01T00:00:00.000Z");
       expect(state.readRecords["note-1"].readCount).toBe(1);
-      expect(state.unreadNoteIds).toEqual(["note-2"]);
+      expect(state.unreadNoteIds).toEqual({ "note-2": true });
 
       vi.useRealTimers();
     });
@@ -88,7 +88,7 @@ describe("noteReadTrackingReducer", () => {
     it("should set unread IDs and clear loading", () => {
       const prev: NoteReadTrackingState = { ...initialState, isLoading: true };
       const state = noteReadTrackingReducer(prev, computeUnreadNotesSuccess(["a", "b"]));
-      expect(state.unreadNoteIds).toEqual(["a", "b"]);
+      expect(state.unreadNoteIds).toEqual({ a: true, b: true });
       expect(state.isLoading).toBe(false);
     });
   });
@@ -104,7 +104,7 @@ describe("noteReadTrackingReducer", () => {
     it("should reset to initial state", () => {
       const prev: NoteReadTrackingState = {
         readRecords: { "n": { lastReadAt: "x", readCount: 1 } },
-        unreadNoteIds: ["n"],
+        unreadNoteIds: { n: true },
         isLoading: true,
         currentlyViewedNoteId: "n",
         currentWorkspaceId: "ws",
@@ -118,11 +118,11 @@ describe("noteReadTrackingReducer", () => {
     it("should remove note from unread and clear if currently viewed", () => {
       const prev: NoteReadTrackingState = {
         ...initialState,
-        unreadNoteIds: ["note-1", "note-2"],
+        unreadNoteIds: { "note-1": true, "note-2": true },
         currentlyViewedNoteId: "note-1",
       };
       const state = noteReadTrackingReducer(prev, clearUnread("note-1"));
-      expect(state.unreadNoteIds).toEqual(["note-2"]);
+      expect(state.unreadNoteIds).toEqual({ "note-2": true });
       expect(state.currentlyViewedNoteId).toBeNull();
     });
   });
@@ -139,7 +139,7 @@ describe("noteReadTrackingReducer", () => {
     it("should reset state with new workspace ID", () => {
       const prev: NoteReadTrackingState = {
         readRecords: { "n": { lastReadAt: "x" } },
-        unreadNoteIds: ["n"],
+        unreadNoteIds: { n: true },
         isLoading: true,
         currentlyViewedNoteId: "n",
         currentWorkspaceId: "old-ws",
@@ -147,7 +147,7 @@ describe("noteReadTrackingReducer", () => {
       const state = noteReadTrackingReducer(prev, workspaceChanged("new-ws"));
       expect(state.currentWorkspaceId).toBe("new-ws");
       expect(state.readRecords).toEqual({});
-      expect(state.unreadNoteIds).toEqual([]);
+      expect(state.unreadNoteIds).toEqual({});
       expect(state.currentlyViewedNoteId).toBeNull();
     });
   });

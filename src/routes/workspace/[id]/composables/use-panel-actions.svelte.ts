@@ -15,7 +15,7 @@ import type {
   UnifiedWorkspaceState,
   createUnifiedWorkspaceState,
 } from '$features/workspace/workspace-unified-state.svelte';
-import { openTerminalOverlay } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
+import { openTerminalOverlay } from '$lib/store/slices/terminals/terminals-slice';
 import { getDispatch } from '$lib/store/utils/utils';
 
 /** Type alias for the unified workspace state manager */
@@ -29,7 +29,6 @@ export interface UsePanelActionsOptions {
   workspaceState: () => UnifiedWorkspaceStateManager | null;
   state: () => UnifiedWorkspaceState | null;
   agents?: () => Array<{ id: string; name?: string | null }>;
-  terminals?: () => Array<{ id: string }>;
   /**
    * Svelte 5 $state(Set) requires cloning to trigger reactivity.
    * Caller is responsible for implementing that (e.g. add + clone).

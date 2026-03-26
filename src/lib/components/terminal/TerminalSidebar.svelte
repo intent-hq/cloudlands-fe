@@ -18,11 +18,11 @@
   import { useBackgroundAgent } from '$lib/hooks/use-background-agent.svelte';
   import {
     selectActiveTerminalId as selectActiveTerminalIdSelector,
-    selectTerminals as selectTerminalsSelector,
-  } from '$lib/store/slices/terminal-overlay/terminal-overlay-selectors';
+    selectUserTerminals as selectTerminalsSelector,
+  } from '$lib/store/slices/terminals/terminals-selectors';
   import {
     removeTerminal,
-  } from '$lib/store/slices/terminal-overlay/terminal-overlay-slice';
+  } from '$lib/store/slices/terminals/terminals-slice';
   import { getDispatch } from '$lib/store/utils/utils';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';

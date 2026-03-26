@@ -620,7 +620,7 @@ export class TerminalProvider implements Provider {
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     try {
       const { terminalManager } = await import('$features/terminal/terminal-manager.svelte');
-      const { selectTerminals, selectTerminalDisplayName } = await import('$lib/store/slices/terminal-overlay/terminal-overlay-selectors');
+      const { selectTerminals, selectTerminalDisplayName } = await import('$lib/store/slices/terminals/terminals-selectors');
       const { getReduxStore } = await import('$lib/store/redux-dispatch-bridge');
       const store = getReduxStore();
       const state = store.getState();

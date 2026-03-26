@@ -1,5 +1,16 @@
 import { createAction } from "../../utils/create-action";
 import { createReducer } from "../../utils/create-reducer";
+import {
+  addItem,
+  createCollection,
+  filterCollection,
+  getItem,
+  getItems,
+  removeItem,
+  type Collection,
+  updateItem,
+  upsertItem,
+} from "../../utils/collection-utils";
 
 // ============================================================================
 // Types
@@ -40,15 +51,44 @@ export interface SelectionContextItem {
 // ============================================================================
 
 export type MultiPanelContextState = {
-  panels: PanelContextItem[];
-  selections: SelectionContextItem[];
+  panels: Collection<PanelContextItem, "id">;
+  selections: Collection<SelectionContextItem, "id">;
   currentAgentPanelId: string | null;
   workspaceId: string | null;
 };
 
+function mapCollectionItems<ITEM extends object, K extends keyof ITEM & string>(
+  collection: Collection<ITEM, K>,
+  mapItem: (item: ITEM) => ITEM
+): Collection<ITEM, K> {
+  let changed = false;
+  const items = getItems(collection).map((item) => {
+    const nextItem = mapItem(item);
+    if (nextItem !== item) {
+      changed = true;
+    }
+    return nextItem;
+  });
+
+  return changed ? createCollection<ITEM, K>(collection.idField, items) : collection;
+}
+
+function setCheckedState<ITEM extends { checked: boolean }, K extends keyof ITEM & string>(
+  collection: Collection<ITEM, K>,
+  checked: boolean
+): Collection<ITEM, K> {
+  return mapCollectionItems(collection, (item) => {
+    if (item.checked === checked) {
+      return item;
+    }
+
+    return { ...item, checked };
+  });
+}
+
 const initialState: MultiPanelContextState = {
-  panels: [],
-  selections: [],
+  panels: createCollection<PanelContextItem, "id">("id"),
+  selections: createCollection<SelectionContextItem, "id">("id"),
   currentAgentPanelId: null,
   workspaceId: null,
 };
@@ -81,28 +121,42 @@ export const removePanel = createAction<[id: string]>("multiPanelContext/removeP
 export const multiPanelContextReducer = createReducer<MultiPanelContextState>(initialState)
   .with(setWorkspace, (state, { payload: [workspaceId] }) => {
     if (state.workspaceId === workspaceId) return state;
-    return { panels: [], selections: [], currentAgentPanelId: null, workspaceId };
+    return {
+      panels: createCollection<PanelContextItem, "id">("id"),
+      selections: createCollection<SelectionContextItem, "id">("id"),
+      currentAgentPanelId: null,
+      workspaceId,
+    };
   })
   .with(setCurrentAgentPanel, (state, { payload: [panelId] }) => ({
     ...state,
     currentAgentPanelId: panelId,
   }))
   .with(updatePanels, (state, { payload: [panels] }) => {
-    const checkedIds = new Set(state.panels.filter((p) => p.checked).map((p) => p.id));
+    const checkedIds = new Set(getItems(state.panels).filter((p) => p.checked).map((p) => p.id));
     return {
       ...state,
-      panels: panels.map((p) => ({
-        ...p,
-        checked: checkedIds.has(p.id) || p.checked,
-      })),
+      panels: createCollection<PanelContextItem, "id">(
+        "id",
+        panels.map((p) => ({
+          ...p,
+          checked: checkedIds.has(p.id) || p.checked,
+        }))
+      ),
     };
   })
   .with(togglePanel, (state, { payload: [id] }) => {
-    const idx = state.panels.findIndex((p) => p.id === id);
-    if (idx < 0) return state;
+    const panel = getItem(state.panels, id);
+    if (!panel) return state;
+
+    const panels = updateItem(state.panels, { ...panel, checked: !panel.checked });
+    if (panels === state.panels) {
+      return state;
+    }
+
     return {
       ...state,
-      panels: state.panels.map((p, i) => i === idx ? { ...p, checked: !p.checked } : p),
+      panels,
     };
   })
   .with(setSelection, (state, { payload: [selection] }) => {
@@ -112,68 +166,87 @@ export const multiPanelContextReducer = createReducer<MultiPanelContextState>(in
       id,
       checked: true,
     };
-    const existingIndex = state.selections.findIndex(
-      (s) => s.panelId === selection.panelId && s.tabId === selection.tabId,
-    );
-    if (existingIndex >= 0) {
-      return {
-        ...state,
-        selections: state.selections.map((s, i) => i === existingIndex ? item : s),
-      };
+    const selections = upsertItem(state.selections, item);
+    if (selections === state.selections) {
+      return state;
     }
-    return { ...state, selections: [...state.selections, item] };
+
+    return { ...state, selections };
   })
   .with(clearSelection, (state, { payload: [panelId, tabId] }) => ({
     ...state,
-    selections: state.selections.filter((s) => !(s.panelId === panelId && s.tabId === tabId)),
+    selections: filterCollection(
+      state.selections,
+      (selection): selection is SelectionContextItem => {
+        return !(selection.panelId === panelId && selection.tabId === tabId);
+      }
+    ),
   }))
   .with(clearPanelSelections, (state, { payload: [panelId] }) => ({
     ...state,
-    selections: state.selections.filter((s) => s.panelId !== panelId),
+    selections: filterCollection(state.selections, (selection): selection is SelectionContextItem => {
+      return selection.panelId !== panelId;
+    }),
   }))
   .with(toggleSelection, (state, { payload: [id] }) => {
-    const idx = state.selections.findIndex((s) => s.id === id);
-    if (idx < 0) return state;
+    const selection = getItem(state.selections, id);
+    if (!selection) return state;
+
+    const selections = updateItem(state.selections, {
+      ...selection,
+      checked: !selection.checked,
+    });
+    if (selections === state.selections) {
+      return state;
+    }
+
     return {
       ...state,
-      selections: state.selections.map((s, i) => i === idx ? { ...s, checked: !s.checked } : s),
+      selections,
     };
   })
   .with(removeSelection, (state, { payload: [id] }) => ({
     ...state,
-    selections: state.selections.filter((s) => s.id !== id),
+    selections: removeItem(state.selections, id),
   }))
   .with(checkAllPanels, (state) => ({
     ...state,
-    panels: state.panels.map((p) => ({ ...p, checked: true })),
+    panels: setCheckedState(state.panels, true),
   }))
   .with(uncheckAllPanels, (state) => ({
     ...state,
-    panels: state.panels.map((p) => ({ ...p, checked: false })),
+    panels: setCheckedState(state.panels, false),
   }))
   .with(checkAllSelections, (state) => ({
     ...state,
-    selections: state.selections.map((s) => ({ ...s, checked: true })),
+    selections: setCheckedState(state.selections, true),
   }))
   .with(uncheckAllSelections, (state) => ({
     ...state,
-    selections: state.selections.map((s) => ({ ...s, checked: false })),
+    selections: setCheckedState(state.selections, false),
   }))
   .with(clear, (state) => ({
-    panels: [],
-    selections: [],
+    panels: createCollection<PanelContextItem, "id">("id"),
+    selections: createCollection<SelectionContextItem, "id">("id"),
     currentAgentPanelId: null,
     workspaceId: state.workspaceId,
   }))
   .with(addSearchedItem, (state, { payload: [item] }) => {
-    const existing = state.panels.find((p) => p.id === item.id);
+    const existing = getItem(state.panels, item.id);
     if (existing) {
       if (existing.checked) return state;
+
+      const panels = updateItem(state.panels, { ...existing, checked: true });
+      if (panels === state.panels) {
+        return state;
+      }
+
       return {
         ...state,
-        panels: state.panels.map((p) => p.id === item.id ? { ...p, checked: true } : p),
+        panels,
       };
     }
+
     const newItem: PanelContextItem = {
       id: item.id,
       panelId: 'search',
@@ -184,10 +257,11 @@ export const multiPanelContextReducer = createReducer<MultiPanelContextState>(in
       noteId: item.noteId,
       checked: true,
     };
-    return { ...state, panels: [...state.panels, newItem] };
+
+    return { ...state, panels: addItem(state.panels, newItem) };
   })
   .with(removePanel, (state, { payload: [id] }) => ({
     ...state,
-    panels: state.panels.filter((p) => p.id !== id),
+    panels: removeItem(state.panels, id),
   }));
 

@@ -44,4 +44,19 @@ describe('getWorkspaceAgentsVisibilitySummary', () => {
       backgroundCount: 0,
     });
   });
+
+  it('treats metadata background agents as background while keeping raw counts intact', () => {
+    const agents = [
+      makeAgent('foreground'),
+      makeAgent('delegated', { metadata: { createdByAgentId: 'foreground' } as any }),
+      makeAgent('background-via-metadata', { metadata: { isBackground: true } as any }),
+    ];
+
+    expect(getWorkspaceAgentsVisibilitySummary(agents)).toEqual({
+      totalCount: 3,
+      topLevelForegroundCount: 1,
+      delegatedCount: 1,
+      backgroundCount: 1,
+    });
+  });
 });

@@ -26,9 +26,10 @@ vi.mock("$lib/electron-bridge", () => ({
 import {
   refreshAutoCommitSettings,
   syncWorkspaceSettings,
+  loadAutoCommitSettings,
 } from "../workspace-settings-slice";
 import { selectAutoCommitEnabled } from "../workspace-settings-selectors";
-import { initSaga } from "./init-saga";
+import { initSaga, getGlobalAutoCommitDefault } from "./init-saga";
 import { syncSaga } from "./sync-saga";
 
 describe("syncSaga", () => {
@@ -46,8 +47,13 @@ describe("syncSaga", () => {
 
     const syncIterator = syncWorker(syncWorkspaceSettings("ws-1"));
     expect(syncIterator.next()).toEqual({ value: { type: "JOIN", payload: initTask }, done: false });
+    // loadAutoCommitSettings is dispatched with workspaceId and the global default
     expect(syncIterator.next()).toEqual({
-      value: sagaEffects.select(selectAutoCommitEnabled.select),
+      value: sagaEffects.put(loadAutoCommitSettings("ws-1", getGlobalAutoCommitDefault())),
+      done: false,
+    });
+    expect(syncIterator.next()).toEqual({
+      value: sagaEffects.select(selectAutoCommitEnabled.select, "ws-1"),
       done: false,
     });
 
@@ -58,8 +64,13 @@ describe("syncSaga", () => {
 
     const refreshIterator = refreshWorker();
     expect(refreshIterator.next()).toEqual({ value: sagaEffects.call(initSaga), done: false });
+    // First workspace: put loadAutoCommitSettings
     expect(refreshIterator.next()).toEqual({
-      value: sagaEffects.select(selectAutoCommitEnabled.select),
+      value: sagaEffects.put(loadAutoCommitSettings("ws-1", getGlobalAutoCommitDefault())),
+      done: false,
+    });
+    expect(refreshIterator.next()).toEqual({
+      value: sagaEffects.select(selectAutoCommitEnabled.select, "ws-1"),
       done: false,
     });
 

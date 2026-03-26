@@ -12,7 +12,7 @@
   import { invoke } from '$lib/electron-bridge';
   import { getRecentRepos } from '$lib/utils/workspace-utils';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
-  import type { KnownRepo } from '$features/workspace/main/repo-registry';
+  import type { KnownRepo } from '$shared/types/known-repo';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import {
     faFolder,

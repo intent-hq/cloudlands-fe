@@ -1,10 +1,27 @@
+<script lang="ts" module>
+  import { setContext } from 'svelte';
+  import { init } from '../init';
+  import { type PreloadedStoreState } from '../types';
+  import { STORE_CONTEXT } from '../constants';
+  import { getStoreContext } from '../utils/utils';
+
+  export function initStore(initialState?: PreloadedStoreState): () => void {
+    const existingStoreContext = getStoreContext();
+    if (existingStoreContext) {
+      return () => {};
+    }
+
+    const storeContext = init(initialState);
+    setContext(STORE_CONTEXT, storeContext);
+    return () => {
+      storeContext.dispose();
+    };
+  }
+</script>
+
 <script lang="ts">
-  import { onDestroy, setContext, type Snippet } from "svelte";
-  import { init } from "../init";
-  import { type PreloadedStoreState } from "../types";
-  import RunSaga from "./RunSaga.svelte";
-  import { STORE_CONTEXT } from "../constants";
-  import { getStoreContext } from "../utils/utils";
+  import { onDestroy, type Snippet } from 'svelte';
+  import RunSaga from './RunSaga.svelte';
 
   const {
     initialState,
@@ -14,17 +31,9 @@
     children: Snippet;
   } = $props();
 
-  let storeContext = null;
-  const existingStoreContext = getStoreContext();
+  const dispose = initStore(initialState);
 
-  if (!existingStoreContext) {
-    storeContext = init(initialState);
-    setContext(STORE_CONTEXT, storeContext);
-  }
-
-  onDestroy(() => {
-    storeContext?.dispose();
-  });
+  onDestroy(dispose);
 </script>
 
 <RunSaga sagaName="streamingSaga" />
@@ -47,18 +56,18 @@
 <RunSaga sagaName="workspaceInitializerSaga" />
 <RunSaga sagaName="providerSettingsSaga" />
 <RunSaga sagaName="backgroundAgentSettingsSaga" />
-<RunSaga sagaName="fontSettingsSaga" />
 <RunSaga sagaName="uiLayoutSaga" />
 <RunSaga sagaName="externalEditorsSaga" />
 <RunSaga sagaName="tabStateSaga" />
-<RunSaga sagaName="terminalOverlaySaga" />
 <RunSaga sagaName="noteReadTrackingSaga" />
-<RunSaga sagaName="notificationSettingsSaga" />
+<RunSaga sagaName="workspaceOperationsSaga" />
 <RunSaga sagaName="workspaceSettingsSaga" />
 <RunSaga sagaName="permissionSaga" />
 <RunSaga sagaName="featureCodesSaga" />
+<RunSaga sagaName="knownReposSaga" />
 <RunSaga sagaName="modelSaga" />
 <RunSaga sagaName="specialistsSaga" />
 <RunSaga sagaName="pipSaga" />
+<RunSaga sagaName="systemStatusSaga" />
 <RunSaga sagaName="userPreferencesSaga" />
 {@render children?.()}

@@ -6,11 +6,7 @@ import { setOpenAction } from "../external-editors-slice";
 const STORAGE_KEY = "open-combo-button-last-action";
 
 function* persistAction(action: string): SagaGenerator<void> {
-  try {
-    yield* call(setLocalStorageItem, STORAGE_KEY, action);
-  } catch {
-    // Ignore storage errors
-  }
+  yield* call(setLocalStorageItem, STORAGE_KEY, action);
 }
 
 /**

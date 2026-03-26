@@ -1,6 +1,6 @@
 import { invoke } from "$lib/electron-bridge";
 import { createCollection } from "$lib/store/utils/collection-utils";
-import { getLocalStorageItem } from "$lib/store/utils/safe-local-storage-saga";
+import { getLocalStorageJSON } from "$lib/store/utils/safe-local-storage-saga";
 import { expectSaga, testSaga } from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
 import * as sagaEffects from "redux-saga/effects";
@@ -53,8 +53,8 @@ describe("fetchEditorsSaga", () => {
   it("loads cached editors from legacy array cache", async () => {
     testSaga(loadCachedEditors)
       .next()
-      .call(getLocalStorageItem, STORAGE_KEY)
-      .next(JSON.stringify({ editors: [mockEditor], timestamp: 123 }))
+      .call(getLocalStorageJSON, STORAGE_KEY)
+      .next({ editors: [mockEditor], timestamp: 123 })
       .put(fetchEditorsSuccess([mockEditor], 123))
       .next()
       .isDone();
@@ -63,12 +63,12 @@ describe("fetchEditorsSaga", () => {
   it("loads cached editors from collection-shaped cache", async () => {
     testSaga(loadCachedEditors)
       .next()
-      .call(getLocalStorageItem, STORAGE_KEY)
+      .call(getLocalStorageJSON, STORAGE_KEY)
       .next(
-        JSON.stringify({
+        {
           editors: createCollection<InstalledEditor, "id">("id", [mockEditor]),
           timestamp: 456,
-        })
+        }
       )
       .put(fetchEditorsSuccess([mockEditor], 456))
       .next()
