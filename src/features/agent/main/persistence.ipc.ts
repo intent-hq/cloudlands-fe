@@ -296,8 +296,8 @@ export function setupPersistenceIPC(): void {
 
             if (
               !allowTruncation &&
-              existingMessages.length > frontendMessages.length &&
-              frontendMessages.length > 0
+              frontendMessages.length > 0 &&
+              existingMessages.length > 0
             ) {
               const existingMessageIds = new Set(existingMessages.map((m: any) => m.id));
 
@@ -323,7 +323,7 @@ export function setupPersistenceIPC(): void {
                 }
               }
 
-              if (isPrefix && frontendKnownMessages.length < existingMessages.length) {
+              if (isPrefix && frontendKnownMessages.length > 0 && frontendKnownMessages.length < existingMessages.length) {
                 logger.warn(
                   'Frontend save has stale message subset - merging with disk to prevent data loss',
                   {

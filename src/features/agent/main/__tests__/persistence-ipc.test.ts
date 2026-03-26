@@ -247,7 +247,6 @@ describe('Persistence IPC Handlers', () => {
       // Verify response
       expect(result.success).toBe(true);
     });
-  });
 
     it('should merge messages when frontend is missing backend-persisted messages', async () => {
       // Simulate: disk has 6 messages (2 original + 4 from subscription delivery)
@@ -309,6 +308,109 @@ describe('Persistence IPC Handlers', () => {
       expect(savedAgent.messages[5].id).toBe(BrandedIds.MessageId('msg-6'));
       // Last should be the new frontend message
       expect(savedAgent.messages[6].id).toBe(BrandedIds.MessageId('msg-new'));
+    });
+
+    it('should merge messages when counts are equal but content differs (race condition)', async () => {
+      // Simulate: disk has [user1, assistant1] (backend persisted assistant response)
+      // Frontend has [user1, user2] (sent new message before seeing assistant response)
+      // The merge should produce [user1, assistant1, user2]
+      const existingAgent: AgentSession = {
+        id: BrandedIds.AgentId('agent-equal-count-test'),
+        workspaceId: BrandedIds.WorkspaceId('workspace-123'),
+        name: 'Equal Count Test Agent',
+        status: AgentStatus.Active,
+        messages: [
+          { id: BrandedIds.MessageId('msg-1'), role: 'user', contentBlocks: [{ type: 'text', text: 'Hello' }], timestamp: '2026-03-05T17:08:49Z' },
+          { id: BrandedIds.MessageId('msg-2'), role: 'assistant', contentBlocks: [{ type: 'text', text: 'Hi there' }], timestamp: '2026-03-05T17:11:21Z' },
+        ] as any[],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+
+      // Frontend has same count (2) but different content - it has a new user message instead of assistant
+      const frontendSession = {
+        ...existingAgent,
+        messages: [
+          { id: BrandedIds.MessageId('msg-1'), role: 'user', contentBlocks: [{ type: 'text', text: 'Hello' }], timestamp: '2026-03-05T17:08:49Z' },
+          { id: BrandedIds.MessageId('msg-new'), role: 'user', contentBlocks: [{ type: 'text', text: 'Follow up question' }], timestamp: '2026-03-05T17:15:00Z' },
+        ] as any[],
+      };
+
+      mockUnifiedPersistence.loadAgent.mockResolvedValue({
+        success: true,
+        data: existingAgent,
+      });
+
+      mockUnifiedPersistence.saveAgent.mockResolvedValue({
+        success: true,
+      });
+
+      const handler = handlers.get(IPC_CHANNELS.PERSISTENCE.SAVE_SESSION);
+      const mockEvent = {} as IpcMainInvokeEvent;
+      const result = await handler!(mockEvent, {
+        session: frontendSession,
+        workspaceId: 'workspace-123',
+      });
+
+      expect(result.success).toBe(true);
+
+      // Verify: merged messages should be [msg-1, msg-2 (assistant from disk), msg-new (new from frontend)]
+      const savedAgent = mockUnifiedPersistence.saveAgent.mock.calls[0][0];
+      expect(savedAgent.messages).toHaveLength(3);
+      expect(savedAgent.messages[0].id).toBe(BrandedIds.MessageId('msg-1'));
+      expect(savedAgent.messages[1].id).toBe(BrandedIds.MessageId('msg-2')); // preserved from disk
+      expect(savedAgent.messages[2].id).toBe(BrandedIds.MessageId('msg-new')); // appended from frontend
+    });
+
+    it('should NOT merge when frontend has zero overlap with disk messages (unrelated histories)', async () => {
+      // Edge case: frontend has entirely new messages with no IDs matching disk.
+      // frontendKnownMessages would be empty, isPrefix would vacuously be true,
+      // and without the guard this would falsely merge unrelated histories.
+      const existingAgent: AgentSession = {
+        id: BrandedIds.AgentId('agent-no-overlap-test'),
+        workspaceId: BrandedIds.WorkspaceId('workspace-123'),
+        name: 'No Overlap Test Agent',
+        status: AgentStatus.Active,
+        messages: [
+          { id: BrandedIds.MessageId('disk-msg-1'), role: 'user', contentBlocks: [{ type: 'text', text: 'Disk hello' }], timestamp: '2026-03-05T17:00:00Z' },
+          { id: BrandedIds.MessageId('disk-msg-2'), role: 'assistant', contentBlocks: [{ type: 'text', text: 'Disk response' }], timestamp: '2026-03-05T17:01:00Z' },
+        ] as any[],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+
+      // Frontend has completely different messages — zero ID overlap with disk
+      const frontendSession = {
+        ...existingAgent,
+        messages: [
+          { id: BrandedIds.MessageId('fe-msg-1'), role: 'user', contentBlocks: [{ type: 'text', text: 'Frontend hello' }], timestamp: '2026-03-05T18:00:00Z' },
+        ] as any[],
+      };
+
+      mockUnifiedPersistence.loadAgent.mockResolvedValue({
+        success: true,
+        data: existingAgent,
+      });
+
+      mockUnifiedPersistence.saveAgent.mockResolvedValue({
+        success: true,
+      });
+
+      const handler = handlers.get(IPC_CHANNELS.PERSISTENCE.SAVE_SESSION);
+      const mockEvent = {} as IpcMainInvokeEvent;
+      const result = await handler!(mockEvent, {
+        session: frontendSession,
+        workspaceId: 'workspace-123',
+      });
+
+      expect(result.success).toBe(true);
+
+      // With zero overlap, we should NOT merge — frontend messages are used as-is
+      const savedAgent = mockUnifiedPersistence.saveAgent.mock.calls[0][0];
+      expect(savedAgent.messages).toHaveLength(1);
+      expect(savedAgent.messages[0].id).toBe(BrandedIds.MessageId('fe-msg-1'));
     });
 
     it('should NOT merge messages when allowTruncation is true (edit/regenerate)', async () => {
