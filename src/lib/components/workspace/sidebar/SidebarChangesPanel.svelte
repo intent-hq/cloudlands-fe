@@ -1413,6 +1413,15 @@
   // This persists across refreshes since it's based on actual git state
   const hasNoLocalChanges = $derived(!hasUnstaged && !hasStaged && commits.length === 0);
 
+  // Detect new work after a merge. Checks uncommitted changes, unpushed commits,
+  // and pushed-but-not-PR'd commits (aheadOfTrunk). The aheadOfTrunk check is
+  // guarded by !isContentMergedToTrunk because after a squash merge, aheadOfTrunk
+  // is always > 0 (local SHAs differ from the squash commit) even without new work.
+  const hasNewWorkAfterMerge = $derived(
+    hasUnstaged || hasStaged || commits.length > 0 ||
+    (aheadOfTrunk !== null && aheadOfTrunk > 0 && !isContentMergedToTrunk),
+  );
+
   // Note: mergeHeadSha is ONLY set during in-session merges (see merge handlers below at lines ~2354/~2423).
   // For external merges (areAllPRsMerged, isContentMergedToTrunk), we do NOT capture mergeHeadSha
   // because detection may happen after the user made new commits, and capturing HEAD at detection
@@ -5282,7 +5291,7 @@
                 >
                   Push {unpushedCount} Commit{unpushedCount === 1 ? '' : 's'}
                 </DividerButton>
-              {:else if !hasOpenPR && !(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)}
+              {:else if (!hasOpenPR && !(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)) || (!hasOpenPR && hasNewWorkAfterMerge)}
                 <!-- Show Create PR + Merge buttons when no open PR and not post-merge -->
                 <div class="w-full flex gap-1">
                   <DividerButton
@@ -5710,7 +5719,7 @@
           {/if}
 
           <!-- Divider with Merge button - hide when PR is already merged, when merge is in upper section, or post-merge -->
-          {#if !isPRMerged && (!hasRemote || hasOpenPR) && !(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)}
+          {#if !isPRMerged && (!hasRemote || hasOpenPR) && (!(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) || hasNewWorkAfterMerge)}
             <TimelineDivider>
               {#if !hasRemote}
                 <div class="w-full flex gap-1">
@@ -5814,9 +5823,9 @@
 
           <!-- Post-merge options - shown when workspace is completed (commits merged to trunk) -->
           <!-- Also shown immediately after direct merge to trunk (isMergedToTrunk), when all PRs are merged on GitHub (areAllPRsMerged), or when squash merge detected via tree hash (isContentMergedToTrunk) -->
-          <!-- Hidden when new commits were made after merge (mergeHeadSha no longer matches HEAD) - indicates user is actively working -->
+          <!-- Hidden when hasNewWorkAfterMerge is true (new commits, staged/unstaged changes, or pushed commits ahead of trunk) or when mergeHeadSha no longer matches HEAD -->
           <!-- areAllPRsMerged is gated by hasResetToTrunk to allow creating new PRs after reset -->
-          {#if (isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) && (!mergeHeadSha || mergeHeadSha === allCommits[0]?.hash)}
+          {#if (isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) && (!mergeHeadSha || mergeHeadSha === allCommits[0]?.hash) && !hasNewWorkAfterMerge}
             <div class="mt-4 pt-4 border-t border-border/50 ml-4 space-y-3">
               <!-- Reset and continue button - hidden when there are uncommitted changes or unpushed commits -->
               {#if hasNoLocalChanges}

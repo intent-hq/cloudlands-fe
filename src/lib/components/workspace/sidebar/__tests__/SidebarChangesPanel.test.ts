@@ -1299,4 +1299,287 @@ describe('SidebarChangesPanel', () => {
       });
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // POST-MERGE BUTTON VISIBILITY TESTS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe('Post-merge button visibility', () => {
+    it('shows Create PR and Merge buttons when all PRs are merged and user has unpushed commits', async () => {
+      const workspace = makeWorkspace({
+        pullRequests: [
+          {
+            number: 42,
+            title: 'Merged PR',
+            url: 'https://github.com/testorg/testrepo/pull/42',
+            status: 'Merged',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      });
+      mockWorkspaceStore.findById.mockReturnValue(workspace);
+      mockFileTrackingStore.commits = [
+        makeCommit({ hash: 'new123', message: 'new work after merge', isPushed: false }),
+      ];
+
+      const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
+      (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
+        aheadOfTrunk: 5,
+        hasRemote: true,
+        isContentMergedToTrunk: false,
+        behindTrunk: 0,
+        hasConflicts: false,
+      });
+
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        const text = container.textContent || '';
+        expect(text).toContain('Create PR');
+        expect(text).toMatch(/\bMerge\b/);
+      });
+    });
+
+    it('shows Create PR and Merge buttons when all PRs are merged and user has staged changes', async () => {
+      const workspace = makeWorkspace({
+        pullRequests: [
+          {
+            number: 42,
+            title: 'Merged PR',
+            url: 'https://github.com/testorg/testrepo/pull/42',
+            status: 'Merged',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      });
+      mockWorkspaceStore.findById.mockReturnValue(workspace);
+      mockFileTrackingStore.workingChanges = {
+        unstaged: [],
+        staged: [makeChange({ relativePath: 'src/new-file.ts', stage: ChangeStage.Staged })],
+      };
+
+      const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
+      (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
+        aheadOfTrunk: 5,
+        hasRemote: true,
+        isContentMergedToTrunk: false,
+        behindTrunk: 0,
+        hasConflicts: false,
+      });
+
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        const text = container.textContent || '';
+        expect(text).toContain('Create PR');
+        expect(text).toMatch(/\bMerge\b/);
+      });
+    });
+
+    it('shows Create PR and Merge buttons when all PRs are merged and user has unstaged changes', async () => {
+      const workspace = makeWorkspace({
+        pullRequests: [
+          {
+            number: 42,
+            title: 'Merged PR',
+            url: 'https://github.com/testorg/testrepo/pull/42',
+            status: 'Merged',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      });
+      mockWorkspaceStore.findById.mockReturnValue(workspace);
+      mockFileTrackingStore.workingChanges = {
+        unstaged: [makeChange({ relativePath: 'src/new-file.ts' })],
+        staged: [],
+      };
+
+      const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
+      (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
+        aheadOfTrunk: 5,
+        hasRemote: true,
+        isContentMergedToTrunk: false,
+        behindTrunk: 0,
+        hasConflicts: false,
+      });
+
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        const text = container.textContent || '';
+        expect(text).toContain('Create PR');
+        expect(text).toMatch(/\bMerge\b/);
+      });
+    });
+
+    it('shows post-merge UI (Reset/Archive) when all PRs are merged and no new work exists', async () => {
+      const workspace = makeWorkspace({
+        pullRequests: [
+          {
+            number: 42,
+            title: 'Merged PR',
+            url: 'https://github.com/testorg/testrepo/pull/42',
+            status: 'Merged',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      });
+      mockWorkspaceStore.findById.mockReturnValue(workspace);
+      // No commits, no staged/unstaged changes
+      mockFileTrackingStore.commits = [];
+      mockFileTrackingStore.workingChanges = { unstaged: [], staged: [] };
+
+      const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
+      (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
+        aheadOfTrunk: 0,
+        hasRemote: true,
+        isContentMergedToTrunk: false,
+        behindTrunk: 0,
+        hasConflicts: false,
+      });
+
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        const text = container.textContent || '';
+        const hasResetOrArchive =
+          text.includes('Reset and continue') || text.includes('Archive');
+        expect(hasResetOrArchive).toBe(true);
+        expect(text).not.toContain('Create PR');
+      });
+    });
+
+    it('shows post-merge UI when squash merge detected (isContentMergedToTrunk) and no new work', async () => {
+      // No PRs — squash merge detected via tree hash matching
+      const workspace = makeWorkspace({
+        pullRequests: [],
+      });
+      mockWorkspaceStore.findById.mockReturnValue(workspace);
+      mockFileTrackingStore.commits = [];
+      mockFileTrackingStore.workingChanges = { unstaged: [], staged: [] };
+
+      const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
+      (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
+        aheadOfTrunk: 3,
+        hasRemote: true,
+        isContentMergedToTrunk: true,
+        behindTrunk: 0,
+        hasConflicts: false,
+      });
+
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        const text = container.textContent || '';
+        const hasResetOrArchive =
+          text.includes('Reset and continue') || text.includes('Archive');
+        expect(hasResetOrArchive).toBe(true);
+        expect(text).not.toContain('Create PR');
+      });
+    });
+
+    it('hides post-merge UI when squash merge detected but user has new unpushed commits', async () => {
+      // No PRs — squash merge detected via tree hash matching
+      const workspace = makeWorkspace({
+        pullRequests: [],
+      });
+      mockWorkspaceStore.findById.mockReturnValue(workspace);
+      mockFileTrackingStore.commits = [
+        makeCommit({ hash: 'new-work-123', message: 'new work after squash merge', isPushed: false }),
+      ];
+      mockFileTrackingStore.workingChanges = { unstaged: [], staged: [] };
+
+      const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
+      (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
+        aheadOfTrunk: 3,
+        hasRemote: true,
+        isContentMergedToTrunk: true,
+        behindTrunk: 0,
+        hasConflicts: false,
+      });
+
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        const text = container.textContent || '';
+        expect(text).toContain('Create PR');
+        expect(text).not.toContain('Reset and continue');
+      });
+    });
+
+    it('shows Create PR when all PRs are merged and user has pushed new commits (aheadOfTrunk > 0)', async () => {
+      const workspace = makeWorkspace({
+        pullRequests: [
+          {
+            number: 42,
+            title: 'Merged PR',
+            url: 'https://github.com/testorg/testrepo/pull/42',
+            status: 'Merged',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      });
+      mockWorkspaceStore.findById.mockReturnValue(workspace);
+      // NO unpushed commits (all pushed)
+      mockFileTrackingStore.commits = [];
+      // NO staged/unstaged changes
+      mockFileTrackingStore.workingChanges = { unstaged: [], staged: [] };
+      // Set ahead to match aheadOfTrunk
+      mockGitStore.ahead = 2;
+
+      const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
+      (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
+        aheadOfTrunk: 2,
+        hasRemote: true,
+        isContentMergedToTrunk: false,
+        behindTrunk: 0,
+        hasConflicts: false,
+      });
+
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        const text = container.textContent || '';
+        expect(text).toContain('Create PR');
+        expect(text).not.toContain('Reset and continue');
+        expect(text).not.toContain('Archive');
+      });
+    });
+
+    it('shows post-merge UI after squash merge even with aheadOfTrunk > 0', async () => {
+      // No PRs — squash merge detected via tree hash matching
+      const workspace = makeWorkspace({
+        pullRequests: [],
+      });
+      mockWorkspaceStore.findById.mockReturnValue(workspace);
+      // NO unpushed commits
+      mockFileTrackingStore.commits = [];
+      // NO staged/unstaged changes
+      mockFileTrackingStore.workingChanges = { unstaged: [], staged: [] };
+
+      const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
+      (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
+        aheadOfTrunk: 3,
+        hasRemote: true,
+        isContentMergedToTrunk: true,
+        behindTrunk: 0,
+        hasConflicts: false,
+      });
+
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        const text = container.textContent || '';
+        const hasResetOrArchive =
+          text.includes('Reset and continue') || text.includes('Archive');
+        expect(hasResetOrArchive).toBe(true);
+        expect(text).not.toContain('Create PR');
+      });
+    });
+  });
 });
