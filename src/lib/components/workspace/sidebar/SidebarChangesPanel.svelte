@@ -2205,6 +2205,15 @@
       trackGitOp('commit', { workspaceId, success: result.success, trigger: 'manual' });
 
       if (result.success) {
+        // Refresh stores to update UI (push button, synced status, etc.)
+        try {
+          await Promise.all([
+            gitStore.loadStatus(workspaceId as WorkspaceId, true),
+            fileTrackingStore.refresh(),
+          ]);
+        } catch (e) {
+          console.warn('Failed to refresh stores after group commit:', e);
+        }
         // Toast is handled by git:op-completed event in +layout.svelte
       } else {
         toast.error('Commit failed', {

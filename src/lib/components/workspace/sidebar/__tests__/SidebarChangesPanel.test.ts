@@ -1201,6 +1201,93 @@ describe('SidebarChangesPanel', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // COMMIT GROUP REGRESSION TESTS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe('Commit Group - store refresh after commit (regression)', () => {
+    it('calls gitStore.loadStatus and fileTrackingStore.refresh after successful group commit', async () => {
+      // Set up AcceptChangesClient to return success
+      const { AcceptChangesClient } = await import(
+        '$features/accept-changes/accept-changes.client'
+      );
+      (AcceptChangesClient.execute as Mock).mockResolvedValue({ success: true });
+
+      // Set up agent-attributed unstaged files so agent group headers render
+      const { groupFilesByAgent } = await import(
+        '$lib/components/file-tracking/accept-changes/types'
+      );
+      (groupFilesByAgent as Mock).mockReturnValue([
+        {
+          agentId: 'agent-1',
+          agentName: 'Test Agent',
+          files: [
+            {
+              path: 'src/foo.ts',
+              additions: 5,
+              deletions: 2,
+              status: 'modified',
+              staged: false,
+              attribution: { agentId: 'agent-1', agentName: 'Test Agent' },
+            },
+          ],
+          stats: { fileCount: 1, additions: 5, deletions: 2 },
+        },
+      ]);
+
+      const unstaged = [
+        makeChange({
+          relativePath: 'src/foo.ts',
+          attribution: {
+            timestamp: Date.now(),
+            agent: { agentId: 'agent-1' as any, agentName: 'Test Agent' },
+          },
+        }),
+      ];
+      mockFileTrackingStore.workingChanges = { unstaged, staged: [] };
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+
+      const { container } = await renderPanel();
+
+      // Wait for the agent group to render
+      await waitFor(() => {
+        expect(container.textContent).toContain('Unstaged');
+      });
+
+      // Find the group commit button by locating the faCodeCommit icon within
+      // the agent group's action buttons area (not in the commit list or other
+      // sections). The agent group header's action div contains the "Stage &
+      // commit" button with a faCodeCommit icon rendered by mock Fa as
+      // <span class="fa-icon" data-icon="code-commit">.
+      // We scope to the Unstaged section's agent group by finding the icon
+      // whose ancestor button has data-slot="button" (from the real Button
+      // component) within the agent header action area.
+      const unstagedFileEl = container.querySelector('[data-file-key^="unstaged:"]');
+      expect(unstagedFileEl).not.toBeNull();
+      const agentGroupSection = unstagedFileEl!.closest('.space-y-px');
+      expect(agentGroupSection).not.toBeNull();
+      const commitIcon = agentGroupSection!.querySelector(
+        '[data-icon="code-commit"]',
+      );
+      expect(commitIcon).not.toBeNull();
+      const commitBtn = commitIcon!.closest('button');
+
+      // Clear mocks to isolate assertions to this interaction
+      mockGitStore.loadStatus.mockClear();
+      mockFileTrackingStore.refresh.mockClear();
+
+      await fireEvent.click(commitBtn!);
+
+      // Wait for the async commit flow (enqueueGroupCommit → commitSingleGroup)
+      // to complete and verify stores are refreshed afterward
+      await waitFor(() => {
+        expect(mockGitStore.loadStatus).toHaveBeenCalledWith('ws-1', true);
+      });
+
+      expect(mockFileTrackingStore.refresh).toHaveBeenCalled();
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // PR AUTO-DISCOVERY TESTS
   // ═══════════════════════════════════════════════════════════════════════════
 
