@@ -731,6 +731,48 @@ export class AgentEventSubscriptionService {
       return '';
     }
 
+    // Deduplicate oneShot subscriptions: if the caller already has an active
+    // oneShot subscription with the same target actor(s), event types, priority,
+    // and other filter fields, return the existing subscription ID instead of creating a duplicate.
+    if (filter.oneShot && filter.actorIds?.length) {
+      const existingSubs = this.getAgentSubscriptions(agentId);
+      const duplicate = existingSubs.find((sub) => {
+        if (!sub.filter.oneShot) return false;
+        // Check that actorIds match exactly (same set, any order)
+        if (!sub.filter.actorIds?.length) return false;
+        const targetMatch = filter.actorIds!.length === sub.filter.actorIds!.length &&
+          filter.actorIds!.every((id) => sub.filter.actorIds!.includes(id));
+        if (!targetMatch) return false;
+        // Check that event types match exactly (same set, any order)
+        if (!sub.filter.eventTypes?.length || !filter.eventTypes?.length) return false;
+        if (filter.eventTypes.length !== sub.filter.eventTypes!.length ||
+          !filter.eventTypes.every((t) => sub.filter.eventTypes!.includes(t))) return false;
+        // Check priority matches
+        if (sub.filter.priority !== filter.priority) return false;
+        // Check excludeActorIds match
+        const existingExclude = sub.filter.excludeActorIds ?? [];
+        const newExclude = filter.excludeActorIds ?? [];
+        if (existingExclude.length !== newExclude.length || !existingExclude.every((id) => newExclude.includes(id))) return false;
+        // dataMatchers may contain RegExp which can't be reliably compared;
+        // skip dedup if either subscription uses them
+        const hasExistingMatchers = sub.filter.dataMatchers && sub.filter.dataMatchers.length > 0;
+        const hasNewMatchers = filter.dataMatchers && filter.dataMatchers.length > 0;
+        if (hasExistingMatchers || hasNewMatchers) return false;
+        return true;
+      });
+
+      if (duplicate) {
+        logger.info('Deduplicating oneShot subscription — returning existing', {
+          existingSubscriptionId: duplicate.id,
+          agentId,
+          agentName,
+          actorIds: filter.actorIds,
+          eventTypes: filter.eventTypes,
+        });
+        return duplicate.id;
+      }
+    }
+
     const subscriptionId = uuidv4();
 
     const subscription: AgentSubscription = {

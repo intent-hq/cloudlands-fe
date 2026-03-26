@@ -3159,4 +3159,116 @@ describe('AgentEventSubscriptionService', () => {
     });
   });
 
+  // ==========================================================================
+  // Duplicate subscription prevention (regression)
+  // ==========================================================================
+  describe('Duplicate subscription prevention (regression)', () => {
+    it('should not create duplicate oneShot subscriptions for same caller and target', () => {
+      // First oneShot subscription: agent-A watching agent-B for completion events
+      service.subscribe('agent-A', 'Agent A', {
+        eventTypes: ['agent:idle', 'agent:completed', 'agent:failed', 'agent:deleted'],
+        actorIds: ['agent-B'],
+        oneShot: true,
+        priority: 'high',
+      });
+
+      // Should have exactly 1 subscription
+      expect(service.getAgentSubscriptions('agent-A').length).toBe(1);
+
+      // Second identical oneShot subscription: same caller, same target, same params
+      service.subscribe('agent-A', 'Agent A', {
+        eventTypes: ['agent:idle', 'agent:completed', 'agent:failed', 'agent:deleted'],
+        actorIds: ['agent-B'],
+        oneShot: true,
+        priority: 'high',
+      });
+
+      // Before the fix, this was 2 (duplicate subscription created).
+      // Correct behavior: should still be 1 (duplicate should be deduplicated).
+      expect(service.getAgentSubscriptions('agent-A').length).toBe(1);
+    });
+
+    it('should allow re-subscribing after oneShot fires (valid use case)', async () => {
+      let deliveredEvents: WorkspaceEvent[] = [];
+      service.setDeliveryCallback((_agentId, events) => {
+        deliveredEvents = deliveredEvents.concat(events);
+        return { status: 'success' as const };
+      });
+
+      // First oneShot subscription: agent-A watching agent-B
+      service.setAgentStatus('agent-A', 'idle');
+      service.subscribe('agent-A', 'Agent A', {
+        eventTypes: ['agent:idle', 'agent:completed', 'agent:failed', 'agent:deleted'],
+        actorIds: ['agent-B'],
+        oneShot: true,
+        priority: 'high',
+      });
+
+      expect(service.getAgentSubscriptions('agent-A').length).toBe(1);
+
+      // Emit agent:idle from agent-B to fire the oneShot
+      const idleEvent: WorkspaceEvent = {
+        id: 'oneshot-fire-event-1',
+        workspaceId,
+        timestamp: new Date().toISOString(),
+        type: 'agent:idle',
+        actor: { type: 'agent', id: 'agent-B', name: 'Agent B' },
+        data: { agentId: 'agent-B' },
+      };
+
+      eventBus.emitEvent(idleEvent);
+
+      // Wait for async delivery to complete
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // OneShot should have been consumed — 0 subscriptions remaining
+      expect(service.getAgentSubscriptions('agent-A').length).toBe(0);
+
+      // Now re-subscribe (valid: the first oneShot was consumed)
+      service.subscribe('agent-A', 'Agent A', {
+        eventTypes: ['agent:idle', 'agent:completed', 'agent:failed', 'agent:deleted'],
+        actorIds: ['agent-B'],
+        oneShot: true,
+        priority: 'high',
+      });
+
+      // Should have exactly 1 subscription (the new one)
+      expect(service.getAgentSubscriptions('agent-A').length).toBe(1);
+    });
+
+    it('should NOT deduplicate oneShot subscriptions with overlapping but different filters', () => {
+      // First subscription: watching agent-B for idle+completed
+      service.subscribe('agent-A', 'Agent A', {
+        eventTypes: ['agent:idle', 'agent:completed'],
+        actorIds: ['agent-B'],
+        oneShot: true,
+        priority: 'high',
+      });
+
+      expect(service.getAgentSubscriptions('agent-A').length).toBe(1);
+
+      // Second subscription: overlapping eventTypes but includes agent:failed
+      service.subscribe('agent-A', 'Agent A', {
+        eventTypes: ['agent:idle', 'agent:completed', 'agent:failed'],
+        actorIds: ['agent-B'],
+        oneShot: true,
+        priority: 'high',
+      });
+
+      // Should have 2 subscriptions — they are NOT duplicates because eventTypes differ
+      expect(service.getAgentSubscriptions('agent-A').length).toBe(2);
+
+      // Third subscription: overlapping actorIds but watching different agents
+      service.subscribe('agent-A', 'Agent A', {
+        eventTypes: ['agent:idle', 'agent:completed'],
+        actorIds: ['agent-B', 'agent-C'],
+        oneShot: true,
+        priority: 'high',
+      });
+
+      // Should have 3 — actorIds differ
+      expect(service.getAgentSubscriptions('agent-A').length).toBe(3);
+    });
+  });
+
 });
