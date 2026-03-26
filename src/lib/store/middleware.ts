@@ -16,6 +16,7 @@ import { createLoggerMiddleware } from "./middlewares/logger";
 import { createSentryBreadcrumbsMiddleware } from "./middlewares/sentry-breadcrumbs";
 import { createReferenceChangeDetectorMiddleware } from "./middlewares/state-reference-checks";
 import { createStructuredCloneCheckerMiddleware } from "./middlewares/structured-clone-checker";
+import { safeLocalStorage } from "$lib/utils/safe-storage";
 
 export const sagaMiddleware = createSagaMiddleware();
 
@@ -33,14 +34,21 @@ function getReduxLoggerConfig(): { enabled: boolean; webviewName?: string } {
 
   const globallyEnabled = (window as any).intentFlags?.enableReduxLogger;
 
-  let localStorageEnabled = false;
-  try {
-    localStorageEnabled = !!JSON.parse(localStorage.getItem(REDUX_DEBUG_LS_KEY) ?? "false");
-  } catch (error) {
-    console.warn(`Failed to parse ${REDUX_DEBUG_LS_KEY} from localStorage:`, error);
+  let localStorageEnabled: boolean | undefined;
+  const { value: localStorageValue, hadError } = safeLocalStorage.getItemWithStatus(REDUX_DEBUG_LS_KEY);
+
+  if (hadError) {
+    localStorageEnabled = false;
+  } else if (localStorageValue !== null) {
+    try {
+      localStorageEnabled = !!JSON.parse(localStorageValue);
+    } catch (error) {
+      console.warn(`Failed to parse ${REDUX_DEBUG_LS_KEY} from localStorage:`, error);
+      localStorageEnabled = false;
+    }
   }
 
-  const enableReduxLogger = globallyEnabled ?? localStorageEnabled;
+  const enableReduxLogger = globallyEnabled ?? localStorageEnabled ?? import.meta.env.DEV;
   const webviewName = globallyEnabled ? (window as any).intentFlags?.webviewName : "";
 
   return { enabled: enableReduxLogger, webviewName };
@@ -60,11 +68,11 @@ function buildMiddleware(): Middleware<any, StoreState, any>[] {
   const debugMiddlewares: Middleware<any, StoreState, any>[] = [];
 
   if (typeof window !== "undefined") {
-    if (localStorage.getItem(REDUX_DEBUG_LS_KEY_STATE_REFS_KEY)) {
+    if (safeLocalStorage.getItem(REDUX_DEBUG_LS_KEY_STATE_REFS_KEY)) {
       debugMiddlewares.push(createReferenceChangeDetectorMiddleware());
     }
 
-    if (localStorage.getItem(REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY)) {
+    if (safeLocalStorage.getItem(REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY)) {
       debugMiddlewares.push(createStructuredCloneCheckerMiddleware());
     }
 

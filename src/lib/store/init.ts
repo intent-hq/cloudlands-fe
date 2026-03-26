@@ -15,6 +15,7 @@ import {
   REDUX_DEBUG_LS_KEY_STATE_REFS_KEY,
   REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY,
 } from "./constants";
+import { safeLocalStorage } from "../utils/safe-storage";
 import { createStoreStateReadable } from "./utils/create-readable-store-state";
 import { initReduxDispatchBridge, initReduxStoreBridge } from "./redux-dispatch-bridge";
 
@@ -38,79 +39,9 @@ export const createExtendedDefaultState = <S>(initialState?: PreloadedStoreState
   We don't want to intialize multiple stores, and should see that immediately.
 */
 
-/**
- * Check if any Redux debug flags are enabled in localStorage
- */
-const isAnyDebugFlagEnabled = (): boolean => {
-  try {
-    return Boolean(
-      localStorage.getItem(REDUX_DEBUG_LS_KEY) ||
-        localStorage.getItem(REDUX_DEBUG_LS_KEY_STATE_REFS_KEY) ||
-        localStorage.getItem(REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY)
-    );
-  } catch {
-    return false;
-  }
-};
-
-const exposeStore = (storeContext: ReduxStoreContext) => {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.intent = window.intent || {};
-  if (window.intent.reduxContext === storeContext) {
-    // eslint-disable-next-line no-console
-    console.log("Context is exposed already");
-  } else if (!window.intent.reduxContext) {
-    window.intent.reduxContext = storeContext;
-  } else {
-    const list: ReduxStoreContext[] = [];
-    window.intent.reduxContext = list.concat(window.intent.reduxContext).concat(storeContext);
-    // In storybook we expect multiple stores e.g. in Docs page
-    if (window.isStorybook) {
-      // eslint-disable-next-line no-console
-      console.log("Multiple Redux stores initialized:", window.intent.reduxContext);
-    } else {
-      console.error("Multiple Redux stores initialized:", window.intent.reduxContext);
-    }
-  }
-
-  if (!window.intent.debug) {
-    window.intent.debug = {};
-  }
-
-  /*
-    This lives here for now, but should be moved into separate module for debug options.
-  */
-
-  const toggleBooleanLsKey = (key: string) => {
-    if (localStorage.getItem(key)) {
-      localStorage.removeItem(key);
-    } else {
-      localStorage.setItem(key, "true");
-    }
-  };
-
-  window.intent.debug.toggleReduxLogs = () => {
-    toggleBooleanLsKey(REDUX_DEBUG_LS_KEY);
-  };
-
-  window.intent.debug.toggleStateReferenceChecks = () => {
-    toggleBooleanLsKey(REDUX_DEBUG_LS_KEY_STATE_REFS_KEY);
-  };
-
-  window.intent.debug.toggleStructuredCloneChecks = () => {
-    toggleBooleanLsKey(REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY);
-  };
-};
-
 const cleanUpWindow = (context: ReduxStoreContext) => {
   if (typeof window === "undefined" || !window.intent?.reduxContext) {
     return;
-  }
-
-  if (window.intent.exposeStore) {
-    window.intent.exposeStore = undefined;
   }
 
   if (window.intent.reduxContext === context) {
@@ -170,12 +101,86 @@ export const init = (loadedState?: PreloadedStoreState) => {
     runSaga: runSagaSafely,
   };
 
-  if (process.env.NODE_ENV === "development" || isAnyDebugFlagEnabled()) {
-    exposeStore(storeContext);
-  } else if (typeof window !== "undefined") {
+  if (typeof window !== "undefined") {
     window.intent = window.intent || {};
-    window.intent.exposeStore = () => {
-      exposeStore(storeContext);
+
+    if (window.intent.reduxContext === storeContext) {
+      // eslint-disable-next-line no-console
+      console.log("Context is exposed already");
+    } else if (!window.intent.reduxContext) {
+      window.intent.reduxContext = storeContext;
+    } else {
+      const list: ReduxStoreContext[] = [];
+      window.intent.reduxContext = list.concat(window.intent.reduxContext).concat(storeContext);
+      // In storybook we expect multiple stores e.g. in Docs page
+      if (window.isStorybook) {
+        // eslint-disable-next-line no-console
+        console.log("Multiple Redux stores initialized:", window.intent.reduxContext);
+      } else {
+        console.error("Multiple Redux stores initialized:", window.intent.reduxContext);
+      }
+    }
+
+    if (!window.intent.debug) {
+      window.intent.debug = {};
+    }
+
+    /*
+      This lives here for now, but should be moved into separate module for debug options.
+    */
+
+    const parseStoredBoolean = (value: string | null): boolean | undefined => {
+      if (value === "true") {
+        return true;
+      }
+
+      if (value === "false") {
+        return false;
+      }
+
+      return undefined;
+    };
+
+    const toggleBooleanLsKey = (key: string) => {
+      const currentValue = parseStoredBoolean(safeLocalStorage.getItem(key)) ?? false;
+
+      safeLocalStorage.setItem(key, String(!currentValue));
+    };
+
+    const togglePresenceLsKey = (key: string) => {
+      if (safeLocalStorage.getItem(key)) {
+        safeLocalStorage.removeItem(key);
+      } else {
+        safeLocalStorage.setItem(key, "true");
+      }
+    };
+
+    const logReduxLoggingReloadMessage = () => {
+      // eslint-disable-next-line no-console
+      console.log("Redux logging preference updated. Reload to take effect.");
+    };
+
+    window.intent.enableReduxLogging = () => {
+      safeLocalStorage.setItem(REDUX_DEBUG_LS_KEY, "true");
+      logReduxLoggingReloadMessage();
+    };
+
+    window.intent.disableReduxLogging = () => {
+      safeLocalStorage.setItem(REDUX_DEBUG_LS_KEY, "false");
+      logReduxLoggingReloadMessage();
+    };
+
+    window.intent.debug.toggleReduxLogs = () => {
+      toggleBooleanLsKey(REDUX_DEBUG_LS_KEY);
+      logReduxLoggingReloadMessage();
+    };
+
+    window.intent.debug.toggleStateReferenceChecks = () => {
+      togglePresenceLsKey(REDUX_DEBUG_LS_KEY_STATE_REFS_KEY);
+    };
+
+    window.intent.debug.toggleStructuredCloneChecks = () => {
+      togglePresenceLsKey(REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY);
     };
   }
 

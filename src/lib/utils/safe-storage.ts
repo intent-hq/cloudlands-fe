@@ -20,6 +20,22 @@ export const safeLocalStorage = {
     }
   },
 
+  getItemWithStatus(key: string): { value: string | null; hadError: boolean } {
+    if (!canUseLocalStorage()) {
+      return { value: null, hadError: false };
+    }
+
+    try {
+      return {
+        value: window.localStorage.getItem(key),
+        hadError: false,
+      };
+    } catch (error) {
+      logger.warn('Failed to read localStorage item', { key, error });
+      return { value: null, hadError: true };
+    }
+  },
+
   setItem(key: string, value: string): void {
     if (!canUseLocalStorage()) {
       return;

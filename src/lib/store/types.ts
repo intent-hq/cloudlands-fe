@@ -79,15 +79,23 @@ export type ReduxStore = Store<StoreState, UnknownAction>;
 
 export type SagaName = keyof typeof sagas;
 
+export type SagaCrashRecord = {
+  crashedAt: Date;
+  error: Error;
+};
+
+export type SagaStatusRecord = {
+  isRunning: boolean;
+  launchedAtTs: number | null;
+  crashes: SagaCrashRecord[];
+};
+
 export type ReduxStoreContext = {
   store: ReduxStore;
   storeState: Readable<StoreState>;
   dispose: () => void;
   runSaga: <S extends Saga>(saga: S, ...args: Parameters<S>) => Task;
-  tasks?: {
-    running: SagaName[];
-    notRunning: SagaName[];
-  };
+  tasks?: Record<SagaName, SagaStatusRecord>;
 };
 
 // ============================================================================

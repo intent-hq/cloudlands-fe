@@ -18,12 +18,13 @@ declare global {
       reduxContext?:
         | import('./lib/store/types').ReduxStoreContext
         | import('./lib/store/types').ReduxStoreContext[];
+      enableReduxLogging?: () => void;
+      disableReduxLogging?: () => void;
       debug?: {
         toggleReduxLogs?: () => void;
         toggleStateReferenceChecks?: () => void;
         toggleStructuredCloneChecks?: () => void;
       };
-      exposeStore?: (() => void) | undefined;
     };
     isStorybook?: boolean;
     electronAPI: {

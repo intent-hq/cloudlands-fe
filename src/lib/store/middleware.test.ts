@@ -2,13 +2,16 @@ import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { REDUX_DEBUG_LS_KEY } from "./constants";
 
 const mocks = vi.hoisted(() => {
-  const sagaMiddleware = Object.assign(vi.fn(), { run: vi.fn() });
-  const batchingMiddleware = vi.fn();
-  const sentryMiddleware = vi.fn();
-  const loggerMiddleware = vi.fn();
-  const refCheckMiddleware = vi.fn();
-  const structuredCloneMiddleware = vi.fn();
-  const reduxLoggerMiddleware = vi.fn();
+  const createPassthroughMiddleware = () => {
+    return vi.fn(() => (next: (action: unknown) => unknown) => (action: unknown) => next(action));
+  };
+
+  const sagaMiddleware = Object.assign(createPassthroughMiddleware(), { run: vi.fn() });
+  const batchingMiddleware = createPassthroughMiddleware();
+  const sentryMiddleware = createPassthroughMiddleware();
+  const loggerMiddleware = createPassthroughMiddleware();
+  const refCheckMiddleware = createPassthroughMiddleware();
+  const structuredCloneMiddleware = createPassthroughMiddleware();
 
   return {
     createSagaMiddleware: vi.fn(() => sagaMiddleware),
@@ -17,17 +20,14 @@ const mocks = vi.hoisted(() => {
     createLoggerMiddleware: vi.fn(() => loggerMiddleware),
     createReferenceChangeDetectorMiddleware: vi.fn(() => refCheckMiddleware),
     createStructuredCloneCheckerMiddleware: vi.fn(() => structuredCloneMiddleware),
-    createReduxLogger: vi.fn(() => reduxLoggerMiddleware),
     sagaMiddleware,
     batchingMiddleware,
     sentryMiddleware,
     loggerMiddleware,
-    reduxLoggerMiddleware,
   };
 });
 
 vi.mock("redux-saga", () => ({ default: mocks.createSagaMiddleware }));
-vi.mock("redux-logger", () => ({ createLogger: mocks.createReduxLogger }));
 vi.mock("./middlewares/batch", () => ({ createBatchingMiddleware: mocks.createBatchingMiddleware }));
 vi.mock("./middlewares/logger", () => ({ createLoggerMiddleware: mocks.createLoggerMiddleware }));
 vi.mock("./middlewares/sentry-breadcrumbs", () => ({
@@ -41,20 +41,24 @@ vi.mock("./middlewares/structured-clone-checker", () => ({
 }));
 
 const localStorageGetItem = window.localStorage.getItem as unknown as Mock;
+const localStorageSetItem = window.localStorage.setItem as unknown as Mock;
+const localStorageRemoveItem = window.localStorage.removeItem as unknown as Mock;
 
 const setLocalStorageEntries = (entries: Record<string, string | null | undefined>) => {
   localStorageGetItem.mockImplementation((key: string) => entries[key] ?? null);
 };
 
-describe("store middleware Redux logger gating", () => {
+describe("store middleware Redux logging gating", () => {
   beforeEach(() => {
     vi.resetModules();
+    vi.unstubAllEnvs();
+    vi.stubEnv("DEV", false);
     vi.clearAllMocks();
     setLocalStorageEntries({});
     delete (window as Window & { intentFlags?: unknown }).intentFlags;
   });
 
-  it("does not add redux-logger when the debug flag is off", async () => {
+  it("does not add the logger middleware when the debug flag is off", async () => {
     const { middleware } = await import("./middleware");
 
     expect(mocks.createLoggerMiddleware).not.toHaveBeenCalled();
@@ -65,7 +69,7 @@ describe("store middleware Redux logger gating", () => {
     ]);
   });
 
-  it("adds redux-logger when intent:redux-debug is enabled in localStorage", async () => {
+  it("adds the logger middleware when intent:redux-debug is enabled in localStorage", async () => {
     setLocalStorageEntries({ [REDUX_DEBUG_LS_KEY]: "true" });
 
     const { middleware } = await import("./middleware");
@@ -79,7 +83,35 @@ describe("store middleware Redux logger gating", () => {
     ]);
   });
 
-  it("passes the intent flag webview name through to redux-logger when globally enabled", async () => {
+  it("adds the logger middleware automatically in dev mode when no explicit override is set", async () => {
+    vi.stubEnv("DEV", true);
+
+    const { middleware } = await import("./middleware");
+
+    expect(mocks.createLoggerMiddleware).toHaveBeenCalledWith("");
+    expect(middleware).toEqual([
+      mocks.batchingMiddleware,
+      mocks.sagaMiddleware,
+      mocks.sentryMiddleware,
+      mocks.loggerMiddleware,
+    ]);
+  });
+
+  it("keeps an explicit localStorage disable higher priority than dev mode", async () => {
+    vi.stubEnv("DEV", true);
+    setLocalStorageEntries({ [REDUX_DEBUG_LS_KEY]: "false" });
+
+    const { middleware } = await import("./middleware");
+
+    expect(mocks.createLoggerMiddleware).not.toHaveBeenCalled();
+    expect(middleware).toEqual([
+      mocks.batchingMiddleware,
+      mocks.sagaMiddleware,
+      mocks.sentryMiddleware,
+    ]);
+  });
+
+  it("passes the intent flag webview name through to the logger middleware when globally enabled", async () => {
     (window as Window & { intentFlags?: { enableReduxLogger: boolean; webviewName: string } }).intentFlags = {
       enableReduxLogger: true,
       webviewName: "composer",
@@ -90,45 +122,218 @@ describe("store middleware Redux logger gating", () => {
     expect(mocks.createLoggerMiddleware).toHaveBeenCalledWith("composer");
     expect(middleware.at(-1)).toBe(mocks.loggerMiddleware);
   });
+
+  it("does not crash store middleware initialization when reading the Redux logging flag throws", async () => {
+    vi.stubEnv("DEV", true);
+    localStorageGetItem.mockImplementation((key: string) => {
+      if (key === REDUX_DEBUG_LS_KEY) {
+        throw new Error("Storage unavailable");
+      }
+
+      return null;
+    });
+
+    const { middleware } = await import("./middleware");
+
+    expect(mocks.createLoggerMiddleware).not.toHaveBeenCalled();
+    expect(middleware).toEqual([
+      mocks.batchingMiddleware,
+      mocks.sagaMiddleware,
+      mocks.sentryMiddleware,
+    ]);
+  });
+});
+
+describe("window.intent Redux logging interface", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+    setLocalStorageEntries({});
+    delete (window as Window & { intent?: unknown }).intent;
+    mocks.sagaMiddleware.run.mockReturnValue({ cancel: vi.fn() });
+  });
+
+  it("registers enableReduxLogging and disableReduxLogging on window.intent", async () => {
+    const { init } = await import("./init");
+
+    const storeContext = init();
+
+    expect(window.intent?.enableReduxLogging).toBeTypeOf("function");
+    expect(window.intent?.disableReduxLogging).toBeTypeOf("function");
+
+    storeContext.dispose();
+  });
+
+  it("persists Redux logging toggles and logs that reload is required", async () => {
+    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      const { init } = await import("./init");
+
+      const storeContext = init();
+
+      window.intent?.enableReduxLogging?.();
+      expect(localStorageSetItem).toHaveBeenCalledWith(REDUX_DEBUG_LS_KEY, "true");
+      expect(consoleLog).toHaveBeenCalledWith("Redux logging preference updated. Reload to take effect.");
+
+      consoleLog.mockClear();
+
+      window.intent?.disableReduxLogging?.();
+      expect(localStorageSetItem).toHaveBeenCalledWith(REDUX_DEBUG_LS_KEY, "false");
+      expect(consoleLog).toHaveBeenCalledWith("Redux logging preference updated. Reload to take effect.");
+
+      storeContext.dispose();
+    } finally {
+      consoleLog.mockRestore();
+    }
+  });
+
+  it("toggles Redux logging using stored boolean string values", async () => {
+    const entries: Record<string, string | null> = { [REDUX_DEBUG_LS_KEY]: "false" };
+    localStorageGetItem.mockImplementation((key: string) => entries[key] ?? null);
+    localStorageSetItem.mockImplementation((key: string, value: string) => {
+      entries[key] = value;
+    });
+    localStorageRemoveItem.mockImplementation((key: string) => {
+      entries[key] = null;
+    });
+
+    const { init } = await import("./init");
+
+    const storeContext = init();
+
+    window.intent?.debug?.toggleReduxLogs?.();
+    expect(localStorageSetItem).toHaveBeenLastCalledWith(REDUX_DEBUG_LS_KEY, "true");
+    expect(entries[REDUX_DEBUG_LS_KEY]).toBe("true");
+
+    window.intent?.debug?.toggleReduxLogs?.();
+    expect(localStorageSetItem).toHaveBeenLastCalledWith(REDUX_DEBUG_LS_KEY, "false");
+    expect(entries[REDUX_DEBUG_LS_KEY]).toBe("false");
+
+    storeContext.dispose();
+  });
 });
 
 describe("createLoggerMiddleware", () => {
   beforeEach(() => {
+    vi.resetModules();
+    vi.restoreAllMocks();
     vi.clearAllMocks();
   });
 
-  it("delegates to redux-logger with collapsed logging and the simplified title formatter", async () => {
+  it("logs the welcome message only once", async () => {
+    const { createLoggerMiddleware } = await vi.importActual<typeof import("./middlewares/logger")>(
+      "./middlewares/logger"
+    );
+    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    createLoggerMiddleware("composer");
+    createLoggerMiddleware("composer");
+
+    expect(consoleLog).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs changed state with prev state, action, and next state in a collapsed group", async () => {
     const { createLoggerMiddleware } = await vi.importActual<typeof import("./middlewares/logger")>(
       "./middlewares/logger"
     );
 
+    const prevState = { count: 1 };
+    const nextState = { count: 2 };
+    let currentState = prevState;
+    const action = { type: "TEST_ACTION" };
+    const groupCollapsed = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
+    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
+    const groupEnd = vi.spyOn(console, "groupEnd").mockImplementation(() => {});
+
     const middleware = createLoggerMiddleware("composer");
+    consoleLog.mockClear();
+    const storeApi = {
+      dispatch: vi.fn(),
+      getState: vi.fn(() => currentState),
+    };
+    const next = vi.fn((receivedAction: unknown) => {
+      currentState = nextState;
+      return receivedAction;
+    });
 
-    expect(middleware).toBe(mocks.reduxLoggerMiddleware);
-    expect(mocks.createReduxLogger).toHaveBeenCalledTimes(1);
+    expect(middleware(storeApi as never)(next)(action)).toBe(action);
+    expect(groupCollapsed).toHaveBeenCalledWith("%cTEST_ACTION", "color: inherit; font-weight: 600");
+    expect(consoleLog).toHaveBeenCalledTimes(4);
+    expect(consoleLog.mock.calls.slice(0, 3)).toEqual([
+      ["%c prev state", "color: #9E9E9E; font-weight: bold", prevState],
+      ["%c action    ", "color: #03A9F4; font-weight: bold", action],
+      ["%c next state", "color: #4CAF50; font-weight: bold", nextState],
+    ]);
 
-    const [options] = mocks.createReduxLogger.mock.calls[0];
-    expect(options.collapsed).toBe(true);
-    expect(options.titleFormatter({ type: "TEST_ACTION" }, "12:00:00", 3.456)).toBe(
-      "TEST_ACTION"
+    const lazyDiff = consoleLog.mock.calls[3]?.[2] as { diff: Record<string, { prev: unknown; next: unknown }> };
+    const diffDescriptor = Object.getOwnPropertyDescriptor(lazyDiff, "diff");
+
+    expect(consoleLog.mock.calls[3]?.slice(0, 2)).toEqual(["%c changes  ", "color: #FF9800; font-weight: bold"]);
+    expect(diffDescriptor?.get).toEqual(expect.any(Function));
+    expect(diffDescriptor?.value).toBeUndefined();
+    expect(lazyDiff.diff).toEqual({ count: { prev: 1, next: 2 } });
+
+    expect(groupEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs unchanged state without prev state and uses the no changes label", async () => {
+    const { createLoggerMiddleware } = await vi.importActual<typeof import("./middlewares/logger")>(
+      "./middlewares/logger"
     );
-    expect(options.titleFormatter({ type: "TEST_ACTION", payload: "payload text" }, "12:00:00", 3.456)).toBe(
-      "TEST_ACTION payload text"
+
+    const state = { count: 1 };
+    const action = { type: "TEST_ACTION", payload: "payload text" };
+    const groupCollapsed = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
+    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
+    const groupEnd = vi.spyOn(console, "groupEnd").mockImplementation(() => {});
+
+    const middleware = createLoggerMiddleware("composer");
+    consoleLog.mockClear();
+    const storeApi = {
+      dispatch: vi.fn(),
+      getState: vi.fn(() => state),
+    };
+    const next = vi.fn((receivedAction: unknown) => receivedAction);
+
+    expect(middleware(storeApi as never)(next)(action)).toBe(action);
+    expect(groupCollapsed).toHaveBeenCalledWith("%cTEST_ACTION payload text", "color: #9E9E9E; font-weight: 300");
+    expect(consoleLog.mock.calls).toEqual([
+      ["%c action    ", "color: #03A9F4; font-weight: bold", action],
+      ["%c state (no changes)", "color: #9E9E9E; font-weight: lighter", state],
+    ]);
+    expect(groupEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [{ type: "TEST_ACTION" }, "TEST_ACTION"],
+    [{ type: "TEST_ACTION", payload: "payload text" }, "TEST_ACTION payload text"],
+    [{ type: "TEST_ACTION", payload: 42 }, "TEST_ACTION 42"],
+    [{ type: "TEST_ACTION", payload: ["payload text"] }, "TEST_ACTION payload text"],
+    [{ type: "TEST_ACTION", payload: [42, 7] }, "TEST_ACTION"],
+    [{ type: "TEST_ACTION", payload: { text: "payload text" } }, "TEST_ACTION"],
+    [{ type: "TEST_ACTION", payload: [{ text: "payload text" }] }, "TEST_ACTION"],
+  ])("preserves simplified action titles for %j", async (action, expectedTitle) => {
+    const { createLoggerMiddleware } = await vi.importActual<typeof import("./middlewares/logger")>(
+      "./middlewares/logger"
     );
-    expect(options.titleFormatter({ type: "TEST_ACTION", payload: 42 }, "12:00:00", 3.456)).toBe(
-      "TEST_ACTION 42"
-    );
-    expect(options.titleFormatter({ type: "TEST_ACTION", payload: ["payload text"] }, "12:00:00", 3.456)).toBe(
-      "TEST_ACTION payload text"
-    );
-    expect(options.titleFormatter({ type: "TEST_ACTION", payload: [42, 7] }, "12:00:00", 3.456)).toBe(
-      "TEST_ACTION"
-    );
-    expect(options.titleFormatter({ type: "TEST_ACTION", payload: { text: "payload text" } }, "12:00:00", 3.456)).toBe(
-      "TEST_ACTION"
-    );
-    expect(options.titleFormatter({ type: "TEST_ACTION", payload: [{ text: "payload text" }] }, "12:00:00", 3.456)).toBe(
-      "TEST_ACTION"
-    );
+
+    const state = { count: 1 };
+    const groupCollapsed = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "groupEnd").mockImplementation(() => {});
+
+    const middleware = createLoggerMiddleware("composer");
+    const storeApi = {
+      dispatch: vi.fn(),
+      getState: vi.fn(() => state),
+    };
+    const next = vi.fn((receivedAction: unknown) => receivedAction);
+
+    middleware(storeApi as never)(next)(action);
+
+    expect(groupCollapsed).toHaveBeenCalledWith(`%c${expectedTitle}`, "color: #9E9E9E; font-weight: 300");
   });
 });
