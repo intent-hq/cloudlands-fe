@@ -22,6 +22,12 @@ vi.mock('../../agent.service', () => ({
     activateAgent: vi.fn(),
     getSession: vi.fn(),
     saveSession: vi.fn().mockResolvedValue(undefined),
+    stopSession: vi.fn().mockResolvedValue(undefined),
+    unregisterDomHandler: vi.fn(),
+    registerDomHandler: vi.fn(),
+    replayPendingEvents: vi.fn(),
+    clearPendingEvents: vi.fn(),
+    restoreSession: vi.fn(),
   },
   AgentService: {
     getInstance: vi.fn(() => ({
