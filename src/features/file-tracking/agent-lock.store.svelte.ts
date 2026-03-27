@@ -10,6 +10,7 @@
  *    (streaming or task not in terminal status)
  */
 
+import { untrack } from 'svelte';
 import { unifiedStateStore } from '$features/agent/browser';
 import { agentService } from '$features/agent/agent.service';
 import { notesStateManager } from '$features/notes/notes.store.svelte';
@@ -50,38 +51,46 @@ function ensureStoreSubscription(workspaceId: string | undefined): void {
 
 /**
  * Check if an agent is actively working (streaming or task not complete).
+ *
+ * IMPORTANT: All reads from reactive stores (unifiedStateStore, agentService,
+ * notesStateManager) are wrapped in untrack() to prevent creating reactive
+ * dependencies. Without this, each call inside a $derived.by block creates
+ * reactive subscriptions that trigger cascading re-evaluations — causing a
+ * "reactive avalanche" in workspaces with many agents.
  */
 function isAgentActivelyWorking(agentId: string): boolean {
-  // Check if agent is currently streaming via unified state store
-  const currentWorkspace = unifiedStateStore.currentWorkspace;
-  if (currentWorkspace) {
-    const agentState = currentWorkspace.agents.get(agentId as any);
-    if (agentState?.streaming?.active) {
+  return untrack(() => {
+    // Check if agent is currently streaming via unified state store
+    const currentWorkspace = unifiedStateStore.currentWorkspace;
+    if (currentWorkspace) {
+      const agentState = currentWorkspace.agents.get(agentId as any);
+      if (agentState?.streaming?.active) {
+        return true;
+      }
+    }
+
+    // Check if agent session exists and has a linked task
+    const session = agentService.getSession(agentId);
+    if (!session) return false;
+
+    // Check if session is streaming (fallback check)
+    if (session.isStreaming) {
       return true;
     }
-  }
 
-  // Check if agent session exists and has a linked task
-  const session = agentService.getSession(agentId);
-  if (!session) return false;
-
-  // Check if session is streaming (fallback check)
-  if (session.isStreaming) {
-    return true;
-  }
-
-  // Check linked task status
-  const taskNoteId = session.metadata?.taskNoteId as string | undefined;
-  if (taskNoteId) {
-    const taskNote = notesStateManager.findById(taskNoteId as any);
-    const taskStatus = taskNote?.metadata?.task?.status;
-    // Active unless in terminal status (complete or cancelled)
-    if (taskStatus && taskStatus !== 'complete' && taskStatus !== 'cancelled') {
-      return true;
+    // Check linked task status
+    const taskNoteId = session.metadata?.taskNoteId as string | undefined;
+    if (taskNoteId) {
+      const taskNote = notesStateManager.findById(taskNoteId as any);
+      const taskStatus = taskNote?.metadata?.task?.status;
+      // Active unless in terminal status (complete or cancelled)
+      if (taskStatus && taskStatus !== 'complete' && taskStatus !== 'cancelled') {
+        return true;
+      }
     }
-  }
 
-  return false;
+    return false;
+  });
 }
 
 /**

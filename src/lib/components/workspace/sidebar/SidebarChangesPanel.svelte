@@ -59,7 +59,10 @@
   import { faNote } from '$lib/icons/faNote';
   import { track, trackGitOp, getFileExtension } from '$lib/services/analytics';
   import { selectAutoCommitEnabled } from '$lib/store/slices/workspace-settings/workspace-settings-selectors';
-  import { setAutoCommitEnabled, syncWorkspaceSettings } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
+  import {
+    setAutoCommitEnabled,
+    syncWorkspaceSettings,
+  } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
   import { logger } from '$lib/utils/client-logger';
   import { SYSTEM_CHANNELS, WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import type { WorkspaceId } from '$shared/types/branded-ids';
@@ -234,7 +237,11 @@
   });
 
   // Agent lock store - provides reactive locked agent/file state
-  const agentLockStore = $derived(createAgentLockStore(workspaceId));
+  // IMPORTANT: Do NOT wrap createAgentLockStore in $derived — it sets up Redux
+  // subscriptions and creates internal $derived blocks. Recreating it on every
+  // derivation cycle causes a reactive avalanche that starves the scheduler.
+  // The store internally tracks workspace changes via ensureStoreSubscription.
+  const agentLockStore = createAgentLockStore(workspaceId);
   const lockedAgentIds = $derived(agentLockStore.lockedAgentIds);
 
   // Validate gitStore data belongs to current workspace (defense in depth)
@@ -1418,8 +1425,10 @@
   // guarded by !isContentMergedToTrunk because after a squash merge, aheadOfTrunk
   // is always > 0 (local SHAs differ from the squash commit) even without new work.
   const hasNewWorkAfterMerge = $derived(
-    hasUnstaged || hasStaged || commits.length > 0 ||
-    (aheadOfTrunk !== null && aheadOfTrunk > 0 && !isContentMergedToTrunk),
+    hasUnstaged ||
+      hasStaged ||
+      commits.length > 0 ||
+      (aheadOfTrunk !== null && aheadOfTrunk > 0 && !isContentMergedToTrunk),
   );
 
   // Note: mergeHeadSha is ONLY set during in-session merges (see merge handlers below at lines ~2354/~2423).
@@ -3699,16 +3708,9 @@
   let isWorkspaceSwitching = $state(false);
   let workspaceSwitchTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  // Transition functions that always return non-deferred transitions (slide).
-  //
-  // Why not crossfade: crossfade returns a *deferred* transition (a function).
-  // Svelte creates a facade for deferred transitions where `reset()` calls `a.reset()`,
-  // but `a` is assigned in a microtask. If `reset()` is called before the microtask runs
-  // (which happens during {#each} reconciliation with |global), it crashes:
-  //   "Cannot read properties of undefined (reading 'reset')"
-  //
-  // By always returning a plain transition config (not a function), Svelte takes the
-  // non-deferred path which returns safe no-op handlers.
+  // Transition functions that return non-deferred slide transitions.
+  // Used without |global so Svelte cancels them immediately when the parent
+  // block re-renders, preventing stuck transition loops that block the UI.
   function send(node: Element, params: { key: any }) {
     if (isWorkspaceSwitching) return { duration: 0 };
     const rect = node.getBoundingClientRect();
@@ -4020,7 +4022,9 @@
                       class="font-normal text-subtle flex-row-reverse -mr-1 whitespace-nowrap"
                       onclick={() => {
                         if (workspaceId) {
-                          dispatch(setAutoCommitEnabled(workspaceId as string, !$autoCommitEnabled));
+                          dispatch(
+                            setAutoCommitEnabled(workspaceId as string, !$autoCommitEnabled),
+                          );
                         }
                       }}
                     />
