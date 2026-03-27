@@ -505,6 +505,7 @@ export const AgentSessionSchema = z.object({
   threadId: z.string().optional(),
   messages: z.array(AgentMessageSchema),
   name: z.string().optional(),
+  nameExplicitlySet: z.boolean().optional(),
   currentTurnNumber: z.number().optional(),
   agentInfo: z.any().optional(),
   isInitialAgent: z.boolean().optional(),

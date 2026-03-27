@@ -92,6 +92,9 @@ export interface AgentSession {
   /** Display name for the agent */
   name: string;
 
+  /** Whether the name was explicitly set via setAgentName API */
+  nameExplicitlySet?: boolean;
+
   /** Model identifier (e.g., "sonnet-3.5", "gpt-4") */
   model?: string;
 

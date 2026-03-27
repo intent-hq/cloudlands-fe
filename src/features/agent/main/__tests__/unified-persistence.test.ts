@@ -122,6 +122,179 @@ describe('UnifiedPersistence', () => {
     });
   });
 
+  describe('name preservation on save', () => {
+    it('should preserve intentional name when incoming name is generic (regression)', async () => {
+      // Bug: saveAgent only preserved name when incoming had NO name.
+      // If incoming had a generic name like "Task Agent", it would overwrite
+      // an intentional name like "Coordinator" that was set via setAgentName.
+      const agent: AgentSession = {
+        id: 'agent-123' as any,
+        workspaceId: '550e8400-e29b-41d4-a716-446655440000' as any,
+        name: 'New Agent',
+        status: AgentStatus.Active,
+        messages: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+
+      // Step 1: Save agent with generic name
+      await persistence.saveAgent(agent, testDir);
+
+      // Step 2: Simulate setAgentName writing "Coordinator" to disk
+      const agentFilePath = path.join(testDir, '.workspace/agents', 'agent-123.json');
+      const raw = await fs.readFile(agentFilePath, 'utf-8');
+      const data = JSON.parse(raw);
+      if (data.version && data.data) {
+        data.data.name = 'Coordinator';
+      } else {
+        data.name = 'Coordinator';
+      }
+      await fs.writeFile(agentFilePath, JSON.stringify(data, null, 2), 'utf-8');
+
+      // Step 3: Save again with generic name (simulating frontend save with stale data)
+      await persistence.saveAgent(agent, testDir);
+
+      // Step 4: Load and verify the intentional name was preserved
+      const result = await persistence.loadAgent(
+        agent.id as any,
+        agent.workspaceId as any,
+        testDir,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.data?.name).toBe('Coordinator');
+    });
+
+    it('should preserve intentional name when incoming name is random adjective-animal (regression)', async () => {
+      // Bug: saveAgent would overwrite an intentional name with a random
+      // "Adjective Animal" name because it only checked for empty/missing names.
+      const agent: AgentSession = {
+        id: 'agent-456' as any,
+        workspaceId: '550e8400-e29b-41d4-a716-446655440000' as any,
+        name: 'Swift Falcon',
+        status: AgentStatus.Active,
+        messages: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+
+      // Step 1: Save agent with random name
+      await persistence.saveAgent(agent, testDir);
+
+      // Step 2: Simulate setAgentName writing an intentional name to disk
+      const agentFilePath = path.join(testDir, '.workspace/agents', 'agent-456.json');
+      const raw = await fs.readFile(agentFilePath, 'utf-8');
+      const data = JSON.parse(raw);
+      if (data.version && data.data) {
+        data.data.name = 'Fix login bug';
+      } else {
+        data.name = 'Fix login bug';
+      }
+      await fs.writeFile(agentFilePath, JSON.stringify(data, null, 2), 'utf-8');
+
+      // Step 3: Save again with random name (simulating frontend save with stale data)
+      await persistence.saveAgent(agent, testDir);
+
+      // Step 4: Load and verify the intentional name was preserved
+      const result = await persistence.loadAgent(
+        agent.id as any,
+        agent.workspaceId as any,
+        testDir,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.data?.name).toBe('Fix login bug');
+    });
+
+    it('should preserve explicitly-set name even when incoming name is text-derived (regression)', async () => {
+      const agent: AgentSession = {
+        id: 'agent-789' as any,
+        workspaceId: '550e8400-e29b-41d4-a716-446655440000' as any,
+        name: 'Repo overview',
+        status: AgentStatus.Active,
+        messages: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+
+      // Step 1: Save agent with text-derived name
+      await persistence.saveAgent(agent, testDir);
+
+      // Step 2: Simulate setAgentName modifying disk directly
+      const agentFilePath = path.join(testDir, '.workspace/agents', 'agent-789.json');
+      const raw = await fs.readFile(agentFilePath, 'utf-8');
+      const data = JSON.parse(raw);
+      if (data.version && data.data) {
+        data.data.name = 'My Custom Name';
+        data.data.nameExplicitlySet = true;
+      } else {
+        data.name = 'My Custom Name';
+        data.nameExplicitlySet = true;
+      }
+      await fs.writeFile(agentFilePath, JSON.stringify(data, null, 2), 'utf-8');
+
+      // Step 3: Save again with stale in-memory data (no nameExplicitlySet)
+      await persistence.saveAgent(agent, testDir);
+
+      // Step 4: Load and verify the explicitly-set name was preserved
+      const result = await persistence.loadAgent(
+        agent.id as any,
+        agent.workspaceId as any,
+        testDir,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.data?.name).toBe('My Custom Name');
+    });
+
+    it('should allow rename when incoming save also has nameExplicitlySet (user re-rename)', async () => {
+      const agent: AgentSession = {
+        id: 'agent-890' as any,
+        workspaceId: '550e8400-e29b-41d4-a716-446655440000' as any,
+        name: 'Repo overview',
+        status: AgentStatus.Active,
+        messages: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+
+      // Step 1: Save agent with text-derived name
+      await persistence.saveAgent(agent, testDir);
+
+      // Step 2: Simulate setAgentName modifying disk directly
+      const agentFilePath = path.join(testDir, '.workspace/agents', 'agent-890.json');
+      const raw = await fs.readFile(agentFilePath, 'utf-8');
+      const data = JSON.parse(raw);
+      if (data.version && data.data) {
+        data.data.name = 'My Custom Name';
+        data.data.nameExplicitlySet = true;
+      } else {
+        data.name = 'My Custom Name';
+        data.nameExplicitlySet = true;
+      }
+      await fs.writeFile(agentFilePath, JSON.stringify(data, null, 2), 'utf-8');
+
+      // Step 3: Save with nameExplicitlySet (simulating user re-rename)
+      (agent as any).nameExplicitlySet = true;
+      agent.name = 'Even Newer Name';
+      await persistence.saveAgent(agent, testDir);
+
+      // Step 4: Load and verify the new name took effect
+      const result = await persistence.loadAgent(
+        agent.id as any,
+        agent.workspaceId as any,
+        testDir,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.data?.name).toBe('Even Newer Name');
+    });
+  });
+
   describe('backup and recovery', () => {
     it('should handle multiple writes atomically', async () => {
       const agent: AgentSession = {

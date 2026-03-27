@@ -22,6 +22,7 @@
   import { slide } from 'svelte/transition';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { sessionStore } from '$features/agent/browser';
+  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import {
     getPanelLayoutManager,
     hasPanelLayoutManager,
@@ -29,7 +30,10 @@
   import type { Workspace } from '$shared/types';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { selectSpecialists, selectSpecialistName } from '$lib/store/slices/specialists/specialists-selectors';
+  import {
+    selectSpecialists,
+    selectSpecialistName,
+  } from '$lib/store/slices/specialists/specialists-selectors';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import {
     faArrowUpRightFromSquare,
@@ -83,7 +87,9 @@
 
   // Reactive store subscription for specialist name lookup
   const specialists$ = selectSpecialists();
-  $effect(() => { void $specialists$; });
+  $effect(() => {
+    void $specialists$;
+  });
 
   // Inline editing state
   let isEditing = $state(false);
@@ -105,9 +111,12 @@
   // Save the edited name
   function saveEdit() {
     if (editingValue.trim() && editingValue.trim() !== displayName) {
-      const wsId = workspace?.id ? String(workspace.id) : undefined;
+      const wsId = workspace?.id ? String(workspace.id) : workspaceStore.current?.id;
       if (wsId) {
-        sessionStore.updateSessionForWorkspace(wsId, agentId, { name: editingValue.trim() });
+        sessionStore.updateSessionForWorkspace(wsId, agentId, {
+          name: editingValue.trim(),
+          nameExplicitlySet: true,
+        } as any);
         agentService.saveSession(agentId, wsId, true);
       }
     }
@@ -461,9 +470,7 @@
             </span>
           {/if}
           {#if isBackground}
-            <div
-              class="ml-auto px-1 py-0.5 text-ui font-bold bg-muted text-subtle rounded mr-1"
-            >
+            <div class="ml-auto px-1 py-0.5 text-ui font-bold bg-muted text-subtle rounded mr-1">
               BG
             </div>
           {/if}

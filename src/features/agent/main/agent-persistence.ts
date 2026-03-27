@@ -29,6 +29,7 @@ import { SESSION_CONFIG } from '$shared/constants/agent-services';
 import type { IMetadataFS } from '../../metadata-fs/main/metadata-fs';
 import { LocalMetadataFS } from '../../metadata-fs/main/local-metadata-fs';
 import { truncateLargeFields } from './persistence-truncation';
+import { isGenericAgentName, isRandomAgentName } from '$shared/utils/agent-name-utils';
 
 const logger = new Logger('UnifiedPersistence');
 
@@ -499,6 +500,7 @@ export class UnifiedPersistence {
     // session without knowing about the config or name
     let preservedConfig: Record<string, any> | undefined;
     let preservedName: string | undefined;
+    let preservedNameExplicitlySet: boolean | undefined;
     let preservedAcpSessionId: string | undefined;
     const metadataFS = workspacePath ? new LocalMetadataFS() : this.getFS(agent.workspaceId);
     try {
@@ -522,11 +524,31 @@ export class UnifiedPersistence {
         preservedConfig = mergedConfig;
       }
 
-      // Preserve name from existing file if incoming agent doesn't have it
-      // This handles the case where specialist name is set at workspace creation
-      // but subsequent saves don't include the name field
-      if (existingAgent.name && !(agent as any).name) {
-        preservedName = existingAgent.name;
+      // Preserve name from existing file when:
+      // 1. The existing name was explicitly set — always preserve regardless of incoming name
+      //    (protects user/agent-set names from text-derived names like "Repo overview")
+      // 2. The disk has a non-generic/non-random name but the incoming save has a generic/random name
+      if (existingAgent.name && typeof existingAgent.name === 'string') {
+        const incomingName = typeof (agent as any).name === 'string' ? (agent as any).name : undefined;
+
+        const incomingExplicitlySet = !!(agent as any).nameExplicitlySet;
+
+        if (existingAgent.nameExplicitlySet && !incomingExplicitlySet) {
+          // Disk name was explicitly set but incoming save doesn't have the flag —
+          // this is a stale overwrite from old in-memory data. Preserve the disk name.
+          preservedName = existingAgent.name;
+          preservedNameExplicitlySet = true;
+        } else if (
+          !incomingExplicitlySet && (
+            (!incomingName || incomingName.trim() === '') ||
+            (isGenericAgentName(incomingName) && !isGenericAgentName(existingAgent.name)) ||
+            (isRandomAgentName(incomingName) &&
+              !isRandomAgentName(existingAgent.name) &&
+              !isGenericAgentName(existingAgent.name))
+          )
+        ) {
+          preservedName = existingAgent.name;
+        }
       }
 
       // Preserve acpSessionId from existing file if incoming save doesn't have it.
@@ -585,9 +607,10 @@ export class UnifiedPersistence {
       ...(preservedConfig && {
         config: preservedConfig,
       }),
-      // Preserve name from existing file if not in incoming agent
+      // Preserve name from existing file if incoming is generic/stale
       ...(preservedName && {
         name: preservedName,
+        ...(preservedNameExplicitlySet && { nameExplicitlySet: true }),
       }),
       // Preserve acpSessionId from existing file if not in incoming agent
       ...(preservedAcpSessionId && {

@@ -292,13 +292,21 @@
         oldName,
         newName,
         () => {
-          sessionStore.updateSessionForWorkspace(workspaceId, agentId, { name: newName });
+          sessionStore.updateSessionForWorkspace(workspaceId, agentId, {
+            name: newName,
+            nameExplicitlySet: true,
+          } as any);
           layoutManager.updateTabTitle(tab.id, newName);
           // Save the session to persist the name change
           agentService.saveSession(agentId, workspaceId, true);
         },
         () => {
-          sessionStore.updateSessionForWorkspace(workspaceId, agentId, { name: oldName });
+          // Undo: restore old name with nameExplicitlySet so persistence allows the
+          // disk write (without it, the preservation logic blocks the revert).
+          sessionStore.updateSessionForWorkspace(workspaceId, agentId, {
+            name: oldName,
+            nameExplicitlySet: true,
+          } as any);
           layoutManager.updateTabTitle(tab.id, oldName);
           agentService.saveSession(agentId, workspaceId, true);
         },

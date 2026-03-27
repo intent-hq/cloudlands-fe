@@ -152,6 +152,115 @@ describe('buildWorkspaceApi – setTitle', () => {
 });
 
 // =====================================================================
+// Workspace API tests – setAgentName
+// =====================================================================
+describe('buildWorkspaceApi – setAgentName', () => {
+  const workspaceId = 'ws-name-test';
+  const agentId = 'agent-name-1';
+  const call = { context: { agentId }, name: 'workspace_api', arguments: {} } as any;
+
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  function makeApi(workspaceManager: any) {
+    return buildWorkspaceApi({
+      workspacePath: '/tmp/test',
+      workspaceId,
+      workspaceManager,
+      call,
+    });
+  }
+
+  it('writes name to disk and sends IPC event', async () => {
+    const { getSessionPath: mockGetSessionPath } = await import('$shared/constants');
+    (mockGetSessionPath as any).mockReturnValue('/tmp/session.json');
+
+    vi.doMock('fs/promises', () => ({
+      readFile: vi.fn().mockResolvedValue(JSON.stringify({ name: 'Old Name', id: agentId })),
+      writeFile: vi.fn().mockResolvedValue(undefined),
+    }));
+
+    const { buildWorkspaceApi: freshBuildApi } = await import('../ws-workspace-api');
+    const freshFs = await import('fs/promises');
+
+    const api = freshBuildApi({
+      workspacePath: '/tmp/test',
+      workspaceId,
+      workspaceManager: {},
+      call,
+    });
+    const result = await api.setAgentName('My Custom Name');
+
+    expect(result.ok).toBe(true);
+    expect(result.name).toBe('My Custom Name');
+
+    // Verify disk write
+    expect(freshFs.writeFile).toHaveBeenCalledWith(
+      '/tmp/session.json',
+      expect.stringContaining('"name": "My Custom Name"'),
+      'utf-8',
+    );
+
+    // Verify IPC event
+    const { sendToWorkspaceWindows: mockSend } = await import(
+      '$features/system/main/system.ipc'
+    );
+    expect(mockSend).toHaveBeenCalledWith(workspaceId, 'agent:renamed', {
+      agentId,
+      workspaceId,
+      name: 'My Custom Name',
+    });
+
+    vi.doUnmock('fs/promises');
+  });
+
+  it('updates in-memory backend session (regression)', async () => {
+    const { getSessionPath: mockGetSessionPath } = await import('$shared/constants');
+    (mockGetSessionPath as any).mockReturnValue('/tmp/session.json');
+
+    // Mock ConsolidatedBackendService to track in-memory update
+    const mockSession = { name: 'Old Name', id: agentId };
+
+    vi.doMock('fs/promises', () => ({
+      readFile: vi.fn().mockResolvedValue(JSON.stringify({ name: 'Old Name', id: agentId })),
+      writeFile: vi.fn().mockResolvedValue(undefined),
+    }));
+    vi.doMock('$features/agent/main/consolidated-backend.service', () => ({
+      ConsolidatedBackendService: {
+        getInstance: () => ({
+          getSession: (id: string) => (id === agentId ? mockSession : undefined),
+        }),
+      },
+    }));
+
+    // Re-import to pick up the mocks
+    const { buildWorkspaceApi: freshBuildApi } = await import('../ws-workspace-api');
+    const api = freshBuildApi({
+      workspacePath: '/tmp/test',
+      workspaceId,
+      workspaceManager: {},
+      call,
+    });
+
+    await api.setAgentName('Updated Name');
+
+    // The in-memory session should have been updated
+    expect(mockSession.name).toBe('Updated Name');
+
+    vi.doUnmock('fs/promises');
+    vi.doUnmock('$features/agent/main/consolidated-backend.service');
+  });
+
+  it('throws when name is empty', async () => {
+    const api = makeApi({});
+    await expect(api.setAgentName('')).rejects.toThrow('name is required');
+  });
+
+
+});
+
+// =====================================================================
 // Git API tests – detectMergeConflicts (tested via buildWsGitApi)
 // =====================================================================
 describe('buildWsGitApi – checkMergeConflicts', () => {

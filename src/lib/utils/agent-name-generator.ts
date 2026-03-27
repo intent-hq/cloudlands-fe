@@ -103,49 +103,8 @@ export function generateSpecialistAgentName(baseName: string, existingNames: str
  */
 export const DEFAULT_AGENT_NAME = 'Coordinator';
 
-/**
- * Check if a name is a generic/default name that should be replaced.
- * Used by UI components to determine how to display agent names.
- * Note: Specialist-based names (e.g., "Coordinator", "Implementor 2") are NOT generic.
- */
-export function isGenericAgentName(name: string | undefined | null): boolean {
-  if (!name) return true;
-  const normalized = name.trim().toLowerCase();
-  return (
-    normalized === 'new agent' ||
-    normalized === 'orchestrator' ||
-    normalized === 'assistant' ||
-    normalized.startsWith('thread ') ||
-    normalized.startsWith('workspace agent') ||
-    // Match "Chat HH-MM AM/PM" pattern from legacy timestamp-based names
-    /^chat \d{1,2}-\d{2} (am|pm)$/i.test(normalized)
-  );
-}
-
-/**
- * Create a Set for O(1) lookup of adjectives and animals.
- * Created once at module load for performance.
- */
-const adjectivesSet = new Set(adjectives.map((a) => a.toLowerCase()));
-const animalsSet = new Set(animals.map((a) => a.toLowerCase()));
-
-/**
- * Check if a name is a random "Adjective Animal" name (e.g., "Swift Falcon", "Clever Otter").
- * These are auto-generated names that should prompt the agent to set a custom name.
- * Used to determine if naming instructions should be included in the first message.
- */
-export function isRandomAgentName(name: string | undefined | null): boolean {
-  if (!name) return true;
-
-  const trimmed = name.trim();
-  // Random names are exactly two capitalized words separated by a space
-  const parts = trimmed.split(' ');
-  if (parts.length !== 2) return false;
-
-  const [adjective, animal] = parts;
-  // Check if both words are in the dictionaries (case-insensitive)
-  return adjectivesSet.has(adjective.toLowerCase()) && animalsSet.has(animal.toLowerCase());
-}
+// Re-export name classification functions from shared module (usable in both main and renderer)
+export { isGenericAgentName, isRandomAgentName } from '$shared/utils/agent-name-utils';
 
 /**
  * Generate an agent name from a message or task text.
