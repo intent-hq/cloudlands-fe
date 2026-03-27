@@ -56,7 +56,6 @@
     <div
       class="fixed inset-0 z-60 flex items-center justify-center overflow-y-auto pointer-events-none"
       role="presentation"
-      aria-hidden="true"
       transition:fly={{ y: 20, duration: 200 }}
     >
       <!-- svelte-ignore a11y_no_static_element_interactions -->

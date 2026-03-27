@@ -144,10 +144,10 @@
   function collapseFromCurrent(node: HTMLElement, { duration = 300, easing = cubicOut } = {}) {
     const currentHeight = node.offsetHeight;
     const style = getComputedStyle(node);
-    const paddingTop = parseFloat(style.paddingTop);
-    const paddingBottom = parseFloat(style.paddingBottom);
-    const marginTop = parseFloat(style.marginTop);
-    const marginBottom = parseFloat(style.marginBottom);
+    const paddingTop = parseFloat(style.paddingTop) || 0;
+    const paddingBottom = parseFloat(style.paddingBottom) || 0;
+    const marginTop = parseFloat(style.marginTop) || 0;
+    const marginBottom = parseFloat(style.marginBottom) || 0;
 
     return {
       duration,

@@ -256,6 +256,7 @@ export function* watchSessionStoreSyncSaga(_wsId: string) {
   const channel = createSessionStoreChannel();
   let lastSignature: string | undefined;
   let lastAgentIdsByWorkspace = new Map<string, Set<string>>();
+  let hasSyncedNonEmptySnapshot = false;
 
   try {
     while (true) {
@@ -269,14 +270,23 @@ export function* watchSessionStoreSyncSaga(_wsId: string) {
         lastSignature = newSignature;
         yield* put(replaceWorkspaceAgentSnapshots(snapshotsByWorkspace));
 
-        for (const [workspaceId, agents] of Object.entries(snapshotsByWorkspace)) {
-          const previousAgentIds = lastAgentIdsByWorkspace.get(workspaceId) ?? new Set<string>();
+        if (hasSyncedNonEmptySnapshot) {
+          for (const [workspaceId, agents] of Object.entries(snapshotsByWorkspace)) {
+            const previousAgentIds =
+              lastAgentIdsByWorkspace.get(workspaceId) ?? new Set<string>();
 
-          for (const agent of agents) {
-            if (!previousAgentIds.has(String(agent.id))) {
-              yield* put(markAgentRecentlyCreated(workspaceId, agent.id));
+            for (const agent of agents) {
+              if (!previousAgentIds.has(String(agent.id))) {
+                yield* put(markAgentRecentlyCreated(workspaceId, agent.id));
+              }
             }
           }
+        }
+
+        // Only consider this a real baseline once we've seen at least one
+        // non-empty snapshot — until then, agents are still hydrating.
+        if (!hasSyncedNonEmptySnapshot && Object.keys(snapshotsByWorkspace).length > 0) {
+          hasSyncedNonEmptySnapshot = true;
         }
 
         lastAgentIdsByWorkspace = new Map(

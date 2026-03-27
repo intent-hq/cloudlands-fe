@@ -474,13 +474,13 @@ describe("workspaceAgentsSaga", () => {
       task.cancel();
       await task.toPromise();
 
+      // The first sync should only dispatch replaceWorkspaceAgentSnapshots,
+      // NOT markAgentRecentlyCreated — existing agents on first load are not "new".
       expect(dispatched).toEqual([
         replaceWorkspaceAgentSnapshots({
           "ws-1": [mockAgent("agent-1", "ws-1")],
           "ws-2": [backgroundAgent],
         }),
-        markAgentRecentlyCreated("ws-1", "agent-1"),
-        markAgentRecentlyCreated("ws-2", "agent-2"),
       ]);
     } finally {
       vi.useRealTimers();
@@ -517,18 +517,64 @@ describe("workspaceAgentsSaga", () => {
       task.cancel();
       await task.toPromise();
 
+      // First snapshot: no markAgentRecentlyCreated (existing agents are not "new").
+      // Second snapshot: only agent-3 is truly new — agents 1 and 2 were in the first snapshot.
       expect(dispatched).toEqual([
         replaceWorkspaceAgentSnapshots({
           "ws-1": [ws1Agent],
           "ws-2": [ws2Agent],
         }),
-        markAgentRecentlyCreated("ws-1", "agent-1"),
-        markAgentRecentlyCreated("ws-2", "agent-2"),
         replaceWorkspaceAgentSnapshots({
           "ws-1": [ws1Agent],
           "ws-3": [ws3Agent],
         }),
         markAgentRecentlyCreated("ws-3", "agent-3"),
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not mark hydrated agents as recently created when first sync sees empty store (hydration race)", async () => {
+    vi.useFakeTimers();
+
+    try {
+      // First snapshot: empty store (hydration hasn't finished yet)
+      sessionStoreSnapshotRef.current = { sessions: [] };
+
+      const dispatched: unknown[] = [];
+      const task = runSaga(
+        {
+          dispatch: (action) => {
+            dispatched.push(action);
+          },
+          getState: () => ({}),
+        },
+        watchSessionStoreSyncSaga,
+        "ws-1"
+      );
+
+      // Process empty snapshot
+      await vi.advanceTimersByTimeAsync(101);
+
+      // Second snapshot: hydration completes, agents appear
+      const ws1Agent = mockAgent("agent-1", "ws-1");
+      const ws2Agent = mockAgent("agent-2", "ws-2");
+      emitSessionStoreSnapshot([ws1Agent, ws2Agent]);
+      await vi.advanceTimersByTimeAsync(101);
+
+      task.cancel();
+      await task.toPromise();
+
+      // The first sync sees an empty store and dispatches replaceWorkspaceAgentSnapshots({}).
+      // The second sync sees hydrated agents — these should NOT be marked as recently
+      // created because the previous snapshot was empty (hydration race).
+      expect(dispatched).toEqual([
+        replaceWorkspaceAgentSnapshots({}),
+        replaceWorkspaceAgentSnapshots({
+          "ws-1": [ws1Agent],
+          "ws-2": [ws2Agent],
+        }),
       ]);
     } finally {
       vi.useRealTimers();
