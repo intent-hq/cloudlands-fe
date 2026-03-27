@@ -375,12 +375,56 @@ async function getWorkspaceDisabledMcpServersPath(workspaceId: string): Promise<
 }
 
 /**
- * Get the list of disabled MCP servers for a workspace
+ * Read the global disabled MCP servers setting from electron-store.
+ * Extracted for testability — callers can override via dependency injection.
+ */
+export function readGlobalDisabledSetting(): unknown {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ElectronStore = require('electron-store');
+  const settingsStore = new ElectronStore({ name: 'settings' });
+  return settingsStore.get('disabledMcpServers');
+}
+
+/**
+ * Get the list of globally disabled MCP servers from app settings.
+ * These are the servers disabled in Settings → Workspace Setup.
+ *
+ * @param readSetting - Optional reader function (defaults to electron-store).
+ *                      Useful for testing.
+ * @returns Array of globally disabled server names, empty array if none
+ */
+export function getGlobalDisabledMcpServers(
+  readSetting: () => unknown = readGlobalDisabledSetting,
+): string[] {
+  try {
+    const disabled = readSetting();
+    if (Array.isArray(disabled)) {
+      // Filter out non-string entries to guard against corrupted store data
+      return disabled.filter((item): item is string => typeof item === 'string');
+    }
+    return [];
+  } catch (error) {
+    logger.warn('Failed to read global disabled MCP servers', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  }
+}
+
+/**
+ * Get the list of disabled MCP servers for a workspace.
+ *
+ * Returns the workspace's own persisted disabled list if it exists, or `null`
+ * when there is no workspace-specific state. Callers are responsible for
+ * deciding the fallback (typically `getGlobalDisabledMcpServers()`).
  *
  * @param workspaceId - The workspace ID
- * @returns Array of disabled server names, empty array if none
+ * @returns Array of disabled server names, or `null` when no workspace-specific
+ *          state exists (the caller should fall back to global defaults).
  */
-export async function getWorkspaceDisabledMcpServers(workspaceId: string): Promise<string[]> {
+export async function getWorkspaceDisabledMcpServers(
+  workspaceId: string,
+): Promise<string[] | null> {
   const filePath = await getWorkspaceDisabledMcpServersPath(workspaceId);
 
   try {
@@ -388,10 +432,13 @@ export async function getWorkspaceDisabledMcpServers(workspaceId: string): Promi
     const data = JSON.parse(content);
 
     if (Array.isArray(data.disabledServers)) {
-      return data.disabledServers;
+      // Workspace explicitly persisted its disabled list (even if empty → "all enabled").
+      // Filter out non-string entries to guard against corrupted data.
+      return data.disabledServers.filter((item: unknown): item is string => typeof item === 'string');
     }
 
-    return [];
+    // File exists but has no disabledServers array — no explicit workspace state
+    return null;
   } catch (error) {
     const errCode = (error as NodeJS.ErrnoException).code;
     if (errCode !== 'ENOENT') {
@@ -401,7 +448,8 @@ export async function getWorkspaceDisabledMcpServers(workspaceId: string): Promi
         path: filePath,
       });
     }
-    return [];
+    // No per-workspace file — no explicit workspace state
+    return null;
   }
 }
 

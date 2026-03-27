@@ -4,6 +4,8 @@ import {
   mergeUserMcpServers,
   validateMcpServerConfig,
   readUserMcpServers,
+  getGlobalDisabledMcpServers,
+  getWorkspaceDisabledMcpServers,
   type McpServerConfig,
 } from '../main/user-mcp-settings';
 import {
@@ -32,6 +34,15 @@ vi.mock('../../../shared/logger', () => ({
 // Mock mcp-auth-providers to avoid side effects
 vi.mock('../main/mcp-auth-providers', () => ({
   injectMcpAuth: vi.fn((config: unknown) => config),
+}));
+
+// Mock shared/main/config for workspace paths
+vi.mock('../../../shared/main/config', () => ({
+  WorkspaceConfig: {
+    paths: {
+      metadata: (workspaceId: string) => `/mock/workspaces/${workspaceId}/.workspace`,
+    },
+  },
 }));
 
 beforeEach(() => {
@@ -286,5 +297,102 @@ describe('RESERVED_MCP_SERVER_NAMES', () => {
 
   it('is a readonly array', () => {
     expect(Array.isArray(RESERVED_MCP_SERVER_NAMES)).toBe(true);
+  });
+});
+
+// =============================================================================
+// getGlobalDisabledMcpServers
+// =============================================================================
+describe('getGlobalDisabledMcpServers', () => {
+  it('returns array of disabled server names from the reader function', () => {
+    const mockReader = vi.fn().mockReturnValue(['Figma', 'Augment Context Connectors']);
+
+    const result = getGlobalDisabledMcpServers(mockReader);
+    expect(result).toEqual(['Figma', 'Augment Context Connectors']);
+    expect(mockReader).toHaveBeenCalled();
+  });
+
+  it('filters out non-string entries from the array', () => {
+    const mockReader = vi.fn().mockReturnValue(['Figma', null, 123, 'Snyk', undefined]);
+
+    const result = getGlobalDisabledMcpServers(mockReader);
+    expect(result).toEqual(['Figma', 'Snyk']);
+  });
+
+  it('returns empty array when reader returns undefined', () => {
+    const mockReader = vi.fn().mockReturnValue(undefined);
+
+    const result = getGlobalDisabledMcpServers(mockReader);
+    expect(result).toEqual([]);
+  });
+
+  it('returns empty array when reader returns non-array', () => {
+    const mockReader = vi.fn().mockReturnValue('not-an-array');
+
+    const result = getGlobalDisabledMcpServers(mockReader);
+    expect(result).toEqual([]);
+  });
+
+  it('returns empty array when reader throws', () => {
+    const mockReader = vi.fn().mockImplementation(() => {
+      throw new Error('Store corrupted');
+    });
+
+    const result = getGlobalDisabledMcpServers(mockReader);
+    expect(result).toEqual([]);
+  });
+});
+
+// =============================================================================
+// getWorkspaceDisabledMcpServers
+// =============================================================================
+describe('getWorkspaceDisabledMcpServers', () => {
+  it('returns workspace-specific disabled servers when file exists', async () => {
+    const workspaceData = { disabledServers: ['Snyk'] };
+    vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(workspaceData));
+
+    const result = await getWorkspaceDisabledMcpServers('ws-123');
+    expect(result).toEqual(['Snyk']);
+  });
+
+  it('returns null when workspace file does not exist', async () => {
+    const err = new Error('ENOENT') as NodeJS.ErrnoException;
+    err.code = 'ENOENT';
+    vi.mocked(fs.readFile).mockRejectedValue(err);
+
+    const result = await getWorkspaceDisabledMcpServers('ws-new');
+    expect(result).toBeNull();
+  });
+
+  it('returns null when file has no disabledServers array', async () => {
+    vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify({ otherKey: true }));
+
+    const result = await getWorkspaceDisabledMcpServers('ws-incomplete');
+    expect(result).toBeNull();
+  });
+
+  it('returns empty array when workspace explicitly has no disabled servers', async () => {
+    // disabledServers: [] means "user enabled everything" — must NOT be treated as null
+    const workspaceData = { disabledServers: [] };
+    vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(workspaceData));
+
+    const result = await getWorkspaceDisabledMcpServers('ws-all-enabled');
+    expect(result).toEqual([]);
+  });
+
+  it('filters out non-string entries from workspace disabled list', async () => {
+    const workspaceData = { disabledServers: ['Snyk', null, 42, 'Figma', undefined] };
+    vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(workspaceData));
+
+    const result = await getWorkspaceDisabledMcpServers('ws-corrupted');
+    expect(result).toEqual(['Snyk', 'Figma']);
+  });
+
+  it('returns workspace-specific list regardless of global state', async () => {
+    const workspaceData = { disabledServers: ['Snyk'] };
+    vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(workspaceData));
+
+    const result = await getWorkspaceDisabledMcpServers('ws-override');
+    expect(result).toEqual(['Snyk']);
   });
 });

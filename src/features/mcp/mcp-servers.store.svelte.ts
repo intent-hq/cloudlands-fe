@@ -4,7 +4,9 @@
  * Manages user-defined MCP servers from ~/.augment/settings.json
  * and tracks per-workspace enable/disable state.
  *
- * Servers are ON by default when added.
+ * New workspaces inherit the global disabled state from Settings → Workspace Setup
+ * so that servers disabled globally start disabled in new spaces.
+ * Once a workspace has its own persisted state, that takes precedence.
  */
 
 import { createLogger } from '$lib/utils/client-logger';
@@ -264,26 +266,72 @@ class McpServersStore {
       });
   }
 
+  /**
+   * Apply a disabled server list to the workspace state.
+   * Creates a new top-level object to ensure Svelte 5 $state reactivity fires.
+   */
+  private applyDisabledServers(workspaceId: string, disabledNames: string[]): void {
+    const enabledServers: Record<string, boolean> = {};
+    for (const name of disabledNames) {
+      enabledServers[name] = false;
+    }
+    // Reassign the entire object — mutating a nested property on the $state proxy
+    // inside an async callback doesn't reliably trigger Svelte 5 reactivity.
+    this.#stateByWorkspace = {
+      ...this.#stateByWorkspace,
+      [workspaceId]: { enabledServers },
+    };
+  }
+
   /** Persistence: load from workspace metadata via IPC */
   private loadFromStorage(workspaceId: string): void {
     window.electronAPI
       ?.invoke('user-mcp:get-workspace-disabled', { workspaceId })
-      .then((result) => {
+      ?.then((result) => {
         if (result?.success && Array.isArray(result.data)) {
-          // Convert array of disabled server names to enabledServers map
-          const enabledServers: Record<string, boolean> = {};
-          for (const name of result.data) {
-            enabledServers[name] = false;
-          }
-          this.#stateByWorkspace[workspaceId] = { enabledServers };
-          logger.debug('Loaded MCP server state', {
+          // Workspace has an explicit persisted disabled list (may be empty → "all enabled")
+          this.applyDisabledServers(workspaceId, result.data);
+          logger.debug('Loaded MCP server state from workspace', {
             workspaceId,
             disabledCount: result.data.length,
           });
+        } else if (result?.success && result.data === null) {
+          // No workspace-specific state — inherit from global disabled servers.
+          // Note: inherited defaults are intentionally NOT persisted. This means
+          // spaces that never had their MCP toggles touched will keep reflecting
+          // the latest global state on each load, which is the expected UX —
+          // once a user explicitly toggles a server in a space, that action
+          // persists and the space becomes independent.
+          this.loadGlobalDefaults(workspaceId);
         }
       })
-      .catch((error) => {
+      ?.catch((error: unknown) => {
         logger.error('Failed to load MCP server state', { error });
+      });
+  }
+
+  /**
+   * Load the global disabled servers from Settings → Workspace Setup
+   * and apply them as the initial per-workspace defaults.
+   * This ensures new spaces reflect the global disabled state.
+   */
+  private loadGlobalDefaults(workspaceId: string): void {
+    window.electronAPI
+      ?.invoke('settings:get', { key: 'disabledMcpServers' })
+      ?.then((result) => {
+        if (result?.success && Array.isArray(result.data) && result.data.length > 0) {
+          // Filter non-string entries for consistency with getGlobalDisabledMcpServers
+          const filtered = result.data.filter((item: unknown): item is string => typeof item === 'string');
+          this.applyDisabledServers(workspaceId, filtered);
+          logger.debug('Inherited global disabled MCP servers for new workspace', {
+            workspaceId,
+            disabledCount: result.data.length,
+            disabledServers: result.data,
+          });
+        }
+      })
+      ?.catch((error: unknown) => {
+        logger.error('Failed to load global MCP server defaults', { error });
       });
   }
 }

@@ -2332,8 +2332,14 @@ export function setupSystemIPC() {
       UserMcpGetWorkspaceDisabledSchema,
       async (_event, validated) => {
         const { getWorkspaceDisabledMcpServers } = await import('../../mcp/main/user-mcp-settings');
-        const disabledServers = await getWorkspaceDisabledMcpServers(validated.workspaceId);
-        return { success: true, data: disabledServers };
+        const workspaceResult = await getWorkspaceDisabledMcpServers(validated.workspaceId);
+        if (workspaceResult !== null) {
+          // Workspace has explicit state (may be [] meaning "all enabled")
+          return { success: true, data: workspaceResult };
+        }
+        // No workspace-specific state — return null so the renderer
+        // knows to fall back to global defaults on its own
+        return { success: true, data: null };
       },
       USER_MCP_CHANNELS.GET_WORKSPACE_DISABLED,
     ),

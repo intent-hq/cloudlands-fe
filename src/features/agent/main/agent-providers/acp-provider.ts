@@ -2104,11 +2104,12 @@ export class ACPProvider extends BaseAgentProvider {
 
                 if (userServers) {
                   // Get list of disabled servers for this workspace
-                  const { getWorkspaceDisabledMcpServers } =
+                  const { getWorkspaceDisabledMcpServers, getGlobalDisabledMcpServers } =
                     await import('../../../mcp/main/user-mcp-settings');
-                  const disabledServers = this.config.workspaceId
+                  const workspaceDisabled = this.config.workspaceId
                     ? await getWorkspaceDisabledMcpServers(this.config.workspaceId)
-                    : [];
+                    : null;
+                  const disabledServers = workspaceDisabled ?? getGlobalDisabledMcpServers();
 
                   // Filter out disabled servers before merging
                   const filteredUserServers = Object.fromEntries(
@@ -2433,11 +2434,12 @@ export class ACPProvider extends BaseAgentProvider {
             if (enableUserMcpServers) {
               const userServers = await readUserMcpServers();
               if (userServers) {
-                const { getWorkspaceDisabledMcpServers } =
+                const { getWorkspaceDisabledMcpServers, getGlobalDisabledMcpServers } =
                   await import('../../../mcp/main/user-mcp-settings');
-                const disabledServers = this.config.workspaceId
+                const workspaceDisabled = this.config.workspaceId
                   ? await getWorkspaceDisabledMcpServers(this.config.workspaceId)
-                  : [];
+                  : null;
+                const disabledServers = workspaceDisabled ?? getGlobalDisabledMcpServers();
                 const filteredUserServers = Object.fromEntries(
                   Object.entries(userServers).filter(([name]) => !disabledServers.includes(name)),
                 );
