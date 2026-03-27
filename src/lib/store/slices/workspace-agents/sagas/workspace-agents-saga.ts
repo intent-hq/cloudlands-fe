@@ -27,6 +27,7 @@ import {
   selectIsLoadingAgents,
   selectRecentlyCreatedAgents,
 } from "../workspace-agents-selectors";
+import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import {
   markAgentRecentlyCreated,
   removeAgent,
@@ -154,26 +155,22 @@ export function* watchFileTrackingLifecycleSaga(wsId: string) {
   }
 }
 
-export function* watchAgentDeletedSaga(wsId: string) {
+export function* watchAgentDeletedSaga() {
   yield* takeEveryFromElectronChannel<MaybeWrappedPayload<AgentDeletedPayload>>(
     "agent:deleted",
     function* (event) {
       const data = unwrapPayload(event);
 
-      if (typeof data.agentId !== "string") {
+      if (typeof data.agentId !== "string" || typeof data.workspaceId !== "string") {
         return;
       }
 
-      if (data.workspaceId && data.workspaceId !== wsId) {
-        return;
-      }
-
-      yield* put(removeAgent(wsId, data.agentId));
+      yield* put(removeAgent(data.workspaceId, data.agentId));
     },
   );
 }
 
-export function* watchAgentRenamedSaga(wsId: string) {
+export function* watchAgentRenamedSaga() {
   yield* takeEveryFromElectronChannel<MaybeWrappedPayload<AgentRenamedPayload>>(
     "agent:renamed",
     function* (event) {
@@ -182,26 +179,21 @@ export function* watchAgentRenamedSaga(wsId: string) {
       if (
         typeof data.agentId !== "string" ||
         typeof data.workspaceId !== "string" ||
-        typeof data.name !== "string" ||
-        data.workspaceId !== wsId
+        typeof data.name !== "string"
       ) {
         return;
       }
 
-      yield* put(renameAgent(wsId, data.agentId, data.name));
+      yield* put(renameAgent(data.workspaceId, data.agentId, data.name));
     },
   );
 }
 
-export function* watchWaitingForFirstMessageSaga(wsId: string) {
+export function* watchWaitingForFirstMessageSaga() {
   yield* takeEveryFromWindowEvent<{ agentId: string; workspaceId: string }>(
     "workspace:waiting-for-first-message",
     function* (data) {
-      if (data.workspaceId !== wsId) {
-        return;
-      }
-
-      yield* put(setWaitingForFirstMessage(wsId, data.agentId, true));
+      yield* put(setWaitingForFirstMessage(data.workspaceId, data.agentId, true));
     },
   );
 }
@@ -483,8 +475,8 @@ export function* recoverLateInitialAgentHydrationSaga(wsId: string) {
 }
 
 /** @internal Exported for testing only. */
-export function* watchLateInitialAgentHydrationRecoverySaga(wsId: string) {
-  let recoveryTask: Task | null = null;
+export function* watchLateInitialAgentHydrationRecoverySaga() {
+  const recoveryTasks = new Map<string, Task>();
 
   try {
     while (true) {
@@ -494,20 +486,19 @@ export function* watchLateInitialAgentHydrationRecoverySaga(wsId: string) {
       ])) as ReturnType<typeof setInitialAgentId> | ReturnType<typeof setInitialAgentConfig>;
       const [actionWsId] = action.payload;
 
-      if (actionWsId !== wsId) {
-        continue;
+      const existing = recoveryTasks.get(actionWsId);
+      if (existing) {
+        yield* cancel(existing);
       }
 
-      if (recoveryTask) {
-        yield* cancel(recoveryTask);
-      }
-
-      recoveryTask = yield* fork(recoverLateInitialAgentHydrationSaga, wsId);
+      const task = yield* fork(recoverLateInitialAgentHydrationSaga, actionWsId);
+      recoveryTasks.set(actionWsId, task);
     }
   } finally {
-    if (recoveryTask) {
-      yield* cancel(recoveryTask);
+    for (const task of recoveryTasks.values()) {
+      yield* cancel(task);
     }
+    recoveryTasks.clear();
   }
 }
 
@@ -516,27 +507,29 @@ export function* watchWorkspaceAgentEventsForWorkspaceSaga(
 ) {
   const [wsId] = action.payload;
 
+  // Deduplicate: if a watcher is already running for this workspace
+  // (e.g. from the retroactive mount check), skip this duplicate mount.
+  if (workspaceAgentTasks.has(wsId)) {
+    return;
+  }
+
+  // Immediately register a sentinel so the retroactive-mount guard sees this
+  // workspace as "already being watched" and won't fork a duplicate watcher.
+  workspaceAgentTasks.set(wsId, []);
+
   yield* handleWorkspaceChangeOnMount(wsId);
   clearUnreadForMountedWorkspace(wsId);
 
   const fileTrackingTask = yield* fork(watchFileTrackingLifecycleSaga, wsId);
-  const deletedTask = yield* fork(watchAgentDeletedSaga, wsId);
-  const renamedTask = yield* fork(watchAgentRenamedSaga, wsId);
-  const waitingForFirstMessageTask = yield* fork(watchWaitingForFirstMessageSaga, wsId);
   const drawerGuardTask = yield* fork(watchDrawerGuardSaga, wsId);
 
   // Load agents from disk on workspace mount
   yield* fork(loadAgentsFromDiskSaga, wsId);
-  const lateHydrationRecoveryTask = yield* fork(watchLateInitialAgentHydrationRecoverySaga, wsId);
   const sessionStoreSyncTask = yield* fork(watchSessionStoreSyncSaga, wsId);
 
   workspaceAgentTasks.set(wsId, [
     fileTrackingTask,
-    deletedTask,
-    renamedTask,
-    waitingForFirstMessageTask,
     drawerGuardTask,
-    lateHydrationRecoveryTask,
     sessionStoreSyncTask,
   ]);
 }
@@ -561,9 +554,60 @@ export function* cancelWorkspaceAgentEventsForWorkspaceSaga(
 }
 
 export function* workspaceAgentsSaga() {
+  // Reset module-level state on (re)start to avoid stale data from previous runs
+  previousMountedWorkspaceId = undefined;
+  workspaceAgentTasks.clear();
+
   yield* all([
     takeEvery(workspaceMounted, watchWorkspaceAgentEventsForWorkspaceSaga),
     takeEvery(workspaceUnmounted, cancelWorkspaceAgentEventsForWorkspaceSaga),
     fork(watchAgentCreationSaga),
+    fork(retroactiveWorkspaceMountCheckSaga),
+    fork(watchAgentDeletedSaga),
+    fork(watchAgentRenamedSaga),
+    fork(watchWaitingForFirstMessageSaga),
+    fork(watchLateInitialAgentHydrationRecoverySaga),
   ]);
+}
+
+/**
+ * Guard against early `workspaceMounted` dispatch.
+ *
+ * If the component dispatches `workspaceMounted` before the saga middleware
+ * has registered its `takeEvery`, the action is silently dropped and agents
+ * never load. This saga runs once at startup: after the `takeEvery` is
+ * registered (because `all` waits for all forks to start), it checks whether
+ * a workspace is already active in Redux state. If one exists, it manually
+ * forks the workspace watcher with a synthetic action.
+ *
+ * Invalid workspace IDs (`""`, `"new"`, `"optimistic-..."`, `"undefined"`)
+ * are skipped — the real `workspaceMounted` will arrive once the workspace
+ * is fully resolved.
+ *
+ * The `workspaceAgentTasks` map prevents duplicate loads: if the action was
+ * already processed normally, the map will have an entry for the workspace ID.
+ * This also supports crash recovery: after a saga auto-restart the map is
+ * cleared, so the retroactive check correctly replays the mount.
+ */
+/** @internal Exported for testing only. */
+export function* retroactiveWorkspaceMountCheckSaga() {
+  const activeWsId = yield* select(selectActiveWorkspaceId.select);
+
+  if (!activeWsId) {
+    return;
+  }
+
+  // Skip invalid workspace IDs (empty, "new", "optimistic-*", "undefined") —
+  // the real workspaceMounted will arrive once the workspace is fully resolved.
+  if (!isValidFileTrackingWorkspaceId(activeWsId)) {
+    return;
+  }
+
+  // If the normal takeEvery already processed the mount, tasks will exist.
+  if (workspaceAgentTasks.has(activeWsId)) {
+    return;
+  }
+
+  // The workspace was mounted before the saga started — replay.
+  yield* fork(watchWorkspaceAgentEventsForWorkspaceSaga, workspaceMounted(activeWsId));
 }

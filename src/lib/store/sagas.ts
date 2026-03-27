@@ -1,7 +1,7 @@
 /**
  * Root sagas registry.
  * Each saga is registered here and managed by the saga manager.
- * Sagas are started/stopped via the RunSaga component.
+ * Sagas are started/stopped via initStore() or the RunSaga component.
  */
 
 import { providerSettingsSaga } from "./slices/provider-settings/sagas/provider-settings-saga";
@@ -37,8 +37,9 @@ function* noopSaga() {}
  * All registered sagas.
  * Add new sagas here as slices are migrated.
  *
- * Note: Saga names referenced in Store.svelte (streamingSaga, workspaceSaga, etc.)
- * will be added here as their respective stores are migrated.
+ * All sagas are started synchronously by initStore() during store initialization.
+ * Placeholder noop sagas below will be replaced with real implementations
+ * as their respective Svelte stores are migrated to Redux.
  */
 export const sagas = {
   providerSettingsSaga,
@@ -92,4 +93,7 @@ type _AssertSagasExtendsName = Record<_SagaName, unknown> extends Record<keyof t
 type _AssertNameExtendsSagas = Record<keyof typeof sagas, unknown> extends Record<_SagaName, unknown> ? true : never;
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _assertSync: _AssertSagasExtendsName & _AssertNameExtendsSagas = true;
+
+/** All registered saga names, for use by initStore to start all sagas synchronously. */
+export const sagaNames = Object.keys(sagas) as _SagaName[];
 

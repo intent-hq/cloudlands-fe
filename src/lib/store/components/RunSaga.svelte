@@ -1,7 +1,7 @@
 <script lang="ts">
   import { type SagaName } from '../sagas';
-  import { startSaga, stopSaga } from '../slices/saga-manager/saga-manager-slice';
-  import { getDispatch } from '../utils/utils';
+  import { runSaga } from './run-saga';
+  import { getStoreContext } from '../utils/utils';
 
   const {
     sagaName,
@@ -9,14 +9,11 @@
     sagaName: SagaName;
   } = $props();
 
-  const dispatch = getDispatch();
+  const storeContext = getStoreContext();
 
-  // Should start saga as soon as possible to reduce possible race conditions
   $effect.pre(() => {
-    dispatch(startSaga(sagaName));
-    return () => {
-      dispatch(stopSaga(sagaName));
-    };
+    if (!storeContext) return;
+    return runSaga(storeContext.store, sagaName);
   });
 </script>
 

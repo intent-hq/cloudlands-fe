@@ -193,6 +193,7 @@ import { loadAgentsFromDiskSaga, restoreInitialAgent } from "./agent-loading-sag
 import {
   cancelWorkspaceAgentEventsForWorkspaceSaga,
   recoverLateInitialAgentHydrationSaga,
+  retroactiveWorkspaceMountCheckSaga,
   watchAgentDeletedSaga,
   watchFileTrackingLifecycleSaga,
   watchLateInitialAgentHydrationRecoverySaga,
@@ -257,11 +258,7 @@ describe("workspaceAgentsSaga", () => {
 
   it("registers agent watchers on mount and cancels them from the workspace unmount handler", () => {
     const fileTrackingTask = { type: "file-tracking-task" } as const;
-    const deletedTask = { type: "deleted-task" } as const;
-    const renamedTask = { type: "renamed-task" } as const;
-    const waitingTask = { type: "waiting-task" } as const;
     const drawerGuardTask = { type: "drawer-guard-task" } as const;
-    const lateHydrationRecoveryTask = { type: "late-hydration-recovery-task" } as const;
     const sessionStoreSyncTask = { type: "session-store-sync-task" } as const;
     const iterator = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-1"));
 
@@ -269,20 +266,8 @@ describe("workspaceAgentsSaga", () => {
       value: sagaEffects.fork(watchFileTrackingLifecycleSaga, "ws-1"),
       done: false,
     });
-    expect(iterator.next(fileTrackingTask)).toEqual({
-      value: sagaEffects.fork(watchAgentDeletedSaga, "ws-1"),
-      done: false,
-    });
-    expect(iterator.next(deletedTask)).toEqual({
-      value: sagaEffects.fork(watchAgentRenamedSaga, "ws-1"),
-      done: false,
-    });
-    expect(iterator.next(renamedTask)).toEqual({
-      value: sagaEffects.fork(watchWaitingForFirstMessageSaga, "ws-1"),
-      done: false,
-    });
 
-    const drawerGuardEffect = iterator.next(waitingTask).value as any;
+    const drawerGuardEffect = iterator.next(fileTrackingTask).value as any;
     expect(drawerGuardEffect.type).toBe("FORK");
 
     expect(iterator.next(drawerGuardTask)).toEqual({
@@ -291,11 +276,6 @@ describe("workspaceAgentsSaga", () => {
     });
 
     expect(iterator.next()).toEqual({
-      value: sagaEffects.fork(watchLateInitialAgentHydrationRecoverySaga, "ws-1"),
-      done: false,
-    });
-
-    expect(iterator.next(lateHydrationRecoveryTask)).toEqual({
       value: sagaEffects.fork(watchSessionStoreSyncSaga, "ws-1"),
       done: false,
     });
@@ -313,23 +293,7 @@ describe("workspaceAgentsSaga", () => {
       done: false,
     });
     expect(cancelIterator.next()).toEqual({
-      value: cancelEffect(deletedTask),
-      done: false,
-    });
-    expect(cancelIterator.next()).toEqual({
-      value: cancelEffect(renamedTask),
-      done: false,
-    });
-    expect(cancelIterator.next()).toEqual({
-      value: cancelEffect(waitingTask),
-      done: false,
-    });
-    expect(cancelIterator.next()).toEqual({
       value: cancelEffect(drawerGuardTask),
-      done: false,
-    });
-    expect(cancelIterator.next()).toEqual({
-      value: cancelEffect(lateHydrationRecoveryTask),
       done: false,
     });
     expect(cancelIterator.next()).toEqual({
@@ -339,8 +303,8 @@ describe("workspaceAgentsSaga", () => {
     expect(cancelIterator.next()).toEqual({ value: undefined, done: true });
   });
 
-  it("removes an agent when agent:deleted is received for the workspace", () => {
-    const iterator = watchAgentDeletedSaga("ws-1");
+  it("removes an agent when agent:deleted is received (global, uses payload workspaceId)", () => {
+    const iterator = watchAgentDeletedSaga();
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
     expect(takeEveryFromElectronChannelMock).toHaveBeenCalledWith(
@@ -354,18 +318,18 @@ describe("workspaceAgentsSaga", () => {
     });
   });
 
-  it("ignores deleted agents from other workspaces", () => {
-    const iterator = watchAgentDeletedSaga("ws-1");
+  it("handles agent:deleted events for any workspace", () => {
+    const iterator = watchAgentDeletedSaga();
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
     expect(getElectronHandler("agent:deleted")({ agentId: "agent-1", workspaceId: "ws-2" }).next()).toEqual({
-      value: undefined,
-      done: true,
+      value: sagaEffects.put(removeAgent("ws-2", "agent-1")),
+      done: false,
     });
   });
 
-  it("renames an agent when agent:renamed is received for the workspace", () => {
-    const iterator = watchAgentRenamedSaga("ws-1");
+  it("renames an agent when agent:renamed is received (global, uses payload workspaceId)", () => {
+    const iterator = watchAgentRenamedSaga();
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
     expect(takeEveryFromElectronChannelMock).toHaveBeenCalledWith(
@@ -382,8 +346,22 @@ describe("workspaceAgentsSaga", () => {
     });
   });
 
-  it("sets waiting-for-first-message when the window event is received for the workspace", () => {
-    const iterator = watchWaitingForFirstMessageSaga("ws-1");
+  it("handles agent:renamed events for any workspace", () => {
+    const iterator = watchAgentRenamedSaga();
+
+    expect(iterator.next()).toEqual({ value: undefined, done: true });
+    expect(
+      getElectronHandler("agent:renamed")({
+        payload: { agentId: "agent-2", workspaceId: "ws-other", name: "Other" },
+      }).next()
+    ).toEqual({
+      value: sagaEffects.put(renameAgent("ws-other", "agent-2", "Other")),
+      done: false,
+    });
+  });
+
+  it("sets waiting-for-first-message (global, uses payload workspaceId)", () => {
+    const iterator = watchWaitingForFirstMessageSaga();
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
     expect(takeEveryFromWindowEventMock).toHaveBeenCalledWith(
@@ -397,13 +375,13 @@ describe("workspaceAgentsSaga", () => {
     });
   });
 
-  it("ignores waiting-for-first-message events from other workspaces", () => {
-    const iterator = watchWaitingForFirstMessageSaga("ws-1");
+  it("handles waiting-for-first-message events for any workspace", () => {
+    const iterator = watchWaitingForFirstMessageSaga();
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
     expect(getWindowHandler("workspace:waiting-for-first-message")({ agentId: "agent-1", workspaceId: "ws-2" }).next()).toEqual({
-      value: undefined,
-      done: true,
+      value: sagaEffects.put(setWaitingForFirstMessage("ws-2", "agent-1", true)),
+      done: false,
     });
   });
 
@@ -897,23 +875,19 @@ describe("late initial-agent hydration recovery", () => {
     expect(gen.next()).toEqual({ value: undefined, done: true });
   });
 
-  it("cancels the previous recovery task when the same workspace hydrates again", () => {
+  it("cancels previous recovery task only for the same workspace (per-workspace tracking)", () => {
     const firstTask = { type: "recovery-task-1" } as const;
     const secondTask = { type: "recovery-task-2" } as const;
-    const gen = watchLateInitialAgentHydrationRecoverySaga("ws-watch");
+    const gen = watchLateInitialAgentHydrationRecoverySaga();
 
     expect(gen.next()).toEqual({
       value: sagaEffects.take([setInitialAgentId.type, setInitialAgentConfig.type]),
       done: false,
     });
 
-    expect(gen.next(setInitialAgentId("other-ws", "agent-1"))).toEqual({
-      value: sagaEffects.take([setInitialAgentId.type, setInitialAgentConfig.type]),
-      done: false,
-    });
-
-    expect(gen.next(setInitialAgentId("ws-watch", "agent-1"))).toEqual({
-      value: sagaEffects.fork(recoverLateInitialAgentHydrationSaga, "ws-watch"),
+    // First workspace triggers recovery
+    expect(gen.next(setInitialAgentId("ws-a", "agent-1"))).toEqual({
+      value: sagaEffects.fork(recoverLateInitialAgentHydrationSaga, "ws-a"),
       done: false,
     });
 
@@ -922,26 +896,33 @@ describe("late initial-agent hydration recovery", () => {
       done: false,
     });
 
+    // Different workspace does NOT cancel the first workspace's task
     expect(
       gen.next(
-        setInitialAgentConfig("ws-watch", {
+        setInitialAgentConfig("ws-b", {
           agentId: "agent-1",
           config: {},
           timestamp: 1,
         })
       )
     ).toEqual({
-      value: cancelEffect(firstTask),
-      done: false,
-    });
-
-    expect(gen.next()).toEqual({
-      value: sagaEffects.fork(recoverLateInitialAgentHydrationSaga, "ws-watch"),
+      value: sagaEffects.fork(recoverLateInitialAgentHydrationSaga, "ws-b"),
       done: false,
     });
 
     expect(gen.next(secondTask)).toEqual({
       value: sagaEffects.take([setInitialAgentId.type, setInitialAgentConfig.type]),
+      done: false,
+    });
+
+    // Same workspace (ws-a) DOES cancel the previous task for ws-a
+    expect(gen.next(setInitialAgentId("ws-a", "agent-2"))).toEqual({
+      value: cancelEffect(firstTask),
+      done: false,
+    });
+
+    expect(gen.next()).toEqual({
+      value: sagaEffects.fork(recoverLateInitialAgentHydrationSaga, "ws-a"),
       done: false,
     });
   });
@@ -1036,5 +1017,75 @@ describe("loadAgentsFromDiskSaga — mount-race hardening", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("retroactiveWorkspaceMountCheckSaga — early workspaceMounted guard", () => {
+  it("forks workspace watcher when a workspace is already mounted but agents not loaded", () => {
+    const gen = retroactiveWorkspaceMountCheckSaga();
+
+    // First effect: select activeWorkspaceId
+    const selectEffect = gen.next().value as any;
+    expect(selectEffect.type).toBe("SELECT");
+
+    // Should fork watchWorkspaceAgentEventsForWorkspaceSaga with synthetic action
+    const forkEffect = gen.next("ws-early").value as any;
+    expect(forkEffect.type).toBe("FORK");
+    expect(forkEffect.payload.fn).toBe(watchWorkspaceAgentEventsForWorkspaceSaga);
+    expect(forkEffect.payload.args[0]).toEqual(workspaceMounted("ws-early"));
+
+    expect(gen.next({}).done).toBe(true);
+  });
+
+  it("does nothing when no active workspace exists", () => {
+    const gen = retroactiveWorkspaceMountCheckSaga();
+
+    const selectEffect = gen.next().value as any;
+    expect(selectEffect.type).toBe("SELECT");
+
+    expect(gen.next(null).done).toBe(true);
+  });
+
+  it("does nothing when activeWorkspaceId is 'new'", () => {
+    const gen = retroactiveWorkspaceMountCheckSaga();
+
+    const selectEffect = gen.next().value as any;
+    expect(selectEffect.type).toBe("SELECT");
+
+    expect(gen.next("new").done).toBe(true);
+  });
+
+  it("does nothing when activeWorkspaceId is optimistic", () => {
+    const gen = retroactiveWorkspaceMountCheckSaga();
+
+    const selectEffect = gen.next().value as any;
+    expect(selectEffect.type).toBe("SELECT");
+
+    expect(gen.next("optimistic-abc123").done).toBe(true);
+  });
+
+  it("does nothing when activeWorkspaceId is 'undefined' (string)", () => {
+    const gen = retroactiveWorkspaceMountCheckSaga();
+
+    const selectEffect = gen.next().value as any;
+    expect(selectEffect.type).toBe("SELECT");
+
+    expect(gen.next("undefined").done).toBe(true);
+  });
+});
+
+describe("watchWorkspaceAgentEventsForWorkspaceSaga — deduplication", () => {
+  it("skips duplicate mount when a watcher is already running for the same workspace ID", () => {
+    // First mount sets the sentinel in workspaceAgentTasks
+    const first = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-dedup"));
+    const firstStep = first.next();
+    // Verify first mount proceeds normally (first yield is a fork)
+    expect(firstStep.done).toBe(false);
+
+    // Second mount for the same workspace ID should return immediately
+    // because the first mount already registered the sentinel.
+    const second = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-dedup"));
+    const secondStep = second.next();
+    expect(secondStep.done).toBe(true);
   });
 });
