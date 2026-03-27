@@ -408,6 +408,21 @@ export interface AnalyticsEvents {
   };
 
   // ============================================
+  // Workspace Creation Funnel
+  // ============================================
+  'Clicked Workspace Prompt': Record<string, never>;
+  'Typed Workspace Prompt': Record<string, never>;
+  'Toggled Agent Mode': {
+    mode: 'team' | 'single';
+  };
+  'Used Prompt Enhance': {
+    prompt_length: number;
+  };
+  'Changed Repo': {
+    repo_type: 'local' | 'github' | 'remote';
+  };
+
+  // ============================================
   // Onboarding
   // ============================================
   'Viewed Onboarding': {

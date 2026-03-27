@@ -2,12 +2,19 @@
   import { untrack } from 'svelte';
   import { goto } from '$app/navigation';
   import { agentService } from '$features/agent/agent.service';
-  import { setupScriptStore, SETUP_SCRIPT_TEMPLATES, getTemplateContent } from '$features/setup-scripts';
+  import {
+    setupScriptStore,
+    SETUP_SCRIPT_TEMPLATES,
+    getTemplateContent,
+  } from '$features/setup-scripts';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
   import { debugConfig } from '$lib/config/debug';
   import type { StarterPrompt } from '$lib/data/starter-prompts';
-  import { selectSelectedModel, selectAvailableModels } from '$lib/store/slices/model/model-selectors';
+  import {
+    selectSelectedModel,
+    selectAvailableModels,
+  } from '$lib/store/slices/model/model-selectors';
   import { setWorkspaceModel } from '$lib/store/slices/model/model-slice';
   import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
   import {
@@ -16,7 +23,12 @@
   } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { getDispatch } from '$lib/store/utils/utils';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { selectSpecialists, selectEffectiveBehaviorPrompt, selectUserOverrides } from '$lib/store/slices/specialists/specialists-selectors';
+  import {
+    selectSpecialists,
+    selectEffectiveBehaviorPrompt,
+    selectUserOverrides,
+  } from '$lib/store/slices/specialists/specialists-selectors';
+  import { track } from '$lib/services/analytics';
   import { createLogger } from '$lib/utils/client-logger';
   import {
     getGitErrorMessage,
@@ -369,6 +381,10 @@
   let hasSelectedContext = $state(false);
   let hasImages = $state(false);
 
+  // Funnel tracking — fires at most once per form session, reset in clearForm()
+  let hasFiredClick = $state(false);
+  let hasFiredType = $state(false);
+
   // Setup script state
   let setupScript = $state(savedState?.setupScript ?? '');
   let showSetupScript = $state(false); // Always collapsed on mount
@@ -713,7 +729,6 @@
       window.removeEventListener('chat:enhance-prompt', handleEnhancePromptEvent);
     };
   });
-
 
   // Check for GitHub PRs with source branches when editor content is restored from sessionStorage
   // This ensures the "Use PR branch" suggestion appears for restored context mentions
@@ -1130,6 +1145,10 @@
       skipWorktree = false;
     }
 
+    track('Changed Repo', {
+      repo_type: event.detail.type,
+    });
+
     // Reset GitHub auth state when repo changes - will be updated by BranchSelector
     githubAuthNeeded = 'none';
 
@@ -1329,7 +1348,9 @@
 
       if (selectedSpecialist) {
         // Direct specialist selected
-        const specialist = selectSpecialists.select(getReduxStore().getState()).find((s) => s.id === selectedSpecialist);
+        const specialist = selectSpecialists
+          .select(getReduxStore().getState())
+          .find((s) => s.id === selectedSpecialist);
         agentName = specialist?.name ?? 'Agent';
         specialistId = selectedSpecialist;
       }
@@ -1533,7 +1554,10 @@
       // Resolve behaviorPrompt EARLY so it can be passed to workspace creation IPC
       let resolvedBehaviorPrompt: string | undefined;
       if (selectedSpecialist) {
-        resolvedBehaviorPrompt = selectEffectiveBehaviorPrompt.select(getReduxStore().getState(), selectedSpecialist);
+        resolvedBehaviorPrompt = selectEffectiveBehaviorPrompt.select(
+          getReduxStore().getState(),
+          selectedSpecialist,
+        );
       }
 
       // Resolve the model for the selected specialist + provider so the agent is created
@@ -1555,7 +1579,9 @@
             override: specialistOverride,
           });
         } else {
-          const specialist = selectSpecialists.select(reduxState).find((s) => s.id === selectedSpecialist);
+          const specialist = selectSpecialists
+            .select(reduxState)
+            .find((s) => s.id === selectedSpecialist);
           if (specialist?.defaultModelTier && selectedProvider in PROVIDER_MODEL_TIERS) {
             const baseModel = getDefaultModelForProvider(
               selectedProvider,
@@ -1577,8 +1603,7 @@
         // Fall back to the global store selection when models haven't loaded yet.
         const availableValues = $availableModels$.map((m) => m.value);
         resolvedModel =
-          resolvePreferredDefaultModel(availableValues, $selectedModel$) ??
-          $selectedModel$;
+          resolvePreferredDefaultModel(availableValues, $selectedModel$) ?? $selectedModel$;
       }
 
       // Validate resolvedModel against available models. Tier-mapped model IDs
@@ -1590,11 +1615,7 @@
       // provider (active-provider Redux slice) — otherwise the available models are for a
       // different provider and we can't meaningfully validate.
       const storeProvider = $activeProviderId$;
-      if (
-        resolvedModel &&
-        $availableModels$.length > 0 &&
-        selectedProvider === storeProvider
-      ) {
+      if (resolvedModel && $availableModels$.length > 0 && selectedProvider === storeProvider) {
         const availableModelValues = $availableModels$.map((m) => m.value);
         if (!availableModelValues.includes(resolvedModel)) {
           logger.warn('Tier-resolved model not in available list, using store default', {
@@ -1694,9 +1715,8 @@
       // can cause the workspace page to open a non-existent agent from a previous
       // workspace, leading to spurious agent creation.
       try {
-        const { workspaceStorageManager } = await import(
-          '$features/workspace/workspace-storage-manager'
-        );
+        const { workspaceStorageManager } =
+          await import('$features/workspace/workspace-storage-manager');
         workspaceStorageManager.clearState(workspace.id);
       } catch (error) {
         logger.debug('Could not clear workspace storage state', { error });
@@ -1813,10 +1833,8 @@
             behaviorPromptLength: resolvedBehaviorPrompt?.length || 0,
           });
 
-          await agentService.activateInitialAgent(
-            initialAgent.agentId,
-            workspace,
-            () => agentService.createSession(workspace, {
+          await agentService.activateInitialAgent(initialAgent.agentId, workspace, () =>
+            agentService.createSession(workspace, {
               agentId: initialAgent.agentId,
               name: agentName,
               model: initialAgent.model,
@@ -1937,6 +1955,8 @@
     }
     hasImages = false;
     hasSelectedContext = false; // Reset context selection state
+    hasFiredClick = false;
+    hasFiredType = false;
     error = null;
     // Reset branch status state
     branchBehind = 0;
@@ -2293,6 +2313,7 @@
   async function handleEnhancePrompt() {
     if (!initialPrompt.trim() || isEnhancing) return;
 
+    track('Used Prompt Enhance', { prompt_length: initialPrompt.trim().length });
     isEnhancing = true;
     const currentRequestId = ++enhanceRequestId;
 
@@ -2344,6 +2365,7 @@
   />
 
   <!-- Bordered container: Linear issues + Text area -->
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
   <div
     class="relative -ml-4 w-[calc(100%+32px)] border rounded-xl transition-all duration-200 border-border bg-background"
     class:drag-over={isDraggingOver}
@@ -2351,6 +2373,12 @@
     ondragleave={handleDragLeave}
     ondrop={handleDrop}
     onpaste={handlePaste}
+    onclick={(event) => {
+      if (event.isTrusted && !hasFiredClick) {
+        hasFiredClick = true;
+        track('Clicked Workspace Prompt', {});
+      }
+    }}
     role="region"
   >
     <!-- Drag overlay -->
@@ -2375,6 +2403,25 @@
         onfocus={() => {
           isFocused = true;
           isExpanded = true;
+        }}
+        onkeydown={(event) => {
+          if (
+            event.isTrusted &&
+            !hasFiredType &&
+            !event.metaKey &&
+            !(event.ctrlKey && !event.altKey)
+          ) {
+            // Allow single chars, IME (Process/Dead), and non-BMP (length > 1)
+            const isTyping =
+              event.key.length === 1 ||
+              event.key === 'Process' ||
+              event.key === 'Dead' ||
+              event.key === 'Unidentified';
+            if (isTyping) {
+              hasFiredType = true;
+              track('Typed Workspace Prompt', {});
+            }
+          }
         }}
         onblur={handleBlur}
         onsubmit={handleSubmit}
@@ -2439,10 +2486,7 @@
 
   <!-- First-time user hint -->
   {#if showFirstTimeHints && !isExpanded}
-    <p
-      class="mt-3 text-xs text-subtle leading-relaxed"
-      transition:fade={{ duration: 200 }}
-    >
+    <p class="mt-3 text-xs text-subtle leading-relaxed" transition:fade={{ duration: 200 }}>
       Describe a feature, bug fix, or refactor — the agent will create a branch and start coding.
     </p>
   {/if}
@@ -2588,7 +2632,7 @@
         <div class="mb-6">
           <InitialAgentPicker
             bind:selectedSpecialist
-            selectedModel={selectedModel}
+            {selectedModel}
             onModelChange={(model) => {
               selectedModel = model;
             }}

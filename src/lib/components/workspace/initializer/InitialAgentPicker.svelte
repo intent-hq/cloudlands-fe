@@ -29,6 +29,7 @@
   } from '$shared/config/provider-config';
   import { resolvePreferredDefaultModel } from '$lib/utils/provider-model-selection';
   import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
+  import { track } from '$lib/services/analytics';
   import { createLogger } from '$lib/utils/client-logger';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
@@ -36,7 +37,7 @@
   const logger = createLogger('InitialAgentPicker');
   const specialists$ = selectSpecialists();
   const visibleSpecialists = $derived.by(() =>
-    filterSpecialistsByGitHubAuth($specialists$, githubAuthStore.state.isAuthenticated)
+    filterSpecialistsByGitHubAuth($specialists$, githubAuthStore.state.isAuthenticated),
   );
   const customSpecialistsLoaded$ = selectCustomSpecialistsLoaded();
   const userOverrides$ = selectUserOverrides();
@@ -267,7 +268,9 @@
   });
 
   // The specialist to display in the single-agent card — uses the saved value when in team mode
-  const displayedSpecialist = $derived(isTeamMode ? lastSingleAgent.specialist : selectedSpecialist);
+  const displayedSpecialist = $derived(
+    isTeamMode ? lastSingleAgent.specialist : selectedSpecialist,
+  );
 
   // Get current specialist info for display
   const currentSpecialistInfo = $derived(
@@ -284,6 +287,7 @@
 
   function selectTeamMode() {
     if (isTeamMode) return;
+    track('Toggled Agent Mode', { mode: 'team' });
     // Save single-agent state
     lastSingleAgent = {
       model: selectedModel,
@@ -308,6 +312,7 @@
 
   function selectSingleAgentMode() {
     if (isTeamMode) {
+      track('Toggled Agent Mode', { mode: 'single' });
       // Save team mode state
       lastTeamMode = {
         model: selectedModel,
