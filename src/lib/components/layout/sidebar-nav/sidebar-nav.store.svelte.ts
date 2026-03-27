@@ -99,6 +99,24 @@ class SidebarNavStore {
   /** Draft prompt text preserved for the new workspace card */
   draftPrompt = $state('');
 
+  /** Whether a context menu is open inside the hover card (prevents auto-close) */
+  #contextMenuOpenCount = $state(0);
+
+  get contextMenuOpen(): boolean {
+    return this.#contextMenuOpenCount > 0;
+  }
+
+  incrementContextMenuOpen() {
+    this.#contextMenuOpenCount++;
+  }
+
+  decrementContextMenuOpen() {
+    this.#contextMenuOpenCount = Math.max(0, this.#contextMenuOpenCount - 1);
+  }
+
+  /** Track which leave was deferred: 'card' | 'nav' | null */
+  #deferredLeave: 'card' | 'nav' | null = null;
+
   /** Persisted view mode for All Spaces card */
   allSpacesViewMode = $state<AllSpacesViewMode>(
     (typeof localStorage !== 'undefined'
@@ -143,6 +161,8 @@ class SidebarNavStore {
     if (this.#hoverTimeout) {
       clearTimeout(this.#hoverTimeout);
     }
+    // Cancel any deferred leave — pointer is back on the nav
+    this.#deferredLeave = null;
 
     // If an expanded item is open, switch immediately
     if (this.expandedItem) {
@@ -165,8 +185,14 @@ class SidebarNavStore {
       this.#hoverTimeout = null;
     }
 
-    // If the card is pinned open, don't auto-close
+    // Pinned cards never auto-close — no deferred leave needed
     if (this.isCardPinned) return;
+
+    // Context menu open — defer the leave so we can process it when the menu closes
+    if (this.contextMenuOpen) {
+      this.#deferredLeave = 'nav';
+      return;
+    }
 
     this.#leaveTimeout = setTimeout(() => {
       this.hoveredItem = null;
@@ -179,15 +205,41 @@ class SidebarNavStore {
       clearTimeout(this.#leaveTimeout);
       this.#leaveTimeout = null;
     }
+    // Cancel any deferred leave — pointer is back inside the card
+    this.#deferredLeave = null;
   }
 
   handleCardMouseLeave() {
     // If the card is pinned open, don't auto-close
     if (this.isCardPinned) return;
 
+    if (this.contextMenuOpen) {
+      this.#deferredLeave = 'card';
+      return;
+    }
+
     this.#leaveTimeout = setTimeout(() => {
       this.hoveredItem = null;
       this.expandedItem = null;
+    }, 200);
+  }
+
+  /** Called when context menu closes — process any deferred mouseleave */
+  onContextMenuClosed() {
+    // Don't process deferred leave if another context menu is still open
+    if (this.contextMenuOpen) return;
+
+    const leaveType = this.#deferredLeave;
+    this.#deferredLeave = null;
+
+    if (!leaveType || this.isCardPinned) return;
+
+    this.#leaveTimeout = setTimeout(() => {
+      this.hoveredItem = null;
+      if (leaveType === 'card') {
+        this.expandedItem = null;
+      }
+      // 'nav' type intentionally does NOT clear expandedItem
     }, 200);
   }
 

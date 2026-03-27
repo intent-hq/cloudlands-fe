@@ -9,8 +9,7 @@
    * Supports mark-as-read and pin/unpin actions.
    */
   import { goto } from '$app/navigation';
-  import { invoke } from '$lib/electron-bridge';
-  import { IPC_CHANNELS } from '$shared/ipc-registry';
+  import { openWorkspaceInNewWindow } from '../utils/openWorkspaceInNewWindow';
   import { sidebarNavStore } from '../sidebar-nav.store.svelte';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
@@ -156,12 +155,7 @@
 
     // Command-click (or Ctrl-click on non-Mac) opens in new window
     if (event?.metaKey || event?.ctrlKey) {
-      try {
-        await invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route });
-      } catch (error) {
-        console.warn('Failed to open new window, navigating instead:', error);
-        goto(route);
-      }
+      await openWorkspaceInNewWindow(workspaceId);
       return;
     }
 
@@ -277,6 +271,7 @@
           onMarkAsRead={(e) => handleMarkAsRead(e, workspace.id)}
           onTogglePin={(e) => handleTogglePin(e, workspace.id)}
           onClick={(e) => handleClick(workspace.id, e)}
+          onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
         />
       {/each}
     {/if}
@@ -299,6 +294,7 @@
           onHover={() => (hoveredIndex = unreadOffset + i)}
           onTogglePin={(e) => handleTogglePin(e, workspace.id)}
           onClick={(e) => handleClick(workspace.id, e)}
+          onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
         />
       {/each}
     {/if}
@@ -318,6 +314,7 @@
           onHover={() => (hoveredIndex = pinnedOffset + i)}
           onTogglePin={(e) => handleTogglePin(e, workspace.id)}
           onClick={(e) => handleClick(workspace.id, e)}
+          onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
         />
       {/each}
     {/if}

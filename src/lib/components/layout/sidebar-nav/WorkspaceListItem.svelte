@@ -1,12 +1,16 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { faCheck, faThumbtack } from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faThumbtack, faArrowUpRightFromSquare } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import WorkspacePhaseIndicator from '$lib/components/workspace/WorkspacePhaseIndicator.svelte';
   import { deriveWorkspacePhase } from '$lib/components/workspace/workspace-phase';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
+  import { onDestroy } from 'svelte';
+  import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
+  import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
+  import { sidebarNavStore } from '$lib/components/layout/sidebar-nav/sidebar-nav.store.svelte';
   import type { Workspace } from '$shared/types';
   import { PullRequestStatus } from '$shared/types';
   import { cn } from '$lib/utils';
@@ -25,6 +29,8 @@
     onMarkAsRead?: (e: MouseEvent) => void;
     onTogglePin?: (e: MouseEvent) => void;
     onClick?: (e?: MouseEvent | KeyboardEvent) => void;
+    /** Called when "Open in New Window" is selected from the context menu */
+    onOpenInNewWindow?: () => void;
     /** Called when the mouse enters this item */
     onHover?: () => void;
     /** Whether this item is highlighted via keyboard navigation */
@@ -44,6 +50,7 @@
     onMarkAsRead,
     onTogglePin,
     onClick,
+    onOpenInNewWindow,
     onHover,
     highlighted = false,
     suppressHover = false,
@@ -92,6 +99,59 @@
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') onClick?.(e);
   }
+
+  // Context menu state
+  let contextMenu: { x: number; y: number } | null = $state(null);
+
+  function handleContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    contextMenu = { x: e.clientX, y: e.clientY };
+  }
+
+  function closeContextMenu() {
+    contextMenu = null;
+  }
+
+  // Keep sidebarNavStore in sync so the hover card won't close while
+  // the context menu is open (the menu renders in a Portal outside
+  // the hover card's DOM, which would otherwise trigger mouseleave).
+  // Note: hadContextMenu is intentionally NOT $state — it's a local
+  // tracking variable that must not trigger reactivity.
+  let hadContextMenu = false;
+
+  $effect(() => {
+    const isOpen = contextMenu !== null;
+
+    if (isOpen && !hadContextMenu) {
+      sidebarNavStore.incrementContextMenuOpen();
+    } else if (!isOpen && hadContextMenu) {
+      sidebarNavStore.decrementContextMenuOpen();
+      sidebarNavStore.onContextMenuClosed();
+    }
+    hadContextMenu = isOpen;
+  });
+
+  onDestroy(() => {
+    if (hadContextMenu) {
+      sidebarNavStore.decrementContextMenuOpen();
+      sidebarNavStore.onContextMenuClosed();
+    }
+  });
+
+  function getContextMenuItems(): SidebarMenuEntry[] {
+    return [
+      {
+        id: 'open-new-window',
+        label: 'Open in New Window',
+        icon: faArrowUpRightFromSquare,
+        onClick: () => {
+          onOpenInNewWindow?.();
+          closeContextMenu();
+        },
+      },
+    ];
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -104,6 +164,7 @@
   tabindex="0"
   onclick={(e) => onClick?.(e)}
   onkeydown={handleKeydown}
+  oncontextmenu={onOpenInNewWindow ? handleContextMenu : undefined}
   onmouseenter={() => onHover?.()}
 >
   <!-- Left column: status indicator -->
@@ -247,6 +308,14 @@
   {/if}
 </div>
 
+{#if contextMenu && onOpenInNewWindow}
+  <SidebarContextMenu
+    x={contextMenu.x}
+    y={contextMenu.y}
+    items={getContextMenuItems()}
+    onClickOutside={closeContextMenu}
+  />
+{/if}
 
 <style>
   /* Medium: hide secondary metadata */

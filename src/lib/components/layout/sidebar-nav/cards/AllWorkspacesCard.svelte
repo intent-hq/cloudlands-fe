@@ -1,7 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { invoke } from '$lib/electron-bridge';
-  import { IPC_CHANNELS } from '$shared/ipc-registry';
+  import { openWorkspaceInNewWindow } from '../utils/openWorkspaceInNewWindow';
   import { sidebarNavStore } from '../sidebar-nav.store.svelte';
   import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
@@ -190,12 +189,7 @@
 
     // Command-click (or Ctrl-click on non-Mac) opens in new window
     if (event?.metaKey || event?.ctrlKey) {
-      try {
-        await invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route });
-      } catch (error) {
-        console.warn('Failed to open new window, navigating instead:', error);
-        goto(route);
-      }
+      await openWorkspaceInNewWindow(workspaceId);
       return;
     }
 
@@ -329,6 +323,7 @@
               ? (e) => handleMarkAsRead(e, workspace.id)
               : undefined}
             onClick={(e) => handleClick(workspace.id, e)}
+            onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
           />
         {/each}
       {:else if viewMode === 'repo'}
@@ -365,6 +360,7 @@
                 ? (e) => handleMarkAsRead(e, workspace.id)
                 : undefined}
               onClick={(e) => handleClick(workspace.id, e)}
+              onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
             />
           {/each}
         {/each}
@@ -392,6 +388,7 @@
                 ? (e) => handleMarkAsRead(e, workspace.id)
                 : undefined}
               onClick={(e) => handleClick(workspace.id, e)}
+              onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
             />
           {/each}
         {/each}
