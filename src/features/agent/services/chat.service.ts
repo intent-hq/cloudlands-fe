@@ -23,6 +23,7 @@ import { getProviderConfig } from '$shared/config/provider-config';
 import { cleanErrorMessage } from '$shared/errors/messages';
 import { assertStreamingInvariant } from '../utils/streaming-invariants';
 import { shouldAppendStreamingEvent } from '$lib/components/chat/streaming-status-utils';
+import { track } from '$lib/services/analytics';
 
 const logger = createLogger('ChatService');
 
@@ -2640,6 +2641,45 @@ export class ChatService implements IDisposable {
       if (session && session.messages) {
         const newIsStreaming = session.isStreaming ?? currentState.isStreaming;
 
+        // GUARD: Prevent stale session data from dropping user messages during streaming transitions.
+        // When currentState.isStreaming=true but newIsStreaming=false (stale disk data from
+        // restoreSessionWithoutBackend), neither the non-streaming guard below NOR the streaming
+        // guard further down applies. This gap allows stale data to overwrite user messages.
+        //
+        // We detect this by checking: if we're currently streaming AND message count would
+        // decrease AND the current state's last message is a user message (indicating a
+        // just-sent message), reject the update. This only applies during streaming transitions
+        // since the non-streaming case is already covered by the guard at line ~2686.
+        // This is safe because:
+        // - Edit/regenerate goes through resetHistory, not sessionUpdatedHandler
+        // - Backend message consolidation (legitimate count reduction) always ends with an
+        //   assistant message, not a user message
+        // - Stale restore data from disk will be missing the user's recently-sent message
+        if (currentState.isStreaming && currentState.messages.length > 0 && session.messages.length < currentState.messages.length) {
+          const lastMessage = currentState.messages[currentState.messages.length - 1];
+          if (lastMessage?.role === 'user') {
+            logger.info(
+              '[ChatService] sessionUpdatedHandler: skipping - would drop user message',
+              {
+                sessionId,
+                currentMessageCount: currentState.messages.length,
+                sessionMessageCount: session.messages.length,
+                lastMessageRole: lastMessage.role,
+                lastMessageId: lastMessage.id,
+                currentIsStreaming: currentState.isStreaming,
+                newIsStreaming,
+              },
+            );
+            track('Blocked Stale Session Update', {
+              agent_id: this.agentId || '',
+              workspace_id: session.workspaceId || '',
+              current_message_count: currentState.messages.length,
+              incoming_message_count: session.messages.length,
+              is_streaming: currentState.isStreaming,
+            });
+            return;
+          }
+        }
 
         // Even when NOT streaming, don't overwrite instance state that has
         // more messages than the incoming session data. This prevents stale disk data

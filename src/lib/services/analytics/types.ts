@@ -361,6 +361,13 @@ export interface AnalyticsEvents {
     agent_name?: string;
     error_type?: string;
   };
+  'Blocked Stale Session Update': {
+    agent_id: string;
+    workspace_id: string;
+    current_message_count: number;
+    incoming_message_count: number;
+    is_streaming: boolean;
+  };
 
   // ============================================
   // Git & Workspace Events
