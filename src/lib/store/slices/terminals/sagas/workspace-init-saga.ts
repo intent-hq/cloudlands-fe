@@ -49,10 +49,12 @@ export function* loadTerminalsSaga(wsId: string) {
         const storedTerminals = terminalManager.loadTerminalMetadata(wsId);
         // Query backend for active terminals
         let backendTerminals: BackendTerminal[] = [];
+        let backendCallSucceeded = false;
         try {
             const result: TerminalListResult = yield* call(invoke<TerminalListResult>, "terminal:professional:list", { workspaceId: wsId });
             if (result?.success && result.terminals) {
                 backendTerminals = result.terminals;
+                backendCallSucceeded = true;
             }
         }
         catch (error) {
@@ -87,6 +89,18 @@ export function* loadTerminalsSaga(wsId: string) {
                 });
                 // Save to localStorage for future loads
                 terminalManager.saveTerminalMetadata(backendTerminal.id, backendTerminal.workspaceId, "Setup");
+            }
+        }
+        // Prune stale localStorage entries not present in the backend.
+        // Only prune if the backend call actually succeeded — otherwise an IPC
+        // failure would wipe all local terminal metadata.
+        if (backendCallSucceeded) {
+            const backendIds = new Set(backendTerminals.map((t) => t.id));
+            for (const meta of storedTerminals) {
+                if (!backendIds.has(meta.terminalId)) {
+                    terminalMap.delete(meta.terminalId);
+                    terminalManager.removeTerminalMetadata(meta.terminalId, wsId);
+                }
             }
         }
         const terminals = Array.from(terminalMap.values());

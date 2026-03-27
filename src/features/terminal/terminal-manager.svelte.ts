@@ -143,7 +143,7 @@ class RendererTerminalManager {
   /**
    * Remove terminal metadata from localStorage
    */
-  private removeTerminalMetadata(terminalId: string, workspaceId: string): void {
+  removeTerminalMetadata(terminalId: string, workspaceId: string): void {
     try {
       const key = `${this.STORAGE_PREFIX}${workspaceId}`;
       const existingData = localStorage.getItem(key);

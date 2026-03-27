@@ -217,6 +217,10 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
   private lastMemoryWarningTime = 0;
   /** @property {number} MEMORY_WARNING_INTERVAL - Minimum interval between memory warnings */
   private readonly MEMORY_WARNING_INTERVAL = 60000; // 1 minute
+  /** @property {Function} sigintHandler - Stored SIGINT handler for cleanup */
+  private sigintHandler?: () => void;
+  /** @property {Function} sigtermHandler - Stored SIGTERM handler for cleanup */
+  private sigtermHandler?: () => void;
 
   /**
    * Private constructor for singleton pattern.
@@ -1252,8 +1256,10 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
   private setupShutdownHandlers(): void {
     // Only setup process handlers in main process (Node.js environment)
     if (isMainProcess() && typeof process !== 'undefined' && typeof process.on === 'function') {
-      process.on('SIGINT', () => this.shutdown());
-      process.on('SIGTERM', () => this.shutdown());
+      this.sigintHandler = () => this.shutdown();
+      this.sigtermHandler = () => this.shutdown();
+      process.on('SIGINT', this.sigintHandler);
+      process.on('SIGTERM', this.sigtermHandler);
     }
   }
 
@@ -1968,6 +1974,18 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
 
     // Clean up with memory manager
     memoryManager.cleanup(this);
+
+    // Remove process signal handlers to prevent listener leak across singleton cycles
+    if (typeof process !== 'undefined' && typeof process.removeListener === 'function') {
+      if (this.sigintHandler) {
+        process.removeListener('SIGINT', this.sigintHandler);
+        this.sigintHandler = undefined;
+      }
+      if (this.sigtermHandler) {
+        process.removeListener('SIGTERM', this.sigtermHandler);
+        this.sigtermHandler = undefined;
+      }
+    }
 
     // Remove all event listeners
     this.removeAllListeners();
