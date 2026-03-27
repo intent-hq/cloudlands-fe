@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { createMessageId } from '$shared/types/branded-ids';
 import { writable, get, type Writable } from 'svelte/store';
 import { createLogger } from '$lib/utils/client-logger';
+import { logger as rendererLogger, LogCategory } from '$lib/logging/logger.svelte';
 import type { Workspace, AgentMessage, AgentSession, ContentBlock, WorkspaceId } from '$shared/types';
 import { normalizeContentBlocks } from '$shared/types';
 import type { IDisposable } from '$shared/types/disposable';
@@ -948,9 +949,42 @@ export class ChatService implements IDisposable {
       const agentState = targetWorkspace?.agents.get(agentId);
       let session = agentState?.session;
 
+      // Diagnostic: log unifiedStateStore lookup outcome
+      logger.info('initializeChat: unifiedStateStore lookup', {
+        agentId,
+        workspaceId: workspace.id,
+        hasTargetWorkspace: !!targetWorkspace,
+        hasAgentState: !!agentState,
+        hasSession: !!session,
+      });
+      rendererLogger.info(LogCategory.AGENT, 'initializeChat: unifiedStateStore lookup', {
+        agentId,
+        workspaceId: workspace.id,
+        hasTargetWorkspace: !!targetWorkspace,
+        hasAgentState: !!agentState,
+        hasSession: !!session,
+      });
+
+      // Track what was tried for the "gave up" summary
+      let agentServiceGetSessionResult: boolean | undefined;
+      let restoreSessionAttempted = false;
+      let restoreSessionResult: 'session' | 'null' | 'error' | undefined;
+      let retryCount = 0;
+
       if (!session) {
         // Try to get from agent service first (it might be in memory there)
         const tempSession = agentService.getSession(agentId);
+        agentServiceGetSessionResult = !!tempSession;
+        logger.info('initializeChat: agentService.getSession fallback', {
+          agentId,
+          workspaceId: workspace.id,
+          found: !!tempSession,
+        });
+        rendererLogger.info(LogCategory.AGENT, 'initializeChat: agentService.getSession fallback', {
+          agentId,
+          workspaceId: workspace.id,
+          found: !!tempSession,
+        });
         if (tempSession) {
           session = tempSession;
         }
@@ -958,11 +992,26 @@ export class ChatService implements IDisposable {
 
       if (!session) {
         // Try to restore from disk
+        restoreSessionAttempted = true;
         try {
           const restoredSession = await agentService.restoreSession(agentId, workspace);
+          restoreSessionResult = restoredSession ? 'session' : 'null';
           if (restoredSession) {
             session = { ...restoredSession, isStreaming: restoredSession.isStreaming ?? false };
-            logger.info('Restored session from disk', { agentId });
+            logger.info('Restored session from disk', {
+              agentId,
+              workspaceId: workspace.id,
+              sessionId: restoredSession.id,
+              status: restoredSession.status,
+              messageCount: restoredSession.messages?.length ?? 0,
+            });
+            rendererLogger.info(LogCategory.AGENT, 'initializeChat: restoreSession returned session', {
+              agentId,
+              workspaceId: workspace.id,
+              sessionId: restoredSession.id,
+              status: restoredSession.status,
+              messageCount: restoredSession.messages?.length ?? 0,
+            });
 
             // Note: Pending agents will be activated lazily on first message
             // This is more efficient and safer than activating immediately
@@ -972,9 +1021,32 @@ export class ChatService implements IDisposable {
                 status: restoredSession.status,
               });
             }
+          } else {
+            logger.info('initializeChat: restoreSession returned null (no session on disk)', {
+              agentId,
+              workspaceId: workspace.id,
+            });
+            rendererLogger.info(LogCategory.AGENT, 'initializeChat: restoreSession returned null', {
+              agentId,
+              workspaceId: workspace.id,
+            });
           }
         } catch (err) {
-          logger.warn('Could not restore session from disk', { agentId, error: err });
+          restoreSessionResult = 'error';
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          const errorStack = err instanceof Error ? err.stack : undefined;
+          logger.warn('Could not restore session from disk', {
+            agentId,
+            workspaceId: workspace.id,
+            error: errorMessage,
+            errorStack,
+            rawError: err instanceof Error ? undefined : err,
+          });
+          rendererLogger.error(LogCategory.AGENT, 'initializeChat: restoreSession error', {
+            agentId,
+            workspaceId: workspace.id,
+            error: errorMessage,
+          });
         }
       }
 
@@ -989,20 +1061,38 @@ export class ChatService implements IDisposable {
         // creation, task delegation) — not a side effect of mounting a chat UI.
         const retryDelays = [500, 1000, 2000];
         for (const delay of retryDelays) {
-          logger.debug('Session not found, retrying after delay', {
+          retryCount++;
+          logger.info('initializeChat: retry iteration', {
             agentId,
             workspaceId: workspace.id,
             retryDelayMs: delay,
+            retryNumber: retryCount,
           });
           await new Promise((resolve) => setTimeout(resolve, delay));
 
           // Check unified state store first — use workspace-scoped lookup
           const retryWorkspace = unifiedStateStore.getWorkspace(workspace.id as any);
-          session = retryWorkspace?.agents.get(agentId)?.session ?? undefined;
+          const retryAgentState = retryWorkspace?.agents.get(agentId);
+          session = retryAgentState?.session ?? undefined;
+
+          logger.info('initializeChat: retry unifiedStateStore check', {
+            agentId,
+            workspaceId: workspace.id,
+            retryNumber: retryCount,
+            hasRetryWorkspace: !!retryWorkspace,
+            hasRetryAgentState: !!retryAgentState,
+            hasSession: !!session,
+          });
 
           // Fall back to agent service
           if (!session) {
             const tempSession = agentService.getSession(agentId);
+            logger.info('initializeChat: retry agentService.getSession check', {
+              agentId,
+              workspaceId: workspace.id,
+              retryNumber: retryCount,
+              found: !!tempSession,
+            });
             if (tempSession) {
               session = tempSession;
             }
@@ -1013,6 +1103,7 @@ export class ChatService implements IDisposable {
               agentId,
               workspaceId: workspace.id,
               retryDelayMs: delay,
+              retryNumber: retryCount,
             });
             break;
           }
@@ -1025,9 +1116,23 @@ export class ChatService implements IDisposable {
         // However, we still register a sessionUpdatedHandler so that if the session
         // appears later (e.g., backend creates it asynchronously), we can pick up
         // streaming events instead of missing them entirely.
-        logger.warn('No session found for agent after retries, registering deferred handler', {
+        logger.warn('Session not found after all attempts, registering deferred handler', {
           agentId,
           workspaceId: workspace.id,
+          unifiedStateStoreHadWorkspace: !!targetWorkspace,
+          agentServiceGetSessionResult: agentServiceGetSessionResult ?? 'not attempted',
+          restoreSessionAttempted,
+          restoreSessionResult: restoreSessionResult ?? 'not attempted',
+          retriesAttempted: retryCount,
+        });
+        rendererLogger.warn(LogCategory.AGENT, 'initializeChat: gave up — session not found after all attempts', {
+          agentId,
+          workspaceId: workspace.id,
+          unifiedStateStoreHadWorkspace: !!targetWorkspace,
+          agentServiceGetSessionResult: agentServiceGetSessionResult ?? 'not attempted',
+          restoreSessionAttempted,
+          restoreSessionResult: restoreSessionResult ?? 'not attempted',
+          retriesAttempted: retryCount,
         });
 
         // RACE GUARD: Bail out if a newer initializeChat() call has already started.

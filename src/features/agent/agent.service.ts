@@ -3612,6 +3612,35 @@ class RefactoredAgentService extends EventEmitter {
         // Try to load from disk
         let session = await persistenceService.loadSession(plainAgentId, workspace.id);
 
+        // Diagnostic: log persistenceService.loadSession result
+        if (session) {
+          logger.info('resumeSession: persistenceService.loadSession returned session', {
+            agentId: plainAgentId,
+            workspaceId: workspace.id,
+            sessionId: session.id,
+            status: session.status,
+            messageCount: session.messages?.length ?? 0,
+            isStreaming: session.isStreaming,
+          });
+          rendererLogger.info(LogCategory.AGENT, 'resumeSession: persistenceService.loadSession returned session', {
+            agentId: plainAgentId,
+            workspaceId: workspace.id,
+            sessionId: session.id,
+            status: session.status,
+            messageCount: session.messages?.length ?? 0,
+            isStreaming: session.isStreaming,
+          });
+        } else {
+          logger.info('resumeSession: persistenceService.loadSession returned null', {
+            agentId: plainAgentId,
+            workspaceId: workspace.id,
+          });
+          rendererLogger.info(LogCategory.AGENT, 'resumeSession: persistenceService.loadSession returned null', {
+            agentId: plainAgentId,
+            workspaceId: workspace.id,
+          });
+        }
+
         // Ensure the loaded session has the workspaceId field
         // This field might be missing from older persisted sessions
         if (session && !session.workspaceId) {
@@ -3797,6 +3826,11 @@ class RefactoredAgentService extends EventEmitter {
           if (cmp > 0) {
             // Existing session is richer — merge disk metadata but keep existing messages
             logger.info('resumeSession: preserving existing session messages over stale disk data', {
+              agentId: plainAgentId,
+              existingCount: existingSession.messages.length,
+              diskCount: session.messages.length,
+            });
+            rendererLogger.info(LogCategory.AGENT, 'resumeSession: preserving existing session messages over stale disk data', {
               agentId: plainAgentId,
               existingCount: existingSession.messages.length,
               diskCount: session.messages.length,
@@ -5869,7 +5903,32 @@ class RefactoredAgentService extends EventEmitter {
   ): Promise<AgentSession | null> {
     // Ensure agentId is a plain string (not a Proxy)
     const plainAgentId = agentId ? String(agentId) : '';
-    return this.resumeSession(plainAgentId, workspace);
+    logger.info('restoreSession: entry', {
+      agentId: plainAgentId,
+      workspaceId: workspace?.id,
+    });
+    rendererLogger.info(LogCategory.AGENT, 'restoreSession: entry', {
+      agentId: plainAgentId,
+      workspaceId: workspace?.id,
+    });
+    const result = await this.resumeSession(plainAgentId, workspace);
+    logger.info('restoreSession: result', {
+      agentId: plainAgentId,
+      workspaceId: workspace?.id,
+      found: !!result,
+      sessionId: result?.id,
+      status: result?.status,
+      messageCount: result?.messages?.length ?? 0,
+    });
+    rendererLogger.info(LogCategory.AGENT, 'restoreSession: result', {
+      agentId: plainAgentId,
+      workspaceId: workspace?.id,
+      found: !!result,
+      sessionId: result?.id,
+      status: result?.status,
+      messageCount: result?.messages?.length ?? 0,
+    });
+    return result;
   }
 
   /**
