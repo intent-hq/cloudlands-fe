@@ -1,21 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { runSaga } from "redux-saga";
-import * as sagaEffects from "redux-saga/effects";
 
-// Override the default typed-redux-saga mock with real redux-saga effects
-// so that runSaga can interpret the yielded effects correctly.
-vi.mock("typed-redux-saga", () => {
-  function* call(fn: any, ...args: any[]): Generator<any, any, any> {
-    return yield sagaEffects.call(fn, ...args);
-  }
-  function* race(obj: any): Generator<any, any, any> {
-    return yield sagaEffects.race(obj);
-  }
-  function* delay(ms: number): Generator<any, any, any> {
-    return yield sagaEffects.delay(ms);
-  }
-  return { call, race, delay };
-});
+vi.mock("typed-redux-saga", async () => await import("./test-helpers/typed-redux-saga-mock"));
 
 import { retryWithTimeout } from "./retry-with-timeout";
 import { call } from "typed-redux-saga";

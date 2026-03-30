@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TerminalBufferManager } from '../terminal-buffer-manager';
+import { installLocalStorageMock } from '$lib/store/utils/test-helpers/local-storage-mock';
 
 // Mock the Logger
 vi.mock('../../../shared/logger', () => ({
@@ -15,28 +16,7 @@ vi.mock('../../../shared/logger', () => ({
   },
 }));
 
-// Mock localStorage
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: vi.fn((key: string) => store[key] || null),
-    setItem: vi.fn((key: string, value: string) => {
-      store[key] = value;
-    }),
-    removeItem: vi.fn((key: string) => {
-      delete store[key];
-    }),
-    clear: vi.fn(() => {
-      store = {};
-    }),
-    key: vi.fn((index: number) => Object.keys(store)[index] || null),
-    get length() {
-      return Object.keys(store).length;
-    },
-  };
-})();
-
-Object.defineProperty(global, 'localStorage', { value: localStorageMock });
+const localStorageMock = installLocalStorageMock();
 
 // Mock navigator.storage
 Object.defineProperty(global, 'navigator', {

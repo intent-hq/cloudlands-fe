@@ -5,15 +5,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { debounce, throttle, batchUpdates, memoize } from '../performance-utils';
 
-// Mock the logger
-vi.mock('$lib/utils/client-logger', () => ({
-  createLogger: () => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
-}));
+vi.mock('$lib/utils/client-logger', async () => await import('$lib/store/utils/test-helpers/client-logger-mock'));
 
 describe('performance-utils', () => {
   beforeEach(() => {

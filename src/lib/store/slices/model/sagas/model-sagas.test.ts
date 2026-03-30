@@ -1,12 +1,7 @@
 import { describe, it, vi } from 'vitest';
 import { testSaga } from 'redux-saga-test-plan';
-import * as sagaEffects from 'redux-saga/effects';
 
-vi.mock('typed-redux-saga', () => ({
-  fork: function* (saga: any, ...args: any[]) {
-    return yield sagaEffects.fork(saga, ...args);
-  },
-}));
+vi.mock('typed-redux-saga', async () => await import('$lib/store/utils/test-helpers/typed-redux-saga-mock'));
 
 import { loadModelsSaga } from './load-models-saga';
 import { modelSaga } from './model-saga';

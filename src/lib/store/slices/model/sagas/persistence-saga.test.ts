@@ -1,24 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { expectSaga } from 'redux-saga-test-plan';
-import * as sagaEffects from 'redux-saga/effects';
 import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
 
-vi.mock('typed-redux-saga', () => ({
-  call: function* (fnOrDescriptor: any, ...args: any[]) {
-    return yield Array.isArray(fnOrDescriptor)
-      ? sagaEffects.call(fnOrDescriptor as [any, any], ...args)
-      : sagaEffects.call(fnOrDescriptor, ...args);
-  },
-  put: function* (action: any) {
-    return yield sagaEffects.put(action);
-  },
-  select: function* (selector: any, ...args: any[]) {
-    return yield sagaEffects.select(selector, ...args);
-  },
-  takeLatest: function* (pattern: any, worker: any) {
-    return yield sagaEffects.takeLatest(pattern, worker);
-  },
-}));
+vi.mock('typed-redux-saga', async () => await import('$lib/store/utils/test-helpers/typed-redux-saga-mock'));
 
 vi.mock('$features/agent/services/unified-state-store', () => ({
   unifiedStateStore: {

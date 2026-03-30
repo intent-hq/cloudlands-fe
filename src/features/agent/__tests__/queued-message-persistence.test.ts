@@ -47,10 +47,8 @@ vi.mock('../browser', () => ({
   },
 }));
 
-vi.mock('$lib/electron-bridge', () => ({ invoke: vi.fn() }));
-vi.mock('$lib/utils/client-logger', () => ({
-  createLogger: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }),
-}));
+vi.mock('$lib/electron-bridge', async () => await import('$lib/store/utils/test-helpers/electron-bridge-mock'));
+vi.mock('$lib/utils/client-logger', async () => await import('$lib/store/utils/test-helpers/client-logger-mock'));
 vi.mock('$features/agent/services/unified-state-store', () => ({ unifiedStateStore: { currentWorkspace: { workspace: { id: 'ws-1' } }, getAgentsForWorkspace: vi.fn(() => []) } }));
 vi.mock('$features/agent/services/performance-optimizer', () => ({ performanceOptimizer: {} }));
 vi.mock('$features/agent/services/agent-factory', () => ({ agentFactory: {} }));

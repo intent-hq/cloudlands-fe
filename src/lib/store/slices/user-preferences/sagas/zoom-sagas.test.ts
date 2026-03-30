@@ -2,25 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runSaga } from "redux-saga";
 import * as sagaEffects from "redux-saga/effects";
 
-vi.mock("typed-redux-saga", () => {
-  function* call(fn: any, ...args: any[]): Generator<any, any, any> {
-    return yield sagaEffects.call(fn, ...args);
-  }
-  function* put(action: any): Generator<any, any, any> {
-    return yield sagaEffects.put(action);
-  }
-  function* take(pattern: any): Generator<any, any, any> {
-    return yield sagaEffects.take(pattern);
-  }
-  function* delay(ms: number): Generator<any, any, any> {
-    return yield sagaEffects.delay(ms);
-  }
-  return { call, put, take, delay };
-});
+vi.mock("typed-redux-saga", async () => await import("$lib/store/utils/test-helpers/typed-redux-saga-mock"));
 
-vi.mock("$lib/electron-bridge", () => ({
-  isElectron: vi.fn(() => false),
-}));
+vi.mock("$lib/electron-bridge", async () => await import("$lib/store/utils/test-helpers/electron-bridge-mock"));
 
 vi.mock("$lib/store/utils/ipc-channel", async (importOriginal) => {
   const actual = await importOriginal<typeof import("$lib/store/utils/ipc-channel")>();

@@ -11,9 +11,7 @@ import {
 } from "./ipc-channel";
 
 // Mock electron-bridge
-vi.mock("$lib/electron-bridge", () => ({
-  listenSync: vi.fn(),
-}));
+vi.mock("$lib/electron-bridge", async () => await import("$lib/store/utils/test-helpers/electron-bridge-mock"));
 
 import { listenSync } from "$lib/electron-bridge";
 

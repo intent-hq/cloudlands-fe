@@ -2,25 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runSaga } from "redux-saga";
 import { expectSaga } from "redux-saga-test-plan";
 import * as sagaEffects from "redux-saga/effects";
+import { installLocalStorageMock } from "$lib/store/utils/test-helpers/local-storage-mock";
 
-vi.mock("typed-redux-saga", () => {
-  function* call(fn: any, ...args: any[]): Generator<any, any, any> {
-    return yield sagaEffects.call(fn, ...args);
-  }
-  function* put(action: any): Generator<any, any, any> {
-    return yield sagaEffects.put(action);
-  }
-  function* select(selector: any, ...args: any[]): Generator<any, any, any> {
-    return yield sagaEffects.select(selector, ...args);
-  }
-  function* take(patternOrChannel: any): Generator<any, any, any> {
-    return yield sagaEffects.take(patternOrChannel);
-  }
-  function* takeEvery(pattern: any, worker: any): Generator<any, any, any> {
-    return yield sagaEffects.takeEvery(pattern, worker);
-  }
-  return { call, put, select, take, takeEvery };
-});
+vi.mock("typed-redux-saga", async () => await import("$lib/store/utils/test-helpers/typed-redux-saga-mock"));
 
 const { takeEveryFromListenSyncMock } = vi.hoisted(() => ({
   takeEveryFromListenSyncMock: vi.fn(function* () {}),
@@ -52,30 +36,17 @@ function getListenSyncHandler(eventName: string) {
 }
 
 describe("terminal overlay sagas", () => {
-  const storage = new Map<string, string>();
+  const mockStorage = installLocalStorageMock();
   let originalElectronApi: unknown;
 
   const readStorage = (key: string) => {
-    const value = storage.get(key);
+    const value = window.localStorage.getItem(key);
     return value ? JSON.parse(value) : null;
   };
 
   beforeEach(() => {
-    storage.clear();
+    mockStorage.reset();
     vi.clearAllMocks();
-
-    vi.mocked(window.localStorage.getItem).mockImplementation((key: string) => {
-      return storage.get(key) ?? null;
-    });
-    vi.mocked(window.localStorage.setItem).mockImplementation((key: string, value: string) => {
-      storage.set(key, value);
-    });
-    vi.mocked(window.localStorage.removeItem).mockImplementation((key: string) => {
-      storage.delete(key);
-    });
-    vi.mocked(window.localStorage.clear).mockImplementation(() => {
-      storage.clear();
-    });
 
     originalElectronApi = (window as any).electronAPI;
     (window as any).electronAPI = originalElectronApi ?? { on: vi.fn(), off: vi.fn() };
@@ -110,7 +81,7 @@ describe("terminal overlay sagas", () => {
 
   describe("persistence helpers", () => {
     it("migrates legacy custom-name storage and preserves lookups", async () => {
-      storage.set(CUSTOM_NAMES_STORAGE_KEY, JSON.stringify({ "term-1": "Legacy Name" }));
+      window.localStorage.setItem(CUSTOM_NAMES_STORAGE_KEY, JSON.stringify({ "term-1": "Legacy Name" }));
 
       const storedCustomName = await runSaga(
         { dispatch: vi.fn(), getState: () => ({}) },

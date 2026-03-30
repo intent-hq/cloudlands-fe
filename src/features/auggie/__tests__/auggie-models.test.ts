@@ -6,19 +6,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getModelIcon, type AuggieModel } from '../auggie-models.client';
 
 // Mock the electron-bridge
-vi.mock('$lib/electron-bridge', () => ({
-  invoke: vi.fn(),
-}));
+vi.mock('$lib/electron-bridge', async () => await import('$lib/store/utils/test-helpers/electron-bridge-mock'));
 
-// Mock the logger
-vi.mock('$lib/utils/client-logger', () => ({
-  createLogger: () => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
-}));
+vi.mock('$lib/utils/client-logger', async () => await import('$lib/store/utils/test-helpers/client-logger-mock'));
 
 describe('auggie-models', () => {
   beforeEach(() => {

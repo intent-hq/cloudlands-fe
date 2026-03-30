@@ -1,27 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import * as sagaEffects from "redux-saga/effects";
 
-vi.mock("typed-redux-saga", () => ({
-  call: function* (fn: any, ...args: any[]) {
-    return yield sagaEffects.call(fn, ...args);
-  },
-  join: function* (task: any) {
-    return yield { type: "JOIN", payload: task };
-  },
-  put: function* (action: any) {
-    return yield sagaEffects.put(action);
-  },
-  select: function* (selector: any, ...args: any[]) {
-    return yield sagaEffects.select(selector, ...args);
-  },
-  takeEvery: function* (pattern: any, worker: any) {
-    return yield sagaEffects.takeEvery(pattern, worker);
-  },
-}));
+vi.mock("typed-redux-saga", async () => await import("$lib/store/utils/test-helpers/typed-redux-saga-mock"));
 
-vi.mock("$lib/electron-bridge", () => ({
-  invoke: vi.fn(),
-}));
+vi.mock("$lib/electron-bridge", async () => await import("$lib/store/utils/test-helpers/electron-bridge-mock"));
 
 import {
   refreshAutoCommitSettings,
@@ -34,7 +16,18 @@ import { syncSaga } from "./sync-saga";
 
 describe("syncSaga", () => {
   it("re-syncs previously synced workspaces after a refresh", () => {
-    const initTask = { id: "startup-init" };
+    // Create a mock Task object matching redux-saga's Task shape
+    const initTask = {
+      ["@@redux-saga/TASK"]: true,
+      isRunning: () => true,
+      isCancelled: () => false,
+      isAborted: () => false,
+      result: () => undefined,
+      error: () => undefined,
+      cancel: () => {},
+      setContext: () => {},
+      toPromise: () => Promise.resolve(),
+    };
     const iterator = syncSaga(initTask);
 
     const syncRegistration = iterator.next().value as any;
@@ -46,7 +39,7 @@ describe("syncSaga", () => {
     const refreshWorker = refreshRegistration.payload.args[1] as () => Generator;
 
     const syncIterator = syncWorker(syncWorkspaceSettings("ws-1"));
-    expect(syncIterator.next()).toEqual({ value: { type: "JOIN", payload: initTask }, done: false });
+    expect(syncIterator.next()).toEqual({ value: sagaEffects.join(initTask), done: false });
     // loadAutoCommitSettings is dispatched with workspaceId and the global default
     expect(syncIterator.next()).toEqual({
       value: sagaEffects.put(loadAutoCommitSettings("ws-1", getGlobalAutoCommitDefault())),

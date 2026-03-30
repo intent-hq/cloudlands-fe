@@ -4,29 +4,9 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { UnifiedSaveQueue } from '../unified-save-queue';
+import { installLocalStorageMock } from '$lib/store/utils/test-helpers/local-storage-mock';
 
-// Mock localStorage
-const mockLocalStorage = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: vi.fn((key: string) => store[key] || null),
-    setItem: vi.fn((key: string, value: string) => {
-      store[key] = value;
-    }),
-    removeItem: vi.fn((key: string) => {
-      delete store[key];
-    }),
-    clear: vi.fn(() => {
-      store = {};
-    }),
-    get length() {
-      return Object.keys(store).length;
-    },
-    key: vi.fn((index: number) => Object.keys(store)[index] || null),
-  };
-})();
-
-Object.defineProperty(global, 'localStorage', { value: mockLocalStorage });
+const mockLocalStorage = installLocalStorageMock();
 
 describe('UnifiedSaveQueue', () => {
   beforeEach(() => {

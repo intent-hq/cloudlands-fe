@@ -3,7 +3,6 @@ import { createCollection } from "$lib/store/utils/collection-utils";
 import { getLocalStorageJSON } from "$lib/store/utils/safe-local-storage-saga";
 import { expectSaga, testSaga } from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
-import * as sagaEffects from "redux-saga/effects";
 import { beforeEach, describe, it, vi } from "vitest";
 import {
   STORAGE_KEY,
@@ -15,23 +14,9 @@ import {
 } from "../external-editors-slice";
 import { handleFetchEditors, loadCachedEditors } from "./fetch-editors-saga";
 
-vi.mock("typed-redux-saga", () => ({
-  call: function* (fnOrDescriptor: any, ...args: any[]) {
-    return yield Array.isArray(fnOrDescriptor)
-      ? sagaEffects.call(fnOrDescriptor as [any, any], ...args)
-      : sagaEffects.call(fnOrDescriptor, ...args);
-  },
-  put: function* (action: any) {
-    return yield sagaEffects.put(action);
-  },
-  takeLatest: function* (pattern: any, worker: any) {
-    return yield sagaEffects.takeLatest(pattern, worker);
-  },
-}));
+vi.mock("typed-redux-saga", async () => await import("$lib/store/utils/test-helpers/typed-redux-saga-mock"));
 
-vi.mock("$lib/electron-bridge", () => ({
-  invoke: vi.fn(),
-}));
+vi.mock("$lib/electron-bridge", async () => await import("$lib/store/utils/test-helpers/electron-bridge-mock"));
 
 const mockEditor: InstalledEditor = {
   id: "vscode",

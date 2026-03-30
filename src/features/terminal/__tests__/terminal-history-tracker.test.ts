@@ -4,29 +4,9 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { terminalHistoryTracker } from '../terminal-history-tracker';
+import { installLocalStorageMock } from '$lib/store/utils/test-helpers/local-storage-mock';
 
-// Mock localStorage
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: (key: string) => store[key] || null,
-    setItem: (key: string, value: string) => {
-      store[key] = value;
-    },
-    removeItem: (key: string) => {
-      delete store[key];
-    },
-    clear: () => {
-      store = {};
-    },
-    get length() {
-      return Object.keys(store).length;
-    },
-    key: (index: number) => Object.keys(store)[index] || null,
-  };
-})();
-
-Object.defineProperty(window, 'localStorage', { value: localStorageMock });
+const localStorageMock = installLocalStorageMock();
 
 describe('TerminalHistoryTracker', () => {
   const terminalId = 'test-terminal-123';

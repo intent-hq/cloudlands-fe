@@ -1,30 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { safeLocalStorage } from '../safe-storage';
+import { installLocalStorageMock } from '$lib/store/utils/test-helpers/local-storage-mock';
 
-const storage = new Map<string, string>();
-const localStorageMock = {
-  getItem: vi.fn((key: string) => storage.get(key) ?? null),
-  setItem: vi.fn((key: string, value: string) => {
-    storage.set(key, value);
-  }),
-  removeItem: vi.fn((key: string) => {
-    storage.delete(key);
-  }),
-  clear: vi.fn(() => {
-    storage.clear();
-  }),
-};
+const localStorageMock = installLocalStorageMock();
 
 describe('safeLocalStorage JSON helpers', () => {
   beforeEach(() => {
-    storage.clear();
+    localStorageMock.reset();
     vi.clearAllMocks();
-    Object.defineProperty(window, 'localStorage', {
-      configurable: true,
-      value: localStorageMock,
-    });
-    window.localStorage.clear();
   });
 
   it('allows getJSON to be called without binding', () => {

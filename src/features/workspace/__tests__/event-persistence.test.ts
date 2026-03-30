@@ -5,35 +5,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventPersistenceService, importEventsFromFile } from '../event-persistence';
 import type { WorkspaceEvent } from '$features/events/types';
+import { installLocalStorageMock } from '$lib/store/utils/test-helpers/local-storage-mock';
 
 // Mock browser environment
 vi.mock('$app/environment', () => ({
   browser: true,
 }));
 
-// Mock localStorage
-const mockLocalStorage = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: vi.fn((key: string) => store[key] || null),
-    setItem: vi.fn((key: string, value: string) => {
-      store[key] = value;
-    }),
-    removeItem: vi.fn((key: string) => {
-      delete store[key];
-    }),
-    clear: vi.fn(() => {
-      store = {};
-    }),
-    get length() {
-      return Object.keys(store).length;
-    },
-    key: vi.fn((index: number) => Object.keys(store)[index] || null),
-    keys: () => Object.keys(store),
-  };
-})();
-
-Object.defineProperty(global, 'localStorage', { value: mockLocalStorage });
+const mockLocalStorage = installLocalStorageMock();
 
 // Mock Blob
 global.Blob = class MockBlob {
