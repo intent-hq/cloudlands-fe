@@ -3,6 +3,7 @@ import { workspaceStore } from "$features/workspace/workspace.store.svelte";
 import { invoke } from "$lib/electron-bridge";
 import { removeKnownRepo } from "$lib/store/slices/known-repos/known-repos-slice";
 import { getRunningAgentNames, hasRunningAgents } from "$lib/utils/delete-warning-utils";
+import { navigateAfterWorkspaceRemoval } from "$lib/utils/workspace-navigation";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
 import { WorkspaceStatusEnum, type Workspace } from "$shared/types";
 import type { WorkspaceId } from "$shared/types/branded-ids";
@@ -142,6 +143,12 @@ export function* requestDeleteWorkspaceSaga(action: ReturnType<typeof requestDel
     return;
   }
 
+  const wsPrefix = `/workspace/${workspace.id}`;
+  const isViewingWorkspace = window.location.pathname === wsPrefix || window.location.pathname.startsWith(wsPrefix + '/');
+  if (isViewingWorkspace) {
+    yield* call(navigateAfterWorkspaceRemoval, workspace.id);
+  }
+
   yield* call(deleteWorkspaceWithUndo, workspace);
 }
 
@@ -150,6 +157,12 @@ export function* confirmDeleteWorkspaceSaga() {
   yield* put(closeDeleteWarning());
 
   if (workspace) {
+    const wsPrefix = `/workspace/${workspace.id}`;
+    const isViewingWorkspace = window.location.pathname === wsPrefix || window.location.pathname.startsWith(wsPrefix + '/');
+    if (isViewingWorkspace) {
+      yield* call(navigateAfterWorkspaceRemoval, workspace.id);
+    }
+
     yield* call(deleteWorkspaceWithUndo, workspace);
   }
 }
@@ -158,6 +171,13 @@ export function* requestArchiveWorkspaceSaga(action: ReturnType<typeof requestAr
   const [workspace] = action.payload;
   const toast = yield* call(getToast);
   const workspaceTitle = workspace.title || "space";
+
+  const wsPrefix = `/workspace/${workspace.id}`;
+  const isViewingWorkspace = window.location.pathname === wsPrefix || window.location.pathname.startsWith(wsPrefix + '/');
+  if (isViewingWorkspace) {
+    yield* call(navigateAfterWorkspaceRemoval, workspace.id);
+  }
+
   const result = yield* call([workspaceStore, workspaceStore.archive], workspace.id);
 
   if (result.ok) {

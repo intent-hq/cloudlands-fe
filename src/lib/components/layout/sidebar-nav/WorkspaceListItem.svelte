@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { faCheck, faThumbtack, faArrowUpRightFromSquare } from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faThumbtack, faArrowUpRightFromSquare, faBoxArchive, faTrash } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
@@ -13,6 +13,8 @@
   import { sidebarNavStore } from '$lib/components/layout/sidebar-nav/sidebar-nav.store.svelte';
   import type { Workspace } from '$shared/types';
   import { PullRequestStatus } from '$shared/types';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { requestArchiveWorkspace, requestDeleteWorkspace } from '$lib/store/slices/workspace-operations/workspace-operations-slice';
   import { cn } from '$lib/utils';
   import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
 
@@ -140,8 +142,10 @@
   });
 
   function getContextMenuItems(): SidebarMenuEntry[] {
-    return [
-      {
+    const items: SidebarMenuEntry[] = [];
+
+    if (onOpenInNewWindow) {
+      items.push({
         id: 'open-new-window',
         label: 'Open in New Window',
         icon: faArrowUpRightFromSquare,
@@ -149,8 +153,31 @@
           onOpenInNewWindow?.();
           closeContextMenu();
         },
+      });
+    }
+
+    items.push({
+      id: 'archive',
+      label: 'Archive',
+      icon: faBoxArchive,
+      onClick: () => {
+        getReduxStore().dispatch(requestArchiveWorkspace(workspace));
+        closeContextMenu();
       },
-    ];
+    });
+
+    items.push({
+      id: 'delete',
+      label: 'Delete',
+      icon: faTrash,
+      destructive: true,
+      onClick: () => {
+        getReduxStore().dispatch(requestDeleteWorkspace(workspace));
+        closeContextMenu();
+      },
+    });
+
+    return items;
   }
 </script>
 
@@ -164,7 +191,7 @@
   tabindex="0"
   onclick={(e) => onClick?.(e)}
   onkeydown={handleKeydown}
-  oncontextmenu={onOpenInNewWindow ? handleContextMenu : undefined}
+  oncontextmenu={handleContextMenu}
   onmouseenter={() => onHover?.()}
 >
   <!-- Left column: status indicator -->
@@ -308,7 +335,7 @@
   {/if}
 </div>
 
-{#if contextMenu && onOpenInNewWindow}
+{#if contextMenu}
   <SidebarContextMenu
     x={contextMenu.x}
     y={contextMenu.y}
