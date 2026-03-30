@@ -662,7 +662,14 @@ export class ChatService implements IDisposable {
       try {
         if (window.electronAPI) {
           const result = await window.electronAPI.invoke('agent:get-active-streams');
-          const activeStreams = result?.streams || [];
+          if (!result?.success || !Array.isArray(result?.data)) {
+            logger.debug('State reconciliation: skipping - IPC call did not return success', {
+              sessionId: currentSessionId,
+              success: result?.success,
+            });
+            return;
+          }
+          const activeStreams = result.data;
 
           // Check if our session is in the active streams list
           const hasActiveStream = activeStreams.some(

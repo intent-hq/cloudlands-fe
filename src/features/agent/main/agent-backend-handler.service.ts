@@ -2531,6 +2531,15 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       // Since sendStreamToRenderer now targets all workspace windows (not just the initiator),
       // all windows will receive both chunks and the complete event, so no orphaned handlers.
       const workspaceWindowIds = getWindowIdsForWorkspace(request.workspaceId);
+      const useBroadcastFallback = workspaceWindowIds.length === 0;
+      logger.info('agent:stream-starting emission', {
+        agentId: request.agentId,
+        workspaceId: request.workspaceId,
+        sessionId: request.sessionId,
+        windowIds: workspaceWindowIds,
+        windowCount: workspaceWindowIds.length,
+        useBroadcastFallback,
+      });
       this.sendToRenderer(
         'agent:stream-starting',
         {
@@ -4812,14 +4821,14 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         return this.sendToRenderer(channel, data, targetWindowIds);
       }
       // No windows found for workspace - fall back to broadcast
-      logger.debug('sendStreamToRenderer: no windows found for workspace, broadcasting', {
+      logger.warn('sendStreamToRenderer: no windows found for workspace, broadcasting', {
         agentId,
         workspaceId,
         channel,
       });
     } else {
       // No workspace tracked - fall back to broadcast
-      logger.debug('sendStreamToRenderer: no workspace tracked, broadcasting', {
+      logger.warn('sendStreamToRenderer: no workspace tracked, broadcasting', {
         agentId,
         channel,
       });
@@ -5550,6 +5559,11 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           await this.requestFrontendHandler(sessionId, workspaceId, {
             name: loadResult.data.name,
             model: loadResult.data.model,
+          });
+          logger.info('Backend-initiated message: frontend handshake completed (no provider path)', {
+            agentId: sessionId,
+            workspaceId,
+            note: 'requestFrontendHandler returns early with no error when no windows exist for the workspace',
           });
         } catch (handshakeError) {
           logger.warn(
