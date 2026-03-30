@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.36
+
+- MCP tool calls now show brand logos and structured previews so you can see what tools are doing at a glance.
+- New Spaces automatically inherit your globally disabled MCP servers — no need to re-disable them each time.
+- Create PR, Merge, and Push buttons now appear reliably after commits and merges.
+- Linear tool integration now works correctly.
+- Fixes: workspace not loading on fast navigation, agent messages lost when restoring a session, messages stuck in "Thinking" state, suggested prompts not working when clicked, archived workspaces reappearing, "Waiting for" banner showing up again after dismissal, terminal connections dropping, assistant replies overwritten by stale saves, modal and animation glitches.
+
+## 0.2.33
+
+- Rich model metadata in the model picker — badges (Auto, Free), cost tier indicators ($, $$, $$$), and smarter sorting by priority.
+- Terminal auto-recovery — frozen terminals now self-heal instead of requiring a manual page navigation.
+- Prevents out-of-memory crashes when loading large agent conversations.
+- Spec panel only opens when an agent is actively writing to it, instead of reopening on every workspace visit.
+- Claude Opus 4.6 is now the default model for Auggie agents.
+- Fixes: sent messages not appearing without a refresh, chat panel freezing during concurrent agent streaming, duplicate stream chunks from leaked IPC listeners, delayed user message display, thinking indicator not showing on follow-up messages, sidebar progress card flickering between PR and task status, agent list stuck in skeleton loading state after navigation, duplicate agent wake-up messages.
+
 ## 0.2.32
 
 - Claude Opus 4.6 is now the default model for Auggie agents.
