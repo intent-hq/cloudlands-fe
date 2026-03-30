@@ -168,6 +168,25 @@ export interface AnalyticsEvents {
     agent_name?: string;
     agent_model?: string;
   };
+  'Agent Outcome': {
+    agent_id: string;
+    workspace_id: string;
+    outcome: 'completed' | 'errored' | 'stopped';
+    finish_reason?: string; // e.g., 'end_turn', 'cancelled', 'error', 'provider_stopped'
+    agent_name?: string;
+    agent_model?: string;
+    is_background?: boolean;
+    source: 'backend'; // ground truth from main process
+  };
+  'Agent Outcome Received': {
+    agent_id: string;
+    workspace_id: string;
+    outcome: 'completed' | 'errored' | 'stopped';
+    finish_reason?: string;
+    agent_name?: string;
+    agent_model?: string;
+    source: 'renderer'; // confirms user's UI received the outcome
+  };
 
   // ============================================
   // Feature Usage (specific events per feature)

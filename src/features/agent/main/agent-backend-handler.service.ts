@@ -40,6 +40,7 @@ import { messageAccumulator } from '../services/message-accumulator.service';
 import { streamingConfig } from '../streaming-config.service';
 import { agentPersistence } from './agent-persistence';
 import { getWindowIdForWorkspace, getWindowIdsForWorkspace } from '../../system/main/system.ipc';
+import { trackMain } from '$lib/services/analytics/main';
 
 const logger = new Logger('AgentBackendHandler');
 
@@ -3148,6 +3149,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
             streamId: request.streamId,
             sessionId: request.agentId,
             message: assistantMessage,
+            finishReason,
           });
 
           // Memory instrumentation: cleanup starting
@@ -3164,6 +3166,18 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           // ("Stream already active") and may never be sent. By finalizing first,
           // the queue gets priority over event-triggered streams.
           this.finalizeStream(request.agentId, request.workspaceId, 'complete');
+
+          // Track definitive agent outcome (backend ground truth)
+          trackMain('Agent Outcome', {
+            agent_id: request.agentId,
+            workspace_id: request.workspaceId,
+            outcome: wasInterrupted || ['provider_stopped', 'workspace_deleted', 'process_died', 'process_null'].includes(finishReason) ? 'stopped' : 'completed',
+            finish_reason: finishReason,
+            agent_name: agentName,
+            agent_model: provider?.getConfig?.()?.model || request.model,
+            is_background: !!(request as any).isBackground,
+            source: 'backend',
+          });
 
           // Emit agent:idle event for agent-to-agent coordination
           // Use the agentName from the outer scope (loaded from persistence at line 643)
@@ -3295,6 +3309,17 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
             // ACP provider's onError calls rejectStream(), which causes await provider.streamMessage()
             // to throw, hitting the outer catch. Without this guard, agent:failed fires twice.
             onErrorHandled = true;
+            // Track definitive agent outcome (backend ground truth)
+            trackMain('Agent Outcome', {
+              agent_id: request.agentId,
+              workspace_id: request.workspaceId,
+              outcome: 'errored',
+              finish_reason: 'error',
+              agent_name: agentName,
+              agent_model: provider?.getConfig?.()?.model || request.model,
+              is_background: !!(request as any).isBackground,
+              source: 'backend',
+            });
             // IMPORTANT: finalizeStream MUST run BEFORE emitAgentFailedEvent (same as onComplete).
             // emitAgentFailedEvent can trigger event subscription delivery which starts
             // a new stream, racing with queued message processing.
@@ -3350,6 +3375,16 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         // so streamStartTimes may be stale and the queue would never advance.
         this.finalizeStream(request.agentId, request.workspaceId, 'outer-catch-error');
         const failedAgentName = (request as any).agentName || 'Agent';
+        // Track definitive agent outcome (backend ground truth)
+        trackMain('Agent Outcome', {
+          agent_id: request.agentId,
+          workspace_id: request.workspaceId,
+          outcome: 'errored',
+          finish_reason: 'error',
+          agent_name: failedAgentName,
+          is_background: !!(request as any).isBackground,
+          source: 'backend',
+        });
         this.emitAgentFailedEvent(
           request.agentId,
           request.workspaceId,
@@ -4433,6 +4468,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
             streamId: agentId,
             sessionId: agentId,
             message: partialMessage,
+            finishReason: 'timeout',
           });
         } else {
           // No content recovered, send error
@@ -4457,6 +4493,16 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         // so the parent orchestrator can be notified when delegated agents timeout.
         // emitAgentFailedEvent now coordinates setAgentStatus('failed') + event emission
         // in a single async chain for guaranteed ordering.
+        // Track definitive agent outcome for timeout (backend ground truth)
+        trackMain('Agent Outcome', {
+          agent_id: agentId,
+          workspace_id: workspaceId || 'unknown',
+          outcome: 'errored',
+          finish_reason: 'timeout',
+          is_background: false,
+          source: 'backend',
+        });
+
         if (workspaceId) {
           this.getBackend()
             .then(async (backend) => {

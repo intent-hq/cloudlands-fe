@@ -2070,6 +2070,21 @@ class RefactoredAgentService extends EventEmitter {
             isBackgroundAgent,
           );
 
+          // Track that renderer received the agent outcome (complements backend ground truth)
+          // Use finishReason from backend stream event as authoritative signal
+          const outcomeReason = data.finishReason || 'unknown';
+          const isStop = ['cancelled', 'provider_stopped', 'workspace_deleted', 'process_died', 'process_null'].includes(outcomeReason);
+          const isError = outcomeReason === 'timeout' || outcomeReason === 'error';
+          track('Agent Outcome Received', {
+            agent_id: agentId,
+            workspace_id: resolvedWorkspaceId || 'unknown',
+            outcome: isStop ? 'stopped' : isError ? 'errored' : 'completed',
+            finish_reason: outcomeReason,
+            agent_name: streamSessionForUnread?.name,
+            agent_model: streamSessionForUnread?.model,
+            source: 'renderer',
+          });
+
           // Forward to ChatService WITH the backend's message (or undefined if interrupted)
           // FIX: Use dispatchStreamEvent which queues events if no handler registered
           this.dispatchStreamEvent(handlerSessionId, 'end', {
@@ -2119,6 +2134,15 @@ class RefactoredAgentService extends EventEmitter {
           this.dispatchStreamEvent(handlerSessionId, 'error', {
             type: 'error',
             error: data.data?.message || 'The response was interrupted. Please try again.',
+          });
+
+          // Track that renderer received the agent error outcome
+          track('Agent Outcome Received', {
+            agent_id: agentId,
+            workspace_id: resolvedWorkspaceId || 'unknown',
+            outcome: 'errored',
+            finish_reason: 'error',
+            source: 'renderer',
           });
 
           // Also dispatch session-updated event as a fallback
@@ -4766,6 +4790,19 @@ class RefactoredAgentService extends EventEmitter {
                                     duration_ms: durationMs,
                                     tool_call_count: toolCallCount,
                                   });
+                                  // Track that renderer received the agent outcome
+                                  const sendMsgOutcomeReason = data.finishReason || 'unknown';
+                                  const sendMsgIsStop = ['cancelled', 'provider_stopped', 'workspace_deleted', 'process_died', 'process_null'].includes(sendMsgOutcomeReason);
+                                  const sendMsgIsError = sendMsgOutcomeReason === 'timeout' || sendMsgOutcomeReason === 'error';
+                                  track('Agent Outcome Received', {
+                                    agent_id: agentId,
+                                    workspace_id: workspace.id,
+                                    outcome: sendMsgIsStop ? 'stopped' : sendMsgIsError ? 'errored' : 'completed',
+                                    finish_reason: sendMsgOutcomeReason,
+                                    agent_name: updatedSession.name,
+                                    agent_model: updatedSession.model,
+                                    source: 'renderer',
+                                  });
                                 } catch (trackingError) {
                                   logger.warn('Failed to track Agent Turn Completed event', {
                                     error: trackingError,
@@ -4803,6 +4840,15 @@ class RefactoredAgentService extends EventEmitter {
                                   type: 'end',
                                   message: null,
                                 });
+                                // Track renderer outcome for error/empty case
+                                const emptyMsgReason = data.finishReason || 'unknown';
+                                track('Agent Outcome Received', {
+                                  agent_id: agentId,
+                                  workspace_id: workspace.id,
+                                  outcome: ['cancelled', 'provider_stopped', 'workspace_deleted', 'process_died', 'process_null'].includes(emptyMsgReason) ? 'stopped' : (emptyMsgReason === 'timeout' || emptyMsgReason === 'error') ? 'errored' : 'completed',
+                                  finish_reason: emptyMsgReason,
+                                  source: 'renderer',
+                                });
 
                                 // Also dispatch session-updated event as a fallback
                                 window.dispatchEvent(
@@ -4835,6 +4881,15 @@ class RefactoredAgentService extends EventEmitter {
                               this.dispatchStreamEvent(handlerSessionId, 'end', {
                                 type: 'end',
                                 message: null,
+                              });
+                              // Track renderer outcome for no-messages case
+                              const noMsgReason = data.finishReason || 'unknown';
+                              track('Agent Outcome Received', {
+                                agent_id: agentId,
+                                workspace_id: workspace.id,
+                                outcome: ['cancelled', 'provider_stopped', 'workspace_deleted', 'process_died', 'process_null'].includes(noMsgReason) ? 'stopped' : (noMsgReason === 'timeout' || noMsgReason === 'error') ? 'errored' : 'completed',
+                                finish_reason: noMsgReason,
+                                source: 'renderer',
                               });
 
                               // Also dispatch session-updated event as a fallback
@@ -4934,6 +4989,15 @@ class RefactoredAgentService extends EventEmitter {
                           this.dispatchStreamEvent(handlerSessionId, 'error', {
                             type: 'error',
                             error: data.data?.message || 'The response was interrupted. Please try again.',
+                          });
+
+                          // Track that renderer received the agent error outcome
+                          track('Agent Outcome Received', {
+                            agent_id: agentId,
+                            workspace_id: workspace.id,
+                            outcome: 'errored',
+                            finish_reason: 'error',
+                            source: 'renderer',
                           });
 
                           // Also dispatch session-updated event as a fallback
