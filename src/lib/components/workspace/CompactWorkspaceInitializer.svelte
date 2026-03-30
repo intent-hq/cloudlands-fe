@@ -1,5 +1,10 @@
 <script lang="ts">
   import { untrack } from 'svelte';
+  import {
+    type InitialRepoInfo,
+    getInitialRepoKey,
+    mapInitialRepoToFormState,
+  } from './initializer/initial-repo-utils';
   import { goto } from '$app/navigation';
   import { agentService } from '$features/agent/agent.service';
   import {
@@ -171,16 +176,7 @@
     '.ps1',
   ] as const;
 
-  export interface InitialRepoInfo {
-    repoPath?: string;
-    isGithub?: boolean;
-    owner?: string;
-    name?: string;
-    environmentType?: string;
-    sshConfig?: any;
-    previousWorkspaceId?: string;
-    previousWorkspaceTitle?: string;
-  }
+  export type { InitialRepoInfo };
 
   interface Props {
     isExpanded: boolean;
@@ -660,49 +656,34 @@
   let detectedGitHubOwner = $state<string | null>(null);
   let detectedGitHubRepo = $state<string | null>(null);
 
-  // Track last applied initial repo to avoid re-applying
-  let lastAppliedInitialRepo: InitialRepoInfo | undefined = $state(undefined);
+  // Track last applied initial repo to avoid re-applying (string key avoids $state proxy mismatch)
+  let lastAppliedInitialRepoKey = '__uninitialized__';
 
   // Apply initial repo when provided and focus the prompt input
   $effect(() => {
-    if (initialRepo && initialRepo !== lastAppliedInitialRepo) {
-      lastAppliedInitialRepo = initialRepo;
+    const repoKey = getInitialRepoKey(initialRepo);
+    if (initialRepo && repoKey !== lastAppliedInitialRepoKey) {
+      const repo = initialRepo;
+      // Defer state writes to break the synchronous effect cascade.
+      // untrack() does NOT help here — it only prevents reads from tracking,
+      // but writes to $state still propagate synchronously to subscribers.
+      // queueMicrotask breaks out of the synchronous effect execution context.
+      queueMicrotask(() => {
+        lastAppliedInitialRepoKey = repoKey;
+        const formState = mapInitialRepoToFormState(repo);
 
-      if (initialRepo.repoPath) {
-        repoPath = initialRepo.repoPath;
-        isValidPath = true;
-        isNewRepo = false; // Existing repo path means it's not a new repo
-        // Reset scope when changing repos - scope is repo-specific
-        scope = '';
-        // Reset branch so BranchSelector loads the saved branch for this repo
-        branch = '';
-
-        // When we have a repoPath, it means the repo is already cloned locally.
-        // Always use 'local' type - even for GitHub repos that were cloned previously.
-        // The 'github' type is only for cloning repos that don't exist locally yet.
-        repoType = 'local';
-
-        // Still set githubUrl if we have GitHub info, for features like issue suggestions
-        if (initialRepo.owner && initialRepo.name) {
-          githubUrl = `https://github.com/${initialRepo.owner}/${initialRepo.name}`;
+        if (formState.repoPath !== undefined) repoPath = formState.repoPath;
+        if (formState.isValidPath !== undefined) isValidPath = formState.isValidPath;
+        if (formState.isNewRepo !== undefined) isNewRepo = formState.isNewRepo;
+        if (formState.scope !== undefined) scope = formState.scope;
+        if (formState.branch !== undefined) branch = formState.branch;
+        if (formState.repoType !== undefined) repoType = formState.repoType;
+        if (formState.githubUrl !== undefined) githubUrl = formState.githubUrl;
+        if (formState.remoteSetup) remoteSetup = formState.remoteSetup;
+        if (formState.pendingPreviousWorkspace) {
+          pendingPreviousWorkspace = formState.pendingPreviousWorkspace;
         }
-      }
-
-      // Apply remote environment settings if provided
-      if (initialRepo.environmentType === 'remote' && initialRepo.sshConfig) {
-        remoteSetup = {
-          type: 'remote',
-          ssh: initialRepo.sshConfig,
-        };
-      }
-
-      // Set up previous workspace mention if provided (for "Start New Space" after merge)
-      if (initialRepo.previousWorkspaceId && initialRepo.previousWorkspaceTitle) {
-        pendingPreviousWorkspace = {
-          id: initialRepo.previousWorkspaceId,
-          title: initialRepo.previousWorkspaceTitle,
-        };
-      }
+      });
     }
   });
 

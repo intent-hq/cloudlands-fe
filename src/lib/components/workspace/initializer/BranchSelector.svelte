@@ -122,14 +122,16 @@
   // Track which branch we're fetching status for to prevent race conditions
   let pendingStatusBranch = $state<string | null>(null);
 
-  // Notify parent when GitHub auth state changes
+  // Notify parent when GitHub auth state changes (with previous-value guard)
+  let lastNotifiedGithubAuth: GitHubAuthNeeded | null = null;
   $effect(() => {
-    try {
-      if (typeof onGitHubAuthNeededChange === 'function') {
+    if (typeof onGitHubAuthNeededChange === 'function' && githubAuthNeeded !== lastNotifiedGithubAuth) {
+      lastNotifiedGithubAuth = githubAuthNeeded;
+      try {
         onGitHubAuthNeededChange(githubAuthNeeded);
+      } catch (e) {
+        logger.error('Error in onGitHubAuthNeededChange callback', e);
       }
-    } catch (e) {
-      logger.error('Error in onGitHubAuthNeededChange callback', e);
     }
   });
 
@@ -139,21 +141,20 @@
   // Derived: whether the selected branch is the currently checked out branch
   const isCurrentBranch = $derived(selectedBranch === currentBranch && currentBranch !== '');
 
-  // Derived: full branch status object for external consumers and internal display
-  const branchStatus = $derived<BranchStatus>({
-    behind: branchStatusBehind,
-    hasUncommittedChanges: branchStatusHasUncommittedChanges,
-    currentBranch,
-    isCurrentBranch,
-    isLoading: branchStatusIsLoading,
-  });
-
-  // Notify parent when branch status changes
+  // Notify parent when branch status changes.
+  // Read individual state values directly instead of a $derived object literal,
+  // so Svelte can track each primitive and only re-fire when a value actually changes.
   $effect(() => {
-    // Only notify if we have a valid status (not loading initial state)
     if (typeof onBranchStatusChange === 'function' && selectedBranch) {
+      const status: BranchStatus = {
+        behind: branchStatusBehind,
+        hasUncommittedChanges: branchStatusHasUncommittedChanges,
+        currentBranch,
+        isCurrentBranch,
+        isLoading: branchStatusIsLoading,
+      };
       try {
-        onBranchStatusChange(branchStatus);
+        onBranchStatusChange(status);
       } catch (e) {
         logger.error('Error in onBranchStatusChange callback', e);
       }
@@ -812,7 +813,7 @@
 
   /**
    * Fetch branch status (behind count and unstaged changes) for a branch.
-   * Updates internal state and notifies parent via the branchStatus derived value.
+   * Updates internal state and notifies parent via the branch status notification effect.
    * Only works for local repos with a valid repoPath.
    */
   async function fetchBranchStatus(branchName: string) {

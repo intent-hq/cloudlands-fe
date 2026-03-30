@@ -9,9 +9,8 @@
   import { tick } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import Button from '$lib/components/ui/button/button.svelte';
-  import CompactWorkspaceInitializer, {
-    type InitialRepoInfo,
-  } from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
+  import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
+  import type { InitialRepoInfo } from '$lib/components/workspace/initializer/initial-repo-utils';
 
   interface Props {
     open?: boolean;
