@@ -93,7 +93,7 @@ async function listClaudeCodeModelsViaAcp(): Promise<ClaudeCodeModel[]> {
       done = true;
       // CRITICAL: Kill the entire process tree, not just the parent npx/npm-exec process.
       // child.kill() only sends SIGTERM to the direct child (npx), but the actual
-      // claude-code-acp adapter runs as a grandchild and is left orphaned.
+      // claude-agent-acp adapter runs as a grandchild and is left orphaned.
       // This was causing massive memory leaks (80GB+) from accumulated orphan processes.
       killChildProcessTree(child);
       // Cache successful results to avoid spawning processes on every call
@@ -241,10 +241,10 @@ async function listClaudeCodeModelsViaAcp(): Promise<ClaudeCodeModel[]> {
 }
 
 export function setupClaudeCodeIPC() {
-  // Check if claude-code-acp is available
+  // Check if claude-agent-acp is available
   ipcMain.handle(CLAUDE_CODE_CHANNELS.CHECK_AVAILABILITY, async () => {
     try {
-      logger.debug('Checking claude-code-acp availability');
+      logger.debug('Checking claude-agent-acp availability');
       const resolved = await resolveClaudeCodeCommand();
       const isAvailable = !!resolved;
       logger.info('Claude Code availability check', {

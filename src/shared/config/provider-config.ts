@@ -91,7 +91,7 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
   'claude-code': {
     id: 'claude-code',
     displayName: 'Anthropic Claude Code',
-    command: 'claude-code-acp',
+    command: 'claude-agent-acp',
     // Claude Code ACP adapter runs without additional flags
     baseArgs: [],
     supportsAuthenticate: false,

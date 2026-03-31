@@ -32,7 +32,7 @@ describe('toAcpMcpServers', () => {
         { name: 'CUSTOM_VAR', value: 'some-value' },
       ],
     });
-    // Stdio servers must NOT have a `type` field — the claude-code-acp adapter
+    // Stdio servers must NOT have a `type` field — the claude-agent-acp adapter
     // uses `"type" in server` to discriminate between stdio and http/sse.
     expect('type' in result[0]).toBe(false);
   });

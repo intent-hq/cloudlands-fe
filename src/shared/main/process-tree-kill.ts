@@ -5,7 +5,7 @@
  * This is critical for processes spawned via npx/npm-exec, where child.kill() only
  * kills the npx wrapper but leaves the actual adapter process (grandchild) orphaned.
  *
- * Without this, each killed npx process leaves behind a running claude-code-acp
+ * Without this, each killed npx process leaves behind a running claude-agent-acp
  * (or similar) adapter, leading to massive memory leaks (80GB+ observed).
  */
 

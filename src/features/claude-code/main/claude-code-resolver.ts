@@ -12,7 +12,7 @@ import { findBinary, getCommonNpmPaths } from '../../../shared/main/find-binary'
 
 const logger = new Logger('ClaudeCodeResolver');
 
-// Common paths to look for the 'claude' CLI binary (prerequisite for claude-code-acp)
+// Common paths to look for the 'claude' CLI binary (prerequisite for claude-agent-acp)
 const CLAUDE_CLI_PATHS = [
   '/usr/local/bin/claude',
   '/usr/bin/claude',
@@ -26,6 +26,23 @@ const CLAUDE_CLI_PATHS = [
     path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'claude'),
     path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'claude.exe'),
     path.join(os.homedir(), 'scoop', 'shims', 'claude.exe'),
+  ] : []),
+];
+
+// Common paths to look for claude-agent-acp binary
+const CLAUDE_AGENT_ACP_PATHS = [
+  '/usr/local/bin/claude-agent-acp',
+  '/usr/bin/claude-agent-acp',
+  '/opt/homebrew/bin/claude-agent-acp',
+  path.join(os.homedir(), '.local/bin/claude-agent-acp'),
+  path.join(os.homedir(), '.bun/bin/claude-agent-acp'),
+  path.join(os.homedir(), '.npm-global/bin/claude-agent-acp'),
+  // Windows paths
+  ...(process.platform === 'win32' ? [
+    path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'claude-agent-acp.cmd'),
+    path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'claude-agent-acp'),
+    path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'claude-agent-acp.exe'),
+    path.join(os.homedir(), 'scoop', 'shims', 'claude-agent-acp.exe'),
   ] : []),
 ];
 
@@ -51,6 +68,7 @@ const NPX_PATHS = [
 ];
 
 let cachedClaudeCodePath: string | null = null;
+let cachedClaudeAgentAcpPath: string | null = null;
 let cachedNpxPath: string | null = null;
 
 /**
@@ -59,6 +77,7 @@ let cachedNpxPath: string | null = null;
  */
 export function clearClaudeCodeCache(): void {
   cachedClaudeCodePath = null;
+  cachedClaudeAgentAcpPath = null;
   cachedNpxPath = null;
 }
 
@@ -83,7 +102,7 @@ async function findNpxPath(): Promise<string | null> {
 }
 
 /**
- * Find the 'claude' CLI executable path (prerequisite for claude-code-acp)
+ * Find the 'claude' CLI executable path (prerequisite for claude-agent-acp)
  */
 async function findClaudeCLIPath(): Promise<string | null> {
   if (cachedClaudeCodePath) {
@@ -105,6 +124,29 @@ async function findClaudeCLIPath(): Promise<string | null> {
   return result;
 }
 
+/**
+ * Find the claude-agent-acp executable path
+ */
+async function findClaudeAgentAcpPath(): Promise<string | null> {
+  if (cachedClaudeAgentAcpPath) {
+    return cachedClaudeAgentAcpPath;
+  }
+
+  const result = await findBinary('claude-agent-acp', {
+    commonPaths: [...CLAUDE_AGENT_ACP_PATHS, ...getCommonNpmPaths('claude-agent-acp')],
+    cache: false,
+    timeout: 3000,
+    useEnhancedPath: false,
+    useLoginShell: false,
+  });
+
+  if (result) {
+    cachedClaudeAgentAcpPath = result;
+  }
+
+  return result;
+}
+
 export type ClaudeCodeResolvedCommand = {
   command: string;
   argsPrefix: string[];
@@ -112,7 +154,7 @@ export type ClaudeCodeResolvedCommand = {
 };
 
 /**
- * Check if the 'claude' CLI is installed (prerequisite for claude-code-acp).
+ * Check if the 'claude' CLI is installed (prerequisite for claude-agent-acp).
  * Used for accurate status detection in the provider status panel.
  */
 export async function isClaudeCodeInstalled(): Promise<boolean> {
@@ -131,26 +173,32 @@ export async function getClaudeCodePath(): Promise<string | null> {
 /**
  * Resolve the command to run Claude Code ACP.
  * The 'claude' CLI must be installed as a prerequisite.
- * We always use npx @zed-industries/claude-code-acp as the ACP adapter.
+ * Prefer a direct claude-agent-acp binary, fall back to npx with auto-approve.
  */
 export async function resolveClaudeCodeCommand(): Promise<ClaudeCodeResolvedCommand | null> {
   // Check if 'claude' CLI is installed (prerequisite)
   const claudeCLIPath = await findClaudeCLIPath();
   if (!claudeCLIPath) {
-    logger.warn('Claude CLI not found - claude-code-acp requires the claude CLI to be installed');
+    logger.warn('Claude CLI not found - claude-agent-acp requires the claude CLI to be installed');
     return null;
   }
 
-  // Always use npx to run the ACP adapter
+  // Prefer direct binary
+  const agentAcpPath = await findClaudeAgentAcpPath();
+  if (agentAcpPath) {
+    return { command: agentAcpPath, argsPrefix: [], usesNpx: false };
+  }
+
+  // Fall back to npx
   const npxPath = await findNpxPath();
   if (npxPath) {
     return {
       command: npxPath,
-      argsPrefix: ['-y', '@zed-industries/claude-code-acp'],
+      argsPrefix: ['-y', '@zed-industries/claude-agent-acp'],
       usesNpx: true,
     };
   }
 
-  logger.warn('npx not found - cannot run claude-code-acp');
+  logger.warn('npx not found - cannot run claude-agent-acp');
   return null;
 }

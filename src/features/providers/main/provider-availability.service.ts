@@ -142,7 +142,7 @@ async function checkAuggieAvailability(): Promise<ProviderStatus> {
 }
 
 /**
- * Check if claude-code is available by checking if claude-code-acp is installed.
+ * Check if claude-code is available by checking if the claude CLI is installed.
  * Does not fall back to npx - we want accurate "is installed" status.
  */
 async function checkClaudeCodeAvailability(): Promise<ProviderStatus> {

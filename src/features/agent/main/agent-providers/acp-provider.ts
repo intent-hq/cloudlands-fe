@@ -2506,7 +2506,7 @@ export class ACPProvider extends BaseAgentProvider {
 
       if (caps.id === 'claude-code' || caps.id === 'cortex') {
         // Pass MCP servers via the ACP session/new mcpServers field.
-        // Both claude-code-acp and cortex-acp adapters process these from params.mcpServers.
+        // Both claude-agent-acp and cortex-acp adapters process these from params.mcpServers.
         // cortex-acp writes them to ~/.snowflake/cortex/mcp.json before spawning cortex.
         this.acpMcpServersForSession = toAcpMcpServers(normalized);
         logger.info('Prepared ACP MCP servers for session', {

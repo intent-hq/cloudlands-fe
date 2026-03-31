@@ -1054,45 +1054,9 @@
             >
               {option.label}
             </span>
-            {#if hasRightBadges || selected}
-              <div class="flex items-center gap-1.5 shrink-0">
-                {#if badges && badges.length > 0}
-                  {#each badges as badge}
-                    <span
-                      class="inline-flex items-center px-1.5 py-0 text-xs font-medium rounded-full leading-4
-                        {badge.color === 'info' || badge.color === 'blue'
-                        ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
-                        : ''}
-                        {badge.color === 'success' || badge.color === 'green'
-                        ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                        : ''}
-                        {badge.color === 'warning' || badge.color === 'yellow' || badge.color === 'amber'
-                        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
-                        : ''}
-                        {!(
-                          ['info', 'blue', 'success', 'green', 'warning', 'yellow', 'amber'].includes(badge.color)
-                        )
-                        ? 'bg-gray-500/15 text-gray-600 dark:text-gray-400'
-                        : ''}"
-                    >
-                      {badge.label}
-                    </span>
-                  {/each}
-                {/if}
-                {#if isDefaultModel}
-                  <span class="text-xs text-subtle italic">default</span>
-                {/if}
-                {#if selected}
-                  <Fa icon={faCheck} class="text-xs text-ghost" />
-                {/if}
-                {#if costTierLabel}
-                  <span class="text-xs text-subtle font-mono">{costTierLabel}</span>
-                {/if}
-              </div>
-            {/if}
           </div>
           {#if option.description}
-            <div class="text-xs text-subtle truncate mt-0.5">{option.description}</div>
+            <div class="text-xs text-subtle truncate mt-0.5" title={option.description}>{option.description}</div>
           {/if}
           {#if effortLevels && effortLevels.length > 0}
             <div class="text-xs text-subtle/60 truncate hidden">
