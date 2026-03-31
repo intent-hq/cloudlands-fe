@@ -157,6 +157,39 @@ describe('ModelPicker locked state', () => {
     expect(button.querySelector('[data-icon="lock"]')).toBeNull();
   });
 
+  it('renders the provider icon in locked state', () => {
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt5.4',
+        providerId: 'auggie',
+        isLocked: true,
+      },
+    });
+
+    const button = screen.getByRole('button');
+    // ProviderIcon renders an outer <span> with class "inline-flex"
+    const providerIcon = button.querySelector('span.inline-flex');
+    expect(providerIcon).not.toBeNull();
+  });
+
+  it('renders the provider icon when locked with showLockIconWhenLocked=false', () => {
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt5.4',
+        providerId: 'auggie',
+        isLocked: true,
+        showLockIconWhenLocked: false,
+      },
+    });
+
+    const button = screen.getByRole('button');
+    // ProviderIcon renders an outer <span> with class "inline-flex"
+    const providerIcon = button.querySelector('span.inline-flex');
+    expect(providerIcon).not.toBeNull();
+    // Lock icon should NOT be present
+    expect(button.querySelector('[data-icon="lock"]')).toBeNull();
+  });
+
   it('uses the selectedModel prop on the first render', () => {
     mockModelState.selectedModel = 'gpt5.4';
     mockModelState.availableModels = [

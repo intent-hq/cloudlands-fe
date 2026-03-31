@@ -12,13 +12,13 @@ interface ProviderLockStateInput {
   pendingContextReferenceCount?: number;
 }
 
-function hasVisibleFirstUserMessage({
+function hasConversationStarted({
   messages,
   pendingInitialPrompt,
   pendingContextReferenceCount = 0,
 }: Omit<ProviderLockStateInput, 'session'>): boolean {
   return (
-    messages.some((message) => message.role === 'user') ||
+    messages.length > 0 ||
     Boolean(pendingInitialPrompt) ||
     pendingContextReferenceCount > 0
   );
@@ -30,13 +30,11 @@ export function canChangeAgentProvider({
   pendingInitialPrompt,
   pendingContextReferenceCount = 0,
 }: ProviderLockStateInput): boolean {
-  if (!session) {
-    return true;
-  }
+  const sessionHandledPrompt = session ? hasAgentHandledFirstPrompt(session) : false;
 
   return (
-    !hasAgentHandledFirstPrompt(session) &&
-    !hasVisibleFirstUserMessage({
+    !sessionHandledPrompt &&
+    !hasConversationStarted({
       messages,
       pendingInitialPrompt,
       pendingContextReferenceCount,

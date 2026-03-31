@@ -885,12 +885,14 @@
       {#if shouldShowLockIconWhenLocked}
         <Fa icon={faLock} class="h-3.5 w-3.5" />
       {/if}
+      <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
       <span class="flex-1 text-left truncate">{currentModelLabel}</span>
     {:else}
       <span class={cn('flex items-center', shouldShowLockIconWhenLocked && 'gap-1.5')}>
         {#if shouldShowLockIconWhenLocked}
           <Fa icon={faLock} class="h-3.5 w-3.5" />
         {/if}
+        <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
         <span class="text-xs truncate">{currentModelLabel}</span>
       </span>
     {/if}

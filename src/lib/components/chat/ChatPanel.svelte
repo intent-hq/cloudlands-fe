@@ -1085,7 +1085,7 @@
   // Alias for backward compatibility
   let pendingInitialPrompt = $derived(pendingInitialData.prompt);
 
-  // Provider/model lock — prevents changing provider or model after first user message
+  // Provider/model lock — prevents changing provider or model after any message
   let canChangeProvider = $derived(
     resolveCanChangeAgentProvider({
       session: chatState.session,

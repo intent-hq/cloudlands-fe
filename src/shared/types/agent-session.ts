@@ -295,5 +295,5 @@ export function getAgentProvider(session: AgentSession): string | undefined {
  * backend session IDs or ACP session initialization alone.
  */
 export function hasAgentHandledFirstPrompt(session: AgentSession): boolean {
-  return session.messages.some((message) => message.role === 'user');
+  return session.messages.length > 0;
 }

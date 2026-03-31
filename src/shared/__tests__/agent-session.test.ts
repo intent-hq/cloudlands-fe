@@ -30,12 +30,12 @@ describe('hasAgentHandledFirstPrompt', () => {
     expect(hasAgentHandledFirstPrompt(createSession({ acpSessionId: 'acp-1' }))).toBe(false);
   });
 
-  it('returns false when only assistant messages exist', () => {
+  it('returns true when only assistant messages exist', () => {
     expect(
       hasAgentHandledFirstPrompt(
         createSession({ messages: [{ role: 'assistant', content: 'hello' }] }),
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('returns true once the agent has a user message', () => {

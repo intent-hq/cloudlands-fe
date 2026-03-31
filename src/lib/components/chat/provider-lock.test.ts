@@ -27,11 +27,18 @@ describe('canChangeAgentProvider', () => {
     ).toBe(true);
   });
 
-  it('locks once the first user message is already rendered in chat state', () => {
+  it('locks once any message is already rendered in chat state', () => {
     expect(
       canChangeAgentProvider({
         session: createSession(),
         messages: [{ role: 'user' }],
+      }),
+    ).toBe(false);
+
+    expect(
+      canChangeAgentProvider({
+        session: createSession(),
+        messages: [{ role: 'assistant' }],
       }),
     ).toBe(false);
   });
@@ -46,13 +53,49 @@ describe('canChangeAgentProvider', () => {
     ).toBe(false);
   });
 
-  it('returns unlocked when session is null (nothing to lock)', () => {
+  it('returns unlocked when session is null and no messages or pending state', () => {
     expect(
       canChangeAgentProvider({
         session: null,
         messages: [],
       }),
     ).toBe(true);
+  });
+
+  it('locks when session is null but messages are visible', () => {
+    expect(
+      canChangeAgentProvider({
+        session: null,
+        messages: [{ role: 'user' }],
+      }),
+    ).toBe(false);
+
+    expect(
+      canChangeAgentProvider({
+        session: null,
+        messages: [{ role: 'assistant' }],
+      }),
+    ).toBe(false);
+  });
+
+  it('locks when session is null but a pending initial prompt exists', () => {
+    expect(
+      canChangeAgentProvider({
+        session: null,
+        messages: [],
+        pendingInitialPrompt: 'Hello',
+      }),
+    ).toBe(false);
+  });
+
+  it('locks when session is null but pending context references exist', () => {
+    expect(
+      canChangeAgentProvider({
+        session: null,
+        messages: [],
+        pendingContextReferenceCount: 1,
+      }),
+    ).toBe(false);
   });
 
   it('keeps reopened used chats locked based on persisted user messages', () => {
@@ -65,4 +108,6 @@ describe('canChangeAgentProvider', () => {
       }),
     ).toBe(false);
   });
+
+
 });
