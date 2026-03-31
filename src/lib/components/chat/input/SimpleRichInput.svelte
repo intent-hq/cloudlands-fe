@@ -202,17 +202,39 @@
     return inlineImages
       .map((img: { src: string; alt?: string }, index: number) => {
         // Parse data URL to extract mime type and base64 data
-        const match = img.src.match(/^data:([^;]+);base64,(.+)$/);
-        if (!match) {
+        // NOTE: We use string operations instead of regex here because base64
+        // data URLs can be multi-megabyte strings that cause stack overflows
+        // in the regex engine when using capture groups like (.+)$.
+        const src = img.src ?? '';
+        if (!src.startsWith('data:')) {
           logger.warn('SimpleRichInput: Failed to parse image data URL', {
             index,
             alt: img.alt,
-            srcLength: img.src?.length || 0,
+            srcLength: src.length,
           });
           return null;
         }
-
-        const [, mimeType, base64Data] = match;
+        const base64Marker = ';base64,';
+        const markerIndex = src.indexOf(base64Marker);
+        if (markerIndex === -1) {
+          logger.warn('SimpleRichInput: Failed to parse image data URL', {
+            index,
+            alt: img.alt,
+            srcLength: src.length,
+          });
+          return null;
+        }
+        const mimeType = src.substring(5, markerIndex); // 5 = 'data:'.length
+        const base64Data = src.substring(markerIndex + base64Marker.length);
+        if (!mimeType || !base64Data) {
+          logger.warn('SimpleRichInput: Empty mimeType or base64Data in image data URL', {
+            index,
+            alt: img.alt,
+            mimeType,
+            hasData: base64Data.length > 0,
+          });
+          return null;
+        }
         logger.info('SimpleRichInput: Parsed inline image', {
           index,
           mimeType,
