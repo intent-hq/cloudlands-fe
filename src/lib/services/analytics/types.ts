@@ -437,6 +437,7 @@ export interface AnalyticsEvents {
   'Used Prompt Enhance': {
     prompt_length: number;
   };
+  'Opened Repo Selector': Record<string, never>;
   'Changed Repo': {
     repo_type: 'local' | 'github' | 'remote';
   };
