@@ -285,7 +285,14 @@ export function track<T extends AnalyticsEventName>(
   properties: EventProperties<T>,
 ): void {
   if (!analyticsInstance || !staticCommonProperties) {
-    // Silently skip if not initialized
+    // In dev mode, log analytics events to console so developers can verify instrumentation
+    if (
+      typeof window !== 'undefined' &&
+      window.location?.href &&
+      (window.location.href.includes('localhost') || window.location.href.includes('127.0.0.1'))
+    ) {
+      console.log(`[Analytics:dev] ${event}`, properties);
+    }
     return;
   }
 

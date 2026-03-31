@@ -20,6 +20,7 @@ import { AUGGIE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { findAuggieAsync } from '../../../shared/main/async-utils';
 import { findBinary } from '../../../shared/main/find-binary';
+import { checkGitVersion } from './version-checks';
 
 const logger = new Logger('AuggieIPC');
 
@@ -851,6 +852,8 @@ export function setupAuggieIPC() {
       authDetails?: string;
       nodeVersion?: string;
       nodeVersionOk: boolean;
+      gitInstalled: boolean;
+      gitVersion?: string;
       binaryInstallAvailable: boolean;
       managedBinaryInstalled: boolean;
     } = {
@@ -859,16 +862,22 @@ export function setupAuggieIPC() {
       versionOk: false,
       minimumVersion: MINIMUM_AUGGIE_VERSION,
       nodeVersionOk: false,
+      gitInstalled: false,
       binaryInstallAvailable,
       managedBinaryInstalled,
     };
 
     try {
-      // Check Node.js version (independent of auggie status, needed even when auggie is not installed)
-      try {
-        const nodeResult = await checkNodeVersion();
-        status.nodeVersion = nodeResult.nodeVersion;
-        status.nodeVersionOk = nodeResult.nodeVersionOk;
+      // Check Node.js and Git versions in parallel (independent of auggie status).
+      // Use Promise.allSettled so one failure doesn't drop the other's result.
+      const [nodeSettled, gitSettled] = await Promise.allSettled([
+        checkNodeVersion(),
+        checkGitVersion(),
+      ]);
+
+      if (nodeSettled.status === 'fulfilled') {
+        status.nodeVersion = nodeSettled.value.nodeVersion;
+        status.nodeVersionOk = nodeSettled.value.nodeVersionOk;
         if (!status.nodeVersionOk) {
           if (status.nodeVersion) {
             logger.warn('Node.js version is below minimum required', {
@@ -881,8 +890,15 @@ export function setupAuggieIPC() {
             });
           }
         }
-      } catch (error) {
-        logger.debug('Failed to check Node.js version', { error: (error as Error).message });
+      } else {
+        logger.debug('Failed to check Node.js version', { error: nodeSettled.reason });
+      }
+
+      if (gitSettled.status === 'fulfilled') {
+        status.gitInstalled = gitSettled.value.gitInstalled;
+        status.gitVersion = gitSettled.value.gitVersion;
+      } else {
+        logger.debug('Failed to check Git version', { error: gitSettled.reason });
       }
 
       // Check installation by running --version

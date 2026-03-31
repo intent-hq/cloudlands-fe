@@ -423,6 +423,18 @@ export interface AnalyticsEvents {
   'Completed Authentication': {
     method: 'auto' | 'browser_poll' | 'manual_paste';
   };
+  'Checked Setup Environment': {
+    git_installed: boolean;
+    git_version?: string;
+    node_installed: boolean;
+    node_version?: string;
+    node_version_ok: boolean;
+    auggie_installed: boolean;
+    auggie_version?: string;
+    claude_code_installed: boolean;
+    codex_installed: boolean;
+    opencode_installed: boolean;
+  };
   'Completed Setup': {
     provider_id: string;
   };

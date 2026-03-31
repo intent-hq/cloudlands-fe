@@ -1,7 +1,8 @@
 <script module lang="ts">
-  // Module-level flag to ensure 'Started Setup' fires only once per app session.
-  // This is in <script module> so it persists as a true singleton across remounts.
+  // Module-level flags to ensure setup funnel events fire only once per app session.
+  // These are in <script module> so they persist as true singletons across remounts.
   let hasTrackedStartedSetup = false;
+  let hasTrackedSetupEnvironment = false;
 </script>
 
 <script lang="ts">
@@ -95,6 +96,8 @@
     nodeVersion?: string;
     nodePath?: string;
     nodeVersionOk: boolean;
+    gitInstalled: boolean;
+    gitVersion?: string;
     binaryInstallAvailable?: boolean;
     managedBinaryInstalled?: boolean;
   };
@@ -280,6 +283,31 @@
         if (providerAvailability && auggieStatus.installed) {
           providerAvailability.providers.auggie.available = true;
           providerAvailability.hasAnyProvider = true;
+        }
+
+        // Track environment diagnostics once per session (between Started/Completed Setup).
+        // No isAnalyticsReady() gate needed — track() gracefully handles dev mode
+        // (logs to console) and production (queues in Segment). This matches how
+        // "Started Setup" is tracked above.
+        if (!hasTrackedSetupEnvironment) {
+          try {
+            track('Checked Setup Environment', {
+              git_installed: auggieStatus.gitInstalled,
+              git_version: auggieStatus.gitVersion,
+              node_installed: !!auggieStatus.nodeVersion,
+              node_version: auggieStatus.nodeVersion,
+              node_version_ok: auggieStatus.nodeVersionOk,
+              auggie_installed: auggieStatus.installed,
+              auggie_version: auggieStatus.version,
+              claude_code_installed: providerAvailability?.providers.claudeCode.available ?? false,
+              codex_installed: providerAvailability?.providers.codex.available ?? false,
+              opencode_installed: providerAvailability?.providers.opencode.available ?? false,
+            });
+            // Only mark as tracked after successful track() call
+            hasTrackedSetupEnvironment = true;
+          } catch (err) {
+            logger.warn('Failed to track setup environment', { error: err });
+          }
         }
       }
 
