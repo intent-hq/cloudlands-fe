@@ -375,6 +375,7 @@ class WorkspaceStore {
           is_remote: data.environmentConfig?.type === 'remote' || false,
           from_template: false, // No template system yet
           work_mode: workMode === 'team' || workMode === 'single' ? workMode : undefined,
+          has_initial_prompt: !!data.initialAgent?.prompt,
         });
 
         // If a Linear issue was provided, create a third-party source for it

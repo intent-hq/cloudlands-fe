@@ -132,6 +132,7 @@ export interface AnalyticsEvents {
     is_remote: boolean;
     from_template: boolean;
     work_mode?: 'team' | 'single';
+    has_initial_prompt?: boolean;
   };
   'Opened Workspace': {
     workspace_id: string;
