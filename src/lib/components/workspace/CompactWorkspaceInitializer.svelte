@@ -1126,10 +1126,6 @@
       skipWorktree = false;
     }
 
-    track('Changed Repo', {
-      repo_type: event.detail.type,
-    });
-
     // Reset GitHub auth state when repo changes - will be updated by BranchSelector
     githubAuthNeeded = 'none';
 

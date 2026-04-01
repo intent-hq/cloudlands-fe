@@ -452,7 +452,7 @@ export interface AnalyticsEvents {
   };
   'Opened Repo Selector': Record<string, never>;
   'Changed Repo': {
-    repo_type: 'local' | 'github' | 'remote';
+    repo_type: 'local' | 'github' | 'new' | 'remote';
   };
 
   // ============================================

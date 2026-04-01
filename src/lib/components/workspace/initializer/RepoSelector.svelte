@@ -94,6 +94,12 @@
     onClear,
   }: Props = $props();
 
+  function onchangeWithTracking(detail: RepoChangeDetail) {
+    if (!onchange) return;
+    track('Changed Repo', { repo_type: activeTab });
+    onchange(new CustomEvent('change', { detail }));
+  }
+
   /**
    * Focus the repo input field
    * Used by parent components to focus the input after prefill
@@ -192,7 +198,7 @@
       isNewRepo: false,
       isValidPath: true,
     };
-    onchange?.(new CustomEvent('change', { detail }));
+    onchangeWithTracking(detail);
     isOpen = false;
   }
 
@@ -825,7 +831,7 @@
       isValidPath: true,
       scope: directoryStatus?.relativePathFromGitRoot,
     };
-    onchange?.(new CustomEvent('change', { detail }));
+    onchangeWithTracking(detail);
 
     // Save to localStorage if persistence is enabled
     if (debugConfig.get('enableFormPersistence')) {
@@ -863,7 +869,7 @@
       detail.clonePath = repo.path;
     }
 
-    onchange?.(new CustomEvent('change', { detail }));
+    onchangeWithTracking(detail);
 
     // Save to localStorage if persistence is enabled
     if (debugConfig.get('enableFormPersistence')) {
@@ -925,7 +931,7 @@
             isValidPath: true,
             scope: directoryStatus?.relativePathFromGitRoot,
           };
-          onchange?.(new CustomEvent('change', { detail }));
+          onchangeWithTracking(detail);
 
           // Save to localStorage if persistence is enabled
           if (debugConfig.get('enableFormPersistence')) {
@@ -964,7 +970,7 @@
               isValidPath: true,
               scope: directoryStatus?.relativePathFromGitRoot,
             };
-            onchange?.(new CustomEvent('change', { detail }));
+            onchangeWithTracking(detail);
 
             // Save to localStorage if persistence is enabled
             if (debugConfig.get('enableFormPersistence')) {
@@ -1059,7 +1065,7 @@
       isNewRepo: !existingGitRepo,
       isValidPath: true,
     };
-    onchange?.(new CustomEvent('change', { detail }));
+    onchangeWithTracking(detail);
 
     // Save parent path as default for next time
     try {
@@ -1137,7 +1143,7 @@
     isValidPath = true;
     validationMessage = '';
 
-    onchange?.(new CustomEvent('change', { detail }));
+    onchangeWithTracking(detail);
 
     // Save to localStorage if persistence is enabled
     try {
@@ -1175,7 +1181,7 @@
       isNewRepo: true,
       isValidPath: true,
     };
-    onchange?.(new CustomEvent('change', { detail }));
+    onchangeWithTracking(detail);
 
     if (debugConfig.get('enableFormPersistence')) {
       localStorage.setItem(LAST_SELECTED_REPO_KEY, JSON.stringify(detail));
@@ -1490,9 +1496,7 @@
               </div>
             {/each}
             {#if remoteSetups.length === 0}
-              <div class="text-sm text-subtle px-3 py-2">
-                No remote setups configured yet.
-              </div>
+              <div class="text-sm text-subtle px-3 py-2">No remote setups configured yet.</div>
             {/if}
             <button
               type="button"
@@ -1515,9 +1519,7 @@
               <div class="text-sm font-medium truncate mb-1" title={nonGitFolderPath}>
                 {nonGitFolderPath.split('/').pop() || nonGitFolderPath}
               </div>
-              <div class="text-sm text-subtle mb-2">
-                This folder is not a Git repository.
-              </div>
+              <div class="text-sm text-subtle mb-2">This folder is not a Git repository.</div>
               <div class="flex gap-2">
                 <Button size="sm" variant="secondary" onclick={handleInitializeGitInFolder}
                   >Initialize Git here</Button
