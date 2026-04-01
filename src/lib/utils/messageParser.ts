@@ -79,30 +79,33 @@ export interface ParsedContent {
  * Handles special Auggie formats like <augment_code_snippet> tags, diffs, and commit messages
  */
 // PERF: Pre-compiled regex patterns for single-pass extraction
+// Note: Closing fences MUST be line-anchored (start of line) per CommonMark spec
+// to prevent matching fences within string literals or inline content.
+// Separate patterns for backtick vs tilde fences to prevent mismatched fence types.
 const SPECIAL_BLOCK_PATTERNS = {
-  // XML-style augment_code_snippet with 4 backticks
+  // XML-style augment_code_snippet with 4+ backticks
   augmentSnippet:
-    /<augment_code_snippet\s+path="([^"]+)"(?:\s+mode="([^"]+)")?\s*>\s*````(\w+)?\s*\n([\s\S]*?)\n\s*````\s*<\/augment_code_snippet>/g,
-  // Markdown 4-backtick with path= attribute
-  markdown4: /````(\w+)?\s+path=([^\s]+)(?:\s+mode=([^\s\n]+))?\s*\n([\s\S]*?)\n````/g,
-  // Markdown 3-backtick with path= attribute
-  markdown3: /```(\w+)?\s+path=([^\s]+)(?:\s+mode=([^\s\n]+))?\s*\n([\s\S]*?)\n```/g,
-  // Diff blocks
-  diff: /```diff\n([\s\S]*?)```/g,
+    /<augment_code_snippet\s+path="([^"]+)"(?:\s+mode="([^"]+)")?\s*>\s*(`{4,})(\w+)?\s*\n([\s\S]*?)\n\s*\3\s*<\/augment_code_snippet>/gm,
+  // Markdown 4+ backtick with path= attribute
+  markdown4: /(`{4,})(\w+)?\s+path=([^\s]+)(?:\s+mode=([^\s\n]+))?\s*\n([\s\S]*?)^`{4,}\s*$/gm,
+  // Markdown 3+ backtick with path= attribute
+  markdown3: /(`{3,})(\w+)?\s+path=([^\s]+)(?:\s+mode=([^\s\n]+))?\s*\n([\s\S]*?)^`{3,}\s*$/gm,
+  // Diff blocks - separate patterns for backtick vs tilde to prevent mismatch
+  diff: /(?:(`{3,})diff\n([\s\S]*?)^`{3,}\s*$|(~{3,})diff\n([\s\S]*?)^~{3,}\s*$)/gm,
   // Commit messages
   commit: /<COMMIT_MESSAGE>([\s\S]*?)<\/COMMIT_MESSAGE>/g,
-  // Diagram blocks (```diagram or ```ws-block:diagram)
-  diagram: /```(?:diagram|ws-block:diagram)\s*\n([\s\S]*?)```/g,
-  // Patch blocks (```ws-block:patch)
-  patch: /```ws-block:patch\s*\n([\s\S]*?)```/g,
-  // Reference blocks (```ws-block:reference)
-  reference: /```ws-block:reference\s*\n([\s\S]*?)```/g,
-  // CLI blocks (```ws-block:cli)
-  cli: /```ws-block:cli\s*\n([\s\S]*?)```/g,
-  // Agent action blocks (```ws-block:agent_action)
-  agentAction: /```ws-block:agent_action\s*\n([\s\S]*?)```/g,
-  // Mermaid diagram blocks
-  mermaid: /```mermaid\s*\n([\s\S]*?)```/g,
+  // Diagram blocks - separate patterns for backtick vs tilde
+  diagram: /(?:(`{3,})(?:diagram|ws-block:diagram)\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})(?:diagram|ws-block:diagram)\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
+  // Patch blocks - separate patterns for backtick vs tilde
+  patch: /(?:(`{3,})ws-block:patch\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})ws-block:patch\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
+  // Reference blocks - separate patterns for backtick vs tilde
+  reference: /(?:(`{3,})ws-block:reference\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})ws-block:reference\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
+  // CLI blocks - separate patterns for backtick vs tilde
+  cli: /(?:(`{3,})ws-block:cli\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})ws-block:cli\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
+  // Agent action blocks - separate patterns for backtick vs tilde
+  agentAction: /(?:(`{3,})ws-block:agent_action\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})ws-block:agent_action\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
+  // Mermaid diagram blocks - separate patterns for backtick vs tilde
+  mermaid: /(?:(`{3,})mermaid\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})mermaid\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
   // Agent digest - short summary for display
   agentDigest: /<agent_digest>([\s\S]*?)<\/agent_digest>/g,
   // Detected scripts from background agent
@@ -111,8 +114,10 @@ const SPECIAL_BLOCK_PATTERNS = {
 
 // PERF: Combined regex for single-pass special block detection
 // This finds all special blocks in one pass through the content
+// Closing fences are line-anchored (^) with multiline flag to prevent matching within content.
+// Separate branches for backtick vs tilde fences to prevent mismatched fence types.
 const COMBINED_SPECIAL_REGEX =
-  /(<augment_code_snippet\s+path="[^"]+"(?:\s+mode="[^"]+")?\s*>\s*````\w*\s*\n[\s\S]*?\n\s*````\s*<\/augment_code_snippet>|````\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?\n````|```\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?\n```|```diff\n[\s\S]*?```|<COMMIT_MESSAGE>[\s\S]*?<\/COMMIT_MESSAGE>|```(?:diagram|ws-block:diagram)\s*\n[\s\S]*?```|```ws-block:patch\s*\n[\s\S]*?```|```ws-block:reference\s*\n[\s\S]*?```|```ws-block:cli\s*\n[\s\S]*?```|```ws-block:agent_action\s*\n[\s\S]*?```|```mermaid\s*\n[\s\S]*?```|<agent_digest>[\s\S]*?<\/agent_digest>|<<<DETECTED_SCRIPTS>>>[\s\S]*?<<<\/DETECTED_SCRIPTS>>>)/g;
+  /(<augment_code_snippet\s+path="[^"]+"(?:\s+mode="[^"]+")?\s*>\s*(`{4,})\w*\s*\n[\s\S]*?\n\s*\2\s*<\/augment_code_snippet>|(`{4,})\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?^`{4,}\s*$|(`{3,})\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?^`{3,}\s*$|(?:`{3,}diff\n[\s\S]*?^`{3,}\s*$|~{3,}diff\n[\s\S]*?^~{3,}\s*$)|<COMMIT_MESSAGE>[\s\S]*?<\/COMMIT_MESSAGE>|(?:`{3,}(?:diagram|ws-block:diagram)\s*\n[\s\S]*?^`{3,}\s*$|~{3,}(?:diagram|ws-block:diagram)\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:patch\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:patch\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:reference\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:reference\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:cli\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:cli\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:agent_action\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:agent_action\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}mermaid\s*\n[\s\S]*?^`{3,}\s*$|~{3,}mermaid\s*\n[\s\S]*?^~{3,}\s*$)|<agent_digest>[\s\S]*?<\/agent_digest>|<<<DETECTED_SCRIPTS>>>[\s\S]*?<<<\/DETECTED_SCRIPTS>>>)/gm;
 
 /**
  * Parse a single special block match into a ParsedContent
@@ -122,60 +127,69 @@ function parseSpecialBlock(blockText: string): ParsedContent | null {
   // Check augment_code_snippet first (most specific)
   if (blockText.startsWith('<augment_code_snippet')) {
     const match = blockText.match(
-      /<augment_code_snippet\s+path="([^"]+)"(?:\s+mode="([^"]+)")?\s*>\s*````(\w+)?\s*\n([\s\S]*?)\n\s*````\s*<\/augment_code_snippet>/,
+      /<augment_code_snippet\s+path="([^"]+)"(?:\s+mode="([^"]+)")?\s*>\s*(`{4,})(\w+)?\s*\n([\s\S]*?)\n\s*\3\s*<\/augment_code_snippet>/m,
     );
     if (match) {
       return {
         type: 'augment_code_snippet',
-        content: match[4].trim(),
+        content: match[5].trim(),
         metadata: {
           path: match[1],
           mode: match[2] || 'EXCERPT',
-          language: match[3] || 'plaintext',
+          language: match[4] || 'plaintext',
         },
       };
     }
   }
 
-  // Check 4-backtick markdown with path
-  if (blockText.startsWith('````')) {
+  // Check 4+ backtick markdown with path
+  if (/^`{4,}/.test(blockText)) {
     const match = blockText.match(
-      /````(\w+)?\s+path=([^\s]+)(?:\s+mode=([^\s\n]+))?\s*\n([\s\S]*?)\n````/,
+      /(`{4,})(\w+)?\s+path=([^\s]+)(?:\s+mode=([^\s\n]+))?\s*\n([\s\S]*?)^`{4,}\s*$/m,
     );
     if (match) {
       return {
         type: 'augment_code_snippet',
-        content: match[4].trim(),
+        content: match[5].trim(),
         metadata: {
-          path: match[2] || '',
-          mode: match[3] || 'EXCERPT',
-          language: match[1] || 'plaintext',
+          path: match[3] || '',
+          mode: match[4] || 'EXCERPT',
+          language: match[2] || 'plaintext',
         },
       };
     }
   }
 
-  // Check 3-backtick markdown with path (but not diff)
-  if (blockText.startsWith('```') && !blockText.startsWith('```diff')) {
+  // Check 3+ backtick markdown with path (but not diff, diagram, ws-block, or mermaid)
+  if (/^`{3,}/.test(blockText) && !/^`{3,}(?:diff|diagram|ws-block:|mermaid)/.test(blockText)) {
     const match = blockText.match(
-      /```(\w+)?\s+path=([^\s]+)(?:\s+mode=([^\s\n]+))?\s*\n([\s\S]*?)\n```/,
+      /(`{3,})(\w+)?\s+path=([^\s]+)(?:\s+mode=([^\s\n]+))?\s*\n([\s\S]*?)^`{3,}\s*$/m,
     );
     if (match) {
       return {
         type: 'augment_code_snippet',
-        content: match[4].trim(),
+        content: match[5].trim(),
         metadata: {
-          path: match[2] || '',
-          mode: match[3] || 'EXCERPT',
-          language: match[1] || 'plaintext',
+          path: match[3] || '',
+          mode: match[4] || 'EXCERPT',
+          language: match[2] || 'plaintext',
         },
       };
     }
   }
 
-  // Check diff block
-  if (blockText.startsWith('```diff')) {
-    const match = blockText.match(/```diff\n([\s\S]*?)```/);
+  // Check diff block - separate patterns for backtick vs tilde
+  if (/^`{3,}diff/.test(blockText)) {
+    const match = blockText.match(/`{3,}diff\n([\s\S]*?)^`{3,}\s*$/m);
+    if (match) {
+      return {
+        type: 'diff',
+        content: match[1].trim(),
+      };
+    }
+  }
+  if (/^~{3,}diff/.test(blockText)) {
+    const match = blockText.match(/~{3,}diff\n([\s\S]*?)^~{3,}\s*$/m);
     if (match) {
       return {
         type: 'diff',
@@ -195,9 +209,67 @@ function parseSpecialBlock(blockText: string): ParsedContent | null {
     }
   }
 
-  // Check patch block (```ws-block:patch)
-  if (blockText.startsWith('```ws-block:patch')) {
-    const match = blockText.match(/```ws-block:patch\s*\n([\s\S]*?)```/);
+  // Check patch block - separate patterns for backtick vs tilde
+  if (/^`{3,}ws-block:patch/.test(blockText)) {
+    const match = blockText.match(/`{3,}ws-block:patch\s*\n([\s\S]*?)^`{3,}\s*$/m);
+    if (match) {
+      try {
+        const jsonContent = match[1].trim();
+        // Try parsing as-is first, then fall back to escaping literal newlines.
+        // The diff field often contains literal newline characters (from the agent's
+        // raw output) which are invalid inside JSON string values.
+        let patchJson;
+        try {
+          patchJson = JSON.parse(jsonContent);
+        } catch {
+          const sanitizedJson = jsonContent
+            .replace(/\n/g, '\\n')
+            .replace(/\r/g, '\\r')
+            .replace(/\t/g, '\\t');
+          patchJson = JSON.parse(sanitizedJson);
+        }
+
+        // Support both formats:
+        // 1. Simplified: { target: { filePath, diff, description } }
+        // 2. Standard PatchPrimitive: { type: 'patch', patches: [{ filePath, diff }], label }
+        let filePath = '';
+        let diff = '';
+        let description = '';
+
+        if (patchJson.target) {
+          filePath = patchJson.target.filePath || '';
+          diff = patchJson.target.diff || '';
+          description = patchJson.target.description || patchJson.description || '';
+        } else if (patchJson.patches && patchJson.patches.length > 0) {
+          filePath = patchJson.patches[0].filePath || '';
+          diff = patchJson.patches[0].diff || '';
+          description = patchJson.label || patchJson.description || '';
+        } else {
+          // Flat format: { filePath, diff, description }
+          filePath = patchJson.filePath || '';
+          diff = patchJson.diff || '';
+          description = patchJson.description || patchJson.label || '';
+        }
+
+        return {
+          type: 'patch',
+          content: diff,
+          metadata: {
+            path: filePath,
+            patchData: { filePath, diff, description },
+          },
+        };
+      } catch (e) {
+        logger.warn('[parseSpecialBlock] Failed to parse patch JSON:', e);
+        return {
+          type: 'text',
+          content: blockText,
+        };
+      }
+    }
+  }
+  if (/^~{3,}ws-block:patch/.test(blockText)) {
+    const match = blockText.match(/~{3,}ws-block:patch\s*\n([\s\S]*?)^~{3,}\s*$/m);
     if (match) {
       try {
         const jsonContent = match[1].trim();
@@ -255,9 +327,45 @@ function parseSpecialBlock(blockText: string): ParsedContent | null {
     }
   }
 
-  // Check reference block (```ws-block:reference)
-  if (blockText.startsWith('```ws-block:reference')) {
-    const match = blockText.match(/```ws-block:reference\s*\n([\s\S]*?)```/);
+  // Check reference block - separate patterns for backtick vs tilde
+  if (/^`{3,}ws-block:reference/.test(blockText)) {
+    const match = blockText.match(/`{3,}ws-block:reference\s*\n([\s\S]*?)^`{3,}\s*$/m);
+    if (match) {
+      try {
+        const jsonContent = match[1].trim();
+        let refJson;
+        try {
+          refJson = JSON.parse(jsonContent);
+        } catch {
+          const sanitizedJson = jsonContent
+            .replace(/\n/g, '\\n')
+            .replace(/\r/g, '\\r')
+            .replace(/\t/g, '\\t');
+          refJson = JSON.parse(sanitizedJson);
+        }
+
+        const semanticId = refJson.target?.semanticId || refJson.semanticId || '';
+        const filePath =
+          refJson.target?.filePath || refJson.filePath || semanticId?.split('#')[0] || '';
+        const description = refJson.description || '';
+        const snapshot = refJson.snapshot || undefined;
+
+        return {
+          type: 'reference',
+          content: description || semanticId || filePath,
+          metadata: {
+            path: filePath,
+            referenceData: { semanticId, filePath, description, snapshot },
+          },
+        };
+      } catch (e) {
+        logger.warn('[parseSpecialBlock] Failed to parse reference JSON:', e);
+        return { type: 'text', content: blockText };
+      }
+    }
+  }
+  if (/^~{3,}ws-block:reference/.test(blockText)) {
+    const match = blockText.match(/~{3,}ws-block:reference\s*\n([\s\S]*?)^~{3,}\s*$/m);
     if (match) {
       try {
         const jsonContent = match[1].trim();
@@ -293,9 +401,42 @@ function parseSpecialBlock(blockText: string): ParsedContent | null {
     }
   }
 
-  // Check CLI block (```ws-block:cli)
-  if (blockText.startsWith('```ws-block:cli')) {
-    const match = blockText.match(/```ws-block:cli\s*\n([\s\S]*?)```/);
+  // Check CLI block - separate patterns for backtick vs tilde
+  if (/^`{3,}ws-block:cli/.test(blockText)) {
+    const match = blockText.match(/`{3,}ws-block:cli\s*\n([\s\S]*?)^`{3,}\s*$/m);
+    if (match) {
+      try {
+        const jsonContent = match[1].trim();
+        let cliJson;
+        try {
+          cliJson = JSON.parse(jsonContent);
+        } catch {
+          const sanitizedJson = jsonContent
+            .replace(/\n/g, '\\n')
+            .replace(/\r/g, '\\r')
+            .replace(/\t/g, '\\t');
+          cliJson = JSON.parse(sanitizedJson);
+        }
+
+        const command = cliJson.command || '';
+        const description = cliJson.description || '';
+        const cwd = cliJson.cwd || undefined;
+
+        return {
+          type: 'cli',
+          content: command,
+          metadata: {
+            cliData: { command, description, cwd },
+          },
+        };
+      } catch (e) {
+        logger.warn('[parseSpecialBlock] Failed to parse CLI JSON:', e);
+        return { type: 'text', content: blockText };
+      }
+    }
+  }
+  if (/^~{3,}ws-block:cli/.test(blockText)) {
+    const match = blockText.match(/~{3,}ws-block:cli\s*\n([\s\S]*?)^~{3,}\s*$/m);
     if (match) {
       try {
         const jsonContent = match[1].trim();
@@ -328,9 +469,42 @@ function parseSpecialBlock(blockText: string): ParsedContent | null {
     }
   }
 
-  // Check agent action block (```ws-block:agent_action)
-  if (blockText.startsWith('```ws-block:agent_action')) {
-    const match = blockText.match(/```ws-block:agent_action\s*\n([\s\S]*?)```/);
+  // Check agent action block - separate patterns for backtick vs tilde
+  if (/^`{3,}ws-block:agent_action/.test(blockText)) {
+    const match = blockText.match(/`{3,}ws-block:agent_action\s*\n([\s\S]*?)^`{3,}\s*$/m);
+    if (match) {
+      try {
+        const jsonContent = match[1].trim();
+        let actionJson;
+        try {
+          actionJson = JSON.parse(jsonContent);
+        } catch {
+          const sanitizedJson = jsonContent
+            .replace(/\n/g, '\\n')
+            .replace(/\r/g, '\\r')
+            .replace(/\t/g, '\\t');
+          actionJson = JSON.parse(sanitizedJson);
+        }
+
+        const agentId = actionJson.agentId || '';
+        const goal = actionJson.goal || '';
+        const description = actionJson.description || '';
+
+        return {
+          type: 'agent_action',
+          content: goal,
+          metadata: {
+            agentActionData: { agentId, goal, description },
+          },
+        };
+      } catch (e) {
+        logger.warn('[parseSpecialBlock] Failed to parse agent action JSON:', e);
+        return { type: 'text', content: blockText };
+      }
+    }
+  }
+  if (/^~{3,}ws-block:agent_action/.test(blockText)) {
+    const match = blockText.match(/~{3,}ws-block:agent_action\s*\n([\s\S]*?)^~{3,}\s*$/m);
     if (match) {
       try {
         const jsonContent = match[1].trim();
@@ -363,9 +537,32 @@ function parseSpecialBlock(blockText: string): ParsedContent | null {
     }
   }
 
-  // Check diagram block (```diagram or ```ws-block:diagram)
-  if (blockText.startsWith('```diagram') || blockText.startsWith('```ws-block:diagram')) {
-    const match = blockText.match(/```(?:diagram|ws-block:diagram)\s*\n([\s\S]*?)```/);
+  // Check diagram block - separate patterns for backtick vs tilde
+  if (/^`{3,}(?:diagram|ws-block:diagram)/.test(blockText)) {
+    const match = blockText.match(/`{3,}(?:diagram|ws-block:diagram)\s*\n([\s\S]*?)^`{3,}\s*$/m);
+    if (match) {
+      try {
+        const jsonContent = match[1].trim();
+        const diagramData = JSON.parse(jsonContent);
+        return {
+          type: 'diagram',
+          content: jsonContent,
+          metadata: {
+            diagramData,
+          },
+        };
+      } catch (e) {
+        logger.warn('[parseSpecialBlock] Failed to parse diagram JSON:', e);
+        // Return as text if JSON parsing fails
+        return {
+          type: 'text',
+          content: blockText,
+        };
+      }
+    }
+  }
+  if (/^~{3,}(?:diagram|ws-block:diagram)/.test(blockText)) {
+    const match = blockText.match(/~{3,}(?:diagram|ws-block:diagram)\s*\n([\s\S]*?)^~{3,}\s*$/m);
     if (match) {
       try {
         const jsonContent = match[1].trim();
@@ -388,9 +585,18 @@ function parseSpecialBlock(blockText: string): ParsedContent | null {
     }
   }
 
-  // Check mermaid block
-  if (blockText.startsWith('```mermaid')) {
-    const match = blockText.match(/```mermaid\s*\n([\s\S]*?)```/);
+  // Check mermaid block - separate patterns for backtick vs tilde
+  if (/^`{3,}mermaid/.test(blockText)) {
+    const match = blockText.match(/`{3,}mermaid\s*\n([\s\S]*?)^`{3,}\s*$/m);
+    if (match) {
+      return {
+        type: 'mermaid',
+        content: match[1].trim(),
+      };
+    }
+  }
+  if (/^~{3,}mermaid/.test(blockText)) {
+    const match = blockText.match(/~{3,}mermaid\s*\n([\s\S]*?)^~{3,}\s*$/m);
     if (match) {
       return {
         type: 'mermaid',
@@ -600,24 +806,27 @@ function processRegularContent(content: string): ParsedContent[] {
     }
 
     // Check for code blocks (including indented code fences for list items)
-    // Match ``` at start of line OR with leading whitespace (for nested code blocks in lists)
-    const codeFenceMatch = line.match(/^(\s*)```(.*)$/);
+    // Match ``` or ~~~ (>= 3 chars) at start of line OR with leading whitespace (for nested code blocks in lists)
+    const codeFenceMatch = line.match(/^(\s*)(`{3,}|~{3,})(.*)$/);
     if (codeFenceMatch) {
       flushBlock();
       const indent = codeFenceMatch[1];
-      const lang = codeFenceMatch[2].trim();
+      const openFence = codeFenceMatch[2]; // Full opening fence (e.g., "````" or "~~~")
+      const fenceChar = openFence[0]; // Get the fence character (` or ~)
+      const openFenceLength = openFence.length; // Number of fence characters
+      const lang = codeFenceMatch[3].trim();
       currentBlock = {
         type: 'code',
         content: '',
         metadata: { language: lang || 'plaintext' },
       };
 
-      // Find the closing ``` (with same or less indentation)
+      // Find the closing fence (must have at least the same number of fence chars and same fence character)
       i++;
       while (i < lines.length) {
-        const closingMatch = lines[i].match(/^(\s*)```\s*$/);
-        if (closingMatch) {
-          // Found closing fence
+        const closingMatch = lines[i].match(/^(\s*)(`{3,}|~{3,})\s*$/);
+        if (closingMatch && closingMatch[2][0] === fenceChar && closingMatch[2].length >= openFenceLength) {
+          // Found closing fence with matching fence character and sufficient length
           break;
         }
         blockLines.push(lines[i]);

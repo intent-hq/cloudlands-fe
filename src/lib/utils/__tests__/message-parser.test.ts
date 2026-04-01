@@ -220,6 +220,104 @@ const x = 1;
     expect(result[0].metadata?.language).toBe('typescript');
   });
 
+  it('should parse code blocks with 4 backticks as regular code blocks', () => {
+    const input = `\`\`\`\`typescript
+const x = 1;
+\`\`\`\``;
+
+    const result = parseAgentMessage(input);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('code');
+    expect(result[0].content).toBe('const x = 1;');
+    expect(result[0].metadata?.language).toBe('typescript');
+  });
+
+  it('should parse code blocks with 5+ backticks as regular code blocks', () => {
+    const input = `\`\`\`\`\`python
+def hello():
+    print("world")
+\`\`\`\`\``;
+
+    const result = parseAgentMessage(input);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('code');
+    expect(result[0].content).toBe('def hello():\n    print("world")');
+    expect(result[0].metadata?.language).toBe('python');
+  });
+
+  it('should parse code blocks with tilde fences (~~~) as regular code blocks', () => {
+    const input = `~~~javascript
+const y = 2;
+~~~`;
+
+    const result = parseAgentMessage(input);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('code');
+    expect(result[0].content).toBe('const y = 2;');
+    expect(result[0].metadata?.language).toBe('javascript');
+  });
+
+  it('should parse code blocks with 4+ tilde fences as regular code blocks', () => {
+    const input = `~~~~ruby
+puts "hello"
+~~~~`;
+
+    const result = parseAgentMessage(input);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('code');
+    expect(result[0].content).toBe('puts "hello"');
+    expect(result[0].metadata?.language).toBe('ruby');
+  });
+
+  it('should NOT match blocks with mismatched fence types (backticks vs tildes)', () => {
+    // Test mismatched fences for diff block - backtick open, tilde close
+    const diffInput1 = `Some text before
+\`\`\`diff
+some diff content
+~~~
+Some text after`;
+
+    const diffResult1 = parseAgentMessage(diffInput1);
+    // Should NOT parse as a diff block due to mismatched fences
+    const hasDiffBlock1 = diffResult1.some((block) => block.type === 'diff');
+    expect(hasDiffBlock1).toBe(false);
+
+    // Test mismatched fences for diff block - tilde open, backtick close
+    const diffInput2 = `~~~diff
+some diff content
+\`\`\``;
+
+    const diffResult2 = parseAgentMessage(diffInput2);
+    // Should NOT parse as a diff block due to mismatched fences
+    const hasDiffBlock2 = diffResult2.some((block) => block.type === 'diff');
+    expect(hasDiffBlock2).toBe(false);
+
+    // Test mismatched fences for ws-block:patch
+    const patchInput = `~~~ws-block:patch
+{"filePath":"test.ts","diff":"content","description":"test"}
+\`\`\``;
+
+    const patchResult = parseAgentMessage(patchInput);
+    // Should NOT parse as a patch block due to mismatched fences
+    const hasPatchBlock = patchResult.some((block) => block.type === 'patch');
+    expect(hasPatchBlock).toBe(false);
+
+    // Test mismatched fences for mermaid
+    const mermaidInput = `\`\`\`mermaid
+graph TD
+  A --> B
+~~~`;
+
+    const mermaidResult = parseAgentMessage(mermaidInput);
+    // Should NOT parse as a mermaid block due to mismatched fences
+    const hasMermaidBlock = mermaidResult.some((block) => block.type === 'mermaid');
+    expect(hasMermaidBlock).toBe(false);
+  });
+
   it('should parse agent_digest tags inline', () => {
     const input = `Here is my work:
 
@@ -479,6 +577,115 @@ not valid json
     expect(result.length).toBe(1);
     expect(result[0].type).toBe('text');
     expect(result[0].content).toContain('ws-block:agent_action');
+  });
+
+  it('should parse ws-block:patch with 4+ backticks', () => {
+    const input = `\`\`\`\`ws-block:patch
+{"filePath":"src/app.ts","diff":"--- a/src/app.ts\\n+++ b/src/app.ts\\n@@ -1 +1,2 @@\\n+new line","description":"Add line"}
+\`\`\`\``;
+
+    const result = parseAgentMessage(input);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('patch');
+    expect(result[0].metadata?.patchData?.filePath).toBe('src/app.ts');
+    expect(result[0].metadata?.patchData?.diff).toContain('+new line');
+    expect(result[0].metadata?.patchData?.description).toBe('Add line');
+  });
+
+  it('should parse ws-block:patch with tilde fences', () => {
+    const input = `~~~ws-block:patch
+{"filePath":"src/utils.ts","diff":"--- a/src/utils.ts\\n+++ b/src/utils.ts\\n@@ -1 +1 @@\\n-old\\n+new","description":"Update"}
+~~~`;
+
+    const result = parseAgentMessage(input);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('patch');
+    expect(result[0].metadata?.patchData?.filePath).toBe('src/utils.ts');
+    expect(result[0].metadata?.patchData?.diff).toContain('-old');
+    expect(result[0].metadata?.patchData?.diff).toContain('+new');
+  });
+
+  it('should parse ws-block:reference with 4+ backticks', () => {
+    const input = `\`\`\`\`ws-block:reference
+{"target":{"kind":"function","semanticId":"src/test.ts#myFunc","filePath":"src/test.ts"},"description":"Test function"}
+\`\`\`\``;
+
+    const result = parseAgentMessage(input);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('reference');
+    expect(result[0].metadata?.referenceData?.semanticId).toBe('src/test.ts#myFunc');
+    expect(result[0].metadata?.referenceData?.description).toBe('Test function');
+  });
+
+  it('should parse ws-block:reference with tilde fences', () => {
+    const input = `~~~~ws-block:reference
+{"target":{"kind":"class","semanticId":"src/app.ts#MyClass","filePath":"src/app.ts"},"description":"My class"}
+~~~~`;
+
+    const result = parseAgentMessage(input);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('reference');
+    expect(result[0].metadata?.referenceData?.semanticId).toBe('src/app.ts#MyClass');
+    expect(result[0].metadata?.referenceData?.description).toBe('My class');
+  });
+
+  it('should parse ws-block:cli with 4+ backticks', () => {
+    const input = `\`\`\`\`ws-block:cli
+{"command":"pnpm test","description":"Run tests"}
+\`\`\`\``;
+
+    const result = parseAgentMessage(input);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('cli');
+    expect(result[0].content).toBe('pnpm test');
+    expect(result[0].metadata?.cliData?.command).toBe('pnpm test');
+    expect(result[0].metadata?.cliData?.description).toBe('Run tests');
+  });
+
+  it('should parse ws-block:cli with tilde fences', () => {
+    const input = `~~~ws-block:cli
+{"command":"npm build","description":"Build project","cwd":"/home/user"}
+~~~`;
+
+    const result = parseAgentMessage(input);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('cli');
+    expect(result[0].content).toBe('npm build');
+    expect(result[0].metadata?.cliData?.command).toBe('npm build');
+    expect(result[0].metadata?.cliData?.cwd).toBe('/home/user');
+  });
+
+  it('should parse ws-block:agent_action with 4+ backticks', () => {
+    const input = `\`\`\`\`ws-block:agent_action
+{"agentId":"agent-456","goal":"Test the changes","description":"Testing agent"}
+\`\`\`\``;
+
+    const result = parseAgentMessage(input);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('agent_action');
+    expect(result[0].content).toBe('Test the changes');
+    expect(result[0].metadata?.agentActionData?.agentId).toBe('agent-456');
+    expect(result[0].metadata?.agentActionData?.goal).toBe('Test the changes');
+  });
+
+  it('should parse ws-block:agent_action with tilde fences', () => {
+    const input = `~~~~~ws-block:agent_action
+{"agentId":"agent-789","goal":"Deploy the app","description":"Deployment agent"}
+~~~~~`;
+
+    const result = parseAgentMessage(input);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('agent_action');
+    expect(result[0].content).toBe('Deploy the app');
+    expect(result[0].metadata?.agentActionData?.agentId).toBe('agent-789');
   });
 });
 

@@ -21,11 +21,58 @@
     // Escape HTML first
     text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-    // Handle code blocks
-    text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (_, lang, code) => {
-      return `<pre class="code-block"><code class="language-${lang || 'plaintext'}">${code}</code></pre>`;
-    });
+    // Step 1: Extract code blocks with placeholders to protect from inline transformations
+    const codeBlocks: string[] = [];
+    // Use null bytes to create a placeholder that's extremely unlikely to collide with user content
+    const PLACEHOLDER_PREFIX = '\x00CB_';
+    const PLACEHOLDER_SUFFIX = '_\x00';
 
+    // Handle code blocks with matching fence lengths
+    // Process iteratively to correctly match opening and closing fences
+    let result = '';
+    let pos = 0;
+    // Match opening fence at start of line: backticks or tildes (3+), optional language
+    const openFenceRegex = /^(`{3,}|~{3,})(\w+)?\n/gm;
+
+    let match;
+    while ((match = openFenceRegex.exec(text)) !== null) {
+      const matchStart = match.index;
+      const openFence = match[1];
+      const lang = match[2] || 'plaintext';
+      const fenceChar = openFence[0]; // ` or ~
+      const minLength = openFence.length;
+
+      // Add text before this code block
+      result += text.substring(pos, matchStart);
+
+      // Find the closing fence: must be at start of line, same char, N+ repetitions
+      // where N is the opening fence length
+      const afterOpener = matchStart + match[0].length;
+      const closingRegex = new RegExp(`^(${fenceChar}{${minLength},})\\s*$`, 'gm');
+      closingRegex.lastIndex = afterOpener;
+
+      const closingMatch = closingRegex.exec(text);
+      if (closingMatch && closingMatch.index > afterOpener) {
+        // Found valid closing fence
+        const code = text.substring(afterOpener, closingMatch.index);
+        const placeholder = `${PLACEHOLDER_PREFIX}${codeBlocks.length}${PLACEHOLDER_SUFFIX}`;
+        codeBlocks.push(`<pre class="code-block"><code class="language-${lang}">${code}</code></pre>`);
+        result += placeholder;
+        pos = closingMatch.index + closingMatch[0].length;
+        openFenceRegex.lastIndex = pos;
+      } else {
+        // No closing fence found, treat as literal text
+        result += match[0];
+        pos = afterOpener;
+        openFenceRegex.lastIndex = pos;
+      }
+    }
+
+    // Add remaining text
+    result += text.substring(pos);
+    text = result;
+
+    // Step 2: Now do inline transformations (these won't affect placeholders)
     // Handle inline code
     text = text.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
 
@@ -37,6 +84,13 @@
 
     // Handle line breaks
     text = text.replace(/\n/g, '<br>');
+
+    // Step 3: Restore code blocks from placeholders
+    // Guard against undefined by checking if the index exists in the array
+    text = text.replace(new RegExp(`${PLACEHOLDER_PREFIX}(\\d+)${PLACEHOLDER_SUFFIX}`, 'g'), (_, indexStr) => {
+      const index = parseInt(indexStr, 10);
+      return codeBlocks[index] !== undefined ? codeBlocks[index] : `${PLACEHOLDER_PREFIX}${indexStr}${PLACEHOLDER_SUFFIX}`;
+    });
 
     return text;
   }
