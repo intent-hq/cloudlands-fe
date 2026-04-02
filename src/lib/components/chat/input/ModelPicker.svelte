@@ -1056,6 +1056,9 @@
             >
               {option.label}
             </span>
+            {#if selected}
+              <Fa icon={faCheck} class="text-xs text-primary shrink-0" />
+            {/if}
           </div>
           {#if option.description}
             <div class="text-xs text-subtle truncate mt-0.5" title={option.description}>{option.description}</div>
@@ -1066,9 +1069,7 @@
             </div>
           {/if}
         </div>
-        {#if selected}
-          <Fa icon={faCheck} class="text-xs text-primary shrink-0" />
-        {/if}
+
       </div>
     {/snippet}
 
