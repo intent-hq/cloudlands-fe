@@ -336,6 +336,7 @@ import { setupSkillsIPC } from '../features/agent/main/skills.ipc';
 import { setupSpecialistsIPC } from '../features/specialists/main/specialists.ipc';
 import { setupPermissionIPC } from '../features/acp-official/main/permission.ipc';
 import { setupAutoUpdateIPC } from '../features/auto-update/main/auto-update.ipc';
+import { isInstallingUpdate } from '../features/auto-update/main/auto-update.service';
 import { setupUserRulesIPC as setupWorkspaceRulesIPC } from '../features/rules/main/user-rules.ipc';
 import { setupSandboxIPC } from '../features/sandbox/main/sandbox.ipc';
 import { setupSentryAuthIPC } from '../features/sentry-auth/main/sentry-auth.ipc';
@@ -1834,7 +1835,7 @@ app.on('window-all-closed', async () => {
   // fresh window instead of restoring every window the user just closed.
   // Guard with !isShuttingDown so that an intentional quit (Cmd+Q) — which
   // already saved sessions in before-quit — doesn't lose them.
-  if (process.platform === 'darwin' && !isShuttingDown) {
+  if (process.platform === 'darwin' && !isShuttingDown && !isInstallingUpdate) {
     try {
       const sessionsPath = getWindowSessionsPath();
       if (fs.existsSync(sessionsPath)) {

@@ -71,7 +71,7 @@ export function setupAutoUpdateIPC(): void {
     createSafeValidatedHandler(
       EmptySchema,
       async () => {
-        autoUpdateService.installUpdate();
+        await autoUpdateService.installUpdate();
         return { success: true };
       },
       AUTO_UPDATE_CHANNELS.INSTALL,
