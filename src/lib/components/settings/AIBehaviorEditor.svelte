@@ -347,36 +347,36 @@
         <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
           Default coding agent
         </p>
-        <ModelPicker
-          selectedModel={$selectedModel}
-          onModelChange={handleGlobalModelChange}
-          showDefaultOption={false}
-          variant="default"
-          updateGlobalStore
-        />
-      </div>
-      <div class="flex flex-col items-start gap-2 mt-3">
-        {#if !allSpecialistsUseSelectedModel}
-          <button
-            type="button"
-            onclick={() => {
-              // Batch all overrides into a single action to prevent race conditions
-              const overrides = $specialists.reduce(
-                (acc, s) => {
-                  acc[s.id] = $selectedModel;
-                  return acc;
-                },
-                {} as Record<string, string>
-              );
-              // Dispatch a single bulk update action instead of looping
-              dispatch(setBulkModelOverrides(overrides));
-              track('Used Model for All Specialists', { model_id: $selectedModel });
-            }}
-            class="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          >
-            Use for all specialists
-          </button>
-        {/if}
+        <div class="flex items-center gap-2 flex-wrap">
+          <ModelPicker
+            selectedModel={$selectedModel}
+            onModelChange={handleGlobalModelChange}
+            showDefaultOption={false}
+            variant="default"
+            updateGlobalStore
+          />
+          {#if !allSpecialistsUseSelectedModel}
+            <button
+              type="button"
+              onclick={() => {
+                // Batch all overrides into a single action to prevent race conditions
+                const overrides = $specialists.reduce(
+                  (acc, s) => {
+                    acc[s.id] = $selectedModel;
+                    return acc;
+                  },
+                  {} as Record<string, string>
+                );
+                // Dispatch a single bulk update action instead of looping
+                dispatch(setBulkModelOverrides(overrides));
+                track('Used Model for All Specialists', { model_id: $selectedModel });
+              }}
+              class="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer whitespace-nowrap"
+            >
+              Use for all specialists
+            </button>
+          {/if}
+        </div>
       </div>
     </div>
 
