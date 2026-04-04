@@ -59,7 +59,8 @@ import { AgentStatus, PullRequestStatus, WorkspaceStatus } from '../../../shared
 import type { AgentId, WorkspaceId } from '../../../shared/types/branded-ids';
 import { agentPersistence } from '../../agent/main/agent-persistence';
 import { resolveSpecialistForAgent } from '../../agent/main/specialists.service';
-import { unifiedEventBus, type UnifiedEventBus } from '../../events/main/unified-event-bus';
+import { mainDispatch } from '../../../store/main/redux-store-bridge';
+import { workspaceCreated, workspaceUpdated, workspaceDeleting, workspaceDeleted, workspaceArchived } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
 import { RemoteGitManager } from '../../git/main/remote-git-manager';
 import { getIntentServerPath, escapeShellArg } from '../../agent/main/agent-providers/acp-provider';
 import type { NotesRepository } from '../../notes/main/notes.repository';
@@ -74,7 +75,6 @@ import {
   createSlugPattern,
   createSuffixCapturePattern,
 } from './git-branch-utils';
-import { generateCompleteIntentSlug } from './intent-slug-generator';
 import { generateLocalSlug } from './local-slug-generator';
 import {
   isValidWorkspaceIdFormat,
@@ -90,6 +90,7 @@ import { sshManager, type SSHConnectionConfig } from '../../../shared/main/ssh-m
 import { trackMain } from '$lib/services/analytics/main';
 import { githubService } from '../../git-tracking/main/github.service';
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const { WorkspaceNotFoundError, WorkspaceValidationError, GitWorktreeError } = Errors;
 
 const logger = new Logger('WorkspaceService');
@@ -148,14 +149,8 @@ export class WorkspaceService {
   private readonly LIST_ENRICHMENT_CONCURRENCY = 3;
   private readonly BACKGROUND_ENRICHMENT_CONCURRENCY = 3;
   private readonly BACKGROUND_SUMMARY_TTL_MS = 5 * 60 * 1000;
-  private workspaceDeletedListener?: (data: { workspaceId: WorkspaceId }) => void;
-  private noteCreatedListener?: (data: {
-    workspaceId: WorkspaceId;
-    note?: { metadata?: any };
-  }) => void;
-  private noteDeletedListener?: (data: { workspaceId: WorkspaceId }) => void;
-  private gitStatusChangedListener?: (data: { workspaceId: WorkspaceId }) => void;
-  private taskStatusChangedListener?: (event: { workspaceId?: WorkspaceId }) => void;
+  // Domain event listeners (workspace:deleted, note:created, note:deleted, git:status-changed)
+  // are now handled by sagas in domain-event-listener-sagas.ts.
 
   // Short-lived cache for getWorkspace to reduce redundant fetches during bulk operations
   // (e.g., delegating multiple tasks in parallel)
@@ -183,53 +178,12 @@ export class WorkspaceService {
     private readonly repository: WorkspaceRepository = new FileSystemWorkspaceRepository(),
     private readonly notesRepository: NotesRepository = new FolderBasedNotesRepository(),
     private readonly diffSummaryRepository: DiffSummaryRepository = new DiffSummaryRepository(),
-    private readonly eventBus: UnifiedEventBus = unifiedEventBus,
     private readonly idService: UnifiedIdService = unifiedIdService,
   ) {
     this.store = new ElectronStore();
 
-    // Hook into workspace deletion to cleanup cache and track recently deleted
-    // Store the listener function so we can remove it later
-    this.workspaceDeletedListener = ({ workspaceId }: { workspaceId: WorkspaceId }) => {
-      this.clearWorkspaceCache(workspaceId);
-      this.workspaceCache.delete(workspaceId);
-
-      // Track this workspace as recently deleted to guard against zombie events
-      this.recentlyDeletedWorkspaces.add(workspaceId);
-
-      // Schedule cleanup after TTL
-      setTimeout(() => {
-        this.recentlyDeletedWorkspaces.delete(workspaceId);
-        logger.debug('Cleared workspace from recently deleted tracking', { workspaceId });
-      }, this.RECENTLY_DELETED_TTL);
-    };
-    this.eventBus.onDomainEvent('workspace:deleted', this.workspaceDeletedListener);
-
-    this.noteCreatedListener = ({ workspaceId, note }) => {
-      if (!workspaceId) return;
-      if (note?.metadata?.task || note == null) {
-        this.invalidateWorkspaceSummaries(workspaceId, 'note-created');
-      }
-    };
-    this.eventBus.onDomainEvent('note:created', this.noteCreatedListener);
-
-    this.noteDeletedListener = ({ workspaceId }) => {
-      if (!workspaceId) return;
-      this.invalidateWorkspaceSummaries(workspaceId, 'note-deleted');
-    };
-    this.eventBus.onDomainEvent('note:deleted', this.noteDeletedListener);
-
-    this.gitStatusChangedListener = ({ workspaceId }) => {
-      if (!workspaceId) return;
-      this.invalidateWorkspaceSummaries(workspaceId, 'git-status-changed');
-    };
-    this.eventBus.onDomainEvent('git:status-changed', this.gitStatusChangedListener);
-
-    this.taskStatusChangedListener = (event) => {
-      if (!event?.workspaceId) return;
-      this.invalidateWorkspaceSummaries(event.workspaceId, 'task-status-changed');
-    };
-    this.eventBus.on('task:status-changed', this.taskStatusChangedListener);
+    // Domain event listeners (including task:status-changed) are now handled
+    // by sagas in domain-event-listener-sagas.ts.
 
     // Start periodic PR refresh for non-active workspaces with open PRs
     this.startPeriodicPRRefresh();
@@ -378,7 +332,7 @@ export class WorkspaceService {
       }
 
       return {};
-    } catch (error) {
+    } catch {
       // This is expected for non-git directories (e.g. temp paths, build-smoke repos)
       // so log at debug level rather than error to avoid log spam
       logger.debug('Failed to read git config', { repoPath });
@@ -1719,11 +1673,11 @@ task:
       }
 
       // Emit event
-      this.eventBus.emitDomainEvent('workspace:created', {
+      mainDispatch(workspaceCreated({
         workspaceId: id,
         workspace,
         initialAgent: request.initialAgent,
-      });
+      }));
 
       // Resolve effective setup script: request > repo config > none
       const effectiveSetupScript =
@@ -2429,7 +2383,7 @@ task:
         try {
           // Fetch single PR details to get headSha and mergeableState
           // These are only available from the single PR endpoint
-          let currentPR = { ...pr };
+          const currentPR = { ...pr };
           try {
             const prDetail = await githubService.getPullRequest(owner, repo, pr.number);
             if (prDetail) {
@@ -2678,7 +2632,7 @@ task:
       // Validate: PR's source branch should match the workspace's own branch.
       // Previously, baseRef matching could incorrectly link a parent branch's PR.
       // Check headRef on stored PR, or fetch and validate.
-      let currentPR = { ...pr };
+      const currentPR = { ...pr };
       try {
         const prDetail = await githubService.getPullRequest(owner, repo, pr.number);
         if (prDetail) {
@@ -3000,10 +2954,10 @@ task:
       this.workspaceCache.delete(workspace.id);
 
       // Emit event
-      this.eventBus.emitDomainEvent('workspace:updated', {
+      mainDispatch(workspaceUpdated({
         workspaceId: workspace.id,
         changes: request,
-      });
+      }));
 
       logger.info('Workspace updated', {
         workspaceId: workspace.id,
@@ -3126,10 +3080,10 @@ task:
       }
 
       // Emit event
-      this.eventBus.emitDomainEvent('workspace:created', {
+      mainDispatch(workspaceCreated({
         workspaceId: newId,
         workspace: newWorkspace,
-      });
+      }));
 
       logger.info('Workspace duplicated successfully', {
         sourceId: id,
@@ -3181,9 +3135,9 @@ task:
       }
 
       // Emit pre-delete event to allow cleanup
-      this.eventBus.emitDomainEvent('workspace:deleting', {
+      mainDispatch(workspaceDeleting({
         workspaceId: id,
-      });
+      }));
 
       // Remove git worktree if it exists
       const worktreeWorkspaceResult = await this.getWorkspace(id as WorkspaceId);
@@ -3328,9 +3282,9 @@ task:
       await this.repository.delete(id);
 
       // Emit event
-      this.eventBus.emitDomainEvent('workspace:deleted', {
+      mainDispatch(workspaceDeleted({
         workspaceId: id,
-      });
+      }));
 
       // Track workspace deletion
       trackMain('Deleted Workspace', {
@@ -3381,9 +3335,9 @@ task:
       this.workspaceCache.delete(id);
 
       // Emit event
-      this.eventBus.emitDomainEvent('workspace:archived', {
+      mainDispatch(workspaceArchived({
         workspaceId: id,
-      });
+      }));
 
       logger.info('Workspace archived', { workspaceId: id });
 
@@ -3421,10 +3375,10 @@ task:
       this.workspaceCache.delete(id);
 
       // Emit event
-      this.eventBus.emitDomainEvent('workspace:updated', {
+      mainDispatch(workspaceUpdated({
         workspaceId: id,
         changes: { archived: false },
-      });
+      }));
 
       logger.info('Workspace unarchived', { workspaceId: id });
 
@@ -3693,7 +3647,7 @@ task:
                   cwd: workspace.worktreePath,
                 });
                 // Valid worktree, keep it
-              } catch (gitError) {
+              } catch {
                 // Not a valid git worktree anymore
                 logger.warn('Workspace has invalid git worktree, clearing worktree path', {
                   workspaceId,
@@ -3703,7 +3657,7 @@ task:
                 workspace.worktreePath = undefined;
                 await this.repository.save(workspace);
               }
-            } catch (accessError) {
+            } catch {
               // Worktree path doesn't exist
               logger.warn('Workspace worktree path does not exist, clearing it', {
                 workspaceId,
@@ -3714,7 +3668,7 @@ task:
               await this.repository.save(workspace);
             }
           }
-        } catch (accessError) {
+        } catch {
           // workspace.json doesn't exist or is corrupted - this is an orphan directory
           logger.info('Removing orphan workspace directory (no valid workspace.json)', {
             workspaceId,
@@ -3820,6 +3774,41 @@ task:
     logger.debug('Cleared workspace cache', { workspaceId });
   }
 
+  // ---------------------------------------------------------------------------
+  // Public handlers for domain event sagas (replaces onDomainEvent listeners)
+  // ---------------------------------------------------------------------------
+
+  /** Handle workspace:deleted domain event (saga entry point). */
+  public onWorkspaceDeleted({ workspaceId }: { workspaceId: WorkspaceId }): void {
+    this.clearWorkspaceCache(workspaceId);
+    this.workspaceCache.delete(workspaceId);
+    this.recentlyDeletedWorkspaces.add(workspaceId);
+    setTimeout(() => {
+      this.recentlyDeletedWorkspaces.delete(workspaceId);
+      logger.debug('Cleared workspace from recently deleted tracking', { workspaceId });
+    }, this.RECENTLY_DELETED_TTL);
+  }
+
+  /** Handle note:created domain event (saga entry point). */
+  public onNoteCreated({ workspaceId, note }: { workspaceId: WorkspaceId; note?: { metadata?: any } }): void {
+    if (!workspaceId) return;
+    if (note?.metadata?.task || note == null) {
+      this.invalidateWorkspaceSummaries(workspaceId, 'note-created');
+    }
+  }
+
+  /** Handle note:deleted domain event (saga entry point). */
+  public onNoteDeleted({ workspaceId }: { workspaceId: WorkspaceId }): void {
+    if (!workspaceId) return;
+    this.invalidateWorkspaceSummaries(workspaceId, 'note-deleted');
+  }
+
+  /** Handle git:status-changed domain event (saga entry point). */
+  public onGitStatusChanged({ workspaceId }: { workspaceId: WorkspaceId }): void {
+    if (!workspaceId) return;
+    this.invalidateWorkspaceSummaries(workspaceId, 'git-status-changed');
+  }
+
   /**
    * Cleanup service resources (timers, listeners, etc.)
    */
@@ -3827,26 +3816,8 @@ task:
     this.disposed = true;
 
     // Remove event listeners
-    if (this.workspaceDeletedListener) {
-      this.eventBus.offDomainEvent('workspace:deleted', this.workspaceDeletedListener);
-      this.workspaceDeletedListener = undefined;
-    }
-    if (this.noteCreatedListener) {
-      this.eventBus.offDomainEvent('note:created', this.noteCreatedListener);
-      this.noteCreatedListener = undefined;
-    }
-    if (this.noteDeletedListener) {
-      this.eventBus.offDomainEvent('note:deleted', this.noteDeletedListener);
-      this.noteDeletedListener = undefined;
-    }
-    if (this.gitStatusChangedListener) {
-      this.eventBus.offDomainEvent('git:status-changed', this.gitStatusChangedListener);
-      this.gitStatusChangedListener = undefined;
-    }
-    if (this.taskStatusChangedListener) {
-      this.eventBus.off('task:status-changed', this.taskStatusChangedListener);
-      this.taskStatusChangedListener = undefined;
-    }
+    // Domain event listeners (workspace:deleted, note:created, note:deleted, git:status-changed)
+    // are now handled by sagas — no offDomainEvent cleanup needed here.
 
     // Clear background enrichment timer
     if (this.backgroundEnrichmentTimer) {

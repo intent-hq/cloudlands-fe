@@ -5,7 +5,6 @@
 -->
 
 <script lang="ts">
-  import { Logger } from '$shared/logger';
   import type { WorkspaceEvent } from '../../events/types';
   import Fa from 'svelte-fa';
   import {
@@ -26,9 +25,9 @@
     faCamera,
   } from '@fortawesome/free-solid-svg-icons';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
-  import { onMount, untrack } from 'svelte';
-  import { queryEvents, onEventCreated, onEventsCleared } from '../../events/events.client';
-  import { getDeduplicationService } from '../../events/event-deduplication.service';
+  import { writable } from 'svelte/store';
+  import { selectWorkspaceEvents, selectEventsLoading } from '$lib/store/slices/workspace-events/workspace-events-selectors';
+
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { slide } from 'svelte/transition';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
@@ -41,10 +40,8 @@
     type AgentNameResolver,
   } from '../utils/friendly-labels';
   import { faNote } from '$lib/icons/faNote';
-  import { unifiedStateStore } from '$features/agent/services/unified-state-store';
-  import type { WorkspaceId } from '$shared/types/branded-ids';
-
-  const logger = new Logger('ActivityTimeline');
+  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 
   interface Props {
     workspaceId: string;
@@ -55,16 +52,23 @@
 
   let { workspaceId, handleFileSelect, onShowAgent, onOpenNote }: Props = $props();
 
-  let events: WorkspaceEvent[] = $state([]);
-  let expandedEventId: string | null = $state(null);
-  let isLoading = $state(true);
-  let previousWorkspaceId: string | undefined = $state(undefined);
-  let subscriptionId: string | null = null;
-  const deduplicationService = getDeduplicationService();
+  // Wrap workspaceId prop in a writable store so selectors react to prop changes
+  const workspaceIdStore = writable(workspaceId);
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+  });
 
-  // Create an agent name resolver that looks up agent names from the unified state store
+  // Read events and loading state from Redux
+  const events$ = selectWorkspaceEvents(workspaceIdStore);
+  const loading$ = selectEventsLoading(workspaceIdStore);
+  const events = $derived($events$);
+  const isLoading = $derived($loading$);
+
+  let expandedEventId: string | null = $state(null);
+
+  // Create an agent name resolver that looks up agent names from the Redux store
   const agentNameResolver: AgentNameResolver = (agentId: string): string | undefined => {
-    const agents = unifiedStateStore.getAgentsForWorkspace(workspaceId as WorkspaceId);
+    const agents = selectAllWorkspaceAgents.select(getReduxStore().getState(), workspaceId);
     const agent = agents.find((a) => a.id === agentId);
     return agent?.name;
   };
@@ -82,76 +86,7 @@
     return deduped;
   });
 
-  // Load workspace events
-  async function loadWorkspaceEvents(wsId: string) {
-    isLoading = true;
-    events = [];
-    try {
-      // Query events first (like the sidebar does)
-      const initialEvents = await queryEvents(wsId, [], 1000);
-      if (initialEvents.length > 0) {
-        // Track all initial events in deduplication service to prevent duplicates from real-time updates
-        initialEvents.forEach((event) => deduplicationService.trackEvent(event));
-        // Merge with any real-time events that arrived during the async query
-        // to avoid overwriting them
-        const merged = [
-          ...events.filter((e) => !initialEvents.some((ie) => ie.id === e.id)),
-          ...initialEvents,
-        ];
-        events = merged;
-      }
 
-      // Set up subscription for real-time updates after query
-      const subId = `activity-timeline-${wsId}-${Date.now()}`;
-      await window.electronAPI
-        .invoke('events:subscribe', { subscriptionId: subId, filters: [] })
-        .catch(() => {
-          // Subscribe failed - real-time updates won't work but historical events are still shown
-        });
-      subscriptionId = subId;
-    } catch (error) {
-      logger.error('[ActivityTimeline] Failed to load events:', error);
-    } finally {
-      isLoading = false;
-    }
-  }
-
-  // Watch for workspace changes
-  $effect(() => {
-    const currentWorkspaceId = workspaceId;
-    const prevId = untrack(() => previousWorkspaceId);
-    if (currentWorkspaceId && currentWorkspaceId !== prevId) {
-      if (prevId && subscriptionId) subscriptionId = null;
-      untrack(() => {
-        previousWorkspaceId = currentWorkspaceId;
-      });
-      loadWorkspaceEvents(currentWorkspaceId);
-    }
-  });
-
-  // Real-time updates — uses onMount + onEventCreated (same pattern as SidebarActivityPanel)
-  onMount(() => {
-    const unsubUpdates = onEventCreated((data) => {
-      if (data.workspaceId !== workspaceId) return;
-      if (!data.event?.type) return;
-      // Skip duplicates by ID (do NOT use deduplicationService — the sidebar
-      // listener fires first and marks events as "seen", causing isDuplicate()
-      // to return true here and silently drop every event)
-      if (events.some((e) => e.id === data.event.id)) return;
-      events = [data.event, ...events];
-    });
-    const unsubCleared = onEventsCleared((clearedWorkspaceId) => {
-      if (clearedWorkspaceId === workspaceId) events = [];
-    });
-    return () => {
-      unsubUpdates();
-      unsubCleared();
-      if (subscriptionId) {
-        window.electronAPI.invoke('events:unsubscribe', { subscriptionId }).catch(() => {});
-        subscriptionId = null;
-      }
-    };
-  });
 
   // Icon mapping (same as sandbox)
   function getEventIcon(type: WorkspaceEvent['type']): IconDefinition {
@@ -245,7 +180,7 @@
     {#if isLoading}
       <!-- Loading skeleton -->
       <div class="px-3 py-2 space-y-4">
-        {#each Array(6) as _, i}
+        {#each Array.from({ length: 6 }, (__, idx) => idx) as i}
           <div class="flex items-start gap-3" style="animation-delay: {i * 50}ms">
             <Skeleton class="h-5 w-5 rounded-full shrink-0" />
             <div class="flex-1 space-y-1.5">

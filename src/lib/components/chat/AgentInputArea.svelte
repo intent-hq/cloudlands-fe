@@ -4,7 +4,7 @@
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
   import { faStop, faPaperPlane, faPlus } from '@fortawesome/free-solid-svg-icons';
-  import type { AgentSession } from '$features/agent/agent.service';
+  import type { AgentSession } from '$features/agent/agent-ipc-bridge';
   import type { Workspace } from '$shared/types';
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';

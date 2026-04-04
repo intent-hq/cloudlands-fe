@@ -517,7 +517,6 @@ describe('Edge Routing', () => {
     const layout = computeLayout(diagram.model, diagram.baseView, diagram.grammar);
 
     // Get starting points of all edges from 'source'
-    const sourceNode = layout.nodes.find((n) => n.id === 'source')!;
     const edgesFromSource = layout.edges.filter((e) => e.from === 'source');
 
     expect(edgesFromSource).toHaveLength(3);
@@ -555,7 +554,6 @@ describe('Edge Routing', () => {
     });
 
     // The backward edge should have more routing points (to route around)
-    const forwardEdge = layout.edges.find((e) => e.from === 'a')!;
     const backwardEdge = layout.edges.find((e) => e.from === 'b')!;
 
     // Backward edge typically needs more points for routing around

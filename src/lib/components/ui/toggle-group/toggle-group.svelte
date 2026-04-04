@@ -2,7 +2,7 @@
   import { cn } from '$lib/utils';
   import { tv, type VariantProps } from 'tailwind-variants';
   import type { HTMLAttributes } from 'svelte/elements';
-  import { getContext, setContext } from 'svelte';
+  import { setContext } from 'svelte';
 
   const toggleGroupVariants = tv({
     base: 'inline-flex items-center justify-center -space-x-px rounded-md',

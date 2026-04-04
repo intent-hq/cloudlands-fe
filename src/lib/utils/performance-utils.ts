@@ -3,9 +3,7 @@
  * Helpers for optimizing performance in the workspace
  */
 
-import { createLogger } from '$lib/utils/client-logger';
 
-const logger = createLogger('performance-utils');
 
 /**
  * Creates a debounced version of a function

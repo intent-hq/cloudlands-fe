@@ -10,7 +10,7 @@ import { ConsolidatedBackendService } from './consolidated-backend.service';
 import { Logger } from '../../../shared/logger';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { WorkspaceCleanupAgentsSchema } from '../../../main/ipc-schemas';
-import { unifiedEventBus } from '../../events/main/unified-event-bus';
+// Event listeners migrated to Redux sagas (domain-event-listener-sagas.ts)
 
 const logger = new Logger('InitUnifiedBackend');
 
@@ -30,11 +30,8 @@ export async function initializeUnifiedBackend(mainWindow: BrowserWindow): Promi
     // Load persisted sessions for active workspace
     setupWorkspaceHandlers();
 
-    // Listen for workspace deletion to cleanup agents
-    setupWorkspaceDeletionListener();
-
-    // Listen for workspace archiving to cleanup agents
-    setupWorkspaceArchiveListener();
+    // workspace:deleting and workspace:archived listeners are now handled by sagas
+    // (domain-event-listener-sagas.ts) — no need to register listeners here.
 
     logger.info('Consolidated agent backend initialized successfully');
   } catch (error) {
@@ -43,150 +40,8 @@ export async function initializeUnifiedBackend(mainWindow: BrowserWindow): Promi
   }
 }
 
-/**
- * Setup listener for workspace deletion to cleanup running agents
- */
-function setupWorkspaceDeletionListener(): void {
-  unifiedEventBus.onDomainEvent('workspace:deleting', async ({ workspaceId }) => {
-    logger.info('Workspace deleting - cleaning up agents', { workspaceId });
-
-    try {
-      // CRITICAL: Stop all providers in AgentBackendHandler first
-      // These hold the actual auggie processes and are not tracked in ConsolidatedBackendService.sessions
-      const { agentBackendHandler } = await import('./agent-backend-handler.service');
-      const providersStopped = await agentBackendHandler.stopProvidersForWorkspace(workspaceId);
-      logger.info('Stopped AgentBackendHandler providers for workspace', {
-        workspaceId,
-        providersStopped,
-      });
-
-      // Also stop any agents tracked in ConsolidatedBackendService.sessions
-      const sessions = await consolidatedBackend.listAgents(workspaceId);
-
-      if (sessions.length > 0) {
-        logger.info('Stopping agents in ConsolidatedBackendService for deleted workspace', {
-          workspaceId,
-          agentCount: sessions.length,
-          agentIds: sessions.map((s) => s.id),
-        });
-
-        // Kill each agent process (not just interrupt - fully stop and kill the process)
-        for (const session of sessions) {
-          try {
-            await consolidatedBackend.backendStop({
-              agentId: session.id.toString(),
-              killProcess: true, // Kill the auggie process, not just interrupt
-              _stopTrigger: 'workspace_deletion',
-              _stopReason: 'workspace:deleting event',
-            });
-            logger.info('Killed agent for deleted workspace', {
-              agentId: session.id,
-              workspaceId,
-            });
-          } catch (error) {
-            logger.warn('Failed to kill agent during workspace deletion', {
-              agentId: session.id,
-              workspaceId,
-              error,
-            });
-          }
-        }
-      }
-
-      // Invalidate main-process agent caches to prevent stale data from being
-      // returned after workspace deletion. This must happen even if no agents
-      // were running, because cached disk-read results would still be served.
-      agentBackendHandler.invalidatePersistenceListCache(workspaceId);
-
-      const { unifiedPersistence } = await import('./agent-persistence');
-      unifiedPersistence.invalidateLoadCachesForWorkspace(workspaceId);
-
-      logger.info('Completed agent cleanup for deleted workspace', {
-        workspaceId,
-        providersStopped,
-        sessionsStopped: sessions.length,
-      });
-    } catch (error) {
-      logger.error('Failed to cleanup agents for deleted workspace', {
-        workspaceId,
-        error,
-      });
-    }
-  });
-
-  logger.info('Workspace deletion listener registered for agent cleanup');
-}
-
-/**
- * Setup listener for workspace archiving to cleanup running agents
- */
-function setupWorkspaceArchiveListener(): void {
-  unifiedEventBus.onDomainEvent('workspace:archived', async ({ workspaceId }) => {
-    logger.info('Workspace archived - cleaning up agents', { workspaceId });
-
-    try {
-      // CRITICAL: Stop all providers in AgentBackendHandler first
-      // These hold the actual auggie processes and are not tracked in ConsolidatedBackendService.sessions
-      const { agentBackendHandler } = await import('./agent-backend-handler.service');
-      const providersStopped = await agentBackendHandler.stopProvidersForWorkspace(workspaceId);
-      logger.info('Stopped AgentBackendHandler providers for archived workspace', {
-        workspaceId,
-        providersStopped,
-      });
-
-      // Also stop any agents tracked in ConsolidatedBackendService.sessions
-      const sessions = await consolidatedBackend.listAgents(workspaceId);
-
-      if (sessions.length === 0 && providersStopped === 0) {
-        logger.info('No agents to cleanup for archived workspace', { workspaceId });
-        return;
-      }
-
-      if (sessions.length > 0) {
-        logger.info('Stopping agents in ConsolidatedBackendService for archived workspace', {
-          workspaceId,
-          agentCount: sessions.length,
-          agentIds: sessions.map((s) => s.id),
-        });
-
-        // Kill each agent process (not just interrupt - fully stop and kill the process)
-        for (const session of sessions) {
-          try {
-            await consolidatedBackend.backendStop({
-              agentId: session.id.toString(),
-              killProcess: true, // Kill the auggie process, not just interrupt
-              _stopTrigger: 'workspace_archival',
-              _stopReason: 'workspace:archived event',
-            });
-            logger.info('Killed agent for archived workspace', {
-              agentId: session.id,
-              workspaceId,
-            });
-          } catch (error) {
-            logger.warn('Failed to kill agent during workspace archiving', {
-              agentId: session.id,
-              workspaceId,
-              error,
-            });
-          }
-        }
-      }
-
-      logger.info('Completed agent cleanup for archived workspace', {
-        workspaceId,
-        providersStopped,
-        sessionsStopped: sessions.length,
-      });
-    } catch (error) {
-      logger.error('Failed to cleanup agents for archived workspace', {
-        workspaceId,
-        error,
-      });
-    }
-  });
-
-  logger.info('Workspace archive listener registered for agent cleanup');
-}
+// workspace:deleting and workspace:archived listeners are now sagas
+// in domain-event-listener-sagas.ts
 
 /**
  * Setup workspace-related handlers

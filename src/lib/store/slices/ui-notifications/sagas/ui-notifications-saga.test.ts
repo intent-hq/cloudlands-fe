@@ -26,13 +26,6 @@ vi.mock("$lib/store/utils/ipc-channel", () => ({
   takeEveryFromElectronChannel: takeEveryFromElectronChannelMock,
 }));
 
-vi.mock("$features/workspace/workspace.store.svelte", () => ({
-  workspaceStore: {
-    items: [],
-    current: null,
-  },
-}));
-
 import {
   uiSaga,
   watchBackgroundAgentSpawnedSaga,

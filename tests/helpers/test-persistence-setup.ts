@@ -9,7 +9,7 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import { tmpdir } from 'os';
 import { vi } from 'vitest';
-import type { AgentId, WorkspaceId } from '../../src/shared/types/branded-ids';
+import type { AgentId } from '../../src/shared/types/branded-ids';
 
 export interface TestPersistenceConfig {
   baseDir?: string;

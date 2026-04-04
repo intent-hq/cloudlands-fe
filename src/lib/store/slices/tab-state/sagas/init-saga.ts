@@ -1,14 +1,27 @@
 import { getLocalStorageJSON } from "$lib/store/utils/safe-local-storage-saga";
-import { call, put, type SagaGenerator } from "typed-redux-saga";
-import { loadScrollPositions } from "../tab-state-slice";
-
-const STORAGE_KEY = "tab-scroll-positions";
-
-function* loadFromLocalStorage(): SagaGenerator<Record<string, number>> {
-  return (yield* call(getLocalStorageJSON<Record<string, number>>, STORAGE_KEY)) ?? {};
-}
+import { call, put } from "typed-redux-saga";
+import {
+  loadScrollPositions,
+  loadWorkspaceTabsState,
+  TAB_SCROLL_POSITIONS_STORAGE_KEY,
+  type PersistedWorkspaceTabsState,
+  WORKSPACE_TABS_STORAGE_KEY,
+} from "../tab-state-slice";
 
 export function* initSaga() {
-  const positions = yield* call(loadFromLocalStorage);
+  const positions =
+    (yield* call(getLocalStorageJSON<Record<string, number>>, TAB_SCROLL_POSITIONS_STORAGE_KEY)) ??
+    {};
   yield* put(loadScrollPositions(positions));
+
+  const workspaceTabs = yield* call(
+    getLocalStorageJSON<PersistedWorkspaceTabsState>,
+    WORKSPACE_TABS_STORAGE_KEY
+  );
+
+  if (!workspaceTabs) {
+    return;
+  }
+
+  yield* put(loadWorkspaceTabsState(workspaceTabs));
 }

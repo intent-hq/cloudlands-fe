@@ -1,15 +1,17 @@
 import type { Editor } from '@tiptap/core';
 
-import { notesClient } from '$features/notes/notes.client';
-import { notesStateManager } from '$features/notes/notes.store.svelte';
 import { buildTaskNoteContent } from '$features/notes/utils/task-agent-message-builder';
+import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+import { addOptimisticNote, removeOptimisticNote } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
 import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
-import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { getReduxStore, dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
 import {
   addTaskAgentAssociation,
   removeTaskAgentAssociation,
 } from '$lib/utils/task-agent-associations';
-import type { Workspace } from '$shared/types';
+import { notesIpc } from '$lib/store/slices/workspace-notes/sagas/notes-ipc';
+import { NOTES_CHANNELS } from '$shared/ipc/channels';
+import type { Workspace, Note, AgentSession } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 import { unifiedIdService } from '$shared/services/unified-id.service';
 import { stripMarkdownFormatting } from '$shared/utils-client';
@@ -100,7 +102,7 @@ export async function runAssignAgentTaskMenuAction({
   }
 
   // Step 3: Get parent note info and build content
-  const parentNote = notesStateManager.findById(NoteId(noteId));
+  const parentNote = selectNoteById.select(getReduxStore().getState(), workspace.id, noteId);
   const parentNoteTitle = parentNote?.title || 'parent note';
   const taskNoteContent = buildTaskNoteContent(taskText, noteId, parentNoteTitle);
 
@@ -123,7 +125,7 @@ export async function runAssignAgentTaskMenuAction({
     is_pinned: false,
     is_archived: false,
   };
-  notesStateManager.addOptimisticNote(optimisticNote as any);
+  reduxDispatch(addOptimisticNote(workspace.id, optimisticNote as any));
 
   logger.info('Added optimistic Task Note', {
     noteId: optimisticNoteId,
@@ -149,19 +151,22 @@ export async function runAssignAgentTaskMenuAction({
 
     // Create the Task Note with agent via createPrerequisiteNote
     // Pass the pre-generated agent ID so backend uses it
-    const result = await notesClient.createPrerequisiteNote(
-      WorkspaceId(workspace.id),
-      NoteId(noteId),
+    const result = await notesIpc<{ note: Note; agent?: AgentSession }>(
+      NOTES_CHANNELS.CREATE_PREREQUISITE_NOTE,
       {
-        title: sanitizedTitle,
-        content: taskNoteContent,
-        taskStatus: 'not_started',
-        peerOrder,
-        agentConfig: {
-          instruction: taskText,
-          model: selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspace.id),
-          autoStart: true,
-          agentId: optimisticAgentId, // Use pre-generated ID
+        workspaceId: WorkspaceId(workspace.id),
+        dependentNoteId: NoteId(noteId),
+        options: {
+          title: sanitizedTitle,
+          content: taskNoteContent,
+          taskStatus: 'not_started',
+          peerOrder,
+          agentConfig: {
+            instruction: taskText,
+            model: selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspace.id),
+            autoStart: true,
+            agentId: optimisticAgentId, // Use pre-generated ID
+          },
         },
       },
     );
@@ -171,15 +176,15 @@ export async function runAssignAgentTaskMenuAction({
       if (editor) {
         editor.commands.setTaskAgentId(taskPosition, null);
       }
-      notesStateManager.removeOptimisticNote(optimisticNoteId);
+      reduxDispatch(removeOptimisticNote(workspace.id, optimisticNoteId));
       throw new Error(result.error || 'Failed to create Task Note');
     }
 
     const { note: taskNote, agent: agentData } = result.data;
 
     // Replace optimistic note with real note from server
-    notesStateManager.removeOptimisticNote(optimisticNoteId);
-    notesStateManager.addOptimisticNote(taskNote); // Add the real note
+    reduxDispatch(removeOptimisticNote(workspace.id, optimisticNoteId));
+    reduxDispatch(addOptimisticNote(workspace.id, taskNote)); // Add the real note
 
     logger.info('Task Note created successfully', {
       taskNoteId: taskNote.id,

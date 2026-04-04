@@ -59,7 +59,6 @@ describe('PendingEventQueue — Property-based fuzzing', () => {
 
   // ── Property 2: No event duplication ─────────────────────────────────────
   it('Property 2: each event appears exactly once across multiple replays', () => {
-    const rng = mulberry32(123);
     const queue = new PendingEventQueue(60_000, 500);
     const sessionId = 'dup-test';
     const allReplayed: string[] = [];

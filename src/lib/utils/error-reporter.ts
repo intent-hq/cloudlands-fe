@@ -6,9 +6,7 @@
  */
 
 import type { AppError } from './error-handler.svelte';
-import { Logger } from '$shared/logger';
 
-const logger = new Logger('ErrorReporter');
 
 export interface ErrorReport {
   id: string;

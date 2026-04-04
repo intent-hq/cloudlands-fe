@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ToolService } from '../main/tool.service';
-import type { ToolContext, FileInfo, ToolOperation } from '../main/types';
+import type { ToolContext, ToolOperation } from '../main/types';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { tmpdir } from 'os';
@@ -50,6 +50,7 @@ describe('ToolService', () => {
           const files = await fs.readdir(fullPath);
           return files;
         },
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         execute: async (command: string, options?: any) => ({
           stdout: '',
           stderr: '',
@@ -72,7 +73,7 @@ describe('ToolService', () => {
     // Clean up test directory
     try {
       await fs.rm(testDir, { recursive: true, force: true });
-    } catch (error) {
+    } catch  {
       // Ignore cleanup errors
     }
   });

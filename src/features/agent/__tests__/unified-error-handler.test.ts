@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   errorHandler,
   AgentError,
@@ -138,7 +138,6 @@ describe('UnifiedErrorHandler', () => {
 
   describe('Error Recovery', () => {
     it('should retry recoverable errors', async () => {
-      const attempts = 0;
       const error = new AgentError('Network error', {
         category: ErrorCategory.NETWORK,
         recoverable: true,

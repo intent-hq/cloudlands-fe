@@ -1,14 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import Fa from 'svelte-fa';
   import {
     faCommentDots,
     faCodePullRequest,
     faSquarePen,
     faCircleQuestion,
-    faTimes,
   } from '@fortawesome/free-solid-svg-icons';
-  import Button from '$lib/components/ui/button/button.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
 
   interface Props {
@@ -24,6 +21,7 @@
   let commentType: 'comment' | 'suggestion' | 'change-request' | 'question' = $state('comment');
   let containerRef: HTMLDivElement | null = $state(null);
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const typeOptions = [
     { value: 'comment', label: 'Comment', icon: faCommentDots },
     { value: 'suggestion', label: 'Suggestion', icon: faCodePullRequest },

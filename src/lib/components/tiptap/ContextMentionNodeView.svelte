@@ -13,8 +13,10 @@
   import type { ContextProvider, ContextItemType } from '$features/context/types';
   import type { ContextMentionMetadata } from './ContextMention';
   import { handleLink } from '$features/navigation/link-handler';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import { WorkspaceId } from '$shared/types/branded-ids';
+
+  const activeWorkspaceId = selectActiveWorkspaceId();
 
   let { node, selected, deleteNode }: NodeViewProps = $props();
 
@@ -225,7 +227,7 @@
     e.stopPropagation();
     const targetUrl = url();
     if (targetUrl) {
-      const wsId = workspaceStore.current?.id;
+      const wsId = $activeWorkspaceId;
       if (wsId) {
         await handleLink(targetUrl, {
           workspaceId: WorkspaceId(wsId),

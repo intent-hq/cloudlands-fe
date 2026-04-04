@@ -15,7 +15,8 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Logger } from '../../../shared/logger';
-import { unifiedEventBus, type UnifiedEventBus } from '../../events/main/unified-event-bus';
+import { mainDispatch } from '../../../store/main/redux-store-bridge';
+import { lineAttributionUpdated } from '../../../store/main/slices/note-events/note-events-slice';
 import { WorkspaceConfig } from '../../../shared/main/config';
 import { attributeLines } from '../line-attribution';
 import type { WorkspaceId, NoteId, Note } from '../../../shared/types';
@@ -55,10 +56,8 @@ export interface LineAttributionData {
 }
 
 export class LineAttributionService {
-  private eventBus: UnifiedEventBus;
   private debounceTimers: Map<string, NodeJS.Timeout> = new Map();
   private readonly DEBOUNCE_MS = 5000; // 5 seconds - longer debounce to coalesce rapid agent updates
-  private noteUpdatedListener?: (event: any) => void;
   private notesRepository: FolderBasedNotesRepository;
 
   // Batch processing for bulk operations (e.g., task delegation)
@@ -68,28 +67,25 @@ export class LineAttributionService {
   private readonly BATCH_DEBOUNCE_MS = 8000; // 8 seconds for batch processing
   private readonly BATCH_THRESHOLD = 2; // If 2+ notes pending, use batch mode
 
-  constructor(eventBus: UnifiedEventBus) {
-    this.eventBus = eventBus;
+  constructor() {
     this.notesRepository = new FolderBasedNotesRepository();
   }
 
   /**
-   * Start listening for note updates
+   * Start listening for note updates.
+   * NOTE: note:updated domain event listeners are now handled by sagas
+   * (domain-event-listener-sagas.ts) which call handleNoteUpdated() directly.
    */
   start(): void {
-    logger.info('Starting line attribution service');
+    logger.info('Starting line attribution service (listeners via sagas)');
+  }
 
-    // Listen for note updates
-    // Store the listener function so we can remove it later
-    this.noteUpdatedListener = (event: any) => {
-      // Guard: Skip re-forwarded WorkspaceEvents where noteId is nested inside event.data
-      // instead of at the top level. See workspace-event-bus.ts line 492 for the forwarding path.
-      if (!event.workspaceId || !event.noteId) {
-        return;
-      }
-      this.scheduleComputation(event.workspaceId, event.noteId);
-    };
-    this.eventBus.onDomainEvent('note:updated', this.noteUpdatedListener);
+  /**
+   * Handle note:updated domain event (called by saga).
+   */
+  public handleNoteUpdated(event: { workspaceId?: string; noteId?: string }): void {
+    if (!event.workspaceId || !event.noteId) return;
+    this.scheduleComputation(event.workspaceId as WorkspaceId, event.noteId as NoteId);
   }
 
   /**
@@ -111,11 +107,7 @@ export class LineAttributionService {
     }
     this.pendingBatch.clear();
 
-    // Remove event listeners
-    if (this.noteUpdatedListener) {
-      this.eventBus.offDomainEvent('note:updated', this.noteUpdatedListener);
-      this.noteUpdatedListener = undefined;
-    }
+    // note:updated listener cleanup is no longer needed (handled by sagas)
   }
 
   /**
@@ -278,11 +270,11 @@ export class LineAttributionService {
       await this.persist(workspaceId, noteId, data);
 
       // Emit event for UI
-      this.eventBus.emitDomainEvent('line-attribution:updated', {
+      mainDispatch(lineAttributionUpdated({
         workspaceId,
         noteId,
         attributions: attributionMap,
-      });
+      }));
 
       logger.info('Line attributions computed and persisted', {
         workspaceId,
@@ -405,4 +397,4 @@ export class LineAttributionService {
 }
 
 // Export singleton instance
-export const lineAttributionService = new LineAttributionService(unifiedEventBus);
+export const lineAttributionService = new LineAttributionService();

@@ -7,16 +7,13 @@
  * Uses actual prompts from the codebase to ensure tests stay in sync.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   loadInstruction,
-  loadInstructionWithCommon,
   getSpecialists,
   getSpecialist,
   analyzePrompt,
-  validatePromptContent,
   validateSpecialistPrompt,
-  SPECIALIST_PATTERNS,
 } from './prompt-loader';
 import {
   validateAgentActions,
@@ -25,7 +22,6 @@ import {
   type AgentAction,
   type DelegationRecord,
 } from './specialist-validator';
-import { SPECIALISTS } from '$lib/constants/specialists';
 
 describe('Specialist Prompts', () => {
   describe('Prompt Loading', () => {

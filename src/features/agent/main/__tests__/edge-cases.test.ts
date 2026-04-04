@@ -121,7 +121,7 @@ vi.mock('fs', () => ({
 // Mock logger
 vi.mock('$shared/logger', () => ({
   Logger: class MockLogger {
-    constructor(name: string) {}
+    constructor() {}
     info = vi.fn();
     debug = vi.fn();
     error = vi.fn();

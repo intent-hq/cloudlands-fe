@@ -1,17 +1,12 @@
-import { getWorkspaceEventService } from '../events/main';
 import { eventCollector, AgentEventType } from './event-collector-client';
 import { Logger } from '../../shared/logger';
 
 export class ObservabilityService {
   private logger = new Logger('ObservabilityService');
 
-  async ensureWorkspaceInitialized(workspaceId: string): Promise<void> {
-    try {
-      const eventService = getWorkspaceEventService(workspaceId);
-      await eventService.initialize();
-    } catch (e) {
-      this.logger.error('Failed to init event service', e as Error, { workspaceId });
-    }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async ensureWorkspaceInitialized(_workspaceId: string): Promise<void> {
+    // No-op: Redux handles event initialization now
   }
 
   async trackAgentStart(params: {
@@ -25,7 +20,7 @@ export class ObservabilityService {
   }): Promise<void> {
     await this.ensureWorkspaceInitialized(params.workspaceId);
     // Sessions are now handled by provenance context
-    const sessionId = `session-${Date.now()}`;
+
 
     eventCollector.setContext({ agentId: params.agentId, workspaceId: params.workspaceId });
 

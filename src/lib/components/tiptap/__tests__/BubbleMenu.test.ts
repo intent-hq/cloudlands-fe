@@ -124,6 +124,7 @@ describe('BubbleMenu', () => {
       },
       // Add view for position calculations
       view: {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         coordsAtPos: vi.fn((pos) => ({
           left: 100,
           top: 100,

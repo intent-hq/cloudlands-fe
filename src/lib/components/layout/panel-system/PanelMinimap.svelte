@@ -8,7 +8,7 @@
    * - Visual representation of the layout tree
    */
 
-  import type { PanelLayoutNode } from '$features/layout/panel-layout-manager.svelte';
+  import type { PanelLayoutNode } from '$lib/store/slices/panel-layout/panel-layout-types';
   import { cn } from '$lib/utils';
 
   interface Props {

@@ -6,7 +6,7 @@
  * Supports both local and remote workspaces.
  */
 
-import { ipcMain, IpcMainInvokeEvent } from 'electron';
+import { ipcMain } from 'electron';
 import { GitService } from './git.service.js';
 import { Logger } from '../../../shared/logger.js';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry.js';

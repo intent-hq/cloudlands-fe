@@ -10,6 +10,7 @@ import { promises as fs } from 'fs';
 import type { IMetadataFS, MetadataDirent, MetadataStat } from './metadata-fs';
 
 export class LocalMetadataFS implements IMetadataFS {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async readFile(filePath: string, _encoding: 'utf-8'): Promise<string> {
     return fs.readFile(filePath, 'utf-8');
   }
@@ -30,6 +31,7 @@ export class LocalMetadataFS implements IMetadataFS {
 
   async readdir(
     dirPath: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _options: { withFileTypes: true },
   ): Promise<MetadataDirent[]> {
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
@@ -42,6 +44,7 @@ export class LocalMetadataFS implements IMetadataFS {
     }));
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async writeFile(filePath: string, content: string, _encoding: 'utf-8'): Promise<void> {
     await fs.writeFile(filePath, content, 'utf-8');
   }

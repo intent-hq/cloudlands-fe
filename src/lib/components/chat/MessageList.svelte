@@ -10,7 +10,7 @@
    * significantly reducing DOM nodes and improving performance.
    */
 
-  import type { AgentMessage } from '$features/agent/agent.service';
+  import type { AgentMessage } from '$features/agent/agent-ipc-bridge';
   import type { SearchResult } from '$lib/utils/messageSearch';
   import { groupMessagesByDate, shouldShowTimeSeparator } from '$lib/utils/timeFormatting';
   import ChatMessage from './ChatMessage.svelte';
@@ -36,8 +36,10 @@
     isProcessing,
     isStreaming,
     currentSearchResult,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onMessageRef,
     onVisibleMessageChange,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     scrollToBottom,
   }: Props = $props();
 

@@ -15,8 +15,8 @@ import { ConsolidatedBackendService } from '../main/consolidated-backend.service
 import { agentPersistence } from '../main/agent-persistence';
 import { unifiedIdService } from '$shared/services/unified-id.service';
 import { AgentStatus } from '$shared/types';
-import type { AgentSession, AgentMessage } from '$shared/types';
-import type { WorkspaceId, AgentId } from '$shared/types/branded-ids';
+import type { AgentSession } from '$shared/types';
+import type { WorkspaceId } from '$shared/types/branded-ids';
 import * as fs from 'fs';
 import * as path from 'path';
 import { tmpdir } from 'os';
@@ -164,7 +164,7 @@ describe('Agent Lifecycle E2E Tests', () => {
 
       // Mock streaming response
       const mockStream = vi.fn();
-      vi.spyOn(backend as any, 'sendMessage').mockImplementation(async (params) => {
+      vi.spyOn(backend as any, 'sendMessage').mockImplementation(async () => {
         // Simulate streaming response
         setTimeout(() => {
           mockStream({

@@ -24,7 +24,7 @@ function* loadBundledSpecialists() {
             }
         }
     }
-    catch (error) {
+    catch {
     }
     finally {
         yield* put(setBundledSpecialistsLoaded(true));
@@ -39,7 +39,7 @@ function* loadOverrides() {
             }
         }
     }
-    catch (error) {
+    catch {
     }
     finally {
         yield* put(setOverridesLoaded(true));
@@ -54,7 +54,7 @@ function* loadCustomSpecialists() {
             }
         }
     }
-    catch (error) {
+    catch {
     }
     finally {
         yield* put(setCustomSpecialistsLoaded(true));
@@ -84,7 +84,7 @@ function* loadFileSpecialistsData() {
             }
         }
     }
-    catch (error) {
+    catch {
     }
     finally {
         yield* put(setFileSpecialistsLoaded(true));
@@ -99,7 +99,7 @@ function* loadFolderPath() {
             }
         }
     }
-    catch (error) {
+    catch {
     }
 }
 function* loadProviderModelOverridesCache() {

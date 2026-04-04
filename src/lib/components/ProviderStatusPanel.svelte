@@ -42,8 +42,10 @@
   import Fa from 'svelte-fa';
   import { fly, slide } from 'svelte/transition';
   import { handleLink } from '$features/navigation/link-handler';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import { toast } from 'svelte-sonner';
+
+  const activeWorkspaceId = selectActiveWorkspaceId();
 
   // Props for the panel
   interface Props {
@@ -504,7 +506,7 @@
       } else {
         authError = result.error || 'Failed to start authentication';
       }
-    } catch (err) {
+    } catch {
       authError = 'Failed to start authentication';
     } finally {
       authInProgress = false;
@@ -579,7 +581,7 @@
           authError = result.error || 'Authentication failed';
         }
       }
-    } catch (err) {
+    } catch {
       authError = 'Authentication failed';
     } finally {
       authInProgress = false;
@@ -595,7 +597,7 @@
     if (enableFocusCheck) {
       pendingFocusCheck = true;
     }
-    await handleLink(url, { workspaceId: workspaceStore.current?.id });
+    await handleLink(url, { workspaceId: $activeWorkspaceId ?? undefined });
   }
 </script>
 
@@ -753,7 +755,7 @@
                 onclick={(e) => {
                   e.preventDefault();
                   handleLink('https://nodejs.org', {
-                    workspaceId: workspaceStore.current?.id,
+                    workspaceId: $activeWorkspaceId ?? undefined,
                     event: e,
                   });
                 }}>Node.js</a
@@ -768,7 +770,7 @@
                 onclick={(e) => {
                   e.preventDefault();
                   handleLink('https://nodejs.org', {
-                    workspaceId: workspaceStore.current?.id,
+                    workspaceId: $activeWorkspaceId ?? undefined,
                     event: e,
                   });
                 }}>Node.js</a

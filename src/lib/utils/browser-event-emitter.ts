@@ -9,7 +9,7 @@ const logger = createLogger('BrowserEventEmitter');
  * without requiring Node.js 'events' module.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type EventListener = (...args: any[]) => void;
 
 export class EventEmitter {
@@ -42,7 +42,7 @@ export class EventEmitter {
     return this;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   emit(event: string | symbol, ...args: any[]): boolean {
     const listeners = this.events.get(event);
     if (!listeners || listeners.size === 0) {

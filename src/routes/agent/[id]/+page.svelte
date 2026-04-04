@@ -7,11 +7,13 @@
   import type { DynamicElectronEventName } from '$shared/ipc-registry';
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import MessageContent from '$lib/components/chat/MessageContent.svelte';
-  import { agentService } from '$features/agent/agent.service';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { agentService } from '$features/agent/agent-ipc-bridge';
   import { throttle } from '$lib/utils/performance-utils';
   import { followBottom, scrollToBottom } from '$lib/utils/smartScroll';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
+  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
+
+  const activeWorkspace = selectActiveWorkspace();
 
   let agentId: string = $state('');
   let agent: any = $state(null);
@@ -70,7 +72,7 @@
 
       // If not in memory, try to restore from disk
       if (!session) {
-        const workspace = workspaceStore.current;
+        const workspace = $activeWorkspace;
         if (workspace) {
           logger.info('Session not in memory, restoring from disk', {
             agentId,

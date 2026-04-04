@@ -7,9 +7,9 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { AgentTestHarness } from '../../src/features/agent/testing/agent-test-harness';
-import { createWorkspaceId, createAgentId } from '../../src/shared/types/branded-ids';
+import { createWorkspaceId } from '../../src/shared/types/branded-ids';
 import { randomUUID } from 'crypto';
-import type { AgentSession, AgentMessage } from '../../src/shared/types';
+import type { AgentSession } from '../../src/shared/types';
 import { AgentStatus } from '../../src/shared/types/agent.types';
 import { agentPersistence } from '../../src/features/agent/main/agent-persistence';
 import * as fs from 'fs/promises';
@@ -153,7 +153,7 @@ describe('Agent Creation Flow Integration Tests', () => {
       expect(agent).toBeDefined();
 
       // Send initial message
-      const message = await harness.sendMessage(agent.id, 'Hello, I need help with TypeScript.');
+      await harness.sendMessage(agent.id, 'Hello, I need help with TypeScript.');
 
       // Verify message was added
       const messages = await harness.getAgentMessages(agent.id);

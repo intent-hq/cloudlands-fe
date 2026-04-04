@@ -1,8 +1,52 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { describe, it, expect, vi } from 'vitest';
+import { render, fireEvent } from '@testing-library/svelte';
+
+// ─── Mock Redux selectors and dispatch bridge ───────────────────────────────
+// TaskItemNodeView.svelte calls these at component init time (readable form)
+const mockReadable = (value: any) => ({
+  subscribe: (fn: (v: any) => void) => {
+    fn(value);
+    return () => {};
+  },
+});
+
+vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+  selectActiveWorkspaceId: () => mockReadable(null),
+}));
+
+vi.mock('$lib/store/slices/workspace-notes/workspace-notes-selectors', () => ({
+  selectNoteById: Object.assign(() => mockReadable(undefined), {
+    select: () => undefined,
+  }),
+  selectSelectedNoteId: Object.assign(() => mockReadable(null), {
+    select: () => null,
+  }),
+  selectNotesVersion: () => mockReadable(0),
+}));
+
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({ getState: () => ({}) }),
+  getReduxDispatch: () => () => {},
+  dispatch: () => {},
+}));
+
+vi.mock('$lib/store/slices/workspace-notes/workspace-notes-slice', () => ({
+  updateTaskStatus: vi.fn(),
+  handleExternalNoteUpdate: vi.fn(),
+  reloadNotes: vi.fn(),
+}));
+
+vi.mock('$lib/store/slices/workspace-notes/sagas/notes-ipc', () => ({
+  notesIpc: vi.fn(),
+}));
+
+vi.mock('$lib/utils/workspace-navigation', () => ({
+  navigateToNote: vi.fn(),
+}));
+
 // Use test wrapper that provides the required context
 import TestTaskItemNodeView from './TestTaskItemNodeView.test.svelte';
 
@@ -292,11 +336,11 @@ describe('TaskItemNodeView - Action Button', () => {
         toJSON: () => ({ type: 'taskItem', attrs: { checked: true, status: 'done' } }),
       },
     });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { container } = render(TestTaskItemNodeView, { props });
 
     // For checked tasks, the action button should not be rendered
     // The only buttons should be inside the task preview (if linked) or checkbox
-    const actionButtons = container.querySelectorAll('button:not([type="checkbox"])');
     // With checked tasks, the "Convert to Task Note" button is hidden
     // This test may need adjustment based on what other buttons are rendered
     expect(true).toBe(true); // Component structure validated - button visibility controlled by effectiveChecked

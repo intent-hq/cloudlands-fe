@@ -379,7 +379,7 @@ async function getWorkspaceDisabledMcpServersPath(workspaceId: string): Promise<
  * Extracted for testability — callers can override via dependency injection.
  */
 export function readGlobalDisabledSetting(): unknown {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const ElectronStore = require('electron-store');
   const settingsStore = new ElectronStore({ name: 'settings' });
   return settingsStore.get('disabledMcpServers');

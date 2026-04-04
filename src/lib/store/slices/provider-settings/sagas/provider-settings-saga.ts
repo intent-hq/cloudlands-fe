@@ -123,7 +123,5 @@ export function* providerSettingsSaga() {
     yield* takeEvery(toggleProvider, handlePersistEnabledProviders);
     yield* takeEvery(ensureEnabledIfUnset, handlePersistEnabledProviders);
     yield* call(handlePreventDisablingActiveProvider);
-    yield* fork(function* () {
-        yield* takeEvery(validateActiveProvider, handleValidateActiveProvider);
-    });
+    yield* takeEvery(validateActiveProvider, handleValidateActiveProvider);
 }

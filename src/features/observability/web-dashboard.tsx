@@ -5,14 +5,12 @@
  * agent events in real-time with rich visualizations.
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AgentEvent, AgentEventType, EventFilter } from './event-collector';
 import { formatDistanceToNow } from 'date-fns';
 import {
   LineChart,
   Line,
-  AreaChart,
-  Area,
   BarChart,
   Bar,
   XAxis,
@@ -39,6 +37,7 @@ export const ObservabilityDashboard: React.FC<ObservabilityDashboardProps> = ({
 }) => {
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<AgentEvent | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [filter, setFilter] = useState<EventFilter>({});
   const [isPaused, setIsPaused] = useState(false);
   const [metrics, setMetrics] = useState<any>({});
@@ -349,6 +348,7 @@ function calculateMetrics(events: AgentEvent[]): any {
   return metrics;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function prepareChartData(events: AgentEvent[]): any {
   // Prepare data for charts
   // This is a simplified implementation

@@ -38,7 +38,7 @@ export function extractToolCalls(response: string): ExtractedToolCall[] {
       if (toolCall.name && toolCall.arguments) {
         toolCalls.push(toolCall);
       }
-    } catch (e) {
+    } catch  {
       logger.warn('Failed to parse XML tool call', { toolCall: match[1] });
     }
   }
@@ -56,7 +56,7 @@ export function extractToolCalls(response: string): ExtractedToolCall[] {
       ) {
         toolCalls.push(toolCall);
       }
-    } catch (e) {
+    } catch  {
       // Not a tool call, skip
     }
   }
@@ -74,7 +74,7 @@ export function extractToolCalls(response: string): ExtractedToolCall[] {
       ) {
         toolCalls.push(toolCall);
       }
-    } catch (e) {
+    } catch  {
       // Not a valid tool call, skip
     }
   }

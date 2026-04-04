@@ -6,7 +6,6 @@ import {
   filterCollection,
   getItem,
   getItems,
-  removeItem,
   type Collection,
   updateItem,
   upsertItem,
@@ -98,21 +97,15 @@ const initialState: MultiPanelContextState = {
 // ============================================================================
 
 export const setWorkspace = createAction<[workspaceId: string | null]>("multiPanelContext/setWorkspace");
-export const setCurrentAgentPanel = createAction<[panelId: string | null]>("multiPanelContext/setCurrentAgentPanel");
 export const updatePanels = createAction<[panels: PanelContextItem[]]>("multiPanelContext/updatePanels");
 export const togglePanel = createAction<[id: string]>("multiPanelContext/togglePanel");
 export const setSelection = createAction<[selection: Omit<SelectionContextItem, 'id' | 'checked'> & { timestamp: number }]>("multiPanelContext/setSelection");
 export const clearSelection = createAction<[panelId: string, tabId: string]>("multiPanelContext/clearSelection");
-export const clearPanelSelections = createAction<[panelId: string]>("multiPanelContext/clearPanelSelections");
 export const toggleSelection = createAction<[id: string]>("multiPanelContext/toggleSelection");
-export const removeSelection = createAction<[id: string]>("multiPanelContext/removeSelection");
-export const checkAllPanels = createAction("multiPanelContext/checkAllPanels");
-export const uncheckAllPanels = createAction("multiPanelContext/uncheckAllPanels");
-export const checkAllSelections = createAction("multiPanelContext/checkAllSelections");
 export const uncheckAllSelections = createAction("multiPanelContext/uncheckAllSelections");
 export const clear = createAction("multiPanelContext/clear");
 export const addSearchedItem = createAction<[item: { id: string; type: PanelContextItem['type']; label: string; filePath?: string; noteId?: string }]>("multiPanelContext/addSearchedItem");
-export const removePanel = createAction<[id: string]>("multiPanelContext/removePanel");
+
 
 // ============================================================================
 // Reducer
@@ -128,10 +121,6 @@ export const multiPanelContextReducer = createReducer<MultiPanelContextState>(in
       workspaceId,
     };
   })
-  .with(setCurrentAgentPanel, (state, { payload: [panelId] }) => ({
-    ...state,
-    currentAgentPanelId: panelId,
-  }))
   .with(updatePanels, (state, { payload: [panels] }) => {
     const checkedIds = new Set(getItems(state.panels).filter((p) => p.checked).map((p) => p.id));
     return {
@@ -182,12 +171,6 @@ export const multiPanelContextReducer = createReducer<MultiPanelContextState>(in
       }
     ),
   }))
-  .with(clearPanelSelections, (state, { payload: [panelId] }) => ({
-    ...state,
-    selections: filterCollection(state.selections, (selection): selection is SelectionContextItem => {
-      return selection.panelId !== panelId;
-    }),
-  }))
   .with(toggleSelection, (state, { payload: [id] }) => {
     const selection = getItem(state.selections, id);
     if (!selection) return state;
@@ -205,22 +188,6 @@ export const multiPanelContextReducer = createReducer<MultiPanelContextState>(in
       selections,
     };
   })
-  .with(removeSelection, (state, { payload: [id] }) => ({
-    ...state,
-    selections: removeItem(state.selections, id),
-  }))
-  .with(checkAllPanels, (state) => ({
-    ...state,
-    panels: setCheckedState(state.panels, true),
-  }))
-  .with(uncheckAllPanels, (state) => ({
-    ...state,
-    panels: setCheckedState(state.panels, false),
-  }))
-  .with(checkAllSelections, (state) => ({
-    ...state,
-    selections: setCheckedState(state.selections, true),
-  }))
   .with(uncheckAllSelections, (state) => ({
     ...state,
     selections: setCheckedState(state.selections, false),
@@ -260,8 +227,5 @@ export const multiPanelContextReducer = createReducer<MultiPanelContextState>(in
 
     return { ...state, panels: addItem(state.panels, newItem) };
   })
-  .with(removePanel, (state, { payload: [id] }) => ({
-    ...state,
-    panels: removeItem(state.panels, id),
-  }));
+
 

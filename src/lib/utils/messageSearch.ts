@@ -49,12 +49,13 @@ export function searchMessages<T extends { id: string; contentBlocks?: any[]; ro
       const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       searchPattern = new RegExp(escapedQuery, caseSensitive ? 'g' : 'gi');
     }
-  } catch (error) {
+  } catch {
     // Invalid regex, return empty results
     return [];
   }
 
   // Search each message
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   filteredMessages.forEach((message, index) => {
     const matches: SearchMatch[] = [];
     let match: RegExpExecArray | null;

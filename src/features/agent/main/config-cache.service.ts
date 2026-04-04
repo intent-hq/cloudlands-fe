@@ -63,7 +63,7 @@ export class ConfigCacheService {
       this.setInCache(cacheKey, config);
 
       return config;
-    } catch (error) {
+    } catch {
       // Model config not found
       return null;
     }
@@ -108,7 +108,7 @@ export class ConfigCacheService {
       this.setInCache(cacheKey, validModels);
 
       return validModels;
-    } catch (error) {
+    } catch {
       // Return empty array if directory doesn't exist
       return [];
     }

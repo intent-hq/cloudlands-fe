@@ -7,7 +7,7 @@
     faChevronUp,
     faChevronDown,
   } from '@fortawesome/free-solid-svg-icons';
-  import { fade, slide } from 'svelte/transition';
+  import { slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
 
   interface Props {

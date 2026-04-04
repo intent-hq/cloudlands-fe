@@ -228,7 +228,7 @@ export function isURL(value: string): boolean {
  * JavaScript call stacks are typically limited to 10,000-50,000 frames.
  * We use a conservative limit to prevent "Maximum call stack size exceeded" errors.
  */
-const MAX_CLONE_DEPTH = 100;
+
 
 /**
  * Deep clone an object with stack overflow protection.

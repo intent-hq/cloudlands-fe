@@ -108,7 +108,7 @@
       </Button>
     {/snippet}
 
-    {#snippet content({ close }: { close: () => void })}
+    {#snippet content()}
       <div class="w-48">
         <WorkspaceActionsMenu
           {filePath}

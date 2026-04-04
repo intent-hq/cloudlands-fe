@@ -7,9 +7,9 @@
 
 import { Logger } from '../logger';
 import { AgentErrorTracker } from '../main/agent-error-tracker';
-import { IpcContracts, type IpcContractKey } from './contracts';
+import { type IpcContractKey } from './contracts';
 import { validateIpcRequest, validateIpcResponse } from './validation';
-import { TypeMismatchError, TypeValidationError } from './errors';
+import { TypeMismatchError } from './errors';
 import type { ValidationError } from './validation';
 
 const logger = new Logger('RuntimeTypeChecker');

@@ -8,9 +8,18 @@
 
   import type { TabTypeComponentProps } from './registry';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
-  import { WorkspaceId } from '$shared/types/branded-ids';
+  import {
+    selectFileTrackingChanges,
+    selectFileTrackingCommits,
+    selectFileTrackingLoading,
+  } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+  import {
+    stageByPathRequested,
+    unstageByPathRequested,
+    revertByPathRequested,
+  } from '$lib/store/slices/file-tracking/file-tracking-slice';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import ChatChangesPanel from '$lib/components/chat/ChatChangesPanel.svelte';
   import { Button } from '$lib/components/ui/button';
   import { selectLineWrapping, selectFoldUnchanged, selectDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
@@ -26,9 +35,12 @@
   let { workspaceId, isActive }: TabTypeComponentProps = $props();
 
   const headerContext = getPanelHeaderContext();
-  const workspace = $derived(workspaceStore.findById(WorkspaceId(workspaceId)));
-  const workspacePath = $derived(workspace?.worktreePath || workspace?.repositoryPath || '');
-  const allCommits = $derived(fileTrackingStore.commits || []);
+  const workspace = selectWorkspaceById(workspaceId);
+  const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
+  const ftChanges$ = selectFileTrackingChanges(workspaceId);
+  const ftCommits$ = selectFileTrackingCommits(workspaceId);
+  const ftLoading$ = selectFileTrackingLoading(workspaceId);
+  const allCommits = $derived($ftCommits$ || []);
 
   // State for expand/collapse and panel ref
   let changesAllExpanded = $state(true);
@@ -36,8 +48,8 @@
 
   // Build the changes array with all local changes
   const localChangesForPanel = $derived.by(() => {
-    const unstaged = fileTrackingStore.changes.filter((c) => c.stage === 'unstaged');
-    const staged = fileTrackingStore.changes.filter((c) => c.stage === 'staged');
+    const unstaged = $ftChanges$.filter((c) => c.stage === 'unstaged');
+    const staged = $ftChanges$.filter((c) => c.stage === 'staged');
     return [
       ...unstaged.map((c) => {
         const rawPath = c.file || c.relativePath;
@@ -160,27 +172,27 @@
 
 <ChatChangesPanel
   bind:this={changesPanelRef}
-  isLoading={fileTrackingStore.loading}
+  isLoading={$ftLoading$}
   changes={localChangesForPanel}
   showStagingControls={true}
   showCategoryFilter={true}
-  onStage={(path) => fileTrackingStore.stageByPath([path])}
-  onUnstage={(path) => fileTrackingStore.unstageByPath([path])}
-  onRevert={(path) => fileTrackingStore.revertByPath([path])}
+  onStage={(path) => getReduxStore().dispatch(stageByPathRequested(workspaceId, [path]))}
+  onUnstage={(path) => getReduxStore().dispatch(unstageByPathRequested(workspaceId, [path]))}
+  onRevert={(path) => getReduxStore().dispatch(revertByPathRequested(workspaceId, [path]))}
   onStageAll={() => {
-    const unstaged = fileTrackingStore.changes.filter((c) => c.stage === 'unstaged');
+    const unstaged = $ftChanges$.filter((c) => c.stage === 'unstaged');
     const paths = unstaged.map((c) => {
       const rawPath = c.file || c.relativePath;
       return rawPath?.startsWith('/') ? rawPath : `${workspacePath}/${rawPath}`;
     });
-    fileTrackingStore.stageByPath(paths);
+    getReduxStore().dispatch(stageByPathRequested(workspaceId, paths));
   }}
   onUnstageAll={() => {
-    const staged = fileTrackingStore.changes.filter((c) => c.stage === 'staged');
+    const staged = $ftChanges$.filter((c) => c.stage === 'staged');
     const paths = staged.map((c) => {
       const rawPath = c.file || c.relativePath;
       return rawPath?.startsWith('/') ? rawPath : `${workspacePath}/${rawPath}`;
     });
-    fileTrackingStore.unstageByPath(paths);
+    getReduxStore().dispatch(unstageByPathRequested(workspaceId, paths));
   }}
 />

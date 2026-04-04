@@ -13,7 +13,7 @@
   } from '$lib/components/tiptap/ContextMention';
   import { PasteChip } from '$lib/components/tiptap/PasteChip';
   import { createLogger } from '$lib/utils/client-logger';
-  import type { ContextItem } from '$features/agent/services/unified-state-store';
+  import type { ContextItem } from './context-api';
   import MentionHoverPreview from './MentionHoverPreview.svelte';
   import { createMentionSuggestionRenderer } from './mention-suggestion-renderer';
   import { getMentionSystem, type SearchContext } from '$lib/services/mentions';
@@ -51,10 +51,7 @@
       if (line === '') return ''; // empty-line marker for paragraph splitting
 
       // Escape HTML entities so user text is safe
-      let escaped = line
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+      let escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
       // Preserve leading spaces as &nbsp; so indentation is visible in HTML
       // (browsers collapse leading whitespace in normal flow)
@@ -123,12 +120,14 @@
       return {
         id: {
           default: null,
-          parseHTML: (el: any) => el.getAttribute?.('data-id') || el.textContent?.replace(/^@/, '') || null,
+          parseHTML: (el: any) =>
+            el.getAttribute?.('data-id') || el.textContent?.replace(/^@/, '') || null,
           renderHTML: (attrs: any) => (attrs.id ? { 'data-id': attrs.id } : {}),
         },
         label: {
           default: null,
-          parseHTML: (el: any) => el.getAttribute?.('data-label') || el.textContent?.replace(/^@/, '') || null,
+          parseHTML: (el: any) =>
+            el.getAttribute?.('data-label') || el.textContent?.replace(/^@/, '') || null,
           renderHTML: (attrs: any) => (attrs.label ? { 'data-label': attrs.label } : {}),
         },
         type: {
@@ -204,6 +203,7 @@
     onMentionStart,
     onMentionSelect,
     onSelectionChange,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     contextItems: _contextItems = [],
     minHeight = 80,
     maxHeight = 300,
@@ -683,7 +683,7 @@
                   label: data.label,
                   meta: data.meta,
                 });
-              } catch (_e) {
+              } catch {
                 // Fallback to @label if formatter not available
                 return `@${data?.meta?.fullPath || data?.meta?.path || data?.label || data?.id || 'item'}`;
               }
@@ -875,7 +875,7 @@
                   (selection as any).modify(
                     event.shiftKey ? 'extend' : 'move',
                     'backward',
-                    'lineboundary'
+                    'lineboundary',
                   );
                 }
                 return true;
@@ -888,7 +888,7 @@
                   (selection as any).modify(
                     event.shiftKey ? 'extend' : 'move',
                     'forward',
-                    'lineboundary'
+                    'lineboundary',
                   );
                 }
                 return true;
@@ -1226,11 +1226,7 @@
       // Move to beginning of line
       const selection = window.getSelection();
       if (selection && selection.rangeCount > 0) {
-        (selection as any).modify(
-          event.shiftKey ? 'extend' : 'move',
-          'backward',
-          'lineboundary'
-        );
+        (selection as any).modify(event.shiftKey ? 'extend' : 'move', 'backward', 'lineboundary');
       }
     } else if (event.key === 'ArrowRight') {
       event.preventDefault();
@@ -1238,11 +1234,7 @@
       // Move to end of line
       const selection = window.getSelection();
       if (selection && selection.rangeCount > 0) {
-        (selection as any).modify(
-          event.shiftKey ? 'extend' : 'move',
-          'forward',
-          'lineboundary'
-        );
+        (selection as any).modify(event.shiftKey ? 'extend' : 'move', 'forward', 'lineboundary');
       }
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
@@ -1251,7 +1243,9 @@
       const docStart = 1;
       if (event.shiftKey) {
         const { from } = state.selection;
-        dispatch(state.tr.setSelection(TextSelection.create(state.doc, docStart, from)).scrollIntoView());
+        dispatch(
+          state.tr.setSelection(TextSelection.create(state.doc, docStart, from)).scrollIntoView(),
+        );
       } else {
         dispatch(state.tr.setSelection(TextSelection.create(state.doc, docStart)).scrollIntoView());
       }
@@ -1262,7 +1256,9 @@
       const docEnd = state.doc.content.size - 1;
       if (event.shiftKey) {
         const { to } = state.selection;
-        dispatch(state.tr.setSelection(TextSelection.create(state.doc, to, docEnd)).scrollIntoView());
+        dispatch(
+          state.tr.setSelection(TextSelection.create(state.doc, to, docEnd)).scrollIntoView(),
+        );
       } else {
         dispatch(state.tr.setSelection(TextSelection.create(state.doc, docEnd)).scrollIntoView());
       }
@@ -1295,7 +1291,6 @@
   });
 
   // PERF: Track pending async update to prevent race conditions
-  let pendingValueUpdate: string | null = null;
   let valueUpdateRequestId = 0;
 
   // Update editor when value changes externally (preserve caret when focused)
@@ -1312,7 +1307,6 @@
 
     // PERF: Track this request to handle race conditions
     const requestId = ++valueUpdateRequestId;
-    pendingValueUpdate = value;
 
     (async () => {
       const html = plainTextToEditorHTML(value || '');
@@ -1336,15 +1330,13 @@
               const maxPos = state.doc.content.size;
               const newPos = Math.min(from, maxPos);
               tr.setSelection(TextSelection.create(state.doc, newPos, newPos));
-            } catch (_e) {
+            } catch {
               // ignore restore errors
             }
           }
           return true;
         })
         .run();
-
-      pendingValueUpdate = null;
     })();
   });
 

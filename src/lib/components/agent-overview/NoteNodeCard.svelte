@@ -7,7 +7,7 @@
    * Styled similarly to AgentCard with border and shadow.
    */
   import type { NoteNode } from './types';
-  import { faStickyNote, faPen, faEye } from '@fortawesome/free-solid-svg-icons';
+  import { faPen, faEye } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   interface Props {
@@ -19,9 +19,11 @@
     onclick?: () => void;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let { node, isActive = false, isBeingAccessed = false, actionType = null, onclick }: Props = $props();
 
   // Action indicator icon
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const actionIcon = $derived.by(() => {
     if (node.lastAction === 'write') return faPen;
     if (node.lastAction === 'read') return faEye;

@@ -2,12 +2,12 @@
   import { onMount, onDestroy } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
-  import { faPlus, faGear, faChevronDown } from '@fortawesome/free-solid-svg-icons';
+  import { faPlus, faGear } from '@fortawesome/free-solid-svg-icons';
   import {
     filterSpecialistsByGitHubAuth,
     selectSpecialists,
   } from '$lib/store/slices/specialists/specialists-selectors';
-  import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
+  import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { scale } from 'svelte/transition';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
@@ -27,8 +27,9 @@
   let portalStyle = $state('');
 
   const specialists$ = selectSpecialists();
+  const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
   const visibleSpecialists = $derived.by(() =>
-    filterSpecialistsByGitHubAuth($specialists$, githubAuthStore.state.isAuthenticated)
+    filterSpecialistsByGitHubAuth($specialists$, $isGitHubAuth$)
   );
   const coordinator = $derived(visibleSpecialists.find((s) => s.id === 'spec-writer'));
   const otherSpecialists = $derived(

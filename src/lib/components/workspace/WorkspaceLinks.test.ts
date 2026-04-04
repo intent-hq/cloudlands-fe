@@ -1,6 +1,5 @@
 /**
- * Regression test: selecting a workspace should be driven by the URL (route),
- * not by mutating workspaceStore.current.
+ * Regression test: selecting a workspace should be driven by the URL (route).
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -8,11 +7,6 @@ import { render, fireEvent } from '@testing-library/svelte';
 
 vi.mock('$app/navigation', () => ({
   goto: vi.fn(),
-}));
-
-const setCurrentWorkspace = vi.fn();
-vi.mock('$features/workspace/workspace.store.svelte', () => ({
-  workspaceStore: { setCurrentWorkspace },
 }));
 
 import { goto } from '$app/navigation';
@@ -30,7 +24,7 @@ describe('WorkspaceLinks', () => {
     });
   });
 
-  it('navigates without mutating workspaceStore (URL is the source of truth)', async () => {
+  it('navigates using the workspace route as the source of truth', async () => {
     const workspaces = [
       {
         id: 'ws-1',
@@ -45,6 +39,5 @@ describe('WorkspaceLinks', () => {
     await fireEvent.click(button);
 
     expect(goto).toHaveBeenCalledWith('/workspace/ws-1');
-    expect(setCurrentWorkspace).not.toHaveBeenCalled();
   });
 });

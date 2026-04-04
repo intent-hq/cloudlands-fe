@@ -10,13 +10,8 @@
  * This utility extracts these into structured context items and clean user message.
  */
 
-import {
-  faFile,
-  faCodeCompare,
-  faNoteSticky,
-  faClipboard,
-  faICursor,
-} from '@fortawesome/free-solid-svg-icons';
+
+
 import type { ContextItem } from '$lib/components/chat/input/context-api';
 
 export interface ParsedMessage {

@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
-  import { linearAuthStore } from '$features/linear-auth/renderer/linear-auth.store.svelte';
-  import { sentryAuthStore } from '$features/sentry-auth/renderer/sentry-auth.store.svelte';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
+  import { initializeLinearAuth } from '$lib/store/slices/linear-auth/linear-auth-slice';
+  import { initializeSentryAuth } from '$lib/store/slices/sentry-auth/sentry-auth-slice';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import Fa from 'svelte-fa';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
@@ -29,13 +30,13 @@
     { icon: 'sentry', name: 'Sentry', description: 'Create spaces directly from issues.' },
   ] as const;
 
-  onMount(async () => {
+  const dispatch = getDispatch();
+
+  onMount(() => {
     // Initialize all stores in parallel
-    await Promise.all([
-      githubAuthStore.initialize(),
-      linearAuthStore.initialize(),
-      sentryAuthStore.initialize(),
-    ]);
+    dispatch(initializeGitHubAuth());
+    dispatch(initializeLinearAuth());
+    dispatch(initializeSentryAuth());
     isLoading = false;
   });
 </script>

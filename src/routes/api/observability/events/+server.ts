@@ -10,6 +10,7 @@ import * as os from 'os';
 export async function GET({ url }: RequestEvent) {
   // Parse query parameters
   const limit = parseInt(url.searchParams.get('limit') || '100');
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const _filter = url.searchParams.get('filter') || '';
 
   try {
@@ -73,7 +74,7 @@ export async function POST({ request }: RequestEvent) {
       success: true,
       message: `Received ${events.length} events`,
     });
-  } catch (error) {
+  } catch  {
     return json(
       {
         success: false,

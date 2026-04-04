@@ -4,12 +4,13 @@
   import AugmentCodeSnippet from './AugmentCodeSnippet.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { handleLink } from '$features/navigation/link-handler';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
 
   // Dynamically import MermaidRenderer to reduce bundle size (used infrequently)
   const MermaidRenderer = import('$lib/components/markdown/MermaidRenderer.svelte');
 
   const logger = createLogger('MarkdownRenderer');
+  const activeWorkspaceId = selectActiveWorkspaceId();
 
   interface Props {
     content?: string;
@@ -19,9 +20,6 @@
 
   let { content = '', className = '', onOpenFile }: Props = $props();
 
-  function handleOpenFile(event: CustomEvent) {
-    onOpenFile?.(event.detail);
-  }
 
   interface RenderedBlock {
     type: 'html' | 'code' | 'augment-snippet' | 'mermaid';
@@ -129,7 +127,7 @@
       const tag = token.ordered ? 'ol' : 'ul';
       const startAttr = token.ordered && token.start !== 1 ? ` start="${token.start}"` : '';
       const listClass = token.ordered ? 'list-decimal' : 'list-disc';
-      return `<${tag}${startAttr} class="${listClass} pl-6 my-3 space-y-2 text-foreground/90">${token.items}</${tag}>`;
+      return `<${tag}${startAttr} class="${listClass} pl-6 my-3 space-y-2 text-foreground">${token.items}</${tag}>`;
     }
 
     listitem(token: Tokens.ListItem) {
@@ -142,7 +140,7 @@
     }
 
     paragraph({ text }: Tokens.Paragraph) {
-      return `<p class="mb-4 last:mb-0 leading-relaxed text-foreground/90">${text}</p>`;
+      return `<p class="mb-4 last:mb-0 leading-relaxed text-foreground">${text}</p>`;
     }
 
     strong({ text }: Tokens.Strong) {
@@ -150,7 +148,7 @@
     }
 
     em({ text }: Tokens.Em) {
-      return `<em class="italic text-foreground/95">${text}</em>`;
+      return `<em class="italic text-foreground">${text}</em>`;
     }
 
     hr() {
@@ -246,7 +244,7 @@
 
     event.preventDefault();
     event.stopPropagation();
-    await handleLink(href, { workspaceId: workspaceStore.current?.id, event });
+    await handleLink(href, { workspaceId: $activeWorkspaceId ?? undefined, event });
   }
 </script>
 

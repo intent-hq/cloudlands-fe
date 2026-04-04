@@ -7,7 +7,7 @@
 
 import { createRequire } from 'module';
 import { ipcMain, BrowserWindow } from 'electron';
-import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
+import { sendToWorkspaceWindows, getFocusedWindowWorkspaceId } from '../../system/main/system.ipc';
 import type { Result, CommandResponse, WorkspaceId } from '../../../shared/types';
 import { protocolAdapter } from '../../protocol/main/protocol-adapter';
 import { changeDetectorManager as singletonChangeDetectorManager } from './change-detector-manager';
@@ -15,8 +15,11 @@ import { MetadataWatcherManager } from './metadata-watcher-manager';
 import * as fs from 'fs/promises';
 
 import { Logger } from '../../../shared/logger';
-import { unifiedEventBus } from '../../events/main/unified-event-bus';
-import { getWorkspaceEventService, cleanupWorkspaceEventService } from '../../events/main';
+import { mainDispatch } from '../../../store/main/redux-store-bridge';
+import { workspaceFileChanges } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
+import { agentSessionUpdated } from '../../../store/main/slices/agent-events/agent-events-slice';
+import { emitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
+
 import { WorkspaceConfig } from '../../../shared/main/config.js';
 import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
 import { RemoteRPCError } from '../../../shared/main/remote-rpc-client';
@@ -29,7 +32,7 @@ import { getWorkspaceGitInfo, getRemoteGitManager } from '../../git/main/git-rou
 import { cleanupWorkspaceTerminals } from '../../terminal/main/terminal.ipc';
 import { disposeScriptProcessManager } from '../../scripts/main/script-process-manager';
 import { readScripts } from '../../scripts/main/scripts-persistence';
-import { getUnifiedWatcher, shutdownUnifiedWatcher, shutdownOtherWatchers } from './unified-workspace-watcher';
+import { shutdownUnifiedWatcher, shutdownOtherWatchers } from './unified-workspace-watcher';
 import { initRepoRegistry, getAllRepos, addRepo, removeRepo, syncRepos, clearRepos } from './repo-registry';
 import { sshManager, type SSHConnectionConfig } from '../../../shared/main/ssh-manager';
 import { getIntentServerPath, escapeShellArg } from '../../agent/main/agent-providers/acp-provider';
@@ -41,21 +44,20 @@ import * as path from 'path';
 
 const require = createRequire(import.meta.url);
 import {
-  validateIPCWorkspaceId,
-  validateIPCPath,
   validateIPCString,
 } from '../../ipc/ipc-validation';
 import {
   isValidBranchName,
   getBranchNameValidationError,
 } from '../../../main/utils/workspace-validation';
-import { WORKSPACE_CHANNELS, AGENT_CHANNELS, EDITOR_CHANNELS } from '$shared/ipc/channels';
+import { WORKSPACE_CHANNELS, EDITOR_CHANNELS } from '$shared/ipc/channels';
 import {
   createSafeValidatedHandler,
   registerValidationSchema,
 } from '../../../main/ipc-validation-middleware';
 import {
   WorkspaceGetSchema,
+  WorkspaceGetCurrentSchema,
   WorkspaceGetByIdSchema,
   WorkspaceCreateSchema,
   WorkspaceUpdateSchema,
@@ -150,10 +152,10 @@ export function initializeChangeDetectorManager() {
       const { workspaceId, diffChunk } = data;
 
       // Broadcast workspace:file-changes
-      unifiedEventBus.emitDomainEvent('workspace:file-changes', {
+      mainDispatch(workspaceFileChanges({
         workspaceId,
         diffChunk,
-      });
+      }));
 
       // Also send to renderer processes for this workspace
       sendToWorkspaceWindows(workspaceId, 'workspace-changes', {
@@ -162,57 +164,19 @@ export function initializeChangeDetectorManager() {
       });
     });
 
-    // Note: activity-log-event events are handled directly by WorkspaceEventService
-    // which gets the detector instance via getChangeDetector() method.
-    // The ChangeDetectorManager does NOT forward activity-log-event from individual detectors.
-    // See workspace-event-service.ts setupChangeDetectorIntegration() for the event handling.
+    // Bridge activity-log-event from change detectors into Redux.
+    // EventCoordinator → ChangeDetectorRefactored → ChangeDetectorManager → here.
+    // We dispatch emitWorkspaceEvent to Redux (workspace-events slice).
+    changeDetectorManager.on('activity-log-event', (data: any) => {
+      if (!data?.event) {
+        logger.warn('Received activity-log-event with missing event data');
+        return;
+      }
+      mainDispatch(emitWorkspaceEvent(data.event));
+    });
 
-    // Listen for git:commit-created events to handle post-commit file tracking transitions
-    // This is triggered by AcceptChangesService after a commit is made
-    unifiedEventBus.on(
-      'git:commit-created',
-      async (data: { workspaceId: string; commitSha: string; postCommitHandled?: boolean }) => {
-        const { workspaceId, commitSha, postCommitHandled } = data;
-        logger.info('Received git:commit-created event', {
-          workspaceId,
-          commitSha: commitSha?.substring(0, 8),
-          postCommitHandled,
-        });
-
-        // If post-commit was already handled by the caller, skip redundant work
-        // This prevents double-processing when AcceptChangesService calls handlePostCommit directly
-        if (postCommitHandled) {
-          logger.debug('Skipping post-commit handling - already done by caller', { workspaceId });
-          return;
-        }
-
-        try {
-          // Initialize global gitIntegrations map if needed
-          if (!global.gitIntegrations) {
-            global.gitIntegrations = new Map();
-          }
-
-          const gitIntegration = global.gitIntegrations.get(workspaceId);
-          if (gitIntegration) {
-            // Handle post-commit transition (staged -> committed)
-            await gitIntegration.handlePostCommit(commitSha);
-
-            // Then sync the current state
-            await gitIntegration.syncCurrentState(true); // Force sync
-            logger.info('Post-commit transition complete via event', { workspaceId });
-          } else {
-            logger.warn('No git integration found for workspace in git:commit-created handler', {
-              workspaceId,
-              availableWorkspaces: Array.from(global.gitIntegrations.keys()),
-            });
-          }
-        } catch (error) {
-          logger.error('Failed to handle git:commit-created event', error as Error, {
-            workspaceId,
-          });
-        }
-      },
-    );
+    // git:commit-created is now handled by domain-event-listener-sagas.ts
+    // (handleGitCommitCreatedForFileTracking)
   }
 
   return changeDetectorManager;
@@ -249,6 +213,7 @@ export function setupWorkspaceIPC(): void {
 
   // Register validation schemas for all workspace channels
   registerValidationSchema(WORKSPACE_CHANNELS.GET, WorkspaceGetSchema);
+  registerValidationSchema(WORKSPACE_CHANNELS.GET_CURRENT, WorkspaceGetCurrentSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.CREATE, WorkspaceCreateSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.UPDATE, WorkspaceUpdateSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.DELETE, WorkspaceDeleteSchema);
@@ -391,6 +356,33 @@ export function setupWorkspaceIPC(): void {
         }
       },
       WORKSPACE_CHANNELS.GET,
+    ),
+  );
+
+  // Get the current workspace for the calling window
+  ipcMain.handle(
+    WORKSPACE_CHANNELS.GET_CURRENT,
+    createSafeValidatedHandler(
+      WorkspaceGetCurrentSchema,
+      async (event) => {
+        // Determine workspace ID from the sender window
+        const senderWindow = BrowserWindow.fromWebContents(event.sender);
+        const workspaceId = senderWindow
+          ? getFocusedWindowWorkspaceId()
+          : undefined;
+
+        if (!workspaceId) {
+          return resultToCommandResponse({ ok: false, error: 'No active workspace for this window' });
+        }
+
+        const workspace = await protocolAdapter.getWorkspace(workspaceId);
+        if (workspace) {
+          return resultToCommandResponse({ ok: true, data: workspace });
+        } else {
+          return resultToCommandResponse({ ok: false, error: 'Workspace not found' });
+        }
+      },
+      WORKSPACE_CHANNELS.GET_CURRENT,
     ),
   );
 
@@ -540,52 +532,6 @@ export function setupWorkspaceIPC(): void {
           } catch (error) {
             logger.warn('[WorkspaceIPC] Failed to shut down unified watcher', error as Error, {
               workspaceId: id,
-            });
-          }
-
-          // Stop workspace event service
-          try {
-            await cleanupWorkspaceEventService(id);
-            logger.info('[WorkspaceIPC] Workspace event service cleanup', { workspaceId: id });
-          } catch (error) {
-            logger.warn('[WorkspaceIPC] Failed to cleanup event service', error as Error, {
-              workspaceId: id,
-            });
-          }
-
-          // Dispose workspace event bus singleton to free EventStore memory
-          // This MUST happen after cleanupWorkspaceEventService (which detaches listeners)
-          try {
-            const { disposeWorkspaceEventBus } = await import(
-              '../../events/main/workspace-event-bus'
-            );
-            await disposeWorkspaceEventBus(id);
-            logger.debug('[WorkspaceIPC] Workspace event bus disposed', { workspaceId: id });
-          } catch (error) {
-            logger.debug('[WorkspaceIPC] Workspace event bus disposal failed', { error });
-          }
-
-          // Clean up UnifiedEventBus workspace cache (lastEvents)
-          try {
-            const { unifiedEventBus } = await import('../../events/main/unified-event-bus');
-            await unifiedEventBus.cleanupWorkspace(id);
-            logger.debug('[WorkspaceIPC] UnifiedEventBus workspace cache cleaned', {
-              workspaceId: id,
-            });
-          } catch (error) {
-            logger.debug('[WorkspaceIPC] UnifiedEventBus cleanup failed', { error });
-          }
-
-          // Clean up agent event subscription service to prevent memory leaks
-          try {
-            const { disposeAgentEventSubscriptionService } = await import(
-              '../../events/main/agent-event-subscription.service'
-            );
-            disposeAgentEventSubscriptionService(id);
-            logger.debug('[WorkspaceIPC] Agent subscription service cleanup', { workspaceId: id });
-          } catch (error) {
-            logger.debug('[WorkspaceIPC] Agent subscription service cleanup not available', {
-              error,
             });
           }
 
@@ -942,10 +888,10 @@ export function setupWorkspaceIPC(): void {
 
                     // Handle agent list refresh
                     if (shouldRefreshAgents) {
-                      unifiedEventBus.emitDomainEvent('agent:session-updated', {
+                      mainDispatch(agentSessionUpdated({
                         workspaceId: workspace.id,
                         sessionId: '',
-                      });
+                      }));
                     }
                   };
 
@@ -1039,6 +985,7 @@ export function setupWorkspaceIPC(): void {
               // Start BOTH git integration and activity log in PARALLEL
               // They both only need the detector and don't depend on each other
               const gitIntegrationStart = Date.now();
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
               const activityLogStart = Date.now();
 
               // Git integration promise
@@ -1112,27 +1059,15 @@ export function setupWorkspaceIPC(): void {
                 }
               })();
 
-              // Activity log promise
+              // Activity log promise (event service removed — Redux handles events now)
               const activityLogPromise = (async () => {
                 try {
-                  logger.info('Initializing activity log', {
+                  logger.info('Activity log initialization skipped (Redux-based)', {
                     workspaceId: id,
-                    hasDetector: !!detector,
-                  });
-                  const eventService = getWorkspaceEventService({
-                    workspaceId: id,
-                    changeDetector: detector || undefined,
-                  });
-                  await eventService.initialize();
-                  logger.info('Initialized activity log successfully', {
-                    workspaceId: id,
-                    durationMs: Date.now() - activityLogStart,
-                    hasDetector: !!detector,
                   });
                 } catch (error) {
                   logger.error('Failed to initialize activity log', error as Error, {
                     workspaceId: id,
-                    errorMessage: (error as Error).message,
                   });
                 }
               })();
@@ -1403,57 +1338,6 @@ export function setupWorkspaceIPC(): void {
         } catch (error) {
           logger.warn('Failed to cleanup file tracking service before delete', error as Error, {
             workspaceId: validatedId,
-          });
-        }
-
-        // Clean up workspace event service
-        try {
-          await cleanupWorkspaceEventService(validatedId);
-          logger.debug('Workspace event service cleanup before delete', {
-            workspaceId: validatedId,
-          });
-        } catch (error) {
-          logger.warn('Failed to cleanup workspace event service before delete', error as Error, {
-            workspaceId: validatedId,
-          });
-        }
-
-        // Dispose workspace event bus singleton (MUST happen after event service cleanup)
-        try {
-          const { disposeWorkspaceEventBus } = await import(
-            '../../events/main/workspace-event-bus'
-          );
-          await disposeWorkspaceEventBus(validatedId);
-          logger.debug('Workspace event bus disposed before delete', {
-            workspaceId: validatedId,
-          });
-        } catch (error) {
-          logger.debug('Workspace event bus disposal failed before delete', { error });
-        }
-
-        // Clean up UnifiedEventBus workspace cache
-        try {
-          const { unifiedEventBus } = await import('../../events/main/unified-event-bus');
-          await unifiedEventBus.cleanupWorkspace(validatedId);
-          logger.debug('UnifiedEventBus workspace cache cleaned before delete', {
-            workspaceId: validatedId,
-          });
-        } catch (error) {
-          logger.debug('UnifiedEventBus cleanup failed before delete', { error });
-        }
-
-        // Clean up agent event subscription service
-        try {
-          const { disposeAgentEventSubscriptionService } = await import(
-            '../../events/main/agent-event-subscription.service'
-          );
-          disposeAgentEventSubscriptionService(validatedId);
-          logger.debug('Agent subscription service cleanup before delete', {
-            workspaceId: validatedId,
-          });
-        } catch (error) {
-          logger.debug('Agent subscription service cleanup not available before delete', {
-            error,
           });
         }
 
@@ -1927,7 +1811,7 @@ export function setupWorkspaceIPC(): void {
 
           // Get git status for file changes - route to remote if needed
           let changesStats = { uncommitted: 0, staged: 0, unstaged: 0 };
-          let lineStats = { additions: 0, deletions: 0 };
+          const lineStats = { additions: 0, deletions: 0 };
 
           const gitInfo = await getWorkspaceGitInfo(workspaceId);
           if (gitInfo?.isRemote) {
@@ -2251,6 +2135,7 @@ export function setupWorkspaceIPC(): void {
     EDITOR_CHANNELS.GET_SELECTION,
     createSafeValidatedHandler(
       EditorGetSelectionSchema,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       async (event, validated) => {
         try {
           // Try to get the actual selection from the webContents
@@ -2778,7 +2663,7 @@ export function setupWorkspaceIPC(): void {
           try {
             const cmd = `rg -n --hidden --no-ignore -S -F -g "!node_modules" -g "!.git" "${q}" "${workspacePath}"`;
             stdout = await execSearchCommand(cmd);
-          } catch (err: any) {
+          } catch {
             // Fallbacks - for remote, only use grep (no Windows findstr)
             try {
               const grepCmd = `grep -RIn --exclude-dir={.git,node_modules} -e "${q}" "${workspacePath}"`;
@@ -2977,7 +2862,7 @@ async function initializeGitIntegration(
   };
 
   // NOTE: We only listen for 'changes-tracked' here.
-  // File change events for the activity log are emitted via EventCoordinator -> activity-log-event -> WorkspaceEventService
+  // File change events for the activity log are emitted via EventCoordinator -> activity-log-event -> Redux (emitWorkspaceEvent)
   // Adding a 'file-changed' listener here was causing duplicate events in the activity log.
   gitIntegration.on('changes-tracked', changeHandler);
 

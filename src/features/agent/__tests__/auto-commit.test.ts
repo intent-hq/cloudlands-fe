@@ -44,11 +44,7 @@ vi.mock('$shared/types/branded-ids', () => ({
   WorkspaceId: vi.fn((id: string) => id),
 }));
 
-vi.mock('../../events/main/event-handler-registry', () => ({
-  eventHandlerRegistry: {
-    register: vi.fn(),
-  },
-}));
+// event-handler-registry was deleted; auto-commit is now triggered by sagas
 
 vi.mock('../../file-tracking/main/file-tracking.ipc', () => ({
   getServiceForWorkspace: vi.fn(),
@@ -81,9 +77,24 @@ vi.mock('../../../shared/types', () => ({
   LineType: { Context: 'Context', Addition: 'Addition', Deletion: 'Deletion' },
 }));
 
-vi.mock('../../events/main/unified-event-bus', () => ({
-  unifiedEventBus: {
-    emitDomainEvent: vi.fn(),
+// unified-event-bus was deleted; domain events now dispatched via Redux
+const mockMainDispatch = vi.fn();
+vi.mock('../../../store/main/redux-store-bridge', () => ({
+  mainDispatch: (...args: any[]) => mockMainDispatch(...args),
+}));
+
+vi.mock('../../../store/main/slices/git-events/git-events-slice', () => ({
+  gitAutoCommitStarted: vi.fn((payload: any) => ({ type: 'git-events/gitAutoCommitStarted', payload })),
+  gitAutoCommitSucceeded: vi.fn((payload: any) => ({ type: 'git-events/gitAutoCommitSucceeded', payload })),
+  gitAutoCommitHookFailure: vi.fn((payload: any) => ({ type: 'git-events/gitAutoCommitHookFailure', payload })),
+}));
+
+vi.mock('../../git/main/background-git-ops.service', () => ({
+  backgroundGitOpsService: {
+    registerOperation: vi.fn().mockReturnValue('test-op-id'),
+    completeOperation: vi.fn(),
+    failOperation: vi.fn(),
+    updateProgress: vi.fn(),
   },
 }));
 
@@ -106,7 +117,6 @@ describe('Auto-Commit Service', () => {
   let mockMakeBackgroundRequest: ReturnType<typeof vi.fn>;
   let mockGitService: { getDiff: ReturnType<typeof vi.fn>; getHistory: ReturnType<typeof vi.fn> };
   let mockShouldSkipFileForAI: ReturnType<typeof vi.fn>;
-  let mockEmitDomainEvent: ReturnType<typeof vi.fn>;
   let mockSendBackendInitiatedMessage: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
@@ -120,7 +130,6 @@ describe('Auto-Commit Service', () => {
     const backgroundRequest = await import('../main/background-request.service');
     const gitServiceModule = await import('../../git/main/git.service');
     const binaryExtensions = await import('../../../shared/binary-file-extensions');
-    const eventBusModule = await import('../../events/main/unified-event-bus');
     const backendHandlerModule = await import('../main/agent-backend-handler.service');
 
     mockIsAutoCommitEnabled = workspaceSettings.isAutoCommitEnabled as ReturnType<typeof vi.fn>;
@@ -130,7 +139,6 @@ describe('Auto-Commit Service', () => {
     mockMakeBackgroundRequest = backgroundRequest.makeBackgroundRequest as ReturnType<typeof vi.fn>;
     mockGitService = gitServiceModule.gitService as unknown as typeof mockGitService;
     mockShouldSkipFileForAI = binaryExtensions.shouldSkipFileForAI as ReturnType<typeof vi.fn>;
-    mockEmitDomainEvent = (eventBusModule.unifiedEventBus as any).emitDomainEvent as ReturnType<typeof vi.fn>;
     mockSendBackendInitiatedMessage = vi.fn().mockResolvedValue({ success: true });
     (backendHandlerModule.AgentBackendHandler.getInstance as ReturnType<typeof vi.fn>).mockReturnValue({
       sendBackendInitiatedMessage: mockSendBackendInitiatedMessage,
@@ -749,13 +757,15 @@ describe('Auto-Commit Service', () => {
           message: expect.stringContaining('pre-commit hooks'),
         }),
       );
-      // Should emit waking-agent domain event
-      expect(mockEmitDomainEvent).toHaveBeenCalledWith(
-        'git:auto-commit-hook-failure',
+      // Should dispatch hook-failure Redux action
+      expect(mockMainDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
-          status: 'waking-agent',
-          retryCount: 1,
-          agentId: 'agent-1',
+          type: 'git-events/gitAutoCommitHookFailure',
+          payload: expect.objectContaining({
+            status: 'waking-agent',
+            retryCount: 1,
+            agentId: 'agent-1',
+          }),
         }),
       );
     });
@@ -772,11 +782,13 @@ describe('Auto-Commit Service', () => {
       // Should have woken agent twice
       expect(mockSendBackendInitiatedMessage).toHaveBeenCalledTimes(2);
       // Second call should have retryCount 2
-      expect(mockEmitDomainEvent).toHaveBeenCalledWith(
-        'git:auto-commit-hook-failure',
+      expect(mockMainDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
-          status: 'waking-agent',
-          retryCount: 2,
+          type: 'git-events/gitAutoCommitHookFailure',
+          payload: expect.objectContaining({
+            status: 'waking-agent',
+            retryCount: 2,
+          }),
         }),
       );
     });
@@ -792,12 +804,14 @@ describe('Auto-Commit Service', () => {
 
       // Should have woken agent only twice
       expect(mockSendBackendInitiatedMessage).toHaveBeenCalledTimes(2);
-      // Third attempt should emit retries-exhausted
-      expect(mockEmitDomainEvent).toHaveBeenCalledWith(
-        'git:auto-commit-hook-failure',
+      // Third attempt should dispatch retries-exhausted
+      expect(mockMainDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
-          status: 'retries-exhausted',
-          retryCount: 3,
+          type: 'git-events/gitAutoCommitHookFailure',
+          payload: expect.objectContaining({
+            status: 'retries-exhausted',
+            retryCount: 3,
+          }),
         }),
       );
     });
@@ -817,12 +831,12 @@ describe('Auto-Commit Service', () => {
       await handleAgentIdleAutoCommit(event);
 
       // The third call should have retryCount 1 (fresh start)
-      const hookFailureCalls = mockEmitDomainEvent.mock.calls.filter(
-        (call: any[]) => call[0] === 'git:auto-commit-hook-failure',
+      const hookFailureCalls = mockMainDispatch.mock.calls.filter(
+        (call: any[]) => call[0]?.type === 'git-events/gitAutoCommitHookFailure',
       );
       const lastHookFailureCall = hookFailureCalls[hookFailureCalls.length - 1];
-      expect(lastHookFailureCall[0]).toBe('git:auto-commit-hook-failure');
-      expect(lastHookFailureCall[1]).toEqual(expect.objectContaining({ retryCount: 1, status: 'waking-agent' }));
+      expect(lastHookFailureCall[0].type).toBe('git-events/gitAutoCommitHookFailure');
+      expect(lastHookFailureCall[0].payload).toEqual(expect.objectContaining({ retryCount: 1, status: 'waking-agent' }));
     });
 
     it('should not wake agent for non-hook commit failures', async () => {
@@ -832,9 +846,9 @@ describe('Auto-Commit Service', () => {
       await handleAgentIdleAutoCommit(event);
 
       expect(mockSendBackendInitiatedMessage).not.toHaveBeenCalled();
-      // git:auto-commit-started is emitted before the commit attempt, but no hook-failure event should follow
-      const hookFailureCalls = mockEmitDomainEvent.mock.calls.filter(
-        (call: any[]) => call[0] === 'git:auto-commit-hook-failure',
+      // git:auto-commit-started is dispatched before the commit attempt, but no hook-failure action should follow
+      const hookFailureCalls = mockMainDispatch.mock.calls.filter(
+        (call: any[]) => call[0]?.type === 'git-events/gitAutoCommitHookFailure',
       );
       expect(hookFailureCalls).toHaveLength(0);
     });
@@ -847,10 +861,12 @@ describe('Auto-Commit Service', () => {
       // Should not throw
       await handleAgentIdleAutoCommit(event);
 
-      // Should still have emitted the domain event
-      expect(mockEmitDomainEvent).toHaveBeenCalledWith(
-        'git:auto-commit-hook-failure',
-        expect.objectContaining({ status: 'waking-agent' }),
+      // Should still have dispatched the hook-failure Redux action
+      expect(mockMainDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'git-events/gitAutoCommitHookFailure',
+          payload: expect.objectContaining({ status: 'waking-agent' }),
+        }),
       );
     });
   });

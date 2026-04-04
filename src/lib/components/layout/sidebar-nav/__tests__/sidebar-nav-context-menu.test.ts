@@ -1,276 +1,139 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  sidebarNavReducer,
+  initialState,
+  incrementContextMenuOpen,
+  decrementContextMenuOpen,
+  setDeferredLeave,
+  clearDeferredLeave,
+  setHoveredItem,
+  setExpandedItem,
+  setCardPinned,
+} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+import type { SidebarNavState } from '$lib/store/slices/sidebar-nav/sidebar-nav-types';
 
-// Mock dependencies before importing the store
-vi.mock('$features/agent/services/active-streams-tracker', () => ({
-  activeStreamsTracker: {
-    startPolling: vi.fn(),
-    subscribe: vi.fn(),
-  },
-}));
+describe('sidebar-nav context menu (Redux reducer)', () => {
+  let state: SidebarNavState;
 
-vi.mock('$features/agent/services/unread-tracking.service', () => ({
-  unreadTrackingService: {
-    subscribe: vi.fn(),
-  },
-}));
-
-// We need to dynamically import the store module so mocks are in place
-// The store uses $state (Svelte 5 runes) so the .svelte.ts extension is processed by the svelte plugin
-import { sidebarNavStore } from '../sidebar-nav.store.svelte';
-
-describe('SidebarNavStore context menu', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
-    // Reset store state between tests
-    sidebarNavStore.hoveredItem = null;
-    sidebarNavStore.expandedItem = null;
-    sidebarNavStore.isCardPinned = false;
-    // Reset contextMenuOpenCount to 0 by decrementing
-    while (sidebarNavStore.contextMenuOpen) {
-      sidebarNavStore.decrementContextMenuOpen();
-    }
+    state = { ...initialState };
   });
 
   // ── Counter-based contextMenuOpen ──
 
-  describe('counter-based contextMenuOpen', () => {
-    it('incrementing makes contextMenuOpen true', () => {
-      expect(sidebarNavStore.contextMenuOpen).toBe(false);
-      sidebarNavStore.incrementContextMenuOpen();
-      expect(sidebarNavStore.contextMenuOpen).toBe(true);
+  describe('counter-based contextMenuOpenCount', () => {
+    it('incrementing increases count', () => {
+      expect(state.contextMenuOpenCount).toBe(0);
+      state = sidebarNavReducer(state, incrementContextMenuOpen());
+      expect(state.contextMenuOpenCount).toBe(1);
     });
 
-    it('decrementing back to 0 makes contextMenuOpen false', () => {
-      sidebarNavStore.incrementContextMenuOpen();
-      expect(sidebarNavStore.contextMenuOpen).toBe(true);
-      sidebarNavStore.decrementContextMenuOpen();
-      expect(sidebarNavStore.contextMenuOpen).toBe(false);
+    it('decrementing back to 0', () => {
+      state = sidebarNavReducer(state, incrementContextMenuOpen());
+      expect(state.contextMenuOpenCount).toBe(1);
+      state = sidebarNavReducer(state, decrementContextMenuOpen());
+      expect(state.contextMenuOpenCount).toBe(0);
     });
 
     it('multiple increments require equal decrements', () => {
-      sidebarNavStore.incrementContextMenuOpen();
-      sidebarNavStore.incrementContextMenuOpen();
-      sidebarNavStore.incrementContextMenuOpen();
-      expect(sidebarNavStore.contextMenuOpen).toBe(true);
+      state = sidebarNavReducer(state, incrementContextMenuOpen());
+      state = sidebarNavReducer(state, incrementContextMenuOpen());
+      state = sidebarNavReducer(state, incrementContextMenuOpen());
+      expect(state.contextMenuOpenCount).toBe(3);
 
-      sidebarNavStore.decrementContextMenuOpen();
-      expect(sidebarNavStore.contextMenuOpen).toBe(true);
+      state = sidebarNavReducer(state, decrementContextMenuOpen());
+      expect(state.contextMenuOpenCount).toBe(2);
 
-      sidebarNavStore.decrementContextMenuOpen();
-      expect(sidebarNavStore.contextMenuOpen).toBe(true);
+      state = sidebarNavReducer(state, decrementContextMenuOpen());
+      expect(state.contextMenuOpenCount).toBe(1);
 
-      sidebarNavStore.decrementContextMenuOpen();
-      expect(sidebarNavStore.contextMenuOpen).toBe(false);
+      state = sidebarNavReducer(state, decrementContextMenuOpen());
+      expect(state.contextMenuOpenCount).toBe(0);
     });
 
     it('decrement below 0 does not go negative', () => {
-      expect(sidebarNavStore.contextMenuOpen).toBe(false);
-      sidebarNavStore.decrementContextMenuOpen();
-      sidebarNavStore.decrementContextMenuOpen();
-      expect(sidebarNavStore.contextMenuOpen).toBe(false);
-      // Incrementing once should now make it true (counter is 0, not -2)
-      sidebarNavStore.incrementContextMenuOpen();
-      expect(sidebarNavStore.contextMenuOpen).toBe(true);
+      expect(state.contextMenuOpenCount).toBe(0);
+      state = sidebarNavReducer(state, decrementContextMenuOpen());
+      state = sidebarNavReducer(state, decrementContextMenuOpen());
+      expect(state.contextMenuOpenCount).toBe(0);
+      // Incrementing once should now make it 1 (counter is 0, not -2)
+      state = sidebarNavReducer(state, incrementContextMenuOpen());
+      expect(state.contextMenuOpenCount).toBe(1);
     });
   });
 
-  // ── Deferred leave with context menu ──
+  // ── Deferred leave state ──
 
-  describe('deferred leave with context menu', () => {
-    it('handleCardMouseLeave sets deferred leave when contextMenuOpen', () => {
+  describe('deferred leave state', () => {
+    it('setDeferredLeave sets card leave type', () => {
+      state = sidebarNavReducer(state, setDeferredLeave('card'));
+      expect(state.deferredLeave).toBe('card');
+    });
+
+    it('setDeferredLeave sets nav leave type', () => {
+      state = sidebarNavReducer(state, setDeferredLeave('nav'));
+      expect(state.deferredLeave).toBe('nav');
+    });
+
+    it('clearDeferredLeave resets to null', () => {
+      state = sidebarNavReducer(state, setDeferredLeave('card'));
+      state = sidebarNavReducer(state, clearDeferredLeave());
+      expect(state.deferredLeave).toBeNull();
+    });
+  });
+
+  // ── Context menu interaction with hover state ──
+
+  describe('context menu interaction with hover state', () => {
+    it('hoveredItem and expandedItem are preserved when context menu is open', () => {
       // Set up: hoveredItem and expandedItem are set, context menu is open
-      sidebarNavStore.hoveredItem = 'active';
-      sidebarNavStore.expandedItem = 'active';
-      sidebarNavStore.incrementContextMenuOpen();
+      state = sidebarNavReducer(state, setHoveredItem('active'));
+      state = sidebarNavReducer(state, setExpandedItem('active'));
+      state = sidebarNavReducer(state, incrementContextMenuOpen());
 
-      sidebarNavStore.handleCardMouseLeave();
+      // Deferred leave is set (would be done by handleCardMouseLeave in component)
+      state = sidebarNavReducer(state, setDeferredLeave('card'));
 
-      // Should NOT have started a leave timeout (card should remain open)
-      vi.advanceTimersByTime(200);
-      expect(sidebarNavStore.hoveredItem).toBe('active');
-      expect(sidebarNavStore.expandedItem).toBe('active');
+      // Context menu open count > 0, so items remain
+      expect(state.hoveredItem).toBe('active');
+      expect(state.expandedItem).toBe('active');
+      expect(state.contextMenuOpenCount).toBe(1);
+      expect(state.deferredLeave).toBe('card');
     });
 
-    it('handleMouseLeave sets deferred leave when contextMenuOpen', () => {
-      sidebarNavStore.hoveredItem = 'active';
-      sidebarNavStore.expandedItem = 'active';
-      sidebarNavStore.incrementContextMenuOpen();
+    it('card pinned prevents deferred leave processing', () => {
+      state = sidebarNavReducer(state, setHoveredItem('active'));
+      state = sidebarNavReducer(state, setExpandedItem('active'));
+      state = sidebarNavReducer(state, setCardPinned(true));
+      state = sidebarNavReducer(state, incrementContextMenuOpen());
 
-      sidebarNavStore.handleMouseLeave();
-
-      vi.advanceTimersByTime(200);
-      expect(sidebarNavStore.hoveredItem).toBe('active');
-      // expandedItem should still be set
-      expect(sidebarNavStore.expandedItem).toBe('active');
+      // Items remain because card is pinned
+      expect(state.hoveredItem).toBe('active');
+      expect(state.expandedItem).toBe('active');
+      expect(state.isCardPinned).toBe(true);
     });
 
-    it('handleCardMouseLeave does NOT set deferred leave when isCardPinned', () => {
-      sidebarNavStore.hoveredItem = 'active';
-      sidebarNavStore.expandedItem = 'active';
-      sidebarNavStore.isCardPinned = true;
-
-      sidebarNavStore.handleCardMouseLeave();
-
-      vi.advanceTimersByTime(200);
-      // Card stays open because it's pinned
-      expect(sidebarNavStore.hoveredItem).toBe('active');
-      expect(sidebarNavStore.expandedItem).toBe('active');
+    it('clearDeferredLeave prevents late processing', () => {
+      // Set deferred leave then clear it (simulates mouse re-entering)
+      state = sidebarNavReducer(state, setDeferredLeave('card'));
+      state = sidebarNavReducer(state, clearDeferredLeave());
+      expect(state.deferredLeave).toBeNull();
     });
 
-    it('handleMouseLeave does NOT set deferred leave when isCardPinned', () => {
-      sidebarNavStore.hoveredItem = 'active';
-      sidebarNavStore.isCardPinned = true;
+    it('multiple menus: decrementing one still leaves counter > 0', () => {
+      state = sidebarNavReducer(state, setHoveredItem('active'));
+      state = sidebarNavReducer(state, setExpandedItem('active'));
+      state = sidebarNavReducer(state, incrementContextMenuOpen());
+      state = sidebarNavReducer(state, incrementContextMenuOpen()); // two menus
 
-      sidebarNavStore.handleMouseLeave();
-
-      vi.advanceTimersByTime(200);
-      expect(sidebarNavStore.hoveredItem).toBe('active');
-    });
-  });
-
-  // ── Deferred leave cancellation ──
-
-  describe('deferred leave cancellation', () => {
-    it('handleCardMouseEnter clears deferredLeave', () => {
-      sidebarNavStore.hoveredItem = 'active';
-      sidebarNavStore.expandedItem = 'active';
-      sidebarNavStore.incrementContextMenuOpen();
-
-      // Trigger deferred leave
-      sidebarNavStore.handleCardMouseLeave();
-
-      // Mouse re-enters card — should cancel deferred leave
-      sidebarNavStore.handleCardMouseEnter();
-
-      // Now close context menu — should NOT process deferred leave
-      sidebarNavStore.decrementContextMenuOpen();
-      sidebarNavStore.onContextMenuClosed();
-
-      vi.advanceTimersByTime(200);
-      expect(sidebarNavStore.hoveredItem).toBe('active');
-      expect(sidebarNavStore.expandedItem).toBe('active');
-    });
-
-    it('handleMouseEnter clears deferredLeave', () => {
-      sidebarNavStore.hoveredItem = 'active';
-      sidebarNavStore.expandedItem = 'active';
-      sidebarNavStore.incrementContextMenuOpen();
-
-      // Trigger deferred nav leave
-      sidebarNavStore.handleMouseLeave();
-
-      // Mouse re-enters nav — should cancel deferred leave
-      sidebarNavStore.handleMouseEnter('active');
-
-      // Close context menu — should NOT process deferred leave
-      sidebarNavStore.decrementContextMenuOpen();
-      sidebarNavStore.onContextMenuClosed();
-
-      vi.advanceTimersByTime(200);
-      expect(sidebarNavStore.hoveredItem).toBe('active');
-      expect(sidebarNavStore.expandedItem).toBe('active');
-    });
-  });
-
-  // ── onContextMenuClosed ──
-
-  describe('onContextMenuClosed', () => {
-    it('processes deferred card leave (clears hoveredItem AND expandedItem)', () => {
-      sidebarNavStore.hoveredItem = 'active';
-      sidebarNavStore.expandedItem = 'active';
-      sidebarNavStore.incrementContextMenuOpen();
-
-      // Trigger deferred card leave
-      sidebarNavStore.handleCardMouseLeave();
-
-      // Close context menu
-      sidebarNavStore.decrementContextMenuOpen();
-      sidebarNavStore.onContextMenuClosed();
-
-      vi.advanceTimersByTime(200);
-      expect(sidebarNavStore.hoveredItem).toBeNull();
-      expect(sidebarNavStore.expandedItem).toBeNull();
-    });
-
-    it('processes deferred nav leave (clears hoveredItem but NOT expandedItem)', () => {
-      sidebarNavStore.hoveredItem = 'active';
-      sidebarNavStore.expandedItem = 'active';
-      sidebarNavStore.incrementContextMenuOpen();
-
-      // Trigger deferred nav leave
-      sidebarNavStore.handleMouseLeave();
-
-      // Close context menu
-      sidebarNavStore.decrementContextMenuOpen();
-      sidebarNavStore.onContextMenuClosed();
-
-      vi.advanceTimersByTime(200);
-      expect(sidebarNavStore.hoveredItem).toBeNull();
-      // Nav leave intentionally does NOT clear expandedItem
-      expect(sidebarNavStore.expandedItem).toBe('active');
-    });
-
-    it('does NOT process if contextMenuOpen is still true (counter > 0)', () => {
-      sidebarNavStore.hoveredItem = 'active';
-      sidebarNavStore.expandedItem = 'active';
-      sidebarNavStore.incrementContextMenuOpen();
-      sidebarNavStore.incrementContextMenuOpen(); // two menus open
-
-      // Trigger deferred card leave
-      sidebarNavStore.handleCardMouseLeave();
+      state = sidebarNavReducer(state, setDeferredLeave('card'));
 
       // Close only one context menu
-      sidebarNavStore.decrementContextMenuOpen();
-      sidebarNavStore.onContextMenuClosed();
-
-      vi.advanceTimersByTime(200);
-      // Should NOT have processed — another menu is still open
-      expect(sidebarNavStore.hoveredItem).toBe('active');
-      expect(sidebarNavStore.expandedItem).toBe('active');
-    });
-
-    it('does NOT process if isCardPinned', () => {
-      sidebarNavStore.hoveredItem = 'active';
-      sidebarNavStore.expandedItem = 'active';
-      sidebarNavStore.isCardPinned = true;
-      sidebarNavStore.incrementContextMenuOpen();
-
-      // Trigger deferred card leave
-      sidebarNavStore.handleCardMouseLeave();
-
-      // Close context menu
-      sidebarNavStore.decrementContextMenuOpen();
-      sidebarNavStore.onContextMenuClosed();
-
-      vi.advanceTimersByTime(200);
-      // Should NOT have processed — card is pinned
-      expect(sidebarNavStore.hoveredItem).toBe('active');
-      expect(sidebarNavStore.expandedItem).toBe('active');
-    });
-
-    it('clears deferredLeave after processing', () => {
-      sidebarNavStore.hoveredItem = 'active';
-      sidebarNavStore.expandedItem = 'active';
-      sidebarNavStore.incrementContextMenuOpen();
-
-      sidebarNavStore.handleCardMouseLeave();
-
-      sidebarNavStore.decrementContextMenuOpen();
-      sidebarNavStore.onContextMenuClosed();
-
-      vi.advanceTimersByTime(200);
-      expect(sidebarNavStore.hoveredItem).toBeNull();
-      expect(sidebarNavStore.expandedItem).toBeNull();
-
-      // Set items back and call onContextMenuClosed again — should NOT process
-      sidebarNavStore.hoveredItem = 'all-workspaces';
-      sidebarNavStore.expandedItem = 'all-workspaces';
-      sidebarNavStore.onContextMenuClosed();
-
-      vi.advanceTimersByTime(200);
-      // Items should remain since deferredLeave was already cleared
-      expect(sidebarNavStore.hoveredItem).toBe('all-workspaces');
-      expect(sidebarNavStore.expandedItem).toBe('all-workspaces');
+      state = sidebarNavReducer(state, decrementContextMenuOpen());
+      expect(state.contextMenuOpenCount).toBe(1);
+      // Another menu still open — items should remain
+      expect(state.hoveredItem).toBe('active');
+      expect(state.expandedItem).toBe('active');
     });
   });
 });

@@ -15,7 +15,9 @@
   import { createIntentLink } from '$lib/utils/tiptap-link-extension';
   import { TasksBlock } from '$lib/components/tiptap/TasksBlock';
   import { handleLink } from '$features/navigation/link-handler';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+
+  const activeWorkspaceId = selectActiveWorkspaceId();
 
   // Use shared safe lowlight instance (handles unregistered languages gracefully)
   const lowlight = safeLowlight;
@@ -32,6 +34,7 @@
     content,
     isStreaming = false,
     className = '',
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onCodeBlockAction: _onCodeBlockAction,
     onFileClick,
   }: Props = $props();
@@ -256,7 +259,7 @@
       event.stopImmediatePropagation();
 
       handleLink(anchor.href, {
-        workspaceId: workspaceStore.current?.id,
+        workspaceId: $activeWorkspaceId ?? undefined,
         event,
       });
       return;

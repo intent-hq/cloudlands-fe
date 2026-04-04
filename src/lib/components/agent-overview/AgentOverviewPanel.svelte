@@ -5,17 +5,21 @@
    * Simplified panel that renders the agent hierarchy visualization.
    * Uses a clean hierarchical layout showing delegation relationships.
    */
-  import { onMount, onDestroy, untrack } from 'svelte';
-  import { createAgentOverviewStore } from './agent-overview.store.svelte';
+  import { onDestroy, untrack } from 'svelte';
   import type { AgentNode } from './types';
   import { isAgentNode } from './types';
   import AgentHierarchyGraph from './AgentHierarchyGraph.svelte';
-  import { queryEvents, onEventCreated } from '$features/events/events.client';
-  import { createLogger } from '$lib/utils/client-logger';
+  import { getDispatch } from '$lib/store/utils/utils';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
-  import { useAllAgentsSubscription } from '$lib/utils/agent-subscription.svelte';
-
-  const logger = createLogger('AgentOverviewPanel');
+  import { selectGraphState } from '$lib/store/slices/agent-overview/agent-overview-selectors';
+  import { selectWorkspaceEvents } from '$lib/store/slices/workspace-events/workspace-events-selectors';
+  import { loadEventsRequested } from '$lib/store/slices/workspace-events/workspace-events-slice';
+  import {
+    processWorkspaceEvents,
+    clearAgentOverview,
+  } from '$lib/store/slices/agent-overview/agent-overview-slice';
+  import { convertToInteractionEvent } from './graph-helpers';
+  import type { InteractionEvent } from './types';
 
   interface Props {
     workspaceId: string;
@@ -24,56 +28,41 @@
 
   let { workspaceId, onFocus }: Props = $props();
 
-  // Create store for graph state
-  // svelte-ignore state_referenced_locally - workspaceId doesn't change during component lifecycle
-  const store = createAgentOverviewStore(workspaceId);
+  const dispatch = getDispatch();
 
-  // Subscribe to all agents reactively
+  // Create store for graph state — agents are derived from the agent-session slice
   // svelte-ignore state_referenced_locally - workspaceId doesn't change during component lifecycle
-  const agentSubscription = useAllAgentsSubscription(workspaceId);
+  const graphState$ = selectGraphState(workspaceId);
 
-  // Reactively update store when agents change
+  // Request events from the saga (handles IPC query + real-time listeners)
+  dispatch(loadEventsRequested(workspaceId));
+
+  // Subscribe to workspace events from Redux and convert to interaction events
+  // svelte-ignore state_referenced_locally - workspaceId doesn't change during component lifecycle
+  const workspaceEvents$ = selectWorkspaceEvents(workspaceId);
   $effect(() => {
-    const agents = agentSubscription.current;
-    if (agents.length > 0) {
-      untrack(() => {
-        store.updateAgents(agents);
-      });
-    }
-  });
-
-  // Load initial events and set up real-time subscription
-  let unsubscribe: (() => void) | null = null;
-
-  onMount(async () => {
-    // Load historical events
-    try {
-      const events = await queryEvents(workspaceId, [], 200);
-      store.processWorkspaceEvents(events);
-    } catch (error) {
-      logger.error('Failed to load events', { error });
-    }
-
-    // Subscribe to real-time events
-    unsubscribe = onEventCreated((data) => {
-      if (data.workspaceId === workspaceId) {
-        store.addRealtimeEvent(data.event);
+    const events = $workspaceEvents$;
+    untrack(() => {
+      const interactions: InteractionEvent[] = [];
+      for (const event of events) {
+        const interaction = convertToInteractionEvent(event);
+        if (interaction) interactions.push(interaction);
+      }
+      if (interactions.length > 0) {
+        dispatch(processWorkspaceEvents(workspaceId, interactions));
       }
     });
   });
 
   onDestroy(() => {
-    unsubscribe?.();
+    dispatch(clearAgentOverview(workspaceId));
   });
 
   // Handle agent click - open agent panel using workspace:open-agent event
-  // This ensures consistent behavior with other components and proper panel focus
   function handleAgentClick(agentId: string, _agentName: string, event: MouseEvent) {
     const openInAdjacentPanel = event.metaKey || event.ctrlKey;
     const sourcePanelId = findSourcePanelId(event.target);
 
-    // Dispatch workspace:open-agent event for consistent handling
-    // This is handled by the workspace page and ensures proper panel focus
     window.dispatchEvent(
       new CustomEvent('workspace:open-agent', {
         detail: {
@@ -85,8 +74,8 @@
     );
   }
 
-  // Derived values from store
-  const graphState = $derived(store.graphState);
+  // Derived values from Redux selector
+  const graphState = $derived($graphState$);
 
   // Get only agent nodes
   const agentNodes = $derived(graphState.nodes.filter((n): n is AgentNode => isAgentNode(n)));

@@ -14,6 +14,7 @@ import * as Errors from '../../../shared/errors';
 import { Logger } from '../../../shared/logger';
 import { fsyncFile, fsyncDir, renameWithRetry } from '../../../shared/main/file-sync-utils';
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const { FileNotFoundError, FileReadError, FileWriteError, NoteNotFoundError } = Errors;
 
 const logger = new Logger('NotesRepository');

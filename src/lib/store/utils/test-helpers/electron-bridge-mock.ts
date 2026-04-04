@@ -19,9 +19,11 @@ import { vi } from 'vitest';
 export const invoke = vi.fn();
 
 /** Synchronous event listener — returns an unsubscribe function. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const listenSync = vi.fn((_event: string, _handler: (payload: any) => void) => () => {});
 
 /** Async event listener — resolves to an unsubscribe function. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const listen = vi.fn(async (_event: string, _handler: (payload: any) => void) => () => {});
 
 /** Returns `false` by default — most tests don't run in Electron. */

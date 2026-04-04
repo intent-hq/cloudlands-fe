@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app, BrowserWindow } from 'electron';
 import { NotificationService } from './notification.service';
-import { getWorkspaceEventBus } from '../../events/main/workspace-event-bus';
+// workspace-event-bus was deleted; notifications are now driven by Redux sagas
 import { getWindowIdsForWorkspace } from '../../system/main/system.ipc';
 
 vi.mock('../../../shared/logger', () => ({
   Logger: class {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     constructor(_category?: string) {}
     debug = vi.fn();
     info = vi.fn();
@@ -16,6 +17,7 @@ vi.mock('../../../shared/logger', () => ({
 
 vi.mock('electron-store', () => ({
   default: class {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     constructor(_options?: unknown) {}
     get = vi.fn(() => ({ enabled: true, showWhenFocused: false }));
   },
@@ -55,6 +57,7 @@ vi.mock('electron', () => ({
       }
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     constructor(_opts?: unknown) {
       mockNotificationInstances.push(this as any);
     }
@@ -73,9 +76,7 @@ vi.mock('../../agent/main/agent-backend-handler.service', () => ({
   },
 }));
 
-vi.mock('../../events/main/workspace-event-bus', () => ({
-  getWorkspaceEventBus: vi.fn(),
-}));
+// workspace-event-bus mock removed — module was deleted
 
 vi.mock('../../system/main/system.ipc', () => ({
   getWindowIdsForWorkspace: vi.fn(() => []),
@@ -93,46 +94,17 @@ describe('NotificationService start lifecycle', () => {
     vi.clearAllMocks();
   });
 
-  it('unsubscribes previous listener before resubscribing on repeated start()', () => {
-    const unsubscribeFirst = vi.fn();
-    const unsubscribeSecond = vi.fn();
-
-    const subscribe = vi
-      .fn()
-      .mockReturnValueOnce({ unsubscribe: unsubscribeFirst })
-      .mockReturnValueOnce({ unsubscribe: unsubscribeSecond });
-
-    vi.mocked(getWorkspaceEventBus).mockReturnValue({ subscribe } as any);
-
+  it('start() is a no-op (saga-driven)', () => {
     const service = new NotificationService('workspace-1');
-
-    service.start();
-    service.start();
-
-    expect(subscribe).toHaveBeenCalledTimes(2);
-    expect(unsubscribeFirst).toHaveBeenCalledTimes(1);
-    expect(unsubscribeSecond).not.toHaveBeenCalled();
+    // start() should not throw; it's a no-op now (events delivered via Redux sagas)
+    expect(() => service.start()).not.toThrow();
   });
 
-  it('keeps only latest subscription active after repeated start()', () => {
-    const unsubscribeFirst = vi.fn();
-    const unsubscribeSecond = vi.fn();
-
-    const subscribe = vi
-      .fn()
-      .mockReturnValueOnce({ unsubscribe: unsubscribeFirst })
-      .mockReturnValueOnce({ unsubscribe: unsubscribeSecond });
-
-    vi.mocked(getWorkspaceEventBus).mockReturnValue({ subscribe } as any);
-
+  it('stop() is a no-op (saga-driven)', () => {
     const service = new NotificationService('workspace-1');
-
     service.start();
-    service.start();
-    service.stop();
-
-    expect(unsubscribeFirst).toHaveBeenCalledTimes(1);
-    expect(unsubscribeSecond).toHaveBeenCalledTimes(1);
+    // stop() should not throw; it's a no-op now
+    expect(() => service.stop()).not.toThrow();
   });
 });
 
@@ -223,9 +195,6 @@ describe('NotificationService showNotification click behavior', () => {
       id === mockWindow.id ? mockWindow : null,
     );
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([mockWindow]);
-
-    const subscribe = vi.fn().mockReturnValue({ unsubscribe: vi.fn() });
-    vi.mocked(getWorkspaceEventBus).mockReturnValue({ subscribe } as any);
 
     // Use showTestNotification which calls showNotification without workspaceId
     const service = new NotificationService('workspace-1');

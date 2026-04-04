@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   groupAndSortWorkspaces,
   type GroupKeyInfo,
-  type WorkspaceGroup,
 } from '../workspace-sorting';
 import type { Workspace } from '$shared/types';
 

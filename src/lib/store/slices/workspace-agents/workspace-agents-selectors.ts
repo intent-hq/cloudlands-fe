@@ -1,7 +1,7 @@
-import type { AgentSession } from "$shared/types";
+import type { AgentSession, QueuedMessage } from "$shared/types";
 import type { StoreState } from "../../types";
-import { getItems, type Collection } from "../../utils/collection-utils";
 import { createSelector } from "../../utils/create-selector";
+import { selectAgentSession, selectAllStreamingAgents as selectAllStreamingFromAgentSession } from "../agent-session/agent-session-selectors";
 import { emptyWorkspaceAgentState, type InitialAgentConfig } from "./workspace-agents-slice";
 
 function isBackgroundAgent(agent: AgentSession): boolean {
@@ -12,31 +12,20 @@ function getWorkspaceAgentState(state: StoreState, wsId: string) {
   return state.workspaceAgents.byWorkspaceId[wsId] ?? emptyWorkspaceAgentState;
 }
 
-export const selectWorkspaceAgentState = createSelector((state, wsId: string) => {
-  return getWorkspaceAgentState(state, wsId);
-});
-
-export const selectWorkspaceAgentsCollection = createSelector(
-  (state, wsId: string): Collection<AgentSession, "id"> => {
-    return getWorkspaceAgentState(state, wsId).agents;
+/** Derives agent sessions from workspace agentIds + agent-session slice */
+export const selectAllWorkspaceAgents = createSelector((state, wsId: string): AgentSession[] => {
+  const agentIds = getWorkspaceAgentState(state, wsId).agentIds;
+  const result: AgentSession[] = [];
+  for (const id of agentIds) {
+    const session = selectAgentSession.select(state, id);
+    if (session) result.push(session);
   }
-);
-
-export const selectAllWorkspaceAgentsCollection = selectWorkspaceAgentsCollection;
-
-export const selectAllWorkspaceAgents = createSelector((state, wsId: string) => {
-  return getItems(selectWorkspaceAgentsCollection.select(state, wsId));
+  return result;
 });
 
 export const selectForegroundWorkspaceAgents = createSelector((state, wsId: string) => {
   return selectAllWorkspaceAgents.select(state, wsId).filter((agent) => !isBackgroundAgent(agent));
 });
-
-/**
- * Compatibility selector for existing callers. Prefer `selectAllWorkspaceAgents` for raw state
- * access and `selectForegroundWorkspaceAgents` for UI-visible lists.
- */
-export const selectWorkspaceAgents = selectAllWorkspaceAgents;
 
 export const selectAgentsLoaded = createSelector((state, wsId: string) => {
   return getWorkspaceAgentState(state, wsId).agentsLoaded;
@@ -58,20 +47,6 @@ export const selectRecentlyCreatedAgents = createSelector((state, wsId: string) 
   return getWorkspaceAgentState(state, wsId).recentlyCreatedAgents;
 });
 
-export const selectIsAgentRecentlyCreated = createSelector((state, wsId: string, agentId: string) => {
-  return getWorkspaceAgentState(state, wsId).recentlyCreatedAgents.includes(agentId);
-});
-
-export const selectIsWaitingForFirstMessage = createSelector(
-  (state, wsId: string, agentId: string) => {
-    return getWorkspaceAgentState(state, wsId).isWaitingForFirstMessage[agentId] ?? false;
-  }
-);
-
-export const selectWaitingForFirstMessageMap = createSelector((state, wsId: string) => {
-  return getWorkspaceAgentState(state, wsId).isWaitingForFirstMessage;
-});
-
 export const selectInitialAgentConfig = createSelector(
   (state, wsId: string): InitialAgentConfig | null => {
     return getWorkspaceAgentState(state, wsId).initialAgentConfig ?? null;
@@ -85,4 +60,72 @@ export const selectInitialAgentConfig = createSelector(
  */
 export const selectIsNewlyCreatedWorkspace = createSelector((state, wsId: string) => {
   return getWorkspaceAgentState(state, wsId).initialAgentConfig !== null;
+});
+
+// --------------------------------------------------------------------------
+// Selectors delegating to agent-session slice
+// --------------------------------------------------------------------------
+
+/** Get the active agent ID for a workspace */
+export const selectActiveAgentId = createSelector((state, wsId: string): string | null => {
+  return getWorkspaceAgentState(state, wsId).activeAgentId;
+});
+
+/** Get a specific agent session by ID — reads from agent-session slice */
+export const selectAgentById = createSelector(
+  (state, agentId: string): AgentSession | undefined => {
+    return selectAgentSession.select(state, agentId);
+  }
+);
+
+/** Get the active agent session for a workspace — reads from agent-session slice */
+export const selectActiveAgent = createSelector(
+  (state, wsId: string): AgentSession | undefined => {
+    const wsState = getWorkspaceAgentState(state, wsId);
+    if (!wsState.activeAgentId) return undefined;
+    return selectAgentSession.select(state, wsState.activeAgentId);
+  }
+);
+
+/** Whether the initial spec write is in progress for a workspace */
+export const selectIsInitialSpecWriteInProgress = createSelector((state, wsId: string): boolean => {
+  return getWorkspaceAgentState(state, wsId).isInitialSpecWriteInProgress;
+});
+
+/** Get queued messages for a specific agent — reads from agent-session slice */
+export const selectAgentQueuedMessages = createSelector(
+  (state, _wsId: string, agentId: string): QueuedMessage[] => {
+    const session = selectAgentSession.select(state, agentId);
+    return session?.queuedMessages ?? [];
+  }
+);
+
+// --------------------------------------------------------------------------
+// AgentService serializable state selectors (6a migration)
+// --------------------------------------------------------------------------
+
+/** Get the disk message count for a specific agent */
+export const selectDiskMessageCount = createSelector(
+  (state, wsId: string, agentId: string): number => {
+    return getWorkspaceAgentState(state, wsId).diskMessageCounts[agentId] ?? 0;
+  }
+);
+
+/** Get the last-seen timestamp for an agent:created event (for dedup) */
+export const selectRecentAgentCreatedEvent = createSelector(
+  (state, wsId: string, agentId: string): number | undefined => {
+    return getWorkspaceAgentState(state, wsId).recentAgentCreatedEvents[agentId];
+  }
+);
+
+/** Get the count of recent agent created events (for cleanup threshold) */
+export const selectRecentAgentCreatedEventsCount = createSelector(
+  (state, wsId: string): number => {
+    return Object.keys(getWorkspaceAgentState(state, wsId).recentAgentCreatedEvents).length;
+  }
+);
+
+/** Get all streaming agents across all workspaces — delegates to agent-session slice */
+export const selectAllStreamingAgents = createSelector((state): AgentSession[] => {
+  return selectAllStreamingFromAgentSession.select(state);
 });

@@ -41,7 +41,6 @@
     faXmark,
     faChevronUp,
     faChevronDown,
-    faExclamationTriangle,
   } from '@fortawesome/free-solid-svg-icons';
 
   type Props = PureDiffProps;
@@ -122,11 +121,6 @@
   });
 
   // Format file size for display
-  function formatFileSize(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
 
   // Performance: Calculate total line count to determine if highlighting should be disabled
   const shouldDisableHighlighting = $derived.by(() => {
@@ -253,7 +247,7 @@
   }
 
   // Build FileDiff options function - returns fresh options each time
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   function buildFileDiffOptions(): any {
     return {
       diffStyle: viewMode,
@@ -543,6 +537,7 @@
   // Separate effect to handle option changes - need to rerender after setOptions
   $effect(() => {
     // Track all the reactive props that affect options
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const _deps = [
       viewMode,
       diffIndicators,

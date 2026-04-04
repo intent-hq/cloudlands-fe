@@ -95,6 +95,7 @@ export class RemoteFileSystemService extends EventEmitter {
   /**
    * Read a file from the remote system
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async readFile(filePath: string, encoding: BufferEncoding = 'utf-8'): Promise<string> {
     const fullPath = this.resolvePath(filePath);
 
@@ -132,6 +133,7 @@ export class RemoteFileSystemService extends EventEmitter {
   async writeFile(
     filePath: string,
     content: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     encoding: BufferEncoding = 'utf-8',
   ): Promise<void> {
     const fullPath = this.resolvePath(filePath);
@@ -406,7 +408,7 @@ export class RemoteFileSystemService extends EventEmitter {
       const rpcClient = await this.getRPCClient();
       const result = await rpcClient.fileExists({ path: fullPath });
       return result.exists;
-    } catch (error) {
+    } catch  {
       return false;
     }
   }
@@ -583,7 +585,7 @@ export class RemoteFileSystemService extends EventEmitter {
         }
 
         lastModified = currentModified;
-      } catch (error) {
+      } catch  {
         // File might have been deleted
         if (lastModified) {
           callback('delete', fullPath);

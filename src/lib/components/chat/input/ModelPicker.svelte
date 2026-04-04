@@ -3,7 +3,9 @@
   import { fade } from 'svelte/transition';
 
   import { agentClient } from '$features/agent/agent.client';
-  import { sessionStore } from '$features/agent/browser';
+  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { updateSession as updateAgentSessionFields } from '$lib/store/slices/agent-session/agent-session-slice';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import Button from '$lib/components/ui/button/button.svelte';
   import {
     Dropdown,
@@ -39,7 +41,6 @@
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import { safeLocalStorage } from '$lib/utils/safe-storage';
-  import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { toast } from 'svelte-sonner';
   import {
     faCheck,
@@ -106,6 +107,7 @@
     size = 'sm',
     workspaceId,
     agentId,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     showManageLink = true,
     portal = true,
     triggerClass = '',
@@ -128,7 +130,7 @@
     }
 
     if (agentId && workspaceId) {
-      const session = sessionStore.getSessionForWorkspace(workspaceId, agentId);
+      const session = selectAgentById.select(getReduxStore().getState(), agentId);
       if (session) {
         const provider = getAgentProvider(session);
         if (provider) return getProviderConfig(provider).id;
@@ -243,7 +245,6 @@
   const loadError = $derived(isAgentProviderOverride ? agentProviderError : $loadError$);
 
   // Provider display name for footer — reflects the effective provider, not the global one
-  const providerDisplayName = $derived(getProviderConfig(effectiveProviderId).displayName);
 
   // Track which provider groups are collapsed in the dropdown (persisted globally)
   const COLLAPSED_GROUPS_KEY = 'model-picker-collapsed-groups';
@@ -323,6 +324,7 @@
   }
 
   /** Handle refresh models button click */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleRefreshModels() {
     if (isRefreshing) return;
     isRefreshing = true;
@@ -425,7 +427,7 @@
       // If agentId is provided, update the active agent's model
       if (agentId && workspaceId) {
         // Always update local session store so model persists when drawer reopens
-        sessionStore.updateSessionForWorkspace(workspaceId, agentId, { model });
+        getReduxStore().dispatch(updateAgentSessionFields(agentId, { model }));
         logger.debug('Updated local session model:', { agentId, model });
 
         // If deferUpdate is true (streaming), defer the IPC call until streaming ends
@@ -979,7 +981,9 @@
     {groupHeader}
   >
     {#snippet trigger({
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       open: _open,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       value: _value,
     }: {
       open: boolean;
@@ -1031,13 +1035,8 @@
     {/snippet}
 
     {#snippet item({ option, selected }: DropdownItemProps)}
-      {@const badges = option.data?.badges as
-        | Array<{ color: string; label: string; variant?: string }>
-        | undefined}
-      {@const costTierLabel = option.data?.costTierLabel as string | undefined}
-      {@const isDefaultModel = option.data?.isDefault as boolean | undefined}
       {@const effortLevels = option.data?.effortLevels as string[] | undefined}
-      {@const hasRightBadges = (badges && badges.length > 0) || costTierLabel || isDefaultModel}
+      
       <div class="flex gap-2 w-full min-w-0">
         {#if option.value !== USE_DEFAULT_VALUE}
           <ProviderIcon
@@ -1096,7 +1095,7 @@
                 <div class="h-3 w-16 bg-muted/60 rounded animate-pulse"></div>
               </div>
               <!-- Skeleton items -->
-              {#each Array(itemCount) as _, j}
+              {#each Array.from(Array(itemCount), (_, i) => i) as j }
                 <div class="px-3 py-2 flex items-center gap-2">
                   <div class="flex-1 min-w-0">
                     <div

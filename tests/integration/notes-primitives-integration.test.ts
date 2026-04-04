@@ -5,7 +5,7 @@
  * and execution of primitives.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { NotesPrimitivesSerializer } from '../../src/features/notes/notes-primitives-serializer';
 import { ReferenceResolverService } from '../../src/features/notes/reference-resolver.service';
 import type { NotePrimitive } from '../../src/shared/types/notes-primitives';

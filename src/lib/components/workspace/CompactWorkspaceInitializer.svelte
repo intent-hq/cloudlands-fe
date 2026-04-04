@@ -6,13 +6,13 @@
     mapInitialRepoToFormState,
   } from './initializer/initial-repo-utils';
   import { goto } from '$app/navigation';
-  import { agentService } from '$features/agent/agent.service';
-  import {
-    setupScriptStore,
-    SETUP_SCRIPT_TEMPLATES,
-    getTemplateContent,
-  } from '$features/setup-scripts';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { track } from '$lib/services/analytics';
+  import { agentService } from '$features/agent/agent-ipc-bridge';
+  import { SETUP_SCRIPT_TEMPLATES, getTemplateContent } from '$features/setup-scripts';
+  import { v4 as uuidv4 } from 'uuid';
+  import { saveScript } from '$lib/store/slices/setup-scripts/setup-scripts-slice';
+  import { selectLastUsedScriptForRepo } from '$lib/store/slices/setup-scripts/setup-scripts-selectors';
+  import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
   import { debugConfig } from '$lib/config/debug';
   import type { StarterPrompt } from '$lib/data/starter-prompts';
@@ -21,11 +21,14 @@
     selectAvailableModels,
   } from '$lib/store/slices/model/model-selectors';
   import { setWorkspaceModel } from '$lib/store/slices/model/model-slice';
-  import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
   import {
     setInitialAgentConfig,
     setInitialAgentId,
   } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import {
+    setWorkspaceEntity,
+    updateWorkspaceEntity,
+  } from '$lib/store/slices/workspace/workspace-slice';
   import { getDispatch } from '$lib/store/utils/utils';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
@@ -33,7 +36,6 @@
     selectEffectiveBehaviorPrompt,
     selectUserOverrides,
   } from '$lib/store/slices/specialists/specialists-selectors';
-  import { track } from '$lib/services/analytics';
   import { createLogger } from '$lib/utils/client-logger';
   import {
     getGitErrorMessage,
@@ -56,7 +58,7 @@
   import PullConflictDialog, { type PullErrorType } from '../modals/PullConflictDialog.svelte';
   import { onMount, onDestroy } from 'svelte';
   import { toast } from 'svelte-sonner';
-  import { fade, fly, slide } from 'svelte/transition';
+  import { fade, slide } from 'svelte/transition';
   import Button from '../ui/button/button.svelte';
   import { Checkbox } from '../ui/checkbox';
   import Tooltip from '../ui/tooltip/Tooltip.svelte';
@@ -67,9 +69,7 @@
   } from './initializer/IssueSuggestions.svelte';
   import RepoAndBranchPicker from './initializer/RepoAndBranchPicker.svelte';
   import SetupScriptModal from '../modals/SetupScriptModal.svelte';
-  import RemoteSetupSelector from './initializer/RemoteSetupSelector.svelte';
   import { noteUrl } from '$shared/constants/intent-links';
-  import { getProviderAvailability } from '$features/providers/provider-availability.client';
   import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
   import {
     getDefaultModelForProvider,
@@ -374,8 +374,6 @@
   // Track which provider the user selected for the initial agent
   // Priority: active provider store (set via ProviderStatusPanel) takes precedence since it's the user's explicit choice
   let selectedProvider = $state<string>($activeProviderId$ ?? 'auggie');
-  let hasSelectedContext = $state(false);
-  let hasImages = $state(false);
 
   // Funnel tracking — fires at most once per form session, reset in clearForm()
   let hasFiredClick = $state(false);
@@ -390,7 +388,9 @@
   // Helper to restore the last used setup script for a repo
   // If no saved script exists for the repo, falls back to the generic "Copy config files only" template
   function restoreLastUsedSetupScript(repo: string) {
-    const lastUsed = repo ? setupScriptStore.getLastUsedForRepo(repo) : undefined;
+    const lastUsed = repo
+      ? selectLastUsedScriptForRepo.select(getReduxStore().getState(), repo)
+      : undefined;
     if (lastUsed) {
       setupScript = lastUsed.content;
       setupScriptName = lastUsed.name;
@@ -425,9 +425,7 @@
   // Branch status - received from BranchSelector
   // We always auto-pull when behind, so we just need to track the status for the pull operation
   let branchBehind = $state(0);
-  let hasUncommittedChanges = $state(false);
   let shouldPullBeforeCreate = $state(true);
-  let pendingBranchStatusRequest = $state<string | null>(null);
   let pullError = $state<string | null>(null);
   let showPullConflictDialog = $state(false);
   let isPulling = $state(false);
@@ -836,7 +834,6 @@
   let creationStage = $state(0); // 0-3 for progress stages
   let cloneProgress = $state<{ phase: string; percent: number; message: string } | null>(null);
   let error: string | null = $state(null);
-  let isFocused = $state(false);
   let controlsContainer: HTMLDivElement | null = $state(null);
   let richTextarea: RichTextarea | null = $state(null);
 
@@ -1010,7 +1007,6 @@
   // Collapse handler - blurs textarea and collapses
   function collapse() {
     isExpanded = false;
-    isFocused = false;
     // Blur any focused element within the container
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
@@ -1084,7 +1080,6 @@
           return; // Don't set isFocused to false when interacting with dropdowns
         }
       }
-      isFocused = false;
     }, 100);
   }
   function handleRepoChange(
@@ -1163,22 +1158,6 @@
   }
 
   // Extract repo name from GitHub URL for display
-  function getRepoNameFromGithubUrl(url: string): string {
-    try {
-      const urlObj = new URL(url);
-      const pathParts = urlObj.pathname.split('/').filter(Boolean);
-      if (pathParts.length >= 2) {
-        return pathParts[1].replace(/\.git$/, '');
-      }
-    } catch {
-      // Fall back to parsing manually
-      const parts = url.split('/').filter(Boolean);
-      if (parts.length >= 2) {
-        return parts[parts.length - 1].replace(/\.git$/, '');
-      }
-    }
-    return url;
-  }
 
   /**
    * Build context content string from a context mention for the agent
@@ -1458,11 +1437,14 @@
 
         if (mention.type === 'script') {
           try {
-            const { scriptsStore } = await import('$features/scripts/scripts.store.svelte');
+            const { getReduxStore } = await import('$lib/store/redux-dispatch-bridge');
+            const { selectScriptOutput, selectScriptById, selectScriptRuntime } =
+              await import('$lib/store/slices/scripts/scripts-selectors');
             const scriptId = mention.id;
-            const outputLines = scriptsStore.getOutput(scriptId);
-            const script = scriptsStore.scripts.get(scriptId);
-            const runtime = scriptsStore.getRuntime(scriptId);
+            const state = getReduxStore().getState();
+            const outputLines = selectScriptOutput.select(state, scriptId);
+            const script = selectScriptById.select(state, scriptId);
+            const runtime = selectScriptRuntime.select(state, scriptId);
 
             let content = `Script: ${script?.name || mention.label}\n`;
             content += `Command: ${script?.command || 'unknown'}\n`;
@@ -1647,7 +1629,7 @@
         }
       }
 
-      const result = await workspaceStore.create({
+      const result = await workspaceClient.create({
         title: '', // Start with blank title - agent will set it based on the task
         repositoryPath: String(remoteSetupSnapshot?.workspacePath || repoPath),
         githubUrl: repoType === 'github' && githubUrl ? githubUrl : undefined, // GitHub URL to clone
@@ -1681,8 +1663,8 @@
       // This is important when workspace IDs are reused (e.g., after deletion and recreation).
       // Without this, the workspace page may load stale layout data with duplicate tabs.
       try {
-        const { clearPanelLayout } = await import('$features/layout/panel-layout-manager.svelte');
-        clearPanelLayout(workspace.id);
+        const { getPanelLayoutManager } = await import('$features/layout/panel-layout-adapter');
+        getPanelLayoutManager(workspace.id).clearLayout();
       } catch (error) {
         logger.debug('Could not clear panel layout', { error });
       }
@@ -1693,7 +1675,7 @@
       // workspace, leading to spurious agent creation.
       try {
         const { workspaceStorageManager } =
-          await import('$features/workspace/workspace-storage-manager');
+          await import('$lib/store/slices/workspace/utils/workspace-storage-manager');
         workspaceStorageManager.clearState(workspace.id);
       } catch (error) {
         logger.debug('Could not clear workspace storage state', { error });
@@ -1719,12 +1701,18 @@
 
       // Save the setup script to the store for future reuse
       if (setupScript.trim()) {
-        setupScriptStore.save({
+        const now = new Date().toISOString();
+        const scriptToSave = {
+          id: uuidv4(),
           name: setupScriptName || 'Custom Script',
           content: setupScript.trim(),
           repoPath,
-          projectType: 'generic',
-        });
+          projectType: 'generic' as string,
+          lastUsedAt: now,
+          usageCount: 1,
+          createdAt: now,
+        };
+        dispatch(saveScript(scriptToSave));
         logger.info('Saved setup script to store', {
           name: setupScriptName,
           repoPath,
@@ -1779,24 +1767,26 @@
       if (stayOnHomePage) {
         // Update the workspace in the store with agentSummary so the agent shows immediately
         // This is needed because the workspace returned from create() doesn't include agentSummary
-        workspaceStore.updateLocalWorkspace(workspace.id, {
-          agentSummary: {
-            count: 1,
-            agents: [
-              {
-                id: initialAgent.agentId,
-                name: agentName,
-                status: 'busy',
-                specialist: (specialistId ?? null) as
-                  | 'spec-writer'
-                  | 'implementor'
-                  | 'verifier'
-                  | null, // Cast to WorkspaceAgentInfo specialist type
-                lastActivity: new Date().toISOString(),
-              },
-            ],
-          },
-        });
+        dispatch(
+          updateWorkspaceEntity(workspace.id, {
+            agentSummary: {
+              count: 1,
+              agents: [
+                {
+                  id: initialAgent.agentId,
+                  name: agentName,
+                  status: 'busy',
+                  specialist: (specialistId ?? null) as
+                    | 'spec-writer'
+                    | 'implementor'
+                    | 'verifier'
+                    | null, // Cast to WorkspaceAgentInfo specialist type
+                  lastActivity: new Date().toISOString(),
+                },
+              ],
+            },
+          }),
+        );
 
         // Create the agent session and send the initial message
         // When staying on home page, the workspace page flow that normally does this is bypassed
@@ -1845,7 +1835,7 @@
                   agentId: initialAgent.agentId,
                 },
               );
-            } catch (e) {
+            } catch {
               // Ignore parse errors
             }
           }
@@ -1930,17 +1920,13 @@
     if (preserveRepo && repoPath) {
       restoreLastUsedSetupScript(repoPath);
     }
-    hasImages = false;
-    hasSelectedContext = false; // Reset context selection state
     hasFiredClick = false;
     hasFiredType = false;
     error = null;
     // Reset branch status state
     branchBehind = 0;
-    hasUncommittedChanges = false;
     pullError = null;
     showPullConflictDialog = false;
-    pendingBranchStatusRequest = null;
     // Note: intentionally not resetting stayOnHomePage or shouldPullBeforeCreate - user preferences should persist
 
     // Immediately write the cleaned form state to localStorage so that even if
@@ -2002,8 +1988,6 @@
 
     // Insert context mention pill into the editor
     if (richTextarea) {
-      hasSelectedContext = true;
-
       if (metadata.type === 'linear') {
         richTextarea.insertContextMention({
           itemType: 'linear-issue',
@@ -2116,7 +2100,6 @@
           const dataUrl = await fileToDataUrl(file);
           richTextarea?.insertImage(dataUrl, file.name);
           insertedImageCount.value++;
-          hasImages = true;
         } catch (err) {
           logger.error('Failed to insert image', { fileName: file.name, error: err });
           toast.error(`Failed to insert image: ${file.name}`);
@@ -2182,9 +2165,6 @@
   }
 
   function handleContentChangeImmediate() {
-    // Check for inline images whenever content changes
-    hasImages = (richTextarea?.getInlineImages()?.length ?? 0) > 0;
-
     // Check for GitHub PRs with source branches in the content
     const contextMentions = richTextarea?.getContextMentions() ?? [];
 
@@ -2378,7 +2358,6 @@
         placeholder="What would you like to work on?"
         repoPath={repoType === 'local' ? repoPath : undefined}
         onfocus={() => {
-          isFocused = true;
           isExpanded = true;
         }}
         onkeydown={(event) => {

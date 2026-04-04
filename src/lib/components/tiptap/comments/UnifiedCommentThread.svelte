@@ -1,12 +1,5 @@
 <script lang="ts">
-  import {
-    faArrowUp,
-    faAt,
-    faCheck,
-    faEdit,
-    faPaperclip,
-    faTimes,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowUp, faAt, faPaperclip } from '@fortawesome/free-solid-svg-icons';
   import AgentPeekCard from './AgentPeekCard.svelte';
   import Comment from './Comment.svelte';
   import Fa from 'svelte-fa';
@@ -14,11 +7,12 @@
   import TipTapEditor from '$lib/components/chat/input/TipTapEditor.svelte';
   import type { Workspace } from '$shared/types';
   import { Button } from '$lib/components/ui/button';
-  import { formatDistanceToNow, format, differenceInDays } from 'date-fns';
   import { slide } from 'svelte/transition';
 
   import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
-  import { commentsStoreV2 } from '$features/comments/comments-v2.store.svelte';
+  import { getReduxStore, dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
+  import { selectCommentById } from '$lib/store/slices/comments/comments-selectors';
+  import { updateCommentAction } from '$lib/store/slices/comments/comments-slice';
 
   type CommentType = 'comment' | 'suggestion' | 'change-request' | 'question' | string;
 
@@ -68,17 +62,23 @@
     comment,
     replies = [],
     orphaned = false,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     focused = false,
     isCollapsed = false,
     replyValue = '',
     onReplyValueChange,
     onReply,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onAccept,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onReject,
     onResolve,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onMarkUnread,
     onEdit,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onCopyLink,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onDelete,
     onShow,
     onClose,
@@ -87,52 +87,12 @@
     showType = true,
   }: Props = $props();
 
-  function formatTimestamp(dateStr?: string) {
-    if (!dateStr) return '';
-    const d = new Date(dateStr);
-    const days = differenceInDays(new Date(), d);
-    return days >= 1 ? format(d, 'MMM d') : formatDistanceToNow(d, { addSuffix: true });
-  }
   let replyEditor: any = $state(null);
   $effect(() => {
     if (replyEditor && registerReplyInput) {
       registerReplyInput(replyEditor);
     }
   });
-
-  // Editing main comment
-  let isEditing = $state(false);
-  let editEditor: any = $state(null);
-  let editHTML = $state('');
-
-  async function beginEdit() {
-    isEditing = true;
-    const html = await Promise.resolve(
-      processMarkdownToHTML(comment.content || '', { allowEmpty: true }),
-    );
-    editHTML = html || '';
-  }
-
-  async function saveEdit() {
-    try {
-      const html = editEditor?.getHTML?.() ?? '';
-      const md = processHTMLToMarkdown(html, { preserveAnchors: false }).trim();
-      if (!md) return cancelEdit();
-      // Try V2 first, then legacy
-      const v2 = commentsStoreV2.getComment?.(comment.id);
-      if (v2) {
-        commentsStoreV2.updateComment(comment.id, { content: md });
-      }
-      isEditing = false;
-    } catch {
-      isEditing = false;
-    }
-  }
-
-  function cancelEdit() {
-    isEditing = false;
-    editHTML = '';
-  }
 
   // Editing a reply
   let editingReplyId: string | null = $state(null);
@@ -155,9 +115,9 @@
       const html = replyEditEditor?.getHTML?.() ?? '';
       const md = processHTMLToMarkdown(html, { preserveAnchors: false }).trim();
       if (!md) return cancelEditReply();
-      const v2 = commentsStoreV2.getComment?.(id);
+      const v2 = selectCommentById.select(getReduxStore().getState(), id);
       if (v2) {
-        commentsStoreV2.updateComment(id, { content: md });
+        reduxDispatch(updateCommentAction(id, { content: md }));
       }
     } finally {
       editingReplyId = null;
@@ -172,37 +132,16 @@
     replyEditEditor = null;
   }
 
-  function deleteReply(id: string) {
-    if (commentsStoreV2.getComment?.(id)) {
-      commentsStoreV2.removeComment(id);
-    }
-  }
-
-  // Expand/collapse long main comment text
-  let expanded = $state(false);
-  const contentKey = $derived(`${comment.id}:${(comment.content || '').length}`);
-  $effect(() => {
-    // Reset expansion when content changes
-    contentKey;
-    expanded = false;
-  });
-
   // Rendered HTML and plain-text for truncation
-  let commentHtml = $state('');
-  let commentText = $state('');
   $effect(() => {
     let destroyed = false;
     const content = comment.content || '';
     Promise.resolve(processMarkdownToHTML(content, { allowEmpty: true })).then((h) => {
       if (destroyed) return;
-      commentHtml = h || '';
       try {
         const d = document.createElement('div');
-        d.innerHTML = commentHtml;
-        commentText = (d.textContent || '').trim();
-      } catch {
-        commentText = content;
-      }
+        d.innerHTML = h || '';
+      } catch {}
     });
 
     return () => {

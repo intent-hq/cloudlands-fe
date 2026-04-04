@@ -30,7 +30,6 @@
 
   let iconSvg = $derived(getSpecialistIcon(specialist));
   let glowColor = $derived(getSpecialistGlowColor(specialist));
-  let effectiveColor = $derived(muted ? 'currentColor' : glowColor);
 </script>
 
 {#if iconSvg}

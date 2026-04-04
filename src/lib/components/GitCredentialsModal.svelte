@@ -1,7 +1,6 @@
 <script lang="ts">
   import { handleLink } from '$features/navigation/link-handler';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { getGitAuthErrorType } from '$shared/git/git-error-handler';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import { faExternalLink, faKey, faTerminal } from '@fortawesome/free-solid-svg-icons';
@@ -25,13 +24,15 @@
     onRetryInTerminal,
     errorMessage = '',
     rawError,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     operation = 'push',
     command,
     cwd,
   }: Props = $props();
 
+  const activeWorkspaceId = selectActiveWorkspaceId();
+
   // Determine error type for conditional display
-  const errorType = $derived(getGitAuthErrorType(errorMessage));
   // Use raw error for display if available, otherwise fall back to user-friendly message
   const displayError = $derived(rawError || errorMessage);
 
@@ -43,7 +44,7 @@
   }
 
   function openGitHubSSHDocs() {
-    const wsId = workspaceStore.current?.id;
+    const wsId = $activeWorkspaceId;
     if (wsId) {
       handleLink('https://docs.github.com/en/authentication/connecting-to-github-with-ssh', {
         workspaceId: WorkspaceId(wsId),
@@ -52,7 +53,7 @@
   }
 
   function openGitCredentialManagerDocs() {
-    const wsId = workspaceStore.current?.id;
+    const wsId = $activeWorkspaceId;
     if (wsId) {
       handleLink('https://github.com/git-ecosystem/git-credential-manager', {
         workspaceId: WorkspaceId(wsId),

@@ -10,6 +10,7 @@
     position: HoverPosition;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let { fileColumn, lineIndex, line: _line, position }: Props = $props();
 
   const language = $derived(getLanguageFromPath(fileColumn.filePath));

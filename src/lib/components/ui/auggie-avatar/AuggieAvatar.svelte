@@ -1,7 +1,7 @@
 <script lang="ts">
   import { stringToHash, SeededRandom } from '$lib/utils/hash';
-  import { hats, eyes, mouths, extras, getRandomColorsWithSeed } from './avatar-constants';
-  import { getSpecialistIcon, getSpecialistGlowColor } from './specialist-icons';
+  import { getRandomColorsWithSeed } from './avatar-constants';
+  import { getSpecialistIcon } from './specialist-icons';
   import { onMount } from 'svelte';
 
   interface Props {
@@ -53,6 +53,7 @@
   let stableFaceSeed = $derived(faceSeed || seed || 'default-face');
 
   // Create seeded random generator for face features
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let faceRandom = $derived.by(() => {
     const faceSeedStr =
       typeof stableFaceSeed === 'string' ? stableFaceSeed : String(stableFaceSeed);

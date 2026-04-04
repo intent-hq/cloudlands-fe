@@ -44,7 +44,7 @@
         return;
       }
 
-    } catch (e) {
+    } catch {
       error = 'Invalid JSON format';
       return;
     }

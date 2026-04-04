@@ -5,7 +5,6 @@
  * Stored separately from notes to support future multi-user scenarios.
  */
 
-import type { NoteId, WorkspaceId } from '../types';
 
 /**
  * Record of when a user last read a note

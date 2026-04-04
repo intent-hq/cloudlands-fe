@@ -7,12 +7,9 @@
  * Used for SSH workspaces where `.workspace/` metadata lives on the remote.
  */
 
-import { Logger } from '../../../shared/logger';
 import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
 import type { RemoteRPCClient } from '../../../shared/main/remote-rpc-client';
 import type { IMetadataFS, MetadataDirent, MetadataStat } from './metadata-fs';
-
-const logger = new Logger('RemoteMetadataFS');
 
 export class RemoteMetadataFS implements IMetadataFS {
   constructor(private readonly workspaceId: string) {}
@@ -23,6 +20,7 @@ export class RemoteMetadataFS implements IMetadataFS {
 
   // ── Read ──────────────────────────────────────────────────────────────
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async readFile(filePath: string, _encoding: 'utf-8'): Promise<string> {
     const client = await this.getClient();
     const result = await client.readFile({ path: filePath, encoding: 'utf-8' });
@@ -54,6 +52,7 @@ export class RemoteMetadataFS implements IMetadataFS {
 
   async readdir(
     dirPath: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _options: { withFileTypes: true },
   ): Promise<MetadataDirent[]> {
     const client = await this.getClient();
@@ -68,6 +67,7 @@ export class RemoteMetadataFS implements IMetadataFS {
 
   // ── Write ─────────────────────────────────────────────────────────────
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async writeFile(filePath: string, content: string, _encoding: 'utf-8'): Promise<void> {
     const client = await this.getClient();
     await client.writeFile({ path: filePath, content, encoding: 'utf-8', mkdirp: true });

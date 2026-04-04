@@ -14,7 +14,8 @@ import { Logger } from '../../../shared/logger';
 import { gitService } from '../../git/main/git.service';
 import { getServiceForWorkspace } from '../../file-tracking/main/file-tracking.ipc';
 import { ChangeStage } from '../../file-tracking/types';
-import { unifiedEventBus } from '../../events/main/unified-event-bus';
+import { mainDispatch } from '../../../store/main/redux-store-bridge';
+import { gitStatusChanged } from '../../../store/main/slices/git-events/git-events-slice';
 import type { WorkspaceId, Result } from '../../../shared/types';
 
 const logger = new Logger({ category: 'AgentCommitService' });
@@ -237,14 +238,14 @@ function notifyRendererOfCommit(workspaceId: string): void {
     // Clear git status cache so renderer's IPC request gets fresh data
     gitService.clearStatusCache(workspaceId as WorkspaceId);
 
-    // Emit git:status-changed via unifiedEventBus to refresh gitStore
+    // Emit git:status-changed via Redux to refresh gitStore
     // This broadcasts to all renderer windows
-    unifiedEventBus.emitDomainEvent('git:status-changed', {
+    mainDispatch(gitStatusChanged({
       workspaceId: workspaceId as WorkspaceId,
-    });
+    }));
 
     // Emit file-tracking:changes-updated directly to renderer windows
-    // to refresh fileTrackingStore
+    // to refresh file tracking state in Redux
     const windows = BrowserWindow.getAllWindows();
     for (const window of windows) {
       try {

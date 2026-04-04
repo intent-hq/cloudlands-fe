@@ -9,7 +9,6 @@ import { describe, it, expect } from 'vitest';
 
 // Import all test suites
 import './unified-id-service.test';
-import './unified-state-store.test';
 import './memory-manager.test';
 import './performance-optimizer.test';
 
@@ -18,23 +17,21 @@ describe('Agent System Unit Test Suite', () => {
     // This test ensures all test files are included
     const testFiles = [
       'unified-id-service.test',
-      'unified-state-store.test',
       'memory-manager.test',
       'performance-optimizer.test',
     ];
 
-    expect(testFiles).toHaveLength(4);
+    expect(testFiles).toHaveLength(3);
   });
 
   it('should cover all core services', () => {
     const services = [
       'UnifiedIdService',
-      'UnifiedStateStore',
       'MemoryManager',
       'PerformanceOptimizer',
     ];
 
-    expect(services).toHaveLength(4);
+    expect(services).toHaveLength(3);
   });
 });
 

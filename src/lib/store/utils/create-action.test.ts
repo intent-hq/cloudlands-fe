@@ -104,13 +104,13 @@ describe("createAsyncAction", () => {
     const action = createAsyncAction<[string]>("ASYNC_ACTION", "ASYNC_STAGES");
     const asyncResult = action("test-payload");
 
-    const error = new Error("Test error");
-    const failureResult = asyncResult.failure(error);
+    const errorMessage = "Test error";
+    const failureResult = asyncResult.failure(errorMessage);
 
     expect(failureResult.type).toBe("ASYNC_STAGES_FAILURE");
-    expect(failureResult.payload.error).toBe(error);
+    expect(failureResult.payload.error).toBe(errorMessage);
 
-    await expect(asyncResult.promise).rejects.toBe(error);
+    await expect(asyncResult.promise).rejects.toBe(errorMessage);
   });
 
   test("tuple type overload for async actions", () => {

@@ -41,6 +41,7 @@
   let savedPresets = $state<Array<{ name: string; filters: Filters }>>([]);
 
   // Event type mappings
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const eventTypeCategories = {
     fileChanges: ['file:created', 'file:changed', 'file:deleted', 'file:renamed'],
     agentActivity: [

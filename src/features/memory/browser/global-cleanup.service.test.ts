@@ -17,6 +17,7 @@ const mockComponentDisposalManager = {
 
 vi.mock('$lib/utils/logger', () => ({
   Logger: class {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     constructor(_config?: unknown) {}
     debug = vi.fn();
     info = vi.fn();

@@ -14,9 +14,10 @@
 
   import MonacoDiffViewer from '$lib/components/file-tracking/MonacoDiffViewer.svelte';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import { getPanelLayoutManager } from '../panel-layout-manager.svelte';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { WorkspaceId } from '$shared/types/branded-ids';
+  import { openTab, openTabInAdjacentOrSplit } from '$lib/store/slices/panel-layout/panel-layout-slice';
+  import { selectFocusedPanelId } from '$lib/store/slices/panel-layout/panel-layout-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectLineWrapping, selectFoldUnchanged, selectDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import { toggleLineWrapping, toggleFoldUnchanged, toggleDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { dispatch } from '$lib/store/redux-dispatch-bridge';
@@ -36,9 +37,9 @@
   let { tab, workspaceId, isActive }: TabTypeComponentProps = $props();
 
   const headerContext = getPanelHeaderContext();
-  const layoutManager = $derived(getPanelLayoutManager(workspaceId));
-  const workspace = $derived(workspaceStore.findById(WorkspaceId(workspaceId)));
-  const repoPath = $derived(workspace?.worktreePath || workspace?.repositoryPath || undefined);
+
+  const workspace = selectWorkspaceById(workspaceId);
+  const repoPath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || undefined);
 
   // Get the activity event from tab data
   const activityEvent = $derived(tab.data?.event as WorkspaceEvent | undefined);
@@ -141,17 +142,19 @@
       filePath,
       workspaceId,
     };
+    const store = getReduxStore();
     if (openInAdjacentPanel) {
-      layoutManager.openTabInAdjacentOrSplit(tabData, sourcePanelId);
-      if (layoutManager.focusedPanelId) {
+      store.dispatch(openTabInAdjacentOrSplit(workspaceId, tabData, sourcePanelId));
+      const focusedId = selectFocusedPanelId.select(store.getState(), workspaceId);
+      if (focusedId) {
         window.dispatchEvent(
           new CustomEvent('panel:request-focus', {
-            detail: { panelId: layoutManager.focusedPanelId },
+            detail: { panelId: focusedId },
           }),
         );
       }
     } else {
-      layoutManager.openTab(tabData);
+      store.dispatch(openTab(workspaceId, tabData));
     }
   }
 

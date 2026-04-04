@@ -29,7 +29,7 @@ export function safeDispose(obj: any): void {
   if (isDisposable(obj)) {
     try {
       obj.dispose();
-    } catch (error) {
+    } catch {
       // Silently catch disposal errors to prevent cascading failures
     }
   }

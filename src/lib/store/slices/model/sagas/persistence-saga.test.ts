@@ -1,17 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, it, vi } from 'vitest';
 import { expectSaga } from 'redux-saga-test-plan';
 import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
 
 vi.mock('typed-redux-saga', async () => await import('$lib/store/utils/test-helpers/typed-redux-saga-mock'));
 
-vi.mock('$features/agent/services/unified-state-store', () => ({
-  unifiedStateStore: {
-    selectModel: vi.fn(),
-    setAvailableModels: vi.fn(),
-  },
-}));
-
-import { unifiedStateStore } from '$features/agent/services/unified-state-store';
 import {
   removeLocalStorageItem,
   setLocalStorageItem,
@@ -55,9 +47,6 @@ describe('persistenceSaga', () => {
       .put(setAvailableModels([]))
       .put(loadModels())
       .silentRun(0);
-
-    expect(unifiedStateStore.selectModel).toHaveBeenCalledWith(savedModel);
-    expect(unifiedStateStore.setAvailableModels).toHaveBeenCalledWith([]);
   });
 
   it('resets global and unified selection to a provider default when no saved model exists', async () => {
@@ -81,8 +70,5 @@ describe('persistenceSaga', () => {
       .put(setAvailableModels([]))
       .put(loadModels())
       .silentRun(0);
-
-    expect(unifiedStateStore.selectModel).toHaveBeenCalledWith(fallbackModel);
-    expect(unifiedStateStore.setAvailableModels).toHaveBeenCalledWith([]);
   });
 });

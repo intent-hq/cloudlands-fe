@@ -1,10 +1,11 @@
 import { takeEvery } from "redux-saga/effects";
 import { call, put, select } from "typed-redux-saga";
 import { agentFactory } from "$features/agent/services/agent-factory";
-import { agentService } from "$features/agent/agent.service";
-import { workspaceStore } from "$features/workspace/workspace.store.svelte";
-import { notesClient } from "$features/notes/notes.client";
-import { notesStateManager } from "$features/notes/notes.store.svelte";
+import { agentService } from "$features/agent/agent-ipc-bridge";
+import { notesIpc } from "$lib/store/slices/workspace-notes/sagas/notes-ipc";
+import { NOTES_CHANNELS } from "$shared/ipc/channels";
+import { selectNoteById, selectSpec } from "$lib/store/slices/workspace-notes/workspace-notes-selectors";
+import { addOptimisticNote, removeOptimisticNote, updateNoteContent, reloadNotes } from "$lib/store/slices/workspace-notes/workspace-notes-slice";
 import { terminalManager } from "$features/terminal/terminal-manager.svelte";
 import { unifiedIdService } from "$shared/services/unified-id.service";
 import { WorkspaceId, NoteId } from "$shared/types/branded-ids";
@@ -20,9 +21,13 @@ import { taskNoteUrl } from "$shared/constants/intent-links";
 import { buildTaskNoteContent } from "$features/notes/utils/task-agent-message-builder";
 import { stripMarkdownFormatting } from "$shared/utils-client";
 import { track } from "$lib/services/analytics";
-import { getPanelLayoutManager, hasPanelLayoutManager, } from "$features/layout/panel-layout-manager.svelte";
+import { getPanelLayoutManager, hasPanelLayoutManager, } from "$features/layout/panel-layout-adapter";
+import { selectPanels } from "$lib/store/slices/panel-layout/panel-layout-selectors";
+import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
+import { selectWorkspaceById } from "$lib/store/slices/workspace/workspace-selectors";
 import { addAgent, clearInitialAgentConfig, createAgentRequested, createAgentWithSpecialistRequested, delegateTaskRequested, markAgentRecentlyCreated as markAgentRecentlyCreatedAction, } from "../workspace-agents-slice";
 import { selectAllWorkspaceAgents } from "../workspace-agents-selectors";
+import { upsertSession } from "../../agent-session/agent-session-slice";
 import { addTerminal, markTerminalRecentlyCreated, createTerminalRequested, } from "../../terminals/terminals-slice";
 /**
  * Open an agent tab in the panel layout manager.
@@ -31,7 +36,8 @@ function openAgentInLayout(agentId: string, agentName: string, wsId: string): vo
     if (!hasPanelLayoutManager(wsId))
         return;
     const layoutManager = getPanelLayoutManager(wsId);
-    for (const [panelId, panel] of Object.entries(layoutManager.layout.panels)) {
+    const panels = selectPanels.select(getReduxStore().getState(), wsId);
+    for (const [panelId, panel] of Object.entries(panels)) {
         const existingAgentTab = panel.tabs.find((t) => t.type === "agent" && t.agentId === agentId);
         if (existingAgentTab) {
             layoutManager.focusPanel(panelId);
@@ -47,7 +53,7 @@ function openAgentInLayout(agentId: string, agentName: string, wsId: string): vo
     });
 }
 export function* handleCreateAgentRequestedSaga(wsId: string, agentType?: string) {
-    const workspace = workspaceStore.findById(WorkspaceId(wsId));
+    const workspace = yield* selectWorkspaceById.effect(wsId);
     if (!workspace) {
         return;
     }
@@ -81,6 +87,7 @@ export function* handleCreateAgentRequestedSaga(wsId: string, agentType?: string
     const session = result.agent;
     // Add to agents list if not already present
     if (!agents.some((a) => a.id === session.id)) {
+        yield* put(upsertSession(session));
         yield* put(addAgent(wsId, session));
     }
     yield* put(markAgentRecentlyCreatedAction(wsId, session.id));
@@ -88,7 +95,7 @@ export function* handleCreateAgentRequestedSaga(wsId: string, agentType?: string
     setTimeout(() => openAgentInLayout(session.id, session.name || agentName, wsId), 100);
 }
 export function* handleCreateAgentWithSpecialistRequestedSaga(wsId: string, specialistId: string | null) {
-    const workspace = workspaceStore.findById(WorkspaceId(wsId));
+    const workspace = yield* selectWorkspaceById.effect(wsId);
     if (!workspace) {
         return;
     }
@@ -136,6 +143,7 @@ export function* handleCreateAgentWithSpecialistRequestedSaga(wsId: string, spec
     const session = result.agent;
     // Add to agents list if not already present
     if (!agents.some((a) => a.id === session.id)) {
+        yield* put(upsertSession(session));
         yield* put(addAgent(wsId, session));
     }
     yield* put(markAgentRecentlyCreatedAction(wsId, session.id));
@@ -143,7 +151,7 @@ export function* handleCreateAgentWithSpecialistRequestedSaga(wsId: string, spec
     setTimeout(() => openAgentInLayout(session.id, session.name || agentName, wsId), 100);
 }
 export function* handleDelegateTaskRequestedSaga(wsId: string, taskText: string, openAgent?: boolean) {
-    const workspace = workspaceStore.findById(WorkspaceId(wsId));
+    const workspace = yield* selectWorkspaceById.effect(wsId);
     if (!workspace) {
         return;
     }
@@ -156,7 +164,7 @@ export function* handleDelegateTaskRequestedSaga(wsId: string, taskText: string,
     const optimisticNoteId = unifiedIdService.generateNoteId();
     // Step 2: Build content and add optimistic note
     const parentNoteId = SPEC_NOTE_ID;
-    const parentNote = notesStateManager.findById(NoteId(parentNoteId));
+    const parentNote = yield* selectNoteById.effect(wsId, parentNoteId);
     const parentNoteTitle = parentNote?.title || "Workspace Spec";
     const taskNoteContent = buildTaskNoteContent(taskText, parentNoteId, parentNoteTitle);
     // Add optimistic note to store immediately (shows in sidebar)
@@ -178,33 +186,34 @@ export function* handleDelegateTaskRequestedSaga(wsId: string, taskText: string,
         is_pinned: false,
         is_archived: false,
     };
-    notesStateManager.addOptimisticNote(optimisticNote as any);
+    yield* put(addOptimisticNote(wsId, optimisticNote as any));
     try {
         const defaultModel: string = yield* select((s) => selectWorkspaceDefaultModel.select(s, wsId));
         // Step 3: Create the Task Note with agent via createPrerequisiteNote
-        const result: Awaited<ReturnType<typeof notesClient.createPrerequisiteNote>> = yield* call({
-            context: notesClient,
-            fn: notesClient.createPrerequisiteNote,
-        }, WorkspaceId(wsId), NoteId(parentNoteId), {
-            title: sanitizedTitle,
-            content: taskNoteContent,
-            taskStatus: "in_progress" as const,
-            agentConfig: {
-                instruction: taskText,
-                model: defaultModel,
-                autoStart: true,
-                agentId: optimisticAgentId,
+        const result = yield* call(notesIpc<{ note: import("$shared/types").Note; agent?: import("$shared/types").AgentSession }>, NOTES_CHANNELS.CREATE_PREREQUISITE_NOTE, {
+            workspaceId: WorkspaceId(wsId),
+            dependentNoteId: NoteId(parentNoteId),
+            options: {
+                title: sanitizedTitle,
+                content: taskNoteContent,
+                taskStatus: "in_progress" as const,
+                agentConfig: {
+                    instruction: taskText,
+                    model: defaultModel,
+                    autoStart: true,
+                    agentId: optimisticAgentId,
+                },
             },
         });
         if (!result.ok) {
             // Rollback: remove optimistic note
-            notesStateManager.removeOptimisticNote(optimisticNoteId);
+            yield* put(removeOptimisticNote(wsId, optimisticNoteId));
             throw new Error(result.error || "Failed to create Task Note");
         }
         const { note: taskNote, agent: agentData } = result.data;
         // Step 4: Replace optimistic note with real note from server
-        notesStateManager.removeOptimisticNote(optimisticNoteId);
-        notesStateManager.addOptimisticNote(taskNote);
+        yield* put(removeOptimisticNote(wsId, optimisticNoteId));
+        yield* put(addOptimisticNote(wsId, taskNote));
         // Step 5: Add agent session to stores if agent was created
         if (agentData) {
             const agents: AgentSession[] = yield* select((s) => selectAllWorkspaceAgents.select(s, wsId));
@@ -221,6 +230,7 @@ export function* handleDelegateTaskRequestedSaga(wsId: string, taskText: string,
                     updatedAt: new Date().toISOString(),
                 } as AgentSession;
                 agentService.addSession(session);
+                yield* put(upsertSession(session));
                 yield* put(addAgent(wsId, session));
             }
             yield* put(markAgentRecentlyCreatedAction(wsId, agentData.id));
@@ -230,7 +240,8 @@ export function* handleDelegateTaskRequestedSaga(wsId: string, taskText: string,
             }
         }
         // Step 6: Convert the checklist item in spec to a linked task
-        const specContent = notesStateManager.spec?.content || "";
+        const spec = yield* selectSpec.effect(wsId);
+        const specContent = spec?.content || "";
         if (specContent && taskNote.id) {
             const escapedTaskText = taskText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
             const taskRegex = new RegExp(`^(\\s*[-*]\\s*\\[[ xX\\/]\\]\\s*)${escapedTaskText}(\\s*)$`, "gm");
@@ -242,17 +253,17 @@ export function* handleDelegateTaskRequestedSaga(wsId: string, taskText: string,
             const linkedTaskText = `$1[${escapedLinkText}](${taskNoteUrl(taskNote.id)})$2`;
             const updatedSpecContent = specContent.replace(taskRegex, linkedTaskText);
             if (updatedSpecContent !== specContent) {
-                yield* call([notesStateManager, notesStateManager.updateNoteContent], NoteId(SPEC_NOTE_ID), updatedSpecContent, true);
+                yield* put(updateNoteContent(wsId, SPEC_NOTE_ID, updatedSpecContent, true));
             }
         }
         // Reload notes to ensure everything is in sync
-        yield* call([notesStateManager, notesStateManager.reloadNotes]);
+        yield* put(reloadNotes(wsId));
     }
-    catch (error) {
+    catch {
     }
 }
 export function* handleCreateTerminalRequestedSaga(wsId: string) {
-    const workspace = workspaceStore.findById(WorkspaceId(wsId));
+    const workspace = yield* selectWorkspaceById.effect(wsId);
     if (!workspace) {
         return;
     }

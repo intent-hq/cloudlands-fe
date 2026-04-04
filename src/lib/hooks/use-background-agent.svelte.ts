@@ -32,86 +32,60 @@
  */
 
 import {
-  BackgroundAgentExecutor,
-  type ExecutorOptions,
-  type ExecutorStatus,
-} from '$features/agent/background-agent-executor.svelte';
+  executeBackgroundAgent,
+  cancelExecution,
+  resetExecutor,
+} from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
+import type { AgentExecutorContext } from '$lib/store/slices/background-agent-executor/background-agent-executor-types';
+import type { ExecutorStatus } from '$lib/store/slices/background-agent-executor/background-agent-executor-types';
+import { getDispatch } from '$lib/store/utils/utils';
 import type { Workspace } from '$shared/types';
 
-export interface UseBackgroundAgentOptions extends Omit<ExecutorOptions, 'type'> {
+export interface UseBackgroundAgentOptions {
   autoExecute?: boolean; // Execute immediately when workspace is available
   workspace?: Workspace; // Workspace to use for auto-execution
+  onResult?: (result: string) => void;
+  onError?: (error: Error) => void;
+  onStatusChange?: (status: ExecutorStatus) => void;
+  resultTag?: string;
+  timeout?: number;
 }
 
 export interface UseBackgroundAgentReturn {
-  // Reactive state
-  status: ExecutorStatus;
-  isRunning: boolean;
-  isComplete: boolean;
-  progress: number;
-  result: string | null;
-  error: Error | null;
-  messages: any[];
-  agentId: string | null;
-
-  // Methods
-  execute: (workspace: Workspace, context?: any) => Promise<string | null>;
+  // Methods only — reactive state must be read via selectors in the consuming component
+  execute: (workspace: Workspace, context?: AgentExecutorContext) => void;
   cancel: () => void;
   reset: () => void;
 }
 
 /**
- * Create a reactive background agent hook
+ * Create a reactive background agent hook backed by Redux
  */
 export function useBackgroundAgent(
   type: string,
   options: UseBackgroundAgentOptions = {},
 ): UseBackgroundAgentReturn {
-  const { autoExecute, workspace, ...executorOptions } = options;
+  const { autoExecute, workspace: initialWorkspace } = options;
+  const dispatch = getDispatch();
 
-  // Create the executor
-  const executor = new BackgroundAgentExecutor({
-    type,
-    ...executorOptions,
-  });
+  // We need a workspaceId to scope the selector. Use provided workspace or empty.
+  const wsId = initialWorkspace?.id ?? '';
 
   // Auto-execute if requested
-  if (autoExecute && workspace) {
-    executor.execute(workspace);
+  if (autoExecute && initialWorkspace) {
+    dispatch(executeBackgroundAgent(initialWorkspace.id, type));
   }
 
-  // Return reactive interface
   return {
-    // Reactive state (these will be reactive due to $state in executor)
-    get status() {
-      return executor.status;
+    execute: (workspace: Workspace, context?: AgentExecutorContext) => {
+      dispatch(executeBackgroundAgent(workspace.id, type, context));
     },
-    get isRunning() {
-      return executor.isRunning;
+    cancel: () => {
+      if (wsId) dispatch(cancelExecution(wsId, type));
     },
-    get isComplete() {
-      return executor.isComplete;
+    reset: () => {
+      if (wsId) dispatch(resetExecutor(wsId, type));
     },
-    get progress() {
-      return executor.progress;
-    },
-    get result() {
-      return executor.result;
-    },
-    get error() {
-      return executor.error;
-    },
-    get messages() {
-      return executor.messages;
-    },
-    get agentId() {
-      return executor.agentId;
-    },
-
-    // Methods
-    execute: (workspace: Workspace, context?: any) => executor.execute(workspace, context),
-    cancel: () => executor.cancel(),
-    reset: () => executor.reset(),
   };
 }
 

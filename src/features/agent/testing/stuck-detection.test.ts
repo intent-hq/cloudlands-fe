@@ -9,8 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { StuckDetector, createStuckDetector, type StuckDetectorConfig } from './stuck-detector';
-import type { AgentAction, DelegationRecord } from './specialist-validator';
+import { StuckDetector, createStuckDetector } from './stuck-detector';
 
 describe('StuckDetector', () => {
   let detector: StuckDetector;

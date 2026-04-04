@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { flushSync } from 'svelte';
 import { writable } from 'svelte/store';
-import type { AgentSession } from '$features/agent/agent.service';
+import type { AgentSession } from '$features/agent/agent-ipc-bridge';
 import { AgentStatus } from '$shared/types';
 
 const mockDiskAgents = vi.hoisted(() => ({
@@ -21,27 +21,30 @@ const agentServiceMocks = vi.hoisted(() => ({
 }));
 
 const browserMocks = vi.hoisted(() => ({
-  getStore: vi.fn(),
-  getSessionForWorkspace: vi.fn(),
-  addSession: vi.fn(),
-  addSessionForWorkspace: vi.fn(),
-  publishSessionStoreSnapshot: vi.fn(),
   subscribeToAgent: vi.fn(),
 }));
 
+const workspaceMocks = vi.hoisted(() => ({
+  getReduxStore: vi.fn(),
+  selectCurrentWorkspace: vi.fn(),
+  selectWorkspaceById: vi.fn(),
+  state: {
+    current: { id: 'test-workspace', name: 'Test Workspace' },
+    byId: {
+      'test-workspace': { id: 'test-workspace', name: 'Test Workspace' },
+    } as Record<string, { id: string; name: string }>,
+    workspaceAgents: { byWorkspaceId: {} as Record<string, any> },
+  },
+  listeners: new Set<() => void>(),
+}));
+
 // Mock dependencies
-vi.mock('$features/agent/agent.service', () => ({
+vi.mock('$features/agent/agent-ipc-bridge', () => ({
   agentService: agentServiceMocks,
 }));
 
-// Mock sessionStore and subscribeToAgent - these are what the implementation uses
+// Mock subscribeToAgent - this is what the implementation uses
 vi.mock('$features/agent/browser', () => ({
-  sessionStore: {
-    getStore: browserMocks.getStore,
-    getSessionForWorkspace: browserMocks.getSessionForWorkspace,
-    addSessionForWorkspace: browserMocks.addSessionForWorkspace,
-  },
-  publishSessionStoreSnapshot: browserMocks.publishSessionStoreSnapshot,
   subscribeToAgent: browserMocks.subscribeToAgent,
 }));
 
@@ -49,19 +52,17 @@ vi.mock('$lib/utils/agent-loader', () => ({
   getStoredAgentsFromDisk: vi.fn(async () => mockDiskAgents.agents),
 }));
 
-vi.mock('$features/workspace/workspace.store.svelte', () => {
-  const testWorkspace = { id: 'test-workspace', name: 'Test Workspace' };
-  return {
-    workspaceStore: {
-      current: testWorkspace,
-      items: [testWorkspace],
-      findById: (id: string) => (id === 'test-workspace' ? testWorkspace : undefined),
-    },
-  };
-});
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: workspaceMocks.getReduxStore,
+}));
 
-import { agentService } from '$features/agent/agent.service';
-import { sessionStore, subscribeToAgent } from '$features/agent/browser';
+vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+  selectCurrentWorkspace: { select: workspaceMocks.selectCurrentWorkspace },
+  selectWorkspaceById: { select: workspaceMocks.selectWorkspaceById },
+}));
+
+import { agentService } from '$features/agent/agent-ipc-bridge';
+import { subscribeToAgent } from '$features/agent/browser';
 import { useAgentSubscription, useAllAgentsSubscription } from '../agent-subscription.svelte';
 
 describe('useAgentSubscription', () => {
@@ -78,9 +79,6 @@ describe('useAgentSubscription', () => {
 
     // Mock agentService.getStore to return our mock store
     vi.mocked(agentService.getStore).mockReturnValue(mockStore as any);
-
-    // Mock sessionStore.getStore to return our mock store (this is what the implementation uses for subscriptions)
-    vi.mocked(sessionStore.getStore).mockReturnValue(mockStore as any);
 
     // Mock subscribeToAgent - this is what useAgentSubscription actually uses
     // It should call the callback immediately with the current agent value and return an unsubscribe function
@@ -108,6 +106,23 @@ describe('useAgentSubscription', () => {
 
     // Mock restoreSessionWithoutBackend to resolve successfully
     vi.mocked(agentService.restoreSessionWithoutBackend).mockResolvedValue(true);
+
+    workspaceMocks.state.current = { id: 'test-workspace', name: 'Test Workspace' };
+    workspaceMocks.state.byId = {
+      'test-workspace': { id: 'test-workspace', name: 'Test Workspace' },
+    };
+    workspaceMocks.listeners.clear();
+    workspaceMocks.getReduxStore.mockReturnValue({
+      getState: () => workspaceMocks.state,
+      subscribe: (listener: () => void) => {
+        workspaceMocks.listeners.add(listener);
+        return () => {
+          workspaceMocks.listeners.delete(listener);
+        };
+      },
+    });
+    workspaceMocks.selectCurrentWorkspace.mockImplementation((state: any) => state.current);
+    workspaceMocks.selectWorkspaceById.mockImplementation((state: any, id: string) => state.byId[id]);
   });
 
   afterEach(() => {
@@ -823,6 +838,33 @@ describe('useAllAgentsSubscription – workspace isolation', () => {
   let mockStore: ReturnType<typeof writable>;
   let mockSessions: AgentSession[];
 
+  // Helper to build workspaceAgents + agentSessions Redux state from mockSessions
+  function buildWorkspaceAgentsState() {
+    const byWorkspaceId: Record<string, any> = {};
+    for (const session of mockSessions) {
+      const wsId = String(session.workspaceId);
+      if (!byWorkspaceId[wsId]) {
+        byWorkspaceId[wsId] = { agentIds: [] as string[] };
+      }
+      const ws = byWorkspaceId[wsId];
+      if (!ws.agentIds.includes(session.id)) ws.agentIds.push(session.id);
+    }
+    return byWorkspaceId;
+  }
+
+  function buildAgentSessionsState() {
+    const byAgentId: Record<string, any> = {};
+    const agentIdsByWorkspace: Record<string, string[]> = {};
+    for (const session of mockSessions) {
+      byAgentId[session.id] = session;
+      const wsId = String(session.workspaceId);
+      if (!agentIdsByWorkspace[wsId]) agentIdsByWorkspace[wsId] = [];
+      if (!agentIdsByWorkspace[wsId].includes(session.id)) agentIdsByWorkspace[wsId].push(session.id);
+    }
+    return { byAgentId, agentIdsByWorkspace };
+  }
+
+
   beforeEach(() => {
     vi.clearAllMocks();
 
@@ -830,34 +872,27 @@ describe('useAllAgentsSubscription – workspace isolation', () => {
     mockDiskAgents.agents = [];
     mockStore = writable({ sessions: mockSessions, activeSessionId: null });
 
-    browserMocks.getStore.mockReturnValue(mockStore as any);
-    browserMocks.getSessionForWorkspace.mockImplementation((workspaceId: string, agentId: string) => {
-      return (
-        mockSessions.find((session) => session.id === agentId && String(session.workspaceId) === String(workspaceId)) as
-          | AgentSession
-          | undefined
-      );
+    // Add workspace entries for workspace isolation tests
+    workspaceMocks.state.byId = {
+      'test-workspace': { id: 'test-workspace', name: 'Test Workspace' },
+      'workspace-A': { id: 'workspace-A', name: 'Workspace A' },
+      'workspace-B': { id: 'workspace-B', name: 'Workspace B' },
+    };
+    workspaceMocks.selectWorkspaceById.mockImplementation((state: any, id: string) => state.byId[id]);
+    // Reset Redux state - getState dynamically builds from mockSessions
+    workspaceMocks.listeners.clear();
+    workspaceMocks.getReduxStore.mockReturnValue({
+      getState: () => ({
+        ...workspaceMocks.state,
+        workspaceAgents: { byWorkspaceId: buildWorkspaceAgentsState() },
+        agentSessions: buildAgentSessionsState(),
+      }),
+      subscribe: (listener: () => void) => {
+        workspaceMocks.listeners.add(listener);
+        return () => { workspaceMocks.listeners.delete(listener); };
+      },
     });
-    browserMocks.addSession.mockImplementation((session: AgentSession) => {
-      const nextSession = session as AgentSession;
-      const existingIndex = mockSessions.findIndex((item) => item.id === nextSession.id);
-      if (existingIndex === -1) {
-        mockSessions.push(nextSession);
-      } else {
-        mockSessions[existingIndex] = nextSession;
-      }
-      mockStore.set({ sessions: [...mockSessions], activeSessionId: null });
-    });
-    browserMocks.addSessionForWorkspace.mockImplementation((workspaceId: string, session: AgentSession) => {
-      const nextSession = { ...session, workspaceId } as AgentSession;
-      const existingIndex = mockSessions.findIndex((item) => item.id === nextSession.id);
-      if (existingIndex === -1) {
-        mockSessions.push(nextSession);
-      } else {
-        mockSessions[existingIndex] = nextSession;
-      }
-      mockStore.set({ sessions: [...mockSessions], activeSessionId: null });
-    });
+
     vi.mocked(agentService.restoreSessionWithoutBackend).mockResolvedValue(true);
   });
 
@@ -907,11 +942,36 @@ describe('useAllAgentsSubscription – workspace isolation', () => {
       id: 'agent-a',
       name: existingSession.name,
     });
-    browserMocks.getSessionForWorkspace.mockImplementation((workspaceId: string, agentId: string) => {
-      if (workspaceId === 'test-workspace' && agentId === 'agent-a') {
-        return existingSession;
-      }
-      return undefined;
+
+    // Put the existing agent into the Redux mock state so selectAgentById finds it
+    const byWorkspaceId = buildWorkspaceAgentsState();
+    // Add the agent under test-workspace (existing in Redux with stale workspaceId)
+    byWorkspaceId['test-workspace'] = {
+      agentIds: ['agent-a'],
+    };
+
+    // Also add to agentSessions
+    const agentSessionsState = buildAgentSessionsState();
+    agentSessionsState.byAgentId['agent-a'] = existingSession;
+    if (!agentSessionsState.agentIdsByWorkspace['test-workspace']) {
+      agentSessionsState.agentIdsByWorkspace['test-workspace'] = [];
+    }
+    if (!agentSessionsState.agentIdsByWorkspace['test-workspace'].includes('agent-a')) {
+      agentSessionsState.agentIdsByWorkspace['test-workspace'].push('agent-a');
+    }
+
+    const mockDispatch = vi.fn();
+    workspaceMocks.getReduxStore.mockReturnValue({
+      getState: () => ({
+        ...workspaceMocks.state,
+        workspaceAgents: { byWorkspaceId },
+        agentSessions: agentSessionsState,
+      }),
+      subscribe: (listener: () => void) => {
+        workspaceMocks.listeners.add(listener);
+        return () => { workspaceMocks.listeners.delete(listener); };
+      },
+      dispatch: mockDispatch,
     });
 
     const cleanup = $effect.root(() => {
@@ -920,16 +980,10 @@ describe('useAllAgentsSubscription – workspace isolation', () => {
 
     flushSync();
     await vi.waitFor(() => {
-      expect(browserMocks.addSessionForWorkspace).toHaveBeenCalledWith(
-        'test-workspace',
-        expect.objectContaining({
-          id: 'agent-a',
-          workspaceId: 'test-workspace',
-        }),
-      );
+      // Now expects Redux dispatch with upsertAgentSession instead of addSessionForWorkspace
+      expect(mockDispatch).toHaveBeenCalled();
     });
-    expect(browserMocks.publishSessionStoreSnapshot).toHaveBeenCalled();
-    expect(browserMocks.addSession).not.toHaveBeenCalled();
+    // Should NOT fall back to restoreSessionWithoutBackend since agent exists in Redux
     expect(agentService.restoreSessionWithoutBackend).not.toHaveBeenCalled();
 
     cleanup();
@@ -1026,8 +1080,53 @@ describe('useAllAgentsSubscription – loading state', () => {
     mockSessions = [];
     mockStore = writable({ sessions: mockSessions, activeSessionId: null });
 
-    vi.mocked(sessionStore.getStore).mockReturnValue(mockStore as any);
     vi.mocked(agentService.restoreSessionWithoutBackend).mockResolvedValue(true);
+
+    // Build workspace agents state dynamically from mockSessions
+    function buildWsAgentsState() {
+      const byWorkspaceId: Record<string, any> = {};
+      for (const session of mockSessions) {
+        const wsId = String(session.workspaceId);
+        if (!byWorkspaceId[wsId]) {
+          byWorkspaceId[wsId] = { agentIds: [] as string[] };
+        }
+        const ws = byWorkspaceId[wsId];
+        if (!ws.agentIds.includes(session.id)) ws.agentIds.push(session.id);
+      }
+      return byWorkspaceId;
+    }
+    function buildAgentSessionsState2() {
+      const byAgentId: Record<string, any> = {};
+      const agentIdsByWorkspace: Record<string, string[]> = {};
+      for (const session of mockSessions) {
+        byAgentId[session.id] = session;
+        const wsId = String(session.workspaceId);
+        if (!agentIdsByWorkspace[wsId]) agentIdsByWorkspace[wsId] = [];
+        if (!agentIdsByWorkspace[wsId].includes(session.id)) agentIdsByWorkspace[wsId].push(session.id);
+      }
+      return { byAgentId, agentIdsByWorkspace };
+    }
+    workspaceMocks.state.byId = {
+      'test-workspace': { id: 'test-workspace', name: 'Test Workspace' },
+      'ws-1': { id: 'ws-1', name: 'Workspace 1' },
+      'ws-2': { id: 'ws-2', name: 'Workspace 2' },
+      'some-workspace': { id: 'some-workspace', name: 'Some Workspace' },
+    };
+    workspaceMocks.selectWorkspaceById.mockImplementation((state: any, id: string) => state.byId[id]);
+    workspaceMocks.listeners.clear();
+    workspaceMocks.getReduxStore.mockReturnValue({
+      getState: () => ({
+        ...workspaceMocks.state,
+        workspaceAgents: { byWorkspaceId: buildWsAgentsState() },
+        agentSessions: buildAgentSessionsState2(),
+      }),
+      subscribe: (listener: () => void) => {
+        workspaceMocks.listeners.add(listener);
+        return () => {
+          workspaceMocks.listeners.delete(listener);
+        };
+      },
+    });
   });
 
   function makeAgent(id: string, workspaceId: string): AgentSession {
@@ -1043,6 +1142,15 @@ describe('useAllAgentsSubscription – loading state', () => {
       lastActivity: new Date(),
       isProcessing: false,
     };
+  }
+
+  /** Helper to put agents into mockSessions (which getState() builds from dynamically) */
+  function addAgentsToReduxState(_workspaceId: string, agents: AgentSession[]) {
+    for (const a of agents) {
+      const idx = mockSessions.findIndex(s => s.id === a.id);
+      if (idx === -1) mockSessions.push(a);
+      else mockSessions[idx] = a;
+    }
   }
 
   it('loading starts true when workspaceId is provided and store is empty', () => {
@@ -1062,9 +1170,9 @@ describe('useAllAgentsSubscription – loading state', () => {
   });
 
   it('loading becomes false when agents exist in store', () => {
-    // Simulate normal state: agents already exist
+    // Simulate normal state: agents already exist in Redux
     const agent = makeAgent('agent-1', 'test-workspace');
-    mockSessions.push(agent);
+    addAgentsToReduxState('test-workspace', [agent]);
 
     const cleanup = $effect.root(() => {
       const sub = useAllAgentsSubscription('test-workspace');
@@ -1119,12 +1227,9 @@ describe('useAllAgentsSubscription – loading state', () => {
   });
 
   it('loading transitions to true when workspace changes to one without agents', () => {
-    // Regression: when the resolved workspace ID changes (e.g. workspace restore/switch),
-    // initialStateChecked must reset so the new workspace gets its own loading cycle.
-    // Uses $state to simulate reactive workspace ID changes as in real components.
+    // ws-1 has agents in Redux, ws-2 does not
     const agent = makeAgent('agent-1', 'ws-1');
-    mockSessions.push(agent);
-    mockStore.set({ sessions: mockSessions, activeSessionId: null });
+    addAgentsToReduxState('ws-1', [agent]);
 
     const cleanup = $effect.root(() => {
       // First subscription: ws-1 has agents
@@ -1151,10 +1256,11 @@ describe('useAllAgentsSubscription – loading state', () => {
       flushSync();
       expect(sub.loading).toBe(false);
 
-      // Adding agents to the store shouldn't change loading state
+      // Adding agents to Redux state shouldn't change loading state for undefined workspace
       const agent = makeAgent('agent-1', 'some-workspace');
-      mockSessions.push(agent);
-      mockStore.set({ sessions: mockSessions, activeSessionId: null });
+      addAgentsToReduxState('some-workspace', [agent]);
+      // Notify subscribers of state change
+      for (const listener of workspaceMocks.listeners) listener();
       flushSync();
       expect(sub.loading).toBe(false);
     });

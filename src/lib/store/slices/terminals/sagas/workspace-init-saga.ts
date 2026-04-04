@@ -2,7 +2,7 @@ import { getLocalStorageJSON } from "$lib/store/utils/safe-local-storage-saga";
 import { call, put, takeEvery, type SagaGenerator } from "typed-redux-saga";
 import { terminalManager } from "$features/terminal/terminal-manager.svelte";
 import { invoke } from "$lib/electron-bridge";
-import { openTerminalOverlay, loadWorkspaceTerminals, getTerminalName, setTerminalsList, setTerminalsLoaded, setIsLoadingTerminals, type TerminalTab, type PersistedWorkspaceState, WORKSPACE_STATE_STORAGE_KEY, } from "../terminals-slice";
+import { openTerminalOverlay, loadWorkspaceTerminals, getTerminalName, setTerminalsLoaded, setIsLoadingTerminals, type TerminalTab, type PersistedWorkspaceState, WORKSPACE_STATE_STORAGE_KEY, } from "../terminals-slice";
 import { setActiveWorkspaceId } from "../../workspace/workspace-slice";
 import { selectWorkspaceTerminalState } from "../terminals-selectors";
 import { getStoredCustomName } from "./persistence-saga";
@@ -13,6 +13,7 @@ function* loadWorkspaceState(wsId: string): SagaGenerator<PersistedWorkspaceStat
     const states = yield* call(getLocalStorageJSON<Record<string, PersistedWorkspaceState>>, WORKSPACE_STATE_STORAGE_KEY);
     return states?.[wsId] || null;
 }
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function* loadTerminalMetadataForWorkspace(wsId: string): SagaGenerator<TerminalTab[]> {
     const storedTerminals = terminalManager.loadTerminalMetadata(wsId);
     if (storedTerminals.length === 0)
@@ -57,7 +58,7 @@ export function* loadTerminalsSaga(wsId: string) {
                 backendCallSucceeded = true;
             }
         }
-        catch (error) {
+        catch {
         }
         // Merge localStorage terminals with backend terminals
         const terminalMap = new Map<string, TerminalTab>();
@@ -108,7 +109,7 @@ export function* loadTerminalsSaga(wsId: string) {
         const savedState: PersistedWorkspaceState | null = yield* call(loadWorkspaceState, wsId);
         yield* put(loadWorkspaceTerminals(wsId, terminals, savedState));
     }
-    catch (error) {
+    catch {
         yield* put(loadWorkspaceTerminals(wsId, [], null));
     }
     finally {

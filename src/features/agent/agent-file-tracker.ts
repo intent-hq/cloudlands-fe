@@ -12,7 +12,9 @@
  */
 
 import type { AuggieToolCall } from '$shared/types';
-import { agentFollowStore } from './agent-follow.store.svelte';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { selectIsFollowingAgent, selectFollowedAgentId } from '$lib/store/slices/agent-follow/agent-follow-selectors';
+import { setCurrentFile, setCurrentNote, queueTextAnimation } from '$lib/store/slices/agent-follow/agent-follow-slice';
 
 import { Logger } from '$lib/utils/logger';
 const logger = new Logger({ category: 'AgentFileTracker' });
@@ -79,9 +81,6 @@ class AgentFileTracker {
   trackToolCall(
     agentId: string,
     toolCall: AuggieToolCall,
-    sessionId?: string,
-    turnNumber?: number,
-    agentName?: string,
   ) {
     const fileEdits = this.extractFileEdits(agentId, toolCall);
 
@@ -90,8 +89,8 @@ class AgentFileTracker {
         agentId,
         toolName: toolCall.name,
         edits: fileEdits,
-        isFollowing: agentFollowStore.isFollowingAgent(agentId),
-        followedAgentId: agentFollowStore.followedAgentId,
+        isFollowing: selectIsFollowingAgent.select(getReduxStore().getState(), agentId),
+        followedAgentId: selectFollowedAgentId.select(getReduxStore().getState()),
       });
     }
 
@@ -105,7 +104,7 @@ class AgentFileTracker {
       // Notify listeners
       this.notifyListeners(edit);
 
-      // NOTE: We no longer call fileTrackingStore.trackChange() here.
+      // NOTE: We no longer call trackChange() on the file tracking store here.
       // File tracking is handled by the main attribution system:
       // 1. acp-provider-streaming.ts records agent writes with content hash
       // 2. change-processor.ts detects changes via git polling
@@ -113,7 +112,7 @@ class AgentFileTracker {
       // This prevents duplicate tracking and ensures consistent attribution.
 
       // If this agent is being followed, trigger follow actions
-      if (agentFollowStore.isFollowingAgent(agentId)) {
+      if (selectIsFollowingAgent.select(getReduxStore().getState(), agentId)) {
         logger.debug('[AgentFileTracker] Handling followed agent edit:', edit);
         this.handleFollowedAgentEdit(edit);
       }
@@ -268,10 +267,10 @@ class AgentFileTracker {
         // Update the current file or note in the follow store
         if (edit.type === 'file' && edit.file) {
           logger.debug('[AgentFileTracker] Setting current file to:', { file: edit.file });
-          agentFollowStore.setCurrentFile(edit.file);
+          getReduxStore().dispatch(setCurrentFile(edit.file));
         } else if (edit.type === 'note' && edit.noteId) {
           logger.debug('[AgentFileTracker] Setting current note to:', { noteId: edit.noteId });
-          agentFollowStore.setCurrentNote(edit.noteId);
+          getReduxStore().dispatch(setCurrentNote(edit.noteId));
         }
 
         // Queue animation for edits with content
@@ -279,10 +278,8 @@ class AgentFileTracker {
           const target = edit.type === 'file' ? edit.file : edit.noteId;
           logger.debug(`[AgentFileTracker] Queueing text animation for ${edit.type}:`, { target });
           if (target) {
-            agentFollowStore.queueTextAnimation(
-              target,
-              edit.content,
-              true, // For now, assume additions
+            getReduxStore().dispatch(
+              queueTextAnimation(target, edit.content, true),
             );
           }
         }

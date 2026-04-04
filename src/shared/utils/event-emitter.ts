@@ -9,7 +9,7 @@ import { Logger } from '../logger';
 
 const logger = new Logger('EventEmitter');
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type EventListener = (...args: any[]) => void;
 
 export class EventEmitter {
@@ -39,7 +39,7 @@ export class EventEmitter {
     return this;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   emit(event: string, ...args: any[]): boolean {
     const listeners = this.listeners.get(event);
     if (listeners && listeners.size > 0) {
@@ -76,7 +76,8 @@ export class EventEmitter {
     return 10;
   }
 
-  setMaxListeners(n: number): this {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  setMaxListeners(_n: number): this {
     // No-op for compatibility
     return this;
   }

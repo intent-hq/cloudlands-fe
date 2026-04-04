@@ -40,7 +40,7 @@ vi.mock('electron', () => {
 // Mock logger
 vi.mock('$shared/logger', () => ({
   Logger: class MockLogger {
-    constructor(_name: string) {}
+    constructor() {}
     info = vi.fn();
     debug = vi.fn();
     error = vi.fn();

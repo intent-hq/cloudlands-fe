@@ -12,12 +12,11 @@
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { MentionSystem } from '../../src/lib/services/mentions/mention-system';
-import { DebouncedSearchService } from '../../src/lib/services/mentions/search-service';
-import type { SearchContext, MentionCandidate } from '../../src/lib/services/mentions/types';
+
+import type { SearchContext } from '../../src/lib/services/mentions/types';
 
 describe('Edge Cases & Error Handling', () => {
   let mentionSystem: MentionSystem;
-  let searchService: DebouncedSearchService;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -25,10 +24,6 @@ describe('Edge Cases & Error Handling', () => {
       debounceMs: 100,
       maxResults: 10,
       cacheMaxAge: 5000,
-    });
-    searchService = new DebouncedSearchService({
-      debounceMs: 100,
-      maxResults: 10,
     });
   });
 
@@ -116,7 +111,7 @@ describe('Edge Cases & Error Handling', () => {
         const context: SearchContext = { workspaceId: 'test-ws' };
         const results = await mentionSystem.search(char, context);
         expect(Array.isArray(results)).toBe(true);
-        expect(results).not.toThrow;
+        expect(results).toBeDefined();
       });
     });
 

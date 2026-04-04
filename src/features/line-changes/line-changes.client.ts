@@ -7,8 +7,8 @@
 import { invoke } from '$lib/electron-bridge';
 import type { AgentId } from '$shared/types/branded-ids';
 import { createLogger } from '$lib/utils/client-logger';
-import type { WorkspaceId, SessionId } from '$shared/types';
-import type { LineChangeStats } from './line-changes.store.svelte';
+import type { WorkspaceId } from '$shared/types';
+import type { LineChangeStats } from '$lib/store/slices/line-changes/line-changes-types';
 
 const logger = createLogger('LineChangesClient');
 

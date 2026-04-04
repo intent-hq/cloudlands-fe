@@ -81,7 +81,6 @@
   let headerEditValue = $state('');
 
   // Constants
-  const TAB_BAR_HEIGHT = 36;
 
   // ============================================================================
   // Tab Display Logic

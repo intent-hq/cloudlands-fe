@@ -6,13 +6,14 @@
    */
 
   import type { TabTypeComponentProps } from './registry';
-  import { getPanelLayoutManager } from '../panel-layout-manager.svelte';
+  import { closeTab } from '$lib/store/slices/panel-layout/panel-layout-slice';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { agentService } from '$features/agent/agent.service';
-  import { sessionStore, subscribeToAgent } from '$features/agent/browser';
-  import { WorkspaceId } from '$shared/types/branded-ids';
-  import type { AgentSession, Workspace } from '$shared/types';
+  import { agentService } from '$features/agent/agent-ipc-bridge';
+  import { subscribeToAgent } from '$features/agent/browser';
+  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import type { AgentSession } from '$shared/types';
   import { createLogger } from '$lib/utils/client-logger';
   import { navigateToNote } from '$lib/utils/workspace-navigation';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
@@ -24,12 +25,10 @@
   } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { getDispatch } from '$lib/store/utils/utils';
   import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
     selectSpecialistName,
     selectSpecialists,
   } from '$lib/store/slices/specialists/specialists-selectors';
-  import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import { faCheck, faCopy, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
@@ -44,31 +43,22 @@
   let { tab, workspaceId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
 
   const headerContext = getPanelHeaderContext();
-  const layoutManager = $derived(getPanelLayoutManager(workspaceId));
 
-  // Cache workspace to prevent destruction during store reloads
-  let cachedWorkspace: Workspace | null = $state(null);
-  const storeWorkspace = $derived(workspaceStore.findById(WorkspaceId(workspaceId)) ?? null);
-  $effect(() => {
-    if (storeWorkspace) {
-      untrack(() => {
-        cachedWorkspace = storeWorkspace;
-      });
-    }
-  });
-  const workspace = $derived.by(() => {
-    if (storeWorkspace) return storeWorkspace;
-    if (cachedWorkspace && cachedWorkspace.id === workspaceId) return cachedWorkspace;
-    return null;
-  });
+  // Cache $workspace to prevent destruction during store reloads
+  const workspace = $derived(selectWorkspaceById(workspaceId));
+  const defaultModel = $derived(selectWorkspaceDefaultModel(workspaceId));
 
-  // Get agent model from session, falling back to workspace default
+  // Reactive store subscription for specialist names
+  const specialists$ = selectSpecialists();
+
+  // Get agent model from session, falling back to $workspace default
+
   const agentModel = $derived.by(() => {
     if (tab.agentId) {
-      const session = sessionStore.getSessionForWorkspace(workspaceId, tab.agentId);
+      const session = selectAgentById.select(getReduxStore().getState(), tab.agentId);
       if (session?.model) return session.model;
     }
-    return selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspaceId);
+    return $defaultModel;
   });
 
   // Subscribe to agent session updates
@@ -87,9 +77,6 @@
   });
 
   const agentMessages = $derived(agentSession?.messages || []);
-
-  // Reactive store subscription for specialist names
-  const specialists$ = selectSpecialists();
 
   // Get specialist display name
   const agentSpecialistName = $derived.by(() => {
@@ -149,7 +136,7 @@
     const agentName = agentSession?.name || tab.title || '';
     isAgentDeleting = true;
     try {
-      layoutManager.closeTab(tab.id);
+      getReduxStore().dispatch(closeTab(workspaceId, tab.id));
       await agentService.deleteSessionWithUndo({
         agentId: agentIdToDelete,
         workspaceId,
@@ -221,10 +208,16 @@
 {/snippet}
 
 {#if tab.agentId}
-  {#if workspace}
+  {#if $workspace}
     {#key tab.agentId}
       <div class="w-full h-full flex-1 flex pb-1.5">
-        <ChatPanel {workspace} agentId={tab.agentId} {agentModel} {isActive} {isPanelFocused} />
+        <ChatPanel
+          workspace={$workspace}
+          agentId={tab.agentId}
+          {agentModel}
+          {isActive}
+          {isPanelFocused}
+        />
       </div>
     {/key}
   {:else}

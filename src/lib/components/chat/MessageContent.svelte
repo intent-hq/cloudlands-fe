@@ -17,7 +17,6 @@
     groupContentBlocks,
     type ParsedContent,
     type RenderBlock,
-    type GroupedBlock,
     type ContentBlockGroup,
     type RenderContentBlock,
   } from '$lib/utils/messageParser';

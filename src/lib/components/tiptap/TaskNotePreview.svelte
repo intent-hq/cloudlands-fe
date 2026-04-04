@@ -5,9 +5,11 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import { faSpinner } from '@fortawesome/free-solid-svg-icons';
-  import { notesStateManager } from '$features/notes/notes.store.svelte';
   import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
   import type { NoteId } from '$shared/types';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectNoteById, selectNotesVersion } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
 
   interface Props {
     noteId: NoteId;
@@ -17,9 +19,11 @@
   let { noteId, class: className = '' }: Props = $props();
 
   // Get the note from the store
+  const wsId = selectActiveWorkspaceId.select(getReduxStore().getState()) ?? '';
+  const notesVersion$ = selectNotesVersion(wsId);
   let note = $derived.by(() => {
-    void notesStateManager.notesVersion;
-    return notesStateManager.notes.get(noteId) ?? null;
+    void $notesVersion$;
+    return selectNoteById.select(getReduxStore().getState(), wsId, noteId) ?? null;
   });
 
   // Extract first ~5 lines of content for preview

@@ -31,16 +31,6 @@ vi.mock('$shared/types/branded-ids', () => ({
   WorkspaceId: (id: string) => id,
 }));
 
-vi.mock('../services/unified-state-store', () => ({
-  unifiedStateStore: {
-    getSession: vi.fn(),
-    getAllSessionsAcrossWorkspaces: vi.fn(() => []),
-    addSession: vi.fn(),
-    setStreaming: vi.fn(),
-    updateMessage: vi.fn(),
-    updateMessageForWorkspace: vi.fn(),
-  },
-}));
 
 describe('Stream Handler State Management', () => {
   beforeEach(() => {
@@ -131,13 +121,8 @@ describe('Stream Handler State Management', () => {
       // This test demonstrates the bug that was fixed
       // The OLD behavior would reuse an existing handler with stale state
 
-      const agentId = 'agent-123';
-
       // Simulate stale state from a previous stream (the bug scenario)
       let staleTextBuffer = 'OLD CONTENT FROM PREVIOUS STREAM ';
-      const staleOrderedItems = [
-        { type: 'text', content: 'OLD CONTENT FROM PREVIOUS STREAM ', sequence: 0 },
-      ];
 
       // If we reused this handler (OLD buggy behavior), new content would be appended
       const buggyHandler = (data: any) => {

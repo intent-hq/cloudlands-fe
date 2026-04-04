@@ -7,7 +7,6 @@ import {
   extractChangesFromDiff,
   extractChangesFromContents,
   parseGitStatus,
-  type ChangeHunk,
 } from '../main/extract-change-hunks';
 
 describe('extract-change-hunks', () => {

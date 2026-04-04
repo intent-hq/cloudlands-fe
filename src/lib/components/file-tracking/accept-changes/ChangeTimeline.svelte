@@ -43,7 +43,8 @@
     type AgentChangeGroup,
   } from './types';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
-  import { sessionStore } from '$features/agent/browser';
+  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import type { Workspace } from '$shared/types';
   import StartNewWorkspaceSection from './StartNewWorkspaceSection.svelte';
   import { handleLink } from '$features/navigation/link-handler';
@@ -128,14 +129,14 @@
     onReviewStaged?: () => void;
     onReReview?: () => void;
     onOpenReview?: () => void;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     onOpenArchivedReview?: (review: any) => void;
     isReviewingCode?: boolean;
     reviewStatus?: 'idle' | 'running' | 'complete' | 'error' | 'stale';
     hasExistingReview?: boolean;
     reviewCommentCount?: number;
     reviewHasCritical?: boolean;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     reviewArchive?: any[];
     /** Merge to trunk */
     onMergeToTrunk?: (options?: { squash?: boolean }) => void;
@@ -297,7 +298,7 @@
     if (!group.agentId) return 'Manual Changes';
 
     // Try to find the session by ID first
-    const sessions = sessionStore.getAllSessionsForWorkspace(workspaceId);
+    const sessions = selectAllWorkspaceAgents.select(getReduxStore().getState(), workspaceId);
     const session = sessions.find((s) => {
       const id = typeof s.id === 'object' ? (s.id as any).id || String(s.id) : String(s.id);
       return id === group.agentId;
@@ -329,7 +330,7 @@
 
     // If it doesn't look like a UUID, try to find the agent by name
     if (!isUUID) {
-      const sessions = sessionStore.getAllSessionsForWorkspace(workspaceId);
+      const sessions = selectAllWorkspaceAgents.select(getReduxStore().getState(), workspaceId);
       const matchingAgent = sessions.find((s) => s.name === agentIdOrName);
       if (matchingAgent) {
         // Handle both string IDs and object IDs (e.g., Proxy objects)

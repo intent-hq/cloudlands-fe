@@ -3,11 +3,16 @@
   import { Editor } from '@tiptap/core';
   import { createEditorConfig } from '$lib/utils/editor-config';
   import { CommentManagerV2 } from '$features/comments/comment-manager-v2';
-  import { commentsStoreV2 } from '$features/comments/comments-v2.store.svelte';
+  import { dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
+  import { selectComments, selectSelectedComment } from '$lib/store/slices/comments/comments-selectors';
+  import { selectCommentAction, loadCommentsAction, clearCommentsAction } from '$lib/store/slices/comments/comments-slice';
   import CommentsSidebar from '$lib/components/tiptap/CommentsSidebar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
 
   const logger = createLogger('TestComments');
+
+  const comments$ = selectComments();
+  const selectedComment$ = selectSelectedComment();
 
   let editorElement: HTMLDivElement;
   let editor: Editor | null = $state(null);
@@ -58,7 +63,7 @@ More content here for testing purposes.`;
         },
         onCommentClick: (commentId) => {
           logger.info('Comment clicked', { commentId });
-          commentsStoreV2.selectComment(commentId);
+          reduxDispatch(selectCommentAction(commentId));
         },
         useMarkdown: true,
       }),
@@ -68,7 +73,7 @@ More content here for testing purposes.`;
     commentManager = new CommentManagerV2('test-workspace', 'test-note');
 
     // Load test comment AFTER initializing manager
-    commentsStoreV2.loadComments([testComment]);
+    reduxDispatch(loadCommentsAction([testComment]));
 
     // Initialize manager with editor (but skip backend load)
     // We'll manually set the editor instead of calling initialize
@@ -85,7 +90,7 @@ More content here for testing purposes.`;
     logger.info('Test page initialized', {
       editorReady: !!editor,
       commentManagerReady: !!commentManager,
-      commentsLoaded: commentsStoreV2.comments.length,
+      commentsLoaded: $comments$.length,
     });
   });
 
@@ -96,7 +101,7 @@ More content here for testing purposes.`;
     if (commentManager) {
       commentManager.destroy();
     }
-    commentsStoreV2.clear();
+    reduxDispatch(clearCommentsAction());
   });
 
   // Reactive state - access store directly, don't use $derived
@@ -111,29 +116,13 @@ More content here for testing purposes.`;
       return;
     }
 
-    const selectedText = editor.state.doc.textBetween(from, to);
-    const newComment = {
-      id: `test-comment-${Date.now()}`,
-      noteId: 'test-note',
-      author: 'Test User',
-      authorType: 'user' as const,
-      type: 'comment' as const,
-      content: 'New test comment',
-      section: selectedText,
-      status: 'open' as const,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      threadId: `thread-${Date.now()}`,
-      markId: '',
-    };
-
     commentManager.addComment('New test comment', 'comment');
   }
 
   $effect(() => {
     logger.info('Component state', {
-      storeComments: commentsStoreV2.comments.length,
-      selectedComment: commentsStoreV2.selectedComment?.id,
+      storeComments: $comments$.length,
+      selectedComment: $selectedComment$?.id,
     });
   });
 </script>
@@ -149,7 +138,7 @@ More content here for testing purposes.`;
         Add Comment
       </button>
       <div class="text-sm text-subtle">
-        Comments: {commentsStoreV2.comments.length} | Selected: {commentsStoreV2.selectedComment
+        Comments: {$comments$.length} | Selected: {$selectedComment$
           ?.id || 'none'}
       </div>
     </div>
@@ -162,17 +151,17 @@ More content here for testing purposes.`;
     {#if editor}
       <div class="p-4 border-b">
         <h2 class="text-lg font-semibold">
-          Comments ({commentsStoreV2.comments.length})
+          Comments ({$comments$.length})
         </h2>
         <div class="text-xs text-subtle">
-          Editor: {!!editor} | Comments: {JSON.stringify(commentsStoreV2.comments.map((c) => c.id))}
+          Editor: {!!editor} | Comments: {JSON.stringify($comments$.map((c) => c.id))}
         </div>
       </div>
       <div class="p-4 border-2 border-red-500">
         <div class="text-xs mb-2">Before CommentsSidebar</div>
         <CommentsSidebar
           {editor}
-          comments={commentsStoreV2.comments}
+          comments={$comments$}
           onResolve={(id) => commentManager?.resolveComment(id)}
           onReply={(id, content) => commentManager?.replyToComment(id, content)}
         />

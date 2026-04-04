@@ -4,8 +4,8 @@ import {
   getLocalStorageJSON,
   setLocalStorageJSON,
 } from "$lib/store/utils/safe-local-storage-saga";
-import { call, put, takeLatest } from "typed-redux-saga";
-import { selectInstalledEditors, selectLastFetched } from "../external-editors-selectors";
+import { call, delay, put, takeLatest } from "typed-redux-saga";
+import { selectInstalledEditors, selectInstalledEditorsLoading, selectLastFetched } from "../external-editors-selectors";
 import {
   CACHE_TTL_MS,
   STORAGE_KEY,
@@ -51,6 +51,12 @@ export function* loadCachedEditors() {
 
 export function* handleFetchEditors(action: ReturnType<typeof fetchEditors>) {
   const [forceRefresh] = action.payload;
+  yield* delay(50);
+
+  const isLoading = yield* selectInstalledEditorsLoading.effect();
+  if (isLoading) {
+    return;
+  }
 
   // Check cache TTL unless force refresh
   if (!forceRefresh) {
@@ -61,7 +67,7 @@ export function* handleFetchEditors(action: ReturnType<typeof fetchEditors>) {
       return;
     }
   }
-
+  
   yield* put(clearError());
   yield* put(setLoading(true));
 

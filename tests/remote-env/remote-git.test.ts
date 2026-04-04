@@ -4,7 +4,7 @@
  * Tests git operations over SSH against remote environments.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Client } from 'ssh2';
 import { RemoteEnvProfile, getProfileOrThrow } from './remote-env-config';
 

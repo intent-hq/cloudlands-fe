@@ -50,15 +50,6 @@
   }
 
   // Scroll to specific index
-  function scrollToIndex(index: number, behavior: ScrollBehavior = 'smooth') {
-    if (!scrollEl) return;
-
-    const targetScrollTop = index * itemHeight;
-    scrollEl.scrollTo({
-      top: targetScrollTop,
-      behavior,
-    });
-  }
 
   onMount(() => {
     logger.debug('VirtualList mounted', {

@@ -4,7 +4,6 @@
  * Validates diagram primitives and provides helpful error messages
  */
 
-import type { DiagramPrimitive } from '$shared/types/notes-primitives';
 import { DiagramPrimitiveSchema } from '$shared/types/notes-primitives';
 
 export interface ValidationError {

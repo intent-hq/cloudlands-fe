@@ -16,10 +16,10 @@ vi.mock("typed-redux-saga", () => ({
   },
 }));
 
-const { eventChannelMock, getUnifiedWorkspaceStateMock, isFocusInEditableElementMock, isFocusInTerminalMock, isStreamingMock } =
+const { eventChannelMock, getReduxStoreMock, isFocusInEditableElementMock, isFocusInTerminalMock, isStreamingMock } =
   vi.hoisted(() => ({
     eventChannelMock: vi.fn(),
-    getUnifiedWorkspaceStateMock: vi.fn(),
+    getReduxStoreMock: vi.fn(),
     isFocusInEditableElementMock: vi.fn(),
     isFocusInTerminalMock: vi.fn(),
     isStreamingMock: vi.fn(),
@@ -30,8 +30,8 @@ vi.mock("redux-saga", async () => {
   return { ...actual, eventChannel: eventChannelMock };
 });
 
-vi.mock("$features/workspace/workspace-unified-state.svelte", () => ({
-  getUnifiedWorkspaceState: getUnifiedWorkspaceStateMock,
+vi.mock("$lib/store/redux-dispatch-bridge", () => ({
+  getReduxStore: getReduxStoreMock,
 }));
 
 vi.mock("$lib/utils/keyboardShortcuts", () => ({
@@ -39,7 +39,7 @@ vi.mock("$lib/utils/keyboardShortcuts", () => ({
   isFocusInTerminal: isFocusInTerminalMock,
 }));
 
-vi.mock("$features/agent/agent.service", () => ({
+vi.mock("$features/agent/agent-ipc-bridge", () => ({
   agentService: { isStreaming: isStreamingMock },
 }));
 
@@ -47,6 +47,8 @@ import { openTerminalOverlay } from "$lib/store/slices/terminals/terminals-slice
 import { selectForegroundWorkspaceAgents } from "$lib/store/slices/workspace-agents/workspace-agents-selectors";
 import { selectLoadedWorkspaceTerminals } from "$lib/store/slices/terminals/terminals-selectors";
 import { createTerminalRequested } from "$lib/store/slices/terminals/terminals-slice";
+import { selectWorkspaceNavigationDrawer } from "$lib/store/slices/workspace-navigation/workspace-navigation-selectors";
+import { openWorkspaceDrawer } from "$lib/store/slices/workspace-navigation/workspace-navigation-slice";
 import {
   createDockNavigationChannel,
   watchDockNavigationForWorkspaceSaga,
@@ -65,18 +67,33 @@ describe("dockNavigationSaga", () => {
     removeEventListener: vi.fn(),
     dispatchEvent: vi.fn(),
   };
+  let currentState: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal("window", windowStub as unknown as Window & typeof globalThis);
     vi.stubGlobal("navigator", { userAgent: "Macintosh", userAgentData: { platform: "macOS" } });
+    currentState = {
+      workspaceNavigation: {
+        byWorkspaceId: {
+          "ws-1": {
+            drawer: { open: false, type: null, itemId: null },
+          },
+        },
+      },
+    };
+    getReduxStoreMock.mockReturnValue({ getState: () => currentState });
     isFocusInEditableElementMock.mockReturnValue(false);
     isFocusInTerminalMock.mockReturnValue(false);
     isStreamingMock.mockReturnValue(false);
   });
 
   it("emits dock navigation shortcuts from the keydown channel", () => {
-    const manager = { state: { drawer: { type: "agent", itemId: "agent-1" } } } as any;
+    currentState.workspaceNavigation.byWorkspaceId["ws-1"].drawer = {
+      open: true,
+      type: "agent",
+      itemId: "agent-1",
+    };
     const emit = vi.fn();
     let unsubscribe: (() => void) | undefined;
 
@@ -85,7 +102,7 @@ describe("dockNavigationSaga", () => {
       return { close: vi.fn(() => unsubscribe?.()) };
     });
 
-    const channel = createDockNavigationChannel(manager);
+    const channel = createDockNavigationChannel("ws-1");
     const keydown = windowStub.addEventListener.mock.calls[0][1];
     const event = {
       altKey: true,
@@ -108,7 +125,6 @@ describe("dockNavigationSaga", () => {
   });
 
   it("skips dock navigation when focus is in a terminal", () => {
-    const manager = { state: { drawer: { type: "agent", itemId: "agent-1" } } } as any;
     const emit = vi.fn();
 
     eventChannelMock.mockImplementation((subscriber) => {
@@ -117,7 +133,7 @@ describe("dockNavigationSaga", () => {
     });
     isFocusInTerminalMock.mockReturnValue(true);
 
-    createDockNavigationChannel(manager);
+    createDockNavigationChannel("ws-1");
     const keydown = windowStub.addEventListener.mock.calls[0][1];
     keydown({
       altKey: true,
@@ -134,7 +150,11 @@ describe("dockNavigationSaga", () => {
   });
 
   it("blocks dock navigation when the current agent is streaming", () => {
-    const manager = { state: { drawer: { type: "agent", itemId: "agent-1" } } } as any;
+    currentState.workspaceNavigation.byWorkspaceId["ws-1"].drawer = {
+      open: true,
+      type: "agent",
+      itemId: "agent-1",
+    };
     const emit = vi.fn();
 
     eventChannelMock.mockImplementation((subscriber) => {
@@ -143,7 +163,7 @@ describe("dockNavigationSaga", () => {
     });
     isStreamingMock.mockReturnValue(true);
 
-    createDockNavigationChannel(manager);
+    createDockNavigationChannel("ws-1");
     const keydown = windowStub.addEventListener.mock.calls[0][1];
     keydown({
       altKey: true,
@@ -160,12 +180,7 @@ describe("dockNavigationSaga", () => {
   });
 
   it("opens the next agent drawer item", () => {
-    const manager = {
-      state: { drawer: { open: false, type: null, itemId: null } },
-      openDrawer: vi.fn(),
-    } as any;
     const channel = createMockChannel();
-    getUnifiedWorkspaceStateMock.mockReturnValue(manager);
     eventChannelMock.mockReturnValue(channel);
 
     const iterator = watchDockNavigationForWorkspaceSaga("ws-1");
@@ -180,18 +195,17 @@ describe("dockNavigationSaga", () => {
       done: false,
     });
     expect(iterator.next([])).toEqual({
-      value: sagaEffects.call([manager, manager.openDrawer], "agent", "agent-1"),
+      value: sagaEffects.select(selectWorkspaceNavigationDrawer.select, "ws-1"),
+      done: false,
+    });
+    expect(iterator.next({ open: false, type: null, itemId: null })).toEqual({
+      value: sagaEffects.put(openWorkspaceDrawer("ws-1", "agent", "agent-1")),
       done: false,
     });
   });
 
   it("opens the next terminal overlay item", () => {
-    const manager = {
-      state: { drawer: { open: true, type: "agent", itemId: "agent-1" } },
-      openDrawer: vi.fn(),
-    } as any;
     const channel = createMockChannel();
-    getUnifiedWorkspaceStateMock.mockReturnValue(manager);
     eventChannelMock.mockReturnValue(channel);
 
     const iterator = watchDockNavigationForWorkspaceSaga("ws-1");
@@ -200,15 +214,17 @@ describe("dockNavigationSaga", () => {
     iterator.next({ type: "dock", direction: "next" });
     iterator.next([{ id: "agent-1", isBackground: false, metadata: {} }]);
     expect(iterator.next([{ id: "terminal-1", type: "terminal" }])).toEqual({
+      value: sagaEffects.select(selectWorkspaceNavigationDrawer.select, "ws-1"),
+      done: false,
+    });
+    expect(iterator.next({ open: true, type: "agent", itemId: "agent-1" })).toEqual({
       value: sagaEffects.put(openTerminalOverlay("ws-1", "terminal-1")),
       done: false,
     });
   });
 
   it("dispatches terminal creation and message navigation shortcuts", () => {
-    const manager = { state: { drawer: { open: false, type: null, itemId: null } } } as any;
     const channel = createMockChannel();
-    getUnifiedWorkspaceStateMock.mockReturnValue(manager);
     eventChannelMock.mockReturnValue(channel);
 
     const iterator = watchDockNavigationForWorkspaceSaga("ws-1");

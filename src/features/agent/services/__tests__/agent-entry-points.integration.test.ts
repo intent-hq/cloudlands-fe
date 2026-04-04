@@ -6,9 +6,27 @@
  */
 
 import type { Workspace } from '$shared/types';
-import { WorkspaceId, AgentId } from '$shared/types/branded-ids';
+import { WorkspaceId } from '$shared/types/branded-ids';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UnifiedAgentFactory } from '../agent-factory';
+
+// Mock Redux store bridge
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({
+    getState: () => ({ workspaceAgents: { byWorkspaceId: {} }, workspace: { activeWorkspaceId: 'test-ws' } }),
+    dispatch: vi.fn(),
+  }),
+}));
+
+// Mock Redux store bridge (factory dynamically imports this)
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({
+    getState: () => ({ workspaceAgents: { byWorkspaceId: {} } }),
+    dispatch: vi.fn(),
+  }),
+}));
+
+
 
 // Mock the backend creation
 vi.mock('../agent-factory', async () => {
@@ -16,7 +34,8 @@ vi.mock('../agent-factory', async () => {
   return {
     ...actual,
     UnifiedAgentFactory: class extends (actual as any).UnifiedAgentFactory {
-      async createInBackend(agent: any, workspacePath: string, rules: string | null) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      async createInBackend(agent: any, workspacePath: string) {
         // Mock successful backend creation
         return {
           success: true,

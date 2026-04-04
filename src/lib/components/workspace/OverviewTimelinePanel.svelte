@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { WorkspacePhaseInfo, WorkspacePhaseStats } from './workspace-phase';
   import { cn } from '$lib/utils';
-  import { joinPath } from '$lib/utils/path-utils';
   import type { Note, Workspace } from '$shared/types';
   import { isSpecNote } from './sidebar';
   import { getNoteIcon, getNoteTitle, getNoteIconClass, getNoteDepth } from './sidebar/utils';
@@ -25,10 +24,7 @@
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import type { UIFileChange } from '$lib/components/file-tracking/accept-changes/types';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
-  import FileActionsDropdown from '$lib/components/ui/FileActionsDropdown.svelte';
   import Skeleton from '$lib/components/ui/skeleton/skeleton.svelte';
-  import { invoke } from '$lib/electron-bridge';
-  import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
   import { faFolder } from '@fortawesome/free-solid-svg-icons';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import Header from '../ui/Header.svelte';
@@ -64,7 +60,7 @@
   }
 
   interface Props {
-    workspace: Workspace;
+    workspace?: Workspace;
     phase: WorkspacePhaseInfo;
     stats: WorkspacePhaseStats;
     notes?: Note[];
@@ -95,6 +91,7 @@
 
   let {
     workspace,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     phase: _phase,
     stats,
     notes = [],
@@ -115,6 +112,7 @@
     onOpenFile,
     onOpenAllChanges,
     onOpenCommit,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onOpenFileInPanel,
     onOpenAgentOverview,
     class: className,
@@ -207,54 +205,6 @@
       staged: change.staged,
     };
   }
-
-  // Root file listing for the Files card
-  interface RootFileEntry {
-    name: string;
-    isDirectory: boolean;
-    path: string;
-  }
-  const MAX_ROOT_FILES = 12;
-  let rootFiles = $state<RootFileEntry[]>([]);
-  let rootFilesTotal = $state(0);
-  let rootFilesLoading = $state(false);
-
-  async function loadRootFiles() {
-    const worktreePath = workspace?.worktreePath;
-    if (!worktreePath) return;
-    rootFilesLoading = true;
-    try {
-      const response = (await invoke('file:readDirWithStats', { path: worktreePath })) as {
-        success: boolean;
-        data?: { name: string; isDirectory: boolean }[];
-      };
-      if (response?.success && response.data) {
-        // Sort: directories first, then alphabetically
-        const sorted = response.data
-          .filter((e) => !e.name.startsWith('.'))
-          .sort((a, b) => {
-            if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-            return a.name.localeCompare(b.name);
-          });
-        rootFilesTotal = sorted.length;
-        rootFiles = sorted.slice(0, MAX_ROOT_FILES).map((e) => ({
-          name: e.name,
-          isDirectory: e.isDirectory,
-          path: joinPath(worktreePath, e.name),
-        }));
-      }
-    } catch {
-      // ignore
-    } finally {
-      rootFilesLoading = false;
-    }
-  }
-
-  $effect(() => {
-    if (workspace?.worktreePath) {
-      loadRootFiles();
-    }
-  });
 </script>
 
 <div class={cn('flex flex-col gap-3 px-1', className)}>

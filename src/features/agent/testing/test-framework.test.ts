@@ -115,7 +115,7 @@ describe('AgentTestHarness', () => {
     await delay(100);
 
     const finalSnapshot = takeMemorySnapshot();
-    const comparison = compareMemorySnapshots(initialSnapshot, finalSnapshot, 5 * 1024 * 1024);
+    compareMemorySnapshots(initialSnapshot, finalSnapshot, 5 * 1024 * 1024);
 
     // The harness should detect if there's a significant memory increase
     const leaks = await harness.detectMemoryLeaks();
@@ -151,7 +151,7 @@ describe('AgentTestHarness', () => {
     // Try to send message to non-existent agent
     try {
       await harness.sendMessage('non-existent-id' as any, 'Test');
-    } catch (error) {
+    } catch {
       // Expected error
     }
 

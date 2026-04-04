@@ -5,7 +5,7 @@ import { getDefaultModelForProvider, getDefaultProviderId, PROVIDER_MODEL_TIERS,
 import { selectActiveProviderId } from "../provider-settings/provider-settings-selectors";
 import { selectIsFeatureEnabled } from "../feature-codes/feature-codes-selectors";
 import type { CustomSpecialist, FileSpecialist, SpecialistOverrides } from "./specialists-slice";
-import { githubAuthStore } from "$features/github-auth/renderer/github-auth.store.svelte";
+import { selectGitHubAuthIsAuthenticated } from "../github-auth/github-auth-selectors";
 // ============================================================================
 // Basic state selectors
 // ============================================================================
@@ -27,8 +27,6 @@ export const selectProviderModelOverrides = createSelector((state): Record<strin
 /**
  * Check if a specialist should be visible based on Redux state and GitHub auth.
  * Gates both feature-flagged specialists (ralph) and GitHub-dependent specialists (pr-shepherd, pr-reviewer).
- * Components that use selectSpecialists() should also reference githubAuthStore.state.isAuthenticated
- * to ensure reactivity when GitHub auth changes.
  */
 export const selectIsSpecialistVisible = createSelector((state, specialistId: string): boolean => {
     // Gate ralph behind feature flag
@@ -37,7 +35,7 @@ export const selectIsSpecialistVisible = createSelector((state, specialistId: st
     }
     // Gate GitHub-dependent specialists behind GitHub auth
     if (GITHUB_DEPENDENT_SPECIALIST_IDS.has(specialistId)) {
-        if (!githubAuthStore.state.isAuthenticated) {
+        if (!selectGitHubAuthIsAuthenticated.select(state)) {
             return false;
         }
     }
@@ -45,7 +43,6 @@ export const selectIsSpecialistVisible = createSelector((state, specialistId: st
 });
 /**
  * Helper to filter specialists based on GitHub auth status.
- * Used by components that have access to githubAuthStore.
  * @param specialists List of specialists to filter
  * @param isGitHubAuthenticated Whether user is authenticated with GitHub
  */

@@ -42,6 +42,7 @@ vi.mock('$shared/types/branded-ids', () => ({
   createSessionId: (id: string) => id,
   createWorkspaceId: (id: string) => id,
   createMessageId: (id: string) => id,
+  NoteId: (id: string) => id,
 }));
 vi.mock('../services/stream-manager', () => ({
   StreamManager: {
@@ -87,8 +88,7 @@ describe('ConsolidatedBackendService SIGTERM/SIGINT listener leak', () => {
     (CBS as any).instance = undefined;
 
     // Remove excess SIGINT/SIGTERM listeners that leaked
-    const currentSigint = process.listenerCount('SIGINT');
-    const currentSigterm = process.listenerCount('SIGTERM');
+
     // We can't easily remove anonymous listeners, but we can at least reset
     // the module between tests
     vi.resetModules();

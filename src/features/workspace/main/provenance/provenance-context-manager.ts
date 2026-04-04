@@ -129,6 +129,7 @@ export class ProvenanceContextManager {
   /**
    * Create and push a new user context
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   createUserContext(options?: { userId?: string; email?: string; name?: string }): string {
     const context: ProvenanceContext = {
       contextId: `ctx-${Date.now()}-${uuidv4().substring(0, 8)}`,
@@ -142,6 +143,7 @@ export class ProvenanceContextManager {
   /**
    * Create and push a system context
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   createSystemContext(options?: { reason?: string }): string {
     const context: ProvenanceContext = {
       contextId: `ctx-${Date.now()}-${uuidv4().substring(0, 8)}`,

@@ -1,9 +1,8 @@
 <script lang="ts">
   import CodeBlock from './CodeBlock.svelte';
-  import Fa from 'svelte-fa';
-  import { faFileCode, faExternalLinkAlt, faFile } from '@fortawesome/free-solid-svg-icons';
 
-  interface Props {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  type Props = {
     code?: string;
     language?: string;
     path?: string;

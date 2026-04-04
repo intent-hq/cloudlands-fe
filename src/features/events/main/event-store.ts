@@ -30,6 +30,7 @@ function sanitizeEventForStorage(event: WorkspaceEvent): WorkspaceEvent {
 
   // File events: strip large content fields but PRESERVE diff (capped)
   if (event.type === 'file:changed' || event.type === 'file:created') {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { oldContent, newContent, content, diff, ...restData } = data;
     // Keep diff if it's within the size cap; drop it if too large
     const sanitizedDiff = diff && diff.length <= MAX_DIFF_SIZE ? diff : undefined;

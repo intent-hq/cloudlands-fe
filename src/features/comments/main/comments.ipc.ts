@@ -5,11 +5,12 @@
  * Provides direct access to comment functionality without going through MCP.
  */
 
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain } from 'electron';
 import type { Result, CommandResponse, WorkspaceId, NoteComment } from '../../../shared/types';
 import { protocolAdapter } from '../../protocol/main/protocol-adapter';
 import { Logger } from '../../../shared/logger';
-import { unifiedEventBus } from '../../events/main/unified-event-bus';
+import { mainDispatch } from '../../../store/main/redux-store-bridge';
+import { commentUpdatedBatch, commentDeleted } from '../../../store/main/slices/note-events/note-events-slice';
 import { COMMENTS_CHANNELS } from '../../../shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import {
@@ -52,13 +53,13 @@ function broadcastCommentUpdate(
   action: 'added' | 'updated' | 'resolved' | 'deleted',
   comment: NoteComment,
 ): void {
-  // UnifiedEventBus will automatically broadcast to all windows
-  unifiedEventBus.emitDomainEvent('comment:updated-batch', {
+  // Redux dispatch broadcasts to all windows via saga
+  mainDispatch(commentUpdatedBatch({
     workspaceId,
     noteId,
     action,
     comment,
-  });
+  }));
 }
 
 // ============================================================================
@@ -94,7 +95,7 @@ export function setupCommentsIPC() {
         const result = await protocolAdapter.addComment(validated);
 
         if (result.ok) {
-          // Event is already emitted by the service via EventBus
+          // Event is already emitted by the service via Redux dispatch
           // Still broadcast for backward compatibility
           broadcastCommentUpdate(
             validated.workspaceId as WorkspaceId,
@@ -119,7 +120,7 @@ export function setupCommentsIPC() {
         const result = await protocolAdapter.suggestChange(validated);
 
         if (result.ok) {
-          // Event is already emitted by the service via EventBus
+          // Event is already emitted by the service via Redux dispatch
           // Still broadcast for backward compatibility
           broadcastCommentUpdate(
             validated.workspaceId as WorkspaceId,
@@ -144,7 +145,7 @@ export function setupCommentsIPC() {
         const result = await protocolAdapter.updateCommentStatus(validated);
 
         if (result.ok) {
-          // Event is already emitted by the service via EventBus
+          // Event is already emitted by the service via Redux dispatch
           // Still broadcast for backward compatibility
           broadcastCommentUpdate(
             validated.workspaceId as WorkspaceId,
@@ -169,11 +170,11 @@ export function setupCommentsIPC() {
         const result = await protocolAdapter.deleteComment(validated);
 
         if (result.ok) {
-          unifiedEventBus.emitDomainEvent('comment:deleted', {
+          mainDispatch(commentDeleted({
             workspaceId: validated.workspaceId as WorkspaceId,
             noteId: validated.noteId,
             commentId: validated.commentId,
-          });
+          }));
         }
 
         return resultToCommandResponse(result);

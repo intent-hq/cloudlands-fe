@@ -18,6 +18,7 @@ import {
 } from '../../../shared/services/workspace-slug';
 import { writeJsonWithSync } from '../../../shared/main/file-sync-utils';
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const { FileNotFoundError, FileReadError, FileWriteError, WorkspaceNotFoundError } = Errors;
 
 const { Logger } = LoggerModule;
@@ -233,7 +234,7 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
       try {
         await fs.access(workspaceDir);
         logger.debug('Workspace directory exists', { workspaceDir });
-      } catch (accessError) {
+      } catch  {
         // Directory doesn't exist, create it
         logger.debug('Creating workspace directory', { workspaceDir });
         try {
@@ -253,7 +254,7 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
       try {
         await fs.access(metadataDir);
         logger.debug('Metadata directory exists', { metadataDir });
-      } catch (accessError) {
+      } catch  {
         // Directory doesn't exist, create it
         logger.debug('Creating metadata directory', { metadataDir });
         try {
@@ -385,7 +386,7 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
       const workspacePath = WorkspaceConfig.paths.workspace(id);
       await fs.rm(workspacePath, { recursive: true, force: true });
       logger.debug('Workspace directory cleaned up', { workspaceId: id });
-    } catch (error) {
+    } catch  {
       // Directory might not exist, that's okay
       logger.debug('Workspace cleanup - directory might not exist', { workspaceId: id });
     }
@@ -582,12 +583,14 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
     return workspace ? (workspace as any).currentContext || null : null;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async readGitConfig(repoPath: string): Promise<string> {
     // In-memory implementation returns mock config
     return `[remote "origin"]
     url = git@github.com:test/repo.git`;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async scanDirectory(dir: string, depth: number = 0): Promise<string[]> {
     // In-memory implementation returns empty array
     return [];

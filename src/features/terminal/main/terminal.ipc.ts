@@ -5,9 +5,19 @@
  * for the terminal implementation.
  */
 
-import { ipcMain, IpcMainInvokeEvent, app } from 'electron';
+import { ipcMain } from 'electron';
 import { TerminalManager } from '../MainProcessTerminalManager';
-import { unifiedEventBus } from '../../events/main/unified-event-bus';
+import { mainDispatch } from '../../../store/main/redux-store-bridge';
+import {
+  terminalProfessionalData,
+  terminalProfessionalExit,
+  terminalProfessionalCommandStart,
+  terminalProfessionalCommandExecuted,
+  terminalProfessionalCommandFinished,
+  terminalProfessionalCwdChanged,
+  terminalDisposed,
+  terminalCreated,
+} from '../../../store/main/slices/terminal-events/terminal-events-slice';
 import { Logger } from '../../../shared/logger';
 import type { WorkspaceId } from '../../../shared/types';
 import * as path from 'path';
@@ -403,7 +413,7 @@ function ensureDirectoryExists(dirPath: string): string | null {
       return null;
     }
     return dirPath;
-  } catch (error) {
+  } catch  {
     // Directory doesn't exist, try to create it
     try {
       fs.mkdirSync(dirPath, { recursive: true });
@@ -531,15 +541,15 @@ export function registerTerminalHandlers() {
 
               // Set up event forwarding
               terminal.on('data', (data: string) => {
-                unifiedEventBus.emitDomainEvent('terminal:professional:data', { terminalId, data });
+                mainDispatch(terminalProfessionalData({ terminalId, data }));
               });
 
               terminal.on('exit', ({ exitCode }: { exitCode: number }) => {
-                unifiedEventBus.emitDomainEvent('terminal:professional:exit', {
+                mainDispatch(terminalProfessionalExit({
                   terminalId,
                   exitCode,
                   signal: null,
-                });
+                }));
               });
 
               terminal.on('error', (error: Error) => {
@@ -616,18 +626,18 @@ export function registerTerminalHandlers() {
                   logger.info(
                     `[Terminal] Remote data for terminal ${terminalId}: ${data.length} bytes`,
                   );
-                  unifiedEventBus.emitDomainEvent('terminal:professional:data', {
+                  mainDispatch(terminalProfessionalData({
                     terminalId,
                     data,
-                  });
+                  }));
                 },
                 onExit: (code: number) => {
                   logger.info(`[Terminal] Remote terminal ${terminalId} exited with code ${code}`);
-                  unifiedEventBus.emitDomainEvent('terminal:professional:exit', {
+                  mainDispatch(terminalProfessionalExit({
                     terminalId,
                     exitCode: code,
                     signal: null,
-                  });
+                  }));
                   remoteShellSessions.delete(terminalId);
                 },
                 onError: (error: Error) => {
@@ -765,7 +775,7 @@ export function registerTerminalHandlers() {
                   }
                 }
               }
-            } catch (err) {
+            } catch  {
               // Directory doesn't exist or can't be read
             }
           }
@@ -998,51 +1008,51 @@ export function registerTerminalHandlers() {
 
           // Set up event forwarding to renderer
           terminal.on('data', (data: string) => {
-            // Use EventBus to broadcast to renderer
+            // Broadcast terminal data to renderer via Redux dispatch
             logger.info(
               `[Terminal] Sending data to renderer for terminal ${terminalId}: ${data.length} bytes, first 50 chars: ${data.substring(0, 50).replace(/\n/g, '\\n').replace(/\r/g, '\\r')}`,
             );
-            unifiedEventBus.emitDomainEvent('terminal:professional:data', {
+            mainDispatch(terminalProfessionalData({
               terminalId,
               data,
-            });
+            }));
           });
 
           // The shell will automatically show its prompt when it starts
           // No need to send an initial newline
 
           terminal.on('exit', ({ exitCode, signal }: any) => {
-            unifiedEventBus.emitDomainEvent('terminal:professional:exit', {
+            mainDispatch(terminalProfessionalExit({
               terminalId,
               exitCode,
               signal,
-            });
+            }));
           });
 
           terminal.on('command:start', () => {
-            unifiedEventBus.emitDomainEvent('terminal:professional:command:start', {
+            mainDispatch(terminalProfessionalCommandStart({
               terminalId,
-            });
+            }));
           });
 
           terminal.on('command:executed', (command: string) => {
-            unifiedEventBus.emitDomainEvent('terminal:professional:command:executed', {
+            mainDispatch(terminalProfessionalCommandExecuted({
               terminalId,
               command,
-            });
+            }));
           });
 
           terminal.on('command:finished', () => {
-            unifiedEventBus.emitDomainEvent('terminal:professional:command:finished', {
+            mainDispatch(terminalProfessionalCommandFinished({
               terminalId,
-            });
+            }));
           });
 
           terminal.on('cwd:changed', (cwd: string) => {
-            unifiedEventBus.emitDomainEvent('terminal:professional:cwd:changed', {
+            mainDispatch(terminalProfessionalCwdChanged({
               terminalId,
               cwd,
-            });
+            }));
           });
 
           logger.info(`[Terminal] Terminal created with ID: ${terminalId}`);
@@ -1545,10 +1555,10 @@ export async function cleanupWorkspaceTerminals(workspaceId: WorkspaceId): Promi
     try {
       const terminalId = terminal.getInfo().id;
       await terminalManager.disposeTerminal(terminalId);
-      unifiedEventBus.emitDomainEvent('terminal:disposed', {
+      mainDispatch(terminalDisposed({
         terminalId,
         workspaceId,
-      });
+      }));
       cleaned++;
     } catch (error) {
       failed++;
@@ -1565,10 +1575,10 @@ export async function cleanupWorkspaceTerminals(workspaceId: WorkspaceId): Promi
       session.close();
       await sshManager.disconnect(session.connectionId);
       remoteShellSessions.delete(terminalId);
-      unifiedEventBus.emitDomainEvent('terminal:disposed', {
+      mainDispatch(terminalDisposed({
         terminalId,
         workspaceId,
-      });
+      }));
       cleaned++;
     } catch (error) {
       failed++;
@@ -1629,14 +1639,14 @@ export async function createTerminalFromBackend(options: {
           cols: 80,
           rows: 24,
           onData: (data: string) => {
-            unifiedEventBus.emitDomainEvent('terminal:professional:data', { terminalId, data });
+            mainDispatch(terminalProfessionalData({ terminalId, data }));
           },
           onExit: (code: number) => {
-            unifiedEventBus.emitDomainEvent('terminal:professional:exit', {
+            mainDispatch(terminalProfessionalExit({
               terminalId,
               exitCode: code,
               signal: null,
-            });
+            }));
             remoteShellSessions.delete(terminalId);
           },
           onError: (error: Error) => {
@@ -1657,14 +1667,14 @@ export async function createTerminalFromBackend(options: {
         });
 
         // Emit event to notify frontend about the new terminal
-        unifiedEventBus.emitDomainEvent('terminal:created', {
+        mainDispatch(terminalCreated({
           terminalId,
           workspaceId,
           title: title || 'Remote Terminal',
           cwd: terminalCwd,
           createdAt: new Date().toISOString(),
           background: !!initialCommand,
-        });
+        }));
 
         logger.info('[Terminal] Backend remote terminal created', {
           terminalId,
@@ -1715,10 +1725,10 @@ export async function createTerminalFromBackend(options: {
                 });
               }
 
-              unifiedEventBus.emitDomainEvent('terminal:professional:command:executed', {
+              mainDispatch(terminalProfessionalCommandExecuted({
                 terminalId,
                 command: 'Setup script (installing dependencies)',
-              });
+              }));
             } catch (error) {
               logger.error('[Terminal] Failed to execute remote setup script via exec channel', {
                 terminalId,
@@ -1822,26 +1832,26 @@ export async function createTerminalFromBackend(options: {
 
     // Set up event forwarding - use professional terminal events so TerminalAdapter can receive them
     terminal.on('data', (data: string) => {
-      unifiedEventBus.emitDomainEvent('terminal:professional:data', { terminalId, data });
+      mainDispatch(terminalProfessionalData({ terminalId, data }));
     });
 
     terminal.on('exit', ({ exitCode }: { exitCode: number }) => {
-      unifiedEventBus.emitDomainEvent('terminal:professional:exit', {
+      mainDispatch(terminalProfessionalExit({
         terminalId,
         exitCode,
         signal: null,
-      });
+      }));
     });
 
     // Emit event to notify frontend about the new terminal
-    unifiedEventBus.emitDomainEvent('terminal:created', {
+    mainDispatch(terminalCreated({
       terminalId,
       workspaceId,
       title: title || 'Terminal',
       cwd: workingDir,
       createdAt: new Date().toISOString(),
       background: !!initialCommand,
-    });
+    }));
 
     logger.info('[Terminal] Backend terminal created', {
       terminalId,
@@ -1875,10 +1885,10 @@ export async function createTerminalFromBackend(options: {
           logger.info('[Terminal] Executing setup script', { terminalId, scriptPath });
 
           // Notify frontend that a command was executed so it can track it
-          unifiedEventBus.emitDomainEvent('terminal:professional:command:executed', {
+          mainDispatch(terminalProfessionalCommandExecuted({
             terminalId,
             command: 'Setup script (installing dependencies)',
-          });
+          }));
 
           // Clean up the script file after a delay (give it time to execute)
           setTimeout(async () => {

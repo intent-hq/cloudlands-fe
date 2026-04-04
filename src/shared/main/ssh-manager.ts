@@ -1,7 +1,7 @@
 import { Client, ConnectConfig, SFTPWrapper } from 'ssh2';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
-import * as path from 'path';
+
 import * as net from 'net';
 import * as crypto from 'crypto';
 import { promisify } from 'util';
@@ -408,7 +408,7 @@ export class SSHManager extends EventEmitter {
         if (stream) {
           try {
             stream.close();
-          } catch (err) {
+          } catch {
             // Ignore stream close errors
           }
         }
@@ -834,7 +834,7 @@ export class SSHManager extends EventEmitter {
           if (parsed.ok && parsed.auggiePath) {
             auggiePath = parsed.auggiePath;
           }
-        } catch (parseError) {
+        } catch {
           this.logger.warn('intent-server discover returned non-JSON stdout', {
             connectionId,
             stdout: result.stdout,
@@ -1080,7 +1080,7 @@ export class SSHManager extends EventEmitter {
                     isAlive = false;
                   }
                 }, 3000); // Wait 3 seconds for graceful shutdown
-              } catch (signalError) {
+              } catch {
                 // If signal fails, just close the stream
                 this.logger.warn('Failed to send signal, force closing', { connectionId });
                 stream.close();
@@ -1253,7 +1253,7 @@ export class SSHManager extends EventEmitter {
       });
 
       // Handle incoming connections on the forwarded port
-      connection.client.on('tcp connection', (info, accept, _reject) => {
+      connection.client.on('tcp connection', (info, accept) => {
         if (info.destPort === options.remotePort) {
           this.logger.debug('Incoming connection on forwarded port', { info });
           const stream = accept();
@@ -1439,7 +1439,7 @@ export class SSHManager extends EventEmitter {
             results.tools.push(check.name);
           }
         }
-      } catch (error) {
+      } catch {
         // Command not found, skip
       }
     }

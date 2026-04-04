@@ -2,8 +2,6 @@
   import { logger } from '$lib/utils/client-logger';
 
   import { onMount, onDestroy } from 'svelte';
-  import Fa from 'svelte-fa';
-  import { faGripVertical } from '@fortawesome/free-solid-svg-icons';
 
   interface Panel {
     id: string;
@@ -77,7 +75,6 @@
   // State for panel sizes (as percentages)
   let panelSizes: number[] = $state(initialValues.sizes);
   let collapsedPanels = $state<Set<string>>(initialValues.collapsed);
-  let containerSize = $state(0);
   let isResizing = $state(false);
   let resizingIndex = $state(-1);
   let startPosition = $state(0);
@@ -122,50 +119,6 @@
   }
 
   // Redistribute space when panels collapse/expand while maintaining ratios
-  function redistributeSpace(excludeIndices: number[] = []) {
-    const visibleIndices = panels
-      .map((_, i) => i)
-      .filter((i) => !collapsedPanels.has(panels[i].id) && !excludeIndices.includes(i));
-
-    if (visibleIndices.length === 0) return;
-
-    // Get current sizes of visible panels
-    let currentVisibleSizes = visibleIndices.map((i) => panelSizes[i]);
-    let totalCurrentSize = currentVisibleSizes.reduce((sum, size) => sum + size, 0);
-
-    // If all visible panels have 0 size (initial state), distribute equally
-    if (totalCurrentSize === 0) {
-      const spacePerPanel = 100 / visibleIndices.length;
-      const newSizes = [...panelSizes];
-      panels.forEach((panel, i) => {
-        if (collapsedPanels.has(panel.id)) {
-          newSizes[i] = 0;
-        } else if (!excludeIndices.includes(i)) {
-          newSizes[i] = spacePerPanel;
-        }
-      });
-      panelSizes = normalizeSizes(newSizes);
-    } else {
-      // Maintain ratios of visible panels
-      const scaleFactor = 100 / totalCurrentSize;
-      const newSizes = [...panelSizes];
-
-      panels.forEach((panel, i) => {
-        if (collapsedPanels.has(panel.id)) {
-          newSizes[i] = 0;
-        } else if (!excludeIndices.includes(i)) {
-          const currentIndex = visibleIndices.indexOf(i);
-          if (currentIndex !== -1) {
-            newSizes[i] = currentVisibleSizes[currentIndex] * scaleFactor;
-          }
-        }
-      });
-
-      panelSizes = normalizeSizes(newSizes);
-    }
-
-    savePanelSizes();
-  }
 
   // Toggle panel collapse state
   export function togglePanel(panelId: string) {
@@ -187,7 +140,6 @@
 
       if (visibleIndices.length > 0) {
         // Calculate total current size of visible panels
-        const totalVisible = visibleIndices.reduce((sum, i) => sum + panelSizes[i], 0);
 
         // Give the expanding panel a reasonable size (30% or its default)
         const expandingSize = panel.defaultSize || 30;
@@ -214,7 +166,6 @@
       }
     } else {
       // Collapsing a panel
-      const collapsedSize = panelSizes[panelIndex];
 
       collapsedPanels.add(panelId);
       collapsedPanels = new Set(collapsedPanels); // Trigger reactivity
@@ -389,20 +340,12 @@
     resizeRafId = requestAnimationFrame(() => {
       resizeRafId = null;
       if (!containerRef) return;
-      containerSize =
-        orientation === 'vertical' ? containerRef.clientHeight : containerRef.clientWidth;
     });
   }
 
   // Initialize on mount
   onMount(() => {
     initializePanelSizes();
-    // Initial size read doesn't need RAF
-    if (containerRef) {
-      containerSize =
-        orientation === 'vertical' ? containerRef.clientHeight : containerRef.clientWidth;
-    }
-
     // Set up resize observer
     resizeObserver = new ResizeObserver(handleContainerResize);
     if (containerRef) {

@@ -87,6 +87,7 @@ describe('reversible-actions', () => {
       const action = vi.fn();
 
       // Start a non-immediate action
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const promise = reversibleActions.execute({
         id: 'test-cancel',
         message: 'Test',

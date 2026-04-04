@@ -76,7 +76,7 @@ export class GlobalErrorHandler {
     });
 
     // Handle unhandled promise rejections
-    process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+    process.on('unhandledRejection', (reason: any) => {
       const error = reason instanceof Error ? reason : new Error(String(reason));
 
       this.logger.error('Unhandled promise rejection in main process', error);

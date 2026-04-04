@@ -9,7 +9,7 @@ import { Logger } from '../../../shared/logger';
 
 const logger = new Logger({ category: 'AppSettingsService' });
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 let settingsStore: any = null;
 let initPromise: Promise<void> | null = null;
 

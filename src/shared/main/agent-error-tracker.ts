@@ -10,9 +10,9 @@ import * as path from 'path';
 import * as os from 'os';
 import { fileURLToPath } from 'url';
 import { app } from 'electron';
-import { AppError, isAppError, toAppError } from '../errors';
+import { AppError } from '../errors';
 import { Logger, LogEntry } from '../logger';
-import { writeJsonAsync, readJsonAsync } from './async-utils';
+import { writeJsonAsync } from './async-utils';
 
 export interface TrackedError {
   id: string;
@@ -113,7 +113,7 @@ export class AgentErrorTracker {
           if (pkg.name === 'intent') {
             return currentDir;
           }
-        } catch (e) {
+        } catch {
           // Continue searching
         }
       }

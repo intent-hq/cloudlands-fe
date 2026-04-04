@@ -5,7 +5,10 @@
    * Shows skills discovered from project and user directories.
    * Modeled after McpServersSection.svelte (collapsible, hidden when empty).
    */
-  import { skillsStore, type SkillInfo } from '$features/agent/skills.store.svelte';
+  import type { SkillInfo } from '$lib/store/slices/skills/skills-types';
+  import { selectSkills } from '$lib/store/slices/skills/skills-selectors';
+  import { loadSkillsRequested } from '$lib/store/slices/skills/skills-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import { slide } from 'svelte/transition';
   import { faChevronDown, faGlobe, faPuzzlePiece } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -18,20 +21,25 @@
 
   let { workspaceId, class: className }: Props = $props();
 
+  // ✅ At component init — getDispatch and selectors use getContext()
+  const dispatch = getDispatch();
+  const skills$ = selectSkills(workspaceId);
+
   // Collapse state - collapsed by default
   let isExpanded = $state(false);
 
-  // Initialize store for this workspace
+  // Dispatch load request when workspaceId changes
+  let lastInitWorkspaceId: string | undefined;
   $effect(() => {
-    if (workspaceId) {
-      skillsStore.setWorkspace(workspaceId);
+    if (workspaceId && workspaceId !== lastInitWorkspaceId) {
+      lastInitWorkspaceId = workspaceId;
+      dispatch(loadSkillsRequested(workspaceId));
     }
   });
 
-  // Derived values from store — sorted with global skills first
-  const skills = $derived(skillsStore.skills);
+  // Derived values — sorted with global skills first
   const sortedSkills = $derived(
-    [...skills].sort((a, b) => {
+    [...$skills$].sort((a, b) => {
       const aIsGlobal = a.scope === 'user' || !a.scope;
       const bIsGlobal = b.scope === 'user' || !b.scope;
       if (aIsGlobal && !bIsGlobal) return -1;
@@ -67,7 +75,7 @@
   </div>
 {/snippet}
 
-{#if skills.length > 0}
+{#if $skills$.length > 0}
   <div class="mt-3 {className ?? ''}">
     <!-- Section Header -->
     <button
@@ -77,7 +85,7 @@
     >
       <Fa icon={faChevronDown} size="xs" class="opacity-50 transition-transform duration-200 {isExpanded ? '' : '-rotate-90'}" />
       <span>Skills</span>
-      <span class="ml-auto text-ui opacity-60">{skills.length}</span>
+      <span class="ml-auto text-ui opacity-60">{$skills$.length}</span>
     </button>
 
     {#if isExpanded}

@@ -12,6 +12,7 @@ import * as path from 'path';
 import { Logger } from '../../../../shared/logger';
 import { renameWithRetry } from '../../../../shared/main/file-sync-utils';
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const logger = new Logger('AtomicFile');
 
 /**

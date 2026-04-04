@@ -15,7 +15,7 @@ import type { Result } from '$shared/types';
 const logger = createLogger('ErrorHandler');
 
 /** Generic event listener type - uses any for compatibility with various event handlers */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type EventListenerFn = (...args: any[]) => void;
 
 // Simple event emitter for browser compatibility
@@ -29,7 +29,7 @@ class SimpleEventEmitter {
     this.listeners.get(event)!.add(listener);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   emit(event: string, ...args: any[]): void {
     const listeners = this.listeners.get(event);
     if (listeners) {

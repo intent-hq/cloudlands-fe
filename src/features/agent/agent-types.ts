@@ -6,7 +6,7 @@
  */
 
 // Import shared types for use in this file
-import type { AgentSession, ProviderMessage, ToolCall as SharedToolCall } from '../../shared/types';
+import type { ProviderMessage, ToolCall as SharedToolCall } from '../../shared/types';
 
 // Re-export shared types
 export type {

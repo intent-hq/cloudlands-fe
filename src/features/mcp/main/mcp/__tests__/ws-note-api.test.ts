@@ -57,6 +57,7 @@ vi.mock('$features/agent/main/agent-backend-handler.service', () => ({
 import { WorkspaceJsApiTool } from '../workspace-js-api-tool';
 import { hasTaskBlocks } from '$features/notes/utils/task-block-parser';
 import { notesService } from '$features/notes/main/notes.service';
+import { sendToWorkspaceWindows } from '$features/system/main/system.ipc';
 
 function makeCall(code: string) {
   return { name: 'workspace_api', arguments: { code }, context: {} } as any;
@@ -300,6 +301,87 @@ describe('ws.note.edit', () => {
 
     expect(result.isError).toBe(true);
     expect(getText(result)).toContain('Note not found');
+  });
+});
+
+describe('toFrontendNote — contentType and visibility defaults', () => {
+  let mockWM: any;
+  let tool: WorkspaceJsApiTool;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockWM = {
+      getNote: vi.fn(),
+      createNote: vi.fn(),
+      updateNote: vi.fn(),
+      getWorkspace: vi.fn().mockResolvedValue(null),
+    };
+    tool = new WorkspaceJsApiTool('/tmp/test', 'ws-1', mockWM);
+  });
+
+  it('includes contentType defaulting to markdown', async () => {
+    const noteData = { id: 'n1', title: 'Test', content: 'body', tags: [], created_at: '2024-01-01', updated_at: '2024-01-01' };
+    mockWM.createNote.mockResolvedValue(noteData);
+
+    await tool.execute(makeCall('return await ws.note.create("Test", "body")'));
+
+    const emitCall = (sendToWorkspaceWindows as any).mock.calls.find(
+      (c: any[]) => c[1] === 'note:created',
+    );
+    expect(emitCall).toBeDefined();
+    const emittedNote = emitCall[2].note;
+    expect(emittedNote.contentType).toBe('markdown');
+  });
+
+  it('includes visibility defaulting to workspace', async () => {
+    const noteData = { id: 'n2', title: 'Test2', content: 'body2', tags: [], created_at: '2024-01-01', updated_at: '2024-01-01' };
+    mockWM.createNote.mockResolvedValue(noteData);
+
+    await tool.execute(makeCall('return await ws.note.create("Test2", "body2")'));
+
+    const emitCall = (sendToWorkspaceWindows as any).mock.calls.find(
+      (c: any[]) => c[1] === 'note:created',
+    );
+    expect(emitCall).toBeDefined();
+    const emittedNote = emitCall[2].note;
+    expect(emittedNote.visibility).toBe('workspace');
+  });
+
+  it('preserves explicit contentType and visibility from source note', async () => {
+    const noteData = {
+      id: 'n3', title: 'Code Note', content: 'console.log()', tags: [],
+      contentType: 'code', visibility: 'private',
+      created_at: '2024-01-01', updated_at: '2024-01-01',
+    };
+    mockWM.createNote.mockResolvedValue(noteData);
+
+    await tool.execute(makeCall('return await ws.note.create("Code Note", "console.log()")'));
+
+    const emitCall = (sendToWorkspaceWindows as any).mock.calls.find(
+      (c: any[]) => c[1] === 'note:created',
+    );
+    expect(emitCall).toBeDefined();
+    const emittedNote = emitCall[2].note;
+    expect(emittedNote.contentType).toBe('code');
+    expect(emittedNote.visibility).toBe('private');
+  });
+
+  it('falls back to content_type field when contentType is absent', async () => {
+    const noteData = {
+      id: 'n4', title: 'Legacy', content: 'text', tags: [],
+      content_type: 'plaintext',
+      created_at: '2024-01-01', updated_at: '2024-01-01',
+    };
+    mockWM.createNote.mockResolvedValue(noteData);
+
+    await tool.execute(makeCall('return await ws.note.create("Legacy", "text")'));
+
+    const emitCall = (sendToWorkspaceWindows as any).mock.calls.find(
+      (c: any[]) => c[1] === 'note:created',
+    );
+    expect(emitCall).toBeDefined();
+    const emittedNote = emitCall[2].note;
+    expect(emittedNote.contentType).toBe('plaintext');
   });
 });
 

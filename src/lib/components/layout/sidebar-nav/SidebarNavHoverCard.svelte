@@ -10,7 +10,7 @@
    */
 
   import { tick } from 'svelte';
-  import { sidebarNavStore, type SidebarNavItem } from './sidebar-nav.store.svelte';
+  import type { SidebarNavItem } from '$lib/store/slices/sidebar-nav/sidebar-nav-types';
   import NewWorkspaceCard from './cards/NewWorkspaceCard.svelte';
   import ActiveWorkspacesCard from './cards/ActiveWorkspacesCard.svelte';
   import AllWorkspacesCard from './cards/AllWorkspacesCard.svelte';
@@ -18,6 +18,15 @@
   import { faThumbtack } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { selectActiveCard, selectExpandedItem, selectIsCardPinned, selectContextMenuOpen } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+  import { closeHoverCards, setHoveredItem, setExpandedItem, toggleCardPinned, setDeferredLeave, clearDeferredLeave } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+
+  const dispatch = getDispatch();
+  const activeCard$ = selectActiveCard();
+  const expandedItem$ = selectExpandedItem();
+  const isCardPinned$ = selectIsCardPinned();
+  const contextMenuOpen$ = selectContextMenuOpen();
 
   const cardMeta: Partial<Record<SidebarNavItem, { title: string; description: string }>> = {
     'new-workspace': { title: 'Create new workspace', description: '' },
@@ -31,9 +40,9 @@
 
   let { iconRefs }: Props = $props();
 
-  const activeCard = $derived(sidebarNavStore.activeCard);
-  const isExpanded = $derived(sidebarNavStore.expandedItem !== null);
-  const isCardPinned = $derived(sidebarNavStore.isCardPinned);
+  const activeCard = $derived($activeCard$);
+  const isExpanded = $derived($expandedItem$ !== null);
+  const isCardPinned = $derived($isCardPinned$);
   const meta = $derived(activeCard ? cardMeta[activeCard] : null);
 
   // Focus management: save/restore focus when card opens/closes
@@ -58,11 +67,40 @@
     }
   });
 
+  // Hover card mouse enter/leave: cancel/set leave timeouts.
+  // The old store managed timeouts internally. Since hover timeouts are
+  // component-local UI behavior, we keep them here.
+  let leaveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  function handleCardMouseEnter() {
+    if (leaveTimeout) {
+      clearTimeout(leaveTimeout);
+      leaveTimeout = null;
+    }
+    // Cancel any deferred leave — pointer is back inside the card
+    dispatch(clearDeferredLeave());
+  }
+
+  function handleCardMouseLeave() {
+    // If the card is pinned open, don't auto-close
+    if ($isCardPinned$) return;
+
+    if ($contextMenuOpen$) {
+      dispatch(setDeferredLeave('card'));
+      return;
+    }
+
+    leaveTimeout = setTimeout(() => {
+      dispatch(setHoveredItem(null));
+      dispatch(setExpandedItem(null));
+    }, 200);
+  }
+
   function handleCardKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
-      sidebarNavStore.closeHoverCards();
+      dispatch(closeHoverCards());
     }
   }
 
@@ -92,8 +130,8 @@
   <div
     class="sidebar-hover-card fixed z-100"
     style={cardStyle}
-    onmouseenter={() => sidebarNavStore.handleCardMouseEnter()}
-    onmouseleave={() => sidebarNavStore.handleCardMouseLeave()}
+    onmouseenter={handleCardMouseEnter}
+    onmouseleave={handleCardMouseLeave}
     onkeydown={handleCardKeydown}
     transition:fly={{ x: -8, duration: 150 }}
   >
@@ -119,7 +157,7 @@
               <button
                 class="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded transition-all hover:bg-muted/50
                   {isCardPinned ? 'text-foreground rotate-0' : 'text-muted-foreground rotate-45'}"
-                onclick={() => sidebarNavStore.toggleCardPinned()}
+                onclick={() => dispatch(toggleCardPinned())}
                 aria-label={isCardPinned ? 'Unpin sidebar' : 'Pin sidebar open'}
               >
                 <Fa icon={faThumbtack} size="xs" />

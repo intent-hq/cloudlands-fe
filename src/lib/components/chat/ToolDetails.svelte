@@ -12,7 +12,9 @@
   import MarkdownRenderer from '$lib/components/editor/MarkdownRenderer.svelte';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import AgentCard from './AgentCard.svelte';
-  import { sessionStore, unifiedStateStore } from '$features/agent/browser';
+  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
 
@@ -565,8 +567,9 @@
           {:else if parsedResult.type === 'agent-message' && parsedResult.messageContent}
             <!-- Agent message - show "Sent message to [agent]" with clickable link, then the message -->
             {@const agentId = parsedResult.toAgentId}
-            {@const toolWsId = unifiedStateStore.currentWorkspace?.workspace?.id}
-            {@const session = agentId && toolWsId ? sessionStore.getSessionForWorkspace(String(toolWsId), agentId) : null}
+            {@const toolState = getReduxStore().getState()}
+            {@const toolWsId = selectActiveWorkspaceId.select(toolState)}
+            {@const session = agentId && toolWsId ? selectAgentById.select(toolState, agentId) : null}
             {@const agentName =
               session?.name && !isGenericAgentName(session.name)
                 ? session.name

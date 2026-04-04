@@ -124,6 +124,7 @@ export async function commitNote(
     const authorStr = author
       ? `${author.name} <${author.id}@workspaces>`
       : 'Workspaces <workspaces@local>';
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const commitHash = await execGit(notesDir, ['commit', '-m', message, '--author', authorStr]);
 
     // Get the commit hash

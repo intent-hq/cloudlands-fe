@@ -6,7 +6,7 @@
  * 3. No duplicate messages on stream end
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 describe('Contextual Menu Agent Launch Fixes', () => {
   describe('Tool calls display', () => {

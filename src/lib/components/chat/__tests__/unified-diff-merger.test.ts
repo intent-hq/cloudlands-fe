@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   buildSyntheticChunks,
   mergeChangeParts,
-  type MergedHunk,
 } from '../unified-diff-merger';
 import type { ChangePart, DiffHunk } from '../types';
 

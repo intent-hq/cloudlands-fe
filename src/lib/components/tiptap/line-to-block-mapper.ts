@@ -82,6 +82,7 @@ export function mapLineAttributionsToBlocks(
   // Collect ALL block nodes, including nested ones (like listItem inside bulletList)
   const blocks: Array<{ pos: number; node: any; type: string; depth: number }> = [];
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   editor.state.doc.descendants((node, pos, parent, index) => {
     if (node.isBlock && node.type.name !== 'doc') {
       // Store the depth to help identify parent-child relationships
@@ -163,6 +164,7 @@ export function mapLineAttributionsToBlocks(
     positions.forEach((pos) => {
       positionCounts.set(pos, (positionCounts.get(pos) || 0) + 1);
     });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const duplicates = Array.from(positionCounts.entries()).filter(([_, count]) => count > 1);
     logger.warn('[line-to-block-mapper] Duplicate positions:', duplicates);
   }

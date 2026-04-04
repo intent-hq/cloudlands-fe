@@ -73,8 +73,9 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { fade, slide } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
-  import { agentService } from '$features/agent/agent.service';
-  import { notesStore } from '$features/notes/notes.store.svelte';
+  import { agentService } from '$features/agent/agent-ipc-bridge';
+  import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getShortcutDisplay } from '$lib/utils/shortcuts';
 
   const logger = createLogger('PanelLayoutHeader');
@@ -258,7 +259,7 @@
       : [];
 
     // Get notes from the notes store
-    const notes = Array.from(notesStore.notes.values()).map((n) => ({
+    const notes = selectAllNotes.select(getReduxStore().getState(), workspaceId ?? '').map((n) => ({
       id: n.id,
       title: n.title,
     }));

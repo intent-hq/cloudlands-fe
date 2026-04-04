@@ -1,13 +1,16 @@
 <script lang="ts">
   import { slide } from 'svelte/transition';
   import ResponsiveCommentThread from './comments/ResponsiveCommentThread.svelte';
-  import type { CommentV2 } from '$features/comments/comments-v2.store.svelte';
-  import { commentsStoreV2 } from '$features/comments/comments-v2.store.svelte';
+  import type { CommentV2 } from '$features/comments/comment-types-v2';
+  import { selectSelectedComment } from '$lib/store/slices/comments/comments-selectors';
   import type { Editor } from '@tiptap/core';
   import { createLogger } from '$lib/utils/client-logger';
   import { findCommentAnchors } from '$lib/components/tiptap/CommentAnchor';
 
   const logger = createLogger('CommentsSidebar');
+
+  // Selector at component init time
+  const selectedComment$ = selectSelectedComment();
 
   // Use V2 comment type
   type AnyComment = CommentV2;
@@ -56,9 +59,7 @@
 
   // Track editor wrapper rect changes for proper positioning
   // Note: wrapperRect is assigned but not read - kept for potential future use
-  let _wrapperRect: DOMRect | null = $state(null);
   // Note: currentScrollTop is assigned but not read - kept for potential future use
-  let _currentScrollTop = 0;
 
   // Simple wrapper rect tracking for positioning
   $effect(() => {
@@ -66,8 +67,6 @@
 
     if (targetElement) {
       const updateRect = () => {
-        _wrapperRect = targetElement.getBoundingClientRect();
-
         // Simple responsive mode based on container width
         const container = targetElement.closest('.workspace-spec-with-comments');
         if (container) {
@@ -370,8 +369,6 @@
     if (!editorContainer) return;
 
     const handleScroll = () => {
-      // Update the current scroll position
-      _currentScrollTop = editorContainer.scrollTop || 0;
       updateCommentPositions();
     };
 
@@ -427,7 +424,7 @@
 
   // Watch for selected comment from the store
   $effect(() => {
-    const selected = commentsStoreV2.selectedComment?.id ?? null;
+    const selected = $selectedComment$?.id ?? null;
 
     // Only update if the selected comment actually changed
     if (selected && selected !== selectedCommentId) {

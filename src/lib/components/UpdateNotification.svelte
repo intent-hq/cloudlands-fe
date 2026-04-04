@@ -9,10 +9,24 @@
    * The toast shows progress during download and an install button when ready.
    */
 
-  import { autoUpdateStore } from '$features/auto-update/auto-update.store.svelte';
   import UpdateToast from '$lib/components/ui/toast/UpdateToast.svelte';
   import { onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+    selectAutoUpdateToastVisible,
+    selectAutoUpdateStatus,
+  } from '$lib/store/slices/auto-update/auto-update-selectors';
+  import {
+    hideToast,
+    showToast,
+    initAutoUpdate,
+  } from '$lib/store/slices/auto-update/auto-update-slice';
+
+  const dispatch = getDispatch();
+  const toastVisible$ = selectAutoUpdateToastVisible();
+  const status$ = selectAutoUpdateStatus();
 
   let currentToastId: string | number | undefined;
   let previousStatus: string | undefined;
@@ -29,12 +43,13 @@
       componentProps: {
         onDismiss: () => {
           // When update is downloaded, toast is non-dismissible — user must click Install
-          if (autoUpdateStore.status === 'downloaded') return;
+          const currentStatus = selectAutoUpdateStatus.select(getReduxStore().getState());
+          if (currentStatus === 'downloaded') return;
           if (currentToastId !== undefined) {
             toast.dismiss(currentToastId);
             currentToastId = undefined;
           }
-          autoUpdateStore.hideToast();
+          dispatch(hideToast());
         },
       },
     });
@@ -49,14 +64,14 @@
 
   // Show toast when toastVisible becomes true (manual check)
   $effect(() => {
-    if (autoUpdateStore.toastVisible && currentToastId === undefined) {
+    if ($toastVisible$ && currentToastId === undefined) {
       showUpdateToast();
     }
   });
 
   // ALWAYS show toast when downloading or downloaded - this is the most important state
   $effect(() => {
-    const status = autoUpdateStore.status;
+    const status = $status$;
 
     // Don't react if status hasn't changed
     if (status === previousStatus) return;
@@ -68,15 +83,16 @@
         showUpdateToast();
       }
       // Also ensure toastVisible is true so the toast stays visible
-      if (!autoUpdateStore.toastVisible) {
-        autoUpdateStore.showToast();
+      const isToastVisible = selectAutoUpdateToastVisible.select(getReduxStore().getState());
+      if (!isToastVisible) {
+        dispatch(showToast());
       }
     }
 
     // Auto-dismiss toast when idle (error is handled by UpdateToast with a delay)
     if (status === 'idle') {
       dismissToast();
-      autoUpdateStore.hideToast();
+      dispatch(hideToast());
     }
 
     previousStatus = status;
@@ -84,24 +100,23 @@
 
   // Dismiss toast when not-available or error after a delay (handled by UpdateToast component)
   $effect(() => {
-    const status = autoUpdateStore.status;
+    const status = $status$;
     if (status === 'not-available' || status === 'error') {
       // Longer delay for errors so user can read the message
       const delay = status === 'error' ? 5500 : 3500;
       const timeout = setTimeout(() => {
         dismissToast();
-        autoUpdateStore.hideToast();
+        dispatch(hideToast());
       }, delay);
       return () => clearTimeout(timeout);
     }
   });
 
   onMount(() => {
-    // Initialize the auto-update store
-    autoUpdateStore.initialize();
+    // Initialize the auto-update store via saga
+    dispatch(initAutoUpdate());
 
     return () => {
-      autoUpdateStore.cleanup();
       dismissToast();
     };
   });

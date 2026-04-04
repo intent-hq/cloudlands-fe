@@ -11,3 +11,15 @@ export const selectHomePageInitializerRequest = createSelector((state) => {
 export const selectHasHomePageInitializerRequest = createSelector((state) => {
   return selectHomePageInitializerRequest.select(state) !== null;
 });
+
+export const selectPendingDeepLinkAction = createSelector((state) => {
+  return selectDeepLinks.select(state).pendingAction;
+});
+
+export const selectDeepLinkProcessing = createSelector((state) => {
+  return selectDeepLinks.select(state).processing;
+});
+
+export const selectDeepLinkError = createSelector((state) => {
+  return selectDeepLinks.select(state).error;
+});

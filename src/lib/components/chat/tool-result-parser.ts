@@ -731,6 +731,7 @@ function parseEditResult(
  */
 function parseSaveResult(
   input: Record<string, any>,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   result: string | null | undefined,
 ): ParsedToolResult {
   const filePath = input.path || '';
@@ -777,7 +778,6 @@ function parseSearchResult(
   }
 
   // Parse "Path: ..." format from codebase-retrieval
-  const pathRegex = /Path:\s*([^\n]+)/g;
   const sections = result.split(/(?=Path:)/);
 
   for (const section of sections) {
@@ -2445,6 +2445,3 @@ function extractGitHubYamlField(item: string, field: string): string | null {
 /**
  * Escape special regex characters in a string for GitHub YAML parsing.
  */
-function escapeGitHubRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}

@@ -15,9 +15,8 @@
     getFileChangesFromMessage,
     type ChatFileChangeSummary,
   } from '$lib/utils/get-file-changes-from-messages';
-  import LineChangesBadge from '../shared/LineChangesBadge.svelte';
-
-  interface Props {
+  
+interface Props {
     /** Single message to show changes for (per-turn mode) */
     message?: AgentMessage;
     /** All messages to show aggregate changes (aggregate mode) */
@@ -39,6 +38,7 @@
     messages,
     suffix,
     isAggregate = false,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     isStreaming = false,
     agentId,
     turnNumber,

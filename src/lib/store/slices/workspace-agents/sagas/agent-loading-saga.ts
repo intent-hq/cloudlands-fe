@@ -1,7 +1,8 @@
-import { agentService } from "$features/agent/agent.service";
-import { sessionStore } from "$features/agent/browser";
-import { getPanelLayoutManager, hasPanelLayoutManager, } from "$features/layout/panel-layout-manager.svelte";
-import { workspaceStorageManager } from "$features/workspace/workspace-storage-manager";
+import { agentService } from "$features/agent/agent-ipc-bridge";
+import { getPanelLayoutManager, hasPanelLayoutManager, } from "$features/layout/panel-layout-adapter";
+import { selectPanels } from "$lib/store/slices/panel-layout/panel-layout-selectors";
+import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
+import { workspaceStorageManager } from "$lib/store/slices/workspace/utils/workspace-storage-manager";
 import { shouldDeferSpecPanel } from "$lib/store/slices/app-layout/sagas/spec-panel-saga";
 import { acquireAgentLoadLock, releaseAgentLoadLock, } from "$lib/utils/agent-subscription.svelte";
 import { SPEC_NOTE_ID } from "$shared/constants/notes";
@@ -11,9 +12,9 @@ import type { StoredAgent } from "$lib/utils/agent-loader";
 import { call, put, select } from "typed-redux-saga";
 import { lockReactiveSelectors } from "../../store-utility/sagas/lock-reactive-selectors";
 import { markAgentRecentlyCreated, setAgents, setAgentsLoaded, setIsLoadingAgents, } from "../workspace-agents-slice";
-import { selectAgentsLoaded, selectInitialAgentId, selectInitialAgentConfig, selectIsLoadingAgents, } from "../workspace-agents-selectors";
+import { selectAgentById, selectAgentsLoaded, selectInitialAgentId, selectInitialAgentConfig, selectIsLoadingAgents, } from "../workspace-agents-selectors";
+import { bulkUpsertSessions, removeWorkspaceSessions } from "../../agent-session/agent-session-slice";
 import { clearInitialAgentConfig, type InitialAgentConfig } from "../workspace-agents-slice";
-import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 /**
  * Open an agent tab in the panel layout manager.
  * Replicates the component-local `openAgentInLayout` using direct layout manager calls.
@@ -25,7 +26,8 @@ function openAgentInLayout(agentId: string, agentName: string, wsId: string, opt
         return;
     const layoutManager = getPanelLayoutManager(wsId);
     const focusIfExists = options?.focusIfExists ?? true;
-    for (const [panelId, panel] of Object.entries(layoutManager.layout.panels)) {
+    const panels = selectPanels.select(getReduxStore().getState(), wsId);
+    for (const [panelId, panel] of Object.entries(panels)) {
         const existingAgentTab = panel.tabs.find((t) => t.type === "agent" && t.agentId === agentId);
         if (existingAgentTab) {
             if (focusIfExists) {
@@ -101,6 +103,7 @@ export function* loadAgentsFromDiskSaga(wsId: string) {
         // sees an intermediate state (agents set but loaded still false,
         // or loaded true with stale/empty agents).
         yield* lockReactiveSelectors(function* () {
+            yield* put(bulkUpsertSessions(filteredAgents));
             yield* put(setAgents(wsId, filteredAgents));
             yield* put(setAgentsLoaded(wsId, true));
         });
@@ -115,13 +118,14 @@ export function* loadAgentsFromDiskSaga(wsId: string) {
         // 10. Deferred cleanup of sessionStorage
         const isNewlyCreated = restoredAgents.length === 0;
         if (!isNewlyCreated) {
-            cleanupSessionStorageKeys(wsId);
+            yield* cleanupSessionStorageKeys(wsId);
         }
     }
-    catch (error) {
+    catch {
         // Even on error, batch the state publication to avoid a transient
         // empty-agents-but-not-loaded sidebar flash.
         yield* lockReactiveSelectors(function* () {
+            yield* put(removeWorkspaceSessions(wsId));
             yield* put(setAgents(wsId, []));
             yield* put(setAgentsLoaded(wsId, true));
         });
@@ -140,10 +144,8 @@ export function* restoreInitialAgent(wsId: string, initialAgentId: string | null
         return;
     const initialAgentOnDisk = diskAgents.find((a) => a.id === AgentId(initialAgentId));
     if (initialAgentOnDisk) {
-        // Use workspace-scoped session lookup instead of agentService.getSession / hasAgent,
-        // which depend on the global current-workspace and can return wrong results
-        // during workspace-switch races.
-        const existingSession: AgentSession | undefined = yield* call([sessionStore, sessionStore.getSessionForWorkspace], wsId, initialAgentId);
+        // Use workspace-scoped Redux selector for race-safe lookup
+        const existingSession: AgentSession | undefined = yield* select((s: any) => selectAgentById.select(s, initialAgentId));
         const isAlreadyActive = existingSession && !(existingSession as any).isPending;
         if (!isAlreadyActive && !existingSession) {
             try {
@@ -155,7 +157,7 @@ export function* restoreInitialAgent(wsId: string, initialAgentId: string | null
                     yield* put(markAgentRecentlyCreated(wsId, initialAgentId));
                 }
             }
-            catch (error) {
+            catch {
             }
         }
         else {
@@ -189,7 +191,7 @@ export function* restoreInitialAgent(wsId: string, initialAgentId: string | null
                 yield* put(markAgentRecentlyCreated(wsId, initialAgentId));
             }
         }
-        catch (error) {
+        catch {
         }
     }
 }
@@ -199,6 +201,7 @@ function* restoreRemainingAgents(wsId: string, diskAgents: StoredAgent[], existi
     if (agentsToRestore.length === 0)
         return;
     const workspaceStub = { id: wsId } as any;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const results: Array<{
         agentId: string;
         success: boolean;
@@ -211,7 +214,6 @@ function* restoreRemainingAgents(wsId: string, diskAgents: StoredAgent[], existi
             return { agentId: agent.id, success: false };
         }
     })));
-    const successCount = results.filter((r) => r.success).length;
 }
 function reconcileStaleAgentTabs(wsId: string, restoredAgents: AgentSession[]): void {
     if (restoredAgents.length === 0 || !hasPanelLayoutManager(wsId))
@@ -225,9 +227,7 @@ function reconcileStaleAgentTabs(wsId: string, restoredAgents: AgentSession[]): 
     });
     const replacement = sortedForReconcile[0];
     if (replacement) {
-        const reconciled = layoutManager.reconcileStaleAgentTabs(validAgentIds, String(replacement.id), replacement.name || "Agent");
-        if (reconciled > 0) {
-        }
+        layoutManager.reconcileStaleAgentTabs(validAgentIds, String(replacement.id), replacement.name || "Agent");
     }
 }
 function* handleStreamingAgentReconnect(wsId: string, restoredAgents: AgentSession[]): Generator<any, boolean, any> {
@@ -243,7 +243,7 @@ function* handleStreamingAgentReconnect(wsId: string, restoredAgents: AgentSessi
             }
         }
     }
-    catch (error) {
+    catch {
     }
     return hasOpenedStreamingAgent;
 }
@@ -265,7 +265,7 @@ function restoreLayoutState(wsId: string, restoredAgents: AgentSession[], diskAg
         }
         else if (restoredAgents.length > 0) {
             const layoutManager = getPanelLayoutManager(wsId);
-            const allTabs = Object.values(layoutManager.layout.panels).flatMap((p) => p.tabs);
+            const allTabs = Object.values(selectPanels.select(getReduxStore().getState(), wsId)).flatMap((p) => p.tabs);
             const hasAgentTabs = allTabs.some((t) => t.type === "agent");
             if (!hasAgentTabs) {
                 const sortedAgents = [...restoredAgents].sort((a, b) => {
@@ -295,7 +295,7 @@ function ensureFallbackLayout(wsId: string, restoredAgents: AgentSession[], disk
     if (!hasPanelLayoutManager(wsId))
         return;
     const layoutManager = getPanelLayoutManager(wsId);
-    const allTabs = Object.values(layoutManager.layout.panels).flatMap((p) => p.tabs);
+    const allTabs = Object.values(selectPanels.select(getReduxStore().getState(), wsId)).flatMap((p) => p.tabs);
     if (allTabs.length === 0) {
         const agentsToUse = restoredAgents.length > 0
             ? restoredAgents
@@ -324,7 +324,7 @@ function ensureFallbackLayout(wsId: string, restoredAgents: AgentSession[], disk
         }
     }
     else {
-        const panels = Object.entries(layoutManager.layout.panels);
+        const panels = Object.entries(selectPanels.select(getReduxStore().getState(), wsId));
         const emptyPanel = panels.find(([, panel]) => panel.tabs.length === 0);
         const hasSpecAnywhere = allTabs.some((t) => t.type === "note" && t.noteId === SPEC_NOTE_ID);
         if (emptyPanel &&
@@ -340,8 +340,8 @@ function ensureFallbackLayout(wsId: string, restoredAgents: AgentSession[], disk
         }
     }
 }
-function cleanupSessionStorageKeys(wsId: string): void {
-    getReduxStore().dispatch(clearInitialAgentConfig(wsId));
+function* cleanupSessionStorageKeys(wsId: string) {
+    yield* put(clearInitialAgentConfig(wsId));
     const agentConfigKey = `workspace:${wsId}:agent-config`;
     const pendingAgentKey = `workspace:${wsId}:initial-agent-pending`;
     if (sessionStorage.getItem(agentConfigKey)) {

@@ -16,11 +16,6 @@ import {
   findMostRecentHealthyVersion,
   recoverPartialAnchor,
   recoverAllPartialAnchors,
-  type AnchorPositions,
-  type RecoveryResult,
-  type AnchoredTextInfo,
-  type ProblematicAnchorInfo,
-  type RecoverAllResult,
 } from '../markdown-anchor-recovery';
 import type { NoteVersion } from '../../../shared/types';
 

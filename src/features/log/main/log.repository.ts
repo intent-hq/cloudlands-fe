@@ -97,7 +97,7 @@ export class FileSystemLogRepository implements LogRepository {
         try {
           await fs.unlink(filePath);
           logger.info('Cleared log file', { file });
-        } catch (error) {
+        } catch  {
           // File might not exist, that's okay
           logger.debug('Log file not found', { file });
         }

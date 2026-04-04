@@ -7,7 +7,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 describe('Initial Agent Creation (Workspace Initialization)', () => {
   let mockAgentFactory: any;
-  let mockWorkspaceService: any;
 
   beforeEach(() => {
     mockAgentFactory = {
@@ -29,16 +28,6 @@ describe('Initial Agent Creation (Workspace Initialization)', () => {
       }),
     };
 
-    mockWorkspaceService = {
-      createWorkspace: vi.fn(async (config) => ({
-        success: true,
-        workspace: {
-          id: 'ws_1',
-          name: config.name,
-          path: config.path,
-        },
-      })),
-    };
   });
 
   it('should create initial agent when workspace is created', async () => {

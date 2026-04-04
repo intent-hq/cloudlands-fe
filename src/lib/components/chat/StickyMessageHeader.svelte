@@ -12,11 +12,13 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Button from '$lib/components/ui/button/button.svelte';
-  import type { AgentMessage } from '$features/agent/agent.service';
+  import type { AgentMessage } from '$features/agent/agent-ipc-bridge';
   import { extractAllContent } from '$shared/types/agent-message.conversion';
-  import { notesStateManager } from '$features/notes/notes.store.svelte';
   import ProviderIcon from '$lib/components/icons/ProviderIcon.svelte';
   import type { ContextProvider } from '$features/context/types';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
 
   interface Props {
     message: AgentMessage;
@@ -80,6 +82,7 @@
   // Parse inline @mentions into segments (same logic as ChatMessage)
   type Segment = { type: 'text'; content: string } | { type: 'mention'; mentionType: string; label: string; identifier?: string; icon: typeof faFile };
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function parseSegments(text: string, refsByIdentifier: Map<string, any>): Segment[] {
     const segments: Segment[] = [];
     const mentionRegex = /@(context\[[^\]]+\]|note\/[^\s]+|[^\s@]+\.[a-zA-Z]+(?::[L\d-]+)?|[^\s@]*\/[^\s]+)/g;
@@ -102,8 +105,9 @@
         segments.push({ type: 'mention', mentionType: provider, label: title, identifier: identifier || undefined, icon: faFile });
       } else if (captured.startsWith('note/')) {
         const noteId = captured.slice(5);
-        const notes = notesStateManager.notes;
-        const n = notes ? Array.from(notes.values()).find((n) => n.id === noteId) : null;
+        const wsId = selectActiveWorkspaceId.select(getReduxStore().getState()) ?? '';
+        const allNotes = selectAllNotes.select(getReduxStore().getState(), wsId);
+        const n = allNotes.find((n) => n.id === noteId) ?? null;
         segments.push({ type: 'mention', mentionType: noteId === 'spec' ? 'spec' : 'note', label: n?.title || noteId, icon: noteId === 'spec' ? faClipboard : faNoteSticky });
       } else {
         const fileName = captured.split('/').pop() || captured;

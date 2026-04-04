@@ -1,11 +1,9 @@
 <script lang="ts">
-  import type { TrackedChange, FileListViewMode } from '$features/file-tracking/types';
+  import type { TrackedChange } from '$features/file-tracking/types';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
-  import Fa from 'svelte-fa';
   import TreeNode from './TreeNode.svelte';
   import {
     faFileCode,
-    faExpand,
     faPlus,
     faMinus,
     faRotateLeft,

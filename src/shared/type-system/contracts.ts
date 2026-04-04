@@ -9,10 +9,8 @@ import { z } from 'zod';
 import type {
   WorkspaceId,
   AgentId,
-  SessionId,
   MessageId,
   NoteId,
-  UserId,
   ThreadId,
 } from '../types/branded-ids';
 

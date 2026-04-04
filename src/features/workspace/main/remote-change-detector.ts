@@ -20,7 +20,7 @@ import { RemoteFileSystemService } from '../../remote-fs/main/remote-file-system
 import type { RemoteFileSystemConfig } from '../../remote-fs/main/remote-file-system.service';
 import { createHash, randomUUID } from 'crypto';
 import * as path from 'path';
-import type { DiffChunk, FileChange, FileChangeAction } from '../change-detector.types';
+import type { DiffChunk, FileChange, FileChangeAction } from '../../../lib/store/slices/workspace/utils/change-detector.types';
 
 const logger = new Logger('RemoteChangeDetector');
 
@@ -203,6 +203,7 @@ export class RemoteChangeDetector extends EventEmitter {
   /**
    * Trigger an immediate check (compatibility with ChangeDetectorManagerImpl).
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async triggerImmediateCheck(_reason?: string): Promise<void> {
     await this.forceCheck();
   }
@@ -260,8 +261,11 @@ export class RemoteChangeDetector extends EventEmitter {
     threadId?: string,
     turnNumber?: number,
     sessionId?: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     model?: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     temperature?: number,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     reasoning?: string,
   ): Promise<DiffChunk> {
     // Build a DiffChunk from the provided files
@@ -720,7 +724,7 @@ export class RemoteChangeDetector extends EventEmitter {
 
     if (filesToEmit.length === 0) return;
 
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     const { sendToWorkspaceWindows } = require('../../system/main/system.ipc') as {
       sendToWorkspaceWindows: (workspaceId: string | undefined, channel: string, data: unknown) => void;
     };

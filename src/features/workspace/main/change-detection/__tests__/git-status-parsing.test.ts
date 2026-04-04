@@ -556,6 +556,7 @@ M  package.json`;
     });
 
     it('should handle file with only newline', () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const content = '\n';
       // Split gives ['', ''], length 2, ends with \n so subtract 1 = 1
       // Actually '' ends with '\n' is true, so 2 - 1 = 1

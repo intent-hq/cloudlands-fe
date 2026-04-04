@@ -1,6 +1,6 @@
 <script lang="ts" module>
-  import type { LinearIssueResult } from '$features/linear-auth/renderer/linear-auth.store.svelte';
-  import type { SentryIssueResult } from '$features/sentry-auth/renderer/sentry-auth.store.svelte';
+  import type { LinearIssueResult } from '$features/linear-auth/renderer/linear-auth.client';
+  import type { SentryIssueResult } from '$lib/store/slices/sentry-auth/sentry-auth-types';
   import { createLogger } from '$lib/utils/client-logger';
 
   const preloadLogger = createLogger('IssueSuggestions:preload');
@@ -116,9 +116,9 @@
 
     try {
       // Dynamic imports to avoid circular dependencies
-      const [{ linearAuthStore }, { sentryAuthStore }] = await Promise.all([
-        import('$features/linear-auth/renderer/linear-auth.store.svelte'),
-        import('$features/sentry-auth/renderer/sentry-auth.store.svelte'),
+      const [{ linearAuthClient }, { sentryAuthClient }] = await Promise.all([
+        import('$features/linear-auth/renderer/linear-auth.client'),
+        import('$features/sentry-auth/renderer/sentry-auth.client'),
       ]);
 
       // Initialize auth stores and fetch issues in parallel
@@ -129,15 +129,15 @@
         preloadTasks.push(
           (async () => {
             try {
-              await linearAuthStore.initialize();
-              if (!linearAuthStore.state.isAuthenticated) {
+              const linearAuthState = await linearAuthClient.getAuthState(true);
+              if (!linearAuthState.isAuthenticated) {
                 preloadLogger.debug('Linear not authenticated, skipping preload');
                 return;
               }
 
               const [assignedIssues, createdIssues] = await Promise.all([
-                linearAuthStore.fetchMyIssues('assigned'),
-                linearAuthStore.fetchMyIssues('created'),
+                linearAuthClient.fetchMyIssues('assigned'),
+                linearAuthClient.fetchMyIssues('created'),
               ]);
 
               issueCache.linear = {
@@ -161,13 +161,13 @@
         preloadTasks.push(
           (async () => {
             try {
-              await sentryAuthStore.initialize();
-              if (!sentryAuthStore.state.isAuthenticated) {
+              const authState = await sentryAuthClient.getAuthState();
+              if (!authState.isAuthenticated) {
                 preloadLogger.debug('Sentry not authenticated, skipping preload');
                 return;
               }
 
-              const issues = await sentryAuthStore.fetchIssues();
+              const issues = await sentryAuthClient.fetchIssues();
 
               issueCache.sentry = {
                 data: issues,
@@ -199,18 +199,23 @@
   import { faPlus, faSearch, faSync } from '@fortawesome/free-solid-svg-icons';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { TooltipRich } from '$lib/components/ui/tooltip';
-  import { linearAuthStore } from '$features/linear-auth/renderer/linear-auth.store.svelte';
+  import { linearAuthClient } from '$features/linear-auth/renderer/linear-auth.client';
   import { handleLink } from '$features/navigation/link-handler';
-  import { sentryAuthStore } from '$features/sentry-auth/renderer/sentry-auth.store.svelte';
-  import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { sentryAuthClient } from '$features/sentry-auth/renderer/sentry-auth.client';
+  import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
+  import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import Header from '$lib/components/ui/Header.svelte';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
 
   const logger = createLogger('ContextPicker');
+  const issueDispatch = getDispatch();
+  const githubAuthIsAuthenticated$ = selectGitHubAuthIsAuthenticated();
 
   type ContextSource = 'linear' | 'github-issues' | 'github-prs' | 'sentry';
 
@@ -353,7 +358,7 @@
 
   // Watch for GitHub auth state changes (e.g., after user connects via Settings)
   $effect(() => {
-    const storeIsAuth = githubAuthStore.state.isAuthenticated;
+    const storeIsAuth = $githubAuthIsAuthenticated$;
     if (storeIsAuth && !isGitHubAuthenticated) {
       // Auth completed (e.g., user connected via Settings)
       isGitHubAuthenticated = true;
@@ -488,8 +493,8 @@
 
   async function loadLinearIssues() {
     try {
-      await linearAuthStore.initialize();
-      isLinearAuthenticated = linearAuthStore.state.isAuthenticated;
+      const linearAuthState = await linearAuthClient.getAuthState(true);
+      isLinearAuthenticated = linearAuthState.isAuthenticated;
 
       if (!isLinearAuthenticated) return;
 
@@ -508,8 +513,8 @@
 
       // Fetch both assigned and created issues for grouping
       const [assignedIssues, createdIssues] = await Promise.all([
-        linearAuthStore.fetchMyIssues('assigned'),
-        linearAuthStore.fetchMyIssues('created'),
+        linearAuthClient.fetchMyIssues('assigned'),
+        linearAuthClient.fetchMyIssues('created'),
       ]);
 
       linearAssignedIssues = assignedIssues;
@@ -535,8 +540,8 @@
 
   async function loadSentryIssues() {
     try {
-      await sentryAuthStore.initialize();
-      isSentryAuthenticated = sentryAuthStore.state.isAuthenticated;
+      const authState = await sentryAuthClient.getAuthState();
+      isSentryAuthenticated = authState.isAuthenticated;
 
       if (!isSentryAuthenticated) return;
 
@@ -550,7 +555,7 @@
         isLoadingSentry = true;
       }
 
-      const issues = await sentryAuthStore.fetchIssues();
+      const issues = await sentryAuthClient.fetchIssues();
       sentryIssues = issues;
 
       // Update cache
@@ -571,12 +576,11 @@
   async function loadGitHubIssues() {
     try {
       logger.debug('Loading GitHub issues - initializing auth store');
-      await githubAuthStore.initialize();
-      isGitHubAuthenticated = githubAuthStore.state.isAuthenticated;
+      issueDispatch(initializeGitHubAuth());
+      isGitHubAuthenticated = selectGitHubAuthIsAuthenticated.select(getReduxStore().getState());
 
       logger.debug('GitHub auth state', {
         isAuthenticated: isGitHubAuthenticated,
-        storeState: JSON.stringify(githubAuthStore.state),
       });
 
       if (!isGitHubAuthenticated) {
@@ -1229,7 +1233,7 @@
         <!-- Provider issues -->
         {#if isLoading}
           <div class="space-y-1 p-2">
-            {#each [1, 2, 3] as _}
+            {#each [1, 2, 3] as { }}
               <div class="flex items-center gap-2 px-2 py-1.5">
                 <Skeleton class="h-4 w-4 rounded" />
                 <Skeleton class="h-3 w-14" />
@@ -1245,7 +1249,7 @@
               No issues found for <button
                 onclick={() => {
                   handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/issues`, {
-                    workspaceId: workspaceStore.current?.id,
+                    workspaceId: selectActiveWorkspaceId.select(getReduxStore().getState()) ?? undefined,
                   });
                 }}
                 class="underline underline-offset-2 decoration-muted-foreground/20 cursor-pointer"
@@ -1255,7 +1259,7 @@
               No pull requests found for <button
                 onclick={() => {
                   handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/pulls`, {
-                    workspaceId: workspaceStore.current?.id,
+                    workspaceId: selectActiveWorkspaceId.select(getReduxStore().getState()) ?? undefined,
                   });
                 }}
                 class="underline underline-offset-2 decoration-muted-foreground/20 cursor-pointer"

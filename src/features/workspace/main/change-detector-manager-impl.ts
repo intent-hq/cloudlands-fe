@@ -1,6 +1,6 @@
 import { WorkspaceId as WorkspaceIdBrand, createAgentId } from '$shared/types/branded-ids';
 import { ChangeDetectorRefactored as ChangeDetector } from './change-detector-refactored';
-import { DiffChunk, FileChange } from '../change-detector.types';
+import { DiffChunk, FileChange } from '../../../lib/store/slices/workspace/utils/change-detector.types';
 import { DiffSummaryRepository } from './diff-summary.repository';
 import { RemoteChangeDetector } from './remote-change-detector';
 import { EventEmitter } from 'events';
@@ -16,7 +16,7 @@ import {
   type WorkspaceDiffSummary,
   type WorkspaceDiffSummaryFile,
 } from '../../../shared/types';
-import { lineChangesStore, type FileLineChange } from '../../line-changes/line-changes.store';
+import { trackFileChanges, type FileLineChange } from '../../line-changes/line-changes-main-state';
 
 interface WorkspaceInfo {
   id: string;
@@ -161,6 +161,7 @@ export class ChangeDetectorManager extends EventEmitter {
     );
 
     // Get debug mode setting from store or environment variable
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const debugMode =
       process.env.VERBOSE_CHANGE_DETECTOR === 'true' ||
       (this.store.get('experimental.debugMode', false) as boolean);
@@ -213,8 +214,11 @@ export class ChangeDetectorManager extends EventEmitter {
       this.handleChanges(workspace.id, diffChunk);
     });
 
-    // Note: activity-log-event events are now handled directly by WorkspaceEventService
-    // which gets the detector instance via getDetector() method
+    // Forward activity-log-event from individual detectors so workspace.ipc.ts
+    // can dispatch them into Redux via mainDispatch(emitWorkspaceEvent).
+    detector.on('activity-log-event', (event: any) => {
+      this.emit('activity-log-event', { workspaceId: workspace.id, event });
+    });
 
     detector.on('error', (error: Error) => {
       logger.error(
@@ -460,7 +464,7 @@ export class ChangeDetectorManager extends EventEmitter {
         deletions: file.deletions || 0,
         action: (file.action?.toLowerCase() || 'modify') as 'create' | 'modify' | 'delete',
       }));
-      lineChangesStore.trackFileChanges(WorkspaceIdBrand(workspaceId), fileChanges);
+      trackFileChanges(WorkspaceIdBrand(workspaceId), fileChanges);
       logger.debug(
         `[ChangeDetectorManager] Updated line changes store for workspace ${workspaceId}`,
       );
@@ -480,8 +484,9 @@ export class ChangeDetectorManager extends EventEmitter {
     logger.debug('[ChangeDetectorManager] Saved change history');
   }
 
-  // Note: handleActivityLogEvent was removed as activity-log-event events
-  // are now handled directly by WorkspaceEventService
+  // Note: handleActivityLogEvent was removed — activity-log-event events are
+  // now forwarded by each detector listener (see startMonitoring) and dispatched
+  // into Redux via workspace.ipc.ts → mainDispatch(emitWorkspaceEvent).
 
   /**
    * Add diff chunk to history
@@ -737,7 +742,7 @@ export class ChangeDetectorManager extends EventEmitter {
         deletions: file.deletions || 0,
         action: (file.action?.toLowerCase() || 'modify') as 'create' | 'modify' | 'delete',
       }));
-      lineChangesStore.trackFileChanges(createAgentId(sessionId), fileChanges);
+      trackFileChanges(createAgentId(sessionId), fileChanges);
       logger.debug(`[ChangeDetectorManager] Updated line changes store for agent ${sessionId}`);
     }
 

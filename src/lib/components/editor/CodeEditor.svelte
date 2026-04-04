@@ -1,20 +1,23 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { writable } from 'svelte/store';
   import { monaco, initializeMonaco, ensureMonacoInitialized } from '$lib/utils/monaco-workers';
   import { defineMonacoThemes, getActiveMonacoThemeName } from '$lib/utils/monaco-theme';
   import { themeManager } from '$lib/utils/theme';
-  import { agentFollowStore } from '$features/agent/agent-follow.store.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import AgentTypingAnimation from './AgentTypingAnimation.svelte';
   import { type LineChange, createLineChangeDecorations } from '$lib/utils/line-change-decorations';
-  import { unifiedStateStore } from '$features/agent/services/unified-state-store';
+
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import { faExternalLinkAlt, faFolderOpen } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { WorkspaceId } from '$shared/types/branded-ids';
+  import {
+    selectActiveWorkspace,
+    selectWorkspaceById,
+  } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectCodeFontFamilyCSS } from '$lib/store/slices/user-preferences/user-preferences-selectors';
+  import { selectIsFollowing } from '$lib/store/slices/agent-follow/agent-follow-selectors';
 
   const logger = createLogger('CodeEditor');
 
@@ -46,11 +49,15 @@
   let {
     value = $bindable(''),
     language = 'javascript',
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     theme = 'light',
     readOnly = false,
     lineNumbers = true,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     highlightActiveLine = true,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     diffMode = false,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     originalValue = '',
     fileName = '',
     lineWrapping = true,
@@ -63,6 +70,16 @@
   }: Props = $props();
 
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
+  const activeWorkspace = selectActiveWorkspace();
+  const workspaceIdStore = writable(workspaceId ?? '');
+  $effect(() => {
+    workspaceIdStore.set(workspaceId ?? '');
+  });
+  const workspaceById = selectWorkspaceById(workspaceIdStore);
+
+  function getResolvedWorkspace() {
+    return workspaceId ? $workspaceById : $activeWorkspace;
+  }
 
   // Content size tracking
   let contentTooLarge = $state(false);
@@ -88,9 +105,7 @@
       absolutePath = filePath;
     } else {
       // Need to resolve relative path
-      const workspace = workspaceId
-        ? workspaceStore.findById(WorkspaceId(workspaceId))
-        : workspaceStore.current;
+      const workspace = getResolvedWorkspace();
       const workspacePath = workspace?.worktreePath || workspace?.repositoryPath;
 
       if (!workspacePath) {
@@ -120,9 +135,7 @@
       absolutePath = filePath;
     } else {
       // Need to resolve relative path
-      const workspace = workspaceId
-        ? workspaceStore.findById(WorkspaceId(workspaceId))
-        : workspaceStore.current;
+      const workspace = getResolvedWorkspace();
       const workspacePath = workspace?.worktreePath || workspace?.repositoryPath;
 
       if (!workspacePath) {
@@ -144,8 +157,8 @@
   let container = $state.raw<HTMLDivElement | undefined>(undefined);
   let editor: monaco.editor.IStandaloneCodeEditor | null = null;
   let editorReady = $state(false);
-  let isFollowingAgent = $derived(agentFollowStore.isFollowing);
-  let agentColor = $derived(agentFollowStore.agentColor);
+  const isFollowing$ = selectIsFollowing();
+  let isFollowingAgent = $derived($isFollowing$);
 
   // Track decoration IDs for line changes
   let lineChangeDecorationIds: string[] = [];
@@ -294,12 +307,6 @@
               const model = editor?.getModel();
               const selectedText = model?.getValueInRange(selection) || '';
               if (selectedText) {
-                unifiedStateStore.selectionContext = {
-                  text: selectedText,
-                  file: fileName,
-                  language: language,
-                  range: undefined,
-                };
                 window.dispatchEvent(
                   new CustomEvent('editor:selection-change', {
                     detail: { text: selectedText, file: fileName, language, source: 'monaco' },
@@ -309,7 +316,6 @@
             } else if (editor?.hasTextFocus()) {
               // Only clear selection if editor still has focus
               // This preserves the selection when user clicks to another panel
-              unifiedStateStore.selectionContext = null;
               window.dispatchEvent(
                 new CustomEvent('editor:selection-change', {
                   detail: { text: '', file: fileName, language, source: 'monaco' },
@@ -611,12 +617,6 @@
           const model = editor?.getModel();
           const selectedText = model?.getValueInRange(selection) || '';
           if (selectedText) {
-            unifiedStateStore.selectionContext = {
-              text: selectedText,
-              file: fileName,
-              language: language,
-              range: undefined,
-            };
             // Dispatch a custom event for components to listen to
             window.dispatchEvent(
               new CustomEvent('editor:selection-change', {
@@ -627,7 +627,6 @@
         } else if (editor?.hasTextFocus()) {
           // Only clear selection if editor still has focus
           // This preserves the selection when user clicks to another panel
-          unifiedStateStore.selectionContext = null;
           window.dispatchEvent(
             new CustomEvent('editor:selection-change', {
               detail: { text: '', file: fileName, language, source: 'monaco' },
@@ -676,12 +675,6 @@
             const model = editor?.getModel();
             const selectedText = model?.getValueInRange(selection) || '';
             if (selectedText) {
-              unifiedStateStore.selectionContext = {
-                text: selectedText,
-                file: fileName,
-                language: language,
-                range: undefined,
-              };
               window.dispatchEvent(
                 new CustomEvent('editor:selection-change', {
                   detail: { text: selectedText, file: fileName, language, source: 'monaco' },
@@ -691,7 +684,6 @@
           } else if (editor?.hasTextFocus()) {
             // Only clear selection if editor still has focus
             // This preserves the selection when user clicks to another panel
-            unifiedStateStore.selectionContext = null;
             window.dispatchEvent(
               new CustomEvent('editor:selection-change', {
                 detail: { text: '', file: fileName, language, source: 'monaco' },
@@ -833,7 +825,7 @@
         // Dispose the editor directly without clearing the model
         // Monaco will handle model cleanup internally
         editor.dispose();
-      } catch (e) {
+      } catch {
         // Silently ignore all disposal errors
         // These are usually harmless Monaco internal cleanup issues
       }
@@ -859,7 +851,7 @@
       editor.setPosition(position);
       editor.revealPositionInCenterIfOutsideViewport(position, 0);
       editor.focus();
-    } catch (e) {
+    } catch {
       // ignore
     }
   });

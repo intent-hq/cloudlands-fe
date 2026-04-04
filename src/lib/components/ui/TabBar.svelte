@@ -13,10 +13,12 @@
   //
   // By returning plain AnimationConfig objects, Svelte takes the non-deferred
   // code path which uses safe no-op handlers.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function send(node: Element, _params: { key: any }) {
     return scale(node, { duration: 150, start: 0.97, easing: quintOut });
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function receive(node: Element, _params: { key: any }) {
     return scale(node, { duration: 150, start: 0.97, easing: quintOut });
   }

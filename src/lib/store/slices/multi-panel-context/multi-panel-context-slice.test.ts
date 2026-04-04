@@ -3,21 +3,14 @@ import { createCollection, getItems } from "../../utils/collection-utils";
 import {
   multiPanelContextReducer,
   setWorkspace,
-  setCurrentAgentPanel,
   updatePanels,
   togglePanel,
   setSelection,
   clearSelection,
-  clearPanelSelections,
   toggleSelection,
-  removeSelection,
-  checkAllPanels,
-  uncheckAllPanels,
-  checkAllSelections,
   uncheckAllSelections,
   clear,
   addSearchedItem,
-  removePanel,
   type MultiPanelContextState,
   type PanelContextItem,
   type SelectionContextItem,
@@ -96,13 +89,6 @@ describe("multiPanelContextReducer", () => {
     });
   });
 
-  describe("setCurrentAgentPanel", () => {
-    it("should set currentAgentPanelId", () => {
-      const state = multiPanelContextReducer(initialState, setCurrentAgentPanel("agent-panel"));
-      expect(state.currentAgentPanelId).toBe("agent-panel");
-    });
-  });
-
   describe("updatePanels", () => {
     it("should preserve checked state for existing panels", () => {
       const stateWithChecked = withPanels(
@@ -165,19 +151,6 @@ describe("multiPanelContextReducer", () => {
     });
   });
 
-  describe("clearPanelSelections", () => {
-    it("should remove all selections for a panel", () => {
-      const stateWithSels = withSelections(
-        makeSelection({ id: "s1", panelId: "panel-1" }),
-        makeSelection({ id: "s2", panelId: "panel-2", tabId: "tab-2" })
-      );
-      const state = multiPanelContextReducer(stateWithSels, clearPanelSelections("panel-1"));
-      const selections = getItems(state.selections);
-      expect(selections).toHaveLength(1);
-      expect(selections[0].panelId).toBe("panel-2");
-    });
-  });
-
   describe("toggleSelection", () => {
     it("should toggle selection checked state", () => {
       const stateWithSel = withSelections(makeSelection({ checked: true }));
@@ -186,41 +159,7 @@ describe("multiPanelContextReducer", () => {
     });
   });
 
-  describe("removeSelection", () => {
-    it("should remove selection by id", () => {
-      const stateWithSel = withSelections(makeSelection());
-      const state = multiPanelContextReducer(stateWithSel, removeSelection("sel-panel-1-tab-1"));
-      expect(getItems(state.selections)).toHaveLength(0);
-    });
-  });
-
-  describe("checkAllPanels / uncheckAllPanels", () => {
-    it("should check all panels", () => {
-      const stateWithPanels = withPanels(
-        makePanel({ id: "p1", checked: false }),
-        makePanel({ id: "p2", checked: false })
-      );
-      const state = multiPanelContextReducer(stateWithPanels, checkAllPanels());
-      expect(getItems(state.panels).every((p) => p.checked)).toBe(true);
-    });
-
-    it("should uncheck all panels", () => {
-      const stateWithPanels = withPanels(
-        makePanel({ id: "p1", checked: true }),
-        makePanel({ id: "p2", checked: true })
-      );
-      const state = multiPanelContextReducer(stateWithPanels, uncheckAllPanels());
-      expect(getItems(state.panels).every((p) => !p.checked)).toBe(true);
-    });
-  });
-
-  describe("checkAllSelections / uncheckAllSelections", () => {
-    it("should check all selections", () => {
-      const stateWithSels = withSelections(makeSelection({ checked: false }));
-      const state = multiPanelContextReducer(stateWithSels, checkAllSelections());
-      expect(getItems(state.selections).every((s) => s.checked)).toBe(true);
-    });
-
+  describe("uncheckAllSelections", () => {
     it("should uncheck all selections", () => {
       const stateWithSels = withSelections(makeSelection({ checked: true }));
       const state = multiPanelContextReducer(stateWithSels, uncheckAllSelections());
@@ -270,11 +209,4 @@ describe("multiPanelContextReducer", () => {
     });
   });
 
-  describe("removePanel", () => {
-    it("should remove panel by id", () => {
-      const stateWithPanel = withPanels(makePanel());
-      const state = multiPanelContextReducer(stateWithPanel, removePanel("p1"));
-      expect(getItems(state.panels)).toHaveLength(0);
-    });
-  });
 });

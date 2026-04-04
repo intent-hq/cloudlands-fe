@@ -1,12 +1,25 @@
 <script lang="ts">
   import { githubAuthClient } from '$features/github-auth/renderer/github-auth.client';
-  import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import { Button } from '$lib/components/ui/button';
   import { faCheck, faRotateRight, faSpinner, faXmark } from '@fortawesome/free-solid-svg-icons';
   import { onDestroy, onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import {
+    initializeGitHubAuth,
+    startGitHubAuth,
+    cancelGitHubAuth,
+    clearGitHubAuthError,
+  } from '$lib/store/slices/github-auth/github-auth-slice';
+  import {
+    selectGitHubAuthIsAuthenticated,
+    selectGitHubAuthIsAuthenticating,
+    selectGitHubAuthOauthUrl,
+    selectGitHubAuthError,
+    selectGitHubAuthRequiresAugmentAuth,
+  } from '$lib/store/slices/github-auth/github-auth-selectors';
 
   interface Props {
     /** Message shown before auth starts */
@@ -26,7 +39,12 @@
     autoStart = false,
   }: Props = $props();
 
-  const { startAuth, cancelAuth, clearError, initialize } = githubAuthStore;
+  const dispatch = getDispatch();
+  const isAuthenticated$ = selectGitHubAuthIsAuthenticated();
+  const isAuthenticating$ = selectGitHubAuthIsAuthenticating();
+  const oauthUrl$ = selectGitHubAuthOauthUrl();
+  const error$ = selectGitHubAuthError();
+  const requiresAugmentAuth$ = selectGitHubAuthRequiresAugmentAuth();
 
   let authStartedHere = $state(false);
   let isCheckingAuth = $state(false);
@@ -34,34 +52,26 @@
 
   // Initialize auth state on mount and optionally auto-start
   onMount(() => {
-    initialize();
+    dispatch(initializeGitHubAuth());
     if (autoStart) {
       handleConnect();
     }
   });
 
-  async function handleConnect() {
+  function handleConnect() {
     authStartedHere = true;
-    startAuth()
-      .then(() => {
-        if (githubAuthStore.state.isAuthenticated) {
-          handleAuthSuccess();
-        }
-      })
-      .catch((error) => {
-        console.error('[GitHubAuthBanner] Auth flow failed', error);
-      });
+    dispatch(startGitHubAuth());
   }
 
   function handleCancel() {
     if (authStartedHere) {
-      cancelAuth();
+      dispatch(cancelGitHubAuth());
       authStartedHere = false;
     }
   }
 
   function handleRetry() {
-    clearError();
+    dispatch(clearGitHubAuthError());
     handleConnect();
   }
 
@@ -81,7 +91,7 @@
   async function checkAuthStatus() {
     // Check authStartedHere directly, not derived values
     if (!authStartedHere) return;
-    if (githubAuthStore.state.isAuthenticated) {
+    if ($isAuthenticated$) {
       handleAuthSuccess();
       return;
     }
@@ -93,7 +103,7 @@
 
       if (isAuth) {
         // Update the store state
-        await initialize();
+        dispatch(initializeGitHubAuth());
         handleAuthSuccess();
       }
     } catch {
@@ -105,7 +115,7 @@
 
   // Watch for auth state changes from the store (when polling succeeds)
   $effect(() => {
-    if (authStartedHere && githubAuthStore.state.isAuthenticated) {
+    if (authStartedHere && $isAuthenticated$) {
       handleAuthSuccess();
     }
   });
@@ -113,7 +123,7 @@
   // Check auth status on window focus when waiting for authorization
   $effect(() => {
     // Only set up listener when we have an OAuth URL displayed (waiting for auth)
-    if (!authStartedHere || !githubAuthStore.state.oauthUrl) return;
+    if (!authStartedHere || !$oauthUrl$) return;
 
     const handleFocus = () => {
       checkAuthStatus();
@@ -127,7 +137,7 @@
 
   // Poll auth status every 1 second when waiting for authorization
   $effect(() => {
-    if (!authStartedHere || !githubAuthStore.state.oauthUrl) return;
+    if (!authStartedHere || !$oauthUrl$) return;
 
     const interval = setInterval(() => {
       checkAuthStatus();
@@ -139,16 +149,16 @@
   });
 
   onDestroy(() => {
-    if (authStartedHere && githubAuthStore.state.isAuthenticating) {
-      cancelAuth();
+    if (authStartedHere && $isAuthenticating$) {
+      dispatch(cancelGitHubAuth());
     }
   });
 
   // Derived state for cleaner template
-  const isAuthenticating = $derived(authStartedHere && githubAuthStore.state.isAuthenticating);
-  const hasOAuthUrl = $derived(authStartedHere && githubAuthStore.state.oauthUrl);
-  const hasError = $derived(authStartedHere && githubAuthStore.state.error);
-  const requiresAugmentAuth = $derived(githubAuthStore.state.requiresAugmentAuth);
+  const isAuthenticating = $derived(authStartedHere && $isAuthenticating$);
+  const hasOAuthUrl = $derived(authStartedHere && $oauthUrl$);
+  const hasError = $derived(authStartedHere && $error$);
+  const requiresAugmentAuth = $derived($requiresAugmentAuth$);
 </script>
 
 <div class="rounded-sm bg-sidebar overflow-hidden {className}">
@@ -164,7 +174,7 @@
   {:else if hasError}
     <!-- Error state -->
     <div class="py-2 px-2 space-y-2" transition:slide={{ axis: 'y', duration: 200 }}>
-      <p class="text-xs text-destructive-foreground">{githubAuthStore.state.error}</p>
+      <p class="text-xs text-destructive-foreground">{$error$}</p>
       <Button variant="outline" size="xs" onclick={handleRetry}>
         <Fa icon={faRotateRight} size="xs" />
         <span>Try Again</span>

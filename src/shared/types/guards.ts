@@ -10,9 +10,6 @@ import type {
   AgentMessage,
   ContentBlock,
   ToolCall,
-  ToolUseBlock,
-  ToolResultBlock,
-  MessageRole,
 } from '../types';
 import { isContentBlock as isContentBlockImpl } from './content-block';
 

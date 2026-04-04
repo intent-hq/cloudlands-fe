@@ -6,7 +6,6 @@ import { logger } from '$lib/utils/client-logger';
  */
 
 // Check if we're in development mode
-const isDev = import.meta.env.DEV;
 
 // Debug flags stored in localStorage for persistence
 const DEBUG_FLAGS_KEY = 'workspace-debug-flags';

@@ -7,7 +7,6 @@
 import { FSWatcher, watch } from 'chokidar';
 import { EventEmitter } from 'events';
 import { Logger } from '$lib/utils/logger';
-import * as path from 'path';
 
 const logger = new Logger({ category: 'FileWatcherManager' });
 

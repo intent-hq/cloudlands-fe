@@ -78,11 +78,6 @@
     onExternalOpen?.(item);
   }
 
-  function handleDeleteClick(e: MouseEvent) {
-    e.stopPropagation();
-    e.preventDefault();
-    onDelete?.(item);
-  }
 
   // Can delete non-note items
   const canDelete = $derived(item.type !== 'note');

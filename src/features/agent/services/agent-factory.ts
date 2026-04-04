@@ -10,10 +10,10 @@
 import { v4 as uuidv4 } from 'uuid';
 import { createMessageId, createAgentId } from '$shared/types/branded-ids';
 import { unifiedIdService } from '$shared/services/unified-id.service';
-import type { Workspace, AgentSession, ContentBlock } from '$shared/types';
+import type { Workspace, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { Logger } from '$shared/logger';
-import type { AgentId, WorkspaceId as BrandedWorkspaceId } from '$shared/types/branded-ids';
+import type { WorkspaceId as BrandedWorkspaceId } from '$shared/types/branded-ids';
 import { typedInvoke } from '$shared/ipc/typed-invoke';
 import { agentValidator } from './agent-validator';
 import type { AgentIpc } from '$shared/ipc/contracts';
@@ -35,36 +35,33 @@ const logger = new Logger('UnifiedAgentFactory');
 const isBackend = typeof window === 'undefined';
 
 // Lazy-loaded frontend modules
-let agentStateModule: any = null;
-let sessionStoreModule: any = null;
-let sessionStoreDataModule: any = null;
 let invokeFunction: any = null;
 let persistenceServiceModule: any = null;
+let reduxStoreModule: any = null;
+let reduxActionsModule: any = null;
+let reduxSelectorsModule: any = null;
 
-
-// Lazy-load frontend modules only when needed
-async function getUnifiedStateStore() {
-  if (!agentStateModule && !isBackend) {
-    const module = await import('$features/agent/services/unified-state-store');
-    agentStateModule = module.unifiedStateStore;
+// Lazy-load Redux store for frontend
+async function getReduxStoreInstance() {
+  if (!reduxStoreModule && !isBackend) {
+    const module = await import('$lib/store/redux-dispatch-bridge');
+    reduxStoreModule = module.getReduxStore;
   }
-  return agentStateModule;
+  return reduxStoreModule ? reduxStoreModule() : null;
 }
 
-async function getSessionStore() {
-  if (!sessionStoreModule && !isBackend) {
-    const module = await import('$features/agent/browser');
-    sessionStoreModule = module.sessionStore;
+async function getReduxActions() {
+  if (!reduxActionsModule && !isBackend) {
+    reduxActionsModule = await import('$lib/store/slices/workspace-agents/workspace-agents-slice');
   }
-  return sessionStoreModule;
+  return reduxActionsModule;
 }
 
-async function getSessionStoreData() {
-  if (!sessionStoreDataModule && !isBackend) {
-    const module = await import('$features/agent/browser');
-    sessionStoreDataModule = module.sessionStoreData;
+async function getReduxSelectors() {
+  if (!reduxSelectorsModule && !isBackend) {
+    reduxSelectorsModule = await import('$lib/store/slices/workspace-agents/workspace-agents-selectors');
   }
-  return sessionStoreDataModule;
+  return reduxSelectorsModule;
 }
 
 async function getInvoke() {
@@ -271,11 +268,11 @@ export class UnifiedAgentFactory {
           // here, it may load stale data from localStorage, causing duplicate tabs.
           try {
             const { getPanelLayoutManager, hasPanelLayoutManager } =
-              await import('$features/layout/panel-layout-manager.svelte');
+              await import('$features/layout/panel-layout-adapter');
             // Only access panel layout if the workspace page has already initialized it
             if (hasPanelLayoutManager(workspace.id)) {
               const layoutManager = getPanelLayoutManager(workspace.id);
-              const allTabs = layoutManager.allOpenTabs;
+              const allTabs = layoutManager.getAllTabs();
               workspaceContext.openPanels = allTabs
                 .filter((tab) => tab.type !== 'agent') // Don't include agent tabs
                 .map((tab) => ({
@@ -293,11 +290,16 @@ export class UnifiedAgentFactory {
             logger.debug('Could not load open panels', { error });
           }
 
-          // Get linked references from context store
+          // Get linked references from context store (Redux)
           try {
-            const { contextStore } = await import('$features/context/context.store.svelte');
-            contextStore.setWorkspace(workspace.id);
-            const topLevelItems = contextStore.getTopLevelItems();
+            const { getReduxStore } = await import('$lib/store/redux-dispatch-bridge');
+            const { selectTopLevelContextItems } = await import(
+              '$lib/store/slices/context/context-selectors'
+            );
+            const topLevelItems = selectTopLevelContextItems.select(
+              getReduxStore().getState(),
+              workspace.id,
+            );
             workspaceContext.linkedReferences = topLevelItems.map((item) => {
               let identifier: string | undefined;
               if (item.type === 'linear-issue') {
@@ -448,8 +450,8 @@ export class UnifiedAgentFactory {
         model: resolvedModel,
         provider, // Top-level ACP provider — immutable after creation
         // systemPrompt is built by backend, not included in frontend agent object
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         isStreaming: false,
         isProcessing: false,
         // Propagate isBackground from config or metadata so it persists on the session
@@ -540,16 +542,14 @@ export class UnifiedAgentFactory {
 
       // Step 8: Update frontend state
       const stateUpdateStart = Date.now();
-      // Note: AgentState wrapper is created internally by sessionStore.addSessionForWorkspace()
-      // which calls unifiedStateStore.setAgent with the proper structure
+      // Upsert agent session directly into Redux
 
       // Only update frontend state if we're in the frontend
       if (!isBackend) {
-        const sessionStore = await getSessionStore();
-        // Only use sessionStore.addSessionForWorkspace - it internally calls unifiedStateStore.setAgent
-        // and also notifies subscribers. Calling both would cause duplicate updates.
-        if (sessionStore) {
-          sessionStore.addSessionForWorkspace(agent.workspaceId, agent);
+        const store = await getReduxStoreInstance();
+        const actions = await getReduxActions();
+        if (store && actions) {
+          store.dispatch(actions.upsertAgentSession(agent.workspaceId, agent));
         }
       }
       metrics.stateUpdateTime = Date.now() - stateUpdateStart;
@@ -560,18 +560,19 @@ export class UnifiedAgentFactory {
       // This ensures ChatPanel sees streaming state immediately when it mounts
       if (normalized.initialMessage) {
         if (!isBackend) {
-          const sessionStore = await getSessionStore();
+          const store = await getReduxStoreInstance();
+          const actions = await getReduxActions();
 
-          // Set streaming state using sessionStore.setStreamingForWorkspace which properly updates
-          // the streaming state. We use the explicit workspaceId variant to avoid relying on
+          // Set streaming state directly via Redux dispatch.
+          // We use the explicit workspaceId variant to avoid relying on
           // currentWorkspace which may be null in certain timing scenarios.
-          if (sessionStore) {
-            sessionStore.setStreamingForWorkspace(agent.workspaceId, agent.id, true);
+          if (store && actions) {
+            store.dispatch(actions.setAgentStreaming(agent.workspaceId, agent.id, true));
           }
 
           logger.info('Set streaming state to true BEFORE sending initial message', {
             agentId: agent.id,
-            inSessionStore: !!sessionStore,
+            inReduxStore: !!store,
           });
         }
       }
@@ -583,8 +584,10 @@ export class UnifiedAgentFactory {
       const hasContextReferences = (normalized.contextReferences?.length ?? 0) > 0;
 
       if ((hasInitialMessage || hasContextReferences) && !isBackend) {
-        const sessionStore = await getSessionStore();
-        if (sessionStore) {
+        const store = await getReduxStoreInstance();
+        const actions = await getReduxActions();
+        const selectors = await getReduxSelectors();
+        if (store && actions && selectors) {
           // If no text message but we have context references, generate a placeholder
           let messageText = normalized.initialMessage?.trim() || '';
           if (!messageText && hasContextReferences) {
@@ -602,7 +605,7 @@ export class UnifiedAgentFactory {
               ? { contextReferences: normalized.contextReferences }
               : {},
           };
-          sessionStore.addMessageForWorkspace(agent.workspaceId, agent.id, userMessage);
+          store.dispatch(actions.addAgentMessage(agent.workspaceId, agent.id, userMessage));
           logger.info('Added user message to state before sending', {
             agentId: agent.id,
             messageId: userMessage.id,
@@ -612,7 +615,7 @@ export class UnifiedAgentFactory {
           // Save the session immediately after adding the user message
           // This ensures the message persists even if the app crashes or refreshes
           try {
-            const session = sessionStore.getSessionForWorkspace(agent.workspaceId, agent.id);
+            const session = selectors.selectAgentById.select(store.getState(), agent.id);
             if (session) {
               const persistenceService = await getPersistenceService();
               if (persistenceService) {
@@ -895,13 +898,15 @@ export class UnifiedAgentFactory {
 
         // Clean up the user message we added since we can't proceed
         if (!isBackend) {
-          const sessionStore = await getSessionStore();
-          if (sessionStore) {
-            const session = sessionStore.getSessionForWorkspace(agent.workspaceId, agent.id);
+          const store = await getReduxStoreInstance();
+          const actions = await getReduxActions();
+          const selectors = await getReduxSelectors();
+          if (store && actions && selectors) {
+            const session = selectors.selectAgentById.select(store.getState(), agent.id);
             if (session && session.messages) {
               // Remove the last message (the user message we just added)
-              session.messages.pop();
-              sessionStore.updateMessagesForWorkspace(agent.workspaceId, agent.id, session.messages);
+              const trimmedMessages = session.messages.slice(0, -1);
+              store.dispatch(actions.replaceAgentMessages(agent.workspaceId, agent.id, trimmedMessages));
             }
           }
         }
@@ -977,9 +982,10 @@ export class UnifiedAgentFactory {
       // Mark streaming as failed (only in frontend)
       // Note: Stream handler cleanup is handled by AgentService, not here
       if (!isBackend) {
-        const sessionStore = await getSessionStore();
-        if (sessionStore) {
-          sessionStore.setStreamingForWorkspace(agent.workspaceId, agent.id, false);
+        const store = await getReduxStoreInstance();
+        const actions = await getReduxActions();
+        if (store && actions) {
+          store.dispatch(actions.setAgentStreaming(agent.workspaceId, agent.id, false));
         }
       }
       // Don't fail agent creation if initial message fails

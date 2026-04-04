@@ -347,7 +347,7 @@ describe('EventCoordinator', () => {
       // Trigger emission
       vi.advanceTimersByTime(200);
 
-      // Events are emitted via activity-log-event which WorkspaceEventService listens to
+      // Events are emitted via activity-log-event which gets bridged into Redux
       expect(activityLogHandler).toHaveBeenCalledWith(event);
       expect(coordinator.getStats().totalEvents).toBe(1);
     });

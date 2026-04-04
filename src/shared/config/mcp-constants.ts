@@ -3,7 +3,7 @@
  *
  * These are used by:
  * - McpServerForm.svelte (UI form validation)
- * - mcp-settings.store.svelte.ts (store-level safety-net validation)
+ * - mcp-settings-saga.ts (saga-level safety-net validation)
  * - user-mcp-settings.ts (server merge conflict detection)
  */
 

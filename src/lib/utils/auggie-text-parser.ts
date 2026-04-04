@@ -230,6 +230,7 @@ export class AuggieTextParser {
   /**
    * Check if a line is a continuation of a multi-line string parameter
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private isMultilineStringContinuation(line: string): boolean {
     if (this.currentToolParams.length === 0) {
       return false;
@@ -275,7 +276,7 @@ export class AuggieTextParser {
       try {
         const parsed = JSON.parse(fullParamString);
         return parsed;
-      } catch (e) {
+      } catch {
         // Not valid JSON, continue with fallback parsing
       }
     }
@@ -292,7 +293,7 @@ export class AuggieTextParser {
         const reconstructed = params.join(' ').replace(/\s+/g, ' ').trim();
         const parsed = JSON.parse(reconstructed);
         return parsed;
-      } catch (e) {
+      } catch {
         // Still not valid JSON, continue with fallback
       }
     }

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
-  import { pendingAgentsStore } from '$features/agent/services/pending-agents.store.svelte';
-  import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectUnreadAgentIdsForWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import type { Workspace } from '$shared/types';
   import { WorkspaceStatusEnum } from '$shared/types';
@@ -21,10 +21,12 @@
   //
   // By returning plain AnimationConfig objects, Svelte takes the non-deferred
   // code path which uses safe no-op handlers.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function send(node: Element, _params: { key: any }) {
     return scale(node, { duration: 200, start: 0.95, easing: quintOut });
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function receive(node: Element, _params: { key: any }) {
     return scale(node, { duration: 200, start: 0.95, easing: quintOut });
   }
@@ -83,58 +85,51 @@
 
   onMount(() => {
     // Start polling for active streams (if not already started)
-    activeStreamsTracker.startPolling(2000);
+    activeStreamsTracker.startPolling();
     const unsubStreams = activeStreamsTracker.subscribe(() => {
       stateVersion++;
     });
-    const unsubUnread = unreadTrackingService.subscribe(() => {
-      stateVersion++;
+    // Subscribe to unread-tracking Redux state so the component re-renders
+    const store = getReduxStore();
+    let prevUnreadTracking = store.getState().unreadTracking;
+    const unsubStore = store.subscribe(() => {
+      const state = store.getState();
+      if (state.unreadTracking !== prevUnreadTracking) {
+        prevUnreadTracking = state.unreadTracking;
+        stateVersion++;
+      }
     });
+
     return () => {
       unsubStreams();
-      unsubUnread();
+      unsubStore();
     };
   });
 
-  // Get agent display info for a workspace from agentSummary + pending agents
+  // Get agent display info for a workspace from agentSummary
   // Only returns agents that are ACTIVE (streaming/busy) or have UNREAD messages
   function getWorkspaceAgentInfo(ws: Workspace): AgentDisplayInfo[] {
     // Reference version for reactivity
     void stateVersion;
-    // Also reference pending agents store version for reactivity
-    void pendingAgentsStore.version;
-
     const summary = ws.agentSummary;
     const summaryAgents = summary?.agents || [];
 
-    // Get pending agents for this workspace (newly created, not yet in agentSummary)
-    const pendingAgents = pendingAgentsStore.getForWorkspace(ws.id);
-
-    // Combine agents, avoiding duplicates (prefer summary over pending)
-    const summaryAgentIds = new Set(summaryAgents.map((a) => a.id));
-    const allAgents = [
-      ...summaryAgents,
-      ...pendingAgents.filter((pa) => !summaryAgentIds.has(pa.id)),
-    ];
-
-    if (allAgents.length === 0) {
+    if (summaryAgents.length === 0) {
       return [];
     }
 
     // Get unread agent IDs for this workspace
-    const unreadAgentIds = new Set(unreadTrackingService.getUnreadAgentIdsForWorkspace(ws.id));
+    const unreadAgentIds = new Set(selectUnreadAgentIdsForWorkspace.select(getReduxStore().getState(), ws.id));
 
-    return allAgents
+    return summaryAgents
       .map((agent) => {
         // Check if this agent is currently streaming (real-time status)
         const isStreaming = activeStreamsTracker.isAgentStreaming(agent.id);
         const isUnread = unreadAgentIds.has(agent.id);
-        const isPending = pendingAgents.some((pa) => pa.id === agent.id);
 
         // Determine avatar state based on persisted status + real-time streaming state
         let state: AvatarState = 'idle';
-        if (isStreaming || isPending) {
-          // Pending agents are always shown as running
+        if (isStreaming) {
           state = 'running';
         } else if (agent.status === 'busy' || agent.status === 'processing') {
           state = 'running';
@@ -149,7 +144,7 @@
           state,
           specialist: agent.specialist,
           isActive:
-            isStreaming || isPending || agent.status === 'busy' || agent.status === 'processing',
+            isStreaming || agent.status === 'busy' || agent.status === 'processing',
           isUnread,
         };
       })

@@ -17,11 +17,13 @@
   import { fade } from 'svelte/transition';
   import type { ChatFileChange } from '$lib/utils/get-file-changes-from-messages';
   import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import Fa from 'svelte-fa';
   import { faArrowPointer } from '@fortawesome/free-solid-svg-icons';
   import MonacoDiffViewer from '../file-tracking/MonacoDiffViewer.svelte';
+
+  const activeWorkspaceId = selectActiveWorkspaceId();
 
   interface Props {
     change: ChatFileChange;
@@ -45,11 +47,14 @@
     change,
     foldUnchanged = true,
     lineWrapping = false,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     scrollToLine: _scrollToLine,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     isAggregate = false,
     showScrollHint: enableScrollHint = false,
     onStageHunk,
     onUnstageHunk,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onOpenCommit,
   }: Props = $props();
 
@@ -173,7 +178,7 @@
     };
   });
 
-  let workspaceId = $derived(workspaceStore.current?.id);
+  let workspaceId = $derived($activeWorkspaceId);
 
   // Extract line offset from chunks for proper line number display
   // The first chunk's newStart tells us where the changes begin in the file

@@ -193,7 +193,7 @@ export function cancelIdleCallback(id: number): void {
 /**
  * Event listener manager to prevent duplicate registrations
  */
-// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+ 
 type AnyFunction = Function;
 
 export class EventListenerManager {

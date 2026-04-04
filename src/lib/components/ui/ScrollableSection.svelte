@@ -1,9 +1,8 @@
 <script lang="ts">
-  import Header from './Header.svelte';
   import { Button } from './button';
   import { ScrollArea } from './scroll-area';
   import CollapsiblePanel from './CollapsiblePanel.svelte';
-  import type { Component, Snippet } from 'svelte';
+  import type { Snippet } from 'svelte';
   import Fa from 'svelte-fa';
   import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 
@@ -38,9 +37,11 @@
     loadingIcon = faSpinner,
     className = '',
     contentClass = '',
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     headerSize = 3,
     collapsible = false,
     storageKey = '',
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     headerActions,
     defaultCollapsed = false,
     onAction,

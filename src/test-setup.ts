@@ -344,6 +344,7 @@ vi.mock('$lib/electron-bridge', () => ({
 
 // Mock typed-invoke to avoid IPC errors in tests
 vi.mock('$shared/ipc/typed-invoke', () => ({
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   typedInvoke: vi.fn(async (channel: string, data?: any) => {
     // Return mock responses based on channel
     switch (channel) {

@@ -17,7 +17,7 @@
   import { faBell, faXmark } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import { fly, slide } from 'svelte/transition';
+  import { fly } from 'svelte/transition';
 
   interface BannerInteractionRecord {
     dismissed: boolean;
@@ -108,7 +108,6 @@
   // only if the user hasn't started the sequential flow yet (no action taken).
   $effect(() => {
     // Read reactive dependencies so Svelte tracks them
-    const _providerId = $activeProviderId$;
 
     // Only recompute if banners are loaded and the user hasn't started clicking buttons
     if (banners.length > 0 && !flowStarted && !allStepsComplete) {

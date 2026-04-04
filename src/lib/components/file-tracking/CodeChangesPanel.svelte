@@ -1,6 +1,5 @@
 <script lang="ts">
   import { Logger } from '$lib/utils/logger';
-  import { WorkspaceId } from '$shared/types/branded-ids';
   const logger = new Logger({ category: 'CodeChangesPanel' });
 
   import {
@@ -14,7 +13,24 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import type { TrackedChange } from '$features/file-tracking/types';
-  import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
+  import {
+    selectCurrentStagedWorkingChanges as selectFtCurrentStagedChanges,
+    selectCurrentUnstagedWorkingChanges as selectFtCurrentUnstagedChanges,
+    selectCurrentCommits as selectFtCurrentCommits,
+    selectCurrentLoading as selectFtCurrentLoading,
+    selectMainPanelView as selectFtMainPanelView,
+  } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import {
+    setMainPanelView as ftSetMainPanelView,
+  } from '$lib/store/slices/file-tracking/file-tracking-slice';
+  import {
+    stageChangesRequested,
+    unstageChangesRequested,
+    revertChangeRequested,
+    loadWorkspaceDataRequested,
+  } from '$lib/store/slices/file-tracking/file-tracking-slice';
+  import { dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
   import FileChangesList from './FileChangesList.svelte';
   import VSCodeScrollablePanel from '../ui/VSCodeScrollablePanel.svelte';
   import { ListContainer, ListSection } from '../ui/list';
@@ -22,15 +38,15 @@
   import { Tooltip } from '../ui/tooltip';
   import { Button } from '../ui/button';
   import { Skeleton } from '../ui/skeleton';
-  import { gitStore } from '$features/git/git.store.svelte';
+  import { loadGitStatus } from '$lib/store/slices/git/git-slice';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
-  import { getTransientUIStore } from '$features/workspace/transient-ui-state.store.svelte';
   import { Switch } from '../ui/switch';
   import { selectAutoCommitEnabled } from '$lib/store/slices/workspace-settings/workspace-settings-selectors';
-  import { setAutoCommitEnabled, syncWorkspaceSettings } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
+  import { setAutoCommitEnabled } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
   import { getDispatch } from '$lib/store/utils/utils';
-  import { handleLink } from '$features/navigation/link-handler';
+  import { selectAcceptChangesState } from '$lib/store/slices/transient-ui/transient-ui-selectors';
 
   interface Props {
     collapsed?: boolean;
@@ -40,31 +56,16 @@
 
   let { collapsed = undefined, onCollapse = undefined, workspaceId = undefined }: Props = $props();
 
-  // Get transient UI store lazily without creating $state during effect flush.
-  // getTransientUIStore creates a new store with $state if one doesn't exist,
-  // so we defer creation to a microtask after the effect flush completes.
-  let cachedTransientStore = $state<ReturnType<typeof getTransientUIStore> | null>(null);
-  let cachedWorkspaceId: string | null = null;
-  $effect(() => {
-    const currentWorkspaceId = workspaceId ?? null;
-    if (!currentWorkspaceId) {
-      cachedWorkspaceId = null;
-      cachedTransientStore = null;
-      return;
-    }
-    if (currentWorkspaceId === cachedWorkspaceId && cachedTransientStore) return;
+  const acceptChangesState = selectAcceptChangesState(workspaceId ?? '');
+  const ftCurrentWsId$ = selectActiveWorkspaceId();
+  const ftStagedChanges$ = selectFtCurrentStagedChanges();
+  const ftUnstagedChanges$ = selectFtCurrentUnstagedChanges();
+  const ftCommits$ = selectFtCurrentCommits();
+  const ftLoading$ = selectFtCurrentLoading();
+  const ftMainPanelView$ = selectFtMainPanelView();
 
-    cachedWorkspaceId = currentWorkspaceId;
-    queueMicrotask(() => {
-      if (cachedWorkspaceId !== currentWorkspaceId) return;
-      cachedTransientStore = getTransientUIStore(currentWorkspaceId);
-    });
-  });
-  function getTransientStore() {
-    return cachedTransientStore;
-  }
   function getBackgroundOperation() {
-    return getTransientStore()?.acceptChanges.backgroundOperation ?? null;
+    return $acceptChangesState?.backgroundOperation ?? null;
   }
 
   // View mode state
@@ -76,8 +77,8 @@
   // This ensures skeleton shows during workspace transitions instead of showing empty state
   const isLoading = $derived(
     localIsLoading ||
-      fileTrackingStore.loading ||
-      (workspaceId && fileTrackingStore.currentWorkspaceId !== workspaceId),
+      $ftLoading$ ||
+      (workspaceId && $ftCurrentWsId$ !== workspaceId),
   );
 
   // Collapsed state for sections
@@ -88,31 +89,21 @@
   const dispatch = getDispatch();
   const autoCommitEnabled = selectAutoCommitEnabled(workspaceId ?? "");
 
-  // Sync workspace settings when workspaceId is available
-  $effect(() => {
-    if (workspaceId) {
-      dispatch(syncWorkspaceSettings(workspaceId));
-    }
-  });
-
   // Get working changes from FileTrackingStore - the single source of truth
   // PERF: Use store arrays directly to avoid creating new array references on every update.
   // The store already provides stats, so we don't need to map/enhance.
-  // Only create a new object when the workspace doesn't match (edge case).
-  const workingChanges = $derived.by(() => {
-    // Don't show stale data from a different workspace
-    if (fileTrackingStore.currentWorkspaceId !== workspaceId) {
-      return { unstaged: [], staged: [] };
-    }
-    // PERF: Return the store's object directly - no .map() needed
-    // This preserves stable array references and prevents unnecessary re-renders
-    return fileTrackingStore.workingChanges;
-  });
+  // Only use empty arrays when the workspace doesn't match (edge case).
+  const stagedChanges = $derived(
+    $ftCurrentWsId$ !== workspaceId ? [] : ($ftStagedChanges$ ?? []),
+  );
+  const unstagedChanges = $derived(
+    $ftCurrentWsId$ !== workspaceId ? [] : ($ftUnstagedChanges$ ?? []),
+  );
 
   // Track selected change from main panel view
   const selectedChange = $derived(
-    fileTrackingStore.mainPanelView?.type === 'diff'
-      ? fileTrackingStore.mainPanelView.change
+    $ftMainPanelView$?.type === 'diff'
+      ? $ftMainPanelView$.change
       : null,
   );
 
@@ -128,7 +119,7 @@
     }, 150); // Only show loading if operation takes more than 150ms
 
     try {
-      await gitStore.loadStatus(WorkspaceId(wsId));
+      getReduxStore().dispatch(loadGitStatus(wsId));
     } finally {
       clearTimeout(loadingTimer);
       if (shouldShowLoading || localIsLoading) {
@@ -166,8 +157,11 @@
     try {
       // Force refresh both git status and file tracking in parallel
       const refreshPromises = Promise.all([
-        gitStore.loadStatus(WorkspaceId(workspaceId), true), // force refresh
-        fileTrackingStore.loadWorkspaceData(), // reload file tracking data
+        new Promise<void>((resolve) => {
+          getReduxStore().dispatch(loadGitStatus(workspaceId, true));
+          resolve();
+        }),
+        workspaceId ? (getReduxStore().dispatch(loadWorkspaceDataRequested(workspaceId)), Promise.resolve()) : Promise.resolve(), // reload file tracking data
       ]);
 
       // Set a timeout for the refresh operation - use resolve, not reject
@@ -192,7 +186,7 @@
 
   // Group commits for display from the store (already scoped to the workspace)
   const commitHistory = $derived.by(() =>
-    fileTrackingStore.commits.map((commit) => ({
+    $ftCommits$.map((commit) => ({
       hash: commit.hash,
       message: commit.message || commit.hash?.slice(0, 7) || 'unknown',
       author: commit.author || 'unknown',
@@ -215,10 +209,10 @@
     });
 
     // Open diff view in main panel
-    fileTrackingStore.setMainPanelView({
+    reduxDispatch(ftSetMainPanelView({
       type: 'diff',
       change,
-    });
+    }));
 
     logger.info('[CodeChangesPanel] setMainPanelView called with diff type');
 
@@ -245,7 +239,7 @@
     // The store handles optimistic updates and background syncing
     // Pass the UI change so the store can create it if it's a synthetic ID
     try {
-      await fileTrackingStore.stageChanges([change.id], [change]);
+      if (workspaceId) getReduxStore().dispatch(stageChangesRequested(workspaceId, [change.id], [change]));
     } catch (error) {
       logger.error('[handleStageChange] Failed to stage file', error as Error);
     }
@@ -256,33 +250,33 @@
     // The store handles optimistic updates and background syncing
     // Pass the UI change so the store can create it if it's a synthetic ID
     try {
-      await fileTrackingStore.unstageChanges([change.id], [change]);
+      if (workspaceId) getReduxStore().dispatch(unstageChangesRequested(workspaceId, [change.id], [change]));
     } catch (error) {
       logger.error('[handleUnstageChange] Failed to unstage file', error as Error);
     }
   }
 
   async function handleStageAll() {
-    if (!workspaceId || workingChanges.unstaged.length === 0) return;
+    if (!workspaceId || unstagedChanges.length === 0) return;
 
     try {
       // Stage all changes using the store (handles optimistic updates)
       // Pass the UI changes so the store can create them if they're synthetic IDs
-      const changeIds = workingChanges.unstaged.map((c) => c.id);
-      await fileTrackingStore.stageChanges(changeIds, workingChanges.unstaged);
+      const changeIds = unstagedChanges.map((c) => c.id);
+      if (workspaceId) getReduxStore().dispatch(stageChangesRequested(workspaceId, changeIds, unstagedChanges));
     } catch (error) {
       logger.error('[handleStageAll] Failed to stage all files', error as Error);
     }
   }
 
   async function handleUnstageAll() {
-    if (!workspaceId || workingChanges.staged.length === 0) return;
+    if (!workspaceId || stagedChanges.length === 0) return;
 
     try {
       // Unstage all changes using the store (handles optimistic updates)
       // Pass the UI changes so the store can create them if they're synthetic IDs
-      const changeIds = workingChanges.staged.map((c) => c.id);
-      await fileTrackingStore.unstageChanges(changeIds, workingChanges.staged);
+      const changeIds = stagedChanges.map((c) => c.id);
+      if (workspaceId) getReduxStore().dispatch(unstageChangesRequested(workspaceId, changeIds, stagedChanges));
     } catch (error) {
       logger.error('[handleUnstageAll] Failed to unstage all files', error as Error);
     }
@@ -300,17 +294,14 @@
     // Use optimistic revert - UI updates immediately, toast shows right away
     toast.warning('Changes reverted');
 
-    const result = await fileTrackingStore.revertChange(change);
-    if (!result.ok) {
-      // Show error toast - the UI will have already rolled back
-      toast.error('Failed to revert changes');
-      logger.error('[handleRevertChange] Failed to revert changes', undefined, { filePath });
-    }
+    if (!workspaceId) return;
+    // Dispatch revert action - saga handles optimistic update + rollback on failure
+    getReduxStore().dispatch(revertChangeRequested(workspaceId, change));
   }
 
   function handleOpenAcceptChanges() {
     // Open the accept changes panel in the main panel
-    fileTrackingStore.setMainPanelView({ type: 'accept-changes' });
+    reduxDispatch(ftSetMainPanelView({ type: 'accept-changes' }));
 
     // Dispatch event for main panel
     window.dispatchEvent(new CustomEvent('workspace:open-accept-changes'));
@@ -322,8 +313,8 @@
 
   // Computed: whether there are any changes to accept
   const hasChangesToAccept = $derived(
-    workingChanges.unstaged.length > 0 ||
-      workingChanges.staged.length > 0 ||
+    unstagedChanges.length > 0 ||
+      stagedChanges.length > 0 ||
       commitHistory.length > 0,
   );
 
@@ -427,11 +418,11 @@
     <!-- Loading state -->
     {#if isLoading}
       <div class="px-2 py-2">
-        {#each Array(3) as _}
+        {#each Array(3) as { }}
           <div class="mb-3">
             <Skeleton class="h-4 w-20 mb-2" />
             <div class="space-y-1">
-              {#each Array(2) as _}
+              {#each Array(2) as { }}
                 <div class="flex items-center gap-2">
                   <Skeleton class="h-3 w-3 rounded shrink-0" />
                   <Skeleton class="h-3 flex-1" />
@@ -444,13 +435,13 @@
     {:else}
       <div class="w-full flex flex-col">
         <!-- Auto-commit notice -->
-        {#if $autoCommitEnabled && (workingChanges.staged.length > 0 || workingChanges.unstaged.length > 0)}
+        {#if $autoCommitEnabled && (stagedChanges.length > 0 || unstagedChanges.length > 0)}
           <div class="px-2 py-1.5 mb-2 text-xs text-subtle bg-muted/50 rounded">
             Auto-commit is on. Agent changes will be committed automatically.
           </div>
         {/if}
 
-        {#if workingChanges.staged.length > 0}
+        {#if stagedChanges.length > 0}
           <ListSection
             class="mb-3 pb-3 {$autoCommitEnabled ? 'opacity-50 pointer-events-none' : ''}"
             collapsible
@@ -474,7 +465,7 @@
             {/snippet}
             <ListContainer spacing="compact">
               <FileChangesList
-                changes={workingChanges.staged}
+                changes={stagedChanges}
                 {viewMode}
                 showStats={true}
                 showActions={!$autoCommitEnabled}
@@ -487,7 +478,7 @@
         {/if}
 
         <!-- Working Changes -->
-        {#if workingChanges.unstaged.length > 0}
+        {#if unstagedChanges.length > 0}
           <ListSection
             class="mb-3 {$autoCommitEnabled ? 'opacity-50 pointer-events-none' : ''}"
             title="Unstaged"
@@ -512,7 +503,7 @@
             {/snippet}
             <ListContainer spacing="compact">
               <FileChangesList
-                changes={workingChanges.unstaged}
+                changes={unstagedChanges}
                 {viewMode}
                 showStats={true}
                 showActions={!$autoCommitEnabled}
@@ -543,16 +534,16 @@
                   logger.info('Commit clicked, opening in main panel', { hash: commit.hash });
 
                   // Get the changes for this commit
-                  const commitChanges = fileTrackingStore.changes.filter(
+                  const commitChanges = $ftChanges$.filter(
                     (change) => change.commitHash === commit.hash
                   );
 
                   // Set the main panel view to show this commit
-                  fileTrackingStore.setMainPanelView({
+                  reduxDispatch(ftSetMainPanelView({
                     type: 'commit',
                     commit,
                     change: commitChanges[0], // Pass first change for context
-                  });
+                  }));
                 }}
               >
                 <div class="shrink-0">

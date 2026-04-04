@@ -15,7 +15,9 @@
     type SvelteErrorInfo,
   } from '$lib/utils/svelte-error-resolver';
   import { handleLink } from '$features/navigation/link-handler';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+
+  const activeWorkspaceId = selectActiveWorkspaceId();
 
   interface Props {
     error: string | Error | any;
@@ -113,7 +115,7 @@
 
     {#if isExpanded}
       <div class="px-4 pb-3 border-t {config.borderColor} pt-3">
-        <div class="text-sm text-foreground/90 whitespace-pre-wrap break-words">
+        <div class="text-sm text-foreground whitespace-pre-wrap break-words">
           {displayMessage}
         </div>
 
@@ -128,7 +130,7 @@
                 <Fa icon={faLightbulb} size="sm" />
                 Debugging Tips
               </div>
-              <ul class="text-xs text-foreground/80 space-y-1">
+              <ul class="text-xs text-muted-foreground space-y-1">
                 {#each svelteErrorInfo.debuggingTips as tip, tipIndex (`tip-${tipIndex}-${tip.slice(0, 20)}`)}
                   <li class="flex items-start gap-2">
                     <span class="text-blue-500">•</span>
@@ -143,7 +145,7 @@
               <div class="text-sm font-medium text-amber-600 dark:text-amber-400 mb-2">
                 Common Causes
               </div>
-              <ul class="text-xs text-foreground/80 space-y-1">
+              <ul class="text-xs text-muted-foreground space-y-1">
                 {#each svelteErrorInfo.commonCauses as cause, causeIndex (`cause-${causeIndex}-${cause.slice(0, 20)}`)}
                   <li class="flex items-start gap-2">
                     <span class="text-amber-500">•</span>
@@ -157,7 +159,7 @@
             <a
               href={svelteErrorInfo.docsUrl}
               class="inline-flex items-center gap-2 text-xs text-primary hover:underline"
-              onclick={(e) => { e.preventDefault(); handleLink(svelteErrorInfo.docsUrl, { workspaceId: workspaceStore.current?.id, event: e }); }}
+              onclick={(e) => { e.preventDefault(); handleLink(svelteErrorInfo.docsUrl, { workspaceId: $activeWorkspaceId ?? undefined, event: e }); }}
             >
               <Fa icon={faExternalLinkAlt} size="xs" />
               View Svelte Documentation
@@ -183,7 +185,7 @@
         <div class="text-sm font-semibold {config.color} mb-1">
           {displayTitle}
         </div>
-        <div class="text-sm text-foreground/90 whitespace-pre-wrap break-words">
+        <div class="text-sm text-foreground whitespace-pre-wrap break-words">
           {errorMessage}
         </div>
 

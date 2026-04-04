@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { sidebarNavStore } from './sidebar-nav.store.svelte';
   import HomeCard from './cards/HomeCard.svelte';
   import ActiveWorkspacesCard from './cards/ActiveWorkspacesCard.svelte';
   import AllWorkspacesCard from './cards/AllWorkspacesCard.svelte';
@@ -8,12 +7,21 @@
   import Fa from 'svelte-fa';
   import { faXmark, faThumbtack } from '@fortawesome/free-solid-svg-icons';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { selectPanelItem, selectPanelWidth, selectIsCardPinned, selectOnboardingActive } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+  import { toggleCardPinned, closePanel, setPanelWidth as setPanelWidthAction } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+
+  const dispatch = getDispatch();
+  const panelItem$ = selectPanelItem();
+  const panelWidth$ = selectPanelWidth();
+  const isCardPinned$ = selectIsCardPinned();
+  const onboardingActive$ = selectOnboardingActive();
 
   const MIN_WIDTH = 100;
   const MAX_WIDTH = 480;
 
-  const panelItem = $derived(sidebarNavStore.panelItem);
-  const panelWidth = $derived(sidebarNavStore.panelWidth);
+  const panelItem = $derived($panelItem$);
+  const panelWidth = $derived($panelWidth$);
 
   const panelMeta = $derived.by(() => {
     switch (panelItem) {
@@ -32,6 +40,13 @@
 
   let isResizing = $state(false);
 
+  let liveWidth = $state(panelWidth);
+
+  // Keep liveWidth in sync when panelWidth changes from Redux
+  $effect(() => {
+    liveWidth = panelWidth;
+  });
+
   function handleResizeStart(e: MouseEvent) {
     e.preventDefault();
     isResizing = true;
@@ -40,13 +55,12 @@
 
     function onMouseMove(e: MouseEvent) {
       const delta = e.clientX - startX;
-      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + delta));
-      sidebarNavStore.panelWidth = newWidth;
+      liveWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + delta));
     }
 
     function onMouseUp() {
       isResizing = false;
-      sidebarNavStore.setPanelWidth(sidebarNavStore.panelWidth);
+      dispatch(setPanelWidthAction(liveWidth));
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     }
@@ -56,10 +70,10 @@
   }
 </script>
 
-{#if panelItem && !sidebarNavStore.onboardingActive}
+{#if panelItem && !$onboardingActive$}
   <!-- Outer wrapper animates width; inner content stays at full static width -->
   <div class="shrink-0 h-full overflow-hidden" transition:slide={{ axis: 'x', duration: 200 }}>
-    <div class="sidebar-panel h-full flex flex-col relative" style="width: {panelWidth}px;" aria-label="Sidebar panel">
+    <div class="sidebar-panel h-full flex flex-col relative" style="width: {liveWidth}px;" aria-label="Sidebar panel">
       <!-- Header -->
       <div class="panel-header shrink-0">
         <div class="min-w-0 flex-1">
@@ -69,19 +83,19 @@
           {/if}
         </div>
         <div class="flex items-center gap-0.5 shrink-0">
-          <Tooltip content={sidebarNavStore.isCardPinned ? 'Unpin panel' : 'Pin panel open'} side="bottom" sideOffset={4}>
+          <Tooltip content={$isCardPinned$ ? 'Unpin panel' : 'Pin panel open'} side="bottom" sideOffset={4}>
             <button
               class="w-6 h-6 flex items-center justify-center rounded-md transition-colors cursor-pointer
-                {sidebarNavStore.isCardPinned ? 'text-foreground rotate-0' : 'text-muted-foreground rotate-45 hover:text-foreground hover:bg-muted/50'}"
-              onclick={() => sidebarNavStore.toggleCardPinned()}
-              aria-label={sidebarNavStore.isCardPinned ? 'Unpin panel' : 'Pin panel open'}
+                {$isCardPinned$ ? 'text-foreground rotate-0' : 'text-muted-foreground rotate-45 hover:text-foreground hover:bg-muted/50'}"
+              onclick={() => dispatch(toggleCardPinned())}
+              aria-label={$isCardPinned$ ? 'Unpin panel' : 'Pin panel open'}
             >
               <Fa icon={faThumbtack} size="xs" />
             </button>
           </Tooltip>
           <button
             class="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
-            onclick={() => sidebarNavStore.closePanel()}
+            onclick={() => dispatch(closePanel())}
             aria-label="Close panel"
           >
             <Fa icon={faXmark} size="xs" />

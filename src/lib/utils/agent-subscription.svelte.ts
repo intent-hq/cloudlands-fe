@@ -7,12 +7,20 @@
  * Abstracts away the complexity of manual store subscriptions.
  */
 
-import { agentService, type AgentSession } from '$features/agent/agent.service';
-import { publishSessionStoreSnapshot, sessionStore, subscribeToAgent } from '$features/agent/browser';
-import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-import { get } from 'svelte/store';
+import { agentService, type AgentSession } from '$features/agent/agent-ipc-bridge';
+import { subscribeToAgent } from '$features/agent/browser';
 import { createLogger } from '$lib/utils/client-logger';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import {
+  selectCurrentWorkspace,
+  selectWorkspaceById,
+} from '$lib/store/slices/workspace/workspace-selectors';
+import {
+  selectAgentById,
+} from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+import { upsertAgentSession } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
 import type { Workspace } from '$shared/types';
+import type { AgentSession as AgentSessionType } from '$shared/types';
 
 const logger = createLogger('AgentSubscription');
 let allGetterWarningShown = false;
@@ -175,8 +183,9 @@ export function useAgentSubscription(agentId: string, workspace?: Workspace | nu
     // If agent is still null after initial callback, try to restore from disk
     if (agent === null && !restoreAttempted) {
       restoreAttempted = true;
-      // Use provided workspace or fall back to workspaceStore.current
-      const resolvedWorkspace = workspace ?? workspaceStore.current;
+      // Use provided workspace or fall back to the active workspace from Redux.
+      const resolvedWorkspace =
+        workspace ?? selectCurrentWorkspace.select(getReduxStore().getState());
 
       if (resolvedWorkspace) {
         agentService
@@ -279,12 +288,39 @@ export function useAllAgentsSubscription(workspaceId?: WorkspaceIdSource) {
   // Reset when the resolved workspace ID changes so a new workspace gets its own check.
   let initialStateChecked = false;
   let lastCheckedWorkspaceId: string | undefined;
+  let workspaceFromStore = $state<Workspace | undefined>(undefined);
+  let lastWorkspaceFromStore: Workspace | undefined;
 
   // FIX: workspaceId can be a getter (WorkspaceIdSource). Resolve it via $derived so
   // downstream $effects re-run when the resolved value becomes defined or changes
   // (e.g. during workspace restore/switch). Without this, isLoading and
   // initialStateChecked become stale and reintroduce the "No agents yet" flash.
   const resolvedWsId = $derived(resolveWorkspaceId(workspaceId));
+
+  $effect(() => {
+    const resolvedWorkspaceId = resolvedWsId;
+
+    if (!resolvedWorkspaceId) {
+      workspaceFromStore = undefined;
+      return;
+    }
+
+    const store = getReduxStore();
+    const syncWorkspace = () => {
+      const nextWorkspace = selectWorkspaceById.select(store.getState(), resolvedWorkspaceId);
+      if (lastWorkspaceFromStore !== nextWorkspace) {
+        lastWorkspaceFromStore = nextWorkspace;
+        workspaceFromStore = nextWorkspace;
+      }
+    };
+
+    syncWorkspace();
+    const unsubscribe = store.subscribe(syncWorkspace);
+
+    return () => {
+      unsubscribe();
+    };
+  });
 
   // React to workspace ID changes: reset loading/check state for the new workspace.
   $effect(() => {
@@ -308,8 +344,22 @@ export function useAllAgentsSubscription(workspaceId?: WorkspaceIdSource) {
   // Use $effect for subscription management with automatic cleanup
   $effect(() => {
     // Subscribe to all agent updates (no filtering here)
-    const unsubscribe = sessionStore.getStore().subscribe((state) => {
-      const nextAgents = state.sessions || [];
+    // Helper to collect all agents from all workspaces in Redux
+    function getAllAgentsFromRedux(): AgentSession[] {
+      const reduxState = getReduxStore().getState();
+      const result: AgentSession[] = [];
+      const sessionsByAgent = reduxState.agentSessions?.byAgentId ?? {};
+      for (const wsState of Object.values(reduxState.workspaceAgents.byWorkspaceId)) {
+        for (const agentId of wsState.agentIds) {
+          const session = sessionsByAgent[agentId] as AgentSessionType | undefined;
+          if (session) result.push(session as AgentSession);
+        }
+      }
+      return result;
+    }
+
+    const unsubscribe = getReduxStore().subscribe(() => {
+      const nextAgents = getAllAgentsFromRedux();
       const nextFingerprint = agentsFingerprint(nextAgents);
       if (nextFingerprint !== lastAgentsFingerprint) {
         lastAgentsFingerprint = nextFingerprint;
@@ -318,9 +368,7 @@ export function useAllAgentsSubscription(workspaceId?: WorkspaceIdSource) {
     });
 
     // Initial load
-    const store = sessionStore.getStore();
-    const state = get(store);
-    const nextAgents = state.sessions || [];
+    const nextAgents = getAllAgentsFromRedux();
     lastAgentsFingerprint = agentsFingerprint(nextAgents);
     allAgents = nextAgents;
 
@@ -353,8 +401,7 @@ export function useAllAgentsSubscription(workspaceId?: WorkspaceIdSource) {
     const resolvedWorkspaceId = resolvedWsId;
     if (!resolvedWorkspaceId) return;
 
-    const _items = workspaceStore.items; // reactive dependency
-    const workspace = workspaceStore.findById(resolvedWorkspaceId as any);
+    const workspace = workspaceFromStore;
 
     // CRITICAL: Read allAgents UNCONDITIONALLY so Svelte 5 always tracks it
     // as a dependency. Previously, early returns (lock check, workspace check)
@@ -419,20 +466,18 @@ export function useAllAgentsSubscription(workspaceId?: WorkspaceIdSource) {
         let restoredCount = 0;
         let republishedCount = 0;
         for (const diskAgent of diskAgents) {
-          // If the agent already exists in the workspace-aware in-memory store,
-          // republish it into sessionStoreData instead of skipping it.
-          // This recovers the sidebar after workspace switches where unifiedStateStore
-          // still has the agents but the global session store snapshot is empty/stale.
-          const existingSession = sessionStore.getSessionForWorkspace(
-            resolvedWorkspaceId,
+          // If the agent already exists in Redux, re-upsert it to ensure consistency.
+          // This recovers the sidebar after workspace switches.
+          const existingSession = selectAgentById.select(
+            getReduxStore().getState(),
             diskAgent.id,
           );
           if (existingSession) {
-            logger.debug('Re-publishing existing agent session to session store:', diskAgent.id);
-            sessionStore.addSessionForWorkspace(resolvedWorkspaceId, {
+            logger.debug('Re-upserting existing agent session to Redux:', diskAgent.id);
+            getReduxStore().dispatch(upsertAgentSession(resolvedWorkspaceId, {
               ...existingSession,
               workspaceId: workspace.id,
-            });
+            } as AgentSession));
             republishedCount++;
           } else {
             logger.debug('Restoring agent session from disk:', diskAgent.id);
@@ -450,11 +495,7 @@ export function useAllAgentsSubscription(workspaceId?: WorkspaceIdSource) {
           }
         }
 
-        // Publish a synchronous snapshot now that the restore/republish loop is complete.
-        // The normal browser store path is RAF-batched for steady-state updates, but after a
-        // workspace restore we want the sidebar-facing sessionStoreData to reflect the full
-        // restored set before loading flips back to false.
-        publishSessionStoreSnapshot();
+        // Redux dispatches are synchronous, so no need for explicit snapshot publishing.
 
         logger.info('[AgentSubscription] Agent load complete', {
           restoredCount,

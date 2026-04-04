@@ -2,7 +2,7 @@
   import { cn } from '$lib/utils';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { selectSpecialists, filterSpecialistsByGitHubAuth } from '$lib/store/slices/specialists/specialists-selectors';
-  import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
+  import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
 
   interface Props {
     /** Currently selected specialist ID - null means blank agent */
@@ -24,8 +24,9 @@
 
   // All available specialists (built-in + custom), filtered by GitHub auth
   const allSpecialists = selectSpecialists();
+  const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
   const visibleSpecialists = $derived.by(() =>
-    filterSpecialistsByGitHubAuth($allSpecialists, githubAuthStore.state.isAuthenticated)
+    filterSpecialistsByGitHubAuth($allSpecialists, $isGitHubAuth$)
   );
 
   // Options: blank + visible specialists

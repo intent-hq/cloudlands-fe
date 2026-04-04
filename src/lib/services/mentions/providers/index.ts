@@ -7,7 +7,6 @@ import type {
   MentionCandidate,
   SearchContext,
   MentionType,
-  MentionGroup,
 } from '../types';
 import { SPECIAL_MENTIONS } from '../types';
 import { FileProvider } from './file-provider';
@@ -422,6 +421,7 @@ export class ExternalSourceProvider implements Provider {
   id = 'external';
   triggers = ['@docs', '@external'];
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     const sources = [
       {
@@ -465,6 +465,7 @@ export class RuleProvider implements Provider {
   id = 'rule';
   triggers = ['@rule', '@augment'];
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     const rules = [
       { path: '.augment/rules/cli.md', label: 'CLI Rules' },
@@ -495,6 +496,7 @@ export class TaskProvider implements Provider {
   id = 'task';
   triggers = ['@task', '@todo'];
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     const tasks = [
       {
@@ -578,6 +580,7 @@ export class PersonalityProvider implements Provider {
     },
   ];
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     return this.personalities
       .filter((p) => !query || fuzzyMatch(query, p.name) !== null)
@@ -599,6 +602,7 @@ export class CommandProvider implements Provider {
   id = 'command';
   triggers = ['@cmd', '@command'];
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     const commands = [
       SPECIAL_MENTIONS.USE_DEFAULT_CONTEXT,
@@ -700,13 +704,14 @@ export class ScriptProvider implements Provider {
 
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     try {
-      const { scriptsStore } = await import('$features/scripts/scripts.store.svelte');
+      const { getReduxStore } = await import('$lib/store/redux-dispatch-bridge');
+      const { selectScriptEntries } = await import('$lib/store/slices/scripts/scripts-selectors');
 
       if (!context.workspaceId) {
         return [];
       }
 
-      const scripts = scriptsStore.scriptEntries;
+      const scripts = selectScriptEntries.select(getReduxStore().getState());
       if (scripts.length === 0) {
         return [];
       }
@@ -761,6 +766,7 @@ export class SpecialistProvider implements Provider {
   id = 'specialist';
   triggers = ['@specialist', '@spec'];
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     try {
       const specialists = selectSpecialists.select(getReduxStore().getState());
@@ -807,29 +813,27 @@ export class AgentProvider implements Provider {
 
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     try {
-      const { unifiedStateStore } = await import(
-        '$features/agent/services/unified-state-store'
+      const { selectAllWorkspaceAgents } = await import(
+        '$lib/store/slices/workspace-agents/workspace-agents-selectors'
       );
       const workspaceId = context.workspaceId;
       if (!workspaceId) {
         return [];
       }
 
-      const workspaceState = unifiedStateStore.getWorkspace(workspaceId as any);
-      if (!workspaceState) {
+      const allAgents = selectAllWorkspaceAgents.select(getReduxStore().getState(), workspaceId);
+      if (allAgents.length === 0) {
         return [];
       }
 
       const agents: MentionCandidate[] = [];
-      for (const [agentId, agentState] of workspaceState.agents) {
-        const session = agentState.session;
-        if (!session) continue;
+      for (const session of allAgents) {
+        const agentId = session.id;
 
         const name = session.name || agentId;
-        // Check both session.metadata and agentState.metadata for specialist info
+        // Check session.metadata for specialist info
         const specialistId =
           (session.metadata as any)?.specialist ||
-          agentState.metadata?.specialist ||
           '';
         // Look up specialist name: try session metadata first, then resolve from store
         let specialistName = (session.metadata as any)?.specialistName || '';
@@ -864,12 +868,12 @@ export class AgentProvider implements Provider {
         }
         subtitleParts.push(statusLabel);
 
-        const messageCount = agentState.messages?.length || session.messages?.length || 0;
+        const messageCount = session.messages?.length || 0;
         if (messageCount > 0) {
           subtitleParts.push(`${messageCount} msg${messageCount !== 1 ? 's' : ''}`);
         }
 
-        const lastActive = agentState.lastActivity || agentState.lastModified;
+        const lastActive = (session as any).lastActivity || (session as any).lastModified;
         if (lastActive && !session.isStreaming) {
           subtitleParts.push(formatRelativeTimeCompact(new Date(lastActive)));
         }

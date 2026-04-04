@@ -36,6 +36,7 @@
     onclose?.();
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function handleBackdropClick(e: MouseEvent | KeyboardEvent) {
     // Close when clicking on the backdrop or pressing Enter
     close();

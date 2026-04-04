@@ -314,6 +314,7 @@ class ErrorHandler {
 
     // Add line numbers and make stack trace more readable
     const lines = stack.split('\n');
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const enhanced = lines.map((line, index) => {
       // Highlight important parts
       if (line.includes('.svelte')) {
@@ -429,6 +430,7 @@ class ErrorHandler {
     this.#errorLog = [];
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async sendTelemetry(error: AppError) {
     try {
       // Telemetry integration would go here

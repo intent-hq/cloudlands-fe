@@ -1,7 +1,8 @@
 import { goto } from "$app/navigation";
-import { workspaceStore } from "$features/workspace/workspace.store.svelte";
 import { isGitOp, trackGitOp } from "$lib/services/analytics";
+import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import { takeEveryFromElectronChannel } from "$lib/store/utils/ipc-channel";
+import { selectActiveWorkspace, selectWorkspaceById } from "$lib/store/slices/workspace/workspace-selectors";
 import { call, fork, put } from "typed-redux-saga";
 import { setLastAutoCommitHookFailure, setLastGitError, setLastGitOperation, type AutoCommitHookFailureEvent, type GitOperationCompletedEvent, type GitOperationFailedEvent, } from "../git-operations-slice";
 async function handleGitOperationCompleted(data: GitOperationCompletedEvent): Promise<void> {
@@ -10,8 +11,9 @@ async function handleGitOperationCompleted(data: GitOperationCompletedEvent): Pr
     }
     try {
         const { toast } = await import("svelte-sonner");
-        const eventWorkspace = workspaceStore.items.find((w) => w.id === data.workspaceId);
-        const currentWorkspace = workspaceStore.current;
+        const state = getReduxStore().getState();
+        const eventWorkspace = selectWorkspaceById.select(state, data.workspaceId);
+        const currentWorkspace = selectActiveWorkspace.select(state);
         const workspaceName = eventWorkspace?.title || "Space";
         let message: string;
         switch (data.operationType) {
@@ -81,8 +83,9 @@ async function handleGitOperationFailed(data: GitOperationFailedEvent): Promise<
     }
     try {
         const { toast } = await import("svelte-sonner");
-        const eventWorkspace = workspaceStore.items.find((w) => w.id === data.workspaceId);
-        const currentWorkspace = workspaceStore.current;
+        const state = getReduxStore().getState();
+        const eventWorkspace = selectWorkspaceById.select(state, data.workspaceId);
+        const currentWorkspace = selectActiveWorkspace.select(state);
         const workspaceName = eventWorkspace?.title || "Space";
         const isViewingFailingWorkspace = currentWorkspace && currentWorkspace.id === data.workspaceId;
         if (isViewingFailingWorkspace && data.operationType !== "auto-commit") {

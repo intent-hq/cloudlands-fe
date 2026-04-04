@@ -8,7 +8,7 @@
 import { ipcMain } from 'electron';
 import { FileSystemFirstVisitStateRepository } from './first-visit-state.repository';
 import { Logger } from '../../../shared/logger';
-import type { FirstVisitState, WorkspaceId } from '../../../shared/types';
+import type { FirstVisitState } from '../../../shared/types';
 import { WorkspaceId as WorkspaceIdFn } from '../../../shared/types/branded-ids';
 import { FIRST_VISIT_CHANNELS } from '../../../shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';

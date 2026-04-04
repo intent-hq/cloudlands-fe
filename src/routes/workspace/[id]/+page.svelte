@@ -7,7 +7,6 @@
    */
 
   import { page } from '$app/state';
-  import { goto } from '$app/navigation';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { writable } from 'svelte/store';
 
@@ -15,8 +14,7 @@
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { toast } from 'svelte-sonner';
 
-  // New unified state management
-  import { createUnifiedWorkspaceState } from '$features/workspace/workspace-unified-state.svelte';
+  import { createWorkspacePageState } from './composables/workspace-page-state.svelte';
   import {
     useCloseHandlers,
     usePanelActions,
@@ -30,38 +28,49 @@
     dispatchCreateFileRequest,
     handleCommandPaletteCreateFile,
   } from './composables/create-file-command';
+  import { hydrateInitialAgentConfig } from './composables/initial-agent-config';
 
   // Performance optimization
   import { CleanupManager } from '$features/optimization/memory-manager';
 
-  // Stores
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { agentService } from '$features/agent/agent.service'; // Keep for backward compat
-  import { gitStore } from '$features/git/git.store.svelte';
-  import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
+  import { agentService } from '$features/agent/agent-ipc-bridge'; // Keep for backward compat
   import {
-    selectPanelVisibilityFlag,
+    selectGitBranch,
+    selectGitAhead,
+    selectSidebarCommits,
+  } from '$lib/store/slices/git/git-selectors';
+  import {
+    selectMainPanelView,
+    selectCurrentIsInitialized,
+    selectCurrentLoading,
+  } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+  import { clearMainPanelView as ftClearMainPanelView } from '$lib/store/slices/file-tracking/file-tracking-slice';
+  import {
     selectWorkspaceById,
+    selectWorkspaceIsEmpty,
+    selectWorkspaceActivePullRequest,
+    selectIsNewWorkspaceSession,
   } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectPanelVisibilityFlag } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import {
+    loadWorkspacesRequested,
     setActiveWorkspaceId,
-    setPanelVisibility,
     setWorkspaceEntity,
-    type PanelVisibilityState,
   } from '$lib/store/slices/workspace/workspace-slice';
+  import {
+    setPanelVisibility,
+    type PanelVisibilityState,
+  } from '$lib/store/slices/ui-layout/ui-layout-slice';
 
-  import { workspaceStorageManager } from '$features/workspace/workspace-storage-manager';
+  import { workspaceStorageManager } from '$lib/store/slices/workspace/utils/workspace-storage-manager';
 
   import {
-    markAsViewed,
-    clearCurrentlyViewed,
     markNoteRead,
     createNoteRequested,
   } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
   import { workspaceUnmounted } from '$lib/store/slices/workspace-lifecycle/workspace-lifecycle-slice';
-  import { getTransientUIStore } from '$features/workspace/transient-ui-state.store.svelte';
   import { track, setAnalyticsContextProvider, getFileExtension } from '$lib/services/analytics';
-  import { layoutSettings } from '$features/layout/layout-settings.svelte';
+  import { selectSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import { getDispatch } from '$lib/store/utils/utils';
 
   // Components
@@ -73,14 +82,15 @@
   import InputDialog from '$lib/components/modals/InputDialog.svelte';
   import QuakeTerminalOverlay from '$lib/components/terminal/QuakeTerminalOverlay.svelte';
   import { PanelLayout } from '$lib/components/layout/panel-system';
-  import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
+  import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
 
   // Utils
   import { createLogger } from '$lib/utils/client-logger';
-  import { transitionMCPWorkspace } from '$lib/api/mcp-client';
   import { SPEC_NOTE_ID } from '$shared/constants/notes';
 
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectSidebarActiveTab } from '$lib/store/slices/transient-ui/transient-ui-selectors';
+  import { setSidebarActiveTab } from '$lib/store/slices/transient-ui/transient-ui-slice';
   import {
     addAgent,
     createAgentRequested,
@@ -89,7 +99,6 @@
     markAgentRecentlyCreated as markAgentRecentlyCreatedAction,
     setAgents,
     setAgentsLoaded,
-    setInitialAgentConfig,
     clearInitialAgentConfig,
     setInitialAgentConfigProcessed,
     setInitialAgentId,
@@ -99,7 +108,6 @@
     selectInitialAgentConfigProcessed,
     selectInitialAgentId,
     selectAllWorkspaceAgents,
-    selectIsNewlyCreatedWorkspace,
   } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { createTerminalRequested } from '$lib/store/slices/terminals/terminals-slice';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
@@ -111,6 +119,7 @@
   // ============================================================================
 
   const dispatch = getDispatch();
+  const sidebarSide$ = selectSidebarSide();
 
   // Create unified state for this workspace
   // @ts-expect-error - Svelte 5 rune scoping issue
@@ -121,6 +130,7 @@
   let previousWorkspaceId = $state(null);
   // Draft prompt to pre-fill in agent input without sending
   // @ts-expect-error - Svelte 5 rune scoping issue
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let draftPrompt = $state<string | null>(null);
 
   // Create file dialog state
@@ -133,17 +143,17 @@
    * to avoid a flash of empty/skeleton UI. Used by both the initial load and transition paths.
    *
    * Sets workspaceData on the state AND hydrates Redux so the selector-backed
-   * safeWorkspace has data on the first render frame. The workspace loader's
+   * $workspace has data on the first render frame. The workspace loader's
    * effect will still call workspaceClient.open() because its condition does not gate on
    * hasWorkspaceData — open() must always be called to start backend change detection.
    */
-  function initializeWorkspaceState(wsId: string): ReturnType<typeof createUnifiedWorkspaceState> {
-    const newState = createUnifiedWorkspaceState(wsId);
+  function initializeWorkspaceState(wsId: string): ReturnType<typeof createWorkspacePageState> {
+    const newState = createWorkspacePageState(wsId);
 
     // Pre-populate workspace data from the store to avoid blank state.
     // This is a synchronous Map lookup — cheap and eliminates the skeleton flash
     // when the workspace is already cached (the common case from home page navigation).
-    const cachedWorkspace = workspaceStore.findById(WorkspaceId(wsId));
+    const cachedWorkspace = selectWorkspaceById.select(getReduxStore().getState(), wsId);
     if (cachedWorkspace) {
       newState.updateState({
         workspaceData: cachedWorkspace,
@@ -151,29 +161,13 @@
       });
     }
 
-    // Check if this is a newly created workspace by looking for initial agent config
-    // Read from Redux first, fall back to sessionStorage for page reloads
-    const pendingConfig = selectInitialAgentConfig.select(getReduxStore().getState(), wsId);
-    const pendingAgentKey = `workspace:${wsId}:initial-agent-pending`;
-    const sessionData = sessionStorage.getItem(pendingAgentKey);
-    const hasInitialAgent = !!pendingConfig || !!sessionData;
-
-    // Hydrate Redux from sessionStorage on reload if needed
-    if (!pendingConfig && sessionData) {
-      try {
-        const parsed = JSON.parse(sessionData);
-        dispatch(setInitialAgentConfig(wsId, parsed));
-      } catch {
-        /* ignore parse errors */
-      }
-    }
-
+    // Hydrate initial agent config from Redux / sessionStorage
+    const hasInitialAgent = hydrateInitialAgentConfig(wsId, dispatch);
     if (hasInitialAgent) {
       logger.info('Detected newly created workspace', { workspaceId: wsId });
-      // isNewlyCreatedWorkspace is now derived from Redux initialAgentConfig
     }
 
-    // Hydrate Redux immediately so the selector-backed safeWorkspace has
+    // Hydrate Redux immediately so the selector-backed $workspace has
     // data on the very first render frame (before the workspace loader runs).
     if (cachedWorkspace) {
       dispatch(setWorkspaceEntity(cachedWorkspace));
@@ -202,13 +196,20 @@
   // Redux-backed workspace entity selector.  Called at component init time
   // (top-level script) with a Readable<string> so it stays reactive to both
   // workspaceId changes AND Redux state updates.
-  const workspaceFromRedux = selectWorkspaceById(workspaceIdStore);
+  const workspace = selectWorkspaceById(workspaceIdStore);
 
-  // Reactive readable selector for isNewlyCreatedWorkspace.  Using the readable
-  // form (called at component init) ensures the value updates when Redux state
-  // changes (e.g. when clearInitialAgentConfig is dispatched), unlike a one-shot
-  // `.select()` call which would only snapshot the value at render time.
-  const isNewlyCreatedWorkspaceStore = selectIsNewlyCreatedWorkspace(workspaceIdStore);
+  // Git state from Redux (reactive via workspaceIdStore)
+  const gitBranch$ = selectGitBranch(workspaceIdStore);
+  const gitAhead$ = selectGitAhead(workspaceIdStore);
+
+  // Sidebar-specific selectors (stable references that avoid re-creating arrays/objects)
+  const activePullRequest$ = selectWorkspaceActivePullRequest(workspaceIdStore);
+  const sidebarCommits$ = selectSidebarCommits(workspaceIdStore);
+
+  // File tracking state from Redux
+  const ftMainPanelView$ = selectMainPanelView();
+  const ftIsInitialized$ = selectCurrentIsInitialized();
+  const ftLoading$ = selectCurrentLoading();
 
   // Track if we're in the process of creating a workspace (including optimistic phase)
   let isCreatingWorkspace = $derived(
@@ -224,9 +225,9 @@
   // Load workspace store on mount
   onMount(() => {
     // Load workspace store if needed
-    if (workspaceStore.isEmpty) {
+    if (selectWorkspaceIsEmpty.select(getReduxStore().getState())) {
       logger.debug('Loading workspace store on mount');
-      workspaceStore.load();
+      dispatch(loadWorkspacesRequested());
     }
   });
 
@@ -299,50 +300,33 @@
         mainPanel: currentStateData.mainPanel,
       };
 
-      // Dispose the old state
       const oldState = workspaceState;
 
       try {
         // Create new state with the real workspace ID
-        workspaceState = createUnifiedWorkspaceState(currentWorkspaceId);
+        workspaceState = createWorkspacePageState(currentWorkspaceId);
 
         // Immediately restore the preserved data to avoid UI flash
         workspaceState.updateState(preservedData);
 
-        // Hydrate Redux so the selector-backed safeWorkspace picks up the
+        // Hydrate Redux so the selector-backed $workspace picks up the
         // workspace entity immediately during the optimistic→real transition.
         {
-          const cachedWorkspace = workspaceStore.findById(WorkspaceId(currentWorkspaceId));
+          const cachedWorkspace = selectWorkspaceById.select(
+            getReduxStore().getState(),
+            currentWorkspaceId,
+          );
           if (cachedWorkspace) {
             dispatch(setWorkspaceEntity(cachedWorkspace));
           }
         }
 
-        // Check if this is a newly created workspace by looking for initial agent config
-        // Read from Redux first, fall back to sessionStorage for page reloads
-        const pendingConfig = selectInitialAgentConfig.select(
-          getReduxStore().getState(),
-          currentWorkspaceId,
-        );
-        const pendingAgentKey = `workspace:${currentWorkspaceId}:initial-agent-pending`;
-        const sessionData = sessionStorage.getItem(pendingAgentKey);
-        const hasInitialAgent = !!pendingConfig || !!sessionData;
-
-        // Hydrate Redux from sessionStorage on reload if needed
-        if (!pendingConfig && sessionData) {
-          try {
-            const parsed = JSON.parse(sessionData);
-            dispatch(setInitialAgentConfig(currentWorkspaceId, parsed));
-          } catch {
-            /* ignore parse errors */
-          }
-        }
-
+        // Hydrate initial agent config from Redux / sessionStorage
+        const hasInitialAgent = hydrateInitialAgentConfig(currentWorkspaceId, dispatch);
         if (hasInitialAgent) {
           logger.info('Detected newly created workspace during transition', {
             workspaceId: currentWorkspaceId,
           });
-          // isNewlyCreatedWorkspace is now derived from Redux initialAgentConfig
         }
 
         logger.info('Transitioned to real workspace state', {
@@ -352,10 +336,6 @@
           isNewlyCreated: hasInitialAgent,
         });
 
-        // Dispose the old state asynchronously
-        oldState.dispose().catch((error: unknown) => {
-          logger.error('Failed to dispose old optimistic state', { error });
-        });
       } catch (error) {
         logger.error('Failed to create workspace state for real workspace', {
           workspaceId: currentWorkspaceId,
@@ -403,15 +383,6 @@
         }
       }
 
-      // Now dispose the old state asynchronously (doesn't block UI)
-      logger.debug('Disposing previous workspace state asynchronously', { previousWorkspaceId });
-      Promise.race([
-        previousState.dispose(),
-        new Promise<void>((resolve) => setTimeout(resolve, 1000)),
-      ]).catch((error) => {
-        logger.error('Failed to dispose previous workspace state', { error });
-        // This is non-critical since we already have the new state
-      });
     } else if (!previousState) {
       // No previous state to dispose, create new state immediately
       if (currentWorkspaceId && !stateDisposing) {
@@ -440,20 +411,18 @@
 
   // Convenient state access
   let state: any = $derived(workspaceState?.state);
-  let workspace = $derived(state?.workspaceData);
 
-  // Workspace entity backed by Redux.  The selector reacts to both workspaceId
-  // changes (via workspaceIdStore) and Redux state updates, eliminating the
-  // previous $state / $effect / Object.assign dance.
-  let safeWorkspace: any = $derived($workspaceFromRedux ?? null);
+  // Mirror selectedNoteId into a writable store so the isNewWorkspaceSession selector
+  // can subscribe to it reactively alongside Redux state.
+  const selectedNoteIdStore = writable<string | null>(null);
+  $effect(() => {
+    selectedNoteIdStore.set(state?.mainPanel?.selectedNoteId ?? null);
+  });
+  const isNewWorkspaceSession$ = selectIsNewWorkspaceSession(workspaceIdStore, selectedNoteIdStore);
 
-  // Setup workspace state effects when state is created
+  // Restore scroll position after workspace state is created
   $effect(() => {
     if (workspaceState) {
-      // Call setupEffects to enable workspace store synchronization
-      // This needs to be done from component context to avoid orphaned effects
-      workspaceState.setupEffects();
-
       // Restore scroll position after initial load
       // Use a delay to ensure content is rendered
       // Capture reference to avoid stale closure if workspaceState becomes null
@@ -486,13 +455,11 @@
   // Register analytics context provider for dynamic UI context on all events
   $effect(() => {
     if (workspaceId && workspaceState) {
-      const transientStore = getTransientUIStore(workspaceId);
-
       setAnalyticsContextProvider(() => ({
         routeName: 'workspace',
         mainPanelType: workspaceState?.state?.mainPanel?.type ?? null,
-        sidebarActiveTab: transientStore?.sidebarActiveTab ?? null,
-        workspaceTitle: safeWorkspace?.title ?? null,
+        sidebarActiveTab: selectSidebarActiveTab.select(getReduxStore().getState(), workspaceId),
+        workspaceTitle: $workspace?.title ?? null,
       }));
 
       // Clear the context provider when workspace changes or component unmounts
@@ -508,7 +475,7 @@
 
   const sidebarState = useSidebarState({
     get workspace() {
-      return safeWorkspace;
+      return $workspace ?? null;
     },
     get workspaceState() {
       return workspaceState;
@@ -530,26 +497,6 @@
     },
     get previousWorkspaceId() {
       return previousWorkspaceId;
-    },
-    onResolved: async (optimisticId, realId) => {
-      // Ensure main-side MCP servers/tool calls can resolve optimistic IDs.
-      try {
-        await transitionMCPWorkspace(optimisticId, realId);
-      } catch (error) {
-        logger.warn('Failed to transition MCP workspace (continuing anyway)', {
-          optimisticId,
-          realId,
-          error,
-        });
-      }
-
-      // Avoid double-navigation if something else already navigated.
-      if (workspaceId === realId) return;
-      void goto(`/workspace/${realId}`);
-    },
-    onFailed: (optimisticId, error) => {
-      logger.error('Optimistic workspace creation failed', { optimisticId, error: error.message });
-      void goto('/');
     },
   });
 
@@ -582,9 +529,9 @@
   // Check for optimistic initial agent on mount and transitions
   $effect(() => {
     // Capture workspace ID and workspace reference at the start to avoid race conditions
-    // during async execution where safeWorkspace could become null or change
-    const capturedWorkspaceId = safeWorkspace?.id;
-    const capturedWorkspace = safeWorkspace;
+    // during async execution where $workspace could become null or change
+    const capturedWorkspaceId = $workspace?.id;
+    const capturedWorkspace = $workspace;
 
     // Read initialAgentConfigProcessed with untrack to avoid creating a reactive dependency
     // that would cause the effect to re-run when we set it to true
@@ -856,7 +803,7 @@
 
   // Monitor file tracking store's main panel view for commit and diff navigation
   $effect(() => {
-    const mainPanelView = fileTrackingStore.mainPanelView;
+    const mainPanelView = $ftMainPanelView$;
     if (mainPanelView?.type === 'commit' && mainPanelView.commit && workspaceState) {
       logger.info('[WorkspacePage] Navigating to commit view', {
         commit: mainPanelView.commit,
@@ -870,7 +817,7 @@
       });
 
       // Clear the main panel view to prevent infinite loop
-      fileTrackingStore.clearMainPanelView();
+      dispatch(ftClearMainPanelView());
     } else if (mainPanelView?.type === 'diff' && mainPanelView.change && workspaceState) {
       logger.info('[WorkspacePage] Navigating to diff view from file tracking store', {
         change: mainPanelView.change,
@@ -881,50 +828,31 @@
     }
   });
 
-  // Setup event listeners for workspace state
-  $effect(() => {
-    if (workspaceState && state?.isComponentMounted) {
-      const cleanup = workspaceState.setupEventListeners();
-      return () => {
-        if (cleanup) cleanup();
-      };
+  function handleFileRenamed(oldPath: string, newPath: string) {
+    logger.info('onFileRenamed callback received in +page.svelte', {
+      oldPath,
+      newPath,
+      hasWorkspaceState: !!workspaceState,
+      hasHandleFileRenamed: typeof workspaceState?.handleFileRenamed === 'function',
+    });
+    try {
+      workspaceState?.handleFileRenamed(oldPath, newPath);
+      try {
+        const oldExt = getFileExtension(oldPath);
+        const newExt = getFileExtension(newPath);
+        track('Renamed File', {
+          workspace_id: $workspace?.id || workspaceId,
+          old_extension: oldExt,
+          new_extension: newExt,
+          extension_changed: oldExt !== newExt,
+        });
+      } catch {
+        // Analytics should not break file renaming
+      }
+    } catch (error) {
+      logger.error('Error calling handleFileRenamed', error as Error);
     }
-  });
-
-  // Track current context for MCP tools
-  $effect(() => {
-    // Track the main panel state to update context when it changes
-    // These reads create reactive dependencies that trigger the effect
-    // when any of these values change
-    const mainPanelType = state?.mainPanel?.type;
-    const workspaceReady = safeWorkspace?.id;
-    // Read these to create dependencies (void to suppress unused warnings)
-    void state?.mainPanel?.selectedNoteId;
-    void state?.mainPanel?.selectedFile;
-
-    // Only update context if workspace is ready and we have valid state
-    if (workspaceReady && workspaceState && mainPanelType) {
-      // Use untrack to avoid creating dependencies on the update call itself
-      untrack(() => {
-        workspaceState.updateCurrentContext();
-      });
-    }
-  });
-
-  // Track which note is currently being viewed for unread status
-  // This prevents notes from being marked as "unread" when updated while being viewed
-  $effect(() => {
-    const mainPanelType = state?.mainPanel?.type;
-    const selectedNoteId = state?.mainPanel?.selectedNoteId;
-
-    if (mainPanelType === 'notes' && selectedNoteId) {
-      // Mark this note as currently being viewed
-      dispatch(markAsViewed(selectedNoteId));
-    } else {
-      // No note is being viewed in the main panel
-      dispatch(clearCurrentlyViewed());
-    }
-  });
+  }
 
   function handleFileSelect(filePath: string) {
     if (workspaceState) {
@@ -932,14 +860,14 @@
       workspaceState.openFile(filePath);
 
       track('Opened File', {
-        workspace_id: safeWorkspace?.id || workspaceId,
+        workspace_id: $workspace?.id || workspaceId,
         file_extension: getFileExtension(filePath),
       });
     }
   }
 
   function handleCreateFile(folderPath: string, fileName?: string) {
-    if (!safeWorkspace?.id) return;
+    if (!$workspace?.id) return;
     createFileFolderPath = folderPath;
     if (fileName) {
       // Inline creation from the file tree — skip the dialog
@@ -951,12 +879,12 @@
   }
 
   function handleCreateFileConfirm(fileName: string) {
-    dispatchCreateFileRequest(safeWorkspace, createFileFolderPath, fileName, dispatch);
+    dispatchCreateFileRequest($workspace, createFileFolderPath, fileName, dispatch);
   }
 
   $effect(() => {
     const handleNewFileCommand = () => {
-      handleCommandPaletteCreateFile(safeWorkspace, (folderPath) => handleCreateFile(folderPath));
+      handleCommandPaletteCreateFile($workspace, (folderPath) => handleCreateFile(folderPath));
     };
 
     window.addEventListener('app:new-file', handleNewFileCommand);
@@ -972,15 +900,15 @@
       await workspaceState.openNote(noteId);
 
       // Mark note as read when opened (await to ensure persistence before refresh)
-      if (safeWorkspace?.id) {
-        dispatch(markNoteRead(safeWorkspace.id, noteId));
+      if ($workspace?.id) {
+        dispatch(markNoteRead($workspace.id, noteId));
       }
     }
   }
 
   function handleCreateNote() {
-    if (!safeWorkspace?.id) return;
-    dispatch(createNoteRequested(safeWorkspace.id));
+    if (!$workspace?.id) return;
+    dispatch(createNoteRequested($workspace.id));
   }
 
   function handleOpenUrl(url: string) {
@@ -1000,8 +928,8 @@
   }
 
   async function handleDelegateTask(taskText: string, openAgent?: boolean): Promise<string | null> {
-    if (!safeWorkspace) return null;
-    dispatch(delegateTaskRequested(safeWorkspace.id, taskText, openAgent));
+    if (!$workspace) return null;
+    dispatch(delegateTaskRequested($workspace.id, taskText, openAgent));
     return null;
   }
 
@@ -1017,7 +945,7 @@
   });
 
   useTaskDelegationHandlers({
-    workspace: () => safeWorkspace,
+    workspace: () => $workspace,
     delegateTask: handleDelegateTask,
     onOpenAgent: openAgent,
   });
@@ -1027,11 +955,11 @@
   // ============================================================================
 
   const panelActions = usePanelActions({
-    workspace: () => safeWorkspace,
+    workspace: () => $workspace ?? null,
     workspaceState: () => workspaceState,
     state: () => state,
     markAgentRecentlyCreated: (agentId: string) => {
-      const wsId = safeWorkspace?.id || workspaceId;
+      const wsId = $workspace?.id || workspaceId;
       if (wsId) {
         dispatch(markAgentRecentlyCreatedAction(wsId, agentId));
       }
@@ -1061,8 +989,8 @@
    * Create a new agent (used by keyboard shortcuts and UI buttons)
    */
   async function handleCreateAgent(agentType?: string) {
-    if (!safeWorkspace) return;
-    dispatch(createAgentRequested(safeWorkspace.id, agentType));
+    if (!$workspace) return;
+    dispatch(createAgentRequested($workspace.id, agentType));
   }
 
   /**
@@ -1070,16 +998,16 @@
    * @param specialistId - The ID of the specialist to use, or null for default agent
    */
   async function handleCreateAgentWithSpecialist(specialistId: string | null) {
-    if (!safeWorkspace) return;
-    dispatch(createAgentWithSpecialistRequested(safeWorkspace.id, specialistId));
+    if (!$workspace) return;
+    dispatch(createAgentWithSpecialistRequested($workspace.id, specialistId));
   }
 
   /**
    * Create a new terminal (used by keyboard shortcuts and UI buttons)
    */
   async function handleCreateTerminal() {
-    if (!safeWorkspace) return;
-    dispatch(createTerminalRequested(safeWorkspace.id));
+    if (!$workspace) return;
+    dispatch(createTerminalRequested($workspace.id));
   }
 
   // ============================================================================
@@ -1133,23 +1061,19 @@
     },
     onFocusExplorer: () => {
       // Switch to files tab in TabbedSidebar
-      const transientUIStore = getTransientUIStore(workspaceId);
-      transientUIStore.setSidebarActiveTab('files');
+      dispatch(setSidebarActiveTab(workspaceId, 'files'));
     },
     onFocusGit: () => {
       // Switch to changes tab in TabbedSidebar
-      const transientUIStore = getTransientUIStore(workspaceId);
-      transientUIStore.setSidebarActiveTab('changes');
+      dispatch(setSidebarActiveTab(workspaceId, 'changes'));
     },
     onFocusNotes: () => {
       // Switch to notes tab in TabbedSidebar
-      const transientUIStore = getTransientUIStore(workspaceId);
-      transientUIStore.setSidebarActiveTab('notes');
+      dispatch(setSidebarActiveTab(workspaceId, 'notes'));
     },
     onFocusActivity: () => {
       // Switch to agents tab in TabbedSidebar (Activity tab was removed)
-      const transientUIStore = getTransientUIStore(workspaceId);
-      transientUIStore.setSidebarActiveTab('agents');
+      dispatch(setSidebarActiveTab(workspaceId, 'agents'));
     },
     onMaximizePanel: () => {
       // Toggle maximize: hide sidebar and dock for focus mode
@@ -1207,23 +1131,8 @@
     // Flush any pending undo-able agent deletions (permanently delete them now)
     await agentService.flushPendingDeletions(workspaceId);
 
-    // Clean up workspace state with timeout
-    // Note: dispose() has internal 500ms timeout for save queue, so we only need 1s here
-    if (workspaceState && !stateDisposing) {
-      stateDisposing = true;
-      try {
-        await Promise.race([
-          workspaceState.dispose(),
-          new Promise<void>((resolve) => setTimeout(resolve, 1000)),
-        ]);
-      } catch (error) {
-        // Silently ignore - cleanup timeout is expected during fast navigation
-        logger.debug('Workspace state cleanup timed out', { error });
-      } finally {
-        workspaceState = null;
-        stateDisposing = false;
-      }
-    }
+    // Clear workspace state reference
+    workspaceState = null;
 
     // Clear all local state
     dispatch(setAgents(workspaceId, []));
@@ -1232,7 +1141,7 @@
     // Dispose all managed resources (timers, intervals, etc.)
     cleanupManager.dispose();
 
-    // Note: fileTrackingStore handles its own cleanup internally
+    // Note: file tracking Redux state handles its own cleanup internally
 
     logger.debug('Workspace page cleaned up', { workspaceId });
   });
@@ -1247,7 +1156,7 @@
   {#if isCreatingWorkspace}
     <!-- fake header to match the layout -->
     <div class="flex items-center flex-none w-full"></div>
-  {:else if !safeWorkspace || isCreatingWorkspace}
+  {:else if !$workspace || isCreatingWorkspace}
     {#if isCreatingWorkspace || isInTransition}
       <!-- Blank panel while creating new workspace or during transition -->
       <div class="w-full h-full"></div>
@@ -1257,11 +1166,10 @@
     {/if}
   {:else if sidebarState.useSleekSidebar}
     <MultiSelectTabbedSidebar
-      workspace={safeWorkspace}
-      workspaceId={safeWorkspace?.id || workspaceId}
-      workspacePath={safeWorkspace?.worktreePath ||
-        safeWorkspace?.repositoryPath ||
-        safeWorkspace?.path ||
+      workspaceId={$workspace?.id || workspaceId}
+      workspacePath={$workspace?.worktreePath ||
+        $workspace?.repositoryPath ||
+        $workspace?.path ||
         ''}
       notes={sidebarState.sidebarNotes}
       notesLoading={sidebarState.sidebarNotesLoading}
@@ -1274,31 +1182,7 @@
       selectedFile={state?.mainPanel?.type === 'file' ? state?.mainPanel?.selectedFile || '' : ''}
       onOpenFile={handleFileSelect}
       onCreateFile={handleCreateFile}
-      onFileRenamed={(oldPath, newPath) => {
-        logger.info('onFileRenamed callback received in +page.svelte', {
-          oldPath,
-          newPath,
-          hasWorkspaceState: !!workspaceState,
-          hasHandleFileRenamed: typeof workspaceState?.handleFileRenamed === 'function',
-        });
-        try {
-          workspaceState?.handleFileRenamed(oldPath, newPath);
-          try {
-            const oldExt = getFileExtension(oldPath);
-            const newExt = getFileExtension(newPath);
-            track('Renamed File', {
-              workspace_id: safeWorkspace?.id || workspaceId,
-              old_extension: oldExt,
-              new_extension: newExt,
-              extension_changed: oldExt !== newExt,
-            });
-          } catch {
-            // Analytics should not break file renaming
-          }
-        } catch (error) {
-          logger.error('Error calling handleFileRenamed', error as Error);
-        }
-      }}
+      onFileRenamed={handleFileRenamed}
       unstagedChanges={sidebarState.sidebarUnstagedChanges}
       stagedChanges={sidebarState.sidebarStagedChanges}
       selectedChangeId={state?.mainPanel?.selectedChangeId}
@@ -1320,38 +1204,11 @@
       onAcceptChanges={sidebarState.handleAcceptChanges}
       isAcceptChangesOpen={state?.mainPanel?.type === 'accept-changes'}
       onOpenPR={sidebarState.handleOpenPR}
-      currentBranch={gitStore.branch || ''}
-      unpushedCount={gitStore.ahead}
-      isNewWorkspaceSession={$isNewlyCreatedWorkspaceStore &&
-        state?.mainPanel?.selectedNoteId === 'spec' &&
-        !fileTrackingStore.workingChanges.staged.length &&
-        !fileTrackingStore.workingChanges.unstaged.length &&
-        !gitStore.commits.length &&
-        !gitStore.status?.files.length}
-      pullRequests={safeWorkspace?.activePullRequest
-        ? [
-            {
-              number: safeWorkspace.activePullRequest.number,
-              title:
-                safeWorkspace.activePullRequest.title ||
-                `PR #${safeWorkspace.activePullRequest.number}`,
-              url: safeWorkspace.activePullRequest.url || safeWorkspace.prUrl || '',
-              htmlUrl: safeWorkspace.activePullRequest.url || safeWorkspace.prUrl || '',
-              status: (safeWorkspace.activePullRequest.status ||
-                safeWorkspace.prStatus ||
-                'open') as 'open' | 'merged' | 'closed' | 'draft',
-            },
-          ]
-        : []}
-      commits={gitStore.commits.slice(0, gitStore.ahead).map((c) => ({
-        hash: c.hash,
-        message: c.message,
-        author: c.author || '',
-        date: c.date || '',
-        filesChanged: c.files?.length || 0,
-        isPushed: false,
-        files: c.files?.map((f: string) => ({ path: f, additions: 0, deletions: 0 })) || [],
-      }))}
+      currentBranch={$gitBranch$ || ''}
+      unpushedCount={$gitAhead$ ?? 0}
+      isNewWorkspaceSession={$isNewWorkspaceSession$}
+      activePullRequest={$activePullRequest$}
+      commits={$sidebarCommits$}
       recentActivity={sidebarState.recentActivityEvents}
       onViewAllActivity={sidebarState.handleViewAllActivity}
       onOpenActivityEvent={sidebarState.handleOpenActivityEvent}
@@ -1360,7 +1217,7 @@
       }}
       onCreateAgentWithPrompt={handleCreateAgentWithPrompt}
       onOpenUrl={handleOpenUrl}
-      isChangesLoading={!fileTrackingStore.isInitialized || fileTrackingStore.loading}
+      isChangesLoading={!$ftIsInitialized$ || $ftLoading$}
       activeItemId={state?.drawer?.itemId}
       showOverview={state?.drawer?.type === 'overview'}
       drawerOpen={state?.drawer?.open}
@@ -1377,8 +1234,7 @@
     />
   {:else}
     <VSCodeResizablePanels
-      workspace={safeWorkspace}
-      workspaceId={safeWorkspace?.id || workspaceId}
+      workspaceId={$workspace?.id || workspaceId}
       selectedNoteId={state?.mainPanel?.type === 'notes'
         ? state?.mainPanel?.selectedNoteId || SPEC_NOTE_ID
         : null}
@@ -1393,12 +1249,12 @@
 
 <!-- Main Content Snippet -->
 {#snippet mainContent()}
-  {#if !safeWorkspace || isCreatingWorkspace}
+  {#if !$workspace || isCreatingWorkspace}
     <ContentSkeleton />
   {:else}
     <!-- Panel-based layout when using TabbedSidebar -->
     <PanelLayout
-      workspaceId={safeWorkspace?.id || workspaceId}
+      workspaceId={$workspace?.id || workspaceId}
       onCreateAgent={handleCreateAgent}
       onCreateNote={handleCreateNote}
       onOpenBrowser={handleOpenBrowser}
@@ -1408,12 +1264,16 @@
 
 <!-- Terminal Overlay Snippet -->
 {#snippet terminalOverlayContent()}
-  <QuakeTerminalOverlay workspaceId={safeWorkspace?.id || workspaceId} />
+  <QuakeTerminalOverlay workspaceId={WorkspaceId($workspace?.id || workspaceId)} />
 {/snippet}
 
 <!-- Modals Snippet -->
 {#snippet modalsContent()}
-  <WorkspaceModals workspace={safeWorkspace} showAugieSetupWizard={false} showPRCreator={false} />
+  <WorkspaceModals
+    workspace={$workspace ?? null}
+    showAugieSetupWizard={false}
+    showPRCreator={false}
+  />
   <InputDialog
     bind:open={createFileDialogOpen}
     title="Create new file"
@@ -1430,5 +1290,5 @@
   content={mainContent}
   terminalOverlay={terminalOverlayContent}
   modals={modalsContent}
-  sidebarSide={layoutSettings.sidebarSide}
+  sidebarSide={$sidebarSide$}
 />

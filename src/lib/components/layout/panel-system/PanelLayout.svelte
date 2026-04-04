@@ -10,7 +10,7 @@
   import {
     getPanelLayoutManager,
     type PanelTab,
-  } from '$features/layout/panel-layout-manager.svelte';
+  } from '$features/layout/panel-layout-adapter';
   import {
     createPanelKeyboardShortcuts,
     registerPanelKeyboardShortcuts,
@@ -21,25 +21,35 @@
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import { selectIsTerminalOverlayOpen } from '$lib/store/slices/terminals/terminals-selectors';
-  import { get } from 'svelte/store';
+  import { get, writable } from 'svelte/store';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import { createLogger } from '$lib/utils/client-logger';
   import { track } from '$lib/services/analytics';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { agentService } from '$features/agent/agent.service';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { layoutSettings } from '$features/layout/layout-settings.svelte';
-  import { selectIsCollapsed } from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { notesStateManager } from '$features/notes/notes.store.svelte';
+  import { agentService } from '$features/agent/agent-ipc-bridge';
+  import { selectIsCollapsed, selectSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { NoteId } from '$shared/types/branded-ids';
+  import { updateNoteTitle } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
   import { renameWithUndo } from '$lib/utils/reversible-actions';
-  import { sessionStore } from '$features/agent/browser';
+  import { updateSession as updateAgentSessionFields } from '$lib/store/slices/agent-session/agent-session-slice';
   import { invoke, listenSync } from '$lib/electron-bridge';
+  import { getReduxStore, dispatch } from '$lib/store/redux-dispatch-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
+  import {
+    selectPanelLayoutRoot,
+    selectPanels,
+    selectFocusedPanelId,
+    selectFocusedPanel,
+    selectActiveTab,
+    selectAllTabs,
+    selectPanelIds,
+  } from '$lib/store/slices/panel-layout/panel-layout-selectors';
 
   const logger = createLogger('PanelLayout');
   const isCollapsed = selectIsCollapsed();
+  const sidebarSide$ = selectSidebarSide();
 
   interface Props {
     workspaceId: string;
@@ -51,7 +61,20 @@
 
   let { workspaceId, onCreateAgent, onCreateNote, onOpenBrowser }: Props = $props();
 
-  // Get or create the panel layout manager for this workspace
+  // Reactive writable store that mirrors workspaceId so Redux selectors
+  // re-evaluate whenever the prop changes (called at component init time).
+  const workspaceIdStore = writable(workspaceId);
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+  });
+
+  // Reactive selector subscriptions for template rendering
+  const root$ = selectPanelLayoutRoot(workspaceIdStore);
+  const panels$ = selectPanels(workspaceIdStore);
+  const focusedPanelId$ = selectFocusedPanelId(workspaceIdStore);
+  const activeTab$ = selectActiveTab(workspaceIdStore);
+
+  // Get or create the panel layout manager for this workspace (action methods only)
   let layoutManager = $derived(getPanelLayoutManager(workspaceId));
 
   // Create keyboard shortcuts manager and register it globally
@@ -69,13 +92,14 @@
   // The main process uses this to route zoom shortcuts (Cmd+=/-/0) to the webview
   // instead of the main app when the browser panel is active.
   $effect(() => {
-    const isBrowser = layoutManager.focusedContent.type === 'browser';
-    invoke(IPC_CHANNELS.WINDOW.SET_BROWSER_FOCUSED, { browserFocused: isBrowser }).catch(() => {
+    const isBrowser = $activeTab$?.type === 'browser';
+    invoke(IPC_CHANNELS.WINDOW.SET_BROWSER_FOCUSED, { browserFocused: !!isBrowser }).catch(() => {
       // Silently ignore errors (e.g., if main process handler not ready)
     });
   });
 
   // Terminal list state
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let terminals = $state<
     Array<{
       id: string;
@@ -217,6 +241,7 @@
     layoutManager.closePanel(panelId);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function handleZoomToggle(_panelId: string) {
     keyboardShortcuts.executeAction('zoom-toggle');
   }
@@ -275,12 +300,12 @@
         oldName,
         newName,
         () => {
-          notesStateManager.updateNoteTitle(noteId, newName);
+          dispatch(updateNoteTitle(workspaceId, noteId, newName));
           // Update the tab title in the layout manager
           layoutManager.updateTabTitle(tab.id, newName);
         },
         () => {
-          notesStateManager.updateNoteTitle(noteId, oldName);
+          dispatch(updateNoteTitle(workspaceId, noteId, oldName));
           layoutManager.updateTabTitle(tab.id, oldName);
         },
       );
@@ -292,10 +317,10 @@
         oldName,
         newName,
         () => {
-          sessionStore.updateSessionForWorkspace(workspaceId, agentId, {
+          getReduxStore().dispatch(updateAgentSessionFields(agentId, {
             name: newName,
             nameExplicitlySet: true,
-          } as any);
+          } as any));
           layoutManager.updateTabTitle(tab.id, newName);
           // Save the session to persist the name change
           agentService.saveSession(agentId, workspaceId, true);
@@ -303,10 +328,10 @@
         () => {
           // Undo: restore old name with nameExplicitlySet so persistence allows the
           // disk write (without it, the preservation logic blocks the revert).
-          sessionStore.updateSessionForWorkspace(workspaceId, agentId, {
+          getReduxStore().dispatch(updateAgentSessionFields(agentId, {
             name: oldName,
             nameExplicitlySet: true,
-          } as any);
+          } as any));
           layoutManager.updateTabTitle(tab.id, oldName);
           agentService.saveSession(agentId, workspaceId, true);
         },
@@ -387,17 +412,15 @@
     if (isMod && e.shiftKey && (e.key === 't' || e.key === 'T')) {
       e.preventDefault();
       e.stopPropagation();
-      const reopened = layoutManager.reopenClosedTab();
-      if (reopened) {
-        logger.debug('Reopened last closed tab');
-      }
+      layoutManager.reopenClosedTab();
+      logger.debug('Reopened last closed tab');
       return;
     }
 
     // Mod+\ - Split horizontally
     if (isMod && e.key === '\\' && !e.shiftKey) {
       e.preventDefault();
-      const focusedId = layoutManager.focusedPanelId;
+      const focusedId = selectFocusedPanelId.select(getReduxStore().getState(), workspaceId);
       if (focusedId) {
         handleSplitPanel(focusedId, 'horizontal');
       }
@@ -407,7 +430,7 @@
     // Mod+Shift+\ - Split vertically
     if (isMod && e.key === '\\' && e.shiftKey) {
       e.preventDefault();
-      const focusedId = layoutManager.focusedPanelId;
+      const focusedId = selectFocusedPanelId.select(getReduxStore().getState(), workspaceId);
       if (focusedId) {
         handleSplitPanel(focusedId, 'vertical');
       }
@@ -460,7 +483,7 @@
       e.preventDefault();
       e.stopPropagation();
 
-      const panel = layoutManager.focusedPanel;
+      const panel = selectFocusedPanel.select(getReduxStore().getState(), workspaceId);
       logger.debug('Cmd+W pressed', {
         hasFocusedPanel: !!panel,
         activeTabId: panel?.activeTabId,
@@ -488,7 +511,7 @@
     // Cmd+PageDown - Next tab in focused panel
     // Cmd+PageUp - Previous tab in focused panel
     if (e.metaKey && !e.ctrlKey && (e.key === 'PageDown' || e.key === 'PageUp')) {
-      const panel = layoutManager.focusedPanel;
+      const panel = selectFocusedPanel.select(getReduxStore().getState(), workspaceId);
       if (panel && panel.tabs.length > 1) {
         e.preventDefault();
         const currentIndex = panel.tabs.findIndex((t) => t.id === panel.activeTabId);
@@ -532,11 +555,12 @@
       }
 
       // Handle panel cycling
-      const panelIds = layoutManager.getPanelIds();
+      const panelIds = selectPanelIds.select(getReduxStore().getState(), workspaceId);
       if (panelIds.length > 1) {
         e.preventDefault();
-        const currentIndex = layoutManager.focusedPanelId
-          ? panelIds.indexOf(layoutManager.focusedPanelId)
+        const currentFocusedId = selectFocusedPanelId.select(getReduxStore().getState(), workspaceId);
+        const currentIndex = currentFocusedId
+          ? panelIds.indexOf(currentFocusedId)
           : -1;
 
         // Determine direction: ] or PageDown = next, [ or PageUp = previous
@@ -558,7 +582,7 @@
 
     // Mod+1-9 - Switch to tab by index (only if tab exists)
     if (isMod && e.key >= '1' && e.key <= '9') {
-      const panel = layoutManager.focusedPanel;
+      const panel = selectFocusedPanel.select(getReduxStore().getState(), workspaceId);
       if (panel) {
         const tabIndex = parseInt(e.key) - 1;
         if (tabIndex < panel.tabs.length) {
@@ -608,8 +632,9 @@
         if (openInAdjacentPanel) {
           layoutManager.openTabInAdjacentOrSplit(tab, sourcePanelId);
           // Focus the new panel after opening in adjacent
-          if (layoutManager.focusedPanelId) {
-            dispatchFocusPanelContent(layoutManager.focusedPanelId);
+          const newFocusedId = selectFocusedPanelId.select(getReduxStore().getState(), workspaceId);
+          if (newFocusedId) {
+            dispatchFocusPanelContent(newFocusedId);
           }
         } else {
           layoutManager.openTab(tab);
@@ -649,8 +674,9 @@
         if (openInAdjacentPanel) {
           layoutManager.openTabInAdjacentOrSplit(tab, sourcePanelId);
           // Focus the new panel after opening in adjacent
-          if (layoutManager.focusedPanelId) {
-            dispatchFocusPanelContent(layoutManager.focusedPanelId);
+          const newFocusedId = selectFocusedPanelId.select(getReduxStore().getState(), workspaceId);
+          if (newFocusedId) {
+            dispatchFocusPanelContent(newFocusedId);
           }
         } else {
           layoutManager.openTab(tab);
@@ -777,8 +803,9 @@
             // Create a new agent session first, then open the tab
             const agentName = tab.newAgentName || tab.title || `Agent ${panelIndex + 1}`;
             try {
-              const workspace = workspaceStore.findById(
-                workspaceId as import('$shared/types').WorkspaceId,
+              const workspace = selectWorkspaceById.select(
+                getReduxStore().getState(),
+                workspaceId,
               );
               if (workspace) {
                 const newSession = await agentService.createSession(workspace, {
@@ -967,7 +994,8 @@
     function focusBrowserTab(tabId: string) {
       if (!tabId) return;
       logger.debug('Focusing browser tab request', { tabId });
-      for (const [panelId, panel] of Object.entries(layoutManager.layout.panels)) {
+      const currentPanels = selectPanels.select(getReduxStore().getState(), workspaceId);
+      for (const [panelId, panel] of Object.entries(currentPanels)) {
         const tab = panel.tabs.find((t) => t.id === tabId);
         if (tab) {
           logger.info('Focusing browser tab', { tabId, panelId });
@@ -999,7 +1027,7 @@
     // Listen for browser tab list requests from main process
     const unsubBrowserListTabs = listenSync('browser:list-tabs-request', () => {
       // Collect all browser tabs from the panel layout
-      const browserTabs = layoutManager.allOpenTabs
+      const browserTabs = selectAllTabs.select(getReduxStore().getState(), workspaceId)
         .filter((t) => t.type === 'browser')
         .map((t) => ({
           tabId: t.id,
@@ -1038,16 +1066,15 @@
   <div
     class="flex-1 min-h-0 overflow-hidden {$isCollapsed
       ? 'p-3'
-      : layoutSettings.sidebarSide === 'left'
+      : $sidebarSide$ === 'left'
         ? 'p-3 pl-0'
         : 'p-3 pr-0'}"
   >
-    {#if layoutManager.layout}
-      {@const currentFocusedPanelId = layoutManager.focusedPanelId}
+    {#if $root$}
       <PanelContainer
-        node={layoutManager.layout.root}
-        panels={layoutManager.layout.panels}
-        focusedPanelId={currentFocusedPanelId}
+        node={$root$}
+        panels={$panels$}
+        focusedPanelId={$focusedPanelId$}
         zoomedPanelId={keyboardShortcuts.zoomedPanelId}
         {workspaceId}
         onFocusPanel={handleFocusPanel}

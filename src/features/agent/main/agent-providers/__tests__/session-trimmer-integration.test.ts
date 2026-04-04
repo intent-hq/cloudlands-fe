@@ -10,12 +10,16 @@
  */
 
 import { describe, it, expect, afterEach, beforeAll } from 'vitest';
-import { spawn, type ChildProcess, execSync } from 'child_process';
+import { execFile, spawn, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as readline from 'readline';
+import { promisify } from 'util';
 import { trimSession } from '../session-trimmer';
+
+const execFileAsync = promisify(execFile);
+const TEST_MODEL_ID = 'code-review-local';
 
 // ---------------------------------------------------------------------------
 // Helper: AuggieProcess (reused from auggie-session-integration.test.ts)
@@ -109,6 +113,17 @@ async function initAndAuth(proc: AuggieProcess) {
   await proc.sendRequest('authenticate', { methodId: 'none' });
 }
 
+async function maybeSetTestModel(proc: AuggieProcess, sessionId: string | undefined, availableModels?: any[]) {
+  if (!sessionId) return;
+  if (!Array.isArray(availableModels)) return;
+  if (!availableModels.some((model) => model?.modelId === TEST_MODEL_ID)) return;
+
+  await proc.sendRequest('session/set_model', {
+    sessionId,
+    modelId: TEST_MODEL_ID,
+  });
+}
+
 async function initAuthAndNewSession(proc: AuggieProcess, workspaceRoot: string) {
   await initAndAuth(proc);
   const sessionRes = await proc.sendRequest('session/new', {
@@ -116,6 +131,11 @@ async function initAuthAndNewSession(proc: AuggieProcess, workspaceRoot: string)
     metadata: { workspaceId: 'test' },
     mcpServers: [],
   });
+  await maybeSetTestModel(
+    proc,
+    sessionRes?.result?.sessionId as string | undefined,
+    sessionRes?.result?.models?.availableModels,
+  );
   return sessionRes?.result?.sessionId as string;
 }
 
@@ -132,7 +152,8 @@ async function sendPrompt(proc: AuggieProcess, sessionId: string, text: string) 
 
 let auggiePath: string | null = null;
 try {
-  auggiePath = execSync('which auggie', { encoding: 'utf-8' }).trim();
+  const { stdout } = await execFileAsync('which', ['auggie'], { encoding: 'utf-8' });
+  auggiePath = stdout.trim() || null;
 } catch {
   auggiePath = null;
 }
@@ -141,7 +162,8 @@ try {
 let auggieVersion: string | null = null;
 if (auggiePath) {
   try {
-    auggieVersion = execSync(`${auggiePath} --version`, { encoding: 'utf-8' }).trim();
+    const { stdout } = await execFileAsync(auggiePath, ['--version'], { encoding: 'utf-8' });
+    auggieVersion = stdout.trim() || null;
   } catch {
     auggieVersion = null;
   }
@@ -278,6 +300,7 @@ describeOrSkip('session trimmer integration with auggie', { timeout: 120_000 }, 
       cwd: workspaceRoot,
       mcpServers: [],
     }, 30_000);
+    await maybeSetTestModel(proc2, trimmedId, loadRes?.result?.models?.availableModels);
     expect(loadRes.error).toBeUndefined();
     expect(loadRes.result).toBeDefined();
 
@@ -315,6 +338,7 @@ describeOrSkip('session trimmer integration with auggie', { timeout: 120_000 }, 
       cwd: workspaceRoot,
       mcpServers: [],
     }, 30_000);
+    await maybeSetTestModel(proc2, trimmedId, loadRes?.result?.models?.availableModels);
     expect(loadRes.error).toBeUndefined();
 
     const promptRes = await sendPrompt(proc2, trimmedId, 'Say just the word four');

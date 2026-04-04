@@ -6,7 +6,6 @@
    */
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { tick } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import Button from '$lib/components/ui/button/button.svelte';
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
@@ -79,7 +78,7 @@
     >
       <!-- Header -->
       <div class="px-1 pb-4 flex items-center justify-between shrink-0">
-        <h2 class="text-lg font-medium tracking-[-0.02em] text-foreground/90">New Workspace</h2>
+        <h2 class="text-lg font-medium tracking-[-0.02em] text-foreground">New Workspace</h2>
         <Button
           variant="ghost-light"
           size="icon-xs"

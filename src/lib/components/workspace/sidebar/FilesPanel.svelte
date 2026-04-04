@@ -4,9 +4,9 @@
   import { invoke, dialog } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
   import { toast } from 'svelte-sonner';
-  import { gitStore } from '$features/git/git.store.svelte';
   import { gitCache } from '$features/git/git-cache';
-  import type { WorkspaceId } from '$shared/types/branded-ids';
+  import { loadGitStatus } from '$lib/store/slices/git/git-slice';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import type { EnvironmentConfig } from '$shared/types';
 
   const logger = createLogger('FilesPanel');
@@ -327,7 +327,7 @@
       // Refresh git status to show new files in Changes panel
       if (workspaceId) {
         gitCache.invalidate(`git-status-${workspaceId}`);
-        gitStore.loadStatus(workspaceId as WorkspaceId, true);
+        getReduxStore().dispatch(loadGitStatus(workspaceId, true));
       }
     }
   }

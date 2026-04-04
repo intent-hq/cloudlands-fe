@@ -21,6 +21,7 @@
     setContext(STORE_CONTEXT, storeContext);
 
     return () => {
+      setContext(STORE_CONTEXT, null);
       for (const stop of stopHandlers) {
         stop();
       }

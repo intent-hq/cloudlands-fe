@@ -9,6 +9,7 @@ import {
   clearError,
   fetchEditors,
   fetchEditorsSuccess,
+  initialState,
   setLoading,
   type InstalledEditor,
 } from "../external-editors-slice";
@@ -62,10 +63,11 @@ describe("fetchEditorsSaga", () => {
 
   it("clears loading when detection returns neither data nor an error", async () => {
     await expectSaga(handleFetchEditors, fetchEditors(true))
+      .withState({ externalEditors: initialState })
       .provide([[matchers.call.fn(invoke), { success: false }]])
       .put(clearError())
       .put(setLoading(true))
       .put(setLoading(false))
-      .silentRun(0);
+      .silentRun(100);
   });
 });

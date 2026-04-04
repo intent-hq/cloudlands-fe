@@ -56,6 +56,7 @@ export class ExecutionManager extends EventEmitter {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async executeToolInternal(tool: Tool, input: any): Promise<ToolResult> {
     // Placeholder implementation
     return {
@@ -98,6 +99,7 @@ export class ExecutionManager extends EventEmitter {
 
   clearHistory(): void {
     // Only clear completed executions
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     for (const [id, execution] of this.executions) {
       if (!this.activeExecutions.has(id)) {
         this.executions.delete(id);

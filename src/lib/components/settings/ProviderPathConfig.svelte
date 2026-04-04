@@ -5,11 +5,9 @@
    * A compact folder icon button that opens a dropdown portal for configuring
    * a provider's CLI executable path. Designed for the Integrations > Providers section.
    */
-  import { createEventDispatcher } from 'svelte';
   import { invoke } from '$lib/electron-bridge';
   import { faFolder, faCheck } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { slide } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
@@ -46,7 +44,6 @@
 
   let dropdownOpen = $state(false);
   let inputValue = $state(configuredPath);
-  let isSaving = $state(false);
 
   // Sync input value when configuredPath changes
   $effect(() => {
@@ -69,7 +66,6 @@
   }
 
   async function savePath() {
-    isSaving = true;
     try {
       // For auggie, use the existing settings:set IPC
       // For other providers, we'll need per-provider path storage
@@ -81,8 +77,6 @@
     } catch (error) {
       logger.error(`[ProviderPathConfig] Failed to save ${providerId} path:`, error);
       toast.error('Failed to save path');
-    } finally {
-      isSaving = false;
     }
   }
 
@@ -100,7 +94,6 @@
   }
 
   // Determine the display path (configured > resolved > placeholder)
-  const displayPath = $derived(configuredPath || resolvedPath || '');
   const placeholderText = $derived(resolvedPath ? resolvedPath : `Path to ${cliCommand}`);
 </script>
 
@@ -116,7 +109,7 @@
     </button>
   {/snippet}
 
-  {#snippet content({ close }: { close: () => void })}
+  {#snippet content()}
     <div class="w-80 p-3 space-y-3 overflow-hidden">
       <!-- Header with helpful copy -->
       <div class="space-y-1">

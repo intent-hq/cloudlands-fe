@@ -1,20 +1,18 @@
 <script lang="ts">
   import { logger } from '$lib/utils/client-logger';
 
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount } from 'svelte';
   import NotesPanel from '../notes/NotesPanel.svelte';
   import CodeChangesPanel from '../file-tracking/CodeChangesPanel.svelte';
   import VSCodeFileExplorer from '../file-explorer/VSCodeFileExplorer.svelte';
   import VSCodeScrollablePanel from '../ui/VSCodeScrollablePanel.svelte';
   import ActivityLog from '$features/log/ActivityLog.svelte';
   import ErrorBoundary from '../ErrorBoundary.svelte';
-  import WorkspaceSidebarHeader from './WorkspaceSidebarHeader.svelte';
-  import { faTimeline } from '@fortawesome/free-solid-svg-icons';
   import { fly } from 'svelte/transition';
-  import { selectPanelVisibilityFlag } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectPanelVisibilityFlag } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
 
   interface Props {
-    workspace: any;
     workspaceId: string;
     selectedNoteId?: string | null;
     selectedFile?: string;
@@ -29,13 +27,14 @@
   }
 
   let {
-    workspace,
     workspaceId,
     selectedNoteId = null,
     selectedFile = '',
     loading = false,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     showCodeDiff,
     onOpenNote = () => {},
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onOpenFile = () => {},
     onOpenSource = () => {},
     onSelectAgent,
@@ -64,6 +63,8 @@
   let focusedDivider: string | null = $state(null);
   let dragStartY = $state(0);
   let dragStartHeights = $state<Record<string, number>>({});
+
+  const workspace = $derived(selectWorkspaceById(workspaceId));
 
   // Storage key for persistence
   const STORAGE_KEY = 'vscode-resizable-panels';
@@ -129,17 +130,7 @@
   });
 
   // Wrapper functions to handle type mismatches
-  function handleCodeChangeOpenFile(change: any) {
-    if (onOpenFile && change?.filePath) {
-      onOpenFile(change.filePath);
-    }
-  }
 
-  function handleShowDiff(change: any) {
-    if (showCodeDiff) {
-      showCodeDiff(change);
-    }
-  }
 
   function loadSavedState() {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -349,7 +340,6 @@
 
   // Calculate actual panel heights for rendering
   let calculatedHeights = $derived.by(() => {
-    const headerHeight = 28;
     const heights: Record<string, number> = {};
 
     panels.forEach((panel) => {
@@ -474,9 +464,9 @@
       >
         <div class="panel-wrapper">
           <VSCodeFileExplorer
-            workspacePath={workspace?.worktreePath || workspace?.repositoryPath || ''}
+            workspacePath={$workspace?.worktreePath || $workspace?.repositoryPath || ''}
             {workspaceId}
-            environmentConfig={workspace?.environmentConfig}
+            environmentConfig={$workspace?.environmentConfig}
             onFileSelect={handleFileSelect}
             {onSelectAgent}
             bind:selectedFile

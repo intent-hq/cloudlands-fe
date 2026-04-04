@@ -8,13 +8,18 @@
 
   import { onMount, onDestroy } from 'svelte';
   import type { TabTypeComponentProps } from './registry';
-  import { getPanelLayoutManager } from '../panel-layout-manager.svelte';
+  import { openTab, openTabInAdjacentOrSplit } from '$lib/store/slices/panel-layout/panel-layout-slice';
+  import { selectFocusedPanelId } from '$lib/store/slices/panel-layout/panel-layout-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
-  import { gitStore } from '$features/git/git.store.svelte';
+  import { selectFileTrackingChanges } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+  import { refreshRequested } from '$lib/store/slices/file-tracking/file-tracking-slice';
+  import { gitClient } from '$features/git/git.client';
+  import { gitCache } from '$features/git/git-cache';
+  import { loadGitStatus } from '$lib/store/slices/git/git-slice';
   import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
   import MonacoDiffViewer from '$lib/components/file-tracking/MonacoDiffViewer.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -35,6 +40,8 @@
   const logger = createLogger('DiffTabType');
 
   let { tab, workspaceId, isActive }: TabTypeComponentProps = $props();
+
+  const ftChanges$ = selectFileTrackingChanges(workspaceId);
 
   // Track recently saved files to prevent refresh key changes from causing re-renders
   // This prevents scroll jump when editing in the diff viewer
@@ -102,9 +109,9 @@
   }
 
   const headerContext = getPanelHeaderContext();
-  const layoutManager = $derived(getPanelLayoutManager(workspaceId));
-  const workspace = $derived(workspaceStore.findById(WorkspaceId(workspaceId)));
-  const repoPath = $derived(workspace?.worktreePath || workspace?.repositoryPath || undefined);
+
+  const workspace = selectWorkspaceById(workspaceId);
+  const repoPath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || undefined);
 
   // Compute absolute path for diff files
   const diffAbsolutePath = $derived(
@@ -129,7 +136,7 @@
   function findActiveChangeByPath(path: string | null): TrackedChange | null {
     if (!path) return null;
     return (
-      fileTrackingStore.changes.find(
+      $ftChanges$.find(
         (c) => matchesPath(c, path) && (c.stage === 'staged' || c.stage === 'unstaged'),
       ) ?? null
     );
@@ -149,7 +156,7 @@
   const computedRefreshKey = $derived.by((): number => {
     if (!tab.diffPath) return 0;
     const storeChange = findActiveChangeByPath(tab.diffPath);
-    const changesLength = fileTrackingStore.changes.length;
+    const changesLength = $ftChanges$.length;
     if (storeChange) {
       const stageNum =
         storeChange.stage === 'staged' ? 1 : storeChange.stage === 'unstaged' ? 2 : 3;
@@ -240,17 +247,19 @@
       filePath: tab.diffPath,
       workspaceId,
     };
+    const store = getReduxStore();
     if (openInAdjacentPanel) {
-      layoutManager.openTabInAdjacentOrSplit(tabData, sourcePanelId);
-      if (layoutManager.focusedPanelId) {
+      store.dispatch(openTabInAdjacentOrSplit(workspaceId, tabData, sourcePanelId));
+      const focusedId = selectFocusedPanelId.select(store.getState(), workspaceId);
+      if (focusedId) {
         window.dispatchEvent(
           new CustomEvent('panel:request-focus', {
-            detail: { panelId: layoutManager.focusedPanelId },
+            detail: { panelId: focusedId },
           }),
         );
       }
     } else {
-      layoutManager.openTab(tabData);
+      store.dispatch(openTab(workspaceId, tabData));
     }
   }
 
@@ -267,14 +276,15 @@
       toast.error('No workspace available');
       return;
     }
-    const result = await gitStore.stageHunk(WorkspaceId(workspaceId), filePath, hunkPatch);
+    const result = await gitClient.stageHunk(WorkspaceId(workspaceId), filePath, hunkPatch);
     if (result.ok) {
       toast.success('Hunk staged');
       // Track hunk staging event
       track('Staged Changes', { method: 'hunk' });
+      gitCache.invalidateWorkspace(workspaceId);
+      getReduxStore().dispatch(loadGitStatus(workspaceId, true));
       // Refresh file tracking to update the changes panel and diff viewer
-      // The diffRefreshKey is derived from fileTrackingStore.changes, so this will trigger a refresh
-      await fileTrackingStore.refresh();
+      getReduxStore().dispatch(refreshRequested(workspaceId));
     } else {
       toast.error(result.error || 'Failed to stage hunk');
     }
@@ -290,11 +300,13 @@
       toast.error('No workspace available');
       return;
     }
-    const result = await gitStore.unstageHunk(WorkspaceId(workspaceId), filePath, hunkPatch);
+    const result = await gitClient.unstageHunk(WorkspaceId(workspaceId), filePath, hunkPatch);
     if (result.ok) {
       toast.success('Hunk unstaged');
+      gitCache.invalidateWorkspace(workspaceId);
+      getReduxStore().dispatch(loadGitStatus(workspaceId, true));
       // Refresh file tracking to update the changes panel and diff viewer
-      await fileTrackingStore.refresh();
+      getReduxStore().dispatch(refreshRequested(workspaceId));
     } else {
       toast.error(result.error || 'Failed to unstage hunk');
     }

@@ -46,6 +46,24 @@ vi.mock('../../agent/main/agent-backend-handler.service', () => ({
   },
 }));
 
+
+// Mock Redux store bridge (services now dispatch domain events via mainDispatch)
+vi.mock('../../../store/main/redux-store-bridge', () => ({
+  mainDispatch: vi.fn((action: any) => action),
+  getMainStore: vi.fn(),
+  getMainState: vi.fn(),
+}));
+
+vi.mock('../../../store/main/slices/note-events/note-events-slice', () => ({
+  noteCreated: vi.fn((payload: any) => ({ type: 'note-events/noteCreated', payload })),
+  noteUpdated: vi.fn((payload: any) => ({ type: 'note-events/noteUpdated', payload })),
+  noteDeleted: vi.fn((payload: any) => ({ type: 'note-events/noteDeleted', payload })),
+}));
+
+vi.mock('../../../store/main/slices/workspace-events/workspace-events-slice', () => ({
+  emitWorkspaceEvent: vi.fn((payload: any) => ({ type: 'workspace-events/emitWorkspaceEvent', payload })),
+}));
+
 // Mock BrowserWindow
 vi.mock('electron', () => ({
   app: {
@@ -65,7 +83,7 @@ vi.mock('electron', () => ({
 
 import { NotesService } from '../../notes/main/notes.service';
 import { InMemoryNotesRepository } from '../../notes/main/notes.repository';
-import { WorkspaceId, NoteId, createAgentId } from '$shared/types/branded-ids';
+import { WorkspaceId, NoteId } from '$shared/types/branded-ids';
 
 describe('Task Management MCP Tools', () => {
   let notesService: NotesService;

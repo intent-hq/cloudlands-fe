@@ -4,8 +4,8 @@ export const selectShowDeleteWarning = createSelector((state) => {
   return state.workspaceOperations.showDeleteWarning;
 });
 
-export const selectPendingDeleteWorkspace = createSelector((state) => {
-  return state.workspaceOperations.pendingDeleteWorkspace;
+export const selectPendingDeleteWorkspaceId = createSelector((state) => {
+  return state.workspaceOperations.pendingDeleteWorkspaceId;
 });
 
 export const selectRunningAgentNamesForDelete = createSelector((state) => {

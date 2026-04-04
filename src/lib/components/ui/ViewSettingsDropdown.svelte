@@ -67,7 +67,7 @@
     </Button>
   {/snippet}
 
-  {#snippet content({ close }: { close: () => void })}
+  {#snippet content()}
   <div class="w-full text-xs text-subtle px-2 pt-2 pb-1">
     View options
   </div>

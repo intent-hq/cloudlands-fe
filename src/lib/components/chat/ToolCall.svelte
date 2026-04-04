@@ -15,8 +15,9 @@
   import { getPanelIdFromEvent } from '$lib/components/layout/panel-system/panel-context';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import McpIcon from '$lib/components/settings/mcp/McpIcon.svelte';
-  import { sessionStore } from '$features/agent/browser';
-  import { unifiedStateStore } from '$features/agent/services/unified-state-store';
+  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
 
   /** MCP sources that have brand icons in McpIcon */
@@ -81,9 +82,10 @@
   );
   const targetAgentName = $derived.by(() => {
     if (!isAgentMessage || !parsedResult?.toAgentId) return null;
-    const workspaceId = unifiedStateStore.currentWorkspace?.workspace?.id;
+    const state = getReduxStore().getState();
+    const workspaceId = selectActiveWorkspaceId.select(state);
     const session = workspaceId
-      ? sessionStore.getSessionForWorkspace(workspaceId, parsedResult.toAgentId)
+      ? selectAgentById.select(state, parsedResult.toAgentId)
       : undefined;
     if (session?.name && !isGenericAgentName(session.name)) {
       return session.name;

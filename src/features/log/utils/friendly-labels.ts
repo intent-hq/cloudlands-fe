@@ -96,10 +96,6 @@ function textRef(text: string): EntityRef {
   return { type: 'text', value: text, displayValue: text };
 }
 
-function blankRef(text: string): EntityRef {
-  return { type: 'blank', value: text, displayValue: text };
-}
-
 // Filter and return parts with proper typing
 function makeParts(
   ...items: (string | EntityRef | false | null | undefined)[]

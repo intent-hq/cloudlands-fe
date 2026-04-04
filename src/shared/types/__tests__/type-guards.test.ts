@@ -21,7 +21,6 @@ import {
 
 // Valid UUIDs for testing
 const VALID_UUID = '550e8400-e29b-41d4-a716-446655440000';
-const VALID_UUID_2 = '72a6342c-bd9b-4d9b-939e-9ed2af6da3ca';
 
 describe('type-guards', () => {
   describe('restore functions', () => {

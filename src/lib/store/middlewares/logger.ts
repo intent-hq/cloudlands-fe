@@ -83,6 +83,7 @@ function getLogLabelStyle(label: "prev state" | "action" | "next state" | "state
  * Logger middleware - logs dispatched actions and state changes.
  * Only active when debug flag is enabled in localStorage.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function createLoggerMiddleware(_webviewName?: string): Middleware {
   if (!hasLoggedWelcomeMessage) {
     hasLoggedWelcomeMessage = true;

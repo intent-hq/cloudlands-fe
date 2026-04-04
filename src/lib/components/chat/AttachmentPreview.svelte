@@ -34,6 +34,7 @@
     id,
     name,
     type = '',
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     size,
     file,
     imageData,
@@ -74,12 +75,6 @@
   });
 
   // Format file size
-  function formatSize(bytes?: number): string {
-    if (!bytes) return '';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
 
   const isImage = $derived(type.startsWith('image/') || !!imageMimeType?.startsWith('image/'));
 </script>

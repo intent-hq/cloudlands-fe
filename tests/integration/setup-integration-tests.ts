@@ -91,11 +91,11 @@ function setupIPCMocks() {
               return { success: true };
           }
         },
-        on: (channel: string, callback: Function) => {
+        on: (channel: string) => {
           console.log(`Mock IPC on: ${channel}`);
           return () => {}; // Return unsubscribe function
         },
-        off: (channel: string, callback: Function) => {
+        off: (channel: string) => {
           console.log(`Mock IPC off: ${channel}`);
         },
       },

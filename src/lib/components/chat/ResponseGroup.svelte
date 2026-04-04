@@ -40,7 +40,6 @@
   // - isExpanded: user wants full content (no cylinder)
   // - showCylinder: cylinder preview is visible (during/after streaming)
   let isExpanded = $state(isLast && !isStreaming);
-  let userToggled = $state(false);
   let showCylinder = $state(isLast && !isStreaming);
   let collapseTimer: ReturnType<typeof setTimeout> | null = null;
   let contentEl: HTMLElement | undefined = $state();
@@ -54,11 +53,12 @@
     if (currentlyStreaming) {
       showCylinder = true;
       prevStreaming = true;
-      if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
+      if (collapseTimer) {
+        clearTimeout(collapseTimer);
+        collapseTimer = null;
+      }
     } else if (prevStreaming && !currentlyStreaming) {
       prevStreaming = false;
-      // Reset userToggled so auto-collapse works even if user toggled during streaming
-      userToggled = false;
 
       if (isLast) {
         // Last group stays fully expanded after streaming ends
@@ -76,12 +76,17 @@
   });
 
   onDestroy(() => {
-    if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
+    if (collapseTimer) {
+      clearTimeout(collapseTimer);
+      collapseTimer = null;
+    }
   });
 
   function toggle() {
-    userToggled = true;
-    if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
+    if (collapseTimer) {
+      clearTimeout(collapseTimer);
+      collapseTimer = null;
+    }
 
     const el = contentEl;
     if (el) {
@@ -101,13 +106,13 @@
           el.animate(
             [
               { height: `${startHeight}px`, overflow: 'hidden' },
-              { height: `${endHeight}px`, overflow: 'hidden' }
+              { height: `${endHeight}px`, overflow: 'hidden' },
             ],
             {
               duration: 250,
               easing: 'cubic-bezier(0.33, 1, 0.68, 1)',
-              fill: 'none'
-            }
+              fill: 'none',
+            },
           );
         }
       });
@@ -162,7 +167,7 @@
           margin-bottom: ${t * marginBottom}px;
           opacity: ${Math.min(1, t * 2)};
         `;
-      }
+      },
     };
   }
 
@@ -189,7 +194,11 @@
     onclick={toggle}
     aria-expanded={isExpanded}
   >
-    <div class="flex items-center justify-center shrink-0 transition-opacity duration-300 {isStreaming ? 'opacity-70' : ''}">
+    <div
+      class="flex items-center justify-center shrink-0 transition-opacity duration-300 {isStreaming
+        ? 'opacity-70'
+        : ''}"
+    >
       <Fa icon={faRectangleList} size={12} class="text-ghost" />
     </div>
     <span class="font-semibold text-foreground shrink-0">{name}</span>

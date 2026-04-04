@@ -1,5 +1,4 @@
 import { call, put, takeLatest } from "typed-redux-saga";
-import { unifiedStateStore } from "$features/agent/services/unified-state-store";
 import { getLocalStorageJSON, removeLocalStorageItem, setLocalStorageJSON, setLocalStorageItem, } from "$lib/store/utils/safe-local-storage-saga";
 import { selectActiveProviderId } from "../../provider-settings/provider-settings-selectors";
 import { normalizeModelForProvider, normalizeProviderModels, } from "../model-selection-utils";
@@ -17,12 +16,6 @@ export function* handleSelectModel(action: ReturnType<typeof selectModel>) {
     yield* put(setSelectedModel({ providerId: activeProviderId, model: normalizedModel }));
     // Persist to localStorage
     yield* call(setLocalStorageItem, GLOBAL_MODEL_KEY, normalizedModel);
-    // Sync with unified state store
-    try {
-        unifiedStateStore.selectModel(normalizedModel);
-    }
-    catch (e) {
-    }
     // Remember this model for the current active provider
     const providerModels = normalizeProviderModels((yield* call(getLocalStorageJSON<Record<string, string>>, PROVIDER_MODELS_KEY)) ?? {});
     providerModels[activeProviderId] = normalizedModel;

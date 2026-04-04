@@ -325,6 +325,7 @@ const BROWSER_DOCS_TOPICS = Object.keys(BROWSER_DOCS);
  * TypeScript type definitions for action results.
  * This helps the LLM understand what data is returned.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const BROWSER_API_TYPES = `
 // Result types for browser actions
 

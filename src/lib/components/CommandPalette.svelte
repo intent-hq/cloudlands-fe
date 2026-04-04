@@ -24,10 +24,11 @@
     faGlobe,
   } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { browserStore } from '$features/browser/browser.store.svelte';
   import { createLogger } from '$lib/utils/client-logger';
-  import { dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
+  import { dispatch as reduxDispatch, getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectBrowserRecentUrls } from '$lib/store/slices/browser/browser-selectors';
+  import { initBrowserWorkspace } from '$lib/store/slices/browser/browser-slice';
+  import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
   import { createAgentRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { createTerminalRequested } from '$lib/store/slices/terminals/terminals-slice';
   import { createNoteRequested } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
@@ -41,21 +42,18 @@
     buildNoteBreadcrumbs,
     recordMRUItem,
     buildRecentItems,
-    getMRUEntries,
   } from '$lib/store/slices/command-palette/command-palette-utils';
   import {
     computeResults,
-    type PaletteCommand,
   } from '$lib/store/slices/command-palette/command-palette-results';
   import { Skeleton } from './ui/skeleton';
-  import { sessionStoreData } from '$features/agent/browser';
-  import { notesStore } from '$features/notes/notes.store.svelte';
-  import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
+  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import { selectCurrentChanges } from '$lib/store/slices/file-tracking/file-tracking-selectors';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { extractContentFromBlocks } from '$shared/types/agent-message.conversion';
-  import type { Note } from '$shared/types';
   import { track } from '$lib/services/analytics';
 
   const logger = createLogger('CommandPalette');
@@ -78,6 +76,8 @@
   }: Props = $props();
 
   let searchQuery = $state('');
+  const workspaceItems = selectWorkspaceItems();
+  const currentChanges$ = selectCurrentChanges();
   let selectedIndex = $state(0);
   let searchResults: any[] = $state([]);
   let inputRef: HTMLInputElement | undefined = $state(undefined);
@@ -151,15 +151,15 @@
 
     // Initialize browser store for this workspace (untracked to avoid triggering effects)
     untrack(() => {
-      browserStore.initialize(wsId);
+      reduxDispatch(initBrowserWorkspace(wsId));
     });
 
-    // Load agents from sessionStoreData
-    // Use untrack when updating state inside subscription to avoid triggering this effect
-    const unsubscribe = sessionStoreData.subscribe((state: any) => {
-      const sessions = state.sessions || [];
+    // Load agents from Redux store
+    // Use Redux subscribe to reactively update agents when store changes
+    function loadAgentsFromRedux() {
+      const sessions = selectAllWorkspaceAgents.select(getReduxStore().getState(), wsId);
       const newAgents = sessions
-        .filter((s: any) => s.workspaceId === wsId && !s.id?.startsWith('terminal-'))
+        .filter((s: any) => !s.id?.startsWith('terminal-'))
         .map((s: any) => {
           // Get the latest message content
           const messages = s.messages || [];
@@ -187,14 +187,15 @@
       untrack(() => {
         agents = newAgents;
       });
-    });
+    }
+    loadAgentsFromRedux();
+    const unsubscribe = getReduxStore().subscribe(loadAgentsFromRedux);
 
-    // Load notes from notesStore
+    // Load notes from Redux store
     // Use untrack to read stores and update state to avoid triggering this effect
     untrack(() => {
-      const notesMap = notesStore.notes;
-      const allNotes = Array.from(notesMap.values()).filter(
-        (n) => n.workspaceId === wsId && !n.isArchived,
+      const allNotes = selectAllNotes.select(getReduxStore().getState(), wsId).filter(
+        (n) => !n.isArchived,
       );
       notes = allNotes
         .map((n) => ({
@@ -209,8 +210,8 @@
         }))
         .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
-      // Load changes from fileTrackingStore
-      const trackedChanges = fileTrackingStore.changes;
+      // Load changes from Redux file tracking state
+      const trackedChanges = $currentChanges$;
       changes = trackedChanges.slice(0, 10).map((c) => ({
         id: c.id,
         type: 'change' as const,
@@ -246,8 +247,8 @@
         })
         .sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
 
-      // Load browser URLs from browserStore
-      const recentUrls = browserStore.recentUrls;
+      // Load browser URLs from Redux store
+      const recentUrls = selectBrowserRecentUrls.select(getReduxStore().getState(), wsId);
       browserUrls = recentUrls.map((url) => {
         // Extract domain from URL for display
         let domain = url.url;
@@ -337,6 +338,7 @@
               (b._score as number) - (a._score as number) ||
               (b._mru as number) - (a._mru as number),
           )
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           .map(({ _score, _mru, ...rest }: any) => rest)
           .slice(0, 8);
       } else {
@@ -398,7 +400,7 @@
             isLoadingFiles = false;
           });
         }
-      } catch (error) {
+      } catch {
         if (requestId === currentFileRequestId) {
           untrack(() => {
             isLoadingFiles = false;
@@ -419,8 +421,7 @@
   // computeResults is now imported from command-palette-results.
   // This wrapper bridges component state to the pure function's input interface.
   function buildResults(q: string, files: any[]) {
-    // Build workspace items from workspaceStore (still a Svelte store for now)
-    const wsItems = (workspaceStore.items || [])
+    const wsItems = ($workspaceItems || [])
       .filter((w: any) => w.id !== workspaceId)
       .sort((a: any, b: any) => {
         const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
@@ -1100,7 +1101,7 @@
 
           <!-- Loading skeletons for files -->
           {#if isLoadingFiles && workspaceId}
-            {#each Array(3) as _, i}
+            {#each [0, 1, 2] as i}
               <div class="w-full px-3 h-[32px] flex items-center gap-3">
                 <Skeleton class="w-4 h-4 rounded flex-none" />
                 <Skeleton class="h-4 rounded" style="width: {100 + i * 40}px;" />

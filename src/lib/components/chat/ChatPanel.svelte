@@ -35,21 +35,24 @@
    */
 
   import { onMount, onDestroy, untrack, tick } from 'svelte';
-  import {
-    ChatService,
-    getChatService,
-    type ChatState,
-  } from '$features/agent/services/chat.service';
-  import { hasChatServiceStateChanged, syncChatStateFromService } from './chat-panel-state-sync';
+  import { writable } from 'svelte/store';
+  import { getChatService, type ChatState } from '$features/agent/services/chat.service';
   import { WorkspaceRebindTracker } from './workspace-rebind-tracker';
-  import { agentService, type AgentMessage } from '$features/agent/agent.service';
-  import { sessionStore } from '$features/agent/browser';
+  import { agentService, type AgentMessage } from '$features/agent/agent-ipc-bridge';
   import { browser } from '$app/environment';
-  import { unifiedStateStore } from '$features/agent/services/unified-state-store';
-  import { getUnifiedWorkspaceState } from '$features/workspace/workspace-unified-state.svelte';
-  import { notesStore } from '$features/notes/notes.store.svelte';
-  import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
-  import { cn } from '$lib/utils';
+  import { setAgentStreaming } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import {
+    selectAgentSession,
+    selectAgentMessages,
+  } from '$lib/store/slices/agent-session/agent-session-selectors';
+  import {
+    addMessage as addAgentSessionMessage,
+    updateMessage as updateAgentSessionMessage,
+    updateSession as updateAgentSessionFields,
+  } from '$lib/store/slices/agent-session/agent-session-slice';
+  import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
+  import { selectAllTabs as selectPanelLayoutAllTabs } from '$lib/store/slices/panel-layout/panel-layout-selectors';
   import {
     setWorkspace as setMultiPanelWorkspace,
     updatePanels as updateMultiPanels,
@@ -65,6 +68,19 @@
   } from '$lib/store/slices/multi-panel-context/multi-panel-context-selectors';
   import { getDispatch } from '$lib/store/utils/utils';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { clearChatDraft, setChatDraft } from '$lib/store/slices/transient-ui/transient-ui-slice';
+  import {
+    sendMessage,
+    initializeChatRequested,
+    chatRebindStarted,
+    chatRebindEnded,
+    chatTrackedWorkspaceSet,
+    chatSendStarted,
+  } from '$lib/store/slices/chat-state/chat-state-slice';
+  import { selectChatStateOrDefault } from '$lib/store/slices/chat-state/chat-state-selectors';
+  import type { SendMessagePayload } from '$lib/store/slices/chat-state/chat-state-types';
+  import { selectChatDraft } from '$lib/store/slices/transient-ui/transient-ui-selectors';
+  import { selectWorkspaceNavigationMainPanel } from '$lib/store/slices/workspace-navigation/workspace-navigation-selectors';
 
   import {
     getTasksForAgent,
@@ -84,13 +100,7 @@
   import RegularAgentWelcome from './RegularAgentWelcome.svelte';
   import SuggestedPrompts from './SuggestedPrompts.svelte';
   import { groupMessagesByDate } from '$lib/utils/timeFormatting';
-  import {
-    followBottom,
-    scrollToBottom as scrollToBottomUtil,
-    captureScrollAnchor,
-    restoreScrollAnchor,
-    type ScrollAnchor,
-  } from '$lib/utils/smartScroll';
+  import { followBottom, scrollToBottom as scrollToBottomUtil } from '$lib/utils/smartScroll';
   import { createLogger } from '$lib/utils/client-logger';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import { toast } from 'svelte-sonner';
@@ -107,11 +117,11 @@
     faChevronDown,
   } from '@fortawesome/free-solid-svg-icons';
   import { fade, slide } from 'svelte/transition';
-  import { navigateToTask, navigateToSettings } from '$lib/utils/workspace-navigation';
+  import { navigateToTask } from '$lib/utils/workspace-navigation';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
-  import { NoteId, createMessageId } from '$shared/types/branded-ids';
+  import { createMessageId } from '$shared/types/branded-ids';
   import { v4 as uuidv4 } from 'uuid';
   import type { QueuedMessage } from '$shared/types';
   import { unifiedOrchestrator } from '$features/agent/services/consolidated-backend.service';
@@ -120,13 +130,14 @@
   import AgentSubscriptions from './AgentSubscriptions.svelte';
   import { parseSuggestedPrompts } from '$lib/utils/messageParser';
 
-  import { getTransientUIStore } from '$features/workspace/transient-ui-state.store.svelte';
-
   import LazyTurn from './LazyTurn.svelte';
   import InlinePermissionRequest from './InlinePermissionRequest.svelte';
   import { selectPermissionRequests } from '$lib/store/slices/permission/permission-selectors';
   import { selectIsAgentMonospace } from '$lib/store/slices/user-preferences/user-preferences-selectors';
-  import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
+  import {
+    markAgentAsViewed,
+    clearCurrentlyViewedAgent,
+  } from '$lib/store/slices/unread-tracking/unread-tracking-slice';
   import AuroraBackground from './AuroraBackground.svelte';
   import { invoke, listenSync } from '$lib/electron-bridge';
   import {
@@ -134,7 +145,6 @@
     selectEffectiveBehaviorPrompt,
     selectEffectiveModel,
   } from '$lib/store/slices/specialists/specialists-selectors';
-  import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
 
   import { getAgentProvider } from '$shared/types/agent-session';
   import { cleanErrorMessage } from '$shared/errors/messages';
@@ -144,7 +154,6 @@
   const logger = createLogger('ChatPanel');
 
   const multiPanelDispatch = getDispatch();
-  const activeProviderId = selectActiveProviderId();
   const isAgentMonospace = selectIsAgentMonospace();
 
   // Constants
@@ -189,7 +198,7 @@
   }
 
   interface Props {
-    workspace: Workspace | null;
+    workspace: Workspace;
     agentId: string;
     agentName?: string;
     agentModel?: string;
@@ -229,9 +238,11 @@
     agentModel = DEFAULT_AGENT_MODEL,
     isActive = true,
     isInitialWorkspaceAgent = false,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     isNewWorkspace = false,
     initialPrompt: initialPromptProp = null,
     draftPrompt = null,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onClose: _onClose, // Prefix with underscore to indicate intentionally unused
     onFocus,
     onChatUpdate,
@@ -246,34 +257,25 @@
   // Service instance — per-agent, permanently bound to this agent's ID
   const chatService = getChatService(agentId);
 
-  // Synchronously check if agent is actively streaming so first render shows "Thinking"
-  const _isAgentStreaming = workspace?.id
-    ? (unifiedStateStore.getWorkspace(workspace.id)?.agents.get(agentId)?.streaming?.active ??
-      false)
-    : false;
-
-  // Local state (real state from service, or base for sandbox mode)
-  let _chatStateInternal = $state<ChatState>({
-    session: null,
-    messages: [],
-    isStreaming: _isAgentStreaming,
-    isProcessing: _isAgentStreaming,
-    isInterrupting: false,
-    streamingContent: '',
-    error: null,
-    streamingStartTime: null,
-    lastAttemptedMessage: null,
-    lastChunkTime: null,
-    receivedFirstChunk: false,
-    isStalled: false,
-    modelUnavailable: null,
-    statusEvents: [],
+  // Writable store mirroring workspace.id so Redux selectors re-evaluate reactively
+  const workspaceIdStore = writable(workspace?.id ?? '');
+  $effect(() => {
+    workspaceIdStore.set(workspace?.id ?? '');
   });
 
-  // Effective chat state - uses sandbox data when in sandbox mode
+  // Reactive subscription to all panel-layout tabs — triggers availablePanelContexts recompute on tab changes
+  const allPanelLayoutTabs$ = selectPanelLayoutAllTabs(workspaceIdStore);
+
+  // Redux selectors for chat state — called at init time, reactive via Svelte store protocol
+  const _chatAgentState$ = selectChatStateOrDefault(agentId ?? '');
+  const _agentSession$ = selectAgentSession(agentId ?? '');
+  const _agentMessages$ = selectAgentMessages(agentId ?? '');
+
+  // Effective chat state - composes ChatAgentState + session/messages from agent-session slice
   let chatState = $derived.by((): ChatState => {
     if (sandboxMode) {
       return {
+        agentId: agentId ?? '',
         session: { id: 'sandbox-session' } as ChatState['session'],
         messages: sandboxMessages,
         isStreaming: sandboxIsStreaming,
@@ -288,9 +290,22 @@
         isStalled: false,
         modelUnavailable: null,
         statusEvents: [],
+        trackedWorkspaceId: null,
+        isRebinding: false,
+        lastMessageTime: 0,
+        recentSendKeys: [],
+        lastChunkReceivedAt: 0,
       };
     }
-    return _chatStateInternal;
+    const session = $_agentSession$ ?? null;
+    return {
+      ...$_chatAgentState$,
+      session,
+      messages: $_agentMessages$,
+      // isStreaming/isProcessing come from agent-session (single source of truth)
+      isStreaming: session?.isStreaming ?? false,
+      isProcessing: session?.isProcessing ?? false,
+    };
   });
 
   // Track if there's a pending permission request for this agent
@@ -314,7 +329,6 @@
   let shouldFollowBottom = $state(true);
   let isScrollUnlocked = $state(false); // User manually unlocked auto-scroll while at bottom
   let distanceFromBottom = $state(0); // Track actual scroll distance from bottom
-  let unsubscribe: (() => void) | null = null;
 
   // Track which message is currently "sticky" (scrolled past its natural position)
   let stickyMessageId = $state<string | null>(null);
@@ -620,27 +634,6 @@
     }
   });
 
-  // Get transient UI store lazily to avoid creating $state during effect flush
-  // NOTE: We cache the store reference at initialization time (not in an effect)
-  // because getTransientUIStore creates a new store with $state if one doesn't exist,
-  // and creating $state during effect evaluation triggers effect_update_depth_exceeded.
-  // The cache is populated ONCE when the component initializes, before any effects run.
-  let cachedTransientStore: ReturnType<typeof getTransientUIStore> | null = null;
-  function getTransientStore() {
-    if (!workspace) return null;
-    // Return cached store if we already have it for this workspace
-    if (cachedTransientStore) return cachedTransientStore;
-    // Create/get the store outside of any effect context
-    // This runs during component initialization, not during effect evaluation
-    cachedTransientStore = getTransientUIStore(workspace.id);
-    return cachedTransientStore;
-  }
-  // Pre-initialize the cache immediately at component creation time (before effects run)
-  // This ensures the store exists before any effects try to access it
-  if (workspace) {
-    cachedTransientStore = getTransientUIStore(workspace.id);
-  }
-
   /**
    * Convert a File object to base64 data
    * Used for serializing context items before sending through IPC
@@ -696,6 +689,7 @@
 
           const { data, mimeType } = await fileToBase64(item.file);
           // Create a new object without the File property, but with base64 data
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { file: _file, ...rest } = item;
 
           logger.info('File converted successfully', {
@@ -748,10 +742,9 @@
   let draftRestored = $state(false);
   $effect(() => {
     if (draftRestored || !workspace || !agentId) return;
-    // Access the store lazily within untrack to avoid reactive dependencies
-    const transientStore = untrack(() => getTransientStore());
-    if (!transientStore) return;
-    const savedDraft = untrack(() => transientStore.getChatDraft(agentId));
+    const savedDraft = untrack(() =>
+      selectChatDraft.select(getReduxStore().getState(), workspace.id, agentId),
+    );
     if (savedDraft) {
       // Use untrack to avoid creating a dependency on inputValue
       const currentInputValue = untrack(() => inputValue);
@@ -776,11 +769,7 @@
     // Only save if it actually changed from what we last saved
     if (currentValue !== previousSavedDraft) {
       previousSavedDraft = currentValue;
-      // Access store lazily using untrack to avoid creating $state during effect flush
-      const transientStore = untrack(() => getTransientStore());
-      if (transientStore) {
-        transientStore.setChatDraft(agentId, currentValue);
-      }
+      multiPanelDispatch(setChatDraft(workspace.id, agentId, currentValue));
     }
   });
 
@@ -800,30 +789,27 @@
     kind?: 'file' | 'note' | 'spec' | 'diff';
   };
 
+  const mainPanel = $derived(selectWorkspaceNavigationMainPanel(workspace.id));
   let currentMainPanelContext = $derived.by((): MainPanelContext | null => {
     if (!workspace?.id) return null;
 
-    const workspaceState = getUnifiedWorkspaceState(workspace.id);
-    if (!workspaceState) return null;
-
-    const mainPanel = workspaceState.state.mainPanel;
-    if (!mainPanel?.type || mainPanel.type === 'empty' || mainPanel.type === 'welcome') {
+    if (!$mainPanel?.type || $mainPanel.type === 'empty') {
       return null;
     }
 
     // Handle file type
-    if (mainPanel.type === 'file' && mainPanel.selectedFile) {
+    if ($mainPanel.type === 'file' && $mainPanel.selectedFile) {
       return {
         type: 'file',
-        path: mainPanel.selectedFile,
+        path: $mainPanel.selectedFile,
         kind: 'file',
       };
     }
 
     // Handle notes type
-    if (mainPanel.type === 'notes' && mainPanel.selectedNoteId) {
-      const noteId = mainPanel.selectedNoteId;
-      const note = notesStore.findById(NoteId(noteId));
+    if ($mainPanel.type === 'notes' && $mainPanel.selectedNoteId) {
+      const noteId = $mainPanel.selectedNoteId;
+      const note = selectNoteById.select(getReduxStore().getState(), workspace.id, noteId);
       const isSpec = noteId === 'spec';
 
       return {
@@ -835,13 +821,10 @@
     }
 
     // Handle diff types
-    if (
-      (mainPanel.type === 'diff' || mainPanel.type === 'file-tracking-diff') &&
-      mainPanel.selectedFile
-    ) {
+    if ($mainPanel.type === 'file-tracking-diff' && $mainPanel.selectedFile) {
       return {
         type: 'file',
-        path: mainPanel.selectedFile,
+        path: $mainPanel.selectedFile,
         kind: 'diff',
       };
     }
@@ -853,7 +836,10 @@
   const panelLayoutManager = $derived(workspace?.id ? getPanelLayoutManager(workspace.id) : null);
 
   // Derive available panel contexts from all open tabs (excluding agent tabs and this agent's tab)
+  // Reading $allPanelLayoutTabs$ creates a reactive dependency on Redux panel-layout state,
+  // so this derived recomputes whenever tabs are added, removed, or reordered.
   let availablePanelContexts = $derived.by((): PanelContextItem[] => {
+    void $allPanelLayoutTabs$; // reactive dependency on panel layout tab changes
     if (!panelLayoutManager || !workspace?.id) return [];
 
     const panels: PanelContextItem[] = [];
@@ -979,8 +965,7 @@
 
   // Sync selection context from editors to multi-panel context Redux store
   // Listen for the custom 'editor:selection-change' event dispatched by CodeEditor and TipTap
-  // This is used instead of watching unifiedStateStore.selectionContext because that store
-  // uses regular class properties, not Svelte 5 runes, so $effect can't track it
+  // Editors dispatch 'editor:selection-change' custom events which we sync to Redux
   $effect(() => {
     const handleSelectionChange = (
       event: CustomEvent<{ text: string; file?: string; language?: string; source: string }>,
@@ -1042,7 +1027,7 @@
             if (config.agentId === agentId && config.contextReferences?.length > 0) {
               return { prompt: initialPromptProp, contextReferences: config.contextReferences };
             }
-          } catch (err) {
+          } catch {
             // Ignore parse errors
           }
         }
@@ -1104,12 +1089,6 @@
     return getAgentProvider(chatState.session);
   });
 
-  // Flag to preserve streaming state when message was already sent by workspace initializer.
-  // This prevents the ChatService store subscription from overwriting our local streaming state
-  // before the actual streaming data arrives from the backend.
-  let preserveStreamingState = $state(false);
-  let preserveStreamingStateTimeout: ReturnType<typeof setTimeout> | null = null;
-
   // Create a synthetic message object for the pending prompt to use with ChatMessage component
   // Include contextReferences in metadata so they display as pills
   let pendingMessage = $derived(
@@ -1124,7 +1103,7 @@
           metadata: pendingInitialData.contextReferences?.length
             ? { contextReferences: pendingInitialData.contextReferences }
             : undefined,
-        } as import('$features/agent/agent.service').AgentMessage)
+        } as import('$features/agent/agent-ipc-bridge').AgentMessage)
       : null,
   );
 
@@ -1147,14 +1126,26 @@
       const start = performance.now();
 
       waitForSessionUnsub?.();
-      waitForSessionUnsub = chatService.getStore().subscribe((state: ChatState) => {
-        const ready = !!state.session;
+      const store = getReduxStore();
+      // Check agent-session slice for session readiness
+      let prevSession = selectAgentSession.select(store.getState(), agentId ?? '');
+      const checkReady = (session: typeof prevSession) => {
+        const ready = !!session;
         const expired = performance.now() - start >= timeoutMs;
 
         if (ready || expired) {
           waitForSessionUnsub?.();
           waitForSessionUnsub = null;
           resolve(ready);
+        }
+      };
+      // Check initial state immediately
+      checkReady(prevSession);
+      waitForSessionUnsub = store.subscribe(() => {
+        const nextSession = selectAgentSession.select(store.getState(), agentId ?? '');
+        if (nextSession !== prevSession) {
+          prevSession = nextSession;
+          checkReady(nextSession);
         }
       });
     });
@@ -1413,6 +1404,7 @@
   });
 
   // Get the current specialist ID from the session metadata
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const currentSpecialistId = $derived.by(() => {
     const session = chatState.session;
     if (!session) return null;
@@ -1520,83 +1512,28 @@
       return;
     }
 
-    // Initialize the per-agent ChatService to load messages and set up streaming handlers.
-    // Each ChatPanel owns its own ChatService instance (via getChatService(agentId)),
-    // so there are no singleton race conditions — no need for session-mismatch guards.
+    // Dispatch initializeChatRequested to the saga — it handles session lookup,
+    // disk restore, retry with backoff, message loading, and streaming setup.
+    // The saga uses takeLatest to cancel stale init calls automatically.
     if (workspace && agentId) {
-      // Record the workspace ID BEFORE the async initializeChat call so the reactive
-      // workspace-rebind $effect can detect a change that arrives while we are awaiting.
-      const mountWorkspaceId = rebindTracker.recordMount(workspace.id);
+      // Mirror to Redux so the send-message saga can detect workspace changes
+      multiPanelDispatch(chatTrackedWorkspaceSet(agentId, workspace.id));
 
-      try {
-        await chatService.initializeChat(workspace, agentId, {
-          agentName,
-          agentModel,
-          isInitialWorkspaceAgent,
-        });
+      multiPanelDispatch(
+        initializeChatRequested(agentId, {
+          wsId: workspace.id,
+          options: {
+            agentName,
+            agentModel,
+            isInitialWorkspaceAgent,
+          },
+        }),
+      );
 
-        // If the workspace changed while we were awaiting, skip applying stale state —
-        // the reactive $effect will (or already did) re-initialize with the new workspace.
-        if (rebindTracker.wasWorkspaceChangedDuringMount(mountWorkspaceId)) {
-          logger.info('Workspace changed during initial mount initializeChat, skipping stale state', {
-            agentId,
-            mountWorkspaceId,
-            currentWorkspaceId: rebindTracker.trackedWorkspaceId,
-          });
-        } else {
-          // Reconcile streaming state: if the backend is already streaming for this agent
-          // but ChatPanel just mounted, ensure the stream handler is set up and state reflects it.
-          const wasReconciled = chatService.reconcileStreamingState(agentId);
-          if (wasReconciled) {
-            logger.info('Streaming state reconciled after mount', { agentId });
-          }
-
-          logger.info('Per-agent ChatService initialized on mount', { agentId });
-
-          // Use the per-agent instance's state directly — it's always for this agent
-          const initialState = chatService.getState();
-          if (initialState.session) {
-            _chatStateInternal = syncChatStateFromService(_chatStateInternal, initialState);
-
-            logger.info('Restored agent state from per-agent ChatService on mount', {
-              agentId,
-              messageCount: initialState.messages?.length || 0,
-              isStreaming: initialState.isStreaming,
-              hasStreamingContent: (initialState.streamingContent?.length || 0) > 0,
-            });
-          }
-        }
-      } catch (error) {
-        logger.error('Failed to initialize per-agent ChatService', error);
-
-        // Fallback: restore from agentService if ChatService init fails
-        const currentAgent = agentService.getSession(agentId);
-        if (currentAgent) {
-          let isCurrentlyStreaming = currentAgent.isStreaming || false;
-
-          if (currentAgent.workspaceId) {
-            const workspaceState = unifiedStateStore.getWorkspace(currentAgent.workspaceId);
-            const agentFromStore = workspaceState?.agents.get(agentId);
-            if (agentFromStore?.streaming?.active) {
-              isCurrentlyStreaming = true;
-            }
-          }
-
-          _chatStateInternal = {
-            ..._chatStateInternal,
-            messages: currentAgent.messages || [],
-            isStreaming: isCurrentlyStreaming,
-            isProcessing: currentAgent.isProcessing || isCurrentlyStreaming,
-            session: currentAgent,
-          };
-
-          logger.info('Restored agent state from agentService (fallback) on mount', {
-            agentId,
-            messageCount: currentAgent.messages?.length || 0,
-            isStreaming: isCurrentlyStreaming,
-          });
-        }
-      }
+      logger.info('Dispatched initializeChatRequested on mount', {
+        agentId,
+        workspaceId: workspace.id,
+      });
     }
 
     // Set up queue listener using listenSync for proper cleanup without race conditions
@@ -1611,149 +1548,16 @@
     // Note: Initial queue fetch is now handled by the reactive $effect above
     // This ensures the queue is refetched when switching between agents
 
-    let storeSubscriptionCallCount = 0;
-
-    // Subscribe to chat service state - this manages the streaming state
-    unsubscribe = chatService.getStore().subscribe((state) => {
-      storeSubscriptionCallCount++;
-      // PERF: 100+ calls is expected during streaming (throttled at ~60fps)
-      // Only log at debug level for milestones, warn only at very high counts
-      if (storeSubscriptionCallCount === 1000) {
-        logger.debug('[ChatPanel] Store subscription milestone: 1000 calls', {
-          agentId,
-          isStreaming: state.isStreaming,
-        });
-      } else if (storeSubscriptionCallCount === 5000) {
-        logger.warn('[ChatPanel] Store subscription called 5000 times - unusually high', {
-          agentId,
-          sessionId: state.session?.id,
-          messageCount: state.messages?.length,
-          isStreaming: state.isStreaming,
-        });
-      }
-      // CRITICAL FIX: Use untrack() to read _chatStateInternal without creating reactive dependencies.
-      // Previously used $state.snapshot() which calls structuredClone() internally.
-      // structuredClone() can cause "maximum call stack exceeded" errors with large message arrays
-      // containing deeply nested content blocks (tool calls, etc.) during long chat sessions.
-      // untrack() reads the current value without cloning, avoiding stack overflow.
-      const currentChatState = untrack(() => _chatStateInternal);
-
-      // Check if anything actually changed to avoid unnecessary updates
-      // that could trigger effect loops
-      const currentMessages = currentChatState.messages;
-
-      if (!hasChatServiceStateChanged(currentChatState, state)) {
-        return; // No changes, skip update
-      }
-
-      const streamingChanged =
-        state.isStreaming !== currentChatState.isStreaming ||
-        state.isProcessing !== currentChatState.isProcessing ||
-        state.streamingContent !== currentChatState.streamingContent;
-
-      // Per-agent ChatService: state is always for this agent, no session-mismatch guard needed.
-      // Monotonicity guards (message count / contentBlocks count) are enforced
-      // at the source in ChatService.safeStateUpdate(), so ChatPanel no longer
-      // needs to reject updates here.
-
-      // Hydration guard: don't let an empty store emission overwrite messages
-      // already populated from agentService fallback during mount.
-      // This is narrower than the old guard — it only blocks empty→non-empty overwrites,
-      // so it can't cause permanent blocking during streaming.
-      if (state.messages.length === 0 && currentMessages.length > 0 && !state.isStreaming) {
-        return;
-      }
-
-      // Only log actual state transitions (not same-value updates) at debug level
-      if (streamingChanged && state.isStreaming !== currentChatState.isStreaming) {
-        logger.debug('[ChatPanel] Streaming state changed', {
-          agentId,
-          isStreaming: state.isStreaming,
-        });
-      }
-
-      // SCROLL FIX: Capture scroll anchor before state update (only for non-streaming)
-      // During streaming, we want to follow the bottom naturally
-      let scrollAnchorChat: ScrollAnchor | null = null;
-      if (scrollContainer && !shouldFollowBottom && !state.isStreaming) {
-        scrollAnchorChat = captureScrollAnchor(scrollContainer);
-      }
-
-      // DEBUG: Log the state update for duplicate flash diagnosis
-      logger.debug('[ChatPanel] DEBUG: chatService subscription updating state', {
-        agentId,
-        source: 'chatService',
-        timestamp: Date.now(),
-        prevMessageCount: currentMessages.length,
-        newMessageCount: state.messages.length,
-        isStreaming: state.isStreaming,
-        isProcessing: state.isProcessing,
-        lastMessageId: state.messages[state.messages.length - 1]?.id,
-      });
-
-      // PRESERVE STREAMING STATE FIX: If preserveStreamingState is true, we've set isStreaming=true
-      // because the message was already sent by workspace initializer. Don't overwrite this until
-      // actual streaming data arrives.
-      let effectiveIsStreaming = state.isStreaming;
-      let effectiveIsProcessing = state.isProcessing;
-
-      if (preserveStreamingState) {
-        // Keep streaming state true until actual streaming data arrives
-        if (state.isStreaming || state.messages.length > 0) {
-          // Actual streaming data has arrived, clear the preserve flag
-          preserveStreamingState = false;
-        } else {
-          // Preserve the streaming state we set earlier
-          effectiveIsStreaming = currentChatState.isStreaming;
-          effectiveIsProcessing = currentChatState.isProcessing;
-        }
-      }
-
-      // Update chat state with new values from service
-      _chatStateInternal = syncChatStateFromService(currentChatState, state, {
-        isStreaming: effectiveIsStreaming,
-        isProcessing: effectiveIsProcessing,
-        preserveTransientState: preserveStreamingState,
-      });
-
-      // SCROLL FIX: Restore scroll anchor after DOM settles
-      if (scrollAnchorChat && scrollContainer) {
-        requestAnimationFrame(() => {
-          if (scrollContainer && scrollAnchorChat) {
-            restoreScrollAnchor(scrollContainer, scrollAnchorChat);
-          }
-        });
-      }
-
-      // Note: Auto-scroll is handled by the followBottom action via ResizeObserver
-      // The action automatically scrolls when content size changes (if following is enabled)
-
-      // Notify parent of updates
-      if (typeof onChatUpdate === 'function' && state.messages.length > 0) {
-        const lastUserMessage = [...state.messages].reverse().find((m) => m.role === 'user');
-        const lastAgentMessage = [...state.messages].reverse().find((m) => m.role === 'assistant');
-
-        onChatUpdate({
-          lastUserMessage: lastUserMessage ? extractAllContent(lastUserMessage) : undefined,
-          lastAgentResponse: lastAgentMessage ? extractAllContent(lastAgentMessage) : undefined,
-          isProcessing: state.isProcessing,
-          messageCount: state.messages.length,
-        });
-      }
-    });
-
-    // Per-agent ChatService: The chatService.getStore().subscribe() above is the single
-    // source of truth. No dual subscription to subscribeToAgent() is needed — the per-agent
-    // ChatService instance handles all streaming and message state for this agent.
+    // Chat state is now fully reactive via the selectChatStateOrDefault selector.
+    // No manual Redux store subscription needed — the selector provides always-current state.
 
     // Initialize chat session (skip if already done above)
     if (workspace && agentId) {
-      // rebindTracker.recordMount() is already called above before the initializeChat await
+      // rebindTracker.recordMount() is already called above before dispatch
 
       (async () => {
         try {
-          // We've already initialized above, so just check for pending messages
-          // await chatService.initializeChat is already called above
+          // We've already dispatched initializeChatRequested above, so just check for pending messages
 
           // Check for pending initial message from workspace creation
           if (workspace && agentId && chatState.messages.length === 0) {
@@ -1785,32 +1589,9 @@
                     });
 
                     // IMPORTANT: Since the message was already sent, streaming should be in progress.
-                    // Set local streaming state to true so the StreamingStatus indicator shows immediately.
-                    // Also set preserveStreamingState flag to prevent the ChatService store subscription
-                    // from overwriting this state before actual streaming data arrives.
-                    preserveStreamingState = true;
-
-                    // Safety timeout: Clear the preserve flag after 10 seconds if streaming never starts.
-                    // This prevents the UI from being stuck in streaming state forever if something goes wrong.
-                    if (preserveStreamingStateTimeout) {
-                      clearTimeout(preserveStreamingStateTimeout);
-                    }
-                    preserveStreamingStateTimeout = setTimeout(() => {
-                      if (preserveStreamingState) {
-                        logger.warn(
-                          'preserveStreamingState timeout - streaming may have failed to start',
-                          { agentId },
-                        );
-                        preserveStreamingState = false;
-                      }
-                    }, 10000);
-
-                    _chatStateInternal = {
-                      ..._chatStateInternal,
-                      isStreaming: true,
-                      isProcessing: true,
-                      streamingStartTime: Date.now(),
-                    };
+                    // Dispatch chatSendStarted to set streaming state in Redux immediately
+                    // so the StreamingStatus indicator shows right away.
+                    getReduxStore().dispatch(chatSendStarted(agentId));
 
                     // Clear the prompt, images, and context refs from config now that we've displayed them
                     config.prompt = null;
@@ -1871,8 +1652,8 @@
 
   // WORKSPACE REBIND FIX: Reactively re-initialize the ChatService when the workspace
   // changes underneath an already-mounted ChatPanel. Without this, the panel stays stuck
-  // on the pre-send conversation snapshot because initializeChat only runs on mount and
-  // inside handleSendMessage. During workspace restore/rebind the workspace prop changes
+  // on the pre-send conversation snapshot because initializeChatRequested only runs on mount and
+  // during workspace rebind. During workspace restore/rebind the workspace prop changes
   // but the component does not remount (AgentTabType keys by agentId only).
   $effect(() => {
     const currentWorkspaceId = workspace?.id;
@@ -1890,67 +1671,32 @@
 
     // Save previous workspace ID so we can revert on failure.
     // Update tracking variable (untracked to avoid re-triggering this effect).
-    const previousWorkspaceId = untrack(() => rebindTracker.trackedWorkspaceId);
     untrack(() => {
       rebindTracker.recordRebind(currentWorkspaceId);
+      // Mirror to Redux so the send-message saga can read rebind state
+      multiPanelDispatch(chatTrackedWorkspaceSet(agentId, currentWorkspaceId));
     });
 
-    // Re-initialize the ChatService with the new workspace so the panel picks up
-    // the current session state (messages, streaming progress, etc.)
-    //
-    // STALE-RESULT GUARD: Capture the workspace ID at call time so we can detect
-    // if another rebind happened while this async init was in flight. Without this,
-    // a slower older init can resolve last and overwrite the store with stale data.
-    const ws = workspace; // capture for async closure
-    const rebindWorkspaceId = currentWorkspaceId;
-    // Mark rebind as in-flight so the send path can detect and wait for it.
-    // Capture the generation so only the latest rebind's endRebind clears the flag.
+    // Re-initialize via saga — takeLatest automatically cancels any in-flight older init,
+    // replacing the stale-result guard that used to be handled manually.
     const rebindGeneration = untrack(() => rebindTracker.startRebind());
-    (async () => {
-      try {
-        await chatService.initializeChat(ws!, agentId, {
+    multiPanelDispatch(chatRebindStarted(agentId));
+
+    multiPanelDispatch(
+      initializeChatRequested(agentId, {
+        wsId: currentWorkspaceId,
+        options: {
           agentName,
           agentModel,
           isInitialWorkspaceAgent,
-        });
+        },
+      }),
+    );
 
-        // Check if workspace changed again while we were awaiting
-        if (rebindTracker.hasWorkspaceChanged(rebindWorkspaceId)) {
-          logger.info('[ChatPanel] Workspace changed during rebind initializeChat, discarding stale result', {
-            agentId,
-            rebindWorkspaceId,
-            currentWorkspaceId: rebindTracker.trackedWorkspaceId,
-          });
-          return;
-        }
-
-        logger.info('[ChatPanel] ChatService re-initialized after workspace change', {
-          agentId,
-          workspaceId: currentWorkspaceId,
-        });
-      } catch (error) {
-        // FIX: Revert the tracker so a subsequent rebind attempt for the same
-        // workspace ID is not suppressed. Without this, a thrown/aborted init
-        // leaves the tracker advanced and shouldRebind() returns false, permanently
-        // preventing re-initialization.
-        // Only revert if no OTHER rebind happened while we were awaiting — if
-        // another rebind already advanced the tracker, reverting would be wrong.
-        if (!rebindTracker.hasWorkspaceChanged(rebindWorkspaceId)) {
-          rebindTracker.recordRebind(previousWorkspaceId ?? '');
-        }
-        logger.error('[ChatPanel] Failed to re-initialize chat after workspace change', {
-          agentId,
-          workspaceId: currentWorkspaceId,
-          error,
-          revertedTracker: !rebindTracker.hasWorkspaceChanged(previousWorkspaceId ?? ''),
-        });
-      } finally {
-        // Clear the in-flight flag only if this is still the latest rebind.
-        // If a newer rebind started while we were awaiting, its generation
-        // owns the flag and we must not clear it prematurely.
-        rebindTracker.endRebind(rebindGeneration);
-      }
-    })();
+    // The saga is fire-and-forget from the component's perspective.
+    // End rebind tracking immediately — the saga handles its own cancellation.
+    rebindTracker.endRebind(rebindGeneration);
+    multiPanelDispatch(chatRebindEnded(agentId));
   });
 
   // Message navigation state
@@ -2447,13 +2193,19 @@
   // This prevents the workspace from being shown as "unread" in the spaces list
   // when the user is actively viewing the agent in the panel layout.
   // This handles the panel layout case.
+  // Guard: only dispatch when agentId or isActive actually change to prevent cyclical re-dispatches.
+  let lastViewedAgentId: string | undefined;
+  let lastIsActive: boolean | undefined;
   $effect(() => {
+    if (agentId === lastViewedAgentId && isActive === lastIsActive) return;
+    lastViewedAgentId = agentId;
+    lastIsActive = isActive;
     if (agentId && isActive) {
-      unreadTrackingService.markAsViewed(agentId);
+      getReduxStore().dispatch(markAgentAsViewed(agentId));
     } else {
       // Panel is no longer active (user switched to another tab) —
       // clear so new messages for this agent are properly marked as unread.
-      unreadTrackingService.clearCurrentlyViewed();
+      getReduxStore().dispatch(clearCurrentlyViewedAgent());
     }
   });
 
@@ -2466,12 +2218,11 @@
 
     // Clear currently viewed agent so other agents can properly be marked as unread
     if (agentId) {
-      unreadTrackingService.clearCurrentlyViewed();
+      getReduxStore().dispatch(clearCurrentlyViewedAgent());
     }
 
     logger.info('ChatPanel destroyed', { instanceId, agentId });
     // Clean up subscriptions and scroll manager
-    unsubscribe?.();
     waitForSessionUnsub?.();
     queueListenerCleanup?.();
     // Pause background timers (state reconciliation, stall detection) to prevent
@@ -2482,6 +2233,21 @@
     // Note: followBottom action cleanup is handled automatically by Svelte
     // Don't clear chat data - just cleanup listeners
     // The service will persist data for when the panel is reopened
+  });
+
+  // Notify parent of chat state updates (replaces the old store subscription callback)
+  $effect(() => {
+    if (typeof onChatUpdate !== 'function' || chatState.messages.length === 0) return;
+    const messages = chatState.messages;
+    const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
+    const lastAgentMessage = [...messages].reverse().find((m) => m.role === 'assistant');
+
+    onChatUpdate({
+      lastUserMessage: lastUserMessage ? extractAllContent(lastUserMessage) : undefined,
+      lastAgentResponse: lastAgentMessage ? extractAllContent(lastAgentMessage) : undefined,
+      isProcessing: chatState.isProcessing,
+      messageCount: messages.length,
+    });
   });
 
   // Handle editing a queued message
@@ -2517,13 +2283,13 @@
     // Stop current streaming
     if (chatState.isStreaming || chatState.isProcessing) {
       try {
-        await chatService.stopChat();
+        await chatService.stopChat(agentId);
         // Wait for the interrupt to fully complete (isInterrupting becomes false)
         const maxWaitMs = 500;
         const pollIntervalMs = 25;
         let waited = 0;
         while (waited < maxWaitMs) {
-          const state = chatService.getState();
+          const state = chatService.getState(agentId);
           if (!state.isInterrupting) {
             break;
           }
@@ -2551,7 +2317,7 @@
         imageMimeType: block.mimeType,
       }));
       const queuedContextItems = imageContextItems?.length ? imageContextItems : undefined;
-      await chatService.sendMessage(message.content, workspace, {
+      await chatService.sendMessage(message.content, workspace, agentId, {
         noteIds,
         agentId,
         contextItems: queuedContextItems,
@@ -2606,19 +2372,6 @@
         selectedText.length > 500 ? selectedText.substring(0, 500) + '...' : selectedText;
       const source = selection.sourceLabel ? ` from ${selection.sourceLabel}` : '';
       parts.push(`[Selected text${source}:\n\`\`\`\n${displayText}\n\`\`\`]`);
-    }
-
-    // Fallback: Add selection context from legacy unifiedStateStore (for backward compatibility)
-    // This catches selections from panels that haven't been migrated to the new system
-    if (checkedSelections.length === 0) {
-      const mainPanelSelection = unifiedStateStore.selectionContext;
-      if (mainPanelSelection?.text?.trim()) {
-        const selectedText = mainPanelSelection.text.trim();
-        const displayText =
-          selectedText.length > 500 ? selectedText.substring(0, 500) + '...' : selectedText;
-        const source = mainPanelSelection.file ? ` from ${mainPanelSelection.file}` : '';
-        parts.push(`[Selected text${source}:\n\`\`\`\n${displayText}\n\`\`\`]`);
-      }
     }
 
     return parts.join('\n');
@@ -2700,271 +2453,63 @@
 
   // Handle sending messages
   async function handleSend(text: string) {
-    // Check for content: text, context items, or inline images
+    // Gather DOM state (inline images, mentions) BEFORE clearing input
     const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
+    const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
     const hasContent = text?.trim() || contextItems.length > 0 || inlineImageItems.length > 0;
-    if (!hasContent || !workspace) {
-      return;
-    }
+    if (!hasContent || !workspace || !isActive) return;
 
-    // Add text to input history (for up/down arrow navigation)
-    if (text?.trim()) {
-      addToInputHistory(text);
-    }
+    if (text?.trim()) addToInputHistory(text);
 
-    // Safety check: if this panel is not active, don't send
-    // This should never happen if inert is working correctly, but log if it does
-    if (!isActive) {
-      logger.warn('handleSend called on inactive panel - ignoring', { agentId, isActive });
-      return;
-    }
+    // Merge and serialize context items (File objects → base64 for IPC)
+    const allContextItems = [...contextItems, ...inlineImageItems, ...mentionContextItems];
+    const serializedContext =
+      allContextItems.length > 0 ? await serializeContextItemsForIpc(allContextItems) : undefined;
+    const imageBlocks = serializedContext
+      ?.filter((item) => item.imageData && item.imageMimeType)
+      .map((item) => ({
+        type: 'image' as const,
+        data: item.imageData!,
+        mimeType: item.imageMimeType!,
+      }));
+    const workspaceContextStr = buildWorkspaceContextString();
+    const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
-    // If already processing/streaming/interrupting, queue the message instead of interrupting
-    // Also check isInterrupting to avoid race conditions during stop operations
-    //
-    // CRITICAL FIX: Also check the source of truth (unifiedStateStore) directly.
-    // The chatState._chatStateInternal can become stale because updates are delivered
-    // via requestAnimationFrame in the store subscription. If the user sends a message after
-    // streaming stops but before the RAF callback fires, chatState.isStreaming is still
-    // true even though the actual streaming has stopped. Checking unifiedStateStore gives
-    // us the real-time streaming state.
-    const workspaceState = unifiedStateStore.getWorkspace(workspace.id);
-    const agentFromStore = workspaceState?.agents.get(agentId!);
-    const storeIsStreaming = agentFromStore?.streaming?.active ?? false;
-    const storeSessionIsStreaming = agentFromStore?.session?.isStreaming ?? false;
+    // Clear input immediately (DOM concern — stays in component)
+    contextItems = [];
+    inputValue = '';
+    inputComponent?.clear();
+    shouldFollowBottom = true;
+    isScrollUnlocked = false;
 
-    // Use the fresh state from unifiedStateStore as the source of truth
-    // Only queue if BOTH the local state AND the store say it's streaming
-    // If the store says not streaming, trust it even if local state is stale
-    const actuallyStreaming = storeIsStreaming || storeSessionIsStreaming;
-    const shouldQueue =
-      (chatState.isProcessing || chatState.isStreaming || chatState.isInterrupting) &&
-      actuallyStreaming;
-
-    // Log when we detect a stale state - this helps debug future issues
-    if (chatState.isStreaming && !actuallyStreaming) {
-      logger.warn('Detected stale streaming state in ChatPanel - store says not streaming', {
-        agentId,
-        chatStateIsStreaming: chatState.isStreaming,
-        storeIsStreaming,
-        storeSessionIsStreaming,
-      });
-      // Force update the local state to match reality
-      // This prevents the stale state from affecting future checks
-      _chatStateInternal = {
-        ..._chatStateInternal,
-        isStreaming: false,
-        isProcessing: false,
-      };
-    }
-
-    if (shouldQueue) {
-      logger.info('Agent is streaming or interrupting, queueing message', {
-        agentId,
-        chatStateIsStreaming: chatState.isStreaming,
-        storeIsStreaming,
-        storeSessionIsStreaming,
-      });
-      // Extract inline images and @-mentioned files BEFORE clearing
-      const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
-      const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
-      const allContextItems = [...contextItems, ...inlineImageItems, ...mentionContextItems];
-
-      // Serialize context items for IPC - File objects cannot be cloned through Electron's
-      // structured clone algorithm, so we convert them to base64 data before sending
-      const serializedContext =
-        allContextItems.length > 0 ? await serializeContextItemsForIpc(allContextItems) : undefined;
-
-      // Extract image blocks from serialized context items for the backend
-      // The backend expects imageBlocks as a separate field for proper handling
-      const imageBlocks = serializedContext
-        ?.filter((item) => item.imageData && item.imageMimeType)
-        .map((item) => ({
-          type: 'image' as const,
-          data: item.imageData!,
-          mimeType: item.imageMimeType!,
-        }));
-
-      const result = await unifiedOrchestrator.queueMessage(
-        agentId,
-        text.trim(),
-        serializedContext,
-        imageBlocks && imageBlocks.length > 0 ? imageBlocks : undefined,
-      );
-      if (result.success) {
-        // Clear input after successful queue
-        contextItems = [];
-        inputValue = '';
-        inputComponent?.clear();
-        // Clear the draft from transient store
-        getTransientStore()?.clearChatDraft(agentId);
-        // Re-enable auto-scroll and scroll to bottom after DOM updates
-        shouldFollowBottom = true;
-        isScrollUnlocked = false;
-        tick().then(() => {
-          // Guard against component destruction during tick
-          if (isComponentDestroyed) return;
-          if (scrollContainer) scrollToBottomUtil(scrollContainer);
-        });
-        logger.info('Message queued successfully', {
-          agentId,
-          messageId: result.queuedMessage?.id,
-          hasImages: !!imageBlocks?.length,
-        });
-      } else {
-        logger.error('Failed to queue message', { agentId, error: result.error });
-      }
-      return;
-    }
-
-    // If a workspace rebind is currently in flight (the $effect started
-    // initializeChat but it hasn't resolved yet), wait for it to finish
-    // before sending. Without this, the send would go against the old
-    // workspace's session even though the tracker already recorded the
-    // new workspace ID.
-    if (rebindTracker.isRebinding) {
-      logger.info('Waiting for in-flight workspace rebind before sending', { agentId });
-      const rebindCompleted = await rebindTracker.waitForRebind(5000);
-      if (!rebindCompleted) {
-        // The rebind timed out or never resolved. Since the tracker already
-        // recorded the new workspace ID (recordRebind ran before startRebind),
-        // hasWorkspaceChanged below would return false and skip re-init,
-        // letting the send proceed against a stale/partially-initialized
-        // chatService. Abort the send instead.
-        logger.error('Workspace rebind timed out, aborting send to prevent stale session', {
-          agentId,
-          isStillRebinding: rebindTracker.isRebinding,
-        });
-        toast.error('Chat session is still initializing. Please try again.');
-        return;
-      }
-      // After the rebind completes, the session should be ready.
-      // Fall through to the hasWorkspaceChanged check below in case
-      // the rebind failed and we need to re-initialize.
-    }
-
-    // Check if workspace has changed
-    if (rebindTracker.hasWorkspaceChanged(workspace.id)) {
-      logger.warn('Workspace has changed, reinitializing chat');
-      rebindTracker.recordRebind(workspace.id);
-
-      // Mark rebind as in-flight so concurrent handleSendMessage calls
-      // see isRebinding=true and wait instead of sending against a
-      // stale/partially-initialized chatService session.
-      const sendRebindGeneration = rebindTracker.startRebind();
-      try {
-        await chatService.initializeChat(workspace, agentId!, {
-          agentName,
-          agentModel,
-          isInitialWorkspaceAgent,
-        });
-        // Wait for the session to be ready before sending
-        await waitForSessionReady(2000);
-      } catch (error) {
-        // FIX: If initializeChat throws or aborts, revert the tracker so a
-        // subsequent send/rebind attempt for the same workspace ID is not
-        // suppressed. Without this, recordRebind() above leaves the tracker
-        // advanced and hasWorkspaceChanged() returns false, permanently
-        // skipping re-init on future sends.
-        logger.error('Failed to reinitialize chat in send path, reverting tracker', {
-          agentId,
-          workspaceId: workspace.id,
-          error,
-        });
-        rebindTracker.recordRebind(''); // Reset so next attempt re-triggers
-        toast.error('Failed to initialize chat session. Please try again.');
-        return;
-      } finally {
-        rebindTracker.endRebind(sendRebindGeneration);
-      }
-    }
-
-    try {
-      // Extract inline images from the editor BEFORE clearing
-      const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
-      // Extract @-mentioned files from the editor BEFORE clearing
-      // These are file/folder mentions typed via @autocomplete that need to be
-      // passed as context references so the backend can provide file paths to the agent
-      const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
-
-      // Merge inline images and mention-derived context items with existing context items
-      const allContextItems = [...contextItems, ...inlineImageItems, ...mentionContextItems];
-
-      // Serialize context items for IPC - File objects cannot be cloned through Electron's
-      // structured clone algorithm, so we convert them to base64 data before sending
-      const serializedContext =
-        allContextItems.length > 0 ? await serializeContextItemsForIpc(allContextItems) : undefined;
-
-      // Build workspace context string (main panel + selection)
-      const workspaceContextStr = buildWorkspaceContextString();
-
-      // Clear context and input BEFORE sending the message
-      // This ensures the UI is cleared immediately, even if the backend call takes time
-      contextItems = [];
-      inputValue = '';
-      inputComponent?.clear();
-      // Clear the draft from transient store
-      getTransientStore()?.clearChatDraft(agentId);
-      // Clear selection context - it's been captured in workspaceContextStr above
-      // This prevents stale selections from being included in subsequent messages
-      multiPanelDispatch(uncheckAllSelections());
-      unifiedStateStore.selectionContext = null;
-      // Re-enable auto-scroll when user submits - the followBottom action will handle scrolling
-      // as new content (user message, streaming indicator) is added to the DOM
-      shouldFollowBottom = true;
-      isScrollUnlocked = false;
-
-      // Prepend workspace context to the message if available
-      const messageWithContext = workspaceContextStr
-        ? `${workspaceContextStr}\n\n${text.trim()}`
-        : text.trim();
-
-      // Now send the message (this may take time or hang, but the UI is already cleared)
-      // Include noteIds if the current context is a note - this allows agents to "see" images in notes
-      const noteIds = currentMainPanelContext?.noteId
-        ? [currentMainPanelContext.noteId]
-        : undefined;
-      // Pass agentId to ensure message goes to the correct agent
-      await chatService.sendMessage(messageWithContext, workspace, {
-        contextItems: serializedContext,
+    // Dispatch all orchestration to the send-message saga
+    multiPanelDispatch(
+      sendMessage(agentId, {
+        wsId: workspace.id,
+        text,
+        serializedContextItems: serializedContext as SendMessagePayload['serializedContextItems'],
+        workspaceContextStr,
         noteIds,
-        agentId,
-      });
-
-      // Scroll to bottom after message is sent - use double rAF to ensure DOM has painted
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (scrollContainer) scrollToBottomUtil(scrollContainer);
-        });
-      });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to send message';
-      // Don't show toast for user-initiated interruptions
-      const isInterrupted = errorMessage.includes('Agent interrupted');
-      if (!isInterrupted) {
-        logger.error('Failed to send message', error);
-        toast.error(cleanErrorMessage(errorMessage), {
-          action: {
-            label: 'Try again',
-            onClick: () => handleRetry(),
-          },
-        });
-      }
-    }
+        imageBlocks,
+        agentName,
+        agentModel,
+        isInitialWorkspaceAgent,
+      }),
+    );
   }
 
   // Handle stopping the current generation
   async function handleStop() {
     try {
       // Per-agent ChatService: always bound to this agent, use stopChat() directly
-      await chatService.stopChat();
+      await chatService.stopChat(agentId);
 
       // FIX: Directly update the last message with interrupted flag and clear streaming state.
       // We can't rely on the backend completion event because the stream handler is cleaned up
       // by backendStop() before the completion event with stopReason arrives.
       if (workspace) {
-        // Clear streaming state immediately
-        sessionStore.setStreamingForWorkspace(workspace.id, agentId, false);
+        // Clear streaming state immediately (setAgentStreaming triggers cross-slice handler in agent-session-slice)
+        getReduxStore().dispatch(setAgentStreaming(workspace.id, agentId, false));
 
         // Find and update the last assistant message with interrupted flag
         const messages = chatState.messages;
@@ -2980,36 +2525,12 @@
             existingMetadata: lastAssistantMessage.metadata,
             newMetadata: updatedMetadata,
           });
-          sessionStore.updateMessageForWorkspace(workspace.id, agentId, lastAssistantMessage.id, {
-            isStreaming: false,
-            metadata: updatedMetadata,
-          });
-
-          // Also update local state directly to ensure UI updates immediately
-          // The store subscription may not fire synchronously after sessionStore update
-          const messageIndex = messages.findIndex((m) => m.id === lastAssistantMessage.id);
-          if (messageIndex !== -1) {
-            const updatedMessage = {
-              ...messages[messageIndex],
+          getReduxStore().dispatch(
+            updateAgentSessionMessage(agentId, lastAssistantMessage.id, {
               isStreaming: false,
               metadata: updatedMetadata,
-            };
-            // Create new messages array to trigger reactivity
-            _chatStateInternal = {
-              ..._chatStateInternal,
-              messages: [
-                ...messages.slice(0, messageIndex),
-                updatedMessage,
-                ...messages.slice(messageIndex + 1),
-              ],
-              isStreaming: false,
-            };
-            logger.info('Updated local _chatStateInternal with interrupted message', {
-              agentId,
-              messageId: lastAssistantMessage.id,
-              updatedMessageMetadata: updatedMessage.metadata,
-            });
-          }
+            }),
+          );
         } else {
           // No assistant message exists yet (user stopped before any response arrived).
           // Create a placeholder assistant message with interrupted flag so the UI shows "Stopped".
@@ -3029,20 +2550,8 @@
             messageId: stoppedMessage.id,
           });
 
-          // Add the message to unifiedStateStore
-          unifiedStateStore.addMessage(
-            workspace.id as Parameters<typeof unifiedStateStore.addMessage>[0],
-            agentId as Parameters<typeof unifiedStateStore.addMessage>[1],
-            stoppedMessage,
-          );
-
-          // Also update local state directly to ensure UI updates immediately
-          _chatStateInternal = {
-            ..._chatStateInternal,
-            messages: [...messages, stoppedMessage],
-            isStreaming: false,
-            isProcessing: false,
-          };
+          // Add the message to Redux store — the reactive selector will update the UI
+          getReduxStore().dispatch(addAgentSessionMessage(agentId, stoppedMessage));
         }
       }
     } catch (error) {
@@ -3056,7 +2565,7 @@
   async function handleRetry() {
     if (!workspace) return;
     try {
-      await chatService.retryLastMessage(workspace);
+      await chatService.retryLastMessage(workspace, agentId);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Something went wrong';
       logger.error('Failed to retry message', error);
@@ -3069,7 +2578,7 @@
     if (!workspace) return;
     try {
       // Retry with the specified model (this also clears modelUnavailable state)
-      await chatService.retryWithModel(workspace, model);
+      await chatService.retryWithModel(workspace, agentId, model);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Something went wrong';
       logger.error('Failed to retry with model', { model, error });
@@ -3118,27 +2627,16 @@
       specialistName: specialistName ?? '',
     };
 
-    // Update the session via sessionStore
+    // Update the session via Redux (agent-session slice is canonical)
     if (workspace?.id) {
-      sessionStore.updateSessionForWorkspace(String(workspace.id), agentId, {
-        metadata: newMetadata,
-        model: newModel,
-      });
+      getReduxStore().dispatch(
+        updateAgentSessionFields(agentId, { metadata: newMetadata, model: newModel }),
+      );
     }
-
-    // Also update the internal chat state to reflect immediately
-    _chatStateInternal = {
-      ..._chatStateInternal,
-      session: {
-        ...session,
-        metadata: newMetadata,
-        model: newModel,
-      },
-    };
 
     // Try to persist the session to disk for future sessions.
     // NOTE: This may fail for sessions with no messages (which is fine), because:
-    // 1. The in-memory metadata is updated via sessionStore.updateSessionForWorkspace above
+    // 1. The in-memory metadata is updated via Redux dispatch above
     // 2. When sending a message, the metadata is passed directly in the request
     // 3. The backend will read from request.metadata (priority) before disk
     // If persistence succeeds, the specialist will be remembered for future sessions.
@@ -3174,13 +2672,13 @@
     // Stop current streaming first
     if (chatState.isStreaming || chatState.isProcessing) {
       try {
-        await chatService.stopChat();
+        await chatService.stopChat(agentId);
         // Wait for the interrupt to fully complete (isInterrupting becomes false)
         const maxWaitMs = 500;
         const pollIntervalMs = 25;
         let waited = 0;
         while (waited < maxWaitMs) {
-          const state = chatService.getState();
+          const state = chatService.getState(agentId);
           if (!state.isInterrupting) {
             break;
           }
@@ -3207,13 +2705,10 @@
       contextItems = [];
       inputValue = '';
       inputComponent?.clear();
-      // Clear the draft from transient store
-      getTransientStore()?.clearChatDraft(agentId);
+      multiPanelDispatch(clearChatDraft(workspace.id, agentId));
       // Clear selection context - it's been captured in workspaceContextStr above
       // This prevents stale selections from being included in subsequent messages
       multiPanelDispatch(uncheckAllSelections());
-      unifiedStateStore.selectionContext = null;
-
       const messageWithContext = workspaceContextStr
         ? `${workspaceContextStr}\n\n${text.trim()}`
         : text.trim();
@@ -3223,7 +2718,7 @@
         ? [currentMainPanelContext.noteId]
         : undefined;
       // Pass agentId to ensure message goes to the correct agent
-      await chatService.sendMessage(messageWithContext, workspace, {
+      await chatService.sendMessage(messageWithContext, workspace, agentId, {
         contextItems: contextToSend,
         noteIds,
         agentId,
@@ -3249,6 +2744,7 @@
         messageId,
         newText,
         workspace,
+        agentId,
         model ? { model } : undefined,
       );
     } catch (error) {
@@ -3263,7 +2759,7 @@
     if (!workspace) return;
     try {
       // Per-agent ChatService: always bound to this agent, no re-acquisition needed
-      await chatService.regenerateFromMessage(assistantMessageId, workspace);
+      await chatService.regenerateFromMessage(assistantMessageId, workspace, agentId);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Something went wrong';
       logger.error('Failed to regenerate from message', error);
@@ -3279,7 +2775,7 @@
       // forkSession creates the fork and opens it via workspace:open-agent event,
       // which opens the fork in its own panel tab with its own ChatService instance.
       // This preserves the parent ChatService's state.
-      const forkedId = await chatService.forkSession(workspace, {
+      const forkedId = await chatService.forkSession(workspace, agentId, {
         forkFromMessageId: messageId,
       });
       toast.success('Conversation forked');
@@ -3449,7 +2945,7 @@
     }));
 
     // Pass agentId to ensure message goes to the correct agent
-    await chatService.sendMessage(messageWithContext, workspace, {
+    await chatService.sendMessage(messageWithContext, workspace, agentId, {
       contextItems: imageContextItems,
       contextReferences,
       agentId,

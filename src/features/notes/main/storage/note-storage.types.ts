@@ -9,7 +9,7 @@
  * - .meta/.trash/: Soft-deleted notes with 30-day auto-purge
  */
 
-import type { NoteId, WorkspaceId, TaskMetadata } from '../../../../shared/types';
+import type { NoteId, TaskMetadata } from '../../../../shared/types';
 
 /**
  * Author information for versioning

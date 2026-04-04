@@ -50,7 +50,6 @@ describe('Session Resume with Messages', () => {
     it('should preserve existing messages when activating a pending agent', async () => {
       const agentId = 'test-agent-123';
       const workspaceId = 'workspace-456';
-      const workspacePath = `/test/workspaces/${workspaceId}`;
 
       // Mock agent with existing messages
       const existingAgent: AgentSession = {
@@ -101,7 +100,6 @@ describe('Session Resume with Messages', () => {
     it('should continue existing conversation thread when sending new message after resume', async () => {
       const agentId = 'test-agent-789';
       const workspaceId = 'workspace-101';
-      const workspacePath = `/test/workspaces/${workspaceId}`;
 
       // Mock agent with 2+ messages
       const resumedAgent: AgentSession = {

@@ -4,7 +4,7 @@
  * Validates configuration objects and ensures data integrity
  */
 
-import { LIMITS, DEFAULTS } from '../constants';
+import { LIMITS } from '../constants';
 
 // ============================================================================
 // Validation Result Types

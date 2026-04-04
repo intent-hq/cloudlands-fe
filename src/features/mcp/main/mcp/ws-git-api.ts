@@ -1,4 +1,4 @@
-import type { CommitInfo, GitStatus } from '$shared/types';
+import type { GitStatus } from '$shared/types';
 
 import { Logger } from '../../../../shared/logger';
 import { WorkspaceId } from '../../../../shared/types/branded-ids';

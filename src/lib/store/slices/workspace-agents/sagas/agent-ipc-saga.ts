@@ -1,0 +1,545 @@
+/**
+ * Agent IPC Saga
+ *
+ * Manages IPC listeners for agent lifecycle events via redux-saga eventChannels.
+ * Replaces setupEventListeners(), setupBeforeUnloadHandler(), and
+ * scheduleBackendStreamReconnect() from AgentService.
+ */
+
+import { agentService } from "$features/agent/agent-ipc-bridge";
+import { persistenceService } from "$features/agent/browser";
+import { createLogger } from "$lib/utils/client-logger";
+import { takeEveryFromElectronChannel } from "$lib/store/utils/ipc-channel";
+import { END, eventChannel } from "redux-saga";
+import { call, delay, fork, put, select, take, takeLatest, type SagaGenerator } from "typed-redux-saga";
+import type { ElectronEventName } from "$shared/ipc-registry";
+import type { AgentMessage, AgentSession } from "$shared/types";
+import type { StoreState } from "$lib/store/types";
+import type { WorkspaceAgentState } from "../workspace-agents-slice";
+import { AgentStatus } from "$shared/types";
+import { DEFAULT_AGENT_MODEL } from "$shared/constants/agent-services";
+import { AgentId, WorkspaceId } from "$shared/types/branded-ids";
+import {
+  upsertAgentSession,
+  setAgentStreaming,
+  addAgentMessage,
+  removeAgentMessage,
+  recordAgentCreatedEvent,
+  cleanupAgentCreatedEvents,
+  triggerBackendStreamReconnect,
+} from "../workspace-agents-slice";
+import {
+  selectAgentById,
+  selectDiskMessageCount,
+  selectRecentAgentCreatedEvent,
+  selectRecentAgentCreatedEventsCount,
+} from "../workspace-agents-selectors";
+import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
+import {
+  upsertSession as upsertAgentSessionAction,
+  addMessage as addAgentSessionMessage,
+  removeMessage as removeAgentSessionMessage,
+} from "../../agent-session/agent-session-slice";
+
+const logger = createLogger("AgentIpcSaga");
+const AGENT_CREATED_DEDUP_WINDOW = 500; // ms
+
+/** Cast dynamic channel names to ElectronEventName */
+function ec(name: string): ElectronEventName {
+  return name as ElectronEventName;
+}
+
+// ============================================================================
+// 1. agent:stream:disconnected
+// ============================================================================
+
+export function* watchStreamDisconnectedSaga() {
+  yield* takeEveryFromElectronChannel<{ agentId: string }>(
+    ec("agent:stream:disconnected"),
+    function* (data) {
+      logger.warn("Stream disconnected", { agentId: data.agentId });
+      const wsId = (yield* select(selectActiveWorkspaceId.select)) ?? undefined;
+      if (!wsId) return;
+      const session: AgentSession | undefined = yield* select(selectAgentById.select, data.agentId);
+      if (session) {
+        yield* put(setAgentStreaming(session.workspaceId || wsId, session.id, false));
+      }
+    },
+  );
+}
+
+// ============================================================================
+// 2. agent:stream-starting — safety net for stream handler registration
+// ============================================================================
+
+export function* watchStreamStartingSaga() {
+  yield* takeEveryFromElectronChannel<{ agentId: string; workspaceId?: string }>(
+    ec("agent:stream-starting"),
+    function* (data) {
+      yield* call(handleStreamStarting, data);
+    },
+  );
+}
+
+function* handleStreamStarting(data: { agentId: string; workspaceId?: string }): SagaGenerator<void> {
+  const { agentId, workspaceId } = data;
+  logger.info("Backend stream starting notification received", { agentId, workspaceId });
+
+  // Skip if sendMessage() is currently setting up the stream handler
+  const isSettingUp: boolean = yield* call([agentService, agentService.isSendMessageSettingUpStream], agentId);
+  if (isSettingUp) {
+    logger.info("Skipping ensureStreamHandler — sendMessage is setting up stream handler", { agentId });
+    return;
+  }
+
+  const result = yield* call([agentService, agentService.ensureStreamHandler], agentId, { workspaceId });
+  if (result.created) {
+    logger.info("Stream handler registered for starting stream", { agentId, channel: result.channel });
+  }
+
+  // Ensure a session exists before the first chunk arrives
+  const wsId = workspaceId || ((yield* select(selectActiveWorkspaceId.select)) as string | undefined);
+  if (!wsId) {
+    logger.warn("Cannot look up session: no workspaceId available", { agentId });
+    return;
+  }
+  const existing: AgentSession | undefined = yield* select(selectAgentById.select, agentId);
+  if (!existing && workspaceId) {
+    yield* call(loadAndCreateSessionFromPersistence, agentId, workspaceId, wsId);
+  }
+}
+
+function* loadAndCreateSessionFromPersistence(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  agentId: string, workspaceId: string, wsId: string,
+): SagaGenerator<void> {
+  logger.warn("No session found for streaming agent, loading from persistence", { agentId, workspaceId });
+  try {
+    const loaded: AgentSession | null = yield* call(
+      [persistenceService, persistenceService.loadSession], agentId, workspaceId,
+    );
+    const current: AgentSession | undefined = yield* select(selectAgentById.select, agentId);
+    if (current) return; // session appeared while loading
+    if (loaded) {
+      if (workspaceId && !loaded.workspaceId) loaded.workspaceId = WorkspaceId(workspaceId);
+      const targetWsId = workspaceId || loaded.workspaceId;
+      if (!targetWsId) throw new Error(`Cannot start streaming session without workspaceId: ${agentId}`);
+      yield* put(upsertAgentSessionAction(loaded));
+      yield* put(upsertAgentSession(targetWsId, loaded));
+      yield* put(setAgentStreaming(targetWsId, agentId, true));
+      logger.info("Created session from persistence for streaming agent", { agentId, workspaceId });
+    }
+  } catch (err) {
+    logger.error("Failed to load session from persistence", { agentId, error: err, workspaceId });
+  }
+}
+
+// ============================================================================
+// 3. agent:prepare-handler — backend-initiated agent handshake
+// ============================================================================
+
+export function* watchPrepareHandlerSaga() {
+  yield* takeEveryFromElectronChannel<{
+    agentId: string; workspaceId?: string;
+    agentInfo?: { name?: string }; wakeMessage?: AgentMessage;
+  }>(
+    ec("agent:prepare-handler"),
+    function* (data) {
+      const { agentId, workspaceId, wakeMessage } = data;
+      logger.info("Backend requested stream handler preparation", { agentId, workspaceId });
+
+      try {
+        yield* call([agentService, agentService.ensureStreamHandler], agentId, { workspaceId });
+
+        const prepareWsId = workspaceId || ((yield* select(selectActiveWorkspaceId.select)) as string | undefined);
+        if (!prepareWsId) throw new Error(`Cannot prepare handler without workspaceId: ${agentId}`);
+
+        const session: AgentSession | undefined = yield* select(selectAgentById.select, agentId);
+        if (session) {
+          if (wakeMessage) {
+            yield* put(addAgentSessionMessage(agentId, wakeMessage));
+            yield* put(addAgentMessage(prepareWsId, agentId, wakeMessage));
+          }
+          yield* put(setAgentStreaming(prepareWsId, agentId, true));
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent(`agent:session-updated:${agentId}`));
+          }
+        }
+      } catch (error) {
+        logger.error("Error preparing stream handler", {
+          agentId, workspaceId, error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      // Signal back — MUST execute unconditionally
+      if (typeof window !== "undefined" && window.electronAPI) {
+        window.electronAPI.send("agent:handler-ready", { agentId });
+      }
+    },
+  );
+}
+
+
+// ============================================================================
+// 4. agent:created — backend-created agent detection
+// ============================================================================
+
+export function* watchAgentCreatedIpcSaga() {
+  yield* takeEveryFromElectronChannel<any>(
+    ec("agent:created"),
+    function* (data) {
+      yield* call(handleAgentCreated, data);
+    },
+  );
+}
+
+/** Shape of agent:created IPC event data (may arrive as workspace event or direct event) */
+interface AgentCreatedEventData {
+  type?: string;
+  workspaceId?: string;
+  agentId?: string;
+  agent?: Partial<AgentSession> & { messages?: AgentMessage[] };
+  agentName?: string;
+  data?: {
+    agentId?: string;
+    agent?: Partial<AgentSession> & { messages?: AgentMessage[] };
+    agentName?: string;
+  };
+}
+
+function* handleAgentCreated(data: AgentCreatedEventData): SagaGenerator<void> {
+  const isWorkspaceEvent = data?.type === "agent:created" && !!data?.data;
+  const agentId = isWorkspaceEvent ? data.data!.agentId : data?.agentId;
+  const workspaceId = isWorkspaceEvent ? data.workspaceId : data?.workspaceId;
+  const agent = isWorkspaceEvent ? data.data!.agent : data?.agent;
+  const agentName = isWorkspaceEvent ? data.data!.agentName : agent?.name;
+
+  if (!agentId) {
+    if (!isWorkspaceEvent) {
+      logger.warn("Received agent:created event with undefined agentId, ignoring", { workspaceId });
+    }
+    return;
+  }
+
+  // Deduplicate agent:created events
+  const now = Date.now();
+  const dedupWsId = workspaceId || ((yield* select(selectActiveWorkspaceId.select)) as string | undefined);
+  if (dedupWsId) {
+    const lastSeen: number | undefined = yield* select(selectRecentAgentCreatedEvent.select, dedupWsId, agentId);
+    if (lastSeen && now - lastSeen < AGENT_CREATED_DEDUP_WINDOW) {
+      logger.debug("Skipping duplicate agent:created event", { agentId });
+      return;
+    }
+    yield* put(recordAgentCreatedEvent(dedupWsId, agentId, now));
+    const eventCount: number = yield* select(selectRecentAgentCreatedEventsCount.select, dedupWsId);
+    if (eventCount > 50) {
+      yield* put(cleanupAgentCreatedEvents(dedupWsId, now - AGENT_CREATED_DEDUP_WINDOW * 2));
+    }
+  }
+
+  logger.debug("Backend-created agent detected", { agentId, workspaceId, agentName: agentName || agent?.name });
+
+  const wsIdForLookup = workspaceId || ((yield* select(selectActiveWorkspaceId.select)) as string | undefined);
+  if (!wsIdForLookup) {
+    logger.warn("Cannot look up session: no workspaceId available", { agentId });
+    return;
+  }
+
+  const existingSession: AgentSession | undefined = yield* select(selectAgentById.select, agentId);
+
+  if (existingSession) {
+    yield* call(handleExistingSessionUpdate, existingSession, agent, agentId, workspaceId);
+    yield* call([agentService, agentService.ensureStreamHandler], agentId, { workspaceId });
+    return;
+  }
+
+  // Create a new session from agent data
+  if (agent) {
+    const hasHandler: boolean = yield* call([agentService, agentService.hasActiveStreamHandler], agentId);
+    const newSession: AgentSession = {
+      id: agentId as AgentId,
+      backendSessionId: agentId as AgentId,
+      workspaceId: (workspaceId || "") as WorkspaceId,
+      name: agent.name || "Task Agent",
+      status: "active" as typeof AgentStatus[keyof typeof AgentStatus],
+      messages: agent.messages || [],
+      model: agent.model || DEFAULT_AGENT_MODEL,
+      provider: agent.provider,
+      systemPrompt: agent.systemPrompt,
+      createdAt: new Date(agent.createdAt || Date.now()),
+      updatedAt: new Date(agent.updatedAt || Date.now()),
+      isStreaming: hasHandler,
+      isBackground: agent.isBackground || agent.metadata?.isBackground || false,
+      metadata: agent.metadata,
+    };
+    const wsIdForNew = workspaceId || newSession.workspaceId;
+    if (!wsIdForNew) throw new Error(`Cannot create session without workspaceId: ${agentId}`);
+    yield* put(upsertAgentSessionAction(newSession));
+    yield* put(upsertAgentSession(wsIdForNew, newSession));
+  }
+
+  yield* call([agentService, agentService.ensureStreamHandler], agentId, { workspaceId });
+}
+
+function* handleExistingSessionUpdate(
+  existingSession: AgentSession, agent: (Partial<AgentSession> & { messages?: AgentMessage[] }) | undefined, agentId: string, workspaceId?: string,
+): SagaGenerator<void> {
+  if (agent) {
+    const updated: AgentSession = {
+      ...existingSession,
+      name: agent.name || existingSession.name,
+      model: agent.model || existingSession.model,
+      provider: agent.provider || existingSession.provider,
+      systemPrompt: agent.systemPrompt || existingSession.systemPrompt,
+      isBackground: agent.isBackground || agent.metadata?.isBackground || existingSession.isBackground || false,
+      metadata: { ...existingSession.metadata, ...agent.metadata },
+      isStreaming: existingSession.isStreaming,
+    };
+    const wsId = workspaceId || updated.workspaceId;
+    if (wsId) {
+      yield* put(upsertAgentSessionAction(updated));
+      yield* put(upsertAgentSession(wsId, updated));
+    }
+  }
+
+  if (agent?.messages) {
+    const existingIds = new Set(existingSession.messages.map((m: AgentMessage) => m.id));
+    const newMsgs = agent.messages.filter((m: AgentMessage) => !existingIds.has(m.id));
+    for (const msg of newMsgs) {
+      const wsId = workspaceId || existingSession.workspaceId;
+      if (wsId) {
+        yield* put(addAgentSessionMessage(agentId, msg));
+        yield* put(addAgentMessage(wsId, agentId, msg));
+      }
+    }
+  }
+}
+
+// ============================================================================
+// 5. agent:queue:processing — queued message handling
+// ============================================================================
+
+export function* watchQueueProcessingSaga() {
+  yield* takeEveryFromElectronChannel<{
+    agentId: string; messageId: string; content: string; contextItems?: Array<{ id: string; type: string; label?: string; content?: string; path?: string }>;
+  }>(
+    ec("agent:queue:processing"),
+    function* (data) {
+      const { agentId, messageId, content, contextItems } = data;
+      logger.debug("Queue processing event received", { agentId, messageId });
+
+      const wsId = (yield* select(selectActiveWorkspaceId.select)) ?? undefined;
+      if (!wsId) { logger.warn("No workspace ID for queued message", { agentId }); return; }
+
+      const session: AgentSession | undefined = yield* select(selectAgentById.select, agentId);
+      if (!session) { logger.warn("No session for queued message", { agentId }); return; }
+
+      // Add user message to session
+      const userMessage: AgentMessage = {
+        id: messageId,
+        role: "user",
+        contentBlocks: [{ type: "text", text: content }],
+        timestamp: new Date().toISOString(),
+        metadata: { contextItems: contextItems || [] },
+      };
+      yield* put(addAgentSessionMessage(agentId, userMessage));
+      yield* put(addAgentMessage(session.workspaceId || wsId, agentId, userMessage));
+
+      // Set streaming state
+      yield* put(setAgentStreaming(session.workspaceId || wsId, agentId, true));
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent(`agent:session-updated:${agentId}`));
+      }
+
+      // Persist the queued user message immediately
+      try {
+        yield* call([agentService, agentService.saveSession], agentId, session.workspaceId || wsId, true);
+      } catch (error) {
+        logger.error("Failed to persist queued user message", { agentId, messageId, error });
+      }
+
+      // Re-register stream handler with forceReregister
+      yield* call([agentService, agentService.ensureStreamHandler], agentId, { forceReregister: true });
+
+      // Signal backend we're ready
+      if (typeof window !== "undefined" && window.electronAPI) {
+        window.electronAPI.send("agent:handler-ready", { agentId });
+      }
+    },
+  );
+}
+
+// ============================================================================
+// 6. agent:queue:processing-cancelled — undo queue processing effects
+// ============================================================================
+
+export function* watchQueueCancelledSaga() {
+  yield* takeEveryFromElectronChannel<{ agentId: string; messageId: string }>(
+    ec("agent:queue:processing-cancelled"),
+    function* (data) {
+      const { agentId, messageId } = data;
+      logger.warn("Queue processing cancelled, cleaning up", { agentId, messageId });
+
+      const wsId = (yield* select(selectActiveWorkspaceId.select)) ?? undefined;
+      if (!wsId) return;
+
+      const session: AgentSession | undefined = yield* select(selectAgentById.select, agentId);
+      if (session) {
+        // Use atomic remove actions to avoid TOCTOU race
+        // (messages could be added between read and dispatch with the old approach)
+        yield* put(removeAgentSessionMessage(agentId, messageId));
+        yield* put(removeAgentMessage(session.workspaceId || wsId, agentId, messageId));
+        try {
+          yield* call([agentService, agentService.saveSession], agentId, session.workspaceId || wsId, true);
+        } catch (error) {
+          logger.error("Failed to persist queue cancellation cleanup", { agentId, error });
+        }
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent(`agent:session-updated:${agentId}`));
+        }
+      }
+
+      yield* call([agentService, agentService.clearPendingStreamRegistration], agentId);
+    },
+  );
+}
+
+// ============================================================================
+// 7. beforeunload — save streaming sessions and flush pending deletions
+// ============================================================================
+
+function createBeforeUnloadChannel() {
+  return eventChannel<"beforeunload">((emitter) => {
+    if (typeof window === "undefined") { emitter(END as any); return () => {}; }
+    const handler = () => emitter("beforeunload");
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  });
+}
+
+export function* watchBeforeUnloadSaga() {
+  const channel = createBeforeUnloadChannel();
+  try {
+    while (true) {
+      yield* take(channel);
+      yield* call(handleBeforeUnload);
+    }
+  } finally {
+    channel.close();
+  }
+}
+
+function* handleBeforeUnload(): SagaGenerator<void> {
+  logger.info("Page unloading — saving all streaming sessions to disk");
+
+  const state: StoreState = yield* select((s: StoreState) => s);
+  const streamingSessionIds = new Set<string>();
+
+  // Collect all sessions across ALL workspaces from agent-session slice
+  const allSessions: AgentSession[] = [];
+  const agentSessionsByAgent = state.agentSessions?.byAgentId || {};
+  for (const wsState of Object.values(state.workspaceAgents?.byWorkspaceId || {})) {
+    const ws = wsState as WorkspaceAgentState;
+    const agentIds: string[] = ws?.agentIds || [];
+    for (const agentId of agentIds) {
+      const session = agentSessionsByAgent[agentId] as AgentSession | undefined;
+      if (session) {
+        if (session.isStreaming) streamingSessionIds.add(session.id as string);
+        allSessions.push(session);
+      }
+    }
+  }
+
+  for (const session of allSessions) {
+    const isStreaming = streamingSessionIds.has(session.id as string);
+    if ((!session.messages?.length && !isStreaming) || !session.workspaceId) continue;
+
+    const hasStreamingMsg = session.messages?.some((m: AgentMessage) => m.role === "assistant" && m.isStreaming);
+    if (!((hasStreamingMsg && isStreaming) || isStreaming)) continue;
+
+    const diskCount = selectDiskMessageCount.select(state, session.workspaceId as string, session.id as string);
+    const msgCount = session.messages?.length ?? 0;
+    if (diskCount > 0 && msgCount < diskCount) continue;
+
+    // Fire and forget — beforeunload doesn't wait for async
+    persistenceService.saveSession(session, session.workspaceId, { immediate: true }).catch((err) => {
+      logger.warn("Failed to save streaming session on unload", { agentId: session.id, error: (err as Error)?.message });
+    });
+  }
+
+  // Flush pending deletions
+  const deletions = (yield* call(
+    [agentService, agentService.extractPendingDeletions],
+  )) as Array<{ agentId: string; workspaceId?: string }>;
+  for (const { agentId, workspaceId } of deletions) {
+    agentService.deleteSession(agentId, workspaceId).catch((err) => {
+      logger.warn("Failed to flush deletion on unload", { agentId, error: (err as Error)?.message });
+    });
+  }
+}
+
+// ============================================================================
+// 8. pagehide — dispose AgentService on actual page unload
+// ============================================================================
+
+function createPagehideChannel() {
+  return eventChannel<PageTransitionEvent>((emitter) => {
+    if (typeof window === "undefined") { emitter(END as any); return () => {}; }
+    const handler = (event: PageTransitionEvent) => emitter(event);
+    window.addEventListener("pagehide", handler);
+    return () => window.removeEventListener("pagehide", handler);
+  });
+}
+
+export function* watchPagehideSaga() {
+  const channel = createPagehideChannel();
+  try {
+    while (true) {
+      const event: PageTransitionEvent = yield* take(channel);
+      if (event.persisted) {
+        logger.info("Page hidden but persisted (bfcache) — not disposing");
+        continue;
+      }
+      logger.info("Page unloading (pagehide) — disposing AgentService");
+      yield* call([agentService, agentService.dispose]);
+    }
+  } finally {
+    channel.close();
+  }
+}
+
+// ============================================================================
+// 9. Backend stream reconnect — debounced via takeLatest + delay
+// ============================================================================
+
+function* handleBackendStreamReconnect(): SagaGenerator<void> {
+  yield* delay(500);
+  logger.info("Debounced reconnectToBackendStreams triggered");
+  try {
+    yield* call([agentService, agentService.reconnectToBackendStreams]);
+  } catch (error) {
+    logger.error("Failed to reconnect to backend streams", { error });
+  }
+}
+
+export function* watchBackendStreamReconnectSaga() {
+  yield* takeLatest(triggerBackendStreamReconnect, handleBackendStreamReconnect);
+}
+
+// ============================================================================
+// Root saga
+// ============================================================================
+
+export function* agentIpcSaga() {
+  if (typeof window === "undefined") return;
+
+  yield* fork(watchStreamDisconnectedSaga);
+  yield* fork(watchStreamStartingSaga);
+  yield* fork(watchPrepareHandlerSaga);
+  yield* fork(watchAgentCreatedIpcSaga);
+  yield* fork(watchQueueProcessingSaga);
+  yield* fork(watchQueueCancelledSaga);
+  yield* fork(watchBeforeUnloadSaga);
+  yield* fork(watchPagehideSaga);
+  yield* fork(watchBackendStreamReconnectSaga);
+}

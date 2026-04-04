@@ -11,8 +11,15 @@
   import { Input } from '$lib/components/ui/input';
   import { ListContainer, ListItem } from '$lib/components/ui/list';
   import { cn } from '$lib/utils';
-  import { browserStore } from '$features/browser/browser.store.svelte';
-  import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { selectBrowserRecentUrls } from '$lib/store/slices/browser/browser-selectors';
+  import { selectActiveTab } from '$lib/store/slices/panel-layout/panel-layout-selectors';
+  import {
+    addRecentUrl,
+    removeRecentUrl,
+    clearRecentUrls,
+    initBrowserWorkspace,
+  } from '$lib/store/slices/browser/browser-slice';
   import { faGlobe, faTimes } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Button from '../ui/button/button.svelte';
@@ -25,9 +32,12 @@
 
   let { workspaceId, onOpenUrl, class: className }: Props = $props();
 
-  // Get focused browser URL from panel layout manager
-  const panelLayoutManager = $derived(getPanelLayoutManager(workspaceId));
-  const focusedBrowserUrl = $derived(panelLayoutManager.focusedContent.browserUrl);
+  const dispatch = getDispatch();
+  const recentUrls$ = selectBrowserRecentUrls(workspaceId);
+
+  // Get focused browser URL from reactive selector
+  const activeTab$ = selectActiveTab(workspaceId);
+  const focusedBrowserUrl = $derived($activeTab$?.browserUrl ?? null);
 
   // Local state
   let urlInput = $state('');
@@ -36,7 +46,7 @@
   // Initialize store when workspace changes
   $effect(() => {
     if (workspaceId) {
-      browserStore.initialize(workspaceId);
+      dispatch(initBrowserWorkspace(workspaceId));
     }
   });
 
@@ -70,7 +80,7 @@
     }
 
     inputError = '';
-    browserStore.addRecentUrl(normalized);
+    dispatch(addRecentUrl(workspaceId, normalized, undefined, undefined, new Date().toISOString()));
     onOpenUrl(normalized);
     urlInput = '';
   }
@@ -89,19 +99,19 @@
 
   // Handle clicking a recent URL
   function handleUrlClick(url: string) {
-    browserStore.addRecentUrl(url); // Move to top of recents
+    dispatch(addRecentUrl(workspaceId, url, undefined, undefined, new Date().toISOString())); // Move to top of recents
     onOpenUrl(url);
   }
 
   // Handle deleting a recent URL
   function handleDeleteUrl(e: MouseEvent, url: string) {
     e.stopPropagation();
-    browserStore.removeRecentUrl(url);
+    dispatch(removeRecentUrl(workspaceId, url));
   }
 
   // Handle clearing all recent URLs
   function handleClearAll() {
-    browserStore.clearRecentUrls();
+    dispatch(clearRecentUrls(workspaceId));
   }
 
   // Get display title for URL (use title if available, otherwise hostname)
@@ -167,7 +177,7 @@
   </div>
 
   <!-- Recent URLs -->
-  {#if browserStore.recentUrls.length > 0}
+  {#if $recentUrls$.length > 0}
     <div class="flex items-center justify-between px-4 py-1">
       <span class="text-ui uppercase tracking-wider text-muted-foreground">Recent</span>
       <button
@@ -180,7 +190,7 @@
       </button>
     </div>
     <ListContainer class="px-3" spacing="compact">
-      {#each browserStore.recentUrls as entry (entry.url)}
+      {#each $recentUrls$ as entry (entry.url)}
         <div class="group/url relative">
           <ListItem
             icon={faGlobe}

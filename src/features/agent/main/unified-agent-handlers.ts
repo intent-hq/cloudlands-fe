@@ -15,11 +15,7 @@ import { Logger } from '$shared/logger';
 import { WorkspaceConfig } from '$shared/main/config';
 import { AGENT_CHANNELS, AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
 import type {
-  IpcResponse,
   AgentIpc,
-  WorkspaceIpc,
-  FileIpc,
-  TerminalIpc,
 } from '$shared/ipc/contracts';
 import { formatIpcError, formatIpcSuccess } from './ipc-response-formatter';
 import { restoreAgentId, restoreWorkspaceId } from '$shared/types/type-guards';
@@ -46,7 +42,6 @@ import {
   AgentMessagingSendSchema,
   AgentMessagingReceiveSchema,
   AgentSetModelSchema,
-  AgentGetUserRulesSchema,
   AgentGetSpecializationRulesSchema,
   AgentContextUpdateSchema,
   AgentContextGetByWorkspaceSchema,
@@ -171,7 +166,7 @@ export function registerAgentHandlers(backend: IAgentBackendService): void {
   registerPersistenceHandlers(backend);
   registerLifecycleHandlers(backend);
   registerMessagingHandlers(backend);
-  registerRulesHandlers(backend);
+  registerRulesHandlers();
   registerContextHandlers(backend);
   registerCapabilitiesHandlers(backend);
   registerMetricsHandlers(backend);
@@ -828,7 +823,7 @@ function registerMessagingHandlers(backend: IAgentBackendService): void {
 /**
  * Register rules handlers
  */
-function registerRulesHandlers(backend: IAgentBackendService): void {
+function registerRulesHandlers(): void {
   // Get user rules from .augment/rules/user.md
   // Note: This handler is not currently used. User rules are loaded via EndUserRulesManager
   // (electron-store) in the 3-tier fallback system. The commented code below is preserved

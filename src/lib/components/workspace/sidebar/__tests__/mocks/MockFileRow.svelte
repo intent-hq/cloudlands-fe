@@ -1,4 +1,5 @@
 <script lang="ts">
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let { file, onFileClick, onStage, onUnstage, onRevert, onOpenFile, onSelectClick, showStageAction, showRevertAction, active, selected, focused, locked }: any = $props();
 </script>
 

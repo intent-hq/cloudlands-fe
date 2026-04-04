@@ -1,4 +1,5 @@
 import { type UnknownAction } from "redux";
+import { shallowEqual } from "fast-equals";
 import { type StoreAction, type StoreActionCreator } from "../types";
 
 export type StoreReducer<S, A> = (state: S, action: A) => S;
@@ -21,7 +22,8 @@ export const createReducer = <S, A extends StoreAction<any> = StoreAction<any>>(
     action: StoreAction<any> | UnknownAction
   ) => {
     const handler = handlers[action.type];
-    return handler?.(state, action as A) ?? state;
+    const newState = handler?.(state, action as A) ?? state;
+    return shallowEqual(newState, state) ? state : newState;
   };
 
   storeReducer.with = withReducer;
@@ -29,3 +31,12 @@ export const createReducer = <S, A extends StoreAction<any> = StoreAction<any>>(
 
   return storeReducer;
 };
+
+
+export const setStateValue = <S, V>(state: S, key: keyof S, value: V): S => {
+  if (shallowEqual(state[key], value)) {
+    return state;
+  }
+  return { ...state, [key]: value };
+  // Placeholder for a utility function to set a value in the state, if needed.
+}

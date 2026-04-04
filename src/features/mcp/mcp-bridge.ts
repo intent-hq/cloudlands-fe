@@ -53,6 +53,7 @@ export class MCPBridge {
       if (!workspaceResult.ok) {
         throw new Error(workspaceResult.error);
       }
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const workspace = workspaceResult.data;
 
       // Create/reuse executor via ExecutionManager (caching + retries)
@@ -67,6 +68,7 @@ export class MCPBridge {
               workspacePath,
             }
           : null;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const executor = executorManager.getExecutor({ workspaceId, workspacePath, remote });
 
       // Map MCP arguments to tool arguments

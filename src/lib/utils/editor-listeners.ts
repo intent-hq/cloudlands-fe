@@ -15,6 +15,7 @@ interface SetupListenersOptions {
  * Returns a cleanup function to remove all listeners
  */
 export function setupEditorListeners(options: SetupListenersOptions): () => void {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { editor, showSuggestions, workspaceId } = options;
   const unlisteners: Array<() => void> = [];
 

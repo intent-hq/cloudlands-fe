@@ -24,6 +24,7 @@ const ALLOWED_CHANNELS = [
   "workspace:list",
   "workspace:create",
   "workspace:get",
+  "workspace:get-current",
   "workspace:get-by-id",
   "workspace:get-root",
   "workspace:open",

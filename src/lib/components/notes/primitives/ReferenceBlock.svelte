@@ -1,5 +1,6 @@
 <script lang="ts">
   import { NodeViewWrapper } from 'svelte-tiptap';
+  import { writable } from 'svelte/store';
   import type { NodeViewProps } from '@tiptap/core';
   import type { ReferencePrimitive } from '$shared/types/notes-primitives';
   import { Button } from '$lib/components/ui/button';
@@ -12,8 +13,7 @@
   import { parseSemanticId, getSemanticId } from '$shared/types/notes-primitives';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { WorkspaceId } from '$shared/types/branded-ids';
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { onMount } from 'svelte';
 
   const logger = createLogger('ReferenceBlock');
@@ -44,8 +44,6 @@
   // Component state
   let expanded = $state(false);
   let loading = $state(true); // Start loading immediately
-  let saving = $state(false);
-  let isDirty = $state(false);
   let editorContent = $state<string>('');
   let resolvedCode = $state<string | null>(null);
   let resolvedLanguage = $state<string>('typescript');
@@ -69,17 +67,22 @@
 
   // Get workspaceId from extension options
   let workspaceId = $derived(extension?.options?.workspaceId as string | undefined);
+  const workspaceIdStore = writable(workspaceId ?? '');
+  $effect(() => {
+    workspaceIdStore.set(workspaceId ?? '');
+  });
+  const workspaceById = selectWorkspaceById(workspaceIdStore);
 
   // Get workspace and its repo path for file operations
-  let workspace = $derived(
-    workspaceId ? workspaceStore.findById(WorkspaceId(workspaceId)) : undefined,
-  );
+  let workspace = $derived(workspaceId ? $workspaceById : undefined);
   let workspaceRepoPath = $derived(workspace?.worktreePath || workspace?.repositoryPath || null);
 
   // Get line range from primitive or parsed ID
   let lineRange = $derived(
     primitive?.target?.range ||
-    (parsedId?.startLine ? { startLine: parsedId.startLine, endLine: parsedId.endLine || parsedId.startLine } : null)
+      (parsedId?.startLine
+        ? { startLine: parsedId.startLine, endLine: parsedId.endLine || parsedId.startLine }
+        : null),
   );
 
   // Format line range for display (e.g., "L22" or "L22-25")
@@ -182,18 +185,14 @@
       absolutePath = `${workspaceRepoPath}/${filePath}`;
     }
 
-    saving = true;
     try {
       await invoke('file:write', {
         workspaceId,
         path: absolutePath,
         content: editorContent,
       });
-      isDirty = false;
     } catch (err) {
       logger.error('Failed to save file', { error: err, filePath, absolutePath });
-    } finally {
-      saving = false;
     }
   }
 
@@ -204,11 +203,8 @@
   $effect(() => {
     // Skip if content hasn't been initialized yet or is the same
     if (!editorContent || editorContent === originalContent) {
-      isDirty = false;
       return;
     }
-
-    isDirty = true;
 
     // Clear existing timeout
     if (saveTimeout) {
@@ -235,8 +231,7 @@
     if (!primitive) return;
 
     // Get file path from multiple sources
-    const filePath =
-      primitive.target.filePath || parsedId?.filePath || semanticId?.split('#')[0];
+    const filePath = primitive.target.filePath || parsedId?.filePath || semanticId?.split('#')[0];
     const line = primitive.target.range?.startLine || parsedId?.startLine;
 
     if (!filePath) {
@@ -322,25 +317,25 @@
       {#if expanded}
         <div transition:slide={{ duration: 150 }} class="overflow-x-auto">
           <div class="w-full border-t border-border">
-          {#if loading}
-            <div class="p-3">
-              <Skeleton class="h-16 w-full rounded" />
-            </div>
-          {:else if error && !resolvedCode && !primitive.snapshot}
-            <div class="p-3 text-sm text-subtle">{error}</div>
-          {:else if codeContent}
-            <CodeBlock
-              code={codeContent}
-              language={resolvedLanguage}
-              showLineNumbers={true}
-              startLineNumber={startLine}
-              noBorder={true}
-              noMargin={true}
-            />
-          {:else}
-            <div class="p-3 text-sm text-subtle italic">No code content</div>
-          {/if}
-        </div>
+            {#if loading}
+              <div class="p-3">
+                <Skeleton class="h-16 w-full rounded" />
+              </div>
+            {:else if error && !resolvedCode && !primitive.snapshot}
+              <div class="p-3 text-sm text-subtle">{error}</div>
+            {:else if codeContent}
+              <CodeBlock
+                code={codeContent}
+                language={resolvedLanguage}
+                showLineNumbers={true}
+                startLineNumber={startLine}
+                noBorder={true}
+                noMargin={true}
+              />
+            {:else}
+              <div class="p-3 text-sm text-subtle italic">No code content</div>
+            {/if}
+          </div>
         </div>
       {/if}
     </div>

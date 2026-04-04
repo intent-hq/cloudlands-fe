@@ -5,7 +5,7 @@
  * Converts text diffs into structured EditHunk data.
  */
 
-import { diffLines, type Change } from 'diff';
+import { diffLines } from 'diff';
 import { randomUUID } from 'crypto';
 import { Logger } from '../../../shared/logger';
 import type { NoteId, WorkspaceId } from '../../../shared/types';

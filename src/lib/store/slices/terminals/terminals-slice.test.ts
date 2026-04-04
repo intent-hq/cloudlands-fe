@@ -9,15 +9,11 @@ import {
   removeTerminal,
   setTerminalOverlayHeight,
   renameTerminal,
-  updateTerminalName,
-  syncTerminals,
   loadWorkspaceTerminals,
   hydrateHeight,
   setTerminalsLoaded,
   setIsLoadingTerminals,
   markTerminalRecentlyCreated,
-  clearRecentlyCreatedTerminal,
-  clearWorkspaceTerminals,
   setTerminalsList,
   type TerminalOverlayState,
   type TerminalTab,
@@ -264,49 +260,6 @@ describe("terminalsReducer", () => {
     });
   });
 
-  describe("updateTerminalName", () => {
-    it("should update terminal name", () => {
-      const stateWith: TerminalOverlayState = {
-        ...initialState,
-        workspaces: { [WS]: { isOpen: false, activeTerminalId: null, terminals: col([{ id: "t1", name: "Terminal" }]), terminalsLoaded: false, isLoadingTerminals: false, recentlyCreatedTerminals: [] } },
-      };
-      const state = terminalsReducer(stateWith, updateTerminalName(WS, "t1", "npm run build"));
-      expect(getItem(getWs(state).terminals, "t1")?.name).toBe("npm run build");
-    });
-  });
-
-  describe("syncTerminals", () => {
-    it("should sync terminals from list", () => {
-      const state = terminalsReducer(
-        initialState,
-        syncTerminals(WS, [
-          { id: "t1", name: "Term 1" },
-          { id: "t2", title: "Term 2" },
-        ])
-      );
-      const ws = getWs(state);
-      expect(terms(state)).toHaveLength(2);
-      expect(getItem(ws.terminals, "t1")?.name).toBe("Term 1");
-      expect(getItem(ws.terminals, "t2")?.name).toBe("Term 2");
-    });
-
-    it("should reset active terminal if no longer valid", () => {
-      const stateWith: TerminalOverlayState = {
-        ...initialState,
-        workspaces: { [WS]: {
-          isOpen: false,
-          activeTerminalId: "old-term",
-          terminals: col([{ id: "old-term", name: "Old" }]),
-          terminalsLoaded: false,
-          isLoadingTerminals: false,
-          recentlyCreatedTerminals: [],
-        }},
-      };
-      const state = terminalsReducer(stateWith, syncTerminals(WS, [{ id: "t1", name: "New" }]));
-      expect(getWs(state).activeTerminalId).toBe("t1");
-    });
-  });
-
   describe("loadWorkspaceTerminals", () => {
     it("should load terminals with saved state", () => {
       const terminals = [
@@ -461,23 +414,6 @@ describe("terminalsReducer", () => {
       let state = terminalsReducer(initialState, markTerminalRecentlyCreated(WS, "t1"));
       state = terminalsReducer(state, markTerminalRecentlyCreated(WS, "t1"));
       expect(getWs(state).recentlyCreatedTerminals).toEqual(["t1"]);
-    });
-  });
-
-  describe("clearRecentlyCreatedTerminal", () => {
-    it("should remove terminal from recently created list", () => {
-      let state = terminalsReducer(initialState, markTerminalRecentlyCreated(WS, "t1"));
-      state = terminalsReducer(state, markTerminalRecentlyCreated(WS, "t2"));
-      state = terminalsReducer(state, clearRecentlyCreatedTerminal(WS, "t1"));
-      expect(getWs(state).recentlyCreatedTerminals).toEqual(["t2"]);
-    });
-  });
-
-  describe("clearWorkspaceTerminals", () => {
-    it("should remove workspace state", () => {
-      let state = terminalsReducer(initialState, addTerminal(WS, "t1", "T1"));
-      state = terminalsReducer(state, clearWorkspaceTerminals(WS));
-      expect(state.workspaces[WS]).toBeUndefined();
     });
   });
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { RequestDeduplicator } from '../src/features/agent/browser/services/request-deduplicator.service';
 
 describe('RequestDeduplicator', () => {

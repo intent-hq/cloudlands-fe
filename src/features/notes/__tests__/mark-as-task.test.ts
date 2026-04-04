@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { NotesService } from '../notes.service';
-import type { Note, WorkspaceId, NoteId, TaskStatus } from '../../../shared/types';
+import type { Note, WorkspaceId, TaskStatus } from '../../../shared/types';
 import { randomUUID } from 'crypto';
 
 describe('NotesService.markAsTask - Happy Path', () => {

@@ -1,14 +1,12 @@
 import type { Editor } from '@tiptap/core';
+import type { ReduxStore } from '$lib/store/types';
+import { selectCommentAction } from '$lib/store/slices/comments/comments-slice';
 
 import type { LoggerLike } from './logger.types';
 
-export type CommentsStoreV2Like = {
-  selectComment: (commentId: string) => void;
-};
-
 export type SetupCommentMarkClickHandlerV2Args = {
   editor: Editor;
-  commentsStoreV2: CommentsStoreV2Like;
+  store: ReduxStore;
   logger: LoggerLike;
   noteId: string | undefined;
   maxAttempts?: number;
@@ -23,7 +21,7 @@ export type SetupCommentMarkClickHandlerV2Args = {
  */
 export function setupCommentMarkClickHandlerV2({
   editor,
-  commentsStoreV2,
+  store,
   logger,
   noteId,
   maxAttempts = 100,
@@ -115,7 +113,7 @@ export function setupCommentMarkClickHandlerV2({
 
         if (commentId) {
           // Only update through the store to avoid conflicts
-          commentsStoreV2.selectComment(commentId);
+          store.dispatch(selectCommentAction(commentId));
 
           // Prevent default to avoid text selection
           event.preventDefault();

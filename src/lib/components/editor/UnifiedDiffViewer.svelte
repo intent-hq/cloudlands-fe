@@ -11,6 +11,7 @@
    */
 
   import { onMount, onDestroy } from 'svelte';
+  import { writable } from 'svelte/store';
   import * as monaco from 'monaco-editor';
   import { ensureMonacoInitialized, initializeMonaco } from '$lib/utils/monaco-workers';
   import { defineMonacoThemes, getActiveMonacoThemeName } from '$lib/utils/monaco-theme';
@@ -20,8 +21,10 @@
   import { faExternalLinkAlt, faFolderOpen } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { WorkspaceId } from '$shared/types/branded-ids';
+  import {
+    selectActiveWorkspace,
+    selectWorkspaceById,
+  } from '$lib/store/slices/workspace/workspace-selectors';
 
   const logger = createLogger('UnifiedDiffViewer');
 
@@ -59,17 +62,30 @@
     fileName = 'file',
     language = 'plaintext',
     viewMode = 'inline',
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     theme = 'dark',
     readOnly = false,
     height = '400px',
     hideUnchangedRegions = false,
     lineWrapping = true,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     provenance,
     onSave,
     onContentChange,
     workspaceId,
     filePath,
   }: Props = $props();
+
+  const activeWorkspace = selectActiveWorkspace();
+  const workspaceIdStore = writable(workspaceId ?? '');
+  $effect(() => {
+    workspaceIdStore.set(workspaceId ?? '');
+  });
+  const workspaceById = selectWorkspaceById(workspaceIdStore);
+
+  function getResolvedWorkspace() {
+    return workspaceId ? $workspaceById : $activeWorkspace;
+  }
 
   // Warn about incompatible options - use $effect to react to prop changes
   $effect(() => {
@@ -102,9 +118,7 @@
       absolutePath = filePath;
     } else {
       // Need to resolve relative path
-      const workspace = workspaceId
-        ? workspaceStore.findById(WorkspaceId(workspaceId))
-        : workspaceStore.current;
+      const workspace = getResolvedWorkspace();
       const workspacePath = workspace?.worktreePath || workspace?.repositoryPath;
 
       if (!workspacePath) {
@@ -134,9 +148,7 @@
       absolutePath = filePath;
     } else {
       // Need to resolve relative path
-      const workspace = workspaceId
-        ? workspaceStore.findById(WorkspaceId(workspaceId))
-        : workspaceStore.current;
+      const workspace = getResolvedWorkspace();
       const workspacePath = workspace?.worktreePath || workspace?.repositoryPath;
 
       if (!workspacePath) {
@@ -189,6 +201,7 @@
   let themeCleanup: (() => void) | undefined;
 
   // Calculate stats from the actual content
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let stats = $derived.by(() => {
     // Count actual line differences by comparing line by line
     const oldLines = oldContent.split('\n');
@@ -261,16 +274,6 @@
   // Define custom Monaco themes that match the app's design
   function defineCustomThemes() {
     // Get CSS variable values from the document
-    const getColorVar = (varName: string): string => {
-      if (typeof window === 'undefined') return '#000000';
-      const value = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
-      // Convert HSL to hex if needed, or return as-is if already hex
-      if (value.startsWith('hsl')) {
-        // For now, use the HSL value directly - Monaco supports it
-        return `hsl(${value.substring(4, value.length - 1)})`;
-      }
-      return value || '#000000';
-    };
 
     // Define shared themes
     defineMonacoThemes();
@@ -314,7 +317,7 @@
         isDisposing = true;
         try {
           editor.dispose();
-        } catch (e) {
+        } catch {
           // Silently handle disposal errors
         }
         editor = null;
@@ -326,7 +329,7 @@
       if (originalModel) {
         try {
           originalModel.dispose();
-        } catch (e) {
+        } catch {
           // Silently handle disposal errors
         }
         originalModel = null;
@@ -334,7 +337,7 @@
       if (modifiedModel) {
         try {
           modifiedModel.dispose();
-        } catch (e) {
+        } catch {
           // Silently handle disposal errors
         }
         modifiedModel = null;
@@ -465,7 +468,7 @@
       'flex: 1; overflow: auto; border-right: 1px solid var(--border); padding: 1rem;';
 
     const originalLabel = document.createElement('div');
-    originalLabel.style.cssText = 'color: #999; margin-bottom: 0.5rem;';
+    originalLabel.style.cssText = 'color: var(--muted-foreground); margin-bottom: 0.5rem;';
     originalLabel.textContent = 'Original';
     originalPane.appendChild(originalLabel);
 
@@ -479,7 +482,7 @@
     modifiedPane.style.cssText = 'flex: 1; overflow: auto; padding: 1rem;';
 
     const modifiedLabel = document.createElement('div');
-    modifiedLabel.style.cssText = 'color: #999; margin-bottom: 0.5rem;';
+    modifiedLabel.style.cssText = 'color: var(--muted-foreground); margin-bottom: 0.5rem;';
     modifiedLabel.textContent = 'Modified';
     modifiedPane.appendChild(modifiedLabel);
 
@@ -531,7 +534,7 @@
           isDisposing = true;
           try {
             editor.dispose();
-          } catch (err) {
+          } catch {
             // Silently handle disposal errors
           }
           editor = null;
@@ -600,6 +603,7 @@
         // Only update modified if it changed from what's in the model
         if (model.modified.getValue() !== newC) {
           model.modified.setValue(newC);
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           needsDecorationUpdate = true;
         }
 
@@ -610,7 +614,7 @@
         // Note: Monaco's diff editor automatically recomputes diffs when content changes.
         // No need for manual decoration updates.
       }
-    } catch (err) {
+    } catch {
       // Silently handle content update errors
     }
   });
@@ -684,7 +688,7 @@
       isDisposing = true;
       try {
         editor.dispose();
-      } catch (err) {
+      } catch {
         // Silently handle disposal errors
       }
       editor = null;
@@ -695,7 +699,7 @@
     if (originalModel) {
       try {
         originalModel.dispose();
-      } catch (err) {
+      } catch {
         // Silently handle disposal errors
       }
       originalModel = null;
@@ -703,7 +707,7 @@
     if (modifiedModel) {
       try {
         modifiedModel.dispose();
-      } catch (err) {
+      } catch {
         // Silently handle disposal errors
       }
       modifiedModel = null;

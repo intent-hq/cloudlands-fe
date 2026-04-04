@@ -49,6 +49,7 @@ export function formatEventNotification(events: WorkspaceEvent[]): string {
   const grouped = groupEventsByType(events);
 
   let eventNumber = 1;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   for (const [_type, typeEvents] of Object.entries(grouped)) {
     for (const event of typeEvents) {
       lines.push(`${eventNumber}. ${formatSingleEvent(event)}`);

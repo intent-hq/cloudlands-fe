@@ -64,19 +64,11 @@ function flattenTree(d: FileType): FileType[] {
 }
 
 // Get unique values (kept for potential future use)
-function _uniqBy<T>(arr: T[], key: (item: T) => unknown): T[] {
-  const seen = new Set();
-  return arr.filter((item) => {
-    const k = key(item);
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
-}
 
 export function createColorScale(
   data: FileType | null,
   colorEncoding: ColorEncoding,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _fileColors: Record<string, string>,
 ) {
   if (!data) return { colorScale: () => '#f4f4f4', colorExtent: [0, 0] as [number, number] };
@@ -626,6 +618,7 @@ export function packData(
       }
       return 0;
     }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _focusedSubtreeCount = countInSubtree(prunedData, focusPath);
   }
 
@@ -637,9 +630,6 @@ export function packData(
     );
 
   // Debug: check hierarchy values (kept for potential future use)
-  const _allNodes = hierarchicalData.descendants();
-  const _leaves = _allNodes.filter((n) => !n.children);
-  const _totalValue = hierarchicalData.value || 0;
 
   // Pack into a square - d3.pack() guarantees children are contained within parents
   const packSize = Math.min(width, height);

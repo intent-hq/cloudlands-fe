@@ -20,8 +20,6 @@ function bigString(bytes: number): string {
   return 'x'.repeat(bytes);
 }
 
-const THRESHOLD = 50 * 1024; // 50KB
-
 describe('truncateLargeFields', () => {
   it('should return messages unchanged when all fields are small', () => {
     const messages: AgentMessage[] = [

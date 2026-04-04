@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
   import CursorCodeIcon from '$lib/components/shared/icons/CursorCodeIcon.svelte';
   import GhosttyIcon from '$lib/components/shared/icons/GhosttyIcon.svelte';
   import JetBrainsIcon from '$lib/components/shared/icons/JetBrainsIcon.svelte';
@@ -30,7 +30,6 @@
     faCode,
     faCodeBranch,
     faCopy,
-    faEllipsisH,
     faFolder,
     faFolderOpen,
     faTerminal,
@@ -111,7 +110,7 @@
   let dropdownOpen = $state(false);
 
   // Fetch installed editors when component mounts
-  $effect(() => {
+  onMount(() => {
     dispatch(fetchEditors());
   });
 
@@ -175,9 +174,7 @@
     return [...editorActions, otherAction, ...specialActions];
   });
 
-  const currentAction = $derived(
-    actions.find((a) => a.id === $openAction) || actions[0],
-  );
+  const currentAction = $derived(actions.find((a) => a.id === $openAction) || actions[0]);
 
   /**
    * Get the path to open for editors (VSCode, Cursor, JetBrains, Xcode).

@@ -4,8 +4,6 @@
   import { onMount, onDestroy } from 'svelte';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import type { TerminalAdapter } from '$features/terminal/TerminalAdapter';
-  import Fa from 'svelte-fa';
-  import { faSpinner } from '@fortawesome/free-solid-svg-icons';
   import TerminalSearchBar from './TerminalSearchBar.svelte';
 
   interface Props {
@@ -19,14 +17,11 @@
 
   let container: HTMLDivElement;
   let terminal: TerminalAdapter | null = null;
-  let isLoading = $state(true);
   let isConnected = $state(false);
   let isExecuting = $state(false);
-  let currentPath: string = $state('');
 
   // Search state
   let searchOpen = $state(false);
-  let searchQuery = $state('');
   let hasMatches = $state(true);
   let searchFocusTrigger = $state(0);
   let currentMatchIndex = $state(-1);
@@ -35,14 +30,7 @@
   // Theme change listener cleanup function - set on mount
   let themeCleanup: (() => void) | undefined;
 
-  // Detect system theme - initialize with current theme
-  function detectCurrentTheme(): boolean {
-    if (typeof window === 'undefined') return false;
-    return document.documentElement.classList.contains('dark');
-  }
-
   // Track theme changes
-  let isDarkMode = $state(detectCurrentTheme());
 
   // Track previous status to avoid unnecessary updates
   let previousStatus = { isConnected: false, isExecuting: false };
@@ -83,7 +71,6 @@
    */
   async function loadTerminal(id: string) {
     try {
-      isLoading = true;
       isConnected = false;
 
       if (!container) {
@@ -94,7 +81,6 @@
       // Validate terminal ID
       if (!id) {
         logger.error('Invalid terminal ID: empty or null');
-        isLoading = false;
         return;
       }
 
@@ -110,7 +96,6 @@
         container,
         {
           onReady: () => {
-            isLoading = false;
             isConnected = true;
             // Auto-focus the terminal when it's ready
             requestAnimationFrame(() => {
@@ -123,9 +108,6 @@
           onCommandFinished: () => {
             isExecuting = false;
           },
-          onCwdChanged: (cwd) => {
-            currentPath = cwd;
-          },
           onSearchResultsChange: (resultIndex, resultCount) => {
             currentMatchIndex = resultIndex;
             totalMatches = resultCount;
@@ -136,7 +118,6 @@
       );
     } catch (error) {
       logger.error('Failed to load terminal:', error);
-      isLoading = false;
     }
   }
 
@@ -144,7 +125,6 @@
 
   // Search handlers
   function handleFindNext(query: string) {
-    searchQuery = query;
     if (terminal && query) {
       const found = terminal.findNext(query);
       hasMatches = found;
@@ -152,7 +132,6 @@
   }
 
   function handleFindPrevious(query: string) {
-    searchQuery = query;
     if (terminal && query) {
       const found = terminal.findPrevious(query);
       hasMatches = found;
@@ -161,7 +140,6 @@
 
   function handleSearchClose() {
     searchOpen = false;
-    searchQuery = '';
     hasMatches = true; // Reset to avoid stale "No results" state
     currentMatchIndex = -1;
     totalMatches = 0;
@@ -174,22 +152,6 @@
     if (container && terminalId && lastLoadedId !== terminalId) {
       lastLoadedId = terminalId;
       loadTerminal(terminalId);
-    }
-
-    // Set up theme change listeners
-    if (typeof window !== 'undefined') {
-      const observer = new MutationObserver(() => {
-        isDarkMode = detectCurrentTheme();
-      });
-
-      observer.observe(document.documentElement, {
-        attributes: true,
-        attributeFilter: ['class'],
-      });
-
-      themeCleanup = () => {
-        observer.disconnect();
-      };
     }
   });
 

@@ -25,7 +25,8 @@ import { ChoiceBlockShortcuts } from './choice-block-shortcuts';
 import { TasksBlock } from '$lib/components/tiptap/TasksBlock';
 import { MermaidBlock } from '$lib/components/tiptap/MermaidBlock';
 import { safeLowlight } from './safe-lowlight';
-import { commentsStoreV2 } from '$features/comments/comments-v2.store.svelte';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { selectComments, selectCommentById } from '$lib/store/slices/comments/comments-selectors';
 import { createMentionSuggestionRenderer } from '$lib/components/chat/input/mention-suggestion-renderer';
 import { getMentionSystem, type SearchContext } from '$lib/services/mentions';
 import { toPromptToken } from '$lib/services/mentions/format';
@@ -126,7 +127,8 @@ const SelectionPreservation = Extension.create({
   },
 
   addProseMirrorPlugins() {
-    const extension = this;
+    const editor = this.editor;
+    const storage = this.storage;
 
     return [
       new Plugin({
@@ -134,11 +136,11 @@ const SelectionPreservation = Extension.create({
         props: {
           decorations(state) {
             // Check editor focus state directly instead of tracking via transactions
-            if (extension.editor.isFocused) {
+            if (editor.isFocused) {
               return DecorationSet.empty;
             }
 
-            const preserved = extension.storage.preservedSelection;
+            const preserved = storage.preservedSelection;
             if (!preserved) {
               return DecorationSet.empty;
             }
@@ -905,17 +907,12 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         return [
           createCommentDecorationsPlugin({
             getComments: () => {
-              const comments = commentsStoreV2.comments;
-              // Removed excessive logging - this gets called on every editor transaction
-              // logger.info("[editor-config] getComments called", {
-              //   count: comments.length,
-              //   commentIds: comments.map((c) => c.id),
-              // });
+              const comments = selectComments.select(getReduxStore().getState());
               return comments;
             },
             onCommentClick,
             getCommentStatus: (commentId) => {
-              const comment = commentsStoreV2.getComment(commentId);
+              const comment = selectCommentById.select(getReduxStore().getState(), commentId);
               return comment?.status || 'open';
             },
           }),
@@ -1025,7 +1022,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
               editor.commands.focus();
               // Try to restore selection position
               editor.commands.setTextSelection({ from: selectionFrom, to: selectionTo });
-            } catch (e) {
+            } catch {
               // Selection might be out of bounds after content change or view not ready
               editor.commands.focus('end');
             }

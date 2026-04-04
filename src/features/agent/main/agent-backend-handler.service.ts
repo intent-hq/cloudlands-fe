@@ -29,15 +29,15 @@ import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
 import type { QueuedMessage } from '$shared/types/agent-session';
 import type { AgentId, NoteId, WorkspaceId } from '$shared/types/branded-ids';
 import type { IpcMainInvokeEvent } from 'electron';
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { WorkspaceConfig } from '../../../shared/main/config';
 import { workspaceService } from '../../workspace/main/workspace.service';
 import { agentValidator } from '../services/agent-validator';
-import { messageAccumulator } from '../services/message-accumulator.service';
-import { streamingConfig } from '../streaming-config.service';
+import * as messageAccumulator from '../../../store/main/slices/message-accumulator/message-accumulator-api';
+import { resolveStreamingConfig, DEFAULT_PROFILE } from '$lib/store/slices/streaming-config/streaming-config-types';
 import { agentPersistence } from './agent-persistence';
 import { getWindowIdForWorkspace, getWindowIdsForWorkspace } from '../../system/main/system.ipc';
 import { trackMain } from '$lib/services/analytics/main';
@@ -180,7 +180,7 @@ export class AgentBackendHandler {
   /**
    * Secondary guard: tracks recently deleted agent IDs to prevent resurrection
    * in sendBackendInitiatedMessage. Maps agentId → deletedAt timestamp.
-   * Primary guard is in AgentEventSubscriptionService.deletedAgents.
+   * Primary guard is in the agent-subscriptions Redux slice (deletedAgents).
    * Entries older than 1 hour are evicted on each addition.
    */
   private deletedAgentIds: Map<string, number> = new Map();
@@ -2573,10 +2573,9 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       // Mark agent as responding for event subscription service
       // This allows events to be queued until the agent becomes idle
       try {
-        const { getAgentEventSubscriptionService } =
-          await import('../../events/main/agent-event-subscription.service');
-        const subscriptionService = getAgentEventSubscriptionService(request.workspaceId);
-        subscriptionService.setAgentStatus(request.agentId, 'responding');
+        const { updateAgentStatus } =
+          await import('../../events/main/agent-subscription-ops');
+        updateAgentStatus(request.workspaceId, request.agentId, 'responding');
       } catch (err) {
         logger.warn('Failed to set agent status to responding', {
           agentId: request.agentId,
@@ -3521,10 +3520,27 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         };
 
         // Step 1 & 2: Request frontend to prepare handler and wait for ready signal
-        await this.requestFrontendHandler(request.agentId, request.workspaceId, {
-          name: agentSession.name,
-          model: agentSession.model,
-        });
+        // Non-fatal: If the frontend isn't ready (e.g., coordinator's chat panel not visible,
+        // or ACP workspace agent with no UI window), continue anyway. The agent:stream-starting
+        // safety net on the frontend will register handlers when streaming begins.
+        try {
+          await this.requestFrontendHandler(request.agentId, request.workspaceId, {
+            name: agentSession.name,
+            model: agentSession.model,
+          });
+        } catch (handshakeError) {
+          logger.warn(
+            'Backend stream recovery: frontend handshake failed (non-fatal), continuing without UI',
+            {
+              agentId: request.agentId,
+              workspaceId: request.workspaceId,
+              error:
+                handshakeError instanceof Error
+                  ? handshakeError.message
+                  : String(handshakeError),
+            },
+          );
+        }
 
         // Step 3: Emit agent:created to add to dock/session store
         backend.emit('agent:created', {
@@ -4101,10 +4117,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
   /**
    * Handle persistence metrics
    */
-  private async handlePersistenceMetrics(
-    _event: IpcMainInvokeEvent,
-    _validated: any,
-  ): Promise<{ success: boolean; data?: any; error?: string }> {
+  private async handlePersistenceMetrics(): Promise<{ success: boolean; data?: any; error?: string }> {
     try {
       // Get metrics from persistence layer
       // Note: These methods don't exist in UnifiedPersistence yet, returning placeholder data
@@ -4164,7 +4177,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
 
       if (!agent) {
         // Agent not in memory, load from persistence and restore session
-        const wsId = workspaceId || this.getWorkspaceIdForAgent(agentId);
+        const wsId = workspaceId || this.getWorkspaceIdForAgent();
 
         logger.info('Agent not in memory, loading from persistence to resume', {
           agentId,
@@ -4198,13 +4211,13 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
 
           // Resume the session by restoring it to memory
           // The loaded agent already has all its messages and state
-          agent = await this.resumeAgentSession(loadedAgent, workspace);
+          agent = await this.resumeAgentSession(loadedAgent);
 
           if (!agent) {
             logger.error('Failed to resume agent session', {
               agentId,
               providedWorkspaceId: workspaceId,
-              fallbackResult: this.getWorkspaceIdForAgent(agentId),
+              fallbackResult: this.getWorkspaceIdForAgent(),
             });
             return { success: false, error: 'Workspace not found for agent' };
           }
@@ -4247,7 +4260,6 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
    */
   private async resumeAgentSession(
     loadedAgent: AgentSession,
-    _workspace: any,
   ): Promise<AgentSession | null> {
     try {
       const backend = await this.getBackend();
@@ -4289,7 +4301,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
    * Note: Currently returns null as agent-workspace relationships are tracked externally.
    * The caller should always provide workspaceId when available.
    */
-  private getWorkspaceIdForAgent(_agentId: string): string | null {
+  private getWorkspaceIdForAgent(): string | null {
     // Agent-workspace relationships are tracked in the frontend state and persistence layer
     // This method is kept as a fallback but callers should always provide workspaceId when available
     return null;
@@ -4437,7 +4449,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
 
       // Check if stream has been running too long (use maxStreamDuration from config)
       const startTime = this.streamStartTimes.get(agentId);
-      const maxDuration = streamingConfig.getConfig().maxStreamDuration;
+      const maxDuration = resolveStreamingConfig(DEFAULT_PROFILE).maxStreamDuration;
       if (startTime && Date.now() - startTime > maxDuration) {
         const duration = Date.now() - startTime;
         logger.warn('Stream timeout, attempting graceful completion', {
@@ -5022,14 +5034,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       }
 
       // Agent not in memory, restore it
-      const workspace = {
-        id: workspaceId,
-        path: WorkspaceConfig.paths.workspace(workspaceId),
-        title: 'Workspace',
-      };
-
       // Resume the session by restoring it to memory
-      agent = await this.resumeAgentSession(existingAgent, workspace);
+      agent = await this.resumeAgentSession(existingAgent);
 
       if (!agent) {
         logger.error('Failed to resume agent session', {
@@ -5130,7 +5136,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
   /**
    * Get a specific agent
    */
-  public async getAgent(sessionId: string, _workspaceId?: string): Promise<AgentSession | null> {
+  public async getAgent(sessionId: string): Promise<AgentSession | null> {
     try {
       return await this.handleGetAgent(null as any, sessionId);
     } catch (error) {
@@ -5327,10 +5333,9 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     // Mark in subscription service (removes all subscriptions + prevents new ones)
     if (workspaceId) {
       try {
-        const { getAgentEventSubscriptionService } =
-          await import('../../events/main/agent-event-subscription.service');
-        const subscriptionService = getAgentEventSubscriptionService(workspaceId);
-        subscriptionService.markAgentDeleted(agentId);
+        const { markAgentAsDeleted } =
+          await import('../../events/main/agent-subscription-ops');
+        markAgentAsDeleted(workspaceId, agentId);
       } catch (err) {
         logger.error(
           '[AgentBackendHandler] Failed to mark agent as deleted in subscription service',
@@ -5415,7 +5420,6 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     [key: string]: any;
   }): Promise<{ success: boolean; error?: string; errorCode?: string }> {
     const { sessionId, message, workspaceId, messageMetadata, ...otherParams } = params;
-
     // CRITICAL GUARD: Reject messages for deleted agents FIRST, before any other checks.
     // This prevents resurrection of deleted agents from persistence backup.
     // Must be checked before provider health, streaming, and queue checks — a dead
@@ -6687,17 +6691,17 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     // This ensures queued events for this agent are delivered first,
     // and the agent's status is correct when event handlers run.
     try {
-      const { getAgentEventSubscriptionService } =
-        await import('../../events/main/agent-event-subscription.service');
-      const subscriptionService = getAgentEventSubscriptionService(workspaceId);
-      subscriptionService.setAgentStatus(agentId, 'idle');
+      const { updateAgentStatus } =
+        await import('../../events/main/agent-subscription-ops');
+      updateAgentStatus(workspaceId, agentId, 'idle');
     } catch (err) {
       logger.warn('Failed to update agent subscription status', { agentId, error: err });
     }
 
     // Step 3: Build event data and emit the agent:idle event
     try {
-      const { getWorkspaceEventBus } = await import('../../events/main/workspace-event-bus');
+      const { mainDispatch } = await import('../../../store/main/redux-store-bridge');
+      const { emitWorkspaceEvent: reduxEmitWorkspaceEvent } = await import('../../../store/main/slices/workspace-events/workspace-events-slice');
       // Fetch agent's last response summary for delegation notifications
       let lastResponseSummary: string | undefined;
       let messageCount: number | undefined;
@@ -6816,9 +6820,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         logger.debug('Could not fetch agent summary for idle event', { agentId, error: err });
       }
 
-      // Emit the agent:idle event with summary data via WorkspaceEventBus
-      const eventBus = getWorkspaceEventBus(workspaceId);
-      eventBus.emitEvent({
+      // Emit the agent:idle event with summary data via Redux
+      mainDispatch(reduxEmitWorkspaceEvent({
         id: `agent-idle-${agentId}-${uuidv4()}`,
         type: 'agent:idle',
         timestamp: new Date().toISOString(),
@@ -6842,9 +6845,9 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           completionReport,
           parentAgentId,
         },
-      });
+      }));
 
-      logger.info('Emitted agent:idle event via WorkspaceEventBus', {
+      logger.info('Emitted agent:idle event via Redux', {
         agentId,
         workspaceId,
         finishReason,
@@ -6860,11 +6863,12 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       // This updates the renderer's local store; the value is not persisted to disk
       // but updatedAt serves as a reasonable fallback after restart.
       try {
-        const { unifiedEventBus } = await import('../../events/main/unified-event-bus');
-        unifiedEventBus.emitDomainEvent('workspace:updated', {
+        const { mainDispatch } = await import('../../../store/main/redux-store-bridge');
+        const { workspaceUpdated } = await import('../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice');
+        mainDispatch(workspaceUpdated({
           workspaceId: workspaceId as WorkspaceId,
           changes: { lastActivity: new Date().toISOString() },
-        });
+        }));
       } catch (updateErr) {
         logger.debug('Failed to emit workspace lastActivity update', {
           workspaceId,
@@ -6887,39 +6891,41 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     model?: string,
   ): void {
     try {
-      // Use WorkspaceEventBus which forwards to UnifiedEventBus automatically
-      import('../../events/main/workspace-event-bus')
-        .then(({ getWorkspaceEventBus }) => {
-          const eventBus = getWorkspaceEventBus(workspaceId);
-          eventBus.emitEvent({
-            id: `agent-created-${agentId}-${uuidv4()}`,
-            type: 'agent:created',
-            timestamp: new Date().toISOString(),
-            workspaceId,
-            actor: {
-              type: 'user',
-              name: 'User',
-            },
-            data: {
-              agentId,
-              agentName,
-              model,
-            },
-          });
-          logger.debug('Emitted agent:created event via WorkspaceEventBus', {
-            agentId,
-            workspaceId,
-            agentName,
-          });
+      // Emit through Redux (which handles persistence and broadcast via sagas)
+      import('../../../store/main/redux-store-bridge')
+        .then(({ mainDispatch }) => {
+          import('../../../store/main/slices/workspace-events/workspace-events-slice')
+            .then(({ emitWorkspaceEvent: reduxEmit }) => {
+              mainDispatch(reduxEmit({
+                id: `agent-created-${agentId}-${uuidv4()}`,
+                type: 'agent:created',
+                timestamp: new Date().toISOString(),
+                workspaceId,
+                actor: {
+                  type: 'user',
+                  name: 'User',
+                },
+                data: {
+                  agentId,
+                  agentName,
+                  model,
+                },
+              }));
+              logger.debug('Emitted agent:created event via Redux', {
+                agentId,
+                workspaceId,
+                agentName,
+              });
+            });
 
           // Update workspace lastActivity so the workspace list shows fresh timestamps.
           // Emit directly to avoid the heavy getWorkspace() in updateWorkspace().
-          import('../../events/main/unified-event-bus')
-            .then(({ unifiedEventBus }) => {
-              unifiedEventBus.emitDomainEvent('workspace:updated', {
+          import('../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice')
+            .then(({ workspaceUpdated }) => {
+              mainDispatch(workspaceUpdated({
                 workspaceId: workspaceId as WorkspaceId,
                 changes: { lastActivity: new Date().toISOString() },
-              });
+              }));
             })
             .catch((updateErr) => {
               logger.debug('Failed to emit workspace lastActivity update on agent create', {
@@ -6976,9 +6982,9 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     // NOTE: isBackground and parentAgentId are pre-captured by the caller (handleDeleteAgent)
     // BEFORE persistence deletion, since the agent file is already gone by the time this runs.
     try {
-      const { getWorkspaceEventBus } = await import('../../events/main/workspace-event-bus');
-      const eventBus = getWorkspaceEventBus(workspaceId);
-      eventBus.emitEvent({
+      const { mainDispatch } = await import('../../../store/main/redux-store-bridge');
+      const { emitWorkspaceEvent: reduxEmitWorkspaceEvent } = await import('../../../store/main/slices/workspace-events/workspace-events-slice');
+      mainDispatch(reduxEmitWorkspaceEvent({
         id: `agent-deleted-${agentId}-${uuidv4()}`,
         type: 'agent:deleted',
         timestamp: new Date().toISOString(),
@@ -6998,8 +7004,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           isBackground,
           parentAgentId,
         },
-      });
-      logger.info('Emitted agent:deleted event via WorkspaceEventBus', {
+      }));
+      logger.info('Emitted agent:deleted event via Redux', {
         agentId,
         workspaceId,
         agentName,
@@ -7022,32 +7028,34 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     model?: string,
   ): void {
     try {
-      // Use WorkspaceEventBus which forwards to UnifiedEventBus automatically
-      import('../../events/main/workspace-event-bus')
-        .then(({ getWorkspaceEventBus }) => {
-          const eventBus = getWorkspaceEventBus(workspaceId);
-          eventBus.emitEvent({
-            id: `agent-started-${agentId}-${uuidv4()}`,
-            type: 'agent:started',
-            timestamp: new Date().toISOString(),
-            workspaceId,
-            actor: {
-              type: 'agent',
-              id: agentId,
-              name: agentName,
-            },
-            data: {
-              agentId,
-              agentName,
-              model,
-              reason: 'message_received',
-            },
-          });
-          logger.debug('Emitted agent:started event via WorkspaceEventBus', {
-            agentId,
-            workspaceId,
-            agentName,
-          });
+      // Emit through Redux (which handles persistence and broadcast via sagas)
+      import('../../../store/main/redux-store-bridge')
+        .then(({ mainDispatch }) => {
+          import('../../../store/main/slices/workspace-events/workspace-events-slice')
+            .then(({ emitWorkspaceEvent: reduxEmit }) => {
+              mainDispatch(reduxEmit({
+                id: `agent-started-${agentId}-${uuidv4()}`,
+                type: 'agent:started',
+                timestamp: new Date().toISOString(),
+                workspaceId,
+                actor: {
+                  type: 'agent',
+                  id: agentId,
+                  name: agentName,
+                },
+                data: {
+                  agentId,
+                  agentName,
+                  model,
+                  reason: 'message_received',
+                },
+              }));
+              logger.debug('Emitted agent:started event via Redux', {
+                agentId,
+                workspaceId,
+                agentName,
+              });
+            });
         })
         .catch((err) => {
           logger.warn('Failed to emit agent:started event', { agentId, error: err });
@@ -7093,10 +7101,9 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     // Step 1: Set agent status to failed BEFORE emitting the event.
     // This ensures correct ordering for subscription delivery.
     try {
-      const { getAgentEventSubscriptionService } =
-        await import('../../events/main/agent-event-subscription.service');
-      const subscriptionService = getAgentEventSubscriptionService(workspaceId);
-      subscriptionService.setAgentStatus(agentId, 'failed');
+      const { updateAgentStatus } =
+        await import('../../events/main/agent-subscription-ops');
+      updateAgentStatus(workspaceId, agentId, 'failed');
     } catch (err) {
       logger.warn('Failed to set agent status to failed', { agentId, error: err });
     }
@@ -7119,9 +7126,9 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
 
     // Step 3: Emit the agent:failed event
     try {
-      const { getWorkspaceEventBus } = await import('../../events/main/workspace-event-bus');
-      const eventBus = getWorkspaceEventBus(workspaceId);
-      eventBus.emitEvent({
+      const { mainDispatch } = await import('../../../store/main/redux-store-bridge');
+      const { emitWorkspaceEvent: reduxEmitWorkspaceEvent } = await import('../../../store/main/slices/workspace-events/workspace-events-slice');
+      mainDispatch(reduxEmitWorkspaceEvent({
         id: `agent-failed-${agentId}-${uuidv4()}`,
         type: 'agent:failed',
         timestamp: new Date().toISOString(),
@@ -7138,8 +7145,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           isBackground,
           parentAgentId,
         },
-      });
-      logger.debug('Emitted agent:failed event via WorkspaceEventBus', {
+      }));
+      logger.debug('Emitted agent:failed event via Redux', {
         agentId,
         workspaceId,
         agentName,

@@ -14,7 +14,6 @@ import {
   toProviderMessage,
   fromProviderMessage,
   extractContentFromBlocks,
-  extractAllContent,
   normalizeAgentMessage,
   mergeMessages,
 } from '../agent-message.conversion';

@@ -3,8 +3,8 @@
  */
 
 import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
-import { unifiedStateStore } from '$features/agent/services/unified-state-store';
-import { WorkspaceId } from '$shared/types/branded-ids';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
 
 /**
  * Get the names of agents currently running in a workspace
@@ -14,13 +14,10 @@ import { WorkspaceId } from '$shared/types/branded-ids';
 export function getRunningAgentNames(workspaceId: string): string[] {
   const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId);
 
-  // Convert string to branded WorkspaceId for the store lookup
-  const brandedWorkspaceId = WorkspaceId(workspaceId);
+  // Get all agents for this workspace from Redux
+  const agents = selectAllWorkspaceAgents.select(getReduxStore().getState(), workspaceId);
 
-  // Get all agents for this workspace from the store
-  const agents = unifiedStateStore.getAgentsForWorkspace(brandedWorkspaceId);
-
-  // Look up agent names from the unified state store
+  // Look up agent names from the Redux store
   const agentNames: string[] = [];
   for (const agentId of streamingAgentIds) {
     const agent = agents.find((a) => a.id === agentId);

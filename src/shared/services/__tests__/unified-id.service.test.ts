@@ -4,7 +4,6 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { idService, UnifiedIdService } from '../unified-id.service';
-import * as Branded from '../../types/branded-ids';
 
 describe('UnifiedIdService', () => {
   beforeEach(() => {

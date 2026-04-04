@@ -13,11 +13,11 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
   import { agentFactory } from '$features/agent/services/agent-factory';
-  import { unifiedStateStore } from '$features/agent/services/unified-state-store';
-  import { WorkspaceId } from '$shared/types/branded-ids';
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { parseAgentTypeId } from '$shared/types/agent.types';
   import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { WorkspaceId } from '$shared/types/branded-ids';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
 
@@ -36,11 +36,10 @@
   // Get workspaceId from extension options
   let workspaceId = $derived(extension?.options?.workspaceId as string | undefined);
 
-  // Get workspace for agentFactory - getWorkspace returns WorkspaceState, we need the workspace property
-  let workspaceState = $derived(
-    workspaceId ? unifiedStateStore.getWorkspace(WorkspaceId(workspaceId)) : null,
+  // Get workspace for agentFactory from Redux
+  let workspace = $derived(
+    workspaceId ? selectWorkspaceById.select(getReduxStore().getState(), workspaceId) ?? null : null,
   );
-  let workspace = $derived(workspaceState?.workspace ?? null);
 
   // Get button state
   let buttonState = $derived.by(() => {

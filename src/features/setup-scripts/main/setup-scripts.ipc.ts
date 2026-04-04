@@ -38,7 +38,8 @@ async function detectProjectType(repoPath: string): Promise<ProjectAnalysis> {
     if (files.includes('package.json')) {
       const packageJsonPath = path.join(repoPath, 'package.json');
       try {
-        const packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8'));
+        // Parse to validate JSON; the parsed result is unused — we only detect the package manager from lock files
+        JSON.parse(await fs.readFile(packageJsonPath, 'utf-8'));
 
         // Detect package manager
         if (files.includes('pnpm-lock.yaml')) {

@@ -2,20 +2,14 @@
   import Fa from 'svelte-fa';
   import { formatDistanceToNow, format, differenceInDays } from 'date-fns';
   import { Button } from '$lib/components/ui/button';
-  import { Tooltip } from '$lib/components/ui/tooltip';
-  import TipTapEditor from '$lib/components/chat/input/TipTapEditor.svelte';
   import type { Workspace } from '$shared/types';
   import { slide, fade } from 'svelte/transition';
   import { spring } from 'svelte/motion';
-  import AgentPeekCard from './AgentPeekCard.svelte';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import InitialsAvatar from './InitialsAvatar.svelte';
   import UnifiedCommentThread from './UnifiedCommentThread.svelte';
   import {
     faComment,
-    faCommentDots,
     faCheck,
-    faCheckCircle,
     faEdit,
     faTimes,
     faReply,
@@ -25,9 +19,8 @@
     faCircleQuestion,
     faPaperPlane,
   } from '@fortawesome/free-solid-svg-icons';
-  import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
-
-  // Type definitions
+  
+// Type definitions
   interface CommentLike {
     id: string;
     author?: string;
@@ -42,11 +35,6 @@
   type DisplayMode = 'full' | 'compact' | 'icon';
 
   // Helper to check if comment is a session comment with agentId
-  function isSessionCommentWithAgent(
-    comment: CommentLike,
-  ): comment is CommentLike & { agentId: string } {
-    return comment.type === 'session' && !!comment.agentId;
-  }
 
   interface Props {
     comment: CommentLike;

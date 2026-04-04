@@ -251,7 +251,7 @@ export function resolveCodeBlockLinePositions(
           top: rect.top - editorRect.top,
           height: rect.height,
         });
-      } catch (e) {
+      } catch {
         // Fallback if range creation fails - silently continue
       }
     }

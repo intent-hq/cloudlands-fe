@@ -1,17 +1,17 @@
 # Event System Architecture
 
-**Version**: 2.0
-**Date**: 2026-01-07
-**Purpose**: Comprehensive guide to the unified event system
+**Version**: 3.0
+**Date**: 2026-03-25
+**Purpose**: Comprehensive guide to the Redux-based event system
 
 ## Overview
 
-The Intent app uses a unified event bus system that handles two types of events:
+The Intent app uses a **Redux-based event system** for all workspace events. Events are managed through Redux slices and sagas in the main process, with IPC channels for renderer communication.
 
-1. **WorkspaceEvents**: Full-featured events with persistence, deduplication, filtering
-2. **DomainEvents**: Simple broadcast events for terminal, notes, comments, etc.
+1. **WorkspaceEvents**: Full-featured events managed by `workspace-events` Redux slice with persistence, filtering, and query support
+2. **DomainEvents**: Broadcast events managed by `domain-events` Redux actions and sagas
 
-> **Migration Note**: The legacy `ACTIVITY_LOG` IPC channels (`activity-log:get-entries`, `activity-log:add-entry`, `activity-log:clear`) are deprecated. Use the `EVENTS` channels instead. See [IPC Registry](../src/shared/ipc-registry.ts) for migration details.
+> **Note**: The legacy EventBus singletons (UnifiedEventBus, WorkspaceEventBus, WorkspaceEventService) have been removed. All event state is now managed through Redux.
 
 ## Architecture Diagram
 
@@ -19,43 +19,32 @@ The Intent app uses a unified event bus system that handles two types of events:
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Renderer Process                             │
 ├─────────────────────────────────────────────────────────────────┤
-│  Components          UnifiedEventBusClient         Stores       │
+│  Components              Redux Store              Selectors     │
 │  ┌─────────┐         ┌──────────────────┐    ┌─────────────┐   │
-│  │ UI      │◄────────│ Singleton proxy  │◄───│ Reactive    │   │
-│  │ Layer   │────────►│ via IPC          │───►│ State       │   │
+│  │ UI      │◄────────│ workspace-events │◄───│ Reactive    │   │
+│  │ Layer   │────────►│ slice (synced)   │───►│ Selectors   │   │
 │  └─────────┘         └────────┬─────────┘    └─────────────┘   │
 └──────────────────────────────┼──────────────────────────────────┘
-                               │ IPC
+                               │ IPC (Redux sync)
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      Main Process                                │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  ┌─────────────────────────────────────────────────────────┐    │
-│  │                  UnifiedEventBus                         │    │
-│  │  (Singleton - handles all events)                        │    │
+│  │              Redux Store (Main)                          │    │
 │  │                                                          │    │
-│  │  • emitEvent(event, context) - WorkspaceEvents          │    │
-│  │  • emitDomainEvent(name, data) - DomainEvents           │    │
-│  │  • subscribe(options) - Filtered subscriptions          │    │
-│  │  • query(workspaceId, filters) - Historical query       │    │
+│  │  • workspace-events slice — event state + persistence   │    │
+│  │  • domain-events actions — broadcast events             │    │
+│  │  • agent-subscriptions slice — agent event filters      │    │
 │  └────────────────────────┬────────────────────────────────┘    │
 │                           │                                      │
 │           ┌───────────────┼───────────────┐                     │
 │           ▼               ▼               ▼                     │
 │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐            │
-│  │ EventStore   │ │ QueryEngine  │ │ Deduplication│            │
-│  │ (per WS)     │ │ (per WS)     │ │ Service      │            │
+│  │ EventStore   │ │ QueryEngine  │ │ Sagas        │            │
+│  │ (JSONL I/O)  │ │ (pure query) │ │ (side fx)    │            │
 │  └──────────────┘ └──────────────┘ └──────────────┘            │
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │              WorkspaceEventService                       │    │
-│  │  (per workspace - integrates with ChangeDetector)       │    │
-│  │                                                          │    │
-│  │  • Listens to activity-log-event from ChangeDetector    │    │
-│  │  • Coordinates note events                               │    │
-│  │  • Historical sync                                       │    │
-│  └─────────────────────────────────────────────────────────┘    │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -68,9 +57,8 @@ Used for file changes, agent actions, git operations. Features:
 - Unique ID and timestamp
 - Actor attribution (user, agent, system)
 - Workspace scoping
-- Persistence to disk
-- Deduplication
-- Filterable queries
+- Persistence to disk (via sagas + EventStore)
+- Filterable queries (via EventQueryEngine)
 
 ```typescript
 interface WorkspaceEvent {
@@ -86,43 +74,40 @@ interface WorkspaceEvent {
 ### DomainEvents (Simple Broadcast)
 
 Used for terminal, notes, comments. Features:
-- Simple emit/listen pattern
-- Broadcasts to all renderer windows
-- Last event caching
+- Redux actions dispatched via `domain-events-actions.ts`
+- Broadcast saga sends to all renderer windows
 - STDIO broadcasting for MCP
 
 ```typescript
-// Emit a domain event
-unifiedEventBus.emitDomainEvent('terminal:data', { terminalId, data });
-
-// Listen to domain events
-unifiedEventBus.onDomainEvent('note:updated', (data) => { ... });
+// Emit a domain event via Redux
+import { domainEventEmitted } from 'store/main/slices/domain-events/domain-events-actions';
+mainDispatch(domainEventEmitted({ name: 'terminal:data', data: { terminalId, data } }));
 ```
 
 ## Key Components
 
 | Component | Location | Responsibility |
 |-----------|----------|----------------|
-| UnifiedEventBus | `events/main/unified-event-bus.ts` | Singleton, handles all events |
-| UnifiedEventBusClient | `events/renderer/unified-event-bus-client.ts` | Renderer proxy via IPC |
-| WorkspaceEventBus | `events/main/workspace-event-bus.ts` | Per-workspace filtering |
-| WorkspaceEventService | `events/main/workspace-event-service.ts` | ChangeDetector integration |
-| EventStore | `events/main/event-store.ts` | Persistence to disk |
-| EventQueryEngine | `events/main/event-query-engine.ts` | Complex event queries |
-| EventFilterEngine | `events/event-filter-engine.ts` | Filter matching logic |
+| workspace-events slice | `store/main/slices/workspace-events/` | Event state management |
+| domain-events actions | `store/main/slices/domain-events/` | Broadcast event actions + sagas |
+| agent-subscriptions slice | `store/main/slices/agent-subscriptions/` | Agent event filter state |
+| EventStore | `features/events/main/event-store.ts` | Pure JSONL I/O (used by persistence saga) |
+| EventQueryEngine | `features/events/main/event-query-engine.ts` | Pure query logic (used by IPC handler) |
+| EventFilterEngine | `features/events/event-filter-engine.ts` | Pure filter matching logic |
+| agent-event-tools | `features/events/main/agent-event-tools.ts` | MCP tool definitions |
+| agent-subscription-ops | `features/events/main/agent-subscription-ops.ts` | Agent subscription operations |
 
-## Singleton Management
+## Emitting Events
 
 ```typescript
-// Get or create event service for a workspace
-import { getWorkspaceEventService, cleanupWorkspaceEventService } from '../events/main';
+// Emit a workspace event via Redux
+import { emitWorkspaceEvent } from 'store/main/slices/workspace-events/workspace-events-slice';
+import { createWorkspaceEvent } from 'features/events/types';
+import { mainDispatch } from 'store/main/redux-store-bridge';
 
-const service = getWorkspaceEventService(workspaceId);
-// or with options:
-const service = getWorkspaceEventService({ workspaceId, changeDetector });
-
-// Cleanup when workspace closes
-cleanupWorkspaceEventService(workspaceId);
+mainDispatch(emitWorkspaceEvent(
+  createWorkspaceEvent('file:changed', workspaceId, actor, data)
+));
 ```
 
 ## IPC Channels
@@ -149,47 +134,25 @@ All event IPC channels are defined in `src/shared/ipc-registry.ts`:
    ↓
 4. EventCoordinator emits 'activity-log-event'
    ↓
-5. WorkspaceEventService receives event
+5. ChangeDetectorRefactored forwards → ChangeDetectorManager forwards →
+   workspace.ipc.ts listener dispatches mainDispatch(emitWorkspaceEvent())
    ↓
-6. UnifiedEventBus.emitEvent()
-   ├── Deduplication check
-   ├── Store in EventStore
-   ├── Notify subscribers
-   └── Broadcast to renderer windows
+6. workspace-events slice accepts event (with deduplication)
+   ├── Persistence saga writes to EventStore (JSONL)
+   ├── Renderer subscription saga delivers to matching subscriptions
+   ├── Broadcast saga sends to renderer windows + STDIO
+   └── Agent subscription saga checks agent filters
    ↓
-7. UI components update via stores
+7. UI components update via Redux selectors
 ```
 
 ## Best Practices
 
-1. **Use emitEvent for WorkspaceEvents**: When you need persistence, filtering, deduplication
-2. **Use emitDomainEvent for simple broadcasts**: Terminal output, real-time updates
-3. **Always import from index**: `import { getWorkspaceEventService } from '../events/main'`
-4. **Cleanup on workspace close**: Call `cleanupWorkspaceEventService(id)`
-5. **Use EventFilterBuilder**: For type-safe filter construction
-
-## Event Bus Hierarchy
-
-```
-UnifiedEventBus (Singleton)
-├── Handles cross-workspace subscriptions
-├── Broadcasts to renderer windows (via IPC)
-├── Broadcasts to STDIO (for MCP clients)
-└── Does NOT own EventStore (pub/sub only)
-
-WorkspaceEventBus (Per-workspace)
-├── Owns EventStore for persistence
-├── Handles per-workspace filtering
-├── Deduplicates events
-├── Forwards to UnifiedEventBus for cross-workspace
-└── Broadcasts to renderer windows
-
-WorkspaceEventService (Per-workspace)
-├── Integrates ChangeDetector with EventBus
-├── Listens to 'activity-log-event' from ChangeDetector
-├── Handles note events
-└── Manages service lifecycle
-```
+1. **Use `emitWorkspaceEvent` for full events**: When you need persistence, filtering, query support
+2. **Use `domainEventEmitted` for simple broadcasts**: Terminal output, real-time updates
+3. **Import pure utilities from features/events/main**: EventStore, EventQueryEngine, EventFilterEngine
+4. **Use EventFilterBuilder**: For type-safe filter construction
+5. **Dispatch via `mainDispatch`**: All event emission goes through Redux
 
 ## Configuration
 
@@ -233,11 +196,13 @@ window.webContents.send('agent:renamed', { agentId, workspaceId, name });
 // { payload: { agentId, workspaceId, name } }
 ```
 
-#### Pattern B: WorkspaceEventBus (Wrapped Data)
+#### Pattern B: Redux Event (Wrapped Data)
 ```typescript
-// Main process emits via WorkspaceEventBus:
-eventBus.emitEvent({ type: 'agent:deleted', id: '...', data: { agentId, agentName } });
-// broadcastToRenderer sends the full event object:
+// Main process emits via Redux workspace-events slice:
+mainDispatch(emitWorkspaceEvent(
+  createWorkspaceEvent('agent:deleted', workspaceId, actor, { agentId, agentName })
+));
+// Broadcast saga sends the full event object to renderer windows:
 window.webContents.send('agent:deleted', event);
 
 // Renderer receives via listenSync:
@@ -297,13 +262,13 @@ listenSync('agent:renamed', (event: any) => {
    import type { AgentDeletedPayload, AgentRenamedPayload } from '$features/events/types';
    ```
 4. **Log unexpected formats** - Don't silently fail when data extraction fails
-5. **Prefer WorkspaceEventBus for new events** - It provides consistent structure and better observability
+5. **Prefer Redux `emitWorkspaceEvent` for new events** - It provides consistent structure and better observability
 
 ### Common Pitfalls
 
 ❌ **DON'T** assume the event format without checking:
 ```typescript
-// BAD: Assumes flat format - breaks with WorkspaceEventBus events
+// BAD: Assumes flat format - breaks with Redux WorkspaceEvent objects
 listenSync('agent:deleted', (event) => {
   const agentId = event.payload;  // Could be a WorkspaceEvent object!
   agents = agents.filter(a => a.id !== agentId);  // String vs Object comparison always true
@@ -351,9 +316,9 @@ If events aren't being handled correctly:
    });
    ```
 
-2. **Check the emission source** - Is it using direct IPC or WorkspaceEventBus?
+2. **Check the emission source** - Is it using direct IPC or Redux events?
    - Search for `webContents.send('event-name'` for direct IPC
-   - Search for `emitEvent({ type: 'event-name'` for WorkspaceEventBus
+   - Search for `emitWorkspaceEvent(` for Redux-based events
 
 3. **Use `isWorkspaceEvent()` type guard** to understand the format:
    ```typescript

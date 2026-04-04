@@ -9,8 +9,6 @@
   import Fa from 'svelte-fa';
   import { faCodeBranch, faFile, faServer, faPlus } from '@fortawesome/free-solid-svg-icons';
   import type { Workspace } from '$shared/types';
-  import { WorkspaceId } from '$shared/types/branded-ids';
-  import { formatRelative } from 'date-fns';
   interface Props {
     workspaces: Workspace[];
     collapsed?: boolean;
@@ -89,6 +87,7 @@
     return sortedGrouped;
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function getWorkspaceStats(workspace: Workspace): {
     additions: number;
     deletions: number;

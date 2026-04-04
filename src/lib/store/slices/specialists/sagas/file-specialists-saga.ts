@@ -34,7 +34,7 @@ function* reloadFileSpecialists() {
             }
         }
     }
-    catch (error) {
+    catch {
     }
     finally {
         yield* put(setFileSpecialistsLoaded(true));
@@ -52,7 +52,7 @@ function* handleExportBuiltin(action: ReturnType<typeof exportBuiltinToFile>) {
             }
         }
     }
-    catch (error) {
+    catch {
     }
 }
 function* handleSaveFileSpecialist(action: ReturnType<typeof saveFileSpecialist>) {
@@ -67,7 +67,7 @@ function* handleSaveFileSpecialist(action: ReturnType<typeof saveFileSpecialist>
             }
         }
     }
-    catch (error) {
+    catch {
     }
 }
 function* handleDeleteFileSpecialist(action: ReturnType<typeof deleteFileSpecialist>) {
@@ -82,7 +82,7 @@ function* handleDeleteFileSpecialist(action: ReturnType<typeof deleteFileSpecial
             }
         }
     }
-    catch (error) {
+    catch {
     }
 }
 function* handleOpenFolder() {
@@ -91,7 +91,7 @@ function* handleOpenFolder() {
             yield* call([window.electronAPI, window.electronAPI.invoke], SPECIALISTS_CHANNELS.OPEN_FOLDER, {});
         }
     }
-    catch (error) {
+    catch {
     }
 }
 export function* fileSpecialistsSaga() {

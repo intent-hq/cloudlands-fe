@@ -6,7 +6,6 @@
 
 import type { TestScenario } from './agent-test-harness';
 import {
-  createMockSession,
   delay,
   takeMemorySnapshot,
   compareMemorySnapshots,

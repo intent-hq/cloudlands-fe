@@ -45,7 +45,6 @@
     isAgent = false,
     agentId,
     showConnector = true,
-    isFirst = false,
     isLast = false,
     isExpanded = false,
     onClick,

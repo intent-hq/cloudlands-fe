@@ -54,10 +54,7 @@ let invokeFunction: (typeof import('$lib/electron-bridge'))['invoke'] | undefine
 let agentPersistence: any;
 let metadataFSFactory: ((workspaceId: string) => import('../../metadata-fs/main/metadata-fs').IMetadataFS) | undefined;
 
-// Lazy-loaded unified state store for frontend context
-let unifiedStateStoreModule:
-  | (typeof import('$features/agent/services/unified-state-store'))['unifiedStateStore']
-  | undefined;
+
 
 // Check if we're in the main process
 function isMainProcess(): boolean {
@@ -73,16 +70,7 @@ async function getInvoke(): Promise<(typeof import('$lib/electron-bridge'))['inv
   return invokeFunction;
 }
 
-// Get unified state store lazily (only in frontend context)
-async function getUnifiedStateStore(): Promise<
-  (typeof import('$features/agent/services/unified-state-store'))['unifiedStateStore']
-> {
-  if (!unifiedStateStoreModule) {
-    const module = await import('$features/agent/services/unified-state-store');
-    unifiedStateStoreModule = module.unifiedStateStore;
-  }
-  return unifiedStateStoreModule;
-}
+
 
 // Lazy load Node.js modules when needed
 async function getNodeModules() {
@@ -103,7 +91,7 @@ async function getNodeModules() {
       const electron = await import('electron');
       ipcMain = electron.ipcMain;
       BrowserWindow = electron.BrowserWindow;
-    } catch (error) {
+    } catch {
       // Electron may not be available in all contexts
     }
 
@@ -526,15 +514,6 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
       if (record) {
         this.streaming.cancelStream(agentId);
 
-        // Remove from state (only in frontend)
-        if (!isMainProcess()) {
-          const stateStore = await getUnifiedStateStore();
-          const workspace = stateStore.currentWorkspace;
-          if (workspace) {
-            workspace.agents.delete(agentId);
-          }
-        }
-
         // Delete from sessions
         this.sessions.delete(id);
       }
@@ -698,34 +677,6 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
       // Register in session registry
       // Session registered in state
 
-      // Update agent state (only in frontend)
-      if (!isMainProcess()) {
-        const stateStore = await getUnifiedStateStore();
-        stateStore.setAgent(agent.workspaceId, {
-          id: agent.id,
-          session: agent,
-          streaming: {
-            active: false,
-            buffer: '',
-            contentBlocks: [],
-          },
-          ui: {
-            isExpanded: false,
-            scrollPosition: 0,
-            searchQuery: '',
-            isAtTop: true,
-            isAtBottom: true,
-            showScrollToBottom: false,
-          },
-          errors: [],
-          metadata: {
-            source: 'consolidated-backend',
-            isInitialAgent: false,
-          },
-          lastAccess: Date.now(),
-        });
-      }
-
       logger.info('[createAgent] Agent created successfully', {
         agentId: agent.id,
         sessionId: agent.id,
@@ -790,17 +741,7 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
       // Emit status change event
       this.emit('agent:status', { agentId, status });
 
-      // Update in unified state store if in frontend
-      if (!isMainProcess()) {
-        const unifiedStateStore = await getUnifiedStateStore();
-        const workspace = unifiedStateStore.currentWorkspace;
-        if (workspace) {
-          const agentState = workspace.agents.get(id);
-          if (agentState) {
-            agentState.session.status = status;
-          }
-        }
-      }
+
     } catch (error) {
       logger.error('Failed to update agent status', { agentId, status, error });
       throw error;
@@ -1023,34 +964,6 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
 
       // Register in session registry
       // Session registered in state
-
-      // Update agent state (only in frontend)
-      if (!isMainProcess()) {
-        const stateStore = await getUnifiedStateStore();
-        stateStore.setAgent(agent.workspaceId, {
-          id: agent.id,
-          session: agent,
-          streaming: {
-            active: false,
-            buffer: '',
-            contentBlocks: [],
-          },
-          ui: {
-            isExpanded: false,
-            scrollPosition: 0,
-            searchQuery: '',
-            isAtTop: true,
-            isAtBottom: true,
-            showScrollToBottom: false,
-          },
-          errors: [],
-          metadata: {
-            source: 'consolidated-backend',
-            isInitialAgent: false,
-          },
-          lastAccess: Date.now(),
-        });
-      }
 
       logger.info('[loadAgent] Agent loaded', { agentId });
       this.emit('agent:loaded', { agent });
@@ -1444,7 +1357,7 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
    * Setup IPC handlers for Electron (backend mode)
    */
   async setupIPCHandlers(mainWindow?: any): Promise<void> {
-    const { ipcMain, BrowserWindow } = await getNodeModules();
+    const { ipcMain } = await getNodeModules();
     if (!ipcMain) {
       logger.warn('[setupIPCHandlers] IPC not available, skipping handler setup');
       return;
@@ -1739,15 +1652,6 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
    * Reset for testing
    */
   async reset(): Promise<void> {
-    // Clear agent state (only in frontend) - do this before clearing sessions
-    if (!isMainProcess()) {
-      const stateStore = await getUnifiedStateStore();
-      const workspaces = stateStore.getAllWorkspaces();
-      for (const workspace of workspaces) {
-        workspace.agents.clear();
-      }
-    }
-
     // Clear sessions and reset counters
     this.sessions.clear();
     this.totalMessageCount = 0;

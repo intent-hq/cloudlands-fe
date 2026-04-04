@@ -1,6 +1,5 @@
 import { Logger } from '$shared/logger';
 import { createTiptapTaskListMarked } from './tiptap-task-list-extension';
-import { marked } from 'marked';
 import { normalizeAnchorPositions } from './anchor-normalization';
 import { sanitizeMarkdownHTML } from './html-sanitizer';
 import { toPromptToken } from '$lib/services/mentions/format';
@@ -248,7 +247,6 @@ const ANCHOR_COMMENT_REGEX = /<!--\s*anchor:([^:]+):([^-]+)\s*-->/g;
  * Regular expression to match ws-block code blocks
  * Matches patterns like: ```ws-block:reference
  */
-const WS_BLOCK_REGEX = /```ws-block(?::[a-z_]+)?\n[\s\S]*?\n```/g;
 
 /**
  * Escape angle brackets that look like HTML tags.

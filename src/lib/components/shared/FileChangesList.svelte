@@ -64,6 +64,7 @@
     maxItems && fileChanges.length > maxItems ? fileChanges.length - maxItems : 0,
   );
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function getFileIcon(change: FileOperation) {
     return faFile;
   }

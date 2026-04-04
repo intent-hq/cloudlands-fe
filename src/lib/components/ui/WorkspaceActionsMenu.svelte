@@ -34,15 +34,14 @@
     faBoxArchive,
     faBoxOpen,
     faCode,
-    faEllipsisH,
     faFile,
     faFolder,
-    faFolderOpen,
     faSpinner,
     faTerminal,
     faTrash,
     faUpRightFromSquare,
   } from '@fortawesome/free-solid-svg-icons';
+  import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { toast } from 'svelte-sonner';
   import Button from './button/button.svelte';
@@ -111,7 +110,7 @@
   let isDeletingFile = $state(false);
 
   // Fetch installed editors when component mounts
-  $effect(() => {
+  onMount(() => {
     dispatch(fetchEditors());
   });
 
@@ -364,7 +363,9 @@
       ? resolvedPath
       : resolvedPath.substring(0, resolvedPath.lastIndexOf('/'));
 
-    logger.info(`[WorkspaceActionsMenu] openInEditor: targetPath=${targetPath}, handlerType=${editor.handlerType}`);
+    logger.info(
+      `[WorkspaceActionsMenu] openInEditor: targetPath=${targetPath}, handlerType=${editor.handlerType}`,
+    );
 
     try {
       switch (editor.handlerType) {
@@ -387,8 +388,13 @@
         case 'generic':
         default: {
           // Use the editor ID to open via the external-editors handler
-          logger.info(`[WorkspaceActionsMenu] openInEditor: Invoking external-editors:open for ${editor.id}`);
-          const result = await invoke('external-editors:open', { editorId: editor.id, path: targetPath });
+          logger.info(
+            `[WorkspaceActionsMenu] openInEditor: Invoking external-editors:open for ${editor.id}`,
+          );
+          const result = await invoke('external-editors:open', {
+            editorId: editor.id,
+            path: targetPath,
+          });
           logger.info('[WorkspaceActionsMenu] openInEditor: external-editors:open result', result);
           break;
         }
@@ -446,8 +452,6 @@
       logger.error('Failed to copy path:', error);
     }
   }
-
-
 
   async function copyWorkspacePath() {
     if (!filePath) return;
@@ -521,37 +525,34 @@
         onFileDeleted?.();
         onClose?.();
 
-        const toastId = toast.warning(
-          `Deleted "${fileName}"`,
-          {
-            duration: 15000,
-            action: {
-              label: 'Undo',
-              onClick: async () => {
-                try {
-                  await invoke('file:write', {
-                    path: pathToDelete,
-                    content: savedContent,
-                    workspaceId,
-                  });
-                  window.dispatchEvent(
-                    new CustomEvent('file:changed', {
-                      detail: {
-                        workspaceId,
-                        type: 'create',
-                        filePath: pathToDelete,
-                      },
-                    }),
-                  );
-                  toast.dismiss(toastId);
-                } catch (err) {
-                  logger.error('[WorkspaceActionsMenu] Failed to restore file', err);
-                  toast.error('Failed to restore file');
-                }
-              },
+        const toastId = toast.warning(`Deleted "${fileName}"`, {
+          duration: 15000,
+          action: {
+            label: 'Undo',
+            onClick: async () => {
+              try {
+                await invoke('file:write', {
+                  path: pathToDelete,
+                  content: savedContent,
+                  workspaceId,
+                });
+                window.dispatchEvent(
+                  new CustomEvent('file:changed', {
+                    detail: {
+                      workspaceId,
+                      type: 'create',
+                      filePath: pathToDelete,
+                    },
+                  }),
+                );
+                toast.dismiss(toastId);
+              } catch (err) {
+                logger.error('[WorkspaceActionsMenu] Failed to restore file', err);
+                toast.error('Failed to restore file');
+              }
             },
           },
-        );
+        });
       } else {
         toast.error(`Failed to delete file: ${result?.error || 'Unknown error'}`);
       }
@@ -622,8 +623,15 @@
 
     <!-- Copy Actions -->
     <div class="space-y-0.5">
-      <Button variant="ghost" onclick={copyAbsolutePath} class="pl-3.75! gap-2.25! w-full min-w-0 justify-start" size="sm">
-        <div class="text-xs font-black font-mono mr-1 w-3 opacity-50">{isWindowsPlatform() ? '\\' : '/'}</div>
+      <Button
+        variant="ghost"
+        onclick={copyAbsolutePath}
+        class="pl-3.75! gap-2.25! w-full min-w-0 justify-start"
+        size="sm"
+      >
+        <div class="text-xs font-black font-mono mr-1 w-3 opacity-50">
+          {isWindowsPlatform() ? '\\' : '/'}
+        </div>
         <span>Copy Absolute Path</span>
       </Button>
 

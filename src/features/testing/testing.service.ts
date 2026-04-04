@@ -7,7 +7,7 @@
 
 import { spawn, ChildProcess } from 'child_process';
 import { join } from 'path';
-import { existsSync, mkdirSync, writeFileSync, rmSync } from 'fs';
+import { existsSync, mkdirSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import type { Result } from '../../shared/types';
 
@@ -75,7 +75,7 @@ class TestingService {
 
     try {
       // Create a temporary directory for test output
-      const tempDir = this.createTempDir(processId);
+      this.createTempDir(processId);
 
       // Build the test command
       const args: string[] = ['run', 'test'];

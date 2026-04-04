@@ -29,7 +29,7 @@ import { eventChannel, type EventChannel, type Task } from "redux-saga";
 import type { StoreSelector, StoreState } from "../types";
 import type { Readable } from "svelte/store";
 import { shallowEqual } from "fast-equals";
-import { createCachedSelector } from "./create-selector";
+import { createCachedSelector } from "../../../store/utils/create-cached-selector";
 
 /**
  * The payload type emitted by selector channels
@@ -78,7 +78,9 @@ export function* createChannelFromSelector<R, ARGS extends any[]>(
 
   const selectorFunc = selector.select;
   const channel = eventChannel<SelectorChannelPayload<R>>((emitter) => {
-    const cachedSelector = createCachedSelector<ARGS, R>(selectorFunc, true);
+    const cachedSelector = createCachedSelector<StoreState, ARGS, R>(selectorFunc, {
+      lockUpdatesPredicate: (state) => state.storeUtility.updatesLocked,
+    });
     let prevValue: R | null = null;
     const unsubscribe = readableStoreState.subscribe((state) => {
       try {

@@ -10,9 +10,6 @@ import { Client } from 'ssh2';
 import {
   RemoteEnvProfile,
   getProfileOrThrow,
-  STANDARD_PROFILE,
-  DEVPOD_PROFILE,
-  MINIMAL_PROFILE,
 } from './remote-env-config';
 
 // Get profile from environment or default to standard

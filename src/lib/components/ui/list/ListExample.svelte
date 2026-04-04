@@ -6,7 +6,6 @@
   import {
     faStickyNote,
     faFile,
-    faFolder,
     faTerminal,
     faPlus,
     faStar,

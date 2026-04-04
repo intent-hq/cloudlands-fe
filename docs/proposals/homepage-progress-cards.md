@@ -35,9 +35,10 @@ This proposal originally targeted a `HomeGrid.svelte` homepage component, but th
 │  └──────────────────┘                         │                 │
 │                                               ▼                 │
 │                                    ┌──────────────────┐         │
-│                                    │ UnifiedEventBus  │         │
-│                                    │ (broadcasts to   │         │
-│                                    │  all windows)    │         │
+│                                    │ Redux Store      │         │
+│                                    │ (main process,   │         │
+│                                    │  sagas broadcast  │         │
+│                                    │  to all windows) │         │
 │                                    └────────┬─────────┘         │
 │                                             │                   │
 │  ┌──────────────────┐                       │                   │
@@ -168,17 +169,15 @@ Wire up event listeners for live updates:
    │
 2. notes.service.ts calls updateTaskStatus()
    │
-3. Emits 'task:status-changed' to WorkspaceEventBus
+3. Dispatches `mainDispatch(noteEventAction(...))` to Redux store
    │
-4. WorkspaceEventBus → UnifiedEventBus → broadcasts to all windows
+4. Redux saga broadcasts state update to all windows via IPC
    │
-5. `workspaceNotesStore` receives the event via `listenSync`
+5. UI components update via Redux selectors
    │
-6. workspaceNotesStore updates the note in `notesByWorkspace`
+6. `WorkspaceProgressCard` compact mode re-renders with new state
    │
-7. Svelte reactivity updates `WorkspaceProgressCard` compact mode
-   │
-8. FlameGraph re-renders with new status color
+7. FlameGraph re-renders with new status color
 ```
 
 ## Future Enhancements (Out of Scope)

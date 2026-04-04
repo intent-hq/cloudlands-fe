@@ -24,7 +24,7 @@ function* handleApprove(action: ReturnType<typeof approvePermission>) {
         });
         yield* put(removePermissionRequest(requestId));
     }
-    catch (error) {
+    catch {
     }
 }
 function* handleDeny(action: ReturnType<typeof denyPermission>) {
@@ -43,7 +43,7 @@ function* handleDeny(action: ReturnType<typeof denyPermission>) {
         });
         yield* put(removePermissionRequest(requestId));
     }
-    catch (error) {
+    catch {
     }
 }
 function* handleCancel(action: ReturnType<typeof cancelPermission>) {
@@ -55,7 +55,7 @@ function* handleCancel(action: ReturnType<typeof cancelPermission>) {
         });
         yield* put(removePermissionRequest(requestId));
     }
-    catch (error) {
+    catch {
     }
 }
 function* handleSelectOption(action: ReturnType<typeof selectPermissionOption>) {
@@ -71,7 +71,7 @@ function* handleSelectOption(action: ReturnType<typeof selectPermissionOption>) 
         });
         yield* put(removePermissionRequest(requestId));
     }
-    catch (error) {
+    catch {
     }
 }
 /**

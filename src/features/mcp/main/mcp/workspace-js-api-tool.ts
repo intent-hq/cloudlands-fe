@@ -186,6 +186,7 @@ export class WorkspaceJsApiTool extends BaseMCPTool {
     private workspacePath: string,
     private workspaceId: string,
     private workspaceManager?: any,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _eventEmitter?: any,
   ) {
     super(

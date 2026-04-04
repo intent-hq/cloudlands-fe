@@ -4,10 +4,12 @@
   import Fa from 'svelte-fa';
   import { faPlay } from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
-  import { notesStateManager } from '$features/notes/notes.store.svelte';
   import type { NoteId } from '$shared/types';
   import { onMount } from 'svelte';
   import { TASK_HREF_REGEX_FLEXIBLE } from '$shared/constants/intent-links';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectNoteById, selectNotesVersion } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
 
   // Props from SvelteNodeViewRenderer
   let { node, editor }: NodeViewProps = $props();
@@ -92,7 +94,8 @@
 
         // If it's a linked task, check if the Task Note is incomplete
         if (linkedNoteId) {
-          const taskNote = notesStateManager.notes.get(linkedNoteId as NoteId);
+          const wsId = selectActiveWorkspaceId.select(getReduxStore().getState()) ?? '';
+          const taskNote = selectNoteById.select(getReduxStore().getState(), wsId, linkedNoteId);
           if (taskNote?.metadata?.task) {
             const status = taskNote.metadata.task.status;
             if (status !== 'complete' && status !== 'cancelled') {
@@ -133,10 +136,11 @@
     };
   });
 
-  // Also recalculate when notesStateManager.notes changes (Task Note status updates)
+  // Also recalculate when notes version changes (Task Note status updates)
+  const notesVersion$ = selectNotesVersion(selectActiveWorkspaceId.select(getReduxStore().getState()) ?? '');
   $effect(() => {
-    // Access notesStateManager.notes to track changes (void to suppress unused warning)
-    void notesStateManager.notes;
+    // Access notesVersion to track changes (void to suppress unused warning)
+    void $notesVersion$;
     // Recalculate when notes change
     sectionTasks = calculateSectionTasks();
   });

@@ -13,7 +13,7 @@ function* saveOverridesToStore() {
             yield* call([window.electronAPI, window.electronAPI.invoke], 'settings:set', { key: SPECIALISTS_OVERRIDES_KEY, value: plainOverrides });
         }
     }
-    catch (error) {
+    catch {
     }
 }
 function* saveCustomSpecialistsToStore() {
@@ -24,7 +24,7 @@ function* saveCustomSpecialistsToStore() {
             yield* call([window.electronAPI, window.electronAPI.invoke], 'settings:set', { key: CUSTOM_SPECIALISTS_KEY, value: plainCustom });
         }
     }
-    catch (error) {
+    catch {
     }
 }
 export function* persistenceSaga() {

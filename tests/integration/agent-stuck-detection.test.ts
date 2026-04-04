@@ -8,7 +8,7 @@
  * - Recovery mechanisms
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 // Types for stuck detection
 interface AgentActivity {

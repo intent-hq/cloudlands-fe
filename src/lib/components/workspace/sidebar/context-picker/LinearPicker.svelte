@@ -5,15 +5,16 @@
    * Shows list of Linear issues with search/filter.
    * Handles authentication flow if not authenticated.
    */
-  import { linearAuthStore } from '$features/linear-auth/renderer/linear-auth.store.svelte';
-  import type { LinearIssueResult } from '$features/linear-auth/renderer/linear-auth.store.svelte';
+  import { linearAuthClient, type LinearIssueResult } from '$features/linear-auth/renderer/linear-auth.client';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
-  import { faSpinner, faSearch, faExternalLink } from '@fortawesome/free-solid-svg-icons';
+  import { faSpinner, faSearch } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { startLinearAuth } from '$lib/store/slices/linear-auth/linear-auth-slice';
 
   const logger = createLogger('LinearPicker');
 
@@ -23,7 +24,10 @@
     onClose: () => void;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let { workspaceId, onSelect, onClose }: Props = $props();
+
+  const dispatch = getDispatch();
 
   let isAuthenticated = $state(false);
   let issues = $state<LinearIssueResult[]>([]);
@@ -44,8 +48,9 @@
 
   async function loadIssues() {
     try {
-      await linearAuthStore.initialize();
-      isAuthenticated = linearAuthStore.state.isAuthenticated;
+      // Initialize via Redux (fire-and-forget), then check auth state via client
+      const authState = await linearAuthClient.getAuthState(true);
+      isAuthenticated = authState.isAuthenticated;
 
       if (!isAuthenticated) {
         logger.info('Linear not authenticated');
@@ -53,7 +58,7 @@
       }
 
       isLoading = true;
-      const result = await linearAuthStore.fetchMyIssues('all');
+      const result = await linearAuthClient.fetchMyIssues('all');
       issues = result;
       logger.info('Loaded Linear issues', { count: result.length });
     } catch (error) {
@@ -66,8 +71,12 @@
   async function handleConnect() {
     isConnecting = true;
     try {
-      await linearAuthStore.startAuth();
-      if (linearAuthStore.state.isAuthenticated) {
+      dispatch(startLinearAuth());
+      // Wait a bit for auth to potentially complete, then re-check
+      // The user will complete OAuth externally, so we poll
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const authState = await linearAuthClient.getAuthState(true);
+      if (authState.isAuthenticated) {
         isAuthenticated = true;
         await loadIssues();
       }

@@ -4,5 +4,6 @@ declare module 'tailwind-variants' {
   // This keeps our UI components type-safe enough for usage while avoiding
   // noisy module resolution issues.
   export function tv(...args: any[]): (...args: any[]) => string;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   export type VariantProps<T> = any;
 }

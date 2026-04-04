@@ -15,7 +15,7 @@ export type { KnownRepo };
 
 const STORE_KEY = 'knownRepos';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 let store: any = null;
 let initPromise: Promise<void> | null = null;
 

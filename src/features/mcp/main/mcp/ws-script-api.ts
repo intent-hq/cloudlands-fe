@@ -2,7 +2,6 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { Logger } from '$shared/logger';
 
-import { unifiedEventBus } from '../../../events/main/unified-event-bus';
 import { getScriptProcessManager } from '../../../scripts/main/script-process-manager';
 import {
   readScripts,
@@ -201,35 +200,40 @@ export function buildScriptApi(workspaceId: string) {
       manager.start(script);
 
       const timeoutSeconds = Math.max(1, Math.min(options.timeout ?? options.timeoutSeconds ?? 300, 3600));
+      // Poll the script manager's state to detect when the script exits.
+      // Previously used onDomainEvent('script:stopped'), now script:stopped
+      // is dispatched as a Redux action — polling the manager state is simpler
+      // and more reliable for in-process waiting.
       const exitState = await new Promise<'exited' | 'timeout'>((resolve) => {
         let settled = false;
-        const onStopped = (data: { scriptId: string }) => {
-          if (settled || data.scriptId !== scriptId) {
-            return;
-          }
-          settled = true;
-          clearTimeout(timer);
-          unifiedEventBus.offDomainEvent('script:stopped', onStopped);
-          resolve('exited');
-        };
 
-        unifiedEventBus.onDomainEvent('script:stopped', onStopped);
+        const pollInterval = setInterval(() => {
+          if (settled) return;
+          const currentState = manager.getState(scriptId);
+          if (!currentState || currentState.status !== 'running') {
+            settled = true;
+            clearInterval(pollInterval);
+            clearTimeout(timer);
+            resolve('exited');
+          }
+        }, 200);
 
         const timer = setTimeout(() => {
-          if (settled) {
-            return;
-          }
+          if (settled) return;
           settled = true;
-          unifiedEventBus.offDomainEvent('script:stopped', onStopped);
+          clearInterval(pollInterval);
           resolve('timeout');
         }, timeoutSeconds * 1000);
 
+        // Check if the script already exited before polling started
         const currentState = manager.getState(scriptId);
         if (!currentState || currentState.status !== 'running') {
-          settled = true;
-          clearTimeout(timer);
-          unifiedEventBus.offDomainEvent('script:stopped', onStopped);
-          resolve('exited');
+          if (!settled) {
+            settled = true;
+            clearInterval(pollInterval);
+            clearTimeout(timer);
+            resolve('exited');
+          }
         }
       });
 

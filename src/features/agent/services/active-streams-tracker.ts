@@ -5,7 +5,7 @@
  * Uses event-driven updates instead of polling for efficiency.
  *
  * This service is needed because:
- * - unifiedStateStore only has agents loaded for workspaces that have been viewed
+ * - Redux state only has agents loaded for workspaces that have been viewed
  * - When switching between workspace tabs, we need to show streaming indicators
  *   for agents in workspaces that aren't currently loaded in memory
  */
@@ -47,7 +47,7 @@ class ActiveStreamsTracker {
    * This replaces the old polling approach with event-driven updates.
    * @param _intervalMs - Deprecated, kept for API compatibility
    */
-  startPolling(_intervalMs = 2000): void {
+  startPolling(): void {
     // Always fetch fresh state for every caller (e.g., components mounting at different times)
     this.fetchActiveStreams();
 

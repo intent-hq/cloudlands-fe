@@ -7,12 +7,13 @@
  */
 
 import { AcceptChangesClient } from './accept-changes.client';
-import { gitStore } from '$features/git/git.store.svelte';
-import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
+import { loadGitStatus } from '$lib/store/slices/git/git-slice';
+import { refreshRequested } from '$lib/store/slices/file-tracking/file-tracking-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import { PullRequestStatus } from '$shared/types';
 import { createLogger } from '$lib/utils/client-logger';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { updateWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
 
 const logger = createLogger('BackgroundGitActionsService');
 
@@ -62,10 +63,8 @@ class BackgroundGitActionsService {
       if (result.success) {
         // Refresh stores to update UI
         try {
-          await Promise.all([
-            gitStore.loadStatus(workspaceId as WorkspaceId, true),
-            fileTrackingStore.refresh(),
-          ]);
+          getReduxStore().dispatch(loadGitStatus(workspaceId, true));
+          getReduxStore().dispatch(refreshRequested(workspaceId));
         } catch (refreshError) {
           // Refresh failed but commit succeeded - UI will update on next refresh
           logger.warn('Store refresh failed after commit', { refreshError });
@@ -118,7 +117,7 @@ class BackgroundGitActionsService {
       if (result.success) {
         // Update local workspace store with PR info from result
         if (result.result?.prNumber && result.result?.prHtmlUrl) {
-          workspaceStore.updateLocalWorkspace(workspaceId as WorkspaceId, {
+          getReduxStore().dispatch(updateWorkspaceEntity(workspaceId, {
             activePullRequest: {
               id: String(result.result.prNumber),
               number: result.result.prNumber,
@@ -131,16 +130,12 @@ class BackgroundGitActionsService {
             prUrl: result.result.prHtmlUrl,
             prNumber: result.result.prNumber,
             prStatus: PullRequestStatus.Open,
-          });
+          }));
         }
 
         // Fire-and-forget refresh: let UI update reactively
-        Promise.all([
-          gitStore.loadStatus(workspaceId as WorkspaceId, true),
-          fileTrackingStore.refresh(),
-        ]).catch((err) => {
-          logger.warn('Store refresh failed after PR creation', { err });
-        });
+        getReduxStore().dispatch(loadGitStatus(workspaceId, true));
+        getReduxStore().dispatch(refreshRequested(workspaceId));
 
         return {
           success: true,

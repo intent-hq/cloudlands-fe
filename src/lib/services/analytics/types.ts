@@ -119,9 +119,8 @@ export interface AnalyticsEvents {
   // ============================================
   // App Lifecycle
   // ============================================
-  'Opened App': {
-    // Common properties added automatically
-  };
+  // Common properties added automatically
+  'Opened App': Record<string, never>;
 
   // ============================================
   // Workspace Events (no repo names/paths!)
@@ -411,15 +410,13 @@ export interface AnalyticsEvents {
   // ============================================
   // Setup Funnel Events
   // ============================================
-  'Started Setup': {
-    // Fires when ProviderStatusPanel mounts (first-time user sees provider chooser)
-  };
+  // Fires when ProviderStatusPanel mounts (first-time user sees provider chooser)
+  'Started Setup': Record<string, never>;
   'Installed CLI': {
     auggie_version?: string;
   };
-  'Started Authentication': {
-    // Fires when user clicks Login button for Auggie
-  };
+  // Fires when user clicks Login button for Auggie
+  'Started Authentication': Record<string, never>;
   'Completed Authentication': {
     method: 'auto' | 'browser_poll' | 'manual_paste';
   };

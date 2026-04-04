@@ -234,7 +234,7 @@ export interface InitializeResult {
 // Notification handler type
 // ---------------------------------------------------------------------------
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export type NotificationHandler = (params: any) => void;
 
 // ---------------------------------------------------------------------------

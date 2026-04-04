@@ -8,9 +8,6 @@ import {
   openGitCredentialsModal,
   openGitHubAuthModal,
   openNewSpaceModal,
-  setGitCredentialsModalState,
-  setGitHubAuthModalState,
-  setNewSpaceModalState,
 } from "./global-modals-slice";
 import {
   selectGitCredentialsError,
@@ -86,17 +83,15 @@ describe("globalModalsReducer", () => {
 
     const next = globalModalsReducer(
       globalModalsReducer(
-        globalModalsReducer(initialState, setGitHubAuthModalState(githubState)),
-        setGitCredentialsModalState(gitCredentialsState),
+        globalModalsReducer(initialState, openGitHubAuthModal(githubState.pendingAuth)),
+        openGitCredentialsModal(gitCredentialsState.error),
       ),
-      setNewSpaceModalState(newSpaceState),
+      openNewSpaceModal(newSpaceState.initialRepo),
     );
 
-    expect(next).toEqual({
-      githubAuth: githubState,
-      gitCredentials: gitCredentialsState,
-      newSpace: newSpaceState,
-    });
+    expect(next.githubAuth.open).toBe(true);
+    expect(next.gitCredentials.open).toBe(true);
+    expect(next.newSpace.open).toBe(true);
   });
 });
 

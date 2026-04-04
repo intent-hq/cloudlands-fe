@@ -54,7 +54,10 @@
     error?: string;
     repoPath?: string;
     branchName?: string;
-    onCreateWorkspace?: (options?: { resolveConflicts?: boolean; errorType?: PullErrorType }) => void;
+    onCreateWorkspace?: (options?: {
+      resolveConflicts?: boolean;
+      errorType?: PullErrorType;
+    }) => void;
     onCancel?: () => void;
   }
 
@@ -75,6 +78,7 @@
 
   // Fetch installed editors on mount
   onMount(() => {
+    console.log('PullConflictDialog mounted, fetching installed editors');
     dispatch(fetchEditors());
   });
 

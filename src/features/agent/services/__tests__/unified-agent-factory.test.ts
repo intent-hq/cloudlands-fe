@@ -9,10 +9,17 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import {
   UnifiedAgentFactory,
   type UnifiedAgentConfig,
-  type CreateAgentResult,
 } from '../agent-factory';
 import type { Workspace } from '$shared/types';
 import { AgentStatus } from '$shared/types';
+
+// Mock Redux store bridge
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({
+    getState: () => ({ workspaceAgents: { byWorkspaceId: {} }, workspace: { activeWorkspaceId: 'test-ws' } }),
+    dispatch: vi.fn(),
+  }),
+}));
 
 // Mock the typed invoke
 vi.mock('$shared/ipc/typed-invoke', () => ({
@@ -43,20 +50,15 @@ vi.mock('$lib/electron-bridge', () => ({
   }),
 }));
 
-// Mock the agent state
-vi.mock('../agent-state.svelte', () => ({
-  agentState: {
-    setAgent: vi.fn(),
-    getAgent: vi.fn(),
-    addMessage: vi.fn(),
-    updateSession: vi.fn(),
-  },
-  sessionStore: {
-    addSessionForWorkspace: vi.fn(),
-    updateMessagesForWorkspace: vi.fn(),
-    setStreamingForWorkspace: vi.fn(),
-  },
+// Mock Redux store bridge (factory dynamically imports this)
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({
+    getState: () => ({ workspaceAgents: { byWorkspaceId: {} } }),
+    dispatch: vi.fn(),
+  }),
 }));
+
+
 
 describe('UnifiedAgentFactory', () => {
   let factory: UnifiedAgentFactory;

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
-  import { agentService, type AgentMessage } from '$features/agent/agent.service';
+  import { agentService, type AgentMessage } from '$features/agent/agent-ipc-bridge';
   import type { ContentBlock } from '$shared/types';
 
   const logger = createLogger('AgentStreamHandler');
@@ -18,12 +18,12 @@
   }>();
 
   // State exposed to parent
-  let isStreaming = $state(false);
-  let streamingContent = $state<ContentBlock[] | null>(null);
   let streamingError = $state<string | null>(null);
   let messages = $state<AgentMessage[]>([]);
 
   // Internal state
+  let isStreaming = $state(false);
+  let streamingContent = $state<ContentBlock[] | null>(null);
   let unsubscribe: (() => void) | null = null;
   let streamStartTime: number | null = null;
   let messageAccumulator: Map<string, ContentBlock[]> = new Map();

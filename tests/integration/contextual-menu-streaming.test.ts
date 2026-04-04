@@ -10,7 +10,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 describe('Contextual Menu Agent Launch - Streaming Integration', () => {
   let mockAgentService: any;
-  let mockChatService: any;
   let mockUnifiedStore: any;
   let mockSessionStore: any;
 
@@ -19,11 +18,6 @@ describe('Contextual Menu Agent Launch - Streaming Integration', () => {
     mockAgentService = {
       getSession: vi.fn(),
       createAgent: vi.fn(),
-    };
-
-    mockChatService = {
-      getStore: vi.fn(),
-      handleStreamEvent: vi.fn(),
     };
 
     mockUnifiedStore = {

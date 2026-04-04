@@ -13,6 +13,7 @@ import { FirstVisitStateSchema } from '../shared/schemas';
 // ============================================================================
 
 const UUID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const UuidSchema = z.string().regex(UUID_PATTERN, 'Invalid UUID format');
 
 // Workspace IDs can be:
@@ -36,6 +37,7 @@ const WorkspaceIdSchema = z
   );
 const AgentIdSchema = z.string().min(1, 'Agent ID is required');
 const SessionIdSchema = z.string().min(1, 'Session ID is required');
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const MessageIdSchema = z.string().min(1, 'Message ID is required');
 
 // ============================================================================
@@ -45,6 +47,8 @@ const MessageIdSchema = z.string().min(1, 'Message ID is required');
 export const WorkspaceGetSchema = z.object({
   id: WorkspaceIdSchema,
 });
+
+export const WorkspaceGetCurrentSchema = z.object({}).passthrough();
 
 export const WorkspaceGetByIdSchema = z.object({
   workspaceId: WorkspaceIdSchema,
@@ -1797,6 +1801,7 @@ export const EmptySchema = z.undefined().or(z.null()).or(z.void()).or(z.object({
 
 // SSH Connection Config Schema
 // Note: host can be empty for WebSocket transport (connection goes through wsUrl instead)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const SSHConnectionConfigSchema = z
   .object({
     host: z.string(),

@@ -104,6 +104,7 @@ export const CommentAnchor = Node.create({
     return {
       insertCommentAnchors:
         (commentId: string) =>
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           ({ commands, state, chain, tr }) => {
             const { from, to } = state.selection;
 

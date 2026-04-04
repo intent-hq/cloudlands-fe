@@ -1,12 +1,18 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { contextStore } from '$features/context/context.store.svelte';
-  import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
-  import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
+  import { addContextItem } from '$lib/store/slices/context/context-slice';
+  import { v4 as uuidv4 } from 'uuid';
+  import {
+    selectCurrentWorkspaceId,
+    selectCurrentStagedWorkingChanges,
+    selectCurrentUnstagedWorkingChanges,
+    selectCurrentCommits,
+  } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+  import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
+  import { selectActiveTab } from '$lib/store/slices/panel-layout/panel-layout-selectors';
   import { getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
-  import { TooltipRich } from '$lib/components/ui/tooltip';
   import { faNote } from '$lib/icons/faNote';
   import { getFileExtension, track } from '$lib/services/analytics';
   import { getDispatch } from '$lib/store/utils/utils';
@@ -19,9 +25,10 @@
     selectForegroundWorkspaceAgents,
     selectIsLoadingAgents,
   } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
   import { cn } from '$lib/utils';
-  import type { Note, Workspace } from '$shared/types';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { loadWorkspacesRequested } from '$lib/store/slices/workspace/workspace-slice';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import {
     faAsterisk,
@@ -36,6 +43,7 @@
   } from '@fortawesome/free-solid-svg-icons';
 
   import { onMount } from 'svelte';
+  import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { fly, slide } from 'svelte/transition';
   import AnimatedNumber from '../ui/AnimatedNumber.svelte';
@@ -49,15 +57,16 @@
   import {
     deriveWorkspacePhase,
     deriveWorkspaceStats,
-    type WorkspacePhase,
+    type WorkspacePhaseInfo,
+    type WorkspacePhaseStats,
   } from './workspace-phase';
   import WorkspaceAgentsList from './WorkspaceAgentsList.svelte';
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
 
   interface Props {
-    workspace: Workspace;
     workspaceId: string;
     workspacePath?: string;
-    notes?: Note[];
     notesLoading?: boolean;
     selectedNoteId?: string | null;
     onOpenNote?: (noteId: string) => void;
@@ -85,20 +94,21 @@
   }
 
   let {
-    workspace,
     workspaceId,
     workspacePath = '',
-    notes = [],
     notesLoading = false,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     selectedNoteId = null,
     onReorderNotes,
     onCreateNote,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     selectedFile = null,
     onCreateFile,
     onFileRenamed,
     isNewWorkspaceSession = false,
     onCreateAgent,
     onCreateAgentWithSpecialist,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onCreateTerminal,
     onOpenAcceptChanges,
     onAcceptChanges,
@@ -109,6 +119,13 @@
   void restProps;
 
   const dispatch = getDispatch();
+
+  // Reactive writable store that mirrors workspaceId so Redux selectors
+  // re-evaluate whenever the prop changes (called at component init time).
+  const workspaceIdStore = writable(workspaceId);
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+  });
 
   // Tab definitions with metadata for tooltips
   interface TabDefinition {
@@ -203,10 +220,16 @@
     localStorage.setItem(getOrderStorageKey(), JSON.stringify(order));
   }
 
+  // Redux selectors called at init time with a Readable store arg —
+  // auto-subscribe in templates/derivations via $workspace, $notes, etc.
+  const workspace = selectWorkspaceById(workspaceIdStore);
+  const notes = selectAllNotes(workspaceIdStore);
+  const allWorkspaceAgents = selectAllWorkspaceAgents(workspaceIdStore);
+  const foregroundWorkspaceAgents = selectForegroundWorkspaceAgents(workspaceIdStore);
+  const agentsLoading = selectIsLoadingAgents(workspaceIdStore);
   let selectedTabs = $state<Set<TabId>>(new Set(['overview']));
   let tabOrder = $state<TabId[]>(TAB_DEFINITIONS.map((t) => t.id));
   let previousWorkspaceId = $state<string | null>(null);
-
   // Drag state for tab reordering
   let draggedTabId = $state<TabId | null>(null);
   let dropIndicator = $state<{ tabId: TabId; position: 'before' | 'after' } | null>(null);
@@ -221,16 +244,6 @@
     tabOrder.map((id) => TAB_DEFINITIONS.find((t) => t.id === id)!).filter(Boolean),
   );
 
-  // Construct the correct PR URL from repository info and PR number
-  // This is more reliable than using the stored URL which may be incorrect or empty
-  const constructPrUrl = (prNumber: number, fallbackUrl?: string): string => {
-    if (workspace?.repositoryOwner && workspace?.repositoryName) {
-      return `https://github.com/${workspace.repositoryOwner}/${workspace.repositoryName}/pull/${prNumber}`;
-    }
-    // Fallback to stored URL if we do not have repo info
-    return fallbackUrl || '';
-  };
-
   // Dynamic tab description overrides for coordinator mode
   function getTabDescription(tabId: string, defaultDescription: string): string {
     if (tabId === 'agents' && isCoordinator)
@@ -238,12 +251,7 @@
     return defaultDescription;
   }
 
-  // Controlled tooltip state - managed via pointer events for instant switching
-  let openTooltipTabId = $state<string | null>(null);
-  let tooltipPinned = $state(false); // Keep tooltip open after click
-
   // Track previous single tab for fly direction
-  let previousSingleTabId = $state<TabId | null>(null);
   let flyDirection = $state<number>(0); // -1 = left, 1 = right, 0 = no fly
   // Track if we're doing a multi-panel transition (either before or after has multiple panels)
   let useSlideTransition = $state(false);
@@ -334,7 +342,6 @@
       // Reset fly/slide state to prevent overlapping panels
       flyDirection = 0;
       useSlideTransition = false;
-      previousSingleTabId = null;
       return;
     }
     if (currentWorkspaceId !== previousWorkspaceId) {
@@ -343,7 +350,6 @@
       // Reset fly/slide state to prevent overlapping panels after workspace switch
       flyDirection = 0;
       useSlideTransition = false;
-      previousSingleTabId = null;
     }
   });
 
@@ -381,7 +387,6 @@
       } else {
         flyDirection = 0;
       }
-      previousSingleTabId = tabId;
       selectedTabs = new Set([tabId]);
     }
 
@@ -411,65 +416,91 @@
       flyDirection = 0;
     }
     useSlideTransition = selectedTabs.size > 1;
-    previousSingleTabId = id;
     selectedTabs = new Set([id]);
     saveSelectedTabs();
   }
 
   // Workspace phase derivation for Overview tab
+  // Memoize to avoid creating new object references on every evaluation
+  const defaultPhaseInfo: WorkspacePhaseInfo = {
+    phase: 'planning',
+    label: 'Planning',
+    subtitle: 'Describe what you want to build',
+    isActive: false,
+  };
+  const defaultPhaseStats: WorkspacePhaseStats = {
+    tasks: { total: 0, completed: 0, inProgress: 0, notStarted: 0 },
+    files: { changed: 0, additions: 0, deletions: 0 },
+    commits: { total: 0, unpushed: 0 },
+    pr: { hasOpen: false, hasMerged: false, hasClosed: false },
+  };
+  let cachedPhaseInfo: WorkspacePhaseInfo = defaultPhaseInfo;
+  let cachedPhaseStats: WorkspacePhaseStats = defaultPhaseStats;
   const workspacePhaseInfo = $derived.by(() => {
-    if (!workspace)
-      return {
-        phase: 'planning' as WorkspacePhase,
-        label: 'Planning',
-        subtitle: 'Describe what you want to build',
-        isActive: false,
-      };
+    if (!$workspace) return defaultPhaseInfo;
     const hasActiveAgents = $allWorkspaceAgents.some(
       (a) => a.isStreaming || a.isProcessing || a.isResponding,
     );
-    return deriveWorkspacePhase(workspace, { hasActiveAgents });
+    const next = deriveWorkspacePhase($workspace, { hasActiveAgents });
+    if (
+      next.phase !== cachedPhaseInfo.phase ||
+      next.label !== cachedPhaseInfo.label ||
+      next.subtitle !== cachedPhaseInfo.subtitle ||
+      next.isActive !== cachedPhaseInfo.isActive
+    ) {
+      cachedPhaseInfo = next;
+    }
+    return cachedPhaseInfo;
   });
   const workspacePhaseStats = $derived.by(() => {
-    if (!workspace)
-      return {
-        tasks: { total: 0, completed: 0, inProgress: 0, notStarted: 0 },
-        files: { changed: 0, additions: 0, deletions: 0 },
-        commits: { total: 0, unpushed: 0 },
-        pr: { hasOpen: false, hasMerged: false, hasClosed: false },
-      };
-    return deriveWorkspaceStats(workspace);
+    if (!$workspace) return defaultPhaseStats;
+    const next = deriveWorkspaceStats($workspace);
+    if (JSON.stringify(next) !== JSON.stringify(cachedPhaseStats)) {
+      cachedPhaseStats = next;
+    }
+    return cachedPhaseStats;
   });
 
   // Core state and handlers (same as StackedSidebar)
   const handleOpenAcceptChanges = $derived(onOpenAcceptChanges || onAcceptChanges);
-  const storeHasCorrectWorkspace = $derived(fileTrackingStore.currentWorkspaceId === workspaceId);
+  const ftCurrentWsId$ = selectCurrentWorkspaceId();
+  const ftStagedChanges$ = selectCurrentStagedWorkingChanges();
+  const ftUnstagedChanges$ = selectCurrentUnstagedWorkingChanges();
+  const ftCommits$ = selectCurrentCommits();
+  const storeHasCorrectWorkspace = $derived($ftCurrentWsId$ === workspaceId);
   const panelLayoutManager = $derived(getPanelLayoutManager(workspaceId));
-  const focusedContent = $derived(panelLayoutManager.focusedContent);
+  // Use reactive selector subscription for focused tab state
+  const activeTab$ = selectActiveTab(workspaceIdStore);
+  // Derive individual fields from the reactive activeTab selector
+  const focusedContentType = $derived($activeTab$?.type ?? null);
+  const focusedContentNoteId = $derived($activeTab$?.noteId ?? null);
+  const focusedContentAgentId = $derived($activeTab$?.agentId ?? null);
+  const focusedContentFilePath = $derived($activeTab$?.filePath ?? null);
+  const focusedContentDiffPath = $derived($activeTab$?.diffPath ?? null);
 
   const effectiveSelectedNoteId = $derived(
-    focusedContent.type === 'note' ? focusedContent.noteId : null,
+    focusedContentType === 'note' ? focusedContentNoteId : null,
   );
   const effectiveSelectedAgentId = $derived(
-    focusedContent.type === 'agent' ? focusedContent.agentId : null,
+    focusedContentType === 'agent' ? focusedContentAgentId : null,
   );
   const effectiveSelectedFile = $derived(
-    focusedContent.type === 'file' ? focusedContent.filePath : null,
+    focusedContentType === 'file' ? focusedContentFilePath : null,
   );
   const effectiveActiveFilePath = $derived.by(() => {
-    if (focusedContent.type === 'diff' && focusedContent.diffPath) {
-      return focusedContent.diffPath;
+    if (focusedContentType === 'diff' && focusedContentDiffPath) {
+      return focusedContentDiffPath;
     }
     return null;
   });
   const effectiveActiveFileStaged = $derived.by(() => {
-    if (focusedContent.type === 'diff' && focusedContent.diffPath) {
-      const diffPath = focusedContent.diffPath;
-      const isInStaged = workingChanges.staged.some(
+    if (focusedContentType === 'diff' && focusedContentDiffPath) {
+      const diffPath = focusedContentDiffPath;
+      const isInStaged = stagedChanges.some(
         (c) => c.file === diffPath || c.relativePath === diffPath,
       );
       if (isInStaged) return true;
-      const isInUnstaged = workingChanges.unstaged.some(
+      const isInUnstaged = unstagedChanges.some(
         (c) => c.file === diffPath || c.relativePath === diffPath,
       );
       if (isInUnstaged) return false;
@@ -477,9 +508,9 @@
     }
     return null;
   });
-  const effectiveIsAllChangesViewActive = $derived(focusedContent.type === 'local-changes');
+  const effectiveIsAllChangesViewActive = $derived(focusedContentType === 'local-changes');
   const effectiveActiveCommitHash = $derived.by(() => {
-    const tab = panelLayoutManager.focusedTab;
+    const tab = $activeTab$;
     if (tab?.type === 'changes' && tab.data?.commitHash) {
       return tab.data.commitHash as string;
     }
@@ -500,7 +531,7 @@
   }
 
   function handleOpenNoteInPanel(noteId: string) {
-    const note = notes.find((n) => n.id === noteId);
+    const note = $notes.find((n) => n.id === noteId);
     const title = note?.title || 'Note';
     panelLayoutManager.openTab({
       type: 'note',
@@ -550,19 +581,15 @@
   }
 
   // Working changes for badges
-  const workingChanges = $derived(
-    storeHasCorrectWorkspace
-      ? (fileTrackingStore.workingChanges ?? { unstaged: [], staged: [] })
-      : { unstaged: [], staged: [] },
-  );
-  const allCommits = $derived(storeHasCorrectWorkspace ? (fileTrackingStore.commits ?? []) : []);
+  const stagedChanges = $derived(storeHasCorrectWorkspace ? ($ftStagedChanges$ ?? []) : []);
+  const unstagedChanges = $derived(storeHasCorrectWorkspace ? ($ftUnstagedChanges$ ?? []) : []);
+  const allCommits = $derived(storeHasCorrectWorkspace ? ($ftCommits$ ?? []) : []);
 
-  const allWorkspaceAgents = $derived(selectAllWorkspaceAgents(workspaceId));
-  const foregroundWorkspaceAgents = $derived(selectForegroundWorkspaceAgents(workspaceId));
-  const agentsLoading = $derived(selectIsLoadingAgents(workspaceId));
-
+  // Memoize activeAgents to avoid creating new array references when contents haven't changed
+  let cachedActiveAgents: Array<{ agent: (typeof $allWorkspaceAgents)[number]; state: string }> =
+    [];
   const activeAgents = $derived.by(() => {
-    return $allWorkspaceAgents
+    const newResult = $allWorkspaceAgents
       .map((agent) => {
         const state = getAvatarState(
           {
@@ -576,6 +603,18 @@
         return { agent, state };
       })
       .filter(({ state }) => state === 'running' || state === 'responding' || state === 'unread');
+    // Only update reference if contents changed
+    if (
+      newResult.length !== cachedActiveAgents.length ||
+      newResult.some(
+        (item, i) =>
+          item.agent.id !== cachedActiveAgents[i]?.agent.id ||
+          item.state !== cachedActiveAgents[i]?.state,
+      )
+    ) {
+      cachedActiveAgents = newResult;
+    }
+    return cachedActiveAgents;
   });
 
   // Agent badge state - green if running, blue if unread
@@ -583,74 +622,31 @@
     activeAgents.some(({ state }) => state === 'running' || state === 'responding'),
   );
   const hasUnreadAgents = $derived(activeAgents.some(({ state }) => state === 'unread'));
-
-  // Status card context: spec, coordinator agent, digest
-  const hasSpec = $derived(
-    notes.some((n) => isSpecNote(n.id as string) && n.content && n.content.trim().length > 0),
-  );
   const coordinatorAgent = $derived(
     $foregroundWorkspaceAgents.find(
       (a) => a.metadata?.isInitialAgent === true || a.metadata?.isInitialWorkspaceAgent === true,
-    ) ||
-      ($foregroundWorkspaceAgents.length === 1 ? $foregroundWorkspaceAgents[0] : null),
+    ) || ($foregroundWorkspaceAgents.length === 1 ? $foregroundWorkspaceAgents[0] : null),
   );
-  const isCoordinatorRunning = $derived(
-    coordinatorAgent
-      ? coordinatorAgent.isStreaming ||
-          coordinatorAgent.isProcessing ||
-          coordinatorAgent.isResponding
-      : false,
-  );
-  const coordinatorDigest = $derived(coordinatorAgent?.digest || undefined);
   const isCoordinator = $derived(coordinatorAgent?.metadata?.specialist === 'spec-writer');
 
-  function handleStatusCardAction(action: string) {
-    switch (action) {
-      case 'show-coordinator':
-        if (coordinatorAgent) {
-          handleOpenAgentInPanel(coordinatorAgent.id);
-        } else if ($foregroundWorkspaceAgents.length > 0) {
-          handleOpenAgentInPanel($foregroundWorkspaceAgents[0].id);
-        }
-        break;
-      case 'view-spec': {
-        const spec = notes.find((n) => isSpecNote(n.id as string));
-        if (spec) handleOpenNoteInPanel(spec.id as string);
-        break;
-      }
-      case 'approve':
-        window.dispatchEvent(
-          new CustomEvent('workspace:approve-spec', { detail: { workspaceId } }),
-        );
-        break;
-      case 'pause':
-        // TODO: implement pause functionality
-        break;
-      case 'show-changes':
-        switchToTab('changes');
-        break;
-      case 'create-pr':
-        window.dispatchEvent(new CustomEvent('workspace:create-pr', { detail: { workspaceId } }));
-        break;
-      case 'archive':
-        handleArchiveWorkspace();
-        break;
-    }
-  }
-
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleArchiveWorkspace() {
-    if (!workspace) return;
+    if (!$workspace) return;
     const { toast } = await import('svelte-sonner');
-    const workspaceTitle = workspace.title || 'space';
+    const workspaceTitle = $workspace.title || 'space';
 
-    const result = await workspaceStore.archive(workspace.id);
+    const result = await workspaceClient.archive($workspace.id);
     if (result.ok) {
+      getReduxStore().dispatch(loadWorkspacesRequested());
       toast.warning(`Archived space ${workspaceTitle}`, {
         duration: 15000,
         action: {
           label: 'Undo',
           onClick: async () => {
-            await workspaceStore.unarchive(workspace.id);
+            const undoResult = await workspaceClient.unarchive($workspace.id);
+            if (undoResult.ok) {
+              getReduxStore().dispatch(loadWorkspacesRequested());
+            }
           },
         },
       });
@@ -662,8 +658,8 @@
 
   // Changed files count
   const changedFilesCount = $derived(
-    workingChanges.unstaged.length +
-      workingChanges.staged.length +
+    unstagedChanges.length +
+      stagedChanges.length +
       allCommits.reduce((sum, c) => sum + (c.files?.length || 0), 0),
   );
 
@@ -759,17 +755,22 @@
       window.removeEventListener('sidebar:locate-item', handleLocateItem);
     };
   });
-
-  // Refresh unread notes
+  // Refresh unread notes — only dispatch when note data actually changes
+  let lastRefreshKey: string | undefined;
   $effect(() => {
-    if (workspaceId && notes.length > 0) {
-      const trackableNotes = notes.filter((n) => !isSpecNote(n.id as string));
+    if (workspaceId && $notes.length > 0) {
+      const trackableNotes = $notes.filter((n) => !isSpecNote(n.id as string));
       const notesWithTimestamps = trackableNotes.map((n) => ({
         id: n.id as string,
         updatedAt: n.updatedAt || n.updated_at || n.createdAt || n.created_at || '',
         createdAt: n.createdAt || n.created_at,
       }));
-      dispatch(refreshUnreadNotes(workspaceId, notesWithTimestamps));
+      const refreshKey =
+        workspaceId + ':' + notesWithTimestamps.map((n) => n.id + ':' + n.updatedAt).join(',');
+      if (refreshKey !== lastRefreshKey) {
+        lastRefreshKey = refreshKey;
+        dispatch(refreshUnreadNotes(workspaceId, notesWithTimestamps));
+      }
     }
   });
 
@@ -781,22 +782,15 @@
 <div bind:this={sidebarElement} class={cn('flex flex-col h-full bg-sidebar', className)}>
   <!-- Fixed Top Section: Progress Card -->
   <div class="shrink-0 px-4 pb-3 pt-3">
-    <WorkspaceProgressCard {notes} {workspace} {workspaceId} onOpenNote={handleOpenNoteInPanel} />
+    <WorkspaceProgressCard {workspaceId} onOpenNote={handleOpenNoteInPanel} />
   </div>
 
   {#if !isNewWorkspaceSession}
     <!-- Multi-Select Tab Bar -->
     <div class="shrink-0 flex items-center px-4">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class="tab-bar-container flex items-center gap-px p-0.5 bg-muted/50 flex-1"
-        onpointerleave={() => {
-          if (!tooltipPinned) {
-            openTooltipTabId = null;
-          }
-        }}
-      >
-        {#each orderedTabDefinitions as tab, tabIndex (tab.id)}
+      <div class="tab-bar-container flex items-center gap-px p-0.5 bg-muted/50 flex-1">
+        {#each orderedTabDefinitions as tab (tab.id)}
           {@const isSelected = isTabSelected(tab.id)}
           {@const isDragging = draggedTabId === tab.id}
           {@const showDropBefore =
@@ -820,9 +814,7 @@
               isDragging && 'opacity-50 cursor-grabbing',
               tab.hideLabel ? 'shrink-0' : 'flex-1 shrink-0',
             )}
-            onpointerenter={() => (openTooltipTabId = tab.id)}
             onclick={(e) => {
-              tooltipPinned = true;
               handleTabClick(tab.id, e);
             }}
             ondragstart={(e) => handleDragStart(tab.id, e)}
@@ -873,10 +865,6 @@
         'w-full min-w-0 flex-1 flex flex-col overflow-y-auto overflow-x-hidden',
         !useSlideTransition && flyDirection !== 0 && 'grid *:col-start-1 *:row-start-1',
       )}
-      onclick={() => {
-        tooltipPinned = false;
-        openTooltipTabId = null;
-      }}
     >
       {#each orderedSelectedTabs as tabId, index (tabId)}
         {@const tab = TAB_DEFINITIONS.find((t) => t.id === tabId)}
@@ -918,17 +906,19 @@
                         onAddNote={onCreateNote}
                         onOpenBrowser={() => {
                           const defaultUrl = 'about:blank';
-                          const contextItem = contextStore.addItem({
-                            type: 'browser-url',
-                            provider: 'browser',
+                          const now = new Date().toISOString();
+                          const newItem = {
+                            type: 'browser-url' as const,
+                            provider: 'browser' as const,
                             title: 'Browser',
                             url: defaultUrl,
-                          } as Omit<
-                            import('$features/context/types').BrowserUrlContextItem,
-                            'id' | 'createdAt' | 'updatedAt'
-                          >);
+                            id: uuidv4(),
+                            createdAt: now,
+                            updatedAt: now,
+                          };
+                          dispatch(addContextItem(workspaceId, newItem));
                           const layoutManager = getPanelLayoutManager(workspaceId);
-                          layoutManager.openBrowserPanel(defaultUrl, contextItem.id);
+                          layoutManager.openBrowserPanel(defaultUrl, newItem.id);
                         }}
                         compact
                       />
@@ -936,18 +926,18 @@
                   {/if}
                 </h6>
                 <p class="text-ui text-subtle mt-0.5 leading-snug transition-all duration-200">
-                  {#if tabId === 'context' && workspace?.isRemote}
+                  {#if tabId === 'context' && $workspace?.isRemote}
                     {getTabDescription(tab.id, tab.description)} Your notes live on
                     <span class="font-mono text-subtle"
-                      >{workspace.environmentConfig?.ssh?.host
-                        ? `${workspace.environmentConfig.ssh.host}:`
-                        : ''}{workspace.id}/.workspace</span
+                      >{$workspace.environmentConfig?.ssh?.host
+                        ? `${$workspace.environmentConfig.ssh.host}:`
+                        : ''}{$workspace.id}/.workspace</span
                     >.
-                  {:else if tabId === 'context' && workspace?.path}
+                  {:else if tabId === 'context' && $workspace?.path}
                     {getTabDescription(tab.id, tab.description)} Your notes live in
                     <span class="inline-flex items-baseline gap-1">
                       <OpenComboButton
-                        filePath={workspace.path + '/.workspace'}
+                        filePath={$workspace.path + '/.workspace'}
                         isDirectory={true}
                         variant="sidebar"
                         compact
@@ -955,12 +945,12 @@
                       >
                         <span
                           class="text-inherit underline underline-offset-2 decoration-muted-foreground/20"
-                          >/{workspace.path.split(/[/\\]/).slice(-1)[0]}/.workspace</span
+                          >/{$workspace.path.split(/[/\\]/).slice(-1)[0]}/.workspace</span
                         >
                       </OpenComboButton></span
                     >.
                   {:else if tabId === 'files' && workspacePath}
-                    {workspace?.skipWorktree
+                    {$workspace?.skipWorktree
                       ? 'Working directly in'
                       : 'The workspace contains a copy of your repo that lives in'}
                     <span class="inline-flex items-baseline gap-1">
@@ -1032,17 +1022,17 @@
                     };
                   })}
                   {@const overviewChangedFiles = [
-                    ...workingChanges.unstaged.map((c) => ({
+                    ...unstagedChanges.map((c) => ({
                       path: c.relativePath || c.file,
                       additions: c.stats?.additions ?? 0,
                       deletions: c.stats?.deletions ?? 0,
                       status: c.status,
                       staged: false,
                     })),
-                    ...workingChanges.staged
+                    ...stagedChanges
                       .filter(
                         (s) =>
-                          !workingChanges.unstaged.some(
+                          !unstagedChanges.some(
                             (u) => u.file === s.file || u.relativePath === s.relativePath,
                           ),
                       )
@@ -1055,10 +1045,10 @@
                       })),
                   ]}
                   <OverviewTimelinePanel
-                    {workspace}
+                    workspace={$workspace}
                     phase={workspacePhaseInfo}
                     stats={workspacePhaseStats}
-                    {notes}
+                    notes={$notes}
                     agents={overviewAgents}
                     changedFiles={overviewChangedFiles}
                     commits={allCommits.map((c) => ({
@@ -1108,7 +1098,7 @@
                 {:else if tabId === 'context'}
                   <div class="px-3 transition-all duration-200">
                     <ContextPanel
-                      {notes}
+                      notes={$notes}
                       {workspaceId}
                       selectedNoteId={effectiveSelectedNoteId}
                       onOpenNote={handleOpenNoteInPanel}
@@ -1220,7 +1210,7 @@
                       bind:this={filesPanelRef}
                       {workspacePath}
                       {workspaceId}
-                      environmentConfig={workspace?.environmentConfig}
+                      environmentConfig={$workspace?.environmentConfig}
                       selectedFile={effectiveSelectedFile}
                       onOpenFile={handleOpenFileInPanel}
                       {onCreateFile}

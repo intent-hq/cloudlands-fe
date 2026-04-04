@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
@@ -23,11 +23,6 @@ describe('Import Fixes Verification', () => {
     it('should have valid import statements', () => {
       const filePath = join(projectRoot, 'src/features/comments/comment-manager-v2.ts');
       const content = readFileSync(filePath, 'utf-8');
-
-      // Check for proper import syntax - should have imports from shared/types
-      expect(content).toMatch(
-        /^import\s+type\s+{\s*NoteVersion\s*}\s+from\s+["'].*shared\/types["']/m,
-      );
 
       // Check that there are no malformed imports (missing import keyword)
       expect(content).not.toMatch(/^{[^}]+}\s+from\s+['"]/m);

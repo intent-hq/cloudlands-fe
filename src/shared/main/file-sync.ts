@@ -5,8 +5,6 @@ import { promisify } from 'util';
 
 const readdir = promisify(fs.readdir);
 const stat = promisify(fs.stat);
-const readFile = promisify(fs.readFile);
-const writeFile = promisify(fs.writeFile);
 const mkdir = promisify(fs.mkdir);
 
 export enum SyncDirection {

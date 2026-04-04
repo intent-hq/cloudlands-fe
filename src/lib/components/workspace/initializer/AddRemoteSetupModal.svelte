@@ -13,13 +13,12 @@
     faKey,
   } from '@fortawesome/free-solid-svg-icons';
   import { fade, scale } from 'svelte/transition';
-  import { flyConfig, scaleConfig } from '$lib/utils/animations';
+  import { scaleConfig } from '$lib/utils/animations';
   import { createLogger } from '$lib/utils/client-logger';
   import { portal } from '$lib/actions/portal';
   import { invoke } from '$lib/electron-bridge';
-  import { onMount } from 'svelte';
-
-  interface Props {
+  
+interface Props {
     isOpen: boolean;
     onclose: () => void;
     onsave: (setup: RemoteSetup) => void;

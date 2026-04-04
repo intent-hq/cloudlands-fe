@@ -29,6 +29,7 @@
 
   let {
     workspacePath,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     workspaceId: _workspaceId,
     repoName: repoNameProp,
     filesChanged = [],

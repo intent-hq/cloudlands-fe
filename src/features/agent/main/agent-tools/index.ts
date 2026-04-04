@@ -2,7 +2,6 @@ import { Tool } from '../agent-providers/base-provider';
 import { remoteRPCManager } from '$shared/main/remote-rpc-manager';
 import { RemoteRPCError } from '$shared/main/remote-rpc-client';
 import * as fs from 'fs/promises';
-import * as path from 'path';
 import { execAsync } from '../../../../shared/git/git-env';
 
 // Track file operations for agent provenance
@@ -296,7 +295,6 @@ export const gitTool: Tool = {
 
     // Prevent staging all files - agents should only stage specific files they've modified
     if (operation === 'add') {
-      const argsStr = args.join(' ');
       if (args.length === 0 || args.includes('.') || args.includes('-A') || args.includes('--all') || args.includes('-u')) {
         return {
           success: false,
@@ -308,7 +306,6 @@ export const gitTool: Tool = {
 
     // Prevent commit -a which stages and commits all modified files
     if (operation === 'commit') {
-      const argsStr = args.join(' ');
       if (args.includes('-a') || args.includes('--all')) {
         return {
           success: false,
@@ -371,7 +368,7 @@ export const webSearchTool: Tool = {
     required: ['query'],
   },
   execute: async (params: any) => {
-    const { query, numResults = 5 } = params;
+    const { query } = params;
 
     // Placeholder implementation
     // Future: Integrate with search API (Google, Bing, etc.)

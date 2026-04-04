@@ -22,7 +22,6 @@
 
 import { URLStateManager, type URLStateDefinition } from '$lib/utils/url-state';
 import { page } from '$app/stores';
-import { get } from 'svelte/store';
 
 export interface UseURLStateOptions {
   prefix?: string;
@@ -39,6 +38,7 @@ export function useURLState(definition: URLStateDefinition, options: UseURLState
   // We need to subscribe to the page store to make this reactive to URL changes
   $effect(() => {
     // Subscribe to page store to trigger when URL changes
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const unsubscribe = page.subscribe(($page) => {
       const newState = manager.getState();
       state = newState;

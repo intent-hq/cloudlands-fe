@@ -5,9 +5,7 @@
  * plus a buffer zone for smooth scrolling.
  */
 
-import { Logger } from '$lib/utils/logger';
 
-const logger = new Logger({ category: 'VirtualScroll' });
 
 export interface VirtualScrollOptions {
   /** Height of each item (must be fixed) */

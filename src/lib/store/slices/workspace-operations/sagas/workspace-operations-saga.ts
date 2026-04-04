@@ -1,17 +1,30 @@
 import { goto } from "$app/navigation";
-import { workspaceStore } from "$features/workspace/workspace.store.svelte";
+import { workspaceClient } from "$lib/store/slices/workspace/utils/workspace.client";
 import { invoke } from "$lib/electron-bridge";
+import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import { removeKnownRepo } from "$lib/store/slices/known-repos/known-repos-slice";
+import {
+  clearActiveWorkspace,
+  loadWorkspacesRequested,
+  openWorkspaceRequested,
+  removeWorkspaceEntity,
+  setWorkspaceEntity,
+} from "$lib/store/slices/workspace/workspace-slice";
+import {
+  selectActiveWorkspace,
+  selectWorkspaceById,
+  selectWorkspaceItems,
+} from "$lib/store/slices/workspace/workspace-selectors";
 import { getRunningAgentNames, hasRunningAgents } from "$lib/utils/delete-warning-utils";
 import { navigateAfterWorkspaceRemoval } from "$lib/utils/workspace-navigation";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
 import { WorkspaceStatusEnum, type Workspace } from "$shared/types";
 import type { WorkspaceId } from "$shared/types/branded-ids";
-import { call, put, takeLatest, delay } from "typed-redux-saga";
+import { call, put, takeLatest } from "typed-redux-saga";
 import {
   selectPendingBulkDeleteRepoKey,
   selectPendingBulkRepoKey,
-  selectPendingDeleteWorkspace,
+  selectPendingDeleteWorkspaceId,
   selectPendingRemoveRepoPath,
 } from "../workspace-operations-selectors";
 import {
@@ -45,8 +58,8 @@ function workspaceMatchesRepoKey(workspace: Workspace, repoKey: string): boolean
   return repoKey === "unknown";
 }
 
-function getActiveWorkspacesForRepo(repoKey: string): Workspace[] {
-  return workspaceStore.items.filter(
+function getActiveWorkspacesForRepo(repoKey: string, workspaces: Workspace[]): Workspace[] {
+  return workspaces.filter(
     (workspace) =>
       workspace.status !== WorkspaceStatusEnum.Archived &&
       workspace.status !== WorkspaceStatusEnum.Deleted &&
@@ -54,8 +67,8 @@ function getActiveWorkspacesForRepo(repoKey: string): Workspace[] {
   );
 }
 
-function getArchivedWorkspacesForRepo(repoKey: string): Workspace[] {
-  return workspaceStore.items.filter(
+function getArchivedWorkspacesForRepo(repoKey: string, workspaces: Workspace[]): Workspace[] {
+  return workspaces.filter(
     (workspace) =>
       workspace.status === WorkspaceStatusEnum.Archived && workspaceMatchesRepoKey(workspace, repoKey)
   );
@@ -67,23 +80,64 @@ async function getToast() {
 }
 
 async function deleteWorkspaceWithUndo(workspace: Workspace): Promise<void> {
-  await workspaceStore.deleteWithUndo(workspace.id, workspace.title);
+  const toast = await getToast();
+  const store = getReduxStore();
+  const currentWorkspace = selectActiveWorkspace.select(store.getState());
+  let undone = false;
+  let toastId: string | number | undefined;
+
+  store.dispatch(removeWorkspaceEntity(workspace.id));
+  if (currentWorkspace?.id === workspace.id) {
+    store.dispatch(clearActiveWorkspace());
+  }
+
+  const timeoutId = globalThis.setTimeout(async () => {
+    if (undone) {
+      return;
+    }
+
+    const result = await workspaceClient.delete(workspace.id);
+    if (!result.ok) {
+      store.dispatch(setWorkspaceEntity(workspace));
+      store.dispatch(loadWorkspacesRequested());
+      toast.error("Failed to delete space");
+      return;
+    }
+
+    store.dispatch(loadWorkspacesRequested());
+  }, 15000);
+
+  toastId = toast.warning(`Deleted ${workspace.title || "space"}`, {
+    duration: 15000,
+    action: {
+      label: "Undo",
+      onClick: async () => {
+        undone = true;
+        globalThis.clearTimeout(timeoutId);
+        store.dispatch(setWorkspaceEntity(workspace));
+        if (toastId !== undefined) {
+          toast.dismiss(toastId);
+        }
+      },
+    },
+  });
 }
 
-async function performBulkDeleteArchivedForRepo(repoKey: string): Promise<void> {
+async function performBulkDeleteArchivedForRepo(repoKey: string, workspaces: Workspace[]): Promise<boolean> {
   const toast = await getToast();
-  const toDelete = getArchivedWorkspacesForRepo(repoKey);
+  const toDelete = getArchivedWorkspacesForRepo(repoKey, workspaces);
 
   if (toDelete.length === 0) {
     toast.info("No archived spaces to delete");
-    return;
+    return false;
   }
 
-  const results = await Promise.allSettled(toDelete.map((workspace) => workspaceStore.delete(workspace.id)));
+  const results = await Promise.allSettled(
+    toDelete.map((workspace) => workspaceClient.delete(workspace.id))
+  );
 
   let deleteCount = 0;
   let failCount = 0;
-  const failedIds: WorkspaceId[] = [];
 
   for (let index = 0; index < results.length; index++) {
     const settled = results[index];
@@ -93,7 +147,6 @@ async function performBulkDeleteArchivedForRepo(repoKey: string): Promise<void> 
     }
 
     failCount++;
-    failedIds.push(toDelete[index].id);
   }
 
   if (deleteCount > 0) {
@@ -104,11 +157,9 @@ async function performBulkDeleteArchivedForRepo(repoKey: string): Promise<void> 
 
   if (failCount > 0) {
     toast.error(`Failed to delete ${failCount} space${failCount === 1 ? "" : "s"}`);
-    for (const id of failedIds) {
-      workspaceStore.restoreToUI(id);
-    }
-    await workspaceStore.load();
   }
+
+  return deleteCount > 0 || failCount > 0;
 }
 
 export function* requestOpenWorkspaceSaga(action: ReturnType<typeof requestOpenWorkspace>) {
@@ -125,68 +176,82 @@ export function* requestOpenWorkspaceSaga(action: ReturnType<typeof requestOpenW
     return;
   }
 
-  yield* delay(50);
-  yield* call([workspaceStore, workspaceStore.setCurrentWorkspace], workspaceId as WorkspaceId);
+  yield* put(openWorkspaceRequested(workspaceId));
   yield* call(goto, route);
 }
 
 export function* requestDeleteWorkspaceSaga(action: ReturnType<typeof requestDeleteWorkspace>) {
-  const [workspace] = action.payload;
+  const [workspaceId] = action.payload;
 
-  if (hasRunningAgents(workspace.id)) {
+  if (hasRunningAgents(workspaceId)) {
     yield* put(
       openDeleteWarning({
-        workspace,
-        agentNames: getRunningAgentNames(workspace.id),
+        workspaceId,
+        agentNames: getRunningAgentNames(workspaceId),
       })
     );
     return;
   }
 
-  const wsPrefix = `/workspace/${workspace.id}`;
+  const workspace = yield* selectWorkspaceById.effect(workspaceId);
+  if (!workspace) return;
+
+  const wsPrefix = `/workspace/${workspaceId}`;
   const isViewingWorkspace = window.location.pathname === wsPrefix || window.location.pathname.startsWith(wsPrefix + '/');
   if (isViewingWorkspace) {
-    yield* call(navigateAfterWorkspaceRemoval, workspace.id);
+    yield* call(navigateAfterWorkspaceRemoval, workspaceId);
   }
 
   yield* call(deleteWorkspaceWithUndo, workspace);
 }
 
 export function* confirmDeleteWorkspaceSaga() {
-  const workspace = yield* selectPendingDeleteWorkspace.effect();
+  const workspaceId = yield* selectPendingDeleteWorkspaceId.effect();
   yield* put(closeDeleteWarning());
 
-  if (workspace) {
-    const wsPrefix = `/workspace/${workspace.id}`;
-    const isViewingWorkspace = window.location.pathname === wsPrefix || window.location.pathname.startsWith(wsPrefix + '/');
-    if (isViewingWorkspace) {
-      yield* call(navigateAfterWorkspaceRemoval, workspace.id);
-    }
+  if (workspaceId) {
+    const workspace = yield* selectWorkspaceById.effect(workspaceId);
 
-    yield* call(deleteWorkspaceWithUndo, workspace);
+    if (workspace) {
+      const wsPrefix = `/workspace/${workspace.id}`;
+      const isViewingWorkspace = window.location.pathname === wsPrefix || window.location.pathname.startsWith(wsPrefix + '/');
+      if (isViewingWorkspace) {
+        yield* call(navigateAfterWorkspaceRemoval, workspace.id);
+      }
+
+      yield* call(deleteWorkspaceWithUndo, workspace);
+    }
   }
 }
 
 export function* requestArchiveWorkspaceSaga(action: ReturnType<typeof requestArchiveWorkspace>) {
-  const [workspace] = action.payload;
+  const [workspaceId] = action.payload;
   const toast = yield* call(getToast);
-  const workspaceTitle = workspace.title || "space";
+  const workspace = yield* selectWorkspaceById.effect(workspaceId);
+  const workspaceTitle = workspace?.title || "space";
 
-  const wsPrefix = `/workspace/${workspace.id}`;
+  const wsPrefix = `/workspace/${workspaceId}`;
   const isViewingWorkspace = window.location.pathname === wsPrefix || window.location.pathname.startsWith(wsPrefix + '/');
   if (isViewingWorkspace) {
-    yield* call(navigateAfterWorkspaceRemoval, workspace.id);
+    yield* call(navigateAfterWorkspaceRemoval, workspaceId);
   }
 
-  const result = yield* call([workspaceStore, workspaceStore.archive], workspace.id);
+  const wsId = workspaceId as WorkspaceId;
+  const result = yield* call([workspaceClient, workspaceClient.archive], wsId);
 
   if (result.ok) {
+    yield* put(loadWorkspacesRequested());
     toast.warning(`Archived space ${workspaceTitle}`, {
       duration: 15000,
       action: {
         label: "Undo",
+        // Direct dispatch is intentional: this callback fires outside any saga
+        // generator context when the user clicks "Undo" after the saga has completed.
         onClick: async () => {
-          await workspaceStore.unarchive(workspace.id);
+          const undoResult = await workspaceClient.unarchive(wsId);
+          if (undoResult.ok) {
+            getReduxStore().dispatch(loadWorkspacesRequested());
+          }
         },
       },
     });
@@ -197,14 +262,15 @@ export function* requestArchiveWorkspaceSaga(action: ReturnType<typeof requestAr
 }
 
 export function* requestUnarchiveWorkspaceSaga(action: ReturnType<typeof requestUnarchiveWorkspace>) {
-  const [workspace] = action.payload;
+  const [workspaceId] = action.payload;
   const toast = yield* call(getToast);
-  const workspaceTitle = workspace.title || "space";
-  const result = yield* call([workspaceStore, workspaceStore.unarchive], workspace.id);
+  const workspace = yield* selectWorkspaceById.effect(workspaceId);
+  const workspaceTitle = workspace?.title || "space";
+  const result = yield* call([workspaceClient, workspaceClient.unarchive], workspaceId as WorkspaceId);
 
   if (result.ok) {
     toast.success(`Unarchived space ${workspaceTitle}`);
-    yield* call([workspaceStore, workspaceStore.load]);
+    yield* put(loadWorkspacesRequested());
     return;
   }
 
@@ -221,7 +287,8 @@ export function* confirmBulkArchiveSaga() {
   }
 
   const toast = yield* call(getToast);
-  const toArchive = getActiveWorkspacesForRepo(repoKey);
+  const workspaces = yield* selectWorkspaceItems.effect();
+  const toArchive = getActiveWorkspacesForRepo(repoKey, workspaces);
 
   if (toArchive.length === 0) {
     toast.info("No active spaces to archive");
@@ -231,7 +298,7 @@ export function* confirmBulkArchiveSaga() {
   const results = yield* call(() =>
     Promise.allSettled(
       toArchive.map((workspace) =>
-        workspaceStore.archive(workspace.id).then((result) => ({ id: workspace.id, result }))
+        workspaceClient.archive(workspace.id).then((result) => ({ id: workspace.id, result }))
       )
     )
   );
@@ -249,14 +316,18 @@ export function* confirmBulkArchiveSaga() {
   }
 
   if (archivedIds.length > 0) {
+    yield* put(loadWorkspacesRequested());
     toast.warning(`Archived ${archivedIds.length} space${archivedIds.length === 1 ? "" : "s"}`, {
       duration: 15000,
       action: {
         label: "Undo",
+        // Direct dispatch is intentional: this callback fires outside any saga
+        // generator context when the user clicks "Undo" after the saga has completed.
         onClick: async () => {
           for (const id of archivedIds) {
-            await workspaceStore.unarchive(id);
+            await workspaceClient.unarchive(id);
           }
+          getReduxStore().dispatch(loadWorkspacesRequested());
         },
       },
     });
@@ -277,7 +348,8 @@ export function* confirmBulkDeleteArchivedSaga() {
   }
 
   const toast = yield* call(getToast);
-  const toDelete = getArchivedWorkspacesForRepo(repoKey);
+  const workspaces = yield* selectWorkspaceItems.effect();
+  const toDelete = getArchivedWorkspacesForRepo(repoKey, workspaces);
 
   if (toDelete.length === 0) {
     toast.info("No archived spaces to delete");
@@ -295,7 +367,10 @@ export function* confirmBulkDeleteArchivedSaga() {
     return;
   }
 
-  yield* call(performBulkDeleteArchivedForRepo, repoKey);
+  const shouldReload: boolean = yield* call(performBulkDeleteArchivedForRepo, repoKey, workspaces);
+  if (shouldReload) {
+    yield* put(loadWorkspacesRequested());
+  }
 }
 
 export function* confirmBulkDeleteWarningSaga() {
@@ -307,7 +382,11 @@ export function* confirmBulkDeleteWarningSaga() {
     return;
   }
 
-  yield* call(performBulkDeleteArchivedForRepo, repoKey);
+  const workspaces = yield* selectWorkspaceItems.effect();
+  const shouldReload: boolean = yield* call(performBulkDeleteArchivedForRepo, repoKey, workspaces);
+  if (shouldReload) {
+    yield* put(loadWorkspacesRequested());
+  }
 }
 
 export function* confirmRemoveRepoSaga() {

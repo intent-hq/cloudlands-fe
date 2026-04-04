@@ -158,13 +158,13 @@ describe('Background Agent Tool Restrictions', () => {
 
   describe('Denylist Completeness', () => {
     it('all background agents should have non-empty denylists', () => {
-      for (const [agentType, denylist] of Object.entries(BACKGROUND_AGENT_TOOL_DENYLISTS)) {
+      for (const [, denylist] of Object.entries(BACKGROUND_AGENT_TOOL_DENYLISTS)) {
         expect(denylist.length).toBeGreaterThan(0);
       }
     });
 
     it('denylists should not have duplicate entries', () => {
-      for (const [agentType, denylist] of Object.entries(BACKGROUND_AGENT_TOOL_DENYLISTS)) {
+      for (const [, denylist] of Object.entries(BACKGROUND_AGENT_TOOL_DENYLISTS)) {
         const uniqueTools = new Set(denylist);
         expect(uniqueTools.size).toBe(denylist.length);
       }

@@ -75,6 +75,7 @@ const preventSvelteKitRegenHMR = () => ({
   name: 'prevent-sveltekit-regen-hmr',
   // Run before other plugins to intercept HMR early
   enforce: 'pre',
+  // eslint-disable-next-line no-unused-vars
   handleHotUpdate({ file, server }) {
     // Block HMR for .svelte-kit/generated and .svelte-kit/types files
     if (file.includes('.svelte-kit/generated') || file.includes('.svelte-kit/types')) {

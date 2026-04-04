@@ -173,7 +173,7 @@ describe('WorkspaceSlug', () => {
     it('recognizes legacy adjective-animal slugs with alphanumeric suffix', () => {
       // Legacy slugs from the dictionaries should still be recognized
       // We need a valid adjective and animal from the dictionaries
-      const slug = generateWorkspaceSlug(); // e.g., "amber-forest"
+      generateWorkspaceSlug(); // e.g., "amber-forest"
       // Legacy format would have been e.g., "amber-forest-a7x2" but isWorkspaceSlug
       // checks the adjective/animal dictionaries, not just the pattern
     });

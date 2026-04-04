@@ -313,7 +313,6 @@ export class FileProvider implements Provider {
     }
 
     // Find files in same directory
-    const currentDir = context.currentFile.substring(0, context.currentFile.lastIndexOf('/'));
 
     // This would normally search for files in the same directory
     // For now, returning empty
@@ -380,6 +379,7 @@ export class FileProvider implements Provider {
     // Process each group
     const processed: MentionCandidate[] = [];
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     for (const [filename, candidates] of filesByName.entries()) {
       if (candidates.length === 1) {
         // Single file with this name - keep as is

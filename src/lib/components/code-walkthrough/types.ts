@@ -117,6 +117,7 @@ export function parseWalkthroughResult(text: string): ParsedWalkthrough | null {
             category?: string;
             importance?: string;
           },
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           i: number,
         ) => ({
           file: a.file || '',

@@ -4,7 +4,6 @@
     faTerminal,
     faWandMagicSparkles,
     faTrash,
-    faFloppyDisk,
     faPlus,
     faPencil,
   } from '@fortawesome/free-solid-svg-icons';
@@ -16,12 +15,28 @@
   import { slide } from 'svelte/transition';
   import { untrack } from 'svelte';
   import {
-    setupScriptStore,
     SETUP_SCRIPT_TEMPLATES,
     SETUP_SCRIPT_VARIABLES,
     getTemplateContent,
     type ProjectType,
   } from '$features/setup-scripts';
+  import { v4 as uuidv4 } from 'uuid';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+    saveScript,
+    renameScript,
+    updateScriptContent,
+    removeScriptFromUI,
+    restoreScriptToUI,
+    deleteScript,
+  } from '$lib/store/slices/setup-scripts/setup-scripts-slice';
+  import {
+    selectScripts,
+    selectScriptById,
+    selectLastUsedScriptForRepo,
+  } from '$lib/store/slices/setup-scripts/setup-scripts-selectors';
+  import type { SetupScript } from '$lib/store/slices/setup-scripts/setup-scripts-types';
 
   interface Props {
     repoPath?: string;
@@ -55,6 +70,10 @@
     onSave,
   }: Props = $props();
 
+  // Redux dispatch (must be at component init)
+  const dispatch = getDispatch();
+  const allScripts$ = selectScripts();
+
   // Agent panel state
   let showAgentPanel = $state(false);
 
@@ -69,8 +88,76 @@
   // Track programmatic value changes to avoid false "user edited" detection
   let isProgrammaticChange = $state(false);
 
+  /** Create a new SetupScript object with generated ID and timestamps */
+  function createScriptObject(params: {
+    name?: string;
+    content: string;
+    repoPath?: string;
+    projectType?: string;
+  }): SetupScript {
+    const now = new Date().toISOString();
+    return {
+      id: uuidv4(),
+      name: params.name || 'Custom Script',
+      content: params.content,
+      repoPath: params.repoPath,
+      projectType: params.projectType,
+      lastUsedAt: now,
+      usageCount: 1,
+      createdAt: now,
+    };
+  }
+
+  /** Save or update a script, handling duplicate detection */
+  function saveOrUpdateScript(params: {
+    name?: string;
+    content: string;
+    repoPath?: string;
+    projectType?: string;
+  }): SetupScript {
+    // Check for existing script with same content for this repo
+    const scripts = $allScripts$;
+    const existing = scripts.find(
+      (s) => s.content === params.content && s.repoPath === params.repoPath,
+    );
+
+    if (existing) {
+      const now = new Date().toISOString();
+      const updated: SetupScript = {
+        ...existing,
+        lastUsedAt: now,
+        usageCount: existing.usageCount + 1,
+        ...(params.name ? { name: params.name } : {}),
+        ...(params.projectType ? { projectType: params.projectType } : {}),
+      };
+      dispatch(saveScript(updated));
+      return updated;
+    }
+
+    const newScript = createScriptObject(params);
+    dispatch(saveScript(newScript));
+    return newScript;
+  }
+
   // Get recent scripts sorted by relevance to current repo
-  const recentScripts = $derived(setupScriptStore.getScriptsForRepo(repoPath, projectType));
+  const recentScripts = $derived.by(() => {
+    const scripts = [...$allScripts$];
+    scripts.sort((a, b) => {
+      const aRepoMatch = repoPath && a.repoPath === repoPath;
+      const bRepoMatch = repoPath && b.repoPath === repoPath;
+      if (aRepoMatch && !bRepoMatch) return -1;
+      if (!aRepoMatch && bRepoMatch) return 1;
+
+      const aTypeMatch = projectType && a.projectType === projectType;
+      const bTypeMatch = projectType && b.projectType === projectType;
+      if (aTypeMatch && !bTypeMatch) return -1;
+      if (!aTypeMatch && bTypeMatch) return 1;
+
+      if (b.usageCount !== a.usageCount) return b.usageCount - a.usageCount;
+      return new Date(b.lastUsedAt).getTime() - new Date(a.lastUsedAt).getTime();
+    });
+    return scripts;
+  });
 
   // Build a map of script id -> content and label for quick lookup
   const scriptMap = $derived.by(() => {
@@ -129,7 +216,7 @@
         if (contentChanged && selectedScriptId.startsWith('template-')) {
           // User edited a template — fork into a new saved script
           const templateName = script.label;
-          const savedScript = setupScriptStore.save({
+          const savedScript = saveOrUpdateScript({
             name: templateName,
             content: newValue,
             repoPath,
@@ -153,10 +240,10 @@
 
   // Handle deleting a saved script with undo
   function handleDeleteSavedScript(scriptId: string, name: string) {
-    const scriptData = setupScriptStore.getById(scriptId);
+    const scriptData = selectScriptById.select(getReduxStore().getState(), scriptId);
     if (!scriptData) return;
 
-    setupScriptStore.removeFromUI(scriptId);
+    dispatch(removeScriptFromUI(scriptId));
 
     if (selectedScriptId === scriptId) {
       selectedScriptId = '';
@@ -172,7 +259,7 @@
         label: 'Undo',
         onClick: () => {
           undoClicked = true;
-          setupScriptStore.restoreToUI(scriptId);
+          dispatch(restoreScriptToUI(scriptId));
           toast.dismiss(toastId);
         },
       },
@@ -180,7 +267,7 @@
 
     setTimeout(() => {
       if (!undoClicked) {
-        setupScriptStore.delete(scriptId, true);
+        dispatch(deleteScript(scriptId));
       }
     }, 15000);
   }
@@ -205,17 +292,17 @@
     // If a non-template saved script is selected, update it in place
     const isExistingSaved = selectedScriptId && !selectedScriptId.startsWith('template-');
     if (isExistingSaved) {
-      setupScriptStore.updateContent(selectedScriptId, value);
-      setupScriptStore.rename(selectedScriptId, customName || 'Custom Script');
-      const updated = setupScriptStore.getById(selectedScriptId);
-      if (updated) customName = updated.name;
+      const now = new Date().toISOString();
+      dispatch(updateScriptContent(selectedScriptId, value, now));
+      dispatch(renameScript(selectedScriptId, customName || 'Custom Script'));
+      customName = (customName || 'Custom Script').trim() || 'Custom Script';
       hasUserEdited = false;
       toast.success(`Saved "${customName}"`);
       onSave?.();
       return;
     }
 
-    const savedScript = setupScriptStore.save({
+    const savedScript = saveOrUpdateScript({
       name: customName || 'Custom Script',
       content: value,
       repoPath,
@@ -238,7 +325,7 @@
 
   function commitNameEdit() {
     if (editingNameId && editingNameValue.trim()) {
-      setupScriptStore.rename(editingNameId, editingNameValue.trim());
+      dispatch(renameScript(editingNameId, editingNameValue.trim()));
       if (selectedScriptId === editingNameId) {
         customName = editingNameValue.trim();
       }
@@ -305,7 +392,7 @@
     }
 
     // Try to find last used script for this repo
-    const lastUsed = currentRepo ? setupScriptStore.getLastUsedForRepo(currentRepo) : undefined;
+    const lastUsed = currentRepo ? selectLastUsedScriptForRepo.select(getReduxStore().getState(), currentRepo) : undefined;
 
     // Use untrack only for internal state mutations to avoid infinite loops
     // But keep value assignment tracked so UI updates
@@ -374,12 +461,13 @@
           size="sm"
           class="w-full justify-start text-subtle"
           onclick={() => {
-            const newScript = setupScriptStore.save({
+            const newScript = createScriptObject({
               name: 'Untitled script',
               content: '',
               repoPath,
               projectType: projectType || 'generic',
             });
+            dispatch(saveScript(newScript));
             selectedScriptId = newScript.id;
             value = '';
             customName = newScript.name;
@@ -406,7 +494,7 @@
             <SetupScriptAgent
               {repoPath}
               onScriptGenerated={(script) => {
-                const savedScript = setupScriptStore.save({
+                const savedScript = saveOrUpdateScript({
                   name: script.name,
                   content: script.content,
                   repoPath,

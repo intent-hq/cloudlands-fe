@@ -7,7 +7,7 @@
    * Supports drag-and-drop for cross-panel tab movement.
    */
 
-  import type { PanelState, PanelTab } from '$features/layout/panel-layout-manager.svelte';
+  import type { PanelState, PanelTab } from '$lib/store/slices/panel-layout/panel-layout-types';
   import { cn } from '$lib/utils';
   import PanelTabBar from './PanelTabBar.svelte';
   import PanelContentRenderer from './PanelContentRenderer.svelte';

@@ -12,21 +12,19 @@
   import { useAgentSubscription } from '$lib/utils/agent-subscription.svelte';
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getLastMeaningfulLine } from '$lib/utils/text-utils';
-  import { lineChangesStore } from '$features/line-changes/line-changes.store.svelte';
-  import { agentService } from '$features/agent/agent.service';
-  import { AgentId } from '$shared/types/branded-ids';
+  import { selectAgentLineStats } from '$lib/store/slices/line-changes/line-changes-selectors';
+  import { agentService } from '$features/agent/agent-ipc-bridge';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
-  import SpecialistToolIcon from '../ui/auggie-avatar/SpecialistToolIcon.svelte';
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
   import { selectPendingCount } from '$lib/store/slices/permission/permission-selectors';
   import { slide } from 'svelte/transition';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
-  import { sessionStore } from '$features/agent/browser';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { updateSession as updateAgentSessionFields } from '$lib/store/slices/agent-session/agent-session-slice';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import {
     getPanelLayoutManager,
     hasPanelLayoutManager,
-  } from '$features/layout/panel-layout-manager.svelte';
+  } from '$features/layout/panel-layout-adapter';
   import type { Workspace } from '$shared/types';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
@@ -111,12 +109,14 @@
   // Save the edited name
   function saveEdit() {
     if (editingValue.trim() && editingValue.trim() !== displayName) {
-      const wsId = workspace?.id ? String(workspace.id) : workspaceStore.current?.id;
+      const wsId = workspace?.id
+        ? String(workspace.id)
+        : selectActiveWorkspaceId.select(getReduxStore().getState());
       if (wsId) {
-        sessionStore.updateSessionForWorkspace(wsId, agentId, {
+        getReduxStore().dispatch(updateAgentSessionFields(agentId, {
           name: editingValue.trim(),
           nameExplicitlySet: true,
-        } as any);
+        } as any));
         agentService.saveSession(agentId, wsId, true);
       }
     }
@@ -216,7 +216,7 @@
         const sessionWorkspaceId = workspace?.id ? String(workspace.id) : undefined;
         if (sessionWorkspaceId && hasPanelLayoutManager(sessionWorkspaceId)) {
           const layoutManager = getPanelLayoutManager(sessionWorkspaceId);
-          layoutManager.closeTabsMatching((tab) => tab.type === 'agent' && tab.agentId === agentId);
+          layoutManager.closeTabsByType('agent', 'agentId', agentId);
         }
         closeContextMenu();
 
@@ -232,7 +232,7 @@
   }
 
   // Subscribe to agent updates for real-time streaming
-  // Pass workspace to allow loading from disk when on home page (workspaceStore.current is null)
+  // Pass workspace to allow loading from disk when on home page (Redux workspace state may be null)
   const agentSubscription = useAgentSubscription(agentId, workspace);
   const agent = $derived(agentSubscription.current);
   const agentData = $derived(getAgentPeekData(agent));
@@ -251,7 +251,8 @@
   });
 
   // Get line changes for this agent
-  const lineChanges = $derived(lineChangesStore.getAgentStats(AgentId(agentId)));
+  const lineChanges$ = selectAgentLineStats(agentId);
+  const lineChanges = $derived($lineChanges$);
 
   // Streaming state - updated via events for real-time display
   let streamingBuffer: string = $state('');
@@ -346,6 +347,7 @@
 
   // Map specialist ID to display name using unified lookup
   // Includes built-in and custom specialists
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const specialistDisplayName = $derived.by(() => {
     if (!specialist) return null;
     return selectSpecialistName.select(getReduxStore().getState(), specialist);

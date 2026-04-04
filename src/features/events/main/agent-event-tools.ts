@@ -5,7 +5,8 @@
  * This would be exposed as MCP tools for agents to use.
  */
 
-import { WorkspaceEventBus, EventFilterBuilder } from './workspace-event-bus';
+import { EventQueryEngine } from './event-query-engine';
+import { EventFilterBuilder } from '../event-filter-engine';
 import {
   WorkspaceEvent,
   FileChangedEvent,
@@ -46,7 +47,7 @@ export interface WorkspaceActivity {
  * Agent-friendly interface to workspace events
  */
 export class AgentEventTools {
-  constructor(private eventBus: WorkspaceEventBus) {}
+  constructor(private queryEngine: EventQueryEngine) {}
 
   /**
    * Get the last N files that were touched
@@ -55,7 +56,7 @@ export class AgentEventTools {
   async getRecentFiles(limit: number = 5): Promise<FileActivity[]> {
     logger.debug('Getting recent files', { limit });
 
-    const events = await this.eventBus.query<FileChangedEvent>(
+    const events = await this.queryEngine.query<FileChangedEvent>(
       new EventFilterBuilder().ofType('file:changed').limit(limit).build(),
     );
 
@@ -77,7 +78,7 @@ export class AgentEventTools {
   async getAgentFiles(agentId: string, limit: number = 10): Promise<FileActivity[]> {
     logger.debug('Getting files changed by agent', { agentId, limit });
 
-    const events = await this.eventBus.query<FileChangedEvent>(
+    const events = await this.queryEngine.query<FileChangedEvent>(
       new EventFilterBuilder()
         .ofType('file:changed')
         .byActor('agent', agentId)
@@ -103,7 +104,7 @@ export class AgentEventTools {
   async getAgentActivity(minutesAgo: number = 30): Promise<AgentActivity[]> {
     logger.debug('Getting agent activity', { minutesAgo });
 
-    const events = await this.eventBus.query(
+    const events = await this.queryEngine.query(
       new EventFilterBuilder()
         .byActor('agent')
         .inLast(minutesAgo * 60 * 1000)
@@ -162,7 +163,7 @@ export class AgentEventTools {
   async getDirectoryChanges(directory: string, limit: number = 20): Promise<FileActivity[]> {
     logger.debug('Getting directory changes', { directory, limit });
 
-    const events = await this.eventBus.query<FileChangedEvent>(
+    const events = await this.queryEngine.query<FileChangedEvent>(
       new EventFilterBuilder().ofType('file:changed').inPath(directory).limit(limit).build(),
     );
 
@@ -184,7 +185,7 @@ export class AgentEventTools {
   async getWorkspaceSummary(minutesAgo: number = 60): Promise<WorkspaceActivity> {
     logger.debug('Getting workspace summary', { minutesAgo });
 
-    const allEvents = await this.eventBus.query(
+    const allEvents = await this.queryEngine.query(
       new EventFilterBuilder().inLast(minutesAgo * 60 * 1000).build(),
     );
 
@@ -226,46 +227,8 @@ export class AgentEventTools {
     };
   }
 
-  /**
-   * Watch for changes to specific files
-   * Example: "Tell me when package.json changes"
-   */
-  watchFile(filePath: string, callback: (event: FileChangedEvent) => void): () => void {
-    logger.debug('Setting up file watch', { filePath });
-
-    const subscription = this.eventBus.subscribe<FileChangedEvent>({
-      filters: new EventFilterBuilder().ofType('file:changed').matchingPattern(filePath).build(),
-      callback: (event) => {
-        if (event.data.path === filePath || event.data.path.endsWith('/' + filePath)) {
-          callback(event);
-        }
-      },
-    });
-
-    return () => subscription.unsubscribe?.();
-  }
-
-  /**
-   * Watch for other agent activities
-   * Example: "Let me know when other agents make changes"
-   */
-  watchAgentActivity(
-    excludeAgentId: string,
-    callback: (event: WorkspaceEvent) => void,
-  ): () => void {
-    logger.debug('Setting up agent activity watch', { excludeAgentId });
-
-    const subscription = this.eventBus.subscribe({
-      filters: new EventFilterBuilder().byActor('agent').build(),
-      callback: (event) => {
-        if (event.actor.id !== excludeAgentId) {
-          callback(event);
-        }
-      },
-    });
-
-    return () => subscription.unsubscribe?.();
-  }
+  // watchFile and watchAgentActivity removed during Redux migration.
+  // Real-time subscriptions are now handled by Redux sagas (event-triggered-sagas.ts).
 
   /**
    * Get correlated events (events that happened together)
@@ -274,7 +237,7 @@ export class AgentEventTools {
   async getCorrelatedEvents(correlationId: string): Promise<WorkspaceEvent[]> {
     logger.debug('Getting correlated events', { correlationId });
 
-    return this.eventBus.query(new EventFilterBuilder().withCorrelation(correlationId).build());
+    return this.queryEngine.query(new EventFilterBuilder().withCorrelation(correlationId).build());
   }
 
   /**
@@ -286,7 +249,7 @@ export class AgentEventTools {
 
     // This would need a more sophisticated search implementation
     // For now, we can search in file paths
-    const events = await this.eventBus.query(
+    const events = await this.queryEngine.query(
       new EventFilterBuilder().matchingPattern(searchTerm).limit(limit).build(),
     );
 

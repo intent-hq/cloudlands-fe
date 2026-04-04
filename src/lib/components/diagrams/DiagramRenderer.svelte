@@ -44,7 +44,6 @@
   let currentState = $derived(diagram.states?.find((s) => s.id === currentStateId) ?? null);
 
   // Track state changes for animations
-  let previousStateId = $state<string | undefined>(undefined);
   let stateJustChanged = $state(false);
   let previousVisibleEdgeIds = $state<string[]>([]);
 
@@ -143,12 +142,14 @@
   // Visible elements (based on current state)
   let visibleNodeIds = $derived(currentState?.visibleNodes ?? diagram.model.nodes.map((n) => n.id));
   let visibleNodeIdSet = $derived(new Set(visibleNodeIds));
-  let rawVisibleEdgeIds = $derived(currentState?.visibleEdges ?? diagram.model.edges.map((e) => e.id));
+  let rawVisibleEdgeIds = $derived(
+    currentState?.visibleEdges ?? diagram.model.edges.map((e) => e.id),
+  );
   let visibleEdgeIds = $derived(
     rawVisibleEdgeIds.filter((edgeId) => {
       const edge = diagram.model.edges.find((e) => e.id === edgeId);
       return edge && visibleNodeIdSet.has(edge.from) && visibleNodeIdSet.has(edge.to);
-    })
+    }),
   );
 
   // Track which edges are newly visible (for animation)
@@ -249,8 +250,10 @@
         const labelX = midX - labelWidth / 2;
         const labelY = midY - labelHeight / 2;
 
-        if (!overlapsNode(labelX, labelY, labelWidth, labelHeight) &&
-            !overlapsLabel(labelX, labelY, labelWidth, labelHeight)) {
+        if (
+          !overlapsNode(labelX, labelY, labelWidth, labelHeight) &&
+          !overlapsLabel(labelX, labelY, labelWidth, labelHeight)
+        ) {
           positions.set(edge.id, { x: labelX, y: labelY, width: labelWidth, height: labelHeight });
           placedLabels.push({ x: labelX, y: labelY, width: labelWidth, height: labelHeight });
         }
@@ -432,7 +435,6 @@
 
   // Handle state change
   function changeState(stateId: string) {
-    previousStateId = currentStateId;
     previousVisibleEdgeIds = visibleEdgeIds;
     stateJustChanged = true;
     currentStateId = stateId;
@@ -466,13 +468,24 @@
 <div class="diagram-renderer">
   <!-- Scrollable diagram content -->
   <div class="diagram-scroll-container" bind:this={scrollContainerEl}>
-    <div class="diagram-content rounded-lg" style:transform={cameraTransformStyle} style:transform-origin="top left">
+    <div
+      class="diagram-content rounded-lg"
+      style:transform={cameraTransformStyle}
+      style:transform-origin="top left"
+    >
       <!-- SVG Layer (edges, groups, and HTML overlay) -->
       <svg class="diagram-svg-layer" width={svgWidth} height={svgHeight + 6}>
         <!-- Shared marker definitions scoped by diagram ID to avoid cross-diagram conflicts -->
         <defs>
           <!-- Default arrowhead matching default edge stroke color -->
-          <marker id="arrowhead-{diagram.id}" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+          <marker
+            id="arrowhead-{diagram.id}"
+            markerWidth="10"
+            markerHeight="10"
+            refX="8"
+            refY="5"
+            orient="auto"
+          >
             <path
               d="M 3 1 L 8 5 L 3 9"
               fill="none"
@@ -484,26 +497,131 @@
             />
           </marker>
           <!-- Semantic-colored arrowhead markers -->
-          <marker id="arrowhead-danger-{diagram.id}" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
-            <path d="M 3 1 L 8 5 L 3 9" fill="none" stroke="hsl(var(--destructive) / 0.8)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+          <marker
+            id="arrowhead-danger-{diagram.id}"
+            markerWidth="10"
+            markerHeight="10"
+            refX="8"
+            refY="5"
+            orient="auto"
+          >
+            <path
+              d="M 3 1 L 8 5 L 3 9"
+              fill="none"
+              stroke="hsl(var(--destructive) / 0.8)"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              vector-effect="non-scaling-stroke"
+            />
           </marker>
-          <marker id="arrowhead-success-{diagram.id}" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
-            <path d="M 3 1 L 8 5 L 3 9" fill="none" stroke="hsl(142 76% 36% / 0.6)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+          <marker
+            id="arrowhead-success-{diagram.id}"
+            markerWidth="10"
+            markerHeight="10"
+            refX="8"
+            refY="5"
+            orient="auto"
+          >
+            <path
+              d="M 3 1 L 8 5 L 3 9"
+              fill="none"
+              stroke="hsl(142 76% 36% / 0.6)"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              vector-effect="non-scaling-stroke"
+            />
           </marker>
-          <marker id="arrowhead-warning-{diagram.id}" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
-            <path d="M 3 1 L 8 5 L 3 9" fill="none" stroke="hsl(38 92% 50% / 0.6)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+          <marker
+            id="arrowhead-warning-{diagram.id}"
+            markerWidth="10"
+            markerHeight="10"
+            refX="8"
+            refY="5"
+            orient="auto"
+          >
+            <path
+              d="M 3 1 L 8 5 L 3 9"
+              fill="none"
+              stroke="hsl(38 92% 50% / 0.6)"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              vector-effect="non-scaling-stroke"
+            />
           </marker>
-          <marker id="arrowhead-muted-{diagram.id}" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
-            <path d="M 3 1 L 8 5 L 3 9" fill="none" stroke="hsl(var(--muted-foreground) / 0.3)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+          <marker
+            id="arrowhead-muted-{diagram.id}"
+            markerWidth="10"
+            markerHeight="10"
+            refX="8"
+            refY="5"
+            orient="auto"
+          >
+            <path
+              d="M 3 1 L 8 5 L 3 9"
+              fill="none"
+              stroke="hsl(var(--muted-foreground) / 0.3)"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              vector-effect="non-scaling-stroke"
+            />
           </marker>
-          <marker id="arrowhead-inactive-{diagram.id}" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
-            <path d="M 3 1 L 8 5 L 3 9" fill="none" stroke="hsl(var(--muted-foreground) / 0.2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+          <marker
+            id="arrowhead-inactive-{diagram.id}"
+            markerWidth="10"
+            markerHeight="10"
+            refX="8"
+            refY="5"
+            orient="auto"
+          >
+            <path
+              d="M 3 1 L 8 5 L 3 9"
+              fill="none"
+              stroke="hsl(var(--muted-foreground) / 0.2)"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              vector-effect="non-scaling-stroke"
+            />
           </marker>
-          <marker id="arrowhead-highlighted-{diagram.id}" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
-            <path d="M 3 1 L 8 5 L 3 9" fill="none" stroke="hsl(var(--accent))" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+          <marker
+            id="arrowhead-highlighted-{diagram.id}"
+            markerWidth="10"
+            markerHeight="10"
+            refX="8"
+            refY="5"
+            orient="auto"
+          >
+            <path
+              d="M 3 1 L 8 5 L 3 9"
+              fill="none"
+              stroke="hsl(var(--accent))"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              vector-effect="non-scaling-stroke"
+            />
           </marker>
-          <marker id="arrowhead-active-{diagram.id}" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
-            <path d="M 3 1 L 8 5 L 3 9" fill="none" stroke="hsl(var(--accent))" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+          <marker
+            id="arrowhead-active-{diagram.id}"
+            markerWidth="10"
+            markerHeight="10"
+            refX="8"
+            refY="5"
+            orient="auto"
+          >
+            <path
+              d="M 3 1 L 8 5 L 3 9"
+              fill="none"
+              stroke="hsl(var(--accent))"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              vector-effect="non-scaling-stroke"
+            />
           </marker>
         </defs>
         <g transform={svgTransform}>
@@ -525,11 +643,19 @@
             {@const isEdgeDimmed =
               (hoveredNodeId !== null && !connectedEdgeIds.has(edge.id)) ||
               (hoveredGroupId !== null && !groupEdgeIds.has(edge.id)) ||
-              (hasStateHighlighting && highlightedEdgeSet !== null && !highlightedEdgeSet.has(edge.id))}
-            {@const isEdgeHighlighted = highlightedEdgeSet !== null && highlightedEdgeSet.has(edge.id)}
+              (hasStateHighlighting &&
+                highlightedEdgeSet !== null &&
+                !highlightedEdgeSet.has(edge.id))}
+            {@const isEdgeHighlighted =
+              highlightedEdgeSet !== null && highlightedEdgeSet.has(edge.id)}
             {@const isNewEdge = newEdgeIds.has(edge.id)}
             <g class:edge-draw-in={isNewEdge}>
-              <DiagramEdge {edge} dimmed={isEdgeDimmed} highlighted={isEdgeHighlighted} markerScope={diagram.id} />
+              <DiagramEdge
+                {edge}
+                dimmed={isEdgeDimmed}
+                highlighted={isEdgeHighlighted}
+                markerScope={diagram.id}
+              />
             </g>
           {/each}
 
@@ -540,7 +666,9 @@
               {@const isDimmed =
                 (hoveredNodeId !== null && !connectedEdgeIds.has(edge.id)) ||
                 (hoveredGroupId !== null && !groupEdgeIds.has(edge.id)) ||
-                (hasStateHighlighting && highlightedEdgeSet !== null && !highlightedEdgeSet.has(edge.id))}
+                (hasStateHighlighting &&
+                  highlightedEdgeSet !== null &&
+                  !highlightedEdgeSet.has(edge.id))}
               <foreignObject
                 x={labelPos.x}
                 y={labelPos.y}
@@ -561,8 +689,11 @@
             {@const isNodeDimmed =
               (hoveredNodeId !== null && !connectedNodeIds.has(node.id)) ||
               (hoveredGroupId !== null && !groupNodeIds.has(node.id)) ||
-              (hasStateHighlighting && highlightedNodeSet !== null && !highlightedNodeSet.has(node.id))}
-            {@const isNodeHighlighted = highlightedNodeSet !== null && highlightedNodeSet.has(node.id)}
+              (hasStateHighlighting &&
+                highlightedNodeSet !== null &&
+                !highlightedNodeSet.has(node.id))}
+            {@const isNodeHighlighted =
+              highlightedNodeSet !== null && highlightedNodeSet.has(node.id)}
             <foreignObject
               x={node.x}
               y={node.y}
@@ -594,7 +725,10 @@
 
     <!-- Footer with controls and narrative (only show if states exist) - sticky at bottom -->
     {#if diagram.states && diagram.states.length > 0}
-      <div class="diagram-footer" style:width="{scrollContainerWidth != null ? `${scrollContainerWidth}px` : '100%'}">
+      <div
+        class="diagram-footer"
+        style:width={scrollContainerWidth != null ? `${scrollContainerWidth}px` : '100%'}
+      >
         <DiagramControls states={diagram.states} {currentStateId} onStateChange={changeState} />
       </div>
     {/if}

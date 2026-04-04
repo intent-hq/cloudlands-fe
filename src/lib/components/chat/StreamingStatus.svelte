@@ -16,14 +16,12 @@
   import Fa from 'svelte-fa';
   import {
     faRotateRight,
-    faStop,
-    faInfoCircle,
     faExclamationTriangle,
   } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils/cn';
   import { Spinner } from '$lib/components/ui/indicators';
-  import { formatDuration, computeCompletedEvents } from './streaming-status-utils';
+  import { formatDuration } from './streaming-status-utils';
 
   interface Props {
     /** Whether streaming is active */
@@ -69,9 +67,12 @@
     isStreaming = false,
     isProcessing = false,
     lastChunkTime = null,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     receivedFirstChunk = false,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     streamingContentLength = 0,
     error = null,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     isStalled = false,
     modelUnavailable = null,
     statusEvents = [],
@@ -80,6 +81,7 @@
     providerName = null,
     onRetry,
     onRetryWithModel,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onStop,
     seed,
     class: className = '',
@@ -142,10 +144,10 @@
   // Whether we've received at least one chunk (streaming content actively arriving)
   // Use receivedFirstChunk prop instead of lastChunkTime !== null, because lastChunkTime
   // is set during the 'start' event before any real chunk arrives.
-  let hasReceivedChunk = $derived(receivedFirstChunk);
 
   // Time since streaming started (shown inline after first chunk arrives)
   // Uses effectiveStartTime to handle recovered streams where streamingStartTime is null
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let streamingElapsedTime = $derived.by(() => {
     const elapsed = nowMs - effectiveStartTime;
     return formatDuration(elapsed);
@@ -209,6 +211,7 @@
     'OpenAI Codex': 'https://status.openai.com/',
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let providerStatusUrl = $derived(
     providerName ? (PROVIDER_STATUS_URLS[providerName] ?? null) : null,
   );
@@ -231,7 +234,6 @@
 
   // Whether we've received any streaming data — used to distinguish
   // "no data" (network/provider unknown) from "mid-stream silence" (agent working)
-  let hasReceivedData = $derived((streamingContentLength ?? 0) > 0 || lastChunkTime !== null);
 
   // Status message - differentiated by whether we've received data:
   // - No data: neutral messages (could be network, provider, or agent)

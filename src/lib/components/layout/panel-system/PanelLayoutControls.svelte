@@ -13,10 +13,11 @@
    * - Absolutely positioned above the progress card in sidebar
    */
 
-  import { agentService } from '$features/agent/agent.service';
-  import type { PanelLayoutNode } from '$features/layout/panel-layout-manager.svelte';
-  import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
-  import { notesStore } from '$features/notes/notes.store.svelte';
+  import { agentService } from '$features/agent/agent-ipc-bridge';
+  import type { PanelLayoutNode } from '$features/layout/panel-layout-adapter';
+  import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
+  import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { invoke } from '$lib/electron-bridge';
   import { selectModelForType } from '$lib/store/slices/background-agent-settings/background-agent-settings-selectors';
   import { createLogger } from '$lib/utils/client-logger';
@@ -57,7 +58,6 @@
   }: Props = $props();
 
   // Track if dropdown is open
-  let isDropdownOpen = $state(false);
   let promptValue = $state('');
   let isGenerating = $state(false);
 
@@ -97,7 +97,6 @@
           logger.info('Parsed layout', { layout });
           applyParsedLayout(layout);
           promptValue = '';
-          isDropdownOpen = false;
           toast.success('Layout updated!');
         } else {
           logger.warn('Failed to parse layout response', { response: result.enhanced });
@@ -124,7 +123,7 @@
         }))
       : [];
 
-    const notes = Array.from(notesStore.notes.values()).map((n) => ({
+    const notes = selectAllNotes.select(getReduxStore().getState(), workspaceId).map((n) => ({
       id: n.id,
       title: n.title,
     }));
@@ -193,7 +192,6 @@ Respond with ONLY:
       }),
     );
   }
-
 </script>
 
 <!-- Minimap triggers preset dropdown with AI input and navigation -->
@@ -202,10 +200,8 @@ Respond with ONLY:
   {currentPreset}
   onApplyPreset={(presetId) => {
     onApplyPreset(presetId);
-    isDropdownOpen = false;
     promptValue = '';
   }}
-  onOpenChange={(open) => (isDropdownOpen = open)}
   {promptValue}
   {isGenerating}
   onPromptChange={(value) => (promptValue = value)}

@@ -8,7 +8,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   EndUserRulesManager,
   type EndUserRulesConfig,
-  type RuleTypeConfig,
 } from '../user-rules.service';
 import type { ConfigManager } from '../../../shared/services/config-manager';
 
@@ -29,6 +28,7 @@ const createMockConfigManager = () => {
 // Mock Logger
 vi.mock('../../../shared/logger', () => ({
   Logger: class MockLogger {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     constructor(name: string) {}
     info = vi.fn();
     debug = vi.fn();

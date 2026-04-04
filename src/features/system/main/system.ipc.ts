@@ -1047,7 +1047,7 @@ export function setupSystemIPC() {
     SHELL_CHANNELS.INSTALL_CLI,
     createSafeValidatedHandler(
       ShellInstallCliSchema,
-      async (_event, _validated) => {
+      async () => {
         return await installIntentCli();
       },
       SHELL_CHANNELS.INSTALL_CLI,
@@ -1133,7 +1133,7 @@ export function setupSystemIPC() {
             // Spawn failed, try macOS fallback
             throw new Error('code command not found');
           }
-        } catch (error) {
+        } catch  {
           // Try macOS-specific approach using full VSCode path
           try {
             const path = typeof validated === 'string' ? validated : validated.file;
@@ -1147,7 +1147,6 @@ export function setupSystemIPC() {
             ];
 
             const { spawn: spawnProcess } = require('child_process');
-            const fs = require('fs');
             const { promises: fsPromises } = require('fs');
 
             // Try each common path (ASYNC)
@@ -1176,7 +1175,7 @@ export function setupSystemIPC() {
                   child.unref();
                   return { success: true };
                 }
-              } catch (err) {
+              } catch  {
                 // Continue to next path
                 continue;
               }
@@ -1184,13 +1183,13 @@ export function setupSystemIPC() {
 
             // If no path found, throw error to try fallback
             throw new Error('VSCode executable not found in common paths');
-          } catch (macOSError) {
+          } catch  {
             // Try with shell.openExternal as final fallback
             try {
               const path = typeof validated === 'string' ? validated : validated.file;
               await shell.openExternal(`vscode://file/${path}`);
               return { success: true };
-            } catch (fallbackError) {
+            } catch  {
               return {
                 success: false,
                 error: 'Failed to open in VS Code. Is it installed?',
@@ -1211,7 +1210,6 @@ export function setupSystemIPC() {
       async (_event, validated) => {
         try {
           const { spawn } = require('child_process');
-          const path = require('path');
 
           logger.info('Opening git diff in VSCode:', {
             filePath: validated.filePath,
@@ -1279,7 +1277,6 @@ export function setupSystemIPC() {
                   '~/Applications/Visual Studio Code - Insiders.app',
                 ];
 
-                const { spawn: spawnProcess } = require('child_process');
                 const fs = require('fs');
 
                 // Try each common path
@@ -1319,7 +1316,7 @@ export function setupSystemIPC() {
 
                           // Use exec to run the command through the shell
                           const { exec: execCommand } = require('child_process');
-                          execCommand(command, { windowsHide: true }, (error: any, stdout: any, stderr: any) => {
+                          execCommand(command, { windowsHide: true }, (error: any) => {
                             if (error) {
                               logger.error('Failed to execute VSCode binary:', error as Error);
                             } else {
@@ -1381,7 +1378,7 @@ export function setupSystemIPC() {
             // filePath is already absolute
             await shell.openExternal(`vscode://file/${validated.filePath}`);
             return { success: true };
-          } catch (fallbackError) {
+          } catch  {
             return {
               success: false,
               error: `Failed to open git diff in VS Code: ${error}`,
@@ -1400,7 +1397,6 @@ export function setupSystemIPC() {
       VscodeOpenDiffSchema,
       async (_event, validated) => {
         try {
-          const fs = require('fs');
           const { promises: fsPromises } = require('fs');
           const path = require('path');
           const os = require('os');
@@ -1536,7 +1532,7 @@ export function setupSystemIPC() {
               : `vscode://file/${validated.file}`;
             await shell.openExternal(fileUrl);
             return { success: true };
-          } catch (fallbackError) {
+          } catch  {
             return {
               success: false,
               error: 'Failed to open file in VS Code. Is it installed?',
@@ -1579,7 +1575,7 @@ export function setupSystemIPC() {
           // Wait for error or successful spawn
           const spawnResult = await new Promise<boolean>((resolve) => {
             // If error occurs, resolve with false
-            child.on('error', (error: any) => {
+            child.on('error', () => {
               resolve(false);
             });
 
@@ -1595,7 +1591,7 @@ export function setupSystemIPC() {
             // Spawn failed, try fallback with jetbrains toolbox
             throw new Error('idea command not found');
           }
-        } catch (error) {
+        } catch  {
           // Try alternative JetBrains commands
           try {
             // Get the path to open
@@ -1614,7 +1610,7 @@ export function setupSystemIPC() {
               try {
                 await execAsync(command);
                 return { success: true };
-              } catch (err) {
+              } catch  {
                 // Continue to next command
                 continue;
               }
@@ -1624,7 +1620,7 @@ export function setupSystemIPC() {
               success: false,
               error: 'Failed to open in JetBrains. Is any JetBrains IDE installed?',
             };
-          } catch (fallbackError) {
+          } catch  {
             return {
               success: false,
               error: 'Failed to open in JetBrains. Is any JetBrains IDE installed?',
@@ -2759,7 +2755,7 @@ export function setupSystemIPC() {
               hash: parsed.hash,
             },
           };
-        } catch (error) {
+        } catch  {
           return {
             success: false,
             error: 'Invalid deep link URL',
@@ -2830,7 +2826,7 @@ export function setupSystemIPC() {
       async (event, validated) => {
         try {
           const { spawn } = require('child_process');
-          const { sessionId, command, cwd, stdin, sshConfig } = validated;
+          const { sessionId, command, cwd, stdin } = validated;
 
           const childProcess = spawn(command, {
             cwd,

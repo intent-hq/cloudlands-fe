@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Header from '$lib/components/ui/Header.svelte';
@@ -14,18 +14,17 @@
   import { getRecentRepos } from '$lib/utils/workspace-utils';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import type { KnownRepo } from '$shared/types/known-repo';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { replaceWorkspaceList } from '$lib/store/slices/workspace/workspace-slice';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import {
     faFolder,
-    faFolderOpen,
     faXmark,
     faPlus,
-    faChevronRight,
     faSpinner,
   } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import { slide } from 'svelte/transition';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import AddRemoteSetupModal from './AddRemoteSetupModal.svelte';
   import { selectIsFeatureEnabled } from '$lib/store/slices/feature-codes/feature-codes-selectors';
@@ -91,6 +90,7 @@
     triggerClass,
     emptyLabel = 'Select a repository',
     showEmptyIcon = false,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onClear,
   }: Props = $props();
 
@@ -116,11 +116,14 @@
   let searchTerm = $state(''); // Separate search term that starts empty
   let inputElement: any;
   let isOpen = $state(false); // Track dropdown open state
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let isDialogOpen = $state(false); // Track if a native dialog is open (prevents dropdown from closing)
   let isLoading = $state(true); // Start as loading
   let isNewRepo = $state(false); // Track if this is a new repo creation
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let isValidPath = $state(false); // Track if the input is a valid path
   let selectedRepoType = $state<'local' | 'github' | 'new'>('local'); // Track the type/tab of the selected repo
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let validationMessage = $state(''); // Message to show when path is invalid
   let directoryStatus = $state<{
     exists: boolean;
@@ -220,10 +223,10 @@
   // ═══════════════════════════════════════════════════════════════════════════
   // CREATE NEW REPO - Inline mode state
   // ═══════════════════════════════════════════════════════════════════════════
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let showCreateNewMode = $state(false); // Whether the inline create form is visible
   let newRepoParentPath = $state(''); // Parent directory for new repo
   let newRepoProjectName = $state('new-project'); // Project name for new repo
-  let projectNameInputRef: { focus: () => void; select: () => void } | null = $state(null);
 
   // GitHub URL input for the tabbed interface
   let githubUrlInput = $state('');
@@ -442,35 +445,6 @@
   });
 
   // Helper to detect the correct tab for a given value
-  function detectTabForValue(val: string): 'local' | 'github' | 'new' {
-    if (!val) return 'local';
-
-    // Check if it's a GitHub URL or owner/repo format
-    const githubInfo = parseGitHubUrl(val);
-    if (githubInfo) {
-      return 'github';
-    }
-
-    // Check if value looks like a GitHub shorthand (owner/repo without being a path)
-    if (
-      val.includes('/') &&
-      !val.startsWith('/') &&
-      !val.startsWith('.') &&
-      !val.startsWith('~') &&
-      !val.includes(':\\') &&
-      val.split('/').length === 2
-    ) {
-      const parts = val.split('/');
-      const validIdentifier = (s: string) =>
-        /^[a-zA-Z0-9]([a-zA-Z0-9\-_\.]*[a-zA-Z0-9])?$/.test(s) || /^[a-zA-Z0-9]$/.test(s);
-      if (validIdentifier(parts[0]) && validIdentifier(parts[1])) {
-        return 'github';
-      }
-    }
-
-    // Otherwise it's a local path
-    return 'local';
-  }
 
   // Load recent repositories on mount
   // NOTE: We intentionally do NOT restore the last selected repo here.
@@ -490,15 +464,18 @@
       }
 
       // Load repos from both workspace-derived and persistent registry in parallel
-      const [, registryResult] = await Promise.all([
-        workspaceStore.load(),
+      const [workspaceListResult, registryResult] = await Promise.all([
+        workspaceClient.list({ lite: true }),
         invoke<{ success: boolean; data?: KnownRepo[] }>(
           WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES,
           {},
         ).catch(() => null),
       ]);
 
-      const workspaces = workspaceStore.items;
+      const workspaces = workspaceListResult.ok ? workspaceListResult.data : [];
+      if (workspaceListResult.ok) {
+        getReduxStore().dispatch(replaceWorkspaceList(workspaces));
+      }
 
       // Build a map of repos by path (persistent registry first, then workspace-derived)
       const repoMap = new Map<
@@ -817,6 +794,7 @@
   }
 
   // Handle confirming a detected local path
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleConfirmLocalPath() {
     if (!detectedLocalPath) return;
 
@@ -992,19 +970,6 @@
   // ═══════════════════════════════════════════════════════════════════════════
 
   // Toggle the inline create new repo form
-  function handleToggleCreateNew() {
-    showCreateNewMode = !showCreateNewMode;
-    if (showCreateNewMode) {
-      // Initialize with default parent path
-      newRepoParentPath = getDefaultParentPath();
-      newRepoProjectName = 'new-project';
-      // Focus the project name input after render
-      requestAnimationFrame(() => {
-        projectNameInputRef?.focus();
-        projectNameInputRef?.select();
-      });
-    }
-  }
 
   // Handle selecting parent folder for new repo via file picker
   async function handleSelectNewRepoParent() {
@@ -1539,7 +1504,7 @@
           <Header size={6} class="mb-1">Recent</Header>
           {#if isLoading && recentRepos.length === 0}
             <div class="space-y-1">
-              {#each [1, 2, 3] as _}
+              {#each [1, 2, 3] as { }}
                 <div class="flex items-center gap-2 py-1.5">
                   <div class="w-4 h-4 bg-muted rounded animate-pulse"></div>
                   <div class="h-4 bg-muted rounded flex-1 animate-pulse"></div>

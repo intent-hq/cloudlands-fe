@@ -636,9 +636,6 @@
   $effect(() => {
     // Create reactive dependencies by reading values into local vars
     const _data = data;
-    const _colorEncoding = colorEncoding;
-    const _customFileColors = customFileColors;
-    const _maxDepth = maxDepth;
     const _width = width;
     const _height = height;
     const _focusedPath = focusedPath;
@@ -833,10 +830,12 @@
     for (const item of packedData) {
       const { x, y, r, depth, data: nodeData, children } = item;
       if (depth <= 0 || depth > maxDepth || nodeData.path === LOOSE_FILES_ID) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         filesSkippedDepth++;
         continue;
       }
       if (children) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         filesSkippedFolder++;
         continue;
       }
@@ -853,10 +852,12 @@
       }
 
       if (!isVisible(x, y, r * animScale)) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         filesSkippedVisibility++;
         continue;
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       filesDrawn++;
 
       const isHovered = hoveredFilePath === nodeData.path;
@@ -894,6 +895,7 @@
         ? packedData.filter((p) => !p.children && p.data.path.startsWith(zoomedPath + '/'))
         : [];
       // Check which focused files passed visibility
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const focusedFilesVisible = filesInFocused.filter((f) => {
         const dr = Math.max(f.r, MIN_FILE_SCREEN_RADIUS / scale);
         return isVisible(f.x, f.y, dr);
@@ -1256,6 +1258,7 @@
     });
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function handleClick(_event: MouseEvent) {
     // Click on whatever is currently hovered (shown in hover card)
     if (hoveredFilePath) {

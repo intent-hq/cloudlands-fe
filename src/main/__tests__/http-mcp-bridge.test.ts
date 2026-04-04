@@ -118,18 +118,8 @@ vi.mock('../../features/protocol/main/protocol-adapter', () => ({
   protocolAdapter: mockProtocolAdapter,
 }));
 
-vi.mock('../../features/events/main/unified-event-bus', () => ({
-  unifiedEventBus: {
-    onDomainEvent: vi.fn((event: string, handler: Function) => {
-      if (!eventHandlers[event]) eventHandlers[event] = [];
-      eventHandlers[event].push(handler);
-    }),
-    on: vi.fn((event: string, handler: Function) => {
-      if (!eventHandlers[event]) eventHandlers[event] = [];
-      eventHandlers[event].push(handler);
-    }),
-  },
-}));
+// unified-event-bus was deleted; workspace cleanup is now handled by sagas
+// The setupWorkspaceCleanupListeners() in HttpMcpBridge is now a no-op
 
 vi.mock('../../utils/port-utils', () => ({
   findAvailablePort: mockFindAvailablePort,
@@ -233,11 +223,12 @@ describe('HttpMcpBridge', () => {
       expect(mockExpressApp.post).toHaveBeenCalled();
     });
 
-    it('registers workspace cleanup event listeners', () => {
+    it('setupWorkspaceCleanupListeners is a no-op (handled by sagas)', () => {
       bridge = new HttpMcpBridge(5179);
-      // Should register for workspace:deleting and workspace:deleted
-      expect(eventHandlers['workspace:deleting']).toBeDefined();
-      expect(eventHandlers['workspace:deleted']).toBeDefined();
+      // Event listeners are no longer registered directly — handled by sagas
+      expect(eventHandlers['workspace:deleting']).toBeUndefined();
+      expect(eventHandlers['workspace:deleted']).toBeUndefined();
+      expect(eventHandlers['workspace:updated']).toBeUndefined();
     });
   });
 
@@ -319,25 +310,12 @@ describe('HttpMcpBridge', () => {
       expect(count).toBe(0);
     });
 
-    it('workspace:deleting event clears cached servers for that workspace', () => {
-      // Trigger the workspace:deleting event
-      const handlers = eventHandlers['workspace:deleting'];
-      expect(handlers).toBeDefined();
-      expect(handlers.length).toBeGreaterThan(0);
-
-      // Spy on clearMcpServersForWorkspace
+    it('clearMcpServersForWorkspace can be called directly (used by sagas)', () => {
+      // workspace:deleting and workspace:deleted are now handled by sagas which
+      // call bridge.clearMcpServersForWorkspace() directly
       const clearSpy = vi.spyOn(bridge, 'clearMcpServersForWorkspace');
-      handlers[0]({ workspaceId: 'ws-123' });
+      bridge.clearMcpServersForWorkspace('ws-123');
       expect(clearSpy).toHaveBeenCalledWith('ws-123');
-    });
-
-    it('workspace:deleted event clears cached servers for that workspace', () => {
-      const handlers = eventHandlers['workspace:deleted'];
-      expect(handlers).toBeDefined();
-
-      const clearSpy = vi.spyOn(bridge, 'clearMcpServersForWorkspace');
-      handlers[0]({ workspaceId: 'ws-456' });
-      expect(clearSpy).toHaveBeenCalledWith('ws-456');
     });
 
     it('healthCheckMcpServers returns correct stats with no servers', async () => {
@@ -620,6 +598,7 @@ describe('HttpMcpBridge', () => {
       // Warm up: trigger the first IPC request to apply the one-time patch.
       // The module-level `fromWebContentsPatched` flag may already be true
       // from a prior test run in this file; capture the reference before/after.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const fnBefore = BrowserWindow.fromWebContents;
       await ipcHandler(
         { body: { channel: 'test-channel', data: 'a' } },

@@ -47,25 +47,13 @@ export function getNoteTitle(note: Note): string {
  * Uses parentId if set.
  * Spec note is never considered a child.
  */
-function getEffectiveParentId(note: Note): string | undefined {
-  // Spec note is never a child
-  if (isSpecNote(note.id)) {
-    return undefined;
-  }
-
-  // Use explicit parentId
-  if (note.parentId) {
-    return note.parentId as string;
-  }
-
-  return undefined;
-}
 
 /**
  * Build a map of child note ID -> parent note ID.
  * Note: Legacy dependency-based parent mapping has been removed.
  * All notes now use parentId directly for hierarchy.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function buildParentMap(_notes: Note[]): Map<string, string> {
   // Return empty map - parentId is now the only source of truth for hierarchy
   return new Map<string, string>();

@@ -62,7 +62,9 @@ export class WorkspaceConfigConstants {
    */
   static generateWorktreeFolderName(
     repoName?: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _workspaceName?: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _workspaceId?: string,
   ): string {
     // Just use the repo name - the workspace ID is already in the parent folder

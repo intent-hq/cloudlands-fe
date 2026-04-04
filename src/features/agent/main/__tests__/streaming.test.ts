@@ -11,7 +11,7 @@ import { getAgentBackendAdapter } from '../agent-backend-adapter';
 import { AgentBackendHandler } from '../agent-backend-handler.service';
 import type { AgentIpc } from '$shared/ipc/contracts';
 import * as BrandedIds from '$shared/types/branded-ids';
-import { AGENT_CHANNELS, AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
+import { AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
 
 // Mock util.promisify FIRST before any imports
 vi.mock('util', async (importOriginal) => {
@@ -120,7 +120,7 @@ vi.mock('fs', () => ({
 // Mock logger
 vi.mock('$shared/logger', () => ({
   Logger: class MockLogger {
-    constructor(name: string) {}
+    constructor() {}
     info = vi.fn();
     debug = vi.fn();
     error = vi.fn();
@@ -174,7 +174,7 @@ describe('Agent Streaming Tests', () => {
   describe('Message Streaming', () => {
     it('should handle streaming message chunks', async () => {
       const agentId = BrandedIds.AgentId('agent-123');
-      const streamId = BrandedIds.StreamId('stream-123');
+
 
       // Simulate sending a message
       mockBackendHandler.handleSendMessage.mockResolvedValue({

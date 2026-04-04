@@ -58,6 +58,7 @@ const MOCK_WORKSPACES = [
 // ---------------------------------------------------------------------------
 
 /** Return a mock response for a given IPC channel + data. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function mockInvoke(channel: string, data?: any): any {
   // Workspace channels
   if (channel === 'workspace:list') {
@@ -357,6 +358,7 @@ const browserElectronAPI = {
     return mockInvoke(channel, data);
   },
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   send: (_channel: string, ..._args: any[]) => {
     // No-op in browser
   },
@@ -369,6 +371,7 @@ const browserElectronAPI = {
     return id;
   },
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   off: (_channel: string, _callback: (...args: any[]) => void) => {
     // No-op (use offById for reliable removal)
   },
@@ -397,6 +400,7 @@ const browserElectronAPI = {
     connectEventWebSocket();
   },
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   getPathForFile: (_file: File): string => '',
 
   getSentryConfig: () => null,

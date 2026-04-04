@@ -20,22 +20,35 @@
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
-  import { paletteStore } from '$features/palette/palette.store.svelte';
-  import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
+  import { openPalette } from '$lib/store/slices/palette/palette-slice';
+  import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { applyContentPreset } from '$features/layout/preset-executor';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { WorkspaceId } from '$shared/types/branded-ids';
+  import {
+    selectPanelLayoutRoot,
+    selectCanGoBack,
+    selectCanGoForward,
+    selectActiveTab,
+  } from '$lib/store/slices/panel-layout/panel-layout-selectors';
   import { PanelLayoutControls } from '$lib/components/layout/panel-system';
   import type { LayoutPresetId } from '$lib/components/layout/panel-system/types';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import PromotionalBanner from '$lib/components/PromotionalBanner.svelte';
-  import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
+  import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
+  import {
+    selectUnreadAgentIds,
+    selectUnreadAgentIdsForWorkspace,
+  } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { writable } from 'svelte/store';
   import { WorkspaceStatusEnum } from '$shared/types';
   import { getLineStats, type LineStats } from '$features/file-tracking/file-tracking.client';
-  import { selectZoomFactor, selectCounterScale } from '$lib/store/slices/user-preferences/user-preferences-selectors';
+  import {
+    selectZoomFactor,
+    selectCounterScale,
+  } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { toggleSidebar } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { getDispatch } from '$lib/store/utils/utils';
-  import { layoutSettings } from '$features/layout/layout-settings.svelte';
+  import { selectSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
 
   interface Props {
     workspaceId?: string;
@@ -44,10 +57,13 @@
   let { workspaceId }: Props = $props();
 
   const dispatch = getDispatch();
+  const sidebarSide$ = selectSidebarSide();
 
   // Zoom selectors
   const zoomFactor = selectZoomFactor();
   const counterScale = selectCounterScale();
+  const workspaceItems = selectWorkspaceItems();
+  const unreadAgentIds$ = selectUnreadAgentIds();
 
   // Detect platform for conditional styling and shortcuts
   const isMac = $derived.by(() => {
@@ -61,8 +77,6 @@
 
   // Reactivity versions for subscriptions
   let activeStreamsVersion = $state(0);
-  let unreadVersion = $state(0);
-  let lineStatsVersion = $state(0);
 
   // Cache for line stats
   let lineStatsCache = new SvelteMap<string, LineStats>();
@@ -102,7 +116,6 @@
         }
       }
     }
-    lineStatsVersion++;
   }
 
   // Check if we're on a workspace page
@@ -111,32 +124,46 @@
 
   // Get workspace data
   const workspace = $derived(
-    workspaceId ? workspaceStore.findById(WorkspaceId(workspaceId)) : null,
+    $workspaceItems.find((candidate) => candidate.id === workspaceId) ?? null,
   );
 
-  // Get panel layout manager for this workspace
+  // Reactive writable store for workspaceId so Redux selectors re-evaluate
+  const workspaceIdStore = writable(workspaceId ?? '');
+  $effect(() => {
+    workspaceIdStore.set(workspaceId ?? '');
+  });
+
+  // Get panel layout manager for this workspace (action methods only)
   const layoutManager = $derived(workspaceId ? getPanelLayoutManager(workspaceId) : null);
 
+  // Reactive selector subscriptions for panel layout state
+  const layoutRoot$ = selectPanelLayoutRoot(workspaceIdStore);
+  const canGoBack$ = selectCanGoBack(workspaceIdStore);
+  const canGoForward$ = selectCanGoForward(workspaceIdStore);
+  const focusedTab$ = selectActiveTab(workspaceIdStore);
+
   // Get focused tab info
-  const focusedTab = $derived(layoutManager?.focusedTab ?? null);
+  const focusedTab = $derived($focusedTab$ ?? null);
 
   // Get workspaces with activity (streaming or unread) - excluding current workspace
   const workspacesWithActivity = $derived.by(() => {
     // Touch reactive versions
     void activeStreamsVersion;
-    void unreadVersion;
+    // Reading unreadAgentIds$ triggers re-evaluation when unread state changes
+    void $unreadAgentIds$;
 
-    const allWorkspaces = workspaceStore.items.filter(
+    const allWorkspaces = $workspaceItems.filter(
       (w) => w.status !== WorkspaceStatusEnum.Archived && w.id !== workspaceId,
     );
 
+    const state = getReduxStore().getState();
     return allWorkspaces
       .map((ws) => {
         const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
         const streaming = streamingAgentIds.length > 0;
         const hasUnread =
-          unreadTrackingService
-            .getUnreadAgentIdsForWorkspace(ws.id)
+          selectUnreadAgentIdsForWorkspace
+            .select(state, ws.id)
             .filter((id) => !streamingAgentIds.includes(id)).length > 0;
 
         return { workspace: ws, streaming, hasUnread };
@@ -148,13 +175,9 @@
   let hasMounted = false;
 
   onMount(() => {
-    activeStreamsTracker.startPolling(2000);
+    activeStreamsTracker.startPolling();
     const unsubscribeStreams = activeStreamsTracker.subscribe(() => {
       activeStreamsVersion++;
-      refreshLineStats(); // Refresh line stats when activity changes
-    });
-    const unsubscribeUnread = unreadTrackingService.subscribe(() => {
-      unreadVersion++;
       refreshLineStats(); // Refresh line stats when activity changes
     });
 
@@ -164,7 +187,6 @@
 
     return () => {
       unsubscribeStreams();
-      unsubscribeUnread();
     };
   });
 
@@ -199,7 +221,7 @@
   });
 
   function handleSearchClick() {
-    paletteStore.open();
+    dispatch(openPalette());
   }
 
   async function handleApplyPreset(presetId: LayoutPresetId) {
@@ -213,7 +235,11 @@
 </script>
 
 <!-- Counter-scale wrapper to maintain fixed position relative to macOS traffic lights -->
-<div class="window-title-bar-wrapper" style:height="{35 / $zoomFactor}px" aria-label="Window title bar">
+<div
+  class="window-title-bar-wrapper"
+  style:height="{35 / $zoomFactor}px"
+  aria-label="Window title bar"
+>
   <div
     class={cn(
       'window-title-bar app-drag-region',
@@ -225,7 +251,7 @@
   >
     <!-- Left column -->
     <div class="flex items-center min-w-0">
-      {#if !isHomePage && layoutSettings.sidebarSide === 'left'}
+      {#if !isHomePage && $sidebarSide$ === 'left'}
         <Tooltip side="bottom" delayDuration={300}>
           {#snippet content()}
             <span>Sidebar</span>
@@ -257,9 +283,7 @@
           </span>
 
           <!-- Shortcut hint -->
-          <span class="text-ui text-subtle font-medium shrink-0"
-            >{isMac ? '⌘' : 'Ctrl+'}K</span
-          >
+          <span class="text-ui text-subtle font-medium shrink-0">{isMac ? '⌘' : 'Ctrl+'}K</span>
         </button>
       </div>
     {:else}
@@ -270,16 +294,16 @@
     <div class="flex items-center justify-end pr-4 gap-1">
       {#if isWorkspacePage && workspaceId && layoutManager}
         <PanelLayoutControls
-          layoutRoot={layoutManager.layout.root}
-          canGoBack={layoutManager.canGoBack}
-          canGoForward={layoutManager.canGoForward}
+          layoutRoot={$layoutRoot$}
+          canGoBack={$canGoBack$}
+          canGoForward={$canGoForward$}
           {workspaceId}
           onGoBack={() => layoutManager.goBack()}
           onGoForward={() => layoutManager.goForward()}
           onApplyPreset={handleApplyPreset}
         />
       {/if}
-      {#if !isHomePage && layoutSettings.sidebarSide === 'right'}
+      {#if !isHomePage && $sidebarSide$ === 'right'}
         <Tooltip side="bottom" delayDuration={300}>
           {#snippet content()}
             <span>Sidebar</span>

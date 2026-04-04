@@ -1,6 +1,6 @@
 <script lang="ts">
   import { slide } from 'svelte/transition';
-  import type { Note, Workspace } from '$shared/types';
+  import type { Note } from '$shared/types';
   import { WorkspaceStatusEnum } from '$shared/types';
   import { isSpecNote } from '$shared/constants/notes';
   import {
@@ -28,16 +28,24 @@
   import WorkspaceActionsMenu, {
     type MenuAction,
   } from '$lib/components/ui/WorkspaceActionsMenu.svelte';
-  import { layoutSettings } from '$features/layout/layout-settings.svelte';
+  import { selectSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import { toggleSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { handleLink } from '$features/navigation/link-handler';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
   import { goto } from '$app/navigation';
   import { tick, onMount } from 'svelte';
   import { logger, createLogger } from '$lib/utils/client-logger';
-  import { notesClient } from '$features/notes/notes.client';
-  import { createWorkspaceId, WorkspaceId } from '$shared/types/branded-ids';
+  import { WorkspaceId } from '$shared/types/branded-ids';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import {
+    selectAllNotes,
+  } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import {
+    fetchReadyTasks,
+    applyReadyTasks,
+  } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
   import { listenSync } from '$lib/electron-bridge';
-  import { ChatServiceManager } from '$features/agent/services/chat.service';
+  import { selectAgentSessionsByWorkspace } from '$lib/store/slices/agent-session/agent-session-selectors';
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import type { WorkspaceGitStatus } from '$features/accept-changes/types';
   import {
@@ -49,12 +57,20 @@
   import FlameGraph from './FlameGraph.svelte';
   import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';
   import { hasRunningAgents, getRunningAgentNames } from '$lib/utils/delete-warning-utils';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { requestDeleteWorkspace } from '$lib/store/slices/workspace-operations/workspace-operations-slice';
+  import {
+    loadWorkspacesRequested,
+    setWorkspaceEntity,
+  } from '$lib/store/slices/workspace/workspace-slice';
+  import {
+    selectWorkspaceById,
+    selectWorkspaceActivePullRequest,
+  } from '$lib/store/slices/workspace/workspace-selectors';
 
   const readyLogger = createLogger('ReadyTasks');
 
   interface Props {
-    notes?: Note[];
-    workspace?: Workspace;
     workspaceId?: string;
     onOpenNote?: (noteId: string) => void;
     onAcceptChanges?: () => void;
@@ -64,15 +80,14 @@
     onClick?: () => void;
   }
 
-  let {
-    notes = [],
-    workspace,
-    workspaceId,
-    onOpenNote,
-    onAcceptChanges,
-    compact = false,
-    onClick,
-  }: Props = $props();
+  let { workspaceId, onOpenNote, onAcceptChanges, compact = false, onClick }: Props = $props();
+
+  // ✅ At component init — getDispatch and selectors use getContext()
+  const dispatch = getDispatch();
+  const sidebarSide$ = selectSidebarSide();
+  const notes = $derived(selectAllNotes(workspaceId));
+  const workspace = $derived(selectWorkspaceById(workspaceId ?? ''));
+  const activePullRequest$ = $derived(selectWorkspaceActivePullRequest(workspaceId ?? ''));
 
   // Git status state for workflow awareness
   let gitStatus = $state<WorkspaceGitStatus | null>(null);
@@ -217,11 +232,11 @@
 
   // Delete warning dialog state
   let showDeleteWarning = $state(false);
-  let pendingDeleteWorkspace = $state<Workspace | null>(null);
+  let pendingDeleteWorkspaceId = $state<string | null>(null);
   let runningAgentNamesForDelete = $state<string[]>([]);
 
   // Derive the workspace path display
-  const workspacePath = $derived(workspace?.worktreePath || workspace?.repositoryPath || '');
+  const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
 
   // Copy workspace repo path to clipboard
   let copiedRepoPath = $state(false);
@@ -253,16 +268,16 @@
   }
 
   // Check if workspace is archived
-  let isArchived = $derived(workspace?.status === WorkspaceStatusEnum.Archived);
+  let isArchived = $derived($workspace?.status === WorkspaceStatusEnum.Archived);
 
   async function handleDelete() {
-    if (isDeleting || !workspace) return;
+    if (isDeleting || !$workspace) return;
 
     // Check if workspace has running agents
-    if (hasRunningAgents(workspace.id)) {
+    if (hasRunningAgents($workspace.id)) {
       // Show warning dialog instead of deleting immediately
-      pendingDeleteWorkspace = workspace;
-      runningAgentNamesForDelete = getRunningAgentNames(workspace.id);
+      pendingDeleteWorkspaceId = $workspace.id;
+      runningAgentNamesForDelete = getRunningAgentNames($workspace.id);
       showDeleteWarning = true;
       return;
     }
@@ -272,14 +287,14 @@
   }
 
   async function performDelete() {
-    if (isDeleting || !workspace) return;
+    if (isDeleting || !$workspace) return;
 
     try {
       isDeleting = true;
       // Navigate immediately to avoid UI stalling
       goto('/');
 
-      await workspaceStore.deleteWithUndo(workspace.id, workspace.title);
+      getReduxStore().dispatch(requestDeleteWorkspace($workspace.id));
     } catch (error) {
       logger.error('Failed to delete workspace:', error);
     } finally {
@@ -288,18 +303,22 @@
   }
 
   async function handleArchive() {
-    if (!workspace) return;
+    if (!$workspace) return;
     const { toast } = await import('svelte-sonner');
-    const workspaceTitle = workspace.title || 'space';
+    const workspaceTitle = $workspace.title || 'space';
 
-    const result = await workspaceStore.archive(workspace.id);
+    const result = await workspaceClient.archive($workspace.id);
     if (result.ok) {
+      getReduxStore().dispatch(loadWorkspacesRequested());
       toast.warning(`Archived space ${workspaceTitle}`, {
         duration: 15000,
         action: {
           label: 'Undo',
           onClick: async () => {
-            await workspaceStore.unarchive(workspace.id);
+            const undoResult = await workspaceClient.unarchive($workspace.id);
+            if (undoResult.ok) {
+              getReduxStore().dispatch(loadWorkspacesRequested());
+            }
           },
         },
       });
@@ -310,12 +329,13 @@
   }
 
   async function handleUnarchive() {
-    if (!workspace) return;
+    if (!$workspace) return;
     const { toast } = await import('svelte-sonner');
-    const workspaceTitle = workspace.title || 'space';
+    const workspaceTitle = $workspace.title || 'space';
 
-    const result = await workspaceStore.unarchive(workspace.id);
+    const result = await workspaceClient.unarchive($workspace.id);
     if (result.ok) {
+      getReduxStore().dispatch(loadWorkspacesRequested());
       toast.success(`Unarchived space ${workspaceTitle}`);
     } else {
       toast.error('Failed to unarchive space');
@@ -323,9 +343,9 @@
   }
 
   function startEditingTitle() {
-    if (!workspace) return;
+    if (!$workspace) return;
     isEditingTitle = true;
-    editedTitle = workspace.title || 'Untitled';
+    editedTitle = $workspace.title || 'Untitled';
     tick().then(() => {
       if (titleInputRef) {
         titleInputRef.focus();
@@ -335,14 +355,17 @@
   }
 
   async function saveTitle() {
-    if (!workspace || !editedTitle.trim()) {
+    if (!$workspace || !editedTitle.trim()) {
       isEditingTitle = false;
       return;
     }
 
     const newTitle = editedTitle.trim();
-    if (newTitle !== workspace.title) {
-      await workspaceStore.update(workspace.id, { title: newTitle });
+    if (newTitle !== $workspace.title) {
+      const result = await workspaceClient.update({ id: $workspace.id, title: newTitle });
+      if (result.ok) {
+        getReduxStore().dispatch(setWorkspaceEntity(result.data));
+      }
     }
     isEditingTitle = false;
   }
@@ -353,7 +376,7 @@
       saveTitle();
     } else if (e.key === 'Escape') {
       isEditingTitle = false;
-      editedTitle = workspace?.title || 'Untitled';
+      editedTitle = $workspace?.title || 'Untitled';
     }
   }
 
@@ -362,11 +385,11 @@
   }
 
   const sidebarSideAction: MenuAction = $derived({
-    label: layoutSettings.sidebarSide === 'left' ? 'Move sidebar to right' : 'Move sidebar to left',
+    label: $sidebarSide$ === 'left' ? 'Move sidebar to right' : 'Move sidebar to left',
     iconSnippet: sidebarSideIconSnippet,
     dividerBefore: true,
     onClick: () => {
-      layoutSettings.toggleSidebarSide();
+      dispatch(toggleSidebarSide());
     },
   });
 
@@ -388,12 +411,8 @@
   // Hover state for progress segments
   let hoveredNoteId: string | null = $state(null);
 
-  // Ready tasks state
-  let readyTasks: Note[] = $state([]);
+  // Ready tasks state — derived from Redux store
   let currentReadyIndex = $state(0);
-  let isLoadingReadyTasks = $state(false);
-  let readyTasksError: string | null = $state(null);
-  let hasSearchedForReadyTasks = $state(false);
 
   // Deduplicate notes by ID
   function deduplicateNotes(notesList: Note[]): Note[] {
@@ -406,48 +425,17 @@
     });
   }
 
-  // Load all ready tasks using the backend service
-  async function loadReadyTasks() {
-    if (!workspaceId) return;
-
-    isLoadingReadyTasks = true;
-    readyTasksError = null;
-
-    try {
-      const wsId = createWorkspaceId(workspaceId);
-      const result = await notesClient.findReadyTasks(wsId);
-
-      if (result.ok) {
-        // Deduplicate to prevent duplicate entries
-        readyTasks = deduplicateNotes(result.data.ready);
-        currentReadyIndex = 0;
-        readyLogger.info('Loaded ready tasks', { count: readyTasks.length });
-      } else {
-        readyLogger.info('No ready tasks found');
-        readyTasks = [];
-      }
-    } catch (error) {
-      readyTasksError = error instanceof Error ? error.message : String(error);
-      readyLogger.error('Error loading ready tasks', error);
-      readyTasks = [];
-    } finally {
-      isLoadingReadyTasks = false;
-      hasSearchedForReadyTasks = true;
-    }
-  }
-
   // Auto-load ready tasks on initial load (only once)
   // Keep this as an effect since it needs to react to notes changes
   // Skip in compact mode - ready tasks are not shown on homepage
+  let lastFetchReadyTasksKey: string | undefined;
   $effect(() => {
-    if (
-      workspaceId &&
-      notes.length > 0 &&
-      !isLoadingReadyTasks &&
-      !hasSearchedForReadyTasks &&
-      !compact
-    ) {
-      loadReadyTasks();
+    if (workspaceId && $notes.length > 0 && !compact) {
+      const fetchKey = workspaceId + ':' + $notes.length;
+      if (fetchKey !== lastFetchReadyTasksKey) {
+        lastFetchReadyTasksKey = fetchKey;
+        dispatch(fetchReadyTasks(workspaceId));
+      }
     }
   });
 
@@ -481,13 +469,14 @@
       // Update ready tasks from the notes we already have
       // Deduplicate to prevent duplicate entries if notes array has duplicates
       if (readyTaskIds) {
-        const filtered = notes.filter((n) => readyTaskIds.includes(n.id as string));
-        readyTasks = deduplicateNotes(filtered);
+        const filtered = $notes.filter((n) => readyTaskIds.includes(n.id as string));
+        const deduped = deduplicateNotes(filtered);
+        dispatch(applyReadyTasks(mountedWorkspaceId, deduped));
         // Reset index if current is out of bounds
-        if (currentReadyIndex >= readyTasks.length) {
-          currentReadyIndex = Math.max(0, readyTasks.length - 1);
+        if (currentReadyIndex >= deduped.length) {
+          currentReadyIndex = Math.max(0, deduped.length - 1);
         }
-        readyLogger.info('Ready tasks updated from backend', { count: readyTasks.length });
+        readyLogger.info('Ready tasks updated from backend', { count: deduped.length });
       }
     });
 
@@ -500,12 +489,12 @@
   const unreadNoteIds = selectUnreadNoteIds();
 
   // Get spec note
-  const specNote = $derived(notes.find((n) => n.id === 'spec' || n.isDefault));
+  const specNote = $derived($notes.find((n) => n.id === 'spec' || n.isDefault));
 
   // Compute task stats using the shared canonical logic.
   // See $shared/utils/task-stats.ts for the single source of truth on
   // which tasks are counted and how statuses map to progress categories.
-  const taskStats = $derived(computeTaskStats(notes));
+  const taskStats = $derived(computeTaskStats($notes));
 
   // Tree node with computed weight (leaf count)
   interface TaskTreeNode {
@@ -633,8 +622,7 @@
     const specTaskIds = extractSpecTaskIds(specNote?.content);
     const hasSpecLinks = specTaskIds.size > 0;
     const roots = taskNotes.filter(
-      (n) =>
-        isSpecNote(n.parentId as string) && (!hasSpecLinks || specTaskIds.has(n.id as string)),
+      (n) => isSpecNote(n.parentId as string) && (!hasSpecLinks || specTaskIds.has(n.id as string)),
     );
 
     // Sort roots by their order in the spec note content
@@ -683,49 +671,19 @@
   }
 
   // Reactive: build flame graph data
-  const taskTree = $derived(buildTaskTree(notes));
+  const taskTree = $derived(buildTaskTree($notes));
   const flameRows = $derived(treeToRows(taskTree));
 
   // Calculate completion ratio
   const completionRatio = $derived(taskStats.total > 0 ? taskStats.completed / taskStats.total : 0);
 
-  // Track if any agent is currently working (streaming or processing)
-  let isAgentWorking = $state(false);
-
-  // Check all active ChatService instances via ChatServiceManager to detect if ANY agent is working.
-  // Uses a polling interval since services can be created/destroyed dynamically.
-  // Skip in compact mode - we don't need agent working state on homepage.
-  onMount(() => {
-    if (!workspaceId || compact) {
-      isAgentWorking = false;
-      return;
-    }
-
-    const manager = ChatServiceManager.getInstance();
-
-    const checkAgentWorking = () => {
-      let anyWorking = false;
-      for (const [, service] of manager.getActiveServices()) {
-        const state = service.getState();
-        if (state.isStreaming || state.isProcessing) {
-          anyWorking = true;
-          break;
-        }
-      }
-      if (anyWorking !== isAgentWorking) {
-        isAgentWorking = anyWorking;
-      }
-    };
-
-    // Poll at ~1s interval — sufficient for a progress indicator
-    const intervalId = setInterval(checkAgentWorking, 1000);
-    // Also check immediately on mount
-    checkAgentWorking();
-
-    return () => {
-      clearInterval(intervalId);
-    };
-  });
+  // Track if any agent is currently working (streaming).
+  // Uses agent-session slice to check streaming state per workspace.
+  // ✅ Selector called at component init time (uses getContext internally)
+  const workspaceAgentSessions$ = selectAgentSessionsByWorkspace(workspaceId ?? '');
+  const isAgentWorking = $derived(
+    compact ? false : $workspaceAgentSessions$.some((s) => s.isStreaming),
+  );
 
   // Workflow stage type for determining current state
   type WorkflowStage =
@@ -754,8 +712,13 @@
   const workflowStage = $derived.by<WorkflowStage>(() => {
     // Still loading git status - only show loading if we have no cached data to display
     if (gitStatusLoading && !gitStatus) {
-      const activePR = workspace?.activePullRequest;
-      const hasCachedPRData = activePR && (activePR.status === 'Open' || activePR.status === 'Draft' || activePR.status === 'Merged' || activePR.status === 'Closed');
+      const cachedPR = $activePullRequest$ ?? undefined;
+      const hasCachedPRData =
+        cachedPR &&
+        (cachedPR.status === 'Open' ||
+          cachedPR.status === 'Draft' ||
+          cachedPR.status === 'Merged' ||
+          cachedPR.status === 'Closed');
       const hasTasks = taskStats.total > 0;
 
       if (!hasCachedPRData && !hasTasks) {
@@ -776,9 +739,9 @@
       (gitStatus?.localCommits?.filter((c) => !c.isPushed).length ?? 0) > 0;
     const existingPR = gitStatus?.existingPR;
 
-    // Check PR state - use workspace.activePullRequest as primary signal (available from cache immediately)
+    // Check PR state - use selector-derived activePullRequest as primary signal (available from cache immediately)
     // Fall back to gitStatus.existingPR for merged/closed detection
-    const activePR = workspace?.activePullRequest;
+    const activePR = $activePullRequest$ ?? undefined;
 
     if (existingPR) {
       if (existingPR.state === 'merged') {
@@ -959,7 +922,7 @@
         };
 
       case 'pr-open': {
-        const activePR = workspace?.activePullRequest;
+        const activePR = $activePullRequest$ ?? undefined;
         const parts: string[] = [];
         // Review status
         if (activePR?.reviewDecision === 'CHANGES_REQUESTED') {
@@ -1001,7 +964,7 @@
       }
 
       case 'pr-approved': {
-        const activePR = workspace?.activePullRequest;
+        const activePR = $activePullRequest$ ?? undefined;
         let approvedBy = '';
         if (activePR?.approvedBy && activePR.approvedBy.length > 0) {
           approvedBy = ` by ${activePR.approvedBy.join(', ')}`;
@@ -1049,7 +1012,7 @@
 {#snippet sidebarSideIconSnippet()}
   <SidebarIcon
     size={12}
-    side={layoutSettings.sidebarSide === 'left' ? 'right' : 'left'}
+    side={$sidebarSide$ === 'left' ? 'right' : 'left'}
     class="mr-1.5 opacity-50"
   />
 {/snippet}
@@ -1064,7 +1027,7 @@
     <!-- Header: Title and repo -->
     <div class="w-full">
       <div class="text-sm font-semibold text-foreground truncate">
-        {workspace?.title || 'Untitled'}
+        {$workspace?.title || 'Untitled'}
       </div>
       <div class="text-sm text-subtle truncate mt-0.5 flex items-center gap-1">
         <Tooltip
@@ -1078,14 +1041,15 @@
         >
           {#snippet content()}
             <span>
-              {#if workspace?.skipWorktree}
+              {#if $workspace?.skipWorktree}
                 Working directly in your repo at
                 <span class="underline underline-offset-2 break-all"
                   >{workspacePath.split('/').slice(-2).join('/')}</span
                 >.
               {:else}
                 We have an isolated copy of your repo in the
-                <span class="underline underline-offset-2">{workspace?.id || 'workspace'}/repo</span
+                <span class="underline underline-offset-2"
+                  >{$workspace?.id || 'workspace'}/repo</span
                 >
                 folder.
               {/if}
@@ -1108,16 +1072,16 @@
             class="cursor-pointer bg-transparent border-none p-0 text-inherit font-inherit hover:underline"
             onclick={copyRepoPath}
           >
-            {#if workspace?.repositoryOwner && workspace?.repositoryName}
-              {workspace.repositoryOwner}/{workspace.repositoryName}
-            {:else if workspace?.repositoryPath}
-              {workspace.repositoryPath.split('/').pop()}
+            {#if $workspace?.repositoryOwner && $workspace?.repositoryName}
+              {$workspace.repositoryOwner}/{$workspace.repositoryName}
+            {:else if $workspace?.repositoryPath}
+              {$workspace.repositoryPath.split('/').pop()}
             {/if}
           </button>
         </Tooltip>
-        {#if workspace?.branch}
+        {#if $workspace?.branch}
           <span class="mx-1">·</span>
-          <span>{workspace.branch}</span>
+          <span>{$workspace.branch}</span>
         {/if}
       </div>
     </div>
@@ -1126,7 +1090,7 @@
     {#if flameRows.length > 0}
       <div class="w-full mt-3">
         <FlameGraph
-          {notes}
+          notes={$notes}
           onCellClick={(noteId) => onOpenNote?.(noteId)}
           onCellHover={(noteId) => (hoveredNoteId = noteId)}
           onSpecClick={() => onOpenNote?.('spec')}
@@ -1174,13 +1138,13 @@
                transition-all duration-150 leading-normal
                focus-visible:outline-1 focus-visible:outline-primary/50 focus-visible:-outline-offset-1
                disabled:cursor-default disabled:opacity-50 truncate min-w-0"
-              class:opacity-50={!workspace?.title}
+              class:opacity-50={!$workspace?.title}
               onclick={startEditingTitle}
               title="Click to edit space title"
-              disabled={!workspace}
+              disabled={!$workspace}
             >
-              {#if workspace}
-                {workspace.title || 'Untitled'}
+              {#if $workspace}
+                {$workspace.title || 'Untitled'}
               {/if}
             </button>
           {/if}
@@ -1206,14 +1170,14 @@
               </Button>
             {/snippet}
 
-            {#snippet content({ close: _close }: { close: () => void })}
+            {#snippet content()}
               <div class="w-48">
                 <WorkspaceActionsMenu
-                  filePath={workspace?.worktreePath ||
-                    workspace?.repositoryPath ||
-                    workspace?.path ||
+                  filePath={$workspace?.worktreePath ||
+                    $workspace?.repositoryPath ||
+                    $workspace?.path ||
                     ''}
-                  workspaceId={workspace?.id || workspaceId || ''}
+                  workspaceId={$workspace?.id || workspaceId || ''}
                   isDirectory={true}
                   isWorkspaceRoot={true}
                   onDelete={handleDelete}
@@ -1245,14 +1209,15 @@
         >
           {#snippet content()}
             <span>
-              {#if workspace?.skipWorktree}
+              {#if $workspace?.skipWorktree}
                 Working directly in your repo at
                 <span class="underline underline-offset-2 break-all"
                   >{workspacePath.split('/').slice(-2).join('/')}</span
                 >.
               {:else}
                 We have an isolated copy of your repo in the
-                <span class="underline underline-offset-2">{workspace?.id || 'workspace'}/repo</span
+                <span class="underline underline-offset-2"
+                  >{$workspace?.id || 'workspace'}/repo</span
                 >
                 folder.
               {/if}
@@ -1275,10 +1240,10 @@
             class="flex-1 text-muted-foreground text-sm truncate text-left cursor-pointer bg-transparent border-none p-0 font-inherit hover:underline"
             onclick={copyRepoPath}
           >
-            {#if workspace?.repositoryOwner && workspace?.repositoryName}
-              {workspace.repositoryOwner}/{workspace.repositoryName}
-            {:else if workspace?.repositoryPath}
-              {workspace.repositoryPath.split('/').pop()}
+            {#if $workspace?.repositoryOwner && $workspace?.repositoryName}
+              {$workspace.repositoryOwner}/{$workspace.repositoryName}
+            {:else if $workspace?.repositoryPath}
+              {$workspace.repositoryPath.split('/').pop()}
             {/if}
           </button>
         </Tooltip>
@@ -1290,7 +1255,7 @@
       {#if flameRows.length > 0}
         <div class="flex-1 shrink-0 flex mt-1" transition:slide={{ axis: 'y', duration: 200 }}>
           <FlameGraph
-            {notes}
+            notes={$notes}
             onCellClick={(noteId) => onOpenNote?.(noteId)}
             onCellHover={(noteId) => (hoveredNoteId = noteId)}
             onSpecClick={() => onOpenNote?.('spec')}
@@ -1299,13 +1264,11 @@
           />
         </div>
         <!-- Summary Section -->
-        {#if notes.length > 0 || workflowStage !== 'loading'}
+        {#if $notes.length > 0 || workflowStage !== 'loading'}
           <div class="flex-1 w-full" transition:slide={{ axis: 'y', duration: 200 }}>
             <div class="group w-full p-0 bg-transparent border-none text-left">
               <div class="w-full flex flex-1">
-                <div
-                  class="text-xs text-subtle leading-tight transition-colors duration-150"
-                >
+                <div class="text-xs text-subtle leading-tight transition-colors duration-150">
                   {summaryMessage.headline}
                 </div>
               </div>
@@ -1445,7 +1408,7 @@
 
     <!-- Hover Card for task segments -->
     {#if hoveredNoteId}
-      {@const hoveredNote = notes.find((n) => n.id === hoveredNoteId)}
+      {@const hoveredNote = $notes.find((n) => n.id === hoveredNoteId)}
       {#if hoveredNote}
         {@const taskStatus = hoveredNote.metadata?.task?.status ?? 'not_started'}
         {@const assignedAgentIds = hoveredNote.metadata?.task?.assignedAgentIds}
@@ -1482,12 +1445,12 @@
   bind:open={showDeleteWarning}
   agentNames={runningAgentNamesForDelete}
   onDeleteAnyway={async () => {
-    if (pendingDeleteWorkspace) {
+    if (pendingDeleteWorkspaceId) {
       await performDelete();
-      pendingDeleteWorkspace = null;
+      pendingDeleteWorkspaceId = null;
     }
   }}
   onCancel={() => {
-    pendingDeleteWorkspace = null;
+    pendingDeleteWorkspaceId = null;
   }}
 />

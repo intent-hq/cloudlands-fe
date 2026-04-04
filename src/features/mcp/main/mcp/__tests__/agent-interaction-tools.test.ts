@@ -19,6 +19,7 @@ const mockAgentPersistence = {
   loadAgent: vi.fn(),
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const mockEventBus = {
   emitEvent: vi.fn(),
 };
@@ -39,16 +40,37 @@ vi.mock('$features/agent/main/agent-backend-handler.service', () => ({
   },
 }));
 
-vi.mock('$features/events/main/workspace-event-bus', () => ({
-  getWorkspaceEventBus: () => mockEventBus,
+// workspace-event-bus and unified-event-bus were deleted; events now dispatched via Redux
+
+vi.mock('$features/events/main/agent-subscription-ops', () => ({
+  agentSubscribe: (wsId: string, agentId: string, agentName: string, filter: any) =>
+    mockSubscriptionService.subscribe(agentId, agentName, filter),
+  agentSubscribeToGroup: (wsId: string, ...rest: any[]) =>
+    mockSubscriptionService.subscribeToGroup(...rest),
+  agentUnsubscribe: (wsId: string, subscriptionId: string) =>
+    mockSubscriptionService.unsubscribe(subscriptionId),
+  agentUnsubscribeAll: (wsId: string, agentId: string) =>
+    mockSubscriptionService.unsubscribeAll(agentId),
+  updateAgentStatus: (wsId: string, agentId: string, status: string) =>
+    mockSubscriptionService.setAgentStatus(agentId, status),
+  markAgentAsDeleted: (wsId: string, agentId: string) =>
+    mockSubscriptionService.markAgentDeleted(agentId),
 }));
 
-vi.mock('$features/events/main/unified-event-bus', () => ({
-  unifiedEventBus: mockEventBus,
+// Also mock the selectors/store bridge for direct Redux access in list_agents/get_agent_status
+vi.mock('../../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors', () => ({
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  selectAgentStatus: { select: (_state: any, _wsId: string, _agentId: string) => 'idle' },
 }));
 
-vi.mock('$features/events/main/agent-event-subscription.service', () => ({
-  getAgentEventSubscriptionService: () => mockSubscriptionService,
+const mockMainDispatch = vi.fn();
+vi.mock('../../../../../store/main/redux-store-bridge', () => ({
+  getMainState: () => ({}),
+  mainDispatch: (...args: any[]) => mockMainDispatch(...args),
+}));
+
+vi.mock('../../../../../store/main/slices/workspace-events/workspace-events-slice', () => ({
+  emitWorkspaceEvent: vi.fn((event: any) => ({ type: 'workspace-events/emitWorkspaceEvent', payload: event })),
 }));
 
 vi.mock('$features/events/types', () => ({
@@ -403,10 +425,13 @@ describe('Agent Interaction Tools', () => {
 
       await tool.execute(call);
 
-      expect(mockEventBus.emitEvent).toHaveBeenCalledWith(
+      expect(mockMainDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'agent:message:sent',
-          workspaceId,
+          type: 'workspace-events/emitWorkspaceEvent',
+          payload: expect.objectContaining({
+            type: 'agent:message:sent',
+            workspaceId,
+          }),
         }),
       );
     });

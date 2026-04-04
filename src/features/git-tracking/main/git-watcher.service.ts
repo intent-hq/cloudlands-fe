@@ -10,8 +10,10 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as parcelWatcher from '@parcel/watcher';
 import { GitStateManager } from './git-state-manager';
-import { WorkspaceEventService, ActorType, EventActor } from '../../events/main';
-import { unifiedEventBus } from '../../events/main/unified-event-bus';
+import { ActorType, EventActor, createWorkspaceEvent } from '../../events/types';
+import { emitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
+import { mainDispatch } from '../../../store/main/redux-store-bridge';
+import { gitStatusChanged } from '../../../store/main/slices/git-events/git-events-slice';
 import { Logger } from '../../../shared/logger';
 import type { WorkspaceId } from '../../../shared/types';
 import { gitService } from '../../git/main/git.service';
@@ -118,7 +120,7 @@ export class GitWatcherService extends EventEmitter {
     private readonly workspaceId: string,
     private readonly worktreePath: string,
     private readonly gitStateManager: GitStateManager,
-    private readonly eventService: WorkspaceEventService | null,
+    private readonly _eventServiceRemoved: null = null,
     config?: GitWatcherConfig,
   ) {
     super();
@@ -414,45 +416,16 @@ export class GitWatcherService extends EventEmitter {
       name: 'External Change',
     };
 
-    // Log file creations
-    if (this.eventService) {
-      for (const file of created) {
-        await this.eventService.emitFileChange(
-          file.path,
-          file.action as 'create' | 'modify' | 'delete' | 'rename',
-          {
-            additions: file.additions,
-            deletions: file.deletions,
-            actor,
-          },
-        );
-      }
-
-      // Log file modifications
-      for (const file of modified) {
-        await this.eventService.emitFileChange(
-          file.path,
-          file.action as 'create' | 'modify' | 'delete' | 'rename',
-          {
-            additions: file.additions,
-            deletions: file.deletions,
-            actor,
-          },
-        );
-      }
-
-      // Log file deletions
-      for (const file of deleted) {
-        await this.eventService.emitFileChange(
-          file.path,
-          file.action as 'create' | 'modify' | 'delete' | 'rename',
-          {
-            additions: file.additions,
-            actor,
-            deletions: file.deletions,
-          },
-        );
-      }
+    // Log file changes via Redux
+    const allChanges = [...created, ...modified, ...deleted];
+    for (const file of allChanges) {
+      const event = createWorkspaceEvent(
+        'file:changed',
+        this.workspaceId,
+        actor,
+        { path: file.path, relativePath: file.path, action: file.action, additions: file.additions, deletions: file.deletions },
+      );
+      mainDispatch(emitWorkspaceEvent(event));
     }
 
     // Trigger git state sync
@@ -510,9 +483,9 @@ export class GitWatcherService extends EventEmitter {
           gitService.clearStatusCache(this.workspaceId as WorkspaceId);
 
           // Emit git:status-changed to notify renderer to refresh git status
-          unifiedEventBus.emitDomainEvent('git:status-changed', {
+          mainDispatch(gitStatusChanged({
             workspaceId: this.workspaceId as WorkspaceId,
-          });
+          }));
 
           // Check for new commits, branches, etc.
           const state = this.gitStateManager.getState();
@@ -571,9 +544,9 @@ export class GitWatcherService extends EventEmitter {
               // 1. syncState() returned early due to concurrent sync (pendingSync=true)
               // 2. State changed without HEAD SHA moving (branch/upstream/status changes)
               gitService.clearStatusCache(this.workspaceId as WorkspaceId);
-              unifiedEventBus.emitDomainEvent('git:status-changed', {
+              mainDispatch(gitStatusChanged({
                 workspaceId: this.workspaceId as WorkspaceId,
-              });
+              }));
 
               // Update tracked SHA
               this.lastKnownHeadSha = followUpHeadSha;
@@ -736,6 +709,7 @@ export class GitWatcherService extends EventEmitter {
   /**
    * Detect git operations from state changes
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async detectGitOperations(_state: any): Promise<void> {
     // This would compare with previous state to detect:
     // - New commits

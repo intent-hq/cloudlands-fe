@@ -657,8 +657,6 @@ The instructions in <specialist_role> define your primary function. Prioritize t
       config.agentType,
       config.specialistName,
       config.roleReminder,
-      config.workspaceTitle,
-      config.isInitialAgent,
     );
     if (mandatoryActions) {
       parts.push({
@@ -1133,15 +1131,11 @@ All new branches must use the prefix "${branchPrefix}" (e.g. "${branchPrefix}my-
    * @param _agentType - The type of agent (e.g., 'workspace') - reserved for future use
    * @param specialistName - The specialist role name (e.g., 'Coordinator')
    * @param roleReminder - Critical constraints reminder for the specialist
-   * @param _workspaceTitle - Current workspace title - reserved for future use
-   * @param _isInitialAgent - True if this is the first agent - reserved for future use
    */
   private getMandatoryActionsFooter(
     _agentType?: string,
     specialistName?: string,
     roleReminder?: string,
-    _workspaceTitle?: string,
-    _isInitialAgent?: boolean,
   ): string | null {
     const parts: string[] = [];
 

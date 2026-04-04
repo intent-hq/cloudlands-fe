@@ -7,9 +7,12 @@
    */
   import { flip } from 'svelte/animate';
   import { scriptsClient } from '$features/scripts/scripts.client';
-  import { scriptsStore } from '$features/scripts/scripts.store.svelte';
   import type { ScriptCategory, ScriptMode, ScriptWithState } from '$features/scripts/types';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectScriptEntries } from '$lib/store/slices/scripts/scripts-selectors';
+  import { refreshScripts, removeScript, upsertScript } from '$lib/store/slices/scripts/scripts-slice';
+  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import { ListContainer, ListItem, ListSection } from '$lib/components/ui/list';
@@ -17,12 +20,18 @@
   import { toast } from '$lib/components/ui/toast';
   import { useBackgroundAgent } from '$lib/hooks/use-background-agent.svelte';
   import {
+    selectExecutorIsRunning,
+    selectExecutorAgentId,
+  } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
+  import {
     selectActiveTerminalId as selectActiveTerminalIdSelector,
     selectUserTerminals as selectTerminalsSelector,
   } from '$lib/store/slices/terminals/terminals-selectors';
   import {
     removeTerminal,
   } from '$lib/store/slices/terminals/terminals-slice';
+
+  const activeWorkspace = selectActiveWorkspace();
   import { getDispatch } from '$lib/store/utils/utils';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
@@ -105,7 +114,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   /** Process a parsed detection result (diff or array format). */
   async function handleDetectionResult(parsed: any): Promise<void> {
     // Snapshot full script objects for undo (preserves cwd, env, autoStart, etc.)
-    const snapshot = scriptsStore.scriptEntries.map((s) => {
+    const snapshot = selectScriptEntries.select(getReduxStore().getState()).map((s) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { runtime, ...scriptDef } = s;
       return { ...scriptDef };
     });
@@ -123,7 +133,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
       // Only allow remove/update on auto-detected scripts — user scripts are sacred
       const autoDetectedIds = new Set(
-        scriptsStore.scriptEntries.filter((s) => s.source === 'auto-detected').map((s) => s.id),
+        selectScriptEntries.select(getReduxStore().getState()).filter((s) => s.source === 'auto-detected').map((s) => s.id),
       );
 
       // Process removals (only auto-detected scripts)
@@ -131,7 +141,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         for (const scriptId of parsed.remove) {
           if (typeof scriptId === 'string' && autoDetectedIds.has(scriptId)) {
             await scriptsClient.remove(workspaceId, scriptId);
-            scriptsStore.removeScript(scriptId);
+            sidebarDispatch(removeScript(workspaceId, scriptId));
             removedCount++;
           }
         }
@@ -169,21 +179,21 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               source: 'auto-detected',
             });
             if (createResult.success && createResult.data) {
-              scriptsStore.upsertScript(createResult.data);
+              sidebarDispatch(upsertScript(workspaceId, createResult.data));
               addedCount++;
             }
           }
         }
       }
 
-      await scriptsStore.refresh();
+      sidebarDispatch(refreshScripts(workspaceId));
 
       const parts: string[] = [];
       if (addedCount > 0) parts.push(`+${addedCount} added`);
       if (updatedCount > 0) parts.push(`~${updatedCount} updated`);
       if (removedCount > 0) parts.push(`-${removedCount} removed`);
 
-      showAgentAssist = scriptsStore.scriptEntries.length === 0;
+      showAgentAssist = selectScriptEntries.select(getReduxStore().getState()).length === 0;
 
       if (parts.length > 0) {
         toast.success(`Scripts updated: ${parts.join(', ')}`, {
@@ -191,7 +201,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
             label: 'Undo',
             onClick: async () => {
               // Remove all current scripts
-              for (const s of scriptsStore.scriptEntries) {
+              for (const s of selectScriptEntries.select(getReduxStore().getState())) {
                 await scriptsClient.remove(workspaceId, s.id);
               }
               // Re-create from snapshot (preserving all fields)
@@ -207,7 +217,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                   autoStart: s.autoStart,
                 });
               }
-              await scriptsStore.refresh();
+              sidebarDispatch(refreshScripts(workspaceId));
               toast.success('Scripts restored');
             },
           },
@@ -222,7 +232,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     // Fallback: old flat array format — deduplicate
     if (Array.isArray(parsed)) {
       const existingKeys = new Set(
-        scriptsStore.scriptEntries.map((s) => `${s.name}::${s.command}`),
+        selectScriptEntries.select(getReduxStore().getState()).map((s) => `${s.name}::${s.command}`),
       );
 
       let createdCount = 0;
@@ -241,13 +251,13 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
             source: 'auto-detected',
           });
           if (createResult.success && createResult.data) {
-            scriptsStore.upsertScript(createResult.data);
+            sidebarDispatch(upsertScript(workspaceId, createResult.data));
             createdCount++;
           }
         }
       }
 
-      showAgentAssist = scriptsStore.scriptEntries.length === 0;
+      showAgentAssist = selectScriptEntries.select(getReduxStore().getState()).length === 0;
 
       if (createdCount > 0) {
         toast.success(`Detected ${createdCount} new script${createdCount === 1 ? '' : 's'}`);
@@ -279,8 +289,12 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       }
     },
     onError: async () => {
-      // Try to salvage JSON from the agent's raw messages
-      const messages = scriptDetectAgent.messages;
+      // Try to salvage JSON from the agent's raw messages via Redux
+      const currentAgentId = selectExecutorAgentId.select(getReduxStore().getState(), workspaceId, 'script-detect');
+      const agentSession = currentAgentId
+        ? selectAgentById.select(getReduxStore().getState(), currentAgentId)
+        : undefined;
+      const messages = agentSession?.messages;
       if (messages && messages.length > 0) {
         for (let i = messages.length - 1; i >= 0; i--) {
           const msg = messages[i];
@@ -324,7 +338,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         throw new Error(result.error || 'Local script detection failed');
       }
 
-      await scriptsStore.refresh();
+      sidebarDispatch(refreshScripts(workspaceId));
       // Use the detected count from the IPC response (number of scripts found
       // in project manifests) rather than the total store count which includes
       // user-created scripts. Default to 0 so agent assist is shown when the
@@ -340,7 +354,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         toast.info('No scripts found locally. You can try agent-assisted detection.');
       }
       logger.info('Local detection complete', {
-        totalScripts: scriptsStore.scriptEntries.length,
+        totalScripts: selectScriptEntries.select(getReduxStore().getState()).length,
         detectedCount,
         source: options.source ?? 'primary',
       });
@@ -357,7 +371,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   }
 
   function buildExistingScriptsContext(): string {
-    const existingScripts = scriptsStore.scriptEntries.map((s) => ({
+    const existingScripts = selectScriptEntries.select(getReduxStore().getState()).map((s) => ({
       id: s.id,
       name: s.name,
       command: s.command,
@@ -391,14 +405,20 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   const sidebarDispatch = getDispatch();
   const _sidebarTerminals = selectTerminalsSelector();
   const _sidebarActiveTerminalId = selectActiveTerminalIdSelector();
+  const scriptEntries$ = selectScriptEntries();
+  // Background agent executor state via direct selector subscriptions
+  const _scriptDetectIsRunning$ = selectExecutorIsRunning(workspaceId, 'script-detect');
+  const _scriptDetectAgentId$ = selectExecutorAgentId(workspaceId, 'script-detect');
 
   // Derived
-  const scripts = $derived(scriptsStore.scriptEntries);
+  const scripts = $derived($scriptEntries$);
   const hasScripts = $derived(scripts.length > 0);
   const effectiveWidth = $derived(collapsed ? COLLAPSED_WIDTH : sidebarWidth);
-  const isDetecting = $derived(detectFlow !== 'idle' || scriptDetectAgent.isRunning);
+  const scriptDetectIsRunning = $derived($_scriptDetectIsRunning$);
+  const scriptDetectAgentId = $derived($_scriptDetectAgentId$);
+  const isDetecting = $derived(detectFlow !== 'idle' || scriptDetectIsRunning);
   const isLocalDetecting = $derived(detectFlow === 'local');
-  const isAgentDetecting = $derived(detectFlow === 'agent' || scriptDetectAgent.isRunning);
+  const isAgentDetecting = $derived(detectFlow === 'agent' || scriptDetectIsRunning);
   const sidebarTerminals = $derived($_sidebarTerminals);
   const activeTerminalId = $derived($_sidebarActiveTerminalId);
 
@@ -476,9 +496,10 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     await scriptsClient.restart(workspaceId, scriptId);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleDelete(scriptId: string) {
     await scriptsClient.remove(workspaceId, scriptId);
-    scriptsStore.removeScript(scriptId);
+    sidebarDispatch(removeScript(workspaceId, scriptId));
     if (selectedScriptId === scriptId) {
       onSelectScript?.(null);
     }
@@ -498,7 +519,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       return;
     }
 
-    const workspace = workspaceStore.current;
+    const workspace = $activeWorkspace;
     if (!workspace) {
       toast.info('Open the workspace before asking an agent to inspect scripts.');
       return;
@@ -525,7 +546,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       source: 'user',
     });
     if (result.success && result.data) {
-      scriptsStore.upsertScript(result.data);
+      sidebarDispatch(upsertScript(workspaceId, result.data));
       onSelectScript?.(result.data.id);
       newName = '';
       newCommand = '';
@@ -571,7 +592,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     // Range select with Shift+click
     if (event && event.shiftKey && lastClickedScriptId) {
       event.preventDefault();
-      const scripts = sortScripts(scriptsStore.scriptEntries);
+      const scripts = sortScripts(selectScriptEntries.select(getReduxStore().getState()));
       const lastIndex = scripts.findIndex((s) => s.id === lastClickedScriptId);
       const currentIndex = scripts.findIndex((s) => s.id === scriptId);
       if (lastIndex !== -1 && currentIndex !== -1) {
@@ -620,7 +641,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       const idsToDelete = Array.from(selectedScriptIds);
       for (const id of idsToDelete) {
         await scriptsClient.remove(workspaceId, id);
-        scriptsStore.removeScript(id);
+        sidebarDispatch(removeScript(workspaceId, id));
         if (selectedScriptId === id) {
           onSelectScript?.(null);
         }
@@ -671,7 +692,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   function finishEditingScript() {
     if (editingScriptId && editingScriptName.trim()) {
       scriptsClient.update(workspaceId, editingScriptId, { name: editingScriptName.trim() });
-      scriptsStore.refresh();
+      sidebarDispatch(refreshScripts(workspaceId));
     }
     editingScriptId = null;
     editingScriptName = '';
@@ -733,7 +754,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   // Scroll started script into view once it transitions to running
   $effect(() => {
     if (pendingScrollScriptId) {
-      const script = scriptsStore.scriptEntries.find((s) => s.id === pendingScrollScriptId);
+      const script = selectScriptEntries.select(getReduxStore().getState()).find((s) => s.id === pendingScrollScriptId);
       if (script?.runtime.status === 'running') {
         const id = pendingScrollScriptId;
         pendingScrollScriptId = null;
@@ -751,6 +772,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       closeContextMenu();
     }
   }
+  /* eslint-disable @typescript-eslint/no-unused-vars -- template-level vars used by Svelte runtime */
 </script>
 
 <svelte:window onkeydown={handleWindowKeydown} />
@@ -820,7 +842,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
           >
             <Fa icon={faPlus} size="xs" />
           </Button>
-          {#if isAgentDetecting && scriptDetectAgent.agentId}
+          {#if isAgentDetecting && scriptDetectAgentId}
             <button
               type="button"
               class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 rounded text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer shrink-0"
@@ -828,7 +850,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 e.stopPropagation();
                 window.dispatchEvent(
                   new CustomEvent('workspace:open-agent', {
-                    detail: { agentId: scriptDetectAgent.agentId },
+                    detail: { agentId: scriptDetectAgentId },
                   }),
                 );
               }}
@@ -839,7 +861,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 style="min-width: 16px; min-height: 16px; width: 16px; height: 16px;"
               >
                 <AugieAvatarWithState
-                  agentId={scriptDetectAgent.agentId}
+                  agentId={scriptDetectAgentId}
                   state="running"
                   size={16}
                 />
@@ -1009,7 +1031,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               style="left: {contextMenuPos.x}px; top: {contextMenuPos.y}px;"
             >
               {#if contextMenuScriptId}
-                {@const script = scriptsStore.scriptEntries.find((s) => s.id === contextMenuScriptId)}
+                {@const script = scripts.find((s) => s.id === contextMenuScriptId)}
                 {#if script}
                   {#if selectedScriptIds.size > 1}
                     <!-- Multi-select actions -->
@@ -1076,7 +1098,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         {:else if !showAddForm && isDetecting}
           <div class="px-3 text-center">
             <div class="flex flex-col gap-1 px-1 py-1">
-              {#each Array(4) as _}
+              {#each Array(4) as { }}
                 <div class="flex items-center gap-2 py-0.75 rounded">
                   <Skeleton class="h-2 w-2 rounded-full shrink-0" />
                   <Skeleton class="h-3.5 flex-1 rounded" />

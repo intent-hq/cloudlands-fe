@@ -1,4 +1,4 @@
-import type { WorkspaceId, NoteId } from '$shared/types/branded-ids';
+import type { WorkspaceId } from '$shared/types/branded-ids';
 import { WorkspaceId as WorkspaceIdBrand, NoteId as NoteIdBrand } from '$shared/types/branded-ids';
 /**
  * Tool Service
@@ -50,6 +50,7 @@ export class ToolService implements IToolService {
       name: 'readFile',
       description: 'Read the contents of a file',
       category: ToolCategory.FILE,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       handler: async (context: ToolContext) =>
         // Implementation would go here
         ({ success: true, data: null }),
@@ -72,6 +73,7 @@ export class ToolService implements IToolService {
       name: 'writeFile',
       description: 'Write content to a file',
       category: ToolCategory.FILE,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       handler: async (context: ToolContext) =>
         // Implementation would go here
         ({ success: true, data: null }),
@@ -95,6 +97,7 @@ export class ToolService implements IToolService {
       name: 'deleteFile',
       description: 'Delete a file',
       category: ToolCategory.FILE,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       handler: async (context: ToolContext) =>
         // Implementation would go here
         ({ success: true, data: null }),
@@ -117,6 +120,7 @@ export class ToolService implements IToolService {
       name: 'listFiles',
       description: 'List files in a directory',
       category: ToolCategory.FILE,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       handler: async (context: ToolContext) =>
         // Implementation would go here
         ({ success: true, data: [] }),
@@ -137,6 +141,7 @@ export class ToolService implements IToolService {
       name: 'createNote',
       description: 'Create a new note in the workspace',
       category: ToolCategory.NOTE,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       handler: async (context: ToolContext) =>
         // Implementation would go here
         ({ success: true, data: { id: 'note-1' } }),
@@ -161,6 +166,7 @@ export class ToolService implements IToolService {
       name: 'updateNote',
       description: 'Update an existing note',
       category: ToolCategory.NOTE,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       handler: async (context: ToolContext) =>
         // Implementation would go here
         ({ success: true, data: { updated: true } }),
@@ -186,6 +192,7 @@ export class ToolService implements IToolService {
       name: 'listNotes',
       description: 'List all notes in the workspace',
       category: ToolCategory.NOTE,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       handler: async (context: ToolContext) =>
         // Implementation would go here
         ({ success: true, data: [] }),
@@ -207,6 +214,7 @@ export class ToolService implements IToolService {
       name: 'executeCommand',
       description: 'Execute a shell command in the workspace',
       category: ToolCategory.TERMINAL,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       handler: async (context: ToolContext) =>
         // Implementation would go here
         ({ success: true, data: { output: '' } }),
@@ -415,6 +423,7 @@ export class ToolService implements IToolService {
     });
 
     // Filter out id from updates to avoid type conflicts
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id: _, ...updateFields } = updates;
 
     const updateRequest = {

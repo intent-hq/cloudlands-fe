@@ -5,13 +5,23 @@
    * Shows MCP servers from ~/.augment/settings.json and allows users
    * to enable/disable individual servers per workspace.
    */
-  import { mcpServersStore, type McpServerInfo } from '$features/mcp/mcp-servers.store.svelte';
+  import type { McpServerInfo } from '$lib/store/slices/mcp-servers/mcp-servers-types';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+    loadMcpServers,
+    toggleMcpServer,
+  } from '$lib/store/slices/mcp-servers/mcp-servers-slice';
+  import {
+    selectMcpServers,
+    selectIsMcpServerEnabled,
+    selectMcpServerError,
+  } from '$lib/store/slices/mcp-servers/mcp-servers-selectors';
   import { slide } from 'svelte/transition';
   import Switch from '$lib/components/ui/switch/switch.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import {
     faChevronDown,
-    faChevronRight,
     faExclamationTriangle,
     faGear,
     faPlug,
@@ -27,22 +37,24 @@
 
   let { workspaceId, class: className }: Props = $props();
 
+  // ✅ At component init — these use getContext() internally
+  const dispatch = getDispatch();
+  const servers$ = selectMcpServers();
+
   // Collapse state
   let isExpanded = $state(false);
 
   // Track favicon load errors to show fallback
   let faviconErrors = $state<Record<string, boolean>>({});
 
-  // Initialize store for this workspace and load servers
+  // Load servers on workspace change
+  let lastInitWorkspaceId: string | undefined;
   $effect(() => {
-    if (workspaceId) {
-      mcpServersStore.setWorkspace(workspaceId);
-      mcpServersStore.loadServers();
+    if (workspaceId && workspaceId !== lastInitWorkspaceId) {
+      lastInitWorkspaceId = workspaceId;
+      dispatch(loadMcpServers());
     }
   });
-
-  // Derived values from store
-  const servers = $derived(mcpServersStore.servers);
 
   /**
    * Extract the root domain (apex domain) from a hostname.
@@ -74,21 +86,17 @@
   }
 
   // Get description for server type
-  function getServerTypeLabel(server: McpServerInfo): string {
-    switch (server.type) {
-      case 'http':
-        return 'HTTP';
-      case 'sse':
-        return 'SSE';
-      case 'command':
-        return 'Command';
-      default:
-        return 'Unknown';
-    }
-  }
 
   function handleToggle(serverName: string, enabled: boolean) {
-    mcpServersStore.toggleServer(serverName, enabled);
+    dispatch(toggleMcpServer(workspaceId, serverName, enabled));
+  }
+
+  function isServerEnabled(serverName: string): boolean {
+    return selectIsMcpServerEnabled.select(getReduxStore().getState(), serverName);
+  }
+
+  function getServerError(serverName: string): string | undefined {
+    return selectMcpServerError.select(getReduxStore().getState(), serverName);
   }
 
   function handleFaviconError(serverName: string) {
@@ -96,7 +104,7 @@
   }
 </script>
 
-{#if servers.length > 0}
+{#if $servers$.length > 0}
   <div class="mt-3 {className ?? ''}">
     <!-- Section Header -->
     <button
@@ -107,14 +115,14 @@
       <Fa icon={faChevronDown} size="xs" class="opacity-50 transition-transform duration-200 {isExpanded ? '' : '-rotate-90'}" />
       <!-- <Fa icon={faPlug} size="xs" class="opacity-70" /> -->
       <span>MCP Servers</span>
-      <span class="ml-auto text-ui opacity-60">{servers.filter((s) => mcpServersStore.isServerEnabled(s.name)).length} enabled</span>
+      <span class="ml-auto text-ui opacity-60">{$servers$.filter((s) => isServerEnabled(s.name)).length} enabled</span>
     </button>
 
     {#if isExpanded}
       <div class="space-y-0.5 mt-1 pl-4" transition:slide={{ axis: 'y', duration: 200 }}>
-        {#each servers as server (server.name)}
-          {@const isEnabled = mcpServersStore.isServerEnabled(server.name)}
-          {@const serverError = mcpServersStore.getServerError(server.name)}
+        {#each $servers$ as server (server.name)}
+          {@const isEnabled = isServerEnabled(server.name)}
+          {@const serverError = getServerError(server.name)}
           {@const faviconUrl = getFaviconUrl(server)}
           {@const showFallback = !faviconUrl || faviconErrors[server.name]}
           <div

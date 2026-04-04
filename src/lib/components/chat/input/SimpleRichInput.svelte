@@ -7,8 +7,9 @@
   import { invoke } from '$lib/electron-bridge';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
-  import { unifiedStateStore } from '$features/agent/services/unified-state-store';
-  import { sessionStore } from '$features/agent/browser';
+  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { updateSession as updateAgentSessionFields } from '$lib/store/slices/agent-session/agent-session-slice';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { agentClient } from '$features/agent/agent.client';
 
   import { getAgentProvider } from '$shared/types/agent-session';
@@ -17,7 +18,6 @@
     faMagicWandSparkles,
     faPaperclip,
     faPaperPlane,
-    faSpinner,
     faXmark,
     faLayerGroup,
     faStop,
@@ -97,6 +97,7 @@
     workspace,
     isStreaming = false,
     contextItems = $bindable([]),
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     currentContext: _currentContext, // Now using multi-panel-context Redux slice instead
     editorSelection = $bindable<string | null>(null),
     selectedModel: propSelectedModel,
@@ -106,7 +107,9 @@
     agentId,
     autoFocus = false,
     editMode = false,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     panelFocused: _panelFocused = true, // Reserved for future use
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     compactMode: _compactMode = false, // Reserved for future use
     onsubmit,
     onforcesubmit,
@@ -378,7 +381,7 @@
     }
 
     const session = workspace?.id
-      ? sessionStore.getSessionForWorkspace(String(workspace.id), agentId)
+      ? selectAgentById.select(getReduxStore().getState(), agentId)
       : undefined;
     const provider = session ? getAgentProvider(session) : undefined;
     return provider ? getProviderConfig(provider).id : undefined;
@@ -411,7 +414,7 @@
     if (isChangingProvider) return; // prevent re-entry during in-flight switch
 
     const previousSession = agentId && workspace?.id
-      ? sessionStore.getSessionForWorkspace(String(workspace.id), agentId)
+      ? selectAgentById.select(getReduxStore().getState(), agentId)
       : undefined;
     const previousProvider = selectedProviderId;
     const previousModel = selectedModel;
@@ -422,14 +425,14 @@
     selectedModel = newModel;
     lastNotifiedModel = newModel;
 
-    sessionStore.updateSessionForWorkspace(String(workspace.id), agentId, {
+    getReduxStore().dispatch(updateAgentSessionFields(agentId, {
       provider: newProvider,
       model: newModel,
       metadata: {
         ...(previousSession?.metadata || {}),
         provider: newProvider,
       },
-    });
+    }));
 
     try {
       const result = await agentClient.setModel(agentId, newModel, workspace.id);
@@ -446,14 +449,14 @@
       const rollbackProvider = previousProvider ?? previousSession?.provider ?? previousSession?.metadata?.provider as string | undefined;
       const rollbackModel = previousModel ?? previousSession?.model;
       if (rollbackProvider && rollbackModel) {
-        sessionStore.updateSessionForWorkspace(String(workspace.id), agentId, {
+        getReduxStore().dispatch(updateAgentSessionFields(agentId, {
           provider: rollbackProvider,
           model: rollbackModel,
           metadata: {
             ...(previousSession?.metadata || {}),
             provider: rollbackProvider,
           },
-        });
+        }));
       }
       toast.error(
         error instanceof Error ? error.message : `Failed to switch to ${getProviderConfig(newProvider).displayName}.`,
@@ -721,11 +724,6 @@
     toast.success(`Added ${fileName} to context`);
   }
 
-  function insertAtSymbol() {
-    if (tiptap?.insertAtSymbol) {
-      tiptap.insertAtSymbol();
-    }
-  }
 
   // Set up ResizeObserver to track parent panel height
   $effect(() => {
@@ -749,14 +747,8 @@
   });
 
   onMount(() => {
-    // Set workspace in unified state store
-    if (workspace?.id) {
-      unifiedStateStore.setCurrentWorkspace(workspace.id);
-    }
-
     // Note: Selection changes from editors (CodeEditor/Monaco) are synced to the
-    // multi-panel-context Redux store via ChatPanel, which watches unifiedStateStore.selectionContext.
-    // This ensures selections appear in the @ context picker automatically.
+    // multi-panel-context Redux store via ChatPanel which watches editor:selection-change events.
   });
 
   // Listen for global enhance prompt shortcut (Cmd+/)
@@ -796,7 +788,7 @@
   $effect(() => {
     if (workspace?.id && workspace.id !== lastWorkspaceId) {
       lastWorkspaceId = workspace.id;
-      unifiedStateStore.setCurrentWorkspace(workspace.id);
+      // Workspace tracking now handled by Redux setActiveWorkspaceId
     }
   });
 

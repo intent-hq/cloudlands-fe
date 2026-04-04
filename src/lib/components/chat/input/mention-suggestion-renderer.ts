@@ -106,6 +106,7 @@ class MentionSuggestionRenderer {
     return null;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private positionPopup(props: any) {
     if (!this.popup) return;
 

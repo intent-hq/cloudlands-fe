@@ -44,6 +44,7 @@
     onchange?: (event: CustomEvent<{ setup: RemoteSetup | null }>) => void;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let { variant = 'default', repoPath, compact = false, onchange }: Props = $props();
 
   // State

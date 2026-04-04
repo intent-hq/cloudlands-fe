@@ -89,7 +89,7 @@ export class Logger {
           allLogs.splice(0, allLogs.length - this.maxEntries);
         }
         globalThis.localStorage.setItem('app_logs', JSON.stringify(allLogs));
-      } catch (e) {
+      } catch {
         // Storage error, continue without persistence
       }
     }

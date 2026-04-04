@@ -58,15 +58,14 @@ export const LOGGING_CONFIG: LoggingConfig = {
     ActivityLog: LogLevel.INFO,
     EventsClient: LogLevel.INFO,
     EventSystem: LogLevel.INFO,
-    WorkspaceEventService: LogLevel.INFO,
-    WorkspaceEventBus: LogLevel.INFO,
+
 
     // Terminal operations
     TerminalHistoryTracker: LogLevel.WARN,
     TerminalManager: LogLevel.INFO,
 
     // UI components - reduce noise
-    LineChangesStore: LogLevel.WARN,
+    LineChangesMainState: LogLevel.WARN,
     CodeChangesPanel: LogLevel.WARN,
 
     // IPC handlers - reduce startup noise (set DEBUG=true to see setup messages)
@@ -190,7 +189,7 @@ export function getLogLevel(category: string): LogLevel {
           return parsed[category] as LogLevel;
         }
       }
-    } catch (e) {
+    } catch {
       // Ignore errors in reading overrides
     }
   }

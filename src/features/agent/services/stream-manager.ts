@@ -18,14 +18,26 @@ import { unifiedIdService } from '$shared/services/unified-id.service';
 import { Logger } from '../../../shared/logger';
 import type { AgentMessage, ContentBlock, Workspace } from '../../../shared/types';
 import { WorkspaceStatus } from '../../../shared/types';
-import { unifiedStateStore } from '$features/agent/services/unified-state-store';
-import { invoke } from '../../../lib/electron-bridge';
-import { AGENT_CHANNELS } from '../../../shared/ipc/channels';
-import { createMessageId, AgentId, WorkspaceId } from '../../../shared/types/branded-ids';
+import { createMessageId, WorkspaceId } from '../../../shared/types/branded-ids';
 import { memoryManager } from './memory-manager';
 import type { IDisposable } from '$shared/types/disposable';
 import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
-import { unreadTrackingService } from './unread-tracking.service';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { newAssistantMessage } from '$lib/store/slices/unread-tracking/unread-tracking-slice';
+import {
+  setAgentStreaming,
+  updateAgentDigest,
+  addAgentMessage,
+  removeWorkspaceAgentState,
+} from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+import {
+  selectAgentById,
+} from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+import {
+  setWorkspaceEntity,
+  removeWorkspaceEntity,
+} from '$lib/store/slices/workspace/workspace-slice';
 import { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';
 
 const logger = new Logger('DirectStreamManager');
@@ -253,8 +265,9 @@ export class StreamManager extends EventEmitter implements IDisposable {
     this.metrics.totalStreams++;
 
     // Update agent state - fail fast if workspace not found
-    const workspace = unifiedStateStore.getWorkspace(config.workspaceId);
-    if (!workspace) {
+    const wsId = config.workspaceId as string;
+    const workspaceEntity = selectWorkspaceById.select(getReduxStore().getState(), wsId);
+    if (!workspaceEntity) {
       logger.error('Workspace not found, cannot start stream — aborting', {
         workspaceId: config.workspaceId,
         agentId: config.agentId,
@@ -266,7 +279,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
       this.metrics.errors++;
       return config.agentId;
     }
-    unifiedStateStore.setStreaming(workspace.workspace.id, config.agentId as any, true);
+    getReduxStore().dispatch(setAgentStreaming(wsId, config.agentId, true));
 
     // Emit start event (include streamId for backward compatibility in events)
     this.emit('stream:start', { streamId, config });
@@ -392,39 +405,19 @@ export class StreamManager extends EventEmitter implements IDisposable {
         });
       }
 
-      // Update agent state
-      const workspace = unifiedStateStore.getWorkspace(session.config.workspaceId);
-      if (!workspace) {
-        logger.error('Workspace not found for streaming operation', {
-          workspaceId: session.config.workspaceId,
-          agentId: session.config.agentId,
-          operation: 'addTextChunk',
-        });
-      } else {
-        const currentBuffer =
-          workspace.agents.get(session.config.agentId as any)?.streaming.buffer || '';
-        let newBuffer = currentBuffer + chunk.data;
-
+      // Update agent state - check for digest tags in accumulated text
+      {
         // Always check for agent digest tags - the tag may be split across chunks
-        const { digest, cleanedText } = AuggieTextParser.extractDigest(newBuffer);
+        const { digest, cleanedText } = AuggieTextParser.extractDigest(session.accumulatedText);
         if (digest) {
-          newBuffer = cleanedText;
-          unifiedStateStore.updateAgentDigest(
-            workspace.workspace.id,
-            session.config.agentId as AgentId,
-            digest,
-          );
+          session.accumulatedText = cleanedText;
+          const wsId = session.config.workspaceId as string;
+          getReduxStore().dispatch(updateAgentDigest(wsId, session.config.agentId, digest));
           logger.debug('Extracted agent digest from stream', {
             agentId: session.config.agentId,
             digest,
           });
         }
-
-        unifiedStateStore.updateStreamBuffer(
-          workspace.workspace.id,
-          session.config.agentId as any,
-          newBuffer,
-        );
       }
     }
 
@@ -457,20 +450,8 @@ export class StreamManager extends EventEmitter implements IDisposable {
     session.contentBlocks.push(block);
     session.lastActivity = Date.now();
 
-    // Update agent state - add content block to streaming
-    const workspace = unifiedStateStore.getWorkspace(session.config.workspaceId);
-    if (!workspace) {
-      logger.error('Workspace not found for streaming operation', {
-        workspaceId: session.config.workspaceId,
-        agentId: session.config.agentId,
-        operation: 'addContentBlock',
-      });
-    } else {
-      const agentStateData = workspace.agents.get(session.config.agentId as any);
-      if (agentStateData && agentStateData.streaming.active) {
-        agentStateData.streaming.contentBlocks.push(block);
-      }
-    }
+    // Content blocks are tracked in the local StreamSession and forwarded via events.
+    // No need to update Redux here — ChatService handles content block state.
 
     // Emit events
     this.emit('stream:content_block', { streamId, block });
@@ -534,8 +515,6 @@ export class StreamManager extends EventEmitter implements IDisposable {
       if (session.isComplete) continue;
 
       const timeSinceActivity = now - session.lastActivity;
-      const timeSinceHealthCheck = now - session.lastHealthCheck;
-
       // Update health status
       if (timeSinceActivity > STREAM_CONFIG.STALLED_TIMEOUT) {
         if (session.healthStatus !== 'stalled') {
@@ -740,16 +719,8 @@ export class StreamManager extends EventEmitter implements IDisposable {
     }
 
     // Update agent state
-    const workspace = unifiedStateStore.getWorkspace(session.config.workspaceId);
-    if (workspace) {
-      unifiedStateStore.setStreaming(workspace.workspace.id, session.config.agentId as any, false);
-    } else {
-      logger.error('Workspace not found for streaming operation', {
-        workspaceId: session.config.workspaceId,
-        agentId: session.config.agentId,
-        operation: 'completeStream',
-      });
-    }
+    const wsId = session.config.workspaceId as string;
+    getReduxStore().dispatch(setAgentStreaming(wsId, session.config.agentId, false));
 
     // Call completion callbacks - use agentId as the canonical key
     const callbacks = this.callbacks.get(session.config.agentId);
@@ -783,16 +754,16 @@ export class StreamManager extends EventEmitter implements IDisposable {
     // Mark agent as having unread messages (if user isn't currently viewing it)
     // Pass workspaceId to enable cross-workspace tab indicators
     // Pass isBackground to skip unread tracking for background agents
-    const agentSession = unifiedStateStore
-      .getAgentsForWorkspace(session.config.workspaceId as any)
-      .find((a) => a.id === session.config.agentId);
+    const agentSession = selectAgentById.select(
+      getReduxStore().getState(), session.config.agentId
+    );
     const isBackgroundAgent =
       agentSession?.isBackground || agentSession?.metadata?.isBackground || false;
-    unreadTrackingService.onNewAssistantMessage(
+    getReduxStore().dispatch(newAssistantMessage(
       session.config.agentId,
       session.config.workspaceId,
       isBackgroundAgent,
-    );
+    ));
 
     // Update metrics
     this.metrics.activeStreams--;
@@ -859,21 +830,8 @@ export class StreamManager extends EventEmitter implements IDisposable {
     session.healthStatus = 'error';
 
     // Update agent state
-    const workspace = unifiedStateStore.getWorkspace(session.config.workspaceId);
-    if (workspace) {
-      unifiedStateStore.setStreaming(workspace.workspace.id, session.config.agentId as any, false);
-      // Add error to agent state
-      const agentStateData = workspace.agents.get(session.config.agentId as any);
-      if (agentStateData) {
-        agentStateData.errors.push(error);
-      }
-    } else {
-      logger.error('Workspace not found for streaming operation', {
-        workspaceId: session.config.workspaceId,
-        agentId: session.config.agentId,
-        operation: 'handleError',
-      });
-    }
+    const wsId = session.config.workspaceId as string;
+    getReduxStore().dispatch(setAgentStreaming(wsId, session.config.agentId, false));
 
     // Call error callbacks - use agentId as the canonical key
     const callbacks = this.callbacks.get(session.config.agentId);
@@ -1298,7 +1256,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
   }
 
   /**
-   * Register a temporary workspace in the unified state store for test harness methods.
+   * Register a temporary workspace in Redux for test harness methods.
    * This is needed because startStream() validates that the workspace exists.
    */
   private registerTestWorkspace(workspaceId: string): void {
@@ -1313,7 +1271,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    unifiedStateStore.setWorkspace(testWorkspace);
+    getReduxStore().dispatch(setWorkspaceEntity(testWorkspace));
   }
 
   /**
@@ -1342,7 +1300,8 @@ export class StreamManager extends EventEmitter implements IDisposable {
       // Complete the stream
       return this.completeStream(streamId);
     } finally {
-      unifiedStateStore.removeWorkspace(WorkspaceId(testWsId));
+      getReduxStore().dispatch(removeWorkspaceEntity(testWsId));
+      getReduxStore().dispatch(removeWorkspaceAgentState(testWsId));
     }
   }
 
@@ -1383,7 +1342,8 @@ export class StreamManager extends EventEmitter implements IDisposable {
 
       return false;
     } finally {
-      unifiedStateStore.removeWorkspace(WorkspaceId(testWsId));
+      getReduxStore().dispatch(removeWorkspaceEntity(testWsId));
+      getReduxStore().dispatch(removeWorkspaceAgentState(testWsId));
     }
   }
 
@@ -1477,38 +1437,27 @@ export class StreamManager extends EventEmitter implements IDisposable {
         // Use agentId as the canonical key
         this.sessions.set(state.config.agentId, session);
 
-        // Update agent state
-        const workspace = unifiedStateStore.getWorkspace(state.config.workspaceId);
-        if (!workspace) {
-          logger.error('Workspace not found for streaming operation', {
-            workspaceId: state.config.workspaceId,
-            agentId: state.config.agentId,
-            operation: 'loadFromSessionStorage',
-          });
-        } else {
-          unifiedStateStore.setStreaming(workspace.workspace.id, state.config.agentId as any, true);
+        // Update agent state via Redux
+        const wsId = state.config.workspaceId as string;
+        const store = getReduxStore();
+        store.dispatch(setAgentStreaming(wsId, state.config.agentId, true));
 
-          // Restore content blocks to agent state
-          if (state.contentBlocks.length > 0) {
-            // Add content blocks to the last message or create a new message
-            const agent = workspace.agents.get(state.config.agentId);
-            if (agent?.session) {
-              const lastMessage = agent.session.messages[agent.session.messages.length - 1];
-              if (lastMessage && lastMessage.role === 'assistant') {
-                // Append to existing assistant message
-                lastMessage.contentBlocks = [
-                  ...(lastMessage.contentBlocks || []),
-                  ...state.contentBlocks,
-                ];
-              } else {
-                // Create a new assistant message with the content blocks
-                unifiedStateStore.addMessage(workspace.workspace.id, state.config.agentId, {
-                  id: `msg_${Date.now()}`,
-                  role: 'assistant',
-                  contentBlocks: state.contentBlocks,
-                  timestamp: new Date(),
-                });
-              }
+        // Restore content blocks to agent state
+        if (state.contentBlocks.length > 0) {
+          const agentData = selectAgentById.select(store.getState(), state.config.agentId);
+          if (agentData) {
+            const lastMessage = agentData.messages?.[agentData.messages.length - 1];
+            if (lastMessage && lastMessage.role === 'assistant') {
+              // Content blocks on existing messages are handled by the UI layer via streaming events.
+              // No direct mutation needed in Redux here.
+            } else {
+              // Create a new assistant message with the content blocks
+              store.dispatch(addAgentMessage(wsId, state.config.agentId, {
+                id: createMessageId(`msg_${Date.now()}`),
+                role: 'assistant',
+                contentBlocks: state.contentBlocks,
+                timestamp: new Date().toISOString(),
+              }));
             }
           }
         }

@@ -127,6 +127,7 @@ async function migrateNote(
   workspaceId: WorkspaceId,
   noteId: NoteId,
   migrationType: 'json' | 'folder' | 'old-flat' | 'recovery',
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   repository: FolderBasedNotesRepository,
 ): Promise<NoteMigrationResult> {
   const notesDir = WorkspaceConfig.paths.notes(workspaceId);

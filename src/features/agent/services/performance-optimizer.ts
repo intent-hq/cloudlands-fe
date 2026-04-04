@@ -53,7 +53,7 @@ if (typeof window === 'undefined') {
       path = pathModule;
       const urlModule = await import('url');
       fileURLToPath = urlModule.fileURLToPath;
-    } catch (e) {
+    } catch {
       // Worker threads not available
     }
   })();

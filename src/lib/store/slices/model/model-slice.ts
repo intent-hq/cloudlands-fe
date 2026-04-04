@@ -119,10 +119,6 @@ export const clearAllWorkspaceModels = createAction(
   "model/clearAllWorkspaceModels"
 );
 
-export const setProviderModel = createAction<
-  [payload: { providerId: string; model: string }]
->("model/setProviderModel");
-
 export const loadWorkspaceModelsFromStorage = createAction<
   [models: Record<string, string>]
 >("model/loadWorkspaceModelsFromStorage");
@@ -130,8 +126,6 @@ export const loadWorkspaceModelsFromStorage = createAction<
 export const loadProviderModelsFromStorage = createAction<
   [models: Record<string, string>]
 >("model/loadProviderModelsFromStorage");
-
-export const resetModelState = createAction("model/resetModelState");
 
 // ============================================================================
 // Saga Trigger Actions (dispatched by consumers, handled by sagas)
@@ -176,6 +170,7 @@ export const modelReducer = createReducer<ModelState>(initialState)
     })
   )
   .with(clearLoadingStateForProvider, (state, { payload: [providerId] }) => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { [providerId]: _removed, ...loadingState } = state.loadingState;
 
     return {
@@ -202,6 +197,7 @@ export const modelReducer = createReducer<ModelState>(initialState)
     workspaceModels: { ...state.workspaceModels, [workspaceId]: model },
   }))
   .with(clearWorkspaceModel, (state, { payload: [workspaceId] }) => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { [workspaceId]: _, ...rest } = state.workspaceModels;
     return { ...state, workspaceModels: rest };
   })
@@ -209,16 +205,6 @@ export const modelReducer = createReducer<ModelState>(initialState)
     ...state,
     workspaceModels: {},
   }))
-  .with(
-    setProviderModel,
-    (state, { payload: [{ providerId, model }] }) => ({
-      ...state,
-      providerModels: {
-        ...state.providerModels,
-        [providerId]: normalizeModelForProvider(providerId, model),
-      },
-    })
-  )
   .with(
     loadWorkspaceModelsFromStorage,
     (state, { payload: [models] }) => ({
@@ -232,6 +218,4 @@ export const modelReducer = createReducer<ModelState>(initialState)
       ...state,
       providerModels: normalizeProviderModels(models),
     })
-  )
-  .with(resetModelState, () => initialState);
-
+  );

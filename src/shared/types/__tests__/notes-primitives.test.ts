@@ -10,10 +10,6 @@ import {
   PatchPrimitiveSchema,
   parseSemanticId,
   isValidSemanticId,
-  type ReferencePrimitive,
-  type CliPrimitive,
-  type AgentActionPrimitive,
-  type PatchPrimitive,
 } from '../notes-primitives';
 
 describe('Note Primitives Types', () => {

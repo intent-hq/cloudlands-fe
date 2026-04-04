@@ -46,16 +46,6 @@ export interface MergedHunk {
 }
 
 /**
- * Represents a line position in the merged view.
- * We track both HEAD and WT line numbers.
- */
-interface LinePosition {
-  headLine: number | null;
-  indexLine: number | null;
-  wtLine: number | null;
-}
-
-/**
  * Compute line numbers for a hunk's lines based on the hunk header.
  * The server doesn't always include line numbers, so we compute them.
  */

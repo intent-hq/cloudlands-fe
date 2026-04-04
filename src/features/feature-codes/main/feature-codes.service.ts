@@ -28,7 +28,7 @@ const CODE_REGISTRY: ReadonlyMap<string, string> = new Map([
 
 const STORE_KEY = 'featureCodes';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 let settingsStore: any = null;
 let initPromise: Promise<void> | null = null;
 

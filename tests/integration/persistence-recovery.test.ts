@@ -5,7 +5,7 @@
  * and handling of corrupted data scenarios.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { AgentTestHarness } from '../../src/features/agent/testing/agent-test-harness';
 import { agentPersistence } from '../../src/features/agent/main/agent-persistence';
 import { FileSystemWorkspaceRepository } from '../../src/features/workspace/main/workspace.repository';
@@ -225,7 +225,7 @@ describe('Persistence and Recovery Integration Tests', () => {
         const backupData = await fs.readFile(backupPath, 'utf-8');
         const backup = JSON.parse(backupData);
         expect(backup.id).toBe(agent.id);
-      } catch (error) {
+      } catch {
         // Backup might not exist immediately, which is acceptable
       }
     });

@@ -42,7 +42,7 @@ import {
 } from './tool';
 import type { ToolCall, ToolResult } from './protocol';
 import { Logger } from '$shared/logger';
-import type { AgentEventFilter } from '$features/events/main/agent-event-subscription.service';
+import type { AgentEventFilter } from '$features/events/main/agent-subscription-ops';
 import { stripMarkdownFormatting } from '$shared/utils-client';
 import { resolveSpecialistForAgent } from '$features/agent/main/specialists.service';
 import {
@@ -149,9 +149,8 @@ async function subscribeCallerToAgentCompletion(
   callerName: string,
   targetAgentId: string,
 ): Promise<string> {
-  const { getAgentEventSubscriptionService } =
-    await import('../../../events/main/agent-event-subscription.service');
-  const subscriptionService = getAgentEventSubscriptionService(workspaceId);
+  const { agentSubscribe } =
+    await import('../../../events/main/agent-subscription-ops');
 
   const filter: AgentEventFilter = {
     eventTypes: [...AGENT_COMPLETION_EVENT_TYPES],
@@ -160,7 +159,7 @@ async function subscribeCallerToAgentCompletion(
     oneShot: true,
   };
 
-  const subscriptionId = subscriptionService.subscribe(callerId, callerName, filter);
+  const subscriptionId = agentSubscribe(workspaceId, callerId, callerName, filter);
 
   logger.info('Subscribed caller to agent completion', {
     callerId,
@@ -1160,12 +1159,12 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
           onBeforeStart: async (agentId: string) => {
             if (waitMode === 'after_all') {
               // Use group subscription - only wake when ALL agents in the group complete
-              const { getAgentEventSubscriptionService } =
-                await import('../../../events/main/agent-event-subscription.service');
-              const subscriptionService = getAgentEventSubscriptionService(this.workspaceId);
+              const { agentSubscribeToGroup } =
+                await import('../../../events/main/agent-subscription-ops');
 
               groupId = DelegateTaskTool.getOrCreateGroupId(this.workspaceId, ctx.agentId);
-              subscriptionId = subscriptionService.subscribeToGroup(
+              subscriptionId = agentSubscribeToGroup(
+                this.workspaceId,
                 ctx.agentId,
                 ctx.agentName,
                 groupId,
@@ -1336,12 +1335,12 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
       },
       onBeforeStart: async (agentId: string) => {
         if (waitMode === 'after_all') {
-          const { getAgentEventSubscriptionService } =
-            await import('../../../events/main/agent-event-subscription.service');
-          const subscriptionService = getAgentEventSubscriptionService(this.workspaceId);
+          const { agentSubscribeToGroup } =
+            await import('../../../events/main/agent-subscription-ops');
 
           groupId = DelegateTaskTool.getOrCreateGroupId(this.workspaceId, ctx.agentId);
-          subscriptionId = subscriptionService.subscribeToGroup(
+          subscriptionId = agentSubscribeToGroup(
+            this.workspaceId,
             ctx.agentId,
             ctx.agentName,
             groupId,
@@ -1491,9 +1490,10 @@ Use this for coordination, sharing information, or requesting help from other ag
         priority: priority || 'normal',
       });
 
-      // Emit via WorkspaceEventBus which forwards to UnifiedEventBus automatically
+      // Emit via Redux (which handles persistence and broadcast via sagas)
       const { createWorkspaceEvent } = await import('../../../events/types');
-      const { getWorkspaceEventBus } = await import('../../../events/main/workspace-event-bus');
+      const { mainDispatch } = await import('../../../../store/main/redux-store-bridge');
+      const { emitWorkspaceEvent: reduxEmitWorkspaceEvent } = await import('../../../../store/main/slices/workspace-events/workspace-events-slice');
 
       const event = createWorkspaceEvent(
         'agent:message:sent',
@@ -1507,8 +1507,7 @@ Use this for coordination, sharing information, or requesting help from other ag
           priority: priority || 'normal',
         },
       );
-      const eventBus = getWorkspaceEventBus(this.workspaceId);
-      eventBus.emitEvent(event);
+      mainDispatch(reduxEmitWorkspaceEvent(event));
 
       // Subscribe the sender to receive a notification when the target agent responds
       const subscriptionId = await subscribeCallerToAgentCompletion(
@@ -1616,9 +1615,10 @@ not the agent ID. The tool automatically finds which agent is assigned to the ta
         priority: priority || 'normal',
       });
 
-      // Emit via WorkspaceEventBus which forwards to UnifiedEventBus automatically
+      // Emit via Redux (which handles persistence and broadcast via sagas)
       const { createWorkspaceEvent } = await import('../../../events/types');
-      const { getWorkspaceEventBus } = await import('../../../events/main/workspace-event-bus');
+      const { mainDispatch } = await import('../../../../store/main/redux-store-bridge');
+      const { emitWorkspaceEvent: reduxEmitWorkspaceEvent } = await import('../../../../store/main/slices/workspace-events/workspace-events-slice');
 
       const event = createWorkspaceEvent(
         'agent:message:sent',
@@ -1633,8 +1633,7 @@ not the agent ID. The tool automatically finds which agent is assigned to the ta
           taskNoteId, // Include task context
         },
       );
-      const eventBus = getWorkspaceEventBus(this.workspaceId);
-      eventBus.emitEvent(event);
+      mainDispatch(reduxEmitWorkspaceEvent(event));
 
       // Subscribe the sender to receive a notification when the target agent responds
       const subscriptionId = await subscribeCallerToAgentCompletion(
@@ -1753,9 +1752,8 @@ You must specify at least one category. Use category wildcards like "agent:*" or
         }
       }
 
-      const { getAgentEventSubscriptionService } =
-        await import('../../../events/main/agent-event-subscription.service');
-      const subscriptionService = getAgentEventSubscriptionService(this.workspaceId);
+      const { agentSubscribe } =
+        await import('../../../events/main/agent-subscription-ops');
 
       const filter: AgentEventFilter = {
         eventTypes: resolvedTypes,
@@ -1763,7 +1761,7 @@ You must specify at least one category. Use category wildcards like "agent:*" or
         batchWindow: batchWindow || 500,
       };
 
-      const subscriptionId = subscriptionService.subscribe(ctx.agentId, ctx.agentName, filter);
+      const subscriptionId = agentSubscribe(this.workspaceId, ctx.agentId, ctx.agentName, filter);
 
       logger.info('Agent subscribed to events', {
         agentId: ctx.agentId,
@@ -1807,11 +1805,10 @@ export class UnsubscribeFromEventsTool extends BaseMCPTool {
     try {
       const { subscriptionId } = call.arguments;
 
-      const { getAgentEventSubscriptionService } =
-        await import('../../../events/main/agent-event-subscription.service');
-      const subscriptionService = getAgentEventSubscriptionService(this.workspaceId);
+      const { agentUnsubscribe } =
+        await import('../../../events/main/agent-subscription-ops');
 
-      const success = subscriptionService.unsubscribe(subscriptionId);
+      const success = agentUnsubscribe(this.workspaceId, subscriptionId);
 
       if (!success) {
         return this.error('Subscription not found');
@@ -1858,19 +1855,20 @@ export class ListAgentsTool extends BaseMCPTool {
 
       const { AgentBackendHandler } =
         await import('../../../agent/main/agent-backend-handler.service');
-      const { getAgentEventSubscriptionService } =
-        await import('../../../events/main/agent-event-subscription.service');
+      const { selectAgentStatus } =
+        await import('../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors');
+      const { getMainState } =
+        await import('../../../../store/main/redux-store-bridge');
       const handler = AgentBackendHandler.getInstance();
-      const eventService = getAgentEventSubscriptionService(this.workspaceId);
 
       // Get all agents for the workspace (in-memory + disk-persisted)
       // This ensures agents are visible across app restarts even if not loaded into memory
       const agents = await handler.listAllAgents(this.workspaceId);
 
-      // Enhance agents with real-time status from event subscription service
+      // Enhance agents with real-time status from Redux store
       const enhancedAgents = agents.map((a: any) => {
-        // Get real-time status from event subscription service
-        const realtimeStatus = eventService.getAgentStatus(a.id);
+        // Get real-time status from Redux store
+        const realtimeStatus = selectAgentStatus.select(getMainState(), this.workspaceId, a.id);
         return {
           ...a,
           // Use real-time status if available, otherwise fall back to session status
@@ -1949,10 +1947,11 @@ export class GetAgentStatusTool extends BaseMCPTool {
 
       const { AgentBackendHandler } =
         await import('../../../agent/main/agent-backend-handler.service');
-      const { getAgentEventSubscriptionService } =
-        await import('../../../events/main/agent-event-subscription.service');
+      const { selectAgentStatus } =
+        await import('../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors');
+      const { getMainState } =
+        await import('../../../../store/main/redux-store-bridge');
       const handler = AgentBackendHandler.getInstance();
-      const eventService = getAgentEventSubscriptionService(this.workspaceId);
 
       const agent = await handler.getAgent(agentId);
 
@@ -1960,8 +1959,8 @@ export class GetAgentStatusTool extends BaseMCPTool {
         return this.error(`Agent ${agentId} not found`);
       }
 
-      // Get real-time status from event subscription service
-      const realtimeStatus = eventService.getAgentStatus(agentId);
+      // Get real-time status from Redux store
+      const realtimeStatus = selectAgentStatus.select(getMainState(), this.workspaceId, agentId);
       const effectiveStatus = realtimeStatus || agent.status;
 
       const lines = [
@@ -2193,11 +2192,10 @@ an agent is working on the task.`,
             // For queued messages, DON'T use oneShot since agent:idle will fire
             // for the current turn before our queued message is processed.
             // The subscription needs to survive the current turn's completion.
-            const { getAgentEventSubscriptionService } =
-              await import('../../../events/main/agent-event-subscription.service');
-            const subscriptionService = getAgentEventSubscriptionService(this.workspaceId);
+            const { agentSubscribe, agentUnsubscribe } =
+              await import('../../../events/main/agent-subscription-ops');
 
-            const subscriptionId = subscriptionService.subscribe(ctx.agentId, ctx.agentName, {
+            const subscriptionId = agentSubscribe(this.workspaceId, ctx.agentId, ctx.agentName, {
               eventTypes: [...AGENT_COMPLETION_EVENT_TYPES],
               actorIds: [agentToWake.id],
               priority: 'high',
@@ -2207,7 +2205,7 @@ an agent is working on the task.`,
             // Auto-cleanup: unsubscribe after 5 minutes to prevent notification leak.
             // The queued message should be processed well within this window.
             setTimeout(() => {
-              const didUnsubscribe = subscriptionService.unsubscribe(subscriptionId);
+              const didUnsubscribe = agentUnsubscribe(this.workspaceId, subscriptionId);
               if (didUnsubscribe) {
                 logger.info('Auto-cleaned up queued message subscription after timeout', {
                   subscriptionId,

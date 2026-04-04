@@ -123,7 +123,7 @@
           size="sm"
           contentClass="min-w-[280px]"
         >
-          {#snippet trigger({ open: _open, value: _value })}
+          {#snippet trigger()}
             <span class="truncate flex-1 text-left">{getOverrideLabel(commitOverride)}</span>
             <Fa icon={faChevronDown} class="h-2! w-2! opacity-50 shrink-0" />
           {/snippet}
@@ -155,7 +155,7 @@
           size="sm"
           contentClass="min-w-[280px]"
         >
-          {#snippet trigger({ open: _open, value: _value })}
+          {#snippet trigger()}
             <span class="truncate flex-1 text-left">{getOverrideLabel(prOverride)}</span>
             <Fa icon={faChevronDown} class="h-2! w-2! opacity-50 shrink-0" />
           {/snippet}
@@ -187,7 +187,7 @@
           size="sm"
           contentClass="min-w-[280px]"
         >
-          {#snippet trigger({ open: _open, value: _value })}
+          {#snippet trigger()}
             <span class="truncate flex-1 text-left">{getOverrideLabel(fastOverride)}</span>
             <Fa icon={faChevronDown} class="h-2! w-2! opacity-50 shrink-0" />
           {/snippet}

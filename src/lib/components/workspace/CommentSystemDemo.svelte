@@ -3,7 +3,11 @@
   import { Editor } from '@tiptap/core';
   import { createEditorConfig } from '$lib/utils/editor-config';
   import { CommentManagerV2 } from '$features/comments/comment-manager-v2';
-  import { commentsStoreV2 } from '$features/comments/comments-v2.store.svelte';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { selectComments, selectSelectedComment } from '$lib/store/slices/comments/comments-selectors';
+  import { selectCommentAction, loadCommentsAction, clearCommentsAction } from '$lib/store/slices/comments/comments-slice';
+
+  const reduxDispatch = getDispatch();
   import { createLogger } from '$lib/utils/client-logger';
   import Fa from 'svelte-fa';
   import {
@@ -13,8 +17,6 @@
     faCircleQuestion,
     faPaperPlane,
     faCheck,
-    faTimes,
-    faReply,
     faTrash,
   } from '@fortawesome/free-solid-svg-icons';
 
@@ -100,7 +102,7 @@
         },
         onCommentClick: (commentId) => {
           logger.info('Comment clicked', { commentId });
-          commentsStoreV2.selectComment(commentId);
+          reduxDispatch(selectCommentAction(commentId));
         },
       }),
     );
@@ -109,7 +111,7 @@
     commentManager = new CommentManagerV2('demo-workspace', 'demo-note');
 
     // Load demo comments
-    commentsStoreV2.loadComments(demoComments);
+    reduxDispatch(loadCommentsAction(demoComments));
 
     // Initialize manager with editor
     commentManager.initialize(editor);
@@ -124,12 +126,14 @@
     if (commentManager) {
       commentManager.destroy();
     }
-    commentsStoreV2.clear();
+    reduxDispatch(clearCommentsAction());
   });
 
   // Reactive state
-  let comments = $derived(commentsStoreV2.comments);
-  let selectedComment = $derived(commentsStoreV2.selectedComment);
+  const comments$ = selectComments();
+  const selectedComment$ = selectSelectedComment();
+  let comments = $derived($comments$);
+  let selectedComment = $derived($selectedComment$);
 
   function handleAddComment() {
     if (!editor || !commentManager) return;

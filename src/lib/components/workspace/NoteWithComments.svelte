@@ -48,29 +48,46 @@
   import { Editor } from '@tiptap/core';
   import { NoteId } from '$shared/types/branded-ids';
   import { TextSelection } from '@tiptap/pm/state';
-  import { commentsStoreV2 } from '$features/comments/comments-v2.store.svelte';
-  import { createEditorConfig, PLACEHOLDER_TEXT } from '$lib/utils/editor-config';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { selectComments } from '$lib/store/slices/comments/comments-selectors';
+  import {
+    selectCommentAction,
+    updateCommentAction,
+    clearCommentsAction,
+  } from '$lib/store/slices/comments/comments-slice';
+
+  const reduxDispatch = getDispatch();
+  import { createEditorConfig } from '$lib/utils/editor-config';
   import { onMount, onDestroy } from 'svelte';
   import { isSpecNote } from '$shared/constants/notes';
   import { createLogger } from '$lib/utils/client-logger';
 
-  import { notesClient } from '$features/notes/notes.client';
-  import { notesStateManager } from '$features/notes/notes.store.svelte';
+  import {
+    restoreNoteVersion,
+    updateNoteContent,
+    clearNewlyCreatedNoteId,
+  } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+  import {
+    selectNoteById,
+    selectNewlyCreatedNoteId,
+  } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
   import { setupEditorListeners } from '$lib/utils/editor-listeners';
   import { updateCommentDecorations } from '$lib/components/tiptap/CommentDecorations';
   import { AGENT_ASSOCIATIONS_REMOVED_EVENT } from '$lib/utils/task-agent-associations';
-  import { unifiedStateStore } from '$features/agent/services/unified-state-store';
+
   import { invoke } from '$lib/electron-bridge';
-  import { getUnifiedWorkspaceState } from '$features/workspace/workspace-unified-state.svelte';
   import { selectNoteFontStyle } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { selectSpellcheckEnabled } from '$lib/store/slices/user-preferences/user-preferences-selectors';
+  import { selectWorkspaceNavigationHistory } from '$lib/store/slices/workspace-navigation/workspace-navigation-selectors';
   import { createTiptapTaskListMarked } from '$lib/utils/tiptap-task-list-extension';
   import { track } from '$lib/services/analytics';
 
   const logger = createLogger('NoteWithComments');
   const noteFontStyle = selectNoteFontStyle();
   const spellcheckEnabled = selectSpellcheckEnabled();
+  const allComments$ = selectComments();
 
   // --- Markdown paste detection helpers ---
 
@@ -204,6 +221,7 @@
     initialScrollPosition,
     onScrollPositionSave,
     onUpdateSpec,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onAttachContent: _onAttachContent,
     onagentlaunched,
     onnavigatetoagent,
@@ -248,7 +266,10 @@
   // Find search matches using TreeWalker on the actual DOM
   // This works with custom node views like TaskItem
   // Returns both the count and applies highlights
-  function findAndHighlightMatches(query: string, currentIdx: number): { count: number; currentRange: Range | null } {
+  function findAndHighlightMatches(
+    query: string,
+    currentIdx: number,
+  ): { count: number; currentRange: Range | null } {
     // Clear existing highlights
     CSS.highlights?.delete('note-search-results');
     CSS.highlights?.delete('note-current-search-result');
@@ -289,7 +310,7 @@
               allRanges.push(range);
             }
             matchIndex++;
-          } catch (e) {
+          } catch {
             // Range creation might fail, ignore
           }
           index = lowerText.indexOf(lowerQuery, index + 1);
@@ -346,12 +367,12 @@
 
         container.scrollTo({
           top: Math.max(0, targetScrollTop),
-          behavior: 'smooth'
+          behavior: 'smooth',
         });
 
         // Also scroll table wrapper horizontally if the match is in a wide table
         scrollTableWrapperToRange(range);
-      } catch (e) {
+      } catch {
         // Range might be invalid, ignore
       }
     });
@@ -493,24 +514,19 @@
   let commentManager: CommentManagerV2 | null = $state(null);
 
   // Container resize tracking
-  let containerResizeCounter = $state(0);
 
   // Reactive note content - this will update when the store changes
   let lastDerivedContent: string | null = null;
 
-  // Get the current note for task metadata
-  let currentNote = $derived.by(() => {
-    if (!noteId || !workspace?.id) return null;
-    if (notesStateManager.workspaceId !== workspace.id) return null;
-    return notesStateManager.findById(NoteId(noteId));
-  });
+  // Get the current note for task metadata (reactive via Redux selector)
+  const currentNote$ = workspace?.id && noteId ? selectNoteById(workspace.id, noteId) : null;
+  const currentNote = $derived(currentNote$ ? ($currentNote$ ?? null) : null);
+
+  // Reactive selector subscriptions at component init time
 
   let currentNoteContent = $derived.by(() => {
     const updateVersion = externalUpdateVersion;
-    // Also read notesVersion to ensure reactivity when store map is updated
-    // This is needed because Svelte 5's fine-grained reactivity may not track
-    // changes through the getter-based access to notesStateManager.notes
-    const _notesVersion = notesStateManager.notesVersion;
+    // Read notesVersion via reactive selector to ensure reactivity when store is updated
     const workspaceId = workspace?.id;
 
     if (!noteId || !workspaceId) {
@@ -527,25 +543,8 @@
       return fallback;
     }
 
-    const notesMap = notesStateManager.notes;
-    const storeWorkspaceId = notesStateManager.workspaceId;
+    const note = selectNoteById.select(getReduxStore().getState(), workspaceId, noteId);
 
-    if (!notesMap || storeWorkspaceId !== workspaceId) {
-      const fallback = content || '';
-      if (fallback !== lastDerivedContent) {
-        logger.debug('[NoteWithComments] Derived content fallback - workspace mismatch', {
-          noteId,
-          componentWorkspaceId: workspaceId,
-          storeWorkspaceId,
-          hasNotesMap: !!notesMap,
-          updateVersion,
-        });
-        lastDerivedContent = fallback;
-      }
-      return fallback;
-    }
-
-    const note = notesMap.get(NoteId(noteId));
     if (!note || note.workspaceId !== workspaceId) {
       const fallback = content || '';
       if (fallback !== lastDerivedContent) {
@@ -577,60 +576,44 @@
 
   // Check if there are any active comments to display
 
-  let unsubscribeContentUpdate: (() => void) | null = null;
-
   $effect(() => {
-    if (unsubscribeContentUpdate) {
-      unsubscribeContentUpdate();
-      unsubscribeContentUpdate = null;
-    }
-
     const workspaceId = workspace?.id;
     if (!noteId || !workspaceId) {
       return;
     }
 
-    unsubscribeContentUpdate = notesStateManager.onContentUpdate(
-      (updatedNoteId, updatedContent, source) => {
-        if (updatedNoteId !== noteId) {
-          return;
-        }
+    const handleContentUpdate = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail || detail.workspaceId !== workspaceId || detail.noteId !== noteId) {
+        return;
+      }
 
-        const storeWorkspaceId = notesStateManager.workspaceId;
-        if (storeWorkspaceId !== workspaceId) {
-          logger.debug('[NoteWithComments] Ignoring content update for different workspace', {
-            noteId: updatedNoteId,
-            componentWorkspaceId: workspaceId,
-            storeWorkspaceId,
-          });
-          return;
-        }
+      const updatedContent = detail.content as string;
+      const source = detail.source as 'agent' | 'external';
 
-        logger.info('[NoteWithComments] Received store content update', {
-          noteId: updatedNoteId,
-          updatedLength: updatedContent?.length ?? 0,
-          previousVersion: externalUpdateVersion,
-          source,
-          isUserTyping,
+      logger.info('[NoteWithComments] Received store content update', {
+        noteId: detail.noteId,
+        updatedLength: updatedContent?.length ?? 0,
+        previousVersion: externalUpdateVersion,
+        source,
+        isUserTyping,
+      });
+
+      // Agent updates should be trusted - clear the user edit flag so the update is accepted
+      if (source === 'agent') {
+        logger.info('[NoteWithComments] Agent update - clearing hasUserEditedSinceLastSave', {
+          noteId: detail.noteId,
         });
+        hasUserEditedSinceLastSave = false;
+      }
 
-        // Agent updates should be trusted - clear the user edit flag so the update is accepted
-        if (source === 'agent') {
-          logger.info('[NoteWithComments] Agent update - clearing hasUserEditedSinceLastSave', {
-            noteId: updatedNoteId,
-          });
-          hasUserEditedSinceLastSave = false;
-        }
+      externalUpdateVersion = externalUpdateVersion + 1;
+    };
 
-        externalUpdateVersion = externalUpdateVersion + 1;
-      },
-    );
+    window.addEventListener('note-content-update', handleContentUpdate);
 
     return () => {
-      if (unsubscribeContentUpdate) {
-        unsubscribeContentUpdate();
-        unsubscribeContentUpdate = null;
-      }
+      window.removeEventListener('note-content-update', handleContentUpdate);
     };
   });
 
@@ -680,9 +663,7 @@
     // 2. There are actual comments to display (not resolved and not replies)
     if (!showComments) return false;
 
-    const activeComments = commentsStoreV2.comments.filter(
-      (c) => c.status !== 'resolved' && !c.parentId,
-    );
+    const activeComments = $allComments$.filter((c) => c.status !== 'resolved' && !c.parentId);
     return activeComments.length > 0;
   });
 
@@ -749,11 +730,11 @@
         onUpdateSpec(new CustomEvent('updateSpec', { detail: markdownContent }));
       }
 
-      // Update notes state manager
-      if (notesStateManager.workspaceId === workspace.id) {
-        const note = notesStateManager.findById(NoteId(noteId));
+      // Update note content via Redux dispatch
+      {
+        const note = selectNoteById.select(getReduxStore().getState(), workspace.id, noteId);
         if (note) {
-          notesStateManager.updateNoteContent(NoteId(noteId), markdownContent);
+          reduxDispatch(updateNoteContent(workspace.id, noteId, markdownContent));
 
           // Track note edit (throttled to at most once every 30s during continuous editing)
           try {
@@ -892,88 +873,41 @@
 
   // Handle restore version
   //
-  // NOTE: This function directly updates the editor content after the backend restore
-  // completes, rather than relying on the event system (note:updated event).
-  //
-  // Why direct update instead of event-based?
-  // - The external update system ($effect watching externalUpdateVersion) has protective
-  //   logic to reject stale updates when there are "newer writes in flight"
-  // - For user-initiated restore operations, we want to FORCE the update regardless
-  // - Direct update provides immediate feedback and avoids race conditions
-  // - The backend still emits note:updated events for other listeners (MCP tools, etc.)
-  async function handleRestoreVersion(versionId: string) {
+  // Restore a note to a specific version via saga.
+  // The saga calls notesClient.restoreVersion and dispatches handleExternalNoteUpdate,
+  // which triggers the existing external content update flow (note-content-update event →
+  // externalUpdateVersion increment → runExternalContentUpdateEffect).
+  function handleRestoreVersion(versionId: string) {
     if (!noteId || !workspace?.id) {
       logger.warn('[RestoreVersion] Cannot restore version: missing noteId or workspace');
       return;
     }
 
-    try {
-      logger.info('[RestoreVersion] Step 1: Starting restore', {
-        noteId,
-        versionId,
-        workspaceId: workspace.id,
-      });
+    logger.info('[RestoreVersion] Dispatching restoreNoteVersion', {
+      noteId,
+      versionId,
+      workspaceId: workspace.id,
+    });
 
-      // Mark that we're expecting an external update (from the restore operation)
-      // This prevents the "newer writes in flight" logic from rejecting the restore
-      isUpdatingFromExternal = true;
+    // Mark that we're expecting an external update (from the restore operation)
+    // This prevents the "newer writes in flight" logic from rejecting the restore
+    isUpdatingFromExternal = true;
 
-      // Call backend to restore the version
-      logger.info('[RestoreVersion] Step 2: Calling backend IPC');
-      const result = await notesClient.restoreVersion(workspace.id, NoteId(noteId), versionId);
+    // Dispatch to saga — the saga will call notesClient.restoreVersion and
+    // dispatch handleExternalNoteUpdate, which flows through the existing
+    // external update system to update the editor
+    reduxDispatch(restoreNoteVersion(workspace.id, noteId, versionId));
 
-      if (!result.ok) {
-        logger.error('[RestoreVersion] Backend restore failed', { error: result.error });
+    // Safety: clear flag after timeout in case restore fails or doesn't trigger an update
+    setTimeout(() => {
+      if (isUpdatingFromExternal) {
+        logger.warn('[RestoreVersion] Safety timeout: clearing isUpdatingFromExternal flag');
         isUpdatingFromExternal = false;
-        return;
       }
+    }, 5000);
 
-      // The backend has updated the note successfully
-      const restoredNote = result.data;
-
-      logger.info('[RestoreVersion] Step 3: Backend restore successful', {
-        noteId,
-        contentLength: restoredNote.content.length,
-        versionsCount: restoredNote.versions?.length,
-      });
-
-      // Update lastKnownContent to match the restored content
-      logger.info('[RestoreVersion] Step 4: Updating lastKnownContent');
-      lastKnownContent = restoredNote.content;
-
-      // Convert the restored markdown to HTML and update the editor directly
-      logger.info('[RestoreVersion] Step 5: Converting markdown to HTML');
-      const htmlContent = await processMarkdownToHTML(restoredNote.content, {
-        preserveAnchors: true,
-      });
-
-      if (editor && !editor.isDestroyed) {
-        logger.info('[RestoreVersion] Step 6: Updating editor content', {
-          htmlLength: htmlContent.length,
-        });
-        editor.commands.setContent(htmlContent, { emitUpdate: false });
-        // Re-discover task menu popovers since content changed but onUpdate was suppressed
-        setupTaskMenuPopovers();
-        logger.info('[RestoreVersion] Step 7: Editor content updated successfully');
-      } else {
-        logger.warn('[RestoreVersion] Editor not available or destroyed');
-      }
-
-      // Reset the flag after a short delay
-      setTimeout(() => {
-        isUpdatingFromExternal = false;
-        logger.debug('[RestoreVersion] Reset isUpdatingFromExternal flag');
-      }, 300);
-
-      // Close the version history view
-      logger.info('[RestoreVersion] Step 8: Closing version history view');
-      showVersionHistory = false;
-
-      logger.info('[RestoreVersion] ✅ Version restore complete');
-    } catch (error) {
-      logger.error('[RestoreVersion] Error during restore', error);
-      isUpdatingFromExternal = false;
-    }
+    // Close the version history view
+    showVersionHistory = false;
   }
 
   // Initialize editor
@@ -982,10 +916,10 @@
 
     let goalContent = '';
     if (noteId && workspace?.id) {
-      if (notesStateManager.workspaceId === workspace.id) {
-        const currentNote = notesStateManager.findById(NoteId(noteId));
-        if (currentNote && currentNote.workspaceId === workspace.id) {
-          goalContent = currentNote.content || '';
+      {
+        const storeNote = selectNoteById.select(getReduxStore().getState(), workspace.id, noteId);
+        if (storeNote && storeNote.workspaceId === workspace.id) {
+          goalContent = storeNote.content || '';
         }
       }
       // Fallback to content prop if note not found in store yet
@@ -994,7 +928,6 @@
         logger.debug('[NoteWithComments] Using content prop as fallback (note not yet in store)', {
           noteId,
           workspaceId: workspace.id,
-          storeWorkspaceId: notesStateManager.workspaceId,
           contentPropLength: content.length,
         });
         goalContent = content;
@@ -1014,16 +947,18 @@
     });
 
     // Compute placeholder based on whether this is the spec note and initial spec write is in progress
-    const isSpec = noteId ? isSpecNote(noteId) : false;
 
     // Guard: if content exceeds the safe size limit, show plain text fallback
     // instead of running the expensive markdown processing pipeline
     if (goalContent.length > MAX_NOTE_CONTENT_SIZE) {
-      logger.warn('[NoteWithComments] Content exceeds MAX_NOTE_CONTENT_SIZE, using plain text fallback', {
-        noteId,
-        contentLength: goalContent.length,
-        limit: MAX_NOTE_CONTENT_SIZE,
-      });
+      logger.warn(
+        '[NoteWithComments] Content exceeds MAX_NOTE_CONTENT_SIZE, using plain text fallback',
+        {
+          noteId,
+          contentLength: goalContent.length,
+          limit: MAX_NOTE_CONTENT_SIZE,
+        },
+      );
       isTooLargeForRichEditor = true;
       plainTextFallbackContent = goalContent;
       isInitializing = false;
@@ -1039,7 +974,9 @@
 
     const config = createEditorConfig({
       element,
-      content: isLargeContent ? '' : await processMarkdownToHTML(goalContent, { preserveAnchors: true }),
+      content: isLargeContent
+        ? ''
+        : await processMarkdownToHTML(goalContent, { preserveAnchors: true }),
       editable,
       workspace, // Pass workspace for mention support
       onUpdate: () => {
@@ -1049,21 +986,14 @@
       },
       onSelectionUpdate: (selectedText) => {
         // Get the note title from store if available, otherwise use noteId
-        const note = noteId ? notesStateManager.findById(NoteId(noteId)) : null;
+        const note = noteId
+          ? selectNoteById.select(getReduxStore().getState(), workspace.id, noteId)
+          : null;
         const noteLabel = note?.title || noteId || 'Note';
 
         if (selectedText) {
-          unifiedStateStore.selectionContext = {
-            text: selectedText,
-            file: noteLabel, // Use note title as the "file" for display
-            language: 'markdown',
-            range: undefined,
-          };
         } else {
-          // Clear the legacy selection context when text is deselected
-          // This is only called when editor.isFocused is true (user clicked within the note)
-          // so it won't clear when user clicks on chat input to send
-          unifiedStateStore.selectionContext = null;
+          // Deselection is handled below via the custom event dispatch
         }
         // Dispatch custom event with note info for ChatPanel to pick up
         // This handles both selection and deselection (when editor is focused)
@@ -1083,7 +1013,7 @@
       onSuggestionClick: handleSuggestionClick,
       onCommentClick: (commentId) => {
         logger.info('[NoteWithComments] Comment clicked (V2)', { commentId });
-        commentsStoreV2.selectComment(commentId);
+        reduxDispatch(selectCommentAction(commentId));
       },
       onFilePathClick: (filePath, event) => {
         logger.info('[NoteWithComments] File path clicked', { filePath });
@@ -1137,10 +1067,13 @@
             setTimeout(applyContent, 0);
           }
         });
-        logger.debug('[NoteWithComments] Deferred content loaded into editor via requestIdleCallback', {
-          noteId,
-          processedContentLength: processedContent.length,
-        });
+        logger.debug(
+          '[NoteWithComments] Deferred content loaded into editor via requestIdleCallback',
+          {
+            noteId,
+            processedContentLength: processedContent.length,
+          },
+        );
       }
     }
 
@@ -1178,7 +1111,7 @@
     cleanupCommentClickHandler = showComments
       ? setupCommentMarkClickHandlerV2({
           editor,
-          commentsStoreV2,
+          store: getReduxStore(),
           logger,
           noteId,
         })
@@ -1241,24 +1174,11 @@
     // Set up observer for task agent status containers
     taskAgentStatusMountManager.start();
 
-    // Watch for container resize
-    const editorContainer = element?.closest('.editor-container');
-    let resizeObserver: ResizeObserver | null = null;
-    if (editorContainer) {
-      resizeObserver = new ResizeObserver(() => {
-        containerResizeCounter++;
-      });
-      resizeObserver.observe(editorContainer);
-    }
-
     // Store cleanup function
     const originalCleanup = cleanupFn;
     cleanupFn = () => {
       if (originalCleanup) originalCleanup();
       // Note: spec-comments-updated listeners are now handled in the component-level effect
-      if (resizeObserver) {
-        resizeObserver.disconnect();
-      }
       if (headingScrollHandler) {
         window.removeEventListener('note:scroll-to-heading', headingScrollHandler as any);
         headingScrollHandler = null;
@@ -1331,7 +1251,6 @@
 
   // Debounce reinitialize to prevent rapid successive calls
   let reinitializeTimeout: ReturnType<typeof setTimeout> | null = null;
-  let pendingNoteId: string | undefined = undefined;
 
   // Watch for note changes and reinitialize editor
   $effect(() => {
@@ -1346,9 +1265,6 @@
         reinitializeTimeout = null;
       }
 
-      // Store the pending note ID
-      pendingNoteId = currentNoteId;
-
       logger.debug('[NoteWithComments] Note ID changed, scheduling reinitialize', {
         oldNoteId: lastNoteId,
         newNoteId: currentNoteId,
@@ -1360,7 +1276,7 @@
       hasUserEditedSinceLastSave = false;
 
       // Clear comments from previous note and reset decorations immediately
-      commentsStoreV2.clear();
+      reduxDispatch(clearCommentsAction());
       if (editor) {
         try {
           updateCommentDecorations(editor.view);
@@ -1376,11 +1292,14 @@
 
         // Guard: if new note content exceeds the safe size limit, show plain text fallback
         if (newContent.length > MAX_NOTE_CONTENT_SIZE) {
-          logger.warn('[NoteWithComments] Switched to note exceeding MAX_NOTE_CONTENT_SIZE, using plain text fallback', {
-            noteId,
-            contentLength: newContent.length,
-            limit: MAX_NOTE_CONTENT_SIZE,
-          });
+          logger.warn(
+            '[NoteWithComments] Switched to note exceeding MAX_NOTE_CONTENT_SIZE, using plain text fallback',
+            {
+              noteId,
+              contentLength: newContent.length,
+              limit: MAX_NOTE_CONTENT_SIZE,
+            },
+          );
           isTooLargeForRichEditor = true;
           plainTextFallbackContent = newContent;
           lastKnownContent = newContent;
@@ -1670,10 +1589,10 @@
       // Fall back to navigation history
       if (!workspace?.id || !noteId) return;
 
-      const workspaceStateManager = getUnifiedWorkspaceState(workspace.id);
-      if (!workspaceStateManager?.state?.navigation) return;
-
-      const navigation = workspaceStateManager.state.navigation;
+      const navigation = selectWorkspaceNavigationHistory.select(
+        getReduxStore().getState(),
+        workspace.id,
+      );
       // Get the current navigation entry
       const currentEntry = navigation.history[navigation.currentIndex];
       if (
@@ -1704,10 +1623,13 @@
             isInitialized = true;
 
             // Trigger streaming-in animation when a note was just created
-            if (noteId && notesStateManager.newlyCreatedNoteId === noteId) {
+            if (
+              noteId &&
+              selectNewlyCreatedNoteId.select(getReduxStore().getState(), workspace.id) === noteId
+            ) {
               isStreamingIn = true;
               // Clear the store flag so it doesn't re-trigger
-              notesStateManager.clearNewlyCreatedNoteId();
+              reduxDispatch(clearNewlyCreatedNoteId(workspace.id));
               // Clear the animation flag after the animation completes
               setTimeout(() => {
                 isStreamingIn = false;
@@ -1819,7 +1741,12 @@
       <button
         type="button"
         class="p-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-        onclick={() => { showSearch = false; searchQuery = ''; searchMatchCount = 0; clearSearchHighlights(); }}
+        onclick={() => {
+          showSearch = false;
+          searchQuery = '';
+          searchMatchCount = 0;
+          clearSearchHighlights();
+        }}
       >
         <Fa icon={faTimes} class="w-3 h-3" />
       </button>
@@ -1890,10 +1817,15 @@
         <!-- Plain text fallback for notes that exceed the rich editor size limit -->
         {#if isTooLargeForRichEditor}
           <div class="w-full p-4">
-            <div class="mb-3 rounded-md bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 px-4 py-2 text-sm text-yellow-800 dark:text-yellow-200">
-              This note is too large for the rich editor ({Math.round(plainTextFallbackContent.length / 1024)}KB). Showing as plain text.
+            <div
+              class="mb-3 rounded-md bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 px-4 py-2 text-sm text-yellow-800 dark:text-yellow-200"
+            >
+              This note is too large for the rich editor ({Math.round(
+                plainTextFallbackContent.length / 1024,
+              )}KB). Showing as plain text.
             </div>
-            <pre class="whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-foreground">{plainTextFallbackContent}</pre>
+            <pre
+              class="whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-foreground">{plainTextFallbackContent}</pre>
           </div>
         {/if}
 
@@ -1957,10 +1889,10 @@
             {editor}
             {workspace}
             editorWrapper={element}
-            comments={commentsStoreV2.comments}
+            comments={$allComments$}
             onResolve={handleResolveComment}
-            onAccept={(id) => commentsStoreV2.updateComment(id, { status: 'accepted' })}
-            onReject={(id) => commentsStoreV2.updateComment(id, { status: 'rejected' })}
+            onAccept={(id) => reduxDispatch(updateCommentAction(id, { status: 'accepted' }))}
+            onReject={(id) => reduxDispatch(updateCommentAction(id, { status: 'rejected' }))}
             onReply={handleReplyToComment}
           />
         {/if}
@@ -2092,17 +2024,39 @@
   }
 
   /* Stagger children for a cascading reveal */
-  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(1)) { animation-delay: 0ms; }
-  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(2)) { animation-delay: 40ms; }
-  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(3)) { animation-delay: 80ms; }
-  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(4)) { animation-delay: 120ms; }
-  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(5)) { animation-delay: 160ms; }
-  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(6)) { animation-delay: 200ms; }
-  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(7)) { animation-delay: 240ms; }
-  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(8)) { animation-delay: 280ms; }
-  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(9)) { animation-delay: 320ms; }
-  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(10)) { animation-delay: 360ms; }
-  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(n+11)) { animation-delay: 400ms; }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(1)) {
+    animation-delay: 0ms;
+  }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(2)) {
+    animation-delay: 40ms;
+  }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(3)) {
+    animation-delay: 80ms;
+  }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(4)) {
+    animation-delay: 120ms;
+  }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(5)) {
+    animation-delay: 160ms;
+  }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(6)) {
+    animation-delay: 200ms;
+  }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(7)) {
+    animation-delay: 240ms;
+  }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(8)) {
+    animation-delay: 280ms;
+  }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(9)) {
+    animation-delay: 320ms;
+  }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(10)) {
+    animation-delay: 360ms;
+  }
+  :global(.tiptap-editor-wrapper.streaming-in .ProseMirror > *:nth-child(n + 11)) {
+    animation-delay: 400ms;
+  }
 
   @keyframes note-stream-in {
     from {

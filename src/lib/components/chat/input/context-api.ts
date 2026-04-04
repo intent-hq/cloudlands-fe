@@ -5,7 +5,7 @@
 
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
-import type { Workspace, CommandResponse, NoteId } from '../../../../shared/types';
+import type { Workspace, CommandResponse } from '../../../../shared/types';
 import { NoteId as NoteIdFn } from '../../../../shared/types/branded-ids';
 
 const logger = createLogger('ContextAPI');

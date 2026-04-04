@@ -25,7 +25,6 @@ import { validateAgentSession } from '$shared/schemas';
 import { AgentStatus } from '$shared/types/agent.types';
 import { WorkspaceConfig } from '$shared/main/config';
 import { fsyncFile, renameWithRetry } from '$shared/main/file-sync-utils';
-import { SESSION_CONFIG } from '$shared/constants/agent-services';
 import type { IMetadataFS } from '../../metadata-fs/main/metadata-fs';
 import { LocalMetadataFS } from '../../metadata-fs/main/local-metadata-fs';
 import { truncateLargeFields } from './persistence-truncation';
@@ -1138,7 +1137,6 @@ export class UnifiedPersistence {
     // Use a unique temp file name to avoid race conditions
     const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     const tempPath = `${filePath}.tmp.${uniqueSuffix}`;
-    const backupDir = `${filePath}.backups`;
     const checksumPath = `${filePath}.checksum`;
 
     try {

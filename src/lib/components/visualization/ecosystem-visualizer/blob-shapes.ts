@@ -177,38 +177,6 @@ function smoothHull(hull: [number, number][], iterations: number = 2): [number, 
  * @param maxRadius - The base radius (used for Y axis)
  * @param scaleRatio - The ratio of scaleX/scaleY from the layout (default 1 = circular)
  */
-function constrainHullToRadius(
-  hull: [number, number][],
-  centerX: number,
-  centerY: number,
-  maxRadius: number,
-  scaleRatio: number = 1,
-): [number, number][] {
-  if (hull.length < 3 || maxRadius <= 0) return hull;
-
-  // For elliptical constraint:
-  // - radiusX = maxRadius * scaleRatio (stretched horizontally when scaleRatio > 1)
-  // - radiusY = maxRadius
-  const radiusX = maxRadius * scaleRatio;
-  const radiusY = maxRadius;
-
-  return hull.map(([x, y]) => {
-    const dx = x - centerX;
-    const dy = y - centerY;
-
-    // Check if point is inside the ellipse: (dx/radiusX)^2 + (dy/radiusY)^2 <= 1
-    const normalizedDist = (dx * dx) / (radiusX * radiusX) + (dy * dy) / (radiusY * radiusY);
-
-    if (normalizedDist <= 1) {
-      return [x, y] as [number, number];
-    }
-
-    // Clamp point to the ellipse boundary
-    // Scale the point so it lies on the ellipse
-    const scale = 1 / Math.sqrt(normalizedDist);
-    return [centerX + dx * scale, centerY + dy * scale] as [number, number];
-  });
-}
 
 /**
  * Contract a hull inward by moving each point toward the centroid
@@ -264,79 +232,14 @@ function isLeafFolder(folder: ProcessedNode): boolean {
  * Sutherland-Hodgman polygon clipping algorithm
  * Clips a subject polygon against a convex clip polygon
  */
-function clipPolygon(subject: [number, number][], clip: [number, number][]): [number, number][] {
-  if (subject.length < 3 || clip.length < 3) return subject;
-
-  let output = [...subject];
-
-  for (let i = 0; i < clip.length; i++) {
-    if (output.length === 0) return [];
-
-    const edgeStart = clip[i];
-    const edgeEnd = clip[(i + 1) % clip.length];
-
-    const input = output;
-    output = [];
-
-    for (let j = 0; j < input.length; j++) {
-      const current = input[j];
-      const next = input[(j + 1) % input.length];
-
-      const currentInside = isLeftOfEdge(current, edgeStart, edgeEnd);
-      const nextInside = isLeftOfEdge(next, edgeStart, edgeEnd);
-
-      if (currentInside) {
-        output.push(current);
-        if (!nextInside) {
-          const intersection = lineIntersection(current, next, edgeStart, edgeEnd);
-          if (intersection) output.push(intersection);
-        }
-      } else if (nextInside) {
-        const intersection = lineIntersection(current, next, edgeStart, edgeEnd);
-        if (intersection) output.push(intersection);
-      }
-    }
-  }
-
-  return output;
-}
 
 /**
  * Check if a point is on the left side of an edge (inside for CCW polygon)
  */
-function isLeftOfEdge(
-  point: [number, number],
-  edgeStart: [number, number],
-  edgeEnd: [number, number],
-): boolean {
-  return (
-    (edgeEnd[0] - edgeStart[0]) * (point[1] - edgeStart[1]) -
-      (edgeEnd[1] - edgeStart[1]) * (point[0] - edgeStart[0]) >=
-    0
-  );
-}
 
 /**
  * Find intersection point of two line segments
  */
-function lineIntersection(
-  p1: [number, number],
-  p2: [number, number],
-  p3: [number, number],
-  p4: [number, number],
-): [number, number] | null {
-  const d1x = p2[0] - p1[0];
-  const d1y = p2[1] - p1[1];
-  const d2x = p4[0] - p3[0];
-  const d2y = p4[1] - p3[1];
-
-  const cross = d1x * d2y - d1y * d2x;
-  if (Math.abs(cross) < 1e-10) return null;
-
-  const t = ((p3[0] - p1[0]) * d2y - (p3[1] - p1[1]) * d2x) / cross;
-
-  return [p1[0] + t * d1x, p1[1] + t * d1y];
-}
 
 /**
  * Compute the centroid of a polygon
@@ -435,6 +338,7 @@ export function computeBlobShapes(
     wobbleAmplitude = DEFAULT_ECOSYSTEM_SETTINGS.wobbleAmplitude,
     hullSubdivisions = DEFAULT_ECOSYSTEM_SETTINGS.hullSubdivisions,
     hullSmoothing = DEFAULT_ECOSYSTEM_SETTINGS.hullSmoothing,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     scaleRatio = 1, // Default to circular (no stretch)
     zoomScale = 1, // Current zoom level
     focusDepth = 0, // Depth of the focused folder
@@ -585,6 +489,7 @@ export function computeBlobShapes(
 
   // Compute Voronoi cells for each sibling group
   const voronoiCells = new Map<string, [number, number][]>();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   for (const [_parentPath, siblings] of foldersByParent) {
     if (siblings.length <= 1) continue; // No clipping needed for single child
 
@@ -686,7 +591,9 @@ export function drawBlobToCanvas(
   strokeColor: string,
   fillOpacity: number = 0.1,
   strokeWidth: number = 1,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   zoomScale: number = 1,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   basePadding: number = 0,
   depth: number = 1,
   hullContraction: number = 3,

@@ -7,7 +7,7 @@ import { logger } from '../../../shared/logger';
  * without requiring Node.js EventEmitter
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type EventListener = (...args: any[]) => void;
 
 export class BrowserEventEmitter {

@@ -7,7 +7,7 @@
  * These tests import and use the real SSHManager from the Intent app.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   RemoteEnvProfile,
   getProfileOrThrow,

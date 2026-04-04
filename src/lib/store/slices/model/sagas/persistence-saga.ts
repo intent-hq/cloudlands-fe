@@ -1,10 +1,8 @@
 import { call, put, takeLatest } from "typed-redux-saga";
-import { unifiedStateStore } from "$features/agent/services/unified-state-store";
-import { getItems } from "$lib/store/utils/collection-utils";
 import { getLocalStorageItem, getLocalStorageJSON, removeLocalStorageItem, setLocalStorageJSON, setLocalStorageItem, } from "$lib/store/utils/safe-local-storage-saga";
 import { MODEL_DEFAULTS } from "$shared/constants/agent-services";
 import { selectActiveProviderId } from "../../provider-settings/provider-settings-selectors";
-import { selectAvailableModelsCollection, selectProviderModels, selectWorkspaceModels, } from "../model-selectors";
+import { selectProviderModels, selectWorkspaceModels, } from "../model-selectors";
 import { normalizeModelForProvider, normalizeProviderModels, } from "../model-selection-utils";
 import { loadModels, reloadModelsForProvider, setSelectedModel, clearAllWorkspaceModels, clearLoadingStateForProvider, setWorkspaceModel, setAvailableModels, clearWorkspaceModel, loadWorkspaceModelsFromStorage, loadProviderModelsFromStorage, GLOBAL_MODEL_KEY, WORKSPACE_MODELS_KEY, PROVIDER_MODELS_KEY, } from "../model-slice";
 function parseStoredModels(stored: Record<string, string> | undefined): Record<string, string> {
@@ -20,7 +18,7 @@ export function* initPersistenceSaga() {
     try {
         activeProviderId = yield* selectActiveProviderId.effect();
     }
-    catch (e) {
+    catch {
         return;
     }
     let legacySelectedModel: string | null = null;
@@ -41,20 +39,6 @@ export function* initPersistenceSaga() {
         yield* call(setLocalStorageJSON, PROVIDER_MODELS_KEY, providerModels);
     }
     yield* put(loadProviderModelsFromStorage(providerModels));
-    const selectedModel = providerModels[activeProviderId];
-    if (selectedModel) {
-        try {
-            unifiedStateStore.selectModel(selectedModel);
-        }
-        catch (e) {
-        }
-    }
-    try {
-        const availableModelsCollection = yield* selectAvailableModelsCollection.effect();
-        unifiedStateStore.setAvailableModels(getItems(availableModelsCollection));
-    }
-    catch (e) {
-    }
     // Trigger initial model load
     yield* put(loadModels());
 }
@@ -66,7 +50,7 @@ export function* handleReloadModelsForProvider() {
     try {
         newProviderId = yield* selectActiveProviderId.effect();
     }
-    catch (e) {
+    catch {
         return;
     }
     // Clear per-workspace overrides
@@ -83,18 +67,8 @@ export function* handleReloadModelsForProvider() {
     }
     yield* put(setSelectedModel({ providerId: newProviderId, model: nextModel }));
     yield* call(setLocalStorageItem, GLOBAL_MODEL_KEY, nextModel);
-    try {
-        unifiedStateStore.selectModel(nextModel);
-    }
-    catch (e) {
-    }
     yield* put(clearLoadingStateForProvider(newProviderId));
     yield* put(setAvailableModels([]));
-    try {
-        unifiedStateStore.setAvailableModels([]);
-    }
-    catch (e) {
-    }
     yield* put(loadModels());
 }
 /**

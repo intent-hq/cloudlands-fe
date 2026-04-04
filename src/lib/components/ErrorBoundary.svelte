@@ -29,6 +29,7 @@
     logger: customLogger,
     children,
     error: initialError,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     status,
   }: Props = $props();
 
@@ -83,6 +84,7 @@
     showDetails = false;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleCopyDetails() {
     try {
       const textToCopy = `Error: ${errorDetails?.message || 'Unknown error'}\n\nStack Trace:\n${errorInfo}`;
@@ -385,7 +387,7 @@
   </div>
 {/snippet}
 
-<svelte:boundary onerror={(error: unknown, reset) => {
+<svelte:boundary onerror={(error: unknown) => {
   const err = error instanceof Error ? error : new Error(String(error));
   // Skip Monaco "Canceled" errors - benign cancellations during editor disposal/navigation
   if (err.message === 'Canceled' || err.name === 'Canceled') return;

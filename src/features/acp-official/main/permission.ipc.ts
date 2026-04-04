@@ -196,7 +196,7 @@ export function setupPermissionIPC(): void {
   // Handle request to get all pending permission requests (for page refresh recovery)
   ipcMain.handle(IPC_CHANNELS.PERMISSION.GET_PENDING, async () => {
     const pendingData: PermissionRequestData[] = [];
-    for (const [_requestId, pending] of pendingRequests) {
+    for (const [, pending] of pendingRequests) {
       pendingData.push(pending.data);
     }
     logger.info('Returning pending permission requests', { count: pendingData.length });

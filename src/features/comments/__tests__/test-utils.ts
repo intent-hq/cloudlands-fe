@@ -11,7 +11,10 @@ import {
   findCommentAnchors,
   getAllAnchoredCommentIds,
 } from '$lib/components/tiptap/CommentAnchor';
-import { commentsStoreV2, type CommentV2 } from '../comments-v2.store.svelte';
+import type { CommentV2 } from '../comment-types-v2';
+import { getReduxStore, dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
+import { loadCommentsAction } from '$lib/store/slices/comments/comments-slice';
+import { selectCommentById } from '$lib/store/slices/comments/comments-selectors';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { Logger } from '../../../shared/logger';
 
@@ -186,7 +189,7 @@ export async function insertTextWithAnchors(
   }
 
   // Add comment to store
-  commentsStoreV2.loadComments([comment]);
+  reduxDispatch(loadCommentsAction([comment]));
 
   return { commentId: comment.id, from, to };
 }
@@ -284,7 +287,7 @@ export function waitForOrphanCheck(): Promise<void> {
  * Clear all comments from the store
  */
 export function clearCommentsStore(): void {
-  commentsStoreV2.loadComments([]);
+  reduxDispatch(loadCommentsAction([]));
 }
 
 /**
@@ -329,7 +332,7 @@ export function assertNoAnchors(editor: Editor, commentId: string): void {
  * Assert that a comment is marked as orphaned
  */
 export function assertCommentOrphaned(commentId: string, expected: boolean = true): void {
-  const comment = commentsStoreV2.getComment(commentId);
+  const comment = selectCommentById.select(getReduxStore().getState(), commentId);
 
   if (!comment) {
     throw new Error(`Comment ${commentId} not found in store`);
@@ -362,7 +365,7 @@ export function setEditorContent(editor: Editor, html: string): void {
 export function getEditorHTML(editor: Editor): string {
   try {
     return editor.getHTML();
-  } catch (error) {
+  } catch  {
     // If getHTML fails due to invalid state (e.g., with anchors), serialize manually
     const doc = editor.state.doc;
     const parts: string[] = [];

@@ -4,7 +4,7 @@
  * TDD tests for the user activity service layer.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { UserActivityService } from '../user-activity.service';
 import { InMemoryUserActivityRepository } from '../user-activity.repository';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';

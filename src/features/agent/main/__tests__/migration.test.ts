@@ -6,14 +6,12 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { IpcMainInvokeEvent } from 'electron';
 import { registerAgentHandlers } from '../unified-agent-handlers';
 import { getAgentBackendAdapter } from '../agent-backend-adapter';
 import { AgentBackendHandler } from '../agent-backend-handler.service';
-import type { AgentIpc, IpcResponse } from '$shared/ipc/contracts';
+import type { AgentIpc } from '$shared/ipc/contracts';
 import * as BrandedIds from '$shared/types/branded-ids';
 import { AgentStatus } from '$shared/types/agent.types';
-import { Logger } from '$shared/logger';
 
 // Mock util.promisify FIRST before any imports
 vi.mock('util', async (importOriginal) => {
@@ -119,7 +117,7 @@ vi.mock('fs', () => ({
 // Mock logger to reduce noise
 vi.mock('$shared/logger', () => ({
   Logger: class MockLogger {
-    constructor(name: string) {}
+    constructor() {}
     info = vi.fn();
     debug = vi.fn();
     error = vi.fn();
@@ -139,17 +137,9 @@ vi.mock('../../workspace/main/workspace.service', () => ({
 describe('Agent Migration Integration Tests', () => {
   let mockBackendHandler: any;
   let adapter: any;
-  let mockEvent: IpcMainInvokeEvent;
 
   beforeEach(() => {
     vi.clearAllMocks();
-
-    // Create mock event
-    mockEvent = {
-      sender: {
-        send: vi.fn(),
-      },
-    } as any;
 
     // Mock workspaceService.getWorkspace to return a valid workspace
     mockWorkspaceService.getWorkspace.mockResolvedValue({

@@ -1,55 +1,51 @@
 import type { AgentSession, AgentStatus } from "$shared/types";
 import { describe, expect, it } from "vitest";
 import type { StoreState } from "../../types";
-import { createCollection } from "../../utils/collection-utils";
 import {
+  selectAgentById,
+  selectActiveAgent,
   selectAllWorkspaceAgents,
-  selectAllWorkspaceAgentsCollection,
   selectAgentsLoaded,
+  selectAgentQueuedMessages,
   selectForegroundWorkspaceAgents,
   selectInitialAgentConfig,
   selectInitialAgentConfigProcessed,
   selectInitialAgentId,
-  selectIsAgentRecentlyCreated,
+  selectIsInitialSpecWriteInProgress,
   selectIsLoadingAgents,
   selectIsNewlyCreatedWorkspace,
-  selectIsWaitingForFirstMessage,
   selectRecentlyCreatedAgents,
-  selectWaitingForFirstMessageMap,
-  selectWorkspaceAgentState,
-  selectWorkspaceAgents,
-  selectWorkspaceAgentsCollection,
 } from "./workspace-agents-selectors";
 import {
   addAgent,
   agentsLoaded,
   clearInitialAgentConfig,
-  clearRecentlyCreatedAgent,
-  clearWorkspaceAgents,
   createAgentRequested,
   createAgentWithSpecialistRequested,
   emptyWorkspaceAgentState,
   initialState,
   type InitialAgentConfig,
-  loadAgentsRequested,
   markAgentRecentlyCreated,
-  renameAgent,
+  removeWorkspaceAgentState,
   removeAgent,
-  replaceWorkspaceAgentSnapshots,
+  setActiveAgentId,
+  setDiskMessageCount,
+  recordAgentCreatedEvent,
+  cleanupAgentCreatedEvents,
   setAgents,
   setAgentsLoaded,
   setInitialAgentConfig,
   setInitialAgentConfigProcessed,
   setInitialAgentId,
+  setInitialSpecWriteInProgress,
   setIsLoadingAgents,
   setWaitingForFirstMessage,
+  upsertAgentSession,
   workspaceAgentsReducer,
 } from "./workspace-agents-slice";
 
 const WS_1 = "ws-1";
 const WS_2 = "ws-2";
-
-const asCollection = (agents: AgentSession[]) => createCollection<AgentSession, "id">("id", agents);
 
 const mockAgent = (id: string, workspaceId = WS_1, name = "Agent"): AgentSession => ({
   id,
@@ -62,11 +58,30 @@ const mockAgent = (id: string, workspaceId = WS_1, name = "Agent"): AgentSession
   updatedAt: "2026-03-19T00:00:00.000Z",
 });
 
-function mockState(overrides: Partial<StoreState["workspaceAgents"]> = {}): StoreState {
+/**
+ * Build a mock StoreState with both workspaceAgents and agentSessions data.
+ * Session data now lives in agentSessions; workspaceAgents only tracks IDs.
+ */
+function mockState(
+  overrides: Partial<StoreState["workspaceAgents"]> = {},
+  sessions: AgentSession[] = [],
+): StoreState {
+  const byAgentId: Record<string, AgentSession> = {};
+  const agentIdsByWorkspace: Record<string, string[]> = {};
+  for (const s of sessions) {
+    byAgentId[s.id] = s;
+    const wsId = String(s.workspaceId);
+    if (!agentIdsByWorkspace[wsId]) agentIdsByWorkspace[wsId] = [];
+    agentIdsByWorkspace[wsId].push(String(s.id));
+  }
   return {
     workspaceAgents: {
       ...initialState,
       ...overrides,
+    },
+    agentSessions: {
+      byAgentId,
+      agentIdsByWorkspace,
     },
   } as StoreState;
 }
@@ -76,25 +91,25 @@ describe("workspaceAgentsReducer", () => {
     expect(workspaceAgentsReducer(undefined, { type: "@@INIT" })).toEqual(initialState);
   });
 
-  it("stores the agent list for a workspace", () => {
+  it("stores agent IDs for a workspace", () => {
     const agents = [mockAgent("agent-1"), mockAgent("agent-2")];
 
     expect(workspaceAgentsReducer(initialState, setAgents(WS_1, agents))).toEqual({
       byWorkspaceId: {
         [WS_1]: {
           ...emptyWorkspaceAgentState,
-          agents: asCollection(agents),
+          agentIds: ["agent-1", "agent-2"],
         },
       },
     });
   });
 
-  it("adds agents without affecting other workspaces", () => {
+  it("adds agent IDs without affecting other workspaces", () => {
     let state = workspaceAgentsReducer(initialState, addAgent(WS_1, mockAgent("agent-1")));
     state = workspaceAgentsReducer(state, addAgent(WS_2, mockAgent("agent-2", WS_2, "Setup")));
 
-    expect(state.byWorkspaceId[WS_1].agents).toEqual(asCollection([mockAgent("agent-1")]));
-    expect(state.byWorkspaceId[WS_2].agents).toEqual(asCollection([mockAgent("agent-2", WS_2, "Setup")]));
+    expect(state.byWorkspaceId[WS_1].agentIds).toEqual(["agent-1"]);
+    expect(state.byWorkspaceId[WS_2].agentIds).toEqual(["agent-2"]);
   });
 
   it("does not duplicate an existing agent", () => {
@@ -118,57 +133,10 @@ describe("workspaceAgentsReducer", () => {
       byWorkspaceId: {
         [WS_1]: {
           ...emptyWorkspaceAgentState,
-          agents: asCollection([mockAgent("agent-2")]),
+          agentIds: ["agent-2"],
         },
       },
     });
-  });
-
-  it("renames an agent within the workspace", () => {
-    const previousState = workspaceAgentsReducer(
-      initialState,
-      setAgents(WS_1, [mockAgent("agent-1", WS_1, "Before")])
-    );
-
-    const nextState = workspaceAgentsReducer(previousState, renameAgent(WS_1, "agent-1", "After"));
-
-    expect(nextState.byWorkspaceId[WS_1].agents).toEqual(
-      asCollection([mockAgent("agent-1", WS_1, "After")])
-    );
-  });
-
-  it("normalizes Date values before storing agents in Redux", () => {
-    const createdAt = new Date("2026-03-19T01:00:00.000Z");
-    const updatedAt = new Date("2026-03-19T02:00:00.000Z");
-    const messageTimestamp = new Date("2026-03-19T03:00:00.000Z");
-    const fileTimestamp = new Date("2026-03-19T04:00:00.000Z");
-    const lastActivity = new Date("2026-03-19T05:00:00.000Z");
-    const lastViewedAt = new Date("2026-03-19T06:00:00.000Z");
-    const startedAt = new Date("2026-03-19T07:00:00.000Z");
-    const endedAt = new Date("2026-03-19T08:00:00.000Z");
-    const agent = {
-      ...mockAgent("agent-1"),
-      createdAt,
-      updatedAt,
-      lastActivity,
-      lastViewedAt,
-      startedAt,
-      endedAt,
-      messages: [{ id: "msg-1", role: "assistant", timestamp: messageTimestamp, contentBlocks: [] }],
-      fileChanges: [{ path: "src/example.ts", type: "modify", timestamp: fileTimestamp }],
-    } satisfies AgentSession;
-
-    const state = workspaceAgentsReducer(initialState, addAgent(WS_1, agent));
-    const storedAgent = state.byWorkspaceId[WS_1].agents.map["agent-1"];
-
-    expect(storedAgent.createdAt).toBe(createdAt.toISOString());
-    expect(storedAgent.updatedAt).toBe(updatedAt.toISOString());
-    expect(storedAgent.lastActivity).toBe(lastActivity.toISOString());
-    expect(storedAgent.lastViewedAt).toBe(lastViewedAt.toISOString());
-    expect(storedAgent.startedAt).toBe(startedAt.toISOString());
-    expect(storedAgent.endedAt).toBe(endedAt.toISOString());
-    expect(storedAgent.messages[0]?.timestamp).toBe(messageTimestamp.toISOString());
-    expect(storedAgent.fileChanges?.[0]?.timestamp).toBe(fileTimestamp.toISOString());
   });
 
   it("tracks recently created agents per workspace", () => {
@@ -177,21 +145,6 @@ describe("workspaceAgentsReducer", () => {
     state = workspaceAgentsReducer(state, markAgentRecentlyCreated(WS_1, "agent-2"));
 
     expect(state.byWorkspaceId[WS_1].recentlyCreatedAgents).toEqual(["agent-1", "agent-2"]);
-  });
-
-  it("clears a recently created agent id", () => {
-    const previousState = workspaceAgentsReducer(
-      initialState,
-      markAgentRecentlyCreated(WS_1, "agent-1")
-    );
-
-    expect(
-      workspaceAgentsReducer(previousState, clearRecentlyCreatedAgent(WS_1, "agent-1"))
-    ).toEqual({
-      byWorkspaceId: {
-        [WS_1]: emptyWorkspaceAgentState,
-      },
-    });
   });
 
   it("updates loading and initialization flags for a workspace", () => {
@@ -219,7 +172,7 @@ describe("workspaceAgentsReducer", () => {
     expect(state.byWorkspaceId[WS_1].isWaitingForFirstMessage).toEqual({});
   });
 
-  it("reconciles agent-scoped metadata when replacing the agent list", () => {
+  it("reconciles agent-scoped metadata when merging agent list from disk", () => {
     let state = workspaceAgentsReducer(initialState, addAgent(WS_1, mockAgent("agent-1")));
     state = workspaceAgentsReducer(state, addAgent(WS_1, mockAgent("agent-2")));
     state = workspaceAgentsReducer(state, markAgentRecentlyCreated(WS_1, "agent-1"));
@@ -227,34 +180,35 @@ describe("workspaceAgentsReducer", () => {
     state = workspaceAgentsReducer(state, setWaitingForFirstMessage(WS_1, "agent-1", true));
     state = workspaceAgentsReducer(state, setWaitingForFirstMessage(WS_1, "agent-2", true));
 
+    // Disk only has agent-2, but agent-1 was added via IPC and should be preserved
     const nextState = workspaceAgentsReducer(state, setAgents(WS_1, [mockAgent("agent-2")]));
 
-    expect(nextState.byWorkspaceId[WS_1].recentlyCreatedAgents).toEqual(["agent-2"]);
-    expect(nextState.byWorkspaceId[WS_1].isWaitingForFirstMessage).toEqual({ "agent-2": true });
+    expect(nextState.byWorkspaceId[WS_1].agentIds).toEqual(["agent-1", "agent-2"]);
+    expect(nextState.byWorkspaceId[WS_1].recentlyCreatedAgents).toEqual(["agent-1", "agent-2"]);
+    expect(nextState.byWorkspaceId[WS_1].isWaitingForFirstMessage).toEqual({ "agent-1": true, "agent-2": true });
   });
 
-  it("clears workspaces omitted by a later snapshot while preserving workspace metadata", () => {
-    let state = workspaceAgentsReducer(initialState, setAgents(WS_1, [mockAgent("agent-1")]));
-    state = workspaceAgentsReducer(state, setAgents(WS_2, [mockAgent("agent-2", WS_2)]));
-    state = workspaceAgentsReducer(state, setInitialAgentId(WS_2, "agent-2"));
-    state = workspaceAgentsReducer(state, setAgentsLoaded(WS_2, true));
-    state = workspaceAgentsReducer(state, markAgentRecentlyCreated(WS_2, "agent-2"));
-    state = workspaceAgentsReducer(state, setWaitingForFirstMessage(WS_2, "agent-2", true));
+  it("preserves IPC-added agents when setAgents loads disk agents that don't include them", () => {
+    // 1. Coordinator created and added to state
+    let state = workspaceAgentsReducer(initialState, addAgent(WS_1, mockAgent("coordinator")));
+    // 2. Subagent arrives via IPC (upsertAgentSession)
+    state = workspaceAgentsReducer(state, upsertAgentSession(WS_1, mockAgent("subagent")));
+    expect(state.byWorkspaceId[WS_1].agentIds).toEqual(["coordinator", "subagent"]);
 
-    const nextState = workspaceAgentsReducer(
-      state,
-      replaceWorkspaceAgentSnapshots({
-        [WS_1]: [mockAgent("agent-3")],
-      })
-    );
+    // 3. loadAgentsFromDiskSaga finishes — disk only has coordinator
+    state = workspaceAgentsReducer(state, setAgents(WS_1, [mockAgent("coordinator")]));
 
-    expect(nextState.byWorkspaceId[WS_1].agents).toEqual(asCollection([mockAgent("agent-3")]));
-    expect(nextState.byWorkspaceId[WS_2].agents).toEqual(emptyWorkspaceAgentState.agents);
-    expect(nextState.byWorkspaceId[WS_2]).toEqual({
-      ...emptyWorkspaceAgentState,
-      agentsLoaded: true,
-      initialAgentId: "agent-2",
-    });
+    // subagent must NOT be wiped
+    expect(state.byWorkspaceId[WS_1].agentIds).toEqual(["coordinator", "subagent"]);
+  });
+
+  it("adds new disk-loaded agents not already in agentIds", () => {
+    let state = workspaceAgentsReducer(initialState, addAgent(WS_1, mockAgent("agent-1")));
+
+    // Disk has agent-1 (already known) + agent-2 (new from disk)
+    state = workspaceAgentsReducer(state, setAgents(WS_1, [mockAgent("agent-1"), mockAgent("agent-2")]));
+
+    expect(state.byWorkspaceId[WS_1].agentIds).toEqual(["agent-1", "agent-2"]);
   });
 
   it("stores initial agent config for a workspace", () => {
@@ -292,16 +246,6 @@ describe("workspaceAgentsReducer", () => {
       previousState
     );
   });
-
-  it("clears all agent state for a workspace", () => {
-    let state = workspaceAgentsReducer(initialState, addAgent(WS_1, mockAgent("agent-1")));
-    state = workspaceAgentsReducer(state, addAgent(WS_2, mockAgent("agent-2", WS_2)));
-
-    const nextState = workspaceAgentsReducer(state, clearWorkspaceAgents(WS_1));
-
-    expect(nextState.byWorkspaceId[WS_1]).toBeUndefined();
-    expect(nextState.byWorkspaceId[WS_2].agents).toEqual(asCollection([mockAgent("agent-2", WS_2)]));
-  });
 });
 
 describe("workspace-agents actions", () => {
@@ -319,13 +263,6 @@ describe("workspace-agents actions", () => {
     });
   });
 
-  it("creates a loadAgentsRequested action", () => {
-    expect(loadAgentsRequested(WS_1)).toEqual({
-      type: loadAgentsRequested.type,
-      payload: [WS_1],
-    });
-  });
-
   it("creates an agentsLoaded action", () => {
     expect(agentsLoaded(WS_1)).toEqual({
       type: agentsLoaded.type,
@@ -338,31 +275,24 @@ describe("workspace-agents selectors", () => {
   it("returns empty defaults for a workspace with no agent state", () => {
     const state = mockState();
 
-    expect(selectWorkspaceAgentState.select(state, WS_1)).toEqual(emptyWorkspaceAgentState);
-    expect(selectAllWorkspaceAgentsCollection.select(state, WS_1)).toEqual(emptyWorkspaceAgentState.agents);
-    expect(selectWorkspaceAgentsCollection.select(state, WS_1)).toEqual(emptyWorkspaceAgentState.agents);
     expect(selectAllWorkspaceAgents.select(state, WS_1)).toEqual([]);
     expect(selectForegroundWorkspaceAgents.select(state, WS_1)).toEqual([]);
-    expect(selectWorkspaceAgents.select(state, WS_1)).toEqual([]);
     expect(selectAgentsLoaded.select(state, WS_1)).toBe(false);
     expect(selectIsLoadingAgents.select(state, WS_1)).toBe(false);
     expect(selectInitialAgentId.select(state, WS_1)).toBeNull();
     expect(selectInitialAgentConfigProcessed.select(state, WS_1)).toBe(false);
     expect(selectRecentlyCreatedAgents.select(state, WS_1)).toEqual([]);
-    expect(selectIsAgentRecentlyCreated.select(state, WS_1, "agent-1")).toBe(false);
-    expect(selectWaitingForFirstMessageMap.select(state, WS_1)).toEqual({});
-    expect(selectIsWaitingForFirstMessage.select(state, WS_1, "agent-1")).toBe(false);
     expect(selectInitialAgentConfig.select(state, WS_1)).toBeNull();
   });
 
-  it("returns per-workspace agent values", () => {
+  it("returns per-workspace agent values (sessions from agent-session slice)", () => {
     const foregroundAgent = mockAgent("agent-1");
     const backgroundAgent = {
       ...mockAgent("agent-2"),
       isBackground: true,
     } satisfies AgentSession;
     const workspaceState = {
-      agents: asCollection([foregroundAgent, backgroundAgent]),
+      agentIds: ["agent-1", "agent-2"],
       agentsLoaded: true,
       isLoadingAgents: true,
       initialAgentId: "agent-1",
@@ -375,25 +305,18 @@ describe("workspace-agents selectors", () => {
         timestamp: 1700000000000,
       },
     };
-    const state = mockState({
-      byWorkspaceId: {
-        [WS_1]: workspaceState,
-      },
-    });
+    const state = mockState(
+      { byWorkspaceId: { [WS_1]: workspaceState as any } },
+      [foregroundAgent, backgroundAgent],
+    );
 
-    expect(selectAllWorkspaceAgentsCollection.select(state, WS_1)).toEqual(workspaceState.agents);
-    expect(selectWorkspaceAgentsCollection.select(state, WS_1)).toEqual(workspaceState.agents);
     expect(selectAllWorkspaceAgents.select(state, WS_1)).toEqual([foregroundAgent, backgroundAgent]);
     expect(selectForegroundWorkspaceAgents.select(state, WS_1)).toEqual([foregroundAgent]);
-    expect(selectWorkspaceAgents.select(state, WS_1)).toEqual([foregroundAgent, backgroundAgent]);
     expect(selectAgentsLoaded.select(state, WS_1)).toBe(true);
     expect(selectIsLoadingAgents.select(state, WS_1)).toBe(true);
     expect(selectInitialAgentId.select(state, WS_1)).toBe("agent-1");
     expect(selectInitialAgentConfigProcessed.select(state, WS_1)).toBe(true);
     expect(selectRecentlyCreatedAgents.select(state, WS_1)).toEqual(["agent-1"]);
-    expect(selectIsAgentRecentlyCreated.select(state, WS_1, "agent-1")).toBe(true);
-    expect(selectWaitingForFirstMessageMap.select(state, WS_1)).toEqual({ "agent-1": true });
-    expect(selectIsWaitingForFirstMessage.select(state, WS_1, "agent-1")).toBe(true);
     expect(selectInitialAgentConfig.select(state, WS_1)).toEqual(workspaceState.initialAgentConfig);
   });
 
@@ -407,21 +330,19 @@ describe("workspace-agents selectors", () => {
       ...mockAgent("agent-3"),
       metadata: { isBackground: true } as AgentSession["metadata"],
     } satisfies AgentSession;
-    const state = mockState({
-      byWorkspaceId: {
-        [WS_1]: {
-          ...emptyWorkspaceAgentState,
-          agents: asCollection([foregroundAgent, backgroundAgent, metadataBackgroundAgent]),
+    const state = mockState(
+      {
+        byWorkspaceId: {
+          [WS_1]: {
+            ...emptyWorkspaceAgentState,
+            agentIds: ["agent-1", "agent-2", "agent-3"],
+          },
         },
       },
-    });
+      [foregroundAgent, backgroundAgent, metadataBackgroundAgent],
+    );
 
     expect(selectAllWorkspaceAgents.select(state, WS_1)).toEqual([
-      foregroundAgent,
-      backgroundAgent,
-      metadataBackgroundAgent,
-    ]);
-    expect(selectWorkspaceAgents.select(state, WS_1)).toEqual([
       foregroundAgent,
       backgroundAgent,
       metadataBackgroundAgent,
@@ -454,6 +375,153 @@ describe("workspace-agents selectors", () => {
       const cleared = workspaceAgentsReducer(withConfig, clearInitialAgentConfig(WS_1));
       const state = mockState(cleared);
       expect(selectIsNewlyCreatedWorkspace.select(state, WS_1)).toBe(false);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // New actions for unified-state-store migration
+  // -----------------------------------------------------------------------
+
+  describe("setActiveAgentId", () => {
+    it("sets the active agent for a workspace", () => {
+      const state = workspaceAgentsReducer(initialState, setActiveAgentId(WS_1, "agent-1"));
+      expect(state.byWorkspaceId[WS_1].activeAgentId).toBe("agent-1");
+    });
+
+    it("clears the active agent", () => {
+      let state = workspaceAgentsReducer(initialState, setActiveAgentId(WS_1, "agent-1"));
+      state = workspaceAgentsReducer(state, setActiveAgentId(WS_1, null));
+      expect(state.byWorkspaceId[WS_1].activeAgentId).toBeNull();
+    });
+
+    it("returns same reference when value unchanged", () => {
+      const state = workspaceAgentsReducer(initialState, setActiveAgentId(WS_1, "agent-1"));
+      const next = workspaceAgentsReducer(state, setActiveAgentId(WS_1, "agent-1"));
+      expect(next).toBe(state);
+    });
+  });
+
+  describe("upsertAgentSession", () => {
+    it("adds agent ID when session is new", () => {
+      const agent = mockAgent("agent-1");
+      const state = workspaceAgentsReducer(initialState, upsertAgentSession(WS_1, agent));
+      expect(state.byWorkspaceId[WS_1].agentIds).toContain("agent-1");
+    });
+
+    it("does not duplicate agent ID when session already tracked", () => {
+      let state = workspaceAgentsReducer(initialState, upsertAgentSession(WS_1, mockAgent("agent-1")));
+      const before = state.byWorkspaceId[WS_1].agentIds.length;
+      state = workspaceAgentsReducer(state, upsertAgentSession(WS_1, mockAgent("agent-1")));
+      expect(state.byWorkspaceId[WS_1].agentIds.length).toBe(before);
+    });
+  });
+
+  describe("setInitialSpecWriteInProgress", () => {
+    it("sets and clears the flag", () => {
+      let state = workspaceAgentsReducer(initialState, setInitialSpecWriteInProgress(WS_1, true));
+      expect(selectIsInitialSpecWriteInProgress.select(mockState(state), WS_1)).toBe(true);
+      state = workspaceAgentsReducer(state, setInitialSpecWriteInProgress(WS_1, false));
+      expect(selectIsInitialSpecWriteInProgress.select(mockState(state), WS_1)).toBe(false);
+    });
+  });
+
+  describe("removeWorkspaceAgentState", () => {
+    it("removes entire workspace state entry", () => {
+      let state = workspaceAgentsReducer(initialState, addAgent(WS_1, mockAgent("agent-1")));
+      state = workspaceAgentsReducer(state, removeWorkspaceAgentState(WS_1));
+      expect(state.byWorkspaceId[WS_1]).toBeUndefined();
+    });
+  });
+
+  describe("selectAgentById (reads from agent-session)", () => {
+    it("returns agent from agent-session slice", () => {
+      const agent = mockAgent("agent-1");
+      const state = mockState(
+        { byWorkspaceId: { [WS_1]: { ...emptyWorkspaceAgentState, agentIds: ["agent-1"] } } },
+        [agent],
+      );
+      expect(selectAgentById.select(state, "agent-1")).toEqual(agent);
+    });
+
+    it("returns undefined for unknown agent", () => {
+      const state = mockState();
+      expect(selectAgentById.select(state, "unknown")).toBeUndefined();
+    });
+  });
+
+  describe("selectAgentQueuedMessages (reads from agent-session)", () => {
+    it("returns queued messages from agent-session slice", () => {
+      const queued = [{ id: "q1", content: "hi", queuedAt: "2024-01-01", position: 0 }];
+      const agent = { ...mockAgent("agent-1"), queuedMessages: queued };
+      const state = mockState(
+        { byWorkspaceId: { [WS_1]: { ...emptyWorkspaceAgentState, agentIds: ["agent-1"] } } },
+        [agent],
+      );
+      expect(selectAgentQueuedMessages.select(state, WS_1, "agent-1")).toEqual(queued);
+    });
+
+    it("returns empty array when no session", () => {
+      const state = mockState();
+      expect(selectAgentQueuedMessages.select(state, WS_1, "agent-1")).toEqual([]);
+    });
+  });
+
+  describe("selectActiveAgent (reads from agent-session)", () => {
+    it("returns the active agent session from agent-session slice", () => {
+      const agent = mockAgent("agent-1");
+      const state = mockState(
+        { byWorkspaceId: { [WS_1]: { ...emptyWorkspaceAgentState, agentIds: ["agent-1"], activeAgentId: "agent-1" } } },
+        [agent],
+      );
+      const active = selectActiveAgent.select(state, WS_1);
+      expect(active?.id).toBe("agent-1");
+    });
+
+    it("returns undefined when no active agent", () => {
+      const agent = mockAgent("agent-1");
+      const state = mockState(
+        { byWorkspaceId: { [WS_1]: { ...emptyWorkspaceAgentState, agentIds: ["agent-1"] } } },
+        [agent],
+      );
+      const active = selectActiveAgent.select(state, WS_1);
+      expect(active).toBeUndefined();
+    });
+  });
+
+  describe("setDiskMessageCount", () => {
+    it("stores the disk message count for an agent", () => {
+      const state = workspaceAgentsReducer(initialState, setDiskMessageCount(WS_1, "agent-1", 42));
+      expect(state.byWorkspaceId[WS_1].diskMessageCounts["agent-1"]).toBe(42);
+    });
+
+    it("returns same state when count unchanged", () => {
+      const state = workspaceAgentsReducer(initialState, setDiskMessageCount(WS_1, "agent-1", 10));
+      const next = workspaceAgentsReducer(state, setDiskMessageCount(WS_1, "agent-1", 10));
+      expect(next).toBe(state);
+    });
+  });
+
+  describe("recordAgentCreatedEvent", () => {
+    it("records a timestamp for agent-created deduplication", () => {
+      const ts = 1700000000000;
+      const state = workspaceAgentsReducer(initialState, recordAgentCreatedEvent(WS_1, "agent-1", ts));
+      expect(state.byWorkspaceId[WS_1].recentAgentCreatedEvents["agent-1"]).toBe(ts);
+    });
+  });
+
+  describe("cleanupAgentCreatedEvents", () => {
+    it("removes entries older than cutoff", () => {
+      let state = workspaceAgentsReducer(initialState, recordAgentCreatedEvent(WS_1, "agent-old", 1000));
+      state = workspaceAgentsReducer(state, recordAgentCreatedEvent(WS_1, "agent-new", 5000));
+      state = workspaceAgentsReducer(state, cleanupAgentCreatedEvents(WS_1, 3000));
+      expect(state.byWorkspaceId[WS_1].recentAgentCreatedEvents["agent-old"]).toBeUndefined();
+      expect(state.byWorkspaceId[WS_1].recentAgentCreatedEvents["agent-new"]).toBe(5000);
+    });
+
+    it("returns same state when nothing to clean", () => {
+      const state = workspaceAgentsReducer(initialState, recordAgentCreatedEvent(WS_1, "agent-1", 5000));
+      const next = workspaceAgentsReducer(state, cleanupAgentCreatedEvents(WS_1, 1000));
+      expect(next).toBe(state);
     });
   });
 });

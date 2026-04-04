@@ -16,7 +16,7 @@ type ElectronListenerEventName = ElectronEventName | DynamicElectronEventName;
  * 1. Direct IPC (flat data): `window.webContents.send('event', { field1, field2 })`
  *    - listenSync receives: `{ payload: { field1, field2 } }`
  *
- * 2. WorkspaceEventBus (wrapped): `eventBus.emitEvent({ type: 'event', data: { field1 } })`
+ * 2. Redux event dispatch (wrapped): `dispatch(emitWorkspaceEvent({ type: 'event', data: { field1 } }))`
  *    - listenSync receives: `{ payload: { type: 'event', data: { field1 }, workspaceId, ... } }`
  *
  * This helper normalizes both formats to extract the actual data.
@@ -45,7 +45,7 @@ export function extractEventData<T = any>(event: any, fieldName?: string): T {
   // Previously only checked for 'type' and 'data', which matched stream events like
   // { type: 'content-blocks', data: blocks } — causing misidentification.
   // WorkspaceEvents always have { id, type, timestamp, data, ... } (see WorkspaceEventBase).
-  // Aligns with the same check in unified-event-bus.ts isWorkspaceEvent().
+  // Checks for { id, type, timestamp, data } to distinguish from stream events.
   const isWorkspaceEvent =
     payload &&
     typeof payload === 'object' &&
@@ -77,7 +77,7 @@ export function extractEventData<T = any>(event: any, fieldName?: string): T {
  * Type guard to check if an event payload is a WorkspaceEvent.
  * Checks for id + type + timestamp + data to avoid false positives from stream events
  * that also have 'type' and 'data' (e.g., { type: 'content-blocks', data: blocks }).
- * Aligns with unified-event-bus.ts isWorkspaceEvent().
+ * Checks for { id, type, timestamp, data } to distinguish from stream events.
  */
 export function isWorkspaceEvent(
   payload: any,

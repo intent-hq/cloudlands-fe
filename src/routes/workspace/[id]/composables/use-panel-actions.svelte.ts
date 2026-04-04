@@ -11,23 +11,17 @@ import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { createAgentTypeId } from '$shared/types/agent.types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { createLogger } from '$lib/utils/client-logger';
-import type {
-  UnifiedWorkspaceState,
-  createUnifiedWorkspaceState,
-} from '$features/workspace/workspace-unified-state.svelte';
 import { openTerminalOverlay } from '$lib/store/slices/terminals/terminals-slice';
 import { getDispatch } from '$lib/store/utils/utils';
-
-/** Type alias for the unified workspace state manager */
-export type UnifiedWorkspaceStateManager = ReturnType<typeof createUnifiedWorkspaceState>;
 import type { Workspace } from '$shared/types';
+import type { WorkspacePageState, WorkspacePageStateManager } from './workspace-page-state.svelte';
 
 const logger = createLogger('panel-actions');
 
 export interface UsePanelActionsOptions {
   workspace: () => Workspace | null;
-  workspaceState: () => UnifiedWorkspaceStateManager | null;
-  state: () => UnifiedWorkspaceState | null;
+  workspaceState: () => WorkspacePageStateManager | null;
+  state: () => WorkspacePageState | null;
   agents?: () => Array<{ id: string; name?: string | null }>;
   /**
    * Svelte 5 $state(Set) requires cloning to trigger reactivity.

@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   workspaceSettingsReducer,
   setAutoCommitEnabled,
-  toggleAutoCommit,
   refreshAutoCommitSettings,
   syncWorkspaceSettings,
   loadAutoCommitSettings,
@@ -31,24 +30,6 @@ describe("workspaceSettingsReducer", () => {
         byWorkspaceId: { "ws-1": { autoCommitEnabled: false } },
       };
       const state = workspaceSettingsReducer(disabled, setAutoCommitEnabled("ws-1", true));
-      expect(state.byWorkspaceId["ws-1"]?.autoCommitEnabled).toBe(true);
-    });
-  });
-
-  describe("toggleAutoCommit", () => {
-    it("should toggle autoCommitEnabled from true to false", () => {
-      const withEnabled: WorkspaceSettingsState = {
-        byWorkspaceId: { "ws-1": { autoCommitEnabled: true } },
-      };
-      const state = workspaceSettingsReducer(withEnabled, toggleAutoCommit("ws-1"));
-      expect(state.byWorkspaceId["ws-1"]?.autoCommitEnabled).toBe(false);
-    });
-
-    it("should toggle autoCommitEnabled from false to true", () => {
-      const disabled: WorkspaceSettingsState = {
-        byWorkspaceId: { "ws-1": { autoCommitEnabled: false } },
-      };
-      const state = workspaceSettingsReducer(disabled, toggleAutoCommit("ws-1"));
       expect(state.byWorkspaceId["ws-1"]?.autoCommitEnabled).toBe(true);
     });
   });

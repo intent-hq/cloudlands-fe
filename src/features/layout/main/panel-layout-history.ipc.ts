@@ -10,7 +10,6 @@ import {
   type PanelLayoutHistoryData,
 } from './panel-layout-history.repository';
 import { Logger } from '../../../shared/logger';
-import type { WorkspaceId } from '../../../shared/types';
 import { WorkspaceId as WorkspaceIdFn } from '../../../shared/types/branded-ids';
 import { PANEL_LAYOUT_CHANNELS } from '../../../shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';

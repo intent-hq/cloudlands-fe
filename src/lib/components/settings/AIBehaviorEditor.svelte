@@ -37,7 +37,6 @@
   } from '$lib/store/slices/specialists/specialists-slice';
   import {
     selectActiveProviderId,
-    selectEnabledProviderIds,
   } from '$lib/store/slices/provider-settings/provider-settings-selectors';
   import { setActiveProvider } from '$lib/store/slices/provider-settings/provider-settings-slice';
   import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
@@ -145,7 +144,7 @@
       : undefined,
   );
 
-  // Local state for specialist model selection
+  // Local state for specialist model/coding agent selection
   let specialistCodingAgentValue = $state('');
   let specialistModelValue = $state('');
 

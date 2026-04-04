@@ -8,7 +8,6 @@
 import { AgentTestHarness, TestScenario, TestMetrics, HarnessConfig } from './agent-test-harness';
 import { EventEmitter } from '$shared/utils/event-emitter';
 import * as fs from 'fs/promises';
-import * as path from 'path';
 
 export interface TestSuite {
   name: string;
@@ -104,7 +103,7 @@ export class AgentTestRunner extends EventEmitter {
     };
 
     try {
-      for (const [name, suite] of this.suites) {
+      for (const [, suite] of this.suites) {
         const suiteReport = await this.runSuite(suite);
         report.suites.push(suiteReport);
 

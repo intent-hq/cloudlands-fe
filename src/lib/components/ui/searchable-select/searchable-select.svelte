@@ -32,6 +32,7 @@
     placeholder = 'Select an option',
     searchPlaceholder = 'Search...',
     disabled = false,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     loading = false,
     allowCustom = false,
     onSearch,

@@ -267,67 +267,67 @@ class AgentBackendAdapter implements IAgentBackendService {
   }
 
   // Stub implementations for missing interface methods
-  async updateSession(request: any): Promise<any> {
+  async updateSession(): Promise<any> {
     logger.warn('updateSession not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async exportSession(request: any): Promise<any> {
+  async exportSession(): Promise<any> {
     logger.warn('exportSession not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async importSession(request: any): Promise<any> {
+  async importSession(): Promise<any> {
     logger.warn('importSession not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async getHistory(request: any): Promise<any> {
+  async getHistory(): Promise<any> {
     logger.warn('getHistory not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async updateMetadata(request: any): Promise<any> {
+  async updateMetadata(): Promise<any> {
     logger.warn('updateMetadata not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async forkSession(request: any): Promise<any> {
+  async forkSession(): Promise<any> {
     logger.warn('forkSession not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async mergeSession(request: any): Promise<any> {
+  async mergeSession(): Promise<any> {
     logger.warn('mergeSession not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async getStats(request: any): Promise<any> {
+  async getStats(): Promise<any> {
     logger.warn('getStats not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async validateSession(request: any): Promise<any> {
+  async validateSession(): Promise<any> {
     logger.warn('validateSession not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async repairSession(request: any): Promise<any> {
+  async repairSession(): Promise<any> {
     logger.warn('repairSession not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async clearSession(request: any): Promise<any> {
+  async clearSession(): Promise<any> {
     logger.warn('clearSession not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async pauseSession(request: any): Promise<any> {
+  async pauseSession(): Promise<any> {
     logger.warn('pauseSession not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async getStatus(request: any): Promise<any> {
+  async getStatus(): Promise<any> {
     logger.warn('getStatus not implemented');
     return { success: false, error: 'Not implemented' };
   }
@@ -451,52 +451,52 @@ class AgentBackendAdapter implements IAgentBackendService {
     return result;
   }
 
-  async getContext(request: any): Promise<any> {
+  async getContext(): Promise<any> {
     logger.warn('getContext not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async updateContext(request: any): Promise<any> {
+  async updateContext(): Promise<any> {
     logger.warn('updateContext not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async getContextByWorkspace(request: any): Promise<any> {
+  async getContextByWorkspace(): Promise<any> {
     logger.warn('getContextByWorkspace not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async getContextBySession(request: any): Promise<any> {
+  async getContextBySession(): Promise<any> {
     logger.warn('getContextBySession not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async getCapabilities(request: any): Promise<any> {
+  async getCapabilities(): Promise<any> {
     logger.warn('getCapabilities not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async setCapabilities(request: any): Promise<any> {
+  async setCapabilities(): Promise<any> {
     logger.warn('setCapabilities not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async getMetrics(request: any): Promise<any> {
+  async getMetrics(): Promise<any> {
     logger.warn('getMetrics not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async resetMetrics(request: any): Promise<any> {
+  async resetMetrics(): Promise<any> {
     logger.warn('resetMetrics not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async getLogs(request: any): Promise<any> {
+  async getLogs(): Promise<any> {
     logger.warn('getLogs not implemented');
     return { success: false, error: 'Not implemented' };
   }
 
-  async clearLogs(request: any): Promise<any> {
+  async clearLogs(): Promise<any> {
     logger.warn('clearLogs not implemented');
     return { success: false, error: 'Not implemented' };
   }

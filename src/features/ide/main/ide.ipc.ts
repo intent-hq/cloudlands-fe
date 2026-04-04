@@ -294,7 +294,7 @@ async function openInVSCode(
         success: true,
         error: 'Opened in default application (VSCode not found)',
       };
-    } catch (fallbackError) {
+    } catch  {
       return {
         success: false,
         error:
@@ -574,7 +574,7 @@ export function registerIDEHandlers(): void {
           try {
             unlinkSync(oldFilePath);
             unlinkSync(newFilePath);
-          } catch (e) {
+          } catch  {
             // Ignore cleanup errors
           }
           return {
@@ -627,7 +627,7 @@ export function registerIDEHandlers(): void {
             const { shell } = await import('electron');
             await shell.openExternal(`vscode://file/${filePath}`);
             return { success: true };
-          } catch (fallbackError) {
+          } catch  {
             return {
               success: false,
               error: error instanceof Error ? error.message : 'Unknown error',

@@ -22,7 +22,8 @@ import { Logger } from '../../../shared/logger';
 import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
 import { RemoteRPCError } from '../../../shared/main/remote-rpc-client';
 import type { RemoteRPCClient } from '../../../shared/main/remote-rpc-client';
-import { unifiedEventBus } from '../../events/main/unified-event-bus';
+import { mainDispatch } from '../../../store/main/redux-store-bridge';
+import { gitAuthRequired } from '../../../store/main/slices/git-events/git-events-slice';
 import {
   ChangeLocation,
   DiffHunk,
@@ -193,14 +194,14 @@ export class GitStateManager extends EventEmitter {
               command,
               error: errorMessage,
             });
-            unifiedEventBus.emitDomainEvent('git:auth-required', {
+            mainDispatch(gitAuthRequired({
               workspaceId: this.workspaceId as any,
               operation,
               message: userMessage,
               rawError: stderr || errorMessage,
               command,
               cwd: workingDir,
-            });
+            }));
             throw new Error(userMessage);
           }
 
@@ -239,14 +240,14 @@ export class GitStateManager extends EventEmitter {
         });
 
         // Emit domain event for UI notification
-        unifiedEventBus.emitDomainEvent('git:auth-required', {
+        mainDispatch(gitAuthRequired({
           workspaceId: this.workspaceId as any, // workspaceId is string here, cast for event
           operation,
           message: userMessage,
           rawError: stderr || errorMessage,
           command,
           cwd: workingDir,
-        });
+        }));
 
         // Re-throw with user-friendly message
         throw new Error(userMessage);
@@ -404,7 +405,7 @@ export class GitStateManager extends EventEmitter {
             pullRequests = await githubService.getPullRequests(repoInfo.owner, repoInfo.name);
           }
         }
-      } catch (error) {
+      } catch  {
         // Silently handle - this is expected when GitHub integration isn't configured
         // No need to log as it creates noise in the logs
       }
@@ -760,7 +761,7 @@ export class GitStateManager extends EventEmitter {
         .split('\n')
         .filter((line) => line)
         .map((line, index) => {
-          const [ref, message, sha, date] = line.split('|');
+          const [, message, sha, date] = line.split('|');
           return { index, message, sha, date };
         });
     } catch {

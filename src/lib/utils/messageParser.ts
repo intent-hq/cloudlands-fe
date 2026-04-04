@@ -82,6 +82,7 @@ export interface ParsedContent {
 // Note: Closing fences MUST be line-anchored (start of line) per CommonMark spec
 // to prevent matching fences within string literals or inline content.
 // Separate patterns for backtick vs tilde fences to prevent mismatched fence types.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const SPECIAL_BLOCK_PATTERNS = {
   // XML-style augment_code_snippet with 4+ backticks
   augmentSnippet:
@@ -810,7 +811,6 @@ function processRegularContent(content: string): ParsedContent[] {
     const codeFenceMatch = line.match(/^(\s*)(`{3,}|~{3,})(.*)$/);
     if (codeFenceMatch) {
       flushBlock();
-      const indent = codeFenceMatch[1];
       const openFence = codeFenceMatch[2]; // Full opening fence (e.g., "````" or "~~~")
       const fenceChar = openFence[0]; // Get the fence character (` or ~)
       const openFenceLength = openFence.length; // Number of fence characters
@@ -883,7 +883,6 @@ function mergeConsecutiveTextBlocks(blocks: ParsedContent[]): ParsedContent[] {
 // nested tags like <think> that may appear immediately after the group name.
 // The second alternative (<group:([^<\n]+)\n) handles malformed tags without closing >
 // (e.g., "<group:Prepping\n<think>..." where the model omits the closing bracket).
-const GROUP_TAG_REGEX = /<group:([^>\n<]+)>|<\/group(?::([^>\n<]+))?>/g;
 
 // Combined pattern to find group tags AND think tags in a single pass.
 // Think tags are used by some external providers (e.g., opencode) that embed
@@ -906,98 +905,6 @@ const GROUP_AND_THINK_TAG_REGEX =
  * Handles the streaming case: if the last group_start has no matching group_end,
  * it is marked with `metadata.isStreaming = true`.
  */
-function extractGroupMarkers(blocks: ParsedContent[]): ParsedContent[] {
-  const result: ParsedContent[] = [];
-
-  for (const block of blocks) {
-    // Only process text blocks for group markers
-    if (block.type !== 'text') {
-      result.push(block);
-      continue;
-    }
-
-    const text = block.content;
-    GROUP_TAG_REGEX.lastIndex = 0;
-
-    let lastIndex = 0;
-    let match;
-    let hasGroupTags = false;
-
-    while ((match = GROUP_TAG_REGEX.exec(text)) !== null) {
-      hasGroupTags = true;
-      const matchStart = match.index;
-      const matchEnd = match.index + match[0].length;
-
-      // Add text before this tag (if any)
-      if (matchStart > lastIndex) {
-        const textBefore = text.slice(lastIndex, matchStart).trim();
-        if (textBefore) {
-          result.push({ type: 'text', content: textBefore });
-        }
-      }
-
-      if (match[1] !== undefined) {
-        // This is an open tag: <group:Name>
-        result.push({
-          type: 'group_start',
-          content: '',
-          metadata: { groupName: match[1], isStreaming: false },
-        });
-      } else {
-        // This is a close tag: </group:Name> or </group>
-        result.push({
-          type: 'group_end',
-          content: '',
-          metadata: { groupName: match[2] || undefined },
-        });
-      }
-
-      lastIndex = matchEnd;
-    }
-
-    if (!hasGroupTags) {
-      // No group tags found, keep the block as-is
-      result.push(block);
-    } else {
-      // Add any remaining text after the last tag
-      if (lastIndex < text.length) {
-        const textAfter = text.slice(lastIndex).trim();
-        if (textAfter) {
-          result.push({ type: 'text', content: textAfter });
-        }
-      }
-    }
-  }
-
-  // Streaming detection: if there's a group_start without a matching group_end,
-  // mark the last unmatched group_start with isStreaming = true
-  let openCount = 0;
-  let lastOpenIndex = -1;
-  for (let i = 0; i < result.length; i++) {
-    if (result[i].type === 'group_start') {
-      openCount++;
-      lastOpenIndex = i;
-    } else if (result[i].type === 'group_end') {
-      openCount--;
-    }
-  }
-  if (openCount > 0 && lastOpenIndex >= 0) {
-    // Find all unmatched group_starts (walk backwards)
-    let unmatchedCount = 0;
-    for (let i = result.length - 1; i >= 0; i--) {
-      if (result[i].type === 'group_end') {
-        unmatchedCount--;
-      } else if (result[i].type === 'group_start') {
-        unmatchedCount++;
-        if (unmatchedCount > 0) {
-          result[i].metadata = { ...result[i].metadata, isStreaming: true };
-        }
-      }
-    }
-  }
-
-  return result;
-}
 
 /**
  * Grouped block structure for rendering.
@@ -1463,6 +1370,7 @@ export function extractToolCalls(content: string): Array<{
 
     if (toolResultMatch) {
       const toolName = toolResultMatch[1].trim();
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const success = toolResultMatch[2] === '✅' || !toolResultMatch[2]; // Default to success if no status
 
       if (currentTool && currentTool.name === toolName) {
@@ -1530,6 +1438,7 @@ export function extractToolCalls(content: string): Array<{
       } else {
         // Start of code block
         inCodeBlock = true;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         codeBlockType = line.slice(3).trim();
       }
       continue;

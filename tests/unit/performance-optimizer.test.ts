@@ -7,8 +7,6 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { PerformanceOptimizer } from '../../src/features/agent/services/performance-optimizer';
-import { Worker } from 'worker_threads';
-import * as path from 'path';
 
 // Mock worker_threads
 vi.mock('worker_threads', () => ({
@@ -22,6 +20,7 @@ vi.mock('worker_threads', () => ({
 // Mock logger
 vi.mock('../../src/shared/logger', () => ({
   Logger: class MockLogger {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     constructor(name: string) {}
     info = vi.fn();
     debug = vi.fn();

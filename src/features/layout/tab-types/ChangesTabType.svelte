@@ -9,9 +9,8 @@
   import { untrack } from 'svelte';
   import type { TabTypeComponentProps } from './registry';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
-  import { WorkspaceId } from '$shared/types/branded-ids';
+  import { selectFileTrackingCommits, selectFileTrackingOlderCommits, selectFileTrackingLoading } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import ChatChangesPanel from '$lib/components/chat/ChatChangesPanel.svelte';
   import { Button } from '$lib/components/ui/button';
   import { selectLineWrapping, selectFoldUnchanged, selectDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
@@ -28,14 +27,17 @@
   let { tab, workspaceId, isActive }: TabTypeComponentProps = $props();
 
   const headerContext = getPanelHeaderContext();
-  const workspace = $derived(workspaceStore.findById(WorkspaceId(workspaceId)));
-  const workspacePath = $derived(workspace?.worktreePath || workspace?.repositoryPath || '');
+  const workspace = selectWorkspaceById(workspaceId);
+  const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
 
   // Get commit data from tab
   const commitHash = $derived((tab.data?.commitHash as string) || '');
   const commitMessage = $derived((tab.data?.commitMessage as string) || '');
-  const allCommits = $derived(fileTrackingStore.commits || []);
-  const olderCommits = $derived(fileTrackingStore.olderCommits || []);
+  const ftCommits$ = selectFileTrackingCommits(workspaceId);
+  const ftOlderCommits$ = selectFileTrackingOlderCommits(workspaceId);
+  const ftLoading$ = selectFileTrackingLoading(workspaceId);
+  const allCommits = $derived($ftCommits$ || []);
+  const olderCommits = $derived($ftOlderCommits$ || []);
   const targetCommit = $derived(
     allCommits.find((c) => c.hash === commitHash) ||
       olderCommits.find((c) => c.hash === commitHash),
@@ -182,7 +184,7 @@
 {#key commitHash}
   <ChatChangesPanel
     bind:this={changesPanelRef}
-    isLoading={fileTrackingStore.loading || isFetchingDetails}
+    isLoading={$ftLoading$ || isFetchingDetails}
     {changes}
     commitInfo={{
       hash: commitHash,

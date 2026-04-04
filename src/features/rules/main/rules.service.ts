@@ -117,7 +117,7 @@ export class RulesService {
 
           rules.push(rule);
           rulesStore.set(rule.id, rule);
-        } catch (err) {
+        } catch  {
           // File doesn't exist or can't be read, skip it
           logger.debug(`Rule file not found: ${filePath}`);
         }
@@ -146,7 +146,7 @@ export class RulesService {
             rulesStore.set(rule.id, rule);
           }
         }
-      } catch (err) {
+      } catch  {
         logger.debug('No .augment/config.json found');
       }
 

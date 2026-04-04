@@ -40,6 +40,7 @@
     if (textLength > 200) return 3; // Normal for short text
     return 2; // Smooth for very short text
   };
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const FRAME_DELAY = 16; // ~60fps
 
   // Monitor streaming state and ensure animation continues
@@ -76,6 +77,7 @@
     // FIX: Track actual content changes, not just length
     // For arrays, we need to track the text content of text blocks to detect updates
     // Using a simple hash of text lengths and types to detect changes efficiently
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const _contentDep =
       typeof content === 'string'
         ? content

@@ -8,11 +8,10 @@
  * - Persistence
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { NotesPrimitivesSerializer } from '../../src/features/notes/notes-primitives-serializer';
 import { v4 as uuidv4 } from 'uuid';
 import type {
-  NotePrimitive,
   ReferencePrimitive,
   CliPrimitive,
   AgentActionPrimitive,

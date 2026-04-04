@@ -11,7 +11,7 @@ export interface LinkTooltipState {
   copied: boolean;
 }
 
-export let state = $state<LinkTooltipState>({
+export const state = $state<LinkTooltipState>({
   visible: false,
   url: '',
   x: 0,

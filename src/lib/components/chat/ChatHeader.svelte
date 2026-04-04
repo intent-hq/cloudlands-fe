@@ -19,9 +19,13 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { Badge } from '$lib/components/ui/badge';
   import * as Tooltip from '$lib/components/ui/tooltip';
-  import { SPECIALISTS } from '$lib/constants/specialists';
-  import { selectSpecialists, selectSpecialistById, selectOverridesLoaded, selectEffectiveModel, selectUserOverrides } from '$lib/store/slices/specialists/specialists-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+    selectSpecialists,
+    selectUserOverrides,
+    selectSpecialistById,
+    selectEffectiveModel,
+  } from '$lib/store/slices/specialists/specialists-selectors';
 
   interface Props {
     session: AgentSession | PendingAgentSession | null;
@@ -60,7 +64,6 @@
   // Get effective model for specialist with proper reactivity
   // Access overridesLoaded to establish reactivity - when overrides load, this will re-evaluate
   const specialistEffectiveModel = $derived.by(() => {
-    const _overridesLoaded = selectOverridesLoaded.select(getReduxStore().getState());
     if (!specialistInfo) return '';
     return selectEffectiveModel.select(getReduxStore().getState(), specialistInfo.id);
   });

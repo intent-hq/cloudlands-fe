@@ -42,6 +42,7 @@ describe('Anchor Sanitization', () => {
 
   it('should handle complete anchor deletion scenario', () => {
     // Scenario: User deletes all anchored text
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const htmlBefore =
       '<p>Please <span data-anchor-id="test:start" data-anchor-type="start" data-comment-id="test" style="display:none"></span>add a comment<span data-anchor-id="test:end" data-anchor-type="end" data-comment-id="test" style="display:none"></span> in this sentence</p>';
 

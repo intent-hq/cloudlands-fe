@@ -1,6 +1,4 @@
 import { Marked } from 'marked';
-import { addChoiceBlockSupport } from './tiptap-choice-block-extension';
-import { addTasksBlockSupport } from './tiptap-task-block-extension';
 import { parseTaskBlockContent } from '../../features/notes/utils/task-block-parser';
 
 /**
@@ -261,7 +259,7 @@ export const createTiptapTaskListMarked = () => {
           if (token.tokens && token.tokens.length > 0) {
             try {
               content = this.parser.parse(token.tokens);
-            } catch (e) {
+            } catch {
               content = token.text || '';
             }
           }

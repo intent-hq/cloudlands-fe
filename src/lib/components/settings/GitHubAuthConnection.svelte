@@ -1,9 +1,24 @@
 <script lang="ts">
-  import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+    initializeGitHubAuth,
+    startGitHubAuth,
+    logoutGitHub,
+    checkGitHubAuthStatus,
+  } from '$lib/store/slices/github-auth/github-auth-slice';
+  import {
+    selectGitHubAuthIsAuthenticated,
+    selectGitHubAuthIsAuthenticating,
+    selectGitHubAuthOauthUrl,
+    selectGitHubAuthUser,
+    selectGitHubAuthError,
+    selectGitHubAuthRequiresAugmentAuth,
+  } from '$lib/store/slices/github-auth/github-auth-selectors';
 
   interface Props {
     /** Skip initialization if parent already initialized the store */
@@ -14,16 +29,26 @@
 
   let isDisconnectingGitHub = $state(false);
 
+  const dispatch = getDispatch();
+  const isAuthenticated$ = selectGitHubAuthIsAuthenticated();
+  const isAuthenticating$ = selectGitHubAuthIsAuthenticating();
+  const user$ = selectGitHubAuthUser();
+  const error$ = selectGitHubAuthError();
+  const requiresAugmentAuth$ = selectGitHubAuthRequiresAugmentAuth();
+
   onMount(() => {
     if (!skipInitialize) {
-      githubAuthStore.initialize();
+      dispatch(initializeGitHubAuth());
     }
 
     // Check auth status immediately when window gains focus
     // This makes the UI update snappily when user returns from browser
     const handleFocus = () => {
-      if (githubAuthStore.state.isAuthenticating && githubAuthStore.state.oauthUrl) {
-        githubAuthStore.checkAuthStatus();
+      const state = getReduxStore().getState();
+      const isAuthenticating = selectGitHubAuthIsAuthenticating.select(state);
+      const oauthUrl = selectGitHubAuthOauthUrl.select(state);
+      if (isAuthenticating && oauthUrl) {
+        dispatch(checkGitHubAuthStatus());
       }
     };
 
@@ -33,21 +58,20 @@
     };
   });
 
-  async function handleGitHubConnect() {
-    await githubAuthStore.startAuth();
+  function handleGitHubConnect() {
+    dispatch(startGitHubAuth());
   }
 
-  async function handleGitHubDisconnect() {
+  function handleGitHubDisconnect() {
     isDisconnectingGitHub = true;
-    try {
-      await githubAuthStore.logout();
-    } finally {
-      isDisconnectingGitHub = false;
-    }
+    dispatch(logoutGitHub());
+    // The saga handles the async logout; we just reset local UI state
+    // Use a short delay to let the saga complete
+    setTimeout(() => { isDisconnectingGitHub = false; }, 500);
   }
 
-  async function handleGitHubReconnect() {
-    await githubAuthStore.startAuth();
+  function handleGitHubReconnect() {
+    dispatch(startGitHubAuth());
   }
 </script>
 
@@ -56,11 +80,11 @@
     <div class="flex items-center gap-2">
       <Fa icon={faGithub} class="w-4 h-4 text-ghost" />
       <span class="text-sm text-foreground">GitHub</span>
-      {#if githubAuthStore.state.isAuthenticated}
+      {#if $isAuthenticated$}
         <span class="text-xs text-subtle flex items-center gap-1">
           <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
-          {#if githubAuthStore.state.user}
-            @{githubAuthStore.state.user.login}
+          {#if $user$}
+            @{$user$.login}
           {:else}
             Connected
           {/if}
@@ -70,15 +94,15 @@
     <p class="text-xs text-subtle pl-6">
       Push changes and create pull requests directly from workspaces.
     </p>
-    {#if githubAuthStore.state.error}
-      <p class="text-xs text-destructive-foreground pl-6">{githubAuthStore.state.error}</p>
+    {#if $error$}
+      <p class="text-xs text-destructive-foreground pl-6">{$error$}</p>
     {/if}
   </div>
 
   <div class="flex items-center gap-2 text-xs">
-    {#if githubAuthStore.state.isAuthenticating}
+    {#if $isAuthenticating$}
       <span class="text-subtle">Waiting for authorization...</span>
-    {:else if githubAuthStore.state.isAuthenticated}
+    {:else if $isAuthenticated$}
       <button
         type="button"
         class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
@@ -95,7 +119,7 @@
       >
         {isDisconnectingGitHub ? 'Disconnecting...' : 'Disconnect'}
       </button>
-    {:else if !githubAuthStore.state.requiresAugmentAuth}
+    {:else if !$requiresAugmentAuth$}
       <button
         type="button"
         class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"

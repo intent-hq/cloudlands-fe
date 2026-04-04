@@ -41,12 +41,7 @@ vi.mock('$features/agent/agent.client', () => ({
   },
 }));
 
-vi.mock('$features/agent/browser', () => ({
-  sessionStore: {
-    getSessionForWorkspace: vi.fn(),
-    updateSessionForWorkspace: vi.fn(),
-  },
-}));
+vi.mock('$features/agent/browser', () => ({}));
 
 
 

@@ -1,14 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ChatService } from '../chat.service';
 import { AgentService } from '../../agent.service';
-import { sessionStore } from '../session-store';
 import type { AgentSession } from '../../../shared/types/agent-session';
 import type { Workspace } from '../../../shared/types/workspace.types';
 import { AgentStatus } from '../../../shared/types/agent.types';
 
 // Mock dependencies
 vi.mock('../../agent.service');
-vi.mock('../session-store');
 vi.mock('../../../shared/utils/logger', () => ({
   Logger: vi.fn().mockImplementation(() => ({
     info: vi.fn(),
@@ -46,16 +44,15 @@ describe('Chat Session Resume', () => {
     };
     vi.mocked(AgentService).getInstance = vi.fn().mockReturnValue(mockAgentService);
 
-    // Mock session store
+    // Mock session store (previously used sessionStore, now uses Redux)
     mockSessionStore = {
       getSessionForWorkspace: vi.fn(),
       addSessionForWorkspace: vi.fn(),
       setActiveSessionForWorkspace: vi.fn(),
     };
-    Object.assign(sessionStore, mockSessionStore);
 
     // Create a fresh per-agent ChatService instance for each test
-    chatService = new ChatService('test-agent');
+    chatService = new ChatService();
   });
 
   afterEach(() => {

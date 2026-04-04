@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { AgentMessage } from '$features/agent/agent.service';
+  import type { AgentMessage } from '$features/agent/agent-ipc-bridge';
   import { extractAllContent } from '$shared/types';
   import ChatMessage from './ChatMessage.svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';

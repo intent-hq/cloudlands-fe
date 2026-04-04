@@ -104,7 +104,7 @@ export const DEFAULT_STRATEGIES = {
   } as RecoveryStrategy,
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type EventListenerFn = (...args: any[]) => void;
 
 // Simple browser-compatible event emitter
@@ -122,7 +122,7 @@ class SimpleEventEmitter {
     this.listeners.get(event)?.delete(listener);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   emit(event: string, ...args: any[]): void {
     this.listeners.get(event)?.forEach((listener) => {
       try {

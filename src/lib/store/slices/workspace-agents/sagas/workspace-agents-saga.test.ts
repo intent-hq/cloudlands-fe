@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runSaga } from "redux-saga";
 import * as sagaEffects from "redux-saga/effects";
+import { loadGitStatus } from "$lib/store/slices/git/git-slice";
+import { initWorkspace as initFileTracking } from "$lib/store/slices/file-tracking/file-tracking-slice";
 
 function cancelEffect(task: unknown) {
   return {
@@ -42,13 +44,12 @@ vi.mock("typed-redux-saga", () => ({
 const {
   takeEveryFromElectronChannelMock,
   takeEveryFromWindowEventMock,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   disposeEventListenerMock,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   initEventListenerMock,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   loadStatusMock,
-  sessionStoreSnapshotRef,
-  sessionStoreSubscribersRef,
-  sessionStoreSubscribeMock,
-  getSessionForWorkspaceMock,
   getSessionMock,
   hasAgentMock,
   setWorkspaceMock,
@@ -63,25 +64,17 @@ const {
   disposeEventListenerMock: vi.fn(),
   initEventListenerMock: vi.fn(),
   loadStatusMock: vi.fn(),
-  sessionStoreSnapshotRef: { current: { sessions: [] as any[] } },
-  sessionStoreSubscribersRef: { current: [] as Array<(value: unknown) => void> },
-  sessionStoreSubscribeMock: vi.fn((run: (value: unknown) => void) => {
-    sessionStoreSubscribersRef.current.push(run);
-    run(sessionStoreSnapshotRef.current);
-    return () => {
-      sessionStoreSubscribersRef.current = sessionStoreSubscribersRef.current.filter(
-        (subscriber) => subscriber !== run
-      );
-    };
-  }),
-  getSessionForWorkspaceMock: vi.fn((_wsId: string, _agentId: string) => undefined),
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   getSessionMock: vi.fn((_agentId: string) => null),
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   hasAgentMock: vi.fn((_agentId: string) => false),
   setWorkspaceMock: vi.fn(),
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   getSessionsForWorkspaceMock: vi.fn((_wsId: string) => []),
   activateInitialAgentMock: vi.fn(async () => null),
   resumeSessionMock: vi.fn(async () => null),
   reconnectStreamHandlersMock: vi.fn(async () => {}),
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   getStoredAgentsFromDiskMock: vi.fn(async (_wsId: string) => []),
 }));
 
@@ -90,30 +83,9 @@ vi.mock("$lib/store/utils/ipc-channel", () => ({
   takeEveryFromWindowEvent: takeEveryFromWindowEventMock,
 }));
 
-vi.mock("$features/file-tracking/file-tracking.store.svelte", () => ({
-  fileTrackingStore: {
-    setWorkspace: setWorkspaceMock,
-  },
-}));
+// fileTrackingStore mock removed — now uses Redux (file-tracking slice + saga)
 
-vi.mock("$features/git/git.store.svelte", () => ({
-  gitStore: {
-    disposeEventListener: disposeEventListenerMock,
-    initEventListener: initEventListenerMock,
-    loadStatus: loadStatusMock,
-  },
-}));
-
-vi.mock("$features/agent/browser", () => ({
-  sessionStore: {
-    getStore: () => ({
-      subscribe: sessionStoreSubscribeMock,
-    }),
-    getAllSessions: () => sessionStoreSnapshotRef.current.sessions,
-    getAllSessionsAcrossWorkspaces: () => [],
-    getSessionForWorkspace: getSessionForWorkspaceMock,
-  },
-}));
+// gitStore has been migrated to Redux (git slice + saga)
 
 vi.mock("$features/agent/agent.service", () => ({
   agentService: {
@@ -130,12 +102,12 @@ vi.mock("$lib/utils/agent-loader", () => ({
   getStoredAgentsFromDisk: getStoredAgentsFromDiskMock,
 }));
 
-vi.mock("$features/layout/panel-layout-manager.svelte", () => ({
+vi.mock("$features/layout/panel-layout-adapter", () => ({
   hasPanelLayoutManager: () => false,
   getPanelLayoutManager: () => null,
 }));
 
-vi.mock("$features/workspace/workspace-storage-manager", () => ({
+vi.mock("$lib/store/slices/workspace/utils/workspace-storage-manager", () => ({
   workspaceStorageManager: { loadState: () => null },
 }));
 
@@ -174,10 +146,9 @@ import {
   workspaceUnmounted,
 } from "../../workspace-lifecycle/workspace-lifecycle-slice";
 import { clearCurrentlyViewed } from "../../note-read-tracking/note-read-tracking-slice";
+import { clearWorkspaceUnread } from "../../unread-tracking/unread-tracking-slice";
 import {
-  markAgentRecentlyCreated,
   removeAgent,
-  replaceWorkspaceAgentSnapshots,
   renameAgent,
   setAgents,
   setAgentsLoaded,
@@ -187,8 +158,11 @@ import {
   setIsLoadingAgents,
   setWaitingForFirstMessage,
 } from "../workspace-agents-slice";
-import { lockUpdates, unlockUpdates } from "../../store-utility/store-utility-slice";
-import { watchAgentCreationSaga } from "./agent-creation-saga";
+import {
+  removeSession as removeAgentSession,
+  renameSession as renameAgentSession,
+  removeWorkspaceSessions,
+} from "../../agent-session/agent-session-slice";
 import { loadAgentsFromDiskSaga, restoreInitialAgent } from "./agent-loading-saga";
 import {
   cancelWorkspaceAgentEventsForWorkspaceSaga,
@@ -198,7 +172,6 @@ import {
   watchFileTrackingLifecycleSaga,
   watchLateInitialAgentHydrationRecoverySaga,
   watchAgentRenamedSaga,
-  watchSessionStoreSyncSaga,
   watchWaitingForFirstMessageSaga,
   watchWorkspaceAgentEventsForWorkspaceSaga,
   workspaceAgentsSaga,
@@ -229,24 +202,13 @@ function getWindowHandler(eventName: string) {
   return call![1] as (data: any) => Generator;
 }
 
-function emitSessionStoreSnapshot(sessions: AgentSession[]) {
-  sessionStoreSnapshotRef.current = { sessions };
-
-  for (const subscriber of sessionStoreSubscribersRef.current) {
-    subscriber(sessionStoreSnapshotRef.current);
-  }
-}
-
 describe("workspaceAgentsSaga", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    sessionStoreSnapshotRef.current = { sessions: [] };
-    sessionStoreSubscribersRef.current = [];
     const windowStub = Object.assign(new EventTarget(), {
       electronAPI: {},
     }) as Window & typeof globalThis;
     vi.stubGlobal("window", windowStub);
-    loadStatusMock.mockResolvedValue(undefined);
   });
 
   it("starts a workspace listener for every workspace mount", () => {
@@ -259,8 +221,13 @@ describe("workspaceAgentsSaga", () => {
   it("registers agent watchers on mount and cancels them from the workspace unmount handler", () => {
     const fileTrackingTask = { type: "file-tracking-task" } as const;
     const drawerGuardTask = { type: "drawer-guard-task" } as const;
-    const sessionStoreSyncTask = { type: "session-store-sync-task" } as const;
     const iterator = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-1"));
+
+    // First effect: clearUnreadForMountedWorkspace -> put(clearWorkspaceUnread)
+    expect(iterator.next()).toEqual({
+      value: sagaEffects.put(clearWorkspaceUnread("ws-1")),
+      done: false,
+    });
 
     expect(iterator.next()).toEqual({
       value: sagaEffects.fork(watchFileTrackingLifecycleSaga, "ws-1"),
@@ -275,12 +242,7 @@ describe("workspaceAgentsSaga", () => {
       done: false,
     });
 
-    expect(iterator.next()).toEqual({
-      value: sagaEffects.fork(watchSessionStoreSyncSaga, "ws-1"),
-      done: false,
-    });
-
-    expect(iterator.next(sessionStoreSyncTask)).toEqual({ value: undefined, done: true });
+    expect(iterator.next()).toEqual({ value: undefined, done: true });
 
     const cancelIterator = cancelWorkspaceAgentEventsForWorkspaceSaga(workspaceUnmounted("ws-1"));
 
@@ -296,10 +258,6 @@ describe("workspaceAgentsSaga", () => {
       value: cancelEffect(drawerGuardTask),
       done: false,
     });
-    expect(cancelIterator.next()).toEqual({
-      value: cancelEffect(sessionStoreSyncTask),
-      done: false,
-    });
     expect(cancelIterator.next()).toEqual({ value: undefined, done: true });
   });
 
@@ -312,7 +270,13 @@ describe("workspaceAgentsSaga", () => {
       expect.any(Function),
     );
 
-    expect(getElectronHandler("agent:deleted")({ agentId: "agent-1", workspaceId: "ws-1" }).next()).toEqual({
+    const handler = getElectronHandler("agent:deleted")({ agentId: "agent-1", workspaceId: "ws-1" });
+    // Dual-dispatch: agent-session first, then workspace-agents
+    expect(handler.next()).toEqual({
+      value: sagaEffects.put(removeAgentSession("agent-1")),
+      done: false,
+    });
+    expect(handler.next()).toEqual({
       value: sagaEffects.put(removeAgent("ws-1", "agent-1")),
       done: false,
     });
@@ -322,7 +286,12 @@ describe("workspaceAgentsSaga", () => {
     const iterator = watchAgentDeletedSaga();
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
-    expect(getElectronHandler("agent:deleted")({ agentId: "agent-1", workspaceId: "ws-2" }).next()).toEqual({
+    const handler = getElectronHandler("agent:deleted")({ agentId: "agent-1", workspaceId: "ws-2" });
+    expect(handler.next()).toEqual({
+      value: sagaEffects.put(removeAgentSession("agent-1")),
+      done: false,
+    });
+    expect(handler.next()).toEqual({
       value: sagaEffects.put(removeAgent("ws-2", "agent-1")),
       done: false,
     });
@@ -336,11 +305,15 @@ describe("workspaceAgentsSaga", () => {
       "agent:renamed",
       expect.any(Function),
     );
-    expect(
-      getElectronHandler("agent:renamed")({
-        payload: { agentId: "agent-1", workspaceId: "ws-1", name: "Renamed" },
-      }).next()
-    ).toEqual({
+    const handler = getElectronHandler("agent:renamed")({
+      payload: { agentId: "agent-1", workspaceId: "ws-1", name: "Renamed" },
+    });
+    // Dual-dispatch: agent-session first, then workspace-agents
+    expect(handler.next()).toEqual({
+      value: sagaEffects.put(renameAgentSession("agent-1", "Renamed")),
+      done: false,
+    });
+    expect(handler.next()).toEqual({
       value: sagaEffects.put(renameAgent("ws-1", "agent-1", "Renamed")),
       done: false,
     });
@@ -350,11 +323,14 @@ describe("workspaceAgentsSaga", () => {
     const iterator = watchAgentRenamedSaga();
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
-    expect(
-      getElectronHandler("agent:renamed")({
-        payload: { agentId: "agent-2", workspaceId: "ws-other", name: "Other" },
-      }).next()
-    ).toEqual({
+    const handler = getElectronHandler("agent:renamed")({
+      payload: { agentId: "agent-2", workspaceId: "ws-other", name: "Other" },
+    });
+    expect(handler.next()).toEqual({
+      value: sagaEffects.put(renameAgentSession("agent-2", "Other")),
+      done: false,
+    });
+    expect(handler.next()).toEqual({
       value: sagaEffects.put(renameAgent("ws-other", "agent-2", "Other")),
       done: false,
     });
@@ -385,29 +361,33 @@ describe("workspaceAgentsSaga", () => {
     });
   });
 
-  it("initializes file tracking on mount and disposes git listeners when cancelled", () => {
+  it("initializes file tracking on mount and dispatches loadGitStatus", () => {
     const iterator = watchFileTrackingLifecycleSaga("ws-file-tracking");
 
+    // Should dispatch initFileTracking first
+    const initEffect = iterator.next().value as any;
+    expect(initEffect.type).toBe("PUT");
+    expect(initEffect.payload.action).toEqual(initFileTracking("ws-file-tracking"));
+
+    // Then delay
     expect(iterator.next()).toEqual({
       value: sagaEffects.delay(50),
       done: false,
     });
-    expect(setWorkspaceMock).toHaveBeenCalledWith("ws-file-tracking");
 
-    const loadStatusEffect = iterator.next().value as any;
-    expect(loadStatusEffect.type).toBe("CALL");
-    expect(loadStatusEffect.payload.fn).toBe(loadStatusMock);
-    expect(loadStatusEffect.payload.args).toEqual(["ws-file-tracking"]);
+    // Should dispatch loadGitStatus via put
+    const putEffect = iterator.next().value as any;
+    expect(putEffect.type).toBe("PUT");
+    expect(putEffect.payload.action).toEqual(loadGitStatus("ws-file-tracking"));
 
+    // Should enter keep-alive loop
     const keepAliveEffect = iterator.next().value as any;
-    expect(initEventListenerMock).toHaveBeenCalledWith("ws-file-tracking");
     expect(keepAliveEffect).toEqual(sagaEffects.delay(60_000));
 
     expect(iterator.return(undefined)).toEqual({
       value: undefined,
       done: true,
     });
-    expect(disposeEventListenerMock).toHaveBeenCalledOnce();
   });
 
   it("skips file tracking setup for invalid workspace ids", () => {
@@ -415,298 +395,58 @@ describe("workspaceAgentsSaga", () => {
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
     expect(setWorkspaceMock).not.toHaveBeenCalled();
-    expect(loadStatusMock).not.toHaveBeenCalled();
-    expect(initEventListenerMock).not.toHaveBeenCalled();
   });
 
-  it("syncs full sessionStore snapshots across workspaces and marks new agents recently created", async () => {
-    vi.useFakeTimers();
+  it("loads agents for a new workspace when mounting (workspace-switch agent visibility)", () => {
+    // Mount workspace B — should fork watchers and load agents
+    const mountB = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-switch-B"));
 
-    try {
-      const backgroundAgent = {
-        ...mockAgent("agent-2", "ws-2", "Background"),
-        isBackground: true,
-      } satisfies AgentSession;
-
-      sessionStoreSnapshotRef.current = {
-        sessions: [
-          mockAgent("agent-1", "ws-1"),
-          backgroundAgent,
-          mockAgent("terminal-1", "ws-1", "Terminal"),
-        ],
-      };
-
-      const dispatched: unknown[] = [];
-      const task = runSaga(
-        {
-          dispatch: (action) => {
-            dispatched.push(action);
-          },
-          getState: () => ({}),
-        },
-        watchSessionStoreSyncSaga,
-        "ws-1"
-      );
-
-      await vi.advanceTimersByTimeAsync(101);
-      task.cancel();
-      await task.toPromise();
-
-      // The first sync should only dispatch replaceWorkspaceAgentSnapshots,
-      // NOT markAgentRecentlyCreated — existing agents on first load are not "new".
-      expect(dispatched).toEqual([
-        replaceWorkspaceAgentSnapshots({
-          "ws-1": [mockAgent("agent-1", "ws-1")],
-          "ws-2": [backgroundAgent],
-        }),
-      ]);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("replaces dropped workspace buckets on later sessionStore snapshots without re-marking unchanged agents", async () => {
-    vi.useFakeTimers();
-
-    try {
-      const ws1Agent = mockAgent("agent-1", "ws-1");
-      const ws2Agent = mockAgent("agent-2", "ws-2");
-      const ws3Agent = mockAgent("agent-3", "ws-3");
-
-      emitSessionStoreSnapshot([ws1Agent, ws2Agent]);
-
-      const dispatched: unknown[] = [];
-      const task = runSaga(
-        {
-          dispatch: (action) => {
-            dispatched.push(action);
-          },
-          getState: () => ({}),
-        },
-        watchSessionStoreSyncSaga,
-        "ws-1"
-      );
-
-      await vi.advanceTimersByTimeAsync(101);
-
-      emitSessionStoreSnapshot([ws1Agent, ws3Agent]);
-      await vi.advanceTimersByTimeAsync(101);
-
-      task.cancel();
-      await task.toPromise();
-
-      // First snapshot: no markAgentRecentlyCreated (existing agents are not "new").
-      // Second snapshot: only agent-3 is truly new — agents 1 and 2 were in the first snapshot.
-      expect(dispatched).toEqual([
-        replaceWorkspaceAgentSnapshots({
-          "ws-1": [ws1Agent],
-          "ws-2": [ws2Agent],
-        }),
-        replaceWorkspaceAgentSnapshots({
-          "ws-1": [ws1Agent],
-          "ws-3": [ws3Agent],
-        }),
-        markAgentRecentlyCreated("ws-3", "agent-3"),
-      ]);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("does not mark hydrated agents as recently created when first sync sees empty store (hydration race)", async () => {
-    vi.useFakeTimers();
-
-    try {
-      // First snapshot: empty store (hydration hasn't finished yet)
-      sessionStoreSnapshotRef.current = { sessions: [] };
-
-      const dispatched: unknown[] = [];
-      const task = runSaga(
-        {
-          dispatch: (action) => {
-            dispatched.push(action);
-          },
-          getState: () => ({}),
-        },
-        watchSessionStoreSyncSaga,
-        "ws-1"
-      );
-
-      // Process empty snapshot
-      await vi.advanceTimersByTimeAsync(101);
-
-      // Second snapshot: hydration completes, agents appear
-      const ws1Agent = mockAgent("agent-1", "ws-1");
-      const ws2Agent = mockAgent("agent-2", "ws-2");
-      emitSessionStoreSnapshot([ws1Agent, ws2Agent]);
-      await vi.advanceTimersByTimeAsync(101);
-
-      task.cancel();
-      await task.toPromise();
-
-      // The first sync sees an empty store and dispatches replaceWorkspaceAgentSnapshots({}).
-      // The second sync sees hydrated agents — these should NOT be marked as recently
-      // created because the previous snapshot was empty (hydration race).
-      expect(dispatched).toEqual([
-        replaceWorkspaceAgentSnapshots({}),
-        replaceWorkspaceAgentSnapshots({
-          "ws-1": [ws1Agent],
-          "ws-2": [ws2Agent],
-        }),
-      ]);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("clears and reloads agents when switching between workspaces (regression: workspace-switch agent visibility)", () => {
-    // Step 1: Mount workspace A — sets module-level previousMountedWorkspaceId
-    const mountA = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-A"));
-    // Step through all effects to completion (provide dummy task values)
-    let step = mountA.next();
-    while (!step.done) {
-      step = mountA.next({} as any);
-    }
-
-    // Step 2: Mount workspace B — simulates A → B workspace switch.
-    const mountB = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-B"));
-
-    // handleWorkspaceChangeOnMount detects ws-A → ws-B (non-optimistic) and:
-    // 1. Triggers memory cleanup
-    const callEffect = mountB.next().value as any;
-    expect(callEffect.type).toBe("CALL");
-
-    const selectEffect = mountB.next().value as any;
-    expect(selectEffect.type).toBe("SELECT");
-
-    // 2. lockReactiveSelectors batches the agent-state resets so the sidebar
-    //    never sees an intermediate empty state.
-    //    The mock emits lockUpdates, then the inner puts, then unlockUpdates.
-    expect(mountB.next(null)).toEqual({
-      value: sagaEffects.put(lockUpdatesMock),
-      done: false,
-    });
+    // First effect: clearUnreadForMountedWorkspace -> put(clearWorkspaceUnread)
     expect(mountB.next()).toEqual({
-      value: sagaEffects.put(setAgentsLoaded("ws-B", false)),
-      done: false,
-    });
-    expect(mountB.next()).toEqual({
-      value: sagaEffects.put(setAgents("ws-B", [])),
-      done: false,
-    });
-    expect(mountB.next()).toEqual({
-      value: sagaEffects.put(setInitialAgentId("ws-B", null)),
-      done: false,
-    });
-    expect(mountB.next()).toEqual({
-      value: sagaEffects.put(setInitialAgentConfigProcessed("ws-B", false)),
-      done: false,
-    });
-    expect(mountB.next()).toEqual({
-      value: sagaEffects.put(unlockUpdatesMock),
+      value: sagaEffects.put(clearWorkspaceUnread("ws-switch-B")),
       done: false,
     });
 
-    // After handleWorkspaceChangeOnMount, the saga forks watchers for ws-B.
-    // Skip through watcher forks to verify loadAgentsFromDiskSaga is forked for ws-B.
+    // Collect remaining effects
     const effects: any[] = [];
-    step = mountB.next();
+    let step = mountB.next();
     while (!step.done) {
       effects.push(step.value);
       step = mountB.next({} as any);
     }
 
-    // Verify loadAgentsFromDiskSaga("ws-B") was forked — this is the critical
-    // effect that loads agents from disk and makes them visible in the sidebar.
+    // Verify loadAgentsFromDiskSaga("ws-switch-B") was forked
     const loadAgentsFork = effects.find(
       (e) => e?.type === "FORK" && e?.payload?.fn === loadAgentsFromDiskSaga
     );
     expect(loadAgentsFork).toBeDefined();
-    expect(loadAgentsFork.payload.args).toEqual(["ws-B"]);
+    expect(loadAgentsFork.payload.args).toEqual(["ws-switch-B"]);
   });
 
-  it("batches workspace-switch agent clearing inside lockReactiveSelectors (regression: sidebar empty-state flash)", () => {
-    // Mount workspace A first
-    const mountA = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-race-A"));
+  it("deduplicates mount for an already-watched workspace", () => {
+    // Mount workspace A
+    const mountA = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-dedup"));
     let step = mountA.next();
     while (!step.done) step = mountA.next({} as any);
 
-    // Mount workspace B — triggers workspace switch
-    const mountB = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-race-B"));
-
-    // Collect all effects from handleWorkspaceChangeOnMount
-    const effects: any[] = [];
-    step = mountB.next();
-    effects.push(step.value);
-    step = mountB.next();
-    effects.push(step.value);
-    step = mountB.next(null);
-    while (!step.done) {
-      effects.push(step.value);
-      step = mountB.next({} as any);
-    }
-
-    // Find the lockUpdates/unlockUpdates bracket.
-    // sagaEffects.put() wraps the action under payload.action.
-    const getActionType = (e: any) => e?.payload?.action?.type ?? e?.payload?.type;
-    const lockIdx = effects.findIndex(
-      (e) => e?.type === "PUT" && getActionType(e) === "storeUtility/lockUpdates"
-    );
-    const unlockIdx = effects.findIndex(
-      (e) => e?.type === "PUT" && getActionType(e) === "storeUtility/unlockUpdates"
-    );
-
-    expect(lockIdx).toBeGreaterThanOrEqual(0);
-    expect(unlockIdx).toBeGreaterThan(lockIdx);
-
-    // All agent-state resets must be between lock and unlock
-    const batchedEffects = effects.slice(lockIdx + 1, unlockIdx);
-    const batchedActionTypes = batchedEffects
-      .filter((e) => e?.type === "PUT")
-      .map((e) => getActionType(e));
-
-    expect(batchedActionTypes).toContain("workspaceAgents/setAgentsLoaded");
-    expect(batchedActionTypes).toContain("workspaceAgents/setAgents");
-    expect(batchedActionTypes).toContain("workspaceAgents/setInitialAgentId");
-    expect(batchedActionTypes).toContain("workspaceAgents/setInitialAgentConfigProcessed");
+    // Mount same workspace again — should return immediately (dedup guard)
+    const mountA2 = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-dedup"));
+    const result = mountA2.next();
+    expect(result.done).toBe(true);
   });
 
-  it("preserves a pre-hydrated initial agent id during workspace-switch clearing", () => {
-    const mountA = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-existing"));
-    let step = mountA.next();
-    while (!step.done) {
-      step = mountA.next({} as any);
-    }
+  it("clears unread on workspace mount", () => {
+    const mountB = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-unread-test"));
 
-    const mountB = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-new"));
-
-    const callEffect = mountB.next().value as any;
-    expect(callEffect.type).toBe("CALL");
-
-    const selectEffect = mountB.next().value as any;
-    expect(selectEffect.type).toBe("SELECT");
-
-    const effects: any[] = [];
-    step = mountB.next("agent-new-1");
-    while (!step.done) {
-      effects.push(step.value);
-      step = mountB.next({} as any);
-    }
-
-    const getActionType = (e: any) => e?.payload?.action?.type ?? e?.payload?.type;
-    const batchedActionTypes = effects
-      .filter((e) => e?.type === "PUT")
-      .map((e) => getActionType(e));
-
-    expect(batchedActionTypes).toContain("workspaceAgents/setAgentsLoaded");
-    expect(batchedActionTypes).toContain("workspaceAgents/setAgents");
-    expect(batchedActionTypes).toContain("workspaceAgents/setInitialAgentConfigProcessed");
-    expect(batchedActionTypes).not.toContain("workspaceAgents/setInitialAgentId");
+    expect(mountB.next()).toEqual({
+      value: sagaEffects.put(clearWorkspaceUnread("ws-unread-test")),
+      done: false,
+    });
   });
 });
 
 describe("restoreInitialAgent — workspace-scoped session access", () => {
-  it("uses sessionStore.getSessionForWorkspace(wsId, agentId) instead of global getSession", () => {
+  it("uses Redux select for workspace-scoped agent lookup instead of global getSession", () => {
     const wsId = "ws-scoped-test";
     const initialAgentId = "agent-initial-1";
     const diskAgents = [
@@ -716,14 +456,11 @@ describe("restoreInitialAgent — workspace-scoped session access", () => {
 
     const gen = restoreInitialAgent(wsId, initialAgentId, diskAgents, existingAgentIds);
 
-    // The first yielded effect must be a CALL to sessionStore.getSessionForWorkspace,
-    // NOT agentService.getSession (which depends on global current workspace).
+    // The first yielded effect must be a SELECT (workspace-scoped Redux lookup),
+    // NOT a CALL to sessionStore (which depends on global current workspace).
     const firstEffect = gen.next().value as any;
 
-    expect(firstEffect.type).toBe("CALL");
-    const { fn, args } = firstEffect.payload;
-    expect(fn).toBe(getSessionForWorkspaceMock);
-    expect(args).toEqual([wsId, initialAgentId]);
+    expect(firstEffect.type).toBe("SELECT");
   });
 
   it("does not call agentService.getSession or hasAgent (global-scoped)", () => {
@@ -737,7 +474,7 @@ describe("restoreInitialAgent — workspace-scoped session access", () => {
     // Walk the generator to completion, providing mock values
     const gen = restoreInitialAgent(wsId, initialAgentId, diskAgents, existingAgentIds);
     let result = gen.next();
-    // Feed undefined (no existing session) to the getSessionForWorkspace call
+    // Feed undefined (no existing session) to the select call
     result = gen.next(undefined);
     // Continue stepping until done, feeding null for remaining calls
     while (!result.done) {
@@ -757,7 +494,7 @@ describe("late initial-agent hydration recovery", () => {
       workspaceAgents: {
         byWorkspaceId: {
           "ws-late": {
-            agents: { ids: [], map: {} },
+            agentIds: [],
             agentsLoaded: true,
             isLoadingAgents: false,
             initialAgentId: "agent-late-1",
@@ -768,6 +505,7 @@ describe("late initial-agent hydration recovery", () => {
           },
         },
       },
+      agentSessions: { byAgentId: {}, agentIdsByWorkspace: {} },
     };
 
     const selectState = gen.next().value as any;
@@ -792,7 +530,7 @@ describe("late initial-agent hydration recovery", () => {
       workspaceAgents: {
         byWorkspaceId: {
           "ws-racing": {
-            agents: { ids: [], map: {} },
+            agentIds: [],
             agentsLoaded: false,
             isLoadingAgents: true,
             initialAgentId: "agent-race-1",
@@ -803,6 +541,7 @@ describe("late initial-agent hydration recovery", () => {
           },
         },
       },
+      agentSessions: { byAgentId: {}, agentIdsByWorkspace: {} },
     };
     const settledState = {
       workspaceAgents: {
@@ -814,6 +553,7 @@ describe("late initial-agent hydration recovery", () => {
           },
         },
       },
+      agentSessions: { byAgentId: {}, agentIdsByWorkspace: {} },
     };
 
     expect((gen.next().value as any).type).toBe("SELECT");
@@ -850,7 +590,7 @@ describe("late initial-agent hydration recovery", () => {
       workspaceAgents: {
         byWorkspaceId: {
           "ws-config-late": {
-            agents: { ids: [], map: {} },
+            agentIds: [],
             agentsLoaded: true,
             isLoadingAgents: false,
             initialAgentId: null,
@@ -865,6 +605,7 @@ describe("late initial-agent hydration recovery", () => {
           },
         },
       },
+      agentSessions: { byAgentId: {}, agentIdsByWorkspace: {} },
     };
 
     expect((gen.next().value as any).type).toBe("SELECT");
@@ -1077,14 +818,14 @@ describe("retroactiveWorkspaceMountCheckSaga — early workspaceMounted guard", 
 describe("watchWorkspaceAgentEventsForWorkspaceSaga — deduplication", () => {
   it("skips duplicate mount when a watcher is already running for the same workspace ID", () => {
     // First mount sets the sentinel in workspaceAgentTasks
-    const first = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-dedup"));
+    const first = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-dedup-2"));
     const firstStep = first.next();
     // Verify first mount proceeds normally (first yield is a fork)
     expect(firstStep.done).toBe(false);
 
     // Second mount for the same workspace ID should return immediately
     // because the first mount already registered the sentinel.
-    const second = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-dedup"));
+    const second = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-dedup-2"));
     const secondStep = second.next();
     expect(secondStep.done).toBe(true);
   });

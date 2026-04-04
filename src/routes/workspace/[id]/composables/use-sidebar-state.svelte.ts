@@ -6,27 +6,28 @@
  */
 
 import { untrack } from 'svelte';
-import { queryEvents, onEventCreated } from '$features/events/events.client';
-import { getDeduplicationService } from '$features/events/event-deduplication.service';
 import { handleLink } from '$features/navigation/link-handler';
-import { notesStateManager } from '$features/notes/notes.store.svelte';
-import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
-import { WorkspaceId, NoteId } from '$shared/types/branded-ids';
+import { selectCurrentStagedWorkingChanges, selectCurrentUnstagedWorkingChanges } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+import { selectAllNotes, selectNotesLoading } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+import { initializeNotes } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+import { dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
+import {
+  stageByPathRequested,
+  unstageByPathRequested,
+  revertChangeRequested,
+} from '$lib/store/slices/file-tracking/file-tracking-slice';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { WorkspaceId } from '$shared/types/branded-ids';
+import { selectWorkspaceEvents } from '$lib/store/slices/workspace-events/workspace-events-selectors';
 import type { WorkspaceEvent } from '$features/events/types';
 import type { TrackedChange } from '$features/file-tracking/types';
-import type { Workspace } from '$shared/types';
-import type {
-  UnifiedWorkspaceState,
-  createUnifiedWorkspaceState,
-} from '$features/workspace/workspace-unified-state.svelte';
-
-/** Type alias for the unified workspace state manager */
-export type UnifiedWorkspaceStateManager = ReturnType<typeof createUnifiedWorkspaceState>;
+import type { Note, Workspace } from '$shared/types';
+import type { WorkspacePageState, WorkspacePageStateManager } from './workspace-page-state.svelte';
 
 export interface UseSidebarStateOptions {
   workspace: Workspace | null;
-  workspaceState: UnifiedWorkspaceStateManager | null;
-  state: UnifiedWorkspaceState | null;
+  workspaceState: WorkspacePageStateManager | null;
+  state: WorkspacePageState | null;
 }
 
 export function useSidebarState(options: UseSidebarStateOptions) {
@@ -36,16 +37,44 @@ export function useSidebarState(options: UseSidebarStateOptions) {
   // Activity events for the sidebar preview
   let recentActivityEvents: WorkspaceEvent[] = $state([]);
 
-  // Derived values for sidebar data
-  const sidebarNotes = $derived.by(() => {
-    const notesMap = notesStateManager.notes;
-    return notesMap ? Array.from(notesMap.values()) : [];
+  // Subscribe to notes from Redux store
+  // (can't use $store syntax in .svelte.ts files)
+  const reduxStore = getReduxStore();
+  let _sidebarNotes = $state<Note[]>([]);
+  let _sidebarNotesLoading = $state(false);
+  $effect(() => {
+    const wsId = options.workspace?.id;
+    if (!wsId) {
+      _sidebarNotes = [];
+      _sidebarNotesLoading = false;
+      return;
+    }
+    const notesStore = selectAllNotes.withStore(reduxStore)(wsId);
+    const loadingStore = selectNotesLoading.withStore(reduxStore)(wsId);
+    const unsub1 = notesStore.subscribe((value) => { _sidebarNotes = value; });
+    const unsub2 = loadingStore.subscribe((value) => { _sidebarNotesLoading = value; });
+    return () => { unsub1(); unsub2(); };
   });
+  const sidebarNotes = $derived(_sidebarNotes);
+  const sidebarNotesLoading = $derived(_sidebarNotesLoading);
 
-  const sidebarNotesLoading = $derived(notesStateManager.loading);
-
-  const sidebarUnstagedChanges = $derived(fileTrackingStore.workingChanges.unstaged);
-  const sidebarStagedChanges = $derived(fileTrackingStore.workingChanges.staged);
+  // Subscribe to working changes from Redux
+  // (can't use $store syntax in .svelte.ts files)
+  const ftStagedChanges$ = selectCurrentStagedWorkingChanges();
+  const ftUnstagedChanges$ = selectCurrentUnstagedWorkingChanges();
+  let _sidebarStagedChanges = $state<TrackedChange[]>(selectCurrentStagedWorkingChanges.select(getReduxStore().getState()));
+  let _sidebarUnstagedChanges = $state<TrackedChange[]>(selectCurrentUnstagedWorkingChanges.select(getReduxStore().getState()));
+  $effect(() => {
+    const unsub1 = ftStagedChanges$.subscribe((value) => {
+      _sidebarStagedChanges = value;
+    });
+    const unsub2 = ftUnstagedChanges$.subscribe((value) => {
+      _sidebarUnstagedChanges = value;
+    });
+    return () => { unsub1(); unsub2(); };
+  });
+  const sidebarUnstagedChanges = $derived(_sidebarUnstagedChanges);
+  const sidebarStagedChanges = $derived(_sidebarStagedChanges);
 
   // Get unique file paths from changes
   const sidebarFiles = $derived.by(() => {
@@ -61,49 +90,30 @@ export function useSidebarState(options: UseSidebarStateOptions) {
     return Array.from(fileSet).sort();
   });
 
-  // Load recent activity events when workspace is ready
+  // Load recent activity events from Redux store
   $effect(() => {
     const workspace = options.workspace;
-    const deduplicationService = getDeduplicationService();
-    if (workspace?.id && useSleekSidebar) {
-      // Load initial events
-      queryEvents(workspace.id, [], 10).then((events) => {
-        // Track all initial events in deduplication service
-        events.forEach((event) => deduplicationService.trackEvent(event));
-        recentActivityEvents = events;
-      });
-
-      // Subscribe to new events
-      const unsubscribe = onEventCreated(({ workspaceId, event }) => {
-        if (workspaceId === workspace?.id) {
-          // Check for duplicates before adding (content-based)
-          if (deduplicationService.isDuplicate(event)) return;
-          // Also check for duplicate event IDs to prevent {#each} key errors
-          if (recentActivityEvents.some((e) => e.id === event.id)) return;
-          // Add new event at the start and keep only 10 most recent
-          recentActivityEvents = [event, ...recentActivityEvents].slice(0, 10);
-        }
-      });
-
-      return () => {
-        unsubscribe();
-      };
-    }
+    if (!workspace?.id || !useSleekSidebar) return;
+    const allEvents = selectWorkspaceEvents.select(getReduxStore().getState(), workspace.id);
+    // Take the 10 most recent events (events are stored oldest-first, so slice from end)
+    recentActivityEvents = allEvents.slice(-10).reverse();
   });
 
   // Initialize notes store when workspace is ready (needed for sidebar)
+  let lastInitializedWorkspaceId: string | null = null;
   $effect(() => {
     const workspace = options.workspace;
     const state = options.state;
     if (workspace?.id && useSleekSidebar) {
       // Initialize if not already initialized for this workspace
-      if (notesStateManager.workspaceId !== workspace.id) {
+      if (lastInitializedWorkspaceId !== workspace.id) {
+        lastInitializedWorkspaceId = workspace.id;
         // Capture the selected note ID without creating a reactive dependency
         const selectedNoteId = untrack(() => state?.mainPanel.selectedNoteId);
-        notesStateManager.initialize(
-          WorkspaceId(workspace.id),
-          selectedNoteId ? NoteId(selectedNoteId) : undefined,
-        );
+        reduxDispatch(initializeNotes(
+          workspace.id,
+          selectedNoteId ?? undefined,
+        ));
       }
     }
   });
@@ -127,15 +137,17 @@ export function useSidebarState(options: UseSidebarStateOptions) {
 
   async function handleStageChange(change: TrackedChange) {
     const filePath = change.relativePath || change.file;
-    if (filePath) {
-      await fileTrackingStore.stageByPath([filePath]);
+    const wsId = getReduxStore().getState().workspace.activeWorkspaceId;
+    if (filePath && wsId) {
+      getReduxStore().dispatch(stageByPathRequested(wsId, [filePath]));
     }
   }
 
   async function handleUnstageChange(change: TrackedChange) {
     const filePath = change.relativePath || change.file;
-    if (filePath) {
-      await fileTrackingStore.unstageByPath([filePath]);
+    const wsId = getReduxStore().getState().workspace.activeWorkspaceId;
+    if (filePath && wsId) {
+      getReduxStore().dispatch(unstageByPathRequested(wsId, [filePath]));
     }
   }
 
@@ -144,11 +156,10 @@ export function useSidebarState(options: UseSidebarStateOptions) {
     // Use optimistic revert - UI updates immediately, toast shows right away
     toast.warning('Changes reverted');
 
-    const result = await fileTrackingStore.revertChange(change);
-    if (!result.ok) {
-      // Show error toast - the UI will have already rolled back
-      toast.error('Failed to revert changes');
-    }
+    const wsId = getReduxStore().getState().workspace.activeWorkspaceId;
+    if (!wsId) return;
+    // Dispatch revert action - saga handles optimistic update + rollback on failure
+    getReduxStore().dispatch(revertChangeRequested(wsId, change));
   }
 
   function handleOpenPR(url: string) {

@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { MentionSystem } from '../../src/lib/services/mentions/mention-system';
-import type { SearchContext, MentionCandidate } from '../../src/lib/services/mentions/types';
+import type { SearchContext } from '../../src/lib/services/mentions/types';
 
 // Mock the search service
 vi.mock('../../src/lib/services/mentions/search-service', () => ({

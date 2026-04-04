@@ -8,7 +8,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { Logger } from '../../../shared/logger';
-import { unifiedEventBus, type UnifiedEventBus } from '../../events/main/unified-event-bus';
+
 import { attributeLines, type LineAttribution } from '../line-attribution';
 import type { WorkspaceId, NoteId, Note } from '../../../shared/types';
 import { WorkspaceConfig } from '../../../shared/main/config';
@@ -33,12 +33,11 @@ interface AttributionDebugOutput {
 
 export class LineAttributionDebugService {
   private isEnabled = false;
-  private listener?: (event: any) => void;
 
-  constructor(private readonly eventBus: UnifiedEventBus = unifiedEventBus) {}
+  constructor() {}
 
   /**
-   * Enable debug mode - starts listening to note updates
+   * Enable debug mode - note:updated events are handled by sagas.
    */
   enable(): void {
     if (this.isEnabled) {
@@ -47,29 +46,26 @@ export class LineAttributionDebugService {
     }
 
     this.isEnabled = true;
-
-    // Create listener function
-    this.listener = async (event: any) => {
-      try {
-        const { workspaceId, noteId } = event;
-        if (!workspaceId || !noteId) {
-          return;
-        }
-
-        await this.runAttribution(workspaceId, noteId);
-      } catch (error) {
-        logger.error('Failed to run attribution debug', error as Error);
-      }
-    };
-
-    // Listen for note updates
-    this.eventBus.onDomainEvent('note:updated', this.listener);
-
-    logger.info('Line attribution debug service enabled');
+    logger.info('Line attribution debug service enabled (listeners via sagas)');
   }
 
   /**
-   * Disable debug mode - stops listening
+   * Handle note:updated domain event (called by saga).
+   * Only processes when enabled.
+   */
+  public async handleNoteUpdated(event: { workspaceId?: string; noteId?: string }): Promise<void> {
+    if (!this.isEnabled) return;
+    try {
+      const { workspaceId, noteId } = event;
+      if (!workspaceId || !noteId) return;
+      await this.runAttribution(workspaceId as WorkspaceId, noteId as NoteId);
+    } catch (error) {
+      logger.error('Failed to run attribution debug', error as Error);
+    }
+  }
+
+  /**
+   * Disable debug mode
    */
   disable(): void {
     if (!this.isEnabled) {
@@ -77,11 +73,7 @@ export class LineAttributionDebugService {
     }
 
     this.isEnabled = false;
-    if (this.listener) {
-      this.eventBus.offDomainEvent('note:updated', this.listener);
-      this.listener = undefined;
-    }
-
+    // note:updated listener cleanup is no longer needed (handled by sagas)
     logger.info('Line attribution debug service disabled');
   }
 

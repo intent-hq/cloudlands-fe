@@ -1,7 +1,7 @@
 import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentSession } from '$shared/types';
-import { unifiedStateStore } from '$features/agent/services/unified-state-store';
-import { WorkspaceId as WorkspaceIdFn, AgentId as AgentIdFn } from '$shared/types/branded-ids';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
 
 /**
  * Avatar display states for AugieAvatarWithState component
@@ -118,7 +118,7 @@ export function getAvatarStateForSession(
 }
 
 /**
- * Get avatar state by looking up the agent in the unified state store.
+ * Get avatar state by looking up the agent in the Redux store.
  * This checks the store's streaming state directly for the most accurate real-time state.
  */
 export function getAvatarStateFromStore(
@@ -126,36 +126,26 @@ export function getAvatarStateFromStore(
   agentId: string,
   options: AvatarStateOptions = {},
 ): AvatarState {
-  const workspace = unifiedStateStore.getWorkspace(WorkspaceIdFn(workspaceId));
-  if (!workspace) {
+  const session = selectAgentById.select(getReduxStore().getState(), agentId);
+  if (!session) {
     return 'idle';
   }
-
-  const agentState = workspace.agents.get(AgentIdFn(agentId));
-  if (!agentState) {
-    return 'idle';
-  }
-
-  const session = agentState.session;
-  const isStreaming = agentState.streaming?.active ?? false;
 
   return getAvatarState(
     {
-      isStreaming,
-      isProcessing: session?.isProcessing,
-      isResponding: session?.isResponding,
-      status: session?.status,
+      isStreaming: session.isStreaming,
+      isProcessing: session.isProcessing,
+      isResponding: session.isResponding,
+      status: session.status,
     },
     options,
   );
 }
 
 /**
- * Check if an agent is streaming by looking up in the unified state store.
+ * Check if an agent is streaming by looking up in the Redux store.
  */
 export function isAgentStreamingFromStore(workspaceId: string, agentId: string): boolean {
-  const workspace = unifiedStateStore.getWorkspace(WorkspaceIdFn(workspaceId));
-  if (!workspace) return false;
-  const agentState = workspace.agents.get(AgentIdFn(agentId));
-  return agentState?.streaming?.active ?? false;
+  const session = selectAgentById.select(getReduxStore().getState(), agentId);
+  return session?.isStreaming ?? false;
 }

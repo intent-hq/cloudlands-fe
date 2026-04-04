@@ -6,7 +6,7 @@ vi.mock('$lib/utils/workspaces-link-handler', () => ({
   handleIntentLink: vi.fn().mockResolvedValue(true),
 }));
 
-vi.mock('$features/layout/panel-layout-manager.svelte', () => ({
+vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: vi.fn().mockReturnValue({
     openBrowserPanel: vi.fn(),
   }),

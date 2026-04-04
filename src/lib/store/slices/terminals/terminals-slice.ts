@@ -6,7 +6,6 @@ import {
   removeItem,
   updateItem,
   getItem,
-  getItems,
   getItemIndex,
   type Collection,
 } from "../../utils/collection-utils";
@@ -124,14 +123,6 @@ export const renameTerminal = createAction<[wsId: string, termId: string, newNam
   "terminals/renameTerminal"
 );
 
-export const updateTerminalName = createAction<[wsId: string, termId: string, name: string]>(
-  "terminals/updateTerminalName"
-);
-
-export const syncTerminals = createAction<[wsId: string, terminalList: Array<{ id: string; name?: string; title?: string }>]>(
-  "terminals/syncTerminals"
-);
-
 /** Load workspace terminals data (dispatched by sagas after loading from storage) */
 export const loadWorkspaceTerminals = createAction<[
   wsId: string,
@@ -142,11 +133,6 @@ export const loadWorkspaceTerminals = createAction<[
 /** Hydrate height from localStorage (dispatched by init saga) */
 export const hydrateHeight = createAction<[height: number]>(
   "terminals/hydrateHeight"
-);
-
-/** Hydrate custom names from localStorage */
-export const hydrateCustomNames = createAction<[wsId: string, names: Record<string, string>]>(
-  "terminals/hydrateCustomNames"
 );
 
 export const createTerminalRequested = createAction<[wsId: string]>(
@@ -169,13 +155,7 @@ export const markTerminalRecentlyCreated = createAction<[wsId: string, terminalI
   "terminals/markTerminalRecentlyCreated"
 );
 
-export const clearRecentlyCreatedTerminal = createAction<[wsId: string, terminalId: string]>(
-  "terminals/clearRecentlyCreatedTerminal"
-);
 
-export const clearWorkspaceTerminals = createAction<[wsId: string]>(
-  "terminals/clearWorkspaceTerminals"
-);
 
 // ============================================================================
 // Reducer helpers
@@ -213,7 +193,7 @@ function addTerminalIfMissing(terminals: Collection<TerminalTab, "id">, termId: 
 export const terminalsReducer = createReducer<TerminalOverlayState>(initialState)
   .with(openTerminalOverlay, (state, { payload: [wsId, termId] }) => {
     const ws = getWs(state, wsId);
-    let newWs = { ...ws };
+    const newWs = { ...ws };
 
     if (termId) {
       newWs.terminals = addTerminalIfMissing(ws.terminals, termId);
@@ -238,7 +218,7 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
       return setWs(state, wsId, { ...ws, isOpen: false });
     }
     // Delegate to open logic
-    let newWs = { ...ws };
+    const newWs = { ...ws };
     if (termId) {
       newWs.terminals = addTerminalIfMissing(ws.terminals, termId);
       newWs.activeTerminalId = termId;
@@ -303,34 +283,6 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
       terminals: updateItem(ws.terminals, { id: termId, customName: trimmedName }),
     });
   })
-  .with(updateTerminalName, (state, { payload: [wsId, termId, name] }) => {
-    const ws = getWs(state, wsId);
-    if (!getItem(ws.terminals, termId)) return state;
-    return setWs(state, wsId, {
-      ...ws,
-      terminals: updateItem(ws.terminals, { id: termId, name }),
-    });
-  })
-  .with(syncTerminals, (state, { payload: [wsId, terminalList] }) => {
-    const ws = getWs(state, wsId);
-    const newTerminalItems: TerminalTab[] = terminalList.map((t) => ({
-      id: t.id,
-      name: t.name || t.title || getTerminalName(t.id),
-      customName: getItem(ws.terminals, t.id)?.customName,
-    }));
-    const newTerminals = createCollection<TerminalTab, "id">("id", newTerminalItems);
-
-    let newActiveId = ws.activeTerminalId;
-    if (newActiveId && !getItem(newTerminals, newActiveId)) {
-      newActiveId = newTerminals.ids.length > 0 ? newTerminals.ids[0] : null;
-    }
-
-    // Close the panel when all terminals are gone — same invariant
-    // as removeTerminal: isOpen requires activeTerminalId to render.
-    const isOpen = newTerminals.ids.length > 0 ? ws.isOpen : false;
-
-    return setWs(state, wsId, { ...ws, terminals: newTerminals, activeTerminalId: newActiveId, isOpen });
-  })
   .with(loadWorkspaceTerminals, (state, { payload: [wsId, terminals, savedState] }) => {
     const collection = createCollection<TerminalTab, "id">("id", terminals);
     let wsState: WorkspaceTerminalState;
@@ -372,22 +324,6 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
     if (height < MIN_HEIGHT || height > MAX_HEIGHT) return state;
     return { ...state, height };
   })
-  .with(hydrateCustomNames, (state, { payload: [wsId, names] }) => {
-    const ws = getWs(state, wsId);
-    if (ws.terminals.ids.length === 0) return state;
-
-    let updated = ws.terminals;
-    for (const id of ws.terminals.ids) {
-      const customName = names[id];
-      const existing = getItem(ws.terminals, id);
-      if (customName && existing && customName !== existing.customName) {
-        updated = updateItem(updated, { id, customName });
-      }
-    }
-    if (updated === ws.terminals) return state;
-
-    return setWs(state, wsId, { ...ws, terminals: updated });
-  })
   .with(setTerminalsList, (state, { payload: [wsId, terminals] }) => {
     const ws = getWs(state, wsId);
     // Preserve custom names from existing terminals
@@ -414,18 +350,4 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
       ...ws,
       recentlyCreatedTerminals: [...ws.recentlyCreatedTerminals, terminalId],
     });
-  })
-  .with(clearRecentlyCreatedTerminal, (state, { payload: [wsId, terminalId] }) => {
-    const ws = getWs(state, wsId);
-    const recentlyCreatedTerminals = ws.recentlyCreatedTerminals.filter(
-      (id) => id !== terminalId
-    );
-    if (recentlyCreatedTerminals.length === ws.recentlyCreatedTerminals.length) return state;
-    return setWs(state, wsId, { ...ws, recentlyCreatedTerminals });
-  })
-  .with(clearWorkspaceTerminals, (state, { payload: [wsId] }) => {
-    if (!state.workspaces[wsId]) return state;
-    const { [wsId]: _, ...rest } = state.workspaces;
-    return { ...state, workspaces: rest };
   });
-

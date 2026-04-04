@@ -44,6 +44,7 @@ export const invoke = vi.fn(async (channel: string, data?: any) => {
 });
 
 // Mock implementation of listen (deprecated - use listenSync instead)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const listen = vi.fn(async (event: string, handler: (payload: any) => void) =>
   // Return unsubscribe function
   () => {
@@ -52,6 +53,7 @@ export const listen = vi.fn(async (event: string, handler: (payload: any) => voi
 );
 
 // Mock implementation of listenSync (synchronous version - preferred)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const listenSync = vi.fn((event: string, handler: (payload: any) => void) =>
   // Return unsubscribe function immediately (synchronously)
   () => {
@@ -60,17 +62,20 @@ export const listenSync = vi.fn((event: string, handler: (payload: any) => void)
 );
 
 // Mock implementation of emit
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const emit = vi.fn(async (event: string, payload?: any) => {
   // No-op
 });
 
 // Mock implementation of on (deprecated - use listenSync instead)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const on = vi.fn((event: string, handler: (...args: any[]) => void) =>
   // Return a mock listener ID
   `mock-listener-${event}-${Date.now()}`,
 );
 
 // Mock implementation of off (deprecated - use listenSync which handles cleanup)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const off = vi.fn((event: string, handler: (...args: any[]) => void) => {
   // No-op
 });

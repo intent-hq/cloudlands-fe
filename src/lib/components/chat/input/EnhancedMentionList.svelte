@@ -81,6 +81,7 @@
   // Get the currently selected item for preview
   // Note: selectedIndex is a visual-order index (matching grouped display order),
   // so we look up via visualOrderItems which is derived from groupedItems.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const selectedItem = $derived.by(() => {
     // visualOrderItems may not be initialized yet during first render pass,
     // fall back to currentItems for safety
@@ -349,7 +350,7 @@
 
       {#if loading && currentItems.length === 0}
         <div class="mention-loading">
-          {#each Array(4) as _, i (i)}
+          {#each [0, 1, 2, 3] as i (i)}
             <div class="mention-skeleton">
               <div class="skeleton-icon"></div>
               <div class="skeleton-text" style="width: {55 + i * 12}%"></div>
@@ -360,7 +361,7 @@
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="mention-items" onmousemove={() => (ignoreMouseUntilMove = false)}>
           {#each Array.from(groupedItems.entries()) as [groupName, groupItems] (groupName)}
-            {#each groupItems as item, itemIndex (item.id)}
+            {#each groupItems as item (item.id)}
               {@const visualIndex = visualOrderItems.indexOf(item)}
               {@const icon = getIcon(item)}
               {@const isSelected = visualIndex === selectedIndex}

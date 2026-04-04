@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick, untrack } from 'svelte';
   import type { FileNode } from '$shared/types';
-  import type { FlattenedFileNode } from './file-explorer-store.svelte';
+  import type { FlattenedFileNode } from '$lib/store/slices/file-explorer/file-explorer-types';
   import { ListItem } from '$lib/components/ui/list';
   import {
     faChevronDown,
@@ -21,7 +21,7 @@
   import { pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
   import { deleteWithUndo } from '$lib/utils/reversible-actions';
   import { track, getFileExtension } from '$lib/services/analytics';
-  import { getPanelLayoutManager, hasPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
+  import { getPanelLayoutManager, hasPanelLayoutManager } from '$features/layout/panel-layout-adapter';
 
   // Sentinel path for inline creation node
   const CREATING_SENTINEL_PATH = '__creating_new_file__';
@@ -710,7 +710,7 @@
         // Close related panel tabs after successful deletion
         if (workspaceId && hasPanelLayoutManager(workspaceId)) {
           const layoutManager = getPanelLayoutManager(workspaceId);
-          layoutManager.closeTabsMatching((tab) => tab.type === 'file' && tab.filePath === filePath);
+          layoutManager.closeTabsByType('file', 'filePath', filePath);
         }
         window.dispatchEvent(
           new CustomEvent('file:changed', {
@@ -975,6 +975,7 @@
   let treeContainer: HTMLDivElement | undefined = $state();
 
   // Handle item click
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function handleItemClick(flatNode: FlattenedFileNode, index: number) {
     // Update focused path on click (use path directly for stability)
     focusedPath = flatNode.node.path;

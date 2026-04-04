@@ -645,15 +645,6 @@ export class AugmentApiClient {
         });
       }
 
-      const requestPayload = {
-        repo: { owner: options.owner, name: options.repo },
-        title: options.title,
-        body: options.body || undefined, // Don't send empty string, send undefined
-        head: options.head,
-        base: options.base,
-        draft: options.draft ?? false,
-      };
-
       logger.info('Creating pull request via Augment API', {
         owner: options.owner,
         repo: options.repo,

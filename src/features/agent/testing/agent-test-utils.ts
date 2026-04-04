@@ -7,14 +7,11 @@
 import type {
   AgentSession,
   AgentMessage,
-  AgentId,
-  SessionId,
   WorkspaceId,
 } from '../../../shared/types';
 import { AgentStatus } from '../../../shared/types/agent.types';
 import {
   createAgentId,
-  createSessionId,
   createWorkspaceId,
 } from '../../../shared/types/branded-ids';
 import type { AgentConfig } from '../agent-types';
@@ -224,9 +221,9 @@ export function createTestWorkspace(id?: WorkspaceId) {
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type IPCHandler = (...args: any[]) => void;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type IPCResponse = ((...args: any[]) => any) | any;
 
 /**
@@ -234,14 +231,14 @@ type IPCResponse = ((...args: any[]) => any) | any;
  */
 export class MockIPCChannel {
   private handlers: Map<string, IPCHandler> = new Map();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   private responses: Map<string, any> = new Map();
 
   on(channel: string, handler: IPCHandler): void {
     this.handlers.set(channel, handler);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   send(channel: string, ...args: any[]): void {
     const handler = this.handlers.get(channel);
     if (handler) {
@@ -249,12 +246,12 @@ export class MockIPCChannel {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   setResponse(channel: string, response: any): void {
     this.responses.set(channel, response);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   async invoke(channel: string, ...args: any[]): Promise<any> {
     const response = this.responses.get(channel) as IPCResponse;
     if (typeof response === 'function') {

@@ -4,7 +4,6 @@
  */
 
 import { Logger } from '$lib/utils/logger';
-import { agentService } from '../../agent/agent.service';
 import { memoryLeakDetector } from './memory-leak-detector.service';
 import { componentDisposalManager } from './disposal-manager.service';
 import { getMemoryMonitor } from '$shared/monitoring/memory-monitor';
@@ -101,6 +100,7 @@ class GlobalCleanupService {
   /**
    * Handle before unload event
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private handleBeforeUnload(_event: BeforeUnloadEvent): void {
     logger.debug('Before unload event triggered');
 

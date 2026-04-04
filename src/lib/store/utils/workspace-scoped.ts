@@ -1,3 +1,4 @@
+import { shallowEqual } from "fast-equals";
 import { omitKey } from "./utils";
 
 type WorkspaceScopedState<T> = {
@@ -14,6 +15,9 @@ export function createWorkspaceScopedHelpers<T>(emptyState: T) {
     wsId: string,
     workspaceState: T
   ): S => {
+    if (shallowEqual(state.byWorkspaceId[wsId], workspaceState)) {
+      return state; // No change needed
+    }
     return {
       ...state,
       byWorkspaceId: {

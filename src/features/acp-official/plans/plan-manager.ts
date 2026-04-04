@@ -84,7 +84,7 @@ class PlanManager extends EventEmitter {
    * Enhance plan entries with additional metadata
    */
   private enhanceEntries(entries: PlanEntry[]): EnhancedPlanEntry[] {
-    return entries.map((entry, _index) => {
+    return entries.map((entry) => {
       const enhanced: EnhancedPlanEntry = {
         ...entry,
         id: entry.id || `task_${++this.entryCounter}`,

@@ -5,9 +5,9 @@
 import { toast } from '$lib/components/ui/toast';
 import ErrorToast from '$lib/components/ui/toast/ErrorToast.svelte';
 import { errorReporter } from '$lib/utils/error-reporter';
-import { workspaceStore } from '$features/workspace/workspace.store.svelte';
 import { UnifiedAgentFactory } from '$features/agent/services/agent-factory';
 import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
+import { selectCurrentWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { createAgentTypeId } from '$shared/types/agent.types';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
@@ -52,7 +52,7 @@ async function copyError(error: AppError): Promise<void> {
  * Send error to an AI agent for debugging
  */
 async function sendToAgent(error: AppError): Promise<void> {
-  const workspace = workspaceStore.current;
+  const workspace = selectCurrentWorkspace.select(getReduxStore().getState());
   if (!workspace) {
     toast.error('No space selected');
     return;

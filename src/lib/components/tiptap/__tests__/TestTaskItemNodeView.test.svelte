@@ -18,6 +18,7 @@
   // Set up context for drag handling (NodeViewWrapper uses this)
   setContext(NODE_VIEW_CONTEXT_KEY, {
     contentDOMElement: null,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onDragStart: (_event: DragEvent) => {
       // Mock implementation
     },

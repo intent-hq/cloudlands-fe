@@ -7,17 +7,11 @@ import {
   Role,
   JsonRpcErrorCode,
   type AgentInfo,
-  type ClientInfo,
   type SessionMode,
   type SessionModeState,
-  type ModelInfo,
-  type SessionModelState,
   type PlanEntry,
   type PermissionOption,
   type RequestPermissionOutcome,
-  type AvailableCommand,
-  type AuthMethod,
-  type TerminalExitStatus,
 } from '../types/base';
 
 describe('acp-official types', () => {

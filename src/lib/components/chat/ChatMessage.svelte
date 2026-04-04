@@ -4,27 +4,28 @@
     faCodeCompare,
     faNoteSticky,
     faClipboard,
-    faArrowUp,
     faSquare,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import Button from '$lib/components/ui/button/button.svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
   import MessageActions from './MessageActions.svelte';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
-  import type { AgentMessage } from '$features/agent/agent.service';
+  import type { AgentMessage } from '$features/agent/agent-ipc-bridge';
   import type { Workspace } from '$shared/types';
   import RulesInspector from './RulesInspector.svelte';
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
   import { slide } from 'svelte/transition';
   import type { ContextItem } from './input/context-api';
   import { navigateToFile, navigateToNote, navigateToSpec } from '$lib/utils/workspace-navigation';
-  import { notesStateManager } from '$features/notes/notes.store.svelte';
   import ProviderIcon from '$lib/components/icons/ProviderIcon.svelte';
   import type { ContextProvider } from '$features/context/types';
   import { handleLink } from '$features/navigation/link-handler';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { WorkspaceId } from '$shared/types/branded-ids';
+
+  const activeWorkspaceId = selectActiveWorkspaceId();
 
   // Type for parsed context items (pills shown before text)
   interface ContextPill {
@@ -122,7 +123,9 @@
   let {
     message,
     isStreaming = false,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     showTimestamp: _showTimestamp = true,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     animationDelay: _animationDelay = 0,
     hideToolCalls = false,
     sessionMetadata,
@@ -134,6 +137,7 @@
     onVote,
     onCopy,
     onRegisterRef,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     enableSticky = false,
     onScrollToPrevious,
     backendSessionId,
@@ -317,7 +321,7 @@
             identifier = json.identifier || '';
             title = json.title || identifier || 'Context';
             url = json.url;
-          } catch (_e) {
+          } catch {
             // Fall back to treating as pipe-separated format
             const parts = inner.split('|');
             provider = parts[0] || 'browser';
@@ -361,8 +365,9 @@
       } else if (captured.startsWith('note/')) {
         // Note mention: @note/{noteId}
         const noteId = captured.slice(5); // Remove "note/" prefix
-        const notes = notesStateManager.notes;
-        const matchingNote = notes ? Array.from(notes.values()).find((n) => n.id === noteId) : null;
+        const wsId = $activeWorkspaceId ?? '';
+        const allNotes = selectAllNotes.select(getReduxStore().getState(), wsId);
+        const matchingNote = allNotes.find((n) => n.id === noteId) ?? null;
         const label = matchingNote?.title || noteId;
 
         segments.push({
@@ -408,7 +413,7 @@
   }
 
   // Convert context references from message metadata to pills
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   function contextReferencesToPills(contextRefs: any[]): ContextPill[] {
     const pills: ContextPill[] = [];
     for (const ref of contextRefs) {
@@ -504,7 +509,7 @@
   async function handlePillClick(pill: ContextPill, event?: MouseEvent) {
     // Handle external links (Linear, GitHub, Sentry, etc.) via unified link handler
     if (pill.url) {
-      const wsId = workspaceStore.current?.id;
+      const wsId = $activeWorkspaceId;
       if (wsId) {
         await handleLink(pill.url, {
           workspaceId: WorkspaceId(wsId),
@@ -524,10 +529,9 @@
       // noteId is actually the note title from the context string
       // Look up the actual note ID from the title
       const noteTitle = pill.noteId;
-      const notes = notesStateManager.notes;
-      const matchingNote = notes
-        ? Array.from(notes.values()).find((n) => n.title === noteTitle)
-        : null;
+      const wsId = $activeWorkspaceId ?? '';
+      const allNotes = selectAllNotes.select(getReduxStore().getState(), wsId);
+      const matchingNote = allNotes.find((n) => n.title === noteTitle) ?? null;
       if (matchingNote) {
         await navigateToNote(matchingNote.id);
       }
@@ -800,6 +804,7 @@
   }
 
   // Get metadata display info for assistant messages
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const metadataInfo = $derived.by(() => {
     if (role !== 'assistant' || !message?.metadata) {
       return null;
@@ -946,7 +951,7 @@
                   onclick={(e) => {
                     e.stopPropagation();
                     if (segment.url) {
-                      const wsId = workspaceStore.current?.id;
+                      const wsId = $activeWorkspaceId;
                       if (wsId) {
                         handleLink(segment.url, {
                           workspaceId: WorkspaceId(wsId),

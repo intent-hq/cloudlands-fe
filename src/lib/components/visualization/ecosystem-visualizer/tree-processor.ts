@@ -15,6 +15,7 @@ import { DEFAULT_ECOSYSTEM_SETTINGS } from './types';
 
 // Default node limit for performance - can be overridden via options
 const DEFAULT_MAX_NODES = 15000;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const MAX_SIBLINGS_PER_DEPTH = 100; // Consolidate when more siblings than this
 const MIN_SIBLINGS_TO_KEEP = 5; // Always keep at least this many siblings
 
@@ -267,7 +268,9 @@ export function processTree(
     packedNode: any,
     parent?: ProcessedNode,
     depth: number = 0,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     siblingIndex: number = 0,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     siblingCount: number = 1,
   ): ProcessedNode | null => {
     const data = packedNode.data as FileNode;

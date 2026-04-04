@@ -11,12 +11,13 @@
   import {
     selectActiveProviderId,
     selectEnabledProviders,
-    selectIsProviderEnabled,
   } from '$lib/store/slices/provider-settings/provider-settings-selectors';
-  import { setActiveProvider, setProviderEnabled } from '$lib/store/slices/provider-settings/provider-settings-slice';
+  import {
+    setActiveProvider,
+    setProviderEnabled,
+  } from '$lib/store/slices/provider-settings/provider-settings-slice';
   import { retryLoadModels, reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
   import { getDispatch } from '$lib/store/utils/utils';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { ACP_PROVIDERS, getProviderConfig } from '$shared/config/provider-config';
   import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
   import {
@@ -42,13 +43,14 @@
   import Logo from '../Logo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
   import { handleLink } from '$features/navigation/link-handler';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import Button from '../ui/button/button.svelte';
 
   const logger = createLogger('ProviderSelector');
   const dispatch = getDispatch();
   const activeProviderId = selectActiveProviderId();
+  const activeWorkspaceId = selectActiveWorkspaceId();
   const enabledProviders$ = selectEnabledProviders();
 
   const INSTALL_COMMAND = 'npm install -g @augmentcode/auggie';
@@ -107,7 +109,6 @@
   });
 
   // Track if we're waiting to check provider availability on focus
-  let pendingFocusCheck = $state(false);
 
   // Loading state for "Start using" / select buttons
   let selectingProviderId = $state<string | null>(null);
@@ -223,7 +224,6 @@
       if (waitingForBrowserAuth) {
         checkAuthPollOnce();
       }
-      pendingFocusCheck = false;
       silentRefreshProviderAvailability();
     };
 
@@ -232,7 +232,6 @@
       if (waitingForBrowserAuth) {
         checkAuthPollOnce();
       }
-      pendingFocusCheck = false;
       silentRefreshProviderAvailability();
     };
 
@@ -704,10 +703,7 @@
     toast.success('Copied to clipboard');
   }
 
-  function openDocs(url: string, enableFocusCheck = false) {
-    if (enableFocusCheck) {
-      pendingFocusCheck = true;
-    }
+  function openDocs(url: string) {
     shell.open(url);
   }
 
@@ -1031,7 +1027,7 @@
                   class="underline text-primary"
                   onclick={(e) => {
                     e.preventDefault();
-                    const wsId = workspaceStore.current?.id;
+                    const wsId = $activeWorkspaceId;
                     if (wsId)
                       handleLink('https://nodejs.org', {
                         workspaceId: wsId as WorkspaceId,
@@ -1048,7 +1044,7 @@
                   class="underline text-primary"
                   onclick={(e) => {
                     e.preventDefault();
-                    const wsId = workspaceStore.current?.id;
+                    const wsId = $activeWorkspaceId;
                     if (wsId)
                       handleLink('https://nodejs.org', {
                         workspaceId: wsId as WorkspaceId,
@@ -1153,7 +1149,7 @@
                 <button
                   type="button"
                   class="text-yellow-600 dark:text-yellow-500 hover:text-yellow-700 dark:hover:text-yellow-400 cursor-pointer transition-colors"
-                  onclick={() => openDocs(provider.loginDocsUrl!, true)}
+                  onclick={() => openDocs(provider.loginDocsUrl!)}
                 >
                   Log in
                 </button>
@@ -1193,7 +1189,7 @@
               <button
                 type="button"
                 class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
-                onclick={() => openDocs(provider.docsUrl, true)}
+                onclick={() => openDocs(provider.docsUrl)}
               >
                 Install
               </button>

@@ -36,7 +36,8 @@ import {
   extractACPToolCalls,
   parseACPMessage,
 } from '../../../acp-official/parsers/acp-message-parser';
-import { unifiedEventBus } from '../../../events/main/unified-event-bus';
+import { mainDispatch } from '../../../../store/main/redux-store-bridge';
+import { agentAuthRequired, agentPlanRequired } from '../../../../store/main/slices/agent-events/agent-events-slice';
 import {
   normalizeMcpServers,
   toAcpMcpServers,
@@ -57,8 +58,7 @@ import {
   SUBAGENT_TOOLS,
 } from '../../config/background-agent-tool-restrictions';
 import { resolveSpecialistForAgent } from '../specialists.service';
-import { messageAccumulator } from '../../services/message-accumulator.service';
-import { streamingConfig } from '../../streaming-config.service';
+import * as messageAccumulator from '../../../../store/main/slices/message-accumulator/message-accumulator-api';
 import type { StatusEventData, StreamMessage, StreamToolCall } from '../../types/streaming.types';
 import { ACPProviderStreaming } from './acp-provider-streaming';
 import type { AgentConfig, AgentMessage, Tool } from './base-provider';
@@ -2239,7 +2239,7 @@ export class ACPProvider extends BaseAgentProvider {
             entries = entries.slice(-49); // Keep last 49
             entries.push(JSON.stringify(debugInfo, null, 2));
             fs.writeFileSync(debugLogPath, entries.join('\n---\n') + '\n---\n');
-          } catch (debugErr) {
+          } catch {
             // Ignore debug logging errors
           }
 
@@ -4906,13 +4906,13 @@ export class ACPProvider extends BaseAgentProvider {
           providerId: caps.id,
           isRemote,
         });
-        unifiedEventBus.emitDomainEvent('agent:auth-required', {
+        mainDispatch(agentAuthRequired({
           workspaceId: this.config.workspaceId as WorkspaceId | undefined,
           agentId: this.config.agentId,
           isRemote,
           host: this.config.environmentConfig?.ssh?.host,
           message: getProviderAuthErrorMessage(caps.id, isRemote),
-        });
+        }));
       }
 
       throw new Error(errorMessage);
@@ -5171,7 +5171,7 @@ export class ACPProvider extends BaseAgentProvider {
    * This is called automatically when session-related errors are detected.
    * @returns true if recovery succeeded, false otherwise
    */
-  private async attemptSessionRecoveryAndNotify(_callbackSessionId: string): Promise<boolean> {
+  private async attemptSessionRecoveryAndNotify(): Promise<boolean> {
     logger.info('Attempting session recovery', {
       oldSessionId: this.sessionId,
       recoveryAttempt: this.sessionRecoveryAttempts,
@@ -6539,13 +6539,11 @@ export class ACPProvider extends BaseAgentProvider {
 
   async *streamResponse(messages: AgentMessage[]): AsyncGenerator<string> {
     // Use streamMessage with a generator-based approach
-    let accumulatedContent = '';
     const chunks: string[] = [];
 
     await this.streamMessage(messages, {
       onChunk: (chunk: string) => {
         chunks.push(chunk);
-        accumulatedContent += chunk;
       },
     });
 
@@ -7243,8 +7241,7 @@ export class ACPProvider extends BaseAgentProvider {
 
       // Set up initial completion detection timer using configurable timeout
       // This will be reset each time we receive new content
-      const config = streamingConfig.getSessionConfig(callbackSessionId);
-      this.resetCompletionDetection(callbackSessionId, config.completionDetection);
+      this.resetCompletionDetection(callbackSessionId);
 
       try {
         // Filter out system messages - they should be passed as rules via --rules flag, not in the prompt
@@ -7389,7 +7386,7 @@ export class ACPProvider extends BaseAgentProvider {
                 const textContent = Buffer.from(fileBlock.data, 'base64').toString('utf-8');
                 const langHint = fileExtension.replace('.', '') || 'text';
                 promptText += `**File: ${fileBlock.fileName}**\n\`\`\`${langHint}\n${textContent}\n\`\`\`\n\n`;
-              } catch (e) {
+              } catch {
                 logger.warn('Failed to decode file as text', { fileName: fileBlock.fileName });
                 promptText += `**File: ${fileBlock.fileName}** (binary file - content not displayed)\n\n`;
               }
@@ -7849,7 +7846,7 @@ export class ACPProvider extends BaseAgentProvider {
 
                   // Attempt session recovery in background
                   // Don't await - let it run async and retry will happen on next message
-                  this.attemptSessionRecoveryAndNotify(callbackSessionId)
+                  this.attemptSessionRecoveryAndNotify()
                     .then((recovered) => {
                       if (recovered) {
                         logger.info('Session recovered successfully', {
@@ -7970,7 +7967,7 @@ export class ACPProvider extends BaseAgentProvider {
                   clearTimeout(timeout);
                   this.pendingRequests.delete(request.id);
 
-                  this.attemptSessionRecoveryAndNotify(callbackSessionId)
+                  this.attemptSessionRecoveryAndNotify()
                     .then((recovered) => {
                       if (recovered) {
                         logger.info(
@@ -8198,13 +8195,13 @@ export class ACPProvider extends BaseAgentProvider {
                     providerId: this.providerCapabilities.id,
                     isRemote,
                   });
-                  unifiedEventBus.emitDomainEvent('agent:auth-required', {
+                  mainDispatch(agentAuthRequired({
                     workspaceId: this.config.workspaceId as WorkspaceId | undefined,
                     agentId: this.config.agentId,
                     isRemote,
                     host: this.config.environmentConfig?.ssh?.host,
                     message: getProviderAuthErrorMessage(this.providerCapabilities.id, isRemote),
-                  });
+                  }));
                 }
 
                 // Emit domain event for plan-required errors (enterprise users without Intent access)
@@ -8214,12 +8211,12 @@ export class ACPProvider extends BaseAgentProvider {
                     agentId: this.config.agentId,
                     errorCode,
                   });
-                  unifiedEventBus.emitDomainEvent('agent:plan-required', {
+                  mainDispatch(agentPlanRequired({
                     workspaceId: this.config.workspaceId as WorkspaceId | undefined,
                     agentId: this.config.agentId,
                     message:
                       'Intent is not available on your current plan. Please contact your administrator to upgrade your plan or contact your Augment account manager',
-                  });
+                  }));
                 }
 
                 // Clear the timeout and pending request
@@ -8514,12 +8511,12 @@ export class ACPProvider extends BaseAgentProvider {
     return !!(this.config.command || this.config.workspaceId);
   }
 
-  extractToken(_content: string): string | null {
+  extractToken(): string | null {
     // ACP doesn't use tokens in the same way
     return null;
   }
 
-  extractToolCall(_content: string): any | null {
+  extractToolCall(): any | null {
     // ACP handles tool calls internally
     return null;
   }
@@ -8629,7 +8626,7 @@ export class ACPProvider extends BaseAgentProvider {
    * @param sessionId - The session ID
    * @param _timeout - DEPRECATED: No longer used, kept for API compatibility
    */
-  private resetCompletionDetection(sessionId: string, _timeout?: number): void {
+  private resetCompletionDetection(sessionId: string): void {
     // Clear any existing timer (legacy cleanup)
     const existingTimer = this.streamCompletionTimers.get(sessionId);
     if (existingTimer) {

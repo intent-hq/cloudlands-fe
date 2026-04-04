@@ -138,7 +138,7 @@ class StartupMetrics {
 
     // Identify bottlenecks (only warn if there are any)
     const bottlenecks = sortedMetrics
-      .filter(([_, data]) => (data as any).duration > 500)
+      .filter(([, data]) => (data as any).duration > 500)
       .map(([name]) => name);
 
     if (bottlenecks.length > 0) {

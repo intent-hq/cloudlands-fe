@@ -4,14 +4,12 @@
  * IPC handlers for exporting all debug logs as a zip file.
  */
 
-import { ipcMain, dialog, app } from 'electron';
+import { ipcMain, dialog } from 'electron';
 import { promises as fs } from 'fs';
-import path from 'path';
 import { z } from 'zod';
 import { LOG_CHANNELS } from '../../../shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { Logger } from '../../../shared/logger';
-import { EmptySchema } from '../../../main/ipc-schemas';
 import { createDebugBundle } from './debug-bundle.service';
 
 const logger = new Logger('DebugExportIPC');
@@ -55,7 +53,7 @@ export function registerDebugExportHandlers(): void {
             // Clean up temp bundle
             try {
               await fs.unlink(bundlePath);
-            } catch (e) {
+            } catch {
               // Ignore cleanup errors
             }
             return { success: false, canceled: true };

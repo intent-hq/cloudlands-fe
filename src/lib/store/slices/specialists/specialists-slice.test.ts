@@ -4,15 +4,9 @@ import {
   specialistsReducer,
   initialState,
   setBundledSpecialists,
-  setCustomSpecialists,
   setFileSpecialists,
-  setUserOverrides,
   setOverridesLoaded,
   setCustomSpecialistsLoaded,
-  setFileSpecialistsLoaded,
-  setBundledSpecialistsLoaded,
-  setSpecialistsFolderPath,
-  setProviderModelOverrides,
   setModelOverride,
   clearModelOverride,
   setBehaviorPromptOverride,
@@ -22,7 +16,6 @@ import {
   createCustomSpecialist,
   updateCustomSpecialist,
   deleteCustomSpecialist,
-  type SpecialistsState,
   type FileSpecialist,
 } from "./specialists-slice";
 

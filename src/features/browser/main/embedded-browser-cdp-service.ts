@@ -8,7 +8,7 @@
  * a network port - only the main process can access the debugger.
  */
 
-import { webContents, BrowserWindow, ipcMain } from 'electron';
+import { webContents, ipcMain } from 'electron';
 import { Logger } from '../../../shared/logger';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
@@ -205,7 +205,7 @@ class EmbeddedBrowserCdpService {
 
     // Get mounted webviews
     const mountedTabs = this.listTabs();
-    const mountedTabIds = new Set(mountedTabs.map((t) => t.tabId));
+
 
     // Build combined list
     const result: (TabInfo & { mounted: boolean })[] = [];

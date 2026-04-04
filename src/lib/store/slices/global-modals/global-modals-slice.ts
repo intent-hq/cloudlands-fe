@@ -68,10 +68,6 @@ export const openGitHubAuthModal = createAction<[pendingAuth: GitHubAuthRequired
 
 export const closeGitHubAuthModal = createAction("globalModals/closeGitHubAuthModal");
 
-export const setGitHubAuthModalState = createAction<[value: GitHubAuthModalState]>(
-  "globalModals/setGitHubAuthModalState"
-);
-
 export const openGitCredentialsModal = createAction<[error: GitCredentialsModalError]>(
   "globalModals/openGitCredentialsModal"
 );
@@ -80,19 +76,11 @@ export const closeGitCredentialsModal = createAction(
   "globalModals/closeGitCredentialsModal"
 );
 
-export const setGitCredentialsModalState = createAction<[value: GitCredentialsModalState]>(
-  "globalModals/setGitCredentialsModalState"
-);
-
 export const openNewSpaceModal = createAction<[initialRepo: NewSpaceInitialRepo | undefined]>(
   "globalModals/openNewSpaceModal"
 );
 
 export const closeNewSpaceModal = createAction("globalModals/closeNewSpaceModal");
-
-export const setNewSpaceModalState = createAction<[value: NewSpaceModalState]>(
-  "globalModals/setNewSpaceModalState"
-);
 
 export const globalModalsReducer = createReducer<GlobalModalsState>(initialState)
   .with(openGitHubAuthModal, (state, { payload: [pendingAuth] }) => ({
@@ -110,10 +98,6 @@ export const globalModalsReducer = createReducer<GlobalModalsState>(initialState
       open: false,
       pendingAuth: null,
     },
-  }))
-  .with(setGitHubAuthModalState, (state, { payload: [value] }) => ({
-    ...state,
-    githubAuth: value,
   }))
   .with(openGitCredentialsModal, (state, { payload: [error] }) => ({
     ...state,
@@ -137,10 +121,6 @@ export const globalModalsReducer = createReducer<GlobalModalsState>(initialState
       error: null,
     },
   }))
-  .with(setGitCredentialsModalState, (state, { payload: [value] }) => ({
-    ...state,
-    gitCredentials: value,
-  }))
   .with(openNewSpaceModal, (state, { payload: [initialRepo] }) => ({
     ...state,
     newSpace: {
@@ -154,8 +134,4 @@ export const globalModalsReducer = createReducer<GlobalModalsState>(initialState
       open: false,
       initialRepo: undefined,
     },
-  }))
-  .with(setNewSpaceModalState, (state, { payload: [value] }) => ({
-    ...state,
-    newSpace: value,
   }));

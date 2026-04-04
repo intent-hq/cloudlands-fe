@@ -87,6 +87,7 @@
   }
 
   function makeCommitFileClickHandler(commitHash: string) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     return (_filePath: string, _commitHash?: string, _staged?: boolean) => {
       onOpenCommit?.(commitHash);
     };
@@ -97,7 +98,7 @@
   {#if showSkeleton}
     <!-- Skeleton loader for changes list -->
     <div class="space-y-1 py-2">
-      {#each Array(4) as _}
+      {#each Array(4) as { }}
         <div class="flex items-center gap-2 py-1">
           <Skeleton class="h-3 w-3 rounded flex-shrink-0" />
           <Skeleton class="h-3 flex-1" />

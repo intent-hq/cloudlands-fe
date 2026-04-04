@@ -116,7 +116,7 @@ describe('Streaming State Timing', () => {
   });
 
   it('should call setAgent and setStreaming before returning from createAgent', async () => {
-    const result = await mockAgentFactory.createAgent();
+    await mockAgentFactory.createAgent();
 
     // Both should have been called
     expect(mockUnifiedStore.setAgent).toHaveBeenCalled();

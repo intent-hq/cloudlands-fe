@@ -10,61 +10,26 @@
 // Browser-safe services that don't need Node.js APIs
 export { errorBoundary, ErrorBoundaryService } from './error-boundary.service';
 
-// Export unified state store
-export { unifiedStateStore } from '$features/agent/services/unified-state-store';
-export type {
-  AgentState,
-  WorkspaceState,
-  ContextItem,
-} from '$features/agent/services/unified-state-store';
+// Re-export ContextItem from its canonical source for backward compatibility.
+export type { ContextItem } from '$lib/components/chat/input/context-api';
 
-// Create sessionStore compatibility wrapper for agent.service.ts
-import { writable, type Readable } from 'svelte/store';
 import { createLogger } from '$lib/utils/client-logger';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import {
+  selectAgentById,
+} from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+
+
 
 const logger = createLogger('browser/index');
 
-export const sessionStoreData = writable<{ sessions: AgentSession[] }>({ sessions: [] });
-
-export function publishSessionStoreSnapshot(): void {
-  const sessions = unifiedStateStore.getAllAgents();
-  sessionStoreData.set({ sessions });
-}
-
 // Per-agent subscribers for efficient updates during streaming
-// Instead of notifying ALL subscribers for ANY agent update, this allows
-// ChatPanel to subscribe to a specific agent and only get notified when
-// that agent's data changes
 const agentSubscribers = new Map<string, Set<(session: AgentSession | undefined) => void>>();
-
-// Track agent IDs that have pending updates (for targeted notifications)
-const pendingAgentUpdates = new Set<string>();
-
-// Per-agent workspace ID tracking for batched updates.
-// When updates for agents in different workspaces are batched in the same
-// requestAnimationFrame tick, we need to look up each agent in its correct
-// workspace. A single pendingTargetWorkspaceId would be overwritten by the
-// last update, causing notifyAgentSubscribers to use the wrong workspace
-// for earlier agents in the batch — making their subscribers receive
-// `undefined` and the UI appear frozen until refresh.
-const pendingAgentWorkspaces = new Map<string, WorkspaceId>();
-
-// Batching mechanism for store updates during streaming
-// This prevents UI jank by batching multiple updates into a single frame
-let pendingStoreUpdate = false;
-let rafId: number | null = null;
 
 /**
  * Subscribe to updates for a specific agent.
- * More efficient than subscribing to the global store during streaming.
- * The callback only fires when the specified agent's data changes.
- *
- * @param agentId - The agent ID to subscribe to
- * @param callback - Called when the agent's data changes
- * @param workspaceId - Optional workspace ID to scope the lookup. When provided,
- *   only that workspace is searched. When omitted, falls back to currentWorkspace only.
- *   This prevents cross-workspace state bleed where an agent from workspace B
- *   could be returned while viewing workspace A.
+ * Reads from Redux state.
  */
 export function subscribeToAgent(
   agentId: string,
@@ -78,38 +43,23 @@ export function subscribeToAgent(
   }
   subscribers.add(callback);
 
-  // Immediately call with current value
-  // When workspaceId is provided, only search that workspace (workspace-scoped).
-  // Otherwise, search currentWorkspace only (no all-workspace fallback to prevent cross-workspace bleed).
-  let agent = null;
+  // Immediately call with current value from Redux
+  const state = getReduxStore().getState();
+  const wsId = workspaceId ?? selectActiveWorkspaceId.select(state) ?? '';
+  const agent = wsId ? selectAgentById.select(state, agentId) : undefined;
 
-  if (workspaceId) {
-    // Scoped lookup: only search the specified workspace
-    const targetWorkspace = unifiedStateStore.getWorkspace(workspaceId as WorkspaceId);
-    agent = targetWorkspace?.agents.get(agentId as any);
-  } else {
-    // Unscoped: use currentWorkspace only (no all-workspace fallback)
-    const currentWorkspace = unifiedStateStore.currentWorkspace;
-    agent = currentWorkspace?.agents.get(agentId as any);
-  }
-
-  if (agent?.session) {
-    const sessionData = {
-      ...agent.session,
-      messages: agent.messages || agent.session.messages || [],
-    };
+  if (agent) {
     logger.debug('[subscribeToAgent] Initial callback data', {
       agentId,
-      workspaceId: workspaceId || 'current',
+      workspaceId: wsId || 'current',
       hasSession: true,
     });
-    callback(sessionData);
+    callback(agent);
   } else {
-    logger.debug('[subscribeToAgent] No session found', { agentId, workspaceId: workspaceId || 'current' });
+    logger.debug('[subscribeToAgent] No session found', { agentId, workspaceId: wsId || 'current' });
     callback(undefined);
   }
 
-  // Return unsubscribe function
   return () => {
     const subs = agentSubscribers.get(agentId);
     if (subs) {
@@ -123,36 +73,15 @@ export function subscribeToAgent(
 
 /**
  * Notify subscribers for a specific agent.
- *
- * When targetWorkspaceId is provided, only that workspace is searched for the agent.
- * When not provided, falls back to currentWorkspace only.
- * The all-workspaces fallback has been removed to prevent cross-workspace state bleed.
- *
- * @param agentId - The agent ID to notify subscribers for
- * @param targetWorkspaceId - Optional specific workspace to look in
+ * Reads from Redux state.
  */
 export function notifyAgentSubscribers(agentId: string, targetWorkspaceId?: WorkspaceId) {
   const subscribers = agentSubscribers.get(agentId);
   if (!subscribers || subscribers.size === 0) return;
 
-  let agent = null;
-
-  if (targetWorkspaceId) {
-    // Scoped: only search the target workspace
-    const targetWorkspace = unifiedStateStore.getWorkspace(targetWorkspaceId);
-    agent = targetWorkspace?.agents.get(agentId as any);
-  } else {
-    // Unscoped: use currentWorkspace only (no all-workspace fallback)
-    const currentWorkspace = unifiedStateStore.currentWorkspace;
-    agent = currentWorkspace?.agents.get(agentId as any);
-  }
-
-  const session = agent?.session
-    ? {
-        ...agent.session,
-        messages: agent.messages || agent.session.messages || [],
-      }
-    : undefined;
+  const state = getReduxStore().getState();
+  const wsId = targetWorkspaceId ?? selectActiveWorkspaceId.select(state) ?? '';
+  const session = wsId ? selectAgentById.select(state, agentId) : undefined;
 
   if (!session) {
     console.warn('[DIAG notifyAgentSubscribers] Agent NOT FOUND — subscribers get undefined', {
@@ -161,13 +90,6 @@ export function notifyAgentSubscribers(agentId: string, targetWorkspaceId?: Work
       subscriberCount: subscribers.size,
     });
   }
-
-  logger.debug('[notifyAgentSubscribers] Notifying', {
-    agentId,
-    targetWorkspaceId: targetWorkspaceId || 'current',
-    hasSession: !!session,
-    subscriberCount: subscribers.size,
-  });
 
   for (const callback of subscribers) {
     try {
@@ -178,396 +100,13 @@ export function notifyAgentSubscribers(agentId: string, targetWorkspaceId?: Work
   }
 }
 
-function scheduleStoreUpdate(forWorkspaceId?: WorkspaceId, forAgentId?: string) {
-  // Track which agent triggered this update for targeted notifications
-  if (forAgentId) {
-    pendingAgentUpdates.add(forAgentId);
-
-    // Store the workspace ID for THIS specific agent so we can look it up
-    // in its correct workspace when the RAF callback fires.
-    if (forWorkspaceId) {
-      pendingAgentWorkspaces.set(forAgentId, forWorkspaceId);
-    } else if (!pendingAgentWorkspaces.has(forAgentId)) {
-      // Only fall back to currentWorkspace if we don't already have a workspace for this agent
-      const currentWsId = unifiedStateStore.currentWorkspace?.workspace?.id as WorkspaceId;
-      if (currentWsId) {
-        pendingAgentWorkspaces.set(forAgentId, currentWsId);
-      }
-    }
-  }
-
-  if (pendingStoreUpdate) return; // Already scheduled, workspace IDs tracked per-agent above
-  pendingStoreUpdate = true;
-
-  // Debug: Log what we're batching
-  logger.debug('Scheduling store update', {
-    forWorkspaceId,
-    forAgentId,
-    currentWorkspaceId: unifiedStateStore.currentWorkspace?.workspace?.id,
-    pendingAgentCount: pendingAgentUpdates.size,
-    pendingWorkspaceCount: pendingAgentWorkspaces.size,
-  });
-
-  // Use requestAnimationFrame to batch updates within a single frame
-  rafId = requestAnimationFrame(() => {
-    pendingStoreUpdate = false;
-    rafId = null;
-
-    // Capture and clear pending agent updates and their workspace mappings
-    const agentIdsToNotify = Array.from(pendingAgentUpdates);
-    const workspaceSnapshot = new Map(pendingAgentWorkspaces);
-    pendingAgentUpdates.clear();
-    pendingAgentWorkspaces.clear();
-
-    // Notify per-agent subscribers with the CORRECT workspace for each agent.
-    // Previously a single pendingTargetWorkspaceId was used for ALL agents in
-    // the batch, so if agent A (workspace-1) and agent B (workspace-2) both
-    // updated in the same frame, agent A's subscriber would get workspace-2's
-    // context and receive `undefined`.
-    for (const agentId of agentIdsToNotify) {
-      const agentWorkspaceId = workspaceSnapshot.get(agentId);
-      notifyAgentSubscribers(agentId, agentWorkspaceId);
-    }
-
-    // Also update the global store for backward compatibility
-    // Always get ALL agents from ALL workspaces, not just the target workspace.
-    // The sidebar's useAllAgentsSubscription expects sessionStoreData to contain all agents,
-    // and then filters by workspaceId in the component. If we only include agents from one
-    // workspace, the sidebar shows "No agents yet" when switching workspaces.
-    publishSessionStoreSnapshot();
-  });
-}
-
-// Subscribe to streaming state changes from unifiedStateStore
-// This ensures sessionStoreData is updated when streaming starts/stops
-// (e.g., for background agents managed by stream-manager)
-let streamingListenerSetup = false;
-function ensureStreamingListener() {
-  if (streamingListenerSetup) return;
-  streamingListenerSetup = true;
-
-  // Import dynamically to avoid circular dependencies
-  import('$features/agent/services/unified-state-store')
-    .then(({ unifiedStateStore }) => {
-      unifiedStateStore.onStreamingChange(() => {
-        // Schedule store update when any agent's streaming state changes
-        scheduleStoreUpdate();
-      });
-    })
-    .catch((error) => {
-      // Log error but don't crash - streaming listener is optional
-      logger.error('Failed to set up streaming listener', { error });
-    });
-}
-
-// Cancel pending update (useful for cleanup)
-export function cancelPendingStoreUpdate() {
-  if (rafId !== null) {
-    cancelAnimationFrame(rafId);
-    rafId = null;
-    pendingStoreUpdate = false;
-    pendingAgentUpdates.clear();
-    pendingAgentWorkspaces.clear();
-  }
-}
-
-export const sessionStore = {
-  getStore: () => {
-    // Ensure streaming listener is set up when store is accessed
-    ensureStreamingListener();
-    return sessionStoreData;
-  },
-  /**
-   * Get all STREAMING sessions across ALL workspaces.
-   * This is more efficient than getting all sessions - it only returns sessions
-   * that are marked as streaming, which is what we need for clearing stale states.
-   * This avoids expensive iteration through archived/old workspaces.
-   */
-  getAllSessionsAcrossWorkspaces: (): AgentSession[] => {
-    const sessions: AgentSession[] = [];
-    const allWorkspaces = unifiedStateStore.getAllWorkspaces();
-    for (const workspaceState of allWorkspaces) {
-      workspaceState.agents.forEach((agent) => {
-        // Only include sessions that are marked as streaming
-        // This is a performance optimization - we only care about streaming sessions
-        // when checking for stale streaming states
-        // Use agent.streaming.active as authoritative source for isStreaming
-        const isStreaming = agent.streaming?.active ?? agent.session?.isStreaming ?? false;
-        if (agent.session && isStreaming) {
-          const sessionWithMessages = {
-            ...agent.session,
-            isStreaming,
-            messages: agent.messages || agent.session.messages || [],
-          };
-          sessions.push(sessionWithMessages);
-        }
-      });
-    }
-    return sessions;
-  },
-  /**
-   * Add a session to a specific workspace.
-   * Unlike addSession(), this works even when the user is viewing a different workspace.
-   */
-  addSessionForWorkspace: (workspaceId: string, session: AgentSession) => {
-    if (!session) {
-      logger.warn('addSessionForWorkspace called with null/undefined session, ignoring');
-      return;
-    }
-
-    const sessionWithWorkspace = {
-      ...session,
-      workspaceId: workspaceId as WorkspaceId,
-    };
-
-    unifiedStateStore.setAgent(workspaceId as WorkspaceId, sessionWithWorkspace);
-    scheduleStoreUpdate(workspaceId as WorkspaceId, session.id);
-  },
-  /**
-   * Set streaming state for an agent in a specific workspace.
-   * Unlike setStreaming(), this works even when the user is viewing a different workspace.
-   * Use this when handling stream completion events that may occur while user is on another workspace.
-   */
-  setStreamingForWorkspace: (workspaceId: string, agentId: string, isStreaming: boolean) => {
-    logger.info('sessionStore.setStreamingForWorkspace - updating unified state store', {
-      agentId,
-      isStreaming,
-      workspaceId,
-    });
-    unifiedStateStore.setStreaming(workspaceId as WorkspaceId, agentId as any, isStreaming);
-    // Schedule batched store update with the target workspace ID and agent ID
-    // Pass agentId so per-agent subscribers are notified of streaming state changes
-    scheduleStoreUpdate(workspaceId as WorkspaceId, agentId);
-  },
-  /**
-   * Get a session from a specific workspace.
-   * Unlike getSession(), this works even when the user is viewing a different workspace.
-   * Use this when handling stream events that may occur while user is on another workspace.
-   */
-  getSessionForWorkspace: (workspaceId: string, agentId: string): AgentSession | undefined => {
-    const sessions = unifiedStateStore.getAgentsForWorkspace(workspaceId as WorkspaceId);
-    return sessions.find((s) => s.id === agentId);
-  },
-  /**
-   * Add a message to a specific workspace.
-   * Unlike addMessage(), this works even when the user is viewing a different workspace.
-   * Use this when handling wake messages from subscription events that may occur while
-   * user is on another workspace.
-   */
-  addMessageForWorkspace: (workspaceId: string, agentId: string, message: any) => {
-    logger.info('sessionStore.addMessageForWorkspace - adding message to specific workspace', {
-      agentId,
-      workspaceId,
-      messageId: message?.id,
-      hasMetadata: !!message?.metadata,
-      metadataType: message?.metadata?.type,
-    });
-    unifiedStateStore.addMessage(workspaceId as WorkspaceId, agentId as any, message);
-    // Schedule batched store update with the target workspace ID and agent ID
-    // Pass agentId so per-agent subscribers are notified of new messages
-    scheduleStoreUpdate(workspaceId as WorkspaceId, agentId);
-  },
-  /**
-   * Update a message in a specific workspace.
-   * Unlike updateMessage(), this works even when the user is viewing a different workspace.
-   * Use this when handling stream events that may occur while user is on another workspace.
-   */
-  updateMessageForWorkspace: (
-    workspaceId: string,
-    agentId: string,
-    messageId: string,
-    updates: any,
-  ) => {
-    const workspace = unifiedStateStore
-      .getAllWorkspaces()
-      .find((w) => w.workspace.id === workspaceId);
-    if (workspace) {
-      const agent = workspace.agents.get(agentId as any);
-      if (agent) {
-        const messageIndex = agent.messages.findIndex((m: any) => m.id === messageId);
-        if (messageIndex !== -1) {
-          // Create a new message object to trigger reactivity
-          agent.messages[messageIndex] = {
-            ...agent.messages[messageIndex],
-            ...updates,
-          };
-
-          // Also update the session messages if they exist
-          if (agent.session && agent.session.messages) {
-            agent.session.messages[messageIndex] = agent.messages[messageIndex];
-          }
-
-          // Schedule batched store update with the target workspace ID and agent ID
-          scheduleStoreUpdate(workspaceId as WorkspaceId, agentId);
-        }
-      }
-    }
-  },
-  /**
-   * Get all sessions for a specific workspace.
-   * Unlike getAllSessions(), this works even when the user is viewing a different workspace.
-   */
-  getAllSessionsForWorkspace: (workspaceId: string): AgentSession[] => {
-    const workspace = unifiedStateStore.getWorkspace(workspaceId as WorkspaceId);
-    if (!workspace) return [];
-    const sessions: AgentSession[] = [];
-    workspace.agents.forEach((agent) => {
-      if (agent.session) {
-        const isStreaming = agent.streaming?.active ?? agent.session.isStreaming ?? false;
-        const sessionWithMessages = {
-          ...agent.session,
-          isStreaming,
-          messages: (agent.messages?.length ? agent.messages : agent.session.messages) || [],
-        };
-        sessions.push(sessionWithMessages);
-      }
-    });
-    return sessions;
-  },
-  /**
-   * Find sessions matching a predicate in a specific workspace.
-   * Unlike findSessions(), this works even when the user is viewing a different workspace.
-   */
-  findSessionsForWorkspace: (workspaceId: string, predicate: (s: any) => boolean): AgentSession[] => {
-    const workspace = unifiedStateStore.getWorkspace(workspaceId as WorkspaceId);
-    if (!workspace) return [];
-    const sessions: AgentSession[] = [];
-    workspace.agents.forEach((agent) => {
-      if (agent.session) {
-        const sessionWithMessages = {
-          ...agent.session,
-          messages: (agent.messages?.length ? agent.messages : agent.session.messages) || [],
-        };
-        if (predicate(sessionWithMessages)) {
-          sessions.push(sessionWithMessages);
-        }
-      }
-    });
-    return sessions;
-  },
-  /**
-   * Update a session in a specific workspace.
-   * Unlike updateSession(), this works even when the user is viewing a different workspace.
-   */
-  updateSessionForWorkspace: (workspaceId: string, agentId: string, updates: Partial<AgentSession>) => {
-    const workspace = unifiedStateStore.getWorkspace(workspaceId as WorkspaceId);
-    if (workspace) {
-      const agent = workspace.agents.get(agentId as any);
-      if (agent?.session) {
-        // Extract messages to handle separately to avoid shared array references
-        const { messages, ...otherUpdates } = updates;
-        Object.assign(agent.session, otherUpdates);
-        if (messages && Array.isArray(messages)) {
-          const msgArray = [...messages];
-          agent.session.messages = [...msgArray];
-          agent.messages = [...msgArray];
-          // Rebuild messageIdSet to keep deduplication in sync
-          agent.messageIdSet = new Set(msgArray.map((m: any) => m.id).filter(Boolean));
-        }
-        scheduleStoreUpdate(workspaceId as WorkspaceId, agentId);
-      }
-    }
-  },
-  /**
-   * Remove a session from a specific workspace.
-   * Unlike removeSession(), this works even when the user is viewing a different workspace.
-   */
-  removeSessionForWorkspace: (workspaceId: string, agentId: string) => {
-    const workspace = unifiedStateStore.getWorkspace(workspaceId as WorkspaceId);
-    if (workspace) {
-      workspace.agents.delete(agentId as any);
-      scheduleStoreUpdate(workspaceId as WorkspaceId, agentId);
-    }
-  },
-  /**
-   * Set the active session in a specific workspace.
-   * Unlike setActiveSession(), this works even when the user is viewing a different workspace.
-   */
-  setActiveSessionForWorkspace: (workspaceId: string, agentId: string) => {
-    const workspace = unifiedStateStore.getWorkspace(workspaceId as WorkspaceId);
-    if (workspace) {
-      unifiedStateStore.setActiveAgent(workspaceId as WorkspaceId, agentId as any);
-    }
-  },
-  /**
-   * Get the active session from a specific workspace.
-   * Unlike getActiveSession(), this works even when the user is viewing a different workspace.
-   */
-  getActiveSessionForWorkspace: (workspaceId: string): AgentSession | undefined => {
-    const workspace = unifiedStateStore.getWorkspace(workspaceId as WorkspaceId);
-    if (!workspace || !workspace.activeAgentId) return undefined;
-    const agent = workspace.agents.get(workspace.activeAgentId);
-    if (!agent?.session) return undefined;
-    const isStreaming = agent.streaming?.active ?? agent.session.isStreaming ?? false;
-    return {
-      ...agent.session,
-      isStreaming,
-      messages:
-        agent.messages && agent.messages.length > 0
-          ? agent.messages
-          : agent.session.messages && agent.session.messages.length > 0
-            ? agent.session.messages
-            : [],
-    };
-  },
-  /**
-   * Replace messages for an agent in a specific workspace.
-   * Unlike updateMessages(), this works even when the user is viewing a different workspace.
-   */
-  updateMessagesForWorkspace: (workspaceId: string, agentId: string, messages: any[]) => {
-    const workspace = unifiedStateStore.getWorkspace(workspaceId as WorkspaceId);
-    if (workspace) {
-      const agent = workspace.agents.get(agentId as any);
-      if (agent) {
-        agent.messages = [...messages];
-        if (agent.session) {
-          agent.session.messages = [...messages];
-        }
-        agent.messageIdSet = new Set(messages.map((m: any) => m.id));
-        scheduleStoreUpdate(workspaceId as WorkspaceId, agentId);
-      }
-    }
-  },
-  /**
-   * Get stats for a specific workspace.
-   * Unlike getStats(), this works even when the user is viewing a different workspace.
-   */
-  getStatsForWorkspace: (workspaceId: string) => {
-    const workspace = unifiedStateStore.getWorkspace(workspaceId as WorkspaceId);
-    if (!workspace) return { totalSessions: 0, activeSessions: 0, totalMessages: 0 };
-    let totalMessages = 0;
-    let activeSessions = 0;
-    workspace.agents.forEach((agent) => {
-      if (agent.session) {
-        if (agent.streaming.active) activeSessions++;
-        totalMessages += agent.messages.length;
-      }
-    });
-    return { totalSessions: workspace.agents.size, activeSessions, totalMessages };
-  },
-  /**
-   * Clear all agents in a specific workspace.
-   * Unlike clear(), this works even when the user is viewing a different workspace.
-   */
-  clearForWorkspace: (workspaceId: string) => {
-    const workspace = unifiedStateStore.getWorkspace(workspaceId as WorkspaceId);
-    if (workspace) {
-      workspace.agents.clear();
-      workspace.activeAgentId = null;
-      scheduleStoreUpdate(workspaceId as WorkspaceId);
-    }
-  },
-};
-
 // Export the config cache proxy (communicates with main process)
 export { configCache, ConfigCacheProxyService } from './config-cache-proxy.service';
 
 // Create IPC proxies for services that need Node.js APIs
 import { invoke } from '$lib/electron-bridge';
 import { AGENT_CHANNELS, PERSISTENCE_CHANNELS } from '$shared/ipc/channels';
-import { unifiedStateStore } from '$features/agent/services/unified-state-store';
-import type { Workspace } from '$shared/types';
-import type { AgentSession } from '../../../shared/types';
+import type { Workspace, AgentSession } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 
 
@@ -977,7 +516,7 @@ export class PersistenceService {
 
         try {
           serializableSession = structuredClone(serializableSession);
-        } catch (retryError) {
+        } catch {
           // If even truncated version fails, save without messages
           agentProxiesLogger.error('Cannot clone session even with truncation:', {
             agentId: session.id,
@@ -1000,8 +539,8 @@ export class PersistenceService {
         workspaceId,
         options: { immediate: true, allowTruncation },
       });
-    } catch (error) {
-      agentProxiesLogger.error('Failed to save session:', error);
+    } catch (saveError) {
+      agentProxiesLogger.error('Failed to save session:', saveError);
     }
   }
 
@@ -1009,7 +548,7 @@ export class PersistenceService {
     try {
       const response = (await invoke(PERSISTENCE_CHANNELS.LOAD, { key })) as any;
       return response.data;
-    } catch (error) {
+    } catch {
       // Fallback to localStorage
       const data = localStorage.getItem(key);
       return data ? JSON.parse(data) : null;
@@ -1036,12 +575,13 @@ export class PersistenceService {
       // Ensure agentId is a plain string (not a Proxy)
       const plainAgentId = agentId ? String(agentId) : '';
 
-      // Get workspace ID from parameter or session store
+      // Get workspace ID from parameter or Redux state
       let finalWorkspaceId = workspaceId;
       if (!finalWorkspaceId) {
-        const workspace = unifiedStateStore.currentWorkspace;
-        const agent = workspace?.agents.get(plainAgentId);
-        finalWorkspaceId = agent?.session.workspaceId || '';
+        const reduxState = getReduxStore().getState();
+        const wsId = selectActiveWorkspaceId.select(reduxState) ?? '';
+        const agent = wsId ? selectAgentById.select(reduxState, plainAgentId) : undefined;
+        finalWorkspaceId = (agent?.workspaceId as string) || wsId || '';
       }
 
       const response = (await invoke(PERSISTENCE_CHANNELS.LOAD_AGENT_CONFIG, {
@@ -1275,11 +815,13 @@ class RecoveryServiceProxy {
     { agentId: string; workspaceId: string; timestamp: number }
   >();
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async needsRecovery(agentId: string, _workspaceId: string): Promise<boolean> {
     // Check if there's recovery data for this agent
     return this.recoveryData.has(agentId);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async recoverSession(session: AgentSession, _workspaceId: string): Promise<AgentSession> {
     // Clear recovery data after recovery
     this.recoveryData.delete(session.id);

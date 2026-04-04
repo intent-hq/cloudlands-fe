@@ -994,31 +994,37 @@
     error = null;
 
     try {
-      // Import and use the github auth store
-      const { githubAuthStore } =
-        await import('$features/github-auth/renderer/github-auth.store.svelte');
+      const { getReduxStore } = await import('$lib/store/redux-dispatch-bridge');
+      const { initializeGitHubAuth, startGitHubAuth } = await import(
+        '$lib/store/slices/github-auth/github-auth-slice'
+      );
+      const { selectGitHubAuthIsAuthenticated, selectGitHubAuthIsAuthenticating, selectGitHubAuthError } =
+        await import('$lib/store/slices/github-auth/github-auth-selectors');
 
-      // Initialize the auth store if not already
-      await githubAuthStore.initialize();
+      const store = getReduxStore();
+
+      // Initialize the auth state if not already
+      store.dispatch(initializeGitHubAuth());
 
       // Start the auth flow
-      await githubAuthStore.startAuth();
+      store.dispatch(startGitHubAuth());
 
-      // Poll for completion and refetch branches when done
+      // Poll Redux state for completion (saga handles the IPC polling)
       const checkAuthInterval = setInterval(async () => {
-        await githubAuthStore.checkAuthStatus();
-        if (githubAuthStore.state.isAuthenticated) {
+        const state = store.getState();
+        if (selectGitHubAuthIsAuthenticated.select(state)) {
           clearInterval(checkAuthInterval);
           isConnectingGitHub = false;
           githubAuthNeeded = 'none';
           // Refetch branches with new auth
           await handleRefresh();
-        } else if (!githubAuthStore.state.isAuthenticating) {
+        } else if (!selectGitHubAuthIsAuthenticating.select(state)) {
           // Auth was cancelled or failed
           clearInterval(checkAuthInterval);
           isConnectingGitHub = false;
-          if (githubAuthStore.state.error) {
-            error = githubAuthStore.state.error;
+          const authError = selectGitHubAuthError.select(state);
+          if (authError) {
+            error = authError;
           }
         }
       }, 1000);
@@ -1027,6 +1033,7 @@
       setTimeout(
         () => {
           if (isConnectingGitHub) {
+            clearInterval(checkAuthInterval);
             isConnectingGitHub = false;
             error = 'GitHub connection timed out. Please try again.';
           }
@@ -1428,7 +1435,7 @@
           {#if isDropdownMounting || (isLoading && branches.length === 0)}
             <div class="px-4 py-3">
               <div class="space-y-3">
-                {#each [1, 2, 3, 4, 5] as _}
+                {#each [1, 2, 3, 4, 5] as { }}
                   <div class="flex items-center gap-2">
                     <div class="w-4 h-4 bg-muted rounded animate-pulse"></div>
                     <div class="h-4 bg-muted rounded flex-1 animate-pulse"></div>
@@ -1579,7 +1586,7 @@
                     <div class="ml-4" transition:slide={{ axis: 'y' }}>
                       {#if isLoadingRemote}
                         <div class="px-2 py-2 space-y-2">
-                          {#each [1, 2, 3] as _}
+                          {#each [1, 2, 3] as { }}
                             <div class="flex items-center gap-2">
                               <div class="w-3.5 h-3.5 bg-muted rounded animate-pulse"></div>
                               <div class="h-4 bg-muted rounded flex-1 animate-pulse"></div>

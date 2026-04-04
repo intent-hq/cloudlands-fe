@@ -413,7 +413,7 @@ export function setupNotesPrimitivesIPC() {
               });
             }
             return { ok: true };
-          } catch (gitError) {
+          } catch  {
             // Git apply failed, patch won't apply cleanly
             return { ok: false, error: 'Patch cannot be applied cleanly' };
           } finally {
@@ -642,6 +642,7 @@ export function setupNotesPrimitivesIPC() {
     'codebase:search',
     createSafeValidatedHandler(
       CodebaseSearchSchema,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       async (_, validated) => {
         try {
           // This would integrate with the actual codebase search

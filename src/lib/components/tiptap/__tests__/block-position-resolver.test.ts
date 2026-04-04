@@ -4,18 +4,15 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
-import { common, createLowlight } from 'lowlight';
 import {
   resolveBlockPosition,
   resolveCodeBlockLinePositions,
   getAllTextNodes,
   buildTextOffsetMap,
   findTextNodeForOffset,
-  type TextOffsetMapEntry,
 } from '../block-position-resolver';
 import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
 
-const lowlight = createLowlight(common);
 
 describe('Block Position Resolver', () => {
   let editor: Editor | null = null;

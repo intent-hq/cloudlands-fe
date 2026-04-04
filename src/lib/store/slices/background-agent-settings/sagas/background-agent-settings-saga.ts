@@ -1,4 +1,4 @@
-import { call, put, fork, takeEvery } from "typed-redux-saga";
+import { call, put, takeEvery } from "typed-redux-saga";
 import { getLocalStorageJSON, setLocalStorageJSON, } from "$lib/store/utils/safe-local-storage-saga";
 import { getDefaultModelForProvider, getDefaultProviderId, PROVIDER_MODEL_TIERS, } from "$shared/config/provider-config";
 import { STORAGE_KEY, PROVIDER_SETTINGS_KEY, hydrateSettings, hydrateProviderSettings, setDefaultModel, setTypeOverride, clearTypeOverride, resetSettings, saveProviderSnapshot, restoreProviderSettings, switchProvider, type ProviderBgSettings, type BackgroundAgentType, } from "../background-agent-settings-slice";
@@ -40,7 +40,7 @@ function* persistMainSettings() {
         const settings = { defaultModel, typeOverrides };
         yield* call(setLocalStorageJSON, STORAGE_KEY, settings);
     }
-    catch (error) {
+    catch {
     }
 }
 function* persistProviderSettings(providerSettings: Record<string, ProviderBgSettings>) {
@@ -102,7 +102,5 @@ export function* backgroundAgentSettingsSaga() {
     yield* takeEvery(resetSettings, persistMainSettings);
     yield* takeEvery(restoreProviderSettings, persistMainSettings);
     // Handle switchProvider
-    yield* fork(function* () {
-        yield* takeEvery(switchProvider, handleSwitchProvider);
-    });
+    yield* takeEvery(switchProvider, handleSwitchProvider);
 }

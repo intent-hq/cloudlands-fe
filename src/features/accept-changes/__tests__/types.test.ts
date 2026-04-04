@@ -12,18 +12,9 @@ import type {
   StepStatus,
   WorkspaceGitStatus,
   LocalCommitInfo,
-  CommitFile,
-  GetAcceptStatusRequest,
-  PrepareAcceptRequest,
-  PrepareAcceptResponse,
-  PrepareAcceptFile,
-  ExecuteAcceptRequest,
   AcceptChangesStep,
   AcceptChangesResult,
-  ExportFilesRequest,
-  ExportFilesResult,
 } from '../types';
-import type { WorkspaceId } from '$shared/types/branded-ids';
 
 describe('accept-changes types', () => {
   describe('AcceptAction', () => {

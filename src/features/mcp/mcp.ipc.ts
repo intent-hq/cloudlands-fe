@@ -14,7 +14,7 @@ import {
   getMcpStatus,
   type McpHub,
 } from './main/index';
-import { getWorkspaceEventService } from '../events/main';
+// getWorkspaceEventService removed — Redux handles events now
 import { Logger } from '$shared/logger';
 import { MCP_CHANNELS } from '$shared/ipc/channels';
 import { createWorkspaceId, isValidWorkspaceId } from '$shared/types/branded-ids';
@@ -193,10 +193,6 @@ export async function setupMCPIPC(mainWindow?: BrowserWindow) {
             actor,
           );
 
-          // Track the tool call in the event service
-          const eventService = getWorkspaceEventService(effectiveWorkspaceId);
-          await eventService.initialize();
-
           return {
             success: true,
             result,
@@ -206,10 +202,6 @@ export async function setupMCPIPC(mainWindow?: BrowserWindow) {
             'Tool call failed:',
             error instanceof Error ? error : new Error(String(error)),
           );
-
-          // Track the error in the event service
-          const eventService = getWorkspaceEventService(effectiveWorkspaceId);
-          await eventService.initialize();
 
           return {
             success: false,

@@ -336,7 +336,7 @@ export async function watchSessionFile(
           }
         }
       }
-    } catch (error) {
+    } catch  {
       // File might not exist yet
     }
   };

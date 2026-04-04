@@ -17,25 +17,13 @@ vi.mock("typed-redux-saga", () => ({
   take: function* (patternOrChannel: any) {
     return yield sagaEffects.take(patternOrChannel);
   },
+  select: function* (selector: any, ...args: any[]) {
+    return yield sagaEffects.select(selector, ...args);
+  },
 }));
 
-const { eventChannelMock, workspaceStoreMock, deepLinkStoreMock } = vi.hoisted(() => ({
+const { eventChannelMock } = vi.hoisted(() => ({
   eventChannelMock: vi.fn(),
-  workspaceStoreMock: {
-    close: vi.fn(),
-  },
-  deepLinkStoreMock: {
-    clearPendingAction: vi.fn(),
-    getPendingAction: vi.fn(),
-  },
-}));
-
-vi.mock("$features/deeplink/deeplink.store.svelte", () => ({
-  deepLinkStore: deepLinkStoreMock,
-}));
-
-vi.mock("$features/workspace/workspace.store.svelte", () => ({
-  workspaceStore: workspaceStoreMock,
 }));
 
 vi.mock("redux-saga", async () => {
@@ -46,7 +34,12 @@ vi.mock("redux-saga", async () => {
   };
 });
 
-import { requestHomePageInitializer } from "../deep-links-slice";
+import { clearActiveWorkspace } from "$lib/store/slices/workspace/workspace-slice";
+import {
+  clearPendingDeepLinkAction,
+  requestHomePageInitializer,
+} from "../deep-links-slice";
+import { initialState } from "../deep-links-slice";
 import {
   deepLinksSaga,
   handleDeepLinkCreate,
@@ -54,6 +47,7 @@ import {
   handleLocationChange,
   loadInitialPendingDeepLinkSaga,
   watchDeepLinkCreateSaga,
+  watchDeepLinkIpcSaga,
   watchLegacyOpenCreateWorkspaceModalSaga,
   watchLocationSaga,
 } from "./deep-links-saga";
@@ -89,6 +83,8 @@ describe("deepLinksSaga", () => {
       .next()
       .call(loadInitialPendingDeepLinkSaga)
       .next()
+      .fork(watchDeepLinkIpcSaga)
+      .next()
       .fork(watchLocationSaga)
       .next()
       .fork(watchDeepLinkCreateSaga)
@@ -103,7 +99,7 @@ describe("deepLinksSaga", () => {
       pathname: "/",
       href: "http://localhost/?create=true",
     })
-      .call([workspaceStoreMock, workspaceStoreMock.close])
+      .put(clearActiveWorkspace())
       .put(requestHomePageInitializer({ focus: true }))
       .run();
 
@@ -122,7 +118,7 @@ describe("deepLinksSaga", () => {
       pathname: "/",
       href: `http://localhost/?deepLink=${deepLink}`,
     })
-      .call([workspaceStoreMock, workspaceStoreMock.close])
+      .put(clearActiveWorkspace())
       .put(requestHomePageInitializer({ applyPrefill: true }))
       .run();
 
@@ -132,12 +128,12 @@ describe("deepLinksSaga", () => {
     expect(window.history.replaceState).toHaveBeenCalledWith(null, "", "/");
   });
 
-  it("handles deep-link create events from the renderer store", async () => {
+  it("handles deep-link create events by dispatching Redux actions", async () => {
     await expectSaga(handleDeepLinkCreate, {
       params: { repo: "/repo/intent" },
     })
       .put(requestHomePageInitializer({ applyPrefill: true }))
-      .call([deepLinkStoreMock, deepLinkStoreMock.clearPendingAction])
+      .put(clearPendingDeepLinkAction())
       .run();
 
     expect(sessionStorage.getItem("workspace-prefill")).toBe(
@@ -151,17 +147,33 @@ describe("deepLinksSaga", () => {
       .run();
   });
 
-  it("replays a pending create action on startup", () => {
-    deepLinkStoreMock.getPendingAction.mockReturnValue({
-      type: "create",
-      params: { repo: "/repo/intent" },
-    });
+  it("replays a pending create action on startup when state has one", async () => {
+    const stateWithPending = {
+      deepLinks: {
+        ...initialState,
+        pendingAction: {
+          type: "create" as const,
+          params: { repo: "/repo/intent" },
+        },
+      },
+    };
 
-    const iterator = loadInitialPendingDeepLinkSaga();
-    expect(iterator.next()).toEqual({
-      value: sagaEffects.call(handleDeepLinkCreate, { params: { repo: "/repo/intent" } }),
-      done: false,
-    });
+    await expectSaga(loadInitialPendingDeepLinkSaga)
+      .withState(stateWithPending)
+      .put(requestHomePageInitializer({ applyPrefill: true }))
+      .put(clearPendingDeepLinkAction())
+      .run();
+  });
+
+  it("does nothing on startup when no pending action", async () => {
+    const stateEmpty = {
+      deepLinks: initialState,
+    };
+
+    await expectSaga(loadInitialPendingDeepLinkSaga)
+      .withState(stateEmpty)
+      .not.put(requestHomePageInitializer({ applyPrefill: true }))
+      .silentRun(0);
   });
 
   it("takes renderer deep-link create events from the window channel", () => {

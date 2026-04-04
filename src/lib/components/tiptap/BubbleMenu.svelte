@@ -25,7 +25,7 @@
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   // import { getAgentTypes } from '$features/agent/instruction-registry';
   import Portal from '$lib/components/ui/Portal.svelte';
-  import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
+  import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
 
   interface Props {
     editor: Editor | null;
@@ -44,6 +44,7 @@
     noteId,
     onAddComment,
     onAgentLaunched,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onCreateSessionComment: _onCreateSessionComment,
     showNoteActions = true,
   }: Props = $props();
@@ -60,8 +61,6 @@
   let launchDialogPosition = $state({ x: 0, y: 0 });
   let launchDialogSelection = $state('');
   let launchDialogMessage = $state('');
-  let launchDialogSelectionFrom = $state(0);
-  let launchDialogSelectionTo = $state(0);
 
   // Link input state
   let showLinkInput = $state(false);
@@ -184,9 +183,6 @@
 
     // Update selection (but DON'T clear the message)
     launchDialogSelection = selectedText;
-    // Store selection positions for session comment creation
-    launchDialogSelectionFrom = from;
-    launchDialogSelectionTo = to;
 
     // Open dialog (or keep it open if already open)
     showLaunchDialog = true;

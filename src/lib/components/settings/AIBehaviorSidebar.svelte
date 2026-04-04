@@ -8,7 +8,7 @@
     selectHasOverrides,
     selectUserOverrides,
   } from '$lib/store/slices/specialists/specialists-selectors';
-  import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
+  import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
 
@@ -26,8 +26,9 @@
   let { activeView, onSelect }: Props = $props();
 
   const specialists = selectSpecialists();
+  const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
   const visibleSpecialists = $derived.by(() =>
-    filterSpecialistsByGitHubAuth($specialists, githubAuthStore.state.isAuthenticated)
+    filterSpecialistsByGitHubAuth($specialists, $isGitHubAuth$)
   );
   const userOverrides$ = selectUserOverrides();
   // Track override changes to trigger re-render (updates {@const} values in template)

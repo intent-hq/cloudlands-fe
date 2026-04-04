@@ -10,10 +10,8 @@ import {
   loadProviderModelsFromStorage,
   loadWorkspaceModelsFromStorage,
   modelReducer,
-  resetModelState,
   setAvailableModels,
   setLoadingStateForProvider,
-  setProviderModel,
   setRetryAttempt,
   setSelectedModel,
   setWorkspaceModel,
@@ -149,27 +147,5 @@ describe("modelReducer", () => {
     expect(clearedAll.workspaceModels).toEqual({});
   });
 
-  it("normalizes provider model updates", () => {
-    const state = modelReducer(
-      initialState,
-      setProviderModel({ providerId: "codex", model: "gpt-5.3-codex/high" })
-    );
-
-    expect(state.providerModels).toEqual({ codex: "codex:gpt-5.3-codex/high" });
-  });
-
-  it("resets the slice to initial state without mutating the previous state", () => {
-    const prev: ModelState = {
-      availableModels: createCollection("value", mockModels),
-      loadingState: { codex: { status: "loading", retryAttempt: 2 } },
-      workspaceModels: { "ws-1": "gpt5.4" },
-      providerModels: { codex: "codex:gpt-5.3-codex/high" },
-    };
-
-    const state = modelReducer(prev, resetModelState());
-
-    expect(prev.providerModels).toEqual({ codex: "codex:gpt-5.3-codex/high" });
-    expect(state).toEqual(initialState);
-  });
 });
 

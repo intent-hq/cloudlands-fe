@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { NotesService } from '../notes.service';
-import type { WorkspaceId, NoteId } from '../../../shared/types';
+import type { WorkspaceId } from '../../../shared/types';
 import { randomUUID } from 'crypto';
 
 /**

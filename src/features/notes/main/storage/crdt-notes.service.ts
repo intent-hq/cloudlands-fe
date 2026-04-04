@@ -8,7 +8,6 @@
  * - Conflict-free merging of concurrent edits
  */
 
-import * as Y from 'yjs';
 import { Logger } from '../../../../shared/logger';
 import { crdtDocumentManager } from './crdt-document-manager';
 import { FolderBasedNotesRepository } from './folder-notes.repository';

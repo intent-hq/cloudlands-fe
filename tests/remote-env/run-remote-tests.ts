@@ -6,12 +6,9 @@
  * Can check if containers are running before tests.
  */
 
-import { exec, spawn } from 'child_process';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
 import * as net from 'net';
 import { ALL_PROFILES, RemoteEnvProfile } from './remote-env-config';
-
-const execAsync = promisify(exec);
 
 /** Check if a port is open */
 async function isPortOpen(host: string, port: number, timeout = 2000): Promise<boolean> {

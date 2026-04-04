@@ -1,14 +1,11 @@
 import type { Editor } from '@tiptap/core';
 
-import { NoteId } from '$shared/types/branded-ids';
+import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+import { updateNoteContent } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import type { ReduxStore } from '$lib/store/types';
 
 import type { LoggerLike } from './logger.types';
-
-type NotesStateManagerLike = {
-  workspaceId: string | null | undefined;
-  findById: (id: ReturnType<typeof NoteId>) => unknown;
-  updateNoteContent: (id: ReturnType<typeof NoteId>, content: string) => void;
-};
 
 export async function runStartSectionTasks({
   noteId,
@@ -18,7 +15,7 @@ export async function runStartSectionTasks({
   tasks,
   assignAgent,
   processHTMLToMarkdown,
-  notesStateManager,
+  dispatch,
   setLastKnownContent,
   logger,
 }: {
@@ -32,7 +29,7 @@ export async function runStartSectionTasks({
     html: string,
     options?: { preserveAnchors?: boolean },
   ) => string | Promise<string>;
-  notesStateManager: NotesStateManagerLike;
+  dispatch: ReduxStore['dispatch'];
   setLastKnownContent: (value: string) => void;
   logger: LoggerLike;
 }): Promise<void> {
@@ -92,13 +89,11 @@ export async function runStartSectionTasks({
       // Update last known content
       setLastKnownContent(markdownContent);
 
-      // Update notes state manager to persist
-      if (notesStateManager.workspaceId === workspaceId) {
-        const note = notesStateManager.findById(NoteId(noteId));
-        if (note) {
-          notesStateManager.updateNoteContent(NoteId(noteId), markdownContent);
-          logger.info('Note saved after bulk task delegation');
-        }
+      // Update Redux store to persist
+      const note = selectNoteById.select(getReduxStore().getState(), workspaceId, noteId);
+      if (note) {
+        dispatch(updateNoteContent(workspaceId, noteId, markdownContent));
+        logger.info('Note saved after bulk task delegation');
       }
     } catch (error) {
       logger.error('Failed to save note after bulk task delegation', error);

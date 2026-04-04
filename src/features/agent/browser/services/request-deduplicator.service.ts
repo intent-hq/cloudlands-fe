@@ -71,7 +71,7 @@ export class RequestDeduplicator {
 
     // Create new request
     logger.debug(`Starting new request: ${key}`);
-    const promise = this.executeRequest(key, operation, ttl);
+    const promise = this.executeRequest(key, operation);
 
     this.pendingRequests.set(key, {
       promise,
@@ -105,7 +105,6 @@ export class RequestDeduplicator {
   private async executeRequest<T>(
     key: string,
     operation: () => Promise<T>,
-    ttl: number,
   ): Promise<T> {
     try {
       const result = await operation();

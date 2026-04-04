@@ -15,12 +15,15 @@ import path from 'path';
 import { z } from 'zod';
 import { mainLogger } from './main-logger';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
-import type { Result, CommandResponse } from '../../../shared/types';
-import { WorkspaceEvent, EventActor, WorkspaceEventType } from '../../events/types';
+import type { CommandResponse } from '../../../shared/types';
+import { WorkspaceEvent, WorkspaceEventType } from '../../events/types';
 import { FileSystemLogRepository } from './log.repository';
 import type { LogRepository } from './log.repository';
-import { getWorkspaceEventService } from '../../events/main';
+import { createWorkspaceEvent } from '../../events/types';
+import { EventStore } from '../../events/main/event-store';
 import { LOG_CHANNELS } from '../../../shared/ipc/channels';
+import { mainDispatch } from '../../../store/main/redux-store-bridge';
+import { emitWorkspaceEvent as reduxEmitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { EmptySchema } from '../../../main/ipc-schemas';
 
@@ -73,18 +76,19 @@ const TrackMcpCallSchema = z.object({
   exchangeId: z.string().optional(),
 });
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const GetEventsSchema = z.string(); // workspaceId
-
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const ClearEventsSchema = z.string(); // workspaceId
-
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const ReadLogSchema = z.object({
   type: z.enum(['main', 'renderer']),
   lines: z.number().optional(),
   filter: z.string().optional(),
 });
-
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const ClearLogSchema = z.enum(['main', 'renderer', 'all']).optional();
-
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const LogSummarySchema = z
   .object({
     hours: z.number().optional(),
@@ -136,20 +140,6 @@ const logRepository: LogRepository = new FileSystemLogRepository();
 /**
  * Convert Result type to CommandResponse type for IPC
  */
-function resultToCommandResponse<T>(result: Result<T, string>): CommandResponse<T> {
-  if (result.ok) {
-    return {
-      success: true,
-      data: result.data,
-    };
-  } else {
-    return {
-      success: false,
-      error: result.error,
-    };
-  }
-}
-
 // ============================================================================
 // Helper Functions
 // ============================================================================
@@ -201,17 +191,22 @@ export function setupLogIPC() {
       TrackFileChangeSchema,
       async (_, validated): Promise<CommandResponse<any>> => {
         try {
-          // Use event service
-          const eventService = getWorkspaceEventService(validated.workspaceId);
-          await eventService.initialize();
-
-          // Emit file change event
-          eventService.emitFileChange(validated.filePath, validated.action, {
-            additions: validated.additions,
-            deletions: validated.deletions,
-            diff: validated.diff,
-            actor: validated.actor || { type: 'user', name: 'User' },
-          });
+          // Emit file change event via Redux
+          const actor = validated.actor || { type: 'user' as const, name: 'User' };
+          const fileEvent = createWorkspaceEvent(
+            'file:changed',
+            validated.workspaceId,
+            actor as any,
+            {
+              path: validated.filePath,
+              relativePath: validated.filePath,
+              action: validated.action,
+              additions: validated.additions,
+              deletions: validated.deletions,
+              diff: validated.diff,
+            },
+          );
+          mainDispatch(reduxEmitWorkspaceEvent(fileEvent));
 
           // Return success
           return {
@@ -241,10 +236,7 @@ export function setupLogIPC() {
       TrackAgentEventSchema,
       async (_, validated): Promise<CommandResponse<WorkspaceEvent>> => {
         try {
-          const eventService = getWorkspaceEventService(validated.workspaceId);
-          await eventService.initialize();
-
-          // Create and emit the agent event
+          // Create and emit the agent event via Redux
           const event: WorkspaceEvent = {
             id: crypto.randomUUID(),
             type: (validated.eventType as WorkspaceEventType) || 'agent:message',
@@ -258,9 +250,8 @@ export function setupLogIPC() {
             metadata: validated.metadata,
           };
 
-          // Emit through the event bus
-          const eventBus = eventService.getEventBus();
-          eventBus.emitEvent(event);
+          // Emit through Redux (which handles persistence and broadcast via sagas)
+          mainDispatch(reduxEmitWorkspaceEvent(event));
 
           mainLogger.debug('[LOG] Agent event tracked', {
             eventType: validated.eventType,
@@ -287,18 +278,24 @@ export function setupLogIPC() {
       TrackMcpCallSchema,
       async (_, validated): Promise<CommandResponse<WorkspaceEvent>> => {
         try {
-          const eventService = getWorkspaceEventService(validated.workspaceId);
-          await eventService.initialize();
-
           // Determine tool kind from tool name
           const toolKind = getToolKindFromName(validated.toolName);
 
-          // Use the service's emitAgentToolCall method for proper event creation
-          eventService.emitAgentToolCall(validated.toolName, toolKind, validated.metadata || {}, {
-            status: validated.success ? 'completed' : 'error',
-            error: validated.error,
-            duration: validated.duration,
-          });
+          // Emit agent tool call event via Redux
+          const toolEvent = createWorkspaceEvent(
+            'agent:tool:call',
+            validated.workspaceId,
+            validated.actor || { type: 'agent' as const, name: 'Agent', id: '' },
+            {
+              toolName: validated.toolName,
+              toolKind,
+              metadata: validated.metadata || {},
+              status: validated.success ? 'completed' : 'error',
+              error: validated.error,
+              duration: validated.duration,
+            },
+          );
+          mainDispatch(reduxEmitWorkspaceEvent(toolEvent));
 
           mainLogger.debug('[LOG] MCP tool call tracked', {
             toolName: validated.toolName,
@@ -323,12 +320,9 @@ export function setupLogIPC() {
     LOG_CHANNELS.GET_EVENTS,
     async (_, workspaceId: string): Promise<CommandResponse<WorkspaceEvent[]>> => {
       try {
-        // Use event service
-        const eventService = getWorkspaceEventService(workspaceId);
-        await eventService.initialize();
-
-        const eventBus = eventService.getEventBus();
-        const events = await eventBus.query([]);
+        // Query events from the EventStore
+        const eventStore = new EventStore(workspaceId);
+        const events = eventStore.getAll();
 
         // Return the events directly - they're already in WorkspaceEvent format
         return { success: true, data: events };
@@ -347,12 +341,9 @@ export function setupLogIPC() {
     LOG_CHANNELS.CLEAR_EVENTS,
     async (_, workspaceId: string): Promise<CommandResponse<void>> => {
       try {
-        // Use event service
-        const eventService = getWorkspaceEventService(workspaceId);
-        await eventService.initialize();
-
-        const eventBus = eventService.getEventBus();
-        await eventBus.clear();
+        // Clear events from the EventStore
+        const clearEventStore = new EventStore(workspaceId);
+        await clearEventStore.clear();
 
         // Broadcast the clear event to workspace windows
         sendToWorkspaceWindows(workspaceId, 'events:cleared', workspaceId);
@@ -518,6 +509,7 @@ export function setupLogIPC() {
         const since = new Date(Date.now() - hours * 60 * 60 * 1000);
 
         const userDataPath = app.getPath('userData');
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const logPath = path.join(userDataPath, 'logs');
 
         const summary: LogSummary = {

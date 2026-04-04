@@ -73,7 +73,7 @@ describe('MCP STDIO Proxy Integration Tests', () => {
     // Clean up test workspace
     try {
       await fs.rmdir(testWorkspacePath, { recursive: true });
-    } catch (error) {
+    } catch  {
       // Ignore cleanup errors
     }
   });
@@ -88,7 +88,7 @@ describe('MCP STDIO Proxy Integration Tests', () => {
       try {
         await fs.access(stdioServerPath);
         serverExists = true;
-      } catch (error) {
+      } catch  {
         // Will use TypeScript version with tsx
       }
 

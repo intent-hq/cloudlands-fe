@@ -179,28 +179,30 @@ this.eventBus.emitDomainEvent('line-attribution:updated', {
 });
 ```
 
-### 7. EventBus Broadcasts to Renderer
+### 7. Domain Event Broadcast to Renderer
 
-**Location**: `unified-event-bus.ts`
+**Location**: `src/store/main/utils/domain-event-broadcast.ts`
 
-**Automatic Broadcasting**:
+**Redux-based Broadcasting**:
 
 ```typescript
-// Override emit to add broadcasting
-this.emit = function (event: string | symbol, ...args: any[]): boolean {
-  const eventName = event.toString();
-  const data = args[0];
-
-  // Broadcast to all renderer windows
-  const windows = BrowserWindow.getAllWindows();
-  windows.forEach((window) => {
-    if (!window.isDestroyed()) {
-      window.webContents.send(eventName, data); // ← IPC send to renderer
-    }
-  });
-
-  return originalEmit.call(this, event, ...args);
-};
+// Domain events are dispatched as Redux actions and broadcast via sagas.
+// broadcastDomainEvent() sends to renderer windows via IPC:
+export async function broadcastDomainEvent(
+  ipcChannel: DomainEvent,
+  data: unknown,
+  isGlobalEvent: boolean,
+): Promise<void> {
+  const { sendToWorkspaceWindows } = await import(
+    "../../../features/system/main/system.ipc"
+  );
+  if (isGlobalEvent) {
+    sendToWorkspaceWindows(undefined, ipcChannel, safeData);
+  } else {
+    const workspaceId = getWorkspaceId(data);
+    sendToWorkspaceWindows(workspaceId, ipcChannel, safeData);
+  }
+}
 ```
 
 ### 8. Preload Script Filters Event

@@ -719,7 +719,6 @@ export class FileTrackingService {
     changeIds: string[],
     toStage: ChangeStage,
     actor: { type: 'agent' | 'user'; id: string; name?: string },
-    metadata?: any,
   ): Promise<void> {
     // Acquire mutex to prevent race conditions with concurrent storage operations
     const release = await this.acquireStorageMutex();

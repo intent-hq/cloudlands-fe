@@ -1051,7 +1051,7 @@ export class TerminalAdapter {
       if (lines.length > 0) {
         const lastLine = lines[lines.length - 1];
         const secondLastLine = lines.length > 1 ? lines[lines.length - 2] : '';
-        const thirdLastLine = lines.length > 2 ? lines[lines.length - 3] : '';
+
 
         // Case 1: Complete prompt on one line
         if (promptSymbolPattern.test(lastLine) && userHostPattern.test(lastLine)) {
@@ -1747,7 +1747,7 @@ export class TerminalAdapter {
       }
 
       // Import and use the panel layout manager to open browser panel
-      import('$features/layout/panel-layout-manager.svelte')
+      import('$features/layout/panel-layout-adapter')
         .then(({ getPanelLayoutManager }) => {
           const layoutManager = getPanelLayoutManager(this.workspaceId);
           layoutManager.openBrowserPanel(uri);

@@ -10,7 +10,10 @@
   import { onMount, untrack } from 'svelte';
   import { invoke, listenSync } from '$lib/electron-bridge';
   import { pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import {
+    selectActiveWorkspace,
+    selectActiveWorkspaceId,
+  } from '$lib/store/slices/workspace/workspace-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import type { TrackedChange } from '$features/file-tracking/types';
   import DiffViewer from './DiffViewer.svelte';
@@ -18,7 +21,7 @@
   import type { LineStageIndicator, PureDiffLineAnnotation } from './types';
   import * as Diff from 'diff';
   import Fa from 'svelte-fa';
-  import { faExclamationTriangle, faEye } from '@fortawesome/free-solid-svg-icons';
+  import { faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { track } from '$lib/services/analytics';
 
@@ -61,9 +64,11 @@
     lineWrapping = false,
     onStageHunk,
     onUnstageHunk,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onOpenCommit,
     refreshKey,
     useProvidedContent = false,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     lineStageIndicators,
     annotations = [],
     renderAnnotation,
@@ -106,9 +111,11 @@
 
   // Prevent multiple simultaneous staging operations
   let isProcessingLineAction = $state(false);
+  const activeWorkspace = selectActiveWorkspace();
+  const activeWorkspaceId = selectActiveWorkspaceId();
 
   // Get workspace info
-  const workspace = $derived(workspaceStore.current);
+  const workspace = $derived($activeWorkspace);
   const workspacePath = $derived(workspace?.worktreePath || workspace?.repositoryPath || '');
 
   // File info
@@ -462,45 +469,6 @@
    *   --- a/filename
    *   +++ b/filename
    */
-  function convertToGitPatch(jsdiffPatch: string, filePath: string, isNewFile: boolean): string {
-    const lines = jsdiffPatch.split('\n');
-    const result: string[] = [];
-
-    // Build git-format headers
-    if (isNewFile) {
-      result.push(`diff --git a/${filePath} b/${filePath}`);
-      result.push('new file mode 100644');
-      result.push('--- /dev/null');
-      result.push(`+++ b/${filePath}`);
-    } else {
-      result.push(`diff --git a/${filePath} b/${filePath}`);
-      result.push(`--- a/${filePath}`);
-      result.push(`+++ b/${filePath}`);
-    }
-
-    // Skip jsdiff headers and copy hunk content
-    let inHunk = false;
-    for (const line of lines) {
-      // Skip jsdiff headers
-      if (
-        line.startsWith('Index:') ||
-        line.startsWith('===') ||
-        line.startsWith('---') ||
-        line.startsWith('+++')
-      ) {
-        continue;
-      }
-      // Start copying from hunk header
-      if (line.startsWith('@@')) {
-        inHunk = true;
-      }
-      if (inHunk) {
-        result.push(line);
-      }
-    }
-
-    return result.join('\n');
-  }
 
   // Generate a patch for a range of lines (new file line numbers)
   // This properly includes context lines for git apply to work
@@ -942,7 +910,7 @@
 
     // Subscribe to file changes
     const filePath = change?.relativePath || change?.file;
-    const wsId = workspaceId || workspaceStore.current?.id;
+    const wsId = workspaceId || $activeWorkspaceId;
     let debounce: NodeJS.Timeout;
     let unsubscribe: (() => void) | undefined;
 
@@ -1112,7 +1080,7 @@
       </div>
       <!-- Code lines skeleton -->
       <div class="diff-skeleton-content">
-        {#each Array(12) as _, i}
+        {#each [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as i }
           <div
             class="diff-skeleton-line"
             class:diff-skeleton-line--added={i % 5 === 2}
@@ -1145,7 +1113,7 @@
       </span>
     </div>
   {:else}
-    {@const filePath = resolvedFilePath || change.relativePath || change.file}
+    
     <div class="diff-wrapper">
       <!-- Selection action bar -->
       {#if selectedLines}

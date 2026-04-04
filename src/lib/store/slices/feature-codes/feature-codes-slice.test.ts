@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   featureCodesReducer,
   fetchFeaturesSuccess,
-  deactivateFeatureSuccess,
   initialState,
   toggleFeatureCodeDialog,
   type FeatureCodesState,
@@ -63,61 +62,6 @@ describe("featureCodesReducer", () => {
       expect(initialState.activeFeatures).toEqual([]);
       expect(initialState.initialized).toBe(false);
       expect(state.activeFeatures).toHaveLength(1);
-    });
-  });
-
-  describe("deactivateFeatureSuccess", () => {
-    it("should remove the specified feature", () => {
-      const prev: FeatureCodesState = {
-        activeFeatures: ["feature-a", "feature-b", "feature-c"],
-        dialogOpen: false,
-        initialized: true,
-      };
-      const state = featureCodesReducer(
-        prev,
-        deactivateFeatureSuccess("feature-b")
-      );
-      expect(state.activeFeatures).toEqual(["feature-a", "feature-c"]);
-    });
-
-    it("should return same state if feature not found", () => {
-      const prev: FeatureCodesState = {
-        activeFeatures: ["feature-a"],
-        dialogOpen: false,
-        initialized: true,
-      };
-      const state = featureCodesReducer(
-        prev,
-        deactivateFeatureSuccess("nonexistent")
-      );
-      expect(state.activeFeatures).toEqual(["feature-a"]);
-    });
-
-    it("should handle empty features array", () => {
-      const prev: FeatureCodesState = {
-        activeFeatures: [],
-        dialogOpen: false,
-        initialized: true,
-      };
-      const state = featureCodesReducer(
-        prev,
-        deactivateFeatureSuccess("feature-a")
-      );
-      expect(state.activeFeatures).toEqual([]);
-    });
-
-    it("should not mutate previous state", () => {
-      const prev: FeatureCodesState = {
-        activeFeatures: ["feature-a", "feature-b"],
-        dialogOpen: false,
-        initialized: true,
-      };
-      const state = featureCodesReducer(
-        prev,
-        deactivateFeatureSuccess("feature-a")
-      );
-      expect(prev.activeFeatures).toEqual(["feature-a", "feature-b"]);
-      expect(state.activeFeatures).toEqual(["feature-b"]);
     });
   });
 

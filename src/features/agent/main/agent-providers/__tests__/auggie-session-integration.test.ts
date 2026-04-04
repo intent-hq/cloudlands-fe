@@ -10,11 +10,15 @@
  */
 
 import { describe, it, expect, afterEach, beforeAll } from 'vitest';
-import { spawn, type ChildProcess, execSync } from 'child_process';
+import { execFile, spawn, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as readline from 'readline';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
+const TEST_MODEL_ID = 'code-review-local';
 
 // ---------------------------------------------------------------------------
 // Helper: AuggieProcess
@@ -143,6 +147,17 @@ async function initAndAuth(proc: AuggieProcess) {
   return initRes;
 }
 
+async function maybeSetTestModel(proc: AuggieProcess, sessionId: string | undefined, availableModels?: any[]) {
+  if (!sessionId) return;
+  if (!Array.isArray(availableModels)) return;
+  if (!availableModels.some((model) => model?.modelId === TEST_MODEL_ID)) return;
+
+  await proc.sendRequest('session/set_model', {
+    sessionId,
+    modelId: TEST_MODEL_ID,
+  });
+}
+
 async function initAuthAndNewSession(proc: AuggieProcess, workspaceRoot: string) {
   const initRes = await initAndAuth(proc);
   const sessionRes = await proc.sendRequest('session/new', {
@@ -150,6 +165,11 @@ async function initAuthAndNewSession(proc: AuggieProcess, workspaceRoot: string)
     metadata: { workspaceId: 'test' },
     mcpServers: [],
   });
+  await maybeSetTestModel(
+    proc,
+    sessionRes?.result?.sessionId as string | undefined,
+    sessionRes?.result?.models?.availableModels,
+  );
   return { initRes, sessionRes, sessionId: sessionRes?.result?.sessionId as string };
 }
 
@@ -159,7 +179,8 @@ async function initAuthAndNewSession(proc: AuggieProcess, workspaceRoot: string)
 
 let auggiePath: string | null = null;
 try {
-  auggiePath = execSync('which auggie', { encoding: 'utf-8' }).trim();
+  const { stdout } = await execFileAsync('which', ['auggie'], { encoding: 'utf-8' });
+  auggiePath = stdout.trim() || null;
 } catch {
   auggiePath = null;
 }
@@ -168,7 +189,8 @@ try {
 let auggieVersion: string | null = null;
 if (auggiePath) {
   try {
-    auggieVersion = execSync(`${auggiePath} --version`, { encoding: 'utf-8' }).trim();
+    const { stdout } = await execFileAsync(auggiePath, ['--version'], { encoding: 'utf-8' });
+    auggieVersion = stdout.trim() || null;
   } catch {
     auggieVersion = null;
   }
@@ -284,6 +306,7 @@ describeOrSkip('auggie ACP session integration', { timeout: 60_000 }, () => {
       cwd: workspaceRoot,
       mcpServers: [],
     }, 30_000);
+    await maybeSetTestModel(proc2, sessionId, loadRes?.result?.models?.availableModels);
 
     // If auggie doesn't support loading by ACP sessionId, try the disk session ID
     if (loadRes.error) {
@@ -293,6 +316,7 @@ describeOrSkip('auggie ACP session integration', { timeout: 60_000 }, () => {
         cwd: workspaceRoot,
         mcpServers: [],
       }, 30_000);
+      await maybeSetTestModel(proc2, diskSessionId, loadRes2?.result?.models?.availableModels);
       expect(loadRes2.error).toBeUndefined();
       expect(loadRes2.result).toBeDefined();
     } else {
@@ -399,6 +423,7 @@ describeOrSkip('auggie ACP session integration', { timeout: 60_000 }, () => {
       cwd: workspaceRoot,
       mcpServers: [],
     }, 30_000);
+    await maybeSetTestModel(proc2, sessionId, loadRes?.result?.models?.availableModels);
 
     // With auggie ≥ 0.18.0, session/load should succeed with the ACP session ID
     expect(loadRes.error).toBeUndefined();
@@ -443,6 +468,7 @@ describeOrSkip('auggie ACP session integration', { timeout: 60_000 }, () => {
       cwd: workspaceRoot,
       mcpServers: [],
     }, 30_000);
+    await maybeSetTestModel(proc, sessionId, loadRes?.result?.models?.availableModels);
 
     expect(loadRes.error).toBeUndefined();
     expect(loadRes.result).toBeDefined();

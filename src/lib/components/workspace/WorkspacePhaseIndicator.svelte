@@ -1,8 +1,7 @@
 <script lang="ts">
   import type { WorkspacePhase } from './workspace-phase';
-  import { scale } from 'svelte/transition';
-
-  interface Props {
+  
+interface Props {
     phase: WorkspacePhase;
     /** Progress 0–1 for the building phase pie-chart fill */
     progress?: number;
@@ -25,8 +24,6 @@
   let pieFilled = $derived(Math.max(0, Math.min(1, progress)) * pieCircumference);
 
   // Scale factor to fit 16×16 viewBox icons into the circle
-  let iconScale = $derived(circleR / 10);
-  let iconOffset = $derived(cx - circleR);
 
   const colors = {
     planning: '#99999999',

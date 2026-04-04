@@ -21,10 +21,9 @@
    * - maxVisible: Maximum number of agents to show (default: 9)
    */
   import type { AgentSession } from '$shared/types';
-  import { extractAllContent } from '$shared/types';
+
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
-  import Header from '$lib/components/ui/Header.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
 
@@ -49,31 +48,6 @@
 
     // Fallback to agent ID (shortened)
     return `Agent ${agent.id.substring(0, 8)}`;
-  }
-
-  function getLastMessage(agent: AgentSession): string | null {
-    if (!agent.messages || agent.messages.length === 0) {
-      return null;
-    }
-
-    const lastMessage = agent.messages[agent.messages.length - 1];
-    const content = lastMessage ? extractAllContent(lastMessage) : '';
-    if (!lastMessage || !content) {
-      return null;
-    }
-
-    const maxLength = 60;
-    let text = '';
-    if (typeof content === 'string') {
-      text = content;
-    } else if (Array.isArray(content)) {
-      const block: any =
-        (content as any[]).find((b: any) => typeof b?.text === 'string' && b.text) ??
-        (content as any[]).find((b: any) => typeof b?.content === 'string' && b.content);
-      text = (block?.text as string) ?? (block?.content as string) ?? '';
-    }
-    if (!text) return null;
-    return text.length > maxLength ? text.slice(0, maxLength) + '...' : text;
   }
 
   function getAgentTimestamp(agent: AgentSession): Date | null {
@@ -148,7 +122,7 @@
 
     {#if visibleAgents.length > 0}
       {#each visibleAgents as agent (agent.id)}
-        {@const lastMessage = getLastMessage(agent)}
+        
         {@const timestamp = getAgentTimestamp(agent)}
         {@const specialistId = agent.metadata?.specialist || agent.agentMetadata?.specialist}
         <div class="pl-3">

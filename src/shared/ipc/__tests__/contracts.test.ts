@@ -20,7 +20,7 @@ import {
   validateIpcRequest,
   tryValidateIpcRequest,
 } from '../request-validation';
-import { AgentId, SessionId, WorkspaceId, MessageId, StreamId } from '../../types/branded-ids';
+import { AgentId, WorkspaceId } from '../../types/branded-ids';
 
 describe('IPC Contracts', () => {
   describe('Agent IPC Contracts', () => {

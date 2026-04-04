@@ -367,9 +367,9 @@ describe('WorkspaceRebindTracker', () => {
       const tracker = new WorkspaceRebindTracker();
       tracker.recordMount('ws-A');
 
-      // First rebind: A→B
+      // First rebind: A→B — must call startRebind() so isRebinding is true
       tracker.recordRebind('ws-B');
-      const gen1 = tracker.startRebind();
+      tracker.startRebind();
 
       // Send path starts waiting on the first rebind's promise
       const waiterPromise = tracker.waitForRebind(500);

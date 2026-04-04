@@ -27,22 +27,27 @@ export async function fetchModelsForProvider(providerId: string): Promise<Provid
     const normalizedId = getProviderConfig(providerId).id;
     switch (normalizedId) {
         case "auggie":
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             return getAuggieModels().catch((err) => {
                 return [];
             });
         case "claude-code":
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             return getClaudeCodeModels().catch((err) => {
                 return [];
             });
         case "codex":
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             return getCodexModels().catch((err) => {
                 return [];
             });
         case "cortex":
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             return getCortexModels().catch((err) => {
                 return [];
             });
         case "opencode":
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             return getOpencodeModels().catch((err) => {
                 return [];
             });

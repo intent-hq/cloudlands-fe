@@ -129,6 +129,7 @@
   });
 
   // Add cursor for streaming text
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const showCursor = $derived(
     isStreaming && currentIndex < getTextUnits(text, animationType).length,
   );

@@ -5,7 +5,7 @@
  * Includes event tracking for note changes.
  */
 
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain } from 'electron';
 import type { Result, CommandResponse } from '../../../shared/types';
 import { protocolAdapter } from '../../protocol/main/protocol-adapter';
 import { NOTES_CHANNELS } from '$shared/ipc/channels';

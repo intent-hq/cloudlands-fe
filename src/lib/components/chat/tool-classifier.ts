@@ -1500,7 +1500,7 @@ function taskDisplay(name: string, input: Record<string, any>, result?: any): To
       const firstTask = input.tasks[0];
       if (count === 1 && firstTask) {
         let taskName = firstTask.name ? truncate(firstTask.name, 30) : null;
-        let state = firstTask.state;
+        const state = firstTask.state;
 
         // If task name not in input, try to extract from result
         // Result format: "[x] UUID:xxx NAME:Task Name DESCRIPTION:..."

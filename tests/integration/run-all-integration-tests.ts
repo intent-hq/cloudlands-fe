@@ -61,7 +61,6 @@ class IntegrationTestRunner {
       console.log(`\n🧪 Running ${suiteName}...`);
 
       const startTime = performance.now();
-      const startMemory = process.memoryUsage();
 
       const proc = spawn('npx', ['vitest', 'run', suitePath], {
         stdio: this.verbose ? 'inherit' : 'pipe',

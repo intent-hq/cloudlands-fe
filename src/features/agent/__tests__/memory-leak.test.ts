@@ -5,7 +5,20 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { MessageAccumulatorService } from '../services/message-accumulator.service';
+import { combineReducers, legacy_createStore as createStore, type Store } from 'redux';
+import { messageAccumulatorReducer } from '../../../store/main/slices/message-accumulator/message-accumulator-slice';
+
+// Create per-test store for the API
+let testStore: Store;
+
+vi.mock('../../../store/main/redux-store-bridge', () => ({
+  mainDispatch: (action: any) => testStore.dispatch(action),
+  getMainState: () => testStore.getState(),
+  getMainStore: () => testStore,
+  initMainStoreBridge: vi.fn(),
+}));
+
+import * as messageAccumulatorApi from '../../../store/main/slices/message-accumulator/message-accumulator-api';
 
 // Mock disposal classes for testing
 class DisposeManager {
@@ -31,7 +44,7 @@ class DisposeManager {
     if (disposable && !this.disposed.has(id)) {
       try {
         await disposable.dispose();
-      } catch (error) {
+      } catch {
         // Swallow errors to match expected behavior
       }
       this.disposed.add(id);
@@ -43,7 +56,7 @@ class DisposeManager {
       if (!this.disposed.has(id)) {
         try {
           await disposable.dispose();
-        } catch (error) {
+        } catch {
           // Continue disposing other resources even if one fails
         }
         this.disposed.add(id);
@@ -135,7 +148,7 @@ class DisposableCollection {
     for (const disposable of this.disposables) {
       try {
         disposable.dispose();
-      } catch (error) {
+      } catch {
         // Continue disposing other resources even if one fails
       }
     }
@@ -178,7 +191,7 @@ describe('Memory Leak Prevention', () => {
         name: `resource-${i}`,
       }));
 
-      const ids = disposables.map((d, i) => disposeManager.register(d, d.name));
+      disposables.map((d) => disposeManager.register(d, d.name));
 
       await disposeManager.disposeAll();
 
@@ -333,100 +346,43 @@ describe('Memory Leak Prevention', () => {
     });
   });
 
-  describe('MessageAccumulatorService Memory Management', () => {
-    let accumulator: MessageAccumulatorService;
-
+  describe('Message Accumulator Redux State Cleanup', () => {
     beforeEach(() => {
-      MessageAccumulatorService.resetInstance();
-      accumulator = MessageAccumulatorService.getInstance();
+      testStore = createStore(combineReducers({ messageAccumulator: messageAccumulatorReducer }));
     });
 
-    afterEach(() => {
-      accumulator.dispose();
-    });
-
-    it('should clean up timers on dispose', () => {
-      const sessionId = 'test-session';
-
-      // Start accumulation which creates timers
-      accumulator.startAccumulation(sessionId, {
-        messageId: 'msg-1',
-        role: 'assistant',
-      });
-
-      // Add some chunks
-      accumulator.addChunk(sessionId, 'test', {
-        sequenceNumber: 1,
-      });
-
-      // Spy on clearTimeout
-      const clearTimeoutSpy = vi.spyOn(global, 'clearTimeout');
-
-      // Dispose should clear all timers
-      accumulator.dispose();
-
-      expect(clearTimeoutSpy).toHaveBeenCalled();
-    });
-
-    it('should clear all accumulators on dispose', () => {
+    it('should clear all accumulators via clearAll', () => {
       const sessions = ['session-1', 'session-2', 'session-3'];
 
       sessions.forEach((sessionId) => {
-        accumulator.startAccumulation(sessionId, {
+        messageAccumulatorApi.startAccumulation(sessionId, {
           messageId: `msg-${sessionId}`,
           role: 'assistant',
         });
-        accumulator.addChunk(sessionId, `content for ${sessionId}`, {
+        messageAccumulatorApi.addChunk(sessionId, `content for ${sessionId}`, {
           sequenceNumber: 1,
         });
       });
 
-      const statsBefore = accumulator.getStats();
+      const statsBefore = messageAccumulatorApi.getStats();
       expect(statsBefore.activeAccumulators).toBe(3);
 
-      accumulator.dispose();
+      messageAccumulatorApi.clearAll();
 
-      // After disposal, getting instance should return a new one
-      MessageAccumulatorService.resetInstance();
-      const newAccumulator = MessageAccumulatorService.getInstance();
-      const statsAfter = newAccumulator.getStats();
+      const statsAfter = messageAccumulatorApi.getStats();
       expect(statsAfter.activeAccumulators).toBe(0);
     });
 
-    it('should remove all event listeners on dispose', () => {
-      const listener = vi.fn();
-      accumulator.on('chunk', listener);
-      accumulator.on('complete', listener);
-      accumulator.on('error', listener);
+    it('should clear individual accumulators', () => {
+      messageAccumulatorApi.startAccumulation('s1');
+      messageAccumulatorApi.startAccumulation('s2');
+      messageAccumulatorApi.addChunk('s1', 'data', { sequenceNumber: 1 });
 
-      // Verify listeners are registered
-      accumulator.emit('chunk', {});
-      expect(listener).toHaveBeenCalledOnce();
+      messageAccumulatorApi.clear('s1');
 
-      // Get listener count before disposal
-      const listenerCountBefore = accumulator.listenerCount('chunk');
-      expect(listenerCountBefore).toBeGreaterThan(0);
-
-      accumulator.dispose();
-
-      // After disposal, no listeners should remain
-      const listenerCountAfter = accumulator.listenerCount('chunk');
-      expect(listenerCountAfter).toBe(0);
-
-      // Should still be called only once (from before disposal)
-      expect(listener).toHaveBeenCalledOnce();
-    });
-
-    it('should prevent operations after disposal', () => {
-      accumulator.dispose();
-
-      // Attempting to use after disposal should throw an error
-      expect(() => {
-        accumulator.startAccumulation('test', {
-          messageId: 'msg-1',
-          role: 'assistant',
-        });
-      }).toThrow('MessageAccumulatorService has been disposed');
+      expect(messageAccumulatorApi.getAccumulated('s1')).toBeUndefined();
+      expect(messageAccumulatorApi.getAccumulated('s2')).toBeDefined();
+      expect(messageAccumulatorApi.getStats().activeAccumulators).toBe(1);
     });
   });
 });

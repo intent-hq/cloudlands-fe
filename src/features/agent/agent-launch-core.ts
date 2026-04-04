@@ -29,7 +29,6 @@ const logger = createLogger('agent-launch-core');
 export function buildWorkspaceContext(
   workspacePath: string,
   references: ContextReference[],
-  workspaceId?: string,
 ): string {
   const lines = [`Workspace: ${workspacePath}`, ''];
 
@@ -115,7 +114,7 @@ export async function buildWorkspaceContextWithSources(
   references: ContextReference[],
 ): Promise<string> {
   // Start with basic context
-  let context = buildWorkspaceContext(workspacePath, references, workspaceId);
+  let context = buildWorkspaceContext(workspacePath, references);
 
   try {
     // Fetch third-party sources

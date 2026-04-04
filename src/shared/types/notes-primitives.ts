@@ -9,7 +9,6 @@
  */
 
 import { z } from 'zod';
-import type { WorkspaceId, NoteId } from './branded-ids';
 
 // ============================================================================
 // Base Types

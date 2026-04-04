@@ -224,6 +224,7 @@ describe('Anchor Normalization Integration', () => {
       if (anchors.start !== undefined && anchors.end !== undefined) {
         // The decoration will highlight from start to end
         // Let's see what text is in that range
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         doc.nodesBetween(anchors.start, anchors.end, (node, pos) => {
           if (node.isText) {
             foundText += node.text;

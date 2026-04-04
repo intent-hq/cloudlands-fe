@@ -49,8 +49,8 @@ export class EventCoordinator extends EventEmitter {
     const events: WorkspaceEvent[] = [];
 
     for (const change of changes) {
-      // Don't check for duplicates here - let the WorkspaceEventBus handle deduplication
-      // This prevents the event from being marked as duplicate before it reaches the bus
+      // Don't check for duplicates here - let the event queue handle deduplication
+      // This prevents the event from being marked as duplicate before it reaches the queue
       events.push(change.event);
       this.trackEvent(change.event);
     }
@@ -64,8 +64,8 @@ export class EventCoordinator extends EventEmitter {
    * Handle a single workspace event
    */
   async handleEvent(event: WorkspaceEvent): Promise<void> {
-    // Don't check for duplicates here - let the WorkspaceEventBus handle deduplication
-    // This prevents the event from being marked as duplicate before it reaches the bus
+    // Don't check for duplicates here - let the event queue handle deduplication
+    // This prevents the event from being marked as duplicate before it reaches the queue
     this.trackEvent(event);
     await this.queueEvents([event]);
   }
@@ -112,8 +112,9 @@ export class EventCoordinator extends EventEmitter {
     // Sort events by timestamp
     events.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-    // Emit each event as an activity-log-event so it gets picked up by WorkspaceEventService
-    // This is the ONLY path for emitting file change events - all other paths were causing duplicates
+    // Emit each event as an activity-log-event, bridged into Redux via
+    // ChangeDetectorRefactored → ChangeDetectorManager → workspace.ipc.ts → mainDispatch(emitWorkspaceEvent).
+    // This is the ONLY path for emitting file change events — all other paths were causing duplicates.
     for (const event of events) {
       this.emit('activity-log-event', event);
     }

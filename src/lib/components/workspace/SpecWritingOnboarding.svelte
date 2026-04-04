@@ -6,11 +6,10 @@
    * Sets expectations for the multi-agent coordination workflow.
    */
 
-  import { agentService } from '$features/agent/agent.service';
+  import { agentService } from '$features/agent/agent-ipc-bridge';
   import { createLogger } from '$lib/utils/client-logger';
-  import Header from '../ui/Header.svelte';
-
-  const logger = createLogger('SpecWritingOnboarding');
+  
+const logger = createLogger('SpecWritingOnboarding');
 
   interface Props {
     /** The agent ID of the coordinator writing the spec */

@@ -43,11 +43,11 @@ const ENABLE_DEBUG_FILES = false;
  */
 function getDebugDir(): string {
   // Dynamic require to avoid loading fs in browser
-  /* eslint-disable @typescript-eslint/no-require-imports */
+   
   const path = require('path') as typeof import('path');
   const os = require('os') as typeof import('os');
   const fs = require('fs') as typeof import('fs');
-  /* eslint-enable @typescript-eslint/no-require-imports */
+   
 
   const debugDir = path.join(os.homedir(), 'intent', 'recovery-debug');
   if (!fs.existsSync(debugDir)) {
@@ -83,10 +83,10 @@ function writeDebugFile(
 
   try {
     // Dynamic require to avoid loading fs in browser
-    /* eslint-disable @typescript-eslint/no-require-imports */
+     
     const fs = require('fs') as typeof import('fs');
     const path = require('path') as typeof import('path');
-    /* eslint-enable @typescript-eslint/no-require-imports */
+     
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `${timestamp}_${noteId}_${commentId}.json`;

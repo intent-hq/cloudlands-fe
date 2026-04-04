@@ -7,8 +7,6 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { UnifiedIdService } from '../../src/shared/services/unified-id.service';
-import { createAgentId, createWorkspaceId } from '../../src/shared/types/branded-ids';
-import type { AgentId, WorkspaceId } from '../../src/shared/types/branded-ids';
 
 // Mock uuid to generate valid UUID format
 vi.mock('uuid', () => ({
@@ -34,6 +32,7 @@ vi.mock('uuid', () => ({
 // Mock logger
 vi.mock('../../src/shared/logger', () => ({
   Logger: class MockLogger {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     constructor(name: string) {}
     info = vi.fn();
     debug = vi.fn();
@@ -179,8 +178,8 @@ describe('UnifiedIdService', () => {
 
   describe('Clear and Reset', () => {
     it('should clear tracked IDs', () => {
-      const agentId = service.generateAgentId();
-      const workspaceId = service.generateWorkspaceId();
+      service.generateAgentId();
+      service.generateWorkspaceId();
 
       // Check that IDs are being tracked
       expect(service.getTrackedIdCount()).toBeGreaterThan(0);

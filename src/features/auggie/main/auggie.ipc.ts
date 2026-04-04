@@ -199,7 +199,7 @@ function getEnhancedPath(): string {
               });
             }
           }
-        } catch (e) {
+        } catch  {
           // Ignore errors reading shell profiles
         }
       }
@@ -261,7 +261,7 @@ function getEnhancedPath(): string {
         for (const dir of nodeDirs) {
           paths.add(path.join(nvmDir, dir, 'bin'));
         }
-      } catch (e) {
+      } catch  {
         // Ignore
       }
     }
@@ -501,7 +501,7 @@ import { createRequire } from 'module';
 
 // Create require function for ESM context to access Node.js built-in modules
 const requireNode = createRequire(import.meta.url);
-const fsSync = requireNode('fs') as typeof import('fs');
+
 
 /**
  * Build a PATH string for executing the auggie CLI binary.
@@ -1288,7 +1288,7 @@ export function setupAuggieIPC() {
               for (const version of versions) {
                 npmPaths.push(path.join(cellarPath, version, 'bin/npm'));
               }
-            } catch (e) {
+            } catch  {
               // Ignore
             }
           }
@@ -1399,14 +1399,13 @@ export function setupAuggieIPC() {
 
               // Try to use npx if available
               const npxSuffix = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-              const nodeBasename = path.basename(nodePath);
               const npxPath = path.join(path.dirname(nodePath), npxSuffix);
               if (existsSync(npxPath)) {
                 npmPath = npxPath;
                 logger.info('Found npx, will use it to install auggie', { path: npxPath });
               }
               break;
-            } catch (err) {
+            } catch  {
               // Continue
             }
           }
@@ -1878,7 +1877,7 @@ export function setupAuggieIPC() {
           let authArgs: { code?: string; state?: string; tenant_url?: string };
           try {
             authArgs = JSON.parse(authResponse);
-          } catch (parseError) {
+          } catch  {
             return {
               success: false,
               error:
@@ -2228,7 +2227,7 @@ export function setupAuggieIPC() {
   });
 
   // Extract file changes from a session
-  ipcMain.handle(AUGGIE_CHANNELS.EXTRACT_FILE_CHANGES, async (_, { sessionId, workspacePath }) => {
+  ipcMain.handle(AUGGIE_CHANNELS.EXTRACT_FILE_CHANGES, async (_, { sessionId }) => {
     try {
       const sessionsDir = path.join(os.homedir(), '.auggie', 'sessions');
       const sessionFile = path.join(sessionsDir, `session-${sessionId}.json`);

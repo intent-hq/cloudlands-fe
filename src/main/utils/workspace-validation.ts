@@ -206,6 +206,7 @@ export function validateCreateRequest(request: CreateWorkspaceRequest): string[]
   return errors;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function validateUpdateRequest(request: UpdateWorkspaceRequest): string[] {
   const errors: string[] = [];
 

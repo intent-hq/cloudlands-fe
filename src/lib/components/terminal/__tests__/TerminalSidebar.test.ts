@@ -1,22 +1,19 @@
 import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockDetect, mockExecute, mockRefresh, scriptsStore, workspaceStore, toast } = vi.hoisted(() => {
+const { mockDetect, mockExecute, mockDispatch, scriptEntries, activeWorkspaceState, toast } = vi.hoisted(() => {
   const mockDetect = vi.fn();
   const mockExecute = vi.fn();
-  const mockRefresh = vi.fn();
+  const mockDispatch = vi.fn();
   return {
     mockDetect,
     mockExecute,
-    mockRefresh,
-    scriptsStore: {
-      scriptEntries: [] as any[],
-      refresh: mockRefresh,
-      upsertScript: vi.fn(),
-      removeScript: vi.fn(),
+    mockDispatch,
+    scriptEntries: {
+      value: [] as any[],
     },
-    workspaceStore: {
-      current: { id: 'ws-1', path: '/repo' },
+    activeWorkspaceState: {
+      value: { id: 'ws-1', path: '/repo' } as any,
     },
     toast: {
       success: vi.fn(),
@@ -39,8 +36,48 @@ vi.mock('$features/scripts/scripts.client', () => ({
   },
 }));
 
-vi.mock('$features/scripts/scripts.store.svelte', () => ({ scriptsStore }));
-vi.mock('$features/workspace/workspace.store.svelte', () => ({ workspaceStore }));
+vi.mock('$lib/store/slices/scripts/scripts-selectors', () => ({
+  selectScriptEntries: Object.assign(
+    () => ({
+      subscribe: (fn: (value: any) => void) => {
+        fn(scriptEntries.value);
+        return () => {};
+      },
+    }),
+    { select: () => scriptEntries.value },
+  ),
+}));
+vi.mock('$lib/store/slices/scripts/scripts-slice', () => ({
+  refreshScripts: vi.fn((...args: any[]) => ({ type: 'scripts/refreshScripts', payload: args })),
+  removeScript: vi.fn((...args: any[]) => ({ type: 'scripts/removeScript', payload: args })),
+  upsertScript: vi.fn((...args: any[]) => ({ type: 'scripts/upsertScript', payload: args })),
+}));
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({
+    getState: () => ({
+      scripts: {
+        byWorkspaceId: {
+          'ws-1': {
+            scripts: {},
+            runtimeStates: {},
+            outputBuffers: {},
+            initialized: true,
+            loading: false,
+          },
+        },
+      },
+      workspace: { activeWorkspaceId: 'ws-1' },
+    }),
+  }),
+}));
+vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+  selectActiveWorkspace: () => ({
+    subscribe: (fn: (value: any) => void) => {
+      fn(activeWorkspaceState.value);
+      return () => {};
+    },
+  }),
+}));
 vi.mock('$lib/stores/terminal-overlay.store.svelte', () => ({
   terminalsStore: { terminals: [], activeTerminalId: null },
 }));
@@ -50,14 +87,6 @@ vi.mock('$lib/utils/client-logger', () => ({
 }));
 vi.mock('$lib/hooks/use-background-agent.svelte', () => ({
   useBackgroundAgent: () => ({
-    status: 'idle',
-    isRunning: false,
-    isComplete: false,
-    progress: 0,
-    result: null,
-    error: null,
-    messages: [],
-    agentId: null,
     execute: mockExecute,
     cancel: vi.fn(),
     reset: vi.fn(),
@@ -65,7 +94,17 @@ vi.mock('$lib/hooks/use-background-agent.svelte', () => ({
 }));
 
 vi.mock('$lib/store/utils/utils', () => ({
-  getDispatch: () => vi.fn(),
+  getDispatch: () => mockDispatch,
+}));
+vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-selectors', () => ({
+  selectExecutorIsRunning: Object.assign(
+    () => ({ subscribe: (fn: any) => { fn(false); return () => {}; } }),
+    { select: () => false },
+  ),
+  selectExecutorAgentId: Object.assign(
+    () => ({ subscribe: (fn: any) => { fn(null); return () => {}; } }),
+    { select: () => null },
+  ),
 }));
 vi.mock('$lib/store/slices/terminals/terminals-selectors', () => ({
   selectTerminals: () => ({ subscribe: (fn: any) => { fn([]); return () => {}; } }),
@@ -103,13 +142,13 @@ import TerminalSidebar from '../TerminalSidebar.svelte';
 describe('TerminalSidebar detection flow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    scriptsStore.scriptEntries = [];
-    workspaceStore.current = { id: 'ws-1', path: '/repo' } as any;
+    scriptEntries.value = [];
+    activeWorkspaceState.value = { id: 'ws-1', path: '/repo' } as any;
   });
 
   it('runs local detection first and shows scanning copy without starting the agent', async () => {
     // When scripts exist, the scan icon button triggers local detection
-    scriptsStore.scriptEntries = [
+    scriptEntries.value = [
       {
         id: 'existing-1',
         name: 'build',
@@ -127,7 +166,7 @@ describe('TerminalSidebar detection flow', () => {
         resolveDetect = () => resolve({ success: true, detected: 0 });
       }),
     );
-    mockRefresh.mockResolvedValue(undefined);
+    // mockDetect already configured via mockReturnValue above
 
     render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
@@ -143,7 +182,7 @@ describe('TerminalSidebar detection flow', () => {
 
   it('offers manual agent-assisted detection after local detection finds no scripts', async () => {
     // When scripts exist and local detection finds nothing, agent assist is offered
-    scriptsStore.scriptEntries = [
+    scriptEntries.value = [
       {
         id: 'existing-1',
         name: 'build',
@@ -156,9 +195,6 @@ describe('TerminalSidebar detection flow', () => {
     ] as any[];
 
     mockDetect.mockResolvedValue({ success: true, detected: 0 });
-    mockRefresh.mockImplementation(async () => {
-      scriptsStore.scriptEntries = [...scriptsStore.scriptEntries];
-    });
 
     render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
@@ -172,14 +208,14 @@ describe('TerminalSidebar detection flow', () => {
 
     await waitFor(() => {
       expect(mockExecute).toHaveBeenCalledWith(
-        workspaceStore.current,
+        activeWorkspaceState.value,
         expect.objectContaining({ message: expect.stringContaining('Read package.json') }),
       );
     });
   });
 
   it('keeps agent-assisted detection visible after a no-results local scan when user scripts already exist', async () => {
-    scriptsStore.scriptEntries = [
+    scriptEntries.value = [
       {
         id: 'user-1',
         name: 'dev',
@@ -192,9 +228,6 @@ describe('TerminalSidebar detection flow', () => {
     ] as any[];
 
     mockDetect.mockResolvedValue({ success: true, detected: 0 });
-    mockRefresh.mockImplementation(async () => {
-      scriptsStore.scriptEntries = [...scriptsStore.scriptEntries];
-    });
 
     render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
@@ -208,7 +241,7 @@ describe('TerminalSidebar detection flow', () => {
 
     await waitFor(() => {
       expect(mockExecute).toHaveBeenCalledWith(
-        workspaceStore.current,
+        activeWorkspaceState.value,
         expect.objectContaining({ message: expect.stringContaining('Read package.json') }),
       );
     });

@@ -1,6 +1,12 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { faCheck, faThumbtack, faArrowUpRightFromSquare, faBoxArchive, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faCheck,
+    faThumbtack,
+    faArrowUpRightFromSquare,
+    faBoxArchive,
+    faTrash,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
@@ -10,11 +16,19 @@
   import { onDestroy } from 'svelte';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
-  import { sidebarNavStore } from '$lib/components/layout/sidebar-nav/sidebar-nav.store.svelte';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import {
+    incrementContextMenuOpen,
+    decrementContextMenuOpen,
+  } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import type { Workspace } from '$shared/types';
   import { PullRequestStatus } from '$shared/types';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { requestArchiveWorkspace, requestDeleteWorkspace } from '$lib/store/slices/workspace-operations/workspace-operations-slice';
+  import {
+    requestArchiveWorkspace,
+    requestDeleteWorkspace,
+  } from '$lib/store/slices/workspace-operations/workspace-operations-slice';
+  import { selectWorkspaceActivePullRequest } from '$lib/store/slices/workspace/workspace-selectors';
   import { cn } from '$lib/utils';
   import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
 
@@ -58,6 +72,8 @@
     suppressHover = false,
   }: Props = $props();
 
+  const dispatch = getDispatch();
+
   const phaseInfo = $derived(deriveWorkspacePhase(workspace, { hasActiveAgents: isRunning }));
   let isCurrent = $derived(page.url.pathname === `/workspace/${workspace.id}`);
 
@@ -68,26 +84,31 @@
     return (workspace.taskStats?.completed ?? 0) / t;
   });
 
-  // PR status
+  // PR status - use selector for activePullRequest data
   const prStatus = $derived.by(() => {
-    const active = workspace.activePullRequest;
-    if (active) return active.status;
+    const activePR = selectWorkspaceActivePullRequest.select(getReduxStore().getState(), workspace.id);
+    if (activePR) return activePR.status;
     if (workspace.prStatus) return workspace.prStatus;
     const prs = workspace.pullRequests ?? [];
     if (prs.length > 0) return prs[0].status;
     return null;
   });
-  const prNumber = $derived(
-    workspace.activePullRequest?.number ??
-      workspace.prNumber ??
-      workspace.pullRequests?.[0]?.number,
-  );
+  const prNumber = $derived.by(() => {
+    const activePR = selectWorkspaceActivePullRequest.select(getReduxStore().getState(), workspace.id);
+    return activePR?.number ?? workspace.prNumber ?? workspace.pullRequests?.[0]?.number;
+  });
 
   // PR mergeability (optimistic: default green, only yellow for KNOWN issues)
-  const isPRMergeable = $derived.by(() => checkPRMergeable(workspace.activePullRequest));
+  const isPRMergeable = $derived.by(() => {
+    const activePR = selectWorkspaceActivePullRequest.select(getReduxStore().getState(), workspace.id);
+    return checkPRMergeable(activePR ?? undefined);
+  });
 
   // PR tooltip content for mergeability details
-  const prTooltipContent = $derived.by(() => getPRTooltipContent(workspace.activePullRequest));
+  const prTooltipContent = $derived.by(() => {
+    const activePR = selectWorkspaceActivePullRequest.select(getReduxStore().getState(), workspace.id);
+    return getPRTooltipContent(activePR ?? undefined);
+  });
   // Agent info — only show unread and in-progress agents
   const activeAgentStatuses = new Set(['streaming', 'processing', 'busy', 'responding']);
   const agentInfos = $derived.by(() => {
@@ -115,8 +136,8 @@
     contextMenu = null;
   }
 
-  // Keep sidebarNavStore in sync so the hover card won't close while
-  // the context menu is open (the menu renders in a Portal outside
+  // Keep Redux context menu counter in sync so the hover card won't close
+  // while the context menu is open (the menu renders in a Portal outside
   // the hover card's DOM, which would otherwise trigger mouseleave).
   // Note: hadContextMenu is intentionally NOT $state — it's a local
   // tracking variable that must not trigger reactivity.
@@ -126,18 +147,16 @@
     const isOpen = contextMenu !== null;
 
     if (isOpen && !hadContextMenu) {
-      sidebarNavStore.incrementContextMenuOpen();
+      dispatch(incrementContextMenuOpen());
     } else if (!isOpen && hadContextMenu) {
-      sidebarNavStore.decrementContextMenuOpen();
-      sidebarNavStore.onContextMenuClosed();
+      dispatch(decrementContextMenuOpen());
     }
     hadContextMenu = isOpen;
   });
 
   onDestroy(() => {
     if (hadContextMenu) {
-      sidebarNavStore.decrementContextMenuOpen();
-      sidebarNavStore.onContextMenuClosed();
+      dispatch(decrementContextMenuOpen());
     }
   });
 
@@ -161,7 +180,7 @@
       label: 'Archive',
       icon: faBoxArchive,
       onClick: () => {
-        getReduxStore().dispatch(requestArchiveWorkspace(workspace));
+        getReduxStore().dispatch(requestArchiveWorkspace(workspace.id));
         closeContextMenu();
       },
     });
@@ -172,7 +191,7 @@
       icon: faTrash,
       destructive: true,
       onClick: () => {
-        getReduxStore().dispatch(requestDeleteWorkspace(workspace));
+        getReduxStore().dispatch(requestDeleteWorkspace(workspace.id));
         closeContextMenu();
       },
     });
@@ -269,7 +288,9 @@
                 : 'bg-red-500/10 text-red-500'}
         {@const tooltipText = prTooltipContent}
         <Tooltip content={tooltipText} side="bottom" sideOffset={4} disabled={!tooltipText}>
-          <span class="wli-secondary text-ui font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}">
+          <span
+            class="wli-secondary text-ui font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}"
+          >
             PR{prNumber ? ` #${prNumber}` : ''}
           </span>
         </Tooltip>

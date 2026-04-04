@@ -107,7 +107,6 @@
   const zoomTransform = tweened({ x: 0, y: 0, scale: 1 }, { duration: 300, easing: cubicOut });
   let isPanning = $state(false);
   let lastPanPoint = $state({ x: 0, y: 0 });
-  let isActivelyZooming = $state(false);
 
   // Zoom constraints
   const MIN_SCALE = 0.5;
@@ -311,55 +310,6 @@
     return path.split('/').length;
   }
 
-  function reprocessTreeWithFocus(focusPath: string | null) {
-    if (!data) return;
-
-    const s = effectiveSettings;
-    const highlightedPathsSet = new Set([...filesChanged, ...filesCommitted, ...filesPR]);
-
-    // Calculate focus depth for relative depth calculations
-    const focusDepth = getPathDepth(focusPath);
-
-    // Reprocess tree with focus-aware pruning
-    processedNodes = processTree(data, width, height, {
-      minFileRadius: s.minFileRadius,
-      maxFileRadius: s.maxFileRadius,
-      maxNodes: s.maxNodes,
-      maxDepth: s.maxDepth,
-      focusPath: focusPath,
-      highlightedPaths: highlightedPathsSet,
-    });
-
-    // Re-run force simulation
-    runForceSimulation(processedNodes, {
-      width,
-      height,
-      collisionPadding: s.collisionPadding,
-      folderPadding: s.folderPadding,
-      blobPadding: s.blobPadding,
-    }).then(({ nodes: resultNodes, scaleRatio }) => {
-      nodes = resultNodes;
-      // Get current zoom scale for padding adjustment
-      const currentScale = $zoomTransform.scale;
-      blobs = computeBlobShapes(resultNodes, {
-        basePadding: s.blobPadding,
-        depthPaddingFactor: s.depthPaddingFactor,
-        minDepthPaddingFactor: s.minDepthPaddingFactor,
-        wobbleAmplitude: s.wobbleAmplitude,
-        hullSubdivisions: s.hullSubdivisions,
-        hullSmoothing: s.hullSmoothing,
-        minDepth: 1,
-        onlyLeafFolders: false,
-        scaleRatio,
-        zoomScale: currentScale,
-        focusDepth,
-      });
-      draw();
-    });
-
-    lastFocusPath = focusPath;
-  }
-
   /**
    * Zoom to a folder with smooth animation (matches repo-visualizer behavior)
    * Layout stays fixed - only the view transform changes
@@ -368,10 +318,7 @@
     if (folderPath === null || folderPath === '') {
       // Zoom out to root
       zoomedPath = null;
-      isActivelyZooming = true;
-      zoomTransform.set({ x: 0, y: 0, scale: 1 }).then(() => {
-        isActivelyZooming = false;
-      });
+      zoomTransform.set({ x: 0, y: 0, scale: 1 });
       return;
     }
 
@@ -417,11 +364,7 @@
     const tx = width / 2 - centerX * scale;
     const ty = height / 2 - centerY * scale;
 
-    // Animate to folder position
-    isActivelyZooming = true;
-    zoomTransform.set({ x: tx, y: ty, scale }).then(() => {
-      isActivelyZooming = false;
-    });
+    zoomTransform.set({ x: tx, y: ty, scale });
   }
 
   function handleBreadcrumbClick(path: string) {
@@ -476,11 +419,6 @@
 
   function handlePanEnd() {
     isPanning = false;
-  }
-
-  function resetZoom() {
-    zoomedPath = null;
-    zoomTransform.set({ x: 0, y: 0, scale: 1 });
   }
 
   // Keyboard shortcut for search and navigation
@@ -1317,10 +1255,7 @@
         style="left: {cardX}px; top: {cardY}px;"
       >
         <div class="flex items-start gap-1.5">
-          <i
-            class="fa fa-{hoveredNode.isFolder
-              ? 'folder-o'
-              : 'file-o'} text-ghost mt-0.5 shrink-0"
+          <i class="fa fa-{hoveredNode.isFolder ? 'folder-o' : 'file-o'} text-ghost mt-0.5 shrink-0"
           ></i>
           <div class="min-w-0">
             <div class="font-medium text-foreground break-words">{hoveredNode.name}</div>

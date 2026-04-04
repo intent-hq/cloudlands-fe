@@ -850,3 +850,91 @@ export function extractDelegationBatchMap(
 
   return result;
 }
+
+
+// ============================================================================
+// Event Conversion
+// ============================================================================
+
+/**
+ * Convert a WorkspaceEvent to an InteractionEvent for the agent overview graph.
+ * Returns null if the event is not relevant to the graph.
+ */
+export function convertToInteractionEvent(event: {
+  id: string;
+  timestamp: string;
+  type: string;
+  actor?: { id?: string; name?: string; type?: string };
+  data?: any;
+}): import('./types').InteractionEvent | null {
+  const base = {
+    id: event.id,
+    timestamp: event.timestamp,
+    agentId: event.actor?.id || '',
+    agentName: event.actor?.name,
+  };
+
+  if (event.type === 'agent:created') {
+    const data = event.data as any;
+    return {
+      ...base, type: 'agent-created',
+      agentId: data?.agentId || base.agentId,
+      agentName: data?.agentName || base.agentName,
+      parentAgentId: data?.createdByAgentId,
+    };
+  }
+
+  if (event.type === 'agent:idle') {
+    const data = event.data as any;
+    return {
+      ...base, type: 'agent-idle',
+      agentId: data?.agentId || base.agentId,
+      parentAgentId: data?.parentAgentId,
+    };
+  }
+
+  if (event.type === 'file:changed' && event.actor?.type === 'agent') {
+    const data = event.data as Record<string, unknown>;
+    const action = data?.action;
+    const isWrite = action === 'create' || action === 'modify' || action === 'delete';
+    const relativePath = data?.relativePath as string | undefined;
+    return {
+      ...base,
+      type: isWrite ? 'file-write' : 'file-read',
+      targetId: (data?.path || relativePath) as string | undefined,
+      targetName: relativePath?.split('/').pop(),
+    };
+  }
+
+  if (event.type?.startsWith('note:') && event.actor?.type === 'agent') {
+    const data = event.data as Record<string, unknown>;
+    const isWrite = event.type === 'note:created' || event.type === 'note:updated';
+    return {
+      ...base,
+      type: isWrite ? 'note-write' : 'note-read',
+      targetId: data?.noteId as string | undefined,
+      targetName: data?.title as string | undefined,
+    };
+  }
+
+  if (event.type === 'agent:tool:call') {
+    const data = event.data as any;
+    const toolName = data?.toolName?.toLowerCase() || '';
+    if (toolName.includes('read') && data?.filesModified?.[0]) {
+      return {
+        ...base, type: 'file-read',
+        targetId: data.filesModified[0],
+        targetName: data.filesModified[0].split('/').pop(),
+      };
+    }
+    if ((toolName.includes('write') || toolName.includes('edit')) && data?.filesModified?.[0]) {
+      return {
+        ...base, type: 'file-write',
+        targetId: data.filesModified[0],
+        targetName: data.filesModified[0].split('/').pop(),
+      };
+    }
+  }
+
+  return null;
+}

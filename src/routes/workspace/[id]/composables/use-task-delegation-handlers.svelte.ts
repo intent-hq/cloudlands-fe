@@ -9,18 +9,19 @@
 
 import { createLogger } from '$lib/utils/client-logger';
 
-import { AgentId, NoteId, WorkspaceId } from '$shared/types/branded-ids';
+import { WorkspaceId } from '$shared/types/branded-ids';
 import { createAgentTypeId } from '$shared/types/agent.types';
 
 import { agentFactory } from '$features/agent/services/agent-factory';
-import { sessionStore } from '$features/agent/browser';
-import { notesClient } from '$features/notes/notes.client';
-import { notesStateManager } from '$features/notes/notes.store.svelte';
+import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
 import { buildTaskAgentInitialMessage } from '$features/notes/utils/task-agent-message-builder';
 import { getAgentProvider } from '$shared/types/agent-session';
 
+import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
 import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { getDispatch } from '$lib/store/utils/utils';
+import { assignAgentToTask, reloadNotes } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
 import { selectEffectiveModel, selectEffectiveBehaviorPrompt } from '$lib/store/slices/specialists/specialists-selectors';
 import { SPECIALISTS } from '$lib/constants/specialists';
 import { getDefaultModelForProvider, PROVIDER_MODEL_TIERS } from '$shared/config/provider-config';
@@ -33,7 +34,7 @@ const logger = createLogger('task-delegation-handlers');
  * Returns undefined if no initial agent exists (legacy workspaces).
  */
 function getWorkspaceInitialAgentProvider(workspaceId: string): string | undefined {
-  const sessions = sessionStore.getAllSessionsForWorkspace(workspaceId);
+  const sessions = selectAllWorkspaceAgents.select(getReduxStore().getState(), workspaceId);
   const initialAgent = sessions.find(
     (s) => String(s.workspaceId) === workspaceId && s.isInitialAgent,
   );
@@ -67,6 +68,8 @@ export interface UseTaskDelegationHandlersOptions {
 }
 
 export function useTaskDelegationHandlers(options: UseTaskDelegationHandlersOptions) {
+  const dispatch = getDispatch();
+
   $effect(() => {
     if (typeof window === 'undefined') return;
 
@@ -86,7 +89,7 @@ export function useTaskDelegationHandlers(options: UseTaskDelegationHandlersOpti
           logger.info('[WorkspacePage] Delegating existing task note', { noteId, taskText });
 
           // Get the existing note to use its title
-          const existingNote = notesStateManager.findById(NoteId(noteId));
+          const existingNote = selectNoteById.select(getReduxStore().getState(), workspace.id, noteId);
           const noteTitle = existingNote?.title || taskText;
 
           // Inherit provider from the workspace's initial agent (not from global store)
@@ -116,13 +119,8 @@ export function useTaskDelegationHandlers(options: UseTaskDelegationHandlersOpti
 
           const createdAgentId = result.agentId;
 
-          await notesClient.assignAgentToTask(
-            WorkspaceId(workspace.id),
-            NoteId(noteId),
-            AgentId(createdAgentId),
-          );
-
-          await notesStateManager.reloadNotes();
+          dispatch(assignAgentToTask(workspace.id, noteId, createdAgentId));
+          dispatch(reloadNotes(workspace.id));
 
           if (shouldOpenAgent) {
             options.onOpenAgent(createdAgentId);
@@ -187,13 +185,8 @@ export function useTaskDelegationHandlers(options: UseTaskDelegationHandlersOpti
 
         const createdAgentId = result.agentId;
 
-        await notesClient.assignAgentToTask(
-          WorkspaceId(workspace.id),
-          NoteId(noteId),
-          AgentId(createdAgentId),
-        );
-
-        await notesStateManager.reloadNotes();
+        dispatch(assignAgentToTask(workspace.id, noteId, createdAgentId));
+        dispatch(reloadNotes(workspace.id));
         options.onOpenAgent(createdAgentId);
 
         logger.info('[WorkspacePage] Agent created and assigned to note', {
@@ -225,7 +218,7 @@ export function useTaskDelegationHandlers(options: UseTaskDelegationHandlersOpti
         });
 
         // Get the note to build the initial message
-        const note = notesStateManager.findById(NoteId(noteId));
+        const note = selectNoteById.select(getReduxStore().getState(), workspace.id, noteId);
         if (!note) {
           logger.error('[WorkspacePage] Cannot run agent: note not found', { noteId });
           return;
@@ -289,13 +282,8 @@ export function useTaskDelegationHandlers(options: UseTaskDelegationHandlersOpti
 
         const createdAgentId = result.agentId;
 
-        await notesClient.assignAgentToTask(
-          WorkspaceId(workspace.id),
-          NoteId(noteId),
-          AgentId(createdAgentId),
-        );
-
-        await notesStateManager.reloadNotes();
+        dispatch(assignAgentToTask(workspace.id, noteId, createdAgentId));
+        dispatch(reloadNotes(workspace.id));
         options.onOpenAgent(createdAgentId);
 
         logger.info('[WorkspacePage] Agent created, assigned, and running on note', {

@@ -105,7 +105,7 @@ describe('FileProvider', () => {
         data: [],
       });
 
-      const results = await provider.search('', mockContext);
+      await provider.search('', mockContext);
 
       expect(mockInvoke).toHaveBeenNthCalledWith(1, 'workspace:get-by-id', {
         workspaceId: 'test-workspace',

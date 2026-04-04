@@ -1753,90 +1753,6 @@ function computeTreeLayout(
  * Calculate intersection point between a line and a rectangle
  * Line goes from (centerX, centerY) towards (targetX, targetY)
  */
-function getRectangleIntersection(
-  rectX: number,
-  rectY: number,
-  rectWidth: number,
-  rectHeight: number,
-  targetX: number,
-  targetY: number,
-  centerX: number,
-  centerY: number,
-): { x: number; y: number } {
-  const dx = targetX - centerX;
-  const dy = targetY - centerY;
-
-  // If no direction, return center
-  if (dx === 0 && dy === 0) {
-    return { x: centerX, y: centerY };
-  }
-
-  // Rectangle bounds
-  const left = rectX;
-  const right = rectX + rectWidth;
-  const top = rectY;
-  const bottom = rectY + rectHeight;
-
-  // Find all potential intersections
-  const intersections: Array<{ x: number; y: number; dist: number }> = [];
-
-  // Left edge (x = left)
-  if (dx !== 0) {
-    const t = (left - centerX) / dx;
-    if (t > 0) {
-      const y = centerY + t * dy;
-      if (y >= top && y <= bottom) {
-        const dist = Math.sqrt((left - centerX) ** 2 + (y - centerY) ** 2);
-        intersections.push({ x: left, y, dist });
-      }
-    }
-  }
-
-  // Right edge (x = right)
-  if (dx !== 0) {
-    const t = (right - centerX) / dx;
-    if (t > 0) {
-      const y = centerY + t * dy;
-      if (y >= top && y <= bottom) {
-        const dist = Math.sqrt((right - centerX) ** 2 + (y - centerY) ** 2);
-        intersections.push({ x: right, y, dist });
-      }
-    }
-  }
-
-  // Top edge (y = top)
-  if (dy !== 0) {
-    const t = (top - centerY) / dy;
-    if (t > 0) {
-      const x = centerX + t * dx;
-      if (x >= left && x <= right) {
-        const dist = Math.sqrt((x - centerX) ** 2 + (top - centerY) ** 2);
-        intersections.push({ x, y: top, dist });
-      }
-    }
-  }
-
-  // Bottom edge (y = bottom)
-  if (dy !== 0) {
-    const t = (bottom - centerY) / dy;
-    if (t > 0) {
-      const x = centerX + t * dx;
-      if (x >= left && x <= right) {
-        const dist = Math.sqrt((x - centerX) ** 2 + (bottom - centerY) ** 2);
-        intersections.push({ x, y: bottom, dist });
-      }
-    }
-  }
-
-  // Return the closest intersection
-  if (intersections.length > 0) {
-    intersections.sort((a, b) => a.dist - b.dist);
-    return { x: intersections[0].x, y: intersections[0].y };
-  }
-
-  // Fallback to center
-  return { x: centerX, y: centerY };
-}
 
 /**
  * Compute edge paths based on edge routing type
@@ -2186,8 +2102,6 @@ function computeOrthogonalEdgePaths(
   // For vertical layout: edges using horizontal midline channels
 
   // Channel allocation: group edges that share horizontal/vertical segments
-  const horizontalChannels: { y: number; edges: EdgeInfo[] }[] = [];
-  const verticalChannels: { x: number; edges: EdgeInfo[] }[] = [];
 
   // Pre-compute which channel each edge needs
   const edgeChannelInfo = new Map<string, {

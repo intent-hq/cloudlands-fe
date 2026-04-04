@@ -35,6 +35,7 @@ export interface PromptEnhancementContext {
  */
 export const getInputWithEnhancePrompt = (
   input: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   context?: PromptEnhancementContext,
 ): string =>
   '⚠️ NO TOOLS ALLOWED ⚠️\n\n' +

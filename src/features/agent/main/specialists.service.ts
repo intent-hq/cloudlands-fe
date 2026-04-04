@@ -14,7 +14,6 @@
  */
 
 import { Logger } from '$shared/logger';
-import type { Specialist } from '$lib/constants/specialists';
 import { SPECIALISTS, getSpecialistById, GITHUB_DEPENDENT_SPECIALIST_IDS } from '$lib/constants/specialists';
 import {
   getDefaultModelForProvider,
@@ -90,11 +89,6 @@ let initPromise: Promise<void> | null = null;
 // Cache for file-based specialists (refreshed on demand)
 // This includes both bundled specialists and user file-based specialists
 let fileSpecialistsCache: SpecialistFile[] = [];
-let fileSpecialistsCacheTime = 0;
-const FILE_CACHE_TTL_MS = 5000; // 5 second cache for file-based specialists
-
-// In-flight promise to prevent concurrent cache refreshes (race condition fix)
-let refreshInFlight: Promise<void> | null = null;
 
 /**
  * Initialize the settings store (call once during app startup)
@@ -180,7 +174,6 @@ async function refreshFileSpecialistsCache(): Promise<void> {
     }
 
     fileSpecialistsCache = Array.from(specialistsById.values());
-    fileSpecialistsCacheTime = Date.now();
 
     const allErrors = [...bundledResult.errors, ...userResult.errors];
     if (allErrors.length > 0) {
@@ -193,24 +186,6 @@ async function refreshFileSpecialistsCache(): Promise<void> {
   } catch (error) {
     logger.error('Failed to refresh file specialists cache', error as Error);
   }
-}
-
-/**
- * Get file-based specialists (with caching)
- * Uses in-flight promise tracking to prevent concurrent cache refreshes.
- */
-async function getFileSpecialists(): Promise<SpecialistFile[]> {
-  const now = Date.now();
-  if (now - fileSpecialistsCacheTime > FILE_CACHE_TTL_MS) {
-    // Prevent concurrent cache refreshes by reusing in-flight promise
-    if (!refreshInFlight) {
-      refreshInFlight = refreshFileSpecialistsCache().finally(() => {
-        refreshInFlight = null;
-      });
-    }
-    await refreshInFlight;
-  }
-  return fileSpecialistsCache;
 }
 
 /**

@@ -169,7 +169,7 @@ async function discoverOAuthMetadata(serverUrl: string): Promise<OAuthServerMeta
           return metadata as OAuthServerMetadata;
         }
       }
-    } catch (error) {
+    } catch  {
       // Continue trying other paths
     }
   }

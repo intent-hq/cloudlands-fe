@@ -1,25 +1,21 @@
 import type { AgentDeletedPayload, AgentRenamedPayload } from "$features/events/types";
-import { sessionStore } from "$features/agent/browser";
-import { agentService } from "$features/agent/agent.service";
-import { fileTrackingStore } from "$features/file-tracking/file-tracking.store.svelte";
-import { gitStore } from "$features/git/git.store.svelte";
-import { unreadTrackingService } from "$features/agent/services/unread-tracking.service";
-import { getUnifiedWorkspaceState } from "$features/workspace/workspace-unified-state.svelte";
+import { agentService } from "$features/agent/agent-ipc-bridge";
+import { initWorkspace as initFileTracking } from "$lib/store/slices/file-tracking/file-tracking-slice";
+import { loadGitStatus } from "$lib/store/slices/git/git-slice";
+import { clearWorkspaceUnread } from "../../unread-tracking/unread-tracking-slice";
 import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import { clearCurrentlyViewed } from "$lib/store/slices/note-read-tracking/note-read-tracking-slice";
 import type { StoreState } from "$lib/store/types";
 import { takeEveryFromElectronChannel, takeEveryFromWindowEvent } from "$lib/store/utils/ipc-channel";
-import type { AgentSession } from "$shared/types";
-import { WorkspaceId } from "$shared/types/branded-ids";
-import { get } from "svelte/store";
+import { shallowEqual } from "fast-equals";
 import { buffers, eventChannel, type EventChannel, type Task } from "redux-saga";
 import { all, call, cancel, delay, fork, put, select, take, takeEvery } from "typed-redux-saga";
-import { lockReactiveSelectors } from "../../store-utility/sagas/lock-reactive-selectors";
 import {
   workspaceMounted,
   workspaceUnmounted,
 } from "../../workspace-lifecycle/workspace-lifecycle-slice";
 import {
+  selectAgentById,
   selectAllWorkspaceAgents,
   selectAgentsLoaded,
   selectInitialAgentConfig,
@@ -29,18 +25,22 @@ import {
 } from "../workspace-agents-selectors";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import {
-  markAgentRecentlyCreated,
   removeAgent,
-  replaceWorkspaceAgentSnapshots,
   renameAgent,
-  setAgents,
   setAgentsLoaded,
+  setAgentStreaming,
   setInitialAgentConfig,
-  setInitialAgentConfigProcessed,
   setInitialAgentId,
+  setInitialSpecWriteInProgress,
   setIsLoadingAgents,
   setWaitingForFirstMessage,
 } from "../workspace-agents-slice";
+import {
+  removeSession as removeAgentSession,
+  renameSession as renameAgentSession,
+} from "../../agent-session/agent-session-slice";
+import { selectWorkspaceNavigationDrawer } from "../../workspace-navigation/workspace-navigation-selectors";
+import { closeWorkspaceDrawer } from "../../workspace-navigation/workspace-navigation-slice";
 import {
   selectLoadedWorkspaceTerminals,
   selectRecentlyCreatedTerminals,
@@ -48,10 +48,11 @@ import {
 } from "../../terminals/terminals-selectors";
 import { loadAgentsFromDiskSaga } from "./agent-loading-saga";
 import { watchAgentCreationSaga } from "./agent-creation-saga";
+import { heartbeatSaga } from "./heartbeat-saga";
+
 
 type MaybeWrappedPayload<T> = T | { payload: T };
 
-let previousMountedWorkspaceId: string | undefined;
 const workspaceAgentTasks = new Map<string, Task[]>();
 
 function unwrapPayload<T>(event: MaybeWrappedPayload<T>): T {
@@ -70,62 +71,12 @@ function isValidFileTrackingWorkspaceId(wsId: string): boolean {
   return !!wsId && wsId !== "new" && !isOptimisticWorkspaceId(wsId) && wsId !== "undefined";
 }
 
-function* handleWorkspaceChangeOnMount(wsId: string) {
-  if (!wsId) {
-    return;
-  }
-
-  if (previousMountedWorkspaceId === undefined || previousMountedWorkspaceId === wsId) {
-    previousMountedWorkspaceId = wsId;
-    return;
-  }
-
-  const isOptimisticTransition =
-    isOptimisticWorkspaceId(previousMountedWorkspaceId) && !isOptimisticWorkspaceId(wsId);
-
-  if (isOptimisticTransition) {
-    const initialAgentId: string | null = yield* selectInitialAgentId.effect(wsId);
-
-    if (!initialAgentId) {
-      yield* put(setAgentsLoaded(wsId, false));
-    }
-
-    yield* put(setInitialAgentConfigProcessed(wsId, false));
-    previousMountedWorkspaceId = wsId;
-    return;
-  }
-
-  if (typeof window !== "undefined") {
-    try {
-      yield* call(() => window.electronAPI.invoke("app:trigger-memory-cleanup"));
-    } catch {
-      // Best effort only.
-    }
-  }
-
-  const preservedInitialAgentId: string | null = yield* selectInitialAgentId.effect(wsId);
-
-  // Batch all agent-state resets inside lockReactiveSelectors so the sidebar
-  // never observes an intermediate frame where agents are cleared but
-  // agentsLoaded is still true (or vice-versa).  Without this, the sidebar
-  // could briefly render an empty agent list during workspace switches.
-  yield* lockReactiveSelectors(function* () {
-    yield* put(setAgentsLoaded(wsId, false));
-    yield* put(setAgents(wsId, []));
-    if (!preservedInitialAgentId) {
-      yield* put(setInitialAgentId(wsId, null));
-    }
-    yield* put(setInitialAgentConfigProcessed(wsId, false));
-  });
-  previousMountedWorkspaceId = wsId;
-}
-
-function clearUnreadForMountedWorkspace(wsId: string) {
+function* clearUnreadForMountedWorkspace(wsId: string) {
   if (!wsId || wsId === "new" || isOptimisticWorkspaceId(wsId)) {
     return;
   }
 
-  unreadTrackingService.clearUnreadForWorkspace(wsId);
+  yield* put(clearWorkspaceUnread(wsId));
 }
 
 export function* watchFileTrackingLifecycleSaga(wsId: string) {
@@ -133,25 +84,19 @@ export function* watchFileTrackingLifecycleSaga(wsId: string) {
     return;
   }
 
-  const brandedWorkspaceId = WorkspaceId(wsId);
-
   try {
-    fileTrackingStore.setWorkspace(wsId);
+    yield* put(initFileTracking(wsId));
     yield* delay(50);
 
-    try {
-      yield* call([gitStore, gitStore.loadStatus], brandedWorkspaceId);
-    } catch {
-      // Best effort only.
-    }
+    // Load initial git status via Redux
+    yield* put(loadGitStatus(wsId));
 
-    gitStore.initEventListener(brandedWorkspaceId);
-
+    // git:status-changed listener is now handled by gitStatusSaga
     while (true) {
       yield* delay(60_000);
     }
   } finally {
-    gitStore.disposeEventListener();
+    // Cleanup is handled by the gitStatusSaga lifecycle
   }
 }
 
@@ -165,6 +110,7 @@ export function* watchAgentDeletedSaga() {
         return;
       }
 
+      yield* put(removeAgentSession(data.agentId));
       yield* put(removeAgent(data.workspaceId, data.agentId));
     },
   );
@@ -184,6 +130,7 @@ export function* watchAgentRenamedSaga() {
         return;
       }
 
+      yield* put(renameAgentSession(data.agentId, data.name));
       yield* put(renameAgent(data.workspaceId, data.agentId, data.name));
     },
   );
@@ -198,114 +145,13 @@ export function* watchWaitingForFirstMessageSaga() {
   );
 }
 
-function createSessionStoreChannel() {
-  return eventChannel<boolean>((emitter) => {
-    const unsubscribe = sessionStore.getStore().subscribe(() => {
-      emitter(true);
-    });
-
-    return () => unsubscribe();
-  }, buffers.sliding<boolean>(1));
-}
-
-function getWorkspaceAgentSnapshotsFromSessionStore(): Record<string, AgentSession[]> {
-  const storeValue = get(sessionStore.getStore()) as { sessions?: AgentSession[] };
-  const snapshotsByWorkspace: Record<string, AgentSession[]> = {};
-
-  for (const agent of storeValue.sessions ?? []) {
-    if (!agent || String(agent.id).startsWith("terminal-")) {
-      continue;
-    }
-
-    const workspaceId = agent.workspaceId ? String(agent.workspaceId) : "";
-    if (!workspaceId) {
-      continue;
-    }
-
-    if (!snapshotsByWorkspace[workspaceId]) {
-      snapshotsByWorkspace[workspaceId] = [];
-    }
-
-    snapshotsByWorkspace[workspaceId].push(agent);
-  }
-
-  return snapshotsByWorkspace;
-}
-
-function getWorkspaceAgentSnapshotSignature(snapshotsByWorkspace: Record<string, AgentSession[]>) {
-  return Object.entries(snapshotsByWorkspace)
-    .flatMap(([workspaceId, agents]) =>
-      agents.map(
-        (agent) =>
-          `${workspaceId}:${agent.id}:${agent.model}:${agent.name}:${agent.status}:${agent.isStreaming}`
-      )
-    )
-    .sort()
-    .join("|");
-}
-
-export function* watchSessionStoreSyncSaga(_wsId: string) {
-  const channel = createSessionStoreChannel();
-  let lastSignature: string | undefined;
-  let lastAgentIdsByWorkspace = new Map<string, Set<string>>();
-  let hasSyncedNonEmptySnapshot = false;
-
-  try {
-    while (true) {
-      yield* take(channel);
-      yield* delay(100);
-
-      const snapshotsByWorkspace = getWorkspaceAgentSnapshotsFromSessionStore();
-      const newSignature = getWorkspaceAgentSnapshotSignature(snapshotsByWorkspace);
-
-      if (newSignature !== lastSignature) {
-        lastSignature = newSignature;
-        yield* put(replaceWorkspaceAgentSnapshots(snapshotsByWorkspace));
-
-        if (hasSyncedNonEmptySnapshot) {
-          for (const [workspaceId, agents] of Object.entries(snapshotsByWorkspace)) {
-            const previousAgentIds =
-              lastAgentIdsByWorkspace.get(workspaceId) ?? new Set<string>();
-
-            for (const agent of agents) {
-              if (!previousAgentIds.has(String(agent.id))) {
-                yield* put(markAgentRecentlyCreated(workspaceId, agent.id));
-              }
-            }
-          }
-        }
-
-        // Only consider this a real baseline once we've seen at least one
-        // non-empty snapshot — until then, agents are still hydrating.
-        if (!hasSyncedNonEmptySnapshot && Object.keys(snapshotsByWorkspace).length > 0) {
-          hasSyncedNonEmptySnapshot = true;
-        }
-
-        lastAgentIdsByWorkspace = new Map(
-          Object.entries(snapshotsByWorkspace).map(([workspaceId, agents]) => [
-            workspaceId,
-            new Set(agents.map((agent) => String(agent.id))),
-          ])
-        );
-      }
-    }
-  } finally {
-    channel.close();
-  }
-}
-
 function* checkDrawerGuard(wsId: string) {
-  const manager = getUnifiedWorkspaceState(wsId);
-  if (!manager) {
-    return;
-  }
-
-  const drawerState = manager.state.drawer;
+  const state = getReduxStore().getState();
+  const drawerState = selectWorkspaceNavigationDrawer.select(state, wsId);
   if (!drawerState?.open || !drawerState.itemId) {
     return;
   }
 
-  const state = getReduxStore().getState();
   const drawerItemId = String(drawerState.itemId);
 
   if (drawerState.type === "agent") {
@@ -338,7 +184,7 @@ function* checkDrawerGuard(wsId: string) {
     }
 
     if (!agent || String(agent.workspaceId) !== String(wsId)) {
-      manager.closeDrawer();
+      yield* put(closeWorkspaceDrawer(wsId));
     }
 
     return;
@@ -360,7 +206,7 @@ function* checkDrawerGuard(wsId: string) {
 
   const terminals = selectLoadedWorkspaceTerminals.select(state, wsId);
   if (!terminals.find((terminal) => terminal.id === drawerItemId)) {
-    manager.closeDrawer();
+    yield* put(closeWorkspaceDrawer(wsId));
   }
 }
 
@@ -390,11 +236,11 @@ function createDrawerGuardChannel(wsId: string): EventChannel<boolean> {
       const nextRecentlyCreatedTerminals = selectRecentlyCreatedTerminals.select(state, wsId);
 
       const changed =
-        nextAgents !== previousAgents ||
+        !shallowEqual(nextAgents, previousAgents) ||
         nextAgentsLoaded !== previousAgentsLoaded ||
         nextInitialAgentId !== previousInitialAgentId ||
         nextRecentlyCreatedAgents !== previousRecentlyCreatedAgents ||
-        nextTerminals !== previousTerminals ||
+        !shallowEqual(nextTerminals, previousTerminals) ||
         nextTerminalsLoaded !== previousTerminalsLoaded ||
         nextRecentlyCreatedTerminals !== previousRecentlyCreatedTerminals;
 
@@ -516,21 +362,17 @@ export function* watchWorkspaceAgentEventsForWorkspaceSaga(
   // Immediately register a sentinel so the retroactive-mount guard sees this
   // workspace as "already being watched" and won't fork a duplicate watcher.
   workspaceAgentTasks.set(wsId, []);
-
-  yield* handleWorkspaceChangeOnMount(wsId);
-  clearUnreadForMountedWorkspace(wsId);
+  yield* clearUnreadForMountedWorkspace(wsId);
 
   const fileTrackingTask = yield* fork(watchFileTrackingLifecycleSaga, wsId);
   const drawerGuardTask = yield* fork(watchDrawerGuardSaga, wsId);
 
   // Load agents from disk on workspace mount
   yield* fork(loadAgentsFromDiskSaga, wsId);
-  const sessionStoreSyncTask = yield* fork(watchSessionStoreSyncSaga, wsId);
 
   workspaceAgentTasks.set(wsId, [
     fileTrackingTask,
     drawerGuardTask,
-    sessionStoreSyncTask,
   ]);
 }
 
@@ -553,9 +395,28 @@ export function* cancelWorkspaceAgentEventsForWorkspaceSaga(
   workspaceAgentTasks.delete(wsId);
 }
 
+/**
+ * Watch for streaming state changes and track whether the initial spec-writer
+ * agent is actively writing the spec.
+ */
+function* watchSpecWriteTrackingSaga() {
+  yield* takeEvery(setAgentStreaming, function* (action: ReturnType<typeof setAgentStreaming>) {
+    const [wsId, agentId, isStreaming] = action.payload;
+    const state: StoreState = yield* select((s: StoreState) => s);
+    const agent = selectAgentById.select(state, agentId);
+    if (!agent) return;
+
+    const isInitialAgent = agent.metadata?.isInitialAgent === true;
+    const isSpecWriter = agent.metadata?.specialist === "spec-writer";
+
+    if (isInitialAgent && isSpecWriter) {
+      yield* put(setInitialSpecWriteInProgress(wsId, isStreaming));
+    }
+  });
+}
+
 export function* workspaceAgentsSaga() {
   // Reset module-level state on (re)start to avoid stale data from previous runs
-  previousMountedWorkspaceId = undefined;
   workspaceAgentTasks.clear();
 
   yield* all([
@@ -567,6 +428,8 @@ export function* workspaceAgentsSaga() {
     fork(watchAgentRenamedSaga),
     fork(watchWaitingForFirstMessageSaga),
     fork(watchLateInitialAgentHydrationRecoverySaga),
+    fork(heartbeatSaga),
+    fork(watchSpecWriteTrackingSaga),
   ]);
 }
 

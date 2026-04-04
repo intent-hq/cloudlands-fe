@@ -6,14 +6,19 @@
    */
 
   import type { TabTypeComponentProps } from './registry';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { WorkspaceId } from '$shared/types/branded-ids';
   import ChatChangesPanel from '$lib/components/chat/ChatChangesPanel.svelte';
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { writable } from 'svelte/store';
 
   let { tab, workspaceId }: TabTypeComponentProps = $props();
 
-  const workspace = $derived(workspaceStore.findById(WorkspaceId(workspaceId)));
-  const workspacePath = $derived(workspace?.worktreePath || workspace?.repositoryPath || '');
+  const workspaceIdStore = writable(workspaceId);
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+  });
+
+  const workspace = selectWorkspaceById(workspaceIdStore);
+  const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
 
   // Get changes data from tab
   const chatChanges = $derived((tab.data?.changes as any[]) || []);

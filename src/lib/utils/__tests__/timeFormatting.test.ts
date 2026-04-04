@@ -10,7 +10,6 @@ import {
   groupMessagesByDate,
   shouldShowTimeSeparator,
   formatFullTimestamp,
-  getSmartTimestamp,
 } from '../timeFormatting';
 
 describe('timeFormatting', () => {

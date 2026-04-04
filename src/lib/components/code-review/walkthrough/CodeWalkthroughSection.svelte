@@ -14,9 +14,16 @@
   import WalkthroughFileDiff from './WalkthroughFileDiff.svelte';
   import WalkthroughCategoriesGrid from './WalkthroughCategoriesGrid.svelte';
   import WalkthroughCategorySection from './WalkthroughCategorySection.svelte';
-  import type { CodeWalkthrough, WalkthroughStatus, WalkthroughAnnotation, WalkthroughCategory } from './types';
+  import type {
+    CodeWalkthrough,
+    WalkthroughStatus,
+    WalkthroughAnnotation,
+    WalkthroughCategory,
+  } from './types';
   import type { TrackedChange } from '$features/file-tracking/types';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
+
+  const activeWorkspace = selectActiveWorkspace();
 
   interface Props {
     walkthrough: CodeWalkthrough | null;
@@ -57,8 +64,9 @@
   let isOtherFilesExpanded = $state(false);
 
   // Cache for file diffs with stats
-  let fileDiffsCache = $state<Map<string, { patch: string; additions: number; deletions: number }>>(new Map());
-  let isLoadingDiffs = $state(false);
+  let fileDiffsCache = $state<Map<string, { patch: string; additions: number; deletions: number }>>(
+    new Map(),
+  );
 
   // Get categories from walkthrough (or create default from annotations)
   const categories = $derived.by((): WalkthroughCategory[] => {
@@ -73,14 +81,16 @@
         existing.push(ann);
         fileMap.set(ann.file, existing);
       }
-      return [{
-        title: walkthrough.title,
-        description: walkthrough.overview,
-        files: Array.from(fileMap.entries()).map(([path, anns]) => ({
-          path,
-          annotations: anns.sort((a, b) => a.line - b.line),
-        })),
-      }];
+      return [
+        {
+          title: walkthrough.title,
+          description: walkthrough.overview,
+          files: Array.from(fileMap.entries()).map(([path, anns]) => ({
+            path,
+            annotations: anns.sort((a, b) => a.line - b.line),
+          })),
+        },
+      ];
     }
     return [];
   });
@@ -97,7 +107,10 @@
     }
     // Sort annotations within each file by line
     for (const [file, anns] of grouped) {
-      grouped.set(file, anns.sort((a, b) => a.line - b.line));
+      grouped.set(
+        file,
+        anns.sort((a, b) => a.line - b.line),
+      );
     }
     return grouped;
   });
@@ -126,17 +139,12 @@
   $effect(() => {
     if (!walkthrough || !workspacePath) return;
 
-    const workspace = workspaceStore.current;
+    const workspace = $activeWorkspace;
     if (!workspace?.id) return;
 
     // Get all unique file paths
-    const allFiles = new Set([
-      ...mentionedFiles,
-      ...otherFiles.map((c) => c.relativePath),
-    ]);
+    const allFiles = new Set([...mentionedFiles, ...otherFiles.map((c) => c.relativePath)]);
 
-    // Load diffs for each file
-    isLoadingDiffs = true;
     const promises: Promise<void>[] = [];
 
     for (const filePath of allFiles) {
@@ -149,48 +157,42 @@
         workspaceId: workspace.id,
         paths: [filePath],
         staged: true,
-      }).then((response) => {
-        if (response.success && response.data?.[0]) {
-          const diffData = response.data[0];
-          // Build a unified diff string if not provided directly
-          let diffString = '';
-          if (typeof diffData === 'string') {
-            diffString = diffData;
-          } else if (diffData.diff) {
-            diffString = diffData.diff;
-          } else if (diffData.oldContent !== undefined && diffData.newContent !== undefined) {
-            // Generate a simple diff representation
-            diffString = generateUnifiedDiff(filePath, diffData.oldContent, diffData.newContent);
+      })
+        .then((response) => {
+          if (response.success && response.data?.[0]) {
+            const diffData = response.data[0];
+            // Build a unified diff string if not provided directly
+            let diffString = '';
+            if (typeof diffData === 'string') {
+              diffString = diffData;
+            } else if (diffData.diff) {
+              diffString = diffData.diff;
+            } else if (diffData.oldContent !== undefined && diffData.newContent !== undefined) {
+              // Generate a simple diff representation
+              diffString = generateUnifiedDiff(filePath, diffData.oldContent, diffData.newContent);
+            }
+            if (diffString) {
+              // Get stats from changes if available
+              const change = changes.find((c) => c.relativePath === filePath);
+              fileDiffsCache.set(filePath, {
+                patch: diffString,
+                additions: change?.stats?.additions ?? 0,
+                deletions: change?.stats?.deletions ?? 0,
+              });
+              fileDiffsCache = new Map(fileDiffsCache);
+            }
           }
-          if (diffString) {
-            // Get stats from changes if available
-            const change = changes.find((c) => c.relativePath === filePath);
-            fileDiffsCache.set(filePath, {
-              patch: diffString,
-              additions: change?.stats?.additions ?? 0,
-              deletions: change?.stats?.deletions ?? 0,
-            });
-            fileDiffsCache = new Map(fileDiffsCache);
-          }
-        }
-      }).catch((err) => {
-        console.warn(`Failed to load diff for ${filePath}:`, err);
-      });
+        })
+        .catch((err) => {
+          console.warn(`Failed to load diff for ${filePath}:`, err);
+        });
 
       promises.push(promise);
     }
-
-    Promise.all(promises).finally(() => {
-      isLoadingDiffs = false;
-    });
   });
 
   // Simple unified diff generator from old/new content
-  function generateUnifiedDiff(
-    fileName: string,
-    oldContent: string,
-    newContent: string,
-  ): string {
+  function generateUnifiedDiff(fileName: string, oldContent: string, newContent: string): string {
     const oldLines = oldContent.split('\n');
     const newLines = newContent.split('\n');
 
@@ -235,8 +237,6 @@
 
     return diff;
   }
-
-
 </script>
 
 <div class="border-t border-border">
@@ -245,10 +245,7 @@
     class="flex items-center gap-2 w-full px-4 py-3 hover:bg-muted/30 transition-colors cursor-pointer"
     onclick={() => (isExpanded = !isExpanded)}
   >
-    <Fa
-      icon={isExpanded ? faChevronDown : faChevronRight}
-      class="h-3 w-3 text-subtle"
-    />
+    <Fa icon={isExpanded ? faChevronDown : faChevronRight} class="h-3 w-3 text-subtle" />
     <Fa icon={faWandMagicSparkles} class="h-4 w-4 text-purple-500" />
     <span class="text-sm font-medium">Code Walkthrough</span>
     {#if isRunning}
@@ -284,17 +281,17 @@
         <div class="space-y-6">
           <!-- Title -->
           {#if walkthrough.title}
-            <h2 class="text-lg font-semibold text-foreground" transition:fly={{ y: 4, duration: 200 }}>
+            <h2
+              class="text-lg font-semibold text-foreground"
+              transition:fly={{ y: 4, duration: 200 }}
+            >
               {walkthrough.title}
             </h2>
           {/if}
 
           <!-- Overview - simple italic text -->
           {#if walkthrough.overview}
-            <p
-              class="text-sm text-subtle italic"
-              transition:fly={{ y: 4, duration: 200 }}
-            >
+            <p class="text-sm text-subtle italic" transition:fly={{ y: 4, duration: 200 }}>
               {walkthrough.overview}
             </p>
           {/if}

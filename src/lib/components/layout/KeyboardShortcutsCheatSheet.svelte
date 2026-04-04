@@ -7,7 +7,7 @@
    */
 
   import { fade, fly } from 'svelte/transition';
-  import { faTimes, faKeyboard } from '@fortawesome/free-solid-svg-icons';
+  import { faTimes } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import {
     getAllShortcutCategories,

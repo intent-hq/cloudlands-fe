@@ -1,12 +1,8 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faPlus, faCog } from '@fortawesome/free-solid-svg-icons';
+  import { faCog } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import Logo from '$lib/components/Logo.svelte';
-  import Header from '$lib/components/ui/Header.svelte';
-  import ResizablePanel from '$lib/components/layout/ResizablePanel.svelte';
-  import AgentsList from '$lib/components/chat/AgentsList.svelte';
-  import WorkspaceLinks from '$lib/components/workspace/WorkspaceLinks.svelte';
   import type { Workspace } from '$shared/types';
   import type { AgentSession } from '$shared/types';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
@@ -19,6 +15,7 @@
     onSelectAgent?: (agentId: string) => void;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let { workspaces, agents, onCreateWorkspace, onCreateWorkspaceForRepo, onSelectAgent }: Props =
     $props();
 </script>

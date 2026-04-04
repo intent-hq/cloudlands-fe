@@ -16,6 +16,7 @@ import { createLoggerMiddleware } from "./middlewares/logger";
 import { createSentryBreadcrumbsMiddleware } from "./middlewares/sentry-breadcrumbs";
 import { createReferenceChangeDetectorMiddleware } from "./middlewares/state-reference-checks";
 import { createStructuredCloneCheckerMiddleware } from "./middlewares/structured-clone-checker";
+import { createStoreGuardMiddleware } from "../../store/utils/store-guard-middleware";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 
 export const sagaMiddleware = createSagaMiddleware();
@@ -56,6 +57,8 @@ function getReduxLoggerConfig(): { enabled: boolean; webviewName?: string } {
 
 function buildMiddleware(): Middleware<any, StoreState, any>[] {
   const baseMiddleware: Middleware<any, StoreState, any>[] = [
+    // Guard must be first — reject actions tagged for the wrong store immediately
+    createStoreGuardMiddleware("renderer"),
     // No action types to batch yet — add action types here as slices are added
     createBatchingMiddleware([]),
     sagaMiddleware,
@@ -72,7 +75,7 @@ function buildMiddleware(): Middleware<any, StoreState, any>[] {
       debugMiddlewares.push(createReferenceChangeDetectorMiddleware());
     }
 
-    if (safeLocalStorage.getItem(REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY)) {
+    if (import.meta.env.DEV || safeLocalStorage.getItem(REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY)) {
       debugMiddlewares.push(createStructuredCloneCheckerMiddleware());
     }
 

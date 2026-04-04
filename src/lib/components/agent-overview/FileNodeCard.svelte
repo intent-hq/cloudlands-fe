@@ -6,7 +6,7 @@
    * Styled similarly to AgentCard with border and shadow.
    */
   import type { FileNode } from './types';
-  import { faFile, faFileCode, faFileLines, faPen, faEye } from '@fortawesome/free-solid-svg-icons';
+  import { faFile, faPen, faEye } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   interface Props {
@@ -22,6 +22,7 @@
     node,
     isActive = false,
     isBeingAccessed = false,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     actionType = null,
     onclick,
   }: Props = $props();
@@ -41,6 +42,7 @@
   });
 
   // Action indicator icon
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const actionIcon = $derived.by(() => {
     if (node.lastAction === 'write') return faPen;
     if (node.lastAction === 'read') return faEye;

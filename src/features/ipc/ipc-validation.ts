@@ -53,6 +53,7 @@ export function validateIPCWorkspaceId(workspaceId: any): IPCValidationResult {
 /**
  * Validate file path parameter
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function validateIPCPath(path: any, basePath: string): IPCValidationResult {
   if (!path) {
     return {

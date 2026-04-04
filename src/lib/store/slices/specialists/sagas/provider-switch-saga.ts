@@ -46,7 +46,7 @@ function* handleSwitchModelOverrides(action: ReturnType<typeof switchModelOverri
             });
         }
     }
-    catch (error) {
+    catch {
     }
 }
 export function* providerSwitchSaga() {

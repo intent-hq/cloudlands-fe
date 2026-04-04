@@ -8,9 +8,6 @@ import { McpHub } from './hub/mcp-hub';
 import type { BrowserWindow } from 'electron';
 import { Logger } from '../../../shared/logger';
 import { WorkspaceConfig } from '../../../shared/main/config.js';
-import * as path from 'path';
-import * as os from 'os';
-
 const logger = new Logger('MCP');
 
 // Singleton instance

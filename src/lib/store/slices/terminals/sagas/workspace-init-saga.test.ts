@@ -41,7 +41,6 @@ import {
   loadWorkspaceTerminals,
   setIsLoadingTerminals,
   setTerminalsLoaded,
-  WORKSPACE_STATE_STORAGE_KEY,
 } from "../terminals-slice";
 import { loadTerminalsSaga } from "./workspace-init-saga";
 

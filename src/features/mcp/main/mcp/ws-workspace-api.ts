@@ -9,8 +9,9 @@ import { gitService } from '$features/git/main/git.service';
 import type { WorkspaceId } from '$shared/types';
 
 import { sendToWorkspaceWindows } from '../../../system/main/system.ipc';
-import { getWorkspaceEventBus } from '../../../events/main/workspace-event-bus';
 import { createWorkspaceEvent } from '../../../events/types';
+import { emitWorkspaceEvent } from '../../../../store/main/slices/workspace-events/workspace-events-slice';
+import { mainDispatch } from '../../../../store/main/redux-store-bridge';
 import { AVAILABLE_TOPICS, REFERENCE_DOCS } from './reference-docs';
 import type { ToolCall } from './protocol';
 
@@ -282,7 +283,7 @@ export function buildWorkspaceApi({
         { topic, message, ...(metadata !== undefined && { metadata }) },
       );
 
-      getWorkspaceEventBus(workspaceId).emitEvent(event);
+      mainDispatch(emitWorkspaceEvent(event));
       return { ok: true, eventId: event.id };
     },
   };

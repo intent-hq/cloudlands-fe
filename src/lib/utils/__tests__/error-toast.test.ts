@@ -6,6 +6,7 @@ const {
   generateReportMock,
   getInstanceMock,
   getReduxStoreMock,
+  selectCurrentWorkspaceMock,
   selectWorkspaceDefaultModelMock,
   toastCustomMock,
 } = vi.hoisted(() => ({
@@ -14,6 +15,7 @@ const {
   generateReportMock: vi.fn(),
   getInstanceMock: vi.fn(),
   getReduxStoreMock: vi.fn(),
+  selectCurrentWorkspaceMock: vi.fn(),
   selectWorkspaceDefaultModelMock: vi.fn(),
   toastCustomMock: vi.fn(),
 }));
@@ -38,6 +40,10 @@ vi.mock('$lib/store/slices/model/model-selectors', () => ({
   selectWorkspaceDefaultModel: { select: selectWorkspaceDefaultModelMock },
 }));
 
+vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+  selectCurrentWorkspace: { select: selectCurrentWorkspaceMock },
+}));
+
 vi.mock('$lib/utils/error-handler.svelte', () => ({
   errorHandler: {
     attemptRecovery: vi.fn(),
@@ -51,10 +57,6 @@ vi.mock('$lib/utils/error-reporter', () => ({
 
 vi.mock('$features/agent/services/agent-factory', () => ({
   UnifiedAgentFactory: { getInstance: getInstanceMock },
-}));
-
-vi.mock('$features/workspace/workspace.store.svelte', () => ({
-  workspaceStore: { current: { id: 'ws-1' } },
 }));
 
 import { showErrorToast } from '../error-toast';
@@ -72,6 +74,7 @@ describe('showErrorToast', () => {
     generateReportMock.mockReturnValue({ agentPrompt: 'diagnostic context' });
     getInstanceMock.mockReturnValue({ createAgent: createAgentMock });
     getReduxStoreMock.mockReturnValue({ getState: () => legacyState });
+    selectCurrentWorkspaceMock.mockReturnValue({ id: 'ws-1' });
     selectWorkspaceDefaultModelMock.mockReturnValue('selector-workspace-model');
     createAgentMock.mockResolvedValue({ agentId: 'agent-123' });
   });

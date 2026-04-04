@@ -1,23 +1,44 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { openWorkspaceInNewWindow } from '../utils/openWorkspaceInNewWindow';
-  import { sidebarNavStore } from '../sidebar-nav.store.svelte';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
-  import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
+  import {
+    selectWorkspaceItems,
+    selectWorkspaceActivePullRequest,
+  } from '$lib/store/slices/workspace/workspace-selectors';
   import { WorkspaceStatusEnum, PullRequestStatus } from '$shared/types';
   import type { Workspace } from '$shared/types';
   import type { WorkspaceDisplayStatus } from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
   import WorkspaceListItem from '../WorkspaceListItem.svelte';
   import { onMount } from 'svelte';
   import { isPRMergeable as checkPRMergeable } from '$lib/utils/pr-status';
+  import Header from '$lib/components/ui/Header.svelte';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import {
+    selectActiveStreamsVersion,
+    selectPinnedWorkspaceIds,
+    selectAllSpacesViewMode,
+  } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+  import { selectUnreadAgentIds, selectUnreadAgentIdsForWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
+  import { clearWorkspaceUnread } from '$lib/store/slices/unread-tracking/unread-tracking-slice';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+    closeAll,
+    togglePinWorkspace,
+    setAllSpacesViewMode,
+  } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  import type { AllSpacesViewMode } from '$lib/store/slices/sidebar-nav/sidebar-nav-types';
 
   function getGitHubAvatarUrl(owner: string, size: number = 24): string {
     return `https://github.com/${owner}.png?size=${size}`;
   }
 
-  import type { AllSpacesViewMode } from '../sidebar-nav.store.svelte';
-  import Header from '$lib/components/ui/Header.svelte';
+  const dispatch = getDispatch();
+  const workspaceItems = selectWorkspaceItems();
+  const activeStreamsVersion$ = selectActiveStreamsVersion();
+  const unreadAgentIds$ = selectUnreadAgentIds();
+  const pinnedIds$ = selectPinnedWorkspaceIds();
+  const viewMode$ = selectAllSpacesViewMode();
 
   interface Props {
     expanded?: boolean;
@@ -25,7 +46,7 @@
 
   let { expanded = false }: Props = $props();
 
-  const viewMode = $derived(sidebarNavStore.allSpacesViewMode);
+  const viewMode = $derived($viewMode$);
 
   let searchQuery = $state('');
   let searchInputEl = $state<HTMLInputElement | null>(null);
@@ -45,10 +66,8 @@
     }
   });
 
-  // Use the shared store's version counters (initialised by SidebarNav)
+  // Fetch fresh stream state when the card mounts so data is up-to-date
   onMount(() => {
-    sidebarNavStore.initSubscriptions();
-    // Always fetch fresh stream state when the card mounts so data is up-to-date
     activeStreamsTracker.fetchActiveStreams();
   });
 
@@ -57,16 +76,16 @@
   }
 
   const allWorkspaces = $derived.by(() => {
-    void sidebarNavStore.pinnedIds;
+    void $pinnedIds$;
 
-    return workspaceStore.items
+    return $workspaceItems
       .filter(
         (w) =>
           w.status !== WorkspaceStatusEnum.Archived && w.status !== WorkspaceStatusEnum.Deleted,
       )
       .sort((a, b) => {
-        const aPinned = sidebarNavStore.isPinned(a.id);
-        const bPinned = sidebarNavStore.isPinned(b.id);
+        const aPinned = $pinnedIds$.includes(a.id);
+        const bPinned = $pinnedIds$.includes(b.id);
 
         if (aPinned !== bPinned) {
           return aPinned ? -1 : 1;
@@ -78,6 +97,7 @@
 
   function getDisplayStatus(ws: Workspace): WorkspaceDisplayStatus {
     const pullRequests = ws.pullRequests || [];
+    const activePR = selectWorkspaceActivePullRequest.select(getReduxStore().getState(), ws.id);
     const hasMergedPR =
       ws.prStatus === PullRequestStatus.Merged ||
       pullRequests.some((pr) => pr.status === PullRequestStatus.Merged);
@@ -88,9 +108,8 @@
       pullRequests.some(
         (pr) => pr.status === PullRequestStatus.Open || pr.status === PullRequestStatus.Draft,
       ) ||
-      ws.activePullRequest;
+      activePR != null;
     if (hasOpenPR) {
-      const activePR = ws.activePullRequest;
       if (activePR && activePR.status === PullRequestStatus.Open) {
         if (checkPRMergeable(activePR)) return 'pr_ready';
       }
@@ -117,11 +136,12 @@
   const groupedByRepo = $derived.by(() => {
     const groups = new Map<string, { workspaces: Workspace[]; owner?: string; label: string }>();
     for (const ws of filteredWorkspaces) {
-      const repo = ws.repositoryName
-        || ws.repositoryPath
-        || 'No Repository';
-      const label = ws.repositoryName
-        || (ws.repositoryPath ? ws.repositoryPath.split('/').pop() || 'No Repository' : 'No Repository');
+      const repo = ws.repositoryName || ws.repositoryPath || 'No Repository';
+      const label =
+        ws.repositoryName ||
+        (ws.repositoryPath
+          ? ws.repositoryPath.split('/').pop() || 'No Repository'
+          : 'No Repository');
       if (!groups.has(repo)) groups.set(repo, { workspaces: [], owner: ws.repositoryOwner, label });
       groups.get(repo)!.workspaces.push(ws);
     }
@@ -163,22 +183,22 @@
   });
 
   function isRunning(ws: Workspace): boolean {
-    void sidebarNavStore.activeStreamsVersion;
+    void $activeStreamsVersion$;
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id).length > 0;
   }
 
   function getStreamingIds(ws: Workspace): string[] {
-    void sidebarNavStore.activeStreamsVersion;
+    void $activeStreamsVersion$;
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
   }
 
   function getUnreadAgentIds(ws: Workspace): string[] {
-    void sidebarNavStore.unreadVersion;
-    return unreadTrackingService.getUnreadAgentIdsForWorkspace(ws.id);
+    void $unreadAgentIds$;
+    return selectUnreadAgentIdsForWorkspace.select(getReduxStore().getState(), ws.id);
   }
 
   function isUnread(ws: Workspace): boolean {
-    void sidebarNavStore.activeStreamsVersion;
+    void $activeStreamsVersion$;
     const streamingIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
     if (streamingIds.length > 0) return false;
     return getUnreadAgentIds(ws).length > 0;
@@ -195,18 +215,18 @@
 
     keyboardNavActive = false;
     highlightedIndex = -1;
-    sidebarNavStore.closeAll();
+    dispatch(closeAll(false));
     goto(route);
   }
 
   function handleTogglePin(e: MouseEvent, workspaceId: string) {
     e.stopPropagation();
-    sidebarNavStore.togglePinWorkspace(workspaceId);
+    dispatch(togglePinWorkspace(workspaceId));
   }
 
   function handleMarkAsRead(e: MouseEvent, workspaceId: string) {
     e.stopPropagation();
-    unreadTrackingService.clearUnreadForWorkspace(workspaceId);
+    dispatch(clearWorkspaceUnread(workspaceId));
   }
 
   // Flat ordered list of workspace IDs matching the current view mode's display order
@@ -220,9 +240,7 @@
   });
 
   // Map from workspace ID to its position in the flat visible list (for highlighting)
-  const visibleIdIndex = $derived(
-    new Map(allVisibleIds.map((id, i) => [id, i])),
-  );
+  const visibleIdIndex = $derived(new Map(allVisibleIds.map((id, i) => [id, i])));
 
   let keyboardNavActive = $state(false);
   let hoveredIndex = $state(-1);
@@ -242,7 +260,11 @@
       }
       highlightedIndex = Math.max(highlightedIndex - 1, 0);
       keyboardNavActive = true;
-    } else if (e.key === 'Enter' && highlightedIndex >= 0 && highlightedIndex < allVisibleIds.length) {
+    } else if (
+      e.key === 'Enter' &&
+      highlightedIndex >= 0 &&
+      highlightedIndex < allVisibleIds.length
+    ) {
       e.preventDefault();
       handleClick(allVisibleIds[highlightedIndex]);
     } else if (e.key === 'Home') {
@@ -279,7 +301,7 @@
             {viewMode === mode
             ? 'bg-background text-foreground font-medium shadow-sm'
             : 'text-muted-foreground hover:text-foreground'}"
-          onclick={() => sidebarNavStore.setAllSpacesViewMode(mode as AllSpacesViewMode)}
+          onclick={() => dispatch(setAllSpacesViewMode(mode as AllSpacesViewMode))}
         >
           {label}
         </button>
@@ -305,7 +327,7 @@
     <div class="overflow-y-auto flex-1 min-h-0 pb-2">
       {#if viewMode === 'recent'}
         {#each filteredWorkspaces as workspace, i (workspace.id)}
-          {#if i > 0 && !sidebarNavStore.isPinned(workspace.id) && sidebarNavStore.isPinned(filteredWorkspaces[i - 1].id)}
+          {#if i > 0 && !$pinnedIds$.includes(workspace.id) && $pinnedIds$.includes(filteredWorkspaces[i - 1].id)}
             <div class="border-t border-border my-1 mx-2"></div>
           {/if}
           <WorkspaceListItem
@@ -314,7 +336,7 @@
             streamingAgentIds={getStreamingIds(workspace)}
             unreadAgentIds={getUnreadAgentIds(workspace)}
             isUnread={isUnread(workspace)}
-            isPinned={sidebarNavStore.isPinned(workspace.id)}
+            isPinned={$pinnedIds$.includes(workspace.id)}
             highlighted={keyboardNavActive && highlightedIndex === i}
             suppressHover={keyboardNavActive}
             onHover={() => (hoveredIndex = i)}
@@ -327,7 +349,7 @@
           />
         {/each}
       {:else if viewMode === 'repo'}
-        {#each groupedByRepo as [repoName, group]}
+        {#each groupedByRepo as [, group]}
           <div class="section-header flex items-center gap-1.5 px-3 pt-2.5 pb-1 mt-3 min-w-0">
             {#if group.owner}
               <img
@@ -341,7 +363,7 @@
             <Header size={3} class="truncate">{group.label}</Header>
           </div>
           {#each group.workspaces as workspace, i (workspace.id)}
-            {#if i > 0 && !sidebarNavStore.isPinned(workspace.id) && sidebarNavStore.isPinned(group.workspaces[i - 1].id)}
+            {#if i > 0 && !$pinnedIds$.includes(workspace.id) && $pinnedIds$.includes(group.workspaces[i - 1].id)}
               <div class="border-t border-border my-1 mx-2"></div>
             {/if}
             <WorkspaceListItem
@@ -351,8 +373,9 @@
               streamingAgentIds={getStreamingIds(workspace)}
               unreadAgentIds={getUnreadAgentIds(workspace)}
               isUnread={isUnread(workspace)}
-              isPinned={sidebarNavStore.isPinned(workspace.id)}
-              highlighted={keyboardNavActive && highlightedIndex === visibleIdIndex.get(workspace.id)}
+              isPinned={$pinnedIds$.includes(workspace.id)}
+              highlighted={keyboardNavActive &&
+                highlightedIndex === visibleIdIndex.get(workspace.id)}
               suppressHover={keyboardNavActive}
               onHover={() => (hoveredIndex = visibleIdIndex.get(workspace.id) ?? -1)}
               onTogglePin={(e) => handleTogglePin(e, workspace.id)}
@@ -370,7 +393,7 @@
             <Header size={3} class="truncate">{statusLabel}</Header>
           </div>
           {#each workspaces as workspace, i (workspace.id)}
-            {#if i > 0 && !sidebarNavStore.isPinned(workspace.id) && sidebarNavStore.isPinned(workspaces[i - 1].id)}
+            {#if i > 0 && !$pinnedIds$.includes(workspace.id) && $pinnedIds$.includes(workspaces[i - 1].id)}
               <div class="border-t border-border my-1 mx-2"></div>
             {/if}
             <WorkspaceListItem
@@ -379,8 +402,9 @@
               streamingAgentIds={getStreamingIds(workspace)}
               unreadAgentIds={getUnreadAgentIds(workspace)}
               isUnread={isUnread(workspace)}
-              isPinned={sidebarNavStore.isPinned(workspace.id)}
-              highlighted={keyboardNavActive && highlightedIndex === visibleIdIndex.get(workspace.id)}
+              isPinned={$pinnedIds$.includes(workspace.id)}
+              highlighted={keyboardNavActive &&
+                highlightedIndex === visibleIdIndex.get(workspace.id)}
               suppressHover={keyboardNavActive}
               onHover={() => (hoveredIndex = visibleIdIndex.get(workspace.id) ?? -1)}
               onTogglePin={(e) => handleTogglePin(e, workspace.id)}
@@ -396,7 +420,6 @@
     </div>
   {/if}
 </div>
-
 
 <style>
   /* Default: horizontal tabs */

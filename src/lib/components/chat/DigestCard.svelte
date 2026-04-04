@@ -1,8 +1,6 @@
 <script lang="ts">
-  import { faQuoteLeft } from '@fortawesome/free-solid-svg-icons';
-  import Fa from 'svelte-fa';
-
-  interface Props {
+  
+interface Props {
     digest: string;
   }
 

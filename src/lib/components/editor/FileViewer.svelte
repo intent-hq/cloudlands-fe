@@ -3,7 +3,6 @@
   import Fa from 'svelte-fa';
   import {
     faDownload,
-    faExternalLinkAlt,
     faSearchPlus,
     faSearchMinus,
     faArrowsRotate,

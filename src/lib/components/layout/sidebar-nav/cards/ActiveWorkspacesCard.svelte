@@ -10,14 +10,27 @@
    */
   import { goto } from '$app/navigation';
   import { openWorkspaceInNewWindow } from '../utils/openWorkspaceInNewWindow';
-  import { sidebarNavStore } from '../sidebar-nav.store.svelte';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
-  import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
+  import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
   import { WorkspaceStatusEnum } from '$shared/types';
   import { onMount } from 'svelte';
   import WorkspaceListItem from '../WorkspaceListItem.svelte';
   import Header from '$lib/components/ui/Header.svelte';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import {
+    selectActiveStreamsVersion,
+    selectPinnedWorkspaceIds,
+  } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+  import { closeAll, togglePinWorkspace } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectUnreadAgentIds, selectUnreadAgentIdsForWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
+  import { clearWorkspaceUnread } from '$lib/store/slices/unread-tracking/unread-tracking-slice';
+
+  const dispatch = getDispatch();
+  const workspaceItems = selectWorkspaceItems();
+  const activeStreamsVersion$ = selectActiveStreamsVersion();
+  const unreadAgentIds$ = selectUnreadAgentIds();
+  const pinnedIds$ = selectPinnedWorkspaceIds();
 
   interface Props {
     expanded?: boolean;
@@ -25,10 +38,8 @@
 
   let { expanded = false }: Props = $props();
 
-  // Use the shared store's version counters (initialised by SidebarNav)
+  // Fetch fresh stream state when the card mounts so data is up-to-date
   onMount(() => {
-    sidebarNavStore.initSubscriptions();
-    // Always fetch fresh stream state when the card mounts so data is up-to-date
     activeStreamsTracker.fetchActiveStreams();
   });
 
@@ -36,8 +47,8 @@
 
   // Running workspaces (streaming agents)
   const runningWorkspaces = $derived.by(() => {
-    void sidebarNavStore.activeStreamsVersion;
-    return workspaceStore.items
+    void $activeStreamsVersion$;
+    return $workspaceItems
       .filter((w) => {
         if (w.status === WorkspaceStatusEnum.Archived || w.status === WorkspaceStatusEnum.Deleted)
           return false;
@@ -55,24 +66,25 @@
 
   // Unread workspaces (not streaming, has unread, updated within last day)
   const unreadWorkspaces = $derived.by(() => {
-    void sidebarNavStore.activeStreamsVersion;
-    void sidebarNavStore.unreadVersion;
+    void $activeStreamsVersion$;
+    void $unreadAgentIds$;
     const now = Date.now();
-    return workspaceStore.items
+    const state = getReduxStore().getState();
+    return $workspaceItems
       .filter((w) => {
         if (w.status === WorkspaceStatusEnum.Archived || w.status === WorkspaceStatusEnum.Deleted)
           return false;
         const streamingIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(w.id);
         if (streamingIds.length > 0) return false; // already in running
-        const unreadIds = unreadTrackingService.getUnreadAgentIdsForWorkspace(w.id);
-        if (unreadIds.length === 0) return false;
+        const wsUnreadIds = selectUnreadAgentIdsForWorkspace.select(state, w.id);
+        if (wsUnreadIds.length === 0) return false;
         // Only show unread if updated within last day
         const updatedAt = new Date(w.updatedAt).getTime();
         return now - updatedAt < ONE_DAY_MS;
       })
       .map((w) => ({
         workspace: w,
-        unreadIds: unreadTrackingService.getUnreadAgentIdsForWorkspace(w.id),
+        unreadIds: selectUnreadAgentIdsForWorkspace.select(state, w.id),
       }))
       .sort(
         (a, b) =>
@@ -82,12 +94,12 @@
 
   // Pinned workspaces (not already in running or unread)
   const pinnedWorkspaces = $derived.by(() => {
-    void sidebarNavStore.activeStreamsVersion;
-    void sidebarNavStore.unreadVersion;
+    void $activeStreamsVersion$;
+    void $unreadAgentIds$;
     const runningIds = new Set(runningWorkspaces.map((r) => r.workspace.id));
     const unreadIds = new Set(unreadWorkspaces.map((u) => u.workspace.id));
-    return sidebarNavStore.pinnedIds
-      .map((id) => workspaceStore.items.find((w) => w.id === id))
+    return $pinnedIds$
+      .map((id) => $workspaceItems.find((w) => w.id === id))
       .filter((w) => {
         if (!w) return false;
         if (w.status === WorkspaceStatusEnum.Archived || w.status === WorkspaceStatusEnum.Deleted)
@@ -161,19 +173,19 @@
 
     keyboardNavActive = false;
     highlightedIndex = -1;
-    sidebarNavStore.closeAll();
-    unreadTrackingService.clearUnreadForWorkspace(workspaceId);
+    dispatch(closeAll(false));
+    dispatch(clearWorkspaceUnread(workspaceId));
     goto(route);
   }
 
   function handleMarkAsRead(e: MouseEvent, workspaceId: string) {
     e.stopPropagation();
-    unreadTrackingService.clearUnreadForWorkspace(workspaceId);
+    dispatch(clearWorkspaceUnread(workspaceId));
   }
 
   function handleTogglePin(e: MouseEvent, workspaceId: string) {
     e.stopPropagation();
-    sidebarNavStore.togglePinWorkspace(workspaceId);
+    dispatch(togglePinWorkspace(workspaceId));
   }
 
   // Flat list of all visible workspace IDs for keyboard nav
@@ -264,7 +276,7 @@
           {workspace}
           isUnread={true}
           unreadAgentIds={unreadIds}
-          isPinned={sidebarNavStore.isPinned(workspace.id)}
+          isPinned={$pinnedIds$.includes(workspace.id)}
           highlighted={keyboardNavActive && highlightedIndex === i}
           suppressHover={keyboardNavActive}
           onHover={() => (hoveredIndex = i)}
@@ -288,7 +300,7 @@
           {workspace}
           isRunning={true}
           streamingAgentIds={streamingIds}
-          isPinned={sidebarNavStore.isPinned(workspace.id)}
+          isPinned={$pinnedIds$.includes(workspace.id)}
           highlighted={keyboardNavActive && highlightedIndex === unreadOffset + i}
           suppressHover={keyboardNavActive}
           onHover={() => (hoveredIndex = unreadOffset + i)}
@@ -320,7 +332,6 @@
     {/if}
   {/if}
 </div>
-
 
 <style>
   @container (max-width: 160px) {

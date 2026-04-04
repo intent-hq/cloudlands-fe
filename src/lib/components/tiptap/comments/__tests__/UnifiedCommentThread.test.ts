@@ -1,6 +1,20 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
+
+vi.mock('$lib/store/utils/utils', () => ({
+  getDispatch: () => vi.fn(),
+  getStoreContext: () => undefined,
+}));
+
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({ getState: () => ({}) }),
+}));
+
+vi.mock('$lib/store/slices/comments/comments-selectors', () => ({
+  selectCommentById: { select: vi.fn(() => null) },
+}));
+
 import { render, fireEvent } from '@testing-library/svelte';
 import UnifiedCommentThread from '../UnifiedCommentThread.svelte';
 import TooltipWrapper from './TooltipWrapper.svelte';

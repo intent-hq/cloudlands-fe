@@ -9,6 +9,25 @@
  */
 
 import { describe, it, expect, beforeAll, vi } from 'vitest';
+
+// Mock IPC and Redux dependencies
+vi.mock('$shared/ipc/typed-invoke', () => ({
+  typedInvoke: vi.fn().mockResolvedValue({ success: true, data: {} }),
+}));
+
+vi.mock('$lib/electron-bridge', () => ({
+  invoke: vi.fn().mockResolvedValue({ success: true, data: '' }),
+}));
+
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({
+    getState: () => ({ workspaceAgents: { byWorkspaceId: {} } }),
+    dispatch: vi.fn(),
+  }),
+}));
+
+
+
 import { UnifiedAgentFactory } from '../agent-factory';
 import { WorkspaceId } from '../../../../shared/types/branded-ids';
 import { AgentStatus } from '../../../../shared/types/agent.types';

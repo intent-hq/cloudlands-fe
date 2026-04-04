@@ -1,7 +1,6 @@
 <script lang="ts">
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
-  import Header from './Header.svelte';
   import Fa from 'svelte-fa';
 
   interface Props {

@@ -11,8 +11,20 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { combineReducers, legacy_createStore as createStore, type Store } from 'redux';
+import { messageAccumulatorReducer } from '../../../../../store/main/slices/message-accumulator/message-accumulator-slice';
+
+let testStore: Store;
+
+vi.mock('../../../../../store/main/redux-store-bridge', () => ({
+  mainDispatch: (action: any) => testStore?.dispatch(action),
+  getMainState: () => testStore?.getState(),
+  getMainStore: () => testStore,
+  initMainStoreBridge: vi.fn(),
+}));
+
 import { ACPProviderStreaming, testStreamManager } from '../acp-provider-streaming';
-import { messageAccumulator } from '../../../services/message-accumulator.service';
+import * as messageAccumulator from '../../../../../store/main/slices/message-accumulator/message-accumulator-api';
 
 describe('ACP Empty Completion Handling', () => {
   let streaming: ACPProviderStreaming;
@@ -21,6 +33,7 @@ describe('ACP Empty Completion Handling', () => {
   const frontendSessionId = 'frontend-empty-session';
 
   beforeEach(() => {
+    testStore = createStore(combineReducers({ messageAccumulator: messageAccumulatorReducer }));
     streaming = new ACPProviderStreaming(agentId);
     streaming.setInternalSessionId(sessionId);
   });

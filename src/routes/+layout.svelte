@@ -7,18 +7,13 @@
   import type { AnalyticsUIContext } from '$lib/services/analytics';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
 
-  import { releaseNotesStore } from '$features/auto-update/release-notes.store.svelte';
-  import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
+  import { initializeReleaseNotes, closeReleaseNotesModal } from '$lib/store/slices/release-notes/release-notes-slice';
+  import { selectShowReleaseNotesModal, selectReleaseNotes } from '$lib/store/slices/release-notes/release-notes-selectors';
+  import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
   import { globalCleanupService } from '$features/memory/browser/global-cleanup.service';
-  import { paletteStore } from '$features/palette/palette.store.svelte';
-  import {
-    createSpacesSwitcherKeyboard,
-    type SpacesSwitcherKeyboard,
-  } from '$features/workspace/spaces-switcher-keyboard.svelte';
+  import { openPalette, closePalette, togglePalette, openGoToLine } from '$lib/store/slices/palette/palette-slice';
+  import { selectIsPaletteOpen, selectPaletteQuery } from '$lib/store/slices/palette/palette-selectors';
   import SpacesSwitcherOverlay from '$features/workspace/SpacesSwitcherOverlay.svelte';
-  import { workspaceRecencyStore } from '$features/workspace/workspace-recency.store.svelte';
-  import { workspaceTabManager } from '$features/workspace/workspace-tab-manager.svelte';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
   import DebugPanel from '$lib/components/debug/DebugPanel.svelte';
@@ -33,12 +28,11 @@
   import LinkTooltip from '$lib/components/ui/tooltip/LinkTooltip.svelte';
   import UpdateDownloadIndicator from '$lib/components/UpdateDownloadIndicator.svelte';
   import { invoke } from '$lib/electron-bridge';
-  import { dispatch, getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
     closeGitCredentialsModal,
     closeGitHubAuthModal,
     closeNewSpaceModal,
-    openNewSpaceModal,
   } from '$lib/store/slices/global-modals/global-modals-slice';
   import {
     selectGitCredentialsError,
@@ -50,17 +44,35 @@
   import { toggleCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import { toggleLineWrapping } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import {
+    cleanupInvalidWorkspaceTabs,
+    openWorkspaceTab,
+  } from '$lib/store/slices/tab-state/tab-state-slice';
+  import {
+    selectCurrentWorkspaceTabId,
+    selectWorkspaceTabOrder,
+  } from '$lib/store/slices/tab-state/tab-state-selectors';
+  import {
     toggleTerminalOverlay,
     openTerminalOverlay,
   } from '$lib/store/slices/terminals/terminals-slice';
+  import {
+    selectActiveWorkspaceId,
+    selectWorkspaceById,
+    selectWorkspaceItems,
+    selectWorkspaceLoading,
+  } from '$lib/store/slices/workspace/workspace-selectors';
+  import {
+    clearActiveWorkspace,
+    loadWorkspacesRequested,
+    recordWorkspaceView,
+    setActiveWorkspaceId,
+  } from '$lib/store/slices/workspace/workspace-slice';
   import { createAgentRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
   import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
   import { configureMonacoWorkers } from '$lib/utils/monaco-workers';
-  import { themeManager } from '$lib/utils/theme';
-  import { WorkspaceStatus, type Workspace } from '$shared/types';
-  import { WorkspaceId } from '$shared/types/branded-ids';
   import { onDestroy, onMount, untrack } from 'svelte';
 
   import { createLinkTooltipHandler } from '$features/navigation/link-handler';
@@ -71,12 +83,22 @@
   } from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import FeatureCodeDialog from '$lib/components/modals/FeatureCodeDialog.svelte';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
-  import { SidebarNav, sidebarNavStore, SidebarPanel } from '$lib/components/layout/sidebar-nav';
+  import { SidebarNav, SidebarPanel } from '$lib/components/layout/sidebar-nav';
+  import { togglePanel } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import Store, { initStore } from '$lib/store/components/Store.svelte';
   const logger = createLogger('+layout');
 
   const disposeStore = initStore();
   onDestroy(disposeStore);
+
+  const dispatch = getDispatch();
+  const workspaceItems = selectWorkspaceItems();
+  const activeWorkspaceId = selectActiveWorkspaceId();
+  const workspaceLoading = selectWorkspaceLoading();
+  const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
+  const workspaceTabOrder = selectWorkspaceTabOrder();
+  const showReleaseNotesModal$ = selectShowReleaseNotesModal();
+  const releaseNotes$ = selectReleaseNotes();
 
   // Register all tab types early
   // This must happen before any panels are rendered
@@ -87,10 +109,6 @@
   if (typeof window !== 'undefined') {
     preloadDiffHighlighter();
   }
-
-  // Initialize theme manager early to ensure theme is applied
-  // The singleton will load and apply the saved theme on first import
-  const _themeManagerInit = themeManager;
 
   // Import dev tools in development mode
   if (import.meta.env.DEV) {
@@ -115,13 +133,12 @@
   }
 
   let currentWorkspaceId = $derived($page.params.id as string | undefined);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let isHome = $derived($page.route.id === '/');
   const globalModals = selectGlobalModals();
   const featureCodeDialogOpen = selectFeatureCodeDialogOpen();
-
-  // Svelte 5: Use $derived for computed values from stores
-  let workspaces = $derived(workspaceStore.items);
-  let workspaceId = $derived(workspaceStore.current?.id || undefined);
+  const isPaletteOpen$ = selectIsPaletteOpen();
+  const paletteQuery$ = selectPaletteQuery();
 
   // PERF: Consolidated workspace sync effect - handles both tab syncing and cleanup
   // Merging these effects reduces re-renders when workspaces change
@@ -129,12 +146,13 @@
   let lastWorkspaceIds = '';
   $effect(() => {
     // Part 1: Sync workspace store with tab manager
-    const currentTabId = workspaceTabManager.currentTabId;
+    const currentTabId = $currentWorkspaceTabId;
     if (currentTabId && currentTabId !== lastSyncedTabId) {
       lastSyncedTabId = currentTabId;
       untrack(() => {
-        if (currentTabId !== workspaceStore.current?.id) {
-          workspaceStore.setCurrentWorkspace(WorkspaceId(currentTabId));
+        if (currentTabId !== $activeWorkspaceId) {
+          dispatch(setActiveWorkspaceId(currentTabId));
+          dispatch(recordWorkspaceView(currentTabId, Date.now()));
         }
       });
     }
@@ -142,8 +160,7 @@
     // Part 2: Clean up invalid tabs when workspaces change
     // IMPORTANT: Don't cleanup if workspaces is empty or still loading
     // This prevents closing all tabs during initial load or when a reload fails
-    const isLoading = workspaceStore.loading;
-    if (workspaces.length === 0 || isLoading) {
+    if ($workspaceItems.length === 0 || $workspaceLoading) {
       // Skip cleanup when workspaces list is empty or loading
       // This prevents closing tabs during:
       // - Initial load before workspaces are fetched
@@ -152,21 +169,21 @@
       return;
     }
 
-    const validIds = workspaces
+    const validIds = $workspaceItems
       .filter((w) => w.status !== 'Archived' && w.status !== 'Deleted')
       .map((w) => w.id);
     const currentIds = validIds.sort().join(',');
     if (currentIds !== lastWorkspaceIds) {
       lastWorkspaceIds = currentIds;
       untrack(() => {
-        workspaceTabManager.cleanupInvalidTabs(new Set(validIds));
+        dispatch(cleanupInvalidWorkspaceTabs(validIds));
       });
     }
   });
 
   // Send open workspace tabs to main process for Window menu
   $effect(() => {
-    const tabOrder = workspaceTabManager.tabOrder;
+    const tabOrder = $workspaceTabOrder;
     invoke(IPC_CHANNELS.WINDOW.SET_OPEN_WORKSPACE_TABS, {
       workspaceIds: [...tabOrder],
     }).catch(() => {
@@ -224,6 +241,7 @@
 
   // Cmd hold cheat sheet state
   let cmdHoldTimer: ReturnType<typeof setTimeout> | null = null;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const CMD_HOLD_DELAY = 500; // half second
   $effect(() => {
     const currentPath = $page.url.pathname;
@@ -233,21 +251,6 @@
   });
 
   let paletteShortcuts: KeyboardShortcutManager | null = null;
-
-  // Spaces switcher (Cmd+L to cycle through workspaces like Cmd+Tab)
-  let spacesSwitcher: SpacesSwitcherKeyboard | null = $state(null);
-
-  // Resolve the switcher's workspace ID ordering to live store data so that
-  // titles, taskStats, agentSummary, PR status, etc. stay current.
-  // The keyboard manager stores only IDs; we look up live objects here.
-  const switcherLiveWorkspaces = $derived.by(() => {
-    if (!spacesSwitcher) return [];
-    const storeItems = workspaceStore.items;
-    const byId = new Map(storeItems.map((w) => [w.id, w]));
-    return spacesSwitcher.workspaceIds
-      .map((id) => byId.get(id))
-      .filter((w): w is Workspace => w != null);
-  });
 
   onMount(() => {
     // Hide the splash screen from app.html now that Svelte has mounted
@@ -284,13 +287,11 @@
 
     // Initialize global cleanup service
     globalCleanupService.initialize();
-    githubAuthStore.initialize().catch((error) => {
-      logger.warn('[+layout] Failed to initialize GitHub auth store', error);
-    });
+    dispatch(initializeGitHubAuth());
 
     // Initialize release notes store to detect version changes and show release notes
-    // We need to fetch the channel directly from main process since autoUpdateStore
-    // hasn't loaded the user's preference yet at this point
+    // We need to fetch the channel directly from main process since the auto-update
+    // Redux state hasn't loaded the user's preference yet at this point
     if (window.electronAPI) {
       (async () => {
         try {
@@ -309,7 +310,7 @@
           logger.info(
             `[+layout] Initializing release notes: version=${currentVersion}, channel=${channel}`,
           );
-          await releaseNotesStore.initialize(currentVersion, channel);
+          dispatch(initializeReleaseNotes(currentVersion, channel));
         } catch (e) {
           logger.warn('[+layout] Failed to initialize release notes store', e);
         }
@@ -371,16 +372,12 @@
       // Use requestIdleCallback to load workspaces when browser is idle
       if (typeof requestIdleCallback !== 'undefined') {
         requestIdleCallback(() => {
-          workspaceStore.load().catch((err) => {
-            logger.error('Failed to load workspaces', err);
-          });
+          dispatch(loadWorkspacesRequested());
         });
       } else {
         // Fallback to setTimeout for browsers without requestIdleCallback
         setTimeout(() => {
-          workspaceStore.load().catch((err) => {
-            logger.error('Failed to load workspaces', err);
-          });
+          dispatch(loadWorkspacesRequested());
         }, 100);
       }
     };
@@ -395,13 +392,14 @@
         const id = match[1];
         // Don't set workspace for 'new' page
         if (id === 'new') {
-          workspaceStore.close();
+          dispatch(clearActiveWorkspace());
         } else {
           // Open tab and set as current - use untrack to prevent loops
           untrack(() => {
-            workspaceTabManager.openTab(id);
-            if (!workspaceStore.current || workspaceStore.current.id !== id) {
-              workspaceStore.setCurrentWorkspace(WorkspaceId(id));
+            dispatch(openWorkspaceTab(id));
+            if (selectActiveWorkspaceId.select(getReduxStore().getState()) !== id) {
+              dispatch(setActiveWorkspaceId(id));
+              dispatch(recordWorkspaceView(id, Date.now()));
             }
           });
         }
@@ -434,9 +432,9 @@
         action: opts.action,
       });
     };
-    const openCmd = () => paletteStore.open();
-    const openFile = () => paletteStore.open();
-    const openSearch = () => paletteStore.open();
+    const openCmd = () => dispatch(openPalette());
+    const openFile = () => dispatch(openPalette());
+    const openSearch = () => dispatch(openPalette());
 
     // Optionally register config-driven shortcut for opening the command palette
     const registerChord = (chord: string | undefined, description: string, action: () => void) => {
@@ -478,14 +476,14 @@
         if (shortcuts && typeof shortcuts === 'object') {
           registerChord(shortcuts['command-palette'], 'Open Command Palette (Config)', openCmd);
         }
-      } catch (e) {
+      } catch  {
         // Ignore if not available (e.g., web build)
       }
     })();
     // Cmd+K (Mac) / Ctrl+K (Win/Linux) -> open command palette
     // Note: On macOS, Ctrl+K is an Emacs shortcut (kill line) and should NOT open command palette
     const openCommandPalette = () => {
-      paletteStore.toggle();
+      dispatch(togglePalette());
     };
     register({
       key: 'k',
@@ -503,7 +501,7 @@
     }
     // Cmd+O (Mac) / Ctrl+O (Win/Linux) -> toggle all spaces sidebar panel
     const toggleAllSpaces = () => {
-      sidebarNavStore.togglePanel('all-workspaces');
+      getReduxStore().dispatch(togglePanel('all-workspaces'));
     };
     register({
       key: 'o',
@@ -521,7 +519,7 @@
     }
     // Cmd+T (Mac) / Ctrl+T (Win/Linux) - New Tab (creates new agent, like browser new tab)
     const newTab = () => {
-      const wsId = workspaceStore.current?.id;
+      const wsId = selectActiveWorkspaceId.select(getReduxStore().getState());
       if (wsId) {
         dispatch(createAgentRequested(wsId));
       }
@@ -556,14 +554,14 @@
       action: openCmd,
     });
     // Cmd+G (Mac) / Ctrl+G (Win/Linux) -> Go to Line
-    const openGoToLine = () => paletteStore.openGoToLine();
-    register({ key: 'g', meta: true, description: 'Go to Line (Mac)', action: openGoToLine });
+    const openGoToLineAction = () => dispatch(openGoToLine());
+    register({ key: 'g', meta: true, description: 'Go to Line (Mac)', action: openGoToLineAction });
     if (!isMac) {
       register({
         key: 'g',
         ctrl: true,
         description: 'Go to Line (Win/Linux)',
-        action: openGoToLine,
+        action: openGoToLineAction,
       });
     }
     // Cmd+Shift+F (Mac) / Ctrl+Shift+F (Win/Linux) -> search
@@ -585,8 +583,8 @@
     // Ctrl+` -> toggle terminal overlay (matches VS Code behavior - Ctrl on all platforms including Mac)
     // Registered globally so it works on workspace and non-workspace pages alike.
     const toggleTerminal = () => {
-      // Use URL-derived currentWorkspaceId rather than workspaceStore.current?.id
-      // because the store value can be null/stale during initial load or navigation,
+      // Use URL-derived currentWorkspaceId rather than Redux workspace selector
+      // because the selector value can be null/stale during initial load or navigation,
       // which would incorrectly route the toggle to ROOT_WORKSPACE_ID.
       const isOnWorkspacePage = $page.url.pathname.startsWith('/workspace/');
       const terminalContextId =
@@ -741,50 +739,10 @@
     };
     window.addEventListener('keydown', handleBrowserNavigation);
 
-    // Initialize spaces switcher (Ctrl+Tab to cycle through workspaces like Cmd+Tab)
-    spacesSwitcher = createSpacesSwitcherKeyboard({
-      getCurrentWorkspaceId: () => workspaceStore.current?.id ?? null,
-      getWorkspacesSortedByLastViewed: () => {
-        // Filter out archived workspaces, but include current workspace
-        // The keyboard handler will put current workspace first
-        const activeWorkspaces = workspaceStore.items.filter(
-          (w) => w.status !== WorkspaceStatus.Archived,
-        );
-        return workspaceRecencyStore.sortByRecency(activeWorkspaces);
-      },
-      onSelectWorkspaceId: (workspaceId) => {
-        logger.info('[+layout] Spaces switcher selected workspace', { workspaceId });
-        goto(`/workspace/${workspaceId}`);
-      },
-      onOpen: () => {
-        logger.debug('[+layout] Spaces switcher opened');
-      },
-      onClose: () => {
-        logger.debug('[+layout] Spaces switcher closed');
-      },
-    });
-
-    // Handle spaces switcher keyboard events
-    // Use capture phase to ensure we get the event before other handlers can stop propagation
-    const handleSpacesSwitcherKeyDown = (e: KeyboardEvent) => {
-      spacesSwitcher?.handleKeyDown(e);
-    };
-    const handleSpacesSwitcherKeyUp = (e: KeyboardEvent) => {
-      spacesSwitcher?.handleKeyUp(e);
-    };
-    const handleSpacesSwitcherSelect = (e: Event) => {
-      spacesSwitcher?.handleSelectEvent(e as CustomEvent);
-    };
-    window.addEventListener('keydown', handleSpacesSwitcherKeyDown, true);
-    window.addEventListener('keyup', handleSpacesSwitcherKeyUp, true);
-    window.addEventListener('spaces-switcher:select', handleSpacesSwitcherSelect);
-
     return () => {
       paletteShortcuts?.detach();
       paletteShortcuts?.destroy();
       paletteShortcuts = null;
-      spacesSwitcher?.cleanup();
-      spacesSwitcher = null;
       if (cmdHoldTimer) {
         clearTimeout(cmdHoldTimer);
         cmdHoldTimer = null;
@@ -796,16 +754,9 @@
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       cleanupLinkTooltip();
       window.removeEventListener('keydown', handleBrowserNavigation);
-      window.removeEventListener('keydown', handleSpacesSwitcherKeyDown, true);
-      window.removeEventListener('keyup', handleSpacesSwitcherKeyUp, true);
-      window.removeEventListener('spaces-switcher:select', handleSpacesSwitcherSelect);
 
     };
   });
-
-  function handleCreateWorkspace() {
-    dispatch(openNewSpaceModal(undefined));
-  }
 
   function handleGitHubAuthSuccess() {
     const pendingAuth = selectPendingGitHubAuth.select(getReduxStore().getState());
@@ -869,26 +820,13 @@
     dispatch(closeGitCredentialsModal());
   }
 
-  function handleCreateWorkspaceForRepo(lastWorkspace: Workspace) {
-    dispatch(
-      openNewSpaceModal({
-        repoPath: lastWorkspace.repositoryPath || '',
-        isGithub: !!(lastWorkspace.repositoryOwner && lastWorkspace.repositoryName),
-        owner: lastWorkspace.repositoryOwner || undefined,
-        name: lastWorkspace.repositoryName || undefined,
-        environmentType: lastWorkspace.environmentConfig?.type,
-        sshConfig: lastWorkspace.environmentConfig?.ssh,
-      }),
-    );
-  }
-
   // Set currentWorkspaceId when navigating to workspace pages
   beforeNavigate(({ to }: any) => {
     if (to && to.url.pathname.startsWith('/workspace/')) {
       const workspaceId = to.url.pathname.split('/')[2];
       // Don't set workspace for 'new' page - let the page handle it
       if (workspaceId === 'new') {
-        workspaceStore.close();
+        dispatch(clearActiveWorkspace());
       } else {
         // Check if this is an optimistic workspace being created
         const isOptimistic =
@@ -903,14 +841,15 @@
         } else {
           // Only set current workspace if it exists in the store
           // The workspace page will handle loading it if it doesn't exist
-          const workspace = workspaceStore.findById(workspaceId);
+          const workspace = selectWorkspaceById.select(getReduxStore().getState(), workspaceId);
           if (workspace) {
             logger.debug('[+layout] Setting current workspace', {
               workspaceId,
               foundWorkspaceId: workspace.id,
               foundWorkspaceTitle: workspace.title,
             });
-            workspaceStore.setCurrentWorkspace(workspace);
+            dispatch(setActiveWorkspaceId(workspaceId));
+            dispatch(recordWorkspaceView(workspaceId, Date.now()));
           } else {
             logger.debug('[+layout] Workspace not found in store, page will load it', {
               workspaceId,
@@ -921,18 +860,14 @@
       }
     } else if (to && !to.url.pathname.startsWith('/workspace/')) {
       // Clear the current workspace when navigating away from workspace pages
-      workspaceStore.close();
+      dispatch(clearActiveWorkspace());
 
-      // Load workspaces when navigating to the home page
-      // This ensures workspaces are loaded when coming from pages like settings
-      if (to.url.pathname === '/') {
-        // Check if workspaces are already loaded or currently loading
-        if (workspaceStore.items.length === 0 && !workspaceStore.loading) {
-          logger.debug('[+layout] Loading workspaces on navigation to home page');
-          workspaceStore.load().catch((err) => {
-            logger.error('Failed to load workspaces on navigation', err);
-          });
-        }
+      // Load workspaces when navigating to any non-workspace route
+      // This ensures workspaces are loaded for tabs, switcher, and other UI components
+      const state = getReduxStore().getState();
+      if (!selectWorkspaceLoading.select(state)) {
+        logger.debug('[+layout] Loading workspaces on navigation to non-workspace page');
+        dispatch(loadWorkspacesRequested());
       }
     }
   });
@@ -996,7 +931,7 @@
       aria-label="Application shell"
     >
       <!-- Title bar at top -->
-      <WindowTitleBar {workspaceId} />
+      <WindowTitleBar workspaceId={$activeWorkspaceId || undefined} />
 
       <!-- Update indicator (top-right corner) -->
       <div class="absolute top-2 right-3 z-10">
@@ -1023,7 +958,7 @@
 
             <!-- Root Quake Terminal Overlay (for non-workspace pages) -->
             <!-- Only shown when not in a workspace context -->
-            {#if !workspaceId}
+            {#if !$activeWorkspaceId}
               <RootQuakeTerminalOverlay />
             {/if}
           </main>
@@ -1033,10 +968,10 @@
 
     <!-- Global Command Palette Mount -->
     <CommandPalette
-      isOpen={paletteStore.isOpen}
-      initialQuery={paletteStore.query}
-      {workspaceId}
-      onClose={() => paletteStore.close()}
+      isOpen={$isPaletteOpen$}
+      initialQuery={$paletteQuery$}
+      workspaceId={$activeWorkspaceId || undefined}
+      onClose={() => dispatch(closePalette())}
       onSelectFile={(detail: { path: string; line?: number; openInAdjacentPanel?: boolean }) => {
         window.dispatchEvent(
           new CustomEvent('workspace:open-file', {
@@ -1051,14 +986,7 @@
     />
 
     <!-- Spaces Switcher Overlay (Ctrl+Tab) -->
-    {#if spacesSwitcher}
-      <SpacesSwitcherOverlay
-        isOpen={spacesSwitcher.isOpen}
-        workspaces={switcherLiveWorkspaces}
-        selectedIndex={spacesSwitcher.selectedIndex}
-        currentWorkspaceId={workspaceStore.current?.id ?? null}
-      />
-    {/if}
+    <SpacesSwitcherOverlay />
 
     <!-- Keyboard Shortcuts Cheat Sheet (press Cmd+/ to toggle) -->
     <KeyboardShortcutsCheatSheet />
@@ -1107,9 +1035,9 @@
 
     <!-- Release Notes Modal (shown after update) -->
     <ReleaseNotesModal
-      open={releaseNotesStore.showModal}
-      releaseNotes={releaseNotesStore.releaseNotes}
-      onClose={() => releaseNotesStore.closeModal()}
+      open={$showReleaseNotesModal$}
+      releaseNotes={$releaseNotes$}
+      onClose={() => dispatch(closeReleaseNotesModal())}
     />
 
     <!-- New Workspace Modal -->

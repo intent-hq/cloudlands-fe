@@ -6,7 +6,7 @@
  */
 
 import { ipcMain } from 'electron';
-import { ConfigManager, type AppConfig } from '../../../shared/services/config-manager';
+import { ConfigManager } from '../../../shared/services/config-manager';
 import { Logger } from '../../../shared/logger';
 import { CONFIG_CHANNELS } from '../../../shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';

@@ -1,7 +1,19 @@
 <script lang="ts">
-  import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import { onDestroy, onMount } from 'svelte';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import {
+    startGitHubAuth,
+    cancelGitHubAuth,
+    clearGitHubAuthError,
+  } from '$lib/store/slices/github-auth/github-auth-slice';
+  import {
+    selectGitHubAuthIsAuthenticated,
+    selectGitHubAuthIsAuthenticating,
+    selectGitHubAuthOauthUrl,
+    selectGitHubAuthError,
+    selectGitHubAuthRequiresAugmentAuth,
+  } from '$lib/store/slices/github-auth/github-auth-selectors';
 
   interface Props {
     open?: boolean;
@@ -18,8 +30,12 @@
     autoStart = false,
   }: Props = $props();
 
-  // Access state reactively through the store getter, not via destructuring
-  const { startAuth, cancelAuth, clearError } = githubAuthStore;
+  const dispatch = getDispatch();
+  const isAuthenticated$ = selectGitHubAuthIsAuthenticated();
+  const isAuthenticating$ = selectGitHubAuthIsAuthenticating();
+  const oauthUrl$ = selectGitHubAuthOauthUrl();
+  const error$ = selectGitHubAuthError();
+  const requiresAugmentAuth$ = selectGitHubAuthRequiresAugmentAuth();
 
   let authStartedHere = false;
   let hasAutoStarted = false;
@@ -33,24 +49,23 @@
     }
   });
 
-  async function handleConnect() {
+  // Watch for auth completion from saga and trigger success
+  $effect(() => {
+    if (authStartedHere && $isAuthenticated$) {
+      authStartedHere = false;
+      onSuccess();
+      onClose();
+    }
+  });
+
+  function handleConnect() {
     authStartedHere = true;
     hasOpenedBrowser = false;
-    // Run auth without blocking the UI so the spinner renders immediately
-    startAuth()
-      .then(() => {
-        if (githubAuthStore.state.isAuthenticated) {
-          onSuccess();
-          onClose();
-        }
-      })
-      .catch(() => {
-        // Auth flow failed - error state will be shown in the modal
-      });
+    dispatch(startGitHubAuth());
   }
 
   function handleOpenInBrowser() {
-    const url = githubAuthStore.state.oauthUrl;
+    const url = $oauthUrl$;
     if (!url) return;
 
     hasOpenedBrowser = true;
@@ -61,21 +76,21 @@
 
   function handleCancel() {
     if (authStartedHere) {
-      cancelAuth();
+      dispatch(cancelGitHubAuth());
     }
     hasOpenedBrowser = false;
     onClose();
   }
 
   function handleRetry() {
-    clearError();
+    dispatch(clearGitHubAuthError());
     hasOpenedBrowser = false;
     handleConnect();
   }
 
   onDestroy(() => {
-    if (authStartedHere && githubAuthStore.state.isAuthenticating) {
-      cancelAuth();
+    if (authStartedHere && $isAuthenticating$) {
+      dispatch(cancelGitHubAuth());
     }
   });
 </script>
@@ -102,15 +117,15 @@
       </div>
 
       <div class="p-6 text-center text-foreground">
-        {#if githubAuthStore.state.error}
+        {#if $error$}
           <div class="text-destructive-foreground">
-            <p>{githubAuthStore.state.error}</p>
+            <p>{$error$}</p>
             <button
               class="mt-3 bg-muted border-none px-4 py-2 rounded cursor-pointer text-foreground hover:bg-muted/80"
               onclick={handleRetry}>Try Again</button
             >
           </div>
-        {:else if githubAuthStore.state.requiresAugmentAuth}
+        {:else if $requiresAugmentAuth$}
           <div class="augment-auth-required">
             <GitHubIcon size={48} class="block mx-auto mb-4 text-foreground" />
             <p class="text-foreground">
@@ -120,7 +135,7 @@
               Run <code class="bg-muted px-2 py-1 rounded">auggie login</code> in your terminal.
             </p>
           </div>
-        {:else if githubAuthStore.state.oauthUrl}
+        {:else if $oauthUrl$}
           <div class="oauth-redirect">
             <GitHubIcon size={48} class="block mx-auto mb-4 text-foreground" />
             {#if hasOpenedBrowser}
@@ -141,7 +156,7 @@
               </button>
             {/if}
           </div>
-        {:else if githubAuthStore.state.isAuthenticating}
+        {:else if $isAuthenticating$}
           <div class="loading">
             <div
               class="w-6 h-6 border-[3px] border-border border-t-blue-600 rounded-full animate-spin mx-auto"

@@ -139,7 +139,7 @@ export class AugmentCLI extends EventEmitter {
         return match ? match[1] : result.output.trim();
       }
       return null;
-    } catch (error) {
+    } catch  {
       return null;
     }
   }
@@ -230,7 +230,7 @@ export class AugmentCLI extends EventEmitter {
       let buffer = '';
       const toolCalls: any[] = [];
       let currentToolCall: any = null;
-      let inToolSection = false;
+
       let responseStarted = false;
       let hasResolved = false;
 
@@ -292,7 +292,6 @@ export class AugmentCLI extends EventEmitter {
           // Detect tool call markers
           if (cleanLine.startsWith('🔧 Tool call:')) {
             const toolName = cleanLine.replace('🔧 Tool call:', '').trim();
-            inToolSection = true;
             currentToolCall = {
               id: `tool_${Date.now()}`,
               name: toolName,
@@ -314,7 +313,6 @@ export class AugmentCLI extends EventEmitter {
 
           // Detect robot emoji delimiter (separates tool output from response)
           if (cleanLine === '🤖') {
-            inToolSection = false;
             currentToolCall = null;
             responseStarted = true;
             continue;
@@ -494,7 +492,7 @@ export class AugmentCLI extends EventEmitter {
   }
 
   stopAllProcesses(): void {
-    for (const [key, process] of this.activeProcesses) {
+    for (const [, process] of this.activeProcesses) {
       process.kill('SIGTERM');
     }
     this.activeProcesses.clear();

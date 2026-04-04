@@ -2,7 +2,7 @@
 // The build process should handle this correctly
 import { EventEmitter } from 'events';
 import { Logger } from '../../../../shared/logger';
-import type { AgentSession, ProviderMessage, ToolCall } from '../../../../shared/types';
+import type { ProviderMessage, ToolCall } from '../../../../shared/types';
 
 const logger = new Logger('BaseProvider');
 

@@ -8,7 +8,7 @@
 import { Logger } from '../../../../shared/logger';
 import { unifiedIdService } from '$shared/services/unified-id.service';
 import { EventEmitter } from '$shared/utils/event-emitter';
-import { messageAccumulator } from '../../services/message-accumulator.service';
+import * as messageAccumulator from '../../../../store/main/slices/message-accumulator/message-accumulator-api';
 import type { ContentBlock } from '../../../../shared/types';
 import { changeDetectorManager } from '../../../workspace/main/change-detector-manager';
 import { getAttributionEngine } from '../../../workspace/main/provenance/attribution-engine';
@@ -16,7 +16,9 @@ import { readFile } from 'fs/promises';
 import { join, isAbsolute } from 'path';
 import { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';
 import * as Diff from 'diff';
-import { getWorkspaceEventService } from '../../../events/main';
+import { createWorkspaceEvent } from '../../../events/types';
+import { emitWorkspaceEvent } from '../../../../store/main/slices/workspace-events/workspace-events-slice';
+import { mainDispatch } from '../../../../store/main/redux-store-bridge';
 import { consumeMcpToolParams } from '../../../../shared/services/mcp-tool-params-cache';
 import { sendToWorkspaceWindows } from '../../../system/main/system.ipc';
 
@@ -620,7 +622,7 @@ class BackendStreamManager extends EventEmitter {
     for (const session of this.sessions.values()) {
       try {
         messageAccumulator.clear(session.agentId);
-      } catch (error) {
+      } catch {
         // Ignore errors during cleanup
       }
     }
@@ -1140,17 +1142,25 @@ export class ACPProviderStreaming {
           }
 
           const action = oldContent === '' ? 'create' : 'modify';
-          const eventService = getWorkspaceEventService(pendingEdit.workspaceId);
-          eventService.emitFileChange(pendingEdit.filePath, action, {
-            diff: patch,
-            additions,
-            deletions,
-            actor: {
-              type: 'agent',
-              id: pendingEdit.agentId,
-              name: pendingEdit.agentName || 'Agent',
+          const actor = {
+            type: 'agent' as const,
+            id: pendingEdit.agentId,
+            name: pendingEdit.agentName || 'Agent',
+          };
+          const fileEvent = createWorkspaceEvent(
+            'file:changed',
+            pendingEdit.workspaceId,
+            actor,
+            {
+              path: pendingEdit.filePath,
+              relativePath: pendingEdit.filePath,
+              action,
+              additions,
+              deletions,
+              diff: patch,
             },
-          });
+          );
+          mainDispatch(emitWorkspaceEvent(fileEvent));
 
           logger.info('Emitted file:changed event with diff to activity log', {
             filePath: pendingEdit.filePath,
@@ -1956,7 +1966,7 @@ export class ACPProviderStreaming {
       );
       if (existingBlock && existingBlock.input) {
         const existingInput = existingBlock.input as Record<string, any>;
-        let backfilledFields: string[] = [];
+        const backfilledFields: string[] = [];
 
         // Merge all missing fields from rawInput (command, cwd, type, path, etc.)
         const rawInput = update?.rawInput as Record<string, any> | undefined;
@@ -2241,7 +2251,7 @@ export class ACPProviderStreaming {
       // Also clear from message accumulator
       try {
         messageAccumulator.clear(this.agentId);
-      } catch (error) {
+      } catch {
         // Ignore if not found
       }
     }

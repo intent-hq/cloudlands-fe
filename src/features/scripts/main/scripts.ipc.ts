@@ -2,7 +2,7 @@
  * Scripts IPC Handlers
  *
  * Registers IPC handlers for workspace script operations (CRUD, lifecycle, output).
- * Emits domain events via unifiedEventBus for lifecycle changes.
+ * Emits domain events via Redux dispatch (script-events slice) for lifecycle changes.
  * Forwards output batches to renderer via domain events.
  */
 
@@ -14,7 +14,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../../../shared/logger';
 import { SCRIPTS_CHANNELS } from '$shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
-import { unifiedEventBus } from '../../events/main/unified-event-bus';
+import { mainDispatch } from '../../../store/main/redux-store-bridge';
+import { scriptStarted, scriptStopped, scriptError, scriptUrlDetected, scriptOutput } from '../../../store/main/slices/script-events/script-events-slice';
 import { workspaceService } from '../../workspace/main/workspace.service';
 import { readRepoConfig, writeRepoConfig } from '../../workspace/main/repo-config.service';
 import { createWorkspaceId } from '$shared/types/branded-ids';
@@ -165,40 +166,40 @@ async function getOrCreateManager(workspaceId: string) {
       const scriptName = script?.name || scriptId;
 
       if (state.status === 'running') {
-        unifiedEventBus.emitDomainEvent('script:started', {
+        mainDispatch(scriptStarted({
           workspaceId: wsId,
           scriptId,
           scriptName,
           pid: state.pid,
           startedAt: state.startedAt ? new Date(state.startedAt).toISOString() : new Date().toISOString(),
-        });
+        }));
       } else if (state.status === 'exited' || state.status === 'idle') {
         // Only emit stopped if it was previously running (has stoppedAt)
         if (state.stoppedAt) {
-          unifiedEventBus.emitDomainEvent('script:stopped', {
+          mainDispatch(scriptStopped({
             workspaceId: wsId,
             scriptId,
             scriptName,
             exitCode: state.exitCode,
             stoppedAt: new Date(state.stoppedAt).toISOString(),
-          });
+          }));
         }
       }
       if (state.error) {
-        unifiedEventBus.emitDomainEvent('script:error', {
+        mainDispatch(scriptError({
           workspaceId: wsId,
           scriptId,
           scriptName,
           error: state.error,
-        });
+        }));
       }
       if (state.detectedUrl) {
-        unifiedEventBus.emitDomainEvent('script:url-detected', {
+        mainDispatch(scriptUrlDetected({
           workspaceId: wsId,
           scriptId,
           scriptName,
           url: state.detectedUrl,
-        });
+        }));
       }
     }).catch((err) => {
       logger.warn('Failed to look up script name for event', { scriptId, error: String(err) });
@@ -207,7 +208,7 @@ async function getOrCreateManager(workspaceId: string) {
 
   manager.setOutputCallback((scriptId: string, lines: OutputLine[]) => {
     const wsId = workspaceId as unknown as WorkspaceId;
-    unifiedEventBus.emitDomainEvent('script:output', {
+    mainDispatch(scriptOutput({
       workspaceId: wsId,
       scriptId,
       lines: lines.map((l) => ({
@@ -215,7 +216,7 @@ async function getOrCreateManager(workspaceId: string) {
         stream: l.stream,
         timestamp: new Date(l.timestamp).toISOString(),
       })),
-    });
+    }));
   });
 
   // Trigger auto-start for this workspace (once per workspace)

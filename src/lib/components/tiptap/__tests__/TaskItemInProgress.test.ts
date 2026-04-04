@@ -1,7 +1,51 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// ─── Mock Redux selectors and dispatch bridge ───────────────────────────────
+// CustomTaskItem renders TaskItemNodeView.svelte which calls these at init time
+const mockReadable = (value: any) => ({
+  subscribe: (fn: (v: any) => void) => {
+    fn(value);
+    return () => {};
+  },
+});
+
+vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+  selectActiveWorkspaceId: () => mockReadable(null),
+}));
+
+vi.mock('$lib/store/slices/workspace-notes/workspace-notes-selectors', () => ({
+  selectNoteById: Object.assign(() => mockReadable(undefined), {
+    select: () => undefined,
+  }),
+  selectSelectedNoteId: Object.assign(() => mockReadable(null), {
+    select: () => null,
+  }),
+  selectNotesVersion: () => mockReadable(0),
+}));
+
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({ getState: () => ({}) }),
+  getReduxDispatch: () => () => {},
+  dispatch: () => {},
+}));
+
+vi.mock('$lib/store/slices/workspace-notes/workspace-notes-slice', () => ({
+  updateTaskStatus: vi.fn(),
+  handleExternalNoteUpdate: vi.fn(),
+  reloadNotes: vi.fn(),
+}));
+
+vi.mock('$lib/store/slices/workspace-notes/sagas/notes-ipc', () => ({
+  notesIpc: vi.fn(),
+}));
+
+vi.mock('$lib/utils/workspace-navigation', () => ({
+  navigateToNote: vi.fn(),
+}));
+
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import TaskList from '@tiptap/extension-task-list';

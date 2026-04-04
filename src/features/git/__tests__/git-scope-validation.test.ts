@@ -5,7 +5,6 @@
 
 import { describe, it, expect } from 'vitest';
 import { validatePathsInScope } from '../main/git-router';
-import path from 'path';
 
 describe('validatePathsInScope', () => {
   const worktreePath = '/repo';

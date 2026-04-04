@@ -25,9 +25,6 @@ function escapeHtml(text: string): string {
 /**
  * Generate a simple unique ID
  */
-function generateId(): string {
-  return `choice-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-}
 
 /**
  * Parse a choice option line

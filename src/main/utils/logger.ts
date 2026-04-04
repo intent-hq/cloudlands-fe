@@ -5,11 +5,11 @@
  * Re-exports the unified logger for consistency across the application.
  */
 
-import { writeFileSync, appendFileSync, existsSync, mkdirSync } from 'fs';
+import { appendFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import { Logger as BaseLogger, LogLevel } from '../../shared/logger';
-import type { LogEntry, LoggerOptions } from '../../shared/logger';
+import { Logger as BaseLogger } from '../../shared/logger';
+import type { LoggerOptions } from '../../shared/logger';
 
 // Conditionally import electron only if available
 let app: any;
@@ -17,7 +17,7 @@ let app: any;
   try {
     const electron = await import('electron');
     app = electron.app;
-  } catch (e) {
+  } catch  {
     // Running outside of Electron (e.g., in MCP server)
     app = null;
   }

@@ -11,7 +11,7 @@ import { ChangeStage } from './types';
 import { FileTrackingService } from './file-tracking.service';
 import { Logger } from '$lib/utils/logger';
 import { v4 as uuidv4 } from 'uuid';
-import { getDeduplicationService } from '../../events/event-deduplication.service';
+
 import { getAttributionEngine } from '../../workspace/main/provenance/attribution-engine';
 import { storeBlob, isGitRepository } from '../../../shared/git/git-blob-storage';
 
@@ -42,7 +42,8 @@ export class GitIntegrationService extends EventEmitter {
   private lastProcessedChangeId: string | null = null;
   private changeQueue: Map<string, any> = new Map(); // Queue for batch processing
   private debouncedProcessQueue: () => void;
-  private deduplicationService = getDeduplicationService();
+  private recentChangeKeys = new Map<string, number>();
+  private static readonly DEDUP_WINDOW_MS = 2000;
   private lastSyncTime: number = 0;
   private readonly MIN_SYNC_INTERVAL = 10000; // Minimum 10 seconds between syncs
 
@@ -460,13 +461,26 @@ export class GitIntegrationService extends EventEmitter {
       },
     };
 
-    // Check if this is a duplicate using centralized service
-    if (this.deduplicationService.isDuplicate(pseudoEvent)) {
+    // Check if this is a duplicate using simple time-window dedup
+    const dedupKey = `${pseudoEvent.type}-${changeSignature}`;
+    const now = Date.now();
+    const lastSeen = this.recentChangeKeys.get(dedupKey);
+    if (lastSeen && (now - lastSeen) < GitIntegrationService.DEDUP_WINDOW_MS) {
       logger.debug('Skipping duplicate change', {
         changeId: changes.id,
         workspaceId: this.workspaceId,
       });
       return;
+    }
+
+    // Track this change for dedup
+    this.recentChangeKeys.set(dedupKey, now);
+    // Trim old entries
+    if (this.recentChangeKeys.size > 1000) {
+      const cutoff = now - GitIntegrationService.DEDUP_WINDOW_MS;
+      for (const [k, t] of this.recentChangeKeys) {
+        if (t < cutoff) this.recentChangeKeys.delete(k);
+      }
     }
 
     // Add to queue for batch processing
@@ -840,7 +854,7 @@ export class GitIntegrationService extends EventEmitter {
 
           this.emit('changes-tracked', eventData);
           // NOTE: Individual file change events for the activity log are handled by
-          // EventCoordinator -> activity-log-event -> WorkspaceEventService
+          // EventCoordinator → activity-log-event → workspace.ipc.ts → Redux (emitWorkspaceEvent)
         }
       }
     } catch (error) {

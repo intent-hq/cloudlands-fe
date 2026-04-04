@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as sagaEffects from "redux-saga/effects";
-import { eventChannel } from "redux-saga";
 
 vi.mock("typed-redux-saga", () => ({
   cancel: function* (task: any) {
@@ -23,46 +22,33 @@ vi.mock("typed-redux-saga", () => ({
   put: function* (action: any) {
     return yield sagaEffects.put(action);
   },
-  race: function* (effects: any) {
-    return yield sagaEffects.race(effects);
-  },
-  take: function* (patternOrChannel: any) {
-    return yield sagaEffects.take(patternOrChannel);
+  select: function* (selector: any, ...args: any[]) {
+    return yield sagaEffects.select(selector, ...args);
   },
   takeEvery: function* (pattern: any, saga: any) {
     return yield sagaEffects.takeEvery(pattern, saga);
   },
 }));
 
-const { createListenSyncChannelMock, hasPanelLayoutManagerMock, getPanelLayoutManagerMock, getReduxStoreMock } =
-  vi.hoisted(() => ({
-    createListenSyncChannelMock: vi.fn(),
-    hasPanelLayoutManagerMock: vi.fn(),
-    getPanelLayoutManagerMock: vi.fn(),
-    getReduxStoreMock: vi.fn(() => ({
-      getState: () => ({}),
-      dispatch: vi.fn(),
-    })),
-  }));
+const { hasPanelLayoutManagerMock, getPanelLayoutManagerMock, getReduxStoreMock, selectSpecMock, selectPanelsMock, selectDeferSpecTabMock: selectDeferSpecTabSelectorMock, selectActiveWorkspaceIdMock } =
+  vi.hoisted(() => {
+    return {
+      hasPanelLayoutManagerMock: vi.fn(),
+      getPanelLayoutManagerMock: vi.fn(),
+      getReduxStoreMock: vi.fn(() => ({
+        getState: () => ({}),
+        dispatch: vi.fn(),
+      })),
+      selectSpecMock: vi.fn(() => undefined),
+      selectPanelsMock: vi.fn(() => ({})),
+      selectDeferSpecTabMock: vi.fn(() => false),
+      selectActiveWorkspaceIdMock: vi.fn(() => null),
+    };
+  });
 
-vi.mock("$lib/store/utils/ipc-channel", () => ({
-  createListenSyncChannel: createListenSyncChannelMock,
-}));
-
-vi.mock("$features/layout/panel-layout-manager.svelte", () => ({
+vi.mock("$features/layout/panel-layout-adapter", () => ({
   getPanelLayoutManager: getPanelLayoutManagerMock,
   hasPanelLayoutManager: hasPanelLayoutManagerMock,
-}));
-
-vi.mock("$features/notes/notes.store.svelte", () => ({
-  notesStateManager: { spec: null },
-}));
-
-vi.mock("$features/agent/services/unified-state-store", () => ({
-  unifiedStateStore: {
-    getInitialSpecWriteInProgress: vi.fn(() => false),
-    getAgentsForWorkspace: vi.fn(() => []),
-  },
 }));
 
 vi.mock("$shared/constants/notes", () => ({
@@ -77,6 +63,21 @@ vi.mock("$lib/store/redux-dispatch-bridge", () => ({
   getReduxStore: getReduxStoreMock,
 }));
 
+vi.mock("$lib/store/slices/workspace-notes/workspace-notes-selectors", () => ({
+  selectSpec: {
+    select: (...args: any[]) => selectSpecMock(...args),
+  },
+}));
+
+vi.mock("$lib/store/slices/panel-layout/panel-layout-selectors", () => ({
+  selectPanels: {
+    select: (...args: any[]) => selectPanelsMock(...args),
+  },
+  selectDeferSpecTab: {
+    select: (...args: any[]) => selectDeferSpecTabSelectorMock(...args),
+  },
+}));
+
 vi.mock("../../workspace-agents/workspace-agents-slice", () => ({
   clearInitialAgentConfig: vi.fn((wsId: string) => ({
     type: "workspace-agents/clearInitialAgentConfig",
@@ -88,29 +89,34 @@ vi.mock("../../workspace-agents/workspace-agents-selectors", () => ({
   selectInitialAgentConfig: {
     select: vi.fn(() => null),
   },
+  selectIsInitialSpecWriteInProgress: {
+    select: vi.fn(() => false),
+  },
+}));
+
+vi.mock("../../workspace/workspace-selectors", () => ({
+  selectActiveWorkspaceId: {
+    select: (...args: any[]) => selectActiveWorkspaceIdMock(...args),
+  },
 }));
 
 import {
   workspaceMounted,
   workspaceUnmounted,
 } from "../../workspace-lifecycle/workspace-lifecycle-slice";
-import { notesStateManager } from "$features/notes/notes.store.svelte";
 import {
   cancelSpecPanelForWorkspaceSaga,
   specPanelSaga,
   specPanelForWorkspaceSaga,
   watchSpecPanelForWorkspace,
+  retroactiveSpecPanelMountCheckSaga,
 } from "./spec-panel-saga";
 
 describe("specPanelSaga", () => {
-  let channel: ReturnType<typeof eventChannel>;
   let setDeferSpecTabMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    channel = eventChannel(() => () => {});
-    vi.spyOn(channel, "close");
-    createListenSyncChannelMock.mockReturnValue(channel);
     hasPanelLayoutManagerMock.mockReturnValue(true);
     setDeferSpecTabMock = vi.fn();
     getPanelLayoutManagerMock.mockReturnValue({
@@ -120,17 +126,20 @@ describe("specPanelSaga", () => {
       openTabInAdjacentOrSplit: vi.fn(),
     });
 
+    // Default: no spec content, no panels, not deferring
+    selectSpecMock.mockReturnValue(undefined);
+    selectPanelsMock.mockReturnValue({});
+    selectDeferSpecTabSelectorMock.mockReturnValue(false);
+
     // Stub sessionStorage
     vi.stubGlobal("sessionStorage", {
       getItem: vi.fn(() => null),
       setItem: vi.fn(),
       removeItem: vi.fn(),
     });
-
-    notesStateManager.spec = null;
   });
 
-  it("starts watching for workspace mount and unmount lifecycle actions", () => {
+  it("starts watching for workspace mount and unmount lifecycle actions, then forks retroactive check", () => {
     const iterator = specPanelSaga();
 
     expect(iterator.next()).toEqual({
@@ -141,7 +150,10 @@ describe("specPanelSaga", () => {
       value: sagaEffects.takeEvery(workspaceUnmounted, cancelSpecPanelForWorkspaceSaga),
       done: false,
     });
-    expect(iterator.next()).toEqual({ value: undefined, done: true });
+    // Should fork the retroactive mount check
+    const forkEffect = iterator.next();
+    expect(forkEffect.done).toBe(false);
+    expect((forkEffect.value as any)?.type).toBe("FORK");
   });
 
   it("registers the spec panel watcher on mount and cancels it on workspace unmount", () => {
@@ -173,191 +185,128 @@ describe("specPanelSaga", () => {
     expect(setDeferSpecTabMock).toHaveBeenCalledWith(false);
   });
 
-  describe("watchSpecPanelForWorkspace — first-write semantics", () => {
-    it("does NOT include a fallback timer when isDeferring=false (existing workspace revisit)", () => {
-      // Simulate an existing workspace where isDeferring is false
-      getPanelLayoutManagerMock.mockReturnValue({
-        isDeferringSpecTab: false,
-        setDeferSpecTab: setDeferSpecTabMock,
-        layout: { panels: {} },
-        openTabInAdjacentOrSplit: vi.fn(),
-      });
-
-      const iterator = watchSpecPanelForWorkspace("ws-existing");
-
-      // Step through until we hit the race effect
-      let step = iterator.next();
-      while (!step.done) {
-        const value = step.value as any;
-        // The race effect has type "RACE"
-        if (value && value.type === "RACE") {
-          const racePayload = value.payload;
-          // Should have noteUpdated but NOT fallbackTimer, agentIdle, or safetyTimer
-          expect(racePayload).toHaveProperty("noteUpdated");
-          expect(racePayload).not.toHaveProperty("fallbackTimer");
-          expect(racePayload).not.toHaveProperty("agentIdle");
-          expect(racePayload).not.toHaveProperty("safetyTimer");
-          return; // Test passes
-        }
-        step = iterator.next();
-      }
-      // If we get here, no RACE effect was found — fail
-      expect.fail("Expected a RACE effect but saga completed without one");
+  describe("watchSpecPanelForWorkspace — polling approach", () => {
+    it("sets deferSpecTab(true) on start", () => {
+      const iterator = watchSpecPanelForWorkspace("ws-test");
+      // Step once — this should call setDeferSpecTab(true)
+      iterator.next();
+      expect(setDeferSpecTabMock).toHaveBeenCalledWith(true);
     });
 
-    it("includes fallback timer, agent:idle, and safety timer when isDeferring=true (new workspace)", () => {
-      // Simulate a new workspace where isDeferring is true
-      getPanelLayoutManagerMock.mockReturnValue({
-        isDeferringSpecTab: true,
-        setDeferSpecTab: setDeferSpecTabMock,
-        layout: { panels: {} },
-        openTabInAdjacentOrSplit: vi.fn(),
-      });
+    it("calls slideInSpecPanel when spec content is available on first poll", () => {
+      // Set up spec content via selector mock
+      selectSpecMock.mockReturnValue({ content: "# My Spec\nSome content here" });
 
-      const iterator = watchSpecPanelForWorkspace("ws-new");
+      const iterator = watchSpecPanelForWorkspace("ws-test");
 
-      // Step through until we hit the race effect
+      // Step through — the saga should find content on first poll and call slideInSpecPanel
       let step = iterator.next();
       while (!step.done) {
         const value = step.value as any;
-        if (value && value.type === "RACE") {
-          const racePayload = value.payload;
-          // Should have all four race branches
-          expect(racePayload).toHaveProperty("noteUpdated");
-          expect(racePayload).toHaveProperty("fallbackTimer");
-          expect(racePayload).toHaveProperty("agentIdle");
-          expect(racePayload).toHaveProperty("safetyTimer");
-          return; // Test passes
-        }
-        step = iterator.next();
-      }
-      expect.fail("Expected a RACE effect but saga completed without one");
-    });
-
-    it("keeps waiting after the 8s fallback until the first spec write arrives", () => {
-      getPanelLayoutManagerMock.mockReturnValue({
-        isDeferringSpecTab: true,
-        setDeferSpecTab: setDeferSpecTabMock,
-        layout: { panels: {} },
-        openTabInAdjacentOrSplit: vi.fn(),
-      });
-      notesStateManager.spec = { content: "" } as any;
-
-      const iterator = watchSpecPanelForWorkspace("ws-slow");
-
-      let step = iterator.next();
-      while (!step.done) {
-        const value = step.value as any;
-        if (value?.type === "RACE") {
-          step = iterator.next({ fallbackTimer: true });
-          const continuedRace = step.value as any;
-          expect(continuedRace?.type).toBe("RACE");
-          expect(continuedRace.payload).toHaveProperty("noteUpdated");
-          expect(continuedRace.payload).toHaveProperty("agentIdle");
-          expect(continuedRace.payload).toHaveProperty("safetyTimer");
-          expect(continuedRace.payload).not.toHaveProperty("fallbackTimer");
-
-          notesStateManager.spec = { content: "Generated spec" } as any;
-          const callEffect = iterator.next({ noteUpdated: true }).value as any;
-          expect(callEffect?.type).toBe("CALL");
-          expect(callEffect.payload?.fn?.name || "").toContain("slideIn");
-          expect(callEffect.payload?.args).toEqual(["ws-slow"]);
-          return;
-        }
-
-        step = iterator.next();
-      }
-
-      expect.fail("Expected a RACE effect but saga completed without one");
-    });
-
-    it("clears deferral on the safety timer if no spec write arrives after fallback", () => {
-      getPanelLayoutManagerMock.mockReturnValue({
-        isDeferringSpecTab: true,
-        setDeferSpecTab: setDeferSpecTabMock,
-        layout: { panels: {} },
-        openTabInAdjacentOrSplit: vi.fn(),
-      });
-      notesStateManager.spec = { content: "" } as any;
-
-      const iterator = watchSpecPanelForWorkspace("ws-slow");
-
-      let step = iterator.next();
-      while (!step.done) {
-        const value = step.value as any;
-        if (value?.type === "RACE") {
-          step = iterator.next({ fallbackTimer: true });
-          expect((step.value as any)?.type).toBe("RACE");
-          expect(iterator.next({ safetyTimer: true })).toEqual({ value: undefined, done: true });
-          expect(setDeferSpecTabMock).toHaveBeenCalledWith(false);
-          return;
-        }
-
-        step = iterator.next();
-      }
-
-      expect.fail("Expected a RACE effect but saga completed without one");
-    });
-
-    it("calls openSpecNormally (not slideInSpecPanel) via note:updated on existing workspace (isDeferring=false)", () => {
-      getPanelLayoutManagerMock.mockReturnValue({
-        isDeferringSpecTab: false,
-        setDeferSpecTab: setDeferSpecTabMock,
-        layout: { panels: {} },
-        openTabInAdjacentOrSplit: vi.fn(),
-      });
-
-      const iterator = watchSpecPanelForWorkspace("ws-existing");
-
-      // Step through until we hit the race effect
-      let step = iterator.next();
-      while (!step.done) {
-        const value = step.value as any;
-        if (value && value.type === "RACE") {
-          // Simulate noteUpdated winning the race
-          step = iterator.next({ noteUpdated: true });
-          // The next effect should be a CALL to openSpecNormally (not slideInSpecPanel)
-          const callEffect = step.value as any;
-          expect(callEffect).toBeDefined();
-          expect(callEffect.type).toBe("CALL");
-          // The called function should be openSpecNormally, not slideInSpecPanel
-          const calledFn = callEffect.payload?.fn;
-          expect(calledFn?.name || "").not.toContain("slideIn");
-          // The args should include the workspace ID and isDeferring=false
-          expect(callEffect.payload?.args).toEqual(["ws-existing", false]);
+        if (value?.type === "CALL") {
+          // Should be calling slideInSpecPanel
+          expect(value.payload?.args).toEqual(["ws-test"]);
           return;
         }
         step = iterator.next();
       }
-      expect.fail("Expected a RACE effect but saga completed without one");
+      expect.fail("Expected a CALL to slideInSpecPanel but saga completed without one");
     });
 
-    it("existing workspace does NOT auto-open spec just because content exists (no fallback timer)", () => {
-      // This is the key regression test: an existing workspace with spec content
-      // should NOT auto-open the spec tab via a fallback timer.
-      // Only note:updated events should trigger spec opening for existing workspaces.
-      getPanelLayoutManagerMock.mockReturnValue({
-        isDeferringSpecTab: false,
-        setDeferSpecTab: setDeferSpecTabMock,
-        layout: { panels: {} },
-        openTabInAdjacentOrSplit: vi.fn(),
-      });
+    it("yields delay(2000) when no content found and keeps polling", () => {
+      const iterator = watchSpecPanelForWorkspace("ws-test");
 
-      const iterator = watchSpecPanelForWorkspace("ws-existing");
-
-      // Step through and verify no fallback timer is in the race
+      // Step through effects looking for the delay effect (fn name is "delayP" in redux-saga)
       let step = iterator.next();
-      while (!step.done) {
+      let foundDelay = false;
+      let iterations = 0;
+      const MAX_ITERATIONS = 20;
+      while (!step.done && iterations < MAX_ITERATIONS) {
+        iterations++;
         const value = step.value as any;
-        if (value && value.type === "RACE") {
-          const racePayload = value.payload;
-          // The race should only contain noteUpdated — no timer-based auto-open
-          expect(Object.keys(racePayload)).toEqual(["noteUpdated"]);
-          return;
+        if (value?.type === "CALL" && value?.payload?.fn?.name === "delayP") {
+          expect(value.payload.args[0]).toBe(2000);
+          foundDelay = true;
+          break;
         }
         step = iterator.next();
       }
-      expect.fail("Expected a RACE effect but saga completed without one");
+      expect(foundDelay).toBe(true);
+    });
+
+    it("clears deferSpecTab in finally block on normal exit", () => {
+      // Set up spec content so saga completes normally
+      selectSpecMock.mockReturnValue({ content: "# Spec content" });
+
+      const iterator = watchSpecPanelForWorkspace("ws-test");
+
+      // Run to completion
+      let step = iterator.next();
+      while (!step.done) {
+        step = iterator.next();
+      }
+
+      // setDeferSpecTab should have been called with false in the finally block
+      expect(setDeferSpecTabMock).toHaveBeenCalledWith(false);
+    });
+
+    it("clears deferSpecTab in finally block on cancellation (via return)", () => {
+      const iterator = watchSpecPanelForWorkspace("ws-test");
+
+      // Start the saga
+      iterator.next();
+
+      // Simulate cancellation by calling return
+      iterator.return(undefined);
+
+      // setDeferSpecTab should have been called with false in the finally block
+      expect(setDeferSpecTabMock).toHaveBeenCalledWith(false);
+    });
+  });
+
+  describe("retroactiveSpecPanelMountCheckSaga", () => {
+    it("does nothing when no active workspace", () => {
+      selectActiveWorkspaceIdMock.mockReturnValue(null);
+
+      const iterator = retroactiveSpecPanelMountCheckSaga();
+      // select effect
+      const selectEffect = iterator.next();
+      expect(selectEffect.done).toBe(false);
+      // provide null as the selected value — saga should return
+      const result = iterator.next(null);
+      expect(result.done).toBe(true);
+    });
+
+    it("skips invalid workspace IDs like 'new'", () => {
+      selectActiveWorkspaceIdMock.mockReturnValue("new");
+
+      const iterator = retroactiveSpecPanelMountCheckSaga();
+      iterator.next(); // select effect
+      const result = iterator.next("new");
+      expect(result.done).toBe(true);
+    });
+
+    it("skips optimistic workspace IDs", () => {
+      selectActiveWorkspaceIdMock.mockReturnValue("optimistic-123");
+
+      const iterator = retroactiveSpecPanelMountCheckSaga();
+      iterator.next(); // select effect
+      const result = iterator.next("optimistic-123");
+      expect(result.done).toBe(true);
+    });
+
+    it("forks specPanelForWorkspaceSaga when workspace is active but not yet tracked", () => {
+      selectActiveWorkspaceIdMock.mockReturnValue("ws-already-mounted");
+
+      const iterator = retroactiveSpecPanelMountCheckSaga();
+      iterator.next(); // select effect
+      const forkEffect = iterator.next("ws-already-mounted");
+      expect(forkEffect.done).toBe(false);
+      // Should be a FORK effect for specPanelForWorkspaceSaga
+      expect((forkEffect.value as any)?.type).toBe("FORK");
+      expect((forkEffect.value as any)?.payload?.args?.[0]).toEqual(
+        workspaceMounted("ws-already-mounted")
+      );
     });
   });
 });

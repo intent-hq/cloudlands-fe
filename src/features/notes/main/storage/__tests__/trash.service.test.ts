@@ -10,7 +10,6 @@ import * as path from 'path';
 import * as os from 'os';
 import { moveToTrash } from '../trash.service';
 import type { NoteStoragePaths } from '../note-storage.types';
-import type { NoteId } from '../../../../../shared/types';
 
 describe('TrashService', () => {
   let tempDir: string;

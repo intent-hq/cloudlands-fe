@@ -2,6 +2,7 @@
   import { logger } from '$lib/utils/client-logger';
 
   import { onMount, onDestroy, tick } from 'svelte';
+  import { writable } from 'svelte/store';
 
   // Constants
   const GIT_STATUS_REFRESH_DELAY = 300; // ms to wait for git to detect changes
@@ -9,16 +10,27 @@
   import { ScrollArea } from '$lib/components/ui/scroll-area';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
-  import type { FileNode, EnvironmentConfig } from '$shared/types';
-  import { WorkspaceId } from '$shared/types/branded-ids';
+  import type { FileNode, EnvironmentConfig, FileGitStatus } from '$shared/types';
   import {
     getFileExplorerStore,
     deactivateFileExplorerStore,
     reactivateFileExplorerStore,
-  } from './file-explorer-store.svelte';
+  } from './file-explorer-adapter';
   import { ListContainer, ListItem } from '$lib/components/ui/list';
-  import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
-  import { gitStore } from '$features/git/git.store.svelte';
+  import { selectCurrentStagedWorkingChanges, selectCurrentUnstagedWorkingChanges } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+  import { loadGitStatus } from '$lib/store/slices/git/git-slice';
+  import { selectGitStatus } from '$lib/store/slices/git/git-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+    selectFileExplorerRootNode,
+    selectFileExplorerIsLoading,
+    selectFileExplorerIsInitialized,
+    selectFileExplorerError,
+    selectFileExplorerGitStatus,
+    selectFlattenedNodes,
+    selectHasExpandedDirectories,
+    selectFileExplorerWorkspacePath,
+  } from '$lib/store/slices/file-explorer/file-explorer-selectors';
   import VirtualizedFileTree from './VirtualizedFileTree.svelte';
 
   // Search result type from workspace:list-files
@@ -60,6 +72,21 @@
     searchQuery = '',
   }: Props = $props();
 
+  const ftStagedChanges$ = selectCurrentStagedWorkingChanges();
+  const ftUnstagedChanges$ = selectCurrentUnstagedWorkingChanges();
+
+  // Writable store for workspace ID, used as reactive arg for selectors
+  const wsIdStore = writable(workspaceId || workspacePath || '');
+
+  // Selector subscriptions at component init time
+  const rootNode$ = selectFileExplorerRootNode(wsIdStore);
+  const feIsLoading$ = selectFileExplorerIsLoading(wsIdStore);
+  const feIsInitialized$ = selectFileExplorerIsInitialized(wsIdStore);
+  const feError$ = selectFileExplorerError(wsIdStore);
+  const gitStatusRecord$ = selectFileExplorerGitStatus(wsIdStore);
+  const flattenedNodes$ = selectFlattenedNodes(wsIdStore);
+  const feWorkspacePath$ = selectFileExplorerWorkspacePath(wsIdStore);
+
   // Ref to VirtualizedFileTree for delegating method calls
   let virtualizedTreeRef: VirtualizedFileTree | null = $state(null);
 
@@ -69,9 +96,10 @@
   // svelte-ignore state_referenced_locally
   let currentWorkspaceIdRef = workspaceId;
 
-  // Keep the mutable reference in sync with the prop
+  // Keep the mutable reference in sync with the prop and wsIdStore
   $effect(() => {
     currentWorkspaceIdRef = workspaceId;
+    wsIdStore.set(workspaceId || workspacePath || '');
   });
 
   // Use singleton store - cached per workspace for sharing with cmd+k etc.
@@ -210,10 +238,11 @@
         let files = Array.isArray(resp) ? resp : resp?.files || [];
 
         // Filter to only changed files if showOnlyChanged is enabled
-        if (filterOnlyChanged && store.gitStatus) {
+        const gitStatusRec = $gitStatusRecord$;
+        if (filterOnlyChanged && gitStatusRec) {
           files = files.filter((file) => {
             // Check if the file has git status (is changed)
-            return store.gitStatus.has(file.relativePath);
+            return file.relativePath in gitStatusRec;
           });
         }
 
@@ -257,49 +286,10 @@
   }
 
   // Get Git status symbol
-  function getGitStatusSymbol(status?: string): string {
-    if (!status) return '';
-
-    if (status === '??') return '?'; // Untracked
-    if (status.includes('A')) return '+'; // Added
-    if (status.includes('M')) return 'M'; // Modified
-    if (status.includes('D')) return 'D'; // Deleted
-    if (status.includes('R')) return 'R'; // Renamed
-    if (status.includes('C')) return 'C'; // Copied
-
-    return '•'; // Other changes
-  }
 
   // Get file tooltip
-  function getFileTooltip(node: FileNode): string {
-    let tooltip = node.name;
-
-    if (node.gitStatus) {
-      const { status, additions, deletions } = node.gitStatus;
-
-      if (status === '??') tooltip += ' (Untracked)';
-      else if (status.includes('A')) tooltip += ' (Added)';
-      else if (status.includes('M')) tooltip += ' (Modified)';
-      else if (status.includes('D')) tooltip += ' (Deleted)';
-      else if (status.includes('R')) tooltip += ' (Renamed)';
-
-      if (additions || deletions) {
-        tooltip += ` [+${additions || 0}, -${deletions || 0}]`;
-      }
-    }
-
-    return tooltip;
-  }
 
   // Handle file selection
-  function selectFile(node: FileNode) {
-    if (node.type === 'file') {
-      selectedFile = node.path;
-      onFileSelect?.(node.path);
-    } else {
-      store.toggleDirectory(node);
-    }
-  }
 
   // Mark a file as modified (called from parent component)
   export function markFileModified(filePath: string) {
@@ -321,28 +311,28 @@
   }
 
   // Check if a node or any of its children have git changes
-  function hasGitChanges(node: FileNode): boolean {
+  function hasGitChanges(node: FileNode, gitStatusRec: Record<string, FileGitStatus>): boolean {
     // Check if this node has git status with changes (from node property)
     if (node.gitStatus?.status) return true;
     // Check if this node has line changes
     if ((node.gitStatus?.additions ?? 0) > 0) return true;
     if ((node.gitStatus?.deletions ?? 0) > 0) return true;
 
-    // Also check the store's git status map directly (more reliable for root-level files)
-    if (node.type === 'file' && store.gitStatus) {
+    // Also check the git status record directly (more reliable for root-level files)
+    if (node.type === 'file') {
       const relativePath = node.path.replace(`${workspacePath}/`, '');
-      if (store.gitStatus.has(relativePath)) return true;
+      if (relativePath in gitStatusRec) return true;
     }
 
     // For directories, check children recursively
     if (node.children) {
-      return node.children.some((child) => hasGitChanges(child));
+      return node.children.some((child) => hasGitChanges(child, gitStatusRec));
     }
 
     // For directories without loaded children, check if any git status paths start with this dir
-    if (node.type === 'directory' && store.gitStatus) {
+    if (node.type === 'directory') {
       const relativePath = node.path.replace(`${workspacePath}/`, '');
-      for (const [filePath] of store.gitStatus.entries()) {
+      for (const filePath of Object.keys(gitStatusRec)) {
         if (filePath.startsWith(`${relativePath}/`)) {
           return true;
         }
@@ -354,59 +344,15 @@
 
   // Filtered flattened nodes - applies showOnlyChanged filter
   const filteredFlattenedNodes = $derived.by(() => {
-    const nodes = store.flattenedNodes;
+    const nodes = $flattenedNodes$;
+    const gitStatusRec = $gitStatusRecord$;
     if (!showOnlyChanged) return nodes;
     // Filter to only show nodes that have git changes
-    return nodes.filter((flatNode) => hasGitChanges(flatNode.node));
+    return nodes.filter((flatNode) => hasGitChanges(flatNode.node, gitStatusRec));
   });
 
   // Filter nodes by search query and changed files filter
   // isRoot parameter indicates if we're filtering the root level (for adding missing git files)
-  function filterNodes(nodes: FileNode[], query: string, isRoot = false): FileNode[] {
-    let result = nodes;
-
-    // Filter by git changes if showOnlyChanged is enabled
-    if (showOnlyChanged) {
-      // Filter existing nodes for those with git changes
-      result = result.filter((node) => hasGitChanges(node));
-
-      // Only add missing root-level files from gitStatus when we're at the root level
-      // This handles the case where files might not be loaded in the tree yet
-      if (isRoot && store.gitStatus) {
-        const existingNames = new Set(result.map((n) => n.name));
-        for (const [relativePath, gitStatus] of store.gitStatus.entries()) {
-          // Only handle root-level files (no "/" in path)
-          if (!relativePath.includes('/') && !existingNames.has(relativePath)) {
-            result.push({
-              name: relativePath,
-              path: `${workspacePath}/${relativePath}`,
-              type: 'file',
-              gitStatus,
-            });
-          }
-        }
-      }
-    }
-
-    // Filter by search query
-    if (query) {
-      const lowerQuery = query.toLowerCase();
-      result = result.filter((node) => {
-        const matches = node.name.toLowerCase().includes(lowerQuery);
-        if (matches) return true;
-
-        // Also check children for directories
-        if (node.children) {
-          const childMatches = filterNodes(node.children, query, false);
-          return childMatches.length > 0;
-        }
-
-        return false;
-      });
-    }
-
-    return result;
-  }
 
   // Watch for file changes
   // Use listenSync for synchronous cleanup - no race conditions on unmount
@@ -513,11 +459,10 @@
   $effect(() => {
     if (initialized && workspaceId) {
       // Watch for changes in file tracking store
-      const changes = fileTrackingStore.workingChanges;
-      const changeCount = (changes?.unstaged?.length || 0) + (changes?.staged?.length || 0);
+      const changeCount = ($ftUnstagedChanges$?.length || 0) + ($ftStagedChanges$?.length || 0);
 
-      // Also watch git store status
-      const gitStatus = gitStore.status;
+      // Also watch git store status (read from Redux)
+      const gitStatus = workspaceId ? selectGitStatus.select(getReduxStore().getState(), workspaceId) : null;
 
       // Debounce syncs to avoid too many updates
       const now = Date.now();
@@ -529,9 +474,7 @@
         });
         // Just update local display from stores - DON'T trigger a refresh which causes cascade
         // The stores are already updated by event listeners or other components
-        store.syncGitStatusFromStores().catch((error) => {
-          logger.error('[FileTreeView] Failed to sync git status from stores', error as Error);
-        });
+        store.syncGitStatusFromStores();
       }
     }
   });
@@ -564,14 +507,14 @@
 
     try {
       // Load git status if we have a workspace ID.
-      // Don't call fileTrackingStore.setWorkspace() here - the workspace page is the
+      // Don't dispatch initWorkspace here - the workspace page is the
       // authority for that. Calling it with a potentially stale workspace ID can hijack
-      // the singleton store and cause other components to get stuck on loading skeleton.
+      // the state and cause other components to get stuck on loading skeleton.
       if (wsId) {
         try {
-          await gitStore.loadStatus(WorkspaceId(wsId));
+          getReduxStore().dispatch(loadGitStatus(wsId));
         } catch (storeError) {
-          logger.warn('[FileTreeView] Failed to initialize git store:', storeError);
+          logger.warn('[FileTreeView] Failed to load git status:', storeError);
           // Continue with file tree initialization even if store fails
         }
       }
@@ -684,7 +627,7 @@
 
   // Export getter to check if any directories are expanded
   export function getHasExpandedDirectories(): boolean {
-    return store.hasExpandedDirectories;
+    return selectHasExpandedDirectories.select(getReduxStore().getState(), workspaceId || workspacePath || '');
   }
 
   // Export startCreatingFile for parent components to trigger inline creation
@@ -694,7 +637,7 @@
 
   // React to workspace path changes
   $effect(() => {
-    if (workspacePath && workspacePath !== store.workspacePath) {
+    if (workspacePath && workspacePath !== $feWorkspacePath$) {
       // setWorkspacePath is now async and handles initialization
       store
         .setWorkspacePath(workspacePath)
@@ -710,13 +653,6 @@
         .catch((error) => {
           logger.error('[file-tree-view] Failed to set workspace path:', error);
         });
-    }
-  });
-
-  // React to workspace ID changes
-  $effect(() => {
-    if (workspaceId) {
-      store.setWorkspaceId(workspaceId);
     }
   });
 
@@ -746,8 +682,8 @@
     //    b. Search was just cleared, OR
     //    c. Selected file changed to a different file
     const shouldExpandAndScroll =
-      store.isInitialized &&
-      !store.isLoading &&
+      $feIsInitialized$ &&
+      !$feIsLoading$ &&
       !currentQuery &&
       selectedFile &&
       (lastExpandedToFile === null || searchWasCleared || selectedFileChanged);
@@ -808,11 +744,11 @@
        (bits-ui ScrollArea adds overflow-y:scroll on its Viewport) which breaks
        virtualization by giving the inner scroll container an unconstrained height. -->
   <div class="flex-1 min-h-0 overflow-hidden">
-    {#if store.isLoading || externalLoading || !store.isInitialized}
+    {#if $feIsLoading$ || externalLoading || !$feIsInitialized$}
       <!-- Skeleton loaders for file tree -->
       <ScrollArea class="h-full">
         <div class="space-y-1 py-2 px-2">
-          {#each Array(6) as _}
+          {#each Array(6) as { }}
             <div class="flex items-center gap-2 py-1">
               <Skeleton class="h-3 w-3 rounded shrink-0" />
               <Skeleton class="h-3 w-24 flex-1" />
@@ -820,15 +756,15 @@
           {/each}
         </div>
       </ScrollArea>
-    {:else if store.error}
+    {:else if $feError$}
       <div class="text-xs text-destructive-foreground py-2">
-        {store.error}
+        {$feError$}
       </div>
     {:else if searchQuery && searchQuery.trim()}
       <!-- Search results - flat list -->
       {#if isSearching}
         <div class="space-y-1 py-2 px-2">
-          {#each Array(4) as _}
+          {#each Array(4) as { }}
             <div class="flex items-center gap-2 py-1">
               <Skeleton class="h-3 w-3 rounded shrink-0" />
               <Skeleton class="h-3 w-32 flex-1" />
@@ -866,7 +802,7 @@
           </div>
         </ScrollArea>
       {/if}
-    {:else if store.rootNode}
+    {:else if $rootNode$}
       <!-- Virtualized file tree for performance with large repos -->
       <VirtualizedFileTree
         bind:this={virtualizedTreeRef}

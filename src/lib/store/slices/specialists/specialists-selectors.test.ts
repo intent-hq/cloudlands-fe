@@ -25,6 +25,7 @@ function mockState(overrides: Partial<typeof initialState> = {}): StoreState {
     specialists: { ...initialState, ...overrides },
     featureCodes: { activeFeatures: [], initialized: true },
     providerSettings: { activeProviderId: "auggie", enabledProviders: {} },
+    githubAuth: { isAuthenticated: false },
   } as unknown as StoreState;
 }
 
@@ -164,7 +165,7 @@ describe("specialists selectors", () => {
     it("selectEffectiveCodingAgent should return a fallback without throwing", () => {
       const state = {
         ...legacyState(),
-        activeProvider: { activeProviderId: "auggie" },
+        providerSettings: { activeProviderId: "auggie", enabledProviders: {} },
       } as StoreState;
       expect(() => selectEffectiveCodingAgent.select(state, "nonexistent-specialist")).not.toThrow();
       const result = selectEffectiveCodingAgent.select(state, "nonexistent-specialist");

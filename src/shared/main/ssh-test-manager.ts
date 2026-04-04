@@ -4,11 +4,9 @@
  * Provides utilities for testing SSH connections and remote machine setup.
  */
 
-import { SSHManager, SSHConnectionConfig, CommandResult } from '../main/ssh-manager';
+import { SSHManager, SSHConnectionConfig } from '../main/ssh-manager';
 import { Logger } from '../../lib/utils/logger';
-import * as os from 'os';
 import * as path from 'path';
-import * as fs from 'fs';
 
 export interface SSHTestResult {
   success: boolean;
@@ -243,7 +241,7 @@ export class SSHTestManager {
       // Try to cleanup
       try {
         await this.sshManager.executeCommand(connectionId, `rm -rf ${testDir}`);
-      } catch (cleanupError) {
+      } catch {
         // Ignore cleanup errors
       }
 
@@ -422,7 +420,7 @@ export class SSHTestManager {
       // Try to disconnect
       try {
         await this.sshManager.disconnect(connectionId);
-      } catch (disconnectError) {
+      } catch {
         // Ignore
       }
 

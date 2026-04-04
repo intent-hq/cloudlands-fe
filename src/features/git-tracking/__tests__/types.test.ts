@@ -12,7 +12,6 @@ import {
   type GitCommit,
   type GitBranch,
   type PullRequest,
-  type GitState,
 } from '../types';
 
 describe('git-tracking types', () => {

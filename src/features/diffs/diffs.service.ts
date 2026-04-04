@@ -8,7 +8,8 @@
 import type { Result, DiffChunk, WorkspaceId } from '../../shared/types';
 import type { DiffsRepository } from './main/diffs.repository';
 import { FileSystemDiffsRepository } from './main/diffs.repository';
-import { unifiedEventBus } from '../events/main/unified-event-bus';
+import { mainDispatch } from '../../store/main/redux-store-bridge';
+import { workspaceUpdated } from '../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
 import { Logger } from '../../shared/logger';
 
 const logger = new Logger('DiffsService');
@@ -68,7 +69,7 @@ export class DiffsService {
       await this.repository.save(workspaceId, diffs);
 
       // Emit event
-      unifiedEventBus.emitDomainEvent('workspace:updated', { workspaceId, changes: { diffs } });
+      mainDispatch(workspaceUpdated({ workspaceId, changes: { diffs } }));
 
       return {
         ok: true,
@@ -110,7 +111,7 @@ export class DiffsService {
       await this.repository.save(workspaceId, diffs);
 
       // Emit event
-      unifiedEventBus.emitDomainEvent('workspace:updated', { workspaceId, changes: { diffs } });
+      mainDispatch(workspaceUpdated({ workspaceId, changes: { diffs } }));
 
       return {
         ok: true,
@@ -152,6 +153,7 @@ export class DiffsService {
   /**
    * Get current changes for a workspace
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async getCurrentChanges(workspaceId: string): Promise<Result<any, string>> {
     try {
       // This is a placeholder - in a real app, this would get current git changes

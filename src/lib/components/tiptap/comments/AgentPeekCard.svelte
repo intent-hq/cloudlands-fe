@@ -6,10 +6,10 @@
    * Shows a preview of the agent conversation instead of a regular comment.
    */
 
-  import { lineChangesStore } from '$features/line-changes/line-changes.store.svelte';
+  import { selectAgentLineStats } from '$lib/store/slices/line-changes/line-changes-selectors';
   import { getAgentPeekData, truncateToLines } from '$lib/utils/agent-peek-utils';
   import { useAgentSubscription } from '$lib/utils/agent-subscription.svelte';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -39,19 +39,21 @@
     onShow,
   }: Props = $props();
 
+  const activeWorkspace = selectActiveWorkspace();
+
   // Use subscription utility for reliable reactivity with Maps
-  // Pass workspaceStore.current so the subscription is scoped to the current workspace
+  // Pass the active workspace so the subscription is scoped to the current workspace
   // and doesn't accidentally pick up agent data from a different workspace (F9 fix).
-  const agentSubscription = useAgentSubscription(agentId, workspaceStore.current);
+  const agentSubscription = useAgentSubscription(agentId, $activeWorkspace);
   const agent = $derived(agentSubscription.current);
   const agentData = $derived(getAgentPeekData(agent));
 
   // Get line change stats
-  const lineStats = $derived(
-    lineChangesStore.getAgentStats(agentId as import('$shared/types/branded-ids').AgentId),
-  );
+  const lineStats$ = selectAgentLineStats(agentId);
+  const lineStats = $derived($lineStats$);
 
   // Truncate last response to 6 lines
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const truncatedResponse = $derived(
     agentData?.lastResponse ? truncateToLines(agentData.lastResponse, 6) : '',
   );

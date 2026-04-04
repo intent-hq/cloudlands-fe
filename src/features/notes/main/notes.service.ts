@@ -23,8 +23,9 @@ import { stripMarkdownFormatting } from '../../../shared/utils-client';
 export type { NoteComment, NoteCommentsData } from '../../../shared/types';
 import type { CommentsRepository } from '../../comments/main/comments.repository';
 import type { NotesRepository } from './notes.repository';
-import { unifiedEventBus, type UnifiedEventBus } from '../../events/main/unified-event-bus';
-import { getWorkspaceEventBus } from '../../events/main/workspace-event-bus';
+import { mainDispatch } from '../../../store/main/redux-store-bridge';
+import { noteCreated, noteUpdated, noteDeleted } from '../../../store/main/slices/note-events/note-events-slice';
+import { emitWorkspaceEvent as reduxEmitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
 import { FileSystemCommentsRepository } from '../../comments/main/comments.repository';
 import { FileSystemNotesRepository } from './notes.repository';
 import { Logger } from '../../../shared/logger';
@@ -35,7 +36,6 @@ import { editEventsCapturer } from './edit-events.capturer';
 import { editEventsStore } from './edit-events.store';
 import { generateCommentId, isValidCommentId } from '$shared/utils/comment-id-generator';
 import { getProvenanceContextManager } from '../../workspace/main/provenance/provenance-context-manager';
-import { getWorkspaceEventService } from '../../events/main';
 import { createWorkspaceEvent, type EventActor } from '../../events/types';
 import { randomUUID } from 'crypto';
 import { recoverAllPartialAnchors } from '../../comments/markdown-anchor-recovery';
@@ -77,7 +77,6 @@ export class NotesService {
       ? new FolderBasedNotesRepository(getMetadataFS)
       : new FileSystemNotesRepository(),
     private readonly commentsRepository: CommentsRepository = new FileSystemCommentsRepository(),
-    private readonly eventBus: UnifiedEventBus = unifiedEventBus,
   ) {}
 
   /**
@@ -170,10 +169,6 @@ export class NotesService {
         await crdtDocumentManager.initializeWithContent(request.workspaceId, id, note.content);
       }
 
-      // Track in event service
-      const eventService = getWorkspaceEventService(request.workspaceId);
-      await eventService.initialize();
-
       // Get current actor for provenance
       const provenanceManager = getProvenanceContextManager();
       const currentActor = provenanceManager.getCurrentActor();
@@ -188,12 +183,12 @@ export class NotesService {
       });
 
       // Emit event with actor information
-      this.eventBus.emitDomainEvent('note:created', {
+      mainDispatch(noteCreated({
         workspaceId: request.workspaceId,
         noteId: id,
         note,
         actor: currentActor,
-      });
+      }));
 
       logger.info('Note created successfully', {
         workspaceId: request.workspaceId,
@@ -424,10 +419,12 @@ export class NotesService {
 
         // Emit event if any anchors were recovered
         if (recoveredCommentIds.length > 0) {
-          this.eventBus.emit('notes:anchors-recovered', {
+          // notes:anchors-recovered event removed during Redux migration
+          // Recovery info is logged and could be re-added as a Redux action if needed
+          logger.info('Comment anchors recovered', {
             noteId: request.id,
             workspaceId: request.workspaceId,
-            commentIds: recoveredCommentIds,
+            count: recoveredCommentIds.length,
           });
         }
 
@@ -580,23 +577,19 @@ export class NotesService {
         await crdtDocumentManager.updateContent(note.workspaceId, note.id, note.content);
       }
 
-      // Track in event service
-      const eventService = getWorkspaceEventService(note.workspaceId);
-      await eventService.initialize();
-
       // Get current actor for proper attribution
       const provenanceManager = getProvenanceContextManager();
       const currentActor = provenanceManager.getCurrentActor();
 
       // Emit event with actor information (include title for Activity Log)
-      this.eventBus.emitDomainEvent('note:updated', {
+      mainDispatch(noteUpdated({
         workspaceId: note.workspaceId,
         noteId: note.id,
         title: note.title,
         changes: request,
         actor: currentActor,
         sessionId: provenanceManager.getCurrentSessionId(),
-      });
+      }));
 
       // Track note edit
       trackMain('Edited Note', {
@@ -664,20 +657,16 @@ export class NotesService {
         await crdtDocumentManager.removeDocument(workspaceId, noteId);
       }
 
-      // Track in event service
-      const eventService = getWorkspaceEventService(workspaceId);
-      await eventService.initialize();
-
       // Get current actor for proper attribution
       const provenanceManager = getProvenanceContextManager();
       const currentActor = provenanceManager.getCurrentActor();
 
       // Emit event with actor information
-      this.eventBus.emitDomainEvent('note:deleted', {
+      mainDispatch(noteDeleted({
         workspaceId,
         noteId,
         actor: currentActor,
-      });
+      }));
 
       // Track note deletion
       const ageInDays = Math.floor(
@@ -1530,8 +1519,7 @@ export class NotesService {
         const provenanceManager = getProvenanceContextManager();
         const currentActor = provenanceManager.getCurrentActor();
 
-        // Emit via WorkspaceEventBus which forwards to UnifiedEventBus automatically
-        // This ensures events are stored in the same EventStore that the activity panel queries
+        // Emit via Redux (persisted + broadcast by workspace-events sagas)
         // Convert actor to EventActor (getCurrentActor returns loosely typed object)
         const actor = currentActor
           ? {
@@ -1548,10 +1536,9 @@ export class NotesService {
           changedAt: now,
           agentId: currentActor?.type === 'agent' ? currentActor.id : undefined,
         });
-        const eventBus = getWorkspaceEventBus(workspaceId);
-        eventBus.emitEvent(statusChangedEvent);
+        mainDispatch(reduxEmitWorkspaceEvent(statusChangedEvent));
 
-        logger.debug('Emitted task:status-changed event via WorkspaceEventBus', {
+        logger.debug('Emitted task:status-changed event via Redux', {
           workspaceId,
           noteId,
           previousStatus,
@@ -1676,6 +1663,7 @@ export class NotesService {
       }
 
       // Remove task metadata while preserving other metadata
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { task, ...remainingMetadata } = note.metadata;
 
       // Update the note with task metadata removed
@@ -2058,7 +2046,7 @@ export class NotesService {
       const readyTaskIds = readyTasksResult.data.ready.map((note) => note.id);
       const now = new Date().toISOString();
 
-      // Create and emit the event via WorkspaceEventBus
+      // Create and emit the event via Redux
       const readyTasksChangedEvent = createWorkspaceEvent(
         'task:ready-tasks-changed',
         workspaceId,
@@ -2070,10 +2058,9 @@ export class NotesService {
         },
       );
 
-      const eventBus = getWorkspaceEventBus(workspaceId);
-      eventBus.emitEvent(readyTasksChangedEvent);
+      mainDispatch(reduxEmitWorkspaceEvent(readyTasksChangedEvent));
 
-      logger.debug('Emitted task:ready-tasks-changed event via WorkspaceEventBus', {
+      logger.debug('Emitted task:ready-tasks-changed event via Redux', {
         workspaceId,
         readyTaskCount: readyTaskIds.length,
         triggeredBy,
@@ -2494,6 +2481,7 @@ export class NotesService {
   async convertTaskBlocks(
     workspaceId: WorkspaceId,
     noteId: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     options: { autoStartAgents?: boolean } = {},
   ): Promise<
     Result<

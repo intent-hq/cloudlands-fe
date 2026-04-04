@@ -6,13 +6,13 @@ vi.mock("typed-redux-saga", async () => await import("$lib/store/utils/test-help
 vi.mock("$lib/electron-bridge", async () => await import("$lib/store/utils/test-helpers/electron-bridge-mock"));
 
 import {
-  refreshAutoCommitSettings,
   syncWorkspaceSettings,
   loadAutoCommitSettings,
 } from "../workspace-settings-slice";
 import { selectAutoCommitEnabled } from "../workspace-settings-selectors";
 import { initSaga, getGlobalAutoCommitDefault } from "./init-saga";
 import { syncSaga } from "./sync-saga";
+import { workspaceMounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
 
 describe("syncSaga", () => {
   it("re-syncs previously synced workspaces after a refresh", () => {
@@ -29,6 +29,10 @@ describe("syncSaga", () => {
       toPromise: () => Promise.resolve(),
     };
     const iterator = syncSaga(initTask);
+
+    // First registration: workspaceMounted → dispatches syncWorkspaceSettings
+    const mountRegistration = iterator.next().value as any;
+    expect(mountRegistration.payload.args[0]).toBe(workspaceMounted);
 
     const syncRegistration = iterator.next().value as any;
     const refreshRegistration = iterator.next().value as any;

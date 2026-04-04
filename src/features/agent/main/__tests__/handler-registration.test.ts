@@ -96,7 +96,7 @@ vi.mock('../../../workspace/main/workspace.service', () => ({
 // Mock logger
 vi.mock('$shared/logger', () => ({
   Logger: class MockLogger {
-    constructor(name: string) {}
+    constructor() {}
     info = vi.fn();
     debug = vi.fn();
     error = vi.fn();
@@ -182,7 +182,7 @@ describe('Handler Registration Tests', () => {
 
     it('should use the adapter for all operations', () => {
       const adapter = getAgentBackendAdapter();
-      const mockBackendHandler = AgentBackendHandler.getInstance();
+      AgentBackendHandler.getInstance();
 
       registerAgentHandlers(adapter);
 
@@ -196,7 +196,7 @@ describe('Handler Registration Tests', () => {
       const adapter = getAgentBackendAdapter();
       registerAgentHandlers(adapter);
 
-      handlerFunctions.forEach((handler, channel) => {
+      handlerFunctions.forEach((handler) => {
         expect(typeof handler).toBe('function');
         expect(handler.length).toBe(2); // event and request parameters
       });
@@ -420,7 +420,7 @@ describe('Handler Registration Tests', () => {
 
       try {
         registerAgentHandlers(adapter);
-      } catch (error) {
+      } catch {
         // Expected to fail
       }
 

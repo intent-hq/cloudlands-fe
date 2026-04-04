@@ -1,17 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   addOptimisticNoteMock,
   createAgentMock,
-  createPrerequisiteNoteMock,
+  notesIpcMock,
   findByIdMock,
   getReduxStoreMock,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   removeOptimisticNoteMock,
   selectWorkspaceDefaultModelMock,
 } = vi.hoisted(() => ({
   addOptimisticNoteMock: vi.fn(),
   createAgentMock: vi.fn(),
-  createPrerequisiteNoteMock: vi.fn(),
+  notesIpcMock: vi.fn(),
   findByIdMock: vi.fn(),
   getReduxStoreMock: vi.fn(),
   removeOptimisticNoteMock: vi.fn(),
@@ -22,17 +24,22 @@ vi.mock('$features/agent/services/agent-factory', () => ({
   agentFactory: { createAgent: createAgentMock },
 }));
 
-vi.mock('$features/notes/notes.client', () => ({
-  notesClient: { createPrerequisiteNote: createPrerequisiteNoteMock },
+vi.mock('$lib/store/slices/workspace-notes/sagas/notes-ipc', () => ({
+  notesIpc: notesIpcMock,
 }));
 
-vi.mock('$features/notes/notes.store.svelte', () => ({
-  notesStateManager: {
-    addOptimisticNote: addOptimisticNoteMock,
-    findById: findByIdMock,
-    removeOptimisticNote: removeOptimisticNoteMock,
-  },
+vi.mock('$lib/store/slices/workspace-notes/workspace-notes-selectors', () => ({
+  selectNoteById: { select: findByIdMock },
 }));
+
+vi.mock('$lib/store/slices/workspace-notes/workspace-notes-slice', async (importOriginal) => {
+  const original = await importOriginal<Record<string, unknown>>();
+  return {
+    ...original,
+    addOptimisticNote: (...args: unknown[]) => ({ type: 'workspaceNotes/addOptimisticNote', payload: args }),
+    removeOptimisticNote: (...args: unknown[]) => ({ type: 'workspaceNotes/removeOptimisticNote', payload: args }),
+  };
+});
 
 vi.mock('$features/notes/utils/task-agent-message-builder', () => ({
   buildTaskNoteContent: vi.fn(() => 'task note content'),
@@ -40,6 +47,7 @@ vi.mock('$features/notes/utils/task-agent-message-builder', () => ({
 
 vi.mock('$lib/store/redux-dispatch-bridge', () => ({
   getReduxStore: getReduxStoreMock,
+  dispatch: (action: unknown) => action,
 }));
 
 vi.mock('$lib/store/slices/model/model-selectors', () => ({
@@ -85,7 +93,7 @@ describe('task menu actions provider model', () => {
     getReduxStoreMock.mockReturnValue({ getState: () => legacyState });
     selectWorkspaceDefaultModelMock.mockReturnValue('selector-workspace-model');
     findByIdMock.mockReturnValue({ title: 'Parent note' });
-    createPrerequisiteNoteMock.mockResolvedValue({
+    notesIpcMock.mockResolvedValue({
       ok: true,
       data: {
         note: { id: 'task-note-1' },
@@ -112,16 +120,19 @@ describe('task menu actions provider model', () => {
     });
 
     expect(selectWorkspaceDefaultModelMock).toHaveBeenCalledWith(legacyState, 'ws-1');
-    expect(createPrerequisiteNoteMock).toHaveBeenCalledWith(
-      'ws-1',
-      'note-1',
+    expect(notesIpcMock).toHaveBeenCalledWith(
+      expect.any(String),
       expect.objectContaining({
-        agentConfig: expect.objectContaining({
-          model: 'selector-workspace-model',
+        workspaceId: 'ws-1',
+        dependentNoteId: 'note-1',
+        options: expect.objectContaining({
+          agentConfig: expect.objectContaining({
+            model: 'selector-workspace-model',
+          }),
         }),
       }),
     );
-    expect(createPrerequisiteNoteMock.mock.calls[0][2].agentConfig.model).not.toBe(
+    expect(notesIpcMock.mock.calls[0][1].options.agentConfig.model).not.toBe(
       legacyState.model.workspaceModels['ws-1'],
     );
     expect(dispatch).toHaveBeenCalledWith('agentLaunched', {

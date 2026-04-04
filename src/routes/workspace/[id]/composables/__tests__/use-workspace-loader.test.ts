@@ -9,40 +9,27 @@ import {
 import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
 import TestUseWorkspaceLoader from './TestUseWorkspaceLoader.test.svelte';
 
-const { dispatchMock, openMock, workspaceStoreMock, storeStateRef } = vi.hoisted(() => {
+const { dispatchMock, openMock, selectWorkspaceByIdMock, selectActiveWorkspaceMock, storeStateRef } = vi.hoisted(() => {
   const dispatchMock = vi.fn();
   const openMock = vi.fn();
-  const storeStateRef = {
-    current: {
-      workspaceAgents: {
-        byWorkspaceId: {},
-      },
-    },
-  };
-  const workspaceStoreMock = {
-    current: null as Workspace | null,
-    findById: vi.fn(),
-    setCurrentWorkspace: vi.fn(async (workspace: Workspace) => {
-      workspaceStoreMock.current = workspace;
-    }),
-  };
+  const selectWorkspaceByIdMock = vi.fn();
+  const selectActiveWorkspaceMock = vi.fn();
+  const storeStateRef = { current: {} as Record<string, unknown> };
 
-  return { dispatchMock, openMock, workspaceStoreMock, storeStateRef };
+  return { dispatchMock, openMock, selectWorkspaceByIdMock, selectActiveWorkspaceMock, storeStateRef };
 });
 
-vi.mock('$features/workspace/workspace.store.svelte', () => ({
-  workspaceStore: workspaceStoreMock,
-}));
-
-vi.mock('$features/workspace/workspace.client', () => ({
-  workspaceClient: { open: openMock },
-}));
-
-vi.mock('$features/agent/services/unified-state-store', () => ({
-  unifiedStateStore: {
-    setWorkspace: vi.fn(),
-    setCurrentWorkspace: vi.fn(),
+vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceById: {
+    select: (_state: unknown, workspaceId: string) => selectWorkspaceByIdMock(workspaceId),
   },
+  selectActiveWorkspace: {
+    select: () => selectActiveWorkspaceMock(),
+  },
+}));
+
+vi.mock('$lib/store/slices/workspace/utils/workspace.client', () => ({
+  workspaceClient: { open: openMock },
 }));
 
 vi.mock('$lib/store/utils/utils', () => ({
@@ -90,17 +77,18 @@ function createWorkspaceState() {
 describe('useWorkspaceLoader', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    workspaceStoreMock.current = null;
     storeStateRef.current = {
       workspaceAgents: {
         byWorkspaceId: {},
       },
     };
+    selectWorkspaceByIdMock.mockReturnValue(null);
+    selectActiveWorkspaceMock.mockReturnValue(null);
   });
 
   it('hydrates Redux from cached workspace data before open completes', async () => {
     const cachedWorkspace = makeWorkspace({ id: 'loader-cache-1', title: 'Cached Workspace' });
-    workspaceStoreMock.findById.mockReturnValue(cachedWorkspace);
+    selectWorkspaceByIdMock.mockReturnValue(cachedWorkspace);
     openMock.mockResolvedValue({ ok: true, data: cachedWorkspace });
 
     render(TestUseWorkspaceLoader, {
@@ -126,7 +114,7 @@ describe('useWorkspaceLoader', () => {
       worktreePath: '/tmp/loader-cache-2',
     });
 
-    workspaceStoreMock.findById.mockReturnValue(cachedWorkspace);
+    selectWorkspaceByIdMock.mockReturnValue(cachedWorkspace);
     openMock.mockResolvedValue({ ok: true, data: openedWorkspace });
 
     render(TestUseWorkspaceLoader, {
@@ -152,7 +140,7 @@ describe('useWorkspaceLoader', () => {
 
   it('hydrates a pending initial agent id before dispatching workspaceMounted', async () => {
     const cachedWorkspace = makeWorkspace({ id: 'loader-initial-agent-1', title: 'New Workspace' });
-    workspaceStoreMock.findById.mockReturnValue(cachedWorkspace);
+    selectWorkspaceByIdMock.mockReturnValue(cachedWorkspace);
     openMock.mockResolvedValue({ ok: true, data: cachedWorkspace });
 
     storeStateRef.current = {

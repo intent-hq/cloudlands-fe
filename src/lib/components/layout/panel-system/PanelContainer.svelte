@@ -10,7 +10,7 @@
     PanelLayoutNode,
     PanelState,
     PanelTab,
-  } from '$features/layout/panel-layout-manager.svelte';
+  } from '$features/layout/panel-layout-adapter';
   import { cn } from '$lib/utils';
   import Panel from './Panel.svelte';
   import PanelSplitHandle from './PanelSplitHandle.svelte';
@@ -332,6 +332,7 @@
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function handleCornerResizeEnd(_handleIndex: number) {
     handleResizeEnd();
   }

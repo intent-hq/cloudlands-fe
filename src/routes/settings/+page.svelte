@@ -2,8 +2,14 @@
   import { logger } from '../../shared/logger';
 
   import { page } from '$app/state';
-  import { autoUpdateStore } from '$features/auto-update/auto-update.store.svelte';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import {
+    selectIsReadyToInstall,
+    selectAutoUpdateStatus,
+  } from '$lib/store/slices/auto-update/auto-update-selectors';
+  import {
+    installUpdate,
+    simulateSetState,
+  } from '$lib/store/slices/auto-update/auto-update-slice';
   import ProviderSelector from '$lib/components/settings/ProviderSelector.svelte';
   import AIBehaviorEditor from '$lib/components/settings/AIBehaviorEditor.svelte';
   import AIBehaviorSidebar, {
@@ -19,6 +25,9 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { selectIsProviderActive } from '$lib/store/slices/provider-settings/provider-settings-selectors';
+  import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
+  const workspaces = selectWorkspaceItems();
+
   import {
     resetNotificationSettings,
     setAgentFontStyle,
@@ -52,6 +61,8 @@
   import Fa from 'svelte-fa';
 
   const settingsDispatch = getDispatch();
+  const isReadyToInstall$ = selectIsReadyToInstall();
+  const autoUpdateStatus$ = selectAutoUpdateStatus();
   const noteFontStyle = selectNoteFontStyle();
   const isNoteMonospace = selectIsNoteMonospace();
   const agentFontStyle = selectAgentFontStyle();
@@ -148,9 +159,7 @@
       const workspaceId = pathParts[2]; // ['', 'workspace', '{id}', ...]
       logger.debug('[Settings] Extracted workspaceId:', workspaceId);
       if (workspaceId) {
-        const workspace = workspaceStore.findById(
-          workspaceId as import('$shared/types').WorkspaceId,
-        );
+        const workspace = $workspaces.find((item) => item.id === workspaceId);
         logger.debug('[Settings] Found workspace:', workspace?.title);
         return workspace?.title || 'Space';
       }
@@ -608,21 +617,21 @@
                     <Button
                       variant="outline"
                       size="sm"
-                      onclick={() => autoUpdateStore.simulateUpdateFlow()}
+                      onclick={() => settingsDispatch(simulateSetState({ toastVisible: true, status: 'downloading', updateInfo: { version: '99.0.0', releaseDate: new Date().toISOString(), releaseNotes: 'Simulated' }, progress: { percent: 50, bytesPerSecond: 2500000, transferred: 25000000, total: 50000000 }, error: null }))}
                     >
                       Simulate Update Flow
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
-                      onclick={() => autoUpdateStore.simulateNoUpdate()}
+                      onclick={() => settingsDispatch(simulateSetState({ toastVisible: true, status: 'not-available', currentVersion: '1.0.0-dev' }))}
                     >
                       Simulate No Update
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
-                      onclick={() => autoUpdateStore.simulateReset()}
+                      onclick={() => settingsDispatch(simulateSetState({ toastVisible: false, status: 'idle', currentVersion: '1.0.0-dev', updateInfo: null, progress: null, error: null, channel: 'stable' }))}
                     >
                       Reset
                     </Button>
@@ -643,15 +652,15 @@
         <strong class="text-foreground">Intent by Augment</strong>
         <span class="ml-2">
           v{appVersion || '...'}
-          {#if autoUpdateStore.isReadyToInstall}
+          {#if $isReadyToInstall$}
             <span class="mx-2">·</span>
             <button
               class="font-medium underline text-primary hover:text-primary/80 cursor-pointer bg-transparent border-none p-0"
-              onclick={() => autoUpdateStore.installUpdate()}
+              onclick={() => settingsDispatch(installUpdate())}
             >
               Update available
             </button>
-          {:else if autoUpdateStore.status === 'not-available' || autoUpdateStore.status === 'idle'}
+          {:else if $autoUpdateStatus$ === 'not-available' || $autoUpdateStatus$ === 'idle'}
             <span class="mx-2">·</span>
             <span class="text-subtle">Up to date</span>
           {/if}

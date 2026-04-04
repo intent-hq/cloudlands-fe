@@ -14,34 +14,39 @@ import {
   navigateAfterWorkspaceRemoval,
 } from './workspace-navigation';
 
+const { mockDispatch, mockCloseTab, mockCurrentTabId } = vi.hoisted(() => ({
+  mockDispatch: vi.fn(),
+  mockCloseTab: vi.fn(),
+  mockCurrentTabId: { value: null as string | null },
+}));
+
 // Mock svelte/store (SvelteKit mocks are in test-setup.ts)
 vi.mock('svelte/store', () => ({
   get: vi.fn(),
 }));
 
-// Mock the unified workspace state
-vi.mock('$features/workspace/workspace-unified-state.svelte', () => ({
-  getUnifiedWorkspaceState: vi.fn(),
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  dispatch: mockDispatch,
+  getReduxStore: () => ({ getState: () => ({}) }),
 }));
 
-// Mock the workspace tab manager
-const { mockCloseTab, mockCurrentTabId } = vi.hoisted(() => ({
-  mockCloseTab: vi.fn(),
-  mockCurrentTabId: { value: null as string | null },
+vi.mock('$lib/store/slices/tab-state/tab-state-slice', () => ({
+  closeWorkspaceTab: (...args: unknown[]) => mockCloseTab(...args),
 }));
-vi.mock('$features/workspace/workspace-tab-manager.svelte', () => ({
-  workspaceTabManager: {
-    get currentTabId() {
-      return mockCurrentTabId.value;
-    },
-    closeTab: (...args: unknown[]) => mockCloseTab(...args),
+
+vi.mock('$lib/store/slices/tab-state/tab-state-selectors', () => ({
+  selectCurrentWorkspaceTabId: {
+    select: () => mockCurrentTabId.value,
   },
 }));
 
 // Import mocked modules
 import { goto } from '$app/navigation';
 import { get } from 'svelte/store';
-import { getUnifiedWorkspaceState } from '$features/workspace/workspace-unified-state.svelte';
+import {
+  closeWorkspaceDrawer,
+  openWorkspaceDrawer,
+} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
 describe('workspace-navigation', () => {
   const mockPage = {
@@ -52,15 +57,6 @@ describe('workspace-navigation', () => {
     params: {
       id: 'test-workspace-id',
     },
-  };
-
-  const mockWorkspaceState = {
-    openDrawer: vi.fn(),
-    setMainPanel: vi.fn(),
-    closeDrawer: vi.fn(),
-    clearMainContent: vi.fn(),
-    openNote: vi.fn(),
-    openFile: vi.fn(),
   };
 
   beforeEach(() => {
@@ -84,7 +80,7 @@ describe('workspace-navigation', () => {
     // Setup default mock return values
     (get as any).mockReturnValue(mockPage);
     (goto as any).mockResolvedValue(undefined);
-    (getUnifiedWorkspaceState as any).mockReturnValue(mockWorkspaceState);
+    mockDispatch.mockReset();
   });
 
   describe('navigateToAgent', () => {
@@ -98,6 +94,9 @@ describe('workspace-navigation', () => {
       expect(goto).toHaveBeenCalledWith(expect.any(String), {
         replaceState: true,
       });
+      expect(mockDispatch).toHaveBeenCalledWith(
+        openWorkspaceDrawer('test-workspace-id', 'agent', 'agent-123'),
+      );
     });
 
     it('should preserve existing URL params', async () => {
@@ -115,6 +114,9 @@ describe('workspace-navigation', () => {
       expect(goto).toHaveBeenCalledWith(expect.any(String), {
         replaceState: true,
       });
+      expect(mockDispatch).toHaveBeenCalledWith(
+        openWorkspaceDrawer('test-workspace-id', 'agent', 'agent-123'),
+      );
     });
 
     it('should remove selectedTerminal param when navigating to agent', async () => {
@@ -234,6 +236,9 @@ describe('workspace-navigation', () => {
       expect(goto).toHaveBeenCalledWith(expect.any(String), {
         replaceState: true,
       });
+      expect(mockDispatch).toHaveBeenCalledWith(
+        openWorkspaceDrawer('test-workspace-id', 'terminal', 'terminal-789'),
+      );
     });
 
     it('should remove selectedAgent param when navigating to terminal', async () => {
@@ -275,6 +280,7 @@ describe('workspace-navigation', () => {
       expect(goto).toHaveBeenCalledWith(expect.any(String), {
         replaceState: true,
       });
+      expect(mockDispatch).toHaveBeenCalledWith(closeWorkspaceDrawer('test-workspace-id'));
     });
 
     it('should clear selectedAgent param', async () => {

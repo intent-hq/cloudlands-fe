@@ -34,8 +34,8 @@ const cloneSagaStatusRecord = (status: SagaStatusRecord): SagaStatusRecord => ({
   crashes: status.crashes.map((crash) => ({ ...crash })),
 });
 
-const toError = (error: unknown): Error => {
-  return error instanceof Error ? error : new Error(String(error));
+const toErrorMessage = (error: unknown): string => {
+  return error instanceof Error ? error.message : String(error);
 };
 
 const autoRestart = (
@@ -57,8 +57,8 @@ const autoRestart = (
         break; // if saga finished successfully no need to restart it
       } catch (e) {
         crashes.push({
-          crashedAt: new Date(),
-          error: toError(e),
+          crashedAt: Date.now(),
+          error: toErrorMessage(e),
         });
         onCrash?.([...crashes]);
 

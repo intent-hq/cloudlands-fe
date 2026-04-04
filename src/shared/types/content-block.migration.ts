@@ -148,7 +148,7 @@ export function migrateContentBlocks(blocks: any[]): ContentBlock[] {
     .map((block) => {
       try {
         return migrateFromLegacy(block);
-      } catch (error) {
+      } catch {
         // Failed to migrate block, return null
         return null;
       }

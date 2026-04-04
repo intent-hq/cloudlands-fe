@@ -6,7 +6,20 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { WorkspaceService } from '../main/workspace.service';
 import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
 import { InMemoryNotesRepository } from '../../notes/main/notes.repository';
-import { unifiedEventBus, type UnifiedEventBus } from '../../events/main/unified-event-bus';
+import { mainDispatch } from '../../../store/main/redux-store-bridge';
+import {
+  workspaceCreated,
+  workspaceUpdated,
+  workspaceDeleted,
+  workspaceArchived,
+} from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
+
+// Mock mainDispatch
+vi.mock('../../../store/main/redux-store-bridge', () => ({
+  mainDispatch: vi.fn((action: any) => action),
+}));
+
+const mockedMainDispatch = mainDispatch as ReturnType<typeof vi.fn>;
 
 // Mock child_process first
 vi.mock('child_process', () => {
@@ -107,12 +120,9 @@ describe('WorkspaceService', () => {
   let service: WorkspaceService;
   let workspaceRepository: InMemoryWorkspaceRepository;
   let notesRepository: InMemoryNotesRepository;
-  let eventBus: UnifiedEventBus;
-
   beforeEach(() => {
     workspaceRepository = new InMemoryWorkspaceRepository();
     notesRepository = new InMemoryNotesRepository();
-    eventBus = unifiedEventBus;
 
     // Mock readGitConfig to return a sample git config
     vi.spyOn(workspaceRepository, 'readGitConfig').mockResolvedValue(`
@@ -129,6 +139,7 @@ describe('WorkspaceService', () => {
   afterEach(() => {
     service.cleanup();
     vi.clearAllMocks();
+    mockedMainDispatch.mockClear();
   });
 
   describe('createWorkspace', () => {
@@ -214,21 +225,20 @@ describe('WorkspaceService', () => {
     });
 
     it('should emit workspace:created event', async () => {
-      const eventSpy = vi.fn();
-      eventBus.onDomainEvent('workspace:created', eventSpy);
-
       const result = await service.createWorkspace({
         title: 'Test Workspace',
       });
 
       expect(result.ok).toBe(true);
-      expect(eventSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          workspaceId: expect.any(String),
-          workspace: expect.objectContaining({
-            title: 'Test Workspace',
+      expect(mockedMainDispatch).toHaveBeenCalledWith(
+        workspaceCreated(
+          expect.objectContaining({
+            workspaceId: expect.any(String),
+            workspace: expect.objectContaining({
+              title: 'Test Workspace',
+            }),
           }),
-        }),
+        ),
       );
     });
 
@@ -445,21 +455,20 @@ describe('WorkspaceService', () => {
       expect(created.ok).toBe(true);
       if (!created.ok) return;
 
-      const eventSpy = vi.fn();
-      eventBus.onDomainEvent('workspace:updated', eventSpy);
-
       await service.updateWorkspace({
         id: created.data.id,
         title: 'Updated Title',
       });
 
-      expect(eventSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          workspaceId: created.data.id,
-          changes: expect.objectContaining({
-            title: 'Updated Title',
+      expect(mockedMainDispatch).toHaveBeenCalledWith(
+        workspaceUpdated(
+          expect.objectContaining({
+            workspaceId: created.data.id,
+            changes: expect.objectContaining({
+              title: 'Updated Title',
+            }),
           }),
-        }),
+        ),
       );
     });
 
@@ -498,15 +507,14 @@ describe('WorkspaceService', () => {
       expect(created.ok).toBe(true);
       if (!created.ok) return;
 
-      const eventSpy = vi.fn();
-      eventBus.onDomainEvent('workspace:deleted', eventSpy);
-
       await service.deleteWorkspace(created.data.id);
 
-      expect(eventSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          workspaceId: created.data.id,
-        }),
+      expect(mockedMainDispatch).toHaveBeenCalledWith(
+        workspaceDeleted(
+          expect.objectContaining({
+            workspaceId: created.data.id,
+          }),
+        ),
       );
     });
 
@@ -559,15 +567,14 @@ describe('WorkspaceService', () => {
       expect(created.ok).toBe(true);
       if (!created.ok) return;
 
-      const eventSpy = vi.fn();
-      eventBus.onDomainEvent('workspace:archived', eventSpy);
-
       await service.archiveWorkspace(created.data.id);
 
-      expect(eventSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          workspaceId: created.data.id,
-        }),
+      expect(mockedMainDispatch).toHaveBeenCalledWith(
+        workspaceArchived(
+          expect.objectContaining({
+            workspaceId: created.data.id,
+          }),
+        ),
       );
     });
   });

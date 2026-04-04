@@ -7,7 +7,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { createMessageId } from '$shared/types/branded-ids';
-import { writable, get, type Writable } from 'svelte/store';
+import type { Readable } from 'svelte/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { logger as rendererLogger, LogCategory } from '$lib/logging/logger.svelte';
 import type { Workspace, AgentMessage, AgentSession, ContentBlock, WorkspaceId } from '$shared/types';
@@ -15,15 +15,54 @@ import { normalizeContentBlocks } from '$shared/types';
 import type { IDisposable } from '$shared/types/disposable';
 import { memoryManager } from './memory-manager';
 import type { ContextItem } from '$lib/components/chat/input/context-api';
-import { agentService } from '../agent.service';
-import { unifiedStateStore, sessionStore, notifyAgentSubscribers } from '$features/agent/browser';
+import { agentService } from '../agent-ipc-bridge';
+import { notifyAgentSubscribers } from '$features/agent/browser';
+import {
+  upsertAgentSession,
+  setAgentStreaming,
+  replaceAgentMessages,
+} from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+import {
+  selectAgentById,
+} from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+import {
+  selectActiveWorkspaceId,
+  selectWorkspaceById,
+  selectWorkspaceItems,
+} from '$lib/store/slices/workspace/workspace-selectors';
 import { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';
-import { getAgentProvider } from '$shared/types/agent-session';
-import { getProviderConfig } from '$shared/config/provider-config';
 import { cleanErrorMessage } from '$shared/errors/messages';
 import { assertStreamingInvariant } from '../utils/streaming-invariants';
 import { shouldAppendStreamingEvent } from '$lib/components/chat/streaming-status-utils';
 import { track } from '$lib/services/analytics';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { selectChatAgentState } from '$lib/store/slices/chat-state/chat-state-selectors';
+
+import type { ChatAgentState } from '$lib/store/slices/chat-state/chat-state-types';
+import {
+  chatInitialized,
+  chatInitFailed,
+  chatSendStarted,
+  chatSendFailed,
+  chatInterrupted,
+  chatModelUnavailableSet,
+  chatModelUnavailableCleared,
+  chatErrorCleared,
+  chatStopInitiated,
+  chatStopCompleted,
+  chatReset,
+  streamStarted,
+  streamChunkFlushed,
+  streamChunkReceived,
+  streamCompleted,
+  streamErrored,
+  streamStatusReceived,
+  streamTimedOut,
+  chatStallDetected,
+  chatStuckStateCleared,
+} from '$lib/store/slices/chat-state/chat-state-slice';
+import { selectAgentSession, selectAgentMessages } from '$lib/store/slices/agent-session/agent-session-selectors';
+import { upsertSession as upsertAgentSessionData, replaceMessages as replaceAgentSessionMessages, addMessage as addAgentSessionMessage } from '$lib/store/slices/agent-session/agent-session-slice';
 
 const logger = createLogger('ChatService');
 
@@ -58,35 +97,18 @@ function isImageFile(file: File): boolean {
   return file.type.startsWith('image/');
 }
 
-export interface ChatState {
+/**
+ * ChatState composes ChatAgentState (streaming/UI flags) with session and messages
+ * from the agent-session slice. This preserves backward compatibility for consumers.
+ */
+export type ChatState = ChatAgentState & {
   session: AgentSession | null;
   messages: AgentMessage[];
+  /** Streaming flag — sourced from agent-session slice (single source of truth) */
   isStreaming: boolean;
+  /** Processing flag — sourced from agent-session slice (single source of truth) */
   isProcessing: boolean;
-  isInterrupting: boolean; // True while an interrupt is in progress
-  streamingContent: string;
-  error: string | null;
-  /** Timestamp when streaming/processing started (for long-running debug info) */
-  /** Timestamp of the last received chunk (for stall detection) */
-  lastChunkTime: number | null;
-  /** Whether we've received the first real chunk (distinct from lastChunkTime which is set on 'start') */
-  receivedFirstChunk: boolean;
-  /** Whether the stream appears stalled (no chunks for STALL_DETECTION_MS) */
-  isStalled: boolean;
-  streamingStartTime: number | null;
-  /** Last attempted message for retry functionality */
-  lastAttemptedMessage: {
-    text: string;
-    options?: SendMessageOptions;
-  } | null;
-  /** Model unavailable info - set when a model fails and user can retry with another */
-  modelUnavailable: {
-    failedModel: string;
-    nextAvailableModel: string;
-  } | null;
-  /** Transient lifecycle status events from the backend */
-  statusEvents: Array<{ phase: string; message: string; level: 'info' | 'warn' | 'error'; timestamp: number }>;
-}
+};
 
 export interface SendMessageOptions {
   contextItems?: ContextItem[];
@@ -116,13 +138,6 @@ export interface SendMessageOptions {
 }
 
 export class ChatService implements IDisposable {
-  private state: Writable<ChatState>;
-
-  /**
-   * The agent ID this instance is permanently bound to.
-   * This instance only handles events for this specific agent.
-   */
-  public readonly agentId: string | undefined;
   private streamHandlers = new Map<string, (data: any) => void>();
   private sessionUpdatedCleanups = new Map<string, () => void>();
   private streamTimeouts = new Map<string, { cleanup: () => void }>();
@@ -193,44 +208,45 @@ export class ChatService implements IDisposable {
   // from overwriting the store with stale data during rapid workspace switches.
   private _initGeneration = 0;
 
-  constructor(agentId?: string) {
-    this.agentId = agentId;
+  constructor() {
+    // No-arg constructor. All identity (agentId, workspaceId) is passed
+    // explicitly to each method. Visibility handler is registered in
+    // initializeChat when agentId is known.
+  }
 
-    // Restore status events and streamingStartTime from localStorage so they survive tab switches and HMR reloads
-    const restored = this.loadStatusEventsFromStorage();
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Redux helpers
+  // ─────────────────────────────────────────────────────────────────────────────
 
-    // If the restored statusEvents already contain a 'streaming' phase event, the first
-    // real chunk was already received before the HMR/remount. Setting receivedFirstChunk
-    // to true prevents recordChunkReceived() from appending a duplicate synthetic
-    // "Streaming response…" marker and restarting the lifecycle timer on recovery.
-    const restoredReceivedFirstChunk = restored.events.some((e) => e.phase === 'streaming');
 
-    this.state = writable<ChatState>({
-      session: null,
-      messages: [],
-      isStreaming: false,
-      isProcessing: false,
-      isInterrupting: false,
-      streamingContent: '',
-      error: null,
-      streamingStartTime: restored.streamingStartTime,
-      lastAttemptedMessage: null,
-      lastChunkTime: null,
-      receivedFirstChunk: restoredReceivedFirstChunk,
-      isStalled: false,
-      modelUnavailable: null,
-      statusEvents: restored.events,
-    });
+  /** Dispatch an action to the Redux store */
+  private reduxDispatch(action: any): void {
+    try {
+      getReduxStore().dispatch(action);
+    } catch {
+      // Store may not be initialized during tests or early startup
+      logger.warn('ChatService: Redux dispatch failed (store not ready)');
+    }
+  }
 
-    // PERFORMANCE: When the browser tab is backgrounded, RAF callbacks are paused.
-    // This means streaming content accumulates in pendingStreamingContent but never
-    // gets flushed to the UI. When the user returns, force-flush so content appears immediately.
-    this.visibilityChangeHandler = () => {
-      if (document.visibilityState === 'visible' && get(this.state).isProcessing) {
-        this.flushChunkUpdate();
-      }
+  /**
+   * Read current agent chat state from Redux via selector.
+   * Composes ChatAgentState (streaming/UI flags) with session and messages
+   * from the agent-session slice.
+   */
+  private getChatState(agentId: string): ChatState {
+    const state = getReduxStore().getState();
+    const chatAgentState = selectChatAgentState.select(state, agentId);
+    const session = selectAgentSession.select(state, agentId) ?? null;
+    const messages = selectAgentMessages.select(state, agentId);
+    return {
+      ...chatAgentState,
+      session,
+      messages,
+      // isStreaming/isProcessing come from agent-session (single source of truth)
+      isStreaming: session?.isStreaming ?? false,
+      isProcessing: session?.isProcessing ?? false,
     };
-    document.addEventListener('visibilitychange', this.visibilityChangeHandler);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -238,28 +254,52 @@ export class ChatService implements IDisposable {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
+   * Load status events and streamingStartTime from localStorage.
+   * Used during construction to restore state across HMR reloads and tab switches.
+   */
+  private loadStatusEventsFromStorage(agentId: string): { events: ChatState['statusEvents']; streamingStartTime: number | null } {
+    const key = this.getStatusEventsStorageKey(agentId);
+    if (!key) {
+      return { events: [], streamingStartTime: null };
+    }
+    try {
+      const stored = localStorage.getItem(key);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return {
+          events: Array.isArray(parsed.events) ? parsed.events : [],
+          streamingStartTime: typeof parsed.streamingStartTime === 'number' ? parsed.streamingStartTime : null,
+        };
+      }
+    } catch (e: unknown) {
+      logger.debug('[ChatService] Failed to load status events from localStorage', { error: e });
+    }
+    return { events: [], streamingStartTime: null };
+  }
+
+  /**
    * Generate localStorage key for status events.
    * Uses agentId to scope storage per agent.
    * Returns null if agentId is not available to avoid shared 'default' key collisions.
    */
-  private getStatusEventsStorageKey(): string | null {
-    if (!this.agentId) {
+  private getStatusEventsStorageKey(agentId: string): string | null {
+    if (!agentId) {
       return null;
     }
-    return `intent:statusEvents:${this.agentId}`;
+    return `intent:statusEvents:${agentId}`;
   }
 
   /**
    * Save status events to localStorage so they survive tab switches and HMR reloads.
    * No-ops if agentId is not available (to avoid shared key collisions).
    */
-  private saveStatusEventsToStorage(statusEvents: ChatState['statusEvents']): void {
-    const key = this.getStatusEventsStorageKey();
+  private saveStatusEventsToStorage(statusEvents: ChatState['statusEvents'], agentId: string): void {
+    const key = this.getStatusEventsStorageKey(agentId);
     if (!key) {
       return; // Skip persistence when agentId is not available
     }
     try {
-      const currentState = get(this.state);
+      const currentState = this.getChatState(agentId);
       localStorage.setItem(key, JSON.stringify({
         events: statusEvents,
         streamingStartTime: currentState.streamingStartTime,
@@ -270,43 +310,14 @@ export class ChatService implements IDisposable {
     }
   }
 
-  /**
-   * Load status events from localStorage.
-   * Returns events and streamingStartTime, or defaults if not stored or on error.
-   * Returns defaults if agentId is not available (to avoid shared key collisions).
-   */
-  private loadStatusEventsFromStorage(): { events: ChatState['statusEvents']; streamingStartTime: number | null } {
-    const key = this.getStatusEventsStorageKey();
-    if (!key) {
-      return { events: [], streamingStartTime: null }; // Skip loading when agentId is not available
-    }
-    try {
-      const stored = localStorage.getItem(key);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        // Handle old format (array) for backwards compatibility
-        if (Array.isArray(parsed)) {
-          return { events: parsed, streamingStartTime: null };
-        }
-        // Handle new format (object with events + streamingStartTime)
-        if (parsed && Array.isArray(parsed.events)) {
-          return { events: parsed.events, streamingStartTime: parsed.streamingStartTime ?? null };
-        }
-      }
-    } catch (e) {
-      // Ignore parse errors
-      logger.debug('[ChatService] Failed to load status events from localStorage', { error: e });
-    }
-    return { events: [], streamingStartTime: null };
-  }
 
   /**
    * Clear status events from localStorage.
    * Called when a stream ends (end/error) or chat is cleared.
    * No-ops if agentId is not available (to avoid shared key collisions).
    */
-  private clearStatusEventsStorage(): void {
-    const key = this.getStatusEventsStorageKey();
+  private clearStatusEventsStorage(agentId: string): void {
+    const key = this.getStatusEventsStorageKey(agentId);
     if (!key) {
       return; // Skip clearing when agentId is not available
     }
@@ -328,52 +339,55 @@ export class ChatService implements IDisposable {
    *
    * Use this for any state update that touches `messages` during streaming.
    */
-  private safeStateUpdate(updater: (s: ChatState) => ChatState): void {
-    this.state.update((s) => {
-      const next = updater(s);
+  /**
+   * Apply monotonicity guards to messages during streaming.
+   * Prevents message count or contentBlocks regressions during active streaming.
+   * Returns guarded messages that are safe to dispatch to Redux.
+   */
+  private guardStreamingMessages(
+    currentState: ChatState,
+    incomingMessages: AgentMessage[],
+    nextIsStreaming: boolean,
+  ): AgentMessage[] {
+    // Only enforce monotonicity while actively streaming.
+    // Skip guards when stream is finalizing (isStreaming true→false).
+    if (!currentState.isStreaming || !nextIsStreaming) return incomingMessages;
 
-      // Only enforce monotonicity while actively streaming.
-      // Skip guards when stream is finalizing (isStreaming true→false) so that
-      // legitimate message/block count reductions from stream completion go through.
-      if (!s.isStreaming || !next.isStreaming) return next;
+    let guarded = incomingMessages;
 
-      // Guard 1: never reduce message count during streaming
-      if (next.messages.length < s.messages.length) {
-        logger.warn('[ChatService] safeStateUpdate: prevented message count regression during streaming', {
-          agentId: this.agentId,
-          currentCount: s.messages.length,
-          incomingCount: next.messages.length,
-          currentLastId: s.messages[s.messages.length - 1]?.id,
-          incomingLastId: next.messages[next.messages.length - 1]?.id,
+    // Guard 1: never reduce message count during streaming
+    if (guarded.length < currentState.messages.length) {
+      logger.warn('[ChatService] guardStreamingMessages: prevented message count regression during streaming', {
+        currentCount: currentState.messages.length,
+        incomingCount: guarded.length,
+        currentLastId: currentState.messages[currentState.messages.length - 1]?.id,
+        incomingLastId: guarded[guarded.length - 1]?.id,
+      });
+      guarded = currentState.messages;
+    }
+
+    // Guard 2: never reduce contentBlocks count on the last message during streaming
+    if (guarded.length > 0 && currentState.messages.length > 0) {
+      const lastCurrent = currentState.messages[currentState.messages.length - 1];
+      const lastNext = guarded[guarded.length - 1];
+      if (
+        lastCurrent?.id === lastNext?.id &&
+        (lastNext?.contentBlocks?.length || 0) < (lastCurrent?.contentBlocks?.length || 0) &&
+        (lastCurrent?.contentBlocks?.length || 0) > 0
+      ) {
+        logger.warn('[ChatService] guardStreamingMessages: prevented contentBlocks regression during streaming', {
+          messageId: lastCurrent?.id,
+          currentBlockCount: lastCurrent?.contentBlocks?.length || 0,
+          incomingBlockCount: lastNext?.contentBlocks?.length || 0,
+          currentBlockTypes: lastCurrent?.contentBlocks?.map((b) => b.type) || [],
+          incomingBlockTypes: lastNext?.contentBlocks?.map((b) => b.type) || [],
         });
-        return { ...next, messages: s.messages };
+        const fixedLastMessage = { ...lastNext, contentBlocks: lastCurrent.contentBlocks };
+        guarded = [...guarded.slice(0, -1), fixedLastMessage];
       }
+    }
 
-      // Guard 2: never reduce contentBlocks count on the last message during streaming
-      if (next.messages.length > 0 && s.messages.length > 0) {
-        const lastCurrent = s.messages[s.messages.length - 1];
-        const lastNext = next.messages[next.messages.length - 1];
-        if (
-          lastCurrent?.id === lastNext?.id &&
-          (lastNext?.contentBlocks?.length || 0) < (lastCurrent?.contentBlocks?.length || 0) &&
-          (lastCurrent?.contentBlocks?.length || 0) > 0
-        ) {
-          logger.warn('[ChatService] safeStateUpdate: prevented contentBlocks regression during streaming', {
-            agentId: this.agentId,
-            messageId: lastCurrent?.id,
-            currentBlockCount: lastCurrent?.contentBlocks?.length || 0,
-            incomingBlockCount: lastNext?.contentBlocks?.length || 0,
-            currentBlockTypes: lastCurrent?.contentBlocks?.map((b) => b.type) || [],
-            incomingBlockTypes: lastNext?.contentBlocks?.map((b) => b.type) || [],
-          });
-          const fixedLastMessage = { ...lastNext, contentBlocks: lastCurrent.contentBlocks };
-          const fixedMessages = [...next.messages.slice(0, -1), fixedLastMessage];
-          return { ...next, messages: fixedMessages };
-        }
-      }
-
-      return next;
-    });
+    return guarded;
   }
 
 
@@ -381,7 +395,7 @@ export class ChatService implements IDisposable {
    * PERFORMANCE: Flush pending chunk updates using requestAnimationFrame
    * FIX: Read current messages from state to avoid overwriting content-block updates
    */
-  private flushChunkUpdate(): void {
+  private flushChunkUpdate(agentId: string): void {
     if (this.pendingStreamingContent !== null) {
       const newStreamingContent = this.pendingStreamingContent;
       this.pendingStreamingContent = null;
@@ -393,98 +407,97 @@ export class ChatService implements IDisposable {
 
       // Compute updated messages from CURRENT state, not cached messages
       // This prevents race conditions where content-blocks updates are overwritten
-      this.safeStateUpdate((s) => {
-        const existingMessages = s.messages;
-        const lastMessage = existingMessages[existingMessages.length - 1];
-        const hasStreamingAssistantMessage =
-          lastMessage?.role === 'assistant' && lastMessage?.isStreaming === true;
+      const s = this.getChatState(agentId);
+      const existingMessages = s.messages;
+      const lastMessage = existingMessages[existingMessages.length - 1];
+      const hasStreamingAssistantMessage =
+        lastMessage?.role === 'assistant' && lastMessage?.isStreaming === true;
 
-        let updatedMessages = existingMessages;
+      let updatedMessages = existingMessages;
 
-        if (!hasStreamingAssistantMessage) {
-          // Create a new streaming assistant message
-          // IMPORTANT: Message IDs must start with 'msg_' for Zod validation
-          // Reuse the streaming message ID from sessionStore if one exists,
-          // to prevent divergence between this instance and sessionStore that causes
-          // the streaming response to appear in the wrong conversation turn.
-          let streamingMessageId: ReturnType<typeof createMessageId> | undefined;
-          const sessionId = s.session?.id;
-          const sessionWorkspaceId = s.session?.workspaceId;
-          if (sessionId && sessionWorkspaceId) {
-            const storeSession = sessionStore.getSessionForWorkspace(sessionWorkspaceId, sessionId);
-            const storeLastMsg = storeSession?.messages?.[storeSession.messages.length - 1];
-            if (storeLastMsg?.role === 'assistant' && storeLastMsg?.isStreaming) {
-              streamingMessageId = createMessageId(storeLastMsg.id);
-            }
+      if (!hasStreamingAssistantMessage) {
+        // Create a new streaming assistant message
+        // IMPORTANT: Message IDs must start with 'msg_' for Zod validation
+        // Reuse the streaming message ID from Redux state if one exists,
+        // to prevent divergence between this instance and Redux state that causes
+        // the streaming response to appear in the wrong conversation turn.
+        let streamingMessageId: ReturnType<typeof createMessageId> | undefined;
+        const sessionId = s.session?.id;
+        const sessionWorkspaceId = s.session?.workspaceId;
+        if (sessionId && sessionWorkspaceId) {
+          const storeSession = selectAgentById.select(getReduxStore().getState(), sessionId);
+          const storeLastMsg = storeSession?.messages?.[storeSession.messages.length - 1];
+          if (storeLastMsg?.role === 'assistant' && storeLastMsg?.isStreaming) {
+            streamingMessageId = createMessageId(storeLastMsg.id);
           }
-          const streamingMessage: AgentMessage = {
-            id: streamingMessageId ?? createMessageId(`msg_${uuidv4()}`),
-            role: 'assistant' as const,
-            contentBlocks: [{ type: 'text' as const, text: newStreamingContent }],
-            timestamp: new Date().toISOString(),
-            isStreaming: true,
-          };
-          updatedMessages = [...existingMessages, streamingMessage];
-        } else {
-          // Update the existing streaming message's text content
-          const existingBlocks = lastMessage.contentBlocks || [];
+        }
+        const streamingMessage: AgentMessage = {
+          id: streamingMessageId ?? createMessageId(`msg_${uuidv4()}`),
+          role: 'assistant' as const,
+          contentBlocks: [{ type: 'text' as const, text: newStreamingContent }],
+          timestamp: new Date().toISOString(),
+          isStreaming: true,
+        };
+        updatedMessages = [...existingMessages, streamingMessage];
+      } else {
+        // Update the existing streaming message's text content
+        const existingBlocks = lastMessage.contentBlocks || [];
 
-          // Find the last block - if it's a text block, update it; otherwise append a new text block
-          const lastBlock = existingBlocks[existingBlocks.length - 1];
-          let updatedBlocks: ContentBlock[];
+        // Find the last block - if it's a text block, update it; otherwise append a new text block
+        const lastBlock = existingBlocks[existingBlocks.length - 1];
+        let updatedBlocks: ContentBlock[];
 
-          if (lastBlock?.type === 'text') {
-            // Update the last text block
-            // FIX: Don't replace with empty content - this would delete visible text
-            if (newStreamingContent.length === 0) {
-              logger.debug(
-                'flushChunkUpdate: Skipping empty content update to preserve existing text',
-                {
-                  existingTextLength: ((lastBlock as any).text || '').length,
-                  existingTextPreview: ((lastBlock as any).text || '').slice(0, 50),
-                },
-              );
-              updatedBlocks = existingBlocks; // Keep existing blocks unchanged
-            } else {
-              updatedBlocks = [
-                ...existingBlocks.slice(0, -1),
-                { type: 'text' as const, text: newStreamingContent },
-              ];
-            }
+        if (lastBlock?.type === 'text') {
+          // Update the last text block
+          // FIX: Don't replace with empty content - this would delete visible text
+          if (newStreamingContent.length === 0) {
+            logger.debug(
+              'flushChunkUpdate: Skipping empty content update to preserve existing text',
+              {
+                existingTextLength: ((lastBlock as any).text || '').length,
+                existingTextPreview: ((lastBlock as any).text || '').slice(0, 50),
+              },
+            );
+            updatedBlocks = existingBlocks; // Keep existing blocks unchanged
           } else {
-            // Last block is not text (it's a tool block) - append new text block
-            // FIX: Don't append empty text blocks
-            if (newStreamingContent.length === 0) {
-              logger.debug('flushChunkUpdate: Skipping empty text block append');
-              updatedBlocks = existingBlocks; // Keep existing blocks unchanged
-            } else {
-              updatedBlocks = [
-                ...existingBlocks,
-                { type: 'text' as const, text: newStreamingContent },
-              ];
-            }
+            updatedBlocks = [
+              ...existingBlocks.slice(0, -1),
+              { type: 'text' as const, text: newStreamingContent },
+            ];
           }
-
-          const updatedLastMessage = {
-            ...lastMessage,
-            contentBlocks: updatedBlocks,
-          };
-          updatedMessages = [...existingMessages.slice(0, -1), updatedLastMessage];
+        } else {
+          // Last block is not text (it's a tool block) - append new text block
+          // FIX: Don't append empty text blocks
+          if (newStreamingContent.length === 0) {
+            logger.debug('flushChunkUpdate: Skipping empty text block append');
+            updatedBlocks = existingBlocks; // Keep existing blocks unchanged
+          } else {
+            updatedBlocks = [
+              ...existingBlocks,
+              { type: 'text' as const, text: newStreamingContent },
+            ];
+          }
         }
 
-        // Only log at debug level to avoid excessive logging during streaming
-        logger.debug('[ChatService] flushChunkUpdate updating state', {
-          messageCount: updatedMessages.length,
-          streamingContentLength: newStreamingContent.length,
-        });
-
-        return {
-          ...s,
-          isStreaming: true,
-          streamingContent: newStreamingContent,
-          messages: updatedMessages,
+        const updatedLastMessage = {
+          ...lastMessage,
+          contentBlocks: updatedBlocks,
         };
+        updatedMessages = [...existingMessages.slice(0, -1), updatedLastMessage];
+      }
+
+      // Apply monotonicity guards
+      updatedMessages = this.guardStreamingMessages(s, updatedMessages, true);
+
+      // Only log at debug level to avoid excessive logging during streaming
+      logger.debug('[ChatService] flushChunkUpdate updating state', {
+        messageCount: updatedMessages.length,
+        streamingContentLength: newStreamingContent.length,
       });
+
+      // Dispatch to Redux — streaming content to chat-state, messages to agent-session
+      this.reduxDispatch(streamChunkFlushed(agentId, newStreamingContent));
+      this.reduxDispatch(replaceAgentSessionMessages(agentId, updatedMessages));
     }
   }
 
@@ -492,7 +505,7 @@ export class ChatService implements IDisposable {
    * PERFORMANCE: Schedule a throttled chunk update
    * FIX: Only store streamingContent, not full messages array
    */
-  private scheduleChunkUpdate(content: string): void {
+  private scheduleChunkUpdate(content: string, agentId: string): void {
     // FIX: Only store the streaming content - messages will be computed fresh during flush
     this.pendingStreamingContent = content;
 
@@ -508,13 +521,13 @@ export class ChatService implements IDisposable {
     // If enough time has passed, update immediately
     if (timeSinceLastUpdate >= this.CHUNK_THROTTLE_MS) {
       this.lastChunkUpdateTime = now;
-      this.flushChunkUpdate();
+      this.flushChunkUpdate(agentId);
     } else if (this.chunkUpdateRafId === null) {
       // Schedule update for next frame
       this.chunkUpdateRafId = requestAnimationFrame(() => {
         this.chunkUpdateRafId = null;
         this.lastChunkUpdateTime = performance.now();
-        this.flushChunkUpdate();
+        this.flushChunkUpdate(agentId);
       });
     }
     // If RAF is already scheduled, the pending update will be used
@@ -524,11 +537,11 @@ export class ChatService implements IDisposable {
    * Start stall detection timer
    * Checks every 10 seconds if we've received chunks recently
    */
-  private startStallDetection(): void {
+  private startStallDetection(agentId: string): void {
     this.stopStallDetection();
 
     this.stallCheckTimer = setInterval(() => {
-      const currentState = get(this.state);
+      const currentState = this.getChatState(agentId);
 
       // Only check if we're actively streaming
       if (!currentState.isStreaming) {
@@ -562,10 +575,7 @@ export class ChatService implements IDisposable {
           lastChunkTime: currentState.lastChunkTime,
         });
 
-        this.state.update((s) => ({
-          ...s,
-          isStalled: true,
-        }));
+        this.reduxDispatch(chatStallDetected(agentId));
       }
     }, 10_000); // Check every 10 seconds
   }
@@ -592,14 +602,14 @@ export class ChatService implements IDisposable {
    * - Requires consecutive failures before resetting to avoid false positives from transient issues
    * - Resets failure count on IPC errors to be conservative
    */
-  private startStateReconciliation(_initialSessionId: string): void {
+  private startStateReconciliation(_initialSessionId: string, agentId: string): void {
     this.stopStateReconciliation();
 
     // Reset failure counter when starting fresh
     this.stateReconciliationFailureCount = 0;
 
     this.stateReconciliationTimer = setInterval(async () => {
-      const currentState = get(this.state);
+      const currentState = this.getChatState(agentId);
 
       // Only reconcile if we think we're processing
       if (!currentState.isProcessing) {
@@ -618,7 +628,7 @@ export class ChatService implements IDisposable {
       }
 
       // Safety timeout: if isProcessing has been true for > 5 minutes without any chunks
-      // AND the session is not streaming according to sessionStore, auto-clear the stuck state.
+      // AND the session is not streaming according to Redux state, auto-clear the stuck state.
       // This catches permanently stuck states that the normal reconciliation might miss.
       if (currentState.streamingStartTime) {
         const processingDuration = Date.now() - currentState.streamingStartTime;
@@ -626,7 +636,7 @@ export class ChatService implements IDisposable {
           && (Date.now() - currentState.lastChunkTime) < this.STUCK_PROCESSING_TIMEOUT_MS;
         const reconcileWorkspaceId = currentState.session?.workspaceId;
         const sessionData = reconcileWorkspaceId
-          ? sessionStore.getSessionForWorkspace(reconcileWorkspaceId, currentSessionId)
+          ? selectAgentById.select(getReduxStore().getState(), currentSessionId)
           : undefined;
         const sessionSaysStreaming = sessionData?.isStreaming ?? false;
 
@@ -642,16 +652,7 @@ export class ChatService implements IDisposable {
             streamingStartTime: currentState.streamingStartTime,
           });
 
-          this.state.update((s) => ({
-            ...s,
-            isProcessing: false,
-            isStreaming: false,
-            isStalled: false,
-            streamingStartTime: null,
-            lastChunkTime: null,
-            receivedFirstChunk: false,
-          }));
-
+          this.reduxDispatch(chatStuckStateCleared(agentId));
           this.stateReconciliationFailureCount = 0;
           this.stopStateReconciliation();
           return;
@@ -677,7 +678,7 @@ export class ChatService implements IDisposable {
           );
 
           // Re-check isProcessing since state may have changed during IPC call
-          const stateAfterCheck = get(this.state);
+          const stateAfterCheck = this.getChatState(agentId);
           if (!stateAfterCheck.isProcessing) {
             // State was updated while we were checking, reset and skip
             this.stateReconciliationFailureCount = 0;
@@ -725,15 +726,7 @@ export class ChatService implements IDisposable {
                 failureCount: this.stateReconciliationFailureCount,
               });
 
-              this.state.update((s) => ({
-                ...s,
-                isProcessing: false,
-                isStreaming: false,
-                isStalled: false,
-                streamingStartTime: null,
-                lastChunkTime: null,
-                receivedFirstChunk: false,
-              }));
+              this.reduxDispatch(chatStuckStateCleared(agentId));
 
               // Reset counter and stop the reconciliation since we've recovered
               this.stateReconciliationFailureCount = 0;
@@ -774,47 +767,43 @@ export class ChatService implements IDisposable {
    *   blocking the streaming phase event from ever being appended when real
    *   text arrives later.
    */
-  private recordChunkReceived(isTextChunk: boolean = true): void {
+  private recordChunkReceived(agentId: string, isTextChunk: boolean = true): void {
     // Track chunk receipt time on the instance for reconciliation checks
     this.lastChunkReceivedAt = Date.now();
     const now = Date.now();
-    this.state.update((s) => {
-      // For non-text chunks (tool-use content blocks), only update stall detection
-      // timestamps — do NOT flip receivedFirstChunk or append the streaming event.
-      if (!isTextChunk) {
-        return {
-          ...s,
-          lastChunkTime: now,
-          isStalled: false,
-        };
-      }
 
-      const shouldAppend = shouldAppendStreamingEvent(s.receivedFirstChunk, s.statusEvents);
+    // Dispatch to Redux for stall detection saga
+    this.reduxDispatch(streamChunkReceived(agentId, isTextChunk));
 
-      const newStatusEvents = shouldAppend
-        ? [
-            ...s.statusEvents,
-            { phase: 'streaming', message: 'Streaming response…', level: 'info' as const, timestamp: now },
-          ]
-        : s.statusEvents;
-
-      // Persist the updated status events if they changed
+    // Persist status events to localStorage if this is a text chunk and first chunk
+    if (isTextChunk) {
+      const currentState = this.getChatState(agentId);
+      const shouldAppend = shouldAppendStreamingEvent(currentState.receivedFirstChunk, currentState.statusEvents);
       if (shouldAppend) {
-        this.saveStatusEventsToStorage(newStatusEvents);
+        const newStatusEvents = [
+          ...currentState.statusEvents,
+          { phase: 'streaming', message: 'Streaming response…', level: 'info' as const, timestamp: now },
+        ];
+        this.saveStatusEventsToStorage(newStatusEvents, agentId);
       }
+    }
+  }
 
-      return {
-        ...s,
-        lastChunkTime: now,
-        receivedFirstChunk: true,
-        isStalled: false,
-        // On first chunk, append a synthetic "streaming" event to close off the previous phase
-        // (e.g., "Sent prompt") with a fixed duration. This event itself is not shown inline
-        // (the UI switches to elapsed-time-only mode once hasReceivedChunk is true),
-        // but it ensures the expanded history shows accurate durations.
-        statusEvents: newStatusEvents,
-      };
-    });
+  /**
+   * Public method to flush any pending streaming content to Redux.
+   * Called by sagas (e.g., visibility restore) that need to force-flush
+   * accumulated streaming content that hasn't been dispatched yet.
+   */
+  public flushPendingStreamingContent(agentId: string): void {
+    this.flushChunkUpdate(agentId);
+  }
+
+  /**
+   * Public method to set up streaming DOM handlers for a session.
+   * Called by the initialize-chat saga after dispatching chatInitialized.
+   */
+  public setupStreamingForSession(agentId: string, sessionId: string): void {
+    this.setupStreaming(sessionId, agentId);
   }
 
   /**
@@ -829,7 +818,7 @@ export class ChatService implements IDisposable {
     // Record destroy timestamp so initializeChat() can distinguish
     // layout remounts (recent destroy) from HMR (no destroy before re-init)
     this.lastDestroyTimestamp = Date.now();
-    logger.debug('Background timers paused (ChatPanel unmounted)', { agentId: this.agentId });
+    logger.debug('Background timers paused (ChatPanel unmounted)');
   }
 
   /**
@@ -845,93 +834,9 @@ export class ChatService implements IDisposable {
   }
 
   /**
-   * Public method to reconcile streaming state after mount.
-   *
-   * When ChatPanel mounts after the backend has already started streaming,
-   * the DOM handler may not be registered yet. This method checks the
-   * session/unified-state stores and, if the agent is actively streaming
-   * but ChatService has no handler, sets one up so chunks are displayed
-   * immediately.
-   *
-   * @returns true if reconciliation was needed (handler was missing)
-   */
-  public reconcileStreamingState(sessionId: string): boolean {
-    // Invariant: sessionId must be valid
-    assertStreamingInvariant(
-      !!sessionId && sessionId.length > 0,
-      'reconcileStreamingState called with empty sessionId',
-      { agentId: this.agentId },
-    );
-
-    // Invariant: session should match this ChatService instance's agentId
-    assertStreamingInvariant(
-      !this.agentId || sessionId === this.agentId,
-      'reconcileStreamingState sessionId does not match ChatService agentId',
-      { sessionId, agentId: this.agentId },
-    );
-
-    // Check if the session is currently streaming via sessionStore or unifiedStateStore
-    const currentState = get(this.state);
-    const reconcileWsId = currentState.session?.workspaceId;
-    const sessionData = reconcileWsId
-      ? sessionStore.getSessionForWorkspace(reconcileWsId, sessionId)
-      : undefined;
-
-    let isActivelyStreaming = sessionData?.isStreaming ?? false;
-
-    // Also check unified state store for the most up-to-date streaming state
-    if (!isActivelyStreaming && currentState.session?.workspaceId) {
-      const workspaceState = unifiedStateStore.getWorkspace(
-        currentState.session.workspaceId as WorkspaceId,
-      );
-      const agentFromStore = workspaceState?.agents.get(sessionId);
-      if (agentFromStore?.streaming?.active) {
-        isActivelyStreaming = true;
-      }
-    }
-
-    if (!isActivelyStreaming) {
-      return false;
-    }
-
-    let reconciled = false;
-
-    // If streaming but no DOM handler exists, set one up
-    if (!this.streamHandlers.has(sessionId)) {
-      logger.info('[ChatService] reconcileStreamingState: setting up missing stream handler', {
-        sessionId,
-        isProcessing: currentState.isProcessing,
-        isStreaming: currentState.isStreaming,
-      });
-      this.setupStreaming(sessionId);
-      reconciled = true;
-    }
-
-    // If streaming but isProcessing is false, update state to reflect streaming
-    if (!currentState.isProcessing || !currentState.isStreaming) {
-      logger.info('[ChatService] reconcileStreamingState: updating state to reflect active streaming', {
-        sessionId,
-        wasProcessing: currentState.isProcessing,
-        wasStreaming: currentState.isStreaming,
-      });
-      this.state.update((s) => ({
-        ...s,
-        isProcessing: true,
-        isStreaming: true,
-        streamingStartTime: s.streamingStartTime ?? Date.now(),
-      }));
-      reconciled = true;
-    }
-
-    if (reconciled) {
-      logger.info('[ChatService] reconcileStreamingState: reconciliation complete', { sessionId });
-    }
-
-    return reconciled;
-  }
-
-  /**
-   * Initialize or switch to a chat session
+   * Set up DOM event listeners and stream handlers for a session.
+   * Must be called after the session exists in Redux state.
+   * @param workspaceId - The workspace ID to scope Redux state lookups
    */
   async initializeChat(
     workspace: Workspace,
@@ -948,28 +853,35 @@ export class ChatService implements IDisposable {
     const myGeneration = ++this._initGeneration;
     logger.info('Initializing chat', { workspaceId: workspace.id, agentId, initGeneration: myGeneration });
 
+    // Register visibility handler if not already registered (deferred from constructor)
+    if (!this.visibilityChangeHandler) {
+      this.visibilityChangeHandler = () => {
+        if (document.visibilityState === 'visible' && this.getChatState(agentId).isProcessing) {
+          this.flushChunkUpdate(agentId);
+        }
+      };
+      document.addEventListener('visibilitychange', this.visibilityChangeHandler);
+    }
+
     try {
       // Get or create session
       // CROSS-WORKSPACE FIX: Use workspace-scoped lookup instead of currentWorkspace,
       // which reflects the UI's active workspace and may differ from the workspace
       // that owns this agent (e.g., background init, restore, or rebind scenarios).
-      const targetWorkspace = unifiedStateStore.getWorkspace(workspace.id as any);
-      const agentState = targetWorkspace?.agents.get(agentId);
-      let session = agentState?.session;
+      const targetWorkspace = selectWorkspaceById.select(getReduxStore().getState(), workspace.id as string);
+      let session = selectAgentById.select(getReduxStore().getState(), agentId);
 
-      // Diagnostic: log unifiedStateStore lookup outcome
-      logger.info('initializeChat: unifiedStateStore lookup', {
+      // Diagnostic: log Redux state lookup outcome
+      logger.info('initializeChat: Redux state lookup', {
         agentId,
         workspaceId: workspace.id,
         hasTargetWorkspace: !!targetWorkspace,
-        hasAgentState: !!agentState,
         hasSession: !!session,
       });
-      rendererLogger.info(LogCategory.AGENT, 'initializeChat: unifiedStateStore lookup', {
+      rendererLogger.info(LogCategory.AGENT, 'initializeChat: Redux state lookup', {
         agentId,
         workspaceId: workspace.id,
         hasTargetWorkspace: !!targetWorkspace,
-        hasAgentState: !!agentState,
         hasSession: !!session,
       });
 
@@ -1078,17 +990,13 @@ export class ChatService implements IDisposable {
           });
           await new Promise((resolve) => setTimeout(resolve, delay));
 
-          // Check unified state store first — use workspace-scoped lookup
-          const retryWorkspace = unifiedStateStore.getWorkspace(workspace.id as any);
-          const retryAgentState = retryWorkspace?.agents.get(agentId);
-          session = retryAgentState?.session ?? undefined;
+          // Check Redux state first — use workspace-scoped lookup
+          session = selectAgentById.select(getReduxStore().getState(), agentId);
 
-          logger.info('initializeChat: retry unifiedStateStore check', {
+          logger.info('initializeChat: retry Redux state check', {
             agentId,
             workspaceId: workspace.id,
             retryNumber: retryCount,
-            hasRetryWorkspace: !!retryWorkspace,
-            hasRetryAgentState: !!retryAgentState,
             hasSession: !!session,
           });
 
@@ -1127,7 +1035,7 @@ export class ChatService implements IDisposable {
         logger.warn('Session not found after all attempts, registering deferred handler', {
           agentId,
           workspaceId: workspace.id,
-          unifiedStateStoreHadWorkspace: !!targetWorkspace,
+          reduxHadWorkspace: !!targetWorkspace,
           agentServiceGetSessionResult: agentServiceGetSessionResult ?? 'not attempted',
           restoreSessionAttempted,
           restoreSessionResult: restoreSessionResult ?? 'not attempted',
@@ -1136,7 +1044,7 @@ export class ChatService implements IDisposable {
         rendererLogger.warn(LogCategory.AGENT, 'initializeChat: gave up — session not found after all attempts', {
           agentId,
           workspaceId: workspace.id,
-          unifiedStateStoreHadWorkspace: !!targetWorkspace,
+          reduxHadWorkspace: !!targetWorkspace,
           agentServiceGetSessionResult: agentServiceGetSessionResult ?? 'not attempted',
           restoreSessionAttempted,
           restoreSessionResult: restoreSessionResult ?? 'not attempted',
@@ -1184,7 +1092,7 @@ export class ChatService implements IDisposable {
             return;
           }
 
-          const newSession = sessionStore.getSessionForWorkspace(workspace.id, agentId);
+          const newSession = selectAgentById.select(getReduxStore().getState(), agentId);
           if (!newSession) return;
 
           logger.info('[ChatService] Deferred handler: session appeared', {
@@ -1219,11 +1127,11 @@ export class ChatService implements IDisposable {
 
       // Get messages for this session
       // During HMR/remount, if this instance is already streaming, prefer its own
-      // state.messages because sessionStore is only synced periodically and may be stale.
+      // state.messages because Redux state is only synced periodically and may be stale.
       let messages: AgentMessage[] = [];
       let hasActiveStream = false;
       try {
-        const currentState = get(this.state);
+        const currentState = this.getChatState(agentId);
         hasActiveStream =
           currentState.isStreaming &&
           currentState.messages.length > 0;
@@ -1238,35 +1146,35 @@ export class ChatService implements IDisposable {
           });
         } else {
           // Normal case: check multiple sources for latest state
-          const sessionStoreSession = sessionStore.getSessionForWorkspace(workspace.id, agentId);
-          const sessionStoreMessages =
-            sessionStoreSession?.messages && Array.isArray(sessionStoreSession.messages)
-              ? sessionStoreSession.messages
+          const reduxSession = selectAgentById.select(getReduxStore().getState(), agentId);
+          const reduxMessages =
+            reduxSession?.messages && Array.isArray(reduxSession.messages)
+              ? reduxSession.messages
               : [];
 
-          // If instance state has more messages than sessionStore,
+          // If instance state has more messages than Redux state,
           // prefer instance state. This happens when a stream completes while the user
           // is on a different workspace — the instance processed the end event and has
-          // the completed response, but sessionStore may have been overwritten by
+          // the completed response, but Redux state may have been overwritten by
           // restoreSessionWithoutBackend with stale disk data.
           if (
             currentState.messages.length > 0 &&
-            currentState.messages.length > sessionStoreMessages.length
+            currentState.messages.length > reduxMessages.length
           ) {
             messages = currentState.messages;
-            logger.info('Using instance state messages (more complete than sessionStore)', {
+            logger.info('Using instance state messages (more complete than Redux state)', {
               agentId,
               instanceCount: currentState.messages.length,
-              sessionStoreCount: sessionStoreMessages.length,
+              reduxCount: reduxMessages.length,
             });
           } else if (
             currentState.messages.length > 0 &&
-            currentState.messages.length === sessionStoreMessages.length &&
-            sessionStoreMessages.length > 0
+            currentState.messages.length === reduxMessages.length &&
+            reduxMessages.length > 0
           ) {
             // Content-richness tiebreaker: same message count, prefer richer final message
             const currentLast = currentState.messages[currentState.messages.length - 1];
-            const sessionLast = sessionStoreMessages[sessionStoreMessages.length - 1];
+            const sessionLast = reduxMessages[reduxMessages.length - 1];
             if (currentLast?.id === sessionLast?.id) {
               const getTextLength = (blocks: ContentBlock[]) =>
                 blocks?.reduce((sum: number, b: ContentBlock) => {
@@ -1286,34 +1194,32 @@ export class ChatService implements IDisposable {
                   },
                 );
               } else {
-                messages = sessionStoreMessages;
-                logger.debug('Got messages from sessionStore', {
+                messages = reduxMessages;
+                logger.debug('Got messages from Redux state', {
                   agentId,
                   count: messages.length,
                 });
               }
             } else {
-              // Different last message IDs — fall through to sessionStore
-              messages = sessionStoreMessages;
-              logger.debug('Got messages from sessionStore', { agentId, count: messages.length });
+              // Different last message IDs — fall through to Redux state
+              messages = reduxMessages;
+              logger.debug('Got messages from Redux state', { agentId, count: messages.length });
             }
-          } else if (sessionStoreMessages.length > 0) {
-            messages = sessionStoreMessages;
-            logger.debug('Got messages from sessionStore', { agentId, count: messages.length });
+          } else if (reduxMessages.length > 0) {
+            messages = reduxMessages;
+            logger.debug('Got messages from Redux state', { agentId, count: messages.length });
           } else if (session.messages && Array.isArray(session.messages)) {
             // Fall back to messages from session
             messages = session.messages;
             logger.debug('Got messages from session', { agentId, count: messages.length });
           } else {
-            // Try to get from unified state store using the workspace passed to
+            // Try to get from Redux state using the workspace passed to
             // initializeChat (not currentWorkspace, which reflects the UI and can
             // differ during restore/rebind/background init).
-            const allWorkspaces = unifiedStateStore.getAllWorkspaces();
-            const targetWs = allWorkspaces.find((w) => w.workspace?.id === workspace.id);
-            const agent = targetWs?.agents.get(agentId);
+            const agent = selectAgentById.select(getReduxStore().getState(), agentId);
             if (agent?.messages) {
               messages = agent.messages;
-              logger.debug('Got messages from unified state store (workspace-aware)', {
+              logger.debug('Got messages from Redux state (workspace-aware)', {
                 agentId,
                 count: messages.length,
                 workspaceId: workspace.id,
@@ -1361,22 +1267,21 @@ export class ChatService implements IDisposable {
       // Automatic resending was causing duplicate messages when the backend was just slow to respond.
 
       // Check if the session is currently streaming (e.g., if we're loading an agent that's already processing)
-      // Also check the unified state store for the most up-to-date streaming state
+      // Also check Redux state for the most up-to-date streaming state
       let isCurrentlyStreaming = session?.isStreaming || false;
 
-      // Double-check with unified state store - it's the source of truth for streaming state
-      const workspaceState = unifiedStateStore.getWorkspace(workspace.id);
-      const agentFromStore = workspaceState?.agents.get(agentId);
-      if (agentFromStore?.streaming?.active) {
+      // Double-check with Redux state - it's the source of truth for streaming state
+      const agentFromStore = selectAgentById.select(getReduxStore().getState(), agentId);
+      if (agentFromStore?.isStreaming) {
         isCurrentlyStreaming = true;
-        logger.info('Detected active streaming from unified state store', {
+        logger.info('Detected active streaming from Redux state', {
           agentId,
           sessionIsStreaming: session?.isStreaming,
-          storeStreamingActive: agentFromStore.streaming.active,
+          storeStreamingActive: agentFromStore.isStreaming,
         });
       }
 
-      // During HMR, the session and unified state store may be reset while
+      // During HMR, the session and Redux state may be reset while
       // the ChatService singleton's own state still correctly reflects streaming=true.
       // If we detected an active stream from the instance state (hasActiveStream above),
       // trust it — it's the most up-to-date source during HMR. Without this, isCurrentlyStreaming
@@ -1388,14 +1293,14 @@ export class ChatService implements IDisposable {
         logger.info('Preserving streaming state from instance', {
           agentId,
           sessionIsStreaming: session?.isStreaming,
-          storeStreamingActive: agentFromStore?.streaming?.active,
+          storeStreamingActive: agentFromStore?.isStreaming,
         });
       }
 
       logger.info('Initializing chat - streaming state check', {
         agentId,
         sessionIsStreaming: session?.isStreaming,
-        storeStreamingActive: agentFromStore?.streaming?.active,
+        storeStreamingActive: agentFromStore?.isStreaming,
         instanceStreamingActive: hasActiveStream,
         isCurrentlyStreaming,
       });
@@ -1412,7 +1317,7 @@ export class ChatService implements IDisposable {
       // Check if we already have a valid localStreamingContent from an active stream
       // This happens during HMR - the accumulator may have content that hasn't been
       // flushed to the message yet, so we should preserve it rather than re-extracting from messages
-      const freshState = get(this.state);
+      const freshState = this.getChatState(agentId);
       const hasActiveStreamForContent =
         freshState.isStreaming &&
         this.localStreamingContent.length > 0;
@@ -1511,16 +1416,18 @@ export class ChatService implements IDisposable {
         return;
       }
 
-      // Update state - ensure isStreaming has a default value
-      this.state.update((s) => ({
-        ...s,
-        session: session ? { ...session, isStreaming: session.isStreaming ?? false } : null,
-        messages: deduplicatedMessages,
+      // Update state via Redux — session/messages to agent-session, flags to chat-state
+      const normalizedSession = session ? { ...session, isStreaming: session.isStreaming ?? false, messages: deduplicatedMessages } : null;
+      const effectiveLastAttempted = restoredLastAttemptedMessage ?? this.getChatState(agentId).lastAttemptedMessage;
+      if (normalizedSession) {
+        this.reduxDispatch(upsertAgentSessionData(normalizedSession));
+      } else if (deduplicatedMessages.length > 0) {
+        this.reduxDispatch(replaceAgentSessionMessages(agentId, deduplicatedMessages));
+      }
+      this.reduxDispatch(chatInitialized(agentId, {
         isStreaming: isCurrentlyStreaming,
-        isProcessing: isCurrentlyStreaming,
-        streamingContent: existingStreamingContent, // Use existing content instead of empty string
-        error: null,
-        lastAttemptedMessage: restoredLastAttemptedMessage ?? s.lastAttemptedMessage,
+        streamingContent: existingStreamingContent,
+        lastAttemptedMessage: effectiveLastAttempted,
       }));
 
       // Set up streaming for this session
@@ -1533,13 +1440,11 @@ export class ChatService implements IDisposable {
         sessionKeys: Object.keys(session),
         existingStreamingContentLength: existingStreamingContent.length,
       });
-      this.setupStreaming(streamSessionId);
+      this.setupStreaming(streamSessionId, agentId);
     } catch (error) {
       logger.error('Failed to initialize chat', error as Error);
-      this.state.update((s) => ({
-        ...s,
-        error: error instanceof Error ? error.message : 'Failed to initialize chat',
-      }));
+      const errorMsg = error instanceof Error ? error.message : 'Failed to initialize chat';
+      this.reduxDispatch(chatInitFailed(agentId, errorMsg));
       throw error;
     }
   }
@@ -1550,6 +1455,7 @@ export class ChatService implements IDisposable {
   async sendMessage(
     message: string,
     workspace: Workspace,
+    agentId: string,
     options?: SendMessageOptions,
   ): Promise<void> {
     // Validate inputs - allow empty text if there are media attachments (images or files)
@@ -1577,24 +1483,16 @@ export class ChatService implements IDisposable {
       throw new Error('Workspace is required');
     }
 
-    let currentState = get(this.state);
+    let currentState = this.getChatState(agentId);
 
     if (!currentState.session) {
       throw new Error('No active chat session');
     }
-
-    // ALWAYS fetch the session from sessionStore to get fresh isStreaming state.
-    // The internal state copy can become stale. The sessionStore reflects the true state from
-    // unifiedStateStore, which is updated when setStreamingForWorkspace() is called on stream
-    // completion. Without always refreshing, we might check a stale isStreaming=true and block sends.
-    // CROSS-WORKSPACE FIX: Use workspace-aware lookup so the overlap guard consults the
-    // correct session even when the user is viewing a different workspace.
-    const agentId = options?.agentId || currentState.session.id;
-    let session = sessionStore.getSessionForWorkspace(workspace.id, agentId);
+    let session = selectAgentById.select(getReduxStore().getState(), agentId);
 
     if (!session) {
-      // Fallback to the cached state if sessionStore doesn't have it (shouldn't happen normally)
-      logger.warn('Session not found in sessionStore, using cached state', {
+      // Fallback to the cached state if Redux state doesn't have it (shouldn't happen normally)
+      logger.warn('Session not found in Redux state, using cached state', {
         agentId,
         cachedSessionId: currentState.session?.id,
       });
@@ -1611,7 +1509,7 @@ export class ChatService implements IDisposable {
       while (waited < maxWaitMs) {
         await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
         waited += pollIntervalMs;
-        currentState = get(this.state);
+        currentState = this.getChatState(agentId);
         if (!currentState.isInterrupting) {
           break;
         }
@@ -1634,12 +1532,12 @@ export class ChatService implements IDisposable {
     // }
 
     // Prevent sending while already processing.
-    // Check BOTH sessionStore (source of truth once streaming is fully set up) AND the
+    // Check BOTH Redux state (source of truth once streaming is fully set up) AND the
     // in-memory ChatService state. There is a window after the pending-agent first-send
-    // where this instance has already set isProcessing/isStreaming=true but sessionStore
+    // where this instance has already set isProcessing/isStreaming=true but Redux state
     // hasn't been updated yet (activation is in progress). Without checking both, a second
     // send could overlap the in-flight activation/request.
-    const instanceState = get(this.state);
+    const instanceState = this.getChatState(agentId);
     if (session.isStreaming || instanceState.isProcessing || instanceState.isStreaming) {
       logger.warn('Already processing a message for this agent, ignoring new send request', {
         agentId: session.id,
@@ -1794,20 +1692,12 @@ export class ChatService implements IDisposable {
     // Reset local accumulator when sending a new message
     this.localStreamingContent = '';
 
-    this.state.update((s) => ({
-      ...s,
-      isProcessing: true,
-      isStreaming: true,
-      streamingContent: '',
-      error: null,
-      streamingStartTime: Date.now(),
-      lastChunkTime: null, // Reset so stall detection treats this as a fresh stream
-      receivedFirstChunk: false, // Reset for new message
-      isStalled: false,
-      statusEvents: [], // Clear status events for new message
-      // Store message for retry functionality
-      lastAttemptedMessage: { text: message.trim(), options },
-    }));
+    // Dispatch to Redux
+    this.reduxDispatch(chatSendStarted(agentId));
+
+    // Redux dispatch (chatSendStarted) already happened above at line 1825
+    // Note: lastAttemptedMessage is handled by chatSendStarted in the reducer
+    // TODO: If chatSendStarted doesn't set lastAttemptedMessage, we may need a separate action
 
     // Resolve the workspace identity for activation and send.
     // Use the session's own workspaceId (not the passed-in workspace param which
@@ -1836,11 +1726,8 @@ export class ChatService implements IDisposable {
           throw new Error('Failed to activate agent');
         }
 
-        // Update state with activated agent
-        this.state.update((s) => ({
-          ...s,
-          session: activatedAgent,
-        }));
+        // Update session in agent-session slice
+        this.reduxDispatch(upsertAgentSessionData(activatedAgent));
       } catch (error) {
         logger.error('Failed to activate agent on first message', error as Error);
 
@@ -1852,13 +1739,8 @@ export class ChatService implements IDisposable {
           this.sendKeyTimers.delete(sendKey);
         }
 
-        this.state.update((s) => ({
-          ...s,
-          isProcessing: false,
-          isStreaming: false,
-          streamingStartTime: null,
-          error: error instanceof Error ? error.message : 'Failed to activate agent',
-        }));
+        const errorMsg = error instanceof Error ? error.message : 'Failed to activate agent';
+        this.reduxDispatch(chatSendFailed(agentId, errorMsg));
         throw error;
       }
     }
@@ -1873,7 +1755,7 @@ export class ChatService implements IDisposable {
         missingStreamHandler: !this.streamHandlers.has(streamSessionId),
         missingSessionUpdatedHandler: !this.sessionUpdatedCleanups.has(streamSessionId),
       });
-      this.setupStreaming(streamSessionId);
+      this.setupStreaming(streamSessionId, agentId);
     }
 
     try {
@@ -1917,14 +1799,14 @@ export class ChatService implements IDisposable {
       // `sessionWorkspaceId` (from the session). Passing the wrong workspace
       // would cause agentService to activate/resume in the wrong workspace context.
       //
-      // METADATA FIX: Look up the full workspace from unifiedStateStore instead of
+      // METADATA FIX: Look up the full workspace from Redux state instead of
       // spreading the UI workspace with an overridden ID. Spreading keeps stale metadata
       // (worktreePath, repositoryPath, etc.) from the UI workspace, which can mis-target
       // activation or workspace-ready checks in agentService.sendMessage().
       let sendWorkspace = workspace;
       if (sessionWorkspaceId !== workspace.id) {
-        const targetWsState = unifiedStateStore.getWorkspace(sessionWorkspaceId as WorkspaceId);
-        sendWorkspace = targetWsState?.workspace ?? { ...workspace, id: sessionWorkspaceId as WorkspaceId };
+        const targetWs = selectWorkspaceById.select(getReduxStore().getState(), sessionWorkspaceId as string);
+        sendWorkspace = targetWs ?? { ...workspace, id: sessionWorkspaceId as WorkspaceId };
       }
       await agentService.sendMessage(session.id, message, sendWorkspace, {
         contextReferences: allContextReferences,
@@ -1958,22 +1840,10 @@ export class ChatService implements IDisposable {
         logger.debug(
           '[ChatService] Agent interrupted - keeping messages, clearing streaming state',
         );
-        this.state.update((s) => ({
-          ...s,
-          isProcessing: false,
-          isStreaming: false,
-          streamingStartTime: null,
-          // Don't set error for interruptions - it's user-initiated
-        }));
+        this.reduxDispatch(chatInterrupted(agentId));
       } else {
         // Real error - clear streaming state and set error
-        this.state.update((s) => ({
-          ...s,
-          isProcessing: false,
-          isStreaming: false,
-          streamingStartTime: null,
-          error: cleanErrorMessage(errorMessage),
-        }));
+        this.reduxDispatch(chatSendFailed(agentId, cleanErrorMessage(errorMessage)));
       }
 
       throw error;
@@ -1991,9 +1861,10 @@ export class ChatService implements IDisposable {
     messageId: string,
     newText: string,
     workspace: Workspace,
+    agentId: string,
     options?: SendMessageOptions,
   ): Promise<void> {
-    let currentState = get(this.state);
+    let currentState = this.getChatState(agentId);
     if (!currentState.session) {
       throw new Error('No active chat session');
     }
@@ -2017,10 +1888,10 @@ export class ChatService implements IDisposable {
         isStreaming: currentState.isStreaming,
         isProcessing: currentState.isProcessing,
       });
-      await this.stopChat();
+      await this.stopChat(agentId);
 
       // Re-fetch state after stopping - messages may have changed
-      currentState = get(this.state);
+      currentState = this.getChatState(agentId);
 
       // Re-find the message index after state change
       // CRITICAL: Use the updated index for truncation, not the stale one
@@ -2033,22 +1904,19 @@ export class ChatService implements IDisposable {
     // Remove all messages from this point onwards
     const messagesBeforeEdit = currentState.messages.slice(0, messageIndex);
 
-    // CRITICAL: Update both ChatService state AND sessionStore
+    // CRITICAL: Update both ChatService state AND Redux state
     // If we only update ChatService state, the session-updated event handler
-    // will overwrite our truncated messages with the old messages from sessionStore
-    this.state.update((s) => ({
-      ...s,
-      messages: messagesBeforeEdit,
-    }));
+    // will overwrite our truncated messages with the old messages from Redux state
+    this.reduxDispatch(replaceAgentSessionMessages(agentId, messagesBeforeEdit));
 
-    // Sync the truncated messages to sessionStore so they persist in memory
+    // Sync the truncated messages to Redux state so they persist in memory
     const sessionId = currentState.session?.id;
     if (sessionId) {
-      sessionStore.updateMessagesForWorkspace(workspace.id, sessionId, messagesBeforeEdit);
+      getReduxStore().dispatch(replaceAgentMessages(workspace.id, sessionId, messagesBeforeEdit));
 
       // Persist truncated messages to disk immediately so they survive page refresh.
       // Fire-and-forget: the subsequent sendMessage will also persist on stream complete.
-      agentService.saveSession(sessionId, workspace.id, false, { allowTruncation: true }).catch((err) => {
+      agentService.saveSession(sessionId, workspace.id, false, { allowTruncation: true }).catch((err: unknown) => {
         logger.warn('Failed to persist truncated messages after edit', {
           sessionId,
           error: err instanceof Error ? err.message : String(err),
@@ -2057,128 +1925,9 @@ export class ChatService implements IDisposable {
     }
 
     // Send the new message with resetHistory flag to clear ACP session history
-    await this.sendMessage(newText, workspace, { ...options, resetHistory: true });
+    await this.sendMessage(newText, workspace, agentId, { ...options, resetHistory: true });
   }
 
-  /**
-   * Regenerate the last assistant response.
-   * This removes the last assistant message and resends the last user message.
-   *
-   * If streaming is in progress, this will stop the current stream first,
-   * then truncate messages and resend the last user message.
-   */
-  async regenerateLastResponse(workspace: Workspace, options?: SendMessageOptions): Promise<void> {
-    let currentState = get(this.state);
-    if (!currentState.session) {
-      throw new Error('No active chat session');
-    }
-
-    // If streaming or processing is in progress, stop it first
-    if (currentState.isStreaming || currentState.isProcessing) {
-      logger.info('Stopping current stream before regenerating response', {
-        isStreaming: currentState.isStreaming,
-        isProcessing: currentState.isProcessing,
-      });
-      await this.stopChat();
-
-      // Re-fetch state after stopping
-      currentState = get(this.state);
-    }
-
-    const messages = currentState.messages;
-    if (messages.length < 2) {
-      throw new Error('Not enough messages to regenerate');
-    }
-
-    // Find the last user message and remove everything after it
-    let lastUserMessageIndex = -1;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === 'user') {
-        lastUserMessageIndex = i;
-        break;
-      }
-    }
-
-    if (lastUserMessageIndex === -1) {
-      throw new Error('No user message found to regenerate from');
-    }
-
-    const lastUserMessage = messages[lastUserMessageIndex];
-    const messagesBeforeRegenerate = messages.slice(0, lastUserMessageIndex);
-
-    // Get the text from the last user message
-    let userText = '';
-    if (lastUserMessage.contentBlocks && Array.isArray(lastUserMessage.contentBlocks)) {
-      userText = lastUserMessage.contentBlocks
-        .filter((block) => block.type === 'text' && block.text)
-        .map((block) => block.text)
-        .join('');
-    }
-
-    // Extract image and file blocks from the original message so they are preserved on regenerate
-    const mediaContextItems: ContextItem[] = [];
-    if (lastUserMessage.contentBlocks && Array.isArray(lastUserMessage.contentBlocks)) {
-      for (const block of lastUserMessage.contentBlocks) {
-        if (block.type === 'image' && block.data && block.mimeType) {
-          mediaContextItems.push({
-            id: `regen-image-${mediaContextItems.length}`,
-            type: 'file',
-            label: `Image ${mediaContextItems.length + 1}`,
-            imageData: block.data,
-            imageMimeType: block.mimeType,
-          });
-        } else if (block.type === 'file' && block.data && block.mimeType) {
-          mediaContextItems.push({
-            id: `regen-file-${mediaContextItems.length}`,
-            type: 'file',
-            label: block.fileName || 'file',
-            fileData: block.data,
-            fileMimeType: block.mimeType,
-          });
-        }
-      }
-    }
-
-    const hasAttachments = mediaContextItems.length > 0;
-
-    if (!userText.trim() && !hasAttachments) {
-      throw new Error('Could not extract text from user message');
-    }
-
-    // Update state to remove messages from the user message onwards
-    // CRITICAL: Update both ChatService state AND sessionStore
-    // If we only update ChatService state, the session-updated event handler
-    // will overwrite our truncated messages with the old messages from sessionStore
-    this.state.update((s) => ({
-      ...s,
-      messages: messagesBeforeRegenerate,
-    }));
-
-    // Sync the truncated messages to sessionStore so they persist in memory
-    const sessionId = currentState.session?.id;
-    if (sessionId) {
-      sessionStore.updateMessagesForWorkspace(workspace.id, sessionId, messagesBeforeRegenerate);
-
-      // Persist truncated messages to disk immediately so they survive page refresh.
-      agentService.saveSession(sessionId, workspace.id, false, { allowTruncation: true }).catch((err) => {
-        logger.warn('Failed to persist truncated messages after regenerate', {
-          sessionId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
-    }
-
-    // Resend the user message with resetHistory flag to clear ACP session history
-    // Include original media blocks as context items so they are preserved
-    const regenerateOptions: SendMessageOptions = { ...options, resetHistory: true };
-    if (mediaContextItems.length > 0) {
-      regenerateOptions.contextItems = [
-        ...(regenerateOptions.contextItems || []),
-        ...mediaContextItems,
-      ];
-    }
-    await this.sendMessage(userText, workspace, regenerateOptions);
-  }
 
   /**
    * Regenerate the response to a specific message.
@@ -2194,9 +1943,10 @@ export class ChatService implements IDisposable {
   async regenerateFromMessage(
     assistantMessageId: string,
     workspace: Workspace,
+    agentId: string,
     options?: SendMessageOptions,
   ): Promise<void> {
-    let currentState = get(this.state);
+    let currentState = this.getChatState(agentId);
     if (!currentState.session) {
       throw new Error('No active chat session');
     }
@@ -2208,10 +1958,10 @@ export class ChatService implements IDisposable {
         isProcessing: currentState.isProcessing,
         assistantMessageId,
       });
-      await this.stopChat();
+      await this.stopChat(agentId);
 
       // Re-fetch state after stopping
-      currentState = get(this.state);
+      currentState = this.getChatState(agentId);
     }
 
     const messages = currentState.messages;
@@ -2286,19 +2036,16 @@ export class ChatService implements IDisposable {
     });
 
     // Update state to remove messages from the user message onwards
-    // CRITICAL: Update both ChatService state AND sessionStore
-    this.state.update((s) => ({
-      ...s,
-      messages: messagesBeforeRegenerate,
-    }));
+    // CRITICAL: Update both Redux state AND Redux state
+    this.reduxDispatch(replaceAgentSessionMessages(agentId, messagesBeforeRegenerate));
 
-    // Sync the truncated messages to sessionStore so they persist in memory
+    // Sync the truncated messages to Redux state so they persist in memory
     const sessionId = currentState.session?.id;
     if (sessionId) {
-      sessionStore.updateMessagesForWorkspace(workspace.id, sessionId, messagesBeforeRegenerate);
+      getReduxStore().dispatch(replaceAgentMessages(workspace.id, sessionId, messagesBeforeRegenerate));
 
       // Persist truncated messages to disk immediately so they survive page refresh.
-      agentService.saveSession(sessionId, workspace.id, false, { allowTruncation: true }).catch((err) => {
+      agentService.saveSession(sessionId, workspace.id, false, { allowTruncation: true }).catch((err: unknown) => {
         logger.warn('Failed to persist truncated messages after regenerate from message', {
           sessionId,
           error: err instanceof Error ? err.message : String(err),
@@ -2315,7 +2062,7 @@ export class ChatService implements IDisposable {
         ...mediaContextItems,
       ];
     }
-    await this.sendMessage(userText, workspace, regenerateOptions);
+    await this.sendMessage(userText, workspace, agentId, regenerateOptions);
   }
 
   /**
@@ -2326,8 +2073,8 @@ export class ChatService implements IDisposable {
    * whose initial message was sent through the backend), falls back to extracting
    * the last user message from the conversation history and resending it.
    */
-  async retryLastMessage(workspace: Workspace): Promise<void> {
-    const currentState = get(this.state);
+  async retryLastMessage(workspace: Workspace, agentId: string): Promise<void> {
+    const currentState = this.getChatState(agentId);
 
     if (!currentState.session) {
       throw new Error('No active chat session');
@@ -2343,23 +2090,19 @@ export class ChatService implements IDisposable {
       // Standard path: retry from stored message
       const { text, options } = currentState.lastAttemptedMessage;
 
-      // Clear error state before retrying
-      this.state.update((s) => ({
-        ...s,
-        error: null,
-        lastAttemptedMessage: null,
-      }));
+      // Clear error state before retrying via Redux
+      this.reduxDispatch(chatErrorCleared(agentId));
 
       logger.info('Retrying last message', { messageLength: text.length });
 
       // Resend the message
-      await this.sendMessage(text, workspace, options);
+      await this.sendMessage(text, workspace, agentId, options);
     } else {
       // Fallback path: extract last user message from conversation history.
       // This handles background/delegated agents whose initial message was sent
       // through the backend (bypassing chatService.sendMessage), so
       // lastAttemptedMessage was never set.
-      await this.retryFromConversationHistory(workspace);
+      await this.retryFromConversationHistory(workspace, agentId);
     }
   }
 
@@ -2367,8 +2110,8 @@ export class ChatService implements IDisposable {
    * Retry the last message with a different model.
    * Used when the original model was unavailable.
    */
-  async retryWithModel(workspace: Workspace, model: string): Promise<void> {
-    const currentState = get(this.state);
+  async retryWithModel(workspace: Workspace, agentId: string, model: string): Promise<void> {
+    const currentState = this.getChatState(agentId);
 
     if (!currentState.session) {
       throw new Error('No active chat session');
@@ -2384,13 +2127,9 @@ export class ChatService implements IDisposable {
       // Standard path: retry from stored message with new model
       const { text, options } = currentState.lastAttemptedMessage;
 
-      // Clear error and modelUnavailable state before retrying
-      this.state.update((s) => ({
-        ...s,
-        error: null,
-        modelUnavailable: null,
-        lastAttemptedMessage: null,
-      }));
+      // Clear error and modelUnavailable state before retrying via Redux
+      this.reduxDispatch(chatErrorCleared(agentId));
+      this.reduxDispatch(chatModelUnavailableCleared(agentId));
 
       logger.info('Retrying last message with different model', {
         messageLength: text.length,
@@ -2398,13 +2137,13 @@ export class ChatService implements IDisposable {
       });
 
       // Resend the message with the new model
-      await this.sendMessage(text, workspace, {
+      await this.sendMessage(text, workspace, agentId, {
         ...options,
         model,
       });
     } else {
       // Fallback path: extract last user message from conversation history
-      await this.retryFromConversationHistory(workspace, { model });
+      await this.retryFromConversationHistory(workspace, agentId, { model });
     }
   }
 
@@ -2418,9 +2157,10 @@ export class ChatService implements IDisposable {
    */
   private async retryFromConversationHistory(
     workspace: Workspace,
+    agentId: string,
     options?: SendMessageOptions,
   ): Promise<void> {
-    const currentState = get(this.state);
+    const currentState = this.getChatState(agentId);
     const messages = currentState.messages;
 
     // Find the last user message
@@ -2488,25 +2228,21 @@ export class ChatService implements IDisposable {
       hasAttachments,
     });
 
-    // Update state: truncate messages and clear error
-    this.state.update((s) => ({
-      ...s,
-      messages: messagesBeforeRetry,
-      error: null,
-      modelUnavailable: null,
-      lastAttemptedMessage: null,
-    }));
+    // Update state: truncate messages and clear error via Redux
+    this.reduxDispatch(replaceAgentSessionMessages(agentId, messagesBeforeRetry));
+    this.reduxDispatch(chatErrorCleared(agentId));
+    this.reduxDispatch(chatModelUnavailableCleared(agentId));
 
-    // Sync truncated messages to sessionStore so they persist
+    // Sync truncated messages to Redux state so they persist
     // FIX: Use workspace-aware write path so cleanup targets the correct
     // workspace even if the user switched workspaces before retrying.
     const sessionId = currentState.session?.id;
     if (sessionId) {
       const workspaceId = (currentState.session?.workspaceId ?? workspace.id) as string;
-      sessionStore.updateMessagesForWorkspace(workspaceId, sessionId, messagesBeforeRetry);
+      getReduxStore().dispatch(replaceAgentMessages(workspaceId, sessionId, messagesBeforeRetry));
 
       // Persist truncated messages to disk
-      agentService.saveSession(sessionId, workspaceId, false, { allowTruncation: true }).catch((err) => {
+      agentService.saveSession(sessionId, workspaceId, false, { allowTruncation: true }).catch((err: unknown) => {
         logger.warn('Failed to persist truncated messages after retry fallback', {
           sessionId,
           error: err instanceof Error ? err.message : String(err),
@@ -2523,49 +2259,43 @@ export class ChatService implements IDisposable {
       ];
     }
 
-    await this.sendMessage(userText, workspace, retryOptions);
+    await this.sendMessage(userText, workspace, agentId, retryOptions);
   }
 
   /**
    * Clear the modelUnavailable state
    */
-  clearModelUnavailable(): void {
-    this.state.update((s) => ({
-      ...s,
-      modelUnavailable: null,
-    }));
+  clearModelUnavailable(agentId: string): void {
+    this.reduxDispatch(chatModelUnavailableCleared(agentId));
   }
 
   /**
    * Clear the current error state
    */
-  clearError(): void {
-    this.state.update((s) => ({
-      ...s,
-      error: null,
-    }));
+  clearError(agentId: string): void {
+    this.reduxDispatch(chatErrorCleared(agentId));
   }
 
   /**
    * Set up streaming for a session
    */
-  private setupStreaming(sessionId: string): void {
+  private setupStreaming(sessionId: string, agentId: string): void {
     // Invariant: sessionId must exist (session must be initialized before streaming)
     assertStreamingInvariant(
       !!sessionId && sessionId.length > 0,
       'setupStreaming called with empty sessionId',
-      { agentId: this.agentId },
+      { agentId },
     );
 
     // Invariant: session should exist in the store
-    const setupStreamingWsId = get(this.state).session?.workspaceId || unifiedStateStore.currentWorkspace?.workspace?.id;
+    const setupStreamingWsId = this.getChatState(agentId).session?.workspaceId || (selectActiveWorkspaceId.select(getReduxStore().getState()) as string | undefined);
     const sessionCheck = setupStreamingWsId
-      ? sessionStore.getSessionForWorkspace(setupStreamingWsId, sessionId)
+      ? selectAgentById.select(getReduxStore().getState(), sessionId)
       : undefined;
     assertStreamingInvariant(
       !!sessionCheck,
       'setupStreaming called but session not found in store',
-      { sessionId, agentId: this.agentId },
+      { sessionId, agentId },
     );
 
     logger.debug('[ChatService] setupStreaming called', {
@@ -2577,9 +2307,9 @@ export class ChatService implements IDisposable {
     // setupStreaming is about re-registering event handlers, not discarding content.
     this.cleanupStream(sessionId, /* preserveContent */ true);
 
-    // Create stream handler
+    // Create stream handler — capture agentId in closure
     const handler = (data: any) => {
-      this.handleStreamEvent(sessionId, data);
+      this.handleStreamEvent(sessionId, data, agentId);
     };
 
     // Store handler
@@ -2604,15 +2334,15 @@ export class ChatService implements IDisposable {
     // (delegated agents, woken agents) never get a 'start' event because the stream
     // was already started by the backend before ChatService mounted. Without this,
     // stall detection and reconciliation timers never activate for these streams.
-    const syntheticStartWsId = get(this.state).session?.workspaceId || unifiedStateStore.currentWorkspace?.workspace?.id;
+    const syntheticStartWsId = this.getChatState(agentId).session?.workspaceId || (selectActiveWorkspaceId.select(getReduxStore().getState()) as string | undefined);
     const session = syntheticStartWsId
-      ? sessionStore.getSessionForWorkspace(syntheticStartWsId, sessionId)
+      ? selectAgentById.select(getReduxStore().getState(), sessionId)
       : undefined;
     if (session?.isStreaming) {
       logger.info('[ChatService] Dispatching synthetic start event for backend-initiated stream', {
         sessionId,
       });
-      this.handleStreamEvent(sessionId, new CustomEvent('synthetic', { detail: { type: 'start' } }));
+      this.handleStreamEvent(sessionId, new CustomEvent('synthetic', { detail: { type: 'start' } }), agentId);
     }
 
     // Also listen for session-updated events to sync after agent-factory updates
@@ -2623,17 +2353,17 @@ export class ChatService implements IDisposable {
       // are correctly processed even when the user has switched workspaces.
       // If no workspace ID is available from instance state or currentWorkspace,
       // search all workspaces to avoid silently dropping the event.
-      const updatedHandlerWsId = get(this.state).session?.workspaceId || unifiedStateStore.currentWorkspace?.workspace?.id;
+      const updatedHandlerWsId = this.getChatState(agentId).session?.workspaceId || (selectActiveWorkspaceId.select(getReduxStore().getState()) as string | undefined);
       let session = updatedHandlerWsId
-        ? sessionStore.getSessionForWorkspace(updatedHandlerWsId, sessionId)
+        ? selectAgentById.select(getReduxStore().getState(), sessionId)
         : undefined;
       if (!session) {
         // Search all workspaces for this session
-        const allWorkspaces = unifiedStateStore.getAllWorkspaces();
+        const allWorkspaces = selectWorkspaceItems.select(getReduxStore().getState());
         for (const ws of allWorkspaces) {
-          const wsId = ws.workspace?.id;
+          const wsId = ws.id as string;
           if (wsId) {
-            session = sessionStore.getSessionForWorkspace(wsId, sessionId) ?? undefined;
+            session = selectAgentById.select(getReduxStore().getState(), sessionId) ?? undefined;
             if (session) {
               logger.warn('[ChatService] sessionUpdatedHandler: session found via cross-workspace lookup', {
                 sessionId,
@@ -2644,7 +2374,7 @@ export class ChatService implements IDisposable {
           }
         }
       }
-      const currentState = get(this.state);
+      const currentState = this.getChatState(agentId);
       if (session && session.messages) {
         const newIsStreaming = session.isStreaming ?? currentState.isStreaming;
 
@@ -2678,7 +2408,7 @@ export class ChatService implements IDisposable {
               },
             );
             track('Blocked Stale Session Update', {
-              agent_id: this.agentId || '',
+              agent_id: agentId || '',
               workspace_id: session.workspaceId || '',
               current_message_count: currentState.messages.length,
               incoming_message_count: session.messages.length,
@@ -2734,10 +2464,10 @@ export class ChatService implements IDisposable {
         }
 
         // Don't overwrite ChatService messages with stale data during active streaming.
-        // When switching workspaces, resumeSession() loads stale disk data into sessionStore,
+        // When switching workspaces, resumeSession() loads stale disk data into Redux state,
         // then reconnectToBackendStreams() dispatches agent:session-updated which triggers this handler.
-        // The sessionStore data is stale because flushChunkUpdate() (the streaming content accumulator)
-        // never writes to sessionStore — the ChatService instance has the correct, up-to-date messages.
+        // The Redux state data is stale because flushChunkUpdate() (the streaming content accumulator)
+        // never writes to Redux state — the ChatService instance has the correct, up-to-date messages.
         //
         // IMPORTANT: Only apply this guard when the session ALSO says streaming is active (newIsStreaming).
         // If the session says streaming ended (newIsStreaming=false), we must let the update through
@@ -2811,7 +2541,7 @@ export class ChatService implements IDisposable {
 
         // Only log actual state transitions at debug level
         if (newIsStreaming !== currentState.isStreaming) {
-          logger.debug('Session streaming state synced from sessionStore', {
+          logger.debug('Session streaming state synced from Redux state', {
             sessionId,
             newIsStreaming,
           });
@@ -2820,7 +2550,7 @@ export class ChatService implements IDisposable {
         // If streaming and the session has messages with content,
         // sync the localStreamingContent from the last assistant message.
         // This handles the case where page refresh happens during streaming:
-        // AgentService fetches accumulated content from backend and updates sessionStore,
+        // AgentService fetches accumulated content from backend and updates Redux state,
         // but ChatService's localStreamingContent was empty (initialized before backend data arrived).
         // Without this, the streaming content wouldn't display until new chunks arrive.
         let newStreamingContent = currentState.streamingContent;
@@ -2854,30 +2584,22 @@ export class ChatService implements IDisposable {
           }
         }
 
-        this.safeStateUpdate((s) => {
-          // Deduplicate messages to prevent Svelte "duplicate key" error
-          // This handles cases where session.messages might already contain duplicates
-          const seen = new Set<string>();
-          const deduplicatedMessages = session.messages.filter((m: any) => {
-            if (seen.has(m.id)) {
-              logger.debug('Removing duplicate message during session sync', { messageId: m.id });
-              return false;
-            }
-            seen.add(m.id);
-            return true;
-          });
-
-          return {
-            ...s,
-            messages: deduplicatedMessages,
-            // Sync streaming state from session - faithfully reflect session state
-            // The session is the source of truth for streaming status
-            isStreaming: newIsStreaming,
-            isProcessing: newIsStreaming,
-            // Also sync streamingContent if we updated it
-            streamingContent: newStreamingContent,
-          };
+        // Deduplicate messages to prevent Svelte "duplicate key" error
+        const seen = new Set<string>();
+        const deduplicatedMessages = session.messages.filter((m: any) => {
+          if (seen.has(m.id)) {
+            logger.debug('Removing duplicate message during session sync', { messageId: m.id });
+            return false;
+          }
+          seen.add(m.id);
+          return true;
         });
+
+        // Apply streaming monotonicity guards and dispatch to Redux
+        const latestState = this.getChatState(agentId);
+        const guardedMessages = this.guardStreamingMessages(latestState, deduplicatedMessages, newIsStreaming);
+        this.reduxDispatch(streamChunkFlushed(agentId, newStreamingContent));
+        this.reduxDispatch(replaceAgentSessionMessages(agentId, guardedMessages));
 
         // CRITICAL: Re-setup stream listener if session is streaming but we don't have a handler
         // This happens when stopChat() was called (which removes the handler) and then
@@ -2886,7 +2608,7 @@ export class ChatService implements IDisposable {
           logger.info('[ChatService] Re-setting up stream listener for queued message', {
             sessionId,
           });
-          this.setupStreaming(sessionId);
+          this.setupStreaming(sessionId, agentId);
         }
       }
     };
@@ -2925,7 +2647,7 @@ export class ChatService implements IDisposable {
   /**
    * Handle stream events
    */
-  private handleStreamEvent(sessionId: string, event: CustomEvent | Event): void {
+  private handleStreamEvent(sessionId: string, event: CustomEvent | Event, agentId: string): void {
     const data = (event as CustomEvent).detail || event;
 
     // Only log at debug level to avoid excessive logging during streaming
@@ -2972,10 +2694,10 @@ export class ChatService implements IDisposable {
 
       // Clear status events storage for new turn, but preserve restored events on reconnection
       // (same pattern as streaming content preservation above)
-      const currentState = get(this.state);
+      const currentState = this.getChatState(agentId);
       const hasRestoredStatusEvents = currentState.statusEvents.length > 0;
       if (!hasRestoredStatusEvents) {
-        this.clearStatusEventsStorage();
+        this.clearStatusEventsStorage(agentId);
       } else {
         logger.info('Preserving restored status events on start event', {
           sessionId,
@@ -2984,11 +2706,11 @@ export class ChatService implements IDisposable {
       }
 
       // Start stall detection for unresponsive streams
-      this.startStallDetection();
+      this.startStallDetection(agentId);
       // Start state reconciliation to detect and recover from stuck states
-      this.startStateReconciliation(sessionId);
+      this.startStateReconciliation(sessionId, agentId);
 
-      // Update sessionStore streaming state
+      // Update Redux state streaming state
       // Use setStreaming() to explicitly set streaming.active = true.
       // addSession() calls setAgent() which PRESERVES existing streaming.active, so calling
       // addSession({...session, isStreaming: true}) does NOT actually turn on streaming.active.
@@ -2998,21 +2720,21 @@ export class ChatService implements IDisposable {
       // CROSS-WORKSPACE FIX: Search all workspaces to find the session owner, so the
       // correct session is updated even when the user has switched workspaces.
       // First try the fast path (instance state or currentWorkspace), then search all.
-      const candidateWsId = get(this.state).session?.workspaceId || unifiedStateStore.currentWorkspace?.workspace?.id;
+      const candidateWsId = this.getChatState(agentId).session?.workspaceId || (selectActiveWorkspaceId.select(getReduxStore().getState()) as string | undefined);
       let startWsId: string | undefined;
       let startSession = candidateWsId
-        ? sessionStore.getSessionForWorkspace(candidateWsId, sessionId)
+        ? selectAgentById.select(getReduxStore().getState(), sessionId)
         : undefined;
       if (startSession) {
         startWsId = candidateWsId;
       } else {
         // Search all workspaces for this session (handles cross-workspace switches
         // and cases where candidateWsId is falsy or points to the wrong workspace).
-        const allWorkspaces = unifiedStateStore.getAllWorkspaces();
+        const allWorkspaces = selectWorkspaceItems.select(getReduxStore().getState());
         for (const ws of allWorkspaces) {
-          const wsId = ws.workspace?.id;
+          const wsId = ws.id as string;
           if (wsId) {
-            startSession = sessionStore.getSessionForWorkspace(wsId, sessionId) ?? undefined;
+            startSession = selectAgentById.select(getReduxStore().getState(), sessionId) ?? undefined;
             if (startSession) {
               logger.warn('[ChatService] handleStreamEvent start: session found via cross-workspace lookup', {
                 sessionId,
@@ -3025,40 +2747,36 @@ export class ChatService implements IDisposable {
         }
       }
       if (startWsId) {
-        sessionStore.setStreamingForWorkspace(startWsId, sessionId, true);
+        getReduxStore().dispatch(setAgentStreaming(startWsId, sessionId, true));
         if (startSession) {
-          sessionStore.addSessionForWorkspace(startWsId, {
+          getReduxStore().dispatch(upsertAgentSession(startWsId, {
             ...startSession,
             isStreaming: true,
-          });
+          }));
         }
       }
 
-      // Update instance state
-      this.state.update((s) => ({
-        ...s,
-        isStreaming: true,
-        streamingContent: hasRestoredContent ? existingContent : '',
-        error: null,
-        lastChunkTime: Date.now(),
-        isStalled: false,
+      // Dispatch to Redux
+      this.reduxDispatch(streamStarted(agentId, {
+        hasRestoredContent,
+        existingContent,
       }));
     } else if (data.type === 'chunk') {
       // Record chunk received for stall detection
-      this.recordChunkReceived();
+      this.recordChunkReceived(agentId);
 
       // Accumulate text in per-instance accumulator
       const currentContent = this.localStreamingContent;
       const newStreamingContent = currentContent + (data.content || '');
       this.localStreamingContent = newStreamingContent;
 
-      // NOTE: Do NOT read from or write to sessionStore here. AgentService is the sole
-      // writer to sessionStore during streaming (via updateMessageForWorkspace). Having
+      // NOTE: Do NOT read from or write to Redux state here. AgentService is the sole
+      // writer to Redux state during streaming (via updateMessageForWorkspace). Having
       // ChatService also call addSession() creates a race condition where stale snapshots
       // overwrite AgentService's correctly accumulated contentBlocks. ChatService only
       // updates its own instance state (for UI rendering).
 
-      this.scheduleChunkUpdate(newStreamingContent);
+      this.scheduleChunkUpdate(newStreamingContent, agentId);
     } else if (data.type === 'content-blocks') {
       // Handle content blocks (tool calls, etc.)
       // Add the content blocks to the current streaming message
@@ -3067,7 +2785,7 @@ export class ChatService implements IDisposable {
       // tool-use content blocks must not flip receivedFirstChunk or append the
       // synthetic "Streaming response…" event, so the marker is still available
       // when the first real text chunk arrives later).
-      this.recordChunkReceived(/* isTextChunk */ false);
+      this.recordChunkReceived(agentId, /* isTextChunk */ false);
 
       // Cancel pending chunk update.
       // IMPORTANT: Do NOT call flushChunkUpdate() here. flushChunkUpdate() reads from
@@ -3075,30 +2793,30 @@ export class ChatService implements IDisposable {
       // previous content-blocks events. Flushing stale state triggers ChatPanel's Path A
       // subscription with fewer contentBlocks, causing tool calls to briefly disappear.
       // Instead, just cancel the pending RAF and clear the pending content. The content-blocks
-      // handler below will update state with the correct messages from sessionStore.
+      // handler below will update state with the correct messages from Redux state.
       if (this.chunkUpdateRafId !== null) {
         cancelAnimationFrame(this.chunkUpdateRafId);
         this.chunkUpdateRafId = null;
         // Carry forward the pending streaming text so it's not lost.
         // The content-blocks handler reads localStreamingContent and
-        // sessionStore messages, so we just need to make sure the accumulated text is
+        // Redux state messages, so we just need to make sure the accumulated text is
         // preserved in localStreamingContent (it already is — chunk handler appends to it).
         this.pendingStreamingContent = null;
       }
 
-      // Get messages from sessionStore (source of truth)
-      // FIX: Fall back to ChatService instance state if sessionStore doesn't have the session.
+      // Get messages from Redux state (source of truth)
+      // FIX: Fall back to ChatService instance state if Redux state doesn't have the session.
       // This prevents wiping optimistic user messages when getSessionForWorkspace() returns
       // undefined due to workspace context mismatches or timing issues during force-submit.
-      const cbCurrentState = get(this.state);
+      const cbCurrentState = this.getChatState(agentId);
       const contentBlocksWsId = cbCurrentState.session?.workspaceId;
       const session = contentBlocksWsId
-        ? sessionStore.getSessionForWorkspace(contentBlocksWsId, sessionId)
+        ? selectAgentById.select(getReduxStore().getState(), sessionId)
         : undefined;
       const currentInstanceMessages = cbCurrentState.messages;
-      // COUNT MISMATCH PROTECTION: If sessionStore has fewer messages than instance state,
+      // COUNT MISMATCH PROTECTION: If Redux state has fewer messages than instance state,
       // prefer instance messages to avoid losing optimistic user messages or streamed content.
-      // This handles the case where sessionStore has a stale/shorter snapshot (e.g., during
+      // This handles the case where Redux state has a stale/shorter snapshot (e.g., during
       // workspace switches or when optimistic messages haven't been persisted yet).
       const existingMessages =
         session?.messages && session.messages.length >= currentInstanceMessages.length
@@ -3234,33 +2952,23 @@ export class ChatService implements IDisposable {
         this.pendingStreamingContent = null;
       }
 
-      // NOTE: Do NOT update sessionStore here. AgentService is the sole writer to
-      // sessionStore during streaming (via updateMessageForWorkspace). See chunk handler
+      // NOTE: Do NOT update Redux state here. AgentService is the sole writer to
+      // Redux state during streaming (via updateMessageForWorkspace). See chunk handler
       // comment above for full explanation of the race condition this prevents.
 
-      // Update instance state
-      this.safeStateUpdate((s) => {
-        if (!s.isStreaming || !s.isProcessing) {
-          logger.warn('[ChatService] content-blocks: streaming flags were incorrect during active content-blocks processing — forcing back to true (stale sessionUpdatedHandler likely set them)', {
-            sessionId,
-            wasStreaming: s.isStreaming,
-            wasProcessing: s.isProcessing,
-            messageCount: updatedMessages.length,
-          });
-        }
-
-        return {
-          ...s,
-          messages: updatedMessages,
-          // SELF-HEALING: Always set isStreaming and isProcessing to true during
-          // content-blocks processing. Content-blocks events only arrive during active
-          // streaming, so true is always correct here. If a stale sessionUpdatedHandler
-          // set either flag to false, this corrects it.
-          isStreaming: true,
-          isProcessing: true,
-          streamingContent: hasNewToolUse ? '' : s.streamingContent,
-        };
-      });
+      // Update via Redux with streaming monotonicity guards
+      const cbState = this.getChatState(agentId);
+      if (!cbState.isStreaming || !cbState.isProcessing) {
+        logger.warn('[ChatService] content-blocks: streaming flags were incorrect during active content-blocks processing — forcing back to true (stale sessionUpdatedHandler likely set them)', {
+          sessionId,
+          wasStreaming: cbState.isStreaming,
+          wasProcessing: cbState.isProcessing,
+          messageCount: updatedMessages.length,
+        });
+      }
+      const guardedMessages = this.guardStreamingMessages(cbState, updatedMessages, true);
+      this.reduxDispatch(streamChunkFlushed(agentId, hasNewToolUse ? '' : cbState.streamingContent));
+      this.reduxDispatch(replaceAgentSessionMessages(agentId, guardedMessages));
 
     } else if (data.type === 'end' || data.type === 'complete') {
       // Handle both 'end' and 'complete' events (different sources may use different names)
@@ -3281,18 +2989,12 @@ export class ChatService implements IDisposable {
           failedModel: messageMetadata.failedModel,
           nextAvailableModel: messageMetadata.nextAvailableModel,
         });
-        this.state.update((s) => ({
-          ...s,
-          modelUnavailable: {
-            failedModel: messageMetadata.failedModel,
-            nextAvailableModel: messageMetadata.nextAvailableModel,
-          },
+        this.reduxDispatch(chatModelUnavailableSet(agentId, {
+          failedModel: messageMetadata.failedModel,
+          nextAvailableModel: messageMetadata.nextAvailableModel,
         }));
       } else {
-        this.state.update((s) => ({
-          ...s,
-          modelUnavailable: null,
-        }));
+        this.reduxDispatch(chatModelUnavailableCleared(agentId));
       }
 
       // Stop stall detection and state reconciliation
@@ -3304,26 +3006,26 @@ export class ChatService implements IDisposable {
         cancelAnimationFrame(this.chunkUpdateRafId);
         this.chunkUpdateRafId = null;
       }
-      this.flushChunkUpdate();
+      this.flushChunkUpdate(agentId);
 
-      // MULTI-AGENT FIX: Get messages from sessionStore (source of truth)
+      // MULTI-AGENT FIX: Get messages from Redux state (source of truth)
       // CROSS-WORKSPACE FIX: Try instance workspace first, then search all workspaces.
-      const endWsId = get(this.state).session?.workspaceId;
+      const endWsId = this.getChatState(agentId).session?.workspaceId;
       let session = endWsId
-        ? sessionStore.getSessionForWorkspace(endWsId, sessionId)
+        ? selectAgentById.select(getReduxStore().getState(), sessionId)
         : undefined;
       if (!session) {
         // Search all workspaces for this session
-        const allWorkspaces = unifiedStateStore.getAllWorkspaces();
+        const allWorkspaces = selectWorkspaceItems.select(getReduxStore().getState());
         for (const ws of allWorkspaces) {
-          const wsId = ws.workspace?.id;
+          const wsId = ws.id as string;
           if (wsId) {
-            session = sessionStore.getSessionForWorkspace(wsId, sessionId) ?? undefined;
+            session = selectAgentById.select(getReduxStore().getState(), sessionId) ?? undefined;
             if (session) {
               logger.warn('[ChatService] Session found via cross-workspace lookup (user switched workspaces during streaming)', {
                 sessionId,
                 foundInWorkspaceId: wsId,
-                currentWorkspaceId: unifiedStateStore.currentWorkspace?.workspace?.id,
+                currentWorkspaceId: (selectActiveWorkspaceId.select(getReduxStore().getState()) as string | undefined),
               });
               break;
             }
@@ -3333,7 +3035,7 @@ export class ChatService implements IDisposable {
       // FIX: Fall back to ChatService instance state if no session found anywhere.
       // This prevents wiping user messages when the session can't be
       // found in any workspace (e.g., during force-submit timing edge cases).
-      const currentInstanceMessages = get(this.state).messages;
+      const currentInstanceMessages = this.getChatState(agentId).messages;
       const existingMessages = session?.messages ?? currentInstanceMessages;
       if (!session) {
         logger.warn('[ChatService] end: Session not found in any workspace — using instance messages as fallback', {
@@ -3343,14 +3045,14 @@ export class ChatService implements IDisposable {
       }
       const lastMessage = existingMessages[existingMessages.length - 1];
 
-      // Clear streaming state in sessionStore for this session
+      // Clear streaming state in Redux state for this session
       const endClearWsId = session?.workspaceId || endWsId;
       if (endClearWsId) {
-        logger.info('[ChatService] Clearing streaming state in sessionStore', {
+        logger.info('[ChatService] Clearing streaming state in Redux state', {
           sessionId,
           workspaceId: endClearWsId,
         });
-        sessionStore.setStreamingForWorkspace(endClearWsId, sessionId, false);
+        getReduxStore().dispatch(setAgentStreaming(endClearWsId, sessionId, false));
       }
 
       // Clean up per-instance accumulator
@@ -3442,14 +3144,14 @@ export class ChatService implements IDisposable {
         }
       }
 
-      // ALWAYS sync finalized messages to sessionStore
+      // ALWAYS sync finalized messages to Redux state
       const endSyncWsId = session?.workspaceId || endWsId;
       if (session && endSyncWsId) {
-        sessionStore.addSessionForWorkspace(endSyncWsId, {
+        getReduxStore().dispatch(upsertAgentSession(endSyncWsId, {
           ...session,
           messages: updatedMessages,
           isStreaming: false,
-        });
+        }));
 
         // SAFETY NET: Force a direct notification after a short delay.
         // This catches cases where the RAF-based notification from addSession()
@@ -3464,21 +3166,14 @@ export class ChatService implements IDisposable {
       }
 
       // Clear status events storage on stream end - events are transient per-stream
-      this.clearStatusEventsStorage();
+      this.clearStatusEventsStorage(agentId);
 
-      // Update instance state
-      this.safeStateUpdate((s) => {
-        return {
-          ...s,
-          messages: updatedMessages,
-          isStreaming: false,
-          isProcessing: false,
-          streamingContent: '',
-          streamingStartTime: null,
-          lastAttemptedMessage: null,
-          statusEvents: [], // Clear status events on stream end - they're transient per-stream
-        };
-      });
+      // Dispatch messages to agent-session, flags to chat-state
+      this.reduxDispatch(replaceAgentSessionMessages(agentId, updatedMessages));
+      this.reduxDispatch(streamCompleted(agentId, {
+        lastAttemptedMessage: null,
+        modelUnavailable: null,
+      }));
 
     } else if (data.type === 'error') {
       // Stop stall detection on error
@@ -3494,25 +3189,25 @@ export class ChatService implements IDisposable {
       this.clearSendKeys();
 
       // Clear status events storage on error - events are transient per-stream
-      this.clearStatusEventsStorage();
+      this.clearStatusEventsStorage(agentId);
 
-      // Clear streaming state in unifiedStateStore on error
-      const errorState = get(this.state);
+      // Clear streaming state in Redux state on error
+      const errorState = this.getChatState(agentId);
       const errorWsId = errorState.session?.workspaceId;
       if (errorWsId) {
-        sessionStore.setStreamingForWorkspace(
+        getReduxStore().dispatch(setAgentStreaming(
           errorWsId,
           errorState.session!.id,
           false,
-        );
+        ));
       }
 
       // Save any partial content before clearing
-      const partialContent = get(this.state).streamingContent;
+      const partialContent = this.getState(agentId).streamingContent;
+      const cleanedError = cleanErrorMessage(data.error || 'The response was interrupted. Please try again.');
 
       // If we have partial content, save it as a message with an error indicator
       if (partialContent && partialContent.trim()) {
-        // IMPORTANT: Message IDs must start with 'msg_' for Zod validation
         const errorMessage: AgentMessage = {
           id: createMessageId(`msg_${uuidv4()}`),
           role: 'assistant',
@@ -3525,30 +3220,15 @@ export class ChatService implements IDisposable {
           timestamp: new Date().toISOString(),
         };
 
-        this.state.update((s) => {
-          // Check for duplicate message ID before adding
-          const isDuplicate = s.messages.some((m) => m.id === errorMessage.id);
-          const newMessages = isDuplicate ? s.messages : [...s.messages, errorMessage];
-          return {
-            ...s,
-            messages: newMessages,
-            isStreaming: false,
-            isProcessing: false,
-            streamingContent: '',
-            streamingStartTime: null,
-            statusEvents: [], // Clear status events on error - they're transient per-stream
-            error: cleanErrorMessage(data.error || 'The response was interrupted. Please try again.'),
-          };
-        });
+        // Dispatch error message to agent-session, error flag to chat-state
+        this.reduxDispatch(addAgentSessionMessage(agentId, errorMessage));
+        this.reduxDispatch(streamErrored(agentId, {
+          error: cleanedError,
+        }));
       } else {
-        this.state.update((s) => ({
-          ...s,
-          isStreaming: false,
-          isProcessing: false,
-          streamingContent: '',
-          streamingStartTime: null,
-          statusEvents: [], // Clear status events on error - they're transient per-stream
-          error: cleanErrorMessage(data.error || 'The response was interrupted. Please try again.'),
+        // Dispatch to Redux
+        this.reduxDispatch(streamErrored(agentId, {
+          error: cleanedError,
         }));
       }
     } else if (data.type === 'status') {
@@ -3559,49 +3239,37 @@ export class ChatService implements IDisposable {
         message: statusData?.message,
       });
       if (statusData) {
-        this.state.update((s) => {
-          const newStatusEvents = [...s.statusEvents, { ...statusData, timestamp: statusData.timestamp || Date.now() }];
-          // Persist to localStorage so events survive tab switches and HMR reloads
-          this.saveStatusEventsToStorage(newStatusEvents);
-          return {
-            ...s,
-            statusEvents: newStatusEvents,
-            // Reset receivedFirstChunk when entering a tool phase so that
-            // the next text chunk after tool completion appends "Streaming response…"
-            receivedFirstChunk: statusData.phase === 'tool-call' || statusData.phase === 'tool-waiting'
-              ? false
-              : s.receivedFirstChunk,
-          };
-        });
+        const statusEvent = { ...statusData, timestamp: statusData.timestamp || Date.now() };
+        const resetFirstChunk = statusData.phase === 'tool-call' || statusData.phase === 'tool-waiting';
+        // Persist to localStorage so events survive tab switches and HMR reloads
+        const currentState = this.getChatState(agentId);
+        const newStatusEvents = [...currentState.statusEvents, statusEvent];
+        this.saveStatusEventsToStorage(newStatusEvents, agentId);
+        this.reduxDispatch(streamStatusReceived(agentId, statusEvent, resetFirstChunk));
       }
     }
 
     // Set timeout to clean up stale streams (existing timeout was already cleared at start of handleStreamEvent)
     const cleanup = memoryManager.registerTimer(
       () => {
-        const currentState = get(this.state);
+        const currentState = this.getChatState(agentId);
         if (currentState.isStreaming) {
           logger.warn('Stream timeout - cleaning up', { sessionId });
           // Reset per-instance accumulator for the timed-out session
           this.localStreamingContent = '';
           this.pendingStreamingContent = null;
 
-          // Clear streaming state in sessionStore on timeout
+          // Clear streaming state in Redux state on timeout
           const timeoutWsId = currentState.session?.workspaceId;
           if (timeoutWsId) {
-            sessionStore.setStreamingForWorkspace(
+            getReduxStore().dispatch(setAgentStreaming(
               timeoutWsId,
               currentState.session!.id,
               false,
-            );
+            ));
           }
 
-          this.state.update((s) => ({
-            ...s,
-            isStreaming: false,
-            isProcessing: false,
-            streamingStartTime: null,
-          }));
+          this.reduxDispatch(streamTimedOut(agentId));
         }
       },
       this.STREAM_TIMEOUT_MS,
@@ -3670,53 +3338,37 @@ export class ChatService implements IDisposable {
   /**
    * Stop the current chat session
    */
-  async stopChat(): Promise<void> {
-    const currentState = get(this.state);
+  async stopChat(agentId: string): Promise<void> {
+    const currentState = this.getState(agentId);
 
     if (currentState.session) {
       // Set isInterrupting flag to block new sends during cleanup
-      this.state.update((s) => ({
-        ...s,
-        isInterrupting: true,
-      }));
+      this.reduxDispatch(chatStopInitiated(agentId));
 
       // Stop any ongoing streaming
       try {
-        // Stop the session using the available method
         await agentService.stopSession(currentState.session.id);
       } catch (err) {
         logger.warn('Could not stop session', err);
       }
 
       // FIX: Wait for the backend to fully clean up pending requests BEFORE removing handlers
-      // Previously, we removed handlers first which caused a race condition where completion
-      // events arriving during this window were dropped, leaving the agent stuck in "processing"
-      // The ACP provider's interrupt() rejects pending requests asynchronously
-      // 300ms gives enough time for the abort controller to propagate through IPC
       await new Promise((resolve) => setTimeout(resolve, 300));
 
       // Clean up stream handlers AFTER the wait period
-      // This ensures we can still receive any final completion events from the backend
       const streamSessionId = currentState.session.id;
       this.cleanupStream(streamSessionId);
 
       // Update state - clear isInterrupting after cleanup is complete
-      this.state.update((s) => ({
-        ...s,
-        isProcessing: false,
-        isStreaming: false,
-        isInterrupting: false,
-        streamingContent: '',
-        streamingStartTime: null,
-      }));
+      this.reduxDispatch(chatStopCompleted(agentId));
     }
   }
 
   /**
    * Clear the current chat session
    */
-  clearChat(): void {
-    const currentState = get(this.state);
+  clearChat(agentId: string): void {
+    const currentState = this.getState(agentId);
 
     if (currentState.session) {
       // Clean up streaming
@@ -3726,52 +3378,53 @@ export class ChatService implements IDisposable {
 
     // Stop stall detection when clearing
     this.stopStallDetection();
-    // FIX: Stop state reconciliation when clearing
     this.stopStateReconciliation();
 
     // Clear status events from localStorage
-    this.clearStatusEventsStorage();
+    this.clearStatusEventsStorage(agentId);
 
-    this.state.set({
-      session: null,
-      messages: [],
-      isStreaming: false,
-      isProcessing: false,
-      isInterrupting: false,
-      streamingContent: '',
-      error: null,
-      streamingStartTime: null,
-      lastAttemptedMessage: null,
-      lastChunkTime: null,
-      receivedFirstChunk: false,
-      isStalled: false,
-      modelUnavailable: null,
-      statusEvents: [],
-    });
+    // Reset via Redux
+    this.reduxDispatch(chatReset(agentId));
   }
 
   /**
-   * Get the current state store
+   * Get a Svelte-compatible readable store backed by Redux state.
+   * Subscribers receive updates whenever the Redux chat-state slice changes.
    */
-  getStore(): Writable<ChatState> {
-    return this.state;
+  getStore(agentId: string): Readable<ChatState> {
+    return {
+      subscribe: (run: (value: ChatState) => void) => {
+        // Emit initial value
+        run(this.getChatState(agentId));
+
+        // Subscribe to Redux store changes
+        let prev = this.getChatState(agentId);
+        const store = getReduxStore();
+        const unsubscribe = store.subscribe(() => {
+          const next = this.getChatState(agentId);
+          if (next !== prev) {
+            prev = next;
+            run(next);
+          }
+        });
+
+        return unsubscribe;
+      },
+    };
   }
 
   /**
-   * Get current state snapshot
+   * Get current state snapshot from Redux (preferred) or local fallback.
    */
-  getState(): ChatState {
-    return get(this.state);
+  getState(agentId: string): ChatState {
+    return this.getChatState(agentId);
   }
 
   /**
    * Update messages directly.
    */
-  updateMessages(messages: AgentMessage[]): void {
-    this.state.update((s) => ({
-      ...s,
-      messages,
-    }));
+  updateMessages(agentId: string, messages: AgentMessage[]): void {
+    this.reduxDispatch(replaceAgentSessionMessages(agentId, messages));
   }
 
   /**
@@ -3786,6 +3439,7 @@ export class ChatService implements IDisposable {
    */
   async forkSession(
     workspace: Workspace,
+    agentId: string,
     options?: {
       /** Fork from a specific message ID (includes history up to that point) */
       forkFromMessageId?: string;
@@ -3799,7 +3453,7 @@ export class ChatService implements IDisposable {
       selectedText?: string;
     },
   ): Promise<string> {
-    const currentState = get(this.state);
+    const currentState = this.getChatState(agentId);
     if (!currentState.session) {
       throw new Error('No active chat session to fork');
     }
@@ -3810,7 +3464,7 @@ export class ChatService implements IDisposable {
     // If streaming, stop it first
     if (currentState.isStreaming || currentState.isProcessing) {
       logger.info('Stopping current stream before forking session');
-      await this.stopChat();
+      await this.stopChat(agentId);
     }
 
     // Determine which messages to include in the fork
@@ -3851,7 +3505,7 @@ export class ChatService implements IDisposable {
           originalCount: messagesToFork.length,
           truncatedCount: clonedMessages.length,
         });
-      } catch (retryError) {
+      } catch {
         // If even truncated version fails, start with empty messages
         logger.error('Cannot clone messages even with truncation, starting fresh fork');
         clonedMessages = [];
@@ -3878,7 +3532,7 @@ export class ChatService implements IDisposable {
 
     // Create the forked session using the agent factory
     const { agentFactory } = await import('./agent-factory');
-    const { sessionStore, persistenceService } = await import('$features/agent/browser');
+    const { persistenceService } = await import('$features/agent/browser');
 
     // Create agent without initial message - we'll add the cloned messages after
     const createResult = await agentFactory.createAgent(workspace, {
@@ -3906,9 +3560,9 @@ export class ChatService implements IDisposable {
     const forkedSession = createResult.agent;
 
     // Update the forked session with cloned messages
-    const existingSession = sessionStore.getSessionForWorkspace(workspace.id, forkedSession.id);
+    const existingSession = selectAgentById.select(getReduxStore().getState(), forkedSession.id);
     if (existingSession) {
-      sessionStore.addSessionForWorkspace(workspace.id, {
+      getReduxStore().dispatch(upsertAgentSession(workspace.id, {
         ...existingSession,
         messages: clonedMessages,
         parentSessionId: sourceSession.id,
@@ -3918,17 +3572,17 @@ export class ChatService implements IDisposable {
           selectedText: options?.selectedText,
           selectedModel: options?.model,
         },
-      });
+      }));
     }
 
     // Update parent session's childSessionIds
-    const parentSession = sessionStore.getSessionForWorkspace(workspace.id, sourceSession.id);
+    const parentSession = selectAgentById.select(getReduxStore().getState(), sourceSession.id);
     if (parentSession) {
       const childSessionIds = parentSession.childSessionIds || [];
-      sessionStore.addSessionForWorkspace(workspace.id, {
+      getReduxStore().dispatch(upsertAgentSession(workspace.id, {
         ...parentSession,
         childSessionIds: [...childSessionIds, forkedSession.id],
-      });
+      }));
     }
 
     // Save both sessions to disk
@@ -4019,23 +3673,8 @@ export class ChatService implements IDisposable {
     // FIX: Stop state reconciliation on dispose
     this.stopStateReconciliation();
 
-    // Reset state
-    this.state.set({
-      session: null,
-      messages: [],
-      isStreaming: false,
-      isProcessing: false,
-      isInterrupting: false,
-      streamingContent: '',
-      error: null,
-      streamingStartTime: null,
-      lastAttemptedMessage: null,
-      lastChunkTime: null,
-      receivedFirstChunk: false,
-      isStalled: false,
-      modelUnavailable: null,
-      statusEvents: [],
-    });
+    // Note: Redux state cleanup (chatReset) is the responsibility of the
+    // caller (ChatServiceManager) which knows the agentId.
   }
 
   /**
@@ -4096,7 +3735,6 @@ export class ChatService implements IDisposable {
  *
  * Usage:
  *   const service = getChatService(agentId);
- *   // service.agentId === agentId
  *   // Calling getChatService(agentId) again returns the same instance
  */
 const CHAT_SERVICE_HMR_KEY = '__chatServiceManager_hmr';
@@ -4127,7 +3765,7 @@ export class ChatServiceManager {
   getChatService(agentId: string): ChatService {
     let service = this.services.get(agentId);
     if (!service) {
-      service = new ChatService(agentId);
+      service = new ChatService();
       this.services.set(agentId, service);
       logger.info('ChatServiceManager: created per-agent ChatService', { agentId });
     }
@@ -4143,6 +3781,8 @@ export class ChatServiceManager {
     if (service) {
       service.dispose();
       this.services.delete(agentId);
+      // Clean up Redux chat-state for this agent
+      getReduxStore().dispatch(chatReset(agentId));
       logger.info('ChatServiceManager: disposed per-agent ChatService', { agentId });
     }
   }

@@ -1,9 +1,14 @@
-import { agentService } from "$features/agent/agent.service";
-import { getUnifiedWorkspaceState, type UnifiedWorkspaceStateManager, } from "$features/workspace/workspace-unified-state.svelte";
+import { agentService } from "$features/agent/agent-ipc-bridge";
+import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import { openTerminalOverlay } from "$lib/store/slices/terminals/terminals-slice";
 import { selectForegroundWorkspaceAgents } from "$lib/store/slices/workspace-agents/workspace-agents-selectors";
 import { selectLoadedWorkspaceTerminals } from "$lib/store/slices/terminals/terminals-selectors";
 import { createTerminalRequested, type WorkspaceTerminal, } from "$lib/store/slices/terminals/terminals-slice";
+import { selectWorkspaceNavigationDrawer } from "$lib/store/slices/workspace-navigation/workspace-navigation-selectors";
+import {
+    openWorkspaceDrawer,
+    type WorkspaceNavigationDrawerState,
+} from "$lib/store/slices/workspace-navigation/workspace-navigation-slice";
 import { isFocusInEditableElement, isFocusInTerminal } from "$lib/utils/keyboardShortcuts";
 import type { AgentSession } from "$shared/types";
 import { eventChannel, type EventChannel } from "redux-saga";
@@ -25,8 +30,12 @@ function isMacPlatform(): boolean {
     // @ts-expect-error Electron platform detection differs across runtimes
     return navigator.userAgentData?.platform === "macOS" || /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
 }
-function isCurrentAgentStreaming(manager: UnifiedWorkspaceStateManager): boolean {
-    const currentAgentId = manager.state.drawer.type === "agent" ? manager.state.drawer.itemId : null;
+function getCurrentDrawerState(wsId: string): WorkspaceNavigationDrawerState {
+    return selectWorkspaceNavigationDrawer.select(getReduxStore().getState(), wsId);
+}
+function isCurrentAgentStreaming(wsId: string): boolean {
+    const drawerState = getCurrentDrawerState(wsId);
+    const currentAgentId = drawerState.type === "agent" ? drawerState.itemId : null;
     if (!currentAgentId)
         return false;
     return agentService.isStreaming(currentAgentId);
@@ -37,11 +46,11 @@ function getDockItems(agents: AgentSession[], terminals: WorkspaceTerminal[]): D
         ...terminals.map((terminal) => ({ id: terminal.id, type: "terminal" as const })),
     ];
 }
-function getNextDockItem(manager: UnifiedWorkspaceStateManager, items: DockItem[], direction: "next" | "previous"): DockItem | null {
+function getNextDockItem(drawerState: WorkspaceNavigationDrawerState, items: DockItem[], direction: "next" | "previous"): DockItem | null {
     if (items.length === 0)
         return null;
-    const currentId = manager.state.drawer.itemId;
-    const currentType = manager.state.drawer.type;
+    const currentId = drawerState.itemId;
+    const currentType = drawerState.type;
     const currentIndex = currentId && (currentType === "agent" || currentType === "terminal")
         ? items.findIndex((item) => item.id === currentId && item.type === currentType)
         : -1;
@@ -56,7 +65,7 @@ function getNextDockItem(manager: UnifiedWorkspaceStateManager, items: DockItem[
 function dispatchNavigateMessageEvent(direction: "next" | "previous"): void {
     window.dispatchEvent(new CustomEvent("navigate-message", { detail: { direction } }));
 }
-export function createDockNavigationChannel(manager: UnifiedWorkspaceStateManager): EventChannel<DockShortcutEvent> {
+export function createDockNavigationChannel(wsId: string): EventChannel<DockShortcutEvent> {
     return eventChannel((emit) => {
         const isMac = isMacPlatform();
         const handleKeydown = (event: KeyboardEvent) => {
@@ -67,7 +76,7 @@ export function createDockNavigationChannel(manager: UnifiedWorkspaceStateManage
                     return;
                 if (isFocusInTerminal(target))
                     return;
-                if (isCurrentAgentStreaming(manager)) {
+                if (isCurrentAgentStreaming(wsId)) {
                     return;
                 }
                 if (event.key === "ArrowUp" || event.key === "ArrowDown") {
@@ -109,11 +118,7 @@ export function createDockNavigationChannel(manager: UnifiedWorkspaceStateManage
 export function* watchDockNavigationForWorkspaceSaga(wsId: string) {
     if (typeof window === "undefined")
         return;
-    const manager = getUnifiedWorkspaceState(wsId);
-    if (!manager) {
-        return;
-    }
-    const channel = createDockNavigationChannel(manager);
+    const channel = createDockNavigationChannel(wsId);
     try {
         while (true) {
             const shortcut: DockShortcutEvent = yield* take(channel);
@@ -127,11 +132,12 @@ export function* watchDockNavigationForWorkspaceSaga(wsId: string) {
             }
             const agents: AgentSession[] = yield* selectForegroundWorkspaceAgents.effect(wsId);
             const terminals: WorkspaceTerminal[] = yield* selectLoadedWorkspaceTerminals.effect(wsId);
-            const nextItem = getNextDockItem(manager, getDockItems(agents, terminals), shortcut.direction);
+            const drawerState: WorkspaceNavigationDrawerState = yield* selectWorkspaceNavigationDrawer.effect(wsId);
+            const nextItem = getNextDockItem(drawerState, getDockItems(agents, terminals), shortcut.direction);
             if (!nextItem)
                 continue;
             if (nextItem.type === "agent") {
-                yield* call([manager, manager.openDrawer], "agent", nextItem.id);
+                yield* put(openWorkspaceDrawer(wsId, "agent", nextItem.id));
                 continue;
             }
             yield* put(openTerminalOverlay(wsId, nextItem.id));

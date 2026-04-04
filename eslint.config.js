@@ -3,6 +3,7 @@ import typescript from '@typescript-eslint/eslint-plugin';
 import typescriptParser from '@typescript-eslint/parser';
 import svelte from 'eslint-plugin-svelte';
 import svelteParser from 'svelte-eslint-parser';
+import unusedImports from 'eslint-plugin-unused-imports';
 import selectorLifecycleRule from './eslint-rules/selector-lifecycle.js';
 
 export default [
@@ -78,6 +79,9 @@ export default [
         Node: 'readonly',
       },
     },
+    plugins: {
+      'unused-imports': unusedImports,
+    },
     rules: {
       ...js.configs.recommended.rules,
       'no-console': 'off',
@@ -86,11 +90,8 @@ export default [
       'object-shorthand': 'off',
       'prefer-template': 'off',
       'prefer-arrow-callback': 'off',
-      'no-unused-vars': ['warn', {
-        argsIgnorePattern: '^_',
-        varsIgnorePattern: '^_',
-        caughtErrorsIgnorePattern: '^_|^e$|^err$|^error$',
-      }],
+      'no-unused-vars': 'error',
+      'unused-imports/no-unused-imports': 'error',
     },
   },
   {
@@ -137,19 +138,14 @@ export default [
     },
     plugins: {
       '@typescript-eslint': typescript,
+      'unused-imports': unusedImports,
     },
     rules: {
       ...typescript.configs.recommended.rules,
       'no-console': 'off',
       'no-unused-vars': 'off',
-      '@typescript-eslint/no-unused-vars': [
-        'warn',
-        {
-          argsIgnorePattern: '^_',
-          varsIgnorePattern: '^_',
-          caughtErrorsIgnorePattern: '^_',
-        },
-      ],
+      '@typescript-eslint/no-unused-vars': 'error',
+      'unused-imports/no-unused-imports': 'error',
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'off',
       '@typescript-eslint/no-non-null-assertion': 'warn',
@@ -196,6 +192,7 @@ export default [
     plugins: {
       svelte,
       '@typescript-eslint': typescript,
+      'unused-imports': unusedImports,
       intent: {
         rules: {
           'selector-lifecycle': selectorLifecycleRule,
@@ -205,6 +202,8 @@ export default [
     rules: {
       ...svelte.configs.recommended.rules,
       '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unused-vars': 'error',
+      'unused-imports/no-unused-imports': 'error',
       'intent/selector-lifecycle': 'warn',
     },
   },

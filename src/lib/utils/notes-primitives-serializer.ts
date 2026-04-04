@@ -594,6 +594,7 @@ export function tipTapToMarkdown(doc: JSONContent): string {
  * Parse markdown to TipTap document with primitives
  */
 export function markdownToTipTap(markdown: string): JSONContent {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { primitives, segments } = extractPrimitivesWithContext(markdown);
   const nodes: JSONContent[] = [];
 

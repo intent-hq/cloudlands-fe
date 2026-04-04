@@ -20,8 +20,8 @@ import type { WorkspaceEventType, WorkspaceEvent } from '../../../../features/ev
 import { TRACKING_CONFIG } from '../../../file-tracking/tracking.config';
 import type { GitDiffResult } from './git-types';
 // Import FileChange from the shared types instead of defining locally
-import type { FileChange } from '../../change-detector.types';
-export type { FileChange } from '../../change-detector.types';
+import type { FileChange } from '../../../../lib/store/slices/workspace/utils/change-detector.types';
+export type { FileChange } from '../../../../lib/store/slices/workspace/utils/change-detector.types';
 import { isGitRepository, storeBlob } from '../../../../shared/git/git-blob-storage';
 import { isBinaryExtension } from '../../../../shared/binary-file-extensions';
 

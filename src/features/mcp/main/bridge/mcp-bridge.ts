@@ -13,7 +13,7 @@ import { protocolAdapter } from '../../../protocol/main/protocol-adapter';
 import { GitService } from '../../../git/main/git.service';
 import { Logger } from '../../../../shared/logger';
 import { WorkspaceConfig } from '../../../../shared/main/config.js';
-import { createWorkspaceUpdatedEvent, type McpEvent, type McpActor } from '../../types/events';
+import { createWorkspaceUpdatedEvent, type McpActor } from '../../types/events';
 import type { ToolName } from '../../types/schemas';
 import { createHash } from 'crypto';
 import { emitAgentFileChange } from '../mcp/workspace-tools';
@@ -247,6 +247,7 @@ export class McpBridge extends EventEmitter {
 
   private async handleWorkspaceGet(
     params: any,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     context: BridgeCallContext,
   ): Promise<BridgeResponse> {
     const result = await protocolAdapter.getWorkspace(params.workspaceId);
@@ -299,7 +300,9 @@ export class McpBridge extends EventEmitter {
   }
 
   private async handleWorkspaceListSessions(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     params: any,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     context: BridgeCallContext,
   ): Promise<BridgeResponse> {
     // NOTE: Agent sessions are managed client-side via agentService
@@ -315,6 +318,7 @@ export class McpBridge extends EventEmitter {
 
   private async handleWorkspaceCreateSession(
     params: any,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     context: BridgeCallContext,
   ): Promise<BridgeResponse> {
     // NOTE: Agent sessions are managed client-side via agentService
@@ -337,6 +341,7 @@ export class McpBridge extends EventEmitter {
   // Notes Handlers
   // ============================================================================
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async handleNotesList(params: any, context: BridgeCallContext): Promise<BridgeResponse> {
     const result = await protocolAdapter.listNotes(params.workspaceId);
 
@@ -633,6 +638,7 @@ export class McpBridge extends EventEmitter {
 
   private async handleNotesListComments(
     params: any,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     context: BridgeCallContext,
   ): Promise<BridgeResponse> {
     const result = await protocolAdapter.listComments({
@@ -932,6 +938,7 @@ export class McpBridge extends EventEmitter {
   // Git Handlers
   // ============================================================================
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async handleGitStatus(params: any, context: BridgeCallContext): Promise<BridgeResponse> {
     const result = await this.gitService.getStatus(params.workspaceId);
 
@@ -945,6 +952,7 @@ export class McpBridge extends EventEmitter {
     };
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async handleGitDiff(params: any, context: BridgeCallContext): Promise<BridgeResponse> {
     const result = await this.gitService.getDiff(params.workspaceId, params.paths || []);
 

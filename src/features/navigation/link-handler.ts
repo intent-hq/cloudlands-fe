@@ -152,7 +152,7 @@ async function handleDevspaceLink(url: string): Promise<boolean> {
  */
 async function openInBrowserPanel(url: string, workspaceId: WorkspaceId): Promise<boolean> {
   try {
-    const { getPanelLayoutManager } = await import('$features/layout/panel-layout-manager.svelte');
+    const { getPanelLayoutManager } = await import('$features/layout/panel-layout-adapter');
     const layoutManager = getPanelLayoutManager(workspaceId);
     layoutManager.openBrowserPanel(url);
     logger.debug('Opened URL in browser panel', { url, workspaceId });

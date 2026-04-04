@@ -9,7 +9,7 @@
    * Tab types are registered in: src/features/layout/tab-types/register-all.ts
    */
 
-  import type { PanelTab } from '$features/layout/panel-layout-manager.svelte';
+  import type { PanelTab } from '$lib/store/slices/panel-layout/panel-layout-types';
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
 
   interface Props {

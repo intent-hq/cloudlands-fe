@@ -7,5 +7,6 @@ export {
   clearFileExplorerStore,
   deactivateFileExplorerStore,
   reactivateFileExplorerStore,
-} from './file-explorer-store.svelte';
+} from './file-explorer-adapter';
+export type { FlattenedFileNode } from '$lib/store/slices/file-explorer/file-explorer-types';
 export type { FileNode } from '$shared/types';

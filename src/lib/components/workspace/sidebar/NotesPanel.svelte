@@ -33,23 +33,20 @@
     getAvatarState,
     isAgentActivelyWorking,
   } from '$lib/components/ui/auggie-avatar/avatar-state';
-  import { unifiedStateStore } from '$features/agent/services/unified-state-store';
+  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { AgentStatus } from '$shared/types/agent.types';
-  import {
-    WorkspaceId as WorkspaceIdFn,
-    NoteId,
-    type WorkspaceId,
-  } from '$shared/types/branded-ids';
-  import { onMount, tick } from 'svelte';
-  import { notesStateManager } from '$features/notes/notes.store.svelte';
+  
+
+import { onMount, tick } from 'svelte';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
-  import { notesClient } from '$features/notes/notes.client';
-  import { getPanelLayoutManager, hasPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
+  import { getPanelLayoutManager, hasPanelLayoutManager } from '$features/layout/panel-layout-adapter';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { deleteNote, createNote, updateNoteTitle } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
   import { toast } from 'svelte-sonner';
-  import { createLogger } from '$lib/utils/client-logger';
 
-  const logger = createLogger('NotesPanel');
+  const dispatch = getDispatch();
 
   interface Props {
     notes: Note[];
@@ -100,7 +97,7 @@
       const trimmed = editingValue.trim();
       const note = notes.find((n) => n.id === editingNoteId);
       if (note && trimmed !== getNoteTitle(note)) {
-        notesStateManager.updateNoteTitle(editingNoteId as NoteId, trimmed);
+        dispatch(updateNoteTitle(workspaceId, editingNoteId, trimmed));
       }
     }
     cancelEdit();
@@ -181,45 +178,31 @@
           // Close related panel tabs before deleting
           if (hasPanelLayoutManager(workspaceId)) {
             const layoutManager = getPanelLayoutManager(workspaceId);
-            layoutManager.closeTabsMatching((tab) => tab.type === 'note' && tab.noteId === note.id);
+            layoutManager.closeTabsByType('note', 'noteId', note.id);
           }
 
-          const result = await notesClient.delete(note.id as NoteId, workspaceId as WorkspaceId);
+          dispatch(deleteNote(workspaceId, note.id));
           closeContextMenu();
 
-          if (result.ok) {
-            const toastId = toast.warning(
-              `Deleted "${noteTitle}"`,
-              {
-                duration: 15000,
-                action: {
-                  label: 'Undo',
-                  onClick: async () => {
-                    try {
-                      const result = await notesClient.create({
-                        workspaceId: savedNote.workspaceId,
-                        title: savedNote.title,
-                        content: savedNote.content,
-                        contentType: savedNote.contentType,
-                        tags: savedNote.tags,
-                        parentId: savedNote.parentId,
-                        visibility: savedNote.visibility,
-                      });
-                      if (result.ok) {
-                        toast.dismiss(toastId);
-                      } else {
-                        logger.error('Failed to restore note', result.error);
-                        toast.error('Failed to restore note');
-                      }
-                    } catch (err) {
-                      logger.error('Failed to restore note', err);
-                      toast.error('Failed to restore note');
-                    }
-                  },
+          toast.warning(
+            `Deleted "${noteTitle}"`,
+            {
+              duration: 15000,
+              action: {
+                label: 'Undo',
+                onClick: () => {
+                  dispatch(createNote(workspaceId, {
+                    title: savedNote.title,
+                    content: savedNote.content,
+                    contentType: savedNote.contentType,
+                    tags: savedNote.tags,
+                    parentId: savedNote.parentId,
+                    visibility: savedNote.visibility,
+                  }));
                 },
               },
-            );
-          }
+            },
+          );
         },
       });
     }
@@ -353,10 +336,10 @@
   // This counter increments whenever any agent's streaming state changes
   let streamingStateVersion = $state(0);
 
-  // Subscribe to streaming state changes from unified state store
+  // Subscribe to streaming state changes from Redux store
   onMount(() => {
-    const unsubscribe = unifiedStateStore.onStreamingChange(() => {
-      // Increment version to trigger reactivity
+    const unsubscribe = getReduxStore().subscribe(() => {
+      // Increment version to trigger reactivity on any agent state change
       streamingStateVersion++;
     });
 
@@ -378,8 +361,7 @@
     const assignedAgentIds = note.metadata?.task?.assignedAgentIds || [];
     if (assignedAgentIds.length === 0) return [];
 
-    const workspace = unifiedStateStore.getWorkspace(WorkspaceIdFn(workspaceId));
-    if (!workspace) return [];
+    const reduxState = getReduxStore().getState();
 
     const activeAgents: Array<{
       agentId: string;
@@ -389,11 +371,10 @@
     }> = [];
 
     for (const agentId of assignedAgentIds) {
-      const agentState = workspace.agents.get(agentId);
-      if (!agentState) continue;
+      const agent = selectAgentById.select(reduxState, agentId);
+      if (!agent) continue;
 
-      const agent = agentState.session;
-      const isStreaming = agentState.streaming?.active ?? false;
+      const isStreaming = agent.isStreaming ?? false;
 
       // Only show agents that are ACTIVELY working right now
       // Use centralized helper to check if agent is working

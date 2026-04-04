@@ -2,7 +2,7 @@
  * Tests for accessibility utilities
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { checkColorContrast, addAriaLabels, makeKeyboardNavigable } from '../accessibility';
 
 // Mock the logger

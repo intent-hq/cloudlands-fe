@@ -5,7 +5,11 @@
   import { ListEmpty } from '$lib/components/ui/list';
   import VirtualList from '$lib/components/ui/VirtualList.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import { faChevronDown, faEye, faEyeSlash, faRobot, faSitemap } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faChevronDown,
+    faRobot,
+    faSitemap,
+  } from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
@@ -59,7 +63,7 @@
 
   onMount(() => {
     // Start polling for active streams and subscribe to changes
-    activeStreamsTracker.startPolling(2000);
+    activeStreamsTracker.startPolling();
     const unsubscribe = activeStreamsTracker.subscribe(() => {
       activeStreamsVersion++;
     });
@@ -164,15 +168,6 @@
   }
 
   // Helper to check if an agent is the coordinator (initial spec-writer agent)
-  function isCoordinatorAgent(agent: AgentSession): boolean {
-    const specialist = getAgentSpecialistId(agent);
-    return (
-      specialist === 'spec-writer' ||
-      agent.isInitialAgent === true ||
-      agent.metadata?.isInitialAgent === true ||
-      agent.metadata?.isInitialWorkspaceAgent === true
-    );
-  }
 
   // Top-level foreground agents: not background, not delegated under another agent
   // Coordinator agent is always sorted first
@@ -253,7 +248,8 @@
 {#if !loading && shouldShowVisibilitySummary}
   <div class="px-3 pb-2 pt-0.5">
     <p class="text-xs text-subtle">
-      Showing {visibilitySummary.topLevelForegroundCount} top-level of {visibilitySummary.totalCount} total
+      Showing {visibilitySummary.topLevelForegroundCount} top-level of {visibilitySummary.totalCount}
+      total
       {#if visibilitySummary.delegatedCount > 0}
         · {visibilitySummary.delegatedCount} delegated
       {/if}
@@ -275,7 +271,9 @@
 
     <!-- Section header before the first non-coordinator agent when a coordinator exists -->
     {#if showCoordinatorBanner && hasCoordinator && getAgentSpecialistId(agent) !== 'spec-writer' && depth === 0}
-      {@const isFirstNonCoordinator = agentList.slice(0, i).every((a) => getAgentSpecialistId(a) === 'spec-writer')}
+      {@const isFirstNonCoordinator = agentList
+        .slice(0, i)
+        .every((a) => getAgentSpecialistId(a) === 'spec-writer')}
       {#if isFirstNonCoordinator}
         <div class="pt-2.5 pb-0.5">
           <Header size={6}>Your Agents</Header>
@@ -350,7 +348,7 @@
 {#if loading}
   <!-- Skeleton loader while agents are loading -->
   <div class="space-y-2 px-3 py-2">
-    {#each [1, 2, 3] as _}
+    {#each [1, 2, 3] as { }}
       <div class="flex items-center gap-3 py-2 px-2 rounded-md bg-muted/20">
         <Skeleton class="h-4 w-4 rounded-full shrink-0" />
         <div class="flex-1 space-y-1.5">

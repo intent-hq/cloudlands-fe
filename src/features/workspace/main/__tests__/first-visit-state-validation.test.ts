@@ -18,7 +18,9 @@ describe('FirstVisitState IPC Validation Schemas', () => {
   // - UUID
   const validUuid = '123e4567-e89b-42d3-a456-426614174000'; // Valid v4 UUID
   const validSlug = 'amber-forest-a7x2'; // Valid legacy slug format
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const validNewSlug = 'amber-forest'; // Valid new slug format (no suffix)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const validNewSlugWithSuffix = 'amber-forest-2'; // Valid new slug format (numeric suffix)
   // Invalid: single word (needs at least 2 parts)
   const invalidId = 'invalid';

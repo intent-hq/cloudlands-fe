@@ -1,94 +1,122 @@
-import { firstVisitStateClient } from "$features/workspace/first-visit-state.client";
-import { workspaceStore } from "$features/workspace/workspace.store.svelte";
-import { takeEveryFromListenSync } from "$lib/store/utils/ipc-channel";
-import type { FirstVisitState } from "$shared/types";
-import { WorkspaceId } from "$shared/types/branded-ids";
-import { call, fork, put, takeEvery } from "typed-redux-saga";
+import { workspaceClient } from "$lib/store/slices/workspace/utils/workspace.client";
 import {
-  workspaceMounted,
-  workspaceUnmounted,
-} from "../../workspace-lifecycle/workspace-lifecycle-slice";
-import type { PanelVisibilityState, WorkspaceUpdatedEvent } from "../workspace-slice";
+  getLocalStorageJSON,
+  setLocalStorageJSON,
+} from "$lib/store/utils/safe-local-storage-saga";
+import { call, cancelled, delay, fork, put, takeEvery, takeLatest, type SagaGenerator } from "typed-redux-saga";
 import {
-  defaultPanelVisibility,
-  setPanelVisibilityBulk,
-  updateWorkspaceEntity,
+  cleanupRecency,
+  loadRecencyData,
+  loadWorkspacesRequested,
+  recordWorkspaceView,
+  replaceWorkspaceList,
+  setWorkspaceError,
+  setWorkspaceHasLoaded,
+  setWorkspaceLoading,
+  type WorkspaceRecencyState,
 } from "../workspace-slice";
+import {
+  selectWorkspaceIsCreating,
+  selectWorkspaceRecency,
+} from "../workspace-selectors";
+import { workspaceCrudSaga } from "./workspace-crud-saga";
+import { workspaceIpcSaga } from "./workspace-ipc-saga";
 
-// ---------------------------------------------------------------------------
-// Workspace :updated IPC listener
-// ---------------------------------------------------------------------------
+export const WORKSPACE_RECENCY_STORAGE_KEY = "workspace-recency";
+export const WORKSPACE_LOAD_MAX_RETRIES = 2;
+export const WORKSPACE_LOAD_RETRY_DELAY_MS = 1000;
 
-function applyWorkspaceUpdate(data: WorkspaceUpdatedEvent): void {
-  workspaceStore.updateLocalWorkspace(WorkspaceId(data.workspaceId), data.changes);
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
-export function* watchWorkspaceUpdatedSaga() {
-  yield* takeEveryFromListenSync<WorkspaceUpdatedEvent>("workspace:updated", function* (data) {
-    yield* call(applyWorkspaceUpdate, data);
-    // Keep the Redux workspace entity in sync with incoming updates.
-    yield* put(updateWorkspaceEntity(data.workspaceId, data.changes));
+function isWorkspaceRecencyState(value: unknown): value is WorkspaceRecencyState {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const lastViewedAt = (value as { lastViewedAt?: unknown }).lastViewedAt;
+  if (!lastViewedAt || typeof lastViewedAt !== "object" || Array.isArray(lastViewedAt)) {
+    return false;
+  }
+
+  return Object.values(lastViewedAt).every((timestamp) => {
+    return typeof timestamp === "number" && Number.isFinite(timestamp);
   });
 }
 
-// ---------------------------------------------------------------------------
-// First-visit state → Redux panel visibility hydration
-// ---------------------------------------------------------------------------
+export function* initializeWorkspaceRecencySaga() {
+  const recency = yield* call(
+    getLocalStorageJSON<WorkspaceRecencyState>,
+    WORKSPACE_RECENCY_STORAGE_KEY
+  );
 
-/**
- * Map persisted first-visit state to Redux PanelVisibilityState.
- *
- * The first-visit state only tracks three flags (navigationRailRevealed,
- * mainContentRevealed, workspaceDockRevealed). All other panel flags default
- * to their defaultPanelVisibility values.
- */
-export function mapFirstVisitToVisibility(
-  fvs: FirstVisitState,
-): Partial<PanelVisibilityState> {
-  return {
-    showNavigationRail: fvs.navigationRailRevealed,
-    showMainContent: fvs.mainContentRevealed,
-    showChatHeader: fvs.mainContentRevealed,
-    isChatFocusedMode: !fvs.mainContentRevealed,
-    showWorkspaceDock: fvs.workspaceDockRevealed,
-  };
+  if (!isWorkspaceRecencyState(recency)) {
+    return;
+  }
+
+  yield* put(loadRecencyData(recency));
 }
 
-/**
- * On workspace mount: load persisted first-visit state and hydrate the
- * workspace-scoped panel visibility in Redux.
- *
- * If no persisted state exists (brand-new workspace) defaults are already
- * correct so no dispatch is needed.
- */
-export function* handleFirstVisitHydration(
-  action: ReturnType<typeof workspaceMounted>,
-) {
-  const [wsId] = action.payload;
+export function* persistWorkspaceRecency() {
+  const recency = yield* selectWorkspaceRecency.effect();
+  yield* call(setLocalStorageJSON, WORKSPACE_RECENCY_STORAGE_KEY, recency);
+}
+
+export function* watchWorkspaceRecencyPersistenceSaga() {
+  yield* takeEvery([recordWorkspaceView.type, cleanupRecency.type], persistWorkspaceRecency);
+}
+
+export function* performLoadWorkspaces(retryCount = 0): SagaGenerator<void> {
+  yield* put(setWorkspaceLoading(true));
+  if (retryCount === 0) {
+    yield* put(setWorkspaceError(null));
+  }
 
   try {
-    const state: FirstVisitState | null = yield* call(
-      [firstVisitStateClient, firstVisitStateClient.load],
-      WorkspaceId(wsId),
-    );
+    const result = yield* call([workspaceClient, workspaceClient.list], { lite: true });
 
-    if (state) {
-      const updates = mapFirstVisitToVisibility(state);
-      yield* put(setPanelVisibilityBulk(wsId, updates));
+    if (result.ok) {
+      yield* put(replaceWorkspaceList(result.data));
+      yield* put(setWorkspaceHasLoaded(true));
+      yield* put(setWorkspaceError(null));
+      return;
     }
-  } catch {
-    // Defaults are already correct; swallow the error.
+
+    if (retryCount < WORKSPACE_LOAD_MAX_RETRIES) {
+      yield* delay(WORKSPACE_LOAD_RETRY_DELAY_MS);
+      yield* call(performLoadWorkspaces, retryCount + 1);
+      return;
+    }
+
+    yield* put(setWorkspaceError(result.error));
+  } catch (error) {
+    if (retryCount < WORKSPACE_LOAD_MAX_RETRIES) {
+      yield* delay(WORKSPACE_LOAD_RETRY_DELAY_MS);
+      yield* call(performLoadWorkspaces, retryCount + 1);
+      return;
+    }
+
+    yield* put(setWorkspaceError(getErrorMessage(error)));
+  } finally {
+    if (!(yield* cancelled())) {
+      yield* put(setWorkspaceLoading(false));
+    }
   }
 }
 
-// ---------------------------------------------------------------------------
-// Workspace lifecycle watchers
-// ---------------------------------------------------------------------------
+export function* handleLoadWorkspaces(action: ReturnType<typeof loadWorkspacesRequested>) {
+  const [retryCount = 0] = action.payload;
+  const isCreating = yield* selectWorkspaceIsCreating.effect();
+  if (isCreating) {
+    return;
+  }
 
-export function* watchWorkspaceLifecycleSaga() {
-  yield* takeEvery(workspaceMounted, handleFirstVisitHydration);
-  // workspaceUnmounted: panel visibility is intentionally preserved across
-  // workspace switches (see reducer). No cleanup needed here.
+  yield* call(performLoadWorkspaces, retryCount);
+}
+
+export function* watchWorkspaceLoadRequestsSaga() {
+  yield* takeLatest(loadWorkspacesRequested, handleLoadWorkspaces);
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +124,9 @@ export function* watchWorkspaceLifecycleSaga() {
 // ---------------------------------------------------------------------------
 
 export function* workspaceSaga() {
-  yield* fork(watchWorkspaceUpdatedSaga);
-  yield* fork(watchWorkspaceLifecycleSaga);
+  yield* fork(workspaceIpcSaga);
+  yield* fork(workspaceCrudSaga);
+  yield* fork(watchWorkspaceLoadRequestsSaga);
+  yield* fork(initializeWorkspaceRecencySaga);
+  yield* fork(watchWorkspaceRecencyPersistenceSaga);
 }

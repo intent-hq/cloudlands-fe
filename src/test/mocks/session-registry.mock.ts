@@ -4,7 +4,7 @@
  * Provides mock implementations of session registry for testing.
  */
 
-// Define SessionMapping interface locally since it's not exported from agent-state.svelte
+// Define SessionMapping interface locally for test mocking
 interface SessionMapping {
   frontendId: string;
   backendId: string;

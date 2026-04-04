@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => {
   const loggerMiddleware = createPassthroughMiddleware();
   const refCheckMiddleware = createPassthroughMiddleware();
   const structuredCloneMiddleware = createPassthroughMiddleware();
+  const storeGuardMiddleware = createPassthroughMiddleware();
 
   return {
     createSagaMiddleware: vi.fn(() => sagaMiddleware),
@@ -20,10 +21,13 @@ const mocks = vi.hoisted(() => {
     createLoggerMiddleware: vi.fn(() => loggerMiddleware),
     createReferenceChangeDetectorMiddleware: vi.fn(() => refCheckMiddleware),
     createStructuredCloneCheckerMiddleware: vi.fn(() => structuredCloneMiddleware),
+    createStoreGuardMiddleware: vi.fn(() => storeGuardMiddleware),
     sagaMiddleware,
     batchingMiddleware,
     sentryMiddleware,
     loggerMiddleware,
+    structuredCloneMiddleware,
+    storeGuardMiddleware,
   };
 });
 
@@ -38,6 +42,9 @@ vi.mock("./middlewares/state-reference-checks", () => ({
 }));
 vi.mock("./middlewares/structured-clone-checker", () => ({
   createStructuredCloneCheckerMiddleware: mocks.createStructuredCloneCheckerMiddleware,
+}));
+vi.mock("../../store/utils/store-guard-middleware", () => ({
+  createStoreGuardMiddleware: mocks.createStoreGuardMiddleware,
 }));
 
 const localStorageGetItem = window.localStorage.getItem as unknown as Mock;
@@ -63,6 +70,7 @@ describe("store middleware Redux logging gating", () => {
 
     expect(mocks.createLoggerMiddleware).not.toHaveBeenCalled();
     expect(middleware).toEqual([
+      mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sagaMiddleware,
       mocks.sentryMiddleware,
@@ -76,6 +84,7 @@ describe("store middleware Redux logging gating", () => {
 
     expect(mocks.createLoggerMiddleware).toHaveBeenCalledWith("");
     expect(middleware).toEqual([
+      mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sagaMiddleware,
       mocks.sentryMiddleware,
@@ -90,9 +99,11 @@ describe("store middleware Redux logging gating", () => {
 
     expect(mocks.createLoggerMiddleware).toHaveBeenCalledWith("");
     expect(middleware).toEqual([
+      mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sagaMiddleware,
       mocks.sentryMiddleware,
+      mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
     ]);
   });
@@ -105,9 +116,11 @@ describe("store middleware Redux logging gating", () => {
 
     expect(mocks.createLoggerMiddleware).not.toHaveBeenCalled();
     expect(middleware).toEqual([
+      mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sagaMiddleware,
       mocks.sentryMiddleware,
+      mocks.structuredCloneMiddleware,
     ]);
   });
 
@@ -137,9 +150,11 @@ describe("store middleware Redux logging gating", () => {
 
     expect(mocks.createLoggerMiddleware).not.toHaveBeenCalled();
     expect(middleware).toEqual([
+      mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sagaMiddleware,
       mocks.sentryMiddleware,
+      mocks.structuredCloneMiddleware,
     ]);
   });
 });

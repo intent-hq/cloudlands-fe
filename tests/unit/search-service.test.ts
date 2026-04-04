@@ -80,8 +80,8 @@ describe('DebouncedSearchService', () => {
 
     it('should debounce multiple rapid searches', async () => {
       // Start multiple searches rapidly
-      const search1 = service.search('test1', [mockProvider], mockContext);
-      const search2 = service.search('test2', [mockProvider], mockContext);
+      service.search('test1', [mockProvider], mockContext);
+      service.search('test2', [mockProvider], mockContext);
       const search3 = service.search('test3', [mockProvider], mockContext);
 
       // Advance time to trigger debounce
@@ -207,6 +207,7 @@ describe('DebouncedSearchService', () => {
       // Create a provider that throws an AbortError
       const abortableProvider: Provider = {
         id: 'abortable',
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         async search(query: string, context: SearchContext) {
           const error = new Error('Search aborted');
           error.name = 'AbortError';

@@ -76,7 +76,7 @@ describe('isValidDirectory validation logic (contract tests)', () => {
     // 2. A valid temp directory
     // 3. /tmp as last resort
     const validPaths = [homedir(), tmpdir(), '/tmp'];
-    const isValidResult = validPaths.some(
+    validPaths.some(
       (path) => path && path.length > 1 && path !== '/' && result.startsWith(path.slice(0, 4)),
     );
 

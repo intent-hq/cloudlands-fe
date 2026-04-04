@@ -16,7 +16,6 @@ export { default as TimeScrubber } from './TimeScrubber.svelte';
 export * from './types';
 export * from './constants';
 
-// Store and utilities
-export * from './agent-overview.store.svelte';
+// Utilities
 export * from './force-simulation';
 export * from './graph-helpers';

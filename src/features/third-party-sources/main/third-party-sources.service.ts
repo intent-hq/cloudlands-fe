@@ -16,14 +16,10 @@ import type {
 import { Result } from '../../../shared/result';
 import { ThirdPartySourcesRepository } from './third-party-sources.repository';
 import { MetadataExtractor } from '../metadata-extractor';
-import { unifiedEventBus, type UnifiedEventBus } from '../../events/main/unified-event-bus';
+import { mainDispatch } from '../../../store/main/redux-store-bridge';
+import { sourceCreated, sourceUpdated, sourceDeleted } from '../../../store/main/slices/source-events/source-events-slice';
 
 const logger = new Logger('third-party-sources-service');
-
-// Constants for validation
-const MAX_URL_LENGTH = 2048;
-const MAX_TITLE_LENGTH = 255;
-const MAX_DESCRIPTION_LENGTH = 1000;
 
 export class ThirdPartySourcesService {
   private eventListeners: Array<() => void> = [];
@@ -31,7 +27,6 @@ export class ThirdPartySourcesService {
   constructor(
     private readonly repository: ThirdPartySourcesRepository = new ThirdPartySourcesRepository(),
     private readonly metadataExtractor: MetadataExtractor = new MetadataExtractor(),
-    private readonly eventBus: UnifiedEventBus = unifiedEventBus,
   ) {}
 
   /**
@@ -152,11 +147,11 @@ export class ThirdPartySourcesService {
       await this.repository.save(source);
 
       // Emit event
-      this.eventBus.emitDomainEvent('source:created', {
+      mainDispatch(sourceCreated({
         workspaceId: request.workspaceId,
         sourceId: id,
         source,
-      });
+      }));
 
       logger.info('Third-party source created', {
         id,
@@ -203,11 +198,11 @@ export class ThirdPartySourcesService {
 
       await this.repository.save(updated);
 
-      this.eventBus.emitDomainEvent('source:updated', {
+      mainDispatch(sourceUpdated({
         workspaceId,
         sourceId,
         source: updated,
-      });
+      }));
 
       return { ok: true, data: updated };
     } catch (error) {
@@ -264,10 +259,10 @@ export class ThirdPartySourcesService {
     try {
       await this.repository.delete(workspaceId, sourceId);
 
-      this.eventBus.emitDomainEvent('source:deleted', {
+      mainDispatch(sourceDeleted({
         workspaceId,
         sourceId,
-      });
+      }));
 
       return { ok: true, data: undefined };
     } catch (error) {

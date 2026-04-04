@@ -19,6 +19,9 @@ vi.mock("typed-redux-saga", () => ({
   put: function* (action: any) {
     return yield sagaEffects.put(action);
   },
+  select: function* (selector: any, ...args: any[]) {
+    return yield sagaEffects.select(selector, ...args);
+  },
   take: function* (patternOrChannel: any) {
     return yield sagaEffects.take(patternOrChannel);
   },
@@ -31,30 +34,58 @@ const {
   takeEveryFromElectronChannelMock,
   takeEveryFromWindowEventMock,
   createDockNavigationWatcherMock,
+  dispatchMock,
   getFileExtensionMock,
+  getReduxStoreMock,
   getPanelLayoutManagerMock,
   getSettingsPreviousPathMock,
   gotoMock,
   hasPanelLayoutManagerMock,
   isFocusInTerminalMock,
   navigateToSettingsMock,
+  reduxState,
   trackMock,
   windowStub,
-  workspaceStoreMock,
 } = vi.hoisted(() => {
   const location = { pathname: "/" };
+  const reduxState: Record<string, any> = {
+    workspace: {
+      activeWorkspaceId: "ws-current",
+      workspaces: {
+        ids: ["ws-current"],
+        map: {
+          "ws-current": {
+            id: "ws-current",
+            environmentConfig: {
+              type: "remote",
+              ssh: { host: "example.com" },
+            },
+          },
+        },
+      },
+    },
+    panelLayout: {
+      byWorkspaceId: {},
+    },
+  };
+
+  const dispatchMock = vi.fn();
+  const storeMock = { getState: () => reduxState, dispatch: dispatchMock };
 
   return {
     takeEveryFromElectronChannelMock: vi.fn(function* () {}),
     takeEveryFromWindowEventMock: vi.fn(function* () {}),
     createDockNavigationWatcherMock: vi.fn(),
+    dispatchMock,
     getFileExtensionMock: vi.fn(),
+    getReduxStoreMock: vi.fn(() => storeMock),
     getPanelLayoutManagerMock: vi.fn(),
     getSettingsPreviousPathMock: vi.fn(),
     gotoMock: vi.fn(),
     hasPanelLayoutManagerMock: vi.fn(),
     isFocusInTerminalMock: vi.fn(),
     navigateToSettingsMock: vi.fn(),
+    reduxState,
     trackMock: vi.fn(),
     windowStub: {
       electronAPI: {},
@@ -63,15 +94,6 @@ const {
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
     },
-    workspaceStoreMock: {
-      current: {
-        id: "ws-current",
-        environmentConfig: {
-          type: "remote",
-          ssh: { host: "example.com" },
-        },
-      },
-    },
   };
 });
 
@@ -79,13 +101,13 @@ vi.mock("$app/navigation", () => ({
   goto: gotoMock,
 }));
 
-vi.mock("$features/layout/panel-layout-manager.svelte", () => ({
+vi.mock("$features/layout/panel-layout-adapter", () => ({
   getPanelLayoutManager: getPanelLayoutManagerMock,
   hasPanelLayoutManager: hasPanelLayoutManagerMock,
 }));
 
-vi.mock("$features/workspace/workspace.store.svelte", () => ({
-  workspaceStore: workspaceStoreMock,
+vi.mock("$lib/store/redux-dispatch-bridge", () => ({
+  getReduxStore: getReduxStoreMock,
 }));
 
 vi.mock("$lib/services/analytics", () => ({
@@ -112,16 +134,22 @@ vi.mock("./dock-navigation-saga", () => ({
 }));
 
 import { openNewSpaceModal } from "../../global-modals/global-modals-slice";
-import { createNoteRequested } from "../../note-read-tracking/note-read-tracking-slice";
-import { createTerminalRequested } from "../../terminals/terminals-slice";
+import {
+  focusPanel as focusPanelAction,
+  setActiveTab as setActiveTabAction,
+  updateTabBrowserUrl as updateTabBrowserUrlAction,
+} from "../../panel-layout/panel-layout-slice";
+import { selectAllTabs } from "../../panel-layout/panel-layout-selectors";
 import {
   workspaceMounted,
   workspaceUnmounted,
 } from "../../workspace-lifecycle/workspace-lifecycle-slice";
+import { selectActiveWorkspace } from "../../workspace/workspace-selectors";
 import { createAgentRequested } from "../../workspace-agents/workspace-agents-slice";
 import {
   appLayoutSaga,
   cancelWorkspaceWindowEventsForWorkspaceSaga,
+  retroactiveAppLayoutMountCheckSaga,
   watchBrowserOpenTabSaga,
   watchMenuNewAgentSaga,
   watchNavigateSaga,
@@ -149,6 +177,7 @@ import {
   watchWorkspaceWindowEventsForWorkspaceSaga,
   watchWorkspaceWindowEventsSaga,
 } from "./app-layout-saga";
+import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import { specPanelSaga } from "./spec-panel-saga";
 
 function getWindowEventHandler(eventName: string) {
@@ -170,13 +199,34 @@ describe("appLayoutSaga", () => {
     vi.clearAllMocks();
     vi.stubGlobal("window", windowStub as unknown as Window & typeof globalThis);
     windowStub.location.pathname = "/";
-    workspaceStoreMock.current = {
+    reduxState.workspace.activeWorkspaceId = "ws-current";
+    reduxState.workspace.workspaces = {
+      ids: ["ws-current"],
+      map: {
+        "ws-current": {
       id: "ws-current",
       notes: [{ id: "note-1", title: "Note One" }],
       agents: [{ id: "agent-1", title: "Agent One", name: "Agent One" }],
       environmentConfig: {
         type: "remote",
         ssh: { host: "example.com" },
+      },
+        },
+      },
+    };
+    reduxState.workspaceNotes = {
+      byWorkspaceId: {
+        "ws-current": {
+          notes: {
+            ids: ["note-1"],
+            map: { "note-1": { id: "note-1", title: "Note One" } },
+          },
+        },
+      },
+    };
+    reduxState.agentSessions = {
+      byAgentId: {
+        "agent-1": { id: "agent-1", name: "Agent One" },
       },
     };
     getFileExtensionMock.mockReturnValue("ts");
@@ -237,6 +287,10 @@ describe("appLayoutSaga", () => {
     });
     expect(iterator.next()).toEqual({
       value: sagaEffects.fork(watchWorkspaceWindowEventLifecyclesSaga),
+      done: false,
+    });
+    expect(iterator.next()).toEqual({
+      value: sagaEffects.fork(retroactiveAppLayoutMountCheckSaga),
       done: false,
     });
     expect(iterator.next()).toEqual({ value: sagaEffects.fork(specPanelSaga), done: false });
@@ -329,20 +383,30 @@ describe("appLayoutSaga", () => {
   });
 
   it("creates an uncaptured channel for workspace:show-agent and focuses an existing agent tab", () => {
-    const manager = {
-      layout: {
-        panels: {
-          "panel-1": {
-            tabs: [{ id: "tab-1", type: "agent", agentId: "agent-1" }],
-            activeTabId: null,
+    // Set up panel data in Redux state so showAgentInLayout can find the agent tab
+    reduxState.panelLayout = {
+      byWorkspaceId: {
+        "ws-current": {
+          panels: {
+            "panel-1": {
+              tabs: [{ id: "tab-1", type: "agent", agentId: "agent-1" }],
+              activeTabId: null,
+            },
           },
+          focusedPanelId: null,
+          root: { type: "panel", panelId: "panel-1" },
+          recentlyClosed: [],
+          layoutHistory: [],
+          historyIndex: -1,
+          historyLoaded: false,
+          focusHistory: [],
+          focusHistoryIndex: -1,
+          expandedPanelId: null,
+          deferSpecTab: false,
+          pendingFocusTabId: null,
         },
       },
-      focusPanel: vi.fn(),
-      setActiveTab: vi.fn(),
-      openTab: vi.fn(),
     };
-    getPanelLayoutManagerMock.mockReturnValue(manager);
 
     const iterator = watchShowAgentSaga("ws-current");
 
@@ -355,18 +419,31 @@ describe("appLayoutSaga", () => {
     const handler = getWindowEventHandler("workspace:show-agent");
     expect(handler({ agentId: "agent-1" }).next()).toEqual({ value: undefined, done: true });
 
-    expect(manager.focusPanel).toHaveBeenCalledWith("panel-1");
-    expect(manager.setActiveTab).toHaveBeenCalledWith("tab-1", "panel-1");
-    expect(manager.openTab).not.toHaveBeenCalled();
+    // The saga now dispatches Redux actions directly via store.dispatch()
+    expect(dispatchMock).toHaveBeenCalledWith(focusPanelAction("ws-current", "panel-1"));
+    expect(dispatchMock).toHaveBeenCalledWith(setActiveTabAction("ws-current", "tab-1", "panel-1"));
   });
 
-  it("opens files through the panel layout manager and tracks analytics", () => {
-    const manager = {
-      openTab: vi.fn(),
-      openTabInAdjacentOrSplit: vi.fn(),
-      focusedPanelId: "panel-2",
+  it("opens files through Redux dispatch and tracks analytics", () => {
+    // Set up panel state so requestFocusedPanelFocus can read focusedPanelId
+    reduxState.panelLayout = {
+      byWorkspaceId: {
+        "ws-current": {
+          panels: { "panel-2": { tabs: [], activeTabId: null } },
+          focusedPanelId: "panel-2",
+          root: { type: "panel", panelId: "panel-2" },
+          recentlyClosed: [],
+          layoutHistory: [],
+          historyIndex: -1,
+          historyLoaded: false,
+          focusHistory: [],
+          focusHistoryIndex: -1,
+          expandedPanelId: null,
+          deferSpecTab: false,
+          pendingFocusTabId: null,
+        },
+      },
     };
-    getPanelLayoutManagerMock.mockReturnValue(manager);
 
     const iterator = watchOpenFileSaga("ws-current");
 
@@ -389,14 +466,20 @@ describe("appLayoutSaga", () => {
       }).next(),
     ).toEqual({ value: undefined, done: true });
 
-    expect(manager.openTabInAdjacentOrSplit).toHaveBeenCalledWith(
-      {
-        type: "file",
-        title: "main.ts",
-        filePath: "src/main.ts",
-        closable: true,
-      },
-      "panel-1",
+    // The saga now dispatches Redux actions directly via store.dispatch()
+    expect(dispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "panelLayout/openTabInAdjacentOrSplit",
+        payload: expect.objectContaining({
+          tab: expect.objectContaining({
+            type: "file",
+            title: "main.ts",
+            filePath: "src/main.ts",
+            closable: true,
+          }),
+          sourcePanelId: "panel-1",
+        }),
+      }),
     );
     expect(trackMock).toHaveBeenCalledWith("Opened File", {
       workspace_id: "ws-current",
@@ -408,16 +491,31 @@ describe("appLayoutSaga", () => {
   });
 
   it("opens notes in an adjacent panel when launched from an active agent tab", () => {
-    const manager = {
-      getPanel: vi.fn().mockReturnValue({
-        tabs: [{ id: "tab-agent", type: "agent" }],
-        activeTabId: "tab-agent",
-      }),
-      openTab: vi.fn(),
-      openTabInAdjacentOrSplit: vi.fn(),
-      focusedPanelId: "panel-2",
+    // Set up panel state so selectPanel can find the source panel with an active agent tab
+    reduxState.panelLayout = {
+      byWorkspaceId: {
+        "ws-current": {
+          panels: {
+            "panel-1": {
+              tabs: [{ id: "tab-agent", type: "agent" }],
+              activeTabId: "tab-agent",
+            },
+            "panel-2": { tabs: [], activeTabId: null },
+          },
+          focusedPanelId: "panel-2",
+          root: { type: "panel", panelId: "panel-2" },
+          recentlyClosed: [],
+          layoutHistory: [],
+          historyIndex: -1,
+          historyLoaded: false,
+          focusHistory: [],
+          focusHistoryIndex: -1,
+          expandedPanelId: null,
+          deferSpecTab: false,
+          pendingFocusTabId: null,
+        },
+      },
     };
-    getPanelLayoutManagerMock.mockReturnValue(manager);
 
     const iterator = watchOpenNoteSaga("ws-current");
 
@@ -440,16 +538,21 @@ describe("appLayoutSaga", () => {
       }).next(),
     ).toEqual({ value: undefined, done: true });
 
-    expect(manager.openTabInAdjacentOrSplit).toHaveBeenCalledWith(
-      {
-        type: "note",
-        title: "Note One",
-        noteId: "note-1",
-        closable: true,
-      },
-      "panel-1",
+    // The saga detects the active tab is an agent tab and opens in adjacent panel
+    expect(dispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "panelLayout/openTabInAdjacentOrSplit",
+        payload: expect.objectContaining({
+          tab: expect.objectContaining({
+            type: "note",
+            title: "Note One",
+            noteId: "note-1",
+            closable: true,
+          }),
+          sourcePanelId: "panel-1",
+        }),
+      }),
     );
-    expect(manager.openTab).not.toHaveBeenCalled();
   });
 
   it("opens the new space modal instead of navigating for /?create=true", () => {
@@ -541,6 +644,10 @@ describe("appLayoutSaga", () => {
       done: false,
     });
     expect(handlerIterator.next(false)).toEqual({
+      value: sagaEffects.select(selectActiveWorkspace.select),
+      done: false,
+    });
+    expect(handlerIterator.next(reduxState.workspace.workspaces.map["ws-current"])).toEqual({
       value: sagaEffects.put(createAgentRequested("ws-current")),
       done: false,
     });
@@ -548,19 +655,6 @@ describe("appLayoutSaga", () => {
   });
 
   it("reuses an existing browser tab when replace mode is requested", () => {
-    const manager = {
-      allOpenTabs: [{ id: "tab-1", type: "browser" }],
-      updateTabBrowserUrl: vi.fn(),
-      setActiveTab: vi.fn(),
-      openBrowserPanel: vi.fn(),
-      openTabInAdjacentOrSplit: vi.fn(),
-      closeActiveTab: vi.fn(),
-      reopenClosedTab: vi.fn(),
-      selectPreviousTab: vi.fn(),
-      selectNextTab: vi.fn(),
-    };
-    getPanelLayoutManagerMock.mockReturnValue(manager);
-
     const iterator = watchBrowserOpenTabSaga();
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
@@ -572,51 +666,52 @@ describe("appLayoutSaga", () => {
         workspaceId: "ws-target",
       });
 
+    // The saga selects all tabs to find an existing browser tab
     expect(handlerIterator.next()).toEqual({
-      value: sagaEffects.call(
-        [manager, manager.updateTabBrowserUrl],
-        "tab-1",
-        "https://augmentcode.com",
-      ),
+      value: sagaEffects.select(selectAllTabs.select, "ws-target"),
+      done: false,
+    });
+    // Provide an existing browser tab
+    expect(handlerIterator.next([{ id: "tab-1", type: "browser" }])).toEqual({
+      value: sagaEffects.put(updateTabBrowserUrlAction("ws-target", "tab-1", "https://augmentcode.com")),
       done: false,
     });
     expect(handlerIterator.next()).toEqual({
-      value: sagaEffects.call([manager, manager.setActiveTab], "tab-1"),
+      value: sagaEffects.put(setActiveTabAction("ws-target", "tab-1")),
       done: false,
     });
   });
 
   it("opens a browser tab in an adjacent panel by default", () => {
-    const manager = {
-      allOpenTabs: [],
-      updateTabBrowserUrl: vi.fn(),
-      setActiveTab: vi.fn(),
-      openBrowserPanel: vi.fn(),
-      openTabInAdjacentOrSplit: vi.fn(),
-      closeActiveTab: vi.fn(),
-      reopenClosedTab: vi.fn(),
-      selectPreviousTab: vi.fn(),
-      selectNextTab: vi.fn(),
-    };
-    getPanelLayoutManagerMock.mockReturnValue(manager);
-
     const iterator = watchBrowserOpenTabSaga();
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
 
     const handler = getElectronHandler("browser:open-tab");
-    expect(handler({ url: "https://augmentcode.com" }).next()).toEqual({
-      value: sagaEffects.call(
-        { context: manager, fn: manager.openTabInAdjacentOrSplit },
-        {
-          type: "browser",
-          title: "Browser",
-          browserUrl: "https://augmentcode.com",
-          closable: true,
-        },
-      ),
+    const handlerIterator = handler({ url: "https://augmentcode.com" });
+    // No workspaceId provided, so it selects the active workspace first
+    expect(handlerIterator.next()).toEqual({
+      value: sagaEffects.select(selectActiveWorkspace.select),
       done: false,
     });
+    // After getting workspace, it dispatches openTabInAdjacentOrSplit via PUT
+    const step = handlerIterator.next(reduxState.workspace.workspaces.map["ws-current"]);
+    expect(step.done).toBe(false);
+    const putEffect = step.value as any;
+    expect(putEffect.type).toBe("PUT");
+    expect(putEffect.payload.action).toEqual(
+      expect.objectContaining({
+        type: "panelLayout/openTabInAdjacentOrSplit",
+        payload: expect.objectContaining({
+          tab: expect.objectContaining({
+            type: "browser",
+            title: "Browser",
+            browserUrl: "https://augmentcode.com",
+            closable: true,
+          }),
+        }),
+      }),
+    );
   });
 
   it("opens the new space modal from workspace:create-for-repo with environment carry-over", () => {
@@ -625,13 +720,16 @@ describe("appLayoutSaga", () => {
     expect(iterator.next()).toEqual({ value: undefined, done: true });
 
     const handler = getWindowEventHandler("workspace:create-for-repo");
-    expect(
-      handler({
-        repositoryPath: "/repo/intent",
-        workspaceId: "ws-old",
-        workspaceTitle: "Old Space",
-      }).next(),
-    ).toEqual({
+    const handlerIterator = handler({
+      repositoryPath: "/repo/intent",
+      workspaceId: "ws-old",
+      workspaceTitle: "Old Space",
+    });
+    expect(handlerIterator.next()).toEqual({
+      value: sagaEffects.select(selectActiveWorkspace.select),
+      done: false,
+    });
+    expect(handlerIterator.next(reduxState.workspace.workspaces.map["ws-current"])).toEqual({
       value: sagaEffects.put(
         openNewSpaceModal({
           repoPath: "/repo/intent",
@@ -668,6 +766,42 @@ describe("appLayoutSaga", () => {
         }),
       ),
       done: false,
+    });
+  });
+
+  describe("retroactiveAppLayoutMountCheckSaga", () => {
+    it("forks workspace window events when a workspace is already active but no tasks exist", () => {
+      const iterator = retroactiveAppLayoutMountCheckSaga();
+
+      expect(iterator.next()).toEqual({
+        value: sagaEffects.select(selectActiveWorkspaceId.select),
+        done: false,
+      });
+      // Provide active workspace ID
+      const forkResult = iterator.next("ws-current");
+      expect(forkResult.done).toBe(false);
+      expect((forkResult.value as any).type).toBe("FORK");
+      expect((forkResult.value as any).payload.args[0]).toEqual(
+        workspaceMounted("ws-current"),
+      );
+    });
+
+    it("does nothing when no workspace is active", () => {
+      const iterator = retroactiveAppLayoutMountCheckSaga();
+
+      expect(iterator.next()).toEqual({
+        value: sagaEffects.select(selectActiveWorkspaceId.select),
+        done: false,
+      });
+      expect(iterator.next(null)).toEqual({ value: undefined, done: true });
+    });
+
+    it("skips invalid workspace IDs", () => {
+      for (const invalidId of ["", "new", "optimistic-abc123", "undefined"]) {
+        const iterator = retroactiveAppLayoutMountCheckSaga();
+        iterator.next(); // select
+        expect(iterator.next(invalidId)).toEqual({ value: undefined, done: true });
+      }
     });
   });
 });

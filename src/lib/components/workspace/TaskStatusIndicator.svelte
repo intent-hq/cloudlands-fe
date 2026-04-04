@@ -2,12 +2,12 @@
   import { tick } from 'svelte';
   import type { TaskStatus } from '$shared/types';
   import type { WorkspaceId, NoteId } from '$shared/types/branded-ids';
-  import { notesClient } from '$features/notes/notes.client';
-  import { createLogger } from '$lib/utils/client-logger';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import TaskStatusIcon from '../tiptap/TaskStatusIcon.svelte';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { updateTaskStatus } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
 
-  const logger = createLogger('TaskStatusIndicator');
+  const dispatch = getDispatch();
 
   let {
     workspaceId,
@@ -56,6 +56,7 @@
     cancelled: 'bg-gray-600/10 text-gray-500',
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const statusDotColors: Record<TaskStatus, string> = {
     not_started: 'bg-gray-400',
     waiting: 'bg-gray-300',
@@ -69,19 +70,12 @@
   // Check if this is an interactive dropdown or readonly badge
   let isInteractive = $derived(!readonly && !!workspaceId && !!noteId);
 
-  async function handleStatusSelect(newStatus: TaskStatus, close: () => void) {
+  function handleStatusSelect(newStatus: TaskStatus, close: () => void) {
     close();
     if (newStatus === status) return;
     if (!workspaceId || !noteId) return;
 
-    try {
-      const result = await notesClient.updateTaskStatus(workspaceId, noteId, newStatus);
-      if (!result.ok) {
-        logger.error('Failed to update task status', { error: result.error });
-      }
-    } catch (error) {
-      logger.error('Error updating task status', error);
-    }
+    dispatch(updateTaskStatus(workspaceId, noteId, newStatus));
   }
 
   async function handleMenuOpen() {

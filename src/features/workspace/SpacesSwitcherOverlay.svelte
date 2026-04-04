@@ -7,59 +7,70 @@
    * Rows match the home page WorkspaceTableRow layout for visual consistency.
    * Uses a scrollable container with auto-scroll-into-view for keyboard navigation.
    */
+  import { goto } from '$app/navigation';
   import { fade, fly } from 'svelte/transition';
   import { onMount, tick } from 'svelte';
   import type { Workspace } from '$shared/types';
   import { PullRequestStatus } from '$shared/types';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
-  import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
-  import { pendingAgentsStore } from '$features/agent/services/pending-agents.store.svelte';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectUnreadAgentIds, selectUnreadAgentIdsForWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
+  import { getDispatch } from '$lib/store/utils/utils';
   import { selectPermissionRequests } from '$lib/store/slices/permission/permission-selectors';
+  import {
+    closeSwitcher,
+    confirmSelection,
+  } from '$lib/store/slices/workspace-switcher/workspace-switcher-slice';
+  import {
+    selectSwitcherState,
+    selectSwitcherWorkspaceIds,
+  } from '$lib/store/slices/workspace-switcher/workspace-switcher-selectors';
+  import {
+    selectActiveWorkspaceId,
+    selectWorkspaceItems,
+  } from '$lib/store/slices/workspace/workspace-selectors';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import WorkspacePhaseIndicator from '$lib/components/workspace/WorkspacePhaseIndicator.svelte';
   import { deriveWorkspacePhase } from '$lib/components/workspace/workspace-phase';
   import { isPRMergeable as checkPRMergeable } from '$lib/utils/pr-status';
 
-  interface Props {
-    isOpen: boolean;
-    /** All workspaces to display */
-    workspaces: Workspace[];
-    /** Selected index in the full list */
-    selectedIndex: number;
-    /** The currently active workspace ID */
-    currentWorkspaceId?: string | null;
-  }
-
-  let { isOpen, workspaces, selectedIndex, currentWorkspaceId = null }: Props = $props();
+  const dispatch = getDispatch();
+  const switcherState = selectSwitcherState();
+  const switcherWorkspaceIds = selectSwitcherWorkspaceIds();
+  const workspaces = selectWorkspaceItems();
+  const currentWorkspaceId = selectActiveWorkspaceId();
+  const unreadAgentIds$ = selectUnreadAgentIds();
+  const allPermissionRequests = selectPermissionRequests();
+  const isOpen = $derived(!$switcherState.selectionHandled);
+  const orderedWorkspaces = $derived.by(() => {
+    const byId = new Map($workspaces.map((workspace) => [workspace.id, workspace]));
+    return $switcherWorkspaceIds
+      .map((workspaceId) => byId.get(workspaceId as Workspace["id"]))
+      .filter((workspace): workspace is Workspace => workspace != null);
+  });
 
   // Scroll container ref
   let scrollContainer: HTMLDivElement | undefined = $state();
 
-  const allPermissionRequests = selectPermissionRequests();
-
   // Reactivity versions for subscriptions
   let activeStreamsVersion = $state(0);
-  let unreadVersion = $state(0);
 
   onMount(() => {
-    activeStreamsTracker.startPolling(2000);
+    activeStreamsTracker.startPolling();
     const unsubscribeStreams = activeStreamsTracker.subscribe(() => activeStreamsVersion++);
-    const unsubscribeUnread = unreadTrackingService.subscribe(() => unreadVersion++);
 
     return () => {
       unsubscribeStreams();
-      unsubscribeUnread();
     };
   });
 
   // Auto-scroll selected item into view when selectedIndex changes
   $effect(() => {
     if (!isOpen || !scrollContainer) return;
-    // Track selectedIndex to trigger effect
-    const idx = selectedIndex;
+    const idx = $switcherState.selectedIndex;
     tick().then(() => {
       const items = scrollContainer?.querySelectorAll('[data-switcher-item]');
       const target = items?.[idx];
@@ -76,11 +87,14 @@
     isUnread: boolean;
   }
 
-  /** Dispatch selection event - keyboard manager listens for this */
+  /** Navigate to the clicked workspace and close the switcher. */
   function handleWorkspaceClick(workspace: Workspace) {
-    window.dispatchEvent(
-      new CustomEvent('spaces-switcher:select', { detail: { workspaceId: workspace.id } }),
-    );
+    dispatch(confirmSelection());
+    dispatch(closeSwitcher());
+
+    if (workspace.id !== $currentWorkspaceId) {
+      void goto(`/workspace/${workspace.id}`);
+    }
   }
 
   // Get display title (show "Untitled" for empty titles)
@@ -105,28 +119,18 @@
   function getWorkspaceAgentInfo(ws: Workspace): AgentDisplayInfo[] {
     // Reference version counters for reactivity
     void activeStreamsVersion;
-    void unreadVersion;
-    void pendingAgentsStore.version;
-
+    void $unreadAgentIds$;
+    const state = getReduxStore().getState();
     const summary = ws.agentSummary;
     const summaryAgents = summary?.agents || [];
-    const pendingAgents = pendingAgentsStore.getForWorkspace(ws.id);
+    if (summaryAgents.length === 0) return [];
 
-    const summaryAgentIds = new Set(summaryAgents.map((a) => a.id));
-    const allAgents = [
-      ...summaryAgents,
-      ...pendingAgents.filter((pa) => !summaryAgentIds.has(pa.id)),
-    ];
+    const unreadAgentIdsForWs = new Set(selectUnreadAgentIdsForWorkspace.select(state, ws.id));
 
-    if (allAgents.length === 0) return [];
-
-    const unreadAgentIds = new Set(unreadTrackingService.getUnreadAgentIdsForWorkspace(ws.id));
-
-    return allAgents
+    return summaryAgents
       .map((agent) => {
         const isStreaming = activeStreamsTracker.isAgentStreaming(agent.id);
-        const isUnread = unreadAgentIds.has(agent.id);
-        const isPending = pendingAgents.some((pa) => pa.id === agent.id);
+        const isUnread = unreadAgentIdsForWs.has(agent.id);
 
         const hasPermissionRequest = $allPermissionRequests.some((r) => r.sessionId === agent.id);
         let state: AvatarState = 'idle';
@@ -134,7 +138,7 @@
           state = 'failed';
         } else if (hasPermissionRequest) {
           state = 'needs-permission';
-        } else if (isStreaming || isPending) {
+        } else if (isStreaming) {
           state = 'running';
         } else if (agent.status === 'busy' || agent.status === 'processing') {
           state = 'running';
@@ -147,7 +151,7 @@
           state,
           specialist: agent.specialist,
           isActive:
-            isStreaming || isPending || agent.status === 'busy' || agent.status === 'processing',
+            isStreaming || agent.status === 'busy' || agent.status === 'processing',
           isUnread,
         };
       })
@@ -169,7 +173,7 @@
   }
 </script>
 
-{#if isOpen && workspaces.length > 0}
+{#if isOpen && orderedWorkspaces.length > 0}
   <div
     class="fixed inset-0 bg-sidebar/50 backdrop-blur-xs z-50"
     transition:fade={{ duration: 150 }}
@@ -187,9 +191,9 @@
         bind:this={scrollContainer}
         class="max-h-[min(60vh,28rem)] overflow-y-auto overscroll-contain"
       >
-        {#each workspaces as workspace, index (workspace.id)}
-          {@const isSelected = index === selectedIndex}
-          {@const isCurrent = workspace.id === currentWorkspaceId}
+        {#each orderedWorkspaces as workspace, index (workspace.id)}
+          {@const isSelected = index === $switcherState.selectedIndex}
+          {@const isCurrent = workspace.id === $currentWorkspaceId}
           {@const agents = getWorkspaceAgentInfo(workspace)}
           {@const phaseInfo = getPhaseInfo(workspace, agents)}
           {@const progress = getBuildProgress(workspace)}

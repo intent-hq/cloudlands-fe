@@ -1,7 +1,20 @@
 <script lang="ts">
   import { handleLink } from '$features/navigation/link-handler';
-  import { sentryAuthStore } from '$features/sentry-auth/renderer/sentry-auth.store.svelte';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import {
+    selectSentryIsAuthenticated,
+    selectSentryOrganization,
+    selectSentryIsConnecting,
+    selectSentryError,
+  } from '$lib/store/slices/sentry-auth/sentry-auth-selectors';
+  import {
+    initializeSentryAuth,
+    connectSentry,
+    logoutSentry,
+    clearSentryError,
+  } from '$lib/store/slices/sentry-auth/sentry-auth-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
@@ -15,52 +28,55 @@
   }
 
   let { skipInitialize = false }: Props = $props();
+  const dispatch = getDispatch();
+  const activeWorkspaceId = selectActiveWorkspaceId();
+  const isAuthenticated$ = selectSentryIsAuthenticated();
+  const organization$ = selectSentryOrganization();
+  const storeIsConnecting$ = selectSentryIsConnecting();
+  const error$ = selectSentryError();
 
   let isDisconnectingSentry = $state(false);
   let showConnectForm = $state(false);
   let sentryOrg = $state('');
   let sentryToken = $state('');
-  let isConnecting = $state(false);
+  let pendingConnect = $state(false);
 
   onMount(() => {
     if (!skipInitialize) {
-      sentryAuthStore.initialize();
+      dispatch(initializeSentryAuth());
     }
   });
 
-  async function handleSentryConnect() {
+  // When connect completes successfully, clear the form
+  $effect(() => {
+    if (pendingConnect && !$storeIsConnecting$) {
+      pendingConnect = false;
+      if ($isAuthenticated$) {
+        sentryOrg = '';
+        sentryToken = '';
+        showConnectForm = false;
+      }
+    }
+  });
+
+  function handleSentryConnect() {
     if (!sentryOrg.trim() || !sentryToken.trim()) {
       return;
     }
-
-    isConnecting = true;
-    try {
-      const success = await sentryAuthStore.connect(sentryOrg.trim(), sentryToken.trim());
-      if (success) {
-        // Clear form state first, then hide - this prevents flash
-        sentryOrg = '';
-        sentryToken = '';
-        // Use a microtask to ensure state updates are processed
-        await Promise.resolve();
-        showConnectForm = false;
-      }
-    } finally {
-      isConnecting = false;
-    }
+    pendingConnect = true;
+    dispatch(connectSentry(sentryOrg.trim(), sentryToken.trim()));
   }
 
-  async function handleSentryDisconnect() {
+  function handleSentryDisconnect() {
     isDisconnectingSentry = true;
-    try {
-      await sentryAuthStore.logout();
-    } finally {
-      isDisconnectingSentry = false;
-    }
+    dispatch(logoutSentry());
+    // Reset local state immediately since logout is synchronous in Redux
+    isDisconnectingSentry = false;
   }
 
   function handleSentryReconnect() {
     showConnectForm = true;
-    sentryOrg = sentryAuthStore.state.organization || '';
+    sentryOrg = selectSentryOrganization.select(getReduxStore().getState()) || '';
     sentryToken = '';
   }
 
@@ -68,7 +84,7 @@
     showConnectForm = false;
     sentryOrg = '';
     sentryToken = '';
-    sentryAuthStore.clearError();
+    dispatch(clearSentryError());
   }
 </script>
 
@@ -77,11 +93,11 @@
     <div class="flex items-center gap-1">
       <SentryIcon size={17} class="text-ghost" />
       <span class="text-sm text-foreground">Sentry</span>
-      {#if sentryAuthStore.state.isAuthenticated}
+      {#if $isAuthenticated$}
         <span class="text-xs text-subtle flex items-center gap-1">
           <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
-          {#if sentryAuthStore.state.organization}
-            {sentryAuthStore.state.organization}
+          {#if $organization$}
+            {$organization$}
           {:else}
             Connected
           {/if}
@@ -89,15 +105,15 @@
       {/if}
     </div>
     <p class="text-xs text-subtle pl-6">Create spaces directly from issues.</p>
-    {#if sentryAuthStore.state.error}
-      <p class="text-xs text-destructive-foreground pl-6">{sentryAuthStore.state.error}</p>
+    {#if $error$}
+      <p class="text-xs text-destructive-foreground pl-6">{$error$}</p>
     {/if}
   </div>
 
   <div class="flex items-center gap-2 text-xs">
-    {#if sentryAuthStore.state.isConnecting || isConnecting}
+    {#if $storeIsConnecting$ || pendingConnect}
       <span class="text-subtle">Connecting...</span>
-    {:else if sentryAuthStore.state.isAuthenticated}
+    {:else if $isAuthenticated$}
       <button
         type="button"
         class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
@@ -126,7 +142,7 @@
   </div>
 </div>
 
-{#if showConnectForm && !sentryAuthStore.state.isConnecting}
+{#if showConnectForm && !$storeIsConnecting$}
   <div class="space-y-3 rounded-md bg-sidebar p-3">
     <div class="space-y-2">
       <label for="sentry-org" class="block text-xs font-medium text-foreground">
@@ -136,7 +152,7 @@
         id="sentry-org"
         bind:value={sentryOrg}
         placeholder="your-org"
-        disabled={isConnecting}
+        disabled={$storeIsConnecting$}
         class="text-sm"
       />
       <p class="text-xs text-subtle">
@@ -153,7 +169,7 @@
         type="password"
         bind:value={sentryToken}
         placeholder="sntrys_..."
-        disabled={isConnecting}
+        disabled={$storeIsConnecting$}
         class="text-sm"
       />
       <p class="text-xs text-subtle">
@@ -162,7 +178,7 @@
           type="button"
           onclick={() => {
             handleLink('https://sentry.io/settings/account/api/auth-tokens/', {
-              workspaceId: workspaceStore.current?.id,
+              workspaceId: $activeWorkspaceId ?? undefined,
             });
           }}
           class="text-primary hover:underline cursor-pointer"
@@ -179,11 +195,11 @@
         variant="default"
         size="sm"
         onclick={handleSentryConnect}
-        disabled={isConnecting || !sentryOrg.trim() || !sentryToken.trim()}
+        disabled={$storeIsConnecting$ || !sentryOrg.trim() || !sentryToken.trim()}
       >
-        {isConnecting ? 'Connecting...' : 'Connect'}
+        {$storeIsConnecting$ ? 'Connecting...' : 'Connect'}
       </Button>
-      <Button variant="ghost" size="sm" onclick={handleCancelConnect} disabled={isConnecting}>
+      <Button variant="ghost" size="sm" onclick={handleCancelConnect} disabled={$storeIsConnecting$}>
         Cancel
       </Button>
     </div>

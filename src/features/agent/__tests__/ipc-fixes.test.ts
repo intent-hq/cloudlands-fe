@@ -478,7 +478,7 @@ describe('IPC Heartbeat Ping/Pong', () => {
 
     it('should respond to ping with pong', () => {
       const agentId = 'agent-123';
-      const pingChannel = `agent:stream:ping:${agentId}`;
+
 
       // Create ping handler that mirrors the implementation
       const pingHandler = (data: { agentId: string; timestamp: number }) => {

@@ -6,6 +6,7 @@ import { selectPipState } from "../pip-selectors";
 function* handleOpenOrFocusPip(action: ReturnType<typeof openOrFocusPip>) {
     const [workspaceId, tabId, tabType, panelId] = action.payload;
     try {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const result: number = yield* call(invoke<number>, PIP_CHANNELS.OPEN, {
             workspaceId,
             tabId,
@@ -13,7 +14,7 @@ function* handleOpenOrFocusPip(action: ReturnType<typeof openOrFocusPip>) {
             panelId,
         });
     }
-    catch (error) {
+    catch {
     }
 }
 function* handleClosePip(action: ReturnType<typeof closePip>) {
@@ -21,7 +22,7 @@ function* handleClosePip(action: ReturnType<typeof closePip>) {
     try {
         yield* call(invoke, PIP_CHANNELS.CLOSE, { workspaceId, tabId });
     }
-    catch (error) {
+    catch {
     }
 }
 function* handleCloseAllPipForWorkspace(action: ReturnType<typeof closeAllPipForWorkspace>) {
@@ -29,7 +30,7 @@ function* handleCloseAllPipForWorkspace(action: ReturnType<typeof closeAllPipFor
     try {
         yield* call(invoke, PIP_CHANNELS.CLOSE_ALL_FOR_WORKSPACE, { workspaceId });
     }
-    catch (error) {
+    catch {
     }
 }
 function* handleCloseAllPip() {
@@ -43,7 +44,7 @@ function* handleCloseAllPip() {
             });
         }
     }
-    catch (error) {
+    catch {
     }
 }
 /**

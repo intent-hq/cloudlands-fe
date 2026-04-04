@@ -27,10 +27,6 @@ vi.mock('$features/system/main/system.ipc', () => ({
   sendToWorkspaceWindows: vi.fn(),
 }));
 
-vi.mock('$features/events/main/workspace-event-bus', () => ({
-  getWorkspaceEventBus: () => ({ emitEvent: vi.fn() }),
-}));
-
 vi.mock('$features/events/types', () => ({
   createWorkspaceEvent: vi.fn().mockReturnValue({ id: 'evt-1' }),
 }));

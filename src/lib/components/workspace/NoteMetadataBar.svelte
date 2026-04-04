@@ -4,17 +4,18 @@
   import { createLogger } from '$lib/utils/client-logger';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { useAllAgentsSubscription } from '$lib/utils/agent-subscription.svelte';
-  import { notesStateManager } from '$features/notes/notes.store.svelte';
   import TaskStatusIndicator from './TaskStatusIndicator.svelte';
   import Fa from 'svelte-fa';
   import { faPlay } from '@fortawesome/free-solid-svg-icons';
-  import { agentService } from '$features/agent/agent.service';
+  import { agentService } from '$features/agent/agent-ipc-bridge';
   import {
     getFileChangesFromMessages,
     type ChatFileChange,
   } from '$lib/utils/get-file-changes-from-messages';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { SPEC_NOTE_ID } from '$shared/constants/notes';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
 
   const logger = createLogger('NoteMetadataBar');
 
@@ -35,12 +36,13 @@
   const taskMetadata = $derived(note.metadata?.task);
   const assignedAgentIds = $derived(taskMetadata?.assignedAgentIds || []);
   const isSpec = $derived(note.id === SPEC_NOTE_ID);
+  const activeWorkspace = selectActiveWorkspace();
 
   // Get child tasks (notes that have this note as parent)
+  const allNotes$ = selectAllNotes(workspaceId as string);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const childTasks = $derived.by(() => {
-    const notesMap = notesStateManager.notes;
-    if (!notesMap) return [];
-    const allNotes = Array.from(notesMap.values());
+    const allNotes = $allNotes$;
     return allNotes.filter((n) => n.parentId === note.id && n.metadata?.task);
   });
 
@@ -77,7 +79,7 @@
 
   // Effect to load missing agents from disk
   $effect(() => {
-    const workspace = workspaceStore.current;
+    const workspace = $activeWorkspace;
     if (!workspace) return;
 
     const missingAgentIds = assignedAgentIds.filter(
@@ -122,7 +124,7 @@
 
   async function getAggregateChanges(): Promise<ChatFileChange[]> {
     const allMessages: AgentMessage[] = [];
-    const workspace = workspaceStore.current;
+    const workspace = selectActiveWorkspace.select(getReduxStore().getState());
 
     for (const agentId of assignedAgents) {
       try {
@@ -142,6 +144,7 @@
     return summary.changes;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleViewAllChanges() {
     try {
       const changes = await getAggregateChanges();

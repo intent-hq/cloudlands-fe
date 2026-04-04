@@ -26,20 +26,50 @@ import { uiSaga } from "./slices/ui-notifications/sagas/ui-notifications-saga";
 import { workspaceOperationsSaga } from "./slices/workspace-operations/sagas/workspace-operations-saga";
 import { workspaceSaga } from "./slices/workspace/sagas/workspace-saga";
 import { workspaceAgentsSaga } from "./slices/workspace-agents/sagas/workspace-agents-saga";
+import { workspaceNotesSaga } from "./slices/workspace-notes/sagas/workspace-notes-saga";
+import { workspaceEventsSaga as workspaceEventsRendererSaga } from "./slices/workspace-events/sagas/workspace-events-saga";
 import { authSaga } from "./slices/auth/sagas/auth-saga";
 import { autoUpdateSaga } from "./slices/auto-update/sagas/auto-update-saga";
 import { appLayoutSaga } from "./slices/app-layout/sagas/app-layout-saga";
-
-// eslint-disable-next-line @typescript-eslint/no-empty-function
-function* noopSaga() {}
+import { workspaceNavigationSaga } from "./slices/workspace-navigation/sagas/workspace-navigation-saga";
+import { workspaceSwitcherSaga } from "./slices/workspace-switcher/sagas/workspace-switcher-saga";
+import { releaseNotesSaga } from "./slices/release-notes/sagas/release-notes-saga";
+import { transientUiSaga } from "./slices/transient-ui/sagas/transient-ui-saga";
+import { skillsSaga } from "./slices/skills/sagas/skills-saga";
+import { linearAuthSaga } from "./slices/linear-auth/sagas/linear-auth-saga";
+import { githubAuthSaga } from "./slices/github-auth/sagas/github-auth-saga";
+import { sentryAuthSaga } from "./slices/sentry-auth/sagas/sentry-auth-saga";
+import { contextSaga } from "./slices/context/sagas/context-saga";
+import { browserSaga } from "./slices/browser/sagas/browser-saga";
+import { setupScriptsSaga } from "./slices/setup-scripts/sagas/setup-scripts-saga";
+import { mcpServersSaga } from "./slices/mcp-servers/sagas/mcp-servers-saga";
+import { mcpSettingsSaga } from "./slices/mcp-settings/sagas/mcp-settings-saga";
+import { commentsSaga } from "./slices/comments/sagas/comments-saga";
+import { lineChangesSaga } from "./slices/line-changes/sagas/line-changes-saga";
+import { sidebarNavSaga } from "./slices/sidebar-nav/sagas/sidebar-nav-saga";
+import { scriptsSaga } from "./slices/scripts/sagas/scripts-saga";
+import { agentFollowSaga } from "./slices/agent-follow/sagas/agent-follow-saga";
+import { gitSaga as gitStatusSaga } from "./slices/git/sagas/git-saga";
+import { agentOverviewSaga } from "./slices/agent-overview/sagas/agent-overview-saga";
+import { fileTrackingSaga } from "./slices/file-tracking/sagas/file-tracking-saga";
+import { agentLockSaga } from "./slices/agent-lock/sagas/agent-lock-saga";
+import { panelLayoutSaga } from "./slices/panel-layout/sagas/panel-layout-saga";
+import { streamingConfigSaga } from "./slices/streaming-config/sagas/streaming-config-saga";
+import { unreadTrackingSaga } from "./slices/unread-tracking/sagas/unread-tracking-saga";
+import { prStatusSaga } from "./slices/pr-status/sagas/pr-status-saga";
+import { backgroundAgentExecutorSaga } from "./slices/background-agent-executor/sagas/background-agent-executor-saga";
+import { chatStateSaga } from "./slices/chat-state/sagas/chat-state-saga";
+import { chatStreamSaga } from "./slices/chat-state/sagas/chat-stream-saga";
+import { fileExplorerSaga } from "./slices/file-explorer/sagas/file-explorer-saga";
+import { agentIpcSaga } from "./slices/workspace-agents/sagas/agent-ipc-saga";
+import { agentStreamSaga } from "./slices/workspace-agents/sagas/agent-stream-saga";
+import { agentSubscriptionUISaga } from "./slices/agent-subscription-ui/sagas/agent-subscription-ui-saga";
 
 /**
  * All registered sagas.
  * Add new sagas here as slices are migrated.
  *
  * All sagas are started synchronously by initStore() during store initialization.
- * Placeholder noop sagas below will be replaced with real implementations
- * as their respective Svelte stores are migrated to Redux.
  */
 export const sagas = {
   providerSettingsSaga,
@@ -60,24 +90,48 @@ export const sagas = {
   userPreferencesSaga,
   workspaceOperationsSaga,
   workspaceSettingsSaga,
-  // Placeholder sagas for Store.svelte references — will be replaced with real implementations
-  streamingSaga: noopSaga,
+  streamingSaga: streamingConfigSaga,
   workspaceSaga,
   gitSaga: gitOperationsSaga,
-  fileTrackingSaga: noopSaga,
-  notesSaga: noopSaga,
+  fileTrackingSaga,
+  notesSaga: workspaceNotesSaga,
+  workspaceEventsSaga: workspaceEventsRendererSaga,
   agentsSaga: workspaceAgentsSaga,
-  messagesSaga: noopSaga,
-  contextSaga: noopSaga,
-  browserSaga: noopSaga,
-  mcpSaga: noopSaga,
-  diffsSaga: noopSaga,
-  settingsSaga: noopSaga,
+  contextSaga,
+  browserSaga,
+  mcpSaga: mcpServersSaga,
   authSaga,
   uiSaga,
   layoutSaga: appLayoutSaga,
   autoUpdateSaga,
-  workspaceInitializerSaga: noopSaga,
+  workspaceNavigationSaga,
+  workspaceSwitcherSaga,
+  releaseNotesSaga,
+  transientUiSaga,
+  skillsSaga,
+  githubAuthSaga,
+  linearAuthSaga,
+  sentryAuthSaga,
+  setupScriptsSaga,
+  mcpSettingsSaga,
+  commentsSaga,
+  lineChangesSaga,
+  sidebarNavSaga,
+  scriptsSaga,
+  agentFollowSaga,
+  gitStatusSaga,
+  agentOverviewSaga,
+  agentLockSaga,
+  panelLayoutSaga,
+  unreadTrackingSaga,
+  prStatusSaga,
+  bgExecutorSaga: backgroundAgentExecutorSaga,
+  chatStateSaga,
+  chatStreamSaga,
+  fileExplorerSaga,
+  agentIpcSaga,
+  agentStreamSaga,
+  agentSubscriptionUISaga,
 } as const;
 
 // SagaName is defined in ./types.ts as an explicit string literal union to

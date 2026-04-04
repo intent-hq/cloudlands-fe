@@ -177,7 +177,7 @@ class IntegrationTestRunner {
           const result = await harness.testCorruptionRecovery();
           if (!result.success) throw new Error('Corruption recovery failed');
         },
-        validate: (metrics) => true, // Some errors expected
+        validate: () => true, // Some errors expected
         timeout: 20000,
       },
     ];
@@ -195,7 +195,7 @@ class IntegrationTestRunner {
           });
           if (!result.passed) throw new Error('Network recovery failed');
         },
-        validate: (metrics) => true, // Errors expected
+        validate: () => true, // Errors expected
       },
       {
         name: 'timeout-error-recovery',
@@ -207,7 +207,7 @@ class IntegrationTestRunner {
           });
           if (!result.passed) throw new Error('Timeout recovery failed');
         },
-        validate: (metrics) => true, // Errors expected
+        validate: () => true, // Errors expected
       },
       {
         name: 'provider-error-recovery',
@@ -219,7 +219,7 @@ class IntegrationTestRunner {
           });
           if (!result.passed) throw new Error('Provider recovery failed');
         },
-        validate: (metrics) => true, // Errors expected
+        validate: () => true, // Errors expected
       },
     ];
   }
@@ -311,7 +311,7 @@ class IntegrationTestRunner {
           });
           if (!result.passed) throw new Error('Chaos test failed');
         },
-        validate: (metrics) => true, // Errors expected in chaos testing
+        validate: () => true, // Errors expected in chaos testing
         timeout: 30000,
       },
       {

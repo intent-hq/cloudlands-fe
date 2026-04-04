@@ -4,7 +4,6 @@ import {
   extractTasksBlocks,
   hasTaskBlocks,
   hasTasksBlocks,
-  type ParsedTask,
 } from '../task-block-parser';
 
 describe('task-block-parser', () => {

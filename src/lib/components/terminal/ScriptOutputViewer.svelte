@@ -16,15 +16,18 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import { faXmark, faWandMagicSparkles, faPlay } from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
-  import { scriptsStore } from '$features/scripts/scripts.store.svelte';
   import { scriptsClient } from '$features/scripts/scripts.client';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectScriptById, selectScriptRuntime, selectScriptOutput } from '$lib/store/slices/scripts/scripts-selectors';
+  import { removeScript } from '$lib/store/slices/scripts/scripts-slice';
   import { TerminalThemeManager } from '$features/terminal/terminal-theme-manager';
-  import { createLogger } from '$lib/utils/client-logger';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
   import { UnifiedAgentFactory } from '$features/agent/services/agent-factory';
   import { WorkspaceId } from '$shared/types/branded-ids';
 
-  const logger = createLogger('ScriptOutputViewer');
+  const dispatch = getDispatch();
+  const activeWorkspace = selectActiveWorkspace();
 
   interface Props {
     scriptId: string;
@@ -44,10 +47,13 @@
 
 
 
-  // Derived reactive state from store
-  const script = $derived(scriptsStore.scripts.get(scriptId));
-  const runtime = $derived(scriptsStore.getRuntime(scriptId));
-  const outputLines = $derived(scriptsStore.getOutput(scriptId));
+  // Reactive state from Redux store
+  const script$ = selectScriptById(scriptId);
+  const runtime$ = selectScriptRuntime(scriptId);
+  const outputLines$ = selectScriptOutput(scriptId);
+  const script = $derived($script$);
+  const runtime = $derived($runtime$);
+  const outputLines = $derived($outputLines$);
 
   // Track how many lines we've already written to xterm
   let writtenLineCount = $state(0);
@@ -101,7 +107,7 @@
       try {
         const url = new URL(uri);
         if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-          import('$features/layout/panel-layout-manager.svelte')
+          import('$features/layout/panel-layout-adapter')
             .then(({ getPanelLayoutManager }) => {
               const layoutManager = getPanelLayoutManager(workspaceId);
               layoutManager.openBrowserPanel(uri);
@@ -140,7 +146,7 @@
 
   function loadBufferedOutput(): void {
     if (!xterm) return;
-    const lines = scriptsStore.getOutput(scriptId);
+    const lines = selectScriptOutput.select(getReduxStore().getState(), scriptId);
     if (lines.length > 0) {
       const text = lines.map((l) => l.text).join('\n');
       xterm.write(text);
@@ -184,22 +190,23 @@
 
   // ---- Delete ----
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleDelete(): Promise<void> {
     await scriptsClient.remove(workspaceId, scriptId);
-    scriptsStore.removeScript(scriptId);
+    dispatch(removeScript(workspaceId, scriptId));
     onDelete?.();
   }
 
   // ---- Ask Agent ----
 
   async function handleAskAgent(): Promise<void> {
-    const workspace = workspaceStore.current;
+    const workspace = $activeWorkspace;
     if (!workspace) {
       toast.error('No active workspace');
       return;
     }
 
-    const lines = scriptsStore.getOutput(scriptId);
+    const lines = selectScriptOutput.select(getReduxStore().getState(), scriptId);
     const lastLines = lines
       .slice(-100)
       .map((l) => l.text)
@@ -226,7 +233,7 @@
           }),
         );
       }
-    } catch (error) {
+    } catch {
       toast.error('Failed to create agent');
     }
   }

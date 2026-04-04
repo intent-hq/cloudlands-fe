@@ -9,6 +9,7 @@ import { selectAutoCommitEnabled } from "../workspace-settings-selectors";
 import { invoke } from "$lib/electron-bridge";
 import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
 import { initSaga, getGlobalAutoCommitDefault } from "./init-saga";
+import { workspaceMounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
 
 /**
  * Track which workspaces have been synced this session.
@@ -39,6 +40,15 @@ async function syncToWorkspace(workspaceId: string, autoCommitEnabled: boolean):
  * Only syncs once per workspace per session.
  */
 export function* syncSaga(initTask: Task) {
+  // Trigger syncWorkspaceSettings on workspace mount so components don't need to dispatch it
+  yield* takeEvery(
+    workspaceMounted,
+    function* (action: ReturnType<typeof workspaceMounted>) {
+      const [workspaceId] = action.payload;
+      yield* put(syncWorkspaceSettings(workspaceId));
+    }
+  );
+
   yield* takeEvery(
     syncWorkspaceSettings.type,
     function* (action: ReturnType<typeof syncWorkspaceSettings>) {

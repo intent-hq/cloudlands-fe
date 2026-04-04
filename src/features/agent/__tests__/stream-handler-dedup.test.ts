@@ -14,7 +14,7 @@
  * dispatch DOM events for the same stream chunks.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 
 describe('Stream Handler Deduplication (sendMessageStreamSetup guard)', () => {
   // Simulate the core data structures from RefactoredAgentService
@@ -48,7 +48,7 @@ describe('Stream Handler Deduplication (sendMessageStreamSetup guard)', () => {
   }
 
   // Simulates the sendMessage cleanup + registration window (with the fix)
-  function simulateSendMessageStreamSetup(agentId: string, workspaceId: string) {
+  function simulateSendMessageStreamSetup(agentId: string) {
     const streamChannel = `agent:stream:${agentId}`;
 
     // Step 1: Mark as being set up
@@ -100,7 +100,7 @@ describe('Stream Handler Deduplication (sendMessageStreamSetup guard)', () => {
     const agentId = 'agent-2';
 
     // Full sendMessage cycle
-    simulateSendMessageStreamSetup(agentId, 'ws-1');
+    simulateSendMessageStreamSetup(agentId);
 
     // Now agent:stream-starting fires — guard is cleared, handler already exists
     handleStreamStarting({ agentId, workspaceId: 'ws-1' });

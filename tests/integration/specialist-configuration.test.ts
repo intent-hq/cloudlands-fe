@@ -12,7 +12,6 @@ import {
   SPECIALISTS,
   getSpecialistById,
   GITHUB_DEPENDENT_SPECIALIST_IDS,
-  type Specialist,
 } from '../../src/lib/constants/specialists';
 import {
   MODEL_DEFAULTS,

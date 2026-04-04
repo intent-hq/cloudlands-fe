@@ -14,7 +14,7 @@ import * as path from 'path';
 
 const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10 MB
 
-// eslint-disable-next-line no-control-regex
+ 
 const ANSI_REGEX = /\x1b\[[0-9;]*[a-zA-Z]/g;
 
 let logFd: number | null = null;

@@ -8,12 +8,16 @@
    * ```
    */
   import { onMount } from 'svelte';
+  import { writable } from 'svelte/store';
   import * as monaco from 'monaco-editor';
   import { ensureMonacoInitialized, initializeMonaco } from '$lib/utils/monaco-workers';
   import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
   import { invoke, listenSync } from '$lib/electron-bridge';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { WorkspaceId } from '$shared/types/branded-ids';
+  import {
+    selectActiveWorkspace,
+    selectActiveWorkspaceId,
+    selectWorkspaceById,
+  } from '$lib/store/slices/workspace/workspace-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import { defineMonacoThemes, getActiveMonacoThemeName } from '$lib/utils/monaco-theme';
   import { themeManager } from '$lib/utils/theme';
@@ -78,6 +82,17 @@
   }: Props = $props();
 
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
+  const activeWorkspace = selectActiveWorkspace();
+  const activeWorkspaceId = selectActiveWorkspaceId();
+  const workspaceIdStore = writable(workspaceId ?? '');
+  $effect(() => {
+    workspaceIdStore.set(workspaceId ?? '');
+  });
+  const workspaceById = selectWorkspaceById(workspaceIdStore);
+
+  function getResolvedWorkspace() {
+    return workspaceId ? $workspaceById : $activeWorkspace;
+  }
 
   // Default alwaysConsumeMouseWheel to match handleMouseWheel for backward compatibility
   let effectiveAlwaysConsume = $derived(alwaysConsumeMouseWheel ?? handleMouseWheel);
@@ -155,9 +170,7 @@
    */
   function toRelativePath(absolutePath: string): string {
     // Get workspace path
-    const workspace = workspaceId
-      ? workspaceStore.findById(WorkspaceId(workspaceId))
-      : workspaceStore.current;
+    const workspace = getResolvedWorkspace();
     const workspacePath = workspace?.worktreePath || workspace?.repositoryPath;
 
     if (!workspacePath) {
@@ -575,7 +588,7 @@
 
     // Subscribe to file content changes for real-time diff updates
     const filePath = change?.relativePath || change?.file;
-    const wsId = workspaceId || workspaceStore.current?.id;
+    const wsId = workspaceId || $activeWorkspaceId;
 
     // Use shared utility for path matching (handles absolute vs relative, normalization,
     // and prevents false positives like "bar.js" matching "foobar.js")
@@ -741,7 +754,7 @@
       for (const disposable of gutterMenuDisposables) {
         try {
           disposable.dispose();
-        } catch (e) {
+        } catch {
           // Ignore disposal errors
         }
       }
@@ -763,7 +776,7 @@
               if (editor) {
                 try {
                   editor.setModel(null);
-                } catch (e) {
+                } catch {
                   // Ignore errors when clearing model
                 }
               }
@@ -792,7 +805,7 @@
                     if (model.modified && typeof model.modified.dispose === 'function') {
                       model.modified.dispose();
                     }
-                  } catch (e) {
+                  } catch {
                     // Ignore model disposal errors
                   }
                 }, 10);
@@ -835,7 +848,7 @@
         try {
           editor.setModel(null);
           editor.dispose();
-        } catch (e) {
+        } catch {
           // Ignore disposal errors
         }
         editor = null;
@@ -1055,7 +1068,7 @@
 
     const editedContent = model.getValue();
     const filePath = change?.relativePath || change?.file;
-    const wsId = workspaceId || workspaceStore.current?.id;
+    const wsId = workspaceId || $activeWorkspaceId;
 
     if (!filePath || !wsId) {
       logger.warn('Cannot save: missing file path or workspace ID');
@@ -1063,9 +1076,7 @@
     }
 
     // Get workspace to construct absolute path
-    const workspace = workspaceId
-      ? workspaceStore.findById(WorkspaceId(workspaceId))
-      : workspaceStore.current;
+    const workspace = getResolvedWorkspace();
     const workspacePath = workspace?.worktreePath || workspace?.repositoryPath;
 
     if (!workspacePath) {
@@ -1533,9 +1544,7 @@
       });
 
       // Get workspace path - use the workspaceId prop to find the correct workspace
-      const workspace = workspaceId
-        ? workspaceStore.findById(WorkspaceId(workspaceId))
-        : workspaceStore.current;
+      const workspace = getResolvedWorkspace();
       const workspacePath = workspace?.worktreePath || workspace?.repositoryPath;
 
       // Log workspace details for debugging remote workspaces
@@ -2357,9 +2366,7 @@
 
     try {
       // Get the absolute file path
-      const workspace = workspaceId
-        ? workspaceStore.findById(WorkspaceId(workspaceId))
-        : workspaceStore.current;
+      const workspace = getResolvedWorkspace();
       const workspacePath = workspace?.worktreePath || workspace?.repositoryPath;
 
       if (!workspacePath) return;
@@ -2492,9 +2499,7 @@
       const savedScrollLeft = modifiedEditor.getScrollLeft();
 
       // Get workspace path
-      const workspace = workspaceId
-        ? workspaceStore.findById(WorkspaceId(workspaceId))
-        : workspaceStore.current;
+      const workspace = getResolvedWorkspace();
       const workspacePath = workspace?.worktreePath || workspace?.repositoryPath;
 
       if (!workspacePath) {
@@ -2614,7 +2619,7 @@
             originalEditor.setScrollLeft(savedScrollLeft);
             editor.layout();
             addOriginalLineNumberDecorations();
-          } catch (err) {
+          } catch {
             // Suppress errors - editor might be disposed
           }
         }
@@ -2710,9 +2715,7 @@
       absolutePath = filePath;
     } else {
       // Need to resolve relative path
-      const workspace = workspaceId
-        ? workspaceStore.findById(WorkspaceId(workspaceId))
-        : workspaceStore.current;
+      const workspace = getResolvedWorkspace();
       const workspacePath = workspace?.worktreePath || workspace?.repositoryPath;
 
       if (!workspacePath) {
@@ -2746,9 +2749,7 @@
       absolutePath = filePath;
     } else {
       // Need to resolve relative path
-      const workspace = workspaceId
-        ? workspaceStore.findById(WorkspaceId(workspaceId))
-        : workspaceStore.current;
+      const workspace = getResolvedWorkspace();
       const workspacePath = workspace?.worktreePath || workspace?.repositoryPath;
 
       if (!workspacePath) {
@@ -2783,7 +2784,7 @@
       </div>
       <!-- Code lines skeleton -->
       <div class="diff-skeleton-content">
-        {#each Array(16) as _, i}
+        {#each [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] as i }
           <div
             class="diff-skeleton-line"
             class:diff-skeleton-line--added={i % 5 === 2}

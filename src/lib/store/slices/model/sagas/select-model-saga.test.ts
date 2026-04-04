@@ -1,15 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, it, vi } from "vitest";
 import { expectSaga } from "redux-saga-test-plan";
 
 vi.mock("typed-redux-saga", async () => await import("$lib/store/utils/test-helpers/typed-redux-saga-mock"));
 
-vi.mock("$features/agent/services/unified-state-store", () => ({
-  unifiedStateStore: {
-    selectModel: vi.fn(),
-  },
-}));
-
-import { unifiedStateStore } from "$features/agent/services/unified-state-store";
 import {
   setLocalStorageJSON,
   setLocalStorageItem,
@@ -45,7 +38,5 @@ describe("selectModelSaga", () => {
       .call(setLocalStorageItem, GLOBAL_MODEL_KEY, normalizedModel)
       .call(setLocalStorageJSON, PROVIDER_MODELS_KEY, { codex: normalizedModel })
       .silentRun(0);
-
-    expect(unifiedStateStore.selectModel).toHaveBeenCalledWith(normalizedModel);
   });
 });

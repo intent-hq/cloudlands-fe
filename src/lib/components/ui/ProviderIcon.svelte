@@ -7,7 +7,6 @@
     class?: string;
   }
 
-  const iconId = crypto.randomUUID().slice(0, 8);
 
   let { providerId, class: className = 'size-3.5' }: Props = $props();
 </script>

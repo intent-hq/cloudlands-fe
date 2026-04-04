@@ -168,7 +168,7 @@ export class PerformanceMonitor extends EventEmitter {
     logger.info('Stopping performance monitoring');
 
     // Clear all intervals
-    for (const [name, interval] of this.intervals) {
+    for (const [, interval] of this.intervals) {
       clearInterval(interval);
     }
     this.intervals.clear();

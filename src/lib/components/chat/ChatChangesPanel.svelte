@@ -16,15 +16,11 @@
     faChevronDown,
     faChevronRight,
     faCodeCompare,
-    faPencil,
     faArrowUpRightFromSquare,
     faPlus,
     faMinus,
     faRotateLeft,
     faSpinner,
-    faFilter,
-    faCompressAlt,
-    faExpandAlt,
     faCopy,
     faCheck,
   } from '@fortawesome/free-solid-svg-icons';
@@ -33,38 +29,42 @@
   import InlineDiffItem from './InlineDiffItem.svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { Dropdown } from '$lib/components/ui/dropdown';
-  import ViewSettingsDropdown from '$lib/components/ui/ViewSettingsDropdown.svelte';
   import { slide } from 'svelte/transition';
   import { tick, untrack, onMount, onDestroy } from 'svelte';
-  import PanelWrapper from '$lib/components/ui/PanelWrapper.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { selectFoldUnchanged, selectLineWrapping } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import {
-    ChangeSetVisualization,
-    type VisualizationLine,
   } from '$lib/components/file-tracking/change-set-visualization';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { getTransientUIStore } from '$features/workspace/transient-ui-state.store.svelte';
-  import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
-  import { gitStore } from '$features/git/git.store.svelte';
-  import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
+  import {
+    selectActiveWorkspace,
+    selectActiveWorkspaceId,
+  } from '$lib/store/slices/workspace/workspace-selectors';
+  import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
+  import { gitClient } from '$features/git/git.client';
+  import { gitCache } from '$features/git/git-cache';
+  import { loadGitStatus } from '$lib/store/slices/git/git-slice';
+  import { selectCurrentCommits } from '$lib/store/slices/file-tracking/file-tracking-selectors';
   import { invoke, listenSync } from '$lib/electron-bridge';
   import { toast } from '$lib/components/ui/toast';
-  import { NoteId, type WorkspaceId } from '$shared/types/branded-ids';
-  import { notesStore } from '$features/notes/notes.store.svelte';
+  import { type WorkspaceId } from '$shared/types/branded-ids';
+  import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import CombinedInlineDiffItem from './CombinedInlineDiffItem.svelte';
   import { LOCKED_TOOLTIP } from '$lib/utils/agent-lock-utils';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-selectors';
+  import { setViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-slice';
 
   const foldUnchanged = selectFoldUnchanged();
   const lineWrapping = selectLineWrapping();
+  const activeWorkspace = selectActiveWorkspace();
+  const activeWorkspaceId = selectActiveWorkspaceId();
 
   // Re-export types from types.ts for backward compatibility
   export type { ChangeCategory, LocalFileChange, DiffHunk } from './types';
   import type { ChangeCategory, LocalFileChange, DiffHunk } from './types';
   import { getDirectoryPath, getFileName, stripWorkspacePrefix, pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
   import { formatRelativeTime } from '$lib/utils/timeFormatting';
-  import { sessionStore, unifiedStateStore } from '$features/agent/browser';
+  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
 
   /**
    * Get the category for a change, with consistent fallback logic.
@@ -142,7 +142,9 @@
     onStage,
     onUnstage,
     onRevert,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onStageAll: _onStageAll,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onUnstageAll: _onUnstageAll,
     isLoading = false,
     commitInfo = null,
@@ -153,6 +155,9 @@
   // Group-by-commit toggle state (default: combined view)
   let groupByCommit = $state(initialGroupByCommit);
 
+  // File tracking state from Redux
+  const ftCommits$ = selectCurrentCommits();
+
   // Helper to check if a file is locked
   function isFileLocked(filePath: string): boolean {
     return lockedFilePaths.has(filePath);
@@ -161,26 +166,11 @@
   // Instance ID for debugging
   const instanceId = Math.random().toString(36).substring(2, 8);
 
-  // Get transient UI store lazily without creating $state during effect flush.
-  // getTransientUIStore creates a new store with $state if one doesn't exist,
-  // so we defer creation to a microtask after the effect flush completes.
-  let cachedTransientStore = $state<ReturnType<typeof getTransientUIStore> | null>(null);
-  let cachedTransientWorkspaceId: string | null = null;
-  $effect(() => {
-    const currentWorkspaceId = workspaceStore.current?.id ?? null;
-    if (!currentWorkspaceId) {
-      cachedTransientWorkspaceId = null;
-      cachedTransientStore = null;
-      return;
-    }
-    if (currentWorkspaceId === cachedTransientWorkspaceId && cachedTransientStore) return;
-
-    cachedTransientWorkspaceId = currentWorkspaceId;
-    queueMicrotask(() => {
-      if (cachedTransientWorkspaceId !== currentWorkspaceId) return;
-      cachedTransientStore = getTransientUIStore(currentWorkspaceId);
-    });
-  });
+  function getStoredViewedFilesRecord() {
+    const workspaceId = $activeWorkspaceId;
+    if (!workspaceId) return {};
+    return selectViewedFiles.select(getReduxStore().getState(), workspaceId);
+  }
 
   /**
    * Get a commit fingerprint for a file path.
@@ -204,14 +194,14 @@
 
   // Restore viewed files from transient store when mergedChanges first loads
   $effect(() => {
-    // Depend on mergedChanges and cachedTransientStore
+    // Depend on mergedChanges and active workspace identity
     const currentMergedChanges = mergedChanges;
-    const store = cachedTransientStore;
+    const currentWorkspaceId = $activeWorkspaceId;
 
-    if (!store || currentMergedChanges.length === 0) return;
+    if (!currentWorkspaceId || currentMergedChanges.length === 0) return;
     if (hasRestoredViewedFiles) return;
 
-    const stored = store.viewedFiles || {};
+    const stored = getStoredViewedFilesRecord();
     if (Object.keys(stored).length === 0) {
       hasRestoredViewedFiles = true;
       return;
@@ -293,7 +283,7 @@
     logger.debug('ChatChangesPanel: Setting up diff-editor:file-saved listener (onMount)', {
       instanceId,
       showStagingControls,
-      workspaceId: workspaceStore.current?.id,
+      workspaceId: $activeWorkspaceId,
     });
 
     // Handler for diff editor saves - track these to skip refreshing
@@ -306,7 +296,7 @@
         workspaceId: string;
       }>;
       const { filePath, relativePath, workspaceId } = customEvent.detail;
-      const wsId = workspaceStore.current?.id;
+      const wsId = $activeWorkspaceId;
       logger.debug('ChatChangesPanel: Received diff-editor:file-saved event', {
         filePath,
         relativePath,
@@ -348,7 +338,7 @@
     // For agent changes, the content comes from tool calls, not git
     if (!showStagingControls) return;
 
-    const wsId = workspaceStore.current?.id;
+    const wsId = $activeWorkspaceId;
     if (!wsId) return;
 
     // Debounce timer per file path
@@ -475,15 +465,12 @@
     }
   });
 
-  const unstagedCount = $derived(memoizedCounts.unstaged);
-  const stagedCount = $derived(memoizedCounts.staged);
-  const committedCount = $derived(memoizedCounts.committed);
 
   // Get display path - convert absolute paths to relative by extracting just the relevant portion
   function getDisplayPath(filePath: string): string {
     // If it's a workspace-relative absolute path, extract the relative part
     // e.g., /Users/foo/intent/uuid/repo/src/file.ts -> src/file.ts
-    const workspace = workspaceStore.current;
+    const workspace = $activeWorkspace;
     const workspacePath = workspace?.worktreePath || workspace?.repositoryPath;
 
     if (workspacePath) {
@@ -562,7 +549,7 @@
     // Capture dependencies at the start
     const currentChanges = changes;
     const currentShowStagingControls = showStagingControls;
-    const workspaceId = workspaceStore.current?.id;
+    const workspaceId = $activeWorkspaceId;
 
     if (!workspaceId || currentChanges.length === 0) {
       // Only update if enrichedChanges is not already empty (avoid unnecessary reactivity)
@@ -1058,7 +1045,7 @@
       return;
     }
 
-    const workspaceId = workspaceStore.current?.id;
+    const workspaceId = $activeWorkspaceId;
     if (!workspaceId || reactiveChanges.length === 0) {
       // Only update if not already matching
       const currentLength = untrack(() => gitDiffChanges.length);
@@ -1131,10 +1118,7 @@
   });
 
   // Use git diff changes for visualization when aggregate, otherwise use merged changes
-  let visualizationChanges = $derived(isAggregate ? gitDiffChanges : mergedChanges);
 
-  let totalAdditions = $derived(mergedChanges.reduce((sum, c) => sum + c.additions, 0));
-  let totalDeletions = $derived(mergedChanges.reduce((sum, c) => sum + c.deletions, 0));
 
   // Track expanded state for each file - start EXPANDED by default for better UX
   // Performance is handled by lazy-loading DiffViewers via Intersection Observer
@@ -1173,7 +1157,7 @@
     if (!groupByCommit) return null;
     const groups: CommitGroup[] = [];
     const seen = new Map<string, number>();
-    const allCommits = fileTrackingStore.commits || [];
+    const allCommits = $ftCommits$ || [];
 
     for (const change of mergedChanges) {
       if (change.commitHash) {
@@ -1181,7 +1165,7 @@
         if (idx !== undefined) {
           groups[idx].changes.push(change);
         } else {
-          // Look up full commit info from fileTrackingStore
+          // Look up full commit info from Redux file tracking state
           const commitDetail = allCommits.find((c) => c.hash === change.commitHash);
           seen.set(change.commitHash, groups.length);
           groups.push({
@@ -1378,7 +1362,7 @@
   // Refresh diff for a single file after staging/unstaging
   // This is more performant than refreshing all file tracking data
   async function refreshFileDiff(filePath: string) {
-    const workspaceId = workspaceStore.current?.id;
+    const workspaceId = $activeWorkspaceId;
     if (!workspaceId) return;
 
     // Track that this file is being refreshed (for loading indicator)
@@ -1387,7 +1371,7 @@
     try {
       // Mark this file as recently refreshed IMMEDIATELY (before async operations)
       // This prevents the $effect from using stale parent data while we're fetching new data
-      // The fileTrackingStore.refresh() may complete before our fetch does, and we need the
+      // The file tracking refresh may complete before our fetch does, and we need the
       // effect to skip this file and wait for our fresh data
       recentlyRefreshedFiles.set(filePath, Date.now());
 
@@ -1537,7 +1521,7 @@
 
   // Hunk staging handlers for inline diffs
   async function handleStageHunk(filePath: string, hunkPatch: string) {
-    const workspaceId = workspaceStore.current?.id;
+    const workspaceId = $activeWorkspaceId;
     if (!workspaceId) {
       toast.error('No space available');
       return;
@@ -1554,14 +1538,13 @@
     // Preserve scroll position before staging
     const scrollTop = scrollContainerRef?.scrollTop ?? 0;
 
-    const result = await gitStore.stageHunk(workspaceId as WorkspaceId, filePath, hunkPatch);
+    const result = await gitClient.stageHunk(workspaceId as WorkspaceId, filePath, hunkPatch);
     if (result.ok) {
       toast.success('Hunk staged');
+      gitCache.invalidateWorkspace(workspaceId);
+      getReduxStore().dispatch(loadGitStatus(workspaceId, true));
       // Performant update: only refresh the affected file's diff
       await refreshFileDiff(filePath);
-      // NOTE: Removed fileTrackingStore.refresh() - it was causing flicker because
-      // the parent's changes prop would update with stale data, triggering the effect
-      // to overwrite our fresh data. The local refreshFileDiff is sufficient for UI.
       // Restore scroll position
       requestAnimationFrame(() => {
         if (scrollContainerRef) {
@@ -1574,7 +1557,7 @@
   }
 
   async function handleUnstageHunk(filePath: string, hunkPatch: string) {
-    const workspaceId = workspaceStore.current?.id;
+    const workspaceId = $activeWorkspaceId;
     if (!workspaceId) {
       toast.error('No space available');
       return;
@@ -1591,14 +1574,13 @@
     // Preserve scroll position before unstaging
     const scrollTop = scrollContainerRef?.scrollTop ?? 0;
 
-    const result = await gitStore.unstageHunk(workspaceId as WorkspaceId, filePath, hunkPatch);
+    const result = await gitClient.unstageHunk(workspaceId as WorkspaceId, filePath, hunkPatch);
     if (result.ok) {
       toast.success('Hunk unstaged');
+      gitCache.invalidateWorkspace(workspaceId);
+      getReduxStore().dispatch(loadGitStatus(workspaceId, true));
       // Performant update: only refresh the affected file's diff
       await refreshFileDiff(filePath);
-      // NOTE: Removed fileTrackingStore.refresh() - it was causing flicker because
-      // the parent's changes prop would update with stale data, triggering the effect
-      // to overwrite our fresh data. The local refreshFileDiff is sufficient for UI.
       // Restore scroll position
       requestAnimationFrame(() => {
         if (scrollContainerRef) {
@@ -1661,12 +1643,12 @@
     expandedFiles = newExpanded;
 
     // Persist to transient store
-    if (cachedTransientStore) {
+    if ($activeWorkspaceId) {
       const newStoredViewed: Record<string, string> = {};
       for (const fp of newViewed) {
         newStoredViewed[fp] = getCommitFingerprint(fp);
       }
-      cachedTransientStore.setViewedFiles(newStoredViewed);
+      getReduxStore().dispatch(setViewedFiles($activeWorkspaceId, newStoredViewed));
     }
   }
 
@@ -1689,6 +1671,7 @@
     groupByCommit = value;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let allExpanded = $derived(
     mergedChanges.length > 0 &&
       mergedChanges
@@ -1754,39 +1737,8 @@
 
   // Handle visualization click - scroll to file in list and highlight
   // Accepts union type from ChangeSetVisualization
-  function handleVisualizationFileClick(change: unknown) {
-    // Support both ChatFileChange (filePath) and TrackedChange (path)
-    const changeObj = change as { filePath?: string; path?: string };
-    const filePath = changeObj.filePath || changeObj.path;
-    if (!filePath) return;
-
-    scrollToFile(filePath);
-  }
 
   // Handle visualization line click - scroll to file AND specific line
-  function handleVisualizationLineClick(
-    change: unknown,
-    _lineIndex: number,
-    line: VisualizationLine,
-  ) {
-    const changeObj = change as { filePath?: string; path?: string };
-    const filePath = changeObj.filePath || changeObj.path;
-    if (!filePath) return;
-
-    // Get the line number in the new file (for scrolling in the diff viewer)
-    const lineNumber = line.newLineNumber || line.lineNumber + 1;
-
-    // Set scroll target - this will be passed to the InlineDiffItem
-    scrollTarget = { filePath, lineNumber };
-
-    // Also scroll to the file card
-    scrollToFile(filePath);
-
-    // Clear scroll target after a delay to allow re-clicking the same line
-    setTimeout(() => {
-      scrollTarget = null;
-    }, 100);
-  }
 
   // Common logic for scrolling to a file
   async function scrollToFile(filePath: string) {
@@ -1834,11 +1786,10 @@
   }
 
   // Sticky header collapse behavior
-  let isStuck = $state(false);
-  let isHeaderHovered = $state(false);
 
   // Reference to scroll container for preserving scroll position
   let scrollContainerRef: HTMLElement | null = $state(null);
+  let isStuck = $state(false);
 
   // Detect when header becomes stuck using scroll position
   function handleScroll(e: Event) {
@@ -1849,7 +1800,6 @@
   }
 
   // Derived state for whether header should be collapsed
-  const isHeaderCollapsed = $derived(isStuck && !isHeaderHovered);
 
   // Track which file is first in view in the scroll container
   let firstInViewFilePath = $state<string | null>(null);
@@ -1922,7 +1872,7 @@
   // Open commit in an embedded browser panel tab
   function openCommitInBrowser() {
     if (!commitInfo?.hash) return;
-    const workspace = workspaceStore.current;
+    const workspace = $activeWorkspace;
     const repoOwner = workspace?.repositoryOwner;
     const repoName = workspace?.repositoryName;
     const wsId = workspace?.id;
@@ -1941,7 +1891,7 @@
 
   // Derive commit GitHub URL availability
   const hasCommitUrl = $derived(() => {
-    const workspace = workspaceStore.current;
+    const workspace = $activeWorkspace;
     return !!(commitInfo?.hash && workspace?.repositoryOwner && workspace?.repositoryName);
   });
 
@@ -1983,7 +1933,7 @@
     {#if showLoadingState}
       <!-- Skeleton loader for file changes -->
       <div class="flex flex-col gap-3 py-6">
-        {#each Array(4) as _, i}
+        {#each Array(4) as _}
           <div class="rounded-lg border border-border bg-card p-4">
             <div class="flex items-center justify-between mb-3">
               <div class="flex items-center gap-2 flex-1">
@@ -2288,9 +2238,10 @@
           <div class="flex items-center gap-2.5 min-w-0">
             {#if commitInfo?.agentId || agentId}
               {@const displayAgentId = commitInfo?.agentId || agentId}
-              {@const currentWsId = unifiedStateStore.currentWorkspace?.workspace?.id}
+              {@const ccpState = getReduxStore().getState()}
+              {@const currentWsId = selectActiveWorkspaceId.select(ccpState)}
               {@const agentSession = displayAgentId && currentWsId
-                ? sessionStore.getSessionForWorkspace(String(currentWsId), displayAgentId)
+                ? selectAgentById.select(ccpState, displayAgentId)
                 : undefined}
               {@const agentName =
                 agentSession?.name && agentSession.name !== 'New Workspace Agent'
@@ -2313,7 +2264,7 @@
               </button>
             {/if}
             {#if commitInfo?.linkedNoteId && onOpenNote}
-              {@const linkedNote = notesStore.findById(NoteId(commitInfo.linkedNoteId))}
+              {@const linkedNote = selectNoteById.select(getReduxStore().getState(), $activeWorkspaceId ?? '', commitInfo.linkedNoteId)}
               {@const noteName = linkedNote?.title || 'Note'}
               <button
                 type="button"

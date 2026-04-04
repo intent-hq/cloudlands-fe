@@ -9,7 +9,6 @@
    * - Up to date: Success message (brief)
    */
 
-  import { autoUpdateStore } from '$features/auto-update/auto-update.store.svelte';
   import {
     faArrowsRotate,
     faCakeCandles,
@@ -19,6 +18,15 @@
     faXmark,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import {
+    selectAutoUpdateStatus,
+    selectAutoUpdateProgress,
+    selectAutoUpdateInfo,
+    selectAutoUpdateCurrentVersion,
+    selectAutoUpdateError,
+  } from '$lib/store/slices/auto-update/auto-update-selectors';
+  import { installUpdate } from '$lib/store/slices/auto-update/auto-update-slice';
 
   interface Props {
     /** Callback when toast should be dismissed */
@@ -27,10 +35,17 @@
 
   let { onDismiss }: Props = $props();
 
-  // Derived state from store
-  let status = $derived(autoUpdateStore.status);
-  let progress = $derived(autoUpdateStore.progress);
-  let updateInfo = $derived(autoUpdateStore.updateInfo);
+  const dispatch = getDispatch();
+  const status$ = selectAutoUpdateStatus();
+  const progress$ = selectAutoUpdateProgress();
+  const updateInfo$ = selectAutoUpdateInfo();
+  const currentVersion$ = selectAutoUpdateCurrentVersion();
+  const error$ = selectAutoUpdateError();
+
+  // Derived state from selectors
+  let status = $derived($status$);
+  let progress = $derived($progress$);
+  let updateInfo = $derived($updateInfo$);
   let progressPercent = $derived(progress ? Math.round(progress.percent) : 0);
 
   // Format bytes per second
@@ -45,7 +60,7 @@
   }
 
   function handleInstall() {
-    autoUpdateStore.installUpdate();
+    dispatch(installUpdate());
   }
 
   // Auto-dismiss when up-to-date or error after a delay
@@ -126,7 +141,7 @@
       <div class="text">
         <div class="title">You're up to date</div>
         <div class="description">
-          Running version {autoUpdateStore.currentVersion}
+          Running version {$currentVersion$}
         </div>
       </div>
     </div>
@@ -138,7 +153,7 @@
       <div class="text flex-1">
         <div class="title">Update check failed</div>
         <div class="description">
-          {autoUpdateStore.error || 'An unknown error occurred'}
+          {$error$ || 'An unknown error occurred'}
         </div>
       </div>
       {#if onDismiss}

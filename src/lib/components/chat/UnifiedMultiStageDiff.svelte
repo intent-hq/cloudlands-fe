@@ -10,11 +10,13 @@
    */
 
   import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import type { ChangePart } from './types';
   import { mergeChangeParts, buildContentFromMergedHunks } from './unified-diff-merger';
   import MonacoDiffViewer from '../file-tracking/MonacoDiffViewer.svelte';
   import { selectDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+
+  const activeWorkspaceId = selectActiveWorkspaceId();
 
   interface Props {
     /** The change parts to display (staged, unstaged, committed) */
@@ -84,7 +86,7 @@
     };
   });
 
-  const workspaceId = $derived(workspaceStore.current?.id);
+  const workspaceId = $derived($activeWorkspaceId);
 </script>
 
 {#if mergedHunks.length === 0}

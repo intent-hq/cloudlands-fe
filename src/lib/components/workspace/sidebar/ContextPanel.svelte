@@ -6,10 +6,19 @@
    * nested underneath. Includes the AddContextSection for adding new items.
    * Also displays user-defined MCP servers with per-workspace toggles.
    */
-  import { contextStore } from '$features/context/context.store.svelte';
   import type { ContextItem, ContextProvider } from '$features/context/types';
-  import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import {
+    initContextForWorkspace,
+    addContextItem,
+    removeContextItem,
+  } from '$lib/store/slices/context/context-slice';
+  import { selectTopLevelContextItems } from '$lib/store/slices/context/context-selectors';
+  import { v4 as uuidv4 } from 'uuid';
+  import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
+  import { selectActiveTab } from '$lib/store/slices/panel-layout/panel-layout-selectors';
   import { handleLink } from '$features/navigation/link-handler';
+  import { writable } from 'svelte/store';
   import type { IssueSelectionData } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import type { Note } from '$shared/types';
@@ -52,19 +61,48 @@
   let pickerOpen = $state(false);
   let pickerProvider = $state<ContextProvider>('linear');
 
+  const dispatch = getDispatch();
+
   // Initialize context store for this workspace
+  let lastInitWorkspaceId: string | undefined;
   $effect(() => {
-    if (workspaceId) {
-      contextStore.setWorkspace(workspaceId);
+    if (workspaceId && workspaceId !== lastInitWorkspaceId) {
+      lastInitWorkspaceId = workspaceId;
+      dispatch(initContextForWorkspace(workspaceId));
     }
   });
 
   // Get context items that aren't linked to any note
-  const standaloneContextItems = $derived(contextStore.getTopLevelItems());
+  const topLevelItems$ = selectTopLevelContextItems(workspaceId);
+  const standaloneContextItems = $derived($topLevelItems$);
 
-  // Get panel layout manager to track which context item is open in a panel
-  const panelLayoutManager = $derived(getPanelLayoutManager(workspaceId));
-  const focusedContextItemId = $derived(panelLayoutManager.focusedContent.contextItemId);
+  /**
+   * Helper to create a fully-formed ContextItem with id + timestamps,
+   * then dispatch it to the store. Returns the new item (with id).
+   */
+  function dispatchAddItem(
+    itemData: Omit<ContextItem, 'id' | 'createdAt' | 'updatedAt'>,
+  ): ContextItem {
+    const now = new Date().toISOString();
+    const newItem: ContextItem = {
+      ...itemData,
+      id: uuidv4(),
+      createdAt: now,
+      updatedAt: now,
+    } as ContextItem;
+    dispatch(addContextItem(workspaceId, newItem));
+    return newItem;
+  }
+
+  // Reactive writable store that mirrors workspaceId for Redux selectors
+  const workspaceIdStore = writable(workspaceId);
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+  });
+
+  // Use reactive selector subscription for focused tab to track which context item is open
+  const activeTab$ = selectActiveTab(workspaceIdStore);
+  const focusedContextItemId = $derived($activeTab$?.contextItemId ?? null);
 
   // Check if a context item is currently active (open in the focused panel)
   // Uses context item ID for unique matching instead of URL
@@ -106,7 +144,7 @@
 
     // Add to context store based on type - use type assertion to satisfy discriminated union
     if (item.type === 'linear-issue') {
-      contextStore.addItem({
+      dispatchAddItem({
         type: 'linear-issue',
         provider: 'linear',
         title: item.title,
@@ -119,7 +157,7 @@
         'id' | 'createdAt' | 'updatedAt'
       >);
     } else if (item.type === 'sentry-issue') {
-      contextStore.addItem({
+      dispatchAddItem({
         type: 'sentry-issue',
         provider: 'sentry',
         title: item.title,
@@ -131,7 +169,7 @@
         'id' | 'createdAt' | 'updatedAt'
       >);
     } else if (item.type === 'browser-url') {
-      contextStore.addItem({
+      dispatchAddItem({
         type: 'browser-url',
         provider: 'browser',
         title: item.title,
@@ -150,7 +188,7 @@
     logger.info('Integration item selected', { metadata });
 
     if (metadata.type === 'linear') {
-      contextStore.addItem({
+      dispatchAddItem({
         type: 'linear-issue',
         provider: 'linear',
         title: metadata.title,
@@ -167,7 +205,7 @@
       const repo = match?.[1] || metadata.identifier;
       const number = match ? parseInt(match[2], 10) : 0;
 
-      contextStore.addItem({
+      dispatchAddItem({
         type: 'github-issue',
         provider: 'github',
         title: metadata.title,
@@ -179,7 +217,7 @@
         'id' | 'createdAt' | 'updatedAt'
       >);
     } else if (metadata.type === 'sentry') {
-      contextStore.addItem({
+      dispatchAddItem({
         type: 'sentry-issue',
         provider: 'sentry',
         title: metadata.title,
@@ -191,7 +229,7 @@
         'id' | 'createdAt' | 'updatedAt'
       >);
     } else if (metadata.type === 'browser') {
-      contextStore.addItem({
+      dispatchAddItem({
         type: 'browser-url',
         provider: 'browser',
         title: metadata.title,
@@ -226,7 +264,7 @@
         onOpenBrowser={() => {
           const defaultUrl = 'about:blank';
           // Add to context store and get the new item ID
-          const contextItem = contextStore.addItem({
+          const contextItem = dispatchAddItem({
             type: 'browser-url',
             provider: 'browser',
             title: 'Browser',
@@ -264,7 +302,7 @@
           isActive={isItemActive(item)}
           onClick={handleContextItemClick}
           onExternalOpen={handleExternalOpen}
-          onDelete={(item) => contextStore.removeItem(item.id)}
+          onDelete={(item) => dispatch(removeContextItem(workspaceId, item.id))}
         />
       {/each}
     {/if}

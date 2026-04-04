@@ -23,7 +23,9 @@ import { Logger } from '../../../shared/logger';
 import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
 import { RemoteRPCError } from '../../../shared/main/remote-rpc-client';
 import { PullRequestStatus, type WorkspaceId } from '../../../shared/types';
-import { unifiedEventBus } from '../../events/main/unified-event-bus';
+import { mainDispatch } from '../../../store/main/redux-store-bridge';
+import { gitAuthRequired, gitCommitCreated, githubAuthRequired, gitStatusChanged } from '../../../store/main/slices/git-events/git-events-slice';
+import { workspaceUpdated } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
 import { githubService } from '../../git-tracking/main/github.service';
 import { getWorkspaceGitInfo } from '../../git/main/git-router';
 import { gitService } from '../../git/main/git.service';
@@ -181,7 +183,7 @@ export class AcceptChangesService {
           // Check if stash was actually created
           stashCreated = !stashOutput.includes('No local changes to save');
           logger.info('Stash result', { stashCreated });
-        } catch (stashError) {
+        } catch  {
           // Stash failed - don't attempt rebase with dirty worktree
           logger.error('Failed to stash changes before rebase');
           return {
@@ -190,7 +192,7 @@ export class AcceptChangesService {
           };
         }
       }
-    } catch (statusError) {
+    } catch  {
       // git status failed - can't determine dirty state, proceed with rebase
       logger.warn('Failed to check dirty state, proceeding with rebase');
     }
@@ -372,14 +374,14 @@ export class AcceptChangesService {
         // Emit domain event for UI notification (modal + toast)
         // Note: Git push/pull requires local credentials (SSH keys or credential manager),
         // NOT GitHub OAuth. GitHub OAuth is only for API operations like creating PRs.
-        unifiedEventBus.emitDomainEvent('git:auth-required', {
+        mainDispatch(gitAuthRequired({
           workspaceId,
           operation,
           message: userMessage,
           rawError: stderr || errorMessage,
           command,
           cwd: worktreePath,
-        });
+        }));
 
         // Re-throw with user-friendly message
         throw new Error(userMessage);
@@ -400,11 +402,8 @@ export class AcceptChangesService {
    *
    * @returns 'origin' - Let git use the configured remote with local credentials
    */
-  private resolvePushRemote(
-    _status: WorkspaceGitStatus,
-    _workspaceId: WorkspaceId,
-    _operation: string,
-  ): string {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private resolvePushRemote(_status: WorkspaceGitStatus, _workspaceId: WorkspaceId, _operation: string): string {
     // Always use 'origin' and let git handle authentication via local credentials
     // (SSH keys, credential manager, etc.). The user's local git config determines
     // how authentication works. If auth fails, execGitInWorktree's error handler
@@ -785,7 +784,7 @@ export class AcceptChangesService {
                 };
                 await this.workspaceRepository.save(clearedWorkspace);
                 workspace = clearedWorkspace;
-                unifiedEventBus.emit('workspace:updated', {
+                mainDispatch(workspaceUpdated({
                   workspaceId: clearedWorkspace.id,
                   changes: {
                     activePullRequest: undefined,
@@ -793,7 +792,7 @@ export class AcceptChangesService {
                     prUrl: undefined,
                     prStatus: undefined,
                   },
-                });
+                }));
               } catch (clearError) {
                 logger.warn('Failed to clear stale PR association', { error: clearError });
               }
@@ -862,7 +861,7 @@ export class AcceptChangesService {
               try {
                 await this.workspaceRepository.save(updatedWorkspace);
                 workspace = updatedWorkspace;
-                unifiedEventBus.emit('workspace:updated', {
+                mainDispatch(workspaceUpdated({
                   workspaceId: updatedWorkspace.id,
                   changes: {
                     activePullRequest: prInfo,
@@ -870,7 +869,7 @@ export class AcceptChangesService {
                     prUrl: pr.htmlUrl,
                     prStatus: nextPrStatus,
                   },
-                });
+                }));
               } catch (saveError) {
                 logger.warn('Failed to save PR status', { error: saveError });
               }
@@ -1404,7 +1403,7 @@ export class AcceptChangesService {
 
     try {
       // Accumulate result data for the final completeOperation call
-      let operationResult: { commitHash?: string; noChanges?: boolean; reason?: string } = {};
+      const operationResult: { commitHash?: string; noChanges?: boolean; reason?: string } = {};
 
       // Step 1: Stage unstaged changes if requested
       if (request.options?.stageUnstaged && status.uncommittedCount > 0) {
@@ -1483,11 +1482,11 @@ export class AcceptChangesService {
             // Also emit the event for other listeners (e.g., renderer notification)
             // Set postCommitHandled=true so the event listener skips redundant work
             try {
-              unifiedEventBus.emitDomainEvent('git:commit-created', {
+              mainDispatch(gitCommitCreated({
                 workspaceId: request.workspaceId,
                 commitSha: commitResult.data?.hash || '',
                 postCommitHandled: true,
-              });
+              }));
               logger.info('Emitted git:commit-created event', {
                 workspaceId: request.workspaceId,
                 commitHash: commitResult.data?.hash?.slice(0, 7),
@@ -1711,14 +1710,14 @@ export class AcceptChangesService {
             // Git push requires local credentials (SSH keys or credential manager),
             // not GitHub OAuth. Only emit git:auth-required, not github:auth-required.
             const pushCommand = `git push origin ${status.branch}`;
-            unifiedEventBus.emitDomainEvent('git:auth-required', {
+            mainDispatch(gitAuthRequired({
               workspaceId: request.workspaceId,
               operation: 'push',
               message: getGitAuthErrorMessage(stderr, 'push'),
               rawError: stderr,
               command: pushCommand,
               cwd: worktreePath,
-            });
+            }));
           }
           if (operationId) backgroundGitOpsService.failOperation(operationId, 'Failed to push changes');
           return { success: false, steps, error: 'Failed to push changes' };
@@ -2151,7 +2150,7 @@ export class AcceptChangesService {
             await this.workspaceRepository.save(updatedWorkspace);
 
             // Emit event to notify renderer of workspace update
-            unifiedEventBus.emitDomainEvent('workspace:updated', {
+            mainDispatch(workspaceUpdated({
               workspaceId: request.workspaceId,
               changes: {
                 activePullRequest: prInfo,
@@ -2159,7 +2158,7 @@ export class AcceptChangesService {
                 prNumber: existingPR.number,
                 prStatus: PullRequestStatus.Open,
               },
-            });
+            }));
           } catch (saveError) {
             logger.warn('Failed to save workspace with PR info', { error: saveError });
           }
@@ -2224,7 +2223,7 @@ export class AcceptChangesService {
               });
 
               // Emit event to notify renderer of workspace update
-              unifiedEventBus.emitDomainEvent('workspace:updated', {
+              mainDispatch(workspaceUpdated({
                 workspaceId: request.workspaceId,
                 changes: {
                   activePullRequest: prInfo,
@@ -2232,7 +2231,7 @@ export class AcceptChangesService {
                   prNumber: pr.number,
                   prStatus: PullRequestStatus.Open,
                 },
-              });
+              }));
             } catch (saveError) {
               logger.warn('Failed to save workspace with PR info', { error: saveError });
               // Don't fail the whole operation if save fails
@@ -2276,11 +2275,11 @@ export class AcceptChangesService {
           if (isAuthError) {
             userError = 'GitHub authentication required to create pull request.';
             // Emit event to trigger GitHub auth modal
-            unifiedEventBus.emitDomainEvent('github:auth-required', {
+            mainDispatch(githubAuthRequired({
               workspaceId: request.workspaceId,
               operation: 'create-pr',
               message: userError,
-            });
+            }));
           } else if (
             errorMessage.includes('400') ||
             errorMessage.includes('Unidentified internal error')
@@ -2355,11 +2354,11 @@ export class AcceptChangesService {
               }
 
               // Emit event with postCommitHandled flag
-              unifiedEventBus.emitDomainEvent('git:commit-created', {
+              mainDispatch(gitCommitCreated({
                 workspaceId: request.workspaceId,
                 commitSha: trimmedHash,
                 postCommitHandled: true,
-              });
+              }));
               logger.info('Emitted git:commit-created event for merge commit', {
                 workspaceId: request.workspaceId,
                 commitHash: trimmedHash.slice(0, 7),
@@ -2505,9 +2504,9 @@ export class AcceptChangesService {
             // Refresh git state after successful rebase (don't rely on file watcher)
             // This mirrors the post-commit pattern (~line 1340) for reliable state sync
             gitService.clearStatusCache(request.workspaceId);
-            unifiedEventBus.emitDomainEvent('git:status-changed', {
+            mainDispatch(gitStatusChanged({
               workspaceId: request.workspaceId,
-            });
+            }));
             changeDetectorManager.triggerImmediateCheck(request.workspaceId, 'post-rebase-first');
             logger.info('Post-rebase state refresh triggered', {
               workspaceId: request.workspaceId,
@@ -2628,9 +2627,9 @@ export class AcceptChangesService {
             // Refresh git state after successful rebase (don't rely on file watcher)
             // This mirrors the post-commit pattern (~line 1340) for reliable state sync
             gitService.clearStatusCache(request.workspaceId);
-            unifiedEventBus.emitDomainEvent('git:status-changed', {
+            mainDispatch(gitStatusChanged({
               workspaceId: request.workspaceId,
-            });
+            }));
             changeDetectorManager.triggerImmediateCheck(request.workspaceId, 'post-auto-rebase');
             logger.info('Post-rebase state refresh triggered', {
               workspaceId: request.workspaceId,
@@ -2650,7 +2649,7 @@ export class AcceptChangesService {
                   `git push ${remoteTarget} HEAD:refs/heads/${status.branch} --force-with-lease`,
                   worktreePath,
                 );
-              } catch (error) {
+              } catch  {
                 // Don't log raw error - it may contain file paths (PII)
                 logger.error('Force push after auto-rebase failed');
                 steps[steps.length - 1].status = 'failed';

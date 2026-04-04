@@ -7,9 +7,7 @@ import {
   computeUnreadNotesSuccess,
   setLoading,
   clearCache,
-  clearUnread,
   loadNoteReadStatusSuccess,
-  workspaceChanged,
   initialState,
   type NoteReadTrackingState,
 } from "./note-read-tracking-slice";
@@ -107,23 +105,9 @@ describe("noteReadTrackingReducer", () => {
         unreadNoteIds: { n: true },
         isLoading: true,
         currentlyViewedNoteId: "n",
-        currentWorkspaceId: "ws",
       };
       const state = noteReadTrackingReducer(prev, clearCache());
       expect(state).toEqual(initialState);
-    });
-  });
-
-  describe("clearUnread", () => {
-    it("should remove note from unread and clear if currently viewed", () => {
-      const prev: NoteReadTrackingState = {
-        ...initialState,
-        unreadNoteIds: { "note-1": true, "note-2": true },
-        currentlyViewedNoteId: "note-1",
-      };
-      const state = noteReadTrackingReducer(prev, clearUnread("note-1"));
-      expect(state.unreadNoteIds).toEqual({ "note-2": true });
-      expect(state.currentlyViewedNoteId).toBeNull();
     });
   });
 
@@ -132,23 +116,6 @@ describe("noteReadTrackingReducer", () => {
       const record = { lastReadAt: "2025-01-01T00:00:00Z", readCount: 5 };
       const state = noteReadTrackingReducer(initialState, loadNoteReadStatusSuccess("note-1", record));
       expect(state.readRecords["note-1"]).toEqual(record);
-    });
-  });
-
-  describe("workspaceChanged", () => {
-    it("should reset state with new workspace ID", () => {
-      const prev: NoteReadTrackingState = {
-        readRecords: { "n": { lastReadAt: "x" } },
-        unreadNoteIds: { n: true },
-        isLoading: true,
-        currentlyViewedNoteId: "n",
-        currentWorkspaceId: "old-ws",
-      };
-      const state = noteReadTrackingReducer(prev, workspaceChanged("new-ws"));
-      expect(state.currentWorkspaceId).toBe("new-ws");
-      expect(state.readRecords).toEqual({});
-      expect(state.unreadNoteIds).toEqual({});
-      expect(state.currentlyViewedNoteId).toBeNull();
     });
   });
 });

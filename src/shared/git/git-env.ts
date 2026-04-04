@@ -750,6 +750,7 @@ export function isGcmCredentialHelper(helper: string | null): boolean {
  */
 export async function detectKeychainAccessRisk(
   cwd: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   operation: 'push' | 'pull' | 'fetch' | 'clone' = 'push',
 ): Promise<KeychainAccessRisk> {
   // Get remote URL

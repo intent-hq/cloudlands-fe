@@ -1,26 +1,44 @@
 import type { Workspace, WorkspaceId } from "$shared/types";
-import { beforeEach, describe, expect, it } from "vitest";
-import { init } from "../../init";
+import { WorkspaceStatusEnum } from "$shared/types";
+import { describe, expect, it } from "vitest";
 import { openTerminalOverlay, toggleTerminalOverlay } from "../terminals/terminals-slice";
-import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
+import { createCollection, getItem, getItems } from "../../utils/collection-utils";
 import {
-  clearPanelVisibility,
-  defaultPanelVisibility,
+  applyOptimisticTaskStatusUpdate,
+  cleanupRecency,
+  clearActiveWorkspace,
+  clearPendingCreation,
+  clearWorkspacePendingDeletion,
   initialState,
+  markWorkspacePendingDeletion,
+  loadRecencyData,
+  replaceWorkspaceList,
+  recordWorkspaceView,
+  resetWorkspaceState,
   removeWorkspaceEntity,
   setActiveWorkspaceId,
-  setPanelVisibility,
-  setPanelVisibilityBulk,
+  setPendingCreation,
+  setWorkspaceCreating,
   setWorkspaceEntity,
+  setWorkspaceError,
+  setWorkspaceHasLoaded,
+  setWorkspaceLoading,
   updateWorkspaceEntity,
   workspaceReducer,
 } from "./workspace-slice";
 import {
   selectActiveWorkspace,
   selectActiveWorkspaceId,
-  selectPanelVisibility,
-  selectPanelVisibilityFlag,
+  selectCurrentWorkspace,
+  selectWorkspacesSortedByRecency,
   selectWorkspaceById,
+  selectWorkspaceHasLoaded,
+  selectWorkspaceIsCreating,
+  selectWorkspaceIsEmpty,
+  selectWorkspaceItems,
+  selectWorkspaceLoading,
+  selectWorkspacePendingCreations,
+  selectWorkspacePendingDeletions,
 } from "./workspace-selectors";
 
 /** Minimal workspace fixture for testing. */
@@ -31,7 +49,7 @@ function makeWorkspace(overrides: Partial<Workspace> & { id: string }): Workspac
     changesets: [],
     timeline: [],
     conversationInfo: [],
-    status: "active",
+    status: WorkspaceStatusEnum.Active,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
     ...overrides,
@@ -49,6 +67,39 @@ describe("workspaceReducer", () => {
     expect(next.activeWorkspaceId).toBe("ws-1");
   });
 
+  describe("workspace recency tracking", () => {
+    it("loads persisted recency data", () => {
+      const recency = { lastViewedAt: { "ws-1": 100, "ws-2": 200 } };
+      const next = workspaceReducer(initialState, loadRecencyData(recency));
+      expect(next.recency).toEqual(recency);
+    });
+
+    it("records the last viewed timestamp for a workspace", () => {
+      const next = workspaceReducer(initialState, recordWorkspaceView("ws-1", 123));
+      expect(next.recency.lastViewedAt).toEqual({ "ws-1": 123 });
+    });
+
+    it("cleans up recency data for workspaces that no longer exist", () => {
+      const withRecency = workspaceReducer(
+        initialState,
+        loadRecencyData({ lastViewedAt: { "ws-1": 100, "ws-2": 200 } })
+      );
+
+      const next = workspaceReducer(withRecency, cleanupRecency(["ws-2"]));
+      expect(next.recency.lastViewedAt).toEqual({ "ws-2": 200 });
+    });
+
+    it("is a no-op when recency cleanup removes nothing", () => {
+      const withRecency = workspaceReducer(
+        initialState,
+        loadRecencyData({ lastViewedAt: { "ws-1": 100 } })
+      );
+
+      const next = workspaceReducer(withRecency, cleanupRecency(["ws-1", "ws-2"]));
+      expect(next).toBe(withRecency);
+    });
+  });
+
   it("tracks the workspace opened in terminal overlay actions", () => {
     expect(workspaceReducer(initialState, openTerminalOverlay("ws-2")).activeWorkspaceId).toBe(
       "ws-2"
@@ -58,212 +109,80 @@ describe("workspaceReducer", () => {
     );
   });
 
-  // -----------------------------------------------------------------------
-  // Panel Visibility
-  // -----------------------------------------------------------------------
+  describe("workspace request state", () => {
+    it("clears the active workspace explicitly", () => {
+      const withActive = workspaceReducer(initialState, setActiveWorkspaceId("ws-1"));
+      const next = workspaceReducer(withActive, clearActiveWorkspace());
+      expect(next.activeWorkspaceId).toBeNull();
+    });
 
-  describe("setPanelVisibility", () => {
-    it("sets a single panel visibility flag", () => {
-      const next = workspaceReducer(
-        initialState,
-        setPanelVisibility("ws-1", "showNavigationRail", false)
-      );
-      expect(next.panelVisibility.byWorkspaceId["ws-1"]).toEqual({
-        ...defaultPanelVisibility,
-        showNavigationRail: false,
+    it("tracks loading, error, loaded, and creating flags", () => {
+      let state = workspaceReducer(initialState, setWorkspaceLoading(true));
+      state = workspaceReducer(state, setWorkspaceError("boom"));
+      state = workspaceReducer(state, setWorkspaceHasLoaded(true));
+      state = workspaceReducer(state, setWorkspaceCreating(true));
+
+      expect(state.loading).toBe(true);
+      expect(state.error).toBe("boom");
+      expect(state.hasLoaded).toBe(true);
+      expect(state.isCreating).toBe(true);
+    });
+
+    it("tracks and clears pending deletion maps", () => {
+      let state = workspaceReducer(initialState, markWorkspacePendingDeletion("ws-1"));
+      expect(state.pendingDeletions).toEqual({ "ws-1": true });
+
+      state = workspaceReducer(state, clearWorkspacePendingDeletion("ws-1"));
+      expect(state.pendingDeletions).toEqual({});
+    });
+
+    it("tracks and clears pending creations", () => {
+      const pending = makeWorkspace({ id: "pending-1", title: "Pending" });
+      let state = workspaceReducer(initialState, setPendingCreation(pending));
+      expect(state.pendingCreations["pending-1"]).toEqual(pending);
+
+      state = workspaceReducer(state, clearPendingCreation("pending-1"));
+      expect(state.pendingCreations).toEqual({});
+    });
+
+    it("replaces visible workspace items while preserving enrichment and pending creations", () => {
+      const existing = makeWorkspace({
+        id: "ws-1",
+        title: "Existing",
+        taskStats: { total: 5, completed: 2, inProgress: 1 },
       });
-    });
+      const pending = makeWorkspace({ id: "pending-1", title: "Pending" });
 
-    it("is a no-op when value matches default", () => {
-      const next = workspaceReducer(
-        initialState,
-        setPanelVisibility("ws-1", "showNavigationRail", true)
-      );
-      // Should return same reference since value matches default
-      expect(next).toBe(initialState);
-    });
-
-    it("is a no-op when value matches existing", () => {
-      const withState = workspaceReducer(
-        initialState,
-        setPanelVisibility("ws-1", "showNavigationRail", false)
-      );
-      const again = workspaceReducer(
-        withState,
-        setPanelVisibility("ws-1", "showNavigationRail", false)
-      );
-      expect(again).toBe(withState);
-    });
-  });
-
-  describe("setPanelVisibilityBulk", () => {
-    it("sets multiple flags at once", () => {
-      const next = workspaceReducer(
-        initialState,
-        setPanelVisibilityBulk("ws-1", {
-          showNavigationRail: false,
-          showMainContent: false,
-          showWorkspaceDock: false,
-        })
-      );
-      const vis = next.panelVisibility.byWorkspaceId["ws-1"];
-      expect(vis.showNavigationRail).toBe(false);
-      expect(vis.showMainContent).toBe(false);
-      expect(vis.showWorkspaceDock).toBe(false);
-      // other flags remain default
-      expect(vis.showNotesPanel).toBe(true);
-      expect(vis.showChatHeader).toBe(true);
-    });
-
-    it("is a no-op when all values match current state", () => {
-      const next = workspaceReducer(
-        initialState,
-        setPanelVisibilityBulk("ws-1", { showNavigationRail: true, showMainContent: true })
-      );
-      expect(next).toBe(initialState);
-    });
-  });
-
-  describe("clearPanelVisibility", () => {
-    it("removes workspace panel visibility state", () => {
-      const withState = workspaceReducer(
-        initialState,
-        setPanelVisibility("ws-1", "showNavigationRail", false)
-      );
-      expect(withState.panelVisibility.byWorkspaceId["ws-1"]).toBeDefined();
-
-      const cleared = workspaceReducer(withState, clearPanelVisibility("ws-1"));
-      expect(cleared.panelVisibility.byWorkspaceId["ws-1"]).toBeUndefined();
-    });
-
-    it("is a no-op when workspace has no state", () => {
-      const cleared = workspaceReducer(initialState, clearPanelVisibility("ws-unknown"));
-      expect(cleared).toBe(initialState);
-    });
-  });
-
-  describe("workspaceUnmounted", () => {
-    it("preserves panel visibility across workspace switches", () => {
-      const withState = workspaceReducer(
-        initialState,
-        setPanelVisibility("ws-1", "showNavigationRail", false)
-      );
-      const afterUnmount = workspaceReducer(withState, workspaceUnmounted("ws-1"));
-      expect(afterUnmount.panelVisibility.byWorkspaceId["ws-1"]).toEqual({
-        ...defaultPanelVisibility,
-        showNavigationRail: false,
-      });
-    });
-  });
-
-  describe("multi-workspace isolation", () => {
-    it("stores independent visibility state per workspace", () => {
-      let state = workspaceReducer(
-        initialState,
-        setPanelVisibility("ws-1", "showNavigationRail", false)
-      );
-      state = workspaceReducer(state, setPanelVisibility("ws-2", "showMainContent", false));
-
-      expect(state.panelVisibility.byWorkspaceId["ws-1"]?.showNavigationRail).toBe(false);
-      expect(state.panelVisibility.byWorkspaceId["ws-1"]?.showMainContent).toBe(true);
-      expect(state.panelVisibility.byWorkspaceId["ws-2"]?.showNavigationRail).toBe(true);
-      expect(state.panelVisibility.byWorkspaceId["ws-2"]?.showMainContent).toBe(false);
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // Regression: direct Redux panel visibility ownership
-  // -----------------------------------------------------------------------
-
-  describe("direct Redux ownership regression", () => {
-    it("workspace switch cycle preserves both workspaces' visibility independently", () => {
-      // Simulate: mount ws-A, set some flags, unmount ws-A, mount ws-B, set different flags
-      let state = workspaceReducer(
-        initialState,
-        setPanelVisibilityBulk("ws-A", {
-          showNavigationRail: false,
-          showWorkspaceDock: false,
-        })
-      );
-      // Unmount ws-A — visibility must survive
-      state = workspaceReducer(state, workspaceUnmounted("ws-A"));
-
-      // Mount ws-B and set different flags
+      let state = workspaceReducer(initialState, setWorkspaceEntity(existing));
+      state = workspaceReducer(state, setPendingCreation(pending));
       state = workspaceReducer(
         state,
-        setPanelVisibilityBulk("ws-B", {
-          showMainContent: false,
-          showNotesPanel: false,
-        })
+        replaceWorkspaceList([
+          { ...existing, taskStats: undefined, status: WorkspaceStatusEnum.Active, archived: false },
+          makeWorkspace({ id: "pending-1", title: "Pending From Backend" }),
+          makeWorkspace({ id: "ws-2", title: "Second" }),
+        ])
       );
 
-      // ws-A state is still intact
-      expect(state.panelVisibility.byWorkspaceId["ws-A"]?.showNavigationRail).toBe(false);
-      expect(state.panelVisibility.byWorkspaceId["ws-A"]?.showWorkspaceDock).toBe(false);
-      expect(state.panelVisibility.byWorkspaceId["ws-A"]?.showMainContent).toBe(true);
-
-      // ws-B state is independent
-      expect(state.panelVisibility.byWorkspaceId["ws-B"]?.showMainContent).toBe(false);
-      expect(state.panelVisibility.byWorkspaceId["ws-B"]?.showNotesPanel).toBe(false);
-      expect(state.panelVisibility.byWorkspaceId["ws-B"]?.showNavigationRail).toBe(true);
+      expect(state.workspaces.ids).toEqual(["ws-1", "pending-1", "ws-2"]);
+      expect(getItem(state.workspaces, "ws-1")?.taskStats).toEqual(existing.taskStats);
+      expect(state.pendingCreations).toEqual({});
     });
 
-    it("brand-new workspace gets all-visible defaults without any manager", () => {
-      // A workspace that has never had setPanelVisibility called should
-      // return defaultPanelVisibility from the selector — no manager needed.
-      const state = { workspace: initialState } as any;
-      const vis = selectPanelVisibility.select(state, "ws-brand-new");
-      expect(vis).toEqual(defaultPanelVisibility);
+    it("resets workspace migration state including recency", () => {
+      const ws = makeWorkspace({ id: "ws-1" });
+      let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
+      state = workspaceReducer(state, setActiveWorkspaceId("ws-1"));
+      state = workspaceReducer(state, setWorkspaceLoading(true));
+      state = workspaceReducer(state, markWorkspacePendingDeletion("ws-1"));
+      state = workspaceReducer(state, recordWorkspaceView("ws-1", 123));
 
-      // Every individual flag should also return its default
-      for (const [key, defaultVal] of Object.entries(defaultPanelVisibility)) {
-        expect(
-          selectPanelVisibilityFlag.select(
-            state,
-            "ws-brand-new",
-            key as keyof typeof defaultPanelVisibility
-          )
-        ).toBe(defaultVal);
-      }
-    });
-
-    it("first-visit bulk hydration applies without a manager intermediary", () => {
-      // Simulate what the saga does: setPanelVisibilityBulk with first-visit state
-      const state = workspaceReducer(
-        initialState,
-        setPanelVisibilityBulk("ws-hydrated", {
-          showNavigationRail: false,
-          showMainContent: false,
-          showChatHeader: false,
-          isChatFocusedMode: true,
-          showWorkspaceDock: false,
-        })
-      );
-
-      const vis = state.panelVisibility.byWorkspaceId["ws-hydrated"];
-      expect(vis.showNavigationRail).toBe(false);
-      expect(vis.showMainContent).toBe(false);
-      expect(vis.showChatHeader).toBe(false);
-      expect(vis.isChatFocusedMode).toBe(true);
-      expect(vis.showWorkspaceDock).toBe(false);
-      // Flags not in the bulk update remain at defaults
-      expect(vis.showNotesPanel).toBe(true);
-      expect(vis.showFilesPanel).toBe(true);
-      expect(vis.showCodeChangesPanel).toBe(true);
-    });
-
-    it("clearPanelVisibility resets to defaults on next read", () => {
-      let state = workspaceReducer(
-        initialState,
-        setPanelVisibility("ws-clear", "showNavigationRail", false)
-      );
-      state = workspaceReducer(state, clearPanelVisibility("ws-clear"));
-
-      // After clear, selector should return defaults
-      const fullState = { workspace: state } as any;
-      expect(selectPanelVisibility.select(fullState, "ws-clear")).toEqual(
-        defaultPanelVisibility
-      );
+      const reset = workspaceReducer(state, resetWorkspaceState());
+      expect(reset.activeWorkspaceId).toBeNull();
+      expect(reset.workspaces).toEqual(createCollection("id"));
+      expect(reset.loading).toBe(false);
+      expect(reset.pendingDeletions).toEqual({});
+      expect(reset.recency).toEqual(initialState.recency);
     });
   });
 
@@ -275,7 +194,7 @@ describe("workspaceReducer", () => {
     it("stores a workspace entity by ID", () => {
       const ws = makeWorkspace({ id: "ws-1", title: "My Workspace" });
       const next = workspaceReducer(initialState, setWorkspaceEntity(ws));
-      expect(next.byWorkspaceId["ws-1"]).toEqual(ws);
+      expect(getItem(next.workspaces, "ws-1")).toEqual(ws);
     });
 
     it("overwrites an existing workspace entity", () => {
@@ -283,7 +202,7 @@ describe("workspaceReducer", () => {
       const ws1Updated = makeWorkspace({ id: "ws-1", title: "Updated" });
       let state = workspaceReducer(initialState, setWorkspaceEntity(ws1));
       state = workspaceReducer(state, setWorkspaceEntity(ws1Updated));
-      expect(state.byWorkspaceId["ws-1"].title).toBe("Updated");
+      expect(getItem(state.workspaces, "ws-1")?.title).toBe("Updated");
     });
 
     it("does not affect other workspace entities", () => {
@@ -291,8 +210,8 @@ describe("workspaceReducer", () => {
       const ws2 = makeWorkspace({ id: "ws-2" });
       let state = workspaceReducer(initialState, setWorkspaceEntity(ws1));
       state = workspaceReducer(state, setWorkspaceEntity(ws2));
-      expect(state.byWorkspaceId["ws-1"]).toEqual(ws1);
-      expect(state.byWorkspaceId["ws-2"]).toEqual(ws2);
+      expect(getItem(state.workspaces, "ws-1")).toEqual(ws1);
+      expect(getItem(state.workspaces, "ws-2")).toEqual(ws2);
     });
   });
 
@@ -301,8 +220,8 @@ describe("workspaceReducer", () => {
       const ws = makeWorkspace({ id: "ws-1", title: "Original" });
       let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
       state = workspaceReducer(state, updateWorkspaceEntity("ws-1", { title: "Changed" }));
-      expect(state.byWorkspaceId["ws-1"].title).toBe("Changed");
-      expect(state.byWorkspaceId["ws-1"].branch).toBe("main"); // untouched
+      expect(getItem(state.workspaces, "ws-1")?.title).toBe("Changed");
+      expect(getItem(state.workspaces, "ws-1")?.branch).toBe("main"); // untouched
     });
 
     it("is a no-op when workspace does not exist", () => {
@@ -319,7 +238,7 @@ describe("workspaceReducer", () => {
       const ws = makeWorkspace({ id: "ws-1" });
       let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
       state = workspaceReducer(state, removeWorkspaceEntity("ws-1"));
-      expect(state.byWorkspaceId["ws-1"]).toBeUndefined();
+      expect(getItem(state.workspaces, "ws-1")).toBeUndefined();
     });
 
     it("is a no-op when workspace does not exist", () => {
@@ -333,8 +252,57 @@ describe("workspaceReducer", () => {
       let state = workspaceReducer(initialState, setWorkspaceEntity(ws1));
       state = workspaceReducer(state, setWorkspaceEntity(ws2));
       state = workspaceReducer(state, removeWorkspaceEntity("ws-1"));
-      expect(state.byWorkspaceId["ws-1"]).toBeUndefined();
-      expect(state.byWorkspaceId["ws-2"]).toEqual(ws2);
+      expect(getItem(state.workspaces, "ws-1")).toBeUndefined();
+      expect(getItem(state.workspaces, "ws-2")).toEqual(ws2);
+    });
+
+    it("also removes the workspace from the ordered list and clears active if needed", () => {
+      const ws = makeWorkspace({ id: "ws-1" });
+      let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
+      state = workspaceReducer(state, setActiveWorkspaceId("ws-1"));
+
+      state = workspaceReducer(state, removeWorkspaceEntity("ws-1"));
+      expect(state.workspaces.ids).toEqual([]);
+      expect(state.activeWorkspaceId).toBeNull();
+    });
+  });
+
+  describe("applyOptimisticTaskStatusUpdate", () => {
+    it("updates aggregate task stats from task status transitions", () => {
+      const ws = makeWorkspace({
+        id: "ws-1",
+        taskStats: { total: 5, completed: 2, inProgress: 1 },
+      });
+      let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
+
+      state = workspaceReducer(
+        state,
+        applyOptimisticTaskStatusUpdate({
+          workspaceId: "ws-1",
+          previousStatus: "in_progress",
+          newStatus: "complete",
+        })
+      );
+
+      expect(getItem(state.workspaces, "ws-1")?.taskStats).toEqual({
+        total: 5,
+        completed: 3,
+        inProgress: 0,
+      });
+    });
+
+    it("is a no-op when the workspace has no task stats", () => {
+      const ws = makeWorkspace({ id: "ws-1" });
+      const state = workspaceReducer(
+        workspaceReducer(initialState, setWorkspaceEntity(ws)),
+        applyOptimisticTaskStatusUpdate({
+          workspaceId: "ws-1",
+          previousStatus: "in_progress",
+          newStatus: "complete",
+        })
+      );
+
+      expect(getItem(state.workspaces, "ws-1")?.taskStats).toBeUndefined();
     });
   });
 
@@ -351,7 +319,7 @@ describe("workspaceReducer", () => {
       let state = workspaceReducer(initialState, setWorkspaceEntity(wsA));
       state = workspaceReducer(state, setActiveWorkspaceId("ws-A"));
 
-      expect(state.byWorkspaceId["ws-A"]).toEqual(wsA);
+      expect(getItem(state.workspaces, "ws-A")).toEqual(wsA);
       expect(state.activeWorkspaceId).toBe("ws-A");
 
       // Simulate switching to ws-B: hydrate entity + set active
@@ -361,9 +329,9 @@ describe("workspaceReducer", () => {
       // Active pointer moved to ws-B
       expect(state.activeWorkspaceId).toBe("ws-B");
       // ws-B entity is present
-      expect(state.byWorkspaceId["ws-B"]).toEqual(wsB);
+      expect(getItem(state.workspaces, "ws-B")).toEqual(wsB);
       // ws-A entity is still retained (not cleared on switch)
-      expect(state.byWorkspaceId["ws-A"]).toEqual(wsA);
+      expect(getItem(state.workspaces, "ws-A")).toEqual(wsA);
     });
 
     it("switching workspaces does not leave stale data as the active Redux value", () => {
@@ -444,13 +412,44 @@ describe("workspace selectors", () => {
     );
   });
 
+  it("exposes workspace request-state selectors", () => {
+    const state = stateWith({
+      loading: true,
+      error: "boom",
+      hasLoaded: true,
+      isCreating: true,
+      pendingDeletions: { "ws-1": true },
+      pendingArchives: { "ws-2": true },
+      pendingCreations: { "ws-3": makeWorkspace({ id: "ws-3" }) },
+    });
+
+    expect(selectWorkspaceLoading.select(state as any)).toBe(true);
+    expect(selectWorkspaceHasLoaded.select(state as any)).toBe(true);
+    expect(selectWorkspaceIsCreating.select(state as any)).toBe(true);
+    expect(selectWorkspacePendingDeletions.select(state as any)).toEqual({ "ws-1": true });
+    expect(Object.keys(selectWorkspacePendingCreations.select(state as any))).toEqual(["ws-3"]);
+  });
+
+  it("selectWorkspacesSortedByRecency sorts viewed workspaces ahead of unviewed ones", () => {
+    const ws1 = makeWorkspace({ id: "ws-1", title: "First" });
+    const ws2 = makeWorkspace({ id: "ws-2", title: "Second" });
+    const ws3 = makeWorkspace({ id: "ws-3", title: "Third" });
+    const ws4 = makeWorkspace({ id: "ws-4", title: "Fourth" });
+    const state = stateWith({
+      recency: { lastViewedAt: { "ws-1": 100, "ws-2": 200 } },
+    });
+
+    const sorted = selectWorkspacesSortedByRecency.select(state as any, [ws3, ws1, ws4, ws2]);
+    expect(sorted.map((workspace) => workspace.id)).toEqual(["ws-2", "ws-1", "ws-3", "ws-4"]);
+  });
+
   // -----------------------------------------------------------------------
   // Workspace entity selectors
   // -----------------------------------------------------------------------
 
   it("selectWorkspaceById returns stored workspace", () => {
     const ws = makeWorkspace({ id: "ws-1", title: "Found" });
-    const state = stateWith({ byWorkspaceId: { "ws-1": ws } });
+    const state = stateWith({ workspaces: createCollection("id", [ws]) });
     expect(selectWorkspaceById.select(state as any, "ws-1")).toEqual(ws);
   });
 
@@ -458,11 +457,26 @@ describe("workspace selectors", () => {
     expect(selectWorkspaceById.select(stateWith({}) as any, "ws-missing")).toBeUndefined();
   });
 
-  it("selectActiveWorkspace resolves active workspace from byWorkspaceId", () => {
+  it("selectWorkspaceItems and emptiness use collection order", () => {
+    const ws1 = makeWorkspace({ id: "ws-1", path: "C:\\repo\\one" });
+    const ws2 = makeWorkspace({ id: "ws-2", path: "/repo/two" });
+    const state = stateWith({
+      workspaces: createCollection("id", [ws2, ws1]),
+    });
+
+    expect(getItems((state as any).workspace.workspaces).map((workspace) => workspace.id)).toEqual([
+      "ws-2",
+      "ws-1",
+    ]);
+    expect(selectWorkspaceItems.select(state as any).map((workspace) => workspace.id)).toEqual(["ws-2", "ws-1"]);
+    expect(selectWorkspaceIsEmpty.select(state as any)).toBe(false);
+  });
+
+  it("selectActiveWorkspace resolves active workspace from the collection", () => {
     const ws = makeWorkspace({ id: "ws-1", title: "Active" });
     const state = stateWith({
       activeWorkspaceId: "ws-1",
-      byWorkspaceId: { "ws-1": ws },
+      workspaces: createCollection("id", [ws]),
     });
     expect(selectActiveWorkspace.select(state as any)).toEqual(ws);
   });
@@ -472,41 +486,15 @@ describe("workspace selectors", () => {
   });
 
   it("selectActiveWorkspace returns undefined when active id not hydrated", () => {
-    const state = stateWith({ activeWorkspaceId: "ws-1", byWorkspaceId: {} });
+    const state = stateWith({ activeWorkspaceId: "ws-1", workspaces: createCollection("id") });
     expect(selectActiveWorkspace.select(state as any)).toBeUndefined();
   });
 
-  // -----------------------------------------------------------------------
-  // Panel visibility selectors
-  // -----------------------------------------------------------------------
-
-  it("selectPanelVisibility returns defaults when no state exists", () => {
-    expect(selectPanelVisibility.select(stateWith({}) as any, "ws-new")).toEqual(
-      defaultPanelVisibility
-    );
+  it("selectCurrentWorkspace aliases the active workspace selector", () => {
+    const ws = makeWorkspace({ id: "ws-1", title: "Current" });
+    const state = stateWith({ activeWorkspaceId: "ws-1", workspaces: createCollection("id", [ws]) });
+    expect(selectCurrentWorkspace.select(state as any)).toEqual(ws);
   });
 
-  it("selectPanelVisibility returns stored state", () => {
-    const vis = { ...defaultPanelVisibility, showNavigationRail: false };
-    const state = stateWith({
-      panelVisibility: { byWorkspaceId: { "ws-1": vis } },
-    });
-    expect(selectPanelVisibility.select(state as any, "ws-1")).toEqual(vis);
-  });
-
-  it("selectPanelVisibilityFlag returns a single flag", () => {
-    const vis = { ...defaultPanelVisibility, showMainContent: false };
-    const state = stateWith({
-      panelVisibility: { byWorkspaceId: { "ws-1": vis } },
-    });
-    expect(selectPanelVisibilityFlag.select(state as any, "ws-1", "showMainContent")).toBe(false);
-    expect(selectPanelVisibilityFlag.select(state as any, "ws-1", "showNotesPanel")).toBe(true);
-  });
-
-  it("selectPanelVisibilityFlag returns default for unknown workspace", () => {
-    expect(
-      selectPanelVisibilityFlag.select(stateWith({}) as any, "ws-unknown", "showMainContent")
-    ).toBe(true);
-  });
 });
 

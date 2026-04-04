@@ -12,13 +12,12 @@ import type { Note, NoteVersion, UpdateNoteRequest, NoteComment } from '../../..
 import { ContentType, NoteVisibility } from '../../../shared/types';
 import type { NotesRepository } from '../main/notes.repository';
 import type { CommentsRepository } from '../../comments/comments.repository';
-import type { UnifiedEventBus } from '../../events/main/unified-event-bus';
+// NotesService no longer takes an event bus parameter; events are dispatched via Redux actions
 
 describe('NotesService - Anchor Recovery Integration', () => {
   let notesService: NotesService;
   let mockNotesRepository: NotesRepository;
   let mockCommentsRepository: CommentsRepository;
-  let mockEventBus: UnifiedEventBus;
 
   // Helper to create test note
   const createTestNote = (overrides?: Partial<Note>): Note => ({
@@ -78,18 +77,8 @@ describe('NotesService - Anchor Recovery Integration', () => {
       delete: vi.fn(),
     } as unknown as CommentsRepository;
 
-    mockEventBus = {
-      emit: vi.fn(),
-      emitEvent: vi.fn(),
-      emitDomainEvent: vi.fn(),
-      on: vi.fn(),
-      off: vi.fn(),
-      onDomainEvent: vi.fn(),
-      offDomainEvent: vi.fn(),
-    } as unknown as UnifiedEventBus;
-
-    // Create service with mocks
-    notesService = new NotesService(mockNotesRepository, mockCommentsRepository, mockEventBus);
+    // Create service with mocks (no event bus — events now dispatched via Redux)
+    notesService = new NotesService(mockNotesRepository, mockCommentsRepository);
   });
 
   describe('Recovery on save', () => {
@@ -123,7 +112,7 @@ describe('NotesService - Anchor Recovery Integration', () => {
       );
     });
 
-    it('should emit event when recovery happens', async () => {
+    it('should save with recovered anchors when recovery happens', async () => {
       // Setup: Note with healthy anchors initially
       const existingNote = createTestNote({
         content: 'Hello <!--anchor:c1:start-->world<!--anchor:c1:end-->',
@@ -142,17 +131,15 @@ describe('NotesService - Anchor Recovery Integration', () => {
 
       await notesService.updateNote(request);
 
-      // Verify: Event emitted with recovered comment IDs
-      expect(mockEventBus.emit).toHaveBeenCalledWith(
-        'notes:anchors-recovered',
+      // Verify: Saved with recovered anchor (recovery is logged, not emitted as event)
+      expect(mockNotesRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({
-          noteId: 'note-1',
-          commentIds: expect.arrayContaining(['c1']),
+          content: expect.stringContaining('<!--anchor:c1:end-->'),
         }),
       );
     });
 
-    it('should not emit event if no recovery needed', async () => {
+    it('should not alter content if no recovery needed', async () => {
       // Setup: Note with healthy anchors
       const existingNote = createTestNote({
         content: 'Hello <!--anchor:c1:start-->world<!--anchor:c1:end-->',
@@ -170,10 +157,11 @@ describe('NotesService - Anchor Recovery Integration', () => {
 
       await notesService.updateNote(request);
 
-      // Verify: No recovery event emitted
-      expect(mockEventBus.emit).not.toHaveBeenCalledWith(
-        'notes:anchors-recovered',
-        expect.anything(),
+      // Verify: Content preserved as-is
+      expect(mockNotesRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('<!--anchor:c1:start-->world<!--anchor:c1:end-->'),
+        }),
       );
     });
 
@@ -213,11 +201,10 @@ describe('NotesService - Anchor Recovery Integration', () => {
         }),
       );
 
-      // Verify: Event includes recovered comment ID
-      expect(mockEventBus.emit).toHaveBeenCalledWith(
-        'notes:anchors-recovered',
+      // Verify: c2 anchor preserved unchanged
+      expect(mockNotesRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({
-          commentIds: expect.arrayContaining(['c1']),
+          content: expect.stringContaining('<!--anchor:c2:start-->goodbye<!--anchor:c2:end-->'),
         }),
       );
     });
@@ -280,11 +267,8 @@ describe('NotesService - Anchor Recovery Integration', () => {
         }),
       );
 
-      // Verify: No recovery event emitted
-      expect(mockEventBus.emit).not.toHaveBeenCalledWith(
-        'notes:anchors-recovered',
-        expect.anything(),
-      );
+      // Verify: No anchor recovery in saved content (content unchanged)
+      // (notes:anchors-recovered event was removed during Redux migration)
     });
 
     it('should mark comments as orphaned when recovery fails', async () => {

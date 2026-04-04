@@ -8,7 +8,6 @@
 import { app, BrowserWindow, Notification } from 'electron';
 import ElectronStore from 'electron-store';
 import { Logger } from '../../../shared/logger';
-import { getWorkspaceEventBus } from '../../events/main/workspace-event-bus';
 import type { AgentIdleEvent } from '../../events/types';
 import { AgentBackendHandler } from '../../agent/main/agent-backend-handler.service';
 import { getWindowIdsForWorkspace, sendToWorkspaceWindows } from '../../system/main/system.ipc';
@@ -47,7 +46,7 @@ interface NotificationContent {
 
 export class NotificationService {
   private workspaceId: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   private settingsStore: any;
   private unsubscribe?: () => void;
   private activeNotifications = new Set<Notification>();
@@ -63,60 +62,24 @@ export class NotificationService {
   }
 
   /**
-   * Start listening for agent:idle events
+   * Start the notification service (no-op; events are now delivered via sagas).
    */
   start(): void {
-    try {
-      // Clean up any existing subscription before creating a new one.
-      // workspace:open is called every time the user navigates to a workspace,
-      // so start() can be called multiple times on the same singleton instance.
-      // Without this, the old subscription leaks in WorkspaceEventBus.subscribers.
-      if (this.unsubscribe) {
-        logger.info('NotificationService already started, cleaning up previous subscription', {
-          workspaceId: this.workspaceId,
-        });
-        this.unsubscribe();
-        this.unsubscribe = undefined;
-      }
-
-      const eventBus = getWorkspaceEventBus(this.workspaceId);
-
-      // Subscribe to agent:idle events
-      const subscription = eventBus.subscribe({
-        filters: [
-          {
-            field: 'type',
-            operator: 'equals',
-            value: 'agent:idle',
-          },
-        ],
-        callback: (event) => {
-          this.handleAgentIdle(event as AgentIdleEvent);
-        },
-      });
-
-      this.unsubscribe = subscription.unsubscribe;
-      logger.info('NotificationService started', { workspaceId: this.workspaceId });
-    } catch (error) {
-      logger.error('Failed to start NotificationService', error as Error);
-    }
+    logger.info('NotificationService started (saga-driven)', { workspaceId: this.workspaceId });
   }
 
   /**
-   * Stop listening for events
+   * Stop the notification service (no-op; events are now delivered via sagas).
    */
   stop(): void {
-    if (this.unsubscribe) {
-      this.unsubscribe();
-      this.unsubscribe = undefined;
-      logger.info('NotificationService stopped', { workspaceId: this.workspaceId });
-    }
+    logger.info('NotificationService stopped', { workspaceId: this.workspaceId });
   }
 
   /**
-   * Handle agent:idle event
+   * Handle agent:idle event.
+   * Called by event-triggered-sagas when an agent:idle workspace event is accepted.
    */
-  private async handleAgentIdle(event: AgentIdleEvent): Promise<void> {
+  async handleAgentIdle(event: AgentIdleEvent): Promise<void> {
     try {
       const settings = this.getSettings();
 

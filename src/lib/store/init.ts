@@ -105,7 +105,7 @@ export const init = (loadedState?: PreloadedStoreState) => {
     window.intent = window.intent || {};
 
     if (window.intent.reduxContext === storeContext) {
-      // eslint-disable-next-line no-console
+       
       console.log("Context is exposed already");
     } else if (!window.intent.reduxContext) {
       window.intent.reduxContext = storeContext;
@@ -114,7 +114,7 @@ export const init = (loadedState?: PreloadedStoreState) => {
       window.intent.reduxContext = list.concat(window.intent.reduxContext).concat(storeContext);
       // In storybook we expect multiple stores e.g. in Docs page
       if (window.isStorybook) {
-        // eslint-disable-next-line no-console
+         
         console.log("Multiple Redux stores initialized:", window.intent.reduxContext);
       } else {
         console.error("Multiple Redux stores initialized:", window.intent.reduxContext);
@@ -156,7 +156,7 @@ export const init = (loadedState?: PreloadedStoreState) => {
     };
 
     const logReduxLoggingReloadMessage = () => {
-      // eslint-disable-next-line no-console
+       
       console.log("Redux logging preference updated. Reload to take effect.");
     };
 

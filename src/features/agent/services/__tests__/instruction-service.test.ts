@@ -59,7 +59,7 @@ vi.mock('../../../workspace/main/app-settings.service', () => ({
 // Mock Logger
 vi.mock('$shared/logger', () => ({
   Logger: class MockLogger {
-    constructor(name: string) {}
+    constructor() {}
     info = vi.fn();
     debug = vi.fn();
     warn = vi.fn();
@@ -801,10 +801,6 @@ describe('InstructionService', () => {
 
       // Load rules (should create watcher)
       await service.getSpecializationRules('debug', workspacePath);
-
-      // Get initial stats
-      const stats1 = service.getStats();
-      const initialWatcherCount = stats1.watcherCount;
 
       // Destroy service
       service.destroy();

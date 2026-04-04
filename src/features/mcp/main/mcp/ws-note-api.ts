@@ -137,9 +137,11 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
     id: note.id,
     title: note.title,
     content: note.content,
+    contentType: note.contentType || note.content_type || 'markdown',
     tags: note.tags || [],
     isPinned: false,
     isArchived: false,
+    visibility: note.visibility || 'workspace',
     createdAt: note.created_at || note.createdAt,
     updatedAt: note.updated_at || note.updatedAt,
     workspaceId,
@@ -448,6 +450,7 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
           rawContent: note.content || '',
           totalLines: note.content ? note.content.split('\n').length : 0,
           imageCount: embeddedImages.length,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           images: embeddedImages.map(({ data, ...image }) => image),
           ...(note.metadata?.task
             ? {

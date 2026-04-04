@@ -4,7 +4,7 @@ import {
   WorkspaceId as createWorkspaceId,
   AgentId as createAgentId,
 } from '$shared/types/branded-ids';
-import type { NoteId, WorkspaceId, AgentId } from '$shared/types/branded-ids';
+import type { WorkspaceId } from '$shared/types/branded-ids';
 /**
  * Protocol Adapter
  *
@@ -922,7 +922,7 @@ export class ProtocolAdapter {
               wsUrl: workspace.environmentConfig.ssh.ws_url,
             }
           : null;
-      const executor = executorManager.getExecutor({
+      executorManager.getExecutor({
         workspaceId: params.workspaceId,
         workspacePath,
         remote,

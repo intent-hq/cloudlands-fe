@@ -4,7 +4,7 @@
  * IPC layer for file operations.
  */
 
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain } from 'electron';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -19,7 +19,7 @@ import {
 } from '../../../shared/binary-file-extensions';
 import { FILE_CHANNELS } from '$shared/ipc/channels';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { validateIpcRequest, type IpcResponse, FileIpc } from '$shared/ipc';
+import { type IpcResponse, FileIpc } from '$shared/ipc';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import {
   FileReadSchema,
@@ -58,7 +58,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024;
  * Maximum file size for preview/mention context (1MB)
  * Used when maxSize option is passed
  */
-const MAX_PREVIEW_SIZE = 1 * 1024 * 1024;
+
 
 /**
  * Expand tilde (~) to home directory
@@ -457,7 +457,7 @@ export function setupFileIPC() {
             // Clean up temp file if it exists
             try {
               await fs.unlink(tempPath);
-            } catch (unlinkError) {
+            } catch  {
               // Ignore unlink errors
             }
             throw writeError;
@@ -544,7 +544,7 @@ export function setupFileIPC() {
                 if (entry.isDirectory()) {
                   try {
                     await walkDir(fullPath);
-                  } catch (err) {
+                  } catch  {
                     // Skip directories we can't read
                     logger.debug(`[FileIPC] Skipping unreadable directory: ${fullPath}`);
                   }
@@ -750,7 +750,7 @@ export function setupFileIPC() {
                   size: stats.size,
                   modified: stats.mtime.toISOString(),
                 };
-              } catch (_) {
+              } catch  {
                 // If we can't stat the file, return basic info
                 return {
                   name: entry.name,
@@ -793,7 +793,7 @@ export function setupFileIPC() {
             .map((line) => line.trim())
             .filter((line) => line && !line.startsWith('#'));
           return { success: true, data: patterns };
-        } catch (_) {
+        } catch  {
           // If no .gitignore file, return empty array
           return { success: true, data: [] };
         }
@@ -885,7 +885,7 @@ export function setupFileIPC() {
                       additions: lineCount,
                       deletions: 0,
                     };
-                  } catch (_) {
+                  } catch  {
                     fileChanges[filePath] = {
                       additions: 0,
                       deletions: 0,
@@ -997,7 +997,7 @@ export function setupFileIPC() {
                         deletions: 0,
                       };
                     })
-                    .catch((_) => {
+                    .catch(() => {
                       // If we can't read the file, default to 0
                       fileChanges[filePath] = {
                         additions: 0,
@@ -1018,7 +1018,7 @@ export function setupFileIPC() {
                         deletions: 0,
                       };
                     })
-                    .catch((_) => {
+                    .catch(() => {
                       fileChanges[filePath] = {
                         additions: 0,
                         deletions: 0,
@@ -1030,7 +1030,7 @@ export function setupFileIPC() {
 
             // Wait for all file reads to complete
             await Promise.all(fileReadPromises);
-          } catch (_) {
+          } catch  {
             // Ignore errors from git diff (might happen if no changes)
           }
 
@@ -1114,7 +1114,7 @@ export function setupFileIPC() {
               } else {
                 return { name, path: relativePath, size: stats.size };
               }
-            } catch (error) {
+            } catch  {
               // Skip files/dirs we can't access
               return null;
             }

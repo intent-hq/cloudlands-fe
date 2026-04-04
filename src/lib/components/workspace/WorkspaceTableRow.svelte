@@ -44,6 +44,7 @@
     workspace: ws,
     agents,
     isLastInGroup = false,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     showRepoAvatar = false,
     groupByRepo = false,
     onOpen,

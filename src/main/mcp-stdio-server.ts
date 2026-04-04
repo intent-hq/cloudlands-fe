@@ -101,7 +101,7 @@ const envPort = Number.isFinite(Number(process.env.HTTP_MCP_PORT))
 
 function readPortFromStore(): number | undefined {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     const ElectronStore = require('electron-store') as typeof import('electron-store').default;
     const storeOpts = ELECTRON_STORE_CWD
       ? { name: 'settings', cwd: ELECTRON_STORE_CWD }
@@ -112,7 +112,7 @@ function readPortFromStore(): number | undefined {
     if (Number.isFinite(asNumber)) {
       return asNumber;
     }
-  } catch (_err) {
+  } catch  {
     // ignore, will fall back
   }
   return undefined;
@@ -561,7 +561,8 @@ async function main() {
 
         // Try to process complete JSON objects even without newlines
         // This is a workaround for auggie not sending newlines
-        let processedMessages = false;
+         
+
 
         // First, try the standard newline-delimited approach
         if (buffer.includes('\n')) {
@@ -571,7 +572,6 @@ async function main() {
           for (const line of lines) {
             if (!line.trim()) continue;
             await processJsonRpcMessage(line);
-            processedMessages = true;
           }
         }
         // If no newlines, try to detect complete JSON objects
@@ -587,8 +587,7 @@ async function main() {
             lastProcessedBuffer = buffer; // Remember what we processed BEFORE clearing
             await processJsonRpcMessage(buffer);
             buffer = ''; // Clear buffer after processing
-            processedMessages = true;
-          } catch (e) {
+          } catch  {
             // Not a complete JSON object yet, keep buffering
             // Check if we might have multiple JSON objects concatenated
             const matches = buffer.match(/\{[^{}]*\}/g);
@@ -598,7 +597,6 @@ async function main() {
                   JSON.parse(match);
                   await processJsonRpcMessage(match);
                   buffer = buffer.replace(match, '');
-                  processedMessages = true;
                 } catch {
                   // Not a valid JSON object, keep it in buffer
                 }

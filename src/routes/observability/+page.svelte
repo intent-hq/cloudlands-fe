@@ -28,14 +28,12 @@
     faLightbulb,
     faTriangleExclamation,
     faCircle,
-    faPlay,
     faStop,
     faTerminal,
     faServer,
     faCog,
     faPlug,
     faPlugCircleXmark,
-    faExternalLinkAlt,
     faFolderOpen,
   } from '@fortawesome/free-solid-svg-icons';
   import Input from '$lib/components/ui/input/input.svelte';
@@ -46,6 +44,7 @@
   let selectedEvent: AgentEvent | null = $state(null);
   let isPaused: boolean = $state(false);
   let filter: string = $state('');
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let metrics = $state({
     totalEvents: 0,
     toolCalls: 0,
@@ -699,7 +698,7 @@
   }
 
   :global(.dark) .icon-terminal {
-    color: #9ca3af;
+    color: #9ca3af; /* a11y-ignore */
   }
 
   :global(.dark) .icon-git {

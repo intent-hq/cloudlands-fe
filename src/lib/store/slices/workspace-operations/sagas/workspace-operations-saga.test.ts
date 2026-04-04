@@ -20,12 +20,10 @@ vi.mock("typed-redux-saga", () => ({
   },
 }));
 
-const { mockHasRunningAgents, mockGetRunningAgentNames, mockNavigateAfterWorkspaceRemoval, mockDeleteWithUndo, mockArchive, mockToast } = vi.hoisted(() => ({
+const { mockHasRunningAgents, mockGetRunningAgentNames, mockNavigateAfterWorkspaceRemoval, mockToast } = vi.hoisted(() => ({
   mockHasRunningAgents: vi.fn(() => false),
   mockGetRunningAgentNames: vi.fn(() => []),
   mockNavigateAfterWorkspaceRemoval: vi.fn(),
-  mockDeleteWithUndo: vi.fn(),
-  mockArchive: vi.fn(() => ({ ok: true })),
   mockToast: { warning: vi.fn(), error: vi.fn(), info: vi.fn(), success: vi.fn() },
 }));
 
@@ -36,14 +34,6 @@ vi.mock("$lib/utils/delete-warning-utils", () => ({
 
 vi.mock("$lib/utils/workspace-navigation", () => ({
   navigateAfterWorkspaceRemoval: mockNavigateAfterWorkspaceRemoval,
-}));
-
-vi.mock("$features/workspace/workspace.store.svelte", () => ({
-  workspaceStore: {
-    deleteWithUndo: mockDeleteWithUndo,
-    archive: mockArchive,
-    items: [],
-  },
 }));
 
 vi.mock("svelte-sonner", () => ({
@@ -72,7 +62,6 @@ import {
   openDeleteWarning,
   closeDeleteWarning,
 } from "../workspace-operations-slice";
-import { selectPendingDeleteWorkspace } from "../workspace-operations-selectors";
 
 function makeWorkspace(id: string): Workspace {
   return {
@@ -109,16 +98,20 @@ describe("workspace-operations-saga navigate-away behavior", () => {
         configurable: true,
       });
 
-      const action = requestDeleteWorkspace(workspace);
+      const action = requestDeleteWorkspace(workspace.id);
       const gen = requestDeleteWorkspaceSaga(action);
 
-      // First yield: call(navigateAfterWorkspaceRemoval, workspace.id)
-      const navEffect = gen.next().value as any;
+      // First yield: selectWorkspaceById.effect(workspace.id)
+      const selectEffect = gen.next().value as any;
+      expect(selectEffect.type).toBe("SELECT");
+
+      // Provide the workspace as the select result → next yield: navigateAfterWorkspaceRemoval
+      const navEffect = gen.next(workspace).value as any;
       expect(navEffect.type).toBe("CALL");
       expect(navEffect.payload.fn).toBe(navigateAfterWorkspaceRemoval);
       expect(navEffect.payload.args).toEqual([workspace.id]);
 
-      // Second yield: call(deleteWorkspaceWithUndo, workspace)
+      // Next yield: call(deleteWorkspaceWithUndo, workspace)
       const deleteEffect = gen.next().value as any;
       expect(deleteEffect.type).toBe("CALL");
       expect(deleteEffect.payload.args).toEqual([workspace]);
@@ -134,11 +127,15 @@ describe("workspace-operations-saga navigate-away behavior", () => {
         configurable: true,
       });
 
-      const action = requestDeleteWorkspace(workspace);
+      const action = requestDeleteWorkspace(workspace.id);
       const gen = requestDeleteWorkspaceSaga(action);
 
-      // First yield: call(deleteWorkspaceWithUndo, workspace) — no navigation
-      const deleteEffect = gen.next().value as any;
+      // First yield: selectWorkspaceById.effect(workspace.id)
+      const selectEffect = gen.next().value as any;
+      expect(selectEffect.type).toBe("SELECT");
+
+      // Provide the workspace — path doesn't match, so skip navigation → deleteWorkspaceWithUndo
+      const deleteEffect = gen.next(workspace).value as any;
       expect(deleteEffect.type).toBe("CALL");
       expect(deleteEffect.payload.args).toEqual([workspace]);
       // Should NOT be navigateAfterWorkspaceRemoval
@@ -155,16 +152,20 @@ describe("workspace-operations-saga navigate-away behavior", () => {
         configurable: true,
       });
 
-      const action = requestDeleteWorkspace(workspace);
+      const action = requestDeleteWorkspace(workspace.id);
       const gen = requestDeleteWorkspaceSaga(action);
 
-      // First yield: call(navigateAfterWorkspaceRemoval, workspace.id)
-      const navEffect = gen.next().value as any;
+      // First yield: selectWorkspaceById.effect(workspace.id)
+      const selectEffect = gen.next().value as any;
+      expect(selectEffect.type).toBe("SELECT");
+
+      // Provide the workspace → navigate
+      const navEffect = gen.next(workspace).value as any;
       expect(navEffect.type).toBe("CALL");
       expect(navEffect.payload.fn).toBe(navigateAfterWorkspaceRemoval);
       expect(navEffect.payload.args).toEqual([workspace.id]);
 
-      // Second yield: call(deleteWorkspaceWithUndo, workspace)
+      // Next yield: call(deleteWorkspaceWithUndo, workspace)
       const deleteEffect = gen.next().value as any;
       expect(deleteEffect.type).toBe("CALL");
       expect(deleteEffect.payload.args).toEqual([workspace]);
@@ -180,11 +181,15 @@ describe("workspace-operations-saga navigate-away behavior", () => {
         configurable: true,
       });
 
-      const action = requestDeleteWorkspace(workspace);
+      const action = requestDeleteWorkspace(workspace.id);
       const gen = requestDeleteWorkspaceSaga(action);
 
-      // First yield: call(deleteWorkspaceWithUndo, workspace) — no navigation
-      const deleteEffect = gen.next().value as any;
+      // First yield: selectWorkspaceById.effect(workspace.id)
+      const selectEffect = gen.next().value as any;
+      expect(selectEffect.type).toBe("SELECT");
+
+      // Provide workspace → path doesn't match, so skip navigation → deleteWorkspaceWithUndo
+      const deleteEffect = gen.next(workspace).value as any;
       expect(deleteEffect.type).toBe("CALL");
       expect(deleteEffect.payload.args).toEqual([workspace]);
       // Should NOT be navigateAfterWorkspaceRemoval
@@ -203,11 +208,11 @@ describe("workspace-operations-saga navigate-away behavior", () => {
         configurable: true,
       });
 
-      const action = requestDeleteWorkspace(workspace);
+      const action = requestDeleteWorkspace(workspace.id);
 
       testSaga(requestDeleteWorkspaceSaga, action)
         .next()
-        .put(openDeleteWarning({ workspace, agentNames: ["Agent 1"] }))
+        .put(openDeleteWarning({ workspaceId: workspace.id, agentNames: ["Agent 1"] }))
         .next()
         .isDone();
     });
@@ -223,22 +228,26 @@ describe("workspace-operations-saga navigate-away behavior", () => {
 
       const gen = confirmDeleteWorkspaceSaga();
 
-      // First yield: selectPendingDeleteWorkspace.effect()
-      const selectEffect = gen.next().value as any;
-      expect(selectEffect.type).toBe("SELECT");
+      // First yield: selectPendingDeleteWorkspaceId.effect()
+      const selectIdEffect = gen.next().value as any;
+      expect(selectIdEffect.type).toBe("SELECT");
 
-      // Second yield: put(closeDeleteWarning()) — provide workspace from select
-      const putEffect = gen.next(workspace).value as any;
+      // Second yield: put(closeDeleteWarning()) — provide workspaceId from select
+      const putEffect = gen.next(workspace.id).value as any;
       expect(putEffect.type).toBe("PUT");
       expect(putEffect.payload.action.type).toBe(closeDeleteWarning.type);
 
-      // Third yield: call(navigateAfterWorkspaceRemoval, workspace.id)
-      const navEffect = gen.next().value as any;
+      // Third yield: selectWorkspaceById.effect(workspaceId) — look up full workspace
+      const selectWsEffect = gen.next().value as any;
+      expect(selectWsEffect.type).toBe("SELECT");
+
+      // Fourth yield: call(navigateAfterWorkspaceRemoval, workspace.id)
+      const navEffect = gen.next(workspace).value as any;
       expect(navEffect.type).toBe("CALL");
       expect(navEffect.payload.fn).toBe(navigateAfterWorkspaceRemoval);
       expect(navEffect.payload.args).toEqual([workspace.id]);
 
-      // Fourth yield: call(deleteWorkspaceWithUndo, workspace)
+      // Fifth yield: call(deleteWorkspaceWithUndo, workspace)
       const deleteEffect = gen.next().value as any;
       expect(deleteEffect.type).toBe("CALL");
       expect(deleteEffect.payload.args).toEqual([workspace]);
@@ -256,20 +265,24 @@ describe("workspace-operations-saga navigate-away behavior", () => {
         configurable: true,
       });
 
-      const action = requestArchiveWorkspace(workspace);
+      const action = requestArchiveWorkspace(workspace.id);
       const gen = requestArchiveWorkspaceSaga(action);
 
       // First yield: call(getToast)
       const toastEffect = gen.next().value as any;
       expect(toastEffect.type).toBe("CALL");
 
-      // Second yield: call(navigateAfterWorkspaceRemoval, workspace.id)
-      const navEffect = gen.next(mockToast).value as any;
+      // Second yield: select(selectWorkspaceById, workspaceId)
+      const selectEffect = gen.next(mockToast).value as any;
+      expect(selectEffect.type).toBe("SELECT");
+
+      // Third yield: call(navigateAfterWorkspaceRemoval, workspace.id)
+      const navEffect = gen.next(workspace).value as any;
       expect(navEffect.type).toBe("CALL");
       expect(navEffect.payload.fn).toBe(navigateAfterWorkspaceRemoval);
       expect(navEffect.payload.args).toEqual([workspace.id]);
 
-      // Third yield: call([workspaceStore, workspaceStore.archive], workspace.id)
+      // Fourth yield: call([workspaceClient, workspaceClient.archive], workspace.id)
       const archiveEffect = gen.next().value as any;
       expect(archiveEffect.type).toBe("CALL");
     });
@@ -281,15 +294,19 @@ describe("workspace-operations-saga navigate-away behavior", () => {
         configurable: true,
       });
 
-      const action = requestArchiveWorkspace(workspace);
+      const action = requestArchiveWorkspace(workspace.id);
       const gen = requestArchiveWorkspaceSaga(action);
 
       // First yield: call(getToast)
       const toastEffect = gen.next().value as any;
       expect(toastEffect.type).toBe("CALL");
 
-      // Second yield: call([workspaceStore, workspaceStore.archive], ...) — no navigation
-      const archiveEffect = gen.next(mockToast).value as any;
+      // Second yield: select(selectWorkspaceById, workspaceId)
+      const selectEffect = gen.next(mockToast).value as any;
+      expect(selectEffect.type).toBe("SELECT");
+
+      // Third yield: call([workspaceClient, workspaceClient.archive], ...) — no navigation
+      const archiveEffect = gen.next(workspace).value as any;
       expect(archiveEffect.type).toBe("CALL");
       // Should NOT be navigateAfterWorkspaceRemoval
       expect(archiveEffect.payload.fn).not.toBe(navigateAfterWorkspaceRemoval);

@@ -5,7 +5,6 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import * as fs from 'fs';
 import * as path from 'path';
 import { MCPServer } from './server';
 import { extractToolCalls, hasToolCalls, ExtractedToolCall } from './tool-call-extractor';
@@ -255,6 +254,7 @@ async function trackAgentFileChanges(context: ToolExecutionContext): Promise<voi
               context.workspaceId,
             );
             if (workspacePath) {
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
               const fullPath = path.join(workspacePath, op.path);
               // Try to check git status to see if file is untracked (new)
               try {

@@ -198,6 +198,7 @@ export class PermissionManager extends EventEmitter {
   /**
    * Check cached rules for a permission
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private checkCachedRules(title: string, _sessionId: AgentId): RequestPermissionOutcome | null {
     // Remove expired rules
     this.rules = this.rules.filter((rule) => !rule.expiresAt || rule.expiresAt > Date.now());
@@ -308,7 +309,7 @@ export class PermissionManager extends EventEmitter {
             this.rules = [];
             logger.info('No saved permission rules found, starting with empty rules');
           }
-        } catch (_ipcError) {
+        } catch  {
           // Config IPC might not be available in tests
           this.rules = [];
           logger.debug('Config IPC not available, starting with empty rules');
@@ -345,7 +346,7 @@ export class PermissionManager extends EventEmitter {
           } else {
             logger.warn('Failed to save permission rules to config store', { error: result.error });
           }
-        } catch (_ipcError) {
+        } catch  {
           // Config IPC might not be available in tests
           logger.debug('Config IPC not available, rules not persisted');
         }

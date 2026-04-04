@@ -1,11 +1,10 @@
 import { call, put, takeLatest, delay } from "typed-redux-saga";
-import { unifiedStateStore } from "$features/agent/services/unified-state-store";
 import type { AuggieModel } from "$features/auggie/auggie-models.client";
 import { selectActiveProviderId } from "../../provider-settings/provider-settings-selectors";
 import { fetchModelsForProvider } from "../model-utils";
 import { findAvailableModelMatch, normalizeModelForProvider, resolvePreferredModelForProvider, } from "../model-selection-utils";
 import { loadModels, retryLoadModels, setAvailableModels, setLoadingStateForProvider, clearLoadingStateForProvider, setRetryAttempt, selectModel, MAX_AUTO_RETRIES, RETRY_DELAYS_MS, } from "../model-slice";
-import { selectAvailableModels, selectModelsLoadedForProvider, selectIsLoadingModelsForProvider, selectSelectedModel, selectRetryAttempt, } from "../model-selectors";
+import { selectIsLoadingModelsForProvider, selectModelsLoadedForProvider, selectRetryAttempt, selectSelectedModel } from "../model-selectors";
 /**
  * Handle loading models for the active provider.
  */
@@ -14,33 +13,19 @@ export function* handleLoadModels() {
     try {
         activeProviderId = yield* selectActiveProviderId.effect();
     }
-    catch (e) {
+    catch {
         return;
     }
     // Skip if already loaded for this provider or currently loading
     const modelsLoaded: boolean = yield* selectModelsLoadedForProvider.effect(activeProviderId);
     const isLoading: boolean = yield* selectIsLoadingModelsForProvider.effect(activeProviderId);
-    const cachedModels: AuggieModel[] = yield* selectAvailableModels.effect();
     if (modelsLoaded || isLoading) {
-        if (modelsLoaded && cachedModels.length > 0) {
-            try {
-                unifiedStateStore.setAvailableModels(cachedModels);
-            }
-            catch (e) {
-            }
-        }
         return;
     }
     yield* put(setLoadingStateForProvider({
         providerId: activeProviderId,
         status: "loading",
     }));
-    // Sync loading state with unified store
-    try {
-        unifiedStateStore.setModelsLoading(true);
-    }
-    catch (e) {
-    }
     try {
         const models = yield* call(fetchModelsForProvider, activeProviderId);
         if (models.length > 0) {
@@ -54,12 +39,6 @@ export function* handleLoadModels() {
                 status: "success",
                 retryAttempt: 0,
             }));
-            // Sync models with unified state store
-            try {
-                unifiedStateStore.setAvailableModels(prefixedModels);
-            }
-            catch (e) {
-            }
             // Validate selected model is in the available list
             const selectedModel: string = yield* selectSelectedModel.effect(activeProviderId);
             const availableModelValues = prefixedModels.map((m) => m.value);
@@ -94,11 +73,7 @@ export function* handleLoadModels() {
         yield* call(autoRetrySaga, activeProviderId);
     }
     finally {
-        try {
-            unifiedStateStore.setModelsLoading(false);
-        }
-        catch (e) {
-        }
+        // Loading state is tracked in Redux via setLoadingStateForProvider
     }
 }
 /**
@@ -120,7 +95,7 @@ function* autoRetrySaga(forProviderId: string) {
             yield* put(loadModels());
         }
     }
-    catch (e) {
+    catch {
     }
 }
 /**

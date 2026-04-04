@@ -8,9 +8,7 @@ import type {
   DiagramNode,
   DiagramEdge,
   DiagramGroup,
-  DiagramModel,
   DiagramBaseView,
-  DiagramState,
   DiagramGrammar,
 } from '$shared/types/notes-primitives';
 

@@ -2,7 +2,7 @@
  * Tests for Unified Persistence Service
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { UnifiedPersistence } from '../agent-persistence';

@@ -7,7 +7,6 @@
    */
   import type { AgentNode } from './types';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
-  import SpecialistToolIcon from '../ui/auggie-avatar/SpecialistToolIcon.svelte';
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectSpecialistName, selectSpecialists } from '$lib/store/slices/specialists/specialists-selectors';
@@ -38,6 +37,7 @@
   const specialists$ = selectSpecialists();
 
   // Get specialist display name using unified lookup
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const specialistName = $derived.by(() => {
     void $specialists$;
     if (!specialist) return null;

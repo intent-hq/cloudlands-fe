@@ -30,7 +30,7 @@ import { WorkspaceConfig } from '../../../../shared/main/config';
 import { getNoteStoragePaths, getLegacyNotePath, getLegacyFolderPath } from './note-storage-paths';
 import type { NoteFrontmatter, VersionEntry, VersionAuthor } from './note-storage.types';
 import { STORAGE_FILES } from './note-storage.types';
-import { parseFrontmatter, serializeFrontmatter, createDefaultFrontmatter } from './frontmatter';
+import { parseFrontmatter, serializeFrontmatter } from './frontmatter';
 import { readVersions, getContentAtVersion } from './version.service';
 import { trackChange, flushPendingVersion, clearVersionState } from './version-manager';
 import { moveToTrash } from './trash.service';

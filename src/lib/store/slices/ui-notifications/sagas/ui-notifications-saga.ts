@@ -1,6 +1,7 @@
 import { goto } from "$app/navigation";
-import { workspaceStore } from "$features/workspace/workspace.store.svelte";
+import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import { selectNotificationVolume, selectSoundEnabled, selectSoundOnlyWhenUnfocused } from "$lib/store/slices/user-preferences/user-preferences-selectors";
+import { selectActiveWorkspace, selectWorkspaceById } from "$lib/store/slices/workspace/workspace-selectors";
 import { takeEveryFromElectronChannel } from "$lib/store/utils/ipc-channel";
 import { call, fork, select } from "typed-redux-saga";
 
@@ -23,8 +24,9 @@ type NotificationNavigateEvent = {
 async function showBackgroundAgentSpawnedToast(data: BackgroundAgentSpawnedEvent): Promise<void> {
   try {
     const { toast } = await import("svelte-sonner");
-    const eventWorkspace = workspaceStore.items.find((workspace) => workspace.id === data.workspaceId);
-    const currentWorkspace = workspaceStore.current;
+    const state = getReduxStore().getState();
+    const eventWorkspace = selectWorkspaceById.select(state, data.workspaceId);
+    const currentWorkspace = selectActiveWorkspace.select(state);
     const workspaceTitle = eventWorkspace?.title || "Space";
     const shouldShowOpenAction = !!currentWorkspace && currentWorkspace.id !== data.workspaceId;
 

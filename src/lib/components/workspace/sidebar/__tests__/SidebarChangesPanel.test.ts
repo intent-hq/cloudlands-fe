@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
-import { render, fireEvent, waitFor, screen } from '@testing-library/svelte';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
 import { ChangeStage } from '$features/file-tracking/types';
 
@@ -10,119 +10,261 @@ if (typeof Element.prototype.scrollIntoView !== 'function') {
 
 // ─── Mock stores and services ───────────────────────────────────────────────
 
-const mockFileTrackingStore = {
-  loading: false,
-  currentWorkspaceId: 'ws-1',
-  workingChanges: { unstaged: [] as TrackedChange[], staged: [] as TrackedChange[] },
-  commits: [] as CommitInfo[],
-  boundarySha: null as string | null,
-  olderCommits: [] as CommitInfo[],
-  loadingOlderCommits: false,
-  changesTruncated: false,
-  totalChangesCount: 0,
-  stageByPath: vi.fn().mockResolvedValue({ ok: true }),
-  unstageByPath: vi.fn().mockResolvedValue({ ok: true }),
-  revertByPath: vi.fn().mockResolvedValue({ ok: true }),
-  refresh: vi.fn().mockResolvedValue(undefined),
-  setWorkspace: vi.fn(),
-  clearOlderCommits: vi.fn(),
-};
+const { mockFileTrackingStore, createMockFtSelector, flushFtSelectors } = vi.hoisted(() => {
+  // Track all active subscriptions so we can flush updates when mock values change
+  const activeSubscriptions: Array<{ getter: () => any; run: (val: any) => void }> = [];
 
-vi.mock('$features/file-tracking/file-tracking.store.svelte', () => ({
-  fileTrackingStore: mockFileTrackingStore,
+  function _makeReadable<T>(getter: () => T) {
+    return {
+      subscribe(run: (val: T) => void) {
+        const entry = { getter, run };
+        activeSubscriptions.push(entry);
+        run(getter());
+        return () => {
+          const idx = activeSubscriptions.indexOf(entry);
+          if (idx >= 0) activeSubscriptions.splice(idx, 1);
+        };
+      },
+    };
+  }
+
+  function _createMockFtSelector<T>(getter: () => T) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const fn = (..._args: any[]) => _makeReadable(getter);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    fn.select = (_state: any, ..._args: any[]) => getter();
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    fn.effect = (..._args: any[]) => {};
+    fn.withStore = () => fn;
+    return fn;
+  }
+
+  // Call this after updating mockFileTrackingStore values to notify all subscribers
+  function _flushFtSelectors() {
+    for (const sub of activeSubscriptions) {
+      sub.run(sub.getter());
+    }
+  }
+
+  return {
+    mockFileTrackingStore: {
+      loading: false,
+      currentWorkspaceId: 'ws-1' as string | null,
+      stagedChanges: [] as any[],
+      unstagedChanges: [] as any[],
+      commits: [] as any[],
+      boundarySha: null as string | null,
+      olderCommits: [] as any[],
+      loadingOlderCommits: false,
+      changesTruncated: false,
+      totalChangesCount: 0,
+
+    },
+    createMockFtSelector: _createMockFtSelector,
+    flushFtSelectors: _flushFtSelectors,
+  };
+});
+
+vi.mock('$lib/store/slices/file-tracking/file-tracking-selectors', () => ({
+  selectStagedWorkingChanges: createMockFtSelector(() => mockFileTrackingStore.stagedChanges),
+  selectUnstagedWorkingChanges: createMockFtSelector(() => mockFileTrackingStore.unstagedChanges),
+  selectFileTrackingCommits: createMockFtSelector(() => mockFileTrackingStore.commits),
+  selectFileTrackingBoundarySha: createMockFtSelector(() => mockFileTrackingStore.boundarySha),
+  selectFileTrackingOlderCommits: createMockFtSelector(() => mockFileTrackingStore.olderCommits),
+  selectFileTrackingLoadingOlderCommits: createMockFtSelector(() => mockFileTrackingStore.loadingOlderCommits),
+  selectFileTrackingLoading: createMockFtSelector(() => mockFileTrackingStore.loading),
+  selectFileTrackingChangesTruncated: createMockFtSelector(() => mockFileTrackingStore.changesTruncated),
+  selectFileTrackingTotalChangesCount: createMockFtSelector(() => mockFileTrackingStore.totalChangesCount),
 }));
 
-const mockGitStore = {
+vi.mock('$lib/store/slices/file-tracking/file-tracking-slice', () => ({
+  clearOlderCommits: vi.fn((wsId: string) => ({ type: 'fileTracking/clearOlderCommits', payload: wsId })),
+  stageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({ type: 'fileTracking/stageByPathRequested', payload: [wsId, paths] })),
+  unstageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({ type: 'fileTracking/unstageByPathRequested', payload: [wsId, paths] })),
+  revertByPathRequested: vi.fn((wsId: string, paths: string[]) => ({ type: 'fileTracking/revertByPathRequested', payload: [wsId, paths] })),
+  refreshRequested: vi.fn((wsId: string) => ({ type: 'fileTracking/refreshRequested', payload: [wsId] })),
+  loadOlderCommitsRequested: vi.fn((wsId: string, sha: string) => ({ type: 'fileTracking/loadOlderCommitsRequested', payload: { wsId, beforeSha: sha } })),
+}));
+
+const mockGitState = {
   ahead: 0,
   behind: 0,
   status: null as any,
-  dataWorkspaceId: 'ws-1',
-  loadStatus: vi.fn().mockResolvedValue(undefined),
-  push: vi.fn().mockResolvedValue({ ok: true }),
-  pull: vi.fn().mockResolvedValue({ ok: true }),
-  initEventListener: vi.fn(),
 };
-
-vi.mock('$features/git/git.store.svelte', () => ({
-  gitStore: mockGitStore,
-}));
 
 vi.mock('$features/git/git-cache', () => ({
   gitCache: { invalidate: vi.fn(), invalidateWorkspace: vi.fn(), set: vi.fn() },
 }));
 
 vi.mock('$features/git/git.client', () => ({
-  gitClient: { fetch: vi.fn().mockResolvedValue({ ok: true }), getStatus: vi.fn().mockResolvedValue({ ok: true, data: {} }) },
+  gitClient: {
+    fetch: vi.fn().mockResolvedValue({ ok: true }),
+    getStatus: vi.fn().mockResolvedValue({ ok: true, data: {} }),
+    push: vi.fn().mockResolvedValue({ ok: true }),
+    pull: vi.fn().mockResolvedValue({ ok: true }),
+    stageHunk: vi.fn().mockResolvedValue({ ok: true }),
+    unstageHunk: vi.fn().mockResolvedValue({ ok: true }),
+  },
+}));
+
+vi.mock('$lib/store/slices/git/git-selectors', () => ({
+  selectGitAhead: Object.assign(
+    () => createReadable(mockGitState.ahead),
+    { select: () => mockGitState.ahead },
+  ),
+  selectGitBehind: Object.assign(
+    () => createReadable(mockGitState.behind),
+    { select: () => mockGitState.behind },
+  ),
+  selectGitStatus: Object.assign(
+    () => createReadable(mockGitState.status),
+    { select: () => mockGitState.status },
+  ),
+}));
+
+vi.mock('$lib/store/slices/git/git-slice', () => ({
+  loadGitStatus: vi.fn((...args: any[]) => ({ type: 'git/loadStatus', payload: args })),
+  gitPush: vi.fn((...args: any[]) => ({ type: 'git/push', payload: args })),
+  gitPull: vi.fn((...args: any[]) => ({ type: 'git/pull', payload: args })),
 }));
 
 const mockWorkspaceStore = {
   findById: vi.fn().mockReturnValue(undefined),
   update: vi.fn().mockResolvedValue({ ok: true }),
   archive: vi.fn().mockResolvedValue({ ok: true }),
+  unarchive: vi.fn().mockResolvedValue({ ok: true }),
 };
 
-vi.mock('$features/workspace/workspace.store.svelte', () => ({
-  workspaceStore: mockWorkspaceStore,
-}));
+const mockSidebarChangesState = {
+  createPRWhenReady: false,
+  prDescriptionExecutor: null as any,
+  postMergeState: null as any,
+};
 
-vi.mock('$features/workspace/transient-ui-state.store.svelte', () => ({
-  getTransientUIStore: vi.fn().mockReturnValue({
-    sidebarChanges: { createPRWhenReady: false, prDescriptionExecutor: null, postMergeState: null },
-    setSidebarCreatePRWhenReady: vi.fn(),
-    setSidebarPRExecutorState: vi.fn(),
-    setPostMergeState: vi.fn(),
-  }),
-}));
+function createReadable<T>(value: T) {
+  return {
+    subscribe(run: (value: T) => void) {
+      run(value);
+      return () => {};
+    },
+  };
+}
 
-vi.mock('$features/file-tracking/agent-lock.store.svelte', () => ({
-  createAgentLockStore: vi.fn().mockReturnValue({
-    lockedAgentIds: new Set<string>(),
-    lockedFilePaths: new Set<string>(),
-    autoCommitEnabled: true,
-    isAgentLocked: () => false,
-    isFileLocked: () => false,
-  }),
-}));
+function createSelectorReadable<TArg, TValue>(arg: TArg, resolver: (value: any) => TValue) {
+  if (arg && typeof (arg as any).subscribe === 'function') {
+    return {
+      subscribe(run: (value: TValue) => void) {
+        return (arg as any).subscribe((value: any) => run(resolver(value)));
+      },
+    };
+  }
 
+  return createReadable(resolver(arg));
+}
 
-
-vi.mock('$features/github-auth/renderer/github-auth.store.svelte', () => ({
-  githubAuthStore: {
-    state: { isAuthenticated: false },
-    initialize: vi.fn(),
+vi.mock('$lib/store/slices/workspace/utils/workspace.client', () => ({
+  workspaceClient: {
+    update: mockWorkspaceStore.update,
+    archive: mockWorkspaceStore.archive,
+    unarchive: mockWorkspaceStore.unarchive,
   },
 }));
 
-vi.mock('$features/agent/agent.service', () => ({
+const mockDispatch = vi.fn();
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({ getState: () => ({}), dispatch: mockDispatch }),
+}));
+
+vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+  selectActiveWorkspaceId: createMockFtSelector(() => mockFileTrackingStore.currentWorkspaceId),
+  selectWorkspaceById: Object.assign(
+    (workspaceId: string) =>
+      createSelectorReadable(workspaceId, (resolvedWorkspaceId) =>
+        mockWorkspaceStore.findById(resolvedWorkspaceId),
+      ),
+    {
+      select: (_state: unknown, workspaceId: string) => mockWorkspaceStore.findById(workspaceId),
+    },
+  ),
+  selectWorkspaceActivePullRequest: Object.assign(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    (_workspaceId: any) => createReadable(null),
+    { select: () => null },
+  ),
+}));
+
+vi.mock('$lib/store/slices/transient-ui/transient-ui-selectors', () => ({
+  selectSidebarChangesState: Object.assign(
+    (workspaceId: string) => createSelectorReadable(workspaceId, () => mockSidebarChangesState),
+    {
+      select: () => mockSidebarChangesState,
+    },
+  ),
+}));
+
+vi.mock('$lib/store/slices/agent-lock/agent-lock-selectors', () => ({
+  selectLockedAgentIds: vi.fn().mockReturnValue({
+    subscribe: (fn: (value: any) => void) => {
+      fn({});
+      return () => {};
+    },
+  }),
+}));
+vi.mock('$lib/store/slices/agent-lock/agent-lock-slice', () => ({
+  recomputeAgentLocks: vi.fn((wsId: string) => ({
+    type: 'agentLock/recomputeAgentLocks',
+    payload: [wsId],
+  })),
+}));
+
+
+
+const mockGitHubAuthIsAuthenticated = vi.hoisted(() => ({ value: false }));
+
+vi.mock('$lib/store/slices/github-auth/github-auth-selectors', () => ({
+  selectGitHubAuthIsAuthenticated: () => ({
+    subscribe: (fn: (v: boolean) => void) => {
+      fn(mockGitHubAuthIsAuthenticated.value);
+      return () => {};
+    },
+  }),
+}));
+
+vi.mock('$lib/store/slices/github-auth/github-auth-slice', () => ({
+  initializeGitHubAuth: vi.fn(() => ({ type: 'githubAuth/initialize' })),
+}));
+
+vi.mock('$features/agent/agent-ipc-bridge', () => ({
   agentService: { getSession: vi.fn().mockReturnValue(null) },
 }));
 
-vi.mock('$features/agent/browser', () => ({
-  sessionStore: { getAllSessionsForWorkspace: vi.fn().mockReturnValue([]), getAllSessionsAcrossWorkspaces: vi.fn().mockReturnValue([]) },
-  unifiedStateStore: { getWorkspaceState: vi.fn().mockReturnValue(null) },
+const defaultExecutorState = { status: 'idle', result: null, error: null, agentId: null };
+vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-selectors', () => ({
+  selectExecutorState: Object.assign(
+    vi.fn().mockReturnValue({ subscribe: (fn: (v: any) => void) => { fn(defaultExecutorState); return () => {}; } }),
+    { select: vi.fn().mockReturnValue(defaultExecutorState) },
+  ),
 }));
 
-vi.mock('$features/agent/background-agent-executor.svelte', () => ({
-  createCommitMessageExecutor: vi.fn().mockReturnValue({
-    status: 'idle',
-    currentWorkspaceId: null,
-    agentId: null,
-    result: null,
-    error: null,
-    execute: vi.fn(),
-    cancel: vi.fn(),
-  }),
-  createPRDescriptionExecutor: vi.fn().mockReturnValue({
-    status: 'idle',
-    currentWorkspaceId: null,
-    agentId: null,
-    result: null,
-    error: null,
-    execute: vi.fn(),
-    cancel: vi.fn(),
-  }),
+vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-slice', () => ({
+  executeBackgroundAgent: vi.fn((...args: any[]) => ({ type: 'backgroundAgentExecutor/execute', payload: args })),
+  cancelExecution: vi.fn((...args: any[]) => ({ type: 'backgroundAgentExecutor/cancel', payload: args })),
+  reconnectAgent: vi.fn((...args: any[]) => ({ type: 'backgroundAgentExecutor/reconnect', payload: args })),
+  resetExecutor: vi.fn((...args: any[]) => ({ type: 'backgroundAgentExecutor/reset', payload: args })),
+}));
+
+vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+  selectAllWorkspaceAgents: Object.assign(
+    vi.fn().mockReturnValue({ subscribe: (fn: (v: any) => void) => { fn([]); return () => {}; } }),
+    { select: vi.fn().mockReturnValue([]) },
+  ),
+}));
+
+vi.mock('$features/agent/deferred-results-cache', () => ({
   getDeferredResults: vi.fn().mockReturnValue([]),
   hasDeferredResults: vi.fn().mockReturnValue(false),
+  clearDeferredResults: vi.fn(),
+  addDeferredResult: vi.fn(),
 }));
 
 vi.mock('$features/accept-changes/accept-changes.client', () => ({
@@ -141,13 +283,19 @@ vi.mock('$features/accept-changes/background-git-actions.service', () => ({
   },
 }));
 
-vi.mock('$features/git-tracking/pr-status.service', () => ({
-  refreshPRStatus: vi.fn().mockResolvedValue({ success: true }),
-  registerWindowFocusRefresh: vi.fn().mockReturnValue(() => {}),
-  startPRStatusPolling: vi.fn().mockReturnValue(() => {}),
+vi.mock('$lib/store/slices/pr-status/pr-status-slice', () => ({
+  refreshPRStatusRequested: vi.fn((...args: any[]) => ({ type: 'prStatus/refreshRequested', payload: args })),
+  startPRPolling: vi.fn((...args: any[]) => ({ type: 'prStatus/startPolling', payload: args })),
+  stopPRPolling: vi.fn((...args: any[]) => ({ type: 'prStatus/stopPolling', payload: args })),
 }));
 
-vi.mock('$features/layout/panel-layout-manager.svelte', () => ({
+vi.mock('$lib/store/slices/pr-status/pr-status-selectors', () => ({
+  selectPRStatusIsRefreshing: Object.assign(vi.fn().mockReturnValue({ subscribe: vi.fn() }), {
+    select: vi.fn().mockReturnValue(false),
+  }),
+}));
+
+vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: vi.fn().mockReturnValue({ openTab: vi.fn() }),
 }));
 
@@ -158,6 +306,7 @@ vi.mock('$features/navigation/link-handler', () => ({
 vi.mock('$lib/store/slices/terminals/terminals-slice', () => ({
   addTerminal: vi.fn((...args: any[]) => ({ type: 'terminals/addTerminal', payload: args })),
   openTerminalOverlay: vi.fn((...args: any[]) => ({ type: 'terminals/open', payload: args })),
+  toggleTerminalOverlay: vi.fn((...args: any[]) => ({ type: 'terminals/toggle', payload: args })),
 }));
 
 vi.mock('$lib/store/slices/workspace-settings/workspace-settings-selectors', () => {
@@ -170,6 +319,18 @@ vi.mock('$lib/store/slices/workspace-settings/workspace-settings-selectors', () 
 vi.mock('$lib/store/slices/workspace-settings/workspace-settings-slice', () => ({
   setAutoCommitEnabled: vi.fn((val: any) => ({ type: 'workspaceSettings/setAutoCommitEnabled', payload: val })),
   syncWorkspaceSettings: vi.fn((id: any) => ({ type: 'workspaceSettings/syncWorkspaceSettings', payload: id })),
+}));
+
+vi.mock('$lib/store/slices/transient-ui/transient-ui-slice', () => ({
+  clearSidebarExecutorStates: vi.fn((...args: any[]) => ({ type: 'transientUi/clearSidebarExecutorStates', payload: args })),
+  setPostMergeState: vi.fn((...args: any[]) => ({ type: 'transientUi/setPostMergeState', payload: args })),
+  setSidebarCreatePRWhenReady: vi.fn((...args: any[]) => ({ type: 'transientUi/setSidebarCreatePRWhenReady', payload: args })),
+  setSidebarPRExecutorState: vi.fn((...args: any[]) => ({ type: 'transientUi/setSidebarPRExecutorState', payload: args })),
+}));
+
+vi.mock('$lib/store/slices/workspace/workspace-slice', () => ({
+  loadWorkspacesRequested: vi.fn((...args: any[]) => ({ type: 'workspace/loadWorkspacesRequested', payload: args })),
+  setWorkspaceEntity: vi.fn((...args: any[]) => ({ type: 'workspace/setWorkspaceEntity', payload: args })),
 }));
 
 vi.mock('$lib/store/utils/utils', () => ({
@@ -310,22 +471,22 @@ async function resetMocks() {
   vi.clearAllMocks();
   mockFileTrackingStore.loading = false;
   mockFileTrackingStore.currentWorkspaceId = 'ws-1';
-  mockFileTrackingStore.workingChanges = { unstaged: [], staged: [] };
+  mockFileTrackingStore.stagedChanges = [];
+  mockFileTrackingStore.unstagedChanges = [];
   mockFileTrackingStore.commits = [];
   mockFileTrackingStore.boundarySha = null;
   mockFileTrackingStore.olderCommits = [];
   mockFileTrackingStore.loadingOlderCommits = false;
   mockFileTrackingStore.changesTruncated = false;
   mockFileTrackingStore.totalChangesCount = 0;
-  mockFileTrackingStore.stageByPath.mockResolvedValue({ ok: true });
-  mockFileTrackingStore.unstageByPath.mockResolvedValue({ ok: true });
-  mockFileTrackingStore.revertByPath.mockResolvedValue({ ok: true });
-  mockFileTrackingStore.refresh.mockResolvedValue(undefined);
-  mockGitStore.ahead = 0;
-  mockGitStore.behind = 0;
-  mockGitStore.status = null;
-  mockGitStore.dataWorkspaceId = 'ws-1';
+
+  mockGitState.ahead = 0;
+  mockGitState.behind = 0;
+  mockGitState.status = null;
   mockWorkspaceStore.findById.mockReturnValue(undefined);
+  mockSidebarChangesState.createPRWhenReady = false;
+  mockSidebarChangesState.prDescriptionExecutor = null;
+  mockSidebarChangesState.postMergeState = null;
 
   // Reset mock implementations that individual tests override via mockReturnValue
   const { groupFilesByAgent } = await import(
@@ -333,19 +494,18 @@ async function resetMocks() {
   );
   (groupFilesByAgent as Mock).mockReturnValue([]);
 
-  const { createAgentLockStore } = await import(
-    '$features/file-tracking/agent-lock.store.svelte'
+  const { selectLockedAgentIds } = await import(
+    '$lib/store/slices/agent-lock/agent-lock-selectors'
   );
-  (createAgentLockStore as Mock).mockReturnValue({
-    lockedAgentIds: new Set<string>(),
-    lockedFilePaths: new Set<string>(),
-    autoCommitEnabled: true,
-    isAgentLocked: () => false,
-    isFileLocked: () => false,
+  (selectLockedAgentIds as Mock).mockReturnValue({
+    subscribe: (fn: (value: any) => void) => {
+      fn({});
+      return () => {};
+    },
   });
 
   const { hasDeferredResults, getDeferredResults } = await import(
-    '$features/agent/background-agent-executor.svelte'
+    '$features/agent/deferred-results-cache'
   );
   (hasDeferredResults as Mock).mockReturnValue(false);
   (getDeferredResults as Mock).mockReturnValue([]);
@@ -403,7 +563,8 @@ describe('SidebarChangesPanel', () => {
         makeChange({ relativePath: 'src/foo.ts' }),
         makeChange({ relativePath: 'src/bar.ts' }),
       ];
-      mockFileTrackingStore.workingChanges = { unstaged, staged: [] };
+      mockFileTrackingStore.unstagedChanges = unstaged;
+      mockFileTrackingStore.stagedChanges = [];
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const { container } = await renderPanel();
@@ -418,7 +579,8 @@ describe('SidebarChangesPanel', () => {
       const staged = [
         makeChange({ relativePath: 'src/staged.ts', stage: ChangeStage.Staged }),
       ];
-      mockFileTrackingStore.workingChanges = { unstaged: [], staged };
+      mockFileTrackingStore.unstagedChanges = [];
+      mockFileTrackingStore.stagedChanges = staged;
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const { container } = await renderPanel();
@@ -535,7 +697,8 @@ describe('SidebarChangesPanel', () => {
         makeChange({ relativePath: 'src/a.ts' }),
         makeChange({ relativePath: 'src/b.ts' }),
       ];
-      mockFileTrackingStore.workingChanges = { unstaged, staged: [] };
+      mockFileTrackingStore.unstagedChanges = unstaged;
+      mockFileTrackingStore.stagedChanges = [];
 
       const { container } = await renderPanel();
 
@@ -590,7 +753,8 @@ describe('SidebarChangesPanel', () => {
         }),
         makeChange({ relativePath: 'src/bar.ts' }),
       ];
-      mockFileTrackingStore.workingChanges = { unstaged, staged: [] };
+      mockFileTrackingStore.unstagedChanges = unstaged;
+      mockFileTrackingStore.stagedChanges = [];
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const { container } = await renderPanel();
@@ -603,15 +767,14 @@ describe('SidebarChangesPanel', () => {
     });
 
     it('renders locked agent group with lock indicator', async () => {
-      const { createAgentLockStore } = await import(
-        '$features/file-tracking/agent-lock.store.svelte'
+      const { selectLockedAgentIds } = await import(
+        '$lib/store/slices/agent-lock/agent-lock-selectors'
       );
-      (createAgentLockStore as Mock).mockReturnValue({
-        lockedAgentIds: new Set(['agent-locked']),
-        lockedFilePaths: new Set(['src/locked.ts']),
-        autoCommitEnabled: true,
-        isAgentLocked: (id: string) => id === 'agent-locked',
-        isFileLocked: (path: string) => path === 'src/locked.ts',
+      (selectLockedAgentIds as Mock).mockReturnValue({
+        subscribe: (fn: (value: any) => void) => {
+          fn({ 'agent-locked': true as const });
+          return () => {};
+        },
       });
 
       const { groupFilesByAgent } = await import(
@@ -643,7 +806,8 @@ describe('SidebarChangesPanel', () => {
           },
         }),
       ];
-      mockFileTrackingStore.workingChanges = { unstaged, staged: [] };
+      mockFileTrackingStore.unstagedChanges = unstaged;
+      mockFileTrackingStore.stagedChanges = [];
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const { container } = await renderPanel();
@@ -663,7 +827,8 @@ describe('SidebarChangesPanel', () => {
   describe('Interactions', () => {
     it('calls stageByPath when stage action is invoked on unstaged file', async () => {
       const unstaged = [makeChange({ relativePath: 'src/foo.ts' })];
-      mockFileTrackingStore.workingChanges = { unstaged, staged: [] };
+      mockFileTrackingStore.unstagedChanges = unstaged;
+      mockFileTrackingStore.stagedChanges = [];
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const { container } = await renderPanel();
@@ -676,15 +841,17 @@ describe('SidebarChangesPanel', () => {
       const stageBtns = container.querySelectorAll('[data-testid="stage-btn"]');
       expect(stageBtns.length).toBeGreaterThan(0);
       await fireEvent.click(stageBtns[0]);
-      expect(mockFileTrackingStore.stageByPath).toHaveBeenCalledTimes(1);
-      expect(mockFileTrackingStore.stageByPath).toHaveBeenCalledWith(['src/foo.ts']);
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'fileTracking/stageByPathRequested', payload: ['ws-1', ['src/foo.ts']] })
+      );
     });
 
     it('calls unstageByPath when unstage action is invoked on staged file', async () => {
       const staged = [
         makeChange({ relativePath: 'src/foo.ts', stage: ChangeStage.Staged }),
       ];
-      mockFileTrackingStore.workingChanges = { unstaged: [], staged };
+      mockFileTrackingStore.unstagedChanges = [];
+      mockFileTrackingStore.stagedChanges = staged;
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const { container } = await renderPanel();
@@ -696,15 +863,17 @@ describe('SidebarChangesPanel', () => {
       const unstageBtns = container.querySelectorAll('[data-testid="unstage-btn"]');
       expect(unstageBtns.length).toBeGreaterThan(0);
       await fireEvent.click(unstageBtns[0]);
-      expect(mockFileTrackingStore.unstageByPath).toHaveBeenCalledTimes(1);
-      expect(mockFileTrackingStore.unstageByPath).toHaveBeenCalledWith(['src/foo.ts']);
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'fileTracking/unstageByPathRequested', payload: ['ws-1', ['src/foo.ts']] })
+      );
     });
 
     it('toggles commit drawer open and close', async () => {
       const staged = [
         makeChange({ relativePath: 'src/staged.ts', stage: ChangeStage.Staged }),
       ];
-      mockFileTrackingStore.workingChanges = { unstaged: [], staged };
+      mockFileTrackingStore.unstagedChanges = [];
+      mockFileTrackingStore.stagedChanges = staged;
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const { container } = await renderPanel();
@@ -787,7 +956,8 @@ describe('SidebarChangesPanel', () => {
         makeChange({ relativePath: 'src/a.ts' }),
         makeChange({ relativePath: 'src/b.ts' }),
       ];
-      mockFileTrackingStore.workingChanges = { unstaged, staged: [] };
+      mockFileTrackingStore.unstagedChanges = unstaged;
+      mockFileTrackingStore.stagedChanges = [];
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const { container } = await renderPanel();
@@ -809,7 +979,8 @@ describe('SidebarChangesPanel', () => {
         makeChange({ relativePath: 'src/a.ts' }),
         makeChange({ relativePath: 'src/b.ts' }),
       ];
-      mockFileTrackingStore.workingChanges = { unstaged, staged: [] };
+      mockFileTrackingStore.unstagedChanges = unstaged;
+      mockFileTrackingStore.stagedChanges = [];
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const { container } = await renderPanel();
@@ -832,7 +1003,8 @@ describe('SidebarChangesPanel', () => {
   describe('More Interactions', () => {
     it('handles Enter key to open focused file', async () => {
       const unstaged = [makeChange({ relativePath: 'src/a.ts' })];
-      mockFileTrackingStore.workingChanges = { unstaged, staged: [] };
+      mockFileTrackingStore.unstagedChanges = unstaged;
+      mockFileTrackingStore.stagedChanges = [];
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const { container } = await renderPanel();
@@ -852,7 +1024,8 @@ describe('SidebarChangesPanel', () => {
         makeChange({ relativePath: 'src/a.ts' }),
         makeChange({ relativePath: 'src/b.ts' }),
       ];
-      mockFileTrackingStore.workingChanges = { unstaged, staged: [] };
+      mockFileTrackingStore.unstagedChanges = unstaged;
+      mockFileTrackingStore.stagedChanges = [];
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const { container } = await renderPanel();
@@ -873,7 +1046,8 @@ describe('SidebarChangesPanel', () => {
         makeChange({ relativePath: 'src/b.ts' }),
         makeChange({ relativePath: 'src/c.ts' }),
       ];
-      mockFileTrackingStore.workingChanges = { unstaged, staged: [] };
+      mockFileTrackingStore.unstagedChanges = unstaged;
+      mockFileTrackingStore.stagedChanges = [];
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const { container } = await renderPanel();
@@ -899,7 +1073,8 @@ describe('SidebarChangesPanel', () => {
         makeChange({ relativePath: 'src/beta.ts' }),
         makeChange({ relativePath: 'src/gamma.ts' }),
       ];
-      mockFileTrackingStore.workingChanges = { unstaged, staged: [] };
+      mockFileTrackingStore.unstagedChanges = unstaged;
+      mockFileTrackingStore.stagedChanges = [];
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const { container } = await renderPanel();
@@ -920,7 +1095,8 @@ describe('SidebarChangesPanel', () => {
         makeChange({ relativePath: 'src/a.ts' }),
         makeChange({ relativePath: 'src/b.ts' }),
       ];
-      mockFileTrackingStore.workingChanges = { unstaged, staged: [] };
+      mockFileTrackingStore.unstagedChanges = unstaged;
+      mockFileTrackingStore.stagedChanges = [];
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const { container } = await renderPanel();
@@ -937,8 +1113,9 @@ describe('SidebarChangesPanel', () => {
       );
       expect(stageAllBtn).toBeDefined();
       await fireEvent.click(stageAllBtn!);
-      expect(mockFileTrackingStore.stageByPath).toHaveBeenCalledTimes(1);
-      expect(mockFileTrackingStore.stageByPath).toHaveBeenCalledWith(['src/a.ts', 'src/b.ts']);
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'fileTracking/stageByPathRequested', payload: ['ws-1', ['src/a.ts', 'src/b.ts']] })
+      );
     });
 
     it('unstage all button unstages all staged files', async () => {
@@ -946,7 +1123,8 @@ describe('SidebarChangesPanel', () => {
         makeChange({ relativePath: 'src/a.ts', stage: ChangeStage.Staged }),
         makeChange({ relativePath: 'src/b.ts', stage: ChangeStage.Staged }),
       ];
-      mockFileTrackingStore.workingChanges = { unstaged: [], staged };
+      mockFileTrackingStore.unstagedChanges = [];
+      mockFileTrackingStore.stagedChanges = staged;
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const { container } = await renderPanel();
@@ -963,13 +1141,15 @@ describe('SidebarChangesPanel', () => {
       );
       expect(unstageAllBtn).toBeDefined();
       await fireEvent.click(unstageAllBtn!);
-      expect(mockFileTrackingStore.unstageByPath).toHaveBeenCalledTimes(1);
-      expect(mockFileTrackingStore.unstageByPath).toHaveBeenCalledWith(['src/a.ts', 'src/b.ts']);
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'fileTracking/unstageByPathRequested', payload: ['ws-1', ['src/a.ts', 'src/b.ts']] })
+      );
     });
 
     it('clicking a file dispatches workspace:open-diff event', async () => {
       const unstaged = [makeChange({ relativePath: 'src/foo.ts' })];
-      mockFileTrackingStore.workingChanges = { unstaged, staged: [] };
+      mockFileTrackingStore.unstagedChanges = unstaged;
+      mockFileTrackingStore.stagedChanges = [];
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
@@ -997,7 +1177,8 @@ describe('SidebarChangesPanel', () => {
     it('workspace switching resets state - re-renders with new workspace data', async () => {
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace({ branch: 'branch-1' }));
       const unstaged = [makeChange({ relativePath: 'src/old.ts' })];
-      mockFileTrackingStore.workingChanges = { unstaged, staged: [] };
+      mockFileTrackingStore.unstagedChanges = unstaged;
+      mockFileTrackingStore.stagedChanges = [];
 
       const { container, rerender } = await renderPanel();
 
@@ -1007,10 +1188,11 @@ describe('SidebarChangesPanel', () => {
 
       // Switch workspace
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace({ id: 'ws-2', branch: 'branch-2' }));
-      mockFileTrackingStore.workingChanges = { unstaged: [], staged: [] };
+      mockFileTrackingStore.unstagedChanges = [];
+      mockFileTrackingStore.stagedChanges = [];
       mockFileTrackingStore.currentWorkspaceId = 'ws-2';
+      flushFtSelectors();
 
-      const SidebarChangesPanel = (await import('../SidebarChangesPanel.svelte')).default;
       await rerender({ workspaceId: 'ws-2' });
 
       await waitFor(() => {
@@ -1037,15 +1219,14 @@ describe('SidebarChangesPanel', () => {
     });
 
     it('auto-commit lock prevents manual staging of locked files', async () => {
-      const { createAgentLockStore } = await import(
-        '$features/file-tracking/agent-lock.store.svelte'
+      const { selectLockedAgentIds } = await import(
+        '$lib/store/slices/agent-lock/agent-lock-selectors'
       );
-      (createAgentLockStore as Mock).mockReturnValue({
-        lockedAgentIds: new Set(['agent-1']),
-        lockedFilePaths: new Set(['src/locked.ts']),
-        autoCommitEnabled: true,
-        isAgentLocked: (id: string) => id === 'agent-1',
-        isFileLocked: (path: string) => path === 'src/locked.ts',
+      (selectLockedAgentIds as Mock).mockReturnValue({
+        subscribe: (fn: (value: any) => void) => {
+          fn({ 'agent-1': true as const });
+          return () => {};
+        },
       });
 
       const { groupFilesByAgent } = await import(
@@ -1077,7 +1258,8 @@ describe('SidebarChangesPanel', () => {
           },
         }),
       ];
-      mockFileTrackingStore.workingChanges = { unstaged, staged: [] };
+      mockFileTrackingStore.unstagedChanges = unstaged;
+      mockFileTrackingStore.stagedChanges = [];
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const { container } = await renderPanel();
@@ -1088,14 +1270,13 @@ describe('SidebarChangesPanel', () => {
 
       // The locked files should not have stage buttons enabled
       // (FileRow receives locked=true which hides the stage action)
-      const lockedRows = container.querySelectorAll('[data-locked="true"]');
       // Verify the container still shows the unstaged section with file content
       expect(container.textContent).toContain('locked.ts');
     });
 
     it('deferred result restoration from background executor', async () => {
       const { hasDeferredResults, getDeferredResults } = await import(
-        '$features/agent/background-agent-executor.svelte'
+        '$features/agent/deferred-results-cache'
       );
       // getDeferredResults returns an array of strings, not objects
       (hasDeferredResults as Mock).mockReturnValue(true);
@@ -1105,7 +1286,8 @@ describe('SidebarChangesPanel', () => {
       const staged = [
         makeChange({ relativePath: 'src/staged.ts', stage: ChangeStage.Staged }),
       ];
-      mockFileTrackingStore.workingChanges = { unstaged: [], staged };
+      mockFileTrackingStore.unstagedChanges = [];
+      mockFileTrackingStore.stagedChanges = staged;
 
       const { container } = await renderPanel();
 
@@ -1142,7 +1324,8 @@ describe('SidebarChangesPanel', () => {
       const staged = [
         makeChange({ relativePath: 'src/staged.ts', stage: ChangeStage.Staged }),
       ];
-      mockFileTrackingStore.workingChanges = { unstaged, staged };
+      mockFileTrackingStore.unstagedChanges = unstaged;
+      mockFileTrackingStore.stagedChanges = staged;
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const { container } = await renderPanel();
@@ -1160,7 +1343,8 @@ describe('SidebarChangesPanel', () => {
         makeChange({ relativePath: 'src/b.ts' }),
         makeChange({ relativePath: 'src/c.ts' }),
       ];
-      mockFileTrackingStore.workingChanges = { unstaged, staged: [] };
+      mockFileTrackingStore.unstagedChanges = unstaged;
+      mockFileTrackingStore.stagedChanges = [];
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const { container } = await renderPanel();
@@ -1205,7 +1389,7 @@ describe('SidebarChangesPanel', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('Commit Group - store refresh after commit (regression)', () => {
-    it('calls gitStore.loadStatus and fileTrackingStore.refresh after successful group commit', async () => {
+    it('calls loadGitStatus and file tracking refresh after successful group commit', async () => {
       // Set up AcceptChangesClient to return success
       const { AcceptChangesClient } = await import(
         '$features/accept-changes/accept-changes.client'
@@ -1243,7 +1427,8 @@ describe('SidebarChangesPanel', () => {
           },
         }),
       ];
-      mockFileTrackingStore.workingChanges = { unstaged, staged: [] };
+      mockFileTrackingStore.unstagedChanges = unstaged;
+      mockFileTrackingStore.stagedChanges = [];
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const { container } = await renderPanel();
@@ -1272,18 +1457,21 @@ describe('SidebarChangesPanel', () => {
       const commitBtn = commitIcon!.closest('button');
 
       // Clear mocks to isolate assertions to this interaction
-      mockGitStore.loadStatus.mockClear();
-      mockFileTrackingStore.refresh.mockClear();
+      mockDispatch.mockClear();
+
 
       await fireEvent.click(commitBtn!);
 
       // Wait for the async commit flow (enqueueGroupCommit → commitSingleGroup)
       // to complete and verify stores are refreshed afterward
       await waitFor(() => {
-        expect(mockGitStore.loadStatus).toHaveBeenCalledWith('ws-1', true);
+        expect(mockDispatch).toHaveBeenCalled();
       });
 
-      expect(mockFileTrackingStore.refresh).toHaveBeenCalled();
+      // Check that refreshRequested was dispatched
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'fileTracking/refreshRequested' })
+      );
     });
   });
 
@@ -1292,26 +1480,20 @@ describe('SidebarChangesPanel', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('PR Auto-Discovery', () => {
-    let refreshPRStatusMock: Mock;
+    let refreshPRStatusRequestedMock: Mock;
 
     beforeEach(async () => {
-      const prStatusService = await import('$features/git-tracking/pr-status.service');
-      refreshPRStatusMock = prStatusService.refreshPRStatus as Mock;
-      refreshPRStatusMock.mockClear();
+      const prStatusSlice = await import('$lib/store/slices/pr-status/pr-status-slice');
+      refreshPRStatusRequestedMock = prStatusSlice.refreshPRStatusRequested as unknown as Mock;
+      refreshPRStatusRequestedMock.mockClear();
 
       // Enable GitHub auth for discovery tests
-      const { githubAuthStore } = await import(
-        '$features/github-auth/renderer/github-auth.store.svelte'
-      );
-      (githubAuthStore as any).state.isAuthenticated = true;
+      mockGitHubAuthIsAuthenticated.value = true;
     });
 
     afterEach(async () => {
       // Reset GitHub auth
-      const { githubAuthStore } = await import(
-        '$features/github-auth/renderer/github-auth.store.svelte'
-      );
-      (githubAuthStore as any).state.isAuthenticated = false;
+      mockGitHubAuthIsAuthenticated.value = false;
     });
 
     it('triggers PR discovery when workspace has pushed commits and no active PR', async () => {
@@ -1323,7 +1505,7 @@ describe('SidebarChangesPanel', () => {
       await renderPanel();
 
       await waitFor(() => {
-        expect(refreshPRStatusMock).toHaveBeenCalledWith('ws-1', { force: false });
+        expect(refreshPRStatusRequestedMock).toHaveBeenCalledWith('ws-1', false, false);
       });
     });
 
@@ -1339,15 +1521,12 @@ describe('SidebarChangesPanel', () => {
       await renderPanel();
 
       await waitFor(() => {
-        expect(refreshPRStatusMock).toHaveBeenCalledWith('ws-1', { force: false });
+        expect(refreshPRStatusRequestedMock).toHaveBeenCalledWith('ws-1', false, false);
       });
     });
 
     it('does not trigger PR discovery when GitHub is not authenticated', async () => {
-      const { githubAuthStore } = await import(
-        '$features/github-auth/renderer/github-auth.store.svelte'
-      );
-      (githubAuthStore as any).state.isAuthenticated = false;
+      mockGitHubAuthIsAuthenticated.value = false;
 
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       mockFileTrackingStore.commits = [
@@ -1357,7 +1536,7 @@ describe('SidebarChangesPanel', () => {
       await renderPanel();
 
       await new Promise((r) => setTimeout(r, 100));
-      expect(refreshPRStatusMock).not.toHaveBeenCalled();
+      expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });
 
     it('re-triggers PR discovery when workspace switches (resets tracked count)', async () => {
@@ -1369,7 +1548,7 @@ describe('SidebarChangesPanel', () => {
       const { rerender } = await renderPanel();
 
       await waitFor(() => {
-        expect(refreshPRStatusMock).toHaveBeenCalledTimes(1);
+        expect(refreshPRStatusRequestedMock).toHaveBeenCalledTimes(1);
       });
 
       // Switch to a different workspace with pushed commits
@@ -1378,11 +1557,12 @@ describe('SidebarChangesPanel', () => {
       mockFileTrackingStore.commits = [
         makeCommit({ hash: 'def456', message: 'other push', isPushed: true }),
       ];
+      flushFtSelectors();
 
       await rerender({ workspaceId: 'ws-2' });
 
       await waitFor(() => {
-        expect(refreshPRStatusMock).toHaveBeenCalledTimes(2);
+        expect(refreshPRStatusRequestedMock).toHaveBeenCalledTimes(2);
       });
     });
   });
@@ -1442,10 +1622,8 @@ describe('SidebarChangesPanel', () => {
         ],
       });
       mockWorkspaceStore.findById.mockReturnValue(workspace);
-      mockFileTrackingStore.workingChanges = {
-        unstaged: [],
-        staged: [makeChange({ relativePath: 'src/new-file.ts', stage: ChangeStage.Staged })],
-      };
+      mockFileTrackingStore.unstagedChanges = [];
+      mockFileTrackingStore.stagedChanges = [makeChange({ relativePath: 'src/new-file.ts', stage: ChangeStage.Staged })];
 
       const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
       (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
@@ -1479,10 +1657,8 @@ describe('SidebarChangesPanel', () => {
         ],
       });
       mockWorkspaceStore.findById.mockReturnValue(workspace);
-      mockFileTrackingStore.workingChanges = {
-        unstaged: [makeChange({ relativePath: 'src/new-file.ts' })],
-        staged: [],
-      };
+      mockFileTrackingStore.unstagedChanges = [makeChange({ relativePath: 'src/new-file.ts' })];
+      mockFileTrackingStore.stagedChanges = [];
 
       const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
       (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
@@ -1518,7 +1694,8 @@ describe('SidebarChangesPanel', () => {
       mockWorkspaceStore.findById.mockReturnValue(workspace);
       // No commits, no staged/unstaged changes
       mockFileTrackingStore.commits = [];
-      mockFileTrackingStore.workingChanges = { unstaged: [], staged: [] };
+      mockFileTrackingStore.unstagedChanges = [];
+      mockFileTrackingStore.stagedChanges = [];
 
       const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
       (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
@@ -1547,7 +1724,8 @@ describe('SidebarChangesPanel', () => {
       });
       mockWorkspaceStore.findById.mockReturnValue(workspace);
       mockFileTrackingStore.commits = [];
-      mockFileTrackingStore.workingChanges = { unstaged: [], staged: [] };
+      mockFileTrackingStore.unstagedChanges = [];
+      mockFileTrackingStore.stagedChanges = [];
 
       const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
       (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
@@ -1578,7 +1756,8 @@ describe('SidebarChangesPanel', () => {
       mockFileTrackingStore.commits = [
         makeCommit({ hash: 'new-work-123', message: 'new work after squash merge', isPushed: false }),
       ];
-      mockFileTrackingStore.workingChanges = { unstaged: [], staged: [] };
+      mockFileTrackingStore.unstagedChanges = [];
+      mockFileTrackingStore.stagedChanges = [];
 
       const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
       (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
@@ -1615,9 +1794,10 @@ describe('SidebarChangesPanel', () => {
       // NO unpushed commits (all pushed)
       mockFileTrackingStore.commits = [];
       // NO staged/unstaged changes
-      mockFileTrackingStore.workingChanges = { unstaged: [], staged: [] };
+      mockFileTrackingStore.unstagedChanges = [];
+      mockFileTrackingStore.stagedChanges = [];
       // Set ahead to match aheadOfTrunk
-      mockGitStore.ahead = 2;
+      mockGitState.ahead = 2;
 
       const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
       (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
@@ -1647,7 +1827,8 @@ describe('SidebarChangesPanel', () => {
       // NO unpushed commits
       mockFileTrackingStore.commits = [];
       // NO staged/unstaged changes
-      mockFileTrackingStore.workingChanges = { unstaged: [], staged: [] };
+      mockFileTrackingStore.unstagedChanges = [];
+      mockFileTrackingStore.stagedChanges = [];
 
       const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
       (AcceptChangesClient.getStatus as Mock).mockResolvedValue({

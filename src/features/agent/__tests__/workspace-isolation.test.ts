@@ -291,7 +291,6 @@ describe('Workspace Isolation', () => {
 
     it('should prevent cross-workspace access', () => {
       const workspace1Path = '/home/user/intent/workspace-1';
-      const workspace2Path = '/home/user/intent/workspace-2';
       const crossWorkspacePath = '/home/user/intent/workspace-1/../workspace-2/file.ts';
 
       const normalizedPath = path.normalize(crossWorkspacePath);

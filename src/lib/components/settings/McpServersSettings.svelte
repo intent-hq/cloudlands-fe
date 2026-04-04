@@ -1,7 +1,6 @@
 <script lang="ts">
   import { logger } from '../../../shared/logger';
   import { onMount } from 'svelte';
-  import { mcpSettingsStore } from './mcp/mcp-settings.store.svelte';
   import type { McpServerConfig, McpServerWithStatus, McpServerFormState } from './mcp/types';
   import { serverToFormState } from './mcp/types';
   import {
@@ -30,8 +29,36 @@
   import { toast } from '$lib/components/ui/toast';
   import Header from '../ui/Header.svelte';
   import { handleLink } from '$features/navigation/link-handler';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import { isMacPlatform } from '$lib/utils/shortcuts';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+    selectMcpServersWithStatus,
+    selectMcpLoading,
+    selectMcpError,
+    selectMcpEnabled,
+    selectMcpServers,
+    selectMcpLastImportedCount,
+  } from '$lib/store/slices/mcp-settings/mcp-settings-selectors';
+  import {
+    loadServers,
+    toggleEnabled,
+    toggleServer,
+    addServer,
+    removeServer,
+    updateServer,
+    importFromJson,
+    testServerConnection,
+  } from '$lib/store/slices/mcp-settings/mcp-settings-slice';
+
+  const activeWorkspaceId = selectActiveWorkspaceId();
+  const dispatch = getDispatch();
+  const servers$ = selectMcpServersWithStatus();
+  const loading$ = selectMcpLoading();
+  const error$ = selectMcpError();
+  const enabled$ = selectMcpEnabled();
+  const lastImportedCount$ = selectMcpLastImportedCount();
 
   // Props
   let { isAuggieProvider = true }: { isAuggieProvider?: boolean } = $props();
@@ -61,15 +88,19 @@
   const diagnosticCommand = 'auggie mcp list';
   const canOpenDiagnosticTerminal = isMacPlatform();
 
-  // Reactive getters from store
-  const servers = $derived(mcpSettingsStore.serversWithStatus);
-  const loading = $derived(mcpSettingsStore.loading);
-  const error = $derived(mcpSettingsStore.error);
-  const enabled = $derived(mcpSettingsStore.enabled);
+  onMount(() => {
+    dispatch(loadServers());
+    loadSettingsFile();
+  });
 
-  onMount(async () => {
-    await mcpSettingsStore.loadServers();
-    await loadSettingsFile();
+  // React to import completion from the saga (avoids double-parsing JSON in the component)
+  $effect(() => {
+    const count = $lastImportedCount$;
+    if (count !== null && count > 0) {
+      importedCount = count;
+      showImportSuccess = true;
+      setTimeout(() => (showImportSuccess = false), 3000);
+    }
   });
 
   async function loadSettingsFile() {
@@ -94,12 +125,12 @@
     }
   }
 
-  async function handleToggleEnabled() {
-    await mcpSettingsStore.setEnabled(!enabled);
+  function handleToggleEnabled() {
+    dispatch(toggleEnabled());
   }
 
-  async function handleRetryLoadServers() {
-    await mcpSettingsStore.loadServers();
+  function handleRetryLoadServers() {
+    dispatch(loadServers());
   }
 
   async function handleCopyDiagnosticCommand() {
@@ -148,30 +179,16 @@
     }
   }
 
-  async function handleToggleServer(name: string) {
-    await mcpSettingsStore.toggleServer(name);
+  function handleToggleServer(name: string) {
+    dispatch(toggleServer(name));
   }
 
   async function handleAddServer(config: McpServerConfig) {
-    const authInfo = await mcpSettingsStore.addServer(config);
+    // The saga handles auth checks and connection testing.
+    // Auth-required status will be reflected in the server card via the status map.
+    dispatch(addServer(config));
     showAddPanel = false;
     await loadSettingsFile();
-
-    // Show a warning toast if the server requires auth we don't have
-    if (authInfo?.requiresAuth && !authInfo?.hasAuth) {
-      toast.warning(`${authInfo.providerDisplayName || 'Service'} requires authentication`, {
-        description:
-          authInfo.authHint || 'Please configure authentication in Settings > Integrations',
-        duration: 8000,
-        action: {
-          label: 'Configure',
-          onClick: () => {
-            // Navigate to the integrations section using hash navigation
-            window.location.hash = 'integrations';
-          },
-        },
-      });
-    }
   }
 
   async function handleEditServer(server: McpServerWithStatus) {
@@ -180,18 +197,19 @@
 
   async function handleUpdateServer(config: McpServerConfig) {
     if (!editingServer) return;
-    await mcpSettingsStore.updateServer(editingServer.name, config);
+    dispatch(updateServer(editingServer.name, config));
     editingServer = null;
     await loadSettingsFile();
   }
 
   async function handleDeleteServer(name: string) {
     // Get the server config before deleting (for undo)
-    const serverConfig = mcpSettingsStore.servers.find((s) => s.name === name);
+    const currentServers = selectMcpServers.select(getReduxStore().getState());
+    const serverConfig = currentServers.find((s) => s.name === name);
     if (!serverConfig) return;
 
     // Delete immediately
-    await mcpSettingsStore.removeServer(name);
+    dispatch(removeServer(name));
     await loadSettingsFile();
 
     // Show toast with undo action
@@ -199,7 +217,7 @@
       action: {
         label: 'Undo',
         onClick: async () => {
-          await mcpSettingsStore.addServer(serverConfig);
+          dispatch(addServer(serverConfig));
           await loadSettingsFile();
         },
       },
@@ -211,7 +229,8 @@
     logger.info('Reauthenticate requested for:', name);
 
     // Find the server by name
-    const server = servers.find((s) => s.name === name);
+    const currentServers = selectMcpServersWithStatus.select(getReduxStore().getState());
+    const server = currentServers.find((s) => s.name === name);
     if (!server) {
       logger.warn('Server not found:', name);
       return;
@@ -236,7 +255,7 @@
             duration: 5000,
           });
           // Re-test the connection to update status
-          await mcpSettingsStore.testServerConnection(server.name, server.url, server.headers);
+          dispatch(testServerConnection(server.name, server.url, server.headers));
           return;
         }
 
@@ -260,11 +279,11 @@
 
   // Easy MCP Install functions
   function isInstalled(option: McpInstallOption): boolean {
-    return isServerInstalled(option.label, servers);
+    return isServerInstalled(option.label, $servers$);
   }
 
   function getInstalledServerStatus(option: McpInstallOption): string | undefined {
-    const server = servers.find(
+    const server = $servers$.find(
       (s) =>
         s.name.toLowerCase().replace(/\s+/g, '-') ===
         option.label.toLowerCase().replace(/\s+/g, '-'),
@@ -330,7 +349,7 @@
             env: Object.keys(env).length > 0 ? env : undefined,
           };
 
-      await mcpSettingsStore.addServer(config);
+      dispatch(addServer(config));
       activeConfig = null;
       userInputValues = {};
       await loadSettingsFile();
@@ -362,11 +381,10 @@
   }
 
   async function handleImportJson(json: string) {
-    const count = await mcpSettingsStore.importFromJson(json);
-    importedCount = count;
+    dispatch(importFromJson(json));
     showAddPanel = false;
-    showImportSuccess = true;
-    setTimeout(() => (showImportSuccess = false), 3000);
+    // Success feedback is driven by the saga dispatching importFromJsonCompleted,
+    // observed reactively via $lastImportedCount$ below.
     await loadSettingsFile();
   }
 
@@ -389,7 +407,7 @@
       });
       if (result?.success) {
         userMcpSaveStatus = 'saved';
-        await mcpSettingsStore.loadServers();
+        dispatch(loadServers());
         setTimeout(() => (userMcpSaveStatus = 'idle'), 2000);
       } else {
         userMcpSaveStatus = 'error';
@@ -429,14 +447,14 @@
             class="text-primary hover:underline cursor-pointer"
             onclick={(e) => {
               handleLink('https://docs.augmentcode.com/setup-augment/mcp', {
-                workspaceId: workspaceStore.current?.id,
+                  workspaceId: $activeWorkspaceId ?? undefined,
                 event: e,
               });
             }}>Learn more ↗</button
           >
         </p>
       </div>
-      <Switch checked={enabled} onCheckedChange={handleToggleEnabled} size="md" />
+      <Switch checked={$enabled$} onCheckedChange={handleToggleEnabled} size="md" />
     </div>
     {#if !isAuggieProvider}
       <p class="text-xs text-subtle mt-2">
@@ -446,7 +464,7 @@
     {/if}
   </section>
 
-  {#if enabled}
+  {#if $enabled$}
     <div transition:slide={{ duration: 200 }} class="space-y-6">
       <div class="mx-0 px-3 py-2 bg-muted/50 rounded-md border border-border/50">
         <p class="text-xs text-subtle">
@@ -461,7 +479,7 @@
           <div>
             <p class="text-sm font-medium text-foreground">MCP Servers for Auggie</p>
             <p class="text-xs text-subtle">
-              {servers.length} server{servers.length !== 1 ? 's' : ''} configured
+              {$servers$.length} server{$servers$.length !== 1 ? 's' : ''} configured
             </p>
           </div>
           {#if showAddPanel}
@@ -507,7 +525,7 @@
                 <McpServerForm
                   onSubmit={handleAddServer}
                   onCancel={handleCancelAdd}
-                  existingServerNames={servers.map((s) => s.name)}
+                  existingServerNames={$servers$.map((s) => s.name)}
                 />
               {:else}
                 <McpJsonImport onImport={handleImportJson} onCancel={handleCancelAdd} />
@@ -533,10 +551,10 @@
 
         <!-- Configured Servers List -->
         <div class="px-6 py-4">
-          {#if loading}
+          {#if $loading$}
             <!-- Skeleton loaders for configured servers -->
             <div class="space-y-3 mb-6">
-              {#each [1, 2] as _}
+              {#each [1, 2] as { }}
                 <div class="flex items-start gap-3 py-3">
                   <Skeleton class="w-2.5 h-2.5 rounded-full mt-1.5" />
                   <div class="flex-1 min-w-0">
@@ -557,7 +575,7 @@
                 <Skeleton class="h-3 w-16" />
               </div>
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
-                {#each [1, 2, 3, 4, 5, 6] as _}
+                {#each [1, 2, 3, 4, 5, 6] as { }}
                   <div class="flex items-center gap-3 py-2.5 px-1">
                     <Skeleton class="w-7 h-7 rounded-md" />
                     <div class="flex-1 min-w-0">
@@ -569,11 +587,11 @@
                 {/each}
               </div>
             </div>
-          {:else if error}
+          {:else if $error$}
             <div class="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
               <div class="space-y-1">
                 <p class="text-sm font-medium text-foreground">Couldn&apos;t load MCP servers</p>
-                <p class="text-sm text-destructive">{error}</p>
+                <p class="text-sm text-destructive">{$error$}</p>
               </div>
 
               <div class="mt-3 rounded-md border border-border bg-background/70 p-3">
@@ -611,7 +629,7 @@
                 Run this command to inspect the CLI output directly if MCP server loading fails.
               </p>
             </div>
-          {:else if servers.length === 0}
+          {:else if $servers$.length === 0}
             <div class="text-xs text-subtle mb-4">
               <p>No custom MCP servers configured yet.</p>
               <p class="mt-1">
@@ -621,7 +639,7 @@
                   class="text-primary hover:underline cursor-pointer"
                   onclick={(e) => {
                     handleLink('https://docs.augmentcode.com/setup-augment/mcp', {
-                      workspaceId: workspaceStore.current?.id,
+                      workspaceId: $activeWorkspaceId ?? undefined,
                       event: e,
                     });
                   }}>Learn how ↗</button
@@ -630,7 +648,7 @@
             </div>
           {:else}
             <div class="mb-6">
-              {#each servers as server (server.name)}
+              {#each $servers$ as server (server.name)}
                 <McpServerCard
                   {server}
                   onToggle={handleToggleServer}
@@ -805,7 +823,7 @@
                     e.preventDefault();
                     handleLink(
                       'https://docs.augmentcode.com/cli/integrations#configure-mcp-via-settings-json',
-                      { workspaceId: workspaceStore.current?.id, event: e },
+                      { workspaceId: $activeWorkspaceId ?? undefined, event: e },
                     );
                   }}
                 >

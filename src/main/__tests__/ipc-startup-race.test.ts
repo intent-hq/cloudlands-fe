@@ -35,7 +35,7 @@ const SRC_ROOT = path.resolve(__dirname, '..', '..');
  * - src/lib/store/slices/specialists/sagas/init-saga.ts
  * - src/lib/store/slices/permission/sagas/ipc-saga.ts
  * - src/lib/services/promotional-banner.ts (called from PromotionalBanner.svelte)
- * - src/features/auto-update/auto-update.store.svelte.ts
+ * - src/lib/store/slices/auto-update/sagas/auto-update-saga.ts
  * - src/lib/store/slices/workspace-settings/sagas/init-saga.ts
  */
 const RENDERER_STARTUP_CHANNELS = [

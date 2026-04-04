@@ -34,7 +34,7 @@ describe('Edit Events', () => {
         recursive: true,
         force: true,
       });
-    } catch (error) {
+    } catch  {
       // Ignore cleanup errors
     }
   });

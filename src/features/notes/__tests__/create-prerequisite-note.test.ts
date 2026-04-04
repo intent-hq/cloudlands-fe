@@ -6,7 +6,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { NotesService } from '../notes.service';
 import { WorkspaceId, NoteId } from '$shared/types/branded-ids';
-import type { DependencyType, TaskStatus } from '$shared/types';
 import { randomUUID } from 'crypto';
 
 describe('NotesService - createPrerequisiteNote', () => {

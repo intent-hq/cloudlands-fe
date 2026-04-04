@@ -14,6 +14,7 @@
    * - Save script for future workspace creation
    */
   import { untrack } from 'svelte';
+  import { writable } from 'svelte/store';
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
@@ -25,15 +26,17 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
-  import { setupScriptStore } from '$features/setup-scripts';
+  import { v4 as uuidv4 } from 'uuid';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { saveScript } from '$lib/store/slices/setup-scripts/setup-scripts-slice';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { WorkspaceId } from '$shared/types/branded-ids';
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { toast } from 'svelte-sonner';
   import { createLogger } from '$lib/utils/client-logger';
 
   const logger = createLogger('SetupScriptBanner');
+  const dispatch = getDispatch();
 
   const DISMISSED_STORAGE_KEY = 'setup-script-banner-dismissed';
 
@@ -59,6 +62,11 @@
   }
 
   let { workspaceId }: Props = $props();
+  const workspaceIdStore = writable(workspaceId);
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+  });
+  const workspaceById = selectWorkspaceById(workspaceIdStore);
 
   // State
   let isOpen = $state(!isWorkspaceDismissed(workspaceId)); // persists across remounts if dismissed
@@ -100,7 +108,7 @@
   }
 
   // Get workspace info
-  const workspace = $derived(workspaceStore.findById(WorkspaceId(workspaceId)));
+  const workspace = $derived($workspaceById);
   const repoPath = $derived(workspace?.repositoryPath || '');
 
   // Check if this workspace was started with a setup script
@@ -203,11 +211,16 @@
       return;
     }
 
-    setupScriptStore.save({
+    const now = new Date().toISOString();
+    dispatch(saveScript({
+      id: uuidv4(),
       name: scriptName || 'Workspace setup',
       content: scriptContent,
       repoPath: repoPath || undefined,
-    });
+      lastUsedAt: now,
+      usageCount: 1,
+      createdAt: now,
+    }));
 
     toast.success(
       `Setup script "${scriptName}" saved! It will be available when creating new workspaces.`,
@@ -262,7 +275,7 @@
         <Fa icon={faWandMagicSparkles} class="w-3.5 h-3.5 text-primary/70" />
       </div>
       <p class="text-sm text-subtle flex-1">
-        <span class="text-foreground/80 font-medium">Speed up future workspaces</span>
+        <span class="text-muted-foreground font-medium">Speed up future workspaces</span>
         — save your setup commands as a reusable script
       </p>
       <button
@@ -315,7 +328,7 @@
       <div class="flex items-start gap-2">
         <!-- <Fa icon={faWandMagicSparkles} class="w-3.5 h-3.5 text-primary/70 mt-1" /> -->
         <div class="flex flex-col">
-          <span class="text-sm font-medium text-foreground/80">Create setup script</span>
+          <span class="text-sm font-medium text-muted-foreground">Create setup script</span>
           <p class="text-xs text-subtle">
             Runs automatically when you create new workspaces for this repo
           </p>

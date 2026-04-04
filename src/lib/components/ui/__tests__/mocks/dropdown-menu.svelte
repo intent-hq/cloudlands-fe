@@ -9,6 +9,7 @@
     children?: Snippet;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let { open = $bindable(false), align = 'end', trigger, content, children }: Props = $props();
 
   function toggle() {

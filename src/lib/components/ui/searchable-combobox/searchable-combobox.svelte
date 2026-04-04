@@ -49,10 +49,12 @@
     onOpen,
     onClose,
     onRename,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onDelete,
     class: className = '',
     triggerClass = '',
     dropdownClass = '',
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     inputClass = '',
     header = '',
     optionDescription,

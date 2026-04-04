@@ -7,11 +7,11 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { MemoryManager } from '../../src/features/agent/services/memory-manager';
-import { v4 as uuidv4 } from 'uuid';
 
 // Mock logger
 vi.mock('../../src/shared/logger', () => ({
   Logger: class MockLogger {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     constructor(name: string) {}
     info = vi.fn();
     debug = vi.fn();
@@ -102,7 +102,7 @@ describe('MemoryManager', () => {
     it('should register and clear timeouts', () => {
       const callback = vi.fn();
 
-      const cleanup = manager.registerTimer(callback, 1000, 'timeout', testOwner);
+      manager.registerTimer(callback, 1000, 'timeout', testOwner);
       manager.cleanup(testOwner);
 
       vi.advanceTimersByTime(1000);

@@ -345,7 +345,9 @@ export function buildFileApi({ workspaceId, workspacePath, call, fsAdapter }: Fi
       emitAgentFileChange(workspaceId, path);
 
       try {
-        const { getWorkspaceEventService } = await import('../../../events/main');
+        const { emitWorkspaceEvent } = await import('../../../../store/main/slices/workspace-events/workspace-events-slice');
+        const { createWorkspaceEvent } = await import('../../../events/types');
+        const { mainDispatch } = await import('../../../../store/main/redux-store-bridge');
         const patch = Diff.createPatch(path, oldContent, content, '', '', { context: 3 });
         let additions = 0;
         let deletions = 0;
@@ -355,12 +357,11 @@ export function buildFileApi({ workspaceId, workspacePath, call, fsAdapter }: Fi
           else if (line.startsWith('-')) deletions++;
         }
 
-        getWorkspaceEventService(workspaceId).emitFileChange(path, fileExisted ? 'modify' : 'create', {
-          diff: patch,
-          additions,
-          deletions,
-          actor: { type: 'agent', id: agentInfo.id, name: agentInfo.name },
-        });
+        mainDispatch(emitWorkspaceEvent(createWorkspaceEvent(
+          'file:changed', workspaceId,
+          { type: 'agent', id: agentInfo.id, name: agentInfo.name },
+          { path, relativePath: path, action: fileExisted ? 'modify' : 'create', diff: patch, additions, deletions },
+        )));
       } catch (error) {
         logger.warn('Failed to emit file change to activity log', { error });
       }
@@ -395,16 +396,17 @@ export function buildFileApi({ workspaceId, workspacePath, call, fsAdapter }: Fi
       emitAgentFileChange(workspaceId, path);
 
       try {
-        const { getWorkspaceEventService } = await import('../../../events/main');
+        const { emitWorkspaceEvent } = await import('../../../../store/main/slices/workspace-events/workspace-events-slice');
+        const { createWorkspaceEvent } = await import('../../../events/types');
+        const { mainDispatch } = await import('../../../../store/main/redux-store-bridge');
         const agentInfo = getAgentInfo(call);
         const patch = Diff.createPatch(path, oldContent, '', '', '', { context: 3 });
         const deletions = patch.split('\n').filter((line) => line.startsWith('-') && !line.startsWith('---')).length;
-        getWorkspaceEventService(workspaceId).emitFileChange(path, 'delete', {
-          diff: patch,
-          additions: 0,
-          deletions,
-          actor: { type: 'agent', id: agentInfo.id, name: agentInfo.name },
-        });
+        mainDispatch(emitWorkspaceEvent(createWorkspaceEvent(
+          'file:changed', workspaceId,
+          { type: 'agent', id: agentInfo.id, name: agentInfo.name },
+          { path, relativePath: path, action: 'delete', diff: patch, additions: 0, deletions },
+        )));
       } catch (error) {
         logger.warn('Failed to emit file delete to activity log', { error });
       }
@@ -452,12 +454,15 @@ export function buildFileApi({ workspaceId, workspacePath, call, fsAdapter }: Fi
       emitAgentFileChange(workspaceId, newPath);
 
       try {
-        const { getWorkspaceEventService } = await import('../../../events/main');
+        const { emitWorkspaceEvent } = await import('../../../../store/main/slices/workspace-events/workspace-events-slice');
+        const { createWorkspaceEvent } = await import('../../../events/types');
+        const { mainDispatch } = await import('../../../../store/main/redux-store-bridge');
         const agentInfo = getAgentInfo(call);
-        getWorkspaceEventService(workspaceId).emitFileChange(newPath, 'rename', {
-          oldPath,
-          actor: { type: 'agent', id: agentInfo.id, name: agentInfo.name },
-        });
+        mainDispatch(emitWorkspaceEvent(createWorkspaceEvent(
+          'file:changed', workspaceId,
+          { type: 'agent', id: agentInfo.id, name: agentInfo.name },
+          { path: newPath, relativePath: newPath, action: 'rename', oldPath },
+        )));
       } catch (error) {
         logger.warn('Failed to emit rename to activity log', { error });
       }

@@ -19,9 +19,14 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { slide } from 'svelte/transition';
   import { taskNoteUrl } from '$shared/constants/intent-links';
-  import { notesStateManager } from '$features/notes/notes.store.svelte';
-  import { notesClient } from '$features/notes/notes.client';
-  import type { NoteId, TaskStatus } from '$shared/types';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectSelectedNoteId, selectNoteById, selectNotesVersion } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import { getReduxStore, getReduxDispatch, dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
+  import { reloadNotes, updateTaskStatus } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+  import { writable } from 'svelte/store';
+  import { notesIpc } from '$lib/store/slices/workspace-notes/sagas/notes-ipc';
+  import { NOTES_CHANNELS } from '$shared/ipc/channels';
+  import type { NoteId, TaskStatus, Note, AgentSession } from '$shared/types';
   import { NoteId as NoteIdBrand, WorkspaceId } from '$shared/types/branded-ids';
   import TaskStatusIcon from './TaskStatusIcon.svelte';
   import { toPromptToken } from '$lib/services/mentions/format';
@@ -29,6 +34,14 @@
 
   const logger = createLogger('TaskItemNodeView');
   const TASK_LINK_REGEX = /^intent:\/\/local\/task\/(.+)$/;
+
+  // Redux state access - called at component init time for reactive subscriptions
+  const activeWorkspaceId = selectActiveWorkspaceId();
+  const wsIdStore = writable<string>('');
+  $effect(() => {
+    wsIdStore.set($activeWorkspaceId ?? '');
+  });
+  const notesVersion = selectNotesVersion(wsIdStore);
 
   let { node, selected, updateAttributes, getPos, editor }: NodeViewProps = $props();
 
@@ -65,8 +78,11 @@
   let linkedTaskNote = $derived.by(() => {
     if (!linkedTaskNoteId) return null;
     // Access notesVersion to trigger reactivity when notes map changes
-    void notesStateManager.notesVersion;
-    return notesStateManager.notes.get(linkedTaskNoteId) ?? null;
+    void $notesVersion;
+    const wsId = $activeWorkspaceId;
+    if (!wsId) return null;
+    const state = getReduxStore().getState();
+    return selectNoteById.select(state, wsId, linkedTaskNoteId) ?? null;
   });
 
   let linkedTaskTitle = $derived(
@@ -107,7 +123,7 @@
     updateAttributes({ checked: newChecked, status: 'todo', delegatedAgentId });
   }
 
-  async function handleLinkedTaskCheckboxClick(event: MouseEvent) {
+  function handleLinkedTaskCheckboxClick(event: MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
     if (!linkedTaskNoteId || linkedTaskNotFound) return;
@@ -124,10 +140,7 @@
     try {
       const workspaceId = linkedTaskNote?.workspaceId;
       if (!workspaceId) return;
-      const result = await notesClient.updateTaskStatus(workspaceId, linkedTaskNoteId, newStatus);
-      if (result.ok) {
-        await notesStateManager.handleExternalUpdate(linkedTaskNoteId, result.data, 'external');
-      }
+      getReduxDispatch()(updateTaskStatus(workspaceId, linkedTaskNoteId, newStatus));
     } catch (error) {
       logger.error('Failed to update linked task status', error);
     }
@@ -290,19 +303,25 @@
     const taskText = getTaskText();
     if (!taskText) return;
 
-    const currentNoteId = notesStateManager.selectedNoteId;
+    const wsId = $activeWorkspaceId;
+    if (!wsId) return;
+    const reduxState = getReduxStore().getState();
+    const currentNoteId = selectSelectedNoteId.select(reduxState, wsId);
     if (!currentNoteId) return;
-    const currentNote = notesStateManager.notes.get(currentNoteId);
+    const currentNote = selectNoteById.select(reduxState, wsId, currentNoteId);
     if (!currentNote) return;
 
     try {
-      const result = await notesClient.createPrerequisiteNote(
-        WorkspaceId(currentNote.workspaceId),
-        NoteIdBrand(currentNoteId),
+      const result = await notesIpc<{ note: Note; agent?: AgentSession }>(
+        NOTES_CHANNELS.CREATE_PREREQUISITE_NOTE,
         {
-          title: taskText.slice(0, 100),
-          content: taskText.length > 100 ? taskText : '',
-          taskStatus: 'not_started',
+          workspaceId: WorkspaceId(currentNote.workspaceId),
+          dependentNoteId: NoteIdBrand(currentNoteId),
+          options: {
+            title: taskText.slice(0, 100),
+            content: taskText.length > 100 ? taskText : '',
+            taskStatus: 'not_started',
+          },
         },
       );
       if (!result.ok) return;
@@ -320,7 +339,7 @@
       const tr = editor.state.tr;
       tr.replaceWith(pos, pos + node.nodeSize, newTaskItem);
       editor.view.dispatch(tr);
-      await notesStateManager.reloadNotes();
+      reduxDispatch(reloadNotes(currentNote.workspaceId));
     } catch (error) {
       logger.error('Failed to convert checkbox to Task Note', error);
     }

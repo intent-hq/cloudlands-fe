@@ -1,4 +1,3 @@
-import type { Snippet } from 'svelte';
 import type { IconDefinition } from '@fortawesome/free-solid-svg-icons';
 
 /**

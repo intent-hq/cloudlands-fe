@@ -5,8 +5,11 @@
   Integrates with CodeEditor to show text appearing/disappearing character by character.
 -->
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
-  import { agentFollowStore } from '$features/agent/agent-follow.store.svelte';
+  import { onMount } from 'svelte';
+  import { selectIsFollowing, selectAgentColor } from '$lib/store/slices/agent-follow/agent-follow-selectors';
+
+  const isFollowing$ = selectIsFollowing();
+  const agentColor$ = selectAgentColor();
 
   interface Props {
     content: string;
@@ -18,6 +21,7 @@
 
   let animationController: AbortController | null = null;
   let currentAnimation: Promise<void> | null = null;
+  let animatedText = '';
 
   // Listen for animation events
   onMount(() => {
@@ -29,7 +33,7 @@
   });
 
   function handleAnimationEvent(event: Event) {
-    if (!isActive || !agentFollowStore.isFollowing) return;
+    if (!isActive || !$isFollowing$) return;
 
     const detail = (event as CustomEvent).detail as
       | { content?: string; isAddition?: boolean; speed?: number }
@@ -60,7 +64,6 @@
     animationController = new AbortController();
     const signal = animationController.signal;
 
-    let animatedText = '';
     const chars = text.split('');
 
     currentAnimation = (async () => {
@@ -113,17 +116,16 @@
   let cursorClass = $derived(isAnimating ? 'animate-blink' : '');
 </script>
 
-{#if isAnimating && agentFollowStore.isFollowing}
+{#if isAnimating && $isFollowing$}
   <div
     class="absolute top-2 right-2 flex items-center gap-2 px-2 py-1 rounded-md z-50"
-    style="background: {agentFollowStore.agentColor?.start}20; border: 1px solid {agentFollowStore
-      .agentColor?.start}40;"
+    style="background: {$agentColor$?.start}20; border: 1px solid {$agentColor$?.start}40;"
   >
     <div
       class="w-2 h-2 rounded-full {cursorClass}"
-      style="background: {agentFollowStore.agentColor?.start};"
+      style="background: {$agentColor$?.start};"
     ></div>
-    <span class="text-xs" style="color: {agentFollowStore.agentColor?.start};">
+    <span class="text-xs" style="color: {$agentColor$?.start};">
       Agent typing...
     </span>
   </div>

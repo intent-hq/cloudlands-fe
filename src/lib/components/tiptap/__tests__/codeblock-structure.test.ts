@@ -43,6 +43,7 @@ CREATE TABLE entries (
 
     const structure: any[] = [];
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     editor.state.doc.descendants((node, pos, parent) => {
       const info: any = {
         type: node.type.name,
@@ -78,6 +79,7 @@ CREATE TABLE entries (
     // Or is it just one big text node?
     if (codeBlock.children && codeBlock.children.length > 0) {
       // Code block HAS child nodes
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       codeBlock.children.forEach((child: any, i: number) => {
         // Child nodes exist
       });

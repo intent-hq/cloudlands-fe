@@ -9,7 +9,7 @@
  *
  * ## Data Flow & Consistency Notes
  *
- * Workspace objects come from workspaceStore.items which loads in two passes:
+ * Workspace objects come from Redux workspace state which loads in two passes:
  *  - **Lite mode**: taskStats, diffSummary, agentSummary, gitSummary are undefined.
  *  - **Full mode** (500ms later): enrichment fields are populated.
  *

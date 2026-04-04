@@ -5,17 +5,26 @@
    * Shows list of Sentry issues with search/filter.
    * Handles authentication flow if not authenticated.
    */
-  import { sentryAuthStore } from '$features/sentry-auth/renderer/sentry-auth.store.svelte';
-  import type { SentryIssueResult } from '$features/sentry-auth/renderer/sentry-auth.store.svelte';
+  import type { SentryIssueResult } from '$lib/store/slices/sentry-auth/sentry-auth-types';
+  import {
+    selectSentryIsAuthenticated,
+    selectSentryIssues,
+    selectSentryIsLoadingIssues,
+    selectSentryIsConnecting,
+  } from '$lib/store/slices/sentry-auth/sentry-auth-selectors';
+  import {
+    initializeSentryAuth,
+    connectSentry,
+    fetchSentryIssues,
+  } from '$lib/store/slices/sentry-auth/sentry-auth-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
   import { faSpinner, faSearch } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
-  import { createLogger } from '$lib/utils/client-logger';
 
-  const logger = createLogger('SentryPicker');
 
   interface Props {
     workspaceId: string;
@@ -23,13 +32,17 @@
     onClose: () => void;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let { workspaceId, onSelect, onClose }: Props = $props();
 
-  let isAuthenticated = $state(false);
-  let issues = $state<SentryIssueResult[]>([]);
-  let isLoading = $state(false);
+  const dispatch = getDispatch();
+  const isAuthenticated$ = selectSentryIsAuthenticated();
+  const issues$ = selectSentryIssues();
+  const isLoadingIssues$ = selectSentryIsLoadingIssues();
+  const storeIsConnecting$ = selectSentryIsConnecting();
+
   let searchQuery = $state('');
-  let isConnecting = $state(false);
+  let pendingConnect = $state(false);
 
   // Config form for unauthenticated users
   let showConfigForm = $state(false);
@@ -37,53 +50,31 @@
   let sentryToken = $state('');
 
   const filteredIssues = $derived.by(() => {
-    if (!searchQuery.trim()) return issues;
+    if (!searchQuery.trim()) return $issues$;
     const query = searchQuery.toLowerCase();
-    return issues.filter(
-      (issue) =>
+    return $issues$.filter(
+      (issue: SentryIssueResult) =>
         issue.title.toLowerCase().includes(query) ||
         issue.shortId.toLowerCase().includes(query) ||
         issue.projectName?.toLowerCase().includes(query),
     );
   });
 
-  async function loadIssues() {
-    try {
-      await sentryAuthStore.initialize();
-      isAuthenticated = sentryAuthStore.state.isAuthenticated;
-
-      if (!isAuthenticated) {
-        logger.info('Sentry not authenticated');
-        return;
-      }
-
-      isLoading = true;
-      const result = await sentryAuthStore.fetchIssues();
-      issues = result;
-      logger.info('Loaded Sentry issues', { count: result.length });
-    } catch (error) {
-      logger.error('Failed to load Sentry issues', error as Error);
-    } finally {
-      isLoading = false;
-    }
-  }
-
-  async function handleConnect() {
-    if (!sentryOrg || !sentryToken) return;
-
-    isConnecting = true;
-    try {
-      const success = await sentryAuthStore.connect(sentryOrg, sentryToken);
-      if (success) {
-        isAuthenticated = true;
+  // When connect completes successfully, fetch issues
+  $effect(() => {
+    if (pendingConnect && !$storeIsConnecting$) {
+      pendingConnect = false;
+      if ($isAuthenticated$) {
         showConfigForm = false;
-        await loadIssues();
+        dispatch(fetchSentryIssues());
       }
-    } catch (error) {
-      logger.error('Sentry auth failed', error as Error);
-    } finally {
-      isConnecting = false;
     }
+  });
+
+  function handleConnect() {
+    if (!sentryOrg || !sentryToken) return;
+    pendingConnect = true;
+    dispatch(connectSentry(sentryOrg, sentryToken));
   }
 
   function handleSelect(issue: SentryIssueResult) {
@@ -105,11 +96,22 @@
   }
 
   onMount(() => {
-    loadIssues();
+    dispatch(initializeSentryAuth());
+    // Fetch issues if already authenticated (state may persist from previous mount)
+    if ($isAuthenticated$) {
+      dispatch(fetchSentryIssues());
+    }
+  });
+
+  // When auth state becomes true (e.g. after init), fetch issues
+  $effect(() => {
+    if ($isAuthenticated$ && $issues$.length === 0 && !$isLoadingIssues$) {
+      dispatch(fetchSentryIssues());
+    }
   });
 </script>
 
-{#if !isAuthenticated}
+{#if !$isAuthenticated$}
   <div class="p-6 flex flex-col items-center gap-4">
     <SentryIcon size={48} class="text-subtle" />
     <p class="text-sm text-subtle text-center">Connect to Sentry to see your issues</p>
@@ -131,8 +133,8 @@
           <Button variant="outline" onclick={() => (showConfigForm = false)} class="flex-1">
             Cancel
           </Button>
-          <Button onclick={handleConnect} disabled={isConnecting || !sentryOrg || !sentryToken} class="flex-1">
-            {#if isConnecting}
+          <Button onclick={handleConnect} disabled={$storeIsConnecting$ || !sentryOrg || !sentryToken} class="flex-1">
+            {#if $storeIsConnecting$}
               <Fa icon={faSpinner} class="animate-spin mr-2" />
             {/if}
             Connect
@@ -145,7 +147,7 @@
       </Button>
     {/if}
   </div>
-{:else if isLoading}
+{:else if $isLoadingIssues$}
   <div class="p-8 flex justify-center">
     <Fa icon={faSpinner} class="animate-spin text-subtle" size="lg" />
   </div>

@@ -37,6 +37,7 @@ describe('Message Queue Edge Cases', () => {
       interruptedAgents: new Set(),
       streamStartTimes: new Map(),
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       async processNextQueuedMessage(agentId: string, _workspaceId: string) {
         // Check if agent was intentionally interrupted
         // NOTE: Do NOT delete the flag here — it's cleared in handleSendMessage
@@ -383,7 +384,7 @@ describe('Message Queue Edge Cases', () => {
       const agentId = 'agent_1';
       const workspaceId = 'workspace_1';
 
-      const msg1 = handler.queueMessage(agentId, 'Important message');
+      handler.queueMessage(agentId, 'Important message');
 
       // After processing, message should be removed from queue
       await handler.processNextQueuedMessage(agentId, workspaceId);
@@ -487,7 +488,7 @@ describe('Message Queue Edge Cases', () => {
       const agentId = 'agent_1';
       const workspaceId = 'workspace_1';
 
-      const msg1 = handler.queueMessage(agentId, 'Should not be auto-processed');
+      handler.queueMessage(agentId, 'Should not be auto-processed');
 
       await handler.handleStopSession(agentId);
 

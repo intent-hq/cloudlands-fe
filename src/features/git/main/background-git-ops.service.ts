@@ -11,7 +11,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../../../shared/logger';
 import type { WorkspaceId } from '../../../shared/types';
-import { unifiedEventBus } from '../../events/main/unified-event-bus';
+import { mainDispatch } from '../../../store/main/redux-store-bridge';
+import { gitOpStarted, gitOpProgress, gitOpCompleted, gitOpFailed } from '../../../store/main/slices/git-events/git-events-slice';
 
 const logger = new Logger('BackgroundGitOpsService');
 
@@ -101,7 +102,7 @@ export class BackgroundGitOpsService {
 
     logger.info('Registered git operation', { operationId: id, workspaceId, type });
 
-    unifiedEventBus.emitDomainEvent('git:op-started', {
+    mainDispatch(gitOpStarted({
       operationId: id,
       workspaceId,
       operationType: type,
@@ -111,7 +112,7 @@ export class BackgroundGitOpsService {
         agentId: metadata.agentId,
         agentName: metadata.agentName,
       },
-    });
+    }));
 
     return id;
   }
@@ -144,7 +145,7 @@ export class BackgroundGitOpsService {
 
     logger.debug('Operation progress', { operationId, step });
 
-    unifiedEventBus.emitDomainEvent('git:op-progress', {
+    mainDispatch(gitOpProgress({
       operationId,
       workspaceId: op.workspaceId,
       operationType: op.type,
@@ -153,7 +154,7 @@ export class BackgroundGitOpsService {
         message: op.metadata.message,
         prTitle: op.metadata.prTitle,
       },
-    });
+    }));
   }
 
   /**
@@ -195,7 +196,7 @@ export class BackgroundGitOpsService {
 
     logger.info('Operation completed', { operationId, type: op.type });
 
-    unifiedEventBus.emitDomainEvent('git:op-completed', {
+    mainDispatch(gitOpCompleted({
       operationId,
       workspaceId: op.workspaceId,
       operationType: op.type,
@@ -206,7 +207,7 @@ export class BackgroundGitOpsService {
         agentId: op.metadata.agentId,
         agentName: op.metadata.agentName,
       },
-    });
+    }));
   }
 
   /**
@@ -236,7 +237,7 @@ export class BackgroundGitOpsService {
 
     logger.info('Operation failed', { operationId, type: op.type });
 
-    unifiedEventBus.emitDomainEvent('git:op-failed', {
+    mainDispatch(gitOpFailed({
       operationId,
       workspaceId: op.workspaceId,
       operationType: op.type,
@@ -247,7 +248,7 @@ export class BackgroundGitOpsService {
         agentId: op.metadata.agentId,
         agentName: op.metadata.agentName,
       },
-    });
+    }));
   }
 
   /**

@@ -194,6 +194,7 @@ class ReversibleActionManager {
           resolve(false);
         };
 
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const toastId = toast.info(`${config.message}`, {
           duration: duration * 1000,
           action: { label: 'Execute', onClick: executeNow },
@@ -225,6 +226,7 @@ class ReversibleActionManager {
    * Cancel all pending actions
    */
   cancelAll(): void {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     for (const [id, { timeout }] of this.pendingActions) {
       clearTimeout(timeout);
     }

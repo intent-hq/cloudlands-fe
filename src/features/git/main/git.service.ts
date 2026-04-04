@@ -36,7 +36,8 @@ import type {
   WorkspaceId,
 } from '../../../shared/types';
 import { GitFileStatus, LineType } from '../../../shared/types';
-import { unifiedEventBus } from '../../events/main/unified-event-bus';
+import { mainDispatch } from '../../../store/main/redux-store-bridge';
+import { gitAuthRequired } from '../../../store/main/slices/git-events/git-events-slice';
 import { filterDiffableFiles } from '../../workspace/main/change-detection/diffable-file-filter';
 import { getWorktreesLocation } from '../../workspace/main/app-settings.service';
 import type { WorkspaceRepository } from '../../workspace/main/workspace.repository';
@@ -1108,7 +1109,6 @@ export class GitService {
       if (addedLines.length > 0) {
         // Find and remove the added lines
         const removeStart = insertPosition;
-        const removeEnd = removeStart + addedLines.length;
         newStagedLines.splice(removeStart, addedLines.length);
       }
 
@@ -1672,14 +1672,14 @@ export class GitService {
         // Emit domain event for UI notification
         // Git push uses local credentials (SSH keys or credential manager), not GitHub OAuth.
         // Only emit git:auth-required, NOT github:auth-required.
-        unifiedEventBus.emitDomainEvent('git:auth-required', {
+        mainDispatch(gitAuthRequired({
           workspaceId,
           operation: 'push',
           message: userMessage,
           rawError: stderr,
           command,
           cwd: worktreePath,
-        });
+        }));
 
         return {
           ok: false,
@@ -1866,14 +1866,14 @@ export class GitService {
         suppressKeychainAccess(workspaceId as string);
 
         // Emit domain event for UI notification
-        unifiedEventBus.emitDomainEvent('git:auth-required', {
+        mainDispatch(gitAuthRequired({
           workspaceId,
           operation: 'pull',
           message: userMessage,
           rawError: stderr,
           command: pullCommand,
           cwd: worktreePath,
-        });
+        }));
 
         return {
           ok: false,
@@ -1961,14 +1961,14 @@ export class GitService {
         suppressKeychainAccess(workspaceId as string);
 
         // Emit domain event for UI notification
-        unifiedEventBus.emitDomainEvent('git:auth-required', {
+        mainDispatch(gitAuthRequired({
           workspaceId,
           operation: 'fetch',
           message: userMessage,
           rawError: stderr,
           command: fetchCommand,
           cwd: worktreePath,
-        });
+        }));
 
         return {
           ok: false,
@@ -2706,7 +2706,7 @@ export class GitService {
                 }
               }
             }
-          } catch (err) {
+          } catch  {
             // Could not check file status
           }
         }
@@ -2778,7 +2778,7 @@ export class GitService {
                 cwd: worktreePath,
               });
               oldFileContent = headFileContent;
-            } catch (err) {
+            } catch  {
               // File might be new, so HEAD version doesn't exist
               oldFileContent = '';
             }
@@ -2788,7 +2788,7 @@ export class GitService {
                 cwd: worktreePath,
               });
               newFileContent = stagedFileContent;
-            } catch (err) {
+            } catch  {
               // File might be deleted in staging
               newFileContent = '';
             }
@@ -2800,7 +2800,7 @@ export class GitService {
                 cwd: worktreePath,
               });
               newFileContent = fileContent;
-            } catch (err) {
+            } catch  {
               // File might be deleted
               newFileContent = '';
             }
@@ -2812,7 +2812,7 @@ export class GitService {
                   cwd: worktreePath,
                 });
                 oldFileContent = indexFileContent;
-              } catch (err) {
+              } catch  {
                 // File might be new, so index version doesn't exist
                 oldFileContent = '';
               }
@@ -2824,7 +2824,7 @@ export class GitService {
                   { cwd: worktreePath },
                 );
                 oldFileContent = headFileContent;
-              } catch (err) {
+              } catch  {
                 // File might be new, so HEAD version doesn't exist
                 oldFileContent = '';
               }
@@ -3151,7 +3151,7 @@ export class GitService {
             if (commitDate < sinceDate) {
               continue;
             }
-          } catch (err) {
+          } catch  {
             // Error parsing date, include the commit
           }
         }
@@ -3622,8 +3622,6 @@ export class GitService {
 
       // Parse hunks (sections starting with @@)
       let currentHunk: any = null;
-      let hunkStartIndex = 0;
-
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i];
 
@@ -3648,7 +3646,7 @@ export class GitService {
             newLines,
             lines: [],
           };
-          hunkStartIndex = i + 1;
+
           continue;
         }
 
@@ -3741,7 +3739,7 @@ export class GitService {
               };
             });
         }
-      } catch (error) {
+      } catch  {
         // If this is the first commit, there's no parent to diff against
         // Try to get the files from the commit itself
         try {

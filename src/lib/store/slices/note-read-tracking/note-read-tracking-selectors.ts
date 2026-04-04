@@ -34,9 +34,3 @@ export const selectReadRecord = createSelector((state, noteId: string) => {
 export const selectReadRecords = createSelector((state): Record<string, import("$shared/types/user-activity.types").NoteReadRecord> => {
   return state.noteReadTracking.readRecords;
 });
-
-/** Select the current workspace ID */
-export const selectNoteReadTrackingWorkspaceId = createSelector((state) => {
-  return state.noteReadTracking.currentWorkspaceId;
-});
-

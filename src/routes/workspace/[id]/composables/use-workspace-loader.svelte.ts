@@ -6,9 +6,8 @@
  */
 
 import { untrack } from 'svelte';
-import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-import { workspaceClient } from '$features/workspace/workspace.client';
-import { unifiedStateStore } from '$features/agent/services/unified-state-store';
+import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
+
 import { createLogger } from '$lib/utils/client-logger';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { track } from '$lib/services/analytics';
@@ -18,23 +17,18 @@ import {
   selectInitialAgentId,
 } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
 import { setInitialAgentId } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-import type {
-  UnifiedWorkspaceState,
-  createUnifiedWorkspaceState,
-} from '$features/workspace/workspace-unified-state.svelte';
 import { workspaceMounted } from '$lib/store/slices/workspace-lifecycle/workspace-lifecycle-slice';
-import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
+import { selectActiveWorkspace, selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+import { setActiveWorkspaceId, setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
 import { getDispatch } from '$lib/store/utils/utils';
-
-/** Type alias for the unified workspace state manager */
-export type UnifiedWorkspaceStateManager = ReturnType<typeof createUnifiedWorkspaceState>;
+import type { WorkspacePageState, WorkspacePageStateManager } from './workspace-page-state.svelte';
 
 const logger = createLogger('workspace-loader');
 
 export interface UseWorkspaceLoaderOptions {
   workspaceId: string;
-  workspaceState: UnifiedWorkspaceStateManager | null;
-  state: UnifiedWorkspaceState | null;
+  workspaceState: WorkspacePageStateManager | null;
+  state: WorkspacePageState | null;
   previousWorkspaceId: string | null;
 }
 
@@ -125,7 +119,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
 
   async function handleOptimisticLoad(
     workspaceId: string,
-    workspaceState: UnifiedWorkspaceStateManager,
+    workspaceState: WorkspacePageStateManager,
   ) {
     // For optimistic workspaces, `transition` is display config only.
     const transition = workspaceState.transition;
@@ -150,8 +144,8 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
 
   async function handleRealWorkspaceLoad(
     workspaceId: string,
-    workspaceState: UnifiedWorkspaceStateManager,
-    state: UnifiedWorkspaceState | null,
+    workspaceState: WorkspacePageStateManager,
+    state: WorkspacePageState | null,
   ) {
     // Check if this is an optimistic ID that's no longer in the manager
     if (workspaceId.startsWith('optimistic-')) {
@@ -163,7 +157,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     }
 
     // Load real workspace - prefer already-initialized workspace from the store
-    let ws = workspaceStore.findById(WorkspaceId(workspaceId));
+    let ws = selectWorkspaceById.select(getReduxStore().getState(), workspaceId);
 
     // Check if this workspace is already fully loaded and active.
     // If so, we only need to call the backend open() for monitoring idempotency
@@ -173,7 +167,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     // state and cause active streams to appear disconnected.
     const isAlreadyActive =
       ws &&
-      workspaceStore.current?.id === workspaceId &&
+      selectActiveWorkspace.select(getReduxStore().getState())?.id === workspaceId &&
       state?.workspaceData?.id === workspaceId &&
       lastMountedWorkspaceId === workspaceId;
 
@@ -204,7 +198,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     });
 
     // FIX: When the workspace is already cached in the store (e.g. after
-    // workspaceStore.create()), populate Redux and Svelte state immediately
+    // workspace creation via Redux), populate Redux and Svelte state immediately
     // BEFORE the async open() call. This eliminates the blank-page flash
     // that occurs when safeWorkspace is null during the open() round-trip,
     // and lets workspaceMounted sagas (agent loading, terminal init, etc.)
@@ -212,8 +206,6 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     let alreadyMounted = false;
     if (ws) {
       logger.info('Pre-populating workspace state from cache before open()', { workspaceId });
-      unifiedStateStore.setWorkspace(ws);
-      unifiedStateStore.setCurrentWorkspace(ws.id);
       workspaceState.updateState({
         workspaceData: ws,
         workspace: { id: ws.id, status: 'ready' },
@@ -225,9 +217,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       lastMountedWorkspaceId = ws.id;
       alreadyMounted = true;
 
-      if (!workspaceStore.current || workspaceStore.current.id !== ws.id) {
-        workspaceStore.setCurrentWorkspace(ws);
-      }
+      dispatch(setActiveWorkspaceId(ws.id));
     }
 
     let openResult = await workspaceClient.open(WorkspaceId(workspaceId));
@@ -243,9 +233,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
 
     if (openResult.ok && openResult.data) {
       ws = openResult.data;
-      workspaceStore.setCurrentWorkspace(ws);
-      unifiedStateStore.setWorkspace(ws);
-      unifiedStateStore.setCurrentWorkspace(ws.id);
+      dispatch(setActiveWorkspaceId(ws.id));
       logger.info('Workspace opened successfully, monitoring started', {
         workspaceId,
         worktreePath: ws.worktreePath,
@@ -266,9 +254,6 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
 
     if (ws) {
       // Update workspace state with potentially fresher data from the backend.
-      unifiedStateStore.setWorkspace(ws);
-      unifiedStateStore.setCurrentWorkspace(ws.id);
-
       workspaceState.updateState({
         workspaceData: ws,
         workspace: { id: ws.id, status: 'ready' },
@@ -287,9 +272,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       }
 
       // Ensure it's set as current in store
-      if (!workspaceStore.current || workspaceStore.current.id !== ws.id) {
-        workspaceStore.setCurrentWorkspace(ws);
-      }
+      dispatch(setActiveWorkspaceId(ws.id));
     } else {
       // This case shouldn't be reached since we throw if ws is null after failed open
       // but keep it as a safety net

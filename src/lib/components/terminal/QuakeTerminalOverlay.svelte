@@ -52,9 +52,11 @@
     faCircle,
     faPencil,
   } from '@fortawesome/free-solid-svg-icons';
-  import { scriptsStore } from '$features/scripts/scripts.store.svelte';
   import { scriptsClient } from '$features/scripts/scripts.client';
   import type { ScriptWithState } from '$features/scripts/types';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectScriptEntries, selectScriptById, selectScriptRuntime } from '$lib/store/slices/scripts/scripts-selectors';
+  import { refreshScripts, initializeScripts, disposeScripts, removeScript } from '$lib/store/slices/scripts/scripts-slice';
   import { cn } from '$lib/utils';
   import { ListContainer, ListItem } from '$lib/components/ui/list';
   import { Tooltip, TooltipRich } from '$lib/components/ui/tooltip';
@@ -82,6 +84,7 @@
   const height = selectTerminalOverlayHeight();
   const activeTerminalId = selectActiveTerminalId();
   const terminals = selectTerminals();
+  const scriptEntries$ = selectScriptEntries();
 
   // Workspace ID from props (required)
   const workspaceId = $derived(propWorkspaceId);
@@ -110,7 +113,7 @@
     isDetectingScripts = true;
     try {
       await scriptsClient.detect(workspaceId);
-      await scriptsStore.refresh();
+      dispatch(refreshScripts(workspaceId));
     } finally {
       isDetectingScripts = false;
     }
@@ -191,19 +194,21 @@
     else if (action === 'restart') await scriptsClient.restart(workspaceId, scriptId);
     else if (action === 'delete') {
       await scriptsClient.remove(workspaceId, scriptId);
-      scriptsStore.removeScript(scriptId);
+      dispatch(removeScript(workspaceId!, scriptId));
       if (selectedScriptId === scriptId) selectedScriptId = null;
     }
   }
 
   // ---- Script header state (for top header bar when script is selected) ----
 
-  const selectedScript = $derived(
-    selectedScriptId ? scriptsStore.scripts.get(selectedScriptId) : null,
-  );
-  const selectedScriptRuntime = $derived(
-    selectedScriptId ? scriptsStore.getRuntime(selectedScriptId) : null,
-  );
+  const selectedScript = $derived.by(() => {
+    void $scriptEntries$; // trigger reactivity on script state changes
+    return selectedScriptId ? selectScriptById.select(getReduxStore().getState(), selectedScriptId) : null;
+  });
+  const selectedScriptRuntime = $derived.by(() => {
+    void $scriptEntries$; // trigger reactivity on script state changes
+    return selectedScriptId ? selectScriptRuntime.select(getReduxStore().getState(), selectedScriptId) : null;
+  });
 
   const STATUS_CONFIG: Record<string, { label: string; colorClass: string }> = {
     idle: { label: 'Idle', colorClass: 'text-zinc-400' },
@@ -233,7 +238,7 @@
       const trimmed = editedScriptName.trim();
       if (trimmed && trimmed !== selectedScript.name) {
         scriptsClient.update(workspaceId!, selectedScriptId, { name: trimmed });
-        scriptsStore.refresh();
+        dispatch(refreshScripts(workspaceId!));
       }
     }
     isEditingScriptName = false;
@@ -274,7 +279,7 @@
       if (editedScriptCommand !== selectedScript.command) updates.command = editedScriptCommand;
       if (Object.keys(updates).length > 0) {
         scriptsClient.update(workspaceId!, selectedScriptId, updates);
-        scriptsStore.refresh();
+        dispatch(refreshScripts(workspaceId!));
       }
     }
     showScriptEditPanel = false;
@@ -282,7 +287,7 @@
 
   function handleScriptOpenUrl(): void {
     if (!selectedScriptRuntime?.detectedUrl) return;
-    import('$features/layout/panel-layout-manager.svelte')
+    import('$features/layout/panel-layout-adapter')
       .then(({ getPanelLayoutManager }) => {
         const layoutManager = getPanelLayoutManager(workspaceId!);
         layoutManager.openBrowserPanel(selectedScriptRuntime.detectedUrl);
@@ -294,7 +299,7 @@
 
   // Running scripts shown as tabs in the bottom bar
   const runningScripts = $derived(
-    scriptsStore.scriptEntries.filter((s) => s.runtime.status === 'running'),
+    $scriptEntries$.filter((s) => s.runtime.status === 'running'),
   );
 
   // Constants
@@ -307,10 +312,10 @@
   // Initialize scripts store at overlay level (persists across panel open/close)
   $effect(() => {
     if (workspaceId) {
-      untrack(() => scriptsStore.initialize(workspaceId));
+      untrack(() => dispatch(initializeScripts(workspaceId)));
     }
     return () => {
-      scriptsStore.dispose();
+      if (workspaceId) dispatch(disposeScripts(workspaceId));
     };
   });
 
@@ -318,7 +323,7 @@
   $effect(() => {
     if (typeof document === 'undefined') return;
 
-    const scriptCount = scriptsStore.scriptEntries.length;
+    const scriptCount = $scriptEntries$.length;
     const hasTerminals = workspaceId && ($terminals.length > 0 || scriptCount > 0);
     const terminalIsOpen = $isOpen && $activeTerminalId;
     const terminalHeight = $height;
@@ -380,46 +385,9 @@
   // Tab Display Logic
   // ============================================================================
 
-  function stripAnsi(text: string): string {
-    return text
-      .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
-      .replace(/\x1b\][^\x07]*\x07/g, '')
-      .replace(/\x1b\][^\x1b]*\x1b\\/g, '')
-      .replace(/\x1b[()][AB0-2]/g, '')
-      .replace(/\x1b[=>]/g, '')
-      .replace(/\x1b[78DMEHZc]/g, '')
-      .replace(/\x07/g, '');
-  }
 
   /** Split text into segments of plain text and localhost URLs */
-  function splitLocalhostUrls(text: string): Array<{ text: string; url?: string }> {
-    const urlRegex = /https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?(?:\/[^\s]*)?/g;
-    const parts: Array<{ text: string; url?: string }> = [];
-    let lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = urlRegex.exec(text)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push({ text: text.slice(lastIndex, match.index) });
-      }
-      parts.push({ text: match[0], url: match[0] });
-      lastIndex = match.index + match[0].length;
-    }
-    if (lastIndex < text.length) {
-      parts.push({ text: text.slice(lastIndex) });
-    }
-    return parts.length > 0 ? parts : [{ text }];
-  }
 
-  function openLocalhostUrl(url: string): void {
-    import('$features/layout/panel-layout-manager.svelte')
-      .then(({ getPanelLayoutManager }) => {
-        const layoutManager = getPanelLayoutManager(workspaceId!);
-        layoutManager.openBrowserPanel(url);
-      })
-      .catch(() => {
-        window.open(url, '_blank');
-      });
-  }
 
   function getTabDisplayName(term: { id: string; name: string; customName?: string }): string {
     if (term.customName) return term.customName;
@@ -476,7 +444,7 @@
       scriptsClient.update(workspaceId!, editingScriptTabId, {
         name: editingScriptTabValue.trim(),
       });
-      scriptsStore.refresh();
+      dispatch(refreshScripts(workspaceId!));
     }
     editingScriptTabId = null;
     editingScriptTabValue = '';
@@ -1089,15 +1057,15 @@
               />
             {:else}
               <span class="overflow-hidden text-ellipsis whitespace-nowrap">{script.name}</span>
-              {#if scriptsStore.getRuntime(script.id).detectedUrl}
+              {#if script.runtime.detectedUrl}
                 <button
                   type="button"
                   class="ml-auto p-1 text-muted-foreground/50 hover:text-foreground cursor-pointer transition-colors shrink-0"
                   onclick={(e) => {
                     e.stopPropagation();
-                    const url = scriptsStore.getRuntime(script.id).detectedUrl;
+                    const url = script.runtime.detectedUrl;
                     if (url) {
-                      import('$features/layout/panel-layout-manager.svelte')
+                      import('$features/layout/panel-layout-adapter')
                         .then(({ getPanelLayoutManager }) => {
                           const layoutManager = getPanelLayoutManager(workspaceId!);
                           layoutManager.openBrowserPanel(url);
@@ -1133,7 +1101,7 @@
 
       <!-- Right Actions -->
       <div class="flex items-center gap-1">
-        {#if scriptsStore.scriptEntries.length === 0}
+        {#if $scriptEntries$.length === 0}
           <Button
             variant="ghost-light"
             size="sm"
@@ -1168,18 +1136,19 @@
                 } else if (workspaceId) {
                   if ($terminals.length === 0) createNewTerminal();
                   dispatch(openTerminalOverlay(workspaceId));
-                  if (scriptsStore.scriptEntries.length > 0 && !selectedScriptId) {
-                    selectedScriptId = scriptsStore.scriptEntries[0].id;
+                  const entries = selectScriptEntries.select(getReduxStore().getState());
+                  if (entries.length > 0 && !selectedScriptId) {
+                    selectedScriptId = entries[0].id;
                   }
                 }
               }}
             >
               <div class="flex items-center gap-1.5">
                 <Fa icon={faPlay} size="xs" />
-                {#if scriptsStore.scriptEntries.length > 0}
+                {#if $scriptEntries$.length > 0}
                   <span
                     class="text-xs bg-muted-foreground/20 text-foreground px-1 py-0.5 rounded leading-none"
-                    >{scriptsStore.scriptEntries.length}</span
+                    >{$scriptEntries$.length}</span
                   >
                 {/if}
               </div>
@@ -1189,9 +1158,9 @@
           {#snippet content()}
             <div class="flex flex-col min-w-[200px] max-h-[300px] overflow-y-auto p-2 pt-2.5">
               <Header size={6} class="pb-1 px-1">Scripts</Header>
-              {#if scriptsStore.scriptEntries.length > 0}
+              {#if $scriptEntries$.length > 0}
                 <ListContainer spacing="compact" class="py-0 px-0">
-                  {#each sortScripts(scriptsStore.scriptEntries) as script (script.id)}
+                  {#each sortScripts($scriptEntries$) as script (script.id)}
                     <ListItem
                       size="sm"
                       class="py-0.5! px-1! gap-1.5!"

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { MessagePruner } from '../message-pruner';
 import type { AgentSession, AgentMessage } from '$shared/types';
 
@@ -45,7 +45,6 @@ describe('MessagePruner', () => {
 
   it('should prune messages older than maxMessageAge', () => {
     const now = new Date();
-    const oneHourAgo = new Date(now.getTime() - 1000 * 60 * 60);
     const twoHoursAgo = new Date(now.getTime() - 2 * 1000 * 60 * 60);
 
     agent.messages = [

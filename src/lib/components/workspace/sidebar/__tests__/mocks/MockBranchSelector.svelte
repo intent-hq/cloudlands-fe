@@ -1,4 +1,5 @@
 <script lang="ts">
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let { value, disabled, onchange }: any = $props();
 </script>
 

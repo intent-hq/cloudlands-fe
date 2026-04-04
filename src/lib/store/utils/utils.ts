@@ -87,6 +87,7 @@ export function omitKey<T extends Record<string, unknown>>(obj: T, key: string):
   if (!(key in obj)) {
     return obj;
   }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { [key]: _, ...rest } = obj;
   return rest as T;
 }

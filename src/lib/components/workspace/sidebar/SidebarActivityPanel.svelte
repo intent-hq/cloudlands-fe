@@ -4,7 +4,7 @@
    * Shows workspace events in a sleek timeline format with comprehensive
    * event handling and natural language descriptions.
    */
-  import { onMount, untrack } from 'svelte';
+  import { writable } from 'svelte/store';
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
   import {
@@ -33,10 +33,9 @@
   } from '@fortawesome/free-solid-svg-icons';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import type { WorkspaceEvent } from '$features/events/types';
-  import { queryEvents, onEventCreated, onEventsCleared } from '$features/events/events.client';
-  import { getDeduplicationService } from '$features/events/event-deduplication.service';
+  import { selectWorkspaceEvents, selectEventsLoading } from '$lib/store/slices/workspace-events/workspace-events-selectors';
+
   import {
-    getActivityLabel,
     getActivityLabelParts,
     type StructuredLabel,
   } from '$features/events/activity-labels';
@@ -88,17 +87,19 @@
     return event.actor?.name;
   }
 
-  let events: WorkspaceEvent[] = $state([]);
-  let isLoading = $state(true);
-  let previousWorkspaceId: string | undefined = $state(undefined);
-  let subscriptionId: string | null = null;
-  const deduplicationService = getDeduplicationService();
 
-  /**
-   * Generate a content-based key for deduplication.
-   * Events with the same type, actor, and primary data (e.g. file path) within
-   * a short time window are considered duplicates.
-   */
+  // Wrap workspaceId prop in a writable store so selectors react to prop changes
+  const workspaceIdStore = writable(workspaceId);
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+  });
+
+  // Read events and loading state from Redux
+  const events$ = selectWorkspaceEvents(workspaceIdStore);
+  const loading$ = selectEventsLoading(workspaceIdStore);
+  const events = $derived($events$);
+  const isLoading = $derived($loading$);
+
   /**
    * Event types that should be hidden from the activity log.
    * These are internal state changes that aren't useful to show to users.
@@ -209,68 +210,7 @@
     return deduped;
   });
 
-  // Load events
-  async function loadEvents(wsId: string) {
-    isLoading = true;
-    events = [];
-    try {
-      const initialEvents = await queryEvents(wsId, [], 1000);
-      if (initialEvents.length > 0) {
-        initialEvents.forEach((event) => deduplicationService.trackEvent(event));
-        events = initialEvents;
-      }
-      const subId = `sidebar-activity-${wsId}-${Date.now()}`;
-      await window.electronAPI
-        .invoke('events:subscribe', { subscriptionId: subId, filters: [] })
-        .catch(() => {});
-      subscriptionId = subId;
-    } catch (error) {
-      console.error('Failed to load events:', error);
-    } finally {
-      isLoading = false;
-    }
-  }
 
-  // Watch for workspace changes
-  $effect(() => {
-    const currentId = workspaceId;
-    const prevId = untrack(() => previousWorkspaceId);
-    if (currentId && currentId !== prevId) {
-      if (prevId && subscriptionId) subscriptionId = null;
-      untrack(() => {
-        previousWorkspaceId = currentId;
-      });
-      loadEvents(currentId);
-    }
-  });
-
-  // Real-time updates
-  onMount(() => {
-    const unsubUpdates = onEventCreated((data) => {
-      if (data.workspaceId === workspaceId) {
-        // Only require type to be present - actor may not exist for system events
-        if (!data.event?.type) return;
-        // NOTE: Do NOT call deduplicationService.isDuplicate() here.
-        // The use-sidebar-state composable also listens on the same channel and calls
-        // isDuplicate() first, which marks the event as "seen" in the shared singleton.
-        // If we also call isDuplicate(), it returns true and silently drops the event.
-        // The ID-based check below is sufficient to prevent duplicates.
-        if (events.some((e) => e.id === data.event.id)) return;
-        events = [data.event, ...events];
-      }
-    });
-    const unsubCleared = onEventsCleared((clearedId) => {
-      if (clearedId === workspaceId) events = [];
-    });
-    return () => {
-      unsubUpdates();
-      unsubCleared();
-      if (subscriptionId) {
-        window.electronAPI.invoke('events:unsubscribe', { subscriptionId }).catch(() => {});
-        subscriptionId = null;
-      }
-    };
-  });
 
   // Comprehensive icon mapping for all event types
   function getEventIcon(type: string): IconDefinition {
@@ -366,24 +306,6 @@
 
   // Get event label using the centralized activity label generator
   // Uses current agent names from the agent subscription instead of stale event.actor.name
-  function getEventLabel(event: WorkspaceEvent): string {
-    // Get the current actor name (may be different from stored event.actor.name if agent was renamed)
-    const currentActorName = getCurrentActorName(event);
-
-    // If we have a current name that's different from the stored one, create a modified event
-    if (currentActorName && event.actor && currentActorName !== event.actor.name) {
-      const eventWithCurrentName: WorkspaceEvent = {
-        ...event,
-        actor: {
-          ...event.actor,
-          name: currentActorName,
-        },
-      };
-      return getActivityLabel(eventWithCurrentName);
-    }
-
-    return getActivityLabel(event);
-  }
 
   // Get structured event label with styled parts for rich text rendering
   function getEventLabelParts(event: WorkspaceEvent): StructuredLabel {
@@ -488,7 +410,7 @@
   {#if isLoading}
     <!-- Loading skeleton -->
     <div class="px-5 py-3 space-y-3">
-      {#each Array(6) as _, i (i)}
+      {#each [0, 1, 2, 3, 4, 5] as i (i)}
         <div class="flex items-center gap-2" style="animation-delay: {i * 50}ms">
           <Skeleton class="h-4 w-4 rounded shrink-0" />
           <Skeleton class="h-3 flex-1" />

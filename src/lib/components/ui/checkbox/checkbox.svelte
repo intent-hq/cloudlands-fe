@@ -2,7 +2,7 @@
   import { cn } from '$lib/utils';
   import Fa from 'svelte-fa';
   import { faCheck, faMinus } from '@fortawesome/free-solid-svg-icons';
-  import { fly, scale } from 'svelte/transition';
+  import { fly } from 'svelte/transition';
 
   interface Props {
     id?: string;
@@ -26,7 +26,9 @@
     disabled = false,
     class: className = '',
     onCheckedChange,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     name,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     value = 'on',
     ariaLabel,
     ariaLabelledby,

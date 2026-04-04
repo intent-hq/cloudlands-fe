@@ -7,8 +7,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ACPProviderStreaming, testStreamManager } from '../../../src/features/agent/agent-providers/acp-provider-streaming';
 import { messageAccumulator } from '../../../src/features/agent/services/message-accumulator.service';
-import { messageFormatService } from '../../../src/features/agent/services/message-format.service';
-import type { ContentBlock } from '../../../src/shared/types';
 
 describe('Streaming Integration', () => {
   let streaming: ACPProviderStreaming;

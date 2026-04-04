@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ExecutorManager } from '../main/executor-manager';
 import { LocalExecutor } from '../main/executors/local-executor';
 import { RemoteExecutor } from '../main/executors/remote-executor';
-import type { RemoteExecutorConfig, IExecutor } from '../types';
+import type { RemoteExecutorConfig } from '../types';
 
 // Mock the executors using class-style mocks for proper constructor support
 vi.mock('../main/executors/local-executor', () => ({
@@ -242,6 +242,7 @@ describe('ExecutorManager', () => {
         },
       };
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const executor = manager.getExecutor(params);
 
       // Verify executor is cached
@@ -259,6 +260,7 @@ describe('ExecutorManager', () => {
         workspacePath: '/path/to/workspace',
       };
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const executor = manager.getExecutor(params);
 
       // Verify executor is cached and has recent lastUsed

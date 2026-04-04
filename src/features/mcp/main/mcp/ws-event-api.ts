@@ -2,10 +2,14 @@
  * Builder for the `ws.event` JavaScript API surface.
  */
 
-import { getWorkspaceEventService } from '../../../events/main';
-import type { AgentEventFilter } from '../../../events/main/agent-event-subscription.service';
+import { AgentEventTools, type AgentEventFilter } from '../../../events/main';
+import { agentSubscribe, agentUnsubscribe } from '../../../events/main/agent-subscription-ops';
+import { EventStore } from '../../../events/main/event-store';
+import { EventQueryEngine } from '../../../events/main/event-query-engine';
 import type { EventFilter } from '../../../events/types';
 import { Logger } from '../../../../shared/logger';
+import { WorkspaceConfig } from '../../../../shared/main/config';
+import { getOrCreateEventStore } from '../../../../store/main/slices/workspace-events/sagas/persistence-saga';
 import type { ToolCall } from './protocol';
 
 const logger = new Logger('WsEventApi');
@@ -86,18 +90,21 @@ function resolveSubscriptionEventTypes(eventTypes: string[]): string[] {
 }
 
 export function buildWsEventApi(workspaceId: string, call: ToolCall) {
-  const eventService = getWorkspaceEventService({ workspaceId });
-  const agentTools = eventService.getAgentTools();
-  const eventBus = eventService.getEventBus();
+  const storageDir = WorkspaceConfig.paths.metadata(workspaceId);
+  const store = getOrCreateEventStore(workspaceId, storageDir, EventStore);
+  const queryEngine = new EventQueryEngine(store);
+  const agentTools = new AgentEventTools(queryEngine);
 
   return {
     async recentFiles(limit?: number) {
       logger.debug('ws.event.recentFiles', { workspaceId, limit: limit || 10 });
+      await store.initialize();
       return agentTools.getRecentFiles(limit || 10);
     },
 
     async agentActivity(agentId?: string, minutesAgo?: number) {
       logger.debug('ws.event.agentActivity', { workspaceId, agentId, minutesAgo: minutesAgo || 30 });
+      await store.initialize();
       if (agentId) {
         return agentTools.getAgentFiles(agentId, 100);
       }
@@ -106,6 +113,7 @@ export function buildWsEventApi(workspaceId: string, call: ToolCall) {
 
     async workspaceSummary(minutesAgo?: number) {
       logger.debug('ws.event.workspaceSummary', { workspaceId, minutesAgo: minutesAgo || 60 });
+      await store.initialize();
       return agentTools.getWorkspaceSummary(minutesAgo || 60);
     },
 
@@ -114,12 +122,14 @@ export function buildWsEventApi(workspaceId: string, call: ToolCall) {
         throw new Error('Directory path is required');
       }
       logger.debug('ws.event.directoryChanges', { workspaceId, dir, limit: limit || 20 });
+      await store.initialize();
       return agentTools.getDirectoryChanges(dir, limit || 20);
     },
 
     async query(options: EventQueryOptions = {}) {
       logger.debug('ws.event.query', { workspaceId, options });
-      return eventBus.query(buildQueryFilters(options));
+      await store.initialize();
+      return queryEngine.query(buildQueryFilters(options));
     },
 
     async subscribe(eventTypes: string[], options: EventSubscribeOptions = {}) {
@@ -128,17 +138,13 @@ export function buildWsEventApi(workspaceId: string, call: ToolCall) {
 
       logger.info('ws.event.subscribe', { workspaceId, agentId, eventTypes: resolvedTypes });
 
-      const { getAgentEventSubscriptionService } =
-        await import('../../../events/main/agent-event-subscription.service');
-      const subscriptionService = getAgentEventSubscriptionService(workspaceId);
-
       const filter: AgentEventFilter = {
         eventTypes: resolvedTypes,
         excludeActorIds: options.excludeSelf !== false ? [agentId] : undefined,
         batchWindow: options.batchWindow || 500,
       };
 
-      const subscriptionId = subscriptionService.subscribe(agentId, agentName, filter);
+      const subscriptionId = agentSubscribe(workspaceId, agentId, agentName, filter);
       return { subscriptionId, eventTypes: resolvedTypes };
     },
 
@@ -149,10 +155,7 @@ export function buildWsEventApi(workspaceId: string, call: ToolCall) {
 
       logger.info('ws.event.unsubscribe', { workspaceId, subscriptionId });
 
-      const { getAgentEventSubscriptionService } =
-        await import('../../../events/main/agent-event-subscription.service');
-      const subscriptionService = getAgentEventSubscriptionService(workspaceId);
-      const success = subscriptionService.unsubscribe(subscriptionId);
+      const success = agentUnsubscribe(workspaceId, subscriptionId);
 
       if (!success) {
         throw new Error('Subscription not found');

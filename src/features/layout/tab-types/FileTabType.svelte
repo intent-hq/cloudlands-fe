@@ -7,11 +7,11 @@
 
   import type { TabTypeComponentProps } from './registry';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { getPanelLayoutManager } from '../panel-layout-manager.svelte';
-  import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
+  import { closeTab } from '$lib/store/slices/panel-layout/panel-layout-slice';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectFileTrackingChanges } from '$lib/store/slices/file-tracking/file-tracking-selectors';
   import type { TrackedChange } from '$features/file-tracking/types';
-  import { WorkspaceId } from '$shared/types/branded-ids';
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
 	  import { invoke, listenSync } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
   import { getLanguageFromPath, pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
@@ -39,10 +39,11 @@
 
   let { tab, workspaceId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
 
+  const ftChanges$ = selectFileTrackingChanges(workspaceId);
   const headerContext = getPanelHeaderContext();
-  const layoutManager = $derived(getPanelLayoutManager(workspaceId));
-  const workspace = $derived(workspaceStore.findById(WorkspaceId(workspaceId)));
-  const repoPath = $derived(workspace?.worktreePath || workspace?.repositoryPath || null);
+
+  const workspace = selectWorkspaceById(workspaceId);
+  const repoPath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || null);
 
   // File state
   let fileContent = $state<string | null>(null);
@@ -51,6 +52,7 @@
   let fileError = $state<string | null>(null);
   let fileSaving = $state(false);
   let currentFilePath = $state<string | null>(null);
+
   let isNewFile = $state(false);
   let isFileBinary = $state(false);
   let codeEditorRef = $state<{ focus: () => boolean } | null>(null);
@@ -224,7 +226,7 @@
 
   const fileChange = $derived.by(() => {
     if (!tab.filePath) return null;
-    return fileTrackingStore.changes.find((c) => matchesPath(c, tab.filePath!)) ?? null;
+    return $ftChanges$.find((c) => matchesPath(c, tab.filePath!)) ?? null;
   });
   const fileHasChanges = $derived(!!fileChange);
 
@@ -427,7 +429,7 @@
             fileLineChanges = parseHunksToLineChanges(hunks);
           }
         }
-      } catch (err) {
+      } catch {
         if (isMounted) fileLineChanges = [];
       }
     })();
@@ -478,7 +480,7 @@
           throw new Error(result?.error || 'Failed to delete file');
         }
         // Close the tab
-        layoutManager.closeTab(tab.id);
+        getReduxStore().dispatch(closeTab(workspaceId, tab.id));
         window.dispatchEvent(
           new CustomEvent('file:changed', {
             detail: { workspaceId, type: 'delete', filePath },
@@ -596,7 +598,7 @@
     {#if fileLoading}
       <div class="flex flex-col h-full">
         <div class="flex-1 p-4 space-y-2">
-          {#each Array(20) as _}
+          {#each [...Array(20).keys()] as i (i)}
             <div class="flex items-center gap-3">
               <Skeleton class="h-3 w-8 shrink-0" />
               <Skeleton class="h-3" style="width: {30 + Math.random() * 60}%" />

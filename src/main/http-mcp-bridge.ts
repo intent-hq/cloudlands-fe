@@ -16,7 +16,6 @@ import { createServer } from 'http';
 import { Logger } from '../shared/logger';
 import { createWorkspaceMCPServer } from '../features/mcp/main/mcp/index';
 import { protocolAdapter } from '../features/protocol/main/protocol-adapter';
-import { unifiedEventBus, type UnifiedEventBus } from '../features/events/main/unified-event-bus';
 import { findAvailablePort } from '../utils/port-utils';
 import ElectronStore from 'electron-store';
 import { storeMcpToolParams } from '../shared/services/mcp-tool-params-cache';
@@ -62,14 +61,12 @@ export class HttpMcpBridge {
   private logger: Logger;
   private settingsStore: any;
   private port: number;
-  private eventBus: UnifiedEventBus;
   private cleanupIntervalId: NodeJS.Timeout | null = null;
   private readonly mcpServerTtlMs: number = DEFAULT_MCP_SERVER_TTL_MS;
 
   constructor(port: number = parseInt(process.env.HTTP_MCP_PORT || '5179', 10)) {
     this.port = port;
     this.logger = new Logger('HttpMcpBridge');
-    this.eventBus = unifiedEventBus;
 
     try {
       this.settingsStore = new ElectronStore({ name: 'settings' });
@@ -152,7 +149,7 @@ export class HttpMcpBridge {
         protocolAdapter, // Use protocol adapter for workspace operations
         protocolAdapter, // Use protocol adapter for timeline operations
         undefined, // No workspace metadata path needed
-        this.eventBus, // Use event bus for events
+        undefined, // Event bus no longer needed (Redux handles events)
       );
 
       this.mcpServers.set(key, {
@@ -645,20 +642,9 @@ export class HttpMcpBridge {
    * This prevents stale MCP server state from causing tool disconnection issues.
    */
   private setupWorkspaceCleanupListeners(): void {
-    // Listen for workspace close/delete events to clean up cached MCP servers
-    this.eventBus.onDomainEvent('workspace:deleting', (data: { workspaceId: string }) => {
-      this.logger.info('Workspace deleting, clearing MCP server cache', {
-        workspaceId: data.workspaceId,
-      });
-      this.clearMcpServersForWorkspace(data.workspaceId);
-    });
+    // workspace:deleting and workspace:deleted listeners are now handled by sagas
+    // (domain-event-listener-sagas.ts) which call clearMcpServersForWorkspace directly.
 
-    this.eventBus.onDomainEvent('workspace:deleted', (data: { workspaceId: string }) => {
-      this.logger.info('Workspace deleted, ensuring MCP server cache is cleared', {
-        workspaceId: data.workspaceId,
-      });
-      this.clearMcpServersForWorkspace(data.workspaceId);
-    });
 
     this.logger.info('Workspace cleanup listeners set up');
   }
@@ -1065,4 +1051,24 @@ export class HttpMcpBridge {
   getPort(): number {
     return this.port;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Singleton accessor for saga use
+// ---------------------------------------------------------------------------
+
+let bridgeInstance: HttpMcpBridge | null = null;
+
+/**
+ * Set the singleton HttpMcpBridge instance (called from main/index.ts after construction).
+ */
+export function setHttpMcpBridge(bridge: HttpMcpBridge): void {
+  bridgeInstance = bridge;
+}
+
+/**
+ * Get the singleton HttpMcpBridge instance, or null if not yet created.
+ */
+export function getHttpMcpBridge(): HttpMcpBridge | null {
+  return bridgeInstance;
 }

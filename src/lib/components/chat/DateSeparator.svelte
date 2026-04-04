@@ -1,9 +1,8 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import { faCalendar } from '@fortawesome/free-solid-svg-icons';
-  import { fade } from 'svelte/transition';
-
-  interface Props {
+  
+interface Props {
     label: string;
     showIcon?: boolean;
   }

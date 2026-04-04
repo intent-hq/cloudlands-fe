@@ -2,7 +2,7 @@
  * Workspace Navigation Utilities
  *
  * Provides simple, direct function calls for navigating within a workspace.
- * Uses the unified state management system for state persistence.
+ * Uses workspace-navigation Redux state for drawer persistence.
  *
  * Usage:
  * ```typescript
@@ -18,15 +18,16 @@
 
 import { Logger } from '$shared/logger';
 import { get } from 'svelte/store';
-import {
-  getUnifiedWorkspaceState,
-  createUnifiedWorkspaceState,
-} from '$features/workspace/workspace-unified-state.svelte';
 import { goto } from '$app/navigation';
 import { page } from '$app/stores';
-import { toast } from 'svelte-sonner';
 import { track } from '$lib/services/analytics';
-import { workspaceTabManager } from '$features/workspace/workspace-tab-manager.svelte';
+import { dispatch, getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { closeWorkspaceTab } from '$lib/store/slices/tab-state/tab-state-slice';
+import { selectCurrentWorkspaceTabId } from '$lib/store/slices/tab-state/tab-state-selectors';
+import {
+  closeWorkspaceDrawer,
+  openWorkspaceDrawer,
+} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
 const logger = new Logger('WorkspaceNavigation');
 
@@ -34,7 +35,7 @@ const logger = new Logger('WorkspaceNavigation');
  * Navigate to an agent's chat drawer
  *
  * Opens the drawer and displays the specified agent's chat.
- * Uses the unified state management system.
+ * Uses workspace-navigation Redux state.
  *
  * @param agentId - The ID of the agent to navigate to
  */
@@ -49,13 +50,6 @@ export async function navigateToAgent(agentId: string): Promise<void> {
     return;
   }
 
-  // Get or create workspace state (fallback if state was disposed)
-  let workspaceState = getUnifiedWorkspaceState(workspaceId);
-  if (!workspaceState) {
-    logger.warn(`[navigateToAgent] No workspace state found, creating new one for: ${workspaceId}`);
-    workspaceState = createUnifiedWorkspaceState(workspaceId);
-  }
-
   // Update URL params
   const url = new URL(window.location.href);
   url.searchParams.set('drawerOpen', '1');
@@ -66,14 +60,14 @@ export async function navigateToAgent(agentId: string): Promise<void> {
 
   await goto(url.toString(), { replaceState: true });
 
-  workspaceState.openDrawer('agent', agentId);
+  dispatch(openWorkspaceDrawer(workspaceId, 'agent', agentId));
 }
 
 /**
  * Navigate to a terminal drawer
  *
  * Opens the drawer and displays the specified terminal.
- * Uses the unified state management system.
+ * Uses workspace-navigation Redux state.
  *
  * @param terminalId - The ID of the terminal to navigate to
  */
@@ -86,15 +80,6 @@ export async function navigateToTerminal(terminalId: string): Promise<void> {
   if (!workspaceId) {
     logger.error('[navigateToTerminal] No workspace ID found in current page params');
     return;
-  }
-
-  // Get or create workspace state (fallback if state was disposed)
-  let workspaceState = getUnifiedWorkspaceState(workspaceId);
-  if (!workspaceState) {
-    logger.warn(
-      `[navigateToTerminal] No workspace state found, creating new one for: ${workspaceId}`,
-    );
-    workspaceState = createUnifiedWorkspaceState(workspaceId);
   }
 
   // Update URL params
@@ -116,7 +101,7 @@ export async function navigateToTerminal(terminalId: string): Promise<void> {
 
   await goto(url.toString(), { replaceState: true });
 
-  workspaceState.openDrawer('terminal', terminalId);
+  dispatch(openWorkspaceDrawer(workspaceId, 'terminal', terminalId));
 }
 
 /** Options for opening content in panels */
@@ -238,7 +223,7 @@ export async function navigateToSpec(): Promise<void> {
 /**
  * Close the drawer
  *
- * Closes the drawer using the unified state management system.
+ * Closes the drawer using workspace-navigation Redux state.
  * Preserves main content state.
  */
 export async function closeDrawer(): Promise<void> {
@@ -260,14 +245,7 @@ export async function closeDrawer(): Promise<void> {
 
   await goto(url.toString(), { replaceState: true });
 
-  // Get or create workspace state (fallback if state was disposed)
-  let workspaceState = getUnifiedWorkspaceState(workspaceId);
-  if (!workspaceState) {
-    logger.warn(`[closeDrawer] No workspace state found, creating new one for: ${workspaceId}`);
-    workspaceState = createUnifiedWorkspaceState(workspaceId);
-  }
-
-  workspaceState.closeDrawer();
+  dispatch(closeWorkspaceDrawer(workspaceId));
 }
 
 /**
@@ -279,7 +257,6 @@ export async function closeDrawer(): Promise<void> {
 export async function clearMainContent(): Promise<void> {
   logger.info('[clearMainContent] Clearing main content');
 
-  const currentPage = get(page);
   const url = new URL(window.location.href);
 
   url.searchParams.set('mainContentType', 'empty');
@@ -451,10 +428,10 @@ export async function navigateAfterWorkspaceRemoval(removedWorkspaceId: string):
   logger.info('[navigateAfterWorkspaceRemoval] Navigating after workspace removal:', removedWorkspaceId);
 
   // Close the tab - this automatically sets currentTabId to the next available tab
-  workspaceTabManager.closeTab(removedWorkspaceId);
+  dispatch(closeWorkspaceTab(removedWorkspaceId));
 
   // Get the next tab ID (already set by closeTab)
-  const nextTabId = workspaceTabManager.currentTabId;
+  const nextTabId = selectCurrentWorkspaceTabId.select(getReduxStore().getState());
 
   if (nextTabId && typeof nextTabId === 'string' && nextTabId.length > 0 && nextTabId !== 'undefined' && nextTabId !== 'null' && nextTabId !== removedWorkspaceId) {
     logger.info('[navigateAfterWorkspaceRemoval] Navigating to next tab:', nextTabId);

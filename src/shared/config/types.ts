@@ -10,7 +10,7 @@
  * config type you need to avoid confusion.
  */
 
-import type { SessionId, AgentId } from '../types';
+import type { AgentId } from '../types';
 
 // ============================================================================
 // Agent Configuration

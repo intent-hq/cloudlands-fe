@@ -5,10 +5,7 @@
  * Designed to be AI-friendly with clear explanations and actionable fixes.
  */
 
-import { Logger } from '../logger';
 import type { ValidationError } from './validation';
-
-const logger = new Logger('TypeErrors');
 
 // ============================================================================
 // Error Types

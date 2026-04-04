@@ -18,7 +18,7 @@ import type { IpcContractMap } from './contracts';
 
 const UUID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
-const UuidSchema = z.string().regex(UUID_PATTERN, 'Invalid UUID format');
+
 
 // Workspace IDs can be:
 // 1. New slug format: word-word (e.g., "amber-forest", "auth-refactor")

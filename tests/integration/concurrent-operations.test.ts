@@ -81,7 +81,6 @@ describe('Concurrent Operations', () => {
   });
 
   it('should handle rapid agent creation sequentially', async () => {
-    const workspaceId = 'ws_1';
     const createdAgents: string[] = [];
 
     const createAgent = async (id: string) => {
@@ -139,9 +138,6 @@ describe('Concurrent Operations', () => {
   });
 
   it('should handle switching agents during streaming', async () => {
-    const agent1 = 'agent_1';
-    const agent2 = 'agent_2';
-
     const stream1 = vi.fn(async () => 'streaming_agent_1');
     const stream2 = vi.fn(async () => 'streaming_agent_2');
 
@@ -186,7 +182,7 @@ describe('Concurrent Operations', () => {
 
     try {
       await mockOperationQueue.queueWithLock(key, failingOperation);
-    } catch (error) {
+    } catch {
       // Expected
     }
 

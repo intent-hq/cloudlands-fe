@@ -18,7 +18,7 @@ export function setupNotificationIPC(): void {
   logger.info('Setting up notification IPC handlers');
 
   // Test notification handler
-  ipcMain.handle(NOTIFICATION_CHANNELS.TEST, async (event) => {
+  ipcMain.handle(NOTIFICATION_CHANNELS.TEST, async () => {
     try {
       // Get workspace ID from the sender's context
       // For now, we'll use a default workspace ID

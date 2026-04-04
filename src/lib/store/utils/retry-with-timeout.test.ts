@@ -15,7 +15,7 @@ describe("retryWithTimeout", () => {
     const fn = vi.fn();
     const result = await runToCompletion(function* () {
       return yield* retryWithTimeout(
-        // eslint-disable-next-line require-yield
+         
         function* () {
           fn();
         },
@@ -32,7 +32,7 @@ describe("retryWithTimeout", () => {
     const onAttemptError = vi.fn();
     const result = await runToCompletion(function* () {
       return yield* retryWithTimeout(
-        // eslint-disable-next-line require-yield
+         
         function* () {
           attempt++;
           if (attempt < 3) {
@@ -59,7 +59,7 @@ describe("retryWithTimeout", () => {
     const onAttemptError = vi.fn();
     const result = await runToCompletion(function* () {
       return yield* retryWithTimeout(
-        // eslint-disable-next-line require-yield
+         
         function* () {
           throw new Error("always fails");
         },
@@ -101,7 +101,7 @@ describe("retryWithTimeout", () => {
 
     await runToCompletion(function* () {
       return yield* retryWithTimeout(
-        // eslint-disable-next-line require-yield
+         
         function* () {
           throw testError;
         },
@@ -121,7 +121,7 @@ describe("retryWithTimeout", () => {
     let attempts = 0;
     const result = await runToCompletion(function* () {
       return yield* retryWithTimeout(
-        // eslint-disable-next-line require-yield
+         
         function* () {
           attempts++;
           if (attempts < 3) {
@@ -147,7 +147,7 @@ describe("retryWithTimeout", () => {
     const fn = vi.fn();
     const result = await runToCompletion(function* () {
       return yield* retryWithTimeout(
-        // eslint-disable-next-line require-yield
+         
         function* () {
           fn();
         },
@@ -162,7 +162,7 @@ describe("retryWithTimeout", () => {
   it("returns 'retries-exhausted' with negative maxRetries when fn throws", async () => {
     const result = await runToCompletion(function* () {
       return yield* retryWithTimeout(
-        // eslint-disable-next-line require-yield
+         
         function* () {
           throw new Error("fail");
         },

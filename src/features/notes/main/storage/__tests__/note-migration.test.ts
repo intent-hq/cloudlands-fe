@@ -4,7 +4,6 @@
 
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import { promises as fs } from 'fs';
-import * as path from 'path';
 import { migrateWorkspaceNotes, workspaceNeedsMigration } from '../note-migration';
 import { getNoteStoragePaths, getLegacyNotePath } from '../note-storage-paths';
 import { FolderBasedNotesRepository } from '../folder-notes.repository';

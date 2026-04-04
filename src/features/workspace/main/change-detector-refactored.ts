@@ -8,14 +8,14 @@
 import { EventEmitter } from '$shared/utils/event-emitter';
 import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../../../shared/logger';
-import { WorkspaceEventType, type WorkspaceEvent } from '../../events/types';
+import { type WorkspaceEvent } from '../../events/types';
 import { getAttributionEngine } from './provenance/attribution-engine';
 import { TRACKING_CONFIG } from '../../file-tracking/tracking.config';
 import type { Actor } from '../../../shared/types';
-import type { FileChange, DiffChunk } from '../change-detector.types';
+import type { FileChange, DiffChunk } from '../../../lib/store/slices/workspace/utils/change-detector.types';
 
 // Re-export types for compatibility
-export type { FileChange, DiffChunk } from '../change-detector.types';
+export type { FileChange, DiffChunk } from '../../../lib/store/slices/workspace/utils/change-detector.types';
 
 // Import modular components
 import {
@@ -24,7 +24,6 @@ import {
   EventCoordinator,
   SnapshotManager,
   type GitStatus,
-  type GitDiffResult,
   type FileWatchEvent,
   type ProcessedChange,
 } from './change-detection';
@@ -177,6 +176,7 @@ export class ChangeDetectorRefactored extends EventEmitter {
       this.handleChangesBatch(changes);
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     this.changeProcessor.on('workspace-event', (event: WorkspaceEvent) => {
       this.stats.totalEventsEmitted++;
     });
@@ -487,6 +487,7 @@ export class ChangeDetectorRefactored extends EventEmitter {
         this.lastGitPoll = new Date().toISOString();
 
         // End git poll timing
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const pollDuration = this.performanceMonitor.endTimer(timerKey);
 
         // Compare with last status

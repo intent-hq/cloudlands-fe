@@ -11,15 +11,17 @@ export { AgentStatus };
 
 // Import branded ID types for type safety
 import type {
+  AgentId,
   AgentId as BrandedAgentId,
   MessageId as BrandedMessageId,
-  NoteId as BrandedNoteId,
   SessionId as BrandedSessionId,
   StreamId as BrandedStreamId,
   ThreadId as BrandedThreadId,
   ToolCallId as BrandedToolCallId,
   UserId as BrandedUserId,
   WorkspaceId as BrandedWorkspaceId,
+  NoteId,
+  WorkspaceId,
 } from './types/branded-ids';
 import {
   createAgentId,
@@ -172,14 +174,6 @@ export {
   type WorkspaceId,
 } from './types/branded-ids';
 
-// Create type aliases for internal use
-type WorkspaceId = BrandedWorkspaceId;
-type NoteId = BrandedNoteId;
-type SessionId = BrandedSessionId;
-type AgentId = BrandedAgentId;
-type UserId = BrandedUserId;
-type ThreadId = BrandedThreadId;
-
 export type AgentName = string;
 
 // ============================================================================
@@ -305,9 +299,9 @@ export interface FirstVisitState {
   lastUpdated: string;
 }
 
-// FileChange is now defined in features/workspace/change-detector.types.ts
+// FileChange is now defined in lib/store/slices/workspace/utils/change-detector.types.ts
 // Re-export for convenience
-import type { FileChange, FileChangeAction } from '../features/workspace/change-detector.types';
+import type { FileChange, FileChangeAction } from '../lib/store/slices/workspace/utils/change-detector.types';
 export type { FileChange, FileChangeAction };
 
 export interface ChangeSet {

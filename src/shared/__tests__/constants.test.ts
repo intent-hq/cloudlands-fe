@@ -17,7 +17,6 @@ import {
   isValidModelId,
   isAtWarningThreshold,
   isSessionTooLarge,
-  expandPath,
   getSessionPath,
   getRecoveryPath,
 } from '../constants';

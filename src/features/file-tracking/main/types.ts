@@ -27,8 +27,8 @@ export type TrackedChange = FrontendTrackedChange;
 export type StageTransition = FrontendStageTransition;
 export type ChangeFilter = FrontendChangeFilter;
 
-// Note: FileChange interface is defined in features/workspace/change-detector.types.ts
-// Import from there if needed: import type { FileChange } from '../../workspace/change-detector.types';
+// Note: FileChange interface is defined in lib/store/slices/workspace/utils/change-detector.types.ts
+// Import from there if needed: import type { FileChange } from '../../../lib/store/slices/workspace/utils/change-detector.types';
 
 /**
  * Internal file tracking state

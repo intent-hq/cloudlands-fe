@@ -18,6 +18,7 @@
     hasMatches = true,
     currentMatchIndex = -1,
     totalMatches = 0,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     focusTrigger = 0,
     onFindNext,
     onFindPrevious,
@@ -30,7 +31,6 @@
   // Auto-focus and select when opened or focus requested
   $effect(() => {
     // Track focusTrigger to react to focus requests
-    const _ = focusTrigger;
     if (isOpen && inputRef) {
       inputRef.focus();
       inputRef.select();

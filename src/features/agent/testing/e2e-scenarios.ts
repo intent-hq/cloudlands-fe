@@ -195,7 +195,7 @@ export const stuckDetectionScenario: TestScenario = {
   description: 'Tests stuck detection and recovery mechanisms',
   timeout: 30000,
 
-  async execute(_harness: AgentTestHarness): Promise<void> {
+  async execute(): Promise<void> {
     const stuckDetector = createStuckDetector({
       responseTimeout: 2000, // Short timeout for testing
       repeatThreshold: 3,

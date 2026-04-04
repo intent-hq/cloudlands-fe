@@ -137,7 +137,7 @@ describe("getBackOffDelay", () => {
     await task.toPromise();
   });
 
-  it("records crash history with crash timestamps and Error objects", async () => {
+  it("records crash history with crash timestamps and error messages", async () => {
     const crashError = new Error("streaming saga crashed");
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
@@ -162,8 +162,8 @@ describe("getBackOffDelay", () => {
     expect(latestStatus).toMatchObject({
       isRunning: true,
     });
-    expect(latestStatus?.crashes[0]?.error).toBe(crashError);
-    expect(latestStatus?.crashes[0]?.crashedAt).toBeInstanceOf(Date);
+    expect(latestStatus?.crashes[0]?.error).toBe("streaming saga crashed");
+    expect(latestStatus?.crashes[0]?.crashedAt).toBeTypeOf("number");
     expect(mockSentry.captureException).toHaveBeenCalledTimes(1);
     expect(consoleErrorSpy).toHaveBeenCalled();
 
@@ -209,9 +209,9 @@ describe("getBackOffDelay", () => {
       expect(exposeContext.mock.lastCall?.[0]?.streamingSaga?.crashes).toHaveLength(2);
     });
 
-    expect(exposeContext.mock.lastCall?.[0]?.streamingSaga?.crashes.map((crash) => crash.error)).toEqual([
-      firstCrash,
-      secondCrash,
+    expect(exposeContext.mock.lastCall?.[0]?.streamingSaga?.crashes.map((crash: { error: string }) => crash.error)).toEqual([
+      "first crash",
+      "second crash",
     ]);
 
     task.cancel();

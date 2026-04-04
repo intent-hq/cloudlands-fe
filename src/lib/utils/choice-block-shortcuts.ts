@@ -1,7 +1,7 @@
 import { Extension } from '@tiptap/core';
 import { TextSelection } from '@tiptap/pm/state';
 import { InputRule } from '@tiptap/core';
-import type { Editor, RawCommands } from '@tiptap/core';
+import type { RawCommands } from '@tiptap/core';
 
 /**
  * Choice Block Shortcuts Extension

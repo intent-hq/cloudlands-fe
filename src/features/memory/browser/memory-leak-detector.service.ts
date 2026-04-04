@@ -7,7 +7,7 @@ import { Logger } from '$lib/utils/logger';
 
 const logger = new Logger({ category: 'MemoryLeakDetector' });
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type EventHandler = (...args: any[]) => void;
 
 interface TrackedResource {

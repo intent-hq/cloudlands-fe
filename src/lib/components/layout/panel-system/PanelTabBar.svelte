@@ -10,23 +10,16 @@
    * - Close button
    */
 
-  import type { PanelTab, PanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
+  import type { PanelTab, PanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { cn } from '$lib/utils';
   import {
     faXmark,
-    faNoteSticky,
     faFile,
-    faCodeCompare,
-    faLayerGroup,
     faRobot,
     faTerminal,
-    faGear,
-    faHouse,
     faGlobe,
-    faClockRotateLeft,
     faPlus,
     faCrosshairs,
-    faPencil,
     faCopy,
     faFolderOpen,
     faArrowUpRightFromSquare,
@@ -37,20 +30,19 @@
   import Fa from 'svelte-fa';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
-  import { getContext, onMount, tick, type Snippet } from 'svelte';
+  import { getContext, tick, type Snippet } from 'svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import { selectIsDragging } from '$lib/store/slices/tab-state/tab-state-selectors';
   import { startDrag, endDrag } from '$lib/store/slices/tab-state/tab-state-slice';
   import { getDispatch } from '$lib/store/utils/utils';
   import { faNote } from '$lib/icons/faNote';
-  import { notesStateManager } from '$features/notes/notes.store.svelte';
   import EditableName from '$lib/components/ui/EditableName.svelte';
-  import type { NoteId, WorkspaceId } from '$shared/types';
   import { isSpecNote } from '$shared/constants/notes';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { agentService } from '$features/agent/agent.service';
+  import { agentService } from '$features/agent/agent-ipc-bridge';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import { selectSpecialistName, selectSpecialists } from '$lib/store/slices/specialists/specialists-selectors';
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { useAllAgentsSubscription } from '$lib/utils/agent-subscription.svelte';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import { type AvatarState, getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
@@ -121,6 +113,7 @@
     onTabMoveToPanel,
     onCloseOtherTabs,
     onCloseTabsToRight,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onCloseAllTabs,
     onCloseAllOthersEverywhere,
     onClosePanel,
@@ -178,7 +171,7 @@
         return 'Spec';
       }
       // Look up the note from the store
-      const note = notesStateManager.findById(tab.noteId as NoteId);
+      const note = selectNoteById.select(getReduxStore().getState(), workspaceId, tab.noteId);
       if (note) {
         return note.title || 'Untitled';
       }
@@ -282,7 +275,7 @@
     if (!path) return null;
 
     // Get workspace to make path relative
-    const workspace = workspaceStore.findById(workspaceId as WorkspaceId);
+    const workspace = selectWorkspaceById.select(getReduxStore().getState(), workspaceId);
     const workspacePath = workspace?.worktreePath || workspace?.repositoryPath || '';
 
     // Make relative to workspace (with directory boundary check)
@@ -894,7 +887,6 @@
 
   // Get category info for active tab
   const categoryLabel = $derived(activeTab ? getCategoryLabel(activeTab.type) : 'Panel');
-  const categoryIcon = $derived(activeTab ? getTabIcon(activeTab.type) : faFile);
 
   /**
    * Check if a tab can be renamed.

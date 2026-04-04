@@ -1,193 +1,166 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createFileExplorerStore } from '../file-explorer-store.svelte';
-import * as electronBridge from '$lib/electron-bridge';
+import { describe, it, expect } from 'vitest';
+import {
+  fileExplorerReducer,
+  initialState,
+  setFileExplorerWorkspacePath,
+  setRootNode,
+  addExpandedPath,
+  removeExpandedPath,
+  setGitStatusMap,
+  setFileExplorerLoading,
+  setFileExplorerError,
+  clearExpandedPathsExceptRoot,
+  setChildrenAtPathAction,
+  clearFileExplorerForWorkspace,
+} from '$lib/store/slices/file-explorer/file-explorer-slice';
+import type { FileNode } from '$shared/types';
+import {
+  shouldHide,
+  checkGitignored,
+  sortNodes,
+} from '$lib/store/slices/file-explorer/file-explorer-utils';
 
-// Mock the electron-bridge module
-vi.mock('$lib/electron-bridge', () => ({
-  invoke: vi.fn(),
-  on: vi.fn(),
-  off: vi.fn(),
-}));
+describe('FileExplorerReducer', () => {
+  const wsId = 'test-ws';
 
-// Mock the client-logger module
-vi.mock('$lib/utils/client-logger', () => ({
-  createLogger: vi.fn(() => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  })),
-}));
-
-describe('FileExplorerStore', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  it('should return initial state', () => {
+    const state = fileExplorerReducer(undefined, { type: '@@INIT' });
+    expect(state).toEqual(initialState);
+    expect(state.byWorkspaceId).toEqual({});
   });
 
-  it('should create store without errors', () => {
-    const store = createFileExplorerStore('/test/path');
-    expect(store).toBeDefined();
-    expect(store.initialize).toBeDefined();
-    expect(store.refresh).toBeDefined();
-    expect(store.toggleDirectory).toBeDefined();
+  it('should set workspace path and reset tree', () => {
+    const state = fileExplorerReducer(initialState, setFileExplorerWorkspacePath(wsId, '/test/path'));
+    const ws = state.byWorkspaceId[wsId];
+    expect(ws.workspacePath).toBe('/test/path');
+    expect(ws.rootNode).toBeNull();
+    expect(ws.expandedPaths).toEqual([]);
   });
 
-  it('should not attempt to listen for file-explorer:refresh event', () => {
-    const store = createFileExplorerStore('/test/path');
-
-    // The file-explorer:refresh listener should be commented out
-    // so on() should not be called with 'file-explorer:refresh'
-    const onMock = vi.mocked(electronBridge.on);
-    const calls = onMock.mock.calls;
-    const hasFileExplorerRefreshCall = calls.some((call) => call[0] === 'file-explorer:refresh');
-
-    expect(hasFileExplorerRefreshCall).toBe(false);
+  it('should set root node', () => {
+    const root: FileNode = { name: 'root', path: '/test', type: 'directory', children: [] };
+    const state = fileExplorerReducer(initialState, setRootNode(wsId, root));
+    expect(state.byWorkspaceId[wsId].rootNode).toEqual(root);
   });
 
-  it('should have refresh method that works without IPC events', async () => {
-    const invokeMock = vi.mocked(electronBridge.invoke);
-    invokeMock.mockResolvedValue({ success: true, data: { fileStatuses: {}, fileChanges: {} } });
+  it('should add and remove expanded paths', () => {
+    let state = fileExplorerReducer(initialState, addExpandedPath(wsId, '/a'));
+    expect(state.byWorkspaceId[wsId].expandedPaths).toContain('/a');
 
-    const store = createFileExplorerStore('/test/path');
-    store.setWorkspacePath('/test/path');
+    state = fileExplorerReducer(state, addExpandedPath(wsId, '/b'));
+    expect(state.byWorkspaceId[wsId].expandedPaths).toEqual(['/a', '/b']);
 
-    // Refresh should work without relying on IPC events
-    await expect(store.refresh()).resolves.not.toThrow();
+    state = fileExplorerReducer(state, removeExpandedPath(wsId, '/a'));
+    expect(state.byWorkspaceId[wsId].expandedPaths).toEqual(['/b']);
   });
 
-  it('should handle workspace path changes', async () => {
-    const invokeMock = vi.mocked(electronBridge.invoke);
-    // Mock the file:list response
-    invokeMock.mockResolvedValue({
-      success: true,
-      data: [],
-    });
-
-    const store = createFileExplorerStore('/test/path');
-    const testPath = '/test/workspace/path';
-
-    store.setWorkspacePath(testPath);
-
-    // Store should update with new path
-    expect(store).toBeDefined();
+  it('should not duplicate expanded paths', () => {
+    let state = fileExplorerReducer(initialState, addExpandedPath(wsId, '/a'));
+    state = fileExplorerReducer(state, addExpandedPath(wsId, '/a'));
+    expect(state.byWorkspaceId[wsId].expandedPaths).toEqual(['/a']);
   });
 
-  it('should handle git status loading', async () => {
-    const invokeMock = vi.mocked(electronBridge.invoke);
-    const mockGitStatus = {
-      success: true,
-      data: {
-        fileStatuses: {
-          'file1.ts': 'M ',
-          'file2.ts': 'A ',
-        },
-        fileChanges: {
-          'file1.ts': { additions: 10, deletions: 5 },
-          'file2.ts': { additions: 20, deletions: 0 },
-        },
-      },
+  it('should set git status', () => {
+    const gitStatus = { 'file.ts': { status: 'M ', additions: 5, deletions: 2 } };
+    const state = fileExplorerReducer(initialState, setGitStatusMap(wsId, gitStatus));
+    expect(state.byWorkspaceId[wsId].gitStatus).toEqual(gitStatus);
+  });
+
+  it('should set loading and clear error', () => {
+    let state = fileExplorerReducer(initialState, setFileExplorerError(wsId, 'some error'));
+    expect(state.byWorkspaceId[wsId].error).toBe('some error');
+
+    state = fileExplorerReducer(state, setFileExplorerLoading(wsId, true));
+    expect(state.byWorkspaceId[wsId].isLoading).toBe(true);
+    expect(state.byWorkspaceId[wsId].error).toBeNull();
+  });
+
+  it('should clear workspace state', () => {
+    let state = fileExplorerReducer(initialState, setFileExplorerWorkspacePath(wsId, '/test'));
+    state = fileExplorerReducer(state, addExpandedPath(wsId, '/test'));
+    state = fileExplorerReducer(state, clearFileExplorerForWorkspace(wsId));
+    expect(state.byWorkspaceId[wsId]).toBeUndefined();
+  });
+
+  it('should collapse all except root', () => {
+    let state = fileExplorerReducer(initialState, setFileExplorerWorkspacePath(wsId, '/root'));
+    state = fileExplorerReducer(state, addExpandedPath(wsId, '/root'));
+    state = fileExplorerReducer(state, addExpandedPath(wsId, '/root/a'));
+    state = fileExplorerReducer(state, addExpandedPath(wsId, '/root/b'));
+    state = fileExplorerReducer(state, clearExpandedPathsExceptRoot(wsId));
+    expect(state.byWorkspaceId[wsId].expandedPaths).toEqual(['/root']);
+  });
+
+  it('should set children at path', () => {
+    const root: FileNode = {
+      name: 'root', path: '/root', type: 'directory',
+      children: [{ name: 'src', path: '/root/src', type: 'directory', children: [] }],
     };
-
-    invokeMock.mockResolvedValue(mockGitStatus);
-
-    const store = createFileExplorerStore('/test/path');
-    store.setWorkspacePath('/test/path');
-
-    // Git status should load without errors
-    await expect(store.refresh()).resolves.not.toThrow();
+    let state = fileExplorerReducer(initialState, setRootNode(wsId, root));
+    const newChildren: FileNode[] = [
+      { name: 'index.ts', path: '/root/src/index.ts', type: 'file' },
+    ];
+    state = fileExplorerReducer(state, setChildrenAtPathAction(wsId, '/root/src', newChildren));
+    expect(state.byWorkspaceId[wsId].rootNode?.children?.[0].children).toEqual(newChildren);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Gitignore / shouldHide integration tests
+// Gitignore / shouldHide unit tests
 //
-// These test the gitignore filtering logic end-to-end by mocking IPC calls
-// and verifying which files appear in the loaded tree and their isGitignored state.
-//
-// Gitignored files are shown in the tree (dimmed) but marked with isGitignored: true.
-// Only ALWAYS_HIDE entries (e.g. .git) are completely removed from the tree.
+// These test the gitignore filtering logic directly using the utility functions
+// without requiring IPC calls or Redux store.
 // ---------------------------------------------------------------------------
 
-/** Helper: create a mock dir entry as returned by file:readDirWithStats */
-function mockEntry(name: string, isDirectory = false) {
-  return { name, isDirectory, isFile: !isDirectory, size: 100, modified: '2025-01-01T00:00:00Z' };
+/** Helper: create a mock FileNode */
+function mockNode(name: string, workspacePath: string, isDirectory = false): FileNode {
+  return {
+    name,
+    path: `${workspacePath}/${name}`,
+    type: isDirectory ? 'directory' : 'file',
+    size: 100,
+    modified: '2025-01-01T00:00:00Z',
+    children: isDirectory ? [] : undefined,
+  };
 }
 
 /**
- * Helper: set up IPC mocks and load a workspace, returning the children nodes.
- *
- * @param gitignorePatterns - patterns the mock .gitignore contains
- * @param dirEntries        - entries returned by readDirWithStats
- * @param workspacePath     - workspace root (default '/workspace')
+ * Helper: build nodes from entries and apply shouldHide + checkGitignored
+ * to mimic what the saga does when loading a directory.
  */
-async function getLoadedChildren(
+function buildFilteredNodes(
+  names: Array<{ name: string; isDir?: boolean }>,
   gitignorePatterns: string[],
-  dirEntries: ReturnType<typeof mockEntry>[],
   workspacePath = '/workspace',
-) {
-  const invokeMock = vi.mocked(electronBridge.invoke);
-
-  invokeMock.mockImplementation(async (channel: string, ..._args: unknown[]) => {
-    if (channel === 'file:getGitignorePatterns') {
-      return { success: true, data: gitignorePatterns };
-    }
-    if (channel === 'file:readDirWithStats') {
-      return { success: true, data: dirEntries };
-    }
-    if (channel === 'file:getGitStatus') {
-      return { success: true, data: { fileStatuses: {}, fileChanges: {} } };
-    }
-    if (channel === 'workspace:get') {
-      return { ok: true, data: {} };
-    }
-    // Default for any other channel
-    return { success: true, data: [] };
-  });
-
-  const store = createFileExplorerStore(workspacePath);
-  await store.setWorkspacePath(workspacePath);
-
-  return store.rootNode?.children ?? [];
+): FileNode[] {
+  const nodes: FileNode[] = [];
+  for (const { name, isDir } of names) {
+    const fullPath = `${workspacePath}/${name}`;
+    if (shouldHide(fullPath)) continue;
+    const ignored = checkGitignored(fullPath, workspacePath, gitignorePatterns);
+    nodes.push({
+      ...mockNode(name, workspacePath, isDir),
+      ...(ignored && { isGitignored: true }),
+    });
+  }
+  return sortNodes(nodes);
 }
 
 describe('gitignore semantics — shouldHide + isGitignored', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    // Advance past the 200ms delay in setWorkspacePath
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  // Wrap setWorkspacePath calls so the 200ms setTimeout resolves
-  async function loadWithTimers(
-    patterns: string[],
-    entries: ReturnType<typeof mockEntry>[],
-    workspacePath = '/workspace',
-  ) {
-    const promise = getLoadedChildren(patterns, entries, workspacePath);
-    // Flush the 200ms delay inside setWorkspacePath
-    await vi.advanceTimersByTimeAsync(300);
-    return promise;
-  }
-
-  it('should show default-ignored files as gitignored (dimmed), not hidden', async () => {
+  it('should show default-ignored files as gitignored (dimmed), not hidden', () => {
     const entries = [
-      mockEntry('src', true),
-      mockEntry('node_modules', true),
-      mockEntry('dist', true),
-      mockEntry('.DS_Store'),
-      mockEntry('Thumbs.db'),
-      mockEntry('package.json'),
-      mockEntry('debug.log'),
+      { name: 'src', isDir: true },
+      { name: 'node_modules', isDir: true },
+      { name: 'dist', isDir: true },
+      { name: '.DS_Store' },
+      { name: 'Thumbs.db' },
+      { name: 'package.json' },
+      { name: 'debug.log' },
     ];
 
-    const children = await loadWithTimers([], entries);
+    const children = buildFilteredNodes(entries, []);
     const names = children.map((n) => n.name);
 
-    // All files should be visible in the tree
     expect(names).toContain('src');
     expect(names).toContain('package.json');
     expect(names).toContain('node_modules');
@@ -196,7 +169,6 @@ describe('gitignore semantics — shouldHide + isGitignored', () => {
     expect(names).toContain('Thumbs.db');
     expect(names).toContain('debug.log');
 
-    // But default-ignored ones should be marked as gitignored
     const byName = (name: string) => children.find((n) => n.name === name)!;
     expect(byName('node_modules').isGitignored).toBe(true);
     expect(byName('dist').isGitignored).toBe(true);
@@ -204,89 +176,76 @@ describe('gitignore semantics — shouldHide + isGitignored', () => {
     expect(byName('Thumbs.db').isGitignored).toBe(true);
     expect(byName('debug.log').isGitignored).toBe(true);
 
-    // Non-ignored ones should NOT be marked
     expect(byName('src').isGitignored).toBeFalsy();
     expect(byName('package.json').isGitignored).toBeFalsy();
   });
 
-  it('should allow negation patterns to override defaults (e.g. !dist)', async () => {
+  it('should allow negation patterns to override defaults (e.g. !dist)', () => {
     const entries = [
-      mockEntry('dist', true),
-      mockEntry('build', true),
-      mockEntry('src', true),
+      { name: 'dist', isDir: true },
+      { name: 'build', isDir: true },
+      { name: 'src', isDir: true },
     ];
 
-    // User's .gitignore negates dist
-    const children = await loadWithTimers(['!dist'], entries);
+    const children = buildFilteredNodes(entries, ['!dist']);
     const byName = (name: string) => children.find((n) => n.name === name)!;
 
     expect(byName('dist').isGitignored).toBeFalsy();
     expect(byName('src').isGitignored).toBeFalsy();
-    // build is still gitignored by defaults
     expect(byName('build').isGitignored).toBe(true);
   });
 
-  it('should respect last-match-wins for negation then re-ignore', async () => {
+  it('should respect last-match-wins for negation then re-ignore', () => {
     const entries = [
-      mockEntry('important.log'),
-      mockEntry('debug.log'),
+      { name: 'important.log' },
+      { name: 'debug.log' },
     ];
 
-    // *.log is in defaults. User negates important.log, then re-ignores it.
-    const children = await loadWithTimers(
-      ['!important.log', 'important.log'],
-      entries,
-    );
+    const children = buildFilteredNodes(entries, ['!important.log', 'important.log']);
     const byName = (name: string) => children.find((n) => n.name === name)!;
 
-    // Both should be gitignored: debug.log by default *.log, important.log re-ignored
     expect(byName('important.log').isGitignored).toBe(true);
     expect(byName('debug.log').isGitignored).toBe(true);
   });
 
-  it('should completely hide .git (even with negation) — not just dim it', async () => {
+  it('should completely hide .git (even with negation) — not just dim it', () => {
     const entries = [
-      mockEntry('.git', true),
-      mockEntry('src', true),
+      { name: '.git', isDir: true },
+      { name: 'src', isDir: true },
     ];
 
-    // Even if user tries to negate .git, it should stay completely hidden
-    const children = await loadWithTimers(['!.git'], entries);
+    const children = buildFilteredNodes(entries, ['!.git']);
     const names = children.map((n) => n.name);
 
     expect(names).not.toContain('.git');
     expect(names).toContain('src');
   });
 
-  it('should show dotfiles that are not in any ignore pattern (not gitignored)', async () => {
+  it('should show dotfiles that are not in any ignore pattern (not gitignored)', () => {
     const entries = [
-      mockEntry('.prettierrc'),
-      mockEntry('.eslintrc.json'),
-      mockEntry('.npmrc'),
-      mockEntry('.gitignore'),
-      mockEntry('.editorconfig'),
+      { name: '.prettierrc' },
+      { name: '.eslintrc.json' },
+      { name: '.npmrc' },
+      { name: '.gitignore' },
+      { name: '.editorconfig' },
     ];
 
-    const children = await loadWithTimers([], entries);
+    const children = buildFilteredNodes(entries, []);
 
     for (const child of children) {
       expect(child.isGitignored).toBeFalsy();
     }
   });
 
-  it('should mark dotfiles in gitignore as gitignored, respect negation', async () => {
+  it('should mark dotfiles in gitignore as gitignored, respect negation', () => {
     const entries = [
-      mockEntry('.env'),
-      mockEntry('.env.local'),
-      mockEntry('.env.example'),
-      mockEntry('.npmrc'),
+      { name: '.env' },
+      { name: '.env.local' },
+      { name: '.env.example' },
+      { name: '.npmrc' },
     ];
 
-    // User's gitignore ignores .env and .env.local but negates .env.example
-    const children = await loadWithTimers(
-      ['.env', '.env.local', '.env.example', '!.env.example'],
-      entries,
-    );
+    const children = buildFilteredNodes(entries, ['.env', '.env.local', '.env.example', '!.env.example']);
     const byName = (name: string) => children.find((n) => n.name === name)!;
 
     expect(byName('.env').isGitignored).toBe(true);
@@ -295,15 +254,15 @@ describe('gitignore semantics — shouldHide + isGitignored', () => {
     expect(byName('.npmrc').isGitignored).toBeFalsy();
   });
 
-  it('should handle glob patterns from gitignore', async () => {
+  it('should handle glob patterns from gitignore', () => {
     const entries = [
-      mockEntry('app.min.js'),
-      mockEntry('app.js'),
-      mockEntry('styles.min.css'),
-      mockEntry('styles.css'),
+      { name: 'app.min.js' },
+      { name: 'app.js' },
+      { name: 'styles.min.css' },
+      { name: 'styles.css' },
     ];
 
-    const children = await loadWithTimers(['*.min.*'], entries);
+    const children = buildFilteredNodes(entries, ['*.min.*']);
     const byName = (name: string) => children.find((n) => n.name === name)!;
 
     expect(byName('app.min.js').isGitignored).toBe(true);
@@ -312,20 +271,17 @@ describe('gitignore semantics — shouldHide + isGitignored', () => {
     expect(byName('styles.css').isGitignored).toBeFalsy();
   });
 
-  it('should apply default ignores even with no gitignore file (empty patterns)', async () => {
+  it('should apply default ignores even with no gitignore file (empty patterns)', () => {
     const entries = [
-      mockEntry('src', true),
-      mockEntry('node_modules', true),
-      mockEntry('package.json'),
+      { name: 'src', isDir: true },
+      { name: 'node_modules', isDir: true },
+      { name: 'package.json' },
     ];
 
-    const children = await loadWithTimers([], entries);
+    const children = buildFilteredNodes(entries, []);
     const byName = (name: string) => children.find((n) => n.name === name)!;
 
-    // All should be in the tree
     expect(children.map((n) => n.name)).toContain('node_modules');
-
-    // Defaults still mark node_modules as gitignored
     expect(byName('node_modules').isGitignored).toBe(true);
     expect(byName('src').isGitignored).toBeFalsy();
     expect(byName('package.json').isGitignored).toBeFalsy();

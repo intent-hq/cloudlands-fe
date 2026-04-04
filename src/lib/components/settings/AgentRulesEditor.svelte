@@ -24,7 +24,6 @@
 
   // State
   let rulesContent = $state('');
-  let saving = $state(false);
   let loading = $state(true);
   let errorMessage = $state<string | null>(null);
   let hasChanges = $state(false);
@@ -122,7 +121,6 @@
     }
 
     try {
-      saving = true;
       saveStatus = 'saving';
       errorMessage = null;
 
@@ -152,8 +150,6 @@
       logger.error('Failed to save rules', error instanceof Error ? error : undefined);
       saveStatus = 'idle';
       showError('Failed to save rules. Please try again.');
-    } finally {
-      saving = false;
     }
   }
 
@@ -191,12 +187,8 @@
 <div class="h-full flex flex-col gap-4">
   <div class="flex items-start justify-between gap-4 shrink-0">
     <div>
-      <Header size={3}>
-        Agent Instructions
-      </Header>
-      <p class="text-subtle mt-2">
-        Custom instructions that will be included for all agents.
-      </p>
+      <Header size={3}>Agent Instructions</Header>
+      <p class="text-subtle mt-2">Custom instructions that will be included for all agents.</p>
     </div>
 
     {#if hasChanges}

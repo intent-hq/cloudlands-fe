@@ -18,7 +18,9 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { toast } from '$lib/components/ui/toast';
   import { dialog, invoke } from '$lib/electron-bridge';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
+
+  const activeWorkspace = selectActiveWorkspace();
 
   // TipTap NodeViewProps
   let { node, updateAttributes }: NodeViewProps = $props();
@@ -401,7 +403,7 @@
     const svg = diagramContainer.querySelector('svg');
     if (!svg) return;
 
-    const workspace = workspaceStore.current;
+    const workspace = $activeWorkspace;
     const defaultDir = workspace?.worktreePath || workspace?.repositoryPath || '';
     const safeName = (displayName || 'diagram').replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase();
     const defaultPath = defaultDir

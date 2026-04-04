@@ -72,7 +72,7 @@ export const WorkspaceEventType = {
   AgentEventDeliveryFailed: 'agent:event-delivery-failed',
   AgentEventDeliveryTimeout: 'agent:event-delivery-timeout',
   AgentSubscriptionsRestored: 'agent:subscriptions-restored',
-	  AgentSubscriptionsChanged: 'agent:subscriptions-changed',
+  AgentSubscriptionsChanged: 'agent:subscriptions-changed',
   AgentMessageDeliveryFailed: 'agent:message:delivery-failed',
 
   // Git events
@@ -541,12 +541,12 @@ export interface AgentSubscriptionsRestoredEvent extends WorkspaceEventBase {
  * Used as a hint for renderers to refetch a snapshot.
  */
 export interface AgentSubscriptionsChangedEvent extends WorkspaceEventBase {
-	  type: 'agent:subscriptions-changed';
-	  data: {
-	    agentId: string;
-	    subscriptionVersion: number;
-	    reason?: string;
-	  };
+  type: 'agent:subscriptions-changed';
+  data: {
+    agentId: string;
+    subscriptionVersion: number;
+    reason?: string;
+  };
 }
 
 /**
@@ -603,7 +603,7 @@ export type SpecificWorkspaceEvent =
   | AgentEventDeliveryFailedEvent
   | AgentEventDeliveryTimeoutEvent
   | AgentSubscriptionsRestoredEvent
-	  | AgentSubscriptionsChangedEvent
+  | AgentSubscriptionsChangedEvent
   | AgentMessageDeliveryFailedEvent
   // MCP events
   | McpNotificationEvent;
@@ -846,7 +846,7 @@ export function isAgentInteractionEvent(event: WorkspaceEvent): boolean {
     event.type === 'agent:woken-by-subscription' ||
     event.type === 'agent:event-delivery-failed' ||
     event.type === 'agent:event-delivery-timeout' ||
-	    event.type === 'agent:subscriptions-changed' ||
+    event.type === 'agent:subscriptions-changed' ||
     event.type === 'agent:message:delivery-failed'
   );
 }
@@ -940,7 +940,7 @@ export function convertEventType(type: WorkspaceEventType): WorkspaceEventType {
 // 1. Direct IPC (flat): `window.webContents.send('event', { field1, field2 })`
 //    - Handler receives: `{ payload: { field1, field2 } }`
 //
-// 2. WorkspaceEventBus (wrapped): `eventBus.broadcastToRenderer(workspaceEvent)`
+// 2. Redux event dispatch (wrapped): workspace events dispatched via Redux actions
 //    - Handler receives: `{ payload: WorkspaceEvent }`
 //
 // Use these types with extractEventData() to safely handle both formats.
@@ -1141,3 +1141,301 @@ export type NoteEventPayload = NoteCreatedPayload | NoteUpdatedPayload | NoteDel
  * Union type representing all possible IPC event payloads for task events.
  */
 export type TaskEventPayload = TaskStatusChangedPayload | TaskReadyTasksChangedPayload;
+
+
+// ============================================================================
+// Domain Event Types (moved from unified-event-bus.ts during Redux migration)
+// ============================================================================
+
+import type { WorkspaceId } from '../../shared/types';
+
+/**
+ * Domain events that can be emitted (simple broadcast events)
+ */
+export type DomainEvent =
+  // Workspace events
+  | 'workspace:created'
+  | 'workspace:updated'
+  | 'workspace:deleting'
+  | 'workspace:deleted'
+  | 'workspace:archived'
+  | 'workspace:file-changes'
+  // Note events
+  | 'note:created'
+  | 'note:updated'
+  | 'note:deleted'
+  | 'line-attribution:updated'
+  // Comment events
+  | 'comment:added'
+  | 'comment:updated'
+  | 'comment:deleted'
+  | 'comment:resolved'
+  | 'comment:status-changed'
+  | 'comment:updated-batch'
+  // Agent events
+  | 'agent:session-created'
+  | 'agent:session-updated'
+  | 'agent:session-completed'
+  // Git events
+  | 'git:commit-created'
+  | 'git:branch-changed'
+  | 'git:auth-required'
+  | 'github:auth-required'
+  | 'git:status-changed'
+  // Agent auth/error events
+  | 'agent:auth-required'
+  | 'agent:remote-error'
+  | 'agent:plan-required'
+  // Terminal events
+  | 'terminal:created'
+  | 'terminal:data'
+  | 'terminal:exit'
+  | 'terminal:error'
+  | 'terminal:disposed'
+  // Professional Terminal events
+  | 'terminal:professional:data'
+  | 'terminal:professional:exit'
+  | 'terminal:professional:command:start'
+  | 'terminal:professional:command:executed'
+  | 'terminal:professional:command:finished'
+  | 'terminal:professional:cwd:changed'
+  // Source events
+  | 'source:created'
+  | 'source:updated'
+  | 'source:deleted'
+  // Auto-commit events
+  | 'git:auto-commit-started'
+  | 'git:auto-commit-succeeded'
+  | 'git:auto-commit-hook-failure'
+  // Background git operations events
+  | 'git:op-started'
+  | 'git:op-progress'
+  | 'git:op-completed'
+  | 'git:op-failed'
+  // Log events
+  | 'log:events-updated'
+  // Script events
+  | 'script:started'
+  | 'script:stopped'
+  | 'script:output'
+  | 'script:error'
+  | 'script:url-detected';
+
+/**
+ * Domain event data payloads
+ */
+export interface DomainEventPayloads {
+  'workspace:created': { workspaceId: WorkspaceId; workspace: any; initialAgent?: any };
+  'workspace:updated': { workspaceId: WorkspaceId; changes: any };
+  'workspace:deleting': { workspaceId: WorkspaceId };
+  'workspace:deleted': { workspaceId: WorkspaceId };
+  'workspace:archived': { workspaceId: WorkspaceId };
+  'workspace:file-changes': { workspaceId: WorkspaceId; changes?: any; diffChunk?: any };
+
+  'note:created': { workspaceId: WorkspaceId; noteId: string; note: any; actor?: any };
+  'note:updated': {
+    workspaceId: WorkspaceId;
+    noteId: string;
+    title?: string;
+    changes: any;
+    actor?: { type: string; id: string; name: string; turnNumber?: number; messageId?: string };
+    sessionId?: string;
+  };
+  'note:deleted': { workspaceId: WorkspaceId; noteId: string; actor?: any };
+  'line-attribution:updated': {
+    workspaceId: WorkspaceId;
+    noteId: string;
+    attributions: Record<
+      number,
+      {
+        timestamp: number;
+        author?: { id: string; name: string; type: 'user' | 'agent' | 'system' };
+      }
+    >;
+  };
+
+  'comment:added': { workspaceId: WorkspaceId; noteId: string; comment: any };
+  'comment:updated': { workspaceId: WorkspaceId; noteId: string; commentId: string; changes: any };
+  'comment:deleted': { workspaceId: WorkspaceId; noteId: string; commentId: string };
+  'comment:resolved': { workspaceId: WorkspaceId; noteId: string; commentId: string };
+  'comment:status-changed': {
+    workspaceId: WorkspaceId;
+    noteId: string;
+    commentId: string;
+    status: string;
+  };
+  'comment:updated-batch': {
+    workspaceId: WorkspaceId;
+    noteId: string;
+    action?: 'added' | 'updated' | 'resolved' | 'deleted';
+    comment?: any;
+    comments?: any;
+  };
+
+  'agent:session-created': { workspaceId: WorkspaceId; sessionId: string };
+  'agent:session-updated': { workspaceId: WorkspaceId; sessionId: string };
+  'agent:session-completed': { workspaceId: WorkspaceId; sessionId: string };
+
+  'git:commit-created': {
+    workspaceId: WorkspaceId;
+    commitSha: string;
+    postCommitHandled?: boolean;
+  };
+  'git:branch-changed': { workspaceId: WorkspaceId; branch: string };
+  'git:auth-required': {
+    workspaceId?: WorkspaceId;
+    operation: string;
+    remote?: string;
+    message: string;
+    rawError?: string;
+    command?: string;
+    cwd?: string;
+  };
+  'github:auth-required': {
+    workspaceId?: WorkspaceId;
+    operation?: string;
+    message: string;
+  };
+  'git:status-changed': { workspaceId: WorkspaceId };
+
+  'agent:auth-required': {
+    workspaceId?: WorkspaceId;
+    agentId?: string;
+    isRemote: boolean;
+    host?: string;
+    message: string;
+  };
+  'agent:remote-error': {
+    workspaceId?: WorkspaceId;
+    agentId?: string;
+    errorType: 'connection' | 'authentication' | 'command-not-found' | 'unknown';
+    message: string;
+    details?: string;
+  };
+  'agent:plan-required': {
+    workspaceId?: WorkspaceId;
+    agentId?: string;
+    message: string;
+    helpUrl?: string;
+  };
+
+  'terminal:created': {
+    terminalId: string;
+    workspaceId: WorkspaceId;
+    title: string;
+    cwd: string;
+    createdAt: string;
+    background?: boolean;
+  };
+  'terminal:data': { terminalId: string; data: string };
+  'terminal:exit': { terminalId: string; code: number | null; signal: string | null };
+  'terminal:error': { terminalId: string; error: string };
+  'terminal:disposed': { terminalId: string; workspaceId: WorkspaceId };
+
+  'terminal:professional:data': { terminalId: string; data: string };
+  'terminal:professional:exit': {
+    terminalId: string;
+    exitCode: number | null;
+    signal: string | null;
+  };
+  'terminal:professional:command:start': { terminalId: string };
+  'terminal:professional:command:executed': { terminalId: string; command: string };
+  'terminal:professional:command:finished': { terminalId: string };
+  'terminal:professional:cwd:changed': { terminalId: string; cwd: string };
+
+  'source:created': { workspaceId: WorkspaceId; sourceId: string; source: any };
+  'source:updated': { workspaceId: WorkspaceId; sourceId: string; source: any };
+  'source:deleted': { workspaceId: WorkspaceId; sourceId: string };
+
+  'git:auto-commit-started': {
+    workspaceId: WorkspaceId;
+    agentId: string;
+    agentName?: string;
+  };
+  'git:auto-commit-succeeded': {
+    workspaceId: WorkspaceId;
+    agentId: string;
+    agentName?: string;
+    hash: string;
+    message: string;
+    fileCount: number;
+  };
+  'git:auto-commit-hook-failure': {
+    workspaceId: WorkspaceId;
+    agentId: string;
+    agentName?: string;
+    status: 'waking-agent' | 'retries-exhausted';
+    hookOutput: string;
+    retryCount: number;
+  };
+
+  'git:op-started': {
+    operationId: string;
+    workspaceId: WorkspaceId;
+    operationType: 'commit' | 'push' | 'create-pr' | 'auto-commit';
+    metadata?: { message?: string; prTitle?: string; agentId?: string; agentName?: string };
+  };
+  'git:op-progress': {
+    operationId: string;
+    workspaceId: WorkspaceId;
+    operationType: 'commit' | 'push' | 'create-pr' | 'auto-commit';
+    step: string;
+    metadata?: { message?: string; prTitle?: string };
+  };
+  'git:op-completed': {
+    operationId: string;
+    workspaceId: WorkspaceId;
+    operationType: 'commit' | 'push' | 'create-pr' | 'auto-commit';
+    result?: {
+      commitHash?: string;
+      prNumber?: number;
+      prUrl?: string;
+      noChanges?: boolean;
+      reason?: string;
+      fileCount?: number;
+    };
+    metadata?: { message?: string; prTitle?: string; agentId?: string; agentName?: string };
+  };
+  'git:op-failed': {
+    operationId: string;
+    workspaceId: WorkspaceId;
+    operationType: 'commit' | 'push' | 'create-pr' | 'auto-commit';
+    error: string;
+    metadata?: { message?: string; prTitle?: string; agentId?: string; agentName?: string };
+  };
+
+  'log:events-updated': { workspaceId: WorkspaceId; events: any };
+
+  'script:started': {
+    workspaceId: WorkspaceId;
+    scriptId: string;
+    scriptName: string;
+    pid?: number;
+    startedAt?: string;
+  };
+  'script:stopped': {
+    workspaceId: WorkspaceId;
+    scriptId: string;
+    scriptName: string;
+    exitCode?: number | null;
+    signal?: string | null;
+    stoppedAt?: string;
+  };
+  'script:output': {
+    workspaceId: WorkspaceId;
+    scriptId: string;
+    lines: Array<{ text: string; stream: 'stdout' | 'stderr'; timestamp: string }>;
+  };
+  'script:error': {
+    workspaceId: WorkspaceId;
+    scriptId: string;
+    scriptName: string;
+    error: string;
+  };
+  'script:url-detected': {
+    workspaceId: WorkspaceId;
+    scriptId: string;
+    scriptName: string;
+    url: string;
+  };
+}

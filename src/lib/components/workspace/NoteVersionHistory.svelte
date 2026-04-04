@@ -1,12 +1,13 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import type { NoteVersion } from '$shared/types';
-  import { WorkspaceId, NoteId } from '$shared/types/branded-ids';
   import { formatDistanceToNow } from 'date-fns';
   import DiffViewer from '$lib/components/ui/diff/DiffViewer.svelte';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import { faRotateLeft } from '@fortawesome/free-solid-svg-icons';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { fetchNoteVersions } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+  import { selectNoteVersions } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
 
   let {
     workspace,
@@ -22,51 +23,21 @@
     onRestore?: (versionId: string) => void;
   } = $props();
 
-  let versions = $state<NoteVersion[]>([]);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
+  const dispatch = getDispatch();
+  const noteVersionsState = selectNoteVersions(workspace.id);
+
+  const versions = $derived(
+    $noteVersionsState?.versions ? [...$noteVersionsState.versions].reverse().slice(0, 10) : [],
+  );
+  const loading = $derived($noteVersionsState?.loading ?? false);
+  const error = $derived($noteVersionsState?.error ?? null);
+
   let selectedVersionIndex = $state<number | null>(null);
 
-  // Function to fetch versions
-  async function fetchVersions() {
-    // Capture values early since props can change during async operations
-    const workspaceId = workspace?.id;
-    const currentNoteId = noteId;
-
-    if (!workspaceId || !currentNoteId) {
-      loading = false;
-      return;
-    }
-
-    loading = true;
-    error = null;
-
-    try {
-      const { notesClient } = await import('$features/notes/notes.client');
-      const noteResult = await notesClient.get(WorkspaceId(workspaceId), NoteId(currentNoteId));
-
-      if (noteResult.ok && noteResult.data.versions) {
-        // Get last 10 versions in reverse chronological order (newest first)
-        versions = [...noteResult.data.versions].reverse().slice(0, 10);
-      } else {
-        error = 'Failed to load versions';
-      }
-    } catch (err) {
-      error = err instanceof Error ? err.message : 'Unknown error';
-    } finally {
-      loading = false;
-    }
-  }
-
-  // Fetch versions on mount
-  onMount(() => {
-    fetchVersions();
-  });
-
-  // Refresh versions when component becomes visible
+  // Fetch versions on mount and when visibility changes
   $effect(() => {
-    if (visible) {
-      fetchVersions();
+    if (visible && workspace?.id && noteId) {
+      dispatch(fetchNoteVersions(workspace.id, noteId));
     }
   });
 

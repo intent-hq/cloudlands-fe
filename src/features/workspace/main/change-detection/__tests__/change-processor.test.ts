@@ -7,9 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ChangeProcessor } from '../change-processor';
-import { GitignoreManager } from '../../../../lib/utils/main/gitignore-manager';
-import { getAttributionEngine } from '../../provenance/attribution-engine';
-import type { FileChange, ProcessedChange } from '../change-processor';
+import type { FileChange } from '../change-processor';
 import type { GitDiffResult } from '../git-types';
 
 // Create shared mock functions that persist across instances
@@ -246,6 +244,7 @@ describe('ChangeProcessor', () => {
 
   describe('cleanup', () => {
     it('should clean up resources and timers', () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const clearTimeoutSpy = vi.spyOn(global, 'clearTimeout');
       const clearIntervalSpy = vi.spyOn(global, 'clearInterval');
 

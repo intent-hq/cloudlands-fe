@@ -19,34 +19,45 @@
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { faHome, faPlus, faLayerGroup, faCog, faBell } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { sidebarNavStore, type SidebarNavItem } from './sidebar-nav.store.svelte';
+  import type { SidebarNavItem } from '$lib/store/slices/sidebar-nav/sidebar-nav-types';
   import SidebarNavHoverCard from './SidebarNavHoverCard.svelte';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
-  import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
+  import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
   import { WorkspaceStatusEnum } from '$shared/types';
-  import { onMount } from 'svelte';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { selectActiveStreamsVersion, selectPanelItem, selectActiveCard, selectOnboardingActive, selectExpandedItem, selectIsCardPinned, selectContextMenuOpen } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+  import { closeAll, togglePanel, setHoveredItem, setExpandedItem, setDeferredLeave, clearDeferredLeave } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectUnreadAgentIds, selectUnreadAgentIdsForWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
 
-  // Initialize shared subscriptions (idempotent — safe to call from multiple components)
-  onMount(() => {
-    sidebarNavStore.initSubscriptions();
-  });
+  const dispatch = getDispatch();
+  const workspaceItems = selectWorkspaceItems();
+  const activeStreamsVersion$ = selectActiveStreamsVersion();
+  const unreadAgentIds$ = selectUnreadAgentIds();
+  const panelItem$ = selectPanelItem();
+  const activeCard$ = selectActiveCard();
+  const onboardingActive$ = selectOnboardingActive();
+  const expandedItem$ = selectExpandedItem();
+  const isCardPinned$ = selectIsCardPinned();
+  const contextMenuOpen$ = selectContextMenuOpen();
 
   // Count unread workspaces only (within 24h)
   const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
   const unreadCount = $derived.by(() => {
     // Read shared version counters so this re-runs when streams/unread state changes
-    void sidebarNavStore.activeStreamsVersion;
-    void sidebarNavStore.unreadVersion;
+    void $activeStreamsVersion$;
+    // Reading unreadAgentIds$ triggers re-evaluation when unread state changes
+    void $unreadAgentIds$;
     const now = Date.now();
+    const state = getReduxStore().getState();
     let count = 0;
-    for (const ws of workspaceStore.items) {
+    for (const ws of $workspaceItems) {
       if (ws.status === WorkspaceStatusEnum.Archived || ws.status === WorkspaceStatusEnum.Deleted)
         continue;
       // Skip if currently streaming (not "unread")
       if (activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id).length > 0) continue;
-      const unreadIds = unreadTrackingService.getUnreadAgentIdsForWorkspace(ws.id);
+      const unreadIds = selectUnreadAgentIdsForWorkspace.select(state, ws.id);
       const updatedAt = new Date(ws.updatedAt).getTime();
       if (unreadIds.length > 0 && now - updatedAt < ONE_DAY_MS) count++;
     }
@@ -73,16 +84,89 @@
     if (id === 'home' && isHomePage) return true;
     if (id === 'settings' && isSettingsPage) return true;
     // Highlight when panel is open for this item
-    if (sidebarNavStore.panelItem === id) return true;
+    if ($panelItem$ === id) return true;
     return false;
+  }
+
+  // ── Hover timeout management (component-local UI behavior) ──
+  let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
+  let leaveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  // Process deferred leave when context menu closes
+  let prevContextMenuOpen = false;
+  $effect(() => {
+    const isOpen = $contextMenuOpen$;
+    if (prevContextMenuOpen && !isOpen) {
+      // Context menu just closed — process any deferred leave
+      const state = getReduxStore().getState();
+      const deferredLeave = state.sidebarNav.deferredLeave;
+      dispatch(clearDeferredLeave());
+
+      if (deferredLeave && !selectIsCardPinned.select(state)) {
+        leaveTimeout = setTimeout(() => {
+          dispatch(setHoveredItem(null));
+          if (deferredLeave === 'card') {
+            dispatch(setExpandedItem(null));
+          }
+        }, 200);
+      }
+    }
+    prevContextMenuOpen = isOpen;
+  });
+
+  function handleMouseEnter(item: SidebarNavItem) {
+    if (leaveTimeout) {
+      clearTimeout(leaveTimeout);
+      leaveTimeout = null;
+    }
+    if (hoverTimeout) {
+      clearTimeout(hoverTimeout);
+    }
+    // Cancel any deferred leave — pointer is back on the nav
+    dispatch(clearDeferredLeave());
+
+    // If an expanded item is open, switch immediately
+    if ($expandedItem$) {
+      dispatch(setHoveredItem(item));
+      return;
+    }
+
+    // Home and settings don't have hover cards — skip
+    if (item === 'home' || item === 'settings') return;
+
+    // Otherwise delay hover card appearance
+    hoverTimeout = setTimeout(() => {
+      dispatch(setHoveredItem(item));
+    }, 120);
+  }
+
+  function handleMouseLeave() {
+    if (hoverTimeout) {
+      clearTimeout(hoverTimeout);
+      hoverTimeout = null;
+    }
+
+    // Pinned cards never auto-close
+    if ($isCardPinned$) return;
+
+    // Context menu open — defer the leave so we can process it when the menu closes
+    if ($contextMenuOpen$) {
+      dispatch(setDeferredLeave('nav'));
+      return;
+    }
+
+    leaveTimeout = setTimeout(() => {
+      dispatch(setHoveredItem(null));
+      // Don't clear expandedItem on mouse leave - it stays until clicked elsewhere
+    }, 200);
   }
 
   function handleClick(id: SidebarNavItem, event?: MouseEvent) {
     if (id === 'home') {
-      sidebarNavStore.closeAll();
+      dispatch(closeAll(false));
       goto('/');
     } else if (id === 'settings') {
-      sidebarNavStore.closeAll();
+      dispatch(closeAll(false));
       const isOnSettings = page.url.pathname.startsWith('/settings');
       if (isOnSettings) {
         navigateBackFromSettings();
@@ -90,7 +174,7 @@
         navigateToSettings();
       }
     } else if (id === 'new-workspace') {
-      sidebarNavStore.closeAll();
+      dispatch(closeAll(false));
       // Command-click (or Ctrl-click on non-Mac) opens new window on home
       if (event?.metaKey || event?.ctrlKey) {
         invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route: '/' }).catch(() => {
@@ -103,7 +187,7 @@
       window.dispatchEvent(new CustomEvent('app:open-new-space-modal', { detail: {} }));
     } else {
       // Toggle the persistent sidebar panel
-      sidebarNavStore.togglePanel(id);
+      dispatch(togglePanel(id));
     }
   }
 
@@ -111,22 +195,22 @@
   let iconRefs = $state<Record<string, HTMLButtonElement | null>>({});
 </script>
 
-{#if !sidebarNavStore.onboardingActive}
+{#if !$onboardingActive$}
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <nav class="group/nav sidebar-nav flex flex-col items-center pt-2 pb-1 gap-1 h-full shrink-0 w-13" aria-label="Global navigation">
   <!-- Top nav items -->
   <div class="flex flex-col items-center gap-1 w-full px-1.5">
     {#each navItems.slice(0, 4) as item (item.id)}
       {@const active = isItemActive(item.id)}
-      {@const isHovered = sidebarNavStore.activeCard === item.id}
+      {@const isHovered = $activeCard$ === item.id}
       {@const badgeCount = item.badge?.() ?? 0}
       <button
         bind:this={iconRefs[item.id]}
         class="sidebar-nav-btn relative flex flex-col items-center gap-1 cursor-pointer transition-all duration-150
           {active || isHovered ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
         onclick={(e) => handleClick(item.id, e)}
-        onmouseenter={() => sidebarNavStore.handleMouseEnter(item.id)}
-        onmouseleave={() => sidebarNavStore.handleMouseLeave()}
+        onmouseenter={() => handleMouseEnter(item.id)}
+        onmouseleave={handleMouseLeave}
         aria-label={item.label}
         data-nav-item={item.id}
       >
@@ -159,8 +243,8 @@
         class="sidebar-nav-btn relative flex flex-col items-center gap-1 cursor-pointer transition-all duration-150
           {active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
         onclick={(e) => handleClick(item.id, e)}
-        onmouseenter={() => sidebarNavStore.handleMouseEnter(item.id)}
-        onmouseleave={() => sidebarNavStore.handleMouseLeave()}
+        onmouseenter={() => handleMouseEnter(item.id)}
+        onmouseleave={handleMouseLeave}
         aria-label={item.label}
         data-nav-item={item.id}
       >

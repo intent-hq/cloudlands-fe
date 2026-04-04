@@ -69,7 +69,7 @@ function saveBufferIndex(index: Map<string, number>): void {
     localStorage.setItem(TERMINAL_BUFFER_INDEX_KEY, JSON.stringify(entries));
     bufferIndexCache = index;
     bufferIndexCacheTime = Date.now();
-  } catch (error) {
+  } catch  {
     // Ignore - best effort
   }
 }

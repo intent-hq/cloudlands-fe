@@ -119,7 +119,7 @@ export class MetadataFileWatcher extends EventEmitter {
               const hash = this.hashContent(content);
               this.contentHashes.set(filePath, hash);
               logger.debug(`[MetadataFileWatcher] Hashed ${file}: ${hash.substring(0, 8)}...`);
-            } catch (error) {
+            } catch  {
               logger.debug(`[MetadataFileWatcher] Could not hash ${file}`);
             }
           }
@@ -134,7 +134,7 @@ export class MetadataFileWatcher extends EventEmitter {
           const hash = this.hashContent(content);
           this.contentHashes.set(workspaceJsonPath, hash);
           logger.debug(`[MetadataFileWatcher] Hashed workspace.json: ${hash.substring(0, 8)}...`);
-        } catch (error) {
+        } catch  {
           logger.debug('[MetadataFileWatcher] Could not hash workspace.json');
         }
       }
@@ -447,7 +447,7 @@ export class MetadataFileWatcher extends EventEmitter {
           this.emitEvent(event);
         }
       }
-    } catch (error) {
+    } catch  {
       // File may have been deleted or become unreadable
       logger.debug(`[MetadataFileWatcher] Could not check ${path.basename(filePath)} for changes`);
     }

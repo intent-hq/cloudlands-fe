@@ -128,8 +128,29 @@ vi.mock('$features/agent/agent.client', () => ({
   },
 }));
 
-import { sessionStore } from '$features/agent/browser';
-import { unifiedStateStore } from '$features/agent/services/unified-state-store';
+// Mock Redux store bridge — the component reads agent sessions from Redux
+const mockReduxState: { workspaceAgents: { byWorkspaceId: Record<string, any> } } = {
+  workspaceAgents: { byWorkspaceId: {} },
+};
+const mockReduxDispatch = vi.fn();
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({
+    getState: () => mockReduxState,
+    dispatch: mockReduxDispatch,
+  }),
+}));
+vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+  selectAgentById: {
+    select: (_state: any, agentId: string) => {
+      // Search across all workspaces since wsId was removed
+      for (const ws of Object.values(mockReduxState.workspaceAgents.byWorkspaceId) as any[]) {
+        const agent = ws?.agents?.map?.[agentId];
+        if (agent) return agent;
+      }
+      return null;
+    },
+  },
+}));
 import SimpleRichInput from './SimpleRichInput.svelte';
 
 function createSession(overrides: Record<string, unknown> = {}) {
@@ -148,6 +169,23 @@ function createSession(overrides: Record<string, unknown> = {}) {
   } as any;
 }
 
+function addMockSession(wsId: string, session: any) {
+  if (!mockReduxState.workspaceAgents.byWorkspaceId[wsId]) {
+    mockReduxState.workspaceAgents.byWorkspaceId[wsId] = { agents: { ids: [], map: {} } };
+  }
+  const ws = mockReduxState.workspaceAgents.byWorkspaceId[wsId];
+  ws.agents.map[session.id] = session;
+  if (!ws.agents.ids.includes(session.id)) ws.agents.ids.push(session.id);
+}
+
+function removeMockSession(wsId: string, agentId: string) {
+  const ws = mockReduxState.workspaceAgents.byWorkspaceId[wsId];
+  if (ws) {
+    delete ws.agents.map[agentId];
+    ws.agents.ids = ws.agents.ids.filter((id: string) => id !== agentId);
+  }
+}
+
 describe('SimpleRichInput provider switch sync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -158,13 +196,12 @@ describe('SimpleRichInput provider switch sync', () => {
       return 1;
     });
 
-    unifiedStateStore.setCurrentWorkspace('ws-1' as any);
-    sessionStore.addSessionForWorkspace('ws-1', createSession());
+    addMockSession('ws-1', createSession());
   });
 
   afterEach(() => {
     cleanup();
-    sessionStore.removeSessionForWorkspace('ws-1', 'agent-1');
+    removeMockSession('ws-1', 'agent-1');
     vi.unstubAllGlobals();
     document.body.innerHTML = '';
   });
@@ -216,8 +253,8 @@ describe('SimpleRichInput provider switch sync', () => {
   });
 
   it('hydrates the persisted provider from session state instead of showing the default provider on reopen', async () => {
-    sessionStore.removeSessionForWorkspace('ws-1', 'agent-1');
-    sessionStore.addSessionForWorkspace('ws-1',
+    removeMockSession('ws-1', 'agent-1');
+    addMockSession('ws-1',
       createSession({
         model: 'codex:gpt-5-codex',
         provider: 'codex',
@@ -251,8 +288,8 @@ describe('SimpleRichInput provider switch sync', () => {
   });
 
   it('locks provider and model together with shared hover copy and no extra model lock icon', async () => {
-    sessionStore.removeSessionForWorkspace('ws-1', 'agent-1');
-    sessionStore.addSessionForWorkspace('ws-1',
+    removeMockSession('ws-1', 'agent-1');
+    addMockSession('ws-1',
       createSession({
         metadata: {
           provider: 'auggie',
@@ -363,8 +400,8 @@ describe('SimpleRichInput provider switch sync', () => {
   });
 
   it('keeps the provider control visible when the current provider is non-default', async () => {
-    sessionStore.removeSessionForWorkspace('ws-1', 'agent-1');
-    sessionStore.addSessionForWorkspace('ws-1',
+    removeMockSession('ws-1', 'agent-1');
+    addMockSession('ws-1',
       createSession({
         model: 'codex:gpt-5-codex',
         provider: 'codex',

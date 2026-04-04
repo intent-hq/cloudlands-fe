@@ -33,7 +33,7 @@ export async function collectDebugFiles(workspaceId?: string): Promise<DebugFile
       if (stats.isFile()) {
         files.push({ sourcePath, relativePath });
       }
-    } catch (error) {
+    } catch  {
       logger.debug('File not found or not accessible', { sourcePath });
     }
   }
@@ -49,7 +49,7 @@ export async function collectDebugFiles(workspaceId?: string): Promise<DebugFile
           files.push({ sourcePath: fullPath, relativePath: relPath });
         }
       }
-    } catch (error) {
+    } catch  {
       logger.debug('Directory not found or not accessible', { sourcePath });
     }
   }
@@ -67,7 +67,7 @@ export async function collectDebugFiles(workspaceId?: string): Promise<DebugFile
           await addDirectoryRecursive(fullPath, relPath);
         }
       }
-    } catch (error) {
+    } catch  {
       logger.debug('Directory not found or not accessible', { sourcePath });
     }
   }

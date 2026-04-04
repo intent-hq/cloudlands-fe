@@ -1,8 +1,5 @@
 import { call, takeEvery } from "typed-redux-saga";
-import {
-  setAutoCommitEnabled,
-  toggleAutoCommit,
-} from "../workspace-settings-slice";
+import { setAutoCommitEnabled } from "../workspace-settings-slice";
 import { selectAutoCommitEnabled } from "../workspace-settings-selectors";
 import { invoke } from "$lib/electron-bridge";
 import { WORKSPACE_CHANNELS, SETTINGS_CHANNELS } from "$shared/ipc/channels";
@@ -49,15 +46,6 @@ export function* persistenceSaga() {
   yield* takeEvery(
     setAutoCommitEnabled.type,
     function* (action: ReturnType<typeof setAutoCommitEnabled>) {
-      const [workspaceId] = action.payload;
-      const autoCommitEnabled = yield* selectAutoCommitEnabled.effect(workspaceId);
-      yield* call(syncToMainProcess, workspaceId, autoCommitEnabled);
-    }
-  );
-
-  yield* takeEvery(
-    toggleAutoCommit.type,
-    function* (action: ReturnType<typeof toggleAutoCommit>) {
       const [workspaceId] = action.payload;
       const autoCommitEnabled = yield* selectAutoCommitEnabled.effect(workspaceId);
       yield* call(syncToMainProcess, workspaceId, autoCommitEnabled);

@@ -45,6 +45,7 @@ export class GitHubService {
   async getBranches(
     owner: string,
     repo: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _options?: { per_page?: number },
   ): Promise<{ branches: string[]; defaultBranch: string } | null> {
     const isAuth = await this.isAuthenticated();

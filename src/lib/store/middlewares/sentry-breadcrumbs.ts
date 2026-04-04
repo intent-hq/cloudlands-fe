@@ -139,6 +139,7 @@ function buildBreadcrumbData(action: unknown, actionType: string): Record<string
  * Sentry breadcrumbs middleware - records Redux actions as Sentry breadcrumbs.
  */
 export function createSentryBreadcrumbsMiddleware(): Middleware {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   return (_store) => (next) => (action) => {
     try {
       const actionType = getActionType(action);

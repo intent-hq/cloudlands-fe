@@ -132,7 +132,9 @@ describe('assignAgentToTask', () => {
     const agentId = createAgentId(uuidv4());
 
     // Track if event was emitted
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     let eventEmitted = false;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const eventHandler = () => {
       eventEmitted = true;
     };

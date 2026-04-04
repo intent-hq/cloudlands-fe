@@ -212,18 +212,18 @@ export function buildAgentApi(workspaceId: string, workspacePath: string, call: 
       logger.info('ws.agent.list', { workspaceId, includeCompleted });
 
       const { AgentBackendHandler } = await import('../../../agent/main/agent-backend-handler.service');
-      const { getAgentEventSubscriptionService } =
-        await import('../../../events/main/agent-event-subscription.service');
+      const { selectAgentStatus } =
+        await import('../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors');
+      const { getMainState } = await import('../../../../store/main/redux-store-bridge');
 
       const handler = AgentBackendHandler.getInstance();
-      const eventService = getAgentEventSubscriptionService(workspaceId);
       const agents = await handler.listAllAgents(workspaceId);
 
       return agents
         .map((agent: any) => ({
           id: agent.id,
           name: agent.name,
-          status: eventService.getAgentStatus(agent.id) || agent.status,
+          status: selectAgentStatus.select(getMainState(), workspaceId, agent.id) || agent.status,
           messageCount: agent.messages?.length || 0,
           taskNoteId: agent.metadata?.taskNoteId,
           createdAt: toOptionalString(agent.createdAt),
@@ -236,11 +236,11 @@ export function buildAgentApi(workspaceId: string, workspacePath: string, call: 
       logger.info('ws.agent.status', { workspaceId, agentId });
 
       const { AgentBackendHandler } = await import('../../../agent/main/agent-backend-handler.service');
-      const { getAgentEventSubscriptionService } =
-        await import('../../../events/main/agent-event-subscription.service');
+      const { selectAgentStatus } =
+        await import('../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors');
+      const { getMainState } = await import('../../../../store/main/redux-store-bridge');
 
       const handler = AgentBackendHandler.getInstance();
-      const eventService = getAgentEventSubscriptionService(workspaceId);
       const agent = await handler.getAgent(agentId);
 
       if (!agent) {
@@ -250,7 +250,7 @@ export function buildAgentApi(workspaceId: string, workspacePath: string, call: 
       return {
         id: agent.id,
         name: agent.name,
-        status: eventService.getAgentStatus(agentId) || agent.status,
+        status: selectAgentStatus.select(getMainState(), workspaceId, agentId) || agent.status,
         messageCount: agent.messages?.length || 0,
         taskNoteId: agent.metadata?.taskNoteId,
         createdAt: toOptionalString(agent.createdAt),

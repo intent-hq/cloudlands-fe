@@ -48,7 +48,7 @@ export const waveDelegationScenario: TestScenario = {
     {
       type: 'custom',
       name: 'All children used implementor specialist',
-      check: (metrics) =>
+      check: () =>
         // Check that all delegated agents used haiku4.5 model
         true // Placeholder - actual check would inspect agent metadata
       ,
@@ -85,7 +85,7 @@ export const specialistSelectionScenario: TestScenario = {
     {
       type: 'custom',
       name: 'Used both implementor and verifier specialists',
-      check: (metrics) =>
+      check: () =>
         // Check that both specialist types were used
         true
       ,
@@ -126,7 +126,7 @@ export const interruptionDuringDelegationScenario: TestScenario = {
     {
       type: 'custom',
       name: 'No orphaned agents',
-      check: (metrics) =>
+      check: () =>
         // Check that all agents are in a valid state
         true
       ,

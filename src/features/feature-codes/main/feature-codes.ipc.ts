@@ -1,9 +1,8 @@
 import { app, ipcMain } from 'electron';
 import { FEATURE_CODES_CHANNELS } from '../../../shared/ipc/channels';
-import { Logger } from '../../../shared/logger';
 import { featureCodesService } from './feature-codes.service';
 
-const logger = new Logger('FeatureCodesIPC');
+
 
 export async function setupFeatureCodesIPC() {
   // Initialize the service once before registering handlers

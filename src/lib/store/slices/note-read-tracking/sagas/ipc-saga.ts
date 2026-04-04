@@ -1,4 +1,4 @@
-import { call, put, takeEvery, takeLatest } from "typed-redux-saga";
+import { call, put, takeEvery } from "typed-redux-saga";
 import { invoke } from "$lib/electron-bridge";
 import { USER_ACTIVITY_CHANNELS } from "$shared/ipc/channels";
 import type { NoteReadRecord } from "$shared/types/user-activity.types";
@@ -8,11 +8,9 @@ import {
   loadNoteReadStatusSuccess,
   computeUnreadNotesSuccess,
   setLoading,
-  workspaceChanged,
 } from "../note-read-tracking-slice";
 import {
   selectCurrentlyViewedNoteId,
-  selectNoteReadTrackingWorkspaceId,
   selectReadRecords,
 } from "../note-read-tracking-selectors";
 
@@ -20,8 +18,9 @@ import {
  * Handle markNoteRead IPC call (fire-and-forget after optimistic update in reducer)
  */
 function* handleMarkNoteRead(action: ReturnType<typeof markNoteRead>) {
-  const [workspaceId, noteId] = action.payload;
+  const { workspaceId, noteId } = action.payload;
   try {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const result: { success: boolean; error?: string } = yield* call(
       invoke<{ success: boolean; error?: string }>,
       USER_ACTIVITY_CHANNELS.MARK_NOTE_READ,
@@ -63,12 +62,6 @@ export function* handleComputeUnreadNotes(action: {
   ];
 }) {
   const [workspaceId, notes] = action.payload;
-
-  // Check if workspace changed — if so, dispatch workspaceChanged first
-  const currentWorkspaceId: string | null = yield* selectNoteReadTrackingWorkspaceId.effect();
-  if (currentWorkspaceId !== null && currentWorkspaceId !== workspaceId) {
-    yield* put(workspaceChanged(workspaceId));
-  }
 
   yield* put(setLoading(true));
 

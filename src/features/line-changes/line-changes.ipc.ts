@@ -7,8 +7,17 @@
 import { ipcMain } from 'electron';
 import type { AgentId } from '$shared/types/branded-ids';
 import { Logger } from '../../shared/logger';
-import { lineChangesStore, type LineChangeStats } from './line-changes.store';
-import { lineChangesService } from './line-changes.service';
+import {
+  getWorkspaceStats,
+  getAllWorkspaceStats,
+  getAgentStats,
+  updateWorkspaceStats,
+  updateAgentStats,
+  clearWorkspaceStats as clearWorkspaceStatsMain,
+  clearAgentStats as clearAgentStatsMain,
+  type LineChangeStats,
+} from './line-changes-main-state';
+import { calculateContentDiff } from './utils/calculate-content-diff';
 import type { WorkspaceId } from '../../shared/types';
 import { LINE_CHANGES_CHANNELS } from '../../shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../main/ipc-validation-middleware';
@@ -35,7 +44,7 @@ export function registerLineChangesIPC(): void {
       async (_, validated: any) => {
         try {
           const workspaceId = validated.workspaceId as WorkspaceId;
-          const stats = lineChangesStore.getWorkspaceStats(workspaceId);
+          const stats = getWorkspaceStats(workspaceId);
           return {
             success: true,
             data: stats || { additions: 0, deletions: 0, timestamp: new Date().toISOString() },
@@ -58,7 +67,7 @@ export function registerLineChangesIPC(): void {
   // Get all workspace line stats
   ipcMain.handle(LINE_CHANGES_CHANNELS.GET_ALL_WORKSPACE_STATS, async () => {
     try {
-      const allStats = lineChangesStore.getAllWorkspaceStats();
+      const allStats = getAllWorkspaceStats();
       return {
         success: true,
         data: allStats,
@@ -79,7 +88,7 @@ export function registerLineChangesIPC(): void {
       LineChangesGetAgentStatsSchema,
       async (_, validated: any) => {
         try {
-          const stats = lineChangesStore.getAgentStats(validated.agentId as AgentId);
+          const stats = getAgentStats(validated.agentId as AgentId);
           return {
             success: true,
             data: stats || { additions: 0, deletions: 0, timestamp: new Date().toISOString() },
@@ -103,7 +112,7 @@ export function registerLineChangesIPC(): void {
       LineChangesCalculateDiffSchema,
       async (_, validated: any) => {
         try {
-          const stats = lineChangesService.calculateContentDiff(
+          const stats = calculateContentDiff(
             validated.oldContent || '',
             validated.newContent || '',
           );
@@ -131,7 +140,7 @@ export function registerLineChangesIPC(): void {
       async (_, validated: any) => {
         try {
           const normalizedStats = (validated.stats || {}) as Partial<LineChangeStats>;
-          lineChangesStore.updateWorkspaceStats(
+          updateWorkspaceStats(
             validated.workspaceId as WorkspaceId,
             normalizedStats,
           );
@@ -161,7 +170,7 @@ export function registerLineChangesIPC(): void {
       async (_, validated: any) => {
         try {
           const normalizedStats = (validated.stats || {}) as Partial<LineChangeStats>;
-          lineChangesStore.updateAgentStats(validated.agentId as AgentId, normalizedStats);
+          updateAgentStats(validated.agentId as AgentId, normalizedStats);
           return {
             success: true,
           };
@@ -184,7 +193,7 @@ export function registerLineChangesIPC(): void {
       LineChangesClearWorkspaceStatsSchema,
       async (_, validated: any) => {
         try {
-          lineChangesStore.clearWorkspaceStats(validated.workspaceId as WorkspaceId);
+          clearWorkspaceStatsMain(validated.workspaceId as WorkspaceId);
           return {
             success: true,
           };
@@ -210,7 +219,7 @@ export function registerLineChangesIPC(): void {
       LineChangesClearAgentStatsSchema,
       async (_, validated: any) => {
         try {
-          lineChangesStore.clearAgentStats(validated.agentId as AgentId);
+          clearAgentStatsMain(validated.agentId as AgentId);
           return {
             success: true,
           };

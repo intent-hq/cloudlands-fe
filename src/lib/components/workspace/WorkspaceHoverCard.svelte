@@ -5,8 +5,9 @@
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
-  import { unreadTrackingService } from '$features/agent/services/unread-tracking.service';
   import { onMount } from 'svelte';
+  import { selectUnreadAgentIds, selectUnreadAgentIdsForWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 
   interface Props {
     workspace: Workspace | null;
@@ -16,17 +17,16 @@
 
   let { workspace, lineStats, isLoading = false }: Props = $props();
 
-  // Reactive version counters — bumped by service subscriptions so that
-  // $derived blocks re-evaluate when streaming / unread state changes.
+  // Subscribe to unread state via Redux selector for reactivity
+  const unreadAgentIds$ = selectUnreadAgentIds();
+
+  // Reactive version counter for active streams (non-Redux service)
   let activeStreamsVersion = $state(0);
-  let unreadVersion = $state(0);
 
   onMount(() => {
     const unsubStreams = activeStreamsTracker.subscribe(() => activeStreamsVersion++);
-    const unsubUnread = unreadTrackingService.subscribe(() => unreadVersion++);
     return () => {
       unsubStreams();
-      unsubUnread();
     };
   });
 
@@ -40,8 +40,8 @@
   });
 
   let unreadAgentIds = $derived.by(() => {
-    void unreadVersion;
-    return workspace ? unreadTrackingService.getUnreadAgentIdsForWorkspace(workspace.id) : [];
+    void $unreadAgentIds$; // triggers re-evaluation on unread state changes
+    return workspace ? selectUnreadAgentIdsForWorkspace.select(getReduxStore().getState(), workspace.id) : [];
   });
 
   // Filter out streaming agents from unread list

@@ -225,7 +225,7 @@ export class FileTrackingStorage {
    * Clear all singleton instances (for testing or shutdown)
    */
   static clearAllInstances(): void {
-    for (const [workspaceId, instance] of FileTrackingStorage.instances) {
+    for (const [, instance] of FileTrackingStorage.instances) {
       instance.cleanup();
     }
     FileTrackingStorage.instances.clear();

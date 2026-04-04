@@ -364,7 +364,9 @@ export function removeItem<ITEM extends object, K extends keyof ITEM & string>(
     return collection;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { [itemId]: _item, ...newMap } = collection.map;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { [itemId]: _count, ...newRefsCount } = collection.refsCount;
 
   return {
@@ -403,6 +405,7 @@ export function decreaseRefsCount<ITEM extends object, K extends keyof ITEM & st
   const newRefsCount = (collection.refsCount[itemId] || 0) - 1;
 
   if (newRefsCount <= 0) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { [itemId]: _count, ...newRefsCount } = collection.refsCount;
 
     return removeItem(

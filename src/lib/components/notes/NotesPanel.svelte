@@ -1,15 +1,14 @@
 <script lang="ts">
-  import { WorkspaceId, NoteId } from '$shared/types/branded-ids';
+  import { WorkspaceId } from '$shared/types/branded-ids';
   import { faPlus, faLink, faGlobe } from '@fortawesome/free-solid-svg-icons';
   import { faGithub, faGoogle, faSlack, faFigma } from '@fortawesome/free-brands-svg-icons';
 
   import { Skeleton } from '../ui/skeleton';
   import VSCodeScrollablePanel from '../ui/VSCodeScrollablePanel.svelte';
   import { ListContainer, ListItem } from '../ui/list';
-  import { notesStateManager } from '$features/notes/notes.store.svelte';
-  import { notesClient } from '$features/notes/notes.client';
   import { getDispatch } from '$lib/store/utils/utils';
-  import { markNoteRead } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
+  import { createNote as createNoteAction, initializeNotes } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+  import { selectNotesLoading, selectNotesError, selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import { thirdPartySourcesClient } from '$features/third-party-sources/third-party-sources.client';
   import type { ThirdPartySource } from '$shared/types';
   import { hasUrls, handleThirdPartyDrop } from '$lib/utils/third-party-drag-drop';
@@ -22,7 +21,7 @@
     getNoteDepth,
     parseTaskStats,
   } from '../workspace/sidebar/utils';
-  import { track } from '$lib/services/analytics';
+
 
   const logger = createLogger('NotesPanel');
 
@@ -50,17 +49,19 @@
   // Local UI state
   let thirdPartySources: ThirdPartySource[] = $state([]);
   let sourcesLoading = $state(false);
-  let sourcesError: string | null = $state(null);
+  let sourcesError = $state<string | null>(null);
   let isDraggingOver = $state(false);
 
-  // Initialize notes state manager when workspace changes
+  // Initialize notes state when workspace changes
+  let lastInitializedWorkspaceId: string | null = null;
   $effect(() => {
-    if (workspaceId && notesStateManager.workspaceId !== workspaceId) {
+    if (workspaceId && lastInitializedWorkspaceId !== workspaceId) {
+      lastInitializedWorkspaceId = workspaceId;
       // Initialize with the current selected note to preserve selection
-      notesStateManager.initialize(
-        WorkspaceId(workspaceId),
-        selectedNoteId ? NoteId(selectedNoteId) : undefined,
-      );
+      dispatch(initializeNotes(
+        workspaceId,
+        selectedNoteId ? selectedNoteId : undefined,
+      ));
     }
   });
 
@@ -95,15 +96,15 @@
     }
   }
 
-  // Get notes from state manager
-  let loading = $derived(notesStateManager.loading);
-  let error = $derived(notesStateManager.error);
+  // Get notes from Redux store
+  const loading$ = selectNotesLoading(workspaceId);
+  let loading = $derived($loading$);
+  const error$ = selectNotesError(workspaceId);
+  let error = $derived($error$);
 
   // Get all notes as array for parent/child detection
-  let allNotes = $derived.by(() => {
-    const notesMap = notesStateManager.notes;
-    return notesMap ? Array.from(notesMap.values()) : [];
-  });
+  const allNotes$ = selectAllNotes(workspaceId);
+  let allNotes = $derived($allNotes$);
 
   // Filtered and sorted notes (with parent/child grouping)
   let filteredNotes = $derived(sortNotes(allNotes, []));
@@ -127,33 +128,14 @@
     }
   }
 
-  async function createNote() {
+  function createNote() {
     if (!workspaceId) return;
 
-    const result = await notesClient.create({
-      workspaceId: WorkspaceId(workspaceId),
+    dispatch(createNoteAction(workspaceId, {
       title: 'New Note',
       content: '',
       tags: [],
-    });
-
-    if (result.ok && result.data) {
-      // Track note creation
-      try {
-        const noteType = result.data.metadata?.task ? 'task' : 'regular';
-        track('Created Note', { note_type: noteType, source: 'sidebar' });
-      } catch {
-        // Analytics tracking should not break note creation
-      }
-
-      // Mark note as read BEFORE reloading notes to prevent race condition
-      // where computeUnreadNotes runs before the read record is persisted
-      dispatch(markNoteRead(workspaceId, result.data.id));
-
-      // Now reload notes - the read record is already persisted
-      await notesStateManager.reloadNotes();
-      onOpenNote(result.data.id);
-    }
+    }));
   }
 
   // Drag and drop handlers for third-party sources

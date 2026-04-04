@@ -15,7 +15,6 @@
  */
 
 import { Logger } from '../../../shared/logger';
-import { eventHandlerRegistry, type EventHandler } from '../../events/main/event-handler-registry';
 import { isAutoCommitEnabled } from '../../workspace/main/workspace-settings.service';
 import { commitAgentChanges } from './agent-commit.service';
 import { getServiceForWorkspace } from '../../file-tracking/main/file-tracking.ipc';
@@ -27,7 +26,8 @@ import { shouldSkipFileForAI } from '../../../shared/binary-file-extensions';
 import COMMIT_MESSAGE_INSTRUCTION from '../instructions/background/commit-message';
 import type { DiffChunk, WorkspaceId } from '../../../shared/types';
 import { LineType } from '../../../shared/types';
-import { unifiedEventBus } from '../../events/main/unified-event-bus';
+import { mainDispatch } from '../../../store/main/redux-store-bridge';
+import { gitAutoCommitStarted, gitAutoCommitSucceeded, gitAutoCommitHookFailure } from '../../../store/main/slices/git-events/git-events-slice';
 import { isRandomAgentName, isGenericAgentName } from '../../../lib/utils/agent-name-generator';
 import { backgroundGitOpsService } from '../../git/main/background-git-ops.service';
 
@@ -244,7 +244,7 @@ function formatDiffChunks(chunks: DiffChunk[]): string {
  * Task titles and agent names describe intent, not the specific changes made,
  * so they're used as fallbacks only when AI generation fails.
  */
-function needsAICommitMessage(_taskTitle: string | undefined, _agentName: string | undefined): boolean {
+function needsAICommitMessage(): boolean {
   return true;
 }
 
@@ -413,7 +413,7 @@ ${combinedDiff}
  * The auto-commit setting is checked at event time, so the user can toggle it
  * mid-turn and the value at turn-end is what's respected.
  */
-export const handleAgentIdleAutoCommit: EventHandler<AgentIdleEvent> = async (event) => {
+export async function handleAgentIdleAutoCommit(event: AgentIdleEvent): Promise<void> {
   const { workspaceId, data } = event;
   const { agentId, agentName, taskNoteId, taskTitle, finishReason } = data;
 
@@ -565,7 +565,7 @@ export const handleAgentIdleAutoCommit: EventHandler<AgentIdleEvent> = async (ev
   }
 
   let message = fallbackMessage;
-  if (needsAICommitMessage(taskTitle, currentAgentName) && changedFilePaths.length > 0) {
+  if (needsAICommitMessage() && changedFilePaths.length > 0) {
     message = await generateCommitMessage({
       workspaceId,
       filePaths: changedFilePaths,
@@ -576,11 +576,11 @@ export const handleAgentIdleAutoCommit: EventHandler<AgentIdleEvent> = async (ev
 
   // Append new status entry (start of a new auto-commit attempt) + emit domain event for UI
   pushAutoCommitStatus(agentId, { state: 'committing', agentName: currentAgentName });
-  unifiedEventBus.emitDomainEvent('git:auto-commit-started', {
+  mainDispatch(gitAutoCommitStarted({
     workspaceId: workspaceId as WorkspaceId,
     agentId,
     agentName: currentAgentName,
-  });
+  }));
 
   // Register background git operation so it survives workspace navigation
   const operationId = backgroundGitOpsService.registerOperation(
@@ -615,14 +615,14 @@ export const handleAgentIdleAutoCommit: EventHandler<AgentIdleEvent> = async (ev
         fileCount: result.data.fileCount,
         agentName: currentAgentName,
       });
-      unifiedEventBus.emitDomainEvent('git:auto-commit-succeeded', {
+      mainDispatch(gitAutoCommitSucceeded({
         workspaceId: workspaceId as WorkspaceId,
         agentId,
         agentName: currentAgentName,
         hash: result.data.hash,
         message,
         fileCount: result.data.fileCount,
-      });
+      }));
 
       // Mark background operation as completed
       backgroundGitOpsService.completeOperation(operationId, {
@@ -656,14 +656,14 @@ export const handleAgentIdleAutoCommit: EventHandler<AgentIdleEvent> = async (ev
 
         // Update current attempt status (committing → hook-failure) + notify UI
         updateLastAutoCommitStatus(agentId, { state: 'hook-failure', status: 'waking-agent', retryCount, agentName: currentAgentName });
-        unifiedEventBus.emitDomainEvent('git:auto-commit-hook-failure', {
+        mainDispatch(gitAutoCommitHookFailure({
           workspaceId: workspaceId as WorkspaceId,
           agentId,
           agentName: currentAgentName,
           status: 'waking-agent',
           hookOutput,
           retryCount,
-        });
+        }));
 
         // Update background operation progress - agent being woken to fix hooks
         backgroundGitOpsService.updateProgress(
@@ -712,14 +712,14 @@ export const handleAgentIdleAutoCommit: EventHandler<AgentIdleEvent> = async (ev
 
       // Update current attempt status (committing → hook-failure) + notify UI
       updateLastAutoCommitStatus(agentId, { state: 'hook-failure', status: 'retries-exhausted', retryCount, agentName: currentAgentName });
-      unifiedEventBus.emitDomainEvent('git:auto-commit-hook-failure', {
+      mainDispatch(gitAutoCommitHookFailure({
         workspaceId: workspaceId as WorkspaceId,
         agentId,
         agentName: currentAgentName,
         status: 'retries-exhausted',
         hookOutput,
         retryCount,
-      });
+      }));
 
       // Mark background operation as failed - retries exhausted
       backgroundGitOpsService.failOperation(
@@ -764,18 +764,6 @@ export const handleAgentIdleAutoCommit: EventHandler<AgentIdleEvent> = async (ev
     });
     backgroundGitOpsService.failOperation(operationId, `Auto-commit failed: ${errorMessage}`);
   }
-};
-
-/**
- * Register the auto-commit handler
- * Call this during app initialization
- */
-export function registerAutoCommitHandler(): void {
-  logger.info('[AUTO-COMMIT] Registering auto-commit handler');
-
-  eventHandlerRegistry.register('agent:idle', handleAgentIdleAutoCommit, {
-    name: 'handleAgentIdleAutoCommit',
-  });
-
-  logger.info('[AUTO-COMMIT] Auto-commit handler registered');
 }
+
+

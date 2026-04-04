@@ -18,6 +18,7 @@ export class HelloCdpTool extends BaseMCPTool {
     });
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async execute(call: ToolCall): Promise<ToolResult> {
     try {
       const client = this.connectionManager.getClient();

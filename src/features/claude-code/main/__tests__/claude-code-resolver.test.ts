@@ -36,7 +36,7 @@ describe('claude-code-resolver', () => {
     });
 
     it('returns direct binary when claude-agent-acp is found', async () => {
-      vi.mocked(findBinary).mockImplementation(async (name, _opts) => {
+      vi.mocked(findBinary).mockImplementation(async (name) => {
         if (name === 'claude') return '/usr/local/bin/claude';
         if (name === 'claude-agent-acp') return '/usr/local/bin/claude-agent-acp';
         return null;
@@ -50,7 +50,7 @@ describe('claude-code-resolver', () => {
     });
 
     it('falls back to npx when no direct binary is available', async () => {
-      vi.mocked(findBinary).mockImplementation(async (name, _opts) => {
+      vi.mocked(findBinary).mockImplementation(async (name) => {
         if (name === 'claude') return '/usr/local/bin/claude';
         if (name === 'claude-agent-acp') return null;
         if (name === 'npx') return '/usr/local/bin/npx';
@@ -65,7 +65,7 @@ describe('claude-code-resolver', () => {
     });
 
     it('returns null when neither direct binary nor npx is available', async () => {
-      vi.mocked(findBinary).mockImplementation(async (name, _opts) => {
+      vi.mocked(findBinary).mockImplementation(async (name) => {
         if (name === 'claude') return '/usr/local/bin/claude';
         return null;
       });
@@ -77,7 +77,7 @@ describe('claude-code-resolver', () => {
 
   describe('package name verification (regression guard)', () => {
     it('npx fallback uses new package name @zed-industries/claude-agent-acp', async () => {
-      vi.mocked(findBinary).mockImplementation(async (name, _opts) => {
+      vi.mocked(findBinary).mockImplementation(async (name) => {
         if (name === 'claude') return '/usr/local/bin/claude';
         if (name === 'npx') return '/usr/local/bin/npx';
         return null;
@@ -94,7 +94,7 @@ describe('claude-code-resolver', () => {
   describe('clearClaudeCodeCache()', () => {
     it('clears all cached paths so re-detection uses new values', async () => {
       // First call: claude + agent-acp found
-      vi.mocked(findBinary).mockImplementation(async (name, _opts) => {
+      vi.mocked(findBinary).mockImplementation(async (name) => {
         if (name === 'claude') return '/first/claude';
         if (name === 'claude-agent-acp') return '/first/claude-agent-acp';
         return null;
@@ -105,7 +105,7 @@ describe('claude-code-resolver', () => {
 
       // Clear cache and change mock
       clearClaudeCodeCache();
-      vi.mocked(findBinary).mockImplementation(async (name, _opts) => {
+      vi.mocked(findBinary).mockImplementation(async (name) => {
         if (name === 'claude') return '/second/claude';
         if (name === 'claude-agent-acp') return '/second/claude-agent-acp';
         return null;
@@ -118,7 +118,7 @@ describe('claude-code-resolver', () => {
 
   describe('isClaudeCodeInstalled()', () => {
     it('returns true when claude CLI is found', async () => {
-      vi.mocked(findBinary).mockImplementation(async (name, _opts) => {
+      vi.mocked(findBinary).mockImplementation(async (name) => {
         if (name === 'claude') return '/usr/local/bin/claude';
         return null;
       });
@@ -134,7 +134,7 @@ describe('claude-code-resolver', () => {
 
   describe('getClaudeCodePath()', () => {
     it('returns the path when claude CLI is found', async () => {
-      vi.mocked(findBinary).mockImplementation(async (name, _opts) => {
+      vi.mocked(findBinary).mockImplementation(async (name) => {
         if (name === 'claude') return '/usr/local/bin/claude';
         return null;
       });

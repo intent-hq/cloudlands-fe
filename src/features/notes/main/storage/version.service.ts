@@ -9,7 +9,6 @@
  * - Atomic writes: Uses temp file + rename for crash safety
  */
 
-import { promises as fs } from 'fs';
 import { Logger } from '../../../../shared/logger';
 import type { VersionEntry, VersionAuthor } from './note-storage.types';
 import { VERSION_CONFIG } from './note-storage.types';

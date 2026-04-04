@@ -32,12 +32,13 @@
   import { track } from '$lib/services/analytics';
   import { createLogger } from '$lib/utils/client-logger';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
-  import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
+  import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
 
   const logger = createLogger('InitialAgentPicker');
   const specialists$ = selectSpecialists();
+  const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
   const visibleSpecialists = $derived.by(() =>
-    filterSpecialistsByGitHubAuth($specialists$, githubAuthStore.state.isAuthenticated),
+    filterSpecialistsByGitHubAuth($specialists$, $isGitHubAuth$),
   );
   const customSpecialistsLoaded$ = selectCustomSpecialistsLoaded();
   const userOverrides$ = selectUserOverrides();
@@ -475,7 +476,7 @@
           </button>
         {/snippet}
 
-        {#snippet content({ close }: { close: () => void })}
+        {#snippet content()}
           <div class="min-w-[220px] max-h-[300px] overflow-y-auto">
             <!-- General (blank) option -->
             <button

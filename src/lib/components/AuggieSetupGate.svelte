@@ -12,7 +12,6 @@
   import { ACP_PROVIDERS } from '$shared/config/provider-config';
   import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
   import {
-    faArrowUp,
     faArrowUpRightFromSquare,
     faCircleCheck,
     faCircleNotch,
@@ -46,7 +45,6 @@
     binaryInstallAvailable?: boolean;
   };
 
-  const INSTALL_COMMAND = 'npm install -g @augmentcode/auggie';
   const STATUS_REFRESH_INTERVAL_MS = 15000;
   // Minimum time between status checks to prevent rapid re-checks and EAGAIN errors
   const STATUS_CHECK_DEBOUNCE_MS = 3000;
@@ -56,10 +54,6 @@
   let status: AuggieStatus | null = $state(null);
   let loading = $state(true);
   let actionInProgress = $state(false); // Unified loading state for actions
-  let statusError: string | null = $state(null);
-  let installError: string | null = $state(null);
-  let installErrorType: InstallErrorType | null = $state(null);
-  let showManualInstall = $state(false);
   let statusPollHandle: ReturnType<typeof setInterval> | null = null;
   let statusCheckPromise: Promise<void> | null = null;
   // Timestamp of last successful status check for debouncing
@@ -68,6 +62,12 @@
   // Provider availability state (checks all providers: auggie, claude-code, codex)
   let providerAvailability: ProviderAvailabilityResult | null = $state(null);
   let providerCheckError: string | null = $state(null);
+
+  // Error states
+  let statusError: string | null = $state(null);
+  let installError: string | null = $state(null);
+  let installErrorType: InstallErrorType | null = $state(null);
+  let showManualInstall = $state(false);
 
   // Authentication flow states
   let authInProgress = $state(false);
@@ -90,6 +90,7 @@
   });
 
   // Check if we should show the gate (no providers available)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const shouldShowSetupGate = $derived.by(() => {
     if (isSandboxPage) return false;
     if (loading) return false;
@@ -614,7 +615,7 @@
     try {
       await navigator.clipboard.writeText(command);
       toast.success('Copied to clipboard');
-    } catch (err) {
+    } catch {
       toast.error('Could not copy command');
     }
   }
@@ -631,6 +632,7 @@
   });
 
   // Derived: is the version outdated (installed but below minimum)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const needsUpdate = $derived.by(() => {
     return !!status && status.installed && !status.versionOk;
   });
@@ -639,6 +641,7 @@
   // Step 1: Install (or update if version is too old)
   // Step 2: Authenticate
   // Step 3: Ready
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const currentStep = $derived.by(() => {
     if (!status?.installed || !status?.versionOk) return 1;
     if (!status?.authenticated) return 2;

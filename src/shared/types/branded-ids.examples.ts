@@ -6,10 +6,10 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { createMessageId, createToolCallId } from '$shared/types/branded-ids';
+import { createMessageId } from '$shared/types/branded-ids';
 import { IdGenerator } from '../services/id-generator';
 import { unifiedIdService } from '$shared/services/unified-id.service';
-import type { AgentId, SessionId, MessageId, WorkspaceId } from './branded-ids';
+import type { AgentId, WorkspaceId } from './branded-ids';
 import * as BrandedIds from './branded-ids';
 import * as Migration from './branded-ids.migration';
 
@@ -43,20 +43,16 @@ interface Agent {
   workspaceId: WorkspaceId;
 }
 
-interface Message {
-  id: MessageId;
-  agentId: AgentId;
-  content: string;
-}
-
 // Type-safe function - can only accept AgentId
-export function getAgent(id: AgentId): Agent | null {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function getAgent(_id: AgentId): Agent | null {
   // Implementation
   return null;
 }
 
 // Type-safe function - can only accept SessionId
-export function getSession(id: AgentId): any {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function getSession(_id: AgentId): any {
   // Implementation
   return null;
 }
@@ -155,7 +151,7 @@ export function exampleDeepMigration() {
   };
 
   // Deep migration handles nested structures
-  const migratedWorkspace = Migration.migrateToBrandedIdsDeep(oldWorkspace);
+  Migration.migrateToBrandedIdsDeep(oldWorkspace);
   // Now all IDs at all levels are branded
 }
 
@@ -165,7 +161,7 @@ export function exampleDeepMigration() {
 
 export function exampleTypeSafety() {
   const agentId = unifiedIdService.generateAgentId();
-  const sessionId = unifiedIdService.generateAgentId();
+  unifiedIdService.generateAgentId();
 
   // ✅ Correct - types match
   getAgent(agentId);

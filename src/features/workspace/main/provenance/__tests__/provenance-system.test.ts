@@ -30,6 +30,7 @@ describe('ProvenanceContextManager', () => {
   });
 
   it('should push and pop contexts correctly', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const contextId = manager.createAgentContext({
       agentId: 'agent-1',
       agentName: 'Test Agent',
@@ -44,12 +45,14 @@ describe('ProvenanceContextManager', () => {
   });
 
   it('should handle nested contexts', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const ctx1 = manager.createAgentContext({
       agentId: 'agent-1',
       agentName: 'Agent 1',
       messageId: 'msg-1',
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const ctx2 = manager.createAgentContext({
       agentId: 'agent-2',
       agentName: 'Agent 2',

@@ -4,12 +4,14 @@
    *
    * Simple URL input with recent URLs list.
    */
-  import { browserStore } from '$features/browser/browser.store.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
   import { faGlobe, faPlus, faHistory } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { selectBrowserRecentUrls } from '$lib/store/slices/browser/browser-selectors';
+  import { addRecentUrl, initBrowserWorkspace } from '$lib/store/slices/browser/browser-slice';
 
   interface Props {
     workspaceId: string;
@@ -18,6 +20,9 @@
   }
 
   let { workspaceId, onSelect, onClose }: Props = $props();
+
+  const dispatch = getDispatch();
+  const recentUrls$ = selectBrowserRecentUrls(workspaceId);
 
   let urlInput = $state('');
   let urlError = $state('');
@@ -66,7 +71,7 @@
     urlError = '';
 
     // Add to browser store for history
-    browserStore.addRecentUrl(normalized);
+    dispatch(addRecentUrl(workspaceId, normalized, undefined, undefined, new Date().toISOString()));
 
     onSelect({
       type: 'browser-url',
@@ -98,7 +103,7 @@
   }
 
   onMount(() => {
-    browserStore.initialize(workspaceId);
+    dispatch(initBrowserWorkspace(workspaceId));
   });
 </script>
 
@@ -129,14 +134,14 @@
   </div>
 
   <!-- Recent URLs -->
-  {#if browserStore.recentUrls.length > 0}
+  {#if $recentUrls$.length > 0}
     <div class="mt-6">
       <div class="flex items-center gap-2 text-sm text-subtle mb-2">
         <Fa icon={faHistory} size="sm" />
         <span>Recent URLs</span>
       </div>
       <div class="space-y-1 max-h-48 overflow-y-auto">
-        {#each browserStore.recentUrls.slice(0, 10) as entry (entry.url)}
+        {#each $recentUrls$.slice(0, 10) as entry (entry.url)}
           <button
             type="button"
             class="w-full text-left px-3 py-2 rounded hover:bg-muted/50 transition-colors cursor-pointer flex items-center gap-2"

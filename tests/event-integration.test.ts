@@ -11,10 +11,8 @@ import { EventCoordinator } from '../src/features/workspace/change-detection/eve
 import { ChangeDetectorRefactored } from '../src/features/workspace/change-detector-refactored';
 import {
   WorkspaceEventType,
-  type WorkspaceEvent,
   type FileChangedEvent,
 } from '../src/features/events/types';
-import { EventEmitter } from '../src/shared/event-emitter';
 import type { ProcessedChange } from '../src/features/workspace/types';
 import { resetDeduplicationService } from '../src/features/events/event-deduplication.service';
 

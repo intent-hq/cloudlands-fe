@@ -42,7 +42,7 @@ export function sanitizeSurrogates(input: string): string {
   }
   // Match a high surrogate not followed by a low surrogate,
   // or a low surrogate not preceded by a high surrogate.
-  // eslint-disable-next-line no-misleading-character-class
+   
   return input.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD');
 }
 

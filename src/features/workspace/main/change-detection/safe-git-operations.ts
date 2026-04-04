@@ -7,7 +7,6 @@
 
 import { spawn } from 'child_process';
 import * as path from 'path';
-import * as fs from 'fs';
 import { promises as fsPromises } from 'fs';
 import { Logger } from '../../../../shared/logger';
 import { createGitEnv } from '../../../../shared/git/git-env';

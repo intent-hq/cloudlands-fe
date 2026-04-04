@@ -12,7 +12,7 @@
  */
 
 import type { ContentBlock } from './content-block';
-import type { MessageId, AgentId } from './branded-ids';
+import type { AgentId } from './branded-ids';
 
 /**
  * Message role type

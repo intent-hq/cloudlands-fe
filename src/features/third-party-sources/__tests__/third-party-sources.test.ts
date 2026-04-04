@@ -11,8 +11,6 @@ import { MetadataExtractor } from '../metadata-extractor';
 import type { ThirdPartySource } from '../../../shared/types';
 import { ThirdPartySourceType } from '../../../shared/types';
 import * as fs from 'fs/promises';
-import * as path from 'path';
-import { tmpdir } from 'os';
 
 // Mock dependencies
 vi.mock('fs/promises', () => ({
@@ -24,14 +22,26 @@ vi.mock('fs/promises', () => ({
   unlink: vi.fn(),
 }));
 
+// Mock Redux store bridge (services now dispatch domain events via mainDispatch)
+vi.mock('../../../store/main/redux-store-bridge', () => ({
+  mainDispatch: vi.fn((action: any) => action),
+  getMainStore: vi.fn(),
+  getMainState: vi.fn(),
+}));
+
+vi.mock('../../../store/main/slices/source-events/source-events-slice', () => ({
+  sourceCreated: vi.fn((payload: any) => ({ type: 'source-events/sourceCreated', payload })),
+  sourceUpdated: vi.fn((payload: any) => ({ type: 'source-events/sourceUpdated', payload })),
+  sourceDeleted: vi.fn((payload: any) => ({ type: 'source-events/sourceDeleted', payload })),
+}));
+
+
 describe('ThirdPartySourcesService', () => {
   let service: ThirdPartySourcesService;
   let repository: ThirdPartySourcesRepository;
   let metadataExtractor: MetadataExtractor;
-  let testDir: string;
 
   beforeEach(() => {
-    testDir = path.join(tmpdir(), `test-workspace-${Date.now()}`);
     repository = new ThirdPartySourcesRepository();
     metadataExtractor = new MetadataExtractor();
 

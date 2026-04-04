@@ -206,7 +206,7 @@ describe('MetadataSyncService', () => {
       });
 
       // Local has extra files in synced and non-synced directories
-      mockFs.readdir.mockImplementation(async (dirPath: string, _opts?: unknown) => {
+      mockFs.readdir.mockImplementation(async (dirPath: string) => {
         if (dirPath === config.localCachePath) {
           return [
             { name: 'notes', isDirectory: () => true, isFile: () => false },
@@ -251,7 +251,7 @@ describe('MetadataSyncService', () => {
         ],
       });
 
-      mockFs.readdir.mockImplementation(async (dirPath: string, _opts?: unknown) => {
+      mockFs.readdir.mockImplementation(async (dirPath: string) => {
         if (dirPath === config.localCachePath) {
           return [
             { name: 'agents', isDirectory: () => true, isFile: () => false },

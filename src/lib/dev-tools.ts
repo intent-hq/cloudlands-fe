@@ -67,7 +67,8 @@ class DevTools {
    * Get heartbeat service statistics
    */
   getHeartbeatStats() {
-    // This would need to be implemented in the heartbeat.service.ts
+    // Heartbeat monitoring is managed by the heartbeat saga
+    // in workspace-agents. Stats are not currently tracked in Redux state.
     return {
       monitored: 0,
       dead: 0,
@@ -102,6 +103,7 @@ class DevTools {
   /**
    * Check health of a specific agent
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   checkHealth(agentId: string): { healthy: boolean; lastSeen?: number } {
     if (!this.isEnabled) {
       console.warn('DevTools are only available in development mode');
@@ -179,62 +181,65 @@ export const devTools = DevTools.getInstance();
 
 // Expose to window in development mode only
 if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-  // Dynamically import autoUpdateStore to avoid circular dependencies
-  import('$features/auto-update/auto-update.store.svelte').then(({ autoUpdateStore }) => {
-    // Create a namespace for all dev tools
-    (window as any).DevTools = {
-      // Main stats function
-      getStats: () => devTools.getStats(),
+  // Create a namespace for all dev tools
+  (window as any).DevTools = {
+    // Main stats function
+    getStats: () => devTools.getStats(),
 
-      // Service-specific functions
-      HeartbeatService: {
-        getStats: () => devTools.getHeartbeatStats(),
-        checkHealth: (agentId: string) => devTools.checkHealth(agentId),
+    // Service-specific functions
+    HeartbeatService: {
+      getStats: () => devTools.getHeartbeatStats(),
+      checkHealth: (agentId: string) => devTools.checkHealth(agentId),
+    },
+
+    MessageQueue: {
+      getStatus: () => devTools.getMessageQueueStats(),
+      retry: (messageId: string) => devTools.retryMessage(messageId),
+    },
+
+    ErrorRecovery: {
+      getStats: () => devTools.getErrorRecoveryStats(),
+      reset: () => devTools.resetErrorRecovery(),
+    },
+
+    CircuitBreaker: {
+      getState: () => devTools.getCircuitBreakerState(),
+      reset: () => devTools.resetCircuitBreaker(),
+    },
+
+    // Auto-update simulation tools — now use Redux store
+    AutoUpdate: {
+      getState: () => {
+        try {
+          const { getReduxStore } = require('$lib/store/redux-dispatch-bridge');
+          return getReduxStore().getState().autoUpdate;
+        } catch { return null; }
       },
-
-      MessageQueue: {
-        getStatus: () => devTools.getMessageQueueStats(),
-        retry: (messageId: string) => devTools.retryMessage(messageId),
+      simulateSetState: (partial: Record<string, unknown>) => {
+        try {
+          const { getReduxStore } = require('$lib/store/redux-dispatch-bridge');
+          const { simulateSetState } = require('$lib/store/slices/auto-update/auto-update-slice');
+          getReduxStore().dispatch(simulateSetState(partial));
+        } catch { /* ignore */ }
       },
+    },
+  };
 
-      ErrorRecovery: {
-        getStats: () => devTools.getErrorRecoveryStats(),
-        reset: () => devTools.resetErrorRecovery(),
-      },
-
-      CircuitBreaker: {
-        getState: () => devTools.getCircuitBreakerState(),
-        reset: () => devTools.resetCircuitBreaker(),
-      },
-
-      // Auto-update simulation tools
-      AutoUpdate: {
-        getState: () => autoUpdateStore.state,
-        simulateUpdateFlow: () => autoUpdateStore.simulateUpdateFlow(),
-        simulateNoUpdate: () => autoUpdateStore.simulateNoUpdate(),
-        simulateError: (msg?: string) => autoUpdateStore.simulateError(msg),
-        reset: () => autoUpdateStore.simulateReset(),
-      },
-    };
-
-    // Log that dev tools are available
-    console.log('%cDevTools Available', 'color: #4CAF50; font-weight: bold; font-size: 14px;');
-    console.log(
-      '%cAccess debugging tools via window.DevTools or the shortcuts below:',
-      'color: #888; font-size: 12px;',
-    );
-    console.log(
-      '%c' +
-        'DevTools.getStats() - Get all service statistics\n' +
-        'DevTools.HeartbeatService.getStats() - Heartbeat stats\n' +
-        'DevTools.MessageQueue.getStatus() - Message queue status\n' +
-        'DevTools.ErrorRecovery.getStats() - Error recovery stats\n' +
-        'DevTools.CircuitBreaker.getState() - Circuit breaker state\n' +
-        'DevTools.AutoUpdate.simulateUpdateFlow() - Simulate full update\n' +
-        'DevTools.AutoUpdate.simulateError() - Simulate timeout/error\n' +
-        'DevTools.AutoUpdate.simulateNoUpdate() - Simulate up-to-date\n' +
-        'DevTools.AutoUpdate.reset() - Reset update state',
-      'color: #666; font-size: 11px;',
-    );
-  });
+  // Log that dev tools are available
+  console.log('%cDevTools Available', 'color: #4CAF50; font-weight: bold; font-size: 14px;');
+  console.log(
+    '%cAccess debugging tools via window.DevTools or the shortcuts below:',
+    'color: #888; font-size: 12px;',
+  );
+  console.log(
+    '%c' +
+      'DevTools.getStats() - Get all service statistics\n' +
+      'DevTools.HeartbeatService.getStats() - Heartbeat stats\n' +
+      'DevTools.MessageQueue.getStatus() - Message queue status\n' +
+      'DevTools.ErrorRecovery.getStats() - Error recovery stats\n' +
+      'DevTools.CircuitBreaker.getState() - Circuit breaker state\n' +
+      'DevTools.AutoUpdate.getState() - Get auto-update state\n' +
+      'DevTools.AutoUpdate.simulateSetState({...}) - Set auto-update state',
+    'color: #666; font-size: 11px;',
+  );
 }

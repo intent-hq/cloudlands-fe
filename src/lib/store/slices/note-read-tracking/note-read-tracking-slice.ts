@@ -15,8 +15,6 @@ export type NoteReadTrackingState = {
   isLoading: boolean;
   /** Currently viewed note ID (main panel is showing this note) */
   currentlyViewedNoteId: string | null;
-  /** Current workspace ID for tracking workspace switches */
-  currentWorkspaceId: string | null;
 };
 
 // ============================================================================
@@ -28,7 +26,6 @@ export const initialState: NoteReadTrackingState = {
   unreadNoteIds: {},
   isLoading: false,
   currentlyViewedNoteId: null,
-  currentWorkspaceId: null,
 };
 
 function withoutUnreadNoteId(
@@ -39,6 +36,7 @@ function withoutUnreadNoteId(
     return unreadNoteIds;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { [noteId]: _removed, ...rest } = unreadNoteIds;
   return rest;
 }
@@ -65,13 +63,13 @@ export const clearCurrentlyViewed = createAction(
 );
 
 /** Optimistically mark a note as read (reducer handles state, saga handles IPC) */
-export const markNoteRead = createAction<[workspaceId: string, noteId: string]>(
-  "noteReadTracking/markNoteRead"
-);
-
-/** Result of markNoteRead IPC — currently unused but kept for extensibility */
-export const markNoteReadSuccess = createAction<[noteId: string]>(
-  "noteReadTracking/markNoteReadSuccess"
+export const markNoteRead = createAction(
+  "noteReadTracking/markNoteRead",
+  (workspaceId: string, noteId: string) => ({
+    workspaceId,
+    noteId,
+    now: new Date().toISOString(),
+  }),
 );
 
 /** Trigger debounced refresh of unread notes */
@@ -94,11 +92,6 @@ export const clearCache = createAction(
   "noteReadTracking/clearCache"
 );
 
-/** Clear unread status for a specific note */
-export const clearUnread = createAction<[noteId: string]>(
-  "noteReadTracking/clearUnread"
-);
-
 /** Request to create a new note (handled by saga) */
 export const createNoteRequested = createAction<[wsId: string]>(
   "noteReadTracking/createNoteRequested"
@@ -112,11 +105,6 @@ export const loadNoteReadStatus = createAction<[workspaceId: string, noteId: str
 /** Cache a read record from IPC result */
 export const loadNoteReadStatusSuccess = createAction<[noteId: string, record: NoteReadRecord]>(
   "noteReadTracking/loadNoteReadStatusSuccess"
-);
-
-/** Clear stale data when workspace changes (before compute) */
-export const workspaceChanged = createAction<[workspaceId: string]>(
-  "noteReadTracking/workspaceChanged"
 );
 
 // ============================================================================
@@ -136,8 +124,8 @@ export const noteReadTrackingReducer = createReducer<NoteReadTrackingState>(init
     if (!state.currentlyViewedNoteId) return state;
     return { ...state, currentlyViewedNoteId: null };
   })
-  .with(markNoteRead, (state, { payload: [_workspaceId, noteId] }) => {
-    const now = new Date().toISOString();
+  .with(markNoteRead, (state, { payload }) => {
+    const { noteId, now } = payload;
     const existing = state.readRecords[noteId];
     return {
       ...state,
@@ -161,18 +149,9 @@ export const noteReadTrackingReducer = createReducer<NoteReadTrackingState>(init
     isLoading,
   }))
   .with(clearCache, () => ({ ...initialState }))
-  .with(clearUnread, (state, { payload: [noteId] }) => ({
-    ...state,
-    unreadNoteIds: withoutUnreadNoteId(state.unreadNoteIds, noteId),
-    currentlyViewedNoteId:
-      state.currentlyViewedNoteId === noteId ? null : state.currentlyViewedNoteId,
-  }))
+
   .with(loadNoteReadStatusSuccess, (state, { payload: [noteId, record] }) => ({
     ...state,
     readRecords: { ...state.readRecords, [noteId]: record },
   }))
-  .with(workspaceChanged, (state, { payload: [workspaceId] }) => ({
-    ...initialState,
-    currentWorkspaceId: workspaceId,
-  }));
 

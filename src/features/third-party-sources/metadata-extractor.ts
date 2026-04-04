@@ -179,6 +179,7 @@ export class MetadataExtractor {
   /**
    * Extract main text content from HTML
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private extractTextContent($: cheerio.CheerioAPI, url: string): string {
     // Remove script and style elements
     $('script, style, noscript').remove();
@@ -223,6 +224,7 @@ export class MetadataExtractor {
   /**
    * Extract main HTML content (for offline viewing)
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private extractMainHtml($: cheerio.CheerioAPI, url: string): string {
     // Try to find main content area
     const contentSelectors = ['main', 'article', '[role="main"]', '.content', '#content'];
@@ -335,7 +337,7 @@ export class MetadataExtractor {
       }
 
       return result;
-    } catch (error) {
+    } catch  {
       return this.extractGeneric(url);
     }
   }

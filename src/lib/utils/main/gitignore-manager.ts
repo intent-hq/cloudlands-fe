@@ -59,7 +59,7 @@ export class GitignoreManager {
         this.ig.add(userPatterns);
         this.patterns.push(...userPatterns);
       }
-    } catch (error) {
+    } catch {
       // Failed to load .gitignore — defaults are already added above.
       // If we errored before adding defaults (shouldn't happen), add them now.
       if (this.patterns.length === 0) {

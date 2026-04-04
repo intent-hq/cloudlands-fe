@@ -4,7 +4,8 @@
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import { themeManager } from '$lib/utils/theme';
 
-  interface Props {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  type Props = {
     code?: string;
     language?: string;
     showLineNumbers?: boolean;
@@ -27,7 +28,9 @@
     showLineNumbers = false,
     startLineNumber = 1,
     highlightLines = [],
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     fileName = '',
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     filename = '',
     maxHeight = undefined,
     noBorder = false,
@@ -106,7 +109,7 @@
   <div class="flex">
     {#if showLineNumbers}
       <div class="line-numbers-gutter select-none text-right flex-shrink-0 py-3 pl-3 pr-2">
-        {#each lineNumbers as lineNum, i (lineNum)}
+        {#each lineNumbers as lineNum (lineNum)}
           <div class="line-number" class:highlighted={highlightLines.includes(lineNum)}>
             {lineNum}
           </div>

@@ -6,31 +6,74 @@
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import { backgroundGitActionsService } from '$features/accept-changes/background-git-actions.service';
   import type { UndoCommitMetadata } from '$features/accept-changes/types';
-  import { agentService } from '$features/agent/agent.service';
+  import { agentService } from '$features/agent/agent-ipc-bridge';
+  import { getDeferredResults, hasDeferredResults } from '$features/agent/deferred-results-cache';
+  import { selectExecutorState } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
   import {
-    createCommitMessageExecutor,
-    createPRDescriptionExecutor,
-    getDeferredResults,
-    hasDeferredResults,
-  } from '$features/agent/background-agent-executor.svelte';
-  import { sessionStore } from '$features/agent/browser';
-  import { createAgentLockStore } from '$features/file-tracking/agent-lock.store.svelte';
-  import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
+    executeBackgroundAgent,
+    cancelExecution,
+    reconnectAgent,
+  } from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
+  import type { ExecutorStatus } from '$lib/store/slices/background-agent-executor/background-agent-executor-types';
+  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { selectLockedAgentIds } from '$lib/store/slices/agent-lock/agent-lock-selectors';
+  import { recomputeAgentLocks } from '$lib/store/slices/agent-lock/agent-lock-slice';
+  import {
+    selectStagedWorkingChanges as selectFtStagedChanges,
+    selectUnstagedWorkingChanges as selectFtUnstagedChanges,
+    selectFileTrackingCommits as selectFtCommits,
+    selectFileTrackingBoundarySha as selectFtBoundarySha,
+    selectFileTrackingOlderCommits as selectFtOlderCommits,
+    selectFileTrackingLoadingOlderCommits as selectFtLoadingOlderCommits,
+    selectFileTrackingLoading as selectFtLoading,
+    selectFileTrackingChangesTruncated as selectFtChangesTruncated,
+    selectFileTrackingTotalChangesCount as selectFtTotalChangesCount,
+  } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+  import {
+    clearOlderCommits as ftClearOlderCommits,
+  } from '$lib/store/slices/file-tracking/file-tracking-slice';
+
+  import {
+    stageByPathRequested,
+    unstageByPathRequested,
+    revertByPathRequested,
+    refreshRequested,
+    loadOlderCommitsRequested,
+  } from '$lib/store/slices/file-tracking/file-tracking-slice';
   import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
   import {
-    refreshPRStatus,
-    registerWindowFocusRefresh,
-    startPRStatusPolling,
-  } from '$features/git-tracking/pr-status.service';
+    refreshPRStatusRequested,
+  } from '$lib/store/slices/pr-status/pr-status-slice';
   import { gitCache } from '$features/git/git-cache';
   import { gitClient } from '$features/git/git.client';
-  import { gitStore } from '$features/git/git.store.svelte';
-  import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
-  import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
+  import { loadGitStatus } from '$lib/store/slices/git/git-slice';
+  import {
+    selectGitStatus,
+    selectGitAhead,
+    selectGitBehind,
+  } from '$lib/store/slices/git/git-selectors';
+  import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
+  import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
+  import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { handleLink } from '$features/navigation/link-handler';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { getTransientUIStore } from '$features/workspace/transient-ui-state.store.svelte';
+  import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
   import { addTerminal, openTerminalOverlay } from '$lib/store/slices/terminals/terminals-slice';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+    setPostMergeState,
+    setSidebarCreatePRWhenReady,
+  } from '$lib/store/slices/transient-ui/transient-ui-slice';
+  import { selectSidebarChangesState } from '$lib/store/slices/transient-ui/transient-ui-selectors';
+  import {
+    selectActiveWorkspaceId,
+    selectWorkspaceById,
+    selectWorkspaceActivePullRequest,
+  } from '$lib/store/slices/workspace/workspace-selectors';
+  import { getPRDisplayTitle } from '$lib/utils/pull-request-utils';
+  import {
+    loadWorkspacesRequested,
+    setWorkspaceEntity,
+  } from '$lib/store/slices/workspace/workspace-slice';
   import { getDispatch } from '$lib/store/utils/utils';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
@@ -93,6 +136,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import confetti from 'canvas-confetti';
   import { onMount, tick, untrack } from 'svelte';
+  import { readable, writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { flip } from 'svelte/animate';
   import { quintOut } from 'svelte/easing';
@@ -144,33 +188,38 @@
     onOpenChange,
     onOpenFullPanel,
     onOpenNote,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onOpenCodeReview,
   }: Props = $props();
 
-  // Get transient UI store lazily to avoid creating $state during effect flush
-  // NOTE: We cache the store reference at initialization time (not in an effect)
-  // because getTransientUIStore creates a new store with $state if one doesn't exist,
-  // and creating $state during effect evaluation triggers effect_update_depth_exceeded.
-  let cachedTransientStore: ReturnType<typeof getTransientUIStore> | null = null;
-  // Track the workspaceId the cache was created for to detect changes
-  // NOTE: Using a plain variable (not $state) to avoid reactive dependency loops
-  let cachedWorkspaceId: string | null = null;
-  function getTransientStore() {
-    // Invalidate cache if workspaceId changed
-    if (cachedWorkspaceId !== null && cachedWorkspaceId !== workspaceId) {
-      cachedTransientStore = null;
-      cachedWorkspaceId = null;
+  const workspaceIdStore = writable('');
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+  });
+
+  const workspace = selectWorkspaceById(workspaceIdStore);
+  const sidebarChangesState = selectSidebarChangesState(workspaceIdStore);
+
+  // Background agent executor state from Redux (reactive via workspaceIdStore)
+  const commitExecState$ = selectExecutorState(workspaceIdStore, readable('commit'));
+  const prExecState$ = selectExecutorState(workspaceIdStore, readable('pr'));
+  const mergeExecState$ = selectExecutorState(workspaceIdStore, readable('commit-merge'));
+
+  // Git state from Redux (reactive via workspaceIdStore)
+  const gitAheadStore = selectGitAhead(workspaceIdStore);
+  const gitBehindStore = selectGitBehind(workspaceIdStore);
+  const gitStatusStore = selectGitStatus(workspaceIdStore);
+
+  async function persistWorkspaceChanges(changes: Record<string, unknown>) {
+    const result = await workspaceClient.update({ id: workspaceId as WorkspaceId, ...changes });
+    if (result.ok) {
+      dispatch(setWorkspaceEntity(result.data));
     }
-    if (!cachedTransientStore && workspaceId) {
-      cachedTransientStore = getTransientUIStore(workspaceId);
-      cachedWorkspaceId = workspaceId;
-    }
-    return cachedTransientStore;
+    return result;
   }
-  // Pre-initialize the cache immediately at component creation time (before effects run)
-  if (workspaceId) {
-    cachedTransientStore = getTransientUIStore(workspaceId);
-    cachedWorkspaceId = workspaceId;
+
+  function getCurrentWorkspace() {
+    return selectWorkspaceById.select(getReduxStore().getState(), workspaceId);
   }
 
   /**
@@ -199,62 +248,68 @@
    * 2. The agent is actively working (streaming) OR
    * 3. The agent's linked task is not in a terminal status (complete/cancelled)
    *
-   * Uses the precomputed lockedAgentIds set for proper reactivity.
+   * Uses the precomputed lockedAgentIds record from Redux.
    */
   function isAgentGroupLocked(agentId: string | null): boolean {
     if (!agentId) return false;
-    return lockedAgentIds.has(agentId);
+    return agentId in lockedAgentIds;
   }
 
   // Combined loading state: store loading OR workspace mismatch (switching)
   // This ensures skeleton shows during workspace transitions instead of showing stale data
-  const isLoading = $derived(
-    fileTrackingStore.loading ||
-      (workspaceId && fileTrackingStore.currentWorkspaceId !== workspaceId),
-  );
+  // File tracking from Redux
+  const ftCurrentWsId$ = selectActiveWorkspaceId();
+  const ftStagedChanges$ = selectFtStagedChanges(workspaceIdStore);
+  const ftUnstagedChanges$ = selectFtUnstagedChanges(workspaceIdStore);
+  const ftCommits$ = selectFtCommits(workspaceIdStore);
+  const ftBoundarySha$ = selectFtBoundarySha(workspaceIdStore);
+  const ftOlderCommits$ = selectFtOlderCommits(workspaceIdStore);
+  const ftLoadingOlderCommits$ = selectFtLoadingOlderCommits(workspaceIdStore);
+  const ftLoading$ = selectFtLoading(workspaceIdStore);
+  const ftChangesTruncated$ = selectFtChangesTruncated(workspaceIdStore);
+  const ftTotalChangesCount$ = selectFtTotalChangesCount(workspaceIdStore);
+
+  const isLoading = $derived($ftLoading$ || (workspaceId && $ftCurrentWsId$ !== workspaceId));
 
   // Only use store data if workspace IDs match - prevents showing stale data during rapid switches
-  const storeHasCorrectWorkspace = $derived(fileTrackingStore.currentWorkspaceId === workspaceId);
+  const storeHasCorrectWorkspace = $derived($ftCurrentWsId$ === workspaceId);
 
-  // Get data from stores - use defensive checks for reactive updates
-  // CRITICAL: Only use store data when it's for the correct workspace
-  const workingChanges = $derived(
-    storeHasCorrectWorkspace
-      ? (fileTrackingStore.workingChanges ?? { unstaged: [], staged: [] })
-      : { unstaged: [], staged: [] },
+  // Get data from Redux - use defensive checks for reactive updates
+  // CRITICAL: Only use data when it's for the correct workspace
+  const unstagedChanges = $derived(
+    storeHasCorrectWorkspace ? ($ftUnstagedChanges$ ?? []) : [],
   );
-  const unstagedChanges = $derived(workingChanges?.unstaged ?? []);
-  const stagedChanges = $derived(workingChanges?.staged ?? []);
+  const stagedChanges = $derived(
+    storeHasCorrectWorkspace ? ($ftStagedChanges$ ?? []) : [],
+  );
 
   // Auto-commit settings from Redux
-  const autoCommitEnabled = selectAutoCommitEnabled(workspaceId);
+  const autoCommitEnabled = selectAutoCommitEnabled(workspaceIdStore);
 
-  // Sync workspace settings when workspaceId is available
+  // Guard: only dispatch init-style actions once per distinct workspaceId
+  let lastInitWorkspaceId: string | undefined;
+
+  // Sync workspace settings when workspaceId changes
   $effect(() => {
-    if (workspaceId) {
+    if (workspaceId && workspaceId !== lastInitWorkspaceId) {
+      lastInitWorkspaceId = workspaceId;
       dispatch(syncWorkspaceSettings(workspaceId as string));
+      dispatch(recomputeAgentLocks(workspaceId as string));
     }
   });
 
-  // Agent lock store - provides reactive locked agent/file state
-  // IMPORTANT: Do NOT wrap createAgentLockStore in $derived — it sets up Redux
-  // subscriptions and creates internal $derived blocks. Recreating it on every
-  // derivation cycle causes a reactive avalanche that starves the scheduler.
-  // The store internally tracks workspace changes via ensureStoreSubscription.
-  const agentLockStore = createAgentLockStore(workspaceId);
-  const lockedAgentIds = $derived(agentLockStore.lockedAgentIds);
-
-  // Validate gitStore data belongs to current workspace (defense in depth)
-  const gitStoreHasCorrectWorkspace = $derived(gitStore.dataWorkspaceId === workspaceId);
+  // Agent lock state from Redux — reactive via workspaceIdStore
+  const lockedAgentIds$ = selectLockedAgentIds(workspaceIdStore);
+  const lockedAgentIds = $derived($lockedAgentIds$);
 
   // Git status - use defensive checks for array operations during reactive updates
-  const unpushedCount = $derived(gitStoreHasCorrectWorkspace ? gitStore.ahead : 0);
-  const allCommits = $derived(fileTrackingStore.commits ?? []);
+  const unpushedCount = $derived($gitAheadStore ?? 0);
+  const allCommits = $derived($ftCommits$ ?? []);
   const commits = $derived((allCommits ?? []).filter((c) => !c.isPushed));
   const pushedCommits = $derived((allCommits ?? []).filter((c) => c.isPushed));
-  const boundarySha = $derived(fileTrackingStore.boundarySha);
-  const olderCommits = $derived(fileTrackingStore.olderCommits ?? []);
-  const loadingOlderCommits = $derived(fileTrackingStore.loadingOlderCommits);
+  const boundarySha = $derived($ftBoundarySha$);
+  const olderCommits = $derived($ftOlderCommits$ ?? []);
+  const loadingOlderCommits = $derived($ftLoadingOlderCommits$);
 
   // Context menu state for commits
   let commitContextMenu: { x: number; y: number; commitHash: string } | null = $state(null);
@@ -270,7 +325,7 @@
   }
 
   function getCommitContextMenuItems(commitHash: string): SidebarMenuEntry[] {
-    const isCurrentBase = workspace?.baseCommitSha === commitHash;
+    const isCurrentBase = $workspace?.baseCommitSha === commitHash;
     const items: SidebarMenuEntry[] = [
       {
         id: 'set-base-commit',
@@ -284,7 +339,7 @@
       },
     ];
     // If user has a manually-set base commit, offer to clear it
-    if (workspace?.baseCommitSha) {
+    if ($workspace?.baseCommitSha) {
       items.push(
         { type: 'separator' as const },
         {
@@ -302,12 +357,12 @@
   }
 
   async function handleSetBaseCommit(commitHash: string) {
-    if (!workspace) return;
+    if (!$workspace) return;
     try {
-      const result = await workspaceStore.update(workspace.id, { baseCommitSha: commitHash });
+      const result = await persistWorkspaceChanges({ baseCommitSha: commitHash });
       if (result.ok) {
-        fileTrackingStore.clearOlderCommits();
-        await fileTrackingStore.refresh();
+        dispatch(ftClearOlderCommits(workspaceId));
+        getReduxStore().dispatch(refreshRequested(workspaceId));
         toast.success('Base commit updated — only newer commits will be shown');
       } else {
         toast.error('Failed to update base commit');
@@ -319,12 +374,12 @@
   }
 
   async function handleClearBaseCommit() {
-    if (!workspace) return;
+    if (!$workspace) return;
     try {
-      const result = await workspaceStore.update(workspace.id, { baseCommitSha: '' });
+      const result = await persistWorkspaceChanges({ baseCommitSha: '' });
       if (result.ok) {
-        fileTrackingStore.clearOlderCommits();
-        await fileTrackingStore.refresh();
+        dispatch(ftClearOlderCommits(workspaceId));
+        getReduxStore().dispatch(refreshRequested(workspaceId));
         toast.success('Base commit reset to default');
       } else {
         toast.error('Failed to reset base commit');
@@ -336,7 +391,6 @@
   }
 
   // Workspace info for branch
-  const workspace = $derived(workspaceStore.findById(workspaceId as WorkspaceId));
 
   // Pull requests from workspace - use pullRequests array if available, else derive from activePullRequest
   // Construct the correct PR URL from repository info and PR number
@@ -344,20 +398,21 @@
   const constructPrUrl = (prNumber: number, fallbackUrl?: string): string => {
     return constructPrUrlUtil(
       prNumber,
-      workspace?.repositoryOwner,
-      workspace?.repositoryName,
+      $workspace?.repositoryOwner,
+      $workspace?.repositoryName,
       fallbackUrl,
     );
   };
 
+  const activePullRequest$ = selectWorkspaceActivePullRequest(workspaceIdStore);
+
   const pullRequests = $derived.by<PRInfo[]>(() => {
     // Use workspace.pullRequests if available and non-empty
-    if (workspace?.pullRequests && workspace.pullRequests.length > 0) {
-      const mapped = workspace.pullRequests.map((pr) => {
+    if ($workspace?.pullRequests && $workspace.pullRequests.length > 0) {
+      const mapped = $workspace.pullRequests.map((pr) => {
         return {
           number: pr.number,
-          // Use || to fall back to PR #number if title is empty string
-          title: pr.title || `PR #${pr.number}`,
+          title: getPRDisplayTitle(pr),
           url: constructPrUrl(pr.number, pr.url),
           htmlUrl: constructPrUrl(pr.number, pr.url),
           status: toPRDisplayStatus(pr.status),
@@ -367,38 +422,29 @@
       });
       return mapped;
     }
-    // Fall back to activePullRequest for backwards compatibility
-    if (workspace?.activePullRequest) {
-      return [
-        {
-          number: workspace.activePullRequest.number,
-          // Use || to fall back to PR #number if title is empty string
-          title: workspace.activePullRequest.title || `PR #${workspace.activePullRequest.number}`,
-          url: constructPrUrl(workspace.activePullRequest.number, workspace.activePullRequest.url),
-          htmlUrl: constructPrUrl(
-            workspace.activePullRequest.number,
-            workspace.activePullRequest.url,
-          ),
-          status: toPRDisplayStatus(workspace.activePullRequest.status),
-          createdAt: workspace.activePullRequest.createdAt,
-          updatedAt: workspace.activePullRequest.updatedAt,
-        },
-      ];
+    // Fall back to selector-derived activePullRequest
+    const activePR = $activePullRequest$;
+    if (activePR) {
+      return [{
+        number: activePR.number,
+        title: getPRDisplayTitle(activePR),
+        url: constructPrUrl(activePR.number, activePR.url),
+        htmlUrl: constructPrUrl(activePR.number, activePR.url),
+        status: toPRDisplayStatus(activePR.status),
+        createdAt: activePR.createdAt,
+        updatedAt: activePR.updatedAt,
+      }];
     }
     return [];
   });
-  const trunkBranch = $derived(workspace?.baseRef || 'main');
+  const trunkBranch = $derived($workspace?.baseRef || 'main');
   const hasPushedCommits = $derived(pushedCommits.length > 0);
 
   // Truncation state - when there are more changes than we can display
   // Only show truncation warning if there are actual working changes being truncated
   // (not just when there are many committed changes)
-  const rawChangesTruncated = $derived(
-    storeHasCorrectWorkspace ? fileTrackingStore.changesTruncated : false,
-  );
-  const totalChangesCount = $derived(
-    storeHasCorrectWorkspace ? fileTrackingStore.totalChangesCount : 0,
-  );
+  const rawChangesTruncated = $derived(storeHasCorrectWorkspace ? $ftChangesTruncated$ : false);
+  const totalChangesCount = $derived(storeHasCorrectWorkspace ? $ftTotalChangesCount$ : 0);
   const workingChangesCount = $derived(unstagedChanges.length + stagedChanges.length);
   // Only show truncation banner if we're actually truncating working changes
   // (i.e., there are working changes AND the total exceeds what we can show)
@@ -424,19 +470,21 @@
   const hasUnpushedCommits = $derived(commits.length > 0);
 
   // Check if branches have diverged (need force push)
-  const isDiverged = $derived(gitStore.status?.diverged ?? false);
+  const isDiverged = $derived($gitStatusStore?.diverged ?? false);
 
   // Branch state detection
-  const isBehind = $derived(gitStore.behind > 0 && gitStore.ahead === 0 && !isDiverged);
-  const behindCount = $derived(gitStore.behind);
+  const isBehind = $derived(
+    ($gitBehindStore ?? 0) > 0 && ($gitAheadStore ?? 0) === 0 && !isDiverged,
+  );
+  const behindCount = $derived($gitBehindStore ?? 0);
 
   // Note: PR status is automatically refreshed by AcceptChangesService.getStatus()
   // which fetches from GitHub and emits workspace:updated events.
-  // The layout listens for these events and calls workspaceStore.updateLocalWorkspace().
+  // The layout listens for these events and dispatches Redux actions to update workspace state.
 
   // Repository info for branch selector
-  const repoPath = $derived(workspace?.repositoryPath || workspace?.worktreePath || '');
-  const repoType = $derived<'local' | 'github'>(workspace?.isRemote ? 'github' : 'local');
+  const repoPath = $derived($workspace?.repositoryPath || $workspace?.worktreePath || '');
+  const repoType = $derived<'local' | 'github'>($workspace?.isRemote ? 'github' : 'local');
 
   // Loading states
   let isStaging = $state(false);
@@ -458,7 +506,7 @@
   let mergeHeadSha = $state<string | null>(null);
   let isPushing = $state(false);
   let isResettingToTrunk = $state(false);
-  const githubAuthState = $derived(githubAuthStore.state);
+  const githubAuthIsAuthenticated$ = selectGitHubAuthIsAuthenticated();
   let pendingActionAfterAuth = $state<'create-pr' | 'refresh-pr' | null>(null);
   let pendingPRWorkspaceId: string | null = null;
   let authBannerKey = $state(0); // Key to force re-mount the banner with autoStart
@@ -530,12 +578,12 @@
 
   // Initialize GitHub auth state on mount
   onMount(() => {
-    githubAuthStore.initialize();
+    dispatch(initializeGitHubAuth());
 
     // Check if store is already loaded for this workspace on mount
     // This handles the case where the accordion is expanded after the store has already initialized
-    const storeWsId = fileTrackingStore.currentWorkspaceId;
-    const storeLoading = fileTrackingStore.loading;
+    const storeWsId = selectActiveWorkspaceId.select(getReduxStore().getState());
+    const storeLoading = selectFtLoading.select(getReduxStore().getState(), workspaceId);
     if (!storeLoading && storeWsId === workspaceId) {
       logger.debug(
         '[SidebarChangesPanel] Store already loaded on mount, setting hasLoadedForWorkspace',
@@ -548,16 +596,15 @@
     }
   });
 
-  // Note: git:status-changed listener has been moved to gitStore.initEventListener()
-  // which is initialized at workspace level in +page.svelte, ensuring it works
-  // regardless of which sidebar panel is active.
+  // Note: git:status-changed listener has been moved to the git Redux saga,
+  // which listens to the IPC channel and dispatches loadGitStatus.
 
   // Consolidated effect for managing hasLoadedForWorkspace
   // This single effect handles both workspace changes AND load state changes
   // to avoid race conditions between separate effects
   $effect(() => {
-    const storeWsId = fileTrackingStore.currentWorkspaceId;
-    const storeLoading = fileTrackingStore.loading;
+    const storeWsId = $ftCurrentWsId$;
+    const storeLoading = $ftLoading$;
     const workspaceChanged = lastWorkspaceId !== workspaceId;
 
     logger.debug('[SidebarChangesPanel] Checking load state', {
@@ -578,9 +625,9 @@
       targetBranch = '';
       exportPath = '';
       // Restore cached post-merge state for the new workspace (instant button display)
-      // Use getTransientUIStore directly since cachedTransientStore still points to old workspace
-      const newWsTransientStore = workspaceId ? getTransientUIStore(workspaceId) : null;
-      const cachedPostMerge = newWsTransientStore?.sidebarChanges.postMergeState;
+      const cachedPostMerge = workspaceId
+        ? selectSidebarChangesState.select(getReduxStore().getState(), workspaceId).postMergeState
+        : null;
       if (cachedPostMerge) {
         hasResetToTrunk = cachedPostMerge.hasResetToTrunk;
         isMergedToTrunk = cachedPostMerge.isMergedToTrunk;
@@ -631,11 +678,10 @@
       // This can happen when stale callers (e.g., file-explorer-store during cleanup)
       // call setWorkspace() with an old workspace ID, hijacking the singleton store.
       // Re-trigger setWorkspace for our workspace to recover.
-      logger.warn('[SidebarChangesPanel] Store on wrong workspace, re-initializing', {
+      logger.warn('[SidebarChangesPanel] Store on wrong workspace, skipping recovery (activeWorkspaceId is source of truth)', {
         expected: workspaceId,
         actual: storeWsId,
       });
-      fileTrackingStore.setWorkspace(workspaceId);
     }
   });
 
@@ -674,7 +720,7 @@
           // Use the most recent result (last in array)
           const restoredPR = deferredPRDescriptions[deferredPRDescriptions.length - 1];
           if (restoredPR) {
-            // Parse the result to extract title and description (same as prExecutor.onResult)
+            // Parse the result to extract title and description (same as PR executor result handler)
             const lines = restoredPR.trim().split('\n');
             const titleLine = lines[0]?.replace(/^#\s*/, '').trim();
             const descriptionLines = lines.slice(1).join('\n').trim();
@@ -689,14 +735,16 @@
               workspaceId: wsId,
             });
 
-            // Auto-create PR if createPRWhenReady was persisted in transient store
-            const transientStore = getTransientStore();
-            if (transientStore?.sidebarChanges.createPRWhenReady) {
+            const shouldCreatePrWhenReady = selectSidebarChangesState.select(
+              getReduxStore().getState(),
+              wsId,
+            ).createPRWhenReady;
+            if (shouldCreatePrWhenReady) {
               logger.info('[SidebarChangesPanel] Auto-creating PR after deferred result restored', {
                 workspaceId: wsId,
               });
               createPRWhenReady = false;
-              transientStore.setSidebarCreatePRWhenReady(false);
+              dispatch(setSidebarCreatePRWhenReady(wsId, false));
               isCreatingPR = true;
               handleCreatePR(wsId)
                 .then(() => {
@@ -723,20 +771,15 @@
   async function handleRefreshPRStatus() {
     if (isRefreshingPR) return;
     isRefreshingPR = true;
-    const refreshStart = Date.now();
     await tick();
 
     try {
       // Check GitHub authentication first
-      if (!githubAuthState.isAuthenticated) {
-        try {
-          await githubAuthStore.initialize();
-        } catch (error) {
-          logger.warn('[SidebarChangesPanel] Failed to refresh GitHub auth state', error);
-        }
+      if (!$githubAuthIsAuthenticated$) {
+        dispatch(initializeGitHubAuth());
       }
 
-      if (!githubAuthState.isAuthenticated) {
+      if (!$githubAuthIsAuthenticated$) {
         pendingActionAfterAuth = 'refresh-pr';
         toast.info('Connect to GitHub using the banner below');
         return;
@@ -756,25 +799,13 @@
 
       // Refresh git status after fetch to get updated ahead/behind counts
       gitCache.invalidate(`git-status-${workspaceId}`);
-      await gitStore.loadStatus(workspaceId as WorkspaceId, true);
+      getReduxStore().dispatch(loadGitStatus(workspaceId, true));
 
-      // Now refresh PR status
-      const result = await refreshPRStatus(workspaceId as WorkspaceId, { force: true });
-      if (!result.success) {
-        logger.warn('[SidebarChangesPanel] Failed to refresh PR status:', result.error);
-        toast.error(result.error || 'Failed to refresh PR status');
-      } else if (result.skipped) {
-        toast.info(result.skipReason || 'PR refresh skipped');
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to refresh PR status';
-      logger.warn('[SidebarChangesPanel] Failed to refresh PR status:', error);
-      toast.error(message);
+      // Dispatch PR status refresh action (saga handles IPC, toasts, and state updates)
+      dispatch(refreshPRStatusRequested(workspaceId, true, true));
     } finally {
-      const elapsed = Date.now() - refreshStart;
-      if (elapsed < 300) {
-        await new Promise((resolve) => setTimeout(resolve, 300 - elapsed));
-      }
+      // Brief minimum display for loading spinner
+      await new Promise((resolve) => setTimeout(resolve, 300));
       isRefreshingPR = false;
     }
   }
@@ -807,11 +838,11 @@
       // Race the refresh operations against the timeout
       await Promise.race([
         Promise.all([
-          gitStore.loadStatus(workspaceId as WorkspaceId, true),
-          fileTrackingStore.refresh(),
+          Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+          getReduxStore().dispatch(refreshRequested(workspaceId)),
           // Also refresh aheadOfTrunk, hasRemote, and isContentMergedToTrunk for merged state detection
           AcceptChangesClient.getStatus(workspaceId as WorkspaceId).then((status) => {
-            if (workspaceId !== refreshWsId) return; // workspace changed, discard stale update
+            if (workspaceId !== refreshWsId) return; // $workspace changed, discard stale update
             aheadOfTrunk = status.aheadOfTrunk;
             behindTrunk = status.behindTrunk;
             hasConflicts = status.hasConflicts;
@@ -856,12 +887,12 @@
     }
 
     // Re-fetch when workspace changes or when hasLoadedForWorkspace becomes true
-    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+
     hasLoadedForWorkspace;
 
     AcceptChangesClient.getStatus(wsId as WorkspaceId)
       .then((status) => {
-        if (workspaceId !== wsId) return; // workspace changed, discard stale update
+        if (workspaceId !== wsId) return; // $workspace changed, discard stale update
         aheadOfTrunk = status.aheadOfTrunk;
         behindTrunk = status.behindTrunk;
         hasConflicts = status.hasConflicts;
@@ -879,9 +910,9 @@
 
   // Branch editing functions
   function startEditingBranch() {
-    if (!workspace) return;
+    if (!$workspace) return;
     isEditingBranch = true;
-    editedBranch = workspace.branch || '';
+    editedBranch = $workspace.branch || '';
     tick().then(() => {
       if (branchInputRef) {
         branchInputRef.focus();
@@ -896,13 +927,13 @@
       return;
     }
 
-    if (!workspace || !editedBranch.trim()) {
+    if (!$workspace || !editedBranch.trim()) {
       isEditingBranch = false;
       return;
     }
 
     const newBranch = editedBranch.trim();
-    if (newBranch === workspace.branch) {
+    if (newBranch === $workspace.branch) {
       isEditingBranch = false;
       return;
     }
@@ -912,7 +943,7 @@
     if (validationError) {
       logger.error('Invalid branch name format', { branchName: newBranch, error: validationError });
       toast.error(validationError);
-      editedBranch = workspace.branch || '';
+      editedBranch = $workspace.branch || '';
       isEditingBranch = false;
       return;
     }
@@ -920,22 +951,22 @@
     isSavingBranch = true;
     try {
       const result = await window.electronAPI.invoke(WORKSPACE_CHANNELS.RENAME_BRANCH, {
-        id: workspace.id,
+        id: $workspace.id,
         newBranchName: newBranch,
       });
 
       if (result.success) {
         // Update workspace store with new branch
-        await workspaceStore.update(workspace.id, { branch: newBranch });
+        await persistWorkspaceChanges({ branch: newBranch });
       } else {
         logger.error('Failed to rename branch', { error: result.error });
         toast.error(result.error || 'Failed to rename branch');
-        editedBranch = workspace.branch || '';
+        editedBranch = $workspace.branch || '';
       }
     } catch (error) {
       logger.error('Error renaming branch:', error);
       toast.error('Failed to rename branch');
-      editedBranch = workspace.branch || '';
+      editedBranch = $workspace.branch || '';
     } finally {
       isEditingBranch = false;
       isSavingBranch = false;
@@ -948,7 +979,7 @@
       saveBranch();
     } else if (e.key === 'Escape') {
       isEditingBranch = false;
-      editedBranch = workspace?.branch || '';
+      editedBranch = $workspace?.branch || '';
     }
   }
 
@@ -969,21 +1000,6 @@
     }
   });
 
-  // Set up PR status polling and window focus refresh when we have an active PR
-  $effect(() => {
-    if (workspace?.activePullRequest) {
-      // Start polling
-      const stopPolling = startPRStatusPolling(workspaceId as WorkspaceId);
-      // Register window focus listener
-      const unregisterFocus = registerWindowFocusRefresh(workspaceId as WorkspaceId);
-
-      return () => {
-        stopPolling();
-        unregisterFocus();
-      };
-    }
-  });
-
   // Track the last pushed commit count we triggered discovery for.
   // When pushed commits increase (e.g., agent pushes), we re-trigger discovery.
   // This is more robust than a one-shot boolean because it detects new pushes
@@ -998,10 +1014,10 @@
   // Re-triggers when pushed commit count changes (e.g., agent pushes new commits and creates a PR).
   // Discovery tracking (lastDiscoveredPushedCount, hasAttemptedInitialDiscovery) is reset
   // in the workspace-switch block of the consolidated load-state effect above.
-  // Rate-limited by refreshPRStatus's built-in MIN_REFRESH_INTERVAL_MS (5s).
+  // Rate-limited by the PR status saga's built-in MIN_REFRESH_INTERVAL_MS (5s).
   $effect(() => {
     if (!hasLoadedForWorkspace) return;
-    if (!githubAuthState.isAuthenticated) return;
+    if (!$githubAuthIsAuthenticated$) return;
 
     const currentPushedCount = pushedCommits.length;
 
@@ -1014,9 +1030,7 @@
     }
 
     logger.debug('[SidebarChangesPanel] Auto-discovering PRs', { workspaceId });
-    refreshPRStatus(workspaceId as WorkspaceId, { force: false }).catch((err) => {
-      logger.warn('[SidebarChangesPanel] Auto PR discovery failed', err);
-    });
+    dispatch(refreshPRStatusRequested(workspaceId, false, false));
   });
 
   // Listen for github:auth-success from layout to retry pending actions
@@ -1027,11 +1041,7 @@
       // Only handle if this sidebar matches the workspace and operation is push (create-pr uses push)
       if (eventWorkspaceId === workspaceId && operation === 'push') {
         // Refresh auth state first to ensure it's up to date
-        try {
-          await githubAuthStore.initialize();
-        } catch (e) {
-          console.warn('[SidebarChangesPanel] Failed to refresh auth state', e);
-        }
+        dispatch(initializeGitHubAuth());
         // Now retry the PR creation with captured workspace ID
         handleCreatePR(pendingPRWorkspaceId ?? undefined);
         pendingPRWorkspaceId = null;
@@ -1118,46 +1128,37 @@
     });
   });
 
-  // Commit message executor for auto-fill
-  const commitExecutor = createCommitMessageExecutor({
-    onResult: async (result, context) => {
-      commitMessage = result;
+  // Commit message executor - reactive state from Redux
+  let prevCommitResult: string | null = null;
+  $effect(() => {
+    const state = $commitExecState$;
+    if (state.status === 'success' && state.result && state.result !== prevCommitResult) {
+      prevCommitResult = state.result;
+      commitMessage = state.result;
       // Auto-commit if "commit when ready" is toggled on
       if (commitWhenReady) {
         commitWhenReady = false;
-        // Set committing state immediately so UI shows submitting feedback
         isCommitting = true;
-        // Use the workspace ID from the executor context to handle the case where
-        // user navigated to a different workspace while commit message was generating
-        await handleCommit(context?.workspaceId);
+        handleCommit(state.workspaceId ?? undefined);
         commitDrawerOpen = false;
       }
-    },
-    onError: (error) => {
+    }
+    if (state.status === 'error' && state.error) {
       commitWhenReady = false;
-      // Don't show toast for "all models exhausted" - it's shown in chat
-      const isModelsExhausted =
-        error.message.includes('No available models') ||
-        error.message.includes('all models exhausted') ||
-        error.message.includes('All models unavailable');
-      if (!isModelsExhausted) {
-        toast.error(`Failed to generate: ${error.message}`);
-      }
-    },
+    }
   });
 
-  const isGenerating = $derived(
-    commitExecutor.status === 'running' && commitExecutor.currentWorkspaceId === workspaceId,
-  );
-  const commitAgentId = $derived(
-    commitExecutor.currentWorkspaceId === workspaceId ? commitExecutor.agentId : null,
-  );
+  const isGenerating = $derived($commitExecState$.status === 'running');
+  const commitAgentId = $derived($commitExecState$.agentId);
 
-  // PR description executor for auto-fill
-  const prExecutor = createPRDescriptionExecutor({
-    onResult: async (result, context) => {
+  // PR description executor - reactive state from Redux
+  let prevPRResult: string | null = null;
+  $effect(() => {
+    const state = $prExecState$;
+    if (state.status === 'success' && state.result && state.result !== prevPRResult) {
+      prevPRResult = state.result;
       // Parse the result to extract title and description
-      const lines = result.trim().split('\n');
+      const lines = state.result.trim().split('\n');
       const titleLine = lines[0]?.replace(/^#\s*/, '').trim();
       const descriptionLines = lines.slice(1).join('\n').trim();
 
@@ -1171,85 +1172,41 @@
       // Auto-create PR if "create when ready" is toggled on
       if (createPRWhenReady) {
         createPRWhenReady = false;
-        // Clear transient store BEFORE calling handleCreatePR to prevent double-creation
-        // when navigating back (the deferred result path at lines 623-637 also checks this flag)
-        getTransientStore()?.setSidebarCreatePRWhenReady(false);
-        // Set creating state immediately so UI shows submitting feedback
+        dispatch(setSidebarCreatePRWhenReady(workspaceId, false));
         isCreatingPR = true;
-        // Use the workspace ID and targetBranch from the executor context (may differ from current state if user navigated)
-        // Note: executionContext may be undefined on restore paths (e.g., reconnect after app restart) -
-        // in that case we fall back to the current targetBranch state which should be correct since user is in this workspace
-        if (!context?.executionContext?.targetBranch) {
+        const execContext = state.executionContext;
+        if (!execContext?.targetBranch) {
           logger.warn(
             '[SidebarChangesPanel] Auto-PR: executionContext.targetBranch undefined, using current state',
-            {
-              workspaceId: context?.workspaceId,
-              fallbackTargetBranch: targetBranch,
-            },
+            { workspaceId: state.workspaceId, fallbackTargetBranch: targetBranch },
           );
         }
-        await handleCreatePR(context?.workspaceId, context?.executionContext?.targetBranch);
+        handleCreatePR(
+          state.workspaceId ?? undefined,
+          execContext?.targetBranch as string | undefined,
+        );
         prDrawerOpen = false;
       }
-    },
-    onError: (error) => {
+    }
+    if (state.status === 'error' && state.error) {
       createPRWhenReady = false;
-      // Don't show toast for "all models exhausted" - it's shown in chat
-      const isModelsExhausted =
-        error.message.includes('No available models') ||
-        error.message.includes('all models exhausted') ||
-        error.message.includes('All models unavailable');
-      if (!isModelsExhausted) {
-        toast.error(`Failed to generate: ${error.message}`);
-      }
-    },
+    }
   });
 
-  const isGeneratingPR = $derived(
-    prExecutor.status === 'running' && prExecutor.currentWorkspaceId === workspaceId,
-  );
-  const prAgentId = $derived(
-    prExecutor.currentWorkspaceId === workspaceId ? prExecutor.agentId : null,
-  );
+  const isGeneratingPR = $derived($prExecState$.status === 'running');
+  const prAgentId = $derived($prExecState$.agentId);
 
   // Track whether we've already reconnected to the PR executor to avoid infinite loops
   let hasReconnectedPRExecutor = false;
 
-  // Sync createPRWhenReady and prExecutor state to transient store
+  // Sync createPRWhenReady to transient store
   $effect(() => {
-    // Read the value to create dependency
     const currentCreatePRWhenReady = createPRWhenReady;
-    const transientStore = untrack(() => getTransientStore());
-    if (!transientStore) return;
+    const stored = $sidebarChangesState;
 
     untrack(() => {
-      if (currentCreatePRWhenReady !== transientStore.sidebarChanges.createPRWhenReady) {
-        transientStore.setSidebarCreatePRWhenReady(currentCreatePRWhenReady);
-      }
-    });
-  });
-
-  // Sync PR executor state to transient store
-  $effect(() => {
-    // Read reactive values to create dependencies
-    const currentAgentId = prExecutor.agentId;
-    const currentStatus = prExecutor.status;
-    const currentResult = prExecutor.result;
-    const transientStore = untrack(() => getTransientStore());
-    if (!transientStore) return;
-
-    untrack(() => {
-      if (currentAgentId) {
-        transientStore.setSidebarPRExecutorState({
-          agentId: currentAgentId,
-          status: currentStatus,
-          result: currentResult,
-          error: prExecutor.error?.message || null,
-        });
-      } else if (currentStatus !== 'running' && currentStatus !== 'initializing') {
-        // Clear stale PR executor state when executor is reset (canceled or completed)
-        // This prevents the reconnect logic from finding stale state on next mount
-        transientStore.setSidebarPRExecutorState(null);
+      if (currentCreatePRWhenReady !== stored.createPRWhenReady) {
+        dispatch(setSidebarCreatePRWhenReady(workspaceId, currentCreatePRWhenReady));
       }
     });
   });
@@ -1266,47 +1223,34 @@
     const currentMergeHeadSha = mergeHeadSha;
     const currentHasResetToTrunk = hasResetToTrunk;
 
-    const transientStore = untrack(() => getTransientStore());
-    if (!transientStore) return;
-
     untrack(() => {
-      transientStore.setPostMergeState({
-        aheadOfTrunk: currentAheadOfTrunk,
-        behindTrunk: currentBehindTrunk,
-        hasConflicts: currentHasConflicts,
-        isContentMergedToTrunk: currentIsContentMergedToTrunk,
-        hasRemote: currentHasRemote,
-        isMergedToTrunk: currentIsMergedToTrunk,
-        mergeHeadSha: currentMergeHeadSha,
-        hasResetToTrunk: currentHasResetToTrunk,
-      });
+      dispatch(
+        setPostMergeState(workspaceId, {
+          aheadOfTrunk: currentAheadOfTrunk,
+          behindTrunk: currentBehindTrunk,
+          hasConflicts: currentHasConflicts,
+          isContentMergedToTrunk: currentIsContentMergedToTrunk,
+          hasRemote: currentHasRemote,
+          isMergedToTrunk: currentIsMergedToTrunk,
+          mergeHeadSha: currentMergeHeadSha,
+          hasResetToTrunk: currentHasResetToTrunk,
+        }),
+      );
     });
   });
 
-  // Reconnect to running PR executor on mount
+  // Reconnect to running PR executor on mount (reads from bgExecutor which is now persisted)
   $effect(() => {
-    const transientStore = untrack(() => getTransientStore());
-    const stored = transientStore?.sidebarChanges;
-    if (!stored || hasReconnectedPRExecutor) return;
+    const stored = $sidebarChangesState;
+    const prExec = $prExecState$;
+    if (hasReconnectedPRExecutor) return;
 
-    // Only reconnect if we have a stored executor state with an agentId
-    if (stored.prDescriptionExecutor?.agentId) {
-      const { agentId, status: savedStatus, result } = stored.prDescriptionExecutor;
+    // Only reconnect if we have a persisted executor state with an agentId
+    if (prExec.agentId) {
+      const { agentId, status: savedStatus, result } = prExec;
 
-      // Skip reconnection if executor already has an agentId
-      if (prExecutor.agentId) {
-        logger.debug('[SidebarChangesPanel] PR executor already has agentId, skipping reconnect', {
-          currentAgentId: prExecutor.agentId,
-          storedAgentId: agentId,
-        });
-        hasReconnectedPRExecutor = true;
-        return;
-      }
-
-      // Only reconnect if still running OR if we have a result but executor doesn't have it yet
       if (savedStatus === 'running' || savedStatus === 'initializing') {
         hasReconnectedPRExecutor = true;
-        // Restore createPRWhenReady from transient store
         if (stored.createPRWhenReady) {
           createPRWhenReady = true;
         }
@@ -1315,21 +1259,14 @@
           savedStatus,
           createPRWhenReady: stored.createPRWhenReady,
         });
-
-        prExecutor
-          .reconnect(workspaceId, agentId, { status: savedStatus, result })
-          .then((reconnectResult) => {
-            // If reconnect failed (agent gone), clear state
-            if (reconnectResult === null && !prExecutor.result && prExecutor.agentId === agentId) {
-              logger.info('[SidebarChangesPanel] PR executor reconnect failed, clearing state');
-              createPRWhenReady = false;
-              getTransientStore()?.clearSidebarExecutorStates();
-            }
-          });
-      } else if (result && !prExecutor.result) {
-        // Restore completed result only if executor doesn't have it
+        dispatch(
+          reconnectAgent(workspaceId, 'pr', agentId!, {
+            status: savedStatus as ExecutorStatus,
+            result,
+          }),
+        );
+      } else if (savedStatus === 'success' && result && !prExec.result) {
         hasReconnectedPRExecutor = true;
-        // Restore createPRWhenReady so we can auto-trigger PR creation
         if (stored.createPRWhenReady) {
           createPRWhenReady = true;
         }
@@ -1337,43 +1274,39 @@
           agentId,
           createPRWhenReady: stored.createPRWhenReady,
         });
-        prExecutor.reconnect(workspaceId, agentId, { status: savedStatus, result });
+        dispatch(
+          reconnectAgent(workspaceId, 'pr', agentId!, {
+            status: savedStatus as ExecutorStatus,
+            result,
+          }),
+        );
+      } else {
+        hasReconnectedPRExecutor = true;
       }
     }
   });
 
-  // Merge commit message executor for auto-fill
-  const mergeExecutor = createCommitMessageExecutor({
-    onResult: async (result) => {
-      commitMessage = result;
-      // Auto-merge if "merge when ready" is toggled on
+  // Merge commit message executor - reactive state from Redux
+  let prevMergeResult: string | null = null;
+  $effect(() => {
+    const state = $mergeExecState$;
+    if (state.status === 'success' && state.result && state.result !== prevMergeResult) {
+      prevMergeResult = state.result;
+      commitMessage = state.result;
       if (mergeWhenReady) {
         mergeWhenReady = false;
-        // Set merging state immediately so UI shows submitting feedback
         isMergingToTrunk = true;
-        await handleMergeToTrunk({ squash: squashMerge, localOnly: !pushAfterMerge });
+        handleMergeToTrunk({ squash: squashMerge, localOnly: !pushAfterMerge });
         mergeDrawerOpen = false;
       }
-    },
-    onError: (error) => {
+    }
+    if (state.status === 'error' && state.error) {
       mergeWhenReady = false;
-      // Don't show toast for "all models exhausted" - it's shown in chat
-      const isModelsExhausted =
-        error.message.includes('No available models') ||
-        error.message.includes('all models exhausted') ||
-        error.message.includes('All models unavailable');
-      if (!isModelsExhausted) {
-        toast.error(`Failed to generate: ${error.message}`);
-      }
-    },
+    }
   });
 
-  const isGeneratingMerge = $derived(
-    mergeExecutor.status === 'running' && mergeExecutor.currentWorkspaceId === workspaceId,
-  );
-  const mergeAgentId = $derived(
-    mergeExecutor.currentWorkspaceId === workspaceId ? mergeExecutor.agentId : null,
-  );
+  const isGeneratingMerge = $derived($mergeExecState$.status === 'running');
+  const mergeAgentId = $derived($mergeExecState$.agentId);
 
   // Computed
   const hasUnstaged = $derived(unstagedChanges.length > 0);
@@ -1398,6 +1331,7 @@
     }
     return uniquePaths.size;
   });
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const totalAdditions = $derived(
     unstagedChanges.reduce((sum, c) => sum + (c.stats?.additions || 0), 0) +
       stagedChanges.reduce((sum, c) => sum + (c.stats?.additions || 0), 0) +
@@ -1406,6 +1340,7 @@
         0,
       ),
   );
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const totalDeletions = $derived(
     unstagedChanges.reduce((sum, c) => sum + (c.stats?.deletions || 0), 0) +
       stagedChanges.reduce((sum, c) => sum + (c.stats?.deletions || 0), 0) +
@@ -1443,27 +1378,6 @@
   }
 
   // Open code review panel via callback or fallback to event dispatch
-  function handleOpenCodeReviewClick() {
-    if (onOpenCodeReview) {
-      onOpenCodeReview();
-    } else {
-      // Fallback for non-panel layout (old WorkspaceContent)
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-code-review', {
-          detail: {
-            result: null,
-            agentId: null,
-            stagedFiles: stagedChanges.map((c) => c.relativePath),
-            status: 'idle',
-          },
-        }),
-      );
-      // Trigger the review after component mounts
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('workspace:trigger-code-review'));
-      }, 100);
-    }
-  }
 
   // toUIFileChange is imported from sidebar-changes-utils
 
@@ -1493,8 +1407,8 @@
       stagedChanges.some((c) => c.attribution?.agent),
   );
 
-  // Note: lockedAgentIds and lockedFilePaths are now provided by the shared agentLockStore
-  // (created near the top of the script block)
+  // Note: lockedAgentIds is now provided by the Redux agent-lock slice
+  // (selectLockedAgentIds near the top of the script block)
 
   // --- Group commit queue ---
   // Allows users to click commit on multiple groups in sequence.
@@ -1530,7 +1444,7 @@
     // Don't enqueue if already active or queued
     if (groupCommitActive === key || groupCommitQueue.some((e) => e.groupKey === key)) return;
     // Don't allow committing locked groups
-    if (group.agentId && lockedAgentIds.has(group.agentId)) return;
+    if (group.agentId && group.agentId in lockedAgentIds) return;
 
     groupCommitQueue = [...groupCommitQueue, { groupKey: key, section, group }];
 
@@ -1582,12 +1496,12 @@
     try {
       // Temporarily unstage other files so only this group gets committed
       if (otherStagedPaths.length > 0) {
-        await fileTrackingStore.unstageByPath(otherStagedPaths);
+        getReduxStore().dispatch(unstageByPathRequested(workspaceId, otherStagedPaths));
       }
 
       // Stage this group's files if they're currently unstaged
       if (section === 'unstaged') {
-        await fileTrackingStore.stageByPath(paths);
+        getReduxStore().dispatch(stageByPathRequested(workspaceId, paths));
       }
 
       // Now only this group's files are staged — commit
@@ -1604,7 +1518,7 @@
       // Re-stage other files that were temporarily unstaged
       if (otherStagedPaths.length > 0) {
         try {
-          await fileTrackingStore.stageByPath(otherStagedPaths);
+          getReduxStore().dispatch(stageByPathRequested(workspaceId, otherStagedPaths));
         } catch (restageError) {
           logger.error('Failed to re-stage files after group commit', restageError as Error);
         }
@@ -1613,8 +1527,8 @@
       // Always refresh stores regardless of success/failure
       // so the UI reflects the current git state
       await Promise.all([
-        gitStore.loadStatus(workspaceId as WorkspaceId, true),
-        fileTrackingStore.refresh(),
+        Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+        getReduxStore().dispatch(refreshRequested(workspaceId)),
       ]).catch(() => {});
     }
   }
@@ -1718,7 +1632,6 @@
 
   // Clear selection when workspace changes
   $effect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     workspaceId;
     clearSelection();
   });
@@ -1986,7 +1899,7 @@
     if (!group.agentId) return 'Manual Changes';
 
     // Try to find the session by ID first
-    const sessions = sessionStore.getAllSessionsForWorkspace(workspaceId);
+    const sessions = selectAllWorkspaceAgents.select(getReduxStore().getState(), workspaceId);
     const session = sessions.find((s) => {
       const id = typeof s.id === 'object' ? (s.id as any).id || String(s.id) : String(s.id);
       return id === group.agentId;
@@ -2018,11 +1931,11 @@
       // Filter out changes belonging to locked agents
       const unlockedChanges = unstagedChanges.filter((c) => {
         const agentId = c.attribution?.agent?.agentId;
-        return !agentId || !lockedAgentIds.has(agentId);
+        return !agentId || !(agentId in lockedAgentIds);
       });
       const paths = unlockedChanges.map((c) => c.relativePath);
       if (paths.length > 0) {
-        await fileTrackingStore.stageByPath(paths);
+        getReduxStore().dispatch(stageByPathRequested(workspaceId, paths));
       }
     } finally {
       isStaging = false;
@@ -2038,7 +1951,7 @@
     const change = changes.find((c) => c.relativePath === filePath || c.file === filePath);
     if (!change) return false;
     const agentId = change.attribution?.agent?.agentId;
-    return agentId ? lockedAgentIds.has(agentId) : false;
+    return agentId ? agentId in lockedAgentIds : false;
   }
 
   async function handleStageFile(path: string) {
@@ -2054,7 +1967,7 @@
       return;
     }
 
-    await fileTrackingStore.stageByPath(filesToStage);
+    getReduxStore().dispatch(stageByPathRequested(workspaceId, filesToStage));
     clearSelection();
 
     // Wait for Svelte's reactive updates to complete
@@ -2062,7 +1975,7 @@
 
     // After staging, update the selection to the staged version (only for single file)
     if (filesToStage.length === 1) {
-      const stagedChange = fileTrackingStore.workingChanges.staged.find(
+      const stagedChange = $ftStagedChanges$.find(
         (c) => c.relativePath === path || c.file === path,
       );
       if (stagedChange) {
@@ -2095,7 +2008,7 @@
       return;
     }
 
-    await fileTrackingStore.unstageByPath(filesToUnstage);
+    getReduxStore().dispatch(unstageByPathRequested(workspaceId, filesToUnstage));
     clearSelection();
 
     // Wait for Svelte's reactive updates to complete
@@ -2103,7 +2016,7 @@
 
     // After unstaging, update the selection to the unstaged version (only for single file)
     if (filesToUnstage.length === 1) {
-      const unstagedChange = fileTrackingStore.workingChanges.unstaged.find(
+      const unstagedChange = $ftUnstagedChanges$.find(
         (c) => c.relativePath === path || c.file === path,
       );
       if (unstagedChange) {
@@ -2136,7 +2049,7 @@
       return;
     }
 
-    await fileTrackingStore.revertByPath(filesToRevert);
+    getReduxStore().dispatch(revertByPathRequested(workspaceId, filesToRevert));
     clearSelection();
   }
 
@@ -2149,11 +2062,11 @@
       // Filter out changes belonging to locked agents
       const unlockedChanges = stagedChanges.filter((c) => {
         const agentId = c.attribution?.agent?.agentId;
-        return !agentId || !lockedAgentIds.has(agentId);
+        return !agentId || !(agentId in lockedAgentIds);
       });
       const paths = unlockedChanges.map((c) => c.relativePath);
       if (paths.length > 0) {
-        await fileTrackingStore.unstageByPath(paths);
+        getReduxStore().dispatch(unstageByPathRequested(workspaceId, paths));
       }
     } finally {
       isStaging = false;
@@ -2166,12 +2079,12 @@
    */
   async function handleStageGroup(group: AgentChangeGroup) {
     // Don't allow staging locked groups
-    if (group.agentId && lockedAgentIds.has(group.agentId)) {
+    if (group.agentId && group.agentId in lockedAgentIds) {
       logger.warn('Cannot stage locked agent group', { agentId: group.agentId });
       return;
     }
     const paths = group.files.map((f) => f.path);
-    await fileTrackingStore.stageByPath(paths);
+    getReduxStore().dispatch(stageByPathRequested(workspaceId, paths));
   }
 
   /**
@@ -2180,12 +2093,12 @@
    */
   async function handleUnstageGroup(group: AgentChangeGroup) {
     // Don't allow unstaging locked groups
-    if (group.agentId && lockedAgentIds.has(group.agentId)) {
+    if (group.agentId && group.agentId in lockedAgentIds) {
       logger.warn('Cannot unstage locked agent group', { agentId: group.agentId });
       return;
     }
     const paths = group.files.map((f) => f.path);
-    await fileTrackingStore.unstageByPath(paths);
+    getReduxStore().dispatch(unstageByPathRequested(workspaceId, paths));
   }
 
   /**
@@ -2193,9 +2106,10 @@
    * Stages all files and commits with the agent's task name as the message.
    * Prevents commit if the group is locked.
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleCommitGroup(group: AgentChangeGroup) {
     // Don't allow committing locked groups
-    if (group.agentId && lockedAgentIds.has(group.agentId)) {
+    if (group.agentId && group.agentId in lockedAgentIds) {
       logger.warn('Cannot commit locked agent group', { agentId: group.agentId });
       return;
     }
@@ -2204,7 +2118,7 @@
 
     try {
       // Stage files first
-      await fileTrackingStore.stageByPath(paths);
+      getReduxStore().dispatch(stageByPathRequested(workspaceId, paths));
 
       // Commit with agent name as message
       const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'commit', {
@@ -2217,8 +2131,8 @@
         // Refresh stores to update UI (push button, synced status, etc.)
         try {
           await Promise.all([
-            gitStore.loadStatus(workspaceId as WorkspaceId, true),
-            fileTrackingStore.refresh(),
+            Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+            getReduxStore().dispatch(refreshRequested(workspaceId)),
           ]);
         } catch (e) {
           console.warn('Failed to refresh stores after group commit:', e);
@@ -2239,8 +2153,8 @@
   }
 
   function openCommitInBrowser(hash: string, event?: MouseEvent) {
-    const repoOwner = workspace?.repositoryOwner;
-    const repoName = workspace?.repositoryName;
+    const repoOwner = $workspace?.repositoryOwner;
+    const repoName = $workspace?.repositoryName;
     let commitUrl: string | null = null;
 
     if (repoOwner && repoName) {
@@ -2257,15 +2171,11 @@
 
     const wsId = targetWorkspaceId ?? workspaceId;
 
-    if (!githubAuthState.isAuthenticated) {
-      try {
-        await githubAuthStore.initialize();
-      } catch (error) {
-        console.warn('[SidebarChangesPanel] Failed to refresh GitHub auth state', error);
-      }
+    if (!$githubAuthIsAuthenticated$) {
+      dispatch(initializeGitHubAuth());
     }
 
-    if (!githubAuthState.isAuthenticated) {
+    if (!$githubAuthIsAuthenticated$) {
       pendingActionAfterAuth = 'create-pr';
       pendingPRWorkspaceId = wsId;
       toast.info('Connect to GitHub using the banner below');
@@ -2290,7 +2200,6 @@
       });
 
       if (result.success) {
-        const createdPrTitle = prTitle.trim();
         prTitle = '';
         prDescription = '';
         prDrawerOpen = false;
@@ -2301,7 +2210,7 @@
       } else {
         toast.error(result.error || 'Failed to create pull request');
       }
-    } catch (error) {
+    } catch {
       trackGitOp('create-pr', { workspaceId: wsId, success: false, trigger: 'manual' });
       toast.error('Failed to create pull request');
     } finally {
@@ -2311,11 +2220,11 @@
 
   async function handleAutoFill() {
     if (isGenerating) {
-      commitExecutor.cancel();
+      dispatch(cancelExecution(workspaceId, 'commit'));
     } else {
-      const workspace = workspaceStore.findById(workspaceId as WorkspaceId);
+      const workspace = getCurrentWorkspace();
       if (workspace) {
-        await commitExecutor.execute(workspace);
+        dispatch(executeBackgroundAgent(workspace.id, 'commit'));
       }
     }
   }
@@ -2343,7 +2252,7 @@
       } else {
         toast.error(result.error || 'Failed to commit');
       }
-    } catch (error) {
+    } catch {
       trackGitOp('commit', { workspaceId: wsId, success: false, trigger: 'manual' });
       toast.error('Failed to commit');
     } finally {
@@ -2353,42 +2262,44 @@
 
   async function handleAutoFillPR() {
     if (isGeneratingPR) {
-      prExecutor.cancel();
+      dispatch(cancelExecution(workspaceId, 'pr'));
     } else {
-      const workspace = workspaceStore.findById(workspaceId as WorkspaceId);
+      const workspace = getCurrentWorkspace();
       if (workspace) {
-        await prExecutor.execute(workspace, {
-          includeStagedFiles: hasStaged,
-          includeCommitHashes: commits.map((c) => c.hash),
-          targetBranch,
-        });
+        dispatch(
+          executeBackgroundAgent(workspace.id, 'pr', {
+            includeStagedFiles: hasStaged,
+            includeCommitHashes: commits.map((c: any) => c.hash),
+            targetBranch,
+          }),
+        );
       }
     }
   }
 
   function handleStopGenerating() {
-    commitExecutor.cancel();
+    dispatch(cancelExecution(workspaceId, 'commit'));
     commitWhenReady = false;
   }
 
   function handleStopGeneratingPR() {
-    prExecutor.cancel();
+    dispatch(cancelExecution(workspaceId, 'pr'));
     createPRWhenReady = false;
   }
 
   async function handleAutoFillMerge() {
     if (isGeneratingMerge) {
-      mergeExecutor.cancel();
+      dispatch(cancelExecution(workspaceId, 'commit-merge'));
     } else {
-      const workspace = workspaceStore.findById(workspaceId as WorkspaceId);
+      const workspace = getCurrentWorkspace();
       if (workspace) {
-        await mergeExecutor.execute(workspace);
+        dispatch(executeBackgroundAgent(workspace.id, 'commit-merge'));
       }
     }
   }
 
   function handleStopGeneratingMerge() {
-    mergeExecutor.cancel();
+    dispatch(cancelExecution(workspaceId, 'commit-merge'));
     mergeWhenReady = false;
   }
 
@@ -2453,7 +2364,7 @@
         return result;
       }
       return undefined;
-    } catch (error) {
+    } catch {
       toast.error('Failed to open folder picker');
       return undefined;
     }
@@ -2490,7 +2401,7 @@
           return;
         }
       }
-    } catch (e) {
+    } catch {
       // If check fails, proceed anyway
     }
 
@@ -2519,7 +2430,7 @@
       });
       exportDrawerOpen = false;
       exportPath = '';
-    } catch (error) {
+    } catch {
       toast.error('Failed to export files');
     } finally {
       isExporting = false;
@@ -2592,8 +2503,8 @@
         // Refresh stores to update UI before showing success toast
         try {
           await Promise.all([
-            gitStore.loadStatus(workspaceId as WorkspaceId, true),
-            fileTrackingStore.refresh(),
+            Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+            getReduxStore().dispatch(refreshRequested(workspaceId)),
           ]);
         } catch {
           // Refresh failed but merge succeeded - UI will update on next refresh
@@ -2602,12 +2513,12 @@
         // This ensures the sidebar shows only the rebased commits, not stale/duplicate old SHAs
         if (result.result?.autoRebased && result.result?.newBaseSha) {
           try {
-            await workspaceStore.update(workspaceId as WorkspaceId, {
+            await persistWorkspaceChanges({
               baseCommitSha: result.result.newBaseSha,
             });
             // Clear older commits pagination cache which may reference commits from old history
-            fileTrackingStore.clearOlderCommits();
-          } catch (err) {
+            dispatch(ftClearOlderCommits(workspaceId));
+          } catch {
             console.error('Failed to update baseCommitSha after auto-rebase');
             // Non-fatal - merge succeeded, sidebar may show stale commits until next refresh
           }
@@ -2641,7 +2552,7 @@
           toast.error(result.error || 'Failed to merge');
         }
       }
-    } catch (error) {
+    } catch {
       trackGitOp('merge', { workspaceId, success: false, trigger: 'manual' });
       toast.error('Failed to merge to trunk');
     } finally {
@@ -2680,9 +2591,9 @@
         // Refresh stores to update UI
         try {
           await Promise.all([
-            gitStore.loadStatus(workspaceId as WorkspaceId, true),
-            fileTrackingStore.refresh(),
-            refreshPRStatus(workspaceId as WorkspaceId, { force: true }),
+            Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+            getReduxStore().dispatch(refreshRequested(workspaceId)),
+            Promise.resolve(dispatch(refreshPRStatusRequested(workspaceId, true, false))),
           ]);
         } catch {
           // Refresh failed but merge succeeded
@@ -2692,7 +2603,7 @@
       } else {
         toast.error(result.error || 'Failed to merge PR on GitHub');
       }
-    } catch (error) {
+    } catch {
       trackGitOp('merge-pr', { workspaceId, success: false, trigger: 'manual' });
       toast.error('Failed to merge PR on GitHub');
     } finally {
@@ -2707,7 +2618,7 @@
   async function openRebaseTerminal() {
     if (!workspaceId) return;
 
-    const worktreePath = workspace?.worktreePath || workspace?.repositoryPath;
+    const worktreePath = $workspace?.worktreePath || $workspace?.repositoryPath;
     if (!worktreePath) {
       toast.error('Cannot find space path');
       return;
@@ -2750,7 +2661,7 @@
   async function openPullTerminal() {
     if (!workspaceId) return;
 
-    const worktreePath = workspace?.worktreePath || workspace?.repositoryPath;
+    const worktreePath = $workspace?.worktreePath || $workspace?.repositoryPath;
     if (!worktreePath) {
       toast.error('Cannot find space path');
       return;
@@ -2760,7 +2671,7 @@
       // Use workspace.branch which is the remote feature branch name (e.g., "add-dark-mode")
       // This is different from the local worktree branch name (e.g., "dark-mode-6inv")
       // The push targets workspace.branch, so we need to pull from the same remote branch
-      const remoteBranch = workspace?.branch || 'HEAD';
+      const remoteBranch = $workspace?.branch || 'HEAD';
       const pullCommand = `git pull --rebase origin ${remoteBranch}`;
 
       // Create terminal with the pull command
@@ -2783,8 +2694,8 @@
             onClick: async () => {
               gitCache.invalidate(`git-status-${workspaceId}`);
               await Promise.all([
-                gitStore.loadStatus(workspaceId as WorkspaceId, true),
-                fileTrackingStore.refresh(),
+                Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+                getReduxStore().dispatch(refreshRequested(workspaceId)),
               ]);
               toast.success('Git status refreshed');
             },
@@ -2930,10 +2841,10 @@
   async function handlePRFileClick(filePath: string) {
     logger.info('[handlePRFileClick] File clicked in PR', { filePath });
 
-    if (!workspaceId || !workspace) return;
+    if (!workspaceId || !$workspace) return;
 
     try {
-      const baseRef = workspace.baseRef || 'main';
+      const baseRef = $workspace.baseRef || 'main';
 
       // Fetch old content (from base branch) and new content (current HEAD)
       const [oldContentResult, newContentResult] = await Promise.all([
@@ -3021,7 +2932,7 @@
   // Save the edited commit message
   async function saveCommitEdit() {
     // Use worktreePath for git commands - this is the actual worktree where commits live
-    const gitPath = workspace?.worktreePath || workspace?.repositoryPath;
+    const gitPath = $workspace?.worktreePath || $workspace?.repositoryPath;
     if (editingCommitHash && editingCommitValue.trim() && workspaceId && gitPath) {
       const trimmed = editingCommitValue.trim();
       const commit = allCommits.find((c) => c.hash === editingCommitHash);
@@ -3077,8 +2988,8 @@
           // Refresh the commits list and git status
           gitCache.invalidate(`git-status-${workspaceId}`);
           await Promise.all([
-            gitStore.loadStatus(workspaceId as WorkspaceId, true),
-            fileTrackingStore.refresh(),
+            Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+            getReduxStore().dispatch(refreshRequested(workspaceId)),
           ]);
           toast.success(wasPushed ? 'Commit message updated and pushed' : 'Commit message updated');
         } catch (error) {
@@ -3228,11 +3139,11 @@
   }
 
   function getPushTooltip(commitIndex: number): string {
-    return getPushTooltipUtil(allCommits, commitIndex, pullRequests.length > 0, workspace?.branch);
+    return getPushTooltipUtil(allCommits, commitIndex, pullRequests.length > 0, $workspace?.branch);
   }
 
   function getUndoTooltip(commitIndex: number): string {
-    return getUndoTooltipUtil(allCommits, commitIndex, workspace?.branch);
+    return getUndoTooltipUtil(allCommits, commitIndex, $workspace?.branch);
   }
 
   async function handlePushCommits(commitIndex: number) {
@@ -3244,7 +3155,7 @@
 
     try {
       const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'push', {
-        targetBranch: workspace?.branch,
+        targetBranch: $workspace?.branch,
         upToCommitHash: commit.hash,
       });
 
@@ -3265,8 +3176,8 @@
         gitCache.invalidate(`git-status-${workspaceId}`);
         try {
           await Promise.all([
-            gitStore.loadStatus(workspaceId as WorkspaceId, true),
-            fileTrackingStore.refresh(),
+            Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+            getReduxStore().dispatch(refreshRequested(workspaceId)),
           ]);
         } catch {
           // Refresh failed but push succeeded - UI will update on next refresh
@@ -3287,7 +3198,7 @@
           toast.error(errorMsg);
         }
       }
-    } catch (error) {
+    } catch {
       trackGitOp('push', { workspaceId, success: false, trigger: 'manual' });
       toast.error('Failed to push commits');
     } finally {
@@ -3319,15 +3230,15 @@
   async function handleForcePush() {
     isForcePushing = true;
     try {
-      const result = await gitStore.push(workspaceId as WorkspaceId, true);
+      const result = await gitClient.push(workspaceId as WorkspaceId, undefined, true);
       if (result.ok) {
         toast.warning('Force push completed');
         forcePushDrawerOpen = false;
         // Invalidate cache and refresh stores to update UI
         gitCache.invalidate(`git-status-${workspaceId}`);
         Promise.all([
-          gitStore.loadStatus(workspaceId as WorkspaceId, true),
-          fileTrackingStore.refresh(),
+          Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+          getReduxStore().dispatch(refreshRequested(workspaceId)),
         ]);
       } else {
         toast.error(result.error || 'Force push failed');
@@ -3360,15 +3271,15 @@
       if (result.success) {
         // Clear older commits pagination cache which may reference commits from old history
         // Done outside inner try since rebases rewrite history regardless of SHA update success
-        fileTrackingStore.clearOlderCommits();
+        dispatch(ftClearOlderCommits(workspaceId));
 
         // Update baseCommitSha if a new base SHA was returned (same pattern as auto-rebase during merge)
         if (result.result?.newBaseSha) {
           try {
-            await workspaceStore.update(capturedWsId as WorkspaceId, {
+            await persistWorkspaceChanges({
               baseCommitSha: result.result.newBaseSha,
             });
-          } catch (err) {
+          } catch {
             console.error('Failed to update baseCommitSha after rebase onto trunk');
             // Non-fatal - rebase succeeded, sidebar may show stale commits until next refresh
           }
@@ -3377,8 +3288,8 @@
         // Refresh stores to update UI
         gitCache.invalidate(`git-status-${capturedWsId}`);
         await Promise.all([
-          gitStore.loadStatus(capturedWsId as WorkspaceId, true),
-          fileTrackingStore.refresh(),
+          Promise.resolve(getReduxStore().dispatch(loadGitStatus(capturedWsId, true))),
+          getReduxStore().dispatch(refreshRequested(capturedWsId)),
         ]);
 
         // Re-fetch accept-changes status
@@ -3421,12 +3332,12 @@
   async function handlePull() {
     isPulling = true;
     try {
-      const result = await gitStore.pull(workspaceId as WorkspaceId);
+      const result = await gitClient.pull(workspaceId as WorkspaceId);
       if (result.ok) {
         toast.success('Pulled remote commits successfully');
         // Refresh status
         gitCache.invalidateWorkspace(workspaceId as WorkspaceId);
-        await gitStore.loadStatus(workspaceId as WorkspaceId, true);
+        getReduxStore().dispatch(loadGitStatus(workspaceId, true));
       } else {
         toast.error(`Failed to pull: ${result.error}`);
       }
@@ -3453,8 +3364,8 @@
     } else {
       // This is the oldest commit in the workspace, reset to the base commit (trunk)
       // This will remove all workspace commits from remote
-      if (workspace?.baseCommitSha) {
-        resetToHash = workspace.baseCommitSha;
+      if ($workspace?.baseCommitSha) {
+        resetToHash = $workspace.baseCommitSha;
       } else {
         // No base commit available, can't safely undo
         toast.error('Cannot undo - no base commit reference available');
@@ -3478,13 +3389,13 @@
         // Invalidate cache and refresh stores to update UI (don't await - let UI update reactively)
         gitCache.invalidate(`git-status-${workspaceId}`);
         Promise.all([
-          gitStore.loadStatus(workspaceId as WorkspaceId, true),
-          fileTrackingStore.refresh(),
+          Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+          getReduxStore().dispatch(refreshRequested(workspaceId)),
         ]);
       } else {
         toast.error(result.error || 'Failed to undo push');
       }
-    } catch (error) {
+    } catch {
       trackGitOp('undo-push', { workspaceId, success: false, trigger: 'manual' });
       toast.error('Failed to undo push');
     } finally {
@@ -3516,8 +3427,8 @@
       resetToHash = allCommits[nextCommitIndex].hash;
     } else {
       // This is the oldest commit in the workspace, reset to the base commit (trunk)
-      if (workspace?.baseCommitSha) {
-        resetToHash = workspace.baseCommitSha;
+      if ($workspace?.baseCommitSha) {
+        resetToHash = $workspace.baseCommitSha;
       } else {
         toast.error('Cannot undo - no base commit reference available');
         return;
@@ -3561,13 +3472,13 @@
         // Invalidate cache and refresh stores to update UI (don't await - let UI update reactively)
         gitCache.invalidate(`git-status-${workspaceId}`);
         Promise.all([
-          gitStore.loadStatus(workspaceId as WorkspaceId, true),
-          fileTrackingStore.refresh(),
+          Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+          getReduxStore().dispatch(refreshRequested(workspaceId)),
         ]);
       } else {
         toast.error(result.error || 'Failed to undo commit');
       }
-    } catch (error) {
+    } catch {
       trackGitOp('undo-commit', { workspaceId, success: false, trigger: 'manual' });
       toast.error('Failed to undo commit');
     } finally {
@@ -3580,7 +3491,7 @@
     const action = pendingActionAfterAuth;
     pendingActionAfterAuth = null;
 
-    if (githubAuthState.isAuthenticated) {
+    if ($githubAuthIsAuthenticated$) {
       if (action === 'create-pr') {
         handleCreatePR(pendingPRWorkspaceId ?? undefined);
         pendingPRWorkspaceId = null;
@@ -3592,16 +3503,17 @@
 
   // Start new workspace with same repo after merge, archiving the current one
   async function handleStartNewSpace() {
-    const repo = workspace?.repositoryPath;
-    const currentWorkspaceId = workspace?.id;
+    const repo = $workspace?.repositoryPath;
+    const currentWorkspaceId = $workspace?.id;
 
     // Archive the current workspace first
     if (currentWorkspaceId) {
-      const archiveResult = await workspaceStore.archive(currentWorkspaceId);
+      const archiveResult = await workspaceClient.archive(currentWorkspaceId);
       if (!archiveResult.ok) {
         toast.error('Failed to archive workspace');
         return;
       }
+      dispatch(loadWorkspacesRequested());
     }
 
     // Pre-fill the create form with the current repo info via sessionStorage
@@ -3616,7 +3528,7 @@
 
   // Reset workspace branch to trunk HEAD and continue working
   async function handleResetAndContinue() {
-    if (!workspaceId || !workspace) return;
+    if (!workspaceId || !$workspace) return;
 
     const capturedWsId = workspaceId;
     isResettingToTrunk = true;
@@ -3630,22 +3542,22 @@
         // Reset succeeded - now try UI follow-up (non-fatal)
         try {
           // Update baseCommitSha - this is the critical step that "resets" the sidebar boundary
-          await workspaceStore.update(workspace.id, { baseCommitSha: result.result.newHeadSha });
+          await persistWorkspaceChanges({ baseCommitSha: result.result.newHeadSha });
 
           // Clear older commits pagination cache which may reference commits from old history
-          fileTrackingStore.clearOlderCommits();
+          dispatch(ftClearOlderCommits(workspaceId));
 
           // Refresh all stores in parallel
           await Promise.all([
-            gitStore.loadStatus(workspaceId as WorkspaceId, true),
-            fileTrackingStore.refresh(),
+            Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+            getReduxStore().dispatch(refreshRequested(workspaceId)),
           ]);
 
           // Also refresh aheadOfTrunk and isContentMergedToTrunk to ensure button hides itself
           const resetWsId = workspaceId;
           AcceptChangesClient.getStatus(workspaceId as WorkspaceId)
             .then((s) => {
-              if (workspaceId !== resetWsId) return; // workspace changed, discard stale update
+              if (workspaceId !== resetWsId) return; // $workspace changed, discard stale update
               aheadOfTrunk = s.aheadOfTrunk;
               behindTrunk = s.behindTrunk;
               hasConflicts = s.hasConflicts;
@@ -3675,17 +3587,19 @@
 
         // If workspace was archived, unarchive it so the user can continue working
         // Fire-and-forget: don't block the reset UX for a best-effort unarchive
-        if (workspace.archived) {
-          workspaceStore.unarchive(workspace.id).then((result) => {
+        if ($workspace.archived) {
+          workspaceClient.unarchive($workspace.id).then((result) => {
             if (!result.ok) {
               console.error('Failed to unarchive workspace after reset:', result.error);
+            } else {
+              dispatch(loadWorkspacesRequested());
             }
           });
         }
       } else {
         toast.error(result.error || 'Failed to reset workspace');
       }
-    } catch (error) {
+    } catch {
       toast.error('Failed to reset workspace');
     } finally {
       isResettingToTrunk = false;
@@ -3711,6 +3625,7 @@
   // Transition functions that return non-deferred slide transitions.
   // Used without |global so Svelte cancels them immediately when the parent
   // block re-renders, preventing stuck transition loops that block the UI.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function send(node: Element, params: { key: any }) {
     if (isWorkspaceSwitching) return { duration: 0 };
     const rect = node.getBoundingClientRect();
@@ -3720,6 +3635,7 @@
     return slide(node, { duration: 200, easing: quintOut, delay: 0, axis: 'y' });
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function receive(node: Element, params: { key: any }) {
     if (isWorkspaceSwitching) return { duration: 0 };
     const rect = node.getBoundingClientRect();
@@ -3746,7 +3662,7 @@
       workspaceSwitchTimeout = setTimeout(() => {
         isWorkspaceSwitching = false;
         workspaceSwitchTimeout = null;
-      }, 300); // Disable animations for 300ms during workspace switch
+      }, 300); // Disable animations for 300ms during $workspace switch
     });
   });
 </script>
@@ -3758,7 +3674,7 @@
       <div class="flex-1 overflow-y-auto pt-3 pb-20 pl-3 pr-3">
         <div class="relative">
           <div class="absolute left-0 top-2 bottom-2 w-px bg-border/30"></div>
-          {#each Array(4) as _, i (i)}
+          {#each [0, 1, 2, 3] as i (i)}
             <div class="relative pl-4 mb-4">
               <div class="absolute -left-1 top-1 w-2 h-2 rounded-full bg-muted"></div>
               <Skeleton class="h-3 w-16 mb-2" />
@@ -3810,7 +3726,7 @@
             {:else}
               <Tooltip side="top" disableCloseOnTriggerClick bind:open={workingBranchTooltipOpen}>
                 {#snippet content()}<span
-                    >Working on the {workspace?.branch || 'no branch'} branch. Click to change name.</span
+                    >Working on the {$workspace?.branch || 'no branch'} branch. Click to change name.</span
                   ><br /><span class="text-ghost">Shift+click to copy</span
                   >{#if copiedWorkingBranch}<span
                       class="text-green-500 ml-1.5 inline-flex items-center gap-1"
@@ -3825,8 +3741,8 @@
                          focus-visible:outline-none!
                          disabled:cursor-default disabled:opacity-50"
                   onclick={(e) => {
-                    if (e.shiftKey && workspace?.branch) {
-                      navigator.clipboard.writeText(workspace.branch);
+                    if (e.shiftKey && $workspace?.branch) {
+                      navigator.clipboard.writeText($workspace.branch);
                       copiedWorkingBranch = true;
                       workingBranchTooltipOpen = true;
                       setTimeout(() => {
@@ -3837,10 +3753,10 @@
                       startEditingBranch();
                     }
                   }}
-                  disabled={!workspace || isSavingBranch}
+                  disabled={!$workspace || isSavingBranch}
                 >
-                  {#if workspace}
-                    {workspace.branch || 'no branch'}
+                  {#if $workspace}
+                    {$workspace.branch || 'no branch'}
                   {/if}
                 </button>
               </Tooltip>
@@ -3900,7 +3816,7 @@
                   hasTriggerIcon={false}
                   onchange={async (e) => {
                     try {
-                      const result = await workspaceStore.update(workspaceId as WorkspaceId, {
+                      const result = await persistWorkspaceChanges({
                         baseRef: e.detail.branch,
                       });
                       if (!result.ok) {
@@ -4835,8 +4751,6 @@
 
                     <!-- Expanded panel content -->
                     {#if isExpanded}
-                      {@const linkedNoteId =
-                        commit.linkedNoteId || getLinkedNoteId(commit.agentId ?? null)}
                       <div
                         class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px"
                         transition:slide={{ duration: 150 }}
@@ -4871,9 +4785,9 @@
                 disabled={loadingOlderCommits}
                 onclick={() => {
                   if (olderCommits.length > 0) {
-                    fileTrackingStore.clearOlderCommits();
+                    dispatch(ftClearOlderCommits(workspaceId));
                   } else {
-                    fileTrackingStore.loadOlderCommits(boundarySha);
+                    getReduxStore().dispatch(loadOlderCommitsRequested(workspaceId, boundarySha));
                   }
                 }}
               >
@@ -4990,7 +4904,10 @@
                 disabled={loadingOlderCommits}
                 onclick={() => {
                   const lastOlder = olderCommits[olderCommits.length - 1];
-                  if (lastOlder) fileTrackingStore.loadOlderCommits(lastOlder.hash);
+                  if (lastOlder)
+                    getReduxStore().dispatch(
+                      loadOlderCommitsRequested(workspaceId, lastOlder.hash),
+                    );
                 }}
               >
                 {#if loadingOlderCommits}
@@ -5041,7 +4958,7 @@
                 {@const totalCommitsGH = allCommits.length + (hasStaged ? 1 : 0)}
                 {#if totalCommitsGH > 1}
                   <Tooltip
-                    content="Combine all {totalCommitsGH} commits into one called &quot;Squashed commit from {workspace?.branch ||
+                    content="Combine all {totalCommitsGH} commits into one called &quot;Squashed commit from {$workspace?.branch ||
                       'branch'}&quot;. Keeps the target branch history clean."
                     side="top"
                     align="start"
@@ -5152,7 +5069,7 @@
               <div class="flex flex-col gap-1.5">
                 {#if totalCommitsToMerge > 1}
                   <Tooltip
-                    content="Combine all {totalCommitsToMerge} commits into one called &quot;Squashed commit from {workspace?.branch ||
+                    content="Combine all {totalCommitsToMerge} commits into one called &quot;Squashed commit from {$workspace?.branch ||
                       'branch'}&quot;. Keeps the target branch history clean."
                     side="top"
                     align="start"
@@ -5343,7 +5260,7 @@
                 </div>
                 <DividerPanel open={prDrawerOpen}>
                   <!-- GitHub Auth Banner - show when not authenticated -->
-                  {#if !githubAuthState.isAuthenticated}
+                  {#if !$githubAuthIsAuthenticated$}
                     <GitHubAuthBanner
                       onSuccess={() => {
                         // Auth succeeded, user can now create PR
@@ -5545,12 +5462,13 @@
                 </DividerButton>
                 <DividerPanel open={forcePushDrawerOpen}>
                   <p class="text-xs text-subtle">
-                    Your local <span class="font-medium">{workspace?.branch || 'branch'}</span> is {gitStore.ahead}
-                    commit{gitStore.ahead === 1 ? '' : 's'} ahead and {gitStore.behind} commit{gitStore.behind ===
-                    1
+                    Your local <span class="font-medium">{$workspace?.branch || 'branch'}</span> is {$gitAheadStore ??
+                      0}
+                    commit{($gitAheadStore ?? 0) === 1 ? '' : 's'} ahead and {$gitBehindStore ?? 0} commit{($gitBehindStore ??
+                      0) === 1
                       ? ''
                       : 's'} behind
-                    <span class="font-medium">origin/{workspace?.branch || 'branch'}</span>. Force
+                    <span class="font-medium">origin/{$workspace?.branch || 'branch'}</span>. Force
                     pushing will overwrite the GitHub version with your local commits.
                   </p>
                   <div class="flex items-center gap-2">
@@ -5586,12 +5504,12 @@
               <div transition:slide={{ duration: 200 }}>
                 <TimelineSection title="Pull Requests" active={hasPRs} activeColor="bg-purple-500">
                   {#snippet action()}
-                    {#if hasPRs || githubAuthState.isAuthenticated}
+                    {#if hasPRs || $githubAuthIsAuthenticated$}
                       <button
                         type="button"
                         class="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"
                         onclick={() => {
-                          if (!githubAuthState.isAuthenticated) {
+                          if (!$githubAuthIsAuthenticated$) {
                             // Trigger the auth banner by incrementing the key with autoStart
                             pendingActionAfterAuth = 'refresh-pr';
                             authBannerKey++;
@@ -5600,7 +5518,7 @@
                           }
                         }}
                         disabled={isRefreshingPR}
-                        title={githubAuthState.isAuthenticated
+                        title={$githubAuthIsAuthenticated$
                           ? 'Refresh PR status'
                           : 'Connect to GitHub'}
                       >
@@ -5611,7 +5529,7 @@
                       </button>
                     {/if}
                   {/snippet}
-                  {#if !githubAuthState.isAuthenticated}
+                  {#if !$githubAuthIsAuthenticated$}
                     {#key authBannerKey}
                       <GitHubAuthBanner
                         message="Connect to GitHub"
@@ -5863,7 +5781,7 @@
                   </p>
                 </div>
               {/if}
-              {#if hasNoLocalChanges && !workspace?.archived}
+              {#if hasNoLocalChanges && !$workspace?.archived}
                 <!-- Archive and start new space button -->
                 <div>
                   <Button

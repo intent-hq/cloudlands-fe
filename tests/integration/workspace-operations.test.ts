@@ -10,7 +10,6 @@ import { AgentTestHarness } from '../../src/features/agent/testing/agent-test-ha
 import { WorkspaceService } from '../../src/features/workspace/main/workspace.service';
 import { FileSystemWorkspaceRepository } from '../../src/features/workspace/main/workspace.repository';
 import type { WorkspaceRepository } from '../../src/features/workspace/main/workspace.repository';
-import { createWorkspaceId, createAgentId } from '../../src/shared/types/branded-ids';
 import { randomUUID } from 'crypto';
 import type { Workspace, AgentSession } from '../../src/shared/types';
 import { WorkspaceStatus } from '../../src/shared/types';
@@ -266,14 +265,14 @@ describe('Workspace Operations Integration Tests', () => {
       const workspace = createResult.data!;
 
       // Create agents
-      const agent1 = await harness.createAgent({
+      await harness.createAgent({
         name: 'Agent to Delete 1',
         model: 'claude-3-opus',
         provider: 'anthropic',
         workspaceId: workspace.id,
       });
 
-      const agent2 = await harness.createAgent({
+      await harness.createAgent({
         name: 'Agent to Delete 2',
         model: 'claude-3-opus',
         provider: 'anthropic',
@@ -334,14 +333,14 @@ describe('Workspace Operations Integration Tests', () => {
       const original = originalResult.data!;
 
       // Create agents in original
-      const agent1 = await harness.createAgent({
+      await harness.createAgent({
         name: 'Original Agent 1',
         model: 'claude-3-opus',
         provider: 'anthropic',
         workspaceId: original.id,
       });
 
-      const agent2 = await harness.createAgent({
+      await harness.createAgent({
         name: 'Original Agent 2',
         model: 'claude-3-opus',
         provider: 'anthropic',

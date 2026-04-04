@@ -4,7 +4,6 @@
 
 import { describe, it, expect } from 'vitest';
 import { AgentError, AgentErrorCode } from '../../../features/agent/errors/agent-errors';
-import { getUserFriendlyMessage, getHelpLink } from '../messages';
 
 describe('Error Messages Integration', () => {
   describe('AgentError with Messages Module', () => {

@@ -2,19 +2,24 @@
   import { logger } from '$lib/utils/client-logger';
 
   import { Button } from '$lib/components/ui/button';
-  import { faEllipsisV, faTrash, faTableColumns } from '@fortawesome/free-solid-svg-icons';
+  import { faEllipsisV, faTableColumns } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { tick } from 'svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import WorkspaceActionsMenu, { type MenuAction } from '$lib/components/ui/WorkspaceActionsMenu.svelte';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
   import type { Workspace } from '$shared/types';
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';
   import { hasRunningAgents, getRunningAgentNames } from '$lib/utils/delete-warning-utils';
-  import { layoutSettings } from '$features/layout/layout-settings.svelte';
+  import { selectSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import { toggleSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { navigateAfterWorkspaceRemoval } from '$lib/utils/workspace-navigation';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { requestDeleteWorkspace } from '$lib/store/slices/workspace-operations/workspace-operations-slice';
+  import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
 
   interface Props {
     workspace: Workspace | null;
@@ -22,6 +27,9 @@
   }
 
   let { workspace, workspaceId }: Props = $props();
+
+  const dispatch = getDispatch();
+  const sidebarSide$ = selectSidebarSide();
 
   let isDeleting = $state(false);
   let isEditingTitle = $state(false);
@@ -31,7 +39,7 @@
 
   // Delete warning dialog state
   let showDeleteWarning = $state(false);
-  let pendingDeleteWorkspace = $state<Workspace | null>(null);
+  let pendingDeleteWorkspaceId = $state<string | null>(null);
   let runningAgentNamesForDelete = $state<string[]>([]);
 
   // Branch rename state
@@ -46,7 +54,7 @@
     // Check if workspace has running agents
     if (hasRunningAgents(workspace.id)) {
       // Show warning dialog instead of deleting immediately
-      pendingDeleteWorkspace = workspace;
+      pendingDeleteWorkspaceId = workspace.id;
       runningAgentNamesForDelete = getRunningAgentNames(workspace.id);
       showDeleteWarning = true;
       return;
@@ -68,7 +76,7 @@
         logger.error('[WorkspaceSidebarHeader] Failed to navigate after workspace removal:', err);
       });
 
-      await workspaceStore.deleteWithUndo(workspaceIdToDelete, workspace.title);
+      getReduxStore().dispatch(requestDeleteWorkspace(workspace.id));
     } catch (error) {
       logger.error('Failed to delete workspace:', error);
     } finally {
@@ -96,7 +104,10 @@
 
     const newTitle = editedTitle.trim();
     if (newTitle !== workspace.title) {
-      await workspaceStore.update(workspace.id, { title: newTitle });
+      const result = await workspaceClient.update({ id: workspace.id, title: newTitle });
+      if (result.ok) {
+        getReduxStore().dispatch(setWorkspaceEntity(result.data));
+      }
     }
     isEditingTitle = false;
   }
@@ -161,7 +172,10 @@
 
       if (result.success) {
         // Update workspace store with new branch
-        await workspaceStore.update(workspace.id, { branch: newBranch });
+        const updateResult = await workspaceClient.update({ id: workspace.id, branch: newBranch });
+        if (updateResult.ok) {
+          getReduxStore().dispatch(setWorkspaceEntity(updateResult.data));
+        }
       } else {
         logger.error('Failed to rename branch', { error: result.error });
         toast.error(result.error || 'Failed to rename branch');
@@ -236,11 +250,11 @@
   }
 
   const sidebarSideAction: MenuAction = $derived({
-    label: layoutSettings.sidebarSide === 'left' ? 'Move sidebar to right' : 'Move sidebar to left',
+    label: $sidebarSide$ === 'left' ? 'Move sidebar to right' : 'Move sidebar to left',
     icon: faTableColumns,
     dividerBefore: true,
     onClick: () => {
-      layoutSettings.toggleSidebarSide();
+      dispatch(toggleSidebarSide());
     },
   });
 
@@ -380,7 +394,7 @@
       </Button>
     {/snippet}
 
-    {#snippet content({ close }: { close: () => void })}
+    {#snippet content()}
       <div class="w-48">
         <WorkspaceActionsMenu
           filePath={workspace?.worktreePath || workspace?.repositoryPath || workspace?.path || ''}
@@ -403,12 +417,12 @@
   bind:open={showDeleteWarning}
   agentNames={runningAgentNamesForDelete}
   onDeleteAnyway={async () => {
-    if (pendingDeleteWorkspace) {
+    if (pendingDeleteWorkspaceId) {
       await performDelete();
-      pendingDeleteWorkspace = null;
+      pendingDeleteWorkspaceId = null;
     }
   }}
   onCancel={() => {
-    pendingDeleteWorkspace = null;
+    pendingDeleteWorkspaceId = null;
   }}
 />

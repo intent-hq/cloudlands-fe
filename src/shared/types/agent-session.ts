@@ -12,7 +12,7 @@
  * This eliminates confusion between agent ID and session ID.
  */
 
-import type { AgentId, SessionId, WorkspaceId } from './branded-ids';
+import type { AgentId, WorkspaceId } from './branded-ids';
 import { parseCompoundModelId } from '$shared/config/provider-config';
 import type { AgentMessage } from './agent-message';
 import { AgentStatus } from './agent.types';

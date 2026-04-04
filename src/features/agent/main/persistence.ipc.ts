@@ -18,8 +18,6 @@ import {
   PersistenceSaveSchema,
   PersistenceSaveAgentConfigSchema,
   PersistenceSaveSessionSchema,
-  PersistenceDeleteSchema,
-  PersistenceDeleteAgentSchema,
   PersistenceLoadRegistrySchema,
   PersistenceSaveRegistrySchema,
 } from '../../../main/ipc-schemas';

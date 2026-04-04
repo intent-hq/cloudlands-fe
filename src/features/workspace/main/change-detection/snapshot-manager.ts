@@ -332,6 +332,7 @@ export class SnapshotManager {
     const data = {
       workspacePath: this.workspacePath,
       timestamp: new Date().toISOString(),
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       snapshots: Array.from(this.snapshots.entries()).map(([path, snapshot]) => ({
         ...snapshot,
         content: undefined, // Don't export content to keep size manageable

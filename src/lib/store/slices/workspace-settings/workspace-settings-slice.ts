@@ -37,10 +37,6 @@ export const setAutoCommitEnabled = createAction<[workspaceId: string, enabled: 
   "workspaceSettings/setAutoCommitEnabled"
 );
 
-export const toggleAutoCommit = createAction<[workspaceId: string]>(
-  "workspaceSettings/toggleAutoCommit"
-);
-
 export const refreshAutoCommitSettings = createAction(
   "workspaceSettings/refreshAutoCommitSettings"
 );
@@ -67,13 +63,6 @@ export const workspaceSettingsReducer = createReducer<WorkspaceSettingsState>(in
     return setWorkspaceState(state, workspaceId, {
       ...wsState,
       autoCommitEnabled: enabled,
-    });
-  })
-  .with(toggleAutoCommit, (state, { payload: [workspaceId] }) => {
-    const wsState = getWorkspaceState(state, workspaceId);
-    return setWorkspaceState(state, workspaceId, {
-      ...wsState,
-      autoCommitEnabled: !wsState.autoCommitEnabled,
     });
   })
   .with(loadAutoCommitSettings, (state, { payload: [workspaceId, enabled] }) => {

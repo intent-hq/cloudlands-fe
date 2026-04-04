@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import type { NoteVersion } from '../../../shared/types.js';
 import { AuthorType } from '../../../shared/types.js';
-import { attributeLines, type LineAttribution } from '../line-attribution.js';
+import { attributeLines } from '../line-attribution.js';
 import { Logger } from '../../../shared/logger';
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const logger = new Logger('line-attribution-test');
 
 /**

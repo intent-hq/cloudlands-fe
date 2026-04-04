@@ -20,13 +20,11 @@
     groupParsedBlocks,
     groupContentBlocks,
     type RenderBlock,
-    type GroupedBlock,
     type ParsedContent,
     type ContentBlockGroup,
     type RenderContentBlock,
   } from '$lib/utils/messageParser';
   import ResponseGroup from './ResponseGroup.svelte';
-  import CylinderScroller from './CylinderScroller.svelte';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { createLogger } from '$lib/utils/client-logger';
   import { onDestroy } from 'svelte';

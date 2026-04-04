@@ -9,19 +9,27 @@
   import Fa from 'svelte-fa';
   import { invoke } from '$lib/electron-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
-  import { sidebarNavStore } from '../sidebar-nav.store.svelte';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { selectDraftPrompt } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+  import { closeAll } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import type { Workspace } from '$shared/types';
   import { WorkspaceStatusEnum } from '$shared/types';
   import Header from '$lib/components/ui/Header.svelte';
+
+  const dispatch = getDispatch();
+  const draftPrompt$ = selectDraftPrompt();
+  const workspaceItems = selectWorkspaceItems();
 
   interface Props {
     expanded?: boolean;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let { expanded: _ = false }: Props = $props();
 
-  const hasDraft = $derived(sidebarNavStore.draftPrompt.trim().length > 0);
+  const hasDraft = $derived($draftPrompt$.trim().length > 0);
 
   // Get recent repos from existing workspaces (deduplicated)
   const recentRepos = $derived.by(() => {
@@ -29,7 +37,7 @@
       string,
       { name: string; owner?: string; path: string; branch: string }
     >();
-    const workspaces = workspaceStore.items
+    const workspaces = $workspaceItems
       .filter(
         (w: Workspace) =>
           w.status !== WorkspaceStatusEnum.Archived &&
@@ -55,7 +63,7 @@
   });
 
   function openModal(initialRepo?: { repoPath?: string; owner?: string; name?: string }, event?: MouseEvent) {
-    sidebarNavStore.closeAll();
+    dispatch(closeAll(false));
 
     // Command-click (or Ctrl-click on non-Mac) opens in new window
     if (event?.metaKey || event?.ctrlKey) {
@@ -78,13 +86,14 @@
   }
 
   function openWithDraft() {
-    if (sidebarNavStore.draftPrompt.trim()) {
+    const currentDraft = selectDraftPrompt.select(getReduxStore().getState());
+    if (currentDraft.trim()) {
       sessionStorage.setItem(
         'workspace-prefill',
-        JSON.stringify({ prompt: sidebarNavStore.draftPrompt }),
+        JSON.stringify({ prompt: currentDraft }),
       );
     }
-    sidebarNavStore.closeAll();
+    dispatch(closeAll(false));
     window.dispatchEvent(new CustomEvent('app:open-new-space-modal', { detail: {} }));
   }
 
@@ -104,7 +113,7 @@
         <span class="text-ui font-semibold uppercase tracking-wider text-primary/70">Draft</span
         >
       </div>
-      <p class="text-sm text-foreground/80 line-clamp-2">{sidebarNavStore.draftPrompt.trim()}</p>
+      <p class="text-sm text-muted-foreground line-clamp-2">{$draftPrompt$.trim()}</p>
       <span
         class="text-ui text-muted-foreground mt-1 flex items-center gap-1 group-hover:text-foreground/60 transition-colors"
       >
@@ -135,7 +144,7 @@
               <span class="text-ghost shrink-0"><Fa icon={faFolder} size="xs" /></span
               >
             {/if}
-            <span class="text-sm text-foreground/80 truncate font-medium flex-1">{repo.name}</span>
+            <span class="text-sm text-muted-foreground truncate font-medium flex-1">{repo.name}</span>
           </button>
         {/each}
       </div>

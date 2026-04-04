@@ -367,7 +367,7 @@ import {
 import { startupMetrics } from '../utils/startup-metrics';
 import { CdpMcpBridge } from './cdp-mcp-bridge';
 import { claimDownloadAttribution } from './download-attribution';
-import { HttpMcpBridge } from './http-mcp-bridge';
+import { HttpMcpBridge, setHttpMcpBridge } from './http-mcp-bridge';
 
 import { agentBackendHandler } from '../features/agent/main/agent-backend-handler.service';
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
@@ -379,8 +379,6 @@ import { initAppSettingsService } from '../features/workspace/main/app-settings.
 import { getConfigManager } from '../features/config/main/config.ipc';
 import { registerDeepLinkHandlers } from '../features/deeplink/main/deeplink.ipc';
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
-import { eventHandlerRegistry } from '../features/events/main/event-handler-registry';
-import { registerEventTriggeredAgents } from '../features/events/main/event-triggered-agents';
 import { registerChatExportHandlers } from '../features/export/main/export.ipc';
 import { registerDebugExportHandlers } from '../features/debug-export/main/debug-export.ipc';
 import { protocolAdapter } from '../features/protocol/main/protocol-adapter';
@@ -1059,7 +1057,7 @@ app.whenReady().then(async () => {
             // Clean up temp bundle
             try {
               await fs.promises.unlink(bundlePath);
-            } catch (e) {
+            } catch  {
               // Ignore cleanup errors
             }
             return;
@@ -1330,6 +1328,10 @@ app.whenReady().then(async () => {
   // This significantly improves startup time
   startupMetrics.start('criticalIPC');
 
+  // Initialize main-process Redux store before any services that might dispatch actions
+  const { initMainStore } = await import('../store/main/init');
+  initMainStore();
+
   // Initialize specialists service BEFORE workspace IPC - this is critical!
   // The workspace creation flow calls resolveSpecialistForAgent() which needs the store initialized.
   await initSpecialistsService();
@@ -1474,11 +1476,8 @@ app.whenReady().then(async () => {
       setupDebugIPC();
     }
 
-    // Initialize event handler registry
-    // Register event-triggered agents first, then initialize to start listening
-    registerEventTriggeredAgents();
-    eventHandlerRegistry.initialize();
-    logger.info('Event handler registry initialized');
+    // Event-triggered handlers (message delivery, auto-commit) are now sagas
+    // forked from workspaceEventsSaga — no manual registration needed.
 
     // Migrate workspaces from ~/intent/{id} to ~/intent/workspaces/{id}
     try {
@@ -1568,12 +1567,12 @@ app.whenReady().then(async () => {
           .catch(() => {});
       }
 
-      import('../features/agent/services/message-accumulator.service')
-        .then(({ messageAccumulator }) => {
-          const beforeStats = messageAccumulator.getStats();
+      import('../store/main/slices/message-accumulator/message-accumulator-api')
+        .then((accumulatorApi) => {
+          const beforeStats = accumulatorApi.getStats();
           logger.info('Message accumulator cleanup starting', { beforeStats });
-          messageAccumulator.cleanupStale?.();
-          const afterStats = messageAccumulator.getStats();
+          accumulatorApi.cleanupStale();
+          const afterStats = accumulatorApi.getStats();
           logger.info('Message accumulator cleanup complete', { afterStats });
         })
         .catch(() => {});
@@ -1699,6 +1698,7 @@ app.whenReady().then(async () => {
       }
 
       httpMcpServer = new HttpMcpBridge();
+      setHttpMcpBridge(httpMcpServer);
       await httpMcpServer.start();
 
       // Start proactive health monitoring for HTTP MCP Bridge

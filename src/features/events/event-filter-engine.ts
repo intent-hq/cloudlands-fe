@@ -4,7 +4,7 @@
  * Handles filtering of workspace events based on filter criteria.
  */
 
-import { WorkspaceEvent, EventFilter, FilterOperator } from './types';
+import { WorkspaceEvent, WorkspaceEventType, EventFilter, FilterOperator, ActorType } from './types';
 import { Logger } from '../../shared/logger';
 
 const logger = new Logger('EventFilterEngine');
@@ -222,5 +222,83 @@ export class EventFilterEngine {
     }
 
     return filteredEvents;
+  }
+}
+
+
+/**
+ * Type-safe filter builder for workspace events.
+ *
+ * Pure utility – builds an EventFilter[] array from a fluent API.
+ * Moved here from workspace-event-bus.ts during Redux migration cleanup.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export class EventFilterBuilder<_T extends WorkspaceEvent = WorkspaceEvent> {
+  private filters: EventFilter[] = [];
+
+  ofType<K extends WorkspaceEventType>(
+    type: K,
+  ): EventFilterBuilder<Extract<WorkspaceEvent, { type: K }>> {
+    this.filters.push({ field: 'type', operator: 'equals', value: type });
+    return this as any;
+  }
+
+  ofTypes(types: WorkspaceEventType[]): this {
+    if (types.length === 1) {
+      this.filters.push({ field: 'type', operator: 'equals' as const, value: types[0] });
+    } else if (types.length > 1) {
+      this.filters.push({ field: 'type', operator: 'in' as const, value: types });
+    }
+    return this;
+  }
+
+  byActor(actorType: ActorType, actorId?: string): this {
+    this.filters.push({ field: 'actor.type', operator: 'equals', value: actorType });
+    if (actorId) {
+      this.filters.push({ field: 'actor.id', operator: 'equals', value: actorId });
+    }
+    return this;
+  }
+
+  since(timestamp: Date | string): this {
+    this.filters.push({
+      field: 'timestamp',
+      operator: 'greater_than',
+      value: typeof timestamp === 'string' ? timestamp : timestamp.toISOString(),
+    });
+    return this;
+  }
+
+  inLast(milliseconds: number): this {
+    return this.since(new Date(Date.now() - milliseconds));
+  }
+
+  inPath(path: string): this {
+    this.filters.push({ field: 'data.path', operator: 'starts_with', value: path });
+    return this;
+  }
+
+  matchingPattern(pattern: string | RegExp): this {
+    this.filters.push({ field: 'data.path', operator: 'matches', value: pattern });
+    return this;
+  }
+
+  inSession(sessionId: string): this {
+    this.filters.push({ field: 'sessionId', operator: 'equals', value: sessionId });
+    return this;
+  }
+
+  withCorrelation(correlationId: string): this {
+    this.filters.push({ field: 'correlationId', operator: 'equals', value: correlationId });
+    return this;
+  }
+
+  limit(count: number): this {
+    this.filters.push({ field: '_limit', operator: 'equals', value: count });
+    return this;
+  }
+
+  build(): EventFilter[] {
+    return this.filters;
   }
 }

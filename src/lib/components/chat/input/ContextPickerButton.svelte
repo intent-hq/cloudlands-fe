@@ -393,7 +393,7 @@
           {#if isSearching}
             <!-- Skeleton loader while searching -->
             <div class="py-1">
-              {#each Array(3) as _, i (i)}
+              {#each [0, 1, 2] as i (i)}
                 <div class="flex items-center gap-2.5 px-3 py-2">
                   <div class="h-3.5 w-3.5 rounded bg-muted animate-pulse"></div>
                   <div class="flex-1 space-y-1.5">

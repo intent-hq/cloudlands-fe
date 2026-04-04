@@ -15,21 +15,37 @@
     faCheckCircle,
     faTimesCircle,
     faExternalLinkAlt,
-    faCodeBranch,
     faPencil,
   } from '@fortawesome/free-solid-svg-icons';
   import PanelWrapper from '$lib/components/ui/PanelWrapper.svelte';
   import { createLogger } from '$lib/utils/client-logger';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
+  import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
+  import {
+    selectStagedWorkingChanges as selectFtStagedChanges,
+    selectUnstagedWorkingChanges as selectFtUnstagedChanges,
+    selectFileTrackingIsInitialized as selectFtIsInitialized,
+  } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+  import {
+    clearMainPanelView as ftClearMainPanelView,
+  } from '$lib/store/slices/file-tracking/file-tracking-slice';
+  import {
+    stageByPathRequested,
+    unstageByPathRequested,
+    revertByPathRequested,
+    refreshRequested,
+  } from '$lib/store/slices/file-tracking/file-tracking-slice';
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
-  import { WorkspaceId } from '$shared/types/branded-ids';
+  import { untrack } from 'svelte';
   import { toast } from 'svelte-sonner';
   import {
-    createCommitMessageExecutor,
-    createPRDescriptionExecutor,
-    createCodeReviewExecutor,
-  } from '$features/agent/background-agent-executor.svelte';
+    selectExecutorState,
+  } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
+  import {
+    executeBackgroundAgent,
+    cancelExecution,
+    reconnectAgent,
+  } from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
+  import type { ExecutorStatus } from '$lib/store/slices/background-agent-executor/background-agent-executor-types';
   import type {
     WorkspaceGitStatus,
     PrepareAcceptResponse,
@@ -39,10 +55,9 @@
 
   import ChangeTimeline from './ChangeTimeline.svelte';
   import type { UIFileChange, PRInfo } from './types';
-  import { getTransientUIStore } from '$features/workspace/transient-ui-state.store.svelte';
-  import { extractTextFromBlocks } from '$lib/utils/text-utils';
   import confetti from 'canvas-confetti';
   import { createAgentTypeId } from '$shared/types/agent.types';
+  import { WorkspaceId } from '$shared/types/branded-ids';
   import { unifiedIdService } from '$shared/services/unified-id.service';
   import { selectSelectedModel } from '$lib/store/slices/model/model-selectors';
   import { setWorkspaceModel } from '$lib/store/slices/model/model-slice';
@@ -52,21 +67,43 @@
     getReviewStats,
     type ReviewStatus,
   } from '$lib/components/code-review/types';
-  import { untrack } from 'svelte';
-  import { githubAuthStore } from '$features/github-auth/renderer/github-auth.store.svelte';
-  import { getPanelLayoutManager } from '$features/layout/panel-layout-manager.svelte';
+  import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
+  import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
   import { handleLink } from '$features/navigation/link-handler';
   import { track, trackGitOp } from '$lib/services/analytics';
   import {
     addTerminal,
     openTerminalOverlay,
   } from '$lib/store/slices/terminals/terminals-slice';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getDispatch } from '$lib/store/utils/utils';
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { loadWorkspacesRequested, setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
+  import { selectAcceptChangesState } from '$lib/store/slices/transient-ui/transient-ui-selectors';
+  import {
+    clearAcceptChangesForm,
+    clearBackgroundOperation,
+    resetAcceptChangesOperations,
+    setCachedGitStatus,
+    setCommitMessage,
+    setIsAutofillAndCommitting,
+    setIsAutofillAndCreatingPR,
+    setPendingCommitAction,
+    setPendingPRContext,
+    setPRDescription,
+    setPRTitle,
+    setTargetBranch,
+    startBackgroundOperation,
+    updateBackgroundOperationPhase,
+  } from '$lib/store/slices/transient-ui/transient-ui-slice';
+  import {
+    resetExecutor,
+  } from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
 
   const dispatch = getDispatch();
   const selectedModel$ = selectSelectedModel();
   const logger = createLogger('AcceptChangesPanel');
-  const { state: githubAuthState } = githubAuthStore;
+  const githubAuthIsAuthenticated$ = selectGitHubAuthIsAuthenticated();
 
   // Default timeout for git operations (2 minutes to allow for pre-commit hooks)
   const GIT_OPERATION_TIMEOUT_MS = 120000;
@@ -134,28 +171,23 @@
     onNavigateForward,
   }: Props = $props();
 
-  // Get transient UI store lazily to avoid creating $state during effect flush
-  // NOTE: We cache the store reference at initialization time (not in an effect)
-  // because getTransientUIStore creates a new store with $state if one doesn't exist,
-  // and creating $state during effect evaluation triggers effect_update_depth_exceeded.
-  // The cache is populated ONCE when the component initializes, before any effects run.
-  let cachedTransientStore: ReturnType<typeof getTransientUIStore> | null = null;
-  function getTransientStore() {
-    if (!cachedTransientStore && workspaceId) {
-      cachedTransientStore = getTransientUIStore(workspaceId);
-    }
-    return cachedTransientStore;
-  }
-  // Pre-initialize the cache immediately at component creation time (before effects run)
-  if (workspaceId) {
-    cachedTransientStore = getTransientUIStore(workspaceId);
-  }
+  const workspace = selectWorkspaceById(workspaceId);
+  const acceptChangesState = selectAcceptChangesState(workspaceId);
+  const ftStagedChanges$ = selectFtStagedChanges(workspaceId);
+  const ftUnstagedChanges$ = selectFtUnstagedChanges(workspaceId);
+  const ftIsInitialized$ = selectFtIsInitialized(workspaceId);
 
-  // State - initialize from transient store for persistence across navigation
+  // Background agent executor state from Redux
+  const commitExecState$ = selectExecutorState(workspaceId, 'commit');
+  const prExecState$ = selectExecutorState(workspaceId, 'pr');
+  const reviewExecState$ = selectExecutorState(workspaceId, 'review');
+
+  // State - initialize from transient UI Redux state for persistence across navigation
   let status = $state<WorkspaceGitStatus | null>(null);
   let prepareResult = $state<PrepareAcceptResponse | null>(null);
   let isLoading = $state(true); // Initial full load (no data at all)
   let isLoadingStatus = $state(false); // Loading git status (branch, commits, PRs)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let isLoadingPrepare = $state(false); // Loading prepare data (+/- counts)
   let isExecuting = $state(false);
   let executionResult = $state<AcceptChangesResult | null>(null);
@@ -165,19 +197,11 @@
   let prepareRequestVersion = 0;
   let statusRequestVersion = 0;
 
-  // Form values - sync with transient store
-  let targetBranch = $state('');
-  let commitMessage = $state('');
-  let prTitle = $state('');
-  let prDescription = $state('');
-
   // Action states
   let isPushing = $state(false);
   let isCreatingPR = $state(false);
   let isCommitting = $state(false);
   let isExporting = $state(false);
-  let isAutofillAndCommitting = $state(false);
-  let isAutofillAndCreatingPR = $state(false);
   let isMergingToTrunk = $state(false);
   let isMergedToTrunk = $state(false);
 
@@ -185,71 +209,16 @@
   let showGitHubAuthModal = $state(false);
   let pendingActionAfterAuth = $state<'create-pr' | null>(null);
 
-  // Background operation state for optimistic UI
-  // NOTE: Use a getter function instead of $derived to avoid creating $state during effect flush
-  function getBackgroundOperation() {
-    return getTransientStore()?.acceptChanges.backgroundOperation ?? null;
-  }
-
-  // Get workspace
-  const workspace = $derived(workspaceStore.findById(WorkspaceId(workspaceId)));
-
   // Get panel layout manager for opening terminal tabs
-  const panelLayoutManager = $derived(getPanelLayoutManager(workspaceId));
 
-  // Restore form values from transient store on mount
-  $effect(() => {
-    // Use untrack to avoid creating $state during effect flush
-    const transientStore = untrack(() => getTransientStore());
-    const stored = transientStore?.acceptChanges;
-    if (stored) {
-      if (stored.commitMessage && !commitMessage) commitMessage = stored.commitMessage;
-      if (stored.prTitle && !prTitle) prTitle = stored.prTitle;
-      if (stored.prDescription && !prDescription) prDescription = stored.prDescription;
-      if (stored.targetBranch && !targetBranch) targetBranch = stored.targetBranch;
-      // Restore action states
-      if (stored.isAutofillAndCommitting) isAutofillAndCommitting = stored.isAutofillAndCommitting;
-      if (stored.isAutofillAndCreatingPR) isAutofillAndCreatingPR = stored.isAutofillAndCreatingPR;
-    }
-  });
 
-  // PERF: Consolidated form sync effect - single effect instead of 6 separate ones
-  // This reduces reactive subscription overhead significantly
-  $effect(() => {
-    // Use untrack to avoid creating $state during effect flush
-    const transientStore = untrack(() => getTransientStore());
-    if (!transientStore) return;
-
-    const stored = transientStore.acceptChanges;
-
-    // Sync all form values in a single effect
-    if (commitMessage !== stored.commitMessage) {
-      transientStore.setCommitMessage(commitMessage);
-    }
-    if (prTitle !== stored.prTitle) {
-      transientStore.setPRTitle(prTitle);
-    }
-    if (prDescription !== stored.prDescription) {
-      transientStore.setPRDescription(prDescription);
-    }
-    if (targetBranch !== stored.targetBranch) {
-      transientStore.setTargetBranch(targetBranch);
-    }
-    if (isAutofillAndCommitting !== stored.isAutofillAndCommitting) {
-      transientStore.setIsAutofillAndCommitting(isAutofillAndCommitting);
-    }
-    if (isAutofillAndCreatingPR !== stored.isAutofillAndCreatingPR) {
-      transientStore.setIsAutofillAndCreatingPR(isAutofillAndCreatingPR);
-    }
-  });
 
   // Helper: Get attribution from file tracking store for a given file path
   function getAttributionForFile(filePath: string): UIFileChange['attribution'] | undefined {
-    const changes = fileTrackingStore.workingChanges;
     // Check both staged and unstaged for the file
     const tracked =
-      changes.staged.find((c) => c.file === filePath || c.relativePath === filePath) ||
-      changes.unstaged.find((c) => c.file === filePath || c.relativePath === filePath);
+      $ftStagedChanges$.find((c) => c.file === filePath || c.relativePath === filePath) ||
+      $ftUnstagedChanges$.find((c) => c.file === filePath || c.relativePath === filePath);
 
     if (tracked?.attribution?.agent) {
       return {
@@ -264,7 +233,7 @@
   }
 
   // Derived: staged and unstaged files with attribution from file tracking store
-  // IMPORTANT: Always use fileTrackingStore.workingChanges for staged/unstaged status
+  // IMPORTANT: Always use Redux file tracking workingChanges for staged/unstaged status
   // (it has optimistic updates) and augment with prepareResult for +/- counts.
   // This prevents UI flickering when prepareResult is stale after staging/unstaging.
 
@@ -280,8 +249,8 @@
   });
 
   const stagedFiles = $derived.by<UIFileChange[]>(() => {
-    // Always use workingChanges for staged status (has optimistic updates)
-    return fileTrackingStore.workingChanges.staged.map((c) => {
+    // Always use Redux staged changes for staged status (has optimistic updates)
+    return $ftStagedChanges$.map((c) => {
       const path = c.file || c.relativePath || '';
       const stats = prepareStatsMap.get(path);
       return {
@@ -295,8 +264,8 @@
   });
 
   const unstagedFiles = $derived.by<UIFileChange[]>(() => {
-    // Always use workingChanges for unstaged status (has optimistic updates)
-    return fileTrackingStore.workingChanges.unstaged.map((c) => {
+    // Always use Redux unstaged changes for unstaged status (has optimistic updates)
+    return $ftUnstagedChanges$.map((c) => {
       const path = c.file || c.relativePath || '';
       const stats = prepareStatsMap.get(path);
       return {
@@ -336,73 +305,40 @@
     ];
   });
 
-  // Background agent executors with state sync to transient store
-  const commitMessageExecutor = createCommitMessageExecutor({
-    onResult: (result, context) => {
-      commitMessage = result;
-      getTransientStore()?.setCommitMessageExecutorState(commitMessageExecutor.getState());
-      // Only show toast for freshly generated messages, not restored ones
-      if (!context?.isRestored) {
-        toast.success('Commit message generated');
-      }
-    },
-    onError: (error) => {
-      getTransientStore()?.setCommitMessageExecutorState(commitMessageExecutor.getState());
-      // Don't show toast for "all models exhausted" - it's shown in chat
-      const isModelsExhausted =
-        error.message.includes('No available models') ||
-        error.message.includes('all models exhausted') ||
-        error.message.includes('All models unavailable');
-      if (!isModelsExhausted) {
-        toast.error(`Failed to generate: ${error.message}`);
-      }
-    },
-    onStatusChange: () => {
-      getTransientStore()?.setCommitMessageExecutorState(commitMessageExecutor.getState());
-    },
+  // Background agent executors - reactive state from Redux
+  let prevCommitResult: string | null = null;
+  $effect(() => {
+    const state = $commitExecState$;
+    if (state.status === 'success' && state.result && state.result !== prevCommitResult) {
+      prevCommitResult = state.result;
+      dispatch(setCommitMessage(workspaceId, state.result));
+      toast.success('Commit message generated');
+    }
   });
 
-  const prDescriptionExecutor = createPRDescriptionExecutor({
-    onResult: (result, context) => {
-      // Parse the result to extract title and description
-      // The result format is expected to be markdown with a title at the top
-      const lines = result.trim().split('\n');
+  let prevPRResult: string | null = null;
+  $effect(() => {
+    const state = $prExecState$;
+    if (state.status === 'success' && state.result && state.result !== prevPRResult) {
+      prevPRResult = state.result;
+      const lines = state.result.trim().split('\n');
       const titleLine = lines[0]?.replace(/^#\s*/, '').trim();
       const descriptionLines = lines.slice(1).join('\n').trim();
 
       if (titleLine) {
-        prTitle = titleLine;
+        dispatch(setPRTitle(workspaceId, titleLine));
       } else {
-        // Fallback: generate title from branch name
         const branchName = status?.branch || 'feature';
         const cleanBranchName = branchName
           .replace(/^(feature|fix|chore|docs|refactor|test)[-/]/, '')
           .replace(/[-_]/g, ' ')
           .trim();
-        prTitle = cleanBranchName.charAt(0).toUpperCase() + cleanBranchName.slice(1);
+        dispatch(setPRTitle(workspaceId, cleanBranchName.charAt(0).toUpperCase() + cleanBranchName.slice(1)));
       }
 
-      prDescription = descriptionLines || result;
-      getTransientStore()?.setPRDescriptionExecutorState(prDescriptionExecutor.getState());
-      // Only show toast for freshly generated descriptions, not restored ones
-      if (!context?.isRestored) {
-        toast.success('PR description generated');
-      }
-    },
-    onError: (error) => {
-      getTransientStore()?.setPRDescriptionExecutorState(prDescriptionExecutor.getState());
-      // Don't show toast for "all models exhausted" - it's shown in chat
-      const isModelsExhausted =
-        error.message.includes('No available models') ||
-        error.message.includes('all models exhausted') ||
-        error.message.includes('All models unavailable');
-      if (!isModelsExhausted) {
-        toast.error(`Failed to generate: ${error.message}`);
-      }
-    },
-    onStatusChange: () => {
-      getTransientStore()?.setPRDescriptionExecutorState(prDescriptionExecutor.getState());
-    },
+      dispatch(setPRDescription(workspaceId, descriptionLines || state.result));
+      toast.success('PR description generated');
+    }
   });
 
   // Track code review state
@@ -426,85 +362,72 @@
   // Archive of previous reviews (limited to last 5)
   let reviewArchive = $state<Array<CodeReviewState & { timestamp: number }>>([]);
 
-  // Code review executor for AI-powered code review
-  const codeReviewExecutor = createCodeReviewExecutor({
-    onMessage: (message) => {
-      // Stream updates to the code review panel
-      const text = extractTextFromBlocks(message.contentBlocks || []);
+  // Code review executor - reactive state from Redux
+  let prevReviewResult: string | null = null;
+  $effect(() => {
+    const state = $reviewExecState$;
+
+    if (state.status === 'running') {
       codeReviewState = {
         ...codeReviewState,
-        streamingText: text,
-        agentId: codeReviewExecutor.agentId || null,
+        agentId: state.agentId || null,
         status: 'running',
       };
-      // Save state to transient store for reconnection after page reload
-      getTransientStore()?.setCodeReviewExecutorState(codeReviewExecutor.getState());
       window.dispatchEvent(
         new CustomEvent('workspace:code-review-update', {
           detail: {
-            streamingText: text,
-            agentId: codeReviewExecutor.agentId,
-            stagedFiles: stagedFiles.map((f) => f.path),
+            agentId: state.agentId,
+            stagedFiles: stagedFiles.map((f: any) => f.path),
             status: 'running',
           },
         }),
       );
-    },
-    onResult: (result) => {
-      logger.info('Code review completed', { resultLength: result.length });
+    }
+
+    if (state.status === 'success' && state.result && state.result !== prevReviewResult) {
+      prevReviewResult = state.result;
+      logger.info('Code review completed', { resultLength: state.result.length });
       const newReviewState: CodeReviewState = {
-        result,
-        agentId: codeReviewExecutor.agentId || null,
-        stagedFiles: stagedFiles.map((f) => f.path),
+        result: state.result,
+        agentId: state.agentId || null,
+        stagedFiles: stagedFiles.map((f: any) => f.path),
         status: 'complete',
         timestamp: Date.now(),
       };
       codeReviewState = newReviewState;
-
-      // Add to archive (keep last 5)
       reviewArchive = [{ ...newReviewState, timestamp: Date.now() }, ...reviewArchive.slice(0, 4)];
-
-      // Save state to transient store
-      getTransientStore()?.setCodeReviewExecutorState(codeReviewExecutor.getState());
-
       window.dispatchEvent(
         new CustomEvent('workspace:code-review-update', {
           detail: {
-            result,
-            agentId: codeReviewExecutor.agentId,
-            stagedFiles: stagedFiles.map((f) => f.path),
+            result: state.result,
+            agentId: state.agentId,
+            stagedFiles: stagedFiles.map((f: any) => f.path),
             status: 'complete',
           },
         }),
       );
       toast.success('Code review complete');
-    },
-    onError: (error) => {
-      toast.error(`Review failed: ${error.message}`);
+    }
+
+    if (state.status === 'error' && state.error) {
       codeReviewState = {
         ...codeReviewState,
-        error: error.message,
+        error: state.error,
         status: 'error',
       };
-      // Save state to transient store
-      getTransientStore()?.setCodeReviewExecutorState(codeReviewExecutor.getState());
       window.dispatchEvent(
         new CustomEvent('workspace:code-review-update', {
           detail: {
-            error: error.message,
+            error: state.error,
             status: 'error',
           },
         }),
       );
-    },
-    onStatusChange: () => {
-      // Save state to transient store on any status change
-      getTransientStore()?.setCodeReviewExecutorState(codeReviewExecutor.getState());
-    },
+    }
   });
 
   // Check if staged files have changed since the last review
-  const stagedFilesSorted = $derived([...stagedFiles.map((f) => f.path)].sort().join(','));
+  const stagedFilesSorted = $derived([...stagedFiles.map((f: any) => f.path)].sort().join(','));
   const reviewedFilesSorted = $derived([...codeReviewState.stagedFiles].sort().join(','));
 
   // Detect staleness when staged files change
@@ -522,8 +445,9 @@
   });
 
   // Derived: review state for the button
+  const reviewIsRunning = $derived($reviewExecState$.status === 'running' || $reviewExecState$.status === 'initializing');
   const reviewStatus = $derived<ReviewStatus>(
-    codeReviewExecutor.isRunning ? 'running' : codeReviewState.status,
+    reviewIsRunning ? 'running' : codeReviewState.status,
   );
   const hasExistingReview = $derived(
     codeReviewState.result !== null && (reviewStatus === 'complete' || reviewStatus === 'stale'),
@@ -545,198 +469,84 @@
 
   // Reconnect to running executors on mount (runs once)
   $effect(() => {
-    // Use untrack to avoid creating $state during effect flush
-    const stored = untrack(() => getTransientStore())?.acceptChanges;
-    if (!stored) return;
+    const stored = $acceptChangesState;
+    const reviewExec = $reviewExecState$;
+    const commitExec = $commitExecState$;
+    const prExec = $prExecState$;
 
     // Reconnect code review executor if it was running and we haven't already reconnected
-    if (stored.codeReviewExecutor?.agentId && !hasReconnectedCodeReviewExecutor) {
-      const { agentId, status: savedStatus, result } = stored.codeReviewExecutor;
-      // Skip reconnection if executor already has an agentId
-      if (codeReviewExecutor.agentId) {
-        logger.info('Code review executor already has an agentId, skipping reconnect', {
-          currentAgentId: codeReviewExecutor.agentId,
-          storedAgentId: agentId,
-          isSameAgent: codeReviewExecutor.agentId === agentId,
-        });
-        hasReconnectedCodeReviewExecutor = true;
-      }
-      // Only reconnect if still running
-      else if (savedStatus === 'running' || savedStatus === 'initializing') {
+    if (reviewExec.agentId && !hasReconnectedCodeReviewExecutor) {
+      const { agentId, status: savedStatus, result } = reviewExec;
+      if (savedStatus === 'running' || savedStatus === 'initializing') {
         hasReconnectedCodeReviewExecutor = true;
         logger.info('Reconnecting to running code review executor', { agentId, savedStatus });
 
-        // Restore the code review state to show running UI
-        codeReviewState = {
-          ...codeReviewState,
-          agentId,
-          status: 'running',
-        };
-
-        // Open the code review panel to show progress
+        codeReviewState = { ...codeReviewState, agentId, status: 'running' };
         window.dispatchEvent(
           new CustomEvent('workspace:open-code-review', {
-            detail: {
-              result: null,
-              agentId,
-              stagedFiles: codeReviewState.stagedFiles,
-              status: 'running',
-            },
+            detail: { result: null, agentId, stagedFiles: codeReviewState.stagedFiles, status: 'running' },
           }),
         );
-
-        codeReviewExecutor
-          .reconnect(workspaceId, agentId, { status: savedStatus, result })
-          .then((reconnectResult) => {
-            // If reconnect failed (agent gone), clear state
-            if (
-              reconnectResult === null &&
-              !codeReviewExecutor.result &&
-              codeReviewExecutor.agentId === agentId
-            ) {
-              logger.info('Code review executor reconnect failed, clearing state');
-              codeReviewState = {
-                result: null,
-                agentId: null,
-                stagedFiles: [],
-                status: 'idle',
-              };
-              getTransientStore()?.clearCodeReviewExecutorState();
-              // Dispatch update to close the panel or show error
-              window.dispatchEvent(
-                new CustomEvent('workspace:code-review-update', {
-                  detail: {
-                    status: 'error',
-                    error: 'Code review session was lost. Please try again.',
-                  },
-                }),
-              );
-            }
-          });
-      } else if (result && !codeReviewExecutor.result) {
-        // Restore completed result only if executor doesn't have it
+        dispatch(reconnectAgent(workspaceId, 'review', agentId!, { status: savedStatus as ExecutorStatus, result }));
+      } else if (savedStatus === 'success' && result && !reviewExec.result) {
         hasReconnectedCodeReviewExecutor = true;
-        logger.info('Restoring completed code review result', {
-          agentId,
-          resultLength: result.length,
-        });
-        codeReviewExecutor.reconnect(workspaceId, agentId, { status: savedStatus, result });
-
-        // Also restore the local state
-        codeReviewState = {
-          result,
-          agentId,
-          stagedFiles: codeReviewState.stagedFiles,
-          status: 'complete',
-        };
+        logger.info('Restoring completed code review result', { agentId, resultLength: result.length });
+        dispatch(reconnectAgent(workspaceId, 'review', agentId!, { status: savedStatus as ExecutorStatus, result }));
+        codeReviewState = { result, agentId, stagedFiles: codeReviewState.stagedFiles, status: 'complete' };
+      } else {
+        hasReconnectedCodeReviewExecutor = true;
       }
     }
 
     // Reconnect commit message executor if it was running and we haven't already reconnected
-    if (stored.commitMessageExecutor?.agentId && !hasReconnectedCommitExecutor) {
-      const { agentId, status: savedStatus, result } = stored.commitMessageExecutor;
-      // Skip reconnection if executor already has an agentId (new operation in progress OR same operation we started)
-      // This prevents the reconnect effect from interfering with ongoing operations
-      if (commitMessageExecutor.agentId) {
-        logger.info('Commit executor already has an agentId, skipping reconnect', {
-          currentAgentId: commitMessageExecutor.agentId,
-          storedAgentId: agentId,
-          isSameAgent: commitMessageExecutor.agentId === agentId,
-        });
+    if (commitExec.agentId && !hasReconnectedCommitExecutor) {
+      const { agentId, status: savedStatus, result } = commitExec;
+      if (savedStatus === 'running' || savedStatus === 'initializing') {
         hasReconnectedCommitExecutor = true;
-      }
-      // Only reconnect if still running OR if we have a result but executor doesn't have it yet
-      else if (savedStatus === 'running' || savedStatus === 'initializing') {
-        hasReconnectedCommitExecutor = true;
-        // Restore the isAutofillAndCommitting state to show generating UI
         if (stored.pendingCommitAction) {
-          isAutofillAndCommitting = true;
-          pendingCommitAction = stored.pendingCommitAction;
-          getTransientStore()?.startBackgroundOperation('commit', 'Resuming...');
+          dispatch(setIsAutofillAndCommitting(workspaceId, true));
+          dispatch(setPendingCommitAction(workspaceId, stored.pendingCommitAction));
+          dispatch(startBackgroundOperation(workspaceId, 'commit', Date.now(), 'Resuming...'));
         }
-        commitMessageExecutor
-          .reconnect(workspaceId, agentId, { status: savedStatus, result })
-          .then((reconnectResult) => {
-            // If reconnect failed (agent gone), clear pending state
-            // But only if we're still trying to reconnect to the same agent
-            if (
-              reconnectResult === null &&
-              !commitMessageExecutor.result &&
-              commitMessageExecutor.agentId === agentId
-            ) {
-              logger.info('Commit executor reconnect failed, clearing pending state');
-              pendingCommitAction = null;
-              isAutofillAndCommitting = false;
-              getTransientStore()?.clearBackgroundOperation();
-              getTransientStore()?.clearExecutorStates();
-            }
-          });
-      } else if (result && !commitMessageExecutor.result) {
-        // Restore completed result only if executor doesn't have it
+        dispatch(reconnectAgent(workspaceId, 'commit', agentId!, { status: savedStatus as ExecutorStatus, result }));
+      } else if (savedStatus === 'success' && result && !commitExec.result) {
         hasReconnectedCommitExecutor = true;
-        commitMessageExecutor.reconnect(workspaceId, agentId, { status: savedStatus, result });
+        dispatch(reconnectAgent(workspaceId, 'commit', agentId!, { status: savedStatus as ExecutorStatus, result }));
+      } else {
+        hasReconnectedCommitExecutor = true;
       }
     }
 
     // Reconnect PR description executor if it was running and we haven't already reconnected
-    if (stored.prDescriptionExecutor?.agentId && !hasReconnectedPRExecutor) {
-      const { agentId, status: savedStatus, result } = stored.prDescriptionExecutor;
-      // Skip reconnection if executor already has an agentId (new operation in progress OR same operation we started)
-      // This prevents the reconnect effect from interfering with ongoing operations
-      if (prDescriptionExecutor.agentId) {
-        logger.info('PR executor already has an agentId, skipping reconnect', {
-          currentAgentId: prDescriptionExecutor.agentId,
-          storedAgentId: agentId,
-          isSameAgent: prDescriptionExecutor.agentId === agentId,
-        });
+    if (prExec.agentId && !hasReconnectedPRExecutor) {
+      const { agentId, status: savedStatus, result } = prExec;
+      if (savedStatus === 'running' || savedStatus === 'initializing') {
         hasReconnectedPRExecutor = true;
-      }
-      // Only reconnect if still running OR if we have a result but executor doesn't have it yet
-      else if (savedStatus === 'running' || savedStatus === 'initializing') {
-        hasReconnectedPRExecutor = true;
-        // Restore the isAutofillAndCreatingPR state to show generating UI
         if (stored.pendingPRContext) {
-          isAutofillAndCreatingPR = true;
-          pendingPRContext = stored.pendingPRContext;
-          getTransientStore()?.startBackgroundOperation('create-pr', 'Resuming...');
+          dispatch(setIsAutofillAndCreatingPR(workspaceId, true));
+          dispatch(setPendingPRContext(workspaceId, stored.pendingPRContext));
+          dispatch(startBackgroundOperation(workspaceId, 'create-pr', Date.now(), 'Resuming...'));
         }
-        prDescriptionExecutor
-          .reconnect(workspaceId, agentId, { status: savedStatus, result })
-          .then((reconnectResult) => {
-            // If reconnect failed (agent gone), clear pending state
-            // But only if we're still trying to reconnect to the same agent
-            if (
-              reconnectResult === null &&
-              !prDescriptionExecutor.result &&
-              prDescriptionExecutor.agentId === agentId
-            ) {
-              logger.info('PR executor reconnect failed, clearing pending state');
-              pendingPRContext = null;
-              isAutofillAndCreatingPR = false;
-              getTransientStore()?.clearBackgroundOperation();
-              getTransientStore()?.clearExecutorStates();
-            }
-          });
-      } else if (result && !prDescriptionExecutor.result) {
-        // Restore completed result only if executor doesn't have it
+        dispatch(reconnectAgent(workspaceId, 'pr', agentId!, { status: savedStatus as ExecutorStatus, result }));
+      } else if (savedStatus === 'success' && result && !prExec.result) {
         hasReconnectedPRExecutor = true;
-        // Restore pendingPRContext so the $effect at line 1879 can trigger handleCreatePR()
         if (stored.pendingPRContext) {
-          isAutofillAndCreatingPR = true;
-          pendingPRContext = stored.pendingPRContext;
-          getTransientStore()?.startBackgroundOperation('create-pr', 'Resuming...');
+          dispatch(setIsAutofillAndCreatingPR(workspaceId, true));
+          dispatch(setPendingPRContext(workspaceId, stored.pendingPRContext));
+          dispatch(startBackgroundOperation(workspaceId, 'create-pr', Date.now(), 'Resuming...'));
         }
-        prDescriptionExecutor.reconnect(workspaceId, agentId, { status: savedStatus, result });
+        dispatch(reconnectAgent(workspaceId, 'pr', agentId!, { status: savedStatus as ExecutorStatus, result }));
+      } else {
+        hasReconnectedPRExecutor = true;
       }
     }
 
     // Restore pending action states only if we're not reconnecting to a running executor
-    // (reconnecting executors handle their own pending state restoration above)
-    if (stored.pendingCommitAction && !stored.commitMessageExecutor?.agentId) {
-      pendingCommitAction = stored.pendingCommitAction;
+    if (stored.pendingCommitAction && !commitExec.agentId) {
+      dispatch(setPendingCommitAction(workspaceId, stored.pendingCommitAction));
     }
-    if (stored.pendingPRContext && !stored.prDescriptionExecutor?.agentId) {
-      pendingPRContext = stored.pendingPRContext;
+    if (stored.pendingPRContext && !prExec.agentId) {
+      dispatch(setPendingPRContext(workspaceId, stored.pendingPRContext));
     }
   });
 
@@ -751,12 +561,12 @@
     // Handler for stopping code review
     const handleStopCodeReview = () => {
       logger.info('Received workspace:stop-code-review event');
-      codeReviewExecutor.cancel();
+      dispatch(cancelExecution(workspaceId, 'review'));
       codeReviewState = {
         ...codeReviewState,
         status: 'idle',
       };
-      getTransientStore()?.clearCodeReviewExecutorState();
+      dispatch(resetExecutor(workspaceId, 'review'));
       window.dispatchEvent(
         new CustomEvent('workspace:code-review-update', {
           detail: {
@@ -776,56 +586,42 @@
   });
 
   // Streaming preview data for commit message generation
-  const generatingMessagePreview = $derived.by(() => {
-    const latestMessage = commitMessageExecutor.latestMessage;
-    if (!latestMessage?.contentBlocks) return '';
-    const text = extractTextFromBlocks(latestMessage.contentBlocks);
-    // Return last ~100 chars, trimmed to 2 lines max
-    const lines = text.trim().split('\n').slice(-2);
-    return lines.join('\n').slice(-200);
-  });
-
+  const commitIsRunning = $derived($commitExecState$.status === 'running' || $commitExecState$.status === 'initializing');
+  const generatingMessagePreview = $derived(''); // Streaming preview not available via Redux yet
   const generatingMessageStatus = $derived.by(() => {
-    if (!commitMessageExecutor.isRunning) return '';
-    if (commitMessageExecutor.status === 'initializing') return 'Starting agent...';
-    if (commitMessageExecutor.progress < 20) return 'Analyzing changes...';
-    if (commitMessageExecutor.progress < 50) return 'Generating commit message...';
+    if (!commitIsRunning) return '';
+    if ($commitExecState$.status === 'initializing') return 'Starting agent...';
+    if ($commitExecState$.progress < 20) return 'Analyzing changes...';
+    if ($commitExecState$.progress < 50) return 'Generating commit message...';
     return 'Finalizing...';
   });
 
   // Streaming preview data for PR description generation
-  const generatingPRPreview = $derived.by(() => {
-    const latestMessage = prDescriptionExecutor.latestMessage;
-    if (!latestMessage?.contentBlocks) return '';
-    const text = extractTextFromBlocks(latestMessage.contentBlocks);
-    // Return last ~100 chars, trimmed to 2 lines max
-    const lines = text.trim().split('\n').slice(-2);
-    return lines.join('\n').slice(-200);
-  });
-
+  const prIsRunning = $derived($prExecState$.status === 'running' || $prExecState$.status === 'initializing');
+  const generatingPRPreview = $derived(''); // Streaming preview not available via Redux yet
   const generatingPRStatus = $derived.by(() => {
-    if (!prDescriptionExecutor.isRunning) return '';
-    if (prDescriptionExecutor.status === 'initializing') return 'Starting agent...';
-    if (prDescriptionExecutor.progress < 20) return 'Analyzing commits and changes...';
-    if (prDescriptionExecutor.progress < 50) return 'Generating PR description...';
+    if (!prIsRunning) return '';
+    if ($prExecState$.status === 'initializing') return 'Starting agent...';
+    if ($prExecState$.progress < 20) return 'Analyzing commits and changes...';
+    if ($prExecState$.progress < 50) return 'Generating PR description...';
     return 'Finalizing...';
   });
 
   // Track file tracking changes to refresh
   // We need to track BOTH the count AND the staged status to detect when files move between staged/unstaged
   let hasInitiallyLoaded = false;
-  const stagedCount = $derived(fileTrackingStore.workingChanges?.staged?.length ?? 0);
-  const unstagedCount = $derived(fileTrackingStore.workingChanges?.unstaged?.length ?? 0);
+  const stagedCount = $derived($ftStagedChanges$?.length ?? 0);
+  const unstagedCount = $derived($ftUnstagedChanges$?.length ?? 0);
   // Create a fingerprint of staged file paths to detect stage/unstage operations
   const stagedFingerprint = $derived(
-    fileTrackingStore.workingChanges?.staged
+    $ftStagedChanges$
       ?.map((f) => f.file)
       .sort()
       .join(',') ?? '',
   );
 
   // Refresh prepare data when staged/unstaged files change
-  // Note: fileTrackingStore.refresh() has built-in deduplication, so we don't need cooldowns here
+  // Note: refreshRequested has built-in deduplication via saga, so we don't need cooldowns here
   $effect(() => {
     // Depend on counts AND fingerprint so we detect both additions/removals AND stage/unstage operations
     void stagedCount;
@@ -844,15 +640,15 @@
   // Cache TTL: consider cache valid for 30 seconds
   const CACHE_TTL_MS = 30000;
 
-  // PERF: Determine if we have ANY data to show (from fileTrackingStore)
+  // PERF: Determine if we have ANY data to show (from Redux file tracking)
   // This lets us show the timeline immediately even without status/prepareResult
   const hasFilesToShow = $derived(
-    fileTrackingStore.workingChanges.staged.length > 0 ||
-      fileTrackingStore.workingChanges.unstaged.length > 0,
+    $ftStagedChanges$.length > 0 ||
+      $ftUnstagedChanges$.length > 0,
   );
 
-  // Check if file tracking store is still initializing
-  const isFileTrackingInitialized = $derived(fileTrackingStore.isInitialized);
+  // Check if file tracking state is still initializing
+  const isFileTrackingInitialized = $derived($ftIsInitialized$);
 
   // Track if we've already started loading to prevent the $effect from triggering multiple loads
   // IMPORTANT: We track both the flag AND the workspace ID so we reset when switching workspaces
@@ -860,7 +656,7 @@
   let loadedForWorkspaceId: string | null = null;
 
   // Load status on mount - PROGRESSIVE LOADING:
-  // 1. Show timeline immediately with files from fileTrackingStore
+  // 1. Show timeline immediately with files from Redux file tracking state
   // 2. Load status and prepare in PARALLEL
   // 3. Update UI progressively as each completes
   $effect(() => {
@@ -873,8 +669,6 @@
         status = null;
         prepareResult = null;
         isLoading = true;
-        // Update cached transient store for new workspace
-        cachedTransientStore = getTransientUIStore(workspaceId);
       }
       loadedForWorkspaceId = workspaceId;
 
@@ -890,26 +684,26 @@
       }
       hasStartedLoading = true;
 
-      // Check for cached status for instant display
-      // Use untrack to avoid creating $state during effect flush
-      const transientStore = untrack(() => getTransientStore());
-      const cachedStatus = transientStore?.getCachedGitStatus();
-      const cacheAge = transientStore?.getCachedGitStatusAge();
+      const cachedTransientState = selectAcceptChangesState.select(getReduxStore().getState(), workspaceId);
+      const cachedStatus = cachedTransientState.cachedGitStatus;
+      const cacheAge = cachedTransientState.cachedGitStatusTimestamp
+        ? Date.now() - cachedTransientState.cachedGitStatusTimestamp
+        : null;
 
       if (cachedStatus && cacheAge !== null && cacheAge !== undefined && cacheAge < CACHE_TTL_MS) {
         // Use cached status data immediately for instant display
         status = cachedStatus;
-        if (!targetBranch) {
-          targetBranch = cachedStatus.trunkBranch;
+        if (!$acceptChangesState.targetBranch) {
+          dispatch(setTargetBranch(workspaceId, cachedStatus.trunkBranch));
         }
-        // PERF: Show UI immediately since we have cached status + files from fileTrackingStore
+        // PERF: Show UI immediately since we have cached status + files from Redux
         isLoading = false;
         hasInitiallyLoaded = true;
 
         // Load prepare data and refresh status in PARALLEL in background
         Promise.all([prepareAction(), loadStatusOnly()]);
       } else if (hasFilesToShow) {
-        // PERF: No cached status, but we have files from fileTrackingStore
+        // PERF: No cached status, but we have files from Redux file tracking
         // Show timeline immediately with files, load status/prepare in background
         isLoading = false;
         hasInitiallyLoaded = true;
@@ -929,8 +723,8 @@
     const thisVersion = ++statusRequestVersion;
     isLoadingStatus = true;
     try {
-      // Refresh fileTrackingStore in background (don't await - it may be slow)
-      fileTrackingStore.refresh();
+      // Refresh file tracking in background (don't await - it may be slow)
+      dispatch(refreshRequested(workspaceId));
 
       const newStatus = await AcceptChangesClient.getStatus(WorkspaceId(workspaceId));
 
@@ -940,10 +734,10 @@
       status = newStatus;
 
       // Cache the status for future navigation
-      getTransientStore()?.setCachedGitStatus(newStatus);
+      dispatch(setCachedGitStatus(workspaceId, newStatus, Date.now()));
 
-      if (!targetBranch) {
-        targetBranch = newStatus.trunkBranch;
+      if (!$acceptChangesState.targetBranch) {
+        dispatch(setTargetBranch(workspaceId, newStatus.trunkBranch));
       }
     } catch (error) {
       logger.error('Failed to load status', error as Error);
@@ -964,20 +758,19 @@
     isLoadingStatus = true;
     isLoadingPrepare = true;
     try {
-      // Run all loads in parallel for faster initial load
-      const [, newStatus] = await Promise.all([
-        fileTrackingStore.refresh(),
-        AcceptChangesClient.getStatus(WorkspaceId(workspaceId)),
-      ]);
+      // Refresh file tracking in background (dispatch is synchronous)
+      dispatch(refreshRequested(workspaceId));
+      // Load status
+      const newStatus = await AcceptChangesClient.getStatus(WorkspaceId(workspaceId));
 
       // Only update status if this is still the most recent request
       if (thisStatusVersion === statusRequestVersion) {
         status = newStatus;
         isLoadingStatus = false;
-        getTransientStore()?.setCachedGitStatus(newStatus);
+        dispatch(setCachedGitStatus(workspaceId, newStatus, Date.now()));
 
-        if (!targetBranch) {
-          targetBranch = newStatus.trunkBranch;
+        if (!$acceptChangesState.targetBranch) {
+          dispatch(setTargetBranch(workspaceId, newStatus.trunkBranch));
         }
       }
 
@@ -1008,8 +801,8 @@
       if (thisVersion !== prepareRequestVersion) return;
 
       prepareResult = result;
-      if (result.suggestedCommitMessage && !commitMessage) {
-        commitMessage = result.suggestedCommitMessage;
+      if (result.suggestedCommitMessage && !$acceptChangesState.commitMessage) {
+        dispatch(setCommitMessage(workspaceId, result.suggestedCommitMessage));
       }
     } catch (error) {
       logger.error('Failed to prepare action', error as Error);
@@ -1056,10 +849,10 @@
     await Promise.all([loadStatusOnly(), prepareAction()]);
   }
 
-  // Actions - use fileTrackingStore to keep both panels in sync
+  // Actions - use Redux file tracking to keep both panels in sync
   async function handleStage(filePath: string) {
     try {
-      await fileTrackingStore.stageByPath([filePath]);
+      getReduxStore().dispatch(stageByPathRequested(workspaceId, [filePath]));
       await refreshPrepareData();
       // Track staging event
       track('Staged Changes', { method: 'file', file_count: 1 });
@@ -1071,7 +864,7 @@
 
   async function handleUnstage(filePath: string) {
     try {
-      await fileTrackingStore.unstageByPath([filePath]);
+      getReduxStore().dispatch(unstageByPathRequested(workspaceId, [filePath]));
       await refreshPrepareData();
     } catch (error) {
       logger.error('Failed to unstage file', error as Error, { filePath });
@@ -1082,7 +875,7 @@
   async function handleStageAll() {
     try {
       const paths = unstagedFiles.map((f) => f.path);
-      await fileTrackingStore.stageByPath(paths);
+      getReduxStore().dispatch(stageByPathRequested(workspaceId, paths));
       await refreshPrepareData();
     } catch (error) {
       logger.error('Failed to stage all files', error as Error);
@@ -1093,7 +886,7 @@
   async function handleUnstageAll() {
     try {
       const paths = stagedFiles.map((f) => f.path);
-      await fileTrackingStore.unstageByPath(paths);
+      getReduxStore().dispatch(unstageByPathRequested(workspaceId, paths));
       await refreshPrepareData();
     } catch (error) {
       logger.error('Failed to unstage all files', error as Error);
@@ -1104,7 +897,7 @@
   // Batch stage a group of files (used for per-agent-group staging)
   async function handleStageGroup(paths: string[]) {
     try {
-      await fileTrackingStore.stageByPath(paths);
+      getReduxStore().dispatch(stageByPathRequested(workspaceId, paths));
       await refreshPrepareData();
     } catch (error) {
       logger.error('Failed to stage file group', error as Error, { count: paths.length });
@@ -1115,7 +908,7 @@
   // Batch unstage a group of files (used for per-agent-group unstaging)
   async function handleUnstageGroup(paths: string[]) {
     try {
-      await fileTrackingStore.unstageByPath(paths);
+      getReduxStore().dispatch(unstageByPathRequested(workspaceId, paths));
       await refreshPrepareData();
     } catch (error) {
       logger.error('Failed to unstage file group', error as Error, { count: paths.length });
@@ -1127,11 +920,9 @@
     // Use optimistic revert - UI updates immediately, toast shows right away
     toast.warning('Changes reverted');
 
-    const result = await fileTrackingStore.revertByPath([filePath]);
-    if (!result.ok) {
-      toast.error('Failed to revert changes');
-      logger.error('Failed to revert changes', undefined, { filePath });
-    } else {
+    // Dispatch revert action - saga handles optimistic update + rollback on failure
+    getReduxStore().dispatch(revertByPathRequested(workspaceId, [filePath]));
+    {
       // Refresh prepare data in background to update the timeline
       refreshPrepareData().catch((err) => {
         logger.error('Failed to refresh prepare data after revert', err as Error);
@@ -1177,8 +968,8 @@
   }
 
   async function handleGenerateMessage() {
-    if (!workspace) return;
-    await commitMessageExecutor.execute(workspace);
+    if (!$workspace) return;
+    dispatch(executeBackgroundAgent(workspaceId, 'commit'));
   }
 
   function handleOpenExistingReview() {
@@ -1196,19 +987,19 @@
   }
 
   async function handleReviewStaged(forceNew = false) {
-    if (!workspace) return;
+    if (!$workspace) return;
 
     logger.info('handleReviewStaged called', {
       forceNew,
-      executorStatus: codeReviewExecutor.status,
-      executorIsRunning: codeReviewExecutor.isRunning,
-      executorAgentId: codeReviewExecutor.agentId,
+      executorStatus: $reviewExecState$.status,
+      executorIsRunning: reviewIsRunning,
+      executorAgentId: $reviewExecState$.agentId,
       hasExistingReview,
       codeReviewStateStatus: codeReviewState.status,
     });
 
     // Don't start a new review if one is already running
-    if (codeReviewExecutor.isRunning) {
+    if (reviewIsRunning) {
       logger.info('Executor already running, opening existing review');
       handleOpenExistingReview();
       return;
@@ -1224,7 +1015,7 @@
     // Update local state to running
     codeReviewState = {
       result: null,
-      agentId: codeReviewExecutor.agentId || null,
+      agentId: $reviewExecState$.agentId || null,
       stagedFiles: stagedFiles.map((f) => f.path),
       status: 'running',
     };
@@ -1234,7 +1025,7 @@
       new CustomEvent('workspace:open-code-review', {
         detail: {
           result: null,
-          agentId: codeReviewExecutor.agentId,
+          agentId: $reviewExecState$.agentId,
           stagedFiles: stagedFiles.map((f) => f.path),
           status: 'running',
         },
@@ -1245,9 +1036,9 @@
     track('Requested Code Review', { staged_file_count: stagedFiles.length });
 
     // Pass staged files as context for the review
-    await codeReviewExecutor.execute(workspace, {
+    dispatch(executeBackgroundAgent(workspaceId, 'review', {
       files: stagedFiles.map((f) => f.path),
-    });
+    }));
   }
 
   function handleOpenArchivedReview(review: CodeReviewState & { timestamp: number }) {
@@ -1265,14 +1056,14 @@
   }
 
   async function handleCommit() {
-    if (!workspaceId || !commitMessage.trim()) return;
+    if (!workspaceId || !$acceptChangesState.commitMessage.trim()) return;
 
     isCommitting = true;
-    logger.info('Starting commit', { workspaceId, messageLength: commitMessage.length });
+    logger.info('Starting commit', { workspaceId, messageLength: $acceptChangesState.commitMessage.length });
     try {
       const result = await withTimeout(
         AcceptChangesClient.execute(WorkspaceId(workspaceId), 'commit', {
-          commitMessage,
+          commitMessage: $acceptChangesState.commitMessage,
           stageUnstaged: false,
         }),
       );
@@ -1283,9 +1074,8 @@
       if (result.success) {
         logger.info('Commit succeeded, updating UI');
         toast.success('Changes committed');
-        commitMessage = '';
-        // Clear executor state after successful commit
-        getTransientStore()?.clearExecutorStates();
+        dispatch(setCommitMessage(workspaceId, ''));
+        dispatch(resetAcceptChangesOperations(workspaceId));
         logger.info('Loading status after successful commit');
         await loadStatus(false);
         logger.info('Status loaded, calling onSuccess callback');
@@ -1318,7 +1108,7 @@
     try {
       const result = await withTimeout(
         AcceptChangesClient.execute(WorkspaceId(workspaceId), 'push', {
-          targetBranch,
+          targetBranch: $acceptChangesState.targetBranch,
         }),
       );
 
@@ -1328,7 +1118,7 @@
         await loadStatus(false);
         onSuccess?.(result);
       } else {
-        logger.warn('Push failed', { error: result.error, targetBranch });
+        logger.warn('Push failed', { error: result.error, targetBranch: $acceptChangesState.targetBranch });
         toast.error(result.error || 'Failed to push');
       }
     } catch (error) {
@@ -1365,7 +1155,7 @@
     try {
       const result = await withTimeout(
         AcceptChangesClient.execute(WorkspaceId(workspaceId), 'merge', {
-          targetBranch,
+          targetBranch: $acceptChangesState.targetBranch,
           mergeStrategy: options?.squash ? 'squash' : 'merge',
           rebaseFirst: options?.rebaseFirst,
         }),
@@ -1373,13 +1163,13 @@
 
       trackGitOp('merge', { workspaceId, success: result.success, trigger: 'manual' });
       if (result.success) {
-        toast.success(`Changes merged into ${targetBranch}`);
+        toast.success(`Changes merged into ${$acceptChangesState.targetBranch}`);
         isMergedToTrunk = true;
         celebrateMerge();
         await loadStatus(false);
         onSuccess?.(result);
       } else {
-        logger.warn('Merge failed', { error: result.error, targetBranch });
+        logger.warn('Merge failed', { error: result.error, targetBranch: $acceptChangesState.targetBranch });
 
         // Check if this is a "behind trunk" error that can be resolved with rebase
         const errorMsg = result.error || '';
@@ -1424,7 +1214,7 @@
   async function openRebaseTerminal() {
     if (!workspaceId) return;
 
-    const worktreePath = workspace?.worktreePath || workspace?.repositoryPath;
+    const worktreePath = $workspace?.worktreePath || $workspace?.repositoryPath;
     if (!worktreePath) {
       toast.error('Cannot find space path');
       return;
@@ -1433,19 +1223,20 @@
     try {
       // Rebase command: fetch origin first, then rebase onto origin/trunk
       const trunkBranch = status?.trunkBranch || 'main';
-      const rebaseCommand = `git fetch origin ${targetBranch || trunkBranch} && git rebase origin/${targetBranch || trunkBranch}`;
+      const tb = $acceptChangesState.targetBranch || trunkBranch;
+      const rebaseCommand = `git fetch origin ${tb} && git rebase origin/${tb}`;
 
       // Create terminal with the rebase command
       const result = await window.electronAPI.invoke('terminal:createWithCommand', {
         workspaceId,
         command: rebaseCommand,
         cwd: worktreePath,
-        title: `Rebase onto ${targetBranch || trunkBranch}`,
+        title: `Rebase onto ${tb}`,
       });
 
       if (result.ok && result.terminalId) {
         // Open the terminal in the quake terminal bar
-        const terminalTitle = `Rebase onto ${targetBranch || trunkBranch}`;
+        const terminalTitle = `Rebase onto ${tb}`;
         dispatch(addTerminal(workspaceId, result.terminalId, terminalTitle));
         dispatch(openTerminalOverlay(workspaceId, result.terminalId));
 
@@ -1463,7 +1254,7 @@
 
   function handleStartNewSpace() {
     // Navigate to the new workspace creation page with the same repo context
-    const repo = workspace?.repositoryPath;
+    const repo = $workspace?.repositoryPath;
     if (repo) {
       // Dispatch event to start new workspace with same repo
       window.dispatchEvent(
@@ -1479,7 +1270,7 @@
   let isCreatingWorkspace = $state(false);
 
   async function handleCreateWorkspace(prompt: string) {
-    if (!workspace?.repositoryPath) {
+    if (!$workspace?.repositoryPath) {
       toast.error('No repository path found');
       return;
     }
@@ -1488,17 +1279,18 @@
 
     try {
       // Archive the current workspace first
-      if (workspace.id) {
-        const archiveResult = await workspaceStore.archive(workspace.id);
+      if ($workspace.id) {
+        const archiveResult = await workspaceClient.archive($workspace.id);
         if (!archiveResult.ok) {
           toast.error('Failed to archive workspace');
           isCreatingWorkspace = false;
           return;
         }
+        dispatch(loadWorkspacesRequested());
       }
 
-      const repoPath = workspace.repositoryPath;
-      const baseBranch = workspace.baseRef || workspace.branch || 'main';
+      const repoPath = $workspace.repositoryPath;
+      const baseBranch = $workspace.baseRef || $workspace.branch || 'main';
 
       // Generate a unique agent ID for the initial agent
       const initialAgentId = unifiedIdService.generateAgentId();
@@ -1522,16 +1314,16 @@
 
       // Build environment config if remote
       const environmentConfig =
-        workspace.environmentConfig?.type === 'remote' && workspace.environmentConfig?.ssh
+        $workspace.environmentConfig?.type === 'remote' && $workspace.environmentConfig?.ssh
           ? {
               type: 'remote' as const,
-              ssh: workspace.environmentConfig.ssh,
+              ssh: $workspace.environmentConfig.ssh,
             }
           : undefined;
 
       // Create the workspace
       // Note: Branch name will be generated by the backend using the workspace ID
-      const result = await workspaceStore.create({
+      const result = await workspaceClient.create({
         title: repoPath.split('/').pop() || 'New Workspace',
         repositoryPath: repoPath,
         // branch is omitted - backend will use workspace ID as branch name
@@ -1545,6 +1337,7 @@
       }
 
       const newWorkspace = result.data;
+      dispatch(setWorkspaceEntity(newWorkspace));
 
       logger.info('Workspace created successfully from Accept Changes', {
         workspaceId: newWorkspace.id,
@@ -1592,7 +1385,7 @@
     if (!workspaceId) return;
 
     // If including commit, we need a commit message
-    if (includeCommit && !commitMessage.trim()) {
+    if (includeCommit && !$acceptChangesState.commitMessage.trim()) {
       toast.error('Please enter a commit message');
       return;
     }
@@ -1607,7 +1400,7 @@
         // Commit + push in one action
         const result = await withTimeout(
           AcceptChangesClient.execute(WorkspaceId(workspaceId), 'commit', {
-            commitMessage,
+            commitMessage: $acceptChangesState.commitMessage,
             pushAfterCommit: true,
           }),
         );
@@ -1615,7 +1408,7 @@
         trackGitOp('commit', { workspaceId, success: result.success, trigger: 'manual' });
         if (result.success) {
           toast.success('Changes added to PR');
-          commitMessage = '';
+          dispatch(setCommitMessage(workspaceId, ''));
           await loadStatus(false);
           onSuccess?.(result);
         } else {
@@ -1626,7 +1419,7 @@
         // Just push
         const result = await withTimeout(
           AcceptChangesClient.execute(WorkspaceId(workspaceId), 'push', {
-            targetBranch,
+            targetBranch: $acceptChangesState.targetBranch,
           }),
         );
 
@@ -1669,15 +1462,11 @@
     if (!workspaceId) return;
 
     // Ensure GitHub authentication before attempting to create a PR
-    if (!githubAuthState.isAuthenticated) {
-      try {
-        await githubAuthStore.initialize();
-      } catch (error) {
-        logger.warn('Failed to refresh GitHub auth state before creating PR', error);
-      }
+    if (!$githubAuthIsAuthenticated$) {
+      dispatch(initializeGitHubAuth());
     }
 
-    if (!githubAuthState.isAuthenticated) {
+    if (!$githubAuthIsAuthenticated$) {
       pendingActionAfterAuth = 'create-pr';
       showGitHubAuthModal = true;
       return;
@@ -1685,12 +1474,12 @@
 
     isCreatingPR = true;
     try {
-      const title = prTitle || `Changes from ${status?.branch}`;
+      const title = $acceptChangesState.prTitle || `Changes from ${status?.branch}`;
       const result = await withTimeout(
         AcceptChangesClient.execute(WorkspaceId(workspaceId), 'create-pr', {
-          targetBranch,
+          targetBranch: $acceptChangesState.targetBranch,
           prTitle: title,
-          prBody: prDescription,
+          prBody: $acceptChangesState.prDescription,
           // Use PR title as commit message if there are staged changes to commit
           commitMessage: title,
         }),
@@ -1698,15 +1487,12 @@
 
       trackGitOp('create-pr', { workspaceId, success: result.success, trigger: 'manual' });
       if (result.success) {
-        prTitle = '';
-        prDescription = '';
-        commitMessage = '';
-        // Clear executor state after successful PR creation
-        getTransientStore()?.clearExecutorStates();
+        dispatch(clearAcceptChangesForm(workspaceId));
+        dispatch(resetAcceptChangesOperations(workspaceId));
         await loadStatus(false);
         onSuccess?.(result);
       } else {
-        logger.warn('PR creation failed', { error: result.error, title, targetBranch });
+        logger.warn('PR creation failed', { error: result.error, title, targetBranch: $acceptChangesState.targetBranch });
         if (result.error?.toLowerCase().includes('github authentication')) {
           pendingActionAfterAuth = 'create-pr';
           showGitHubAuthModal = true;
@@ -1740,13 +1526,13 @@
     includeCommitHashes: string[];
     targetBranch: string;
   }) {
-    if (!workspace) return;
-    await prDescriptionExecutor.execute(workspace, {
+    if (!$workspace) return;
+    dispatch(executeBackgroundAgent(workspaceId, 'pr', {
       includeStagedFiles: context.includeStagedFiles,
       includeCommitHashes: context.includeCommitHashes,
       targetBranch: context.targetBranch,
       baseBranch: context.targetBranch,
-    });
+    }));
   }
 
   function handleFileClick(
@@ -1824,7 +1610,7 @@
   }
 
   function handleViewCommitThoughtProcess(e?: MouseEvent) {
-    const agentId = commitMessageExecutor.agentId;
+    const agentId = selectExecutorState.select(getReduxStore().getState(), workspaceId, 'commit').agentId;
     if (agentId) {
       const panelElement = (e?.target as HTMLElement | null)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
@@ -1838,7 +1624,7 @@
   }
 
   function handleViewPRThoughtProcess(e?: MouseEvent) {
-    const agentId = prDescriptionExecutor.agentId;
+    const agentId = selectExecutorState.select(getReduxStore().getState(), workspaceId, 'pr').agentId;
     if (agentId) {
       const panelElement = (e?.target as HTMLElement | null)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
@@ -1851,152 +1637,141 @@
     }
   }
 
-  // State to track pending auto-submit actions
-  let pendingCommitAction: 'commit' | 'add-to-pr' | 'merge' | 'squash-merge' | null = $state(null);
-  let pendingPRContext: {
-    includeStagedFiles: boolean;
-    includeCommitHashes: string[];
-    targetBranch: string;
-  } | null = $state(null);
 
-  // Sync pending action states to transient store
-  $effect(() => {
-    // Use untrack to avoid creating $state during effect flush
-    const transientStore = untrack(() => getTransientStore());
-    if (transientStore) {
-      transientStore.setPendingCommitAction(pendingCommitAction);
-    }
-  });
-  $effect(() => {
-    // Use untrack to avoid creating $state during effect flush
-    const transientStore = untrack(() => getTransientStore());
-    if (transientStore) {
-      transientStore.setPendingPRContext(pendingPRContext);
-    }
-  });
 
   // Watch for commit message executor completion to trigger auto-submit
   $effect(() => {
-    if (pendingCommitAction && commitMessageExecutor.result && !commitMessageExecutor.isRunning) {
-      const action = pendingCommitAction;
-      pendingCommitAction = null;
+    const pendingAction = $acceptChangesState.pendingCommitAction;
+    if (pendingAction && $commitExecState$.result && !commitIsRunning) {
+      const action = pendingAction;
 
-      // Set the commit message from the result
-      commitMessage = commitMessageExecutor.result;
+      untrack(() => {
+        dispatch(setPendingCommitAction(workspaceId, null));
 
-      // Update phase to executing (git operations)
-      getTransientStore()?.updateBackgroundOperationPhase('executing');
+        // Set the commit message from the result
+        dispatch(setCommitMessage(workspaceId, $commitExecState$.result!));
 
-      // Perform the action
-      if (action === 'commit') {
-        handleCommit().finally(() => {
-          isAutofillAndCommitting = false;
-          getTransientStore()?.clearBackgroundOperation();
-        });
-      } else if (action === 'add-to-pr') {
-        handleAddToPR(true).finally(() => {
-          isAutofillAndCommitting = false;
-          getTransientStore()?.clearBackgroundOperation();
-        });
-      } else if (action === 'merge') {
-        handleMergeToTrunk({ squash: false }).finally(() => {
-          isAutofillAndCommitting = false;
-          getTransientStore()?.clearBackgroundOperation();
-        });
-      } else if (action === 'squash-merge') {
-        handleMergeToTrunk({ squash: true }).finally(() => {
-          isAutofillAndCommitting = false;
-          getTransientStore()?.clearBackgroundOperation();
-        });
-      }
+        // Update phase to executing (git operations)
+        dispatch(updateBackgroundOperationPhase(workspaceId, 'executing'));
+
+        // Perform the action
+        if (action === 'commit') {
+          handleCommit().finally(() => {
+            dispatch(setIsAutofillAndCommitting(workspaceId, false));
+            dispatch(clearBackgroundOperation(workspaceId));
+          });
+        } else if (action === 'add-to-pr') {
+          handleAddToPR(true).finally(() => {
+            dispatch(setIsAutofillAndCommitting(workspaceId, false));
+            dispatch(clearBackgroundOperation(workspaceId));
+          });
+        } else if (action === 'merge') {
+          handleMergeToTrunk({ squash: false }).finally(() => {
+            dispatch(setIsAutofillAndCommitting(workspaceId, false));
+            dispatch(clearBackgroundOperation(workspaceId));
+          });
+        } else if (action === 'squash-merge') {
+          handleMergeToTrunk({ squash: true }).finally(() => {
+            dispatch(setIsAutofillAndCommitting(workspaceId, false));
+            dispatch(clearBackgroundOperation(workspaceId));
+          });
+        }
+      });
     }
   });
 
   // Watch for PR description executor completion to trigger auto-submit
   $effect(() => {
-    if (pendingPRContext && prDescriptionExecutor.result && !prDescriptionExecutor.isRunning) {
-      pendingPRContext = null;
+    const pendingPR = $acceptChangesState.pendingPRContext;
+    if (pendingPR && $prExecState$.result && !prIsRunning) {
+      untrack(() => {
+        dispatch(setPendingPRContext(workspaceId, null));
 
-      // Parse the result to extract title and description
-      const result = prDescriptionExecutor.result;
-      const lines = result.trim().split('\n');
-      const titleLine = lines[0]?.replace(/^#\s*/, '').trim();
-      const descriptionLines = lines.slice(1).join('\n').trim();
+        // Parse the result to extract title and description
+        const result = $prExecState$.result!;
+        const lines = result.trim().split('\n');
+        const titleLine = lines[0]?.replace(/^#\s*/, '').trim();
+        const descriptionLines = lines.slice(1).join('\n').trim();
 
-      if (titleLine) {
-        prTitle = titleLine;
-      } else {
-        // Fallback: generate title from branch name
-        const branchName = status?.branch || 'feature';
-        const cleanBranchName = branchName
-          .replace(/^(feature|fix|chore|docs|refactor|test)[-/]/, '')
-          .replace(/[-_]/g, ' ')
-          .trim();
-        prTitle = cleanBranchName.charAt(0).toUpperCase() + cleanBranchName.slice(1);
-      }
+        if (titleLine) {
+          dispatch(setPRTitle(workspaceId, titleLine));
+        } else {
+          // Fallback: generate title from branch name
+          const branchName = status?.branch || 'feature';
+          const cleanBranchName = branchName
+            .replace(/^(feature|fix|chore|docs|refactor|test)[-/]/, '')
+            .replace(/[-_]/g, ' ')
+            .trim();
+          dispatch(setPRTitle(workspaceId, cleanBranchName.charAt(0).toUpperCase() + cleanBranchName.slice(1)));
+        }
 
-      prDescription = descriptionLines || result;
+        dispatch(setPRDescription(workspaceId, descriptionLines || result));
 
-      // Update phase to executing (git operations)
-      getTransientStore()?.updateBackgroundOperationPhase('executing');
+        // Update phase to executing (git operations)
+        dispatch(updateBackgroundOperationPhase(workspaceId, 'executing'));
 
-      // Now create the PR
-      handleCreatePR().finally(() => {
-        isAutofillAndCreatingPR = false;
-        getTransientStore()?.clearBackgroundOperation();
+        // Now create the PR
+        handleCreatePR().finally(() => {
+          dispatch(setIsAutofillAndCreatingPR(workspaceId, false));
+          dispatch(clearBackgroundOperation(workspaceId));
+        });
       });
     }
   });
 
   // Watch for executor errors to reset state
   $effect(() => {
-    if (pendingCommitAction && commitMessageExecutor.error) {
-      pendingCommitAction = null;
-      isAutofillAndCommitting = false;
-      getTransientStore()?.clearBackgroundOperation();
+    if ($acceptChangesState.pendingCommitAction && $commitExecState$.error) {
+      untrack(() => {
+        dispatch(setPendingCommitAction(workspaceId, null));
+        dispatch(setIsAutofillAndCommitting(workspaceId, false));
+        dispatch(clearBackgroundOperation(workspaceId));
+      });
     }
   });
 
   $effect(() => {
-    if (pendingPRContext && prDescriptionExecutor.error) {
-      pendingPRContext = null;
-      isAutofillAndCreatingPR = false;
-      getTransientStore()?.clearBackgroundOperation();
+    if ($acceptChangesState.pendingPRContext && $prExecState$.error) {
+      untrack(() => {
+        dispatch(setPendingPRContext(workspaceId, null));
+        dispatch(setIsAutofillAndCreatingPR(workspaceId, false));
+        dispatch(clearBackgroundOperation(workspaceId));
+      });
     }
   });
 
   // Autofill and commit - optimistically shows as submitting while generating message
   async function handleAutofillAndCommit() {
-    if (!workspace) return;
+    if (!$workspace) return;
 
-    isAutofillAndCommitting = true;
-    pendingCommitAction = 'commit';
+    dispatch(setIsAutofillAndCommitting(workspaceId, true));
+    dispatch(setPendingCommitAction(workspaceId, 'commit'));
 
     // Start optimistic background operation tracking
-    getTransientStore()?.startBackgroundOperation('commit', 'Committing changes...');
+    dispatch(startBackgroundOperation(workspaceId, 'commit', Date.now(), 'Committing changes...'));
 
     // Show optimistic feedback - brief toast, UI shows status
     toast.info('Committing in background...', { duration: 2000 });
 
     // Start generating the commit message
-    await commitMessageExecutor.execute(workspace);
+    dispatch(executeBackgroundAgent(workspaceId, 'commit'));
   }
 
   // Autofill and add to PR - optimistically shows as submitting while generating message
   async function handleAutofillAndAddToPR() {
-    if (!workspace) return;
+    if (!$workspace) return;
 
-    isAutofillAndCommitting = true;
-    pendingCommitAction = 'add-to-pr';
+    dispatch(setIsAutofillAndCommitting(workspaceId, true));
+    dispatch(setPendingCommitAction(workspaceId, 'add-to-pr'));
 
     // Start optimistic background operation tracking
-    getTransientStore()?.startBackgroundOperation('add-to-pr', 'Adding to PR...');
+    dispatch(startBackgroundOperation(workspaceId, 'add-to-pr', Date.now(), 'Adding to PR...'));
 
     // Show optimistic feedback - brief toast, UI shows status
     toast.info('Adding to PR in background...', { duration: 2000 });
 
     // Start generating the commit message
-    await commitMessageExecutor.execute(workspace);
+    dispatch(executeBackgroundAgent(workspaceId, 'commit'));
   }
 
   // Autofill and create PR - optimistically shows as submitting while generating description
@@ -2005,40 +1780,40 @@
     includeCommitHashes: string[];
     targetBranch: string;
   }) {
-    if (!workspace) return;
+    if (!$workspace) return;
 
-    isAutofillAndCreatingPR = true;
-    pendingPRContext = context;
+    dispatch(setIsAutofillAndCreatingPR(workspaceId, true));
+    dispatch(setPendingPRContext(workspaceId, context));
 
     // Start optimistic background operation tracking
-    getTransientStore()?.startBackgroundOperation('create-pr', 'Creating PR...');
+    dispatch(startBackgroundOperation(workspaceId, 'create-pr', Date.now(), 'Creating PR...'));
 
     // Show optimistic feedback - brief toast, UI shows status
     toast.info('Creating PR in background...', { duration: 2000 });
 
     // Start generating the PR description
-    await prDescriptionExecutor.execute(workspace, context);
+    dispatch(executeBackgroundAgent(workspaceId, 'pr', context));
   }
 
   // Autofill and merge - generates commit message for staged files, then merges
   async function handleAutofillAndMerge(options?: { squash?: boolean }) {
-    if (!workspace) return;
+    if (!$workspace) return;
 
-    isAutofillAndCommitting = true;
-    pendingCommitAction = options?.squash ? 'squash-merge' : 'merge';
+    dispatch(setIsAutofillAndCommitting(workspaceId, true));
+    dispatch(setPendingCommitAction(workspaceId, options?.squash ? 'squash-merge' : 'merge'));
 
     // Start optimistic background operation tracking
-    getTransientStore()?.startBackgroundOperation('commit', 'Merging to trunk...');
+    dispatch(startBackgroundOperation(workspaceId, 'commit', Date.now(), 'Merging to trunk...'));
 
     // Show optimistic feedback - brief toast, UI shows status
     toast.info('Merging in background...', { duration: 2000 });
 
     // Start generating the commit message (will trigger merge on completion)
-    await commitMessageExecutor.execute(workspace);
+    dispatch(executeBackgroundAgent(workspaceId, 'commit'));
   }
 
   function handleBack() {
-    fileTrackingStore.clearMainPanelView();
+    dispatch(ftClearMainPanelView());
     onBack?.();
   }
 
@@ -2052,7 +1827,7 @@
     showGitHubAuthModal = false;
     pendingActionAfterAuth = null;
 
-    if (action === 'create-pr' && githubAuthState.isAuthenticated) {
+    if (action === 'create-pr' && $githubAuthIsAuthenticated$) {
       handleCreatePR();
     }
   }
@@ -2093,7 +1868,7 @@
             <div class="border border-border rounded-md overflow-hidden shadow-xs">
               <!-- File rows skeleton -->
               <div class="py-2 px-3 space-y-2">
-                {#each [1, 2, 3] as _}
+                {#each [1, 2, 3] as { }}
                   <div class="flex items-center gap-2">
                     <div class="h-3 w-3 bg-muted rounded animate-pulse"></div>
                     <div class="h-3 flex-1 bg-muted rounded animate-pulse"></div>
@@ -2158,20 +1933,20 @@
     <!-- Timeline - show immediately with files, even if status is still loading -->
     <ChangeTimeline
       {workspaceId}
-      {workspace}
-      workspaceTitle={workspace?.title}
+      workspace={$workspace}
+      workspaceTitle={$workspace?.title}
       branch={status?.branch ?? (isLoadingStatus ? '' : 'Loading...')}
-      bind:targetBranch
+      targetBranch={$acceptChangesState.targetBranch}
       availableBranches={status?.availableBranches ?? []}
       {unstagedFiles}
       {stagedFiles}
       commits={localCommits}
       {prs}
-      bind:commitMessage
-      bind:prTitle
-      bind:prDescription
-      isGeneratingMessage={commitMessageExecutor.isRunning}
-      isGeneratingPR={prDescriptionExecutor.isRunning}
+      commitMessage={$acceptChangesState.commitMessage}
+      prTitle={$acceptChangesState.prTitle}
+      prDescription={$acceptChangesState.prDescription}
+      isGeneratingMessage={commitIsRunning}
+      isGeneratingPR={prIsRunning}
       {generatingMessagePreview}
       {generatingPRPreview}
       {generatingMessageStatus}
@@ -2189,58 +1964,58 @@
       onStageGroup={handleStageGroup}
       onUnstageGroup={handleUnstageGroup}
       onCommitMessageChange={(msg: string) => {
-        commitMessage = msg;
+        dispatch(setCommitMessage(workspaceId, msg));
       }}
       onGenerateMessage={handleGenerateMessage}
       onCommit={handleCommit}
       onPush={handlePush}
       onAddToPR={handleAddToPR}
       onTargetBranchChange={(branch: string) => {
-        targetBranch = branch;
+        dispatch(setTargetBranch(workspaceId, branch));
       }}
       onPRTitleChange={(title: string) => {
-        prTitle = title;
+        dispatch(setPRTitle(workspaceId, title));
       }}
       onPRDescriptionChange={(desc: string) => {
-        prDescription = desc;
+        dispatch(setPRDescription(workspaceId, desc));
       }}
       onGeneratePR={handleGeneratePR}
       onCreatePR={handleCreatePR}
       onPickExportFolder={handlePickExportFolder}
       onExport={handleExport}
-      defaultExportPath={workspace?.repositoryPath}
+      defaultExportPath={$workspace?.repositoryPath}
       onOpenCommit={handleOpenCommit}
       onOpenPR={handleOpenPR}
       onOpenLocalChanges={() => {
         window.dispatchEvent(new CustomEvent('workspace:open-local-changes'));
       }}
-      commitMessageAgentId={commitMessageExecutor.agentId}
-      prDescriptionAgentId={prDescriptionExecutor.agentId}
+      commitMessageAgentId={$commitExecState$.agentId}
+      prDescriptionAgentId={$prExecState$.agentId}
       onViewCommitThoughtProcess={handleViewCommitThoughtProcess}
       onViewPRThoughtProcess={handleViewPRThoughtProcess}
       onAutofillAndCommit={handleAutofillAndCommit}
       onAutofillAndAddToPR={handleAutofillAndAddToPR}
       onAutofillAndCreatePR={handleAutofillAndCreatePR}
-      {isAutofillAndCommitting}
-      {isAutofillAndCreatingPR}
-      backgroundOperation={getBackgroundOperation()}
+      isAutofillAndCommitting={$acceptChangesState.isAutofillAndCommitting}
+      isAutofillAndCreatingPR={$acceptChangesState.isAutofillAndCreatingPR}
+      backgroundOperation={$acceptChangesState.backgroundOperation}
       onStopGeneratingMessage={() => {
-        commitMessageExecutor.cancel();
-        isAutofillAndCommitting = false;
-        pendingCommitAction = null;
-        getTransientStore()?.clearExecutorStates();
+        dispatch(cancelExecution(workspaceId, 'commit'));
+        dispatch(setIsAutofillAndCommitting(workspaceId, false));
+        dispatch(setPendingCommitAction(workspaceId, null));
+        dispatch(resetAcceptChangesOperations(workspaceId));
       }}
       onStopGeneratingPR={() => {
-        prDescriptionExecutor.cancel();
-        isAutofillAndCreatingPR = false;
-        pendingPRContext = null;
-        getTransientStore()?.clearExecutorStates();
+        dispatch(cancelExecution(workspaceId, 'pr'));
+        dispatch(setIsAutofillAndCreatingPR(workspaceId, false));
+        dispatch(setPendingPRContext(workspaceId, null));
+        dispatch(resetAcceptChangesOperations(workspaceId));
       }}
       onReviewStaged={() => handleReviewStaged(false)}
       onReReview={() => handleReviewStaged(true)}
       onOpenReview={handleOpenExistingReview}
       onOpenArchivedReview={handleOpenArchivedReview}
-      isReviewingCode={codeReviewExecutor.isRunning}
+      isReviewingCode={reviewIsRunning}
       {reviewStatus}
       {hasExistingReview}
       {reviewCommentCount}

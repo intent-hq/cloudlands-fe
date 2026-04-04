@@ -1,19 +1,18 @@
 <script lang="ts">
-  import {
-    unifiedStateStore,
-    type AgentStateChangeType,
-  } from '$features/agent/services/unified-state-store';
-  import { agentService } from '$features/agent/agent.service';
+  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { selectActiveWorkspaceId, selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { updateDigest as updateAgentDigestAction } from '$lib/store/slices/agent-session/agent-session-slice';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { agentService } from '$features/agent/agent-ipc-bridge';
   import { createLogger } from '$lib/utils/client-logger';
-  import { AgentStatus, type ContentBlock, type AgentId } from '$shared/types';
+  import { AgentStatus, type ContentBlock } from '$shared/types';
   import { onMount, onDestroy } from 'svelte';
   import { getLastMeaningfulLine } from '$lib/utils/text-utils';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { taskAgentPollingManager } from './task-agent-polling-manager';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
-  import type { WorkspaceId } from '$shared/types/branded-ids';
-
-  const logger = createLogger('TaskAgentStatus');
+  
+const logger = createLogger('TaskAgentStatus');
 
   // Polling configuration constants
   // Polling is now handled by the shared taskAgentPollingManager (500ms interval)
@@ -77,15 +76,17 @@
     triedLoading = true;
 
     try {
-      const workspaceState = unifiedStateStore.getCurrentWorkspace();
-      if (workspaceState?.workspace) {
+      const reduxState = getReduxStore().getState();
+      const wsId = selectActiveWorkspaceId.select(reduxState);
+      const currentWorkspace = wsId ? selectWorkspaceById.select(reduxState, wsId) : undefined;
+      if (currentWorkspace) {
         logger.debug('[TaskAgentStatus] Attempting to load agent from disk', {
           agentId,
-          workspaceId: workspaceState.workspace.id,
+          workspaceId: currentWorkspace.id,
         });
         const loadedSession = await agentService.restoreSessionWithoutBackend(
           agentId,
-          workspaceState.workspace,
+          currentWorkspace,
         );
         if (loadedSession) {
           agentFound = true;
@@ -117,9 +118,10 @@
 
   // Helper to persist digest to the store
   function persistDigest(digest: string) {
-    const workspaceState = unifiedStateStore.getCurrentWorkspace();
-    if (workspaceState?.workspace) {
-      unifiedStateStore.updateAgentDigest(workspaceState.workspace.id, agentId as AgentId, digest);
+    const reduxState = getReduxStore().getState();
+    const wsId = selectActiveWorkspaceId.select(reduxState);
+    if (wsId) {
+      getReduxStore().dispatch(updateAgentDigestAction(agentId, digest));
     }
   }
 
@@ -148,6 +150,7 @@
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function handleStreamEnd(_event: CustomEvent) {
     isStreamActive = false;
 
@@ -218,34 +221,28 @@
     function pollCallback() {
       pollCount++;
       const session = agentService.getSession(agentId);
-      const workspace = unifiedStateStore.getCurrentWorkspace();
-      const storeAgent = workspace?.agents.get(agentId);
+      const pollState = getReduxStore().getState();
+      const pollWsId = selectActiveWorkspaceId.select(pollState);
+      const reduxAgent = pollWsId ? selectAgentById.select(pollState, agentId) : undefined;
 
-      if (session || storeAgent) {
+      if (session || reduxAgent) {
         let needsUpdate = false;
 
         if (!agentFound) {
           logger.debug('[TaskAgentStatus] Agent found', {
             agentId,
             hasSession: !!session,
-            hasStoreAgent: !!storeAgent,
+            hasStoreAgent: !!reduxAgent,
             pollCount,
           });
           agentFound = true;
           needsUpdate = true;
         }
 
-        // Check for streaming state from store (backup for events)
-        const currentStreaming = storeAgent?.streaming?.active ?? false;
-        const currentBuffer = storeAgent?.streaming?.buffer || '';
+        // Check for streaming state from Redux (backup for events)
+        const currentStreaming = reduxAgent?.isStreaming ?? false;
 
-        // Only update from store if we have new buffer content we haven't seen via events
-        // This prevents duplicate updates when both events and polling fire
-        if (currentBuffer && currentBuffer.length > streamingBuffer.length) {
-          streamingBuffer = currentBuffer;
-          isStreamActive = currentStreaming;
-          needsUpdate = true;
-        } else if (currentStreaming && !isStreamActive) {
+        if (currentStreaming && !isStreamActive) {
           // Store says streaming started - only trust "start" signals from store
           // Don't trust "stop" signals as they may be stale
           isStreamActive = true;
@@ -256,7 +253,7 @@
         // to correctly set isStreamActive = false.
 
         // Check if agent completed (only set once)
-        const status = storeAgent?.session?.status || session?.status;
+        const status = reduxAgent?.status || session?.status;
         if (status === AgentStatus.Completed && !finalStatus) {
           finalStatus = 'complete';
           needsUpdate = true;
@@ -293,7 +290,6 @@
         logger.debug('[TaskAgentStatus] Still polling...', {
           agentId,
           pollCount,
-          workspaceAgentCount: workspace?.agents.size ?? 0,
         });
       }
     }
@@ -304,66 +300,58 @@
     taskAgentPollingManager.register(agentId, pollCallback);
     isPollingActive = true;
 
-    // Subscribe to event-driven agent state updates (more efficient than polling)
+    // Subscribe to Redux store for event-driven agent state updates
     // This triggers updates when agent state changes instead of waiting for poll cycle
-    agentStateCleanup = unifiedStateStore.onAgentStateChange(
-      (_changedWorkspaceId: WorkspaceId, changedAgentId, changeType: AgentStateChangeType) => {
-        // Only process updates for this specific agent
-        if (changedAgentId !== agentId) return;
+    let prevAgentRef: import('$shared/types').AgentSession | undefined;
+    const unsubRedux = getReduxStore().subscribe(() => {
+      const subState = getReduxStore().getState();
+      const subWsId = selectActiveWorkspaceId.select(subState);
+      if (!subWsId) return;
+      const currentAgent = selectAgentById.select(subState, agentId);
+      if (!currentAgent || currentAgent === prevAgentRef) return;
 
-        // Get current agent state
-        const workspace = unifiedStateStore.getCurrentWorkspace();
-        const storeAgent = workspace?.agents.get(agentId);
+      let needsUpdate = false;
 
-        if (storeAgent) {
-          let needsUpdate = false;
+      // Mark as found if this is the first time
+      if (!agentFound) {
+        logger.debug('[TaskAgentStatus] Agent found via Redux', { agentId });
+        agentFound = true;
+        needsUpdate = true;
+      }
 
-          // Mark as found if this is the first time
-          if (!agentFound) {
-            logger.debug('[TaskAgentStatus] Agent found via event', {
-              agentId,
-              changeType,
-            });
-            agentFound = true;
-            needsUpdate = true;
+      // Handle streaming state changes
+      const prevStreaming = prevAgentRef?.isStreaming ?? false;
+      const curStreaming = currentAgent.isStreaming ?? false;
+      if (curStreaming && !prevStreaming && !isStreamActive) {
+        isStreamActive = true;
+        needsUpdate = true;
+      } else if (!curStreaming && prevStreaming && isStreamActive) {
+        isStreamActive = false;
+        needsUpdate = true;
+      }
 
-            // Since agent is now found, we can reduce polling frequency
-            // (but keep polling registered for backup)
-          }
+      // Handle status changes
+      if (currentAgent.status === AgentStatus.Completed && !finalStatus) {
+        finalStatus = 'complete';
+        needsUpdate = true;
+      } else if (currentAgent.status === AgentStatus.Error && !finalStatus) {
+        finalStatus = 'error';
+        needsUpdate = true;
+      }
 
-          // Handle streaming state changes
-          if (changeType === 'streaming_started' && !isStreamActive) {
-            isStreamActive = true;
-            needsUpdate = true;
-          } else if (changeType === 'streaming_stopped' && isStreamActive) {
-            isStreamActive = false;
-            needsUpdate = true;
-          }
+      if (needsUpdate) {
+        version++;
+      }
 
-          // Handle status changes
-          if (changeType === 'session_updated' || changeType === 'message_added') {
-            const status = storeAgent.session?.status;
-            if (status === AgentStatus.Completed && !finalStatus) {
-              finalStatus = 'complete';
-              needsUpdate = true;
-            } else if (status === AgentStatus.Error && !finalStatus) {
-              finalStatus = 'error';
-              needsUpdate = true;
-            }
-          }
+      // Stop polling once agent is found and stable (not streaming and has final status)
+      if (agentFound && !isStreamActive && finalStatus && isPollingActive) {
+        taskAgentPollingManager.unregister(agentId);
+        isPollingActive = false;
+      }
 
-          if (needsUpdate) {
-            version++;
-          }
-
-          // Stop polling once agent is found and stable (not streaming and has final status)
-          if (agentFound && !isStreamActive && finalStatus && isPollingActive) {
-            taskAgentPollingManager.unregister(agentId);
-            isPollingActive = false;
-          }
-        }
-      },
-    );
+      prevAgentRef = currentAgent;
+    });
+    agentStateCleanup = unsubRedux;
 
     // Stop polling after max timeout
     timeoutId = setTimeout(() => {
@@ -397,11 +385,16 @@
     }
   });
 
-  // Get agent state from stores
+  // Get agent state from Redux and agentService
   // The `(void version, expr)` pattern forces Svelte to re-evaluate the derived when `version` changes,
   // even though the external stores don't trigger Svelte's reactivity system directly.
-  const workspace = $derived((void version, unifiedStateStore.getCurrentWorkspace()));
-  const storeAgent = $derived((void version, workspace?.agents.get(agentId)));
+  const storeAgent = $derived.by(() => {
+    void version;
+    const s = getReduxStore().getState();
+    const wsId = selectActiveWorkspaceId.select(s);
+    if (!wsId) return undefined;
+    return selectAgentById.select(s, agentId);
+  });
   const serviceAgent = $derived((void version, agentService.getSession(agentId)));
 
   // Use either source - store takes precedence for live state
@@ -422,14 +415,14 @@
       return extractedDigest;
     }
     // Fall back to session-stored digest
-    const sessionDigest = storeAgent?.session?.digest || serviceAgent?.digest;
+    const sessionDigest = storeAgent?.digest || serviceAgent?.digest;
     if (sessionDigest) {
       return sessionDigest;
     }
 
     // Check the last message's text content for an embedded <agent_digest> tag
     // This handles the case where the agent sent a digest in the last turn
-    const messages = storeAgent?.session?.messages || serviceAgent?.messages;
+    const messages = storeAgent?.messages || serviceAgent?.messages;
     if (messages && messages.length > 0) {
       // Look for the last assistant message
       for (let i = messages.length - 1; i >= 0; i--) {
@@ -468,7 +461,7 @@
         agentId,
         hasStoreAgent: !!storeAgent,
         hasServiceAgent: !!serviceAgent,
-        agentStatus: storeAgent?.session?.status || serviceAgent?.status,
+        agentStatus: storeAgent?.status || serviceAgent?.status,
       });
     }
   });
@@ -535,9 +528,9 @@
     if (!storeAgent && !serviceAgent) return 'unknown';
 
     // Fallback to store/service state
-    if (storeAgent?.streaming?.active) return 'streaming';
+    if (storeAgent?.isStreaming) return 'streaming';
 
-    const status = storeAgent?.session?.status || serviceAgent?.status;
+    const status = storeAgent?.status || serviceAgent?.status;
     if (status === AgentStatus.Processing) return 'active';
     if (status === AgentStatus.Completed) return 'complete';
     if (status === AgentStatus.Error) return 'error';
@@ -567,16 +560,13 @@
     if (!storeAgent && !serviceAgent) return null;
 
     // Check store streaming state as fallback
-    if (storeAgent?.streaming?.active && storeAgent?.streaming?.buffer) {
-      const lastLine = getLastMeaningfulLine(AuggieTextParser.stripDigestTagsForDisplay(storeAgent.streaming.buffer));
-      return {
-        text: lastLine || 'Working...',
-        isStreaming: true,
-      };
+    if (storeAgent?.isStreaming) {
+      // Agent is streaming but we don't have a local buffer reference here;
+      // fall through to messages-based content extraction below.
     }
 
     // Otherwise show the last message
-    const messages = storeAgent?.session?.messages || serviceAgent?.messages;
+    const messages = storeAgent?.messages || serviceAgent?.messages;
     if (messages && messages.length > 0) {
       // Get the last message (could be user or assistant)
       const lastMsg = messages[messages.length - 1];

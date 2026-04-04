@@ -19,7 +19,6 @@
     faCodeBranch,
     faArrowUp,
   } from '@fortawesome/free-solid-svg-icons';
-  import { isMacPlatform } from '$lib/utils/shortcuts';
 
   type MessageRole = 'user' | 'assistant';
 
@@ -57,8 +56,6 @@
   let copied = $state(false);
   let copiedSessionId = $state(false);
 
-  const isMac = isMacPlatform();
-  const shiftSymbol = isMac ? '⇧' : 'Shift';
 
   async function handleCopy(event: MouseEvent) {
     if (event.shiftKey && requestId) {

@@ -6,9 +6,12 @@
   import Fa from 'svelte-fa';
   import { faTriangleExclamation, faCheckCircle } from '@fortawesome/free-solid-svg-icons';
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const logger = createLogger('TestErrorBoundary');
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let basicErrorMessage = $state('');
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let enhancedErrorMessage = $state('');
 
   function triggerBasicError() {

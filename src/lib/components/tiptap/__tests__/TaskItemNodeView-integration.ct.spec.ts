@@ -90,7 +90,6 @@ test.describe('TaskItemNodeView Integration', () => {
     await component.page().waitForTimeout(200);
 
     const checkbox = component.locator('input[type="checkbox"]').first();
-    const taskItem = component.locator('[data-type="taskItem"]').first();
 
     // Initial state: todo (unchecked, not indeterminate)
     await expect(checkbox).not.toBeChecked();

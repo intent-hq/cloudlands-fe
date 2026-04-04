@@ -334,7 +334,7 @@ export function setupFileTrackingIPC() {
               }
 
               // Batch file lookups via a single git show command
-              let filesByHash = new Map<string, string[]>();
+              const filesByHash = new Map<string, string[]>();
               if (parsedCommits.length > 0) {
                 try {
                   const commitHashes = parsedCommits.map((c) => c.hash).join(' ');

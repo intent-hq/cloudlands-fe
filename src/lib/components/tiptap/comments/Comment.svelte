@@ -8,7 +8,12 @@
   import InitialsAvatar from './InitialsAvatar.svelte';
   import { faEdit, faCheck, faTimes } from '@fortawesome/free-solid-svg-icons';
   import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
-  import { commentsStoreV2 } from '$features/comments/comments-v2.store.svelte';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import { selectCommentById } from '$lib/store/slices/comments/comments-selectors';
+  import { updateCommentAction } from '$lib/store/slices/comments/comments-slice';
+
+  const reduxDispatch = getDispatch();
 
   type CommentType = 'comment' | 'suggestion' | 'change-request' | 'question' | string;
 
@@ -68,6 +73,7 @@
     onEdit,
     onResolve,
     onClose,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onDelete,
     size = 'default',
     externalIsEditing,
@@ -94,11 +100,13 @@
   const isEditing = $derived(useExternalEditing ? externalIsEditing : internalIsEditing);
 
   // For binding, we need to use the actual variable, not a derived
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let currentEditEditor = $derived.by(() => {
     if (useExternalEditing && externalEditEditor) return externalEditEditor;
     return internalEditEditor;
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const currentEditHTML = $derived(
     useExternalEditing ? (externalEditHTML ?? '') : internalEditHTML,
   );
@@ -123,9 +131,9 @@
         const html = internalEditEditor?.getHTML?.() ?? '';
         const md = processHTMLToMarkdown(html, { preserveAnchors: false }).trim();
         if (!md) return cancelEdit();
-        const v2 = commentsStoreV2.getComment?.(comment.id);
+        const v2 = selectCommentById.select(getReduxStore().getState(), comment.id);
         if (v2) {
-          commentsStoreV2.updateComment(comment.id, { content: md });
+          reduxDispatch(updateCommentAction(comment.id, { content: md }));
         }
         internalIsEditing = false;
       } catch {

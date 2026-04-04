@@ -1033,8 +1033,6 @@ export class AgentTestHarness extends EventEmitter {
 
             // For recoverable errors (network, timeout, provider), the error handler
             // should return ok: true with a retry strategy on first attempt
-            const isRecoverable = ['network', 'timeout', 'provider'].includes(errorType);
-
             // Use unique service name per iteration to test independent recovery
             const result = await errorHandler.handleError(error, {
               service: `test-service-${errorType}-${i}`,
@@ -1145,12 +1143,6 @@ export class AgentTestHarness extends EventEmitter {
     const startTime = Date.now();
     const duration = options.duration * 1000; // Convert to milliseconds
     const errorRate = options.errorRate || 0.2;
-    const services = options.services || [
-      'agent-service',
-      'streaming-service',
-      'persistence-service',
-    ];
-
     const metrics = {
       totalOperations: 0,
       successfulOperations: 0,
@@ -1193,8 +1185,6 @@ export class AgentTestHarness extends EventEmitter {
 
         try {
           // Simulate random service operation
-          const service = services[Math.floor(Math.random() * services.length)];
-
           await errorHandler.injectChaos(async () => {
             // Simulate some work
             await this.delay(Math.random() * 100);
@@ -1320,7 +1310,7 @@ export class AgentTestHarness extends EventEmitter {
         const promise = (async () => {
           try {
             const agent = await this.createAgent({ name: `concurrent-agent-${i}` });
-            const message = await this.sendMessage(agent.id, `Test message ${i}`, {
+            await this.sendMessage(agent.id, `Test message ${i}`, {
               streaming: false,
             });
             return { success: true };
@@ -1462,7 +1452,6 @@ export class AgentTestHarness extends EventEmitter {
     };
   }> {
     const operation = this.startOperation('stressTest');
-    const startTime = Date.now();
     const duration = options.duration * 1000; // Convert to ms
     const messagesPerAgent = options.messagesPerAgent || 10;
 

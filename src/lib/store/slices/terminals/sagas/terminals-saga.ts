@@ -8,7 +8,7 @@ import {
   watchWorkspaceState,
 } from "./persistence-saga";
 import { watchTerminalCreated, watchTerminalDisposed } from "./ipc-saga";
-import { watchSetWorkspace, watchOpenWithWorkspace, loadTerminalsSaga } from "./workspace-init-saga";
+import { watchSetWorkspace, watchOpenWithWorkspace } from "./workspace-init-saga";
 import {
   workspaceMounted,
   workspaceUnmounted,
@@ -19,7 +19,6 @@ const workspaceTerminalTasks = new Map<string, Task[]>();
 function* handleWorkspaceMounted(action: ReturnType<typeof workspaceMounted>) {
   const [wsId] = action.payload;
   const terminalCreatedTask = yield* fork(watchTerminalCreated, wsId);
-  yield* fork(loadTerminalsSaga, wsId);
   workspaceTerminalTasks.set(wsId, [terminalCreatedTask]);
 }
 

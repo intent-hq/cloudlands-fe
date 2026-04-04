@@ -12,12 +12,11 @@ import {
   gitDiff as safeGitDiff,
   gitDiffBatch as safeGitDiffBatch,
   gitCheckIgnore as safeGitCheckIgnore,
-  gitRevParse as safeGitRevParse,
   gitCurrentBranch as safeGitCurrentBranch,
   isGitRepository as safeIsGitRepository,
 } from './safe-git-operations';
 import type { GitStatus, GitDiffResult } from './git-types';
-import { filterDiffableFiles, isBinaryExtension } from './diffable-file-filter';
+import { filterDiffableFiles } from './diffable-file-filter';
 
 const logger = new Logger('GitOperationsSafe');
 
@@ -194,7 +193,7 @@ export class GitOperationsSafe {
   async getDiff(filePath: string, staged: boolean = false): Promise<GitDiffResult> {
     try {
       // Check if file is diffable (not binary, not too large)
-      const { diffable, skipped } = await filterDiffableFiles(this.workspacePath, [filePath]);
+      const { skipped } = await filterDiffableFiles(this.workspacePath, [filePath]);
 
       if (skipped.length > 0) {
         const skip = skipped[0];

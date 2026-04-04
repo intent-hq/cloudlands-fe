@@ -2,7 +2,8 @@
  * Utility for tracking and displaying agent file edits in the file tree
  */
 
-import { queryEvents } from '$features/events/events.client';
+import { invoke } from '$lib/electron-bridge';
+import type { WorkspaceEvent } from '$features/events/types';
 import { Logger } from '$shared/logger';
 
 const logger = new Logger('AgentFileEdits');
@@ -22,16 +23,20 @@ export async function getAgentFileEdits(
   filesPerAgent: number = 3,
 ): Promise<Map<string, string[]>> {
   try {
-    // Query for file change events by agents
+    // Query for file change events by agents via IPC
     logger.info('[AgentEdits] Querying events', { workspaceId });
-    const events = await queryEvents(
-      workspaceId,
-      [
-        { field: 'actor.type', operator: 'equals', value: 'agent' },
-        { field: 'type', operator: 'in', value: ['file:changed', 'file:created'] },
-      ],
-      100, // Get recent events
+    const result = await invoke<WorkspaceEvent[] | { data: WorkspaceEvent[] }>(
+      'events:query',
+      {
+        workspaceId,
+        filters: [
+          { field: 'actor.type', operator: 'equals', value: 'agent' },
+          { field: 'type', operator: 'in', value: ['file:changed', 'file:created'] },
+        ],
+        limit: 100,
+      },
     );
+    const events = Array.isArray(result) ? result : result?.data || [];
 
     logger.info('[AgentEdits] Query result', {
       eventCount: events?.length ?? 0,

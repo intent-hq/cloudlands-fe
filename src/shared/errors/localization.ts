@@ -110,7 +110,9 @@ export function initializeLocalization(locale?: SupportedLocale): void {
  * Useful for runtime translation updates
  */
 export function addTranslations(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   locale: SupportedLocale,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   translations: Record<string, string>,
 ): void {
   // This would be implemented to update LOCALE_MESSAGES

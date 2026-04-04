@@ -54,14 +54,9 @@ export function storeBlob(content: string, repoRoot: string): Promise<string | n
       });
 
       let stdout = '';
-      let stderr = '';
 
       hashObject.stdout.on('data', (data: Buffer) => {
         stdout += data.toString();
-      });
-
-      hashObject.stderr.on('data', (data: Buffer) => {
-        stderr += data.toString();
       });
 
       hashObject.on('error', () => {
@@ -140,14 +135,9 @@ export function getBlob(sha: string, repoRoot: string): Promise<string | null> {
       });
 
       let stdout = '';
-      let stderr = '';
 
       catFile.stdout.on('data', (data: Buffer) => {
         stdout += data.toString();
-      });
-
-      catFile.stderr.on('data', (data: Buffer) => {
-        stderr += data.toString();
       });
 
       catFile.on('error', () => {

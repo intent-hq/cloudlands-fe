@@ -11,9 +11,12 @@
  * 4. Measure performance with real data
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, vi } from 'vitest';
 import { CommentManagerV2 } from '../comment-manager-v2';
-import { commentsStoreV2 } from '../comments-v2.store.svelte';
+import { getReduxStore, dispatch as reduxDispatch, initReduxDispatchBridge, initReduxStoreBridge } from '$lib/store/redux-dispatch-bridge';
+import { loadCommentsAction, commentsReducer, initialState as commentsInitialState } from '$lib/store/slices/comments/comments-slice';
+import { selectCommentById } from '$lib/store/slices/comments/comments-selectors';
+import { createStore } from 'redux';
 import { NotesService } from '../../notes/main/notes.service';
 import { InMemoryNotesRepository } from '../../notes/main/notes.repository';
 import {
@@ -37,6 +40,40 @@ vi.mock('$features/comments/comments.client', () => ({
     delete: vi.fn().mockResolvedValue({ ok: true }),
   },
 }));
+
+// Mock Redux store bridge (services now dispatch domain events via mainDispatch)
+vi.mock('../../../store/main/redux-store-bridge', () => ({
+  mainDispatch: vi.fn((action: any) => action),
+  getMainStore: vi.fn(),
+  getMainState: vi.fn(),
+}));
+
+vi.mock('../../../store/main/slices/note-events/note-events-slice', () => ({
+  noteCreated: vi.fn((payload: any) => ({ type: 'note-events/noteCreated', payload })),
+  noteUpdated: vi.fn((payload: any) => ({ type: 'note-events/noteUpdated', payload })),
+  noteDeleted: vi.fn((payload: any) => ({ type: 'note-events/noteDeleted', payload })),
+}));
+
+vi.mock('../../../store/main/slices/workspace-events/workspace-events-slice', () => ({
+  emitWorkspaceEvent: vi.fn((payload: any) => ({ type: 'workspace-events/emitWorkspaceEvent', payload })),
+}));
+
+// Set up a minimal Redux store with comments reducer for tests
+function createTestReduxStore() {
+  const rootReducer = (state: any = { comments: commentsInitialState }, action: any) => ({
+    ...state,
+    comments: commentsReducer(state.comments, action),
+  });
+  return createStore(rootReducer);
+}
+
+let testStore: ReturnType<typeof createTestReduxStore>;
+
+beforeAll(() => {
+  testStore = createTestReduxStore();
+  initReduxDispatchBridge(testStore.dispatch);
+  initReduxStoreBridge(testStore as any);
+});
 
 describe('V3 Integration Tests - Real Version History', () => {
   let notesService: NotesService;
@@ -203,7 +240,7 @@ describe('V3 Integration Tests - Real Version History', () => {
       expect(success).toBe(true);
 
       // Add comment to store
-      commentsStoreV2.loadComments([comment]);
+      reduxDispatch(loadCommentsAction([comment]));
 
       // Get HTML with anchors
       const htmlWithAnchors = getEditorHTML(editor);
@@ -274,7 +311,7 @@ describe('V3 Integration Tests - Real Version History', () => {
 
       // Insert anchors
       insertAnchorsAtPosition(editor, comment.id, 15, 27);
-      commentsStoreV2.loadComments([comment]);
+      reduxDispatch(loadCommentsAction([comment]));
 
       // Save version with anchors
       const htmlWithAnchors = getEditorHTML(editor);
@@ -292,7 +329,7 @@ describe('V3 Integration Tests - Real Version History', () => {
       await manager.scanAnchorHealth();
 
       // Verify comment is orphaned
-      const orphanedComment = commentsStoreV2.getComment(comment.id);
+      const orphanedComment = selectCommentById.select(getReduxStore().getState(), comment.id);
       expect(orphanedComment?.isOrphaned).toBe(true);
 
       // Step 3: Attempt recovery
@@ -312,7 +349,7 @@ describe('V3 Integration Tests - Real Version History', () => {
       expect(result.method).toMatch(/exact-match|fuzzy-match/);
 
       // Verify anchors are back and comment is no longer orphaned
-      const recoveredComment = commentsStoreV2.getComment(comment.id);
+      const recoveredComment = selectCommentById.select(getReduxStore().getState(), comment.id);
       expect(recoveredComment?.isOrphaned).toBe(false);
     });
   });
@@ -355,7 +392,7 @@ describe('V3 Integration Tests - Real Version History', () => {
       // Simulate recovery (will fail until implemented)
       try {
         await manager.recoverAnchor('test-comment-id', note.versions!);
-      } catch (error) {
+      } catch  {
         // Expected to fail - not implemented yet
       }
 

@@ -11,14 +11,12 @@
    *   TipTap HTML → processHTMLToMarkdown → markdown string (emitted via bind:value)
    */
 
-  import { onMount, onDestroy, untrack } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { Editor } from '@tiptap/core';
   import { createEditorConfig } from '$lib/utils/editor-config';
   import { processMarkdownToHTML, processHTMLToMarkdown, extractFrontMatter } from '$lib/utils/markdown-processor';
-  import { createLogger } from '$lib/utils/client-logger';
   import BubbleMenu from '$lib/components/tiptap/BubbleMenu.svelte';
 
-  const logger = createLogger('MarkdownFileEditor');
 
   interface Props {
     /** Markdown content (two-way bindable) */

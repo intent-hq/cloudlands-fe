@@ -270,6 +270,7 @@ function resolveConflicts(node: LayoutNode, config: LayoutConfig): void {
 /**
  * Center nodes between the current node and its leftmost conflicting sibling
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function centerNodesBetween(node: LayoutNode, config: LayoutConfig): void {
   const siblings = node.parent?.layoutChildren ?? [];
   const nodeIndex = siblings.indexOf(node);

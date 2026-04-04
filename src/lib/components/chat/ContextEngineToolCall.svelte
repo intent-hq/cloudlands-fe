@@ -7,19 +7,15 @@
    */
   import type { ToolUseBlock } from '$shared/types';
   import {
-    faCheckCircle,
     faFile,
     faExclamationTriangle,
     faCodeCommit,
-    faMagnifyingGlass,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { fly, slide } from 'svelte/transition';
   import { parseToolResult } from './tool-result-parser';
-  import Logo from '$lib/components/Logo.svelte';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import { TooltipRich } from '$lib/components/ui/tooltip';
-  import Header from '../ui/Header.svelte';
   import { cn } from '$lib/utils';
 
   interface Props {

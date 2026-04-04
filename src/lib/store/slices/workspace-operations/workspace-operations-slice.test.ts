@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { Workspace } from "$shared/types";
 import {
   closeBulkDeleteWarningConfirm,
   closeDeleteWarning,
@@ -11,26 +10,21 @@ import {
   workspaceOperationsReducer,
 } from "./workspace-operations-slice";
 
-const workspace = {
-  id: "ws-1",
-  title: "Demo",
-} as Workspace;
-
 describe("workspaceOperationsReducer", () => {
   it("opens and clears the delete warning state", () => {
     const opened = workspaceOperationsReducer(
       initialState,
-      openDeleteWarning({ workspace, agentNames: ["Agent One"] })
+      openDeleteWarning({ workspaceId: "ws-1", agentNames: ["Agent One"] })
     );
 
     expect(opened.showDeleteWarning).toBe(true);
-    expect(opened.pendingDeleteWorkspace).toBe(workspace);
+    expect(opened.pendingDeleteWorkspaceId).toBe("ws-1");
     expect(opened.runningAgentNamesForDelete).toEqual(["Agent One"]);
 
     const closed = workspaceOperationsReducer(opened, closeDeleteWarning());
 
     expect(closed.showDeleteWarning).toBe(false);
-    expect(closed.pendingDeleteWorkspace).toBeNull();
+    expect(closed.pendingDeleteWorkspaceId).toBeNull();
     expect(closed.runningAgentNamesForDelete).toEqual([]);
   });
 

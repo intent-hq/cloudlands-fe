@@ -10,7 +10,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
-  import { faPlus, faChevronDown, faPuzzlePiece, faGlobe } from '@fortawesome/free-solid-svg-icons';
+  import { faPlus, faGlobe } from '@fortawesome/free-solid-svg-icons';
   import { scale } from 'svelte/transition';
   import ProviderIcon from '$lib/components/icons/ProviderIcon.svelte';
   import IssueSuggestions, {
@@ -40,9 +40,6 @@
     isExpanded = false;
   }
 
-  function handleIntegrationsClick() {
-    showIntegrations = !showIntegrations;
-  }
 
   function handleBrowserClick() {
     onOpenBrowser?.();

@@ -7,12 +7,13 @@
    */
 
   import type { TabTypeComponentProps } from './registry';
-  import { getPanelLayoutManager } from '../panel-layout-manager.svelte';
+  import { closeTab } from '$lib/store/slices/panel-layout/panel-layout-slice';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { notesStateManager } from '$features/notes/notes.store.svelte';
-  import { unifiedStateStore } from '$features/agent/services/unified-state-store';
-  import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
+  import { selectIsInitialSpecWriteInProgress, selectInitialAgentId, selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import { createNote, deleteNote } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
   import { isSpecNote } from '$shared/constants/notes';
   import { invoke } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
@@ -29,7 +30,7 @@
   import { saveScrollPosition } from '$lib/store/slices/tab-state/tab-state-slice';
   import { getDispatch } from '$lib/store/utils/utils';
   import Fa from 'svelte-fa';
-  import { faCheck, faClockRotateLeft, faCopy, faSpellCheck, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faCopy, faSpellCheck, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { track } from '$lib/services/analytics';
 
@@ -38,19 +39,13 @@
   let { tab, workspaceId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
 
   const headerContext = getPanelHeaderContext();
-  const layoutManager = $derived(getPanelLayoutManager(workspaceId));
-  const workspace = $derived(workspaceStore.findById(WorkspaceId(workspaceId)));
+
+  const workspace = selectWorkspaceById(workspaceId);
   const dispatch = getDispatch();
   const spellcheckEnabled = selectSpellcheckEnabled();
   const scrollPosition = selectScrollPosition(tab.id);
 
-  // Get the note
-  const note = $derived.by(() => {
-    if (tab.noteId) {
-      return notesStateManager.findById(NoteId(tab.noteId));
-    }
-    return null;
-  });
+  const note = selectNoteById(workspaceId, tab.noteId);
 
   // Version history state
   let showVersionHistory = $state(false);
@@ -71,42 +66,26 @@
   });
 
   const noteFilePath = $derived(
-    actualWorkspaceRoot && note?.id ? `${actualWorkspaceRoot}/.workspace/notes/${note.id}.md` : '',
+    actualWorkspaceRoot && $note?.id ? `${actualWorkspaceRoot}/.workspace/notes/${$note.id}.md` : '',
   );
 
-  // Track if initial spec write is in progress
-  let isInitialSpecWriteInProgress = $state(false);
-  $effect(() => {
-    const wsId = workspaceId;
-    if (!wsId) return;
-    isInitialSpecWriteInProgress = unifiedStateStore.getInitialSpecWriteInProgress(wsId as any);
-    const unsubscribe = unifiedStateStore.onInitialSpecWriteChange(
-      (changedWorkspaceId, isWriting) => {
-        if (changedWorkspaceId === wsId) isInitialSpecWriteInProgress = isWriting;
-      },
-    );
-    return unsubscribe;
-  });
+  // Track if initial spec write is in progress — read from Redux
+  const isInitialSpecWriteInProgressStore = selectIsInitialSpecWriteInProgress(workspaceId ?? '');
+  let isInitialSpecWriteInProgress = $derived($isInitialSpecWriteInProgressStore);
 
   // Find the initial spec-writer agent ID for this workspace
   // Used to pass to the onboarding component so it can stop the agent
   const initialSpecWriterAgentId = $derived.by(() => {
     if (!workspaceId || !isInitialSpecWriteInProgress) return null;
 
-    // Look through agents in the workspace to find the initial spec-writer
-    const ws = unifiedStateStore.getWorkspace(workspaceId as any);
-    if (!ws) return null;
+    // Use Redux to find the initial agent and verify it's a spec-writer
+    const state = getReduxStore().getState();
+    const initialAgentId = selectInitialAgentId.select(state, workspaceId);
+    if (!initialAgentId) return null;
 
-    for (const [agentId, agentState] of ws.agents) {
-      const isInitialSpecWriter =
-        agentState.metadata?.isInitialAgent === true &&
-        (agentState.metadata?.specialist === 'spec-writer' ||
-          agentState.session?.metadata?.specialist === 'spec-writer');
-      if (isInitialSpecWriter) {
-        return agentId;
-      }
-    }
-    return null;
+    const agent = selectAgentById.select(state, initialAgentId);
+    const isSpecWriter = (agent?.metadata as any)?.specialist === 'spec-writer';
+    return isSpecWriter ? initialAgentId : null;
   });
 
   // DEBUG: Set to true to always show the spec onboarding UI for design testing
@@ -123,23 +102,23 @@
 
     if (!isInitialSpecWriteInProgress) return false;
     // Only show onboarding if the note is empty
-    const hasContent = note && note.content && note.content.trim().length > 0;
+    const hasContent = $note && $note.content && $note.content.trim().length > 0;
     return !hasContent;
   });
 
   // Compute editable state
   const noteEditable = $derived.by(() => {
     if (!tab.noteId) return true;
-    if (note && note.content && note.content.trim().length > 0) return true;
+    if ($note && $note.content && $note.content.trim().length > 0) return true;
     if (MIMIC_SPEC_WRITING) return false;
     if (isSpecNote(tab.noteId)) return !isInitialSpecWriteInProgress;
     return true;
   });
 
   async function handleCopyNote() {
-    if (!note) return;
+    if (!$note) return;
     try {
-      await navigator.clipboard.writeText(note.content || '');
+      await navigator.clipboard.writeText($note.content || '');
       noteCopyFeedback = 'Copied!';
       if (noteCopyTimeoutId) clearTimeout(noteCopyTimeoutId);
       noteCopyTimeoutId = setTimeout(() => {
@@ -161,7 +140,7 @@
     const noteIdToDelete = tab.noteId;
 
     // Get note info for tracking before deletion
-    const noteToDelete = notesStateManager.findById(NoteId(noteIdToDelete));
+    const noteToDelete = selectNoteById.select(getReduxStore().getState(), workspaceId, noteIdToDelete);
     const noteType = noteToDelete?.metadata?.task ? 'task' : 'regular';
     let noteAgeDays: number | undefined;
     if (noteToDelete?.createdAt) {
@@ -170,20 +149,15 @@
       noteAgeDays = Math.floor((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
     }
 
-    const savedNote = note ? { ...note } : null;
-    const noteTitle = note?.title || 'Note';
+    const savedNote = $note ? { ...$note } : null;
+    const noteTitle = $note?.title || 'Note';
     isNoteDeleting = true;
     try {
-      layoutManager.closeTab(tab.id);
-      const result = await notesStateManager.delete(NoteId(noteIdToDelete));
-      if (result.ok) {
-        // Track successful deletion
-        track('Deleted Note', { note_type: noteType, note_age_days: noteAgeDays });
-      } else {
-        const { toast } = await import('svelte-sonner');
-        toast.error(`Failed to delete note: ${result.error}`);
-        return;
-      }
+      getReduxStore().dispatch(closeTab(workspaceId, tab.id));
+      dispatch(deleteNote(workspaceId, noteIdToDelete));
+
+      // Track deletion (optimistic — saga handles IPC + errors)
+      track('Deleted Note', { note_type: noteType, note_age_days: noteAgeDays });
 
       // Show undo toast
       const { toast } = await import('svelte-sonner');
@@ -194,24 +168,17 @@
           action: savedNote
             ? {
                 label: 'Undo',
-                onClick: async () => {
+                onClick: () => {
                   try {
-                    const { notesClient: nc } = await import('$features/notes/notes.client');
-                    const result = await nc.create({
-                      workspaceId: savedNote.workspaceId,
+                    dispatch(createNote(savedNote.workspaceId, {
                       title: savedNote.title,
                       content: savedNote.content,
                       contentType: savedNote.contentType,
                       tags: savedNote.tags,
                       parentId: savedNote.parentId,
                       visibility: savedNote.visibility,
-                    });
-                    if (result.ok) {
-                      toast.dismiss(toastId);
-                    } else {
-                      logger.error('Failed to restore note', result.error);
-                      toast.error('Failed to restore note');
-                    }
+                    }));
+                    toast.dismiss(toastId);
                   } catch (err) {
                     logger.error('Failed to restore note', err);
                     toast.error('Failed to restore note');
@@ -291,7 +258,7 @@
 {/snippet}
 
 {#if tab.noteId}
-  {#if !note}
+  {#if !$note}
     <div class="flex flex-col h-full">
       <div class="flex-1 p-4 space-y-4">
         <Skeleton class="h-8 w-3/4" />
@@ -301,19 +268,19 @@
         <Skeleton class="h-4 w-full" />
       </div>
     </div>
-  {:else if showVersionHistory && workspace}
+  {:else if showVersionHistory && $workspace}
     <NoteVersionHistory
-      {workspace}
+      workspace={$workspace}
       noteId={tab.noteId}
-      currentContent={note?.content || ''}
+      currentContent={$note?.content || ''}
       onRestore={() => (showVersionHistory = false)}
     />
   {:else if showSpecOnboarding}
     <!-- Show onboarding when coordinator is writing initial spec -->
     <SpecWritingOnboarding agentId={initialSpecWriterAgentId} />
-  {:else if workspace}
+  {:else if $workspace}
     <NoteWithComments
-      {workspace}
+      workspace={$workspace}
       noteId={tab.noteId}
       editable={noteEditable}
       {isPanelFocused}

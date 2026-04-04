@@ -38,26 +38,53 @@ export type SagaName =
   | 'gitSaga'
   | 'fileTrackingSaga'
   | 'notesSaga'
+  | 'workspaceEventsSaga'
   | 'agentsSaga'
-  | 'messagesSaga'
   | 'contextSaga'
   | 'browserSaga'
   | 'mcpSaga'
-  | 'diffsSaga'
-  | 'settingsSaga'
   | 'authSaga'
   | 'uiSaga'
   | 'layoutSaga'
   | 'autoUpdateSaga'
-  | 'workspaceInitializerSaga';
+  | 'workspaceNavigationSaga'
+  | 'workspaceSwitcherSaga'
+  | 'releaseNotesSaga'
+  | 'transientUiSaga'
+  | 'skillsSaga'
+  | 'githubAuthSaga'
+  | 'linearAuthSaga'
+  | 'sentryAuthSaga'
+  | 'setupScriptsSaga'
+  | 'mcpSettingsSaga'
+  | 'commentsSaga'
+  | 'lineChangesSaga'
+  | 'sidebarNavSaga'
+  | 'scriptsSaga'
+  | 'agentFollowSaga'
+  | 'gitStatusSaga'
+  | 'agentOverviewSaga'
+  | 'agentLockSaga'
+  | 'panelLayoutSaga'
+  | 'unreadTrackingSaga'
+  | 'prStatusSaga'
+  | 'bgExecutorSaga'
+  | 'chatStateSaga'
+  | 'chatStreamSaga'
+  | 'fileExplorerSaga'
+  | 'agentIpcSaga'
+  | 'agentStreamSaga'
+  | 'agentSubscriptionUISaga';
 
 // ============================================================================
 // Saga Status Types
 // ============================================================================
 
 export type SagaCrashRecord = {
-  crashedAt: Date;
-  error: Error;
+  /** Epoch milliseconds when the saga crashed */
+  crashedAt: number;
+  /** Error message string (serializable) */
+  error: string;
 };
 
 export type SagaStatusRecord = {
@@ -92,16 +119,25 @@ export type SuccessResponse<PL, R> = {
 
 export type ErrorResponse<PL> = {
   request: PL;
-  error: Error;
+  /** Error message string (serializable) */
+  error: string;
 };
 
+/**
+ * Async action object returned by a StoreAsyncActionCreator.
+ *
+ * NOTE: The `promise` field intentionally holds a non-serializable Promise.
+ * This is an architectural pattern — the promise is used by sagas and middleware
+ * to coordinate async flows and is never persisted to Redux state. Serialization
+ * checks should allowlist StoreAsyncAction's `promise` field.
+ */
 export type StoreAsyncAction<PL = undefined, R = unknown> = {
   type: string;
   asyncActionType: string;
   payload: PL;
   promise: Promise<R>;
   success: StoreActionCreator<[R], SuccessResponse<PL, R>>;
-  failure: StoreActionCreator<[Error], ErrorResponse<PL>>;
+  failure: StoreActionCreator<[string], ErrorResponse<PL>>;
 };
 
 export type StoreAsyncActionCreator<ARGS extends any[] = [], PL = ARGS, R = unknown> = {
@@ -109,7 +145,7 @@ export type StoreAsyncActionCreator<ARGS extends any[] = [], PL = ARGS, R = unkn
   type: string;
   asyncActionType: string;
   success: StoreActionCreator<[R], SuccessResponse<PL, R>>;
-  failure: StoreActionCreator<[Error], ErrorResponse<PL>>;
+  failure: StoreActionCreator<[string], ErrorResponse<PL>>;
   toString: () => string;
 };
 

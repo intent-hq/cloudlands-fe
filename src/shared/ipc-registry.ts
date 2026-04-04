@@ -14,6 +14,7 @@ export const IPC_CHANNELS = {
     LIST: 'workspace:list',
     CREATE: 'workspace:create',
     GET: 'workspace:get',
+    GET_CURRENT: 'workspace:get-current',
     GET_BY_ID: 'workspace:get-by-id',
     GET_ROOT: 'workspace:get-root',
     OPEN: 'workspace:open',

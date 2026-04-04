@@ -225,16 +225,11 @@
   let startHeight = $state(0);
 
   // Track previous window size for weighted blending
-  let prevWindowWidth = $state(typeof window !== 'undefined' ? window.innerWidth : 1200);
-  let prevWindowHeight = $state(typeof window !== 'undefined' ? window.innerHeight : 800);
 
   // Handle window resize with weighted blending between fixed and percentage-based sizing
   function handleWindowResize() {
     const weight = effectiveWeight;
     if (weight === 0) return;
-
-    const newWindowWidth = getWindowWidth();
-    const newWindowHeight = getWindowHeight();
 
     if (orientation === 'horizontal') {
       // Calculate what percentage-based width would be
@@ -265,9 +260,6 @@
         panelHeight = Math.max(minHeight, Math.min(maxHeight, blendedHeight));
       }
     }
-
-    prevWindowWidth = newWindowWidth;
-    prevWindowHeight = newWindowHeight;
   }
 
   // Handle sidebar toggle event (for Cmd+B keyboard shortcut)

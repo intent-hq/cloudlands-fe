@@ -451,6 +451,7 @@ function setupPermissionHandlers(ses: Electron.Session): void {
     callback(false);
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   ses.setPermissionCheckHandler((_webContents, permission, _requestingOrigin, _details) => {
     if (permission === 'clipboard-read' || permission === 'clipboard-sanitized-write') {
       return true;
@@ -503,6 +504,7 @@ function setupBrowserPanelSession(): void {
 
   // Permission check handler — synchronous permission queries
   browserSession.setPermissionCheckHandler(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     (_webContents, permission, _requestingOrigin, _details) => {
       return BROWSER_PANEL_ALLOWED_PERMISSIONS.has(permission);
     },

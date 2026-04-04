@@ -1,17 +1,16 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
-  import { invoke, listenSync } from '$lib/electron-bridge';
+  import { listenSync } from '$lib/electron-bridge';
   import * as Sidebar from '$lib/components/ui/sidebar';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
   import { ScrollArea } from '$lib/components/ui/scroll-area';
   import {
-    faSearch,
     faArrowsRotate,
     faFolder,
     faFolderOpen,
-    faFile,
     faFileAlt,
     faFileCode,
     faImage,
@@ -22,7 +21,16 @@
     faSpinner,
   } from '@fortawesome/free-solid-svg-icons';
   import type { FileNode } from '$shared/types';
-  import { createFileExplorerStore } from './file-explorer-store.svelte';
+  import { createFileExplorerStore } from './file-explorer-adapter';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+    selectFileExplorerRootNode,
+    selectFileExplorerIsLoading,
+    selectFileExplorerError,
+    selectFileExplorerFileCount,
+    selectIsPathExpanded,
+    selectIsPathLoading,
+  } from '$lib/store/slices/file-explorer/file-explorer-selectors';
 
   interface Props {
     workspacePath: string;
@@ -34,6 +42,12 @@
   let { workspacePath, workspaceId, onFileSelect, selectedFile = $bindable('') }: Props = $props();
 
   const store = createFileExplorerStore(workspacePath, workspaceId);
+  const wsIdStore = writable(workspaceId || workspacePath || '');
+  const rootNode$ = selectFileExplorerRootNode(wsIdStore);
+  const feIsLoading$ = selectFileExplorerIsLoading(wsIdStore);
+  const feError$ = selectFileExplorerError(wsIdStore);
+  const fileCount$ = selectFileExplorerFileCount(wsIdStore);
+
   let searchQuery = $state('');
   let fileWatcher: any = null;
   let workspaceChangesWatcher: any = null;
@@ -101,6 +115,7 @@
 
   // Watch for file changes
   function setupFileWatcher() {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     fileWatcher = listenSync('file:changed', (event: any) => {
       // Reload the tree when files change
       store.refresh();
@@ -162,17 +177,18 @@
       <Sidebar.GroupContent>
         <ScrollArea class="h-[calc(100vh-8rem)]">
           <Sidebar.Menu>
-            {#if store.isLoading}
+            {#if $feIsLoading$}
               <div class="flex items-center justify-center py-8">
                 <Fa icon={faSpinner} size="lg" class="w-6 h-6 animate-spin text-subtle" />
               </div>
-            {:else if store.error}
+            {:else if $feError$}
               <div class="px-4 py-2 text-sm text-destructive-foreground">
-                {store.error}
+                {$feError$}
               </div>
-            {:else if store.rootNode}
+            {:else if $rootNode$}
               {#snippet FileTreeItem(node: FileNode, depth: number)}
-                {@const nodeExpanded = store.isExpanded(node.path)}
+                {@const wsId = workspaceId || workspacePath || ''}
+                {@const nodeExpanded = selectIsPathExpanded.select(getReduxStore().getState(), wsId, node.path)}
                 {@const isIgnored = node.isGitignored === true}
                 {@const Icon =
                   node.type === 'directory'
@@ -190,7 +206,7 @@
                   >
                     {#if node.type === 'directory'}
                       <span class="w-4 h-4 flex items-center justify-center mr-1">
-                        {#if store.isPathLoading(node.path)}
+                        {#if selectIsPathLoading.select(getReduxStore().getState(), wsId, node.path)}
                           <Fa icon={faSpinner} size="xs" class="w-3 h-3 animate-spin" />
                         {:else if node.children && node.children.length > 0}
                           <Fa
@@ -220,7 +236,7 @@
                 {/if}
               {/snippet}
 
-              {#each filterNodes(store.rootNode.children || [], searchQuery) as node (node.path)}
+              {#each filterNodes($rootNode$.children || [], searchQuery) as node (node.path)}
                 {@render FileTreeItem(node, 0)}
               {/each}
             {:else}
@@ -236,8 +252,8 @@
 
   <Sidebar.Footer>
     <div class="px-2 py-1 text-xs text-subtle">
-      {#if store.fileCount > 0}
-        {store.fileCount} files
+      {#if $fileCount$ > 0}
+        {$fileCount$} files
       {/if}
     </div>
   </Sidebar.Footer>

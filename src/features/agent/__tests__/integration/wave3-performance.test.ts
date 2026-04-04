@@ -5,7 +5,7 @@
  * of the refactored agent system.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ListenerManager } from '../../../../shared/utils/listener-manager';
 import { MessagePruner } from '../../services/message-pruner';
 import { MemoryMonitor } from '../../../../shared/monitoring/memory-monitor';

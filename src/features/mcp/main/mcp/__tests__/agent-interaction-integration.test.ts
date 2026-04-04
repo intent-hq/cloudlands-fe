@@ -1,36 +1,61 @@
 /**
  * Integration Tests for Agent Interaction System
  *
- * Tests the complete flow of agent-to-agent communication:
- * - Creating child agents
- * - Sending messages between agents
- * - Event subscriptions and notifications
- * - Waiting for agent completion
+ * Tests the subscription operations (subscribe, unsubscribe, status) via
+ * the standalone ops functions backed by the Redux store.
+ *
+ * Event delivery is now handled by sagas and tested in
+ * agent-subscriptions-saga.test.ts.
  */
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { AgentEventSubscriptionService } from '$features/events/main/agent-event-subscription.service';
-import { WorkspaceEventBus } from '$features/events/main/workspace-event-bus';
-import { createWorkspaceEvent, WorkspaceEvent } from '$features/events/types';
+
+// Mock logger
+vi.mock('$shared/logger', () => ({
+  Logger: class {
+    debug = vi.fn();
+    info = vi.fn();
+    warn = vi.fn();
+    error = vi.fn();
+  },
+}));
+
+// Set up in-memory Redux store
+import { agentSubscriptionsReducer, initialState as sliceInitialState } from '../../../../../store/main/slices/agent-subscriptions/agent-subscriptions-slice';
+let _state = { agentSubscriptions: { ...sliceInitialState } } as any;
+vi.mock('../../../../../store/main/redux-store-bridge', () => ({
+  getMainState: () => _state,
+  mainDispatch: (action: any) => {
+    _state = {
+      ..._state,
+      agentSubscriptions: agentSubscriptionsReducer(_state.agentSubscriptions, action),
+    };
+    return action;
+  },
+}));
+
+import {
+  agentSubscribe,
+  agentUnsubscribe,
+  updateAgentStatus,
+} from '$features/events/main/agent-subscription-ops';
+import { selectAgentQueueLength, selectAgentStatus } from '../../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
+import { getMainState } from '../../../../../store/main/redux-store-bridge';
 
 describe('Agent Interaction Integration', () => {
-  let eventBus: WorkspaceEventBus;
-  let subscriptionService: AgentEventSubscriptionService;
   const workspaceId = 'test-workspace-id';
 
   beforeEach(() => {
-    eventBus = new WorkspaceEventBus(workspaceId);
-    subscriptionService = new AgentEventSubscriptionService(eventBus, workspaceId);
+    _state = { agentSubscriptions: { ...sliceInitialState } };
   });
 
   afterEach(() => {
-    subscriptionService.dispose();
     vi.clearAllMocks();
   });
 
   describe('Event Subscription Flow', () => {
     it('should subscribe to specific event types', () => {
-      const subscriptionId = subscriptionService.subscribe('agent-1', 'Test Agent', {
+      const subscriptionId = agentSubscribe(workspaceId, 'agent-1', 'Test Agent', {
         eventTypes: ['agent:idle', 'agent:created'],
       });
 
@@ -39,89 +64,54 @@ describe('Agent Interaction Integration', () => {
     });
 
     it('should unsubscribe from events', () => {
-      const subscriptionId = subscriptionService.subscribe('agent-1', 'Test Agent', {
+      const subscriptionId = agentSubscribe(workspaceId, 'agent-1', 'Test Agent', {
         eventTypes: ['agent:idle'],
       });
 
-      const result = subscriptionService.unsubscribe(subscriptionId);
+      const result = agentUnsubscribe(workspaceId, subscriptionId);
       expect(result).toBe(true);
 
       // Unsubscribing again should return false
-      const result2 = subscriptionService.unsubscribe(subscriptionId);
+      const result2 = agentUnsubscribe(workspaceId, subscriptionId);
       expect(result2).toBe(false);
     });
 
     it('should track agent status', () => {
-      subscriptionService.subscribe('agent-1', 'Test Agent', {
+      agentSubscribe(workspaceId, 'agent-1', 'Test Agent', {
         eventTypes: ['agent:idle'],
       });
 
-      // Set agent as responding (busy)
-      subscriptionService.setAgentStatus('agent-1', 'responding');
+      updateAgentStatus(workspaceId, 'agent-1', 'responding');
+      expect(selectAgentStatus.select(getMainState(), workspaceId, 'agent-1')).toBe('responding');
 
-      // Set agent as idle
-      subscriptionService.setAgentStatus('agent-1', 'idle');
-
-      // No errors should occur
-      expect(true).toBe(true);
+      updateAgentStatus(workspaceId, 'agent-1', 'idle');
+      expect(selectAgentStatus.select(getMainState(), workspaceId, 'agent-1')).toBe('idle');
     });
 
     it('should report pending events correctly', () => {
-      subscriptionService.subscribe('agent-1', 'Test Agent', {
+      agentSubscribe(workspaceId, 'agent-1', 'Test Agent', {
         eventTypes: ['agent:idle'],
       });
 
       // Initially no pending events
-      expect(subscriptionService.hasPendingEvents('agent-1')).toBe(false);
-      expect(subscriptionService.getPendingEventCount('agent-1')).toBe(0);
-    });
-
-    it('should deliver high priority events to idle agents immediately', async () => {
-      const deliveredEvents: WorkspaceEvent[] = [];
-      const deliveryCallback = vi.fn(async (agentId: string, events: WorkspaceEvent[]) => {
-        deliveredEvents.push(...events);
-      });
-      subscriptionService.setDeliveryCallback(deliveryCallback);
-
-      // Subscribe with high priority to get immediate delivery
-      subscriptionService.subscribe('agent-1', 'Test Agent', {
-        eventTypes: ['agent:idle'],
-        priority: 'high',
-      });
-
-      // Set agent as idle to receive events immediately
-      subscriptionService.setAgentStatus('agent-1', 'idle');
-
-      // Emit event
-      const idleEvent = createWorkspaceEvent(
-        'agent:idle',
-        workspaceId,
-        { type: 'agent', id: 'agent-2', name: 'Other Agent' },
-        { agentId: 'agent-2', reason: 'stream_complete' },
-      );
-      eventBus.emitEvent(idleEvent);
-
-      // Wait for async delivery
-      await new Promise((resolve) => setTimeout(resolve, 50));
-
-      // Should have received the event
-      expect(deliveryCallback).toHaveBeenCalled();
+      expect(selectAgentQueueLength.select(getMainState(), workspaceId, 'agent-1')).toBe(0);
     });
 
     it('should handle agent status transitions', () => {
-      // Subscribe to events
-      subscriptionService.subscribe('agent-1', 'Test Agent', {
+      agentSubscribe(workspaceId, 'agent-1', 'Test Agent', {
         eventTypes: ['agent:idle'],
       });
 
-      // Verify status transitions work without errors
-      subscriptionService.setAgentStatus('agent-1', 'responding');
-      subscriptionService.setAgentStatus('agent-1', 'idle');
-      subscriptionService.setAgentStatus('agent-1', 'responding');
-      subscriptionService.setAgentStatus('agent-1', 'idle');
+      updateAgentStatus(workspaceId, 'agent-1', 'responding');
+      updateAgentStatus(workspaceId, 'agent-1', 'idle');
+      updateAgentStatus(workspaceId, 'agent-1', 'responding');
+      updateAgentStatus(workspaceId, 'agent-1', 'idle');
 
       // No errors should occur
-      expect(true).toBe(true);
+      expect(selectAgentStatus.select(getMainState(), workspaceId, 'agent-1')).toBe('idle');
     });
+
+    // NOTE: Event delivery tests (high priority delivery, etc.) are now handled
+    // by the delivery saga and tested in agent-subscriptions-saga.test.ts.
   });
 });

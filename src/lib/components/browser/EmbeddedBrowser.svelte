@@ -12,7 +12,11 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { Button } from '$lib/components/ui/button';
   import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../../../shared/constants';
-  import { browserStore } from '$features/browser/browser.store.svelte';
+  import { getDispatch } from '$lib/store/utils/utils';
+  import {
+    addRecentUrl,
+    updateUrlMetadata,
+  } from '$lib/store/slices/browser/browser-slice';
   import Fa from 'svelte-fa';
   import {
     faArrowLeft,
@@ -95,6 +99,8 @@
     focusUrlBarOnMount = false,
     isFocused = false,
   }: Props = $props();
+
+  const dispatch = getDispatch();
 
   // Log the URL prop on mount and changes
   $effect(() => {
@@ -477,13 +483,13 @@
 
     // Title and favicon
     addWebviewListener('page-title-updated', (e: any) => {
-      browserStore.updateUrlMetadata(displayUrl, e.title);
+      dispatch(updateUrlMetadata(_workspaceId, displayUrl, e.title, undefined));
       onTitleChange?.(e.title);
     });
 
     addWebviewListener('page-favicon-updated', (e: any) => {
       if (e.favicons?.length > 0) {
-        browserStore.updateUrlMetadata(displayUrl, undefined, e.favicons[0]);
+        dispatch(updateUrlMetadata(_workspaceId, displayUrl, undefined, e.favicons[0]));
         onFaviconChange?.(e.favicons[0]);
       }
     });
@@ -701,7 +707,7 @@
       }
       logger.info('Loading URL from form', { urlToLoad });
       loadUrl(urlToLoad);
-      browserStore.addRecentUrl(urlToLoad);
+      dispatch(addRecentUrl(_workspaceId, urlToLoad, undefined, undefined, new Date().toISOString()));
       // Blur the input to indicate the action was taken
       urlInputRef?.blur();
     }

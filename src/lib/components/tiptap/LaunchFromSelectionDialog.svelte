@@ -20,7 +20,9 @@
   let {
     x = 0,
     y = 0,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     workspace: _workspace,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     noteId: _noteId,
     initialMessage = '',
     onSubmit,

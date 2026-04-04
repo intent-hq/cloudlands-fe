@@ -6,15 +6,12 @@
  */
 
 import { createLogger } from '$lib/utils/client-logger';
-import type { createUnifiedWorkspaceState } from '$features/workspace/workspace-unified-state.svelte';
-
-/** Type alias for the unified workspace state manager */
-export type UnifiedWorkspaceStateManager = ReturnType<typeof createUnifiedWorkspaceState>;
+import type { WorkspacePageStateManager } from './workspace-page-state.svelte';
 
 const logger = createLogger('close-handlers');
 
 export interface UseCloseHandlersOptions {
-  workspaceState: UnifiedWorkspaceStateManager | null;
+  workspaceState: WorkspacePageStateManager | null;
   onOpenTerminal: (terminalId: string) => void;
 }
 

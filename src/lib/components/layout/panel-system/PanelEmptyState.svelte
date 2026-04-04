@@ -6,14 +6,17 @@
    */
 
   import { getContext } from 'svelte';
-  import type { PanelLayoutManager, PanelTab } from '$features/layout/panel-layout-manager.svelte';
+  import { writable } from 'svelte/store';
+  import type { PanelLayoutManager, PanelTab } from '$features/layout/panel-layout-adapter';
   import Fa from 'svelte-fa';
   import { faPlus, faTerminal, faGlobe, faFile, faRobot } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
-  import { dispatch } from '$lib/store/redux-dispatch-bridge';
+  import { dispatch, getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { openCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
-  import { paletteStore } from '$features/palette/palette.store.svelte';
+  import { openPalette } from '$lib/store/slices/palette/palette-slice';
+  import { selectRecentlyClosed } from '$lib/store/slices/panel-layout/panel-layout-selectors';
+  import { selectFocusedPanelId } from '$lib/store/slices/panel-layout/panel-layout-selectors';
 
   interface Props {
     workspaceId: string;
@@ -35,8 +38,15 @@
   const getLayoutManager = getContext<() => PanelLayoutManager>('panelLayoutManager');
   const layoutManager = $derived(getLayoutManager?.());
 
-  // Get recently closed tabs
-  const recentItems = $derived(layoutManager?.recentlyClosedTabs?.slice(0, 5) ?? []);
+  // Wrap workspaceId in a writable store so selectors react to prop changes
+  const workspaceIdStore = writable(_workspaceId);
+  $effect(() => {
+    workspaceIdStore.set(_workspaceId);
+  });
+
+  // Get recently closed tabs via Redux selector (reactive)
+  const recentlyClosed$ = selectRecentlyClosed(workspaceIdStore);
+  const recentItems = $derived($recentlyClosed$?.slice(0, 5) ?? []);
 
   // Get icon for tab type
   function getTabIcon(type: PanelTab['type']) {
@@ -89,7 +99,7 @@
     {
       key: SHORTCUTS.COMMAND_PALETTE.key,
       label: SHORTCUTS.COMMAND_PALETTE.label,
-      action: () => paletteStore.open(),
+      action: () => dispatch(openPalette()),
     },
     {
       key: 'mod+shift+]',
@@ -105,7 +115,7 @@
       key: SHORTCUTS.SPLIT_PANEL_HORIZONTAL.key,
       label: SHORTCUTS.SPLIT_PANEL_HORIZONTAL.label,
       action: () => {
-        const panelId = layoutManager?.focusedPanelId;
+        const panelId = selectFocusedPanelId.select(getReduxStore().getState(), _workspaceId);
         if (panelId) {
           layoutManager?.splitPanel(panelId, 'horizontal');
         }

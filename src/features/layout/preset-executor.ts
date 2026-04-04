@@ -7,13 +7,13 @@
  * 3. Apply the layout with appropriate content
  */
 
-import { agentService } from '$features/agent/agent.service';
-import { unifiedStateStore } from '$features/agent/services/unified-state-store';
-import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
+import { agentService } from '$features/agent/agent-ipc-bridge';
+import { selectStagedWorkingChanges, selectUnstagedWorkingChanges, selectFileTrackingCommits } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import type { LayoutPresetId } from '$lib/components/layout/panel-system/types';
 import { createLogger } from '$lib/utils/client-logger';
-import type { WorkspaceId } from '$shared/types/branded-ids';
-import type { PanelLayoutManager } from './panel-layout-manager.svelte';
+import type { PanelLayoutManager } from './panel-layout-adapter';
 import { calculateTiling } from './tiling-utils';
 
 const logger = createLogger('PresetExecutor');
@@ -116,9 +116,9 @@ async function applyAgentsRowPreset(
   const { workspaceId, containerWidth, containerHeight } = context;
   const MAX_AGENTS = 6;
 
-  // Use unifiedStateStore to get ALL agents including background ones
+  // Use Redux store to get ALL agents including background ones
   // (agentService.getSessionsForWorkspace filters out background agents)
-  const allAgents = unifiedStateStore.getAgentsForWorkspace(workspaceId as WorkspaceId);
+  const allAgents = selectAllWorkspaceAgents.select(getReduxStore().getState(), workspaceId);
 
   // Helper to check if agent is background
   const isBackground = (a: (typeof allAgents)[0]) =>
@@ -214,15 +214,17 @@ async function applyChangesPreset(
   const { workspaceId, containerWidth, containerHeight } = context;
 
   // Get changes - prioritize staged, then unstaged, then recent commits
-  const workingChanges = fileTrackingStore.workingChanges;
-  const commits = fileTrackingStore.commits;
+  const state = getReduxStore().getState();
+  const staged = selectStagedWorkingChanges.select(state, workspaceId);
+  const unstaged = selectUnstagedWorkingChanges.select(state, workspaceId);
+  const commits = selectFileTrackingCommits.select(state, workspaceId);
 
   // Determine which files to show - combine unstaged + staged (unstaged first)
-  const unstagedFiles = workingChanges.unstaged.map((c) => ({
+  const unstagedFiles = unstaged.map((c) => ({
     path: c.relativePath,
     type: 'unstaged' as const,
   }));
-  const stagedFiles = workingChanges.staged.map((c) => ({
+  const stagedFiles = staged.map((c) => ({
     path: c.relativePath,
     type: 'staged' as const,
   }));

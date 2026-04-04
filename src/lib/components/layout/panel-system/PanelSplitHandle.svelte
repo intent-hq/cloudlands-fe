@@ -19,7 +19,11 @@
 
   import { cn } from '$lib/utils';
   import { selectIsDragging } from '$lib/store/slices/tab-state/tab-state-selectors';
-  import { setActiveHandleDrop, type HandleDropZoneType, type SerializableRect } from '$lib/store/slices/tab-state/tab-state-slice';
+  import {
+    setActiveHandleDrop,
+    type HandleDropZoneType,
+    type SerializableRect,
+  } from '$lib/store/slices/tab-state/tab-state-slice';
   import { getDispatch } from '$lib/store/utils/utils';
 
   /** Position relative to the split for container-level insertion */
@@ -47,6 +51,7 @@
   let {
     direction,
     nodePath = [],
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     handleIndex = 0,
     onResize,
     onResizeStart,
@@ -60,7 +65,6 @@
 
   // Tab drag drop zone state
   let isTabDragOver = $state(false);
-  let activeDropZone = $state<HandleDropZone | null>(null);
   let handleRef: HTMLButtonElement;
 
   // Track global tab drag state
@@ -70,7 +74,6 @@
   $effect(() => {
     if (!$isTabDragging) {
       isTabDragOver = false;
-      activeDropZone = null;
     }
   });
 
@@ -230,7 +233,6 @@
     isTabDragOver = true;
     const zoneInfo = getDropZoneInfo(e);
     currentZoneInfo = zoneInfo;
-    activeDropZone = zoneInfo?.position ?? null;
 
     // Update global store with drop info for the overlay
     if (zoneInfo && handleRef) {
@@ -240,15 +242,23 @@
       const containerRect = container?.getBoundingClientRect() ?? handleRect;
 
       const toRect = (r: DOMRect): SerializableRect => ({
-        x: r.x, y: r.y, width: r.width, height: r.height,
-        top: r.top, right: r.right, bottom: r.bottom, left: r.left,
+        x: r.x,
+        y: r.y,
+        width: r.width,
+        height: r.height,
+        top: r.top,
+        right: r.right,
+        bottom: r.bottom,
+        left: r.left,
       });
-      dispatch(setActiveHandleDrop({
-        handleRect: toRect(handleRect),
-        containerRect: toRect(containerRect),
-        zoneType: zoneInfo.zoneType,
-        label: zoneInfo.label,
-      }));
+      dispatch(
+        setActiveHandleDrop({
+          handleRect: toRect(handleRect),
+          containerRect: toRect(containerRect),
+          zoneType: zoneInfo.zoneType,
+          label: zoneInfo.label,
+        }),
+      );
     }
   }
 
@@ -257,7 +267,6 @@
     if (relatedTarget && handleRef?.contains(relatedTarget)) return;
 
     isTabDragOver = false;
-    activeDropZone = null;
     currentZoneInfo = null;
     dispatch(setActiveHandleDrop(null));
   }
@@ -268,7 +277,6 @@
 
     const zoneInfo = currentZoneInfo;
     isTabDragOver = false;
-    activeDropZone = null;
     currentZoneInfo = null;
     dispatch(setActiveHandleDrop(null));
 

@@ -9,9 +9,6 @@ import { EventEmitter } from '$shared/utils/event-emitter';
 import { Logger } from '../../shared/logger';
 import { TRACKING_CONFIG } from '../file-tracking/tracking.config';
 
-// Access global gc function for Node.js when running with --expose-gc flag
-const globalObj = globalThis as any;
-
 const logger = new Logger('MemoryMonitor');
 
 export interface MemoryStats {

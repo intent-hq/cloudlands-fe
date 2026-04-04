@@ -14,7 +14,6 @@ import {
   recordMRUItem,
   type WorkspaceObject,
 } from "./command-palette-utils";
-import { computeResults, type ComputeResultsInput } from "./command-palette-results";
 import type { Note } from "$shared/types";
 
 // ── fuzzyScore ─────────────────────────────────────────────────────────────

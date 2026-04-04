@@ -96,7 +96,7 @@ export function createAsyncAction<ARGS extends any[] = [], PL = ARGS, R = unknow
     // Determine payload using same logic as createAction
     let payload: PL;
     let resolve: (resolve: R) => void;
-    let reject: (error: Error) => void;
+    let reject: (error: string | Error) => void;
 
     const promise = new Promise<R>((res, rej) => {
       resolve = res;
@@ -121,9 +121,9 @@ export function createAsyncAction<ARGS extends any[] = [], PL = ARGS, R = unknow
       }
     );
 
-    const failureAction = createAction<[Error], ErrorResponse<PL>>(
+    const failureAction = createAction<[string], ErrorResponse<PL>>(
       `${stagesActionType}_FAILURE`,
-      (error: Error) => {
+      (error: string) => {
         reject(error);
         return {
           request: payload,
@@ -151,9 +151,9 @@ export function createAsyncAction<ARGS extends any[] = [], PL = ARGS, R = unknow
     })
   );
 
-  const staticFailureAction = createAction<[Error], ErrorResponse<PL>>(
+  const staticFailureAction = createAction<[string], ErrorResponse<PL>>(
     `${stagesActionType}_FAILURE`,
-    (error: Error) => ({
+    (error: string) => ({
       request: undefined as unknown as PL,
       error,
     })

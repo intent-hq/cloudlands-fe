@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
 
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -8,13 +7,16 @@
   import ProviderStatusPanel from '$lib/components/ProviderStatusPanel.svelte';
   import { setActiveProvider } from '$lib/store/slices/provider-settings/provider-settings-slice';
   import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
-  import {
-    loadKnownRepos,
-  } from '$lib/store/slices/known-repos/known-repos-slice';
+  import { loadKnownRepos } from '$lib/store/slices/known-repos/known-repos-slice';
   import {
     selectKnownRepos,
     selectKnownReposLoaded,
   } from '$lib/store/slices/known-repos/known-repos-selectors';
+  import {
+    selectWorkspaceHasLoaded,
+    selectWorkspaceItems,
+    selectWorkspaceLoading,
+  } from '$lib/store/slices/workspace/workspace-selectors';
   import {
     setHasCompletedProviderSetup,
     toggleGroupByRepo,
@@ -54,7 +56,6 @@
   import {
     selectBulkDeleteWorkspaceCount,
     selectPendingBulkRepoKey,
-    selectPendingDeleteWorkspace,
     selectPendingRemoveRepoPath,
     selectRunningAgentNamesForDelete,
     selectShowBulkArchiveConfirm,
@@ -64,15 +65,13 @@
     selectShowRemoveRepoConfirm,
   } from '$lib/store/slices/workspace-operations/workspace-operations-selectors';
   import { getDispatch } from '$lib/store/utils/utils';
-  import StarterPromptButton from '$lib/components/workspace/StarterPromptButton.svelte';
   import NodeVersionWarning from '$lib/components/NodeVersionWarning.svelte';
   import WorkspaceTableView, {
     type RepoInfo,
   } from '$lib/components/workspace/WorkspaceTableView.svelte';
 
-  import type { StarterPrompt } from '$lib/data/starter-prompts';
   import { faSearch, faXmark } from '@fortawesome/free-solid-svg-icons';
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import { fly } from 'svelte/transition';
   import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';
@@ -88,7 +87,6 @@
   let workspaceInitializer: CompactWorkspaceInitializer | null = $state(null);
 
   const showDeleteWarning = selectShowDeleteWarning();
-  const pendingDeleteWorkspace = selectPendingDeleteWorkspace();
   const runningAgentNamesForDelete = selectRunningAgentNamesForDelete();
   const showBulkArchiveConfirm = selectShowBulkArchiveConfirm();
   const showBulkDeleteArchivedConfirm = selectShowBulkDeleteArchivedConfirm();
@@ -104,30 +102,9 @@
     isInitializerExpanded = true;
   }
 
-  // Handler for starter prompt selection
-  async function handleStarterPromptSelect(prompt: StarterPrompt) {
-    // Prefill the form via sessionStorage (same pattern as deep links)
-    sessionStorage.setItem(
-      'workspace-prefill',
-      JSON.stringify({
-        repoPath: `~/Developer/${prompt.repoName}`,
-        isNewRepo: true,
-        prompt: prompt.prompt,
-      }),
-    );
-
-    // Expand the form and trigger a reload of prefill data
-    isInitializerExpanded = true;
-
-    // Use tick to ensure the component is mounted, then set content
-    await tick();
-    if (workspaceInitializer) {
-      workspaceInitializer.applyStarterPrompt(prompt);
-    }
-  }
-
-  // Reactive binding to workspace items - needed for Svelte 5 reactivity with class getters
-  const workspaces = $derived(workspaceStore.items);
+  const workspaces = selectWorkspaceItems();
+  const workspaceHasLoaded = selectWorkspaceHasLoaded();
+  const workspaceLoading = selectWorkspaceLoading();
 
   // Known repos from persistent registry (survive workspace deletion)
   const knownRepos = selectKnownRepos();
@@ -141,9 +118,7 @@
   });
 
   // Determine if we're in empty state (no workspaces or mimicking)
-  const isEmpty = $derived(
-    MIMIC_EMPTY_STATE || (workspaceStore.hasLoaded && workspaces.length === 0),
-  );
+  const isEmpty = $derived(MIMIC_EMPTY_STATE || ($workspaceHasLoaded && $workspaces.length === 0));
 
   // Auto-expand the form when in empty state
   $effect(() => {
@@ -156,7 +131,9 @@
     const request = $homePageInitializerRequest;
     if (request) {
       isInitializerExpanded = true;
-      dispatch(clearHomePageInitializerRequest());
+      untrack(() => {
+        dispatch(clearHomePageInitializerRequest());
+      });
       tick().then(() => {
         if (request.applyPrefill) {
           workspaceInitializer?.applyPrefill?.();
@@ -183,10 +160,7 @@
   let searchQuery = $state('');
   let searchExpanded = $state(false);
   let searchInputRef: HTMLInputElement | undefined = $state();
-  let didJustBlur = $state(false);
-
   function handleSearchBlur() {
-    didJustBlur = true;
     // Only collapse if empty
     if (!searchQuery) {
       searchExpanded = false;
@@ -203,7 +177,7 @@
 
   // Show skeleton during initial load or before first load completes (returning users)
   let showSkeleton = $derived(
-    (!workspaceStore.hasLoaded || workspaceStore.loading) && workspaces.length === 0,
+    (!$workspaceHasLoaded || $workspaceLoading) && $workspaces.length === 0,
   );
 
   // Track container width for skeleton column calculation
@@ -215,20 +189,19 @@
   const skeletonColumnCount = $derived(
     Math.max(1, Math.floor((skeletonContainerWidth + GAP) / (MIN_COLUMN_WIDTH + GAP))),
   );
-
 </script>
 
 <div class="h-full flex flex-col">
   <div
     class="home-layout flex-1 w-full min-h-0
-      {isEmpty || showProviderPanel || (!workspaceStore.hasLoaded && !$hasCompletedProviderSetup)
+      {isEmpty || showProviderPanel || (!$workspaceHasLoaded && !$hasCompletedProviderSetup)
       ? 'flex items-center justify-center overflow-auto px-[clamp(2rem,6.25rem,6%)]'
       : 'grid gap-15 lg:grid-cols-[minmax(40rem,1fr)_2fr] px-[clamp(2rem,6.25rem,6%)] lg:pl-[clamp(2rem,6.25rem,6%)] lg:pr-0'}"
   >
     <!-- Wait for workspaces to load before rendering for users who haven't completed setup.
          This prevents flashing onboarding/provider setup before we know if they're a new user.
          The splash screen in app.html covers this loading period. -->
-    {#if !workspaceStore.hasLoaded && !$hasCompletedProviderSetup}
+    {#if !$workspaceHasLoaded && !$hasCompletedProviderSetup}
       <!-- Empty: splash screen / bg-sidebar visible while workspaces load -->
     {:else if showProviderPanel}
       <div class="animate-entry" style="--entry-delay: 0ms">
@@ -248,7 +221,6 @@
           : 'min-w-0'} pt-52 lg:self-start lg:sticky lg:top-0"
         style="--entry-delay: 0ms"
       >
-
         <div class="w-full flex items-baseline space-between mb-5 relative">
           <h1 class="text-3xl font-medium tracking-[-0.03em]">
             {isEmpty ? 'Create your first workspace' : 'Workspaces'}
@@ -284,7 +256,7 @@
     {/if}
 
     <!-- Header + Controls Bar (hidden when empty, showing provider setup, onboarding, or still loading for new users) -->
-    {#if !isEmpty && !showProviderPanel && (workspaceStore.hasLoaded || $hasCompletedProviderSetup)}
+    {#if !isEmpty && !showProviderPanel && ($workspaceHasLoaded || $hasCompletedProviderSetup)}
       <div
         class="right-column animate-entry min-w-0 lg:pr-[clamp(2rem,6.25rem,6%)]"
         style="--entry-delay: 120ms"
@@ -386,7 +358,7 @@
                       <Skeleton class="h-4 w-24" />
                     </div>
                     <!-- Rows -->
-                    {#each Array(rowCount) as _, i}
+                    {#each Array.from({ length: rowCount }, (_, i) => i) as i}
                       <div
                         class="flex items-center w-full min-w-0 pr-4 pl-3 py-3 {i < rowCount - 1
                           ? 'border-b border-border/40'
@@ -403,7 +375,7 @@
             {:else}
               <!-- Skeleton loader matching ungrouped table view -->
               <div class="w-full bg-background border border-border shadow-xs rounded-xl">
-                {#each [1, 2, 3, 4, 5] as _, i}
+                {#each [0, 1, 2, 3, 4] as i}
                   <div
                     class="flex items-center w-full min-w-0 pr-5 pl-3 py-3 {i < 4
                       ? 'border-b border-border/40'
@@ -423,9 +395,9 @@
             {/if}
           {:else}
             <WorkspaceTableView
-              {workspaces}
-                showArchived={$showArchived}
-                groupByRepo={$groupByRepo}
+              workspaces={$workspaces}
+              showArchived={$showArchived}
+              groupByRepo={$groupByRepo}
               {searchQuery}
               knownRepos={$knownRepos}
               onOpen={(workspace, event) =>
@@ -433,11 +405,11 @@
                   requestOpenWorkspace({
                     workspaceId: workspace.id,
                     openInNewWindow: !!(event?.metaKey || event?.ctrlKey),
-                  })
+                  }),
                 )}
-              onDelete={(workspace) => dispatch(requestDeleteWorkspace(workspace))}
-              onArchive={(workspace) => dispatch(requestArchiveWorkspace(workspace))}
-              onUnarchive={(workspace) => dispatch(requestUnarchiveWorkspace(workspace))}
+              onDelete={(workspace) => dispatch(requestDeleteWorkspace(workspace.id))}
+              onArchive={(workspace) => dispatch(requestArchiveWorkspace(workspace.id))}
+              onUnarchive={(workspace) => dispatch(requestUnarchiveWorkspace(workspace.id))}
               onCreateForRepo={handleCreateForRepo}
               onBulkArchive={(repoKey) => dispatch(openBulkArchiveConfirm(repoKey))}
               onBulkDeleteArchived={(repoKey) => dispatch(openBulkDeleteArchivedConfirm(repoKey))}

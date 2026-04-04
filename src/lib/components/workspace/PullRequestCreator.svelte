@@ -1,13 +1,16 @@
 <script lang="ts">
   import { logger } from '$lib/utils/client-logger';
 
-  import { getWorkspaceContext } from '$features/workspace/workspace.context.svelte';
   import { invoke } from '$lib/electron-bridge';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { Badge } from '$lib/components/ui/badge';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
+  import { updateWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
+  import { getDispatch } from '$lib/store/utils/utils';
   import {
     faCodePullRequest,
     faExclamationCircle,
@@ -28,8 +31,8 @@
   }
 
   let { onClose, onCreated }: Props = $props();
-
-  let ctx = getWorkspaceContext();
+  const dispatch = getDispatch();
+  const activeWorkspace = selectActiveWorkspace();
 
   // Form state
   let generatingContent = $state(false);
@@ -51,7 +54,8 @@
   let autoCreatePending = $state(false);
 
   async function generatePRContent() {
-    if (!ctx || !ctx.workspace) return;
+    const workspace = selectActiveWorkspace.select(getReduxStore().getState());
+    if (!workspace) return;
 
     generatingContent = true;
     error = null;
@@ -65,13 +69,13 @@
 
     try {
       const workspaceContext = {
-        workspaceId: ctx.workspace.id,
-        title: ctx.workspace.title,
-        branch: ctx.workspace.branch,
-        baseRef: ctx.workspace.baseRef,
-        repositoryPath: ctx.workspace.repositoryPath,
-        repositoryOwner: ctx.workspace.repositoryOwner,
-        repositoryName: ctx.workspace.repositoryName,
+        workspaceId: workspace.id,
+        title: workspace.title,
+        branch: workspace.branch,
+        baseRef: workspace.baseRef,
+        repositoryPath: workspace.repositoryPath,
+        repositoryOwner: workspace.repositoryOwner,
+        repositoryName: workspace.repositoryName,
         userInstructions: userInstructions || undefined,
       };
 
@@ -111,7 +115,8 @@
   }
 
   async function createPullRequest() {
-    if (!ctx || !ctx.workspace) return;
+    const workspace = selectActiveWorkspace.select(getReduxStore().getState());
+    if (!workspace) return;
     if (!formData.title.value) {
       error = 'Please provide a title for the pull request';
       return;
@@ -122,23 +127,24 @@
 
     try {
       const prData = {
-        workspaceId: ctx.workspace.id,
+        workspaceId: workspace.id,
         title: formData.title.value,
         description: formData.description.value,
         isDraft: formData.isDraft,
-        branch: ctx.workspace.branch,
-        baseRef: ctx.workspace.baseRef || 'main',
+        branch: workspace.branch,
+        baseRef: workspace.baseRef || 'main',
       };
 
       const result = await invoke<PullRequestInfo>('pr:create', prData);
 
       if (result) {
         success = true;
-        // Update workspace context with the new PR
-        if (ctx && ctx.workspace) {
-          ctx.workspace.activePullRequest = result;
-          ctx.workspace.prNumber = result.number;
-        }
+        dispatch(
+          updateWorkspaceEntity(workspace.id, {
+            activePullRequest: result,
+            prNumber: result.number,
+          }),
+        );
 
         // Notify parent
         if (onCreated) {
@@ -165,10 +171,10 @@
     <div class="flex items-center gap-3">
       <Fa icon={faCodePullRequest} size="lg" />
       <h2 class="text-lg font-semibold">Create Pull Request</h2>
-      {#if ctx.workspace?.branch}
+      {#if $activeWorkspace?.branch}
         <Badge variant="secondary" class="text-xs">
           <Fa icon={faCodeBranch} size="xs" class="mr-1" />
-          {ctx.workspace.branch}
+          {$activeWorkspace.branch}
         </Badge>
       {/if}
     </div>

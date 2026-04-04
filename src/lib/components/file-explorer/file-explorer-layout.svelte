@@ -8,11 +8,8 @@
   import { Separator } from '$lib/components/ui/separator';
   import * as Sidebar from '$lib/components/ui/sidebar';
   import { Button } from '$lib/components/ui/button';
-  import { ScrollArea } from '$lib/components/ui/scroll-area';
-  import { Skeleton } from '$lib/components/ui/skeleton';
   import {
     faXmark,
-    faSave,
     faFileAlt,
     faExclamationCircle,
     faSpinner,

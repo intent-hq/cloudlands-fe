@@ -7,15 +7,16 @@
    */
 
   import Fa from 'svelte-fa';
-  import { faChevronDown, faChevronRight, faCode } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
   import { faFile } from '@fortawesome/free-regular-svg-icons';
   import type { Note, AgentMessage } from '$shared/types';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import { createLogger } from '$lib/utils/client-logger';
-  import { agentService } from '$features/agent/agent.service';
-  import { workspaceStore } from '$features/workspace/workspace.store.svelte';
-  import { fileTrackingStore } from '$features/file-tracking/file-tracking.store.svelte';
+  import { agentService } from '$features/agent/agent-ipc-bridge';
+  import { selectCurrentChanges } from '$lib/store/slices/file-tracking/file-tracking-selectors';
   import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
   import {
     getFileChangesFromMessages,
     type ChatFileChange,
@@ -31,7 +32,10 @@
     note: Note;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let { workspaceId: _workspaceId, note }: Props = $props();
+
+  const ftChanges$ = selectCurrentChanges();
 
   // State
   let isExpanded = $state(false);
@@ -63,7 +67,7 @@
     isLoading = true;
     try {
       const allMessages: AgentMessage[] = [];
-      const workspace = workspaceStore.current;
+      const workspace = selectActiveWorkspace.select(getReduxStore().getState());
 
       for (const agentId of assignedAgentIds) {
         try {
@@ -135,7 +139,7 @@
     // Do NOT fall back to committed changes - those would show historical diffs
     // instead of the current working tree state
     return (
-      fileTrackingStore.changes.find(
+      $ftChanges$.find(
         (c) =>
           (c.relativePath === filePath || c.file === filePath) &&
           (c.stage === 'staged' || c.stage === 'unstaged'),
@@ -207,7 +211,7 @@
             <!-- <div class="flex items-center justify-center w-5 h-5 rounded bg-muted/50">
               <Fa icon={faCode} class="text-ghost" size="xs" />
             </div> -->
-            <span class="text-sm font-medium text-foreground/90">
+            <span class="text-sm font-medium text-foreground">
               {#if isLoading}
                 Loading changes...
               {:else}
