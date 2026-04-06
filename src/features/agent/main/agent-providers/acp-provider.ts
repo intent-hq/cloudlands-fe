@@ -66,6 +66,14 @@ import { BaseAgentProvider } from './base-provider';
 import { ProviderCapabilities, resolveProviderCapabilities } from './provider-capabilities';
 import { trimSession } from './session-trimmer';
 import { sanitizeSurrogates } from '../../../../shared/validation';
+import {
+  acquireProcessSlot,
+  registerProcess,
+  deregisterProcess,
+  markProcessActive,
+  markProcessIdle,
+  notifyPendingWorkCleared,
+} from '../agent-process-registry';
 
 // Maximum characters to include in conversation history when sending full context.
 // The 413 "Request Entity Too Large" error we hit is actually ExceedContextLength from
@@ -924,6 +932,19 @@ interface RemoteProcessHandle {
   isAlive: () => boolean;
 }
 
+/**
+ * Idle timeout configuration for auggie child processes.
+ *
+ * Each agent spawns its own auggie process (~200-300 MB RAM). When a user has many
+ * workspaces open, idle processes accumulate and consume tens of GB. This timeout
+ * kills idle processes to reclaim memory. The existing respawn-on-demand path in
+ * streamMessage() transparently re-launches the process when the user sends a message.
+ */
+const IDLE_TIMEOUT_CONFIG = {
+  /** How long (ms) a process can sit idle before being killed. Default: 10 minutes. */
+  IDLE_TIMEOUT_MS: 10 * 60 * 1000,
+} as const;
+
 export class ACPProvider extends BaseAgentProvider {
   private acpServer?: ACPServer;
   private sessionId?: string;
@@ -968,6 +989,7 @@ export class ACPProvider extends BaseAgentProvider {
   protected tools: Map<string, Tool> = new Map();
   private stalledStreamCheckInterval?: NodeJS.Timeout; // Store interval ID for cleanup
   private healthCheckInterval?: NodeJS.Timeout; // Store health check interval for cleanup
+  private idleTimer?: NodeJS.Timeout; // Idle timeout — kills the auggie process to reclaim memory
   private streamingHandler?: ACPProviderStreaming;
   private streamingAgentId?: string; // The agentId used by the streaming handler (may differ from sessionId)
   private isStreaming = false; // Track streaming state
@@ -1816,10 +1838,14 @@ export class ACPProvider extends BaseAgentProvider {
     }
 
     // For remote workspaces, launch agent on the remote server
+    // (no local child process — skip slot acquisition)
     if (this.isRemoteWorkspace()) {
       await this.launchRemoteAgent();
       return;
     }
+
+    // Enforce global process cap — evict LRU idle process or wait for a slot
+    await acquireProcessSlot();
 
     // Ensure HTTP MCP Bridge is healthy before launching any agent that may need workspace MCP tools.
     // Background agents can also require tools (e.g. stdio MCP tool channel), so we can't assume
@@ -2708,6 +2734,23 @@ export class ACPProvider extends BaseAgentProvider {
 
     // Set up process cleanup handlers
     this.setupProcessCleanup();
+
+    // Register in the global process registry for cap enforcement
+    if (this.agentProcess?.pid) {
+      registerProcess({
+        pid: this.agentProcess.pid,
+        agentId: this.config.agentId,
+        workspaceId: this.config.workspaceId || '',
+        lastActiveTimestamp: Date.now(),
+        isActive: false,
+        kill: () => this.stopAgentProcess(),
+        hasPendingWork: () => this.pendingRequests.size > 0,
+      });
+    }
+
+    // Start idle timer — if no streaming/requests happen within the timeout,
+    // the process will be killed to reclaim memory
+    this.resetIdleTimer();
 
     // Clean up old log files (keep last 5)
     this.cleanupOldLogs();
@@ -4070,6 +4113,10 @@ export class ACPProvider extends BaseAgentProvider {
         const pending = this.pendingRequests.get(message.id)!;
         clearTimeout(pending.timeout);
         this.pendingRequests.delete(message.id);
+        if (this.agentProcess?.pid) {
+          notifyPendingWorkCleared(this.agentProcess.pid);
+        }
+        this.resetIdleTimer();
         pending.resolve(message);
         return;
       } else if (message.id !== undefined && (message.result || message.error)) {
@@ -4453,6 +4500,7 @@ export class ACPProvider extends BaseAgentProvider {
     } catch (error) {
       logger.error('Failed to handle agent message', error as Error);
     }
+
   }
 
   /**
@@ -6088,6 +6136,69 @@ export class ACPProvider extends BaseAgentProvider {
     logger.info('ACP provider stop() completed', { forceCleanup });
   }
 
+  // ===========================================================================
+  // Idle timeout — kill auggie process to reclaim memory when not in use
+  // ===========================================================================
+
+  /**
+   * Reset (or start) the idle timer. Call this whenever the agent finishes work
+   * (streaming completes, request finishes) so the clock restarts.
+   */
+  private resetIdleTimer(): void {
+    this.clearIdleTimer();
+
+    this.idleTimer = setTimeout(() => {
+      // Safety: don't kill if we're actively streaming or have pending requests
+      if (this.isStreaming || this.pendingRequests.size > 0) {
+        logger.debug('Idle timeout fired but agent is busy — rescheduling', {
+          agentId: this.config.agentId,
+          isStreaming: this.isStreaming,
+          pendingRequests: this.pendingRequests.size,
+        });
+        this.resetIdleTimer();
+        return;
+      }
+
+      if (!this.isAgentAlive()) {
+        logger.debug('Idle timeout fired but agent process is already dead', {
+          agentId: this.config.agentId,
+        });
+        return;
+      }
+
+      logger.info('Killing idle auggie process to reclaim memory', {
+        agentId: this.config.agentId,
+        pid: this.agentProcess?.pid,
+        timeoutMs: IDLE_TIMEOUT_CONFIG.IDLE_TIMEOUT_MS,
+      });
+
+      // stopAgentProcess sets isRestartingProcess/isStoppingIntentionally which
+      // prevents handleProcessExit from auto-restarting.
+      this.stopAgentProcess().catch((err) => {
+        logger.warn('Failed to stop idle agent process', {
+          agentId: this.config.agentId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }, IDLE_TIMEOUT_CONFIG.IDLE_TIMEOUT_MS);
+
+    // Prevent the timer from keeping the Node.js event loop alive
+    // (important so the app can exit cleanly without waiting for the timeout)
+    if (this.idleTimer.unref) {
+      this.idleTimer.unref();
+    }
+  }
+
+  /**
+   * Clear the idle timer (e.g. when the agent becomes active or on dispose).
+   */
+  private clearIdleTimer(): void {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = undefined;
+    }
+  }
+
   /**
    * Stop the agent process only (without disposing the provider).
    * Used for recovery from stuck states where we need to restart the agent.
@@ -6098,6 +6209,9 @@ export class ACPProvider extends BaseAgentProvider {
       hasRemoteProcess: !!this.remoteProcess,
       pid: this.agentProcess?.pid,
     });
+
+    // Clear idle timer — the process is being killed explicitly
+    this.clearIdleTimer();
 
     // Mark as restarting to prevent handleProcessExit from doing its own restart
     // This is important because handleProcessExit fires asynchronously when the process exits
@@ -6114,7 +6228,8 @@ export class ACPProvider extends BaseAgentProvider {
 
     // Kill local agent process tree
     if (this.agentProcess) {
-      logger.info('Killing local agent process tree for recovery', { pid: this.agentProcess.pid });
+      const pid = this.agentProcess.pid;
+      logger.info('Killing local agent process tree for recovery', { pid });
       // Remove all stream listeners before killing to prevent orphaned native handles
       // that can cause SIGSEGV in AsyncWrap::~AsyncWrap() during GC
       this.agentProcess.removeAllListeners('exit');
@@ -6125,6 +6240,10 @@ export class ACPProvider extends BaseAgentProvider {
       await killChildProcessTree(this.agentProcess);
       // Wait a bit for process tree to fully terminate
       await new Promise((resolve) => setTimeout(resolve, 200));
+      // Deregister from global registry — exit listeners were removed so handleProcessExit won't fire
+      if (pid) {
+        deregisterProcess(pid);
+      }
       this.agentProcess = undefined;
     }
 
@@ -6166,6 +6285,9 @@ export class ACPProvider extends BaseAgentProvider {
       clearInterval(this.healthCheckInterval);
       this.healthCheckInterval = undefined;
     }
+
+    // Clear idle timer
+    this.clearIdleTimer();
 
     // Clear all timers
     this.streamCompletionTimers.forEach((timer) => clearTimeout(timer));
@@ -7016,8 +7138,14 @@ export class ACPProvider extends BaseAgentProvider {
       }
     }
 
-    // Set streaming flag
+    // Set streaming flag and cancel idle timer — process is active
     this.isStreaming = true;
+    this.clearIdleTimer();
+
+    // Mark process as active in the global registry so it won't be evicted
+    if (this.agentProcess?.pid) {
+      markProcessActive(this.agentProcess.pid);
+    }
 
     // Store the frontend session ID if provided
     if (options.frontendSessionId) {
@@ -8610,6 +8738,12 @@ export class ACPProvider extends BaseAgentProvider {
     // Reset streaming flag if no more active streams
     if (this.streamingCallbacks.size === 0) {
       this.isStreaming = false;
+      // Mark process idle in the global registry so it can be evicted if needed
+      if (this.agentProcess?.pid) {
+        markProcessIdle(this.agentProcess.pid);
+      }
+      // All streams done — start the idle timer so the process is killed if unused
+      this.resetIdleTimer();
     }
   }
 
@@ -9314,6 +9448,11 @@ export class ACPProvider extends BaseAgentProvider {
       stderr: [...this.recentStderrErrors],
       command: this.config.command,
     };
+
+    // Deregister from the global process registry so the slot is freed
+    if (dyingProcess?.pid) {
+      deregisterProcess(dyingProcess.pid);
+    }
 
     // Now safe to clear the reference
     this.agentProcess = undefined;
