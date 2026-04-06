@@ -242,8 +242,15 @@ export class ACPStreamParser {
   private buffer: string = '';
   private readonly MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB limit
   // Large threshold for buffer cleanup - file content can be very large
-  // Only reset if buffer is truly stuck (1MB without valid JSON)
-  private readonly BUFFER_CLEANUP_THRESHOLD = 1 * 1024 * 1024; // 1MB
+  // Messages are often 1-1.1MB, so threshold must be well above that
+  private readonly BUFFER_CLEANUP_THRESHOLD = 5 * 1024 * 1024; // 5MB
+  // Threshold below which we always try fallback JSON parsing
+  // Above this, we only try fallback if NDJSON didn't yield any messages
+  private readonly FALLBACK_PARSE_THRESHOLD = 256 * 1024; // 256KB
+  // Rate-limit large buffer warnings to avoid log spam
+  private readonly LOG_RATE_LIMIT_MS = 5000; // 5 seconds
+  private lastLargeBufferWarningTime = 0;
+  private lastBufferResetErrorTime = 0;
 
   /**
    * Parse a chunk of streaming data
@@ -257,12 +264,30 @@ export class ACPStreamParser {
 
     // Check buffer size before adding chunk
     if (this.buffer.length + chunk.length > this.MAX_BUFFER_SIZE) {
-      logger.error('ACPStreamParser buffer overflow - resetting', {
-        bufferSize: this.buffer.length,
-        chunkSize: chunk.length,
-      });
+      this.logRateLimited(
+        'error',
+        'lastBufferResetErrorTime',
+        'ACPStreamParser buffer overflow - resetting',
+        {
+          bufferSize: this.buffer.length,
+          chunkSize: chunk.length,
+        }
+      );
       this.reset();
-      // Try to recover by processing just this chunk
+
+      // If a single chunk exceeds MAX_BUFFER_SIZE, skip it entirely
+      if (chunk.length > this.MAX_BUFFER_SIZE) {
+        this.logRateLimited(
+          'error',
+          'lastBufferResetErrorTime',
+          'ACPStreamParser: single chunk exceeds MAX_BUFFER_SIZE, dropping',
+          {
+            chunkSize: chunk.length,
+          }
+        );
+        return [];
+      }
+      // Otherwise try to recover by processing just this chunk
     }
 
     this.buffer += chunk;
@@ -293,9 +318,14 @@ export class ACPStreamParser {
     // Keep the last (potentially incomplete) line in the buffer
     this.buffer = lines[lines.length - 1];
 
-    // Try to parse complete JSON objects from buffer even without newlines
-    // This handles cases where messages are sent without trailing newlines
-    if (this.buffer.length > 0) {
+    // Try fallback JSON parsing when the buffer might contain complete JSON objects
+    // without trailing newlines. For small buffers (< 256KB), always try to avoid
+    // dropping trailing messages. For large buffers, only try if NDJSON didn't yield
+    // any messages (to avoid expensive O(n) scanning on large unparseable buffers).
+    const shouldTryFallback =
+      this.buffer.length > 0 &&
+      (this.buffer.length <= this.FALLBACK_PARSE_THRESHOLD || messages.length === 0);
+    if (shouldTryFallback) {
       const parsed = this.tryParseCompleteJson();
       if (parsed.length > 0) {
         messages.push(...parsed);
@@ -305,10 +335,17 @@ export class ACPStreamParser {
     // Only reset buffer if it's extremely large and still unparseable
     // This prevents data loss for large but valid messages
     if (this.buffer.length > this.BUFFER_CLEANUP_THRESHOLD) {
-      logger.warn('ACPStreamParser: Very large buffer, attempting final parse', {
-        bufferSize: this.buffer.length,
-        preview: this.buffer.substring(0, 100),
-      });
+      const now = Date.now();
+      const shouldLogWarning = now - this.lastLargeBufferWarningTime >= this.LOG_RATE_LIMIT_MS;
+
+      if (shouldLogWarning) {
+        this.lastLargeBufferWarningTime = now;
+        logger.warn('ACPStreamParser: Very large buffer, attempting final parse', {
+          bufferSize: this.buffer.length,
+          preview: this.buffer.substring(0, 100),
+        });
+      }
+
       // Try one more time to parse
       try {
         const message = JSON.parse(this.buffer);
@@ -316,14 +353,35 @@ export class ACPStreamParser {
         this.buffer = '';
       } catch {
         // Buffer is truly stuck - reset it
-        logger.error('ACPStreamParser: Buffer reset due to unparseable content', {
-          bufferSize: this.buffer.length,
-        });
+        this.logRateLimited(
+          'error',
+          'lastBufferResetErrorTime',
+          'ACPStreamParser: Buffer reset due to unparseable content',
+          {
+            bufferSize: this.buffer.length,
+          }
+        );
         this.buffer = '';
       }
     }
 
     return messages;
+  }
+
+  /**
+   * Log a message at most once per LOG_RATE_LIMIT_MS
+   */
+  private logRateLimited(
+    level: 'warn' | 'error',
+    timestampField: 'lastLargeBufferWarningTime' | 'lastBufferResetErrorTime',
+    message: string,
+    data: Record<string, any>
+  ): void {
+    const now = Date.now();
+    if (now - this[timestampField] >= this.LOG_RATE_LIMIT_MS) {
+      this[timestampField] = now;
+      logger[level](message, data);
+    }
   }
 
   /**

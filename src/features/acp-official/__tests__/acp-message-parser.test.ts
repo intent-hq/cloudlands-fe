@@ -9,13 +9,19 @@ import {
   extractACPToolCalls,
 } from '../parsers/acp-message-parser';
 
+// Shared mock functions so we can inspect calls from the module-level logger
+const { mockWarn, mockError } = vi.hoisted(() => ({
+  mockWarn: vi.fn(),
+  mockError: vi.fn(),
+}));
+
 // Mock the Logger
 vi.mock('../../../shared/logger', () => ({
   Logger: class MockLogger {
     debug = vi.fn();
     info = vi.fn();
-    warn = vi.fn();
-    error = vi.fn();
+    warn = mockWarn;
+    error = mockError;
   },
 }));
 
@@ -80,6 +86,10 @@ describe('acp-message-parser', () => {
       parser = new ACPStreamParser();
     });
 
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
     it('should parse complete JSON line', () => {
       const messages = parser.parseChunk('{"method":"test"}\n');
       expect(messages).toHaveLength(1);
@@ -113,6 +123,121 @@ describe('acp-message-parser', () => {
       const messages = parser.parseChunk('{"method":"fresh"}\n');
       expect(messages).toHaveLength(1);
       expect(messages[0].method).toBe('fresh');
+    });
+
+    it('should parse messages slightly larger than 1MB', () => {
+      // Create a message with ~1.1MB of content (this would fail with old 1MB threshold)
+      const largeText = 'x'.repeat(1.1 * 1024 * 1024);
+      const largeMessage = JSON.stringify({ method: 'large', data: largeText });
+
+      // Send the message as a single NDJSON line
+      const messages = parser.parseChunk(largeMessage + '\n');
+      expect(messages).toHaveLength(1);
+      expect(messages[0].method).toBe('large');
+      expect(messages[0].data.length).toBe(largeText.length);
+    });
+
+    it('should parse large messages arriving in multiple chunks', () => {
+      const largeText = 'y'.repeat(1.05 * 1024 * 1024);
+      const fullLine = JSON.stringify({ method: 'chunked', payload: largeText }) + '\n';
+
+      // Split into 3 chunks
+      const chunkSize = Math.ceil(fullLine.length / 3);
+      const chunk1 = fullLine.substring(0, chunkSize);
+      const chunk2 = fullLine.substring(chunkSize, chunkSize * 2);
+      const chunk3 = fullLine.substring(chunkSize * 2);
+
+      const messages1 = parser.parseChunk(chunk1);
+      expect(messages1).toHaveLength(0);
+
+      const messages2 = parser.parseChunk(chunk2);
+      expect(messages2).toHaveLength(0);
+
+      const messages3 = parser.parseChunk(chunk3);
+      expect(messages3).toHaveLength(1);
+      expect(messages3[0].method).toBe('chunked');
+    });
+
+    it('should reset buffer when it exceeds the cleanup threshold (5MB) with unparseable content', () => {
+      // Feed >5MB of non-JSON data without newlines
+      const garbageChunk = 'not-json-'.repeat(600_000); // ~5.4MB
+      const messages1 = parser.parseChunk(garbageChunk);
+      // Buffer should have been reset after exceeding threshold
+      expect(messages1).toHaveLength(0);
+
+      // Parser should still work after reset
+      const messages2 = parser.parseChunk('{"method":"recovered"}\n');
+      expect(messages2).toHaveLength(1);
+      expect(messages2[0].method).toBe('recovered');
+    });
+
+    it('should not call tryParseCompleteJson for large buffers when NDJSON lines yield messages', () => {
+      // When we get complete NDJSON lines and a large trailing buffer,
+      // tryParseCompleteJson should be skipped for performance.
+      // Build a trailing *complete* JSON object > 256KB (no trailing \n).
+      // If tryParseCompleteJson ran, it would find and parse this object,
+      // giving us 2 messages instead of 1.
+      const largeComplete = '{"data":"' + 'x'.repeat(300 * 1024) + '"}';
+      const messages = parser.parseChunk('{"method":"line1"}\n' + largeComplete);
+      expect(messages).toHaveLength(1);
+      expect(messages[0].method).toBe('line1');
+    });
+
+    it('should still parse trailing complete JSON after NDJSON lines when buffer is small', () => {
+      // When buffer is small (< 256KB), tryParseCompleteJson should be called
+      // even if NDJSON lines already yielded messages, to catch trailing objects
+      // without a trailing newline.
+      const messages = parser.parseChunk('{"method":"line1"}\n{"method":"trailing"}');
+      expect(messages).toHaveLength(2);
+      expect(messages[0].method).toBe('line1');
+      expect(messages[1].method).toBe('trailing');
+    });
+
+    it('should handle single chunk larger than MAX_BUFFER_SIZE', () => {
+      // A single chunk > 10MB should be dropped entirely, not overflow the buffer
+      const hugeChunk = 'x'.repeat(11 * 1024 * 1024); // 11MB, > MAX_BUFFER_SIZE
+      const messages = parser.parseChunk(hugeChunk);
+      expect(messages).toHaveLength(0);
+
+      // Parser should still work after dropping the oversized chunk
+      const messages2 = parser.parseChunk('{"method":"after_huge"}\n');
+      expect(messages2).toHaveLength(1);
+      expect(messages2[0].method).toBe('after_huge');
+    });
+
+    it('should rate-limit warning logs for large buffers', () => {
+      vi.useFakeTimers();
+      mockWarn.mockClear();
+      mockError.mockClear();
+
+      const rateLimitParser = new ACPStreamParser();
+      const largeContent = 'a'.repeat(5.5 * 1024 * 1024); // >5MB
+
+      // First call - should trigger warn + error logs
+      rateLimitParser.parseChunk(largeContent);
+      const warnCountAfterFirst = mockWarn.mock.calls.length;
+      const errorCountAfterFirst = mockError.mock.calls.length;
+      expect(warnCountAfterFirst + errorCountAfterFirst).toBeGreaterThan(0);
+
+      // Second call immediately (within 5s window) - should be rate-limited
+      rateLimitParser.parseChunk(largeContent);
+      expect(mockWarn.mock.calls.length).toBe(warnCountAfterFirst);
+      expect(mockError.mock.calls.length).toBe(errorCountAfterFirst);
+
+      // Advance time past the rate limit window (5 seconds)
+      vi.advanceTimersByTime(5001);
+
+      // Third call - should log again since rate limit expired
+      rateLimitParser.parseChunk(largeContent);
+      const totalAfterThird = mockWarn.mock.calls.length + mockError.mock.calls.length;
+      const totalAfterSecond = warnCountAfterFirst + errorCountAfterFirst;
+      expect(totalAfterThird).toBeGreaterThan(totalAfterSecond);
+
+      // Parser should still function
+      const messages = rateLimitParser.parseChunk('{"method":"after_rate_limit"}\n');
+      expect(messages).toHaveLength(1);
+      expect(messages[0].method).toBe('after_rate_limit');
+
     });
   });
 
