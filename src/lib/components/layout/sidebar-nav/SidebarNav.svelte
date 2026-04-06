@@ -155,9 +155,18 @@
       return;
     }
 
+    // Set deferred leave so the hover card can cancel it if the pointer
+    // crosses the gap and enters the card before the timeout fires.
+    dispatch(setDeferredLeave('nav'));
+
     leaveTimeout = setTimeout(() => {
-      dispatch(setHoveredItem(null));
-      // Don't clear expandedItem on mouse leave - it stays until clicked elsewhere
+      // Only close if the deferred leave wasn't cleared (e.g. by the card's mouseenter)
+      const state = getReduxStore().getState();
+      if (state.sidebarNav.deferredLeave === 'nav') {
+        dispatch(clearDeferredLeave());
+        dispatch(setHoveredItem(null));
+        // Don't clear expandedItem on mouse leave - it stays until clicked elsewhere
+      }
     }, 200);
   }
 

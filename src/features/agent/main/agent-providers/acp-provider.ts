@@ -8544,7 +8544,30 @@ export class ACPProvider extends BaseAgentProvider {
                       .filter((id) => id !== completionSessionId);
 
                     for (const relatedId of relatedSessionIds) {
-                      if (this.streamingCallbacks.has(relatedId)) {
+                      const relatedCallbacks = this.streamingCallbacks.get(relatedId);
+                      if (relatedCallbacks) {
+                        // Don't clean up callbacks from a NEWER stream generation.
+                        // When a second streamMessage registers callbacks before the first
+                        // stream's completion cleanup runs, the new callbacks share session
+                        // IDs (e.g. agentId) but belong to a higher generation. Cleaning
+                        // them here would cause "Cannot complete stream" errors for the
+                        // new stream.
+                        if (
+                          capturedGeneration !== undefined &&
+                          relatedCallbacks.streamGeneration !== undefined &&
+                          relatedCallbacks.streamGeneration > capturedGeneration
+                        ) {
+                          logger.debug(
+                            'Skipping cleanup of related session callback - belongs to newer generation',
+                            {
+                              sessionId: relatedId,
+                              primarySessionId: completionSessionId,
+                              relatedGeneration: relatedCallbacks.streamGeneration,
+                              completingGeneration: capturedGeneration,
+                            },
+                          );
+                          continue;
+                        }
                         logger.debug('Cleaning up related session callback', {
                           sessionId: relatedId,
                           primarySessionId: completionSessionId,
@@ -9052,6 +9075,7 @@ export class ACPProvider extends BaseAgentProvider {
 
       // Clean up any other related session IDs after completion
       // This prevents duplicate inactivity timeouts
+      const completingGeneration = callbacks.streamGeneration;
       const relatedSessionIds = [
         this.sessionId,
         this.frontendSessionId,
@@ -9059,7 +9083,28 @@ export class ACPProvider extends BaseAgentProvider {
       ].filter((id): id is string => Boolean(id) && id !== sessionId);
 
       for (const relatedId of relatedSessionIds) {
-        if (this.streamingCallbacks.has(relatedId)) {
+        const relatedCallbacks = this.streamingCallbacks.get(relatedId);
+        if (relatedCallbacks) {
+          // Don't clean up callbacks from a NEWER stream generation.
+          // A second streamMessage may have registered new callbacks under a shared
+          // session ID (e.g. agentId) before this completion handler runs. Those
+          // callbacks belong to the active stream and must not be removed.
+          if (
+            completingGeneration !== undefined &&
+            relatedCallbacks.streamGeneration !== undefined &&
+            relatedCallbacks.streamGeneration > completingGeneration
+          ) {
+            logger.debug(
+              'Skipping cleanup of related session callback in handleStreamCompletion - belongs to newer generation',
+              {
+                sessionId: relatedId,
+                primarySessionId: sessionId,
+                relatedGeneration: relatedCallbacks.streamGeneration,
+                completingGeneration,
+              },
+            );
+            continue;
+          }
           logger.debug('Cleaning up related session callback in handleStreamCompletion', {
             sessionId: relatedId,
             primarySessionId: sessionId,
@@ -9070,7 +9115,26 @@ export class ACPProvider extends BaseAgentProvider {
     }
 
     // Clean up the primary session callback after onComplete finishes
-    this.cleanupStreamingCallback(sessionId);
+    // But only if it still belongs to the same generation — a new stream may have
+    // registered fresh callbacks under the same sessionId while we awaited onComplete.
+    const primaryCallbacks = this.streamingCallbacks.get(sessionId);
+    if (
+      primaryCallbacks &&
+      callbacks.streamGeneration !== undefined &&
+      primaryCallbacks.streamGeneration !== undefined &&
+      primaryCallbacks.streamGeneration > callbacks.streamGeneration
+    ) {
+      logger.debug(
+        'Skipping primary session cleanup - callbacks belong to newer generation',
+        {
+          sessionId,
+          completingGeneration: callbacks.streamGeneration,
+          currentGeneration: primaryCallbacks.streamGeneration,
+        },
+      );
+    } else {
+      this.cleanupStreamingCallback(sessionId);
+    }
 
     // CRITICAL: Clear the messageAccumulator ONLY for session IDs related to THIS agent.
     // DO NOT clear all active accumulators - that would destroy content for other agents!

@@ -25,6 +25,7 @@ import {
   clearWokenUp,
   resetSubscriptionUI,
 } from '../agent-subscription-ui-slice';
+import { selectTrackedAgentIds } from '../agent-subscription-ui-selectors';
 import type {
   Subscription,
   DelegationGroupStatus,
@@ -143,10 +144,20 @@ export function* fetchAndDispatchSnapshot(wsId: string, agentId: string) {
 // Per-workspace event handler
 // ---------------------------------------------------------------------------
 
-function* handleSubscriptionEvent(wsId: string, event: SubscriptionIpcEvent) {
+export function* handleSubscriptionEvent(wsId: string, event: SubscriptionIpcEvent) {
   const { eventName, agentId, data } = event;
 
-  if (!agentId) return;
+  // System-level subscription changes (e.g. bumpVersion cleanup) have no agentId.
+  // Refresh all tracked agents so the UI picks up removals.
+  if (!agentId) {
+    if (eventName === 'agent:subscriptions-changed') {
+      const trackedIds: string[] = yield* select(selectTrackedAgentIds.select, wsId);
+      for (const id of trackedIds) {
+        yield* call(fetchAndDispatchSnapshot, wsId, id);
+      }
+    }
+    return;
+  }
 
   // Always fetch fresh snapshot on any relevant event
   yield* call(fetchAndDispatchSnapshot, wsId, agentId);

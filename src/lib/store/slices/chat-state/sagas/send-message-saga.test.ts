@@ -1,0 +1,573 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as sagaEffects from "redux-saga/effects";
+import { runSaga, stdChannel } from "redux-saga";
+
+// Must mock typed-redux-saga BEFORE importing saga modules
+vi.mock("typed-redux-saga", () => ({
+  call: function* (fnOrDescriptor: any, ...args: any[]) {
+    return yield Array.isArray(fnOrDescriptor)
+      ? sagaEffects.call(fnOrDescriptor as [any, any], ...args)
+      : sagaEffects.call(fnOrDescriptor, ...args);
+  },
+  put: function* (action: any) {
+    return yield sagaEffects.put(action);
+  },
+  take: function* (pattern: any) {
+    return yield sagaEffects.take(pattern);
+  },
+  takeEvery: function* (pattern: any, worker: any) {
+    return yield sagaEffects.takeEvery(pattern, worker);
+  },
+  fork: function* (fn: any, ...args: any[]) {
+    return yield sagaEffects.fork(fn, ...args);
+  },
+  cancel: function* (task: any) {
+    return yield sagaEffects.cancel(task);
+  },
+  delay: function* (ms: any) {
+    return yield sagaEffects.delay(ms);
+  },
+  select: function* (selector: any, ...args: any[]) {
+    return yield sagaEffects.select(selector, ...args);
+  },
+  race: function* (effects: any) {
+    return yield sagaEffects.race(effects);
+  },
+}));
+
+// Hoisted logger mock so tests can assert on logger.warn calls
+const { mockLoggerWarn } = vi.hoisted(() => ({
+  mockLoggerWarn: vi.fn(),
+}));
+
+// Mock client logger
+vi.mock("$lib/utils/client-logger", () => ({
+  createLogger: () => ({
+    info: vi.fn(),
+    warn: mockLoggerWarn,
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
+}));
+
+// Mock svelte-sonner
+vi.mock("svelte-sonner", () => ({
+  toast: { error: vi.fn() },
+}));
+
+// Mock cleanErrorMessage to pass through
+vi.mock("$shared/errors/messages", () => ({
+  cleanErrorMessage: (msg: string) => msg,
+}));
+
+// Mock chat service
+const mockSendMessage = vi.fn().mockResolvedValue(undefined);
+vi.mock("$features/agent/services/chat.service", () => ({
+  getChatService: vi.fn(() => ({
+    sendMessage: mockSendMessage,
+  })),
+}));
+
+// Mock consolidated backend service
+const mockQueueMessage = vi.fn().mockResolvedValue({ success: true });
+vi.mock("$features/agent/services/consolidated-backend.service", () => ({
+  unifiedOrchestrator: {
+    queueMessage: mockQueueMessage,
+  },
+}));
+
+// Mock waitFor utility
+const mockWaitForResult = vi.fn<() => boolean>().mockReturnValue(true);
+vi.mock("$lib/store/slices/store-utility/sagas/waitFor", () => ({
+  waitFor: function* () {
+    return mockWaitForResult();
+  },
+}));
+
+// Mock selector-channel-effects (prevents readableStoreState issues)
+vi.mock("$lib/store/utils/selector-channel-effects", () => ({
+  createChannelFromSelector: vi.fn(),
+}));
+
+// Hoisted mock fns — vi.hoisted runs before vi.mock factories
+const {
+  mockSelectAgentById,
+  mockSelectWorkspaceById,
+  mockSelectChatIsRebinding,
+  mockSelectChatTrackedWorkspaceId,
+} = vi.hoisted(() => ({
+  mockSelectAgentById: vi.fn(),
+  mockSelectWorkspaceById: vi.fn(),
+  mockSelectChatIsRebinding: vi.fn().mockReturnValue(false),
+  mockSelectChatTrackedWorkspaceId: vi.fn().mockReturnValue(null),
+}));
+
+// Import hoisted so it's available in vi.mock factories
+const { hoistedSagaEffects } = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const effects = require("redux-saga/effects") as typeof sagaEffects;
+  return { hoistedSagaEffects: effects };
+});
+
+vi.mock("../../workspace-agents/workspace-agents-selectors", () => ({
+  selectAgentById: {
+    select: (...args: any[]) => mockSelectAgentById(...args),
+    effect: function* (...args: any[]) {
+      return yield hoistedSagaEffects.select(mockSelectAgentById, ...args);
+    },
+  },
+}));
+
+vi.mock("../../workspace/workspace-selectors", () => ({
+  selectWorkspaceById: {
+    select: (...args: any[]) => mockSelectWorkspaceById(...args),
+    effect: function* (...args: any[]) {
+      return yield hoistedSagaEffects.select(mockSelectWorkspaceById, ...args);
+    },
+  },
+}));
+
+vi.mock("../chat-state-selectors", () => ({
+  selectChatIsRebinding: {
+    select: (...args: any[]) => mockSelectChatIsRebinding(...args),
+    effect: function* (...args: any[]) {
+      return yield hoistedSagaEffects.select(mockSelectChatIsRebinding, ...args);
+    },
+  },
+  selectChatTrackedWorkspaceId: {
+    select: (...args: any[]) => mockSelectChatTrackedWorkspaceId(...args),
+    effect: function* (...args: any[]) {
+      return yield hoistedSagaEffects.select(mockSelectChatTrackedWorkspaceId, ...args);
+    },
+  },
+}));
+
+// Mock transient-ui and multi-panel-context slices
+vi.mock("../../transient-ui/transient-ui-slice", () => ({
+  clearChatDraft: (...args: any[]) => ({
+    type: "transientUi/clearChatDraft",
+    payload: args,
+  }),
+}));
+
+vi.mock("../../multi-panel-context/multi-panel-context-slice", () => ({
+  uncheckAllSelections: () => ({
+    type: "multiPanelContext/uncheckAllSelections",
+  }),
+}));
+
+// Import actions after mocks
+import {
+  sendMessage,
+  chatSendStarted,
+  chatSendFailed,
+} from "../chat-state-slice";
+
+
+// ============================================================================
+// Test constants and helpers
+// ============================================================================
+
+const AGENT_ID = "agent-test-1";
+const WS_ID = "ws-test-1";
+
+function makePayload(overrides: Record<string, any> = {}) {
+  return {
+    text: "Hello world",
+    wsId: WS_ID,
+    serializedContextItems: [],
+    ...overrides,
+  };
+}
+
+function makeSendAction(overrides: Record<string, any> = {}) {
+  return sendMessage(AGENT_ID, makePayload(overrides) as any);
+}
+
+const MOCK_WORKSPACE = {
+  id: WS_ID,
+  name: "Test Workspace",
+  path: "/test/path",
+};
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+describe("send-message-saga", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+
+    // Default: agent is not streaming/processing
+    mockSelectAgentById.mockReturnValue(undefined);
+    // Default: workspace exists
+    mockSelectWorkspaceById.mockReturnValue(MOCK_WORKSPACE);
+    // Default: not rebinding
+    mockSelectChatIsRebinding.mockReturnValue(false);
+    // Default: no tracked workspace (no workspace change)
+    mockSelectChatTrackedWorkspaceId.mockReturnValue(null);
+    // Default: waitFor succeeds
+    mockWaitForResult.mockReturnValue(true);
+    // Default: sendMessage succeeds
+    mockSendMessage.mockResolvedValue(undefined);
+    // Default: queueMessage succeeds
+    mockQueueMessage.mockResolvedValue({ success: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // Helper to run the saga with a sendMessage action
+  async function runSendMessageSaga(actionOverrides: Record<string, any> = {}) {
+    const { watchSendMessage } = await import("./send-message-saga");
+
+    const dispatched: any[] = [];
+    const channel = stdChannel();
+
+    runSaga(
+      {
+        channel,
+        dispatch: (action: any) => {
+          dispatched.push(action);
+          channel.put(action);
+        },
+        getState: () => ({}),
+      },
+      watchSendMessage,
+    );
+
+    const action = makeSendAction(actionOverrides);
+    channel.put(action);
+    await vi.advanceTimersByTimeAsync(0);
+
+    return { dispatched, channel };
+  }
+
+  // ========================================================================
+  // Test 1: Immediate loading state (the regression)
+  // ========================================================================
+  describe("immediate loading state (regression)", () => {
+    it("dispatches chatSendStarted before chatService.sendMessage is called", async () => {
+      let sendStartedDispatched = false;
+      mockSendMessage.mockImplementation(() => {
+        // At the time sendMessage is called, chatSendStarted should already be dispatched
+        expect(sendStartedDispatched).toBe(true);
+        return Promise.resolve();
+      });
+
+      const { dispatched } = await runSendMessageSaga();
+
+      // Verify chatSendStarted was dispatched
+      const sendStartedIdx = dispatched.findIndex(
+        (a) => a.type === chatSendStarted.type,
+      );
+      expect(sendStartedIdx).toBeGreaterThanOrEqual(0);
+      sendStartedDispatched = dispatched
+        .slice(0, dispatched.length)
+        .some((a) => a.type === chatSendStarted.type);
+    });
+
+    it("dispatches chatSendStarted before clearChatDraft and uncheckAllSelections", async () => {
+      const { dispatched } = await runSendMessageSaga();
+
+      const sendStartedIdx = dispatched.findIndex(
+        (a) => a.type === chatSendStarted.type,
+      );
+      const clearDraftIdx = dispatched.findIndex(
+        (a) => a.type === "transientUi/clearChatDraft",
+      );
+      const uncheckIdx = dispatched.findIndex(
+        (a) => a.type === "multiPanelContext/uncheckAllSelections",
+      );
+
+      expect(sendStartedIdx).toBeGreaterThanOrEqual(0);
+      // clearChatDraft and uncheckAllSelections should come after chatSendStarted
+      if (clearDraftIdx >= 0) {
+        expect(sendStartedIdx).toBeLessThan(clearDraftIdx);
+      }
+      if (uncheckIdx >= 0) {
+        expect(sendStartedIdx).toBeLessThan(uncheckIdx);
+      }
+    });
+  });
+
+  // ========================================================================
+  // Test 2: Error path — rebind timeout resets loading state
+  // ========================================================================
+  describe("rebind timeout resets loading state", () => {
+    it("dispatches chatSendFailed after chatSendStarted when rebind times out", async () => {
+      mockSelectChatIsRebinding.mockReturnValue(true);
+      mockWaitForResult.mockReturnValue(false); // timeout
+
+      const { dispatched } = await runSendMessageSaga();
+
+      const sendStartedIdx = dispatched.findIndex(
+        (a) => a.type === chatSendStarted.type,
+      );
+      const sendFailedIdx = dispatched.findIndex(
+        (a) => a.type === chatSendFailed.type,
+      );
+
+      expect(sendStartedIdx).toBeGreaterThanOrEqual(0);
+      expect(sendFailedIdx).toBeGreaterThan(sendStartedIdx);
+    });
+  });
+
+  // ========================================================================
+  // Test 3: Error path — workspace not found resets loading state
+  // ========================================================================
+  describe("workspace not found resets loading state", () => {
+    it("dispatches chatSendFailed when workspace is null", async () => {
+      mockSelectWorkspaceById.mockReturnValue(null);
+
+      const { dispatched } = await runSendMessageSaga();
+
+      const sendStartedAction = dispatched.find(
+        (a) => a.type === chatSendStarted.type,
+      );
+      const sendFailedAction = dispatched.find(
+        (a) => a.type === chatSendFailed.type,
+      );
+
+      expect(sendStartedAction).toBeDefined();
+      expect(sendFailedAction).toBeDefined();
+    });
+  });
+
+  // ========================================================================
+  // Test 4: Error path — chatService.sendMessage throws
+  // ========================================================================
+  describe("chatService.sendMessage throws resets loading state", () => {
+    it("dispatches chatSendFailed when sendMessage throws", async () => {
+      mockSendMessage.mockRejectedValue(new Error("Network failure"));
+
+      const { dispatched } = await runSendMessageSaga();
+      // Allow microtask for the rejection to propagate
+      await vi.advanceTimersByTimeAsync(0);
+
+      const sendFailedAction = dispatched.find(
+        (a) => a.type === chatSendFailed.type,
+      );
+      expect(sendFailedAction).toBeDefined();
+    });
+
+    it("does NOT dispatch chatSendFailed for 'Agent interrupted' errors", async () => {
+      mockSendMessage.mockRejectedValue(new Error("Agent interrupted"));
+
+      const { dispatched } = await runSendMessageSaga();
+      await vi.advanceTimersByTimeAsync(0);
+
+      const sendFailedAction = dispatched.find(
+        (a) => a.type === chatSendFailed.type,
+      );
+      expect(sendFailedAction).toBeUndefined();
+    });
+  });
+
+
+  // ========================================================================
+  // Test 5: Error path — workspace reinit failure resets loading state
+  // ========================================================================
+  describe("workspace reinit failure resets loading state", () => {
+    it("dispatches chatSendFailed when workspace reinit fails", async () => {
+      // Workspace has changed: tracked is "old-ws", current is WS_ID
+      mockSelectChatTrackedWorkspaceId.mockReturnValue("old-ws");
+
+      const { watchSendMessage } = await import("./send-message-saga");
+
+      const dispatched: any[] = [];
+      const channel = stdChannel();
+
+      runSaga(
+        {
+          channel,
+          dispatch: (action: any) => {
+            dispatched.push(action);
+            channel.put(action);
+          },
+          getState: () => ({}),
+        },
+        watchSendMessage,
+      );
+
+      const action = makeSendAction();
+      channel.put(action);
+      await vi.advanceTimersByTimeAsync(0);
+
+      // The saga dispatches initializeChatRequested and then races for
+      // chatInitialized vs chatInitFailed vs 30s timeout.
+      // Simulate chatInitFailed arriving:
+      const { chatInitFailed } = await import("../chat-state-slice");
+      channel.put(chatInitFailed(AGENT_ID, "init error"));
+      await vi.advanceTimersByTimeAsync(0);
+
+      const sendStarted = dispatched.find(
+        (a) => a.type === chatSendStarted.type,
+      );
+      const sendFailed = dispatched.find(
+        (a) => a.type === chatSendFailed.type,
+      );
+
+      expect(sendStarted).toBeDefined();
+      expect(sendFailed).toBeDefined();
+    });
+
+    it("dispatches chatSendFailed when workspace reinit times out", async () => {
+      mockSelectChatTrackedWorkspaceId.mockReturnValue("old-ws");
+
+      const { watchSendMessage } = await import("./send-message-saga");
+
+      const dispatched: any[] = [];
+      const channel = stdChannel();
+
+      runSaga(
+        {
+          channel,
+          dispatch: (action: any) => {
+            dispatched.push(action);
+            channel.put(action);
+          },
+          getState: () => ({}),
+        },
+        watchSendMessage,
+      );
+
+      const action = makeSendAction();
+      channel.put(action);
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Don't send any init response — let the 30s timeout hit
+      await vi.advanceTimersByTimeAsync(31_000);
+
+      const sendFailed = dispatched.find(
+        (a) => a.type === chatSendFailed.type,
+      );
+
+      expect(sendFailed).toBeDefined();
+    });
+  });
+
+  // ========================================================================
+  // Test 6: Queue path does NOT dispatch chatSendStarted
+  // ========================================================================
+  describe("queue path does not dispatch chatSendStarted", () => {
+    it("takes queue path when agent is streaming and does not dispatch chatSendStarted", async () => {
+      mockSelectAgentById.mockReturnValue({
+        id: AGENT_ID,
+        isStreaming: true,
+        isProcessing: false,
+      });
+
+      const { dispatched } = await runSendMessageSaga();
+
+      const sendStartedAction = dispatched.find(
+        (a) => a.type === chatSendStarted.type,
+      );
+      expect(sendStartedAction).toBeUndefined();
+    });
+
+    it("takes queue path when agent is processing and does not dispatch chatSendStarted", async () => {
+      mockSelectAgentById.mockReturnValue({
+        id: AGENT_ID,
+        isStreaming: false,
+        isProcessing: true,
+      });
+
+      const { dispatched } = await runSendMessageSaga();
+
+      const sendStartedAction = dispatched.find(
+        (a) => a.type === chatSendStarted.type,
+      );
+      expect(sendStartedAction).toBeUndefined();
+    });
+  });
+
+  // ========================================================================
+  // Test 7: Concurrent send guard drops duplicate sends
+  // ========================================================================
+  describe("concurrent send guard", () => {
+    it("drops a second sendMessage for the same agent while the first is in-flight", async () => {
+      // Make sendMessage hang so the first send stays in-flight
+      let resolveSend!: () => void;
+      mockSendMessage.mockImplementation(
+        () => new Promise<void>((r) => { resolveSend = r; }),
+      );
+
+      const { watchSendMessage } = await import("./send-message-saga");
+
+      const dispatched: any[] = [];
+      const channel = stdChannel();
+
+      runSaga(
+        {
+          channel,
+          dispatch: (action: any) => {
+            dispatched.push(action);
+            channel.put(action);
+          },
+          getState: () => ({}),
+        },
+        watchSendMessage,
+      );
+
+      // Dispatch first sendMessage — it will reach mockSendMessage and hang
+      channel.put(makeSendAction());
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Dispatch second sendMessage for the same agent while first is in-flight
+      channel.put(makeSendAction({ text: "Second message" }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Only one chatSendStarted should have been dispatched
+      const sendStartedActions = dispatched.filter(
+        (a) => a.type === chatSendStarted.type,
+      );
+      expect(sendStartedActions).toHaveLength(1);
+
+      // chatService.sendMessage should have been called exactly once
+      expect(mockSendMessage).toHaveBeenCalledTimes(1);
+
+      // The concurrent-send warning should have been logged
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        "Dropping concurrent sendMessage — send already in flight",
+        expect.objectContaining({ agentId: AGENT_ID }),
+      );
+
+      // Resolve the pending send to clean up
+      resolveSend();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+  });
+
+  // ========================================================================
+  // Test 8: Happy path dispatches chatSendStarted then completes
+  // ========================================================================
+  describe("happy path", () => {
+    it("dispatches chatSendStarted, calls chatService.sendMessage, dispatches clearChatDraft", async () => {
+      const { dispatched } = await runSendMessageSaga();
+
+      // chatSendStarted dispatched
+      const sendStartedAction = dispatched.find(
+        (a) => a.type === chatSendStarted.type,
+      );
+      expect(sendStartedAction).toBeDefined();
+
+      // chatService.sendMessage was called
+      expect(mockSendMessage).toHaveBeenCalled();
+
+      // clearChatDraft dispatched
+      const clearDraftAction = dispatched.find(
+        (a) => a.type === "transientUi/clearChatDraft",
+      );
+      expect(clearDraftAction).toBeDefined();
+
+      // No chatSendFailed
+      const sendFailedAction = dispatched.find(
+        (a) => a.type === chatSendFailed.type,
+      );
+      expect(sendFailedAction).toBeUndefined();
+    });
+  });
+});

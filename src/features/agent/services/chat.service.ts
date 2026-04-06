@@ -42,7 +42,6 @@ import type { ChatAgentState } from '$lib/store/slices/chat-state/chat-state-typ
 import {
   chatInitialized,
   chatInitFailed,
-  chatSendStarted,
   chatSendFailed,
   chatInterrupted,
   chatModelUnavailableSet,
@@ -1531,22 +1530,12 @@ export class ChatService implements IDisposable {
     //   );
     // }
 
-    // Prevent sending while already processing.
-    // Check BOTH Redux state (source of truth once streaming is fully set up) AND the
-    // in-memory ChatService state. There is a window after the pending-agent first-send
-    // where this instance has already set isProcessing/isStreaming=true but Redux state
-    // hasn't been updated yet (activation is in progress). Without checking both, a second
-    // send could overlap the in-flight activation/request.
-    const instanceState = this.getChatState(agentId);
-    if (session.isStreaming || instanceState.isProcessing || instanceState.isStreaming) {
-      logger.warn('Already processing a message for this agent, ignoring new send request', {
-        agentId: session.id,
-        sessionIsStreaming: session.isStreaming,
-        instanceIsProcessing: instanceState.isProcessing,
-        instanceIsStreaming: instanceState.isStreaming,
-      });
-      return;
-    }
+    // NOTE: Concurrency control for sendMessage is handled by the saga layer:
+    // - The saga's `activeSends` Set prevents concurrent sends for the same agent
+    // - The saga checks streaming state for queue-vs-send decisions
+    // - The saga dispatches `chatSendStarted` (which sets isStreaming/isProcessing=true
+    //   in Redux) BEFORE calling this method, so any guard reading those Redux flags
+    //   here would block every send, including legitimate ones.
 
     // Rate limiting
     const now = Date.now();
@@ -1692,12 +1681,8 @@ export class ChatService implements IDisposable {
     // Reset local accumulator when sending a new message
     this.localStreamingContent = '';
 
-    // Dispatch to Redux
-    this.reduxDispatch(chatSendStarted(agentId));
-
-    // Redux dispatch (chatSendStarted) already happened above at line 1825
-    // Note: lastAttemptedMessage is handled by chatSendStarted in the reducer
-    // TODO: If chatSendStarted doesn't set lastAttemptedMessage, we may need a separate action
+    // chatSendStarted is dispatched by the send-message saga before calling sendMessage(),
+    // so we do NOT dispatch it here to avoid a double-dispatch.
 
     // Resolve the workspace identity for activation and send.
     // Use the session's own workspaceId (not the passed-in workspace param which

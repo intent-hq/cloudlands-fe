@@ -36,9 +36,10 @@ vi.mock('typed-redux-saga', () => ({
   },
 }));
 
-const { selectActiveWorkspaceIdMock, invokeMock } = vi.hoisted(() => ({
+const { selectActiveWorkspaceIdMock, invokeMock, selectTrackedAgentIdsMock } = vi.hoisted(() => ({
   selectActiveWorkspaceIdMock: vi.fn(() => null),
   invokeMock: vi.fn(),
+  selectTrackedAgentIdsMock: vi.fn(() => []),
 }));
 
 vi.mock('$lib/electron-bridge', async () => ({
@@ -49,6 +50,12 @@ vi.mock('$lib/electron-bridge', async () => ({
 vi.mock('../../workspace/workspace-selectors', () => ({
   selectActiveWorkspaceId: {
     select: (...args: any[]) => selectActiveWorkspaceIdMock(...args),
+  },
+}));
+
+vi.mock('../agent-subscription-ui-selectors', () => ({
+  selectTrackedAgentIds: {
+    select: (...args: any[]) => selectTrackedAgentIdsMock(...args),
   },
 }));
 
@@ -69,6 +76,7 @@ import {
   handleWorkspaceUnmounted,
   retroactiveMountCheckSaga,
   fetchAndDispatchSnapshot,
+  handleSubscriptionEvent,
 } from './agent-subscription-ui-saga';
 import {
   workspaceMounted,
@@ -219,6 +227,86 @@ describe('agent-subscription-ui-saga', () => {
       });
       expect((putEffect.value as any)?.payload?.action?.type).toBe(expectedAction.type);
       expect((putEffect.value as any)?.payload?.action?.payload?.data?.waitingState).toBe('idle');
+    });
+  });
+
+  describe('handleSubscriptionEvent', () => {
+    it('refreshes all tracked agents on subscriptions-changed without agentId', () => {
+      const trackedAgents = ['agent-1', 'agent-2'];
+      selectTrackedAgentIdsMock.mockReturnValue(trackedAgents);
+
+      const iterator = handleSubscriptionEvent(WS, {
+        eventName: 'agent:subscriptions-changed',
+        workspaceId: WS,
+        agentId: undefined,
+        data: {},
+      });
+
+      // select trackedAgentIds
+      const selectEffect = iterator.next();
+      expect(selectEffect.done).toBe(false);
+
+      // Provide tracked agent IDs
+      const callEffect1 = iterator.next(trackedAgents);
+      expect(callEffect1.done).toBe(false);
+      // Should call fetchAndDispatchSnapshot for agent-1
+      expect((callEffect1.value as any)?.payload?.args).toEqual([WS, 'agent-1']);
+
+      const callEffect2 = iterator.next();
+      expect(callEffect2.done).toBe(false);
+      // Should call fetchAndDispatchSnapshot for agent-2
+      expect((callEffect2.value as any)?.payload?.args).toEqual([WS, 'agent-2']);
+
+      // Should return after processing all tracked agents
+      const done = iterator.next();
+      expect(done.done).toBe(true);
+    });
+
+    it('returns early for non-subscriptions-changed events without agentId', () => {
+      const iterator = handleSubscriptionEvent(WS, {
+        eventName: 'agent:idle',
+        workspaceId: WS,
+        agentId: undefined,
+        data: {},
+      });
+
+      // Should return immediately without any effects
+      const result = iterator.next();
+      expect(result.done).toBe(true);
+    });
+
+    it('fetches snapshot for specific agent when agentId is present', () => {
+      invokeMock.mockResolvedValue({ success: true, data: [], delegationGroups: [], agentStatuses: {} });
+
+      const iterator = handleSubscriptionEvent(WS, {
+        eventName: 'agent:subscribed',
+        workspaceId: WS,
+        agentId: AGENT,
+        data: {},
+      });
+
+      // Should call fetchAndDispatchSnapshot with the specific agentId
+      const callEffect = iterator.next();
+      expect(callEffect.done).toBe(false);
+      expect((callEffect.value as any)?.payload?.args).toEqual([WS, AGENT]);
+    });
+
+    it('handles empty tracked agents list gracefully', () => {
+      selectTrackedAgentIdsMock.mockReturnValue([]);
+
+      const iterator = handleSubscriptionEvent(WS, {
+        eventName: 'agent:subscriptions-changed',
+        workspaceId: WS,
+        agentId: undefined,
+        data: {},
+      });
+
+      // select trackedAgentIds
+      iterator.next();
+
+      // Provide empty list - should complete immediately
+      const done = iterator.next([]);
+      expect(done.done).toBe(true);
     });
   });
 });

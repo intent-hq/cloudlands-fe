@@ -143,6 +143,18 @@ export const selectIsAgentDeleted = createSelector(
 );
 
 // ---------------------------------------------------------------------------
+// All workspace IDs (for periodic sweeps)
+// ---------------------------------------------------------------------------
+
+export const selectAllWorkspaceIds = createSelector(
+  (state: MainStoreState): string[] => {
+    const slice = (state as any).agentSubscriptions;
+    if (!slice) return [];
+    return Object.keys(slice.byWorkspaceId);
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Delivery stats
 // ---------------------------------------------------------------------------
 

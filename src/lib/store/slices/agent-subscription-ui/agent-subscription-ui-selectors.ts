@@ -68,6 +68,23 @@ export const selectShowSubscriptionRow = createSelector<[workspaceId: string, ag
 );
 
 /**
+ * All agent IDs that have entries in the subscription UI for a given workspace.
+ * Used by sagas to refresh all tracked agents on system-level events.
+ */
+export const selectTrackedAgentIds = createSelector<[workspaceId: string], string[]>(
+  (state, workspaceId) => {
+    const prefix = `${workspaceId}:`;
+    const agentIds: string[] = [];
+    for (const key of Object.keys(state.agentSubscriptionUI.entries)) {
+      if (key.startsWith(prefix)) {
+        agentIds.push(key.slice(prefix.length));
+      }
+    }
+    return agentIds;
+  },
+);
+
+/**
  * Completion status across all delegation groups.
  * Returns { total, completed } counting all expected agents.
  */
@@ -80,7 +97,7 @@ export const selectCompletionStatus = createSelector<
   let completed = 0;
   for (const group of groups) {
     total += group.expectedAgentIds.length;
-    completed += group.completedAgentIds.length;
+    completed += group.completedAgentIds.length + group.deletedAgentIds.length;
   }
   return { total, completed };
 });

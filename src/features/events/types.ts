@@ -69,6 +69,7 @@ export const WorkspaceEventType = {
   AgentSubscribed: 'agent:subscribed',
   AgentUnsubscribed: 'agent:unsubscribed',
   AgentWokenBySubscription: 'agent:woken-by-subscription',
+  AgentDeliveryConfirmed: 'agent:delivery-confirmed',
   AgentEventDeliveryFailed: 'agent:event-delivery-failed',
   AgentEventDeliveryTimeout: 'agent:event-delivery-timeout',
   AgentSubscriptionsRestored: 'agent:subscriptions-restored',
@@ -495,6 +496,19 @@ export interface AgentWokenBySubscriptionEvent extends WorkspaceEventBase {
 }
 
 /**
+ * Emitted after successful delivery of subscription events to an agent.
+ * Gives external observers (UI, tests, monitoring) a signal that the delivery chain completed.
+ */
+export interface AgentDeliveryConfirmedEvent extends WorkspaceEventBase {
+  type: 'agent:delivery-confirmed';
+  data: {
+    subscriberAgentId: string;
+    deliveredEventIds: string[];
+    subscriptionId?: string;
+  };
+}
+
+/**
  * Emitted when event delivery to an agent fails after all retries
  */
 export interface AgentEventDeliveryFailedEvent extends WorkspaceEventBase {
@@ -600,6 +614,7 @@ export type SpecificWorkspaceEvent =
   | AgentSubscribedEvent
   | AgentUnsubscribedEvent
   | AgentWokenBySubscriptionEvent
+  | AgentDeliveryConfirmedEvent
   | AgentEventDeliveryFailedEvent
   | AgentEventDeliveryTimeoutEvent
   | AgentSubscriptionsRestoredEvent
@@ -844,6 +859,7 @@ export function isAgentInteractionEvent(event: WorkspaceEvent): boolean {
     event.type === 'agent:subscribed' ||
     event.type === 'agent:unsubscribed' ||
     event.type === 'agent:woken-by-subscription' ||
+    event.type === 'agent:delivery-confirmed' ||
     event.type === 'agent:event-delivery-failed' ||
     event.type === 'agent:event-delivery-timeout' ||
     event.type === 'agent:subscriptions-changed' ||
@@ -855,6 +871,12 @@ export function isAgentWokenBySubscriptionEvent(
   event: WorkspaceEvent,
 ): event is AgentWokenBySubscriptionEvent {
   return event.type === 'agent:woken-by-subscription';
+}
+
+export function isAgentDeliveryConfirmedEvent(
+  event: WorkspaceEvent,
+): event is AgentDeliveryConfirmedEvent {
+  return event.type === 'agent:delivery-confirmed';
 }
 
 export function isAgentEventDeliveryFailedEvent(

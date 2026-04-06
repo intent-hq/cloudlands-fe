@@ -21,6 +21,9 @@ import { workspaceEventsPersistenceSaga } from "./persistence-saga";
 import { workspaceEventsBroadcastSaga } from "./broadcast-saga";
 import { eventTriggeredSagas } from "./event-triggered-sagas";
 import { rendererSubscriptionSaga } from "./renderer-subscription-saga";
+import { Logger } from "../../../../../shared/logger";
+
+const logger = new Logger("DedupGate");
 // ---------------------------------------------------------------------------
 // Dedup gate saga — single entry point for all event processing
 // ---------------------------------------------------------------------------
@@ -38,7 +41,14 @@ function* handleDedupGate(action: ReturnType<typeof emitWorkspaceEvent>) {
   const [event, eventTimestampMs] = action.payload;
 
   if (isDuplicateEvent(event, eventTimestampMs)) {
+    if (event.type === "agent:idle" || event.type === "agent:completed" || event.type === "agent:failed") {
+      logger.debug(`DEDUPLICATED ${event.type} from actor=${event.actor?.id?.substring(0, 20)}`);
+    }
     return; // duplicate — skip all downstream processing
+  }
+
+  if (event.type === "agent:idle" || event.type === "agent:completed" || event.type === "agent:failed") {
+    logger.debug(`ACCEPTED ${event.type} from actor=${event.actor?.id?.substring(0, 20)} wsId=${event.workspaceId}`);
   }
 
   // Not a duplicate — dispatch accepted action for downstream sagas + reducer

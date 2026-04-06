@@ -135,6 +135,9 @@
     onkeydown={handleCardKeydown}
     transition:fly={{ x: -8, duration: 150 }}
   >
+    <!-- Invisible bridge element: extends the hover hit-area leftward to cover the
+         gap between the nav rail and the card, so the pointer doesn't leave/re-enter -->
+    <div class="absolute top-0 bottom-0 -left-4 w-4" aria-hidden="true"></div>
     <div
       class="bg-popover border border-border shadow-lg overflow-hidden flex flex-col
         {isExpanded ? 'w-80 max-h-[70vh]' : 'w-72 max-h-[50vh]'}"

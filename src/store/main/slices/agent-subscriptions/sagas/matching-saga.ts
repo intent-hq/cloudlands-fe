@@ -31,6 +31,8 @@ import {
   selectWorkspaceSubscriptionState,
 } from "../agent-subscriptions-selectors";
 import { requestDeliverQueuedEvents, requestDelegationGroupDelivery } from "./saga-actions";
+import { Logger } from "../../../../../shared/logger";
+const logger = new Logger("MatchingSaga");
 import type {
   AgentSubscriptionRecord,
   AgentEventFilter,
@@ -271,6 +273,9 @@ export function* handleMatchEvent(
     if (!matchesFilter(event, sub.filter)) continue;
 
     // --- Matched! Route the event. ---
+    const eventId = (event as any).id as string | undefined;
+    const corrId = `${sub.id}:${eventId ?? "no-id"}`;
+    logger.debug(`[subscriptions] match subscriptionId=${sub.id} eventId=${eventId} agentId=${sub.agentId} workspaceId=${wsId} eventType=${event.type} step=match`);
     const filter = sub.filter;
 
     // 1. Delegation group routing
@@ -280,6 +285,7 @@ export function* handleMatchEvent(
 
       // Append every matched event to the group tracker so it is
       // available when handleDelegationGroupDelivery delivers to the parent.
+      logger.debug(`[subscriptions] enqueue-delegation subscriptionId=${sub.id} eventId=${eventId} agentId=${sub.agentId} workspaceId=${wsId} groupId=${groupId} step=enqueue`);
       yield* put(appendDelegationGroupEvent(wsId, groupId, event));
 
       if (actorId) {
@@ -305,6 +311,7 @@ export function* handleMatchEvent(
       subscriptionId: sub.id,
       oneShot: filter.oneShot ?? false,
     };
+    logger.debug(`[subscriptions] enqueue subscriptionId=${sub.id} eventId=${eventId} agentId=${sub.agentId} workspaceId=${wsId} step=enqueue`);
     yield* put(enqueueEvent(wsId, sub.agentId, queuedEvent));
 
     // If the agent is already idle, trigger delivery — respecting
@@ -371,6 +378,7 @@ export function* handleMatchEvent(
 
     // 3. Handle oneShot cleanup
     if (filter.oneShot) {
+      logger.debug(`[subscriptions] cleanup subscriptionId=${sub.id} eventId=${eventId} agentId=${sub.agentId} workspaceId=${wsId} step=cleanup reason=oneShot`);
       yield* put(markOneShotFired(wsId, sub.id));
       yield* put(removeSubscription(wsId, sub.id));
       yield* put(bumpVersion(wsId));

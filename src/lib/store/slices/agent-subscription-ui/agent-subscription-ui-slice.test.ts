@@ -36,6 +36,7 @@ const group: DelegationGroupStatus = {
   awaitMode: 'all',
   expectedAgentIds: ['a-1', 'a-2', 'a-3'],
   completedAgentIds: ['a-1'],
+  deletedAgentIds: [],
   agentStatuses: { 'a-1': 'completed', 'a-2': 'responding', 'a-3': 'idle' },
 };
 
@@ -235,6 +236,7 @@ describe('agentSubscriptionUI selectors', () => {
       awaitMode: 'all',
       expectedAgentIds: ['b-1', 'b-2'],
       completedAgentIds: ['b-1', 'b-2'],
+      deletedAgentIds: [],
       agentStatuses: { 'b-1': 'completed', 'b-2': 'completed' },
     };
     const slice: AgentSubscriptionUIState = {

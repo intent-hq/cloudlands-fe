@@ -397,7 +397,6 @@ export function setupEventsIPC(): void {
           })),
           // Include delegation group status with agent states
           delegationGroups: delegationGroups
-            .filter(g => g.completedAgentIds.length < g.expectedAgentIds.length)
             .map((group) => {
               const groupAgentStatuses: Record<string, string> = {};
               for (const aid of group.expectedAgentIds) {

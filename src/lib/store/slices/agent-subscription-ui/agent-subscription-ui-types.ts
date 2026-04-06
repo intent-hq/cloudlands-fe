@@ -28,6 +28,7 @@ export interface DelegationGroupStatus {
   awaitMode: 'all';
   expectedAgentIds: string[];
   completedAgentIds: string[];
+  deletedAgentIds: string[];
   agentStatuses: Record<string, AgentStatus>;
 }
 

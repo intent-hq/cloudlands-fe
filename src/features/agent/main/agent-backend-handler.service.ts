@@ -164,6 +164,12 @@ export class AgentBackendHandler {
    *  already in flight. Prevents concurrent sendBackendInitiatedMessage calls from creating
    *  duplicate wake messages when multiple subscriptions match the same event simultaneously. */
   private pendingBackendDeliveries = new Set<string>();
+  /** @property {Map<string, NodeJS.Timeout>} pendingBackendDeliveryTimeouts - Safety timeouts
+   *  that force-clear pendingBackendDeliveries entries after 5 minutes. Prevents permanent
+   *  unreachability if handleBackendStreamMessage hangs and the finally block never runs. */
+  private pendingBackendDeliveryTimeouts = new Map<string, NodeJS.Timeout>();
+  /** Safety timeout duration for pendingBackendDeliveries (5 minutes). */
+  private static readonly PENDING_DELIVERY_TIMEOUT_MS = 5 * 60 * 1000;
   /** @property {Set<string>} interruptedAgents - Agents that were intentionally interrupted (skip auto queue processing) */
   private interruptedAgents = new Set<string>();
   /** @property {Map<string, Set<string>>} completedStreams - Track completed streamIds per agentId to prevent duplicate onComplete calls */
@@ -4666,6 +4672,24 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
   private finalizeStream(agentId: string, workspaceId: string, reason: string): void {
     this.cleanupStreamResources(agentId);
 
+    // CRITICAL: Clear pendingBackendDeliveries BEFORE any async work that could trigger
+    // a new delivery (e.g., emitAgentIdleEvent → watchAgentIdleForDelivery → requestDeliverQueuedEvents
+    // → sendBackendInitiatedMessage). If we leave this to the finally block in
+    // sendBackendInitiatedMessage, the second delivery sees pendingBackendDeliveries still set
+    // and returns DELIVERY_IN_FLIGHT, blocking the coordinator's wake-up.
+    if (this.pendingBackendDeliveries.has(agentId)) {
+      this.pendingBackendDeliveries.delete(agentId);
+      const timeout = this.pendingBackendDeliveryTimeouts.get(agentId);
+      if (timeout) {
+        clearTimeout(timeout);
+        this.pendingBackendDeliveryTimeouts.delete(agentId);
+      }
+      logger.info('Cleared pendingBackendDeliveries in finalizeStream (before idle event)', {
+        agentId,
+        reason,
+      });
+    }
+
     // DETERMINISTIC QUEUE PRIORITY: If there are queued messages, set a synchronous
     // reservation flag BEFORE any async work. sendBackendInitiatedMessage checks this
     // flag and defers if set, preventing event-triggered streams from racing ahead of
@@ -4798,6 +4822,14 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     this.messageQueues.delete(agentId);
     this.processingQueue.delete(agentId);
     this.pendingQueueProcessing.delete(agentId);
+
+    // Backend delivery tracking
+    this.pendingBackendDeliveries.delete(agentId);
+    const deliveryTimeout = this.pendingBackendDeliveryTimeouts.get(agentId);
+    if (deliveryTimeout) {
+      clearTimeout(deliveryTimeout);
+      this.pendingBackendDeliveryTimeouts.delete(agentId);
+    }
 
     // Agent state tracking
     this.activeSessions.delete(agentId);
@@ -5420,6 +5452,21 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     [key: string]: any;
   }): Promise<{ success: boolean; error?: string; errorCode?: string }> {
     const { sessionId, message, workspaceId, messageMetadata, ...otherParams } = params;
+
+    // Diagnostic state dump: log all guard-relevant state so we can trace which guard
+    // blocks delivery (especially for second wake-up delivery to coordinators).
+    logger.info('Backend-initiated message: guard state dump', {
+      agentId: sessionId,
+      workspaceId,
+      isDeleted: this.isAgentDeleted(sessionId),
+      hasActiveStream: this.streamStartTimes.has(sessionId),
+      streamAgeMs: this.streamStartTimes.has(sessionId) ? Date.now() - (this.streamStartTimes.get(sessionId) || 0) : null,
+      hasPendingQueueProcessing: this.pendingQueueProcessing.has(sessionId),
+      hasPendingBackendDelivery: this.pendingBackendDeliveries.has(sessionId),
+      queueLength: this.messageQueues.get(sessionId)?.length || 0,
+      hasProvider: this.providers.has(sessionId),
+    });
+
     // CRITICAL GUARD: Reject messages for deleted agents FIRST, before any other checks.
     // This prevents resurrection of deleted agents from persistence backup.
     // Must be checked before provider health, streaming, and queue checks — a dead
@@ -5537,6 +5584,22 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
 
     // Mark delivery as in-flight BEFORE any async work
     this.pendingBackendDeliveries.add(sessionId);
+
+    // Safety timeout: force-clear the pending delivery flag after 5 minutes.
+    // If handleBackendStreamMessage hangs, the finally block never runs and
+    // the agent becomes permanently unreachable for backend-initiated messages.
+    const deliveryTimeout = setTimeout(() => {
+      if (this.pendingBackendDeliveries.has(sessionId)) {
+        logger.warn('Backend-initiated delivery safety timeout expired, force-clearing pending flag', {
+          agentId: sessionId,
+          workspaceId,
+          timeoutMs: AgentBackendHandler.PENDING_DELIVERY_TIMEOUT_MS,
+        });
+        this.pendingBackendDeliveries.delete(sessionId);
+        this.pendingBackendDeliveryTimeouts.delete(sessionId);
+      }
+    }, AgentBackendHandler.PENDING_DELIVERY_TIMEOUT_MS);
+    this.pendingBackendDeliveryTimeouts.set(sessionId, deliveryTimeout);
 
     try {
     if (!existingProvider) {
@@ -5915,7 +5978,21 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       ...otherParams,
     });
     } finally {
-      this.pendingBackendDeliveries.delete(sessionId);
+      // Safety net: finalizeStream should have already cleared pendingBackendDeliveries
+      // before emitAgentIdleEvent fires. If it's still set here, it means finalizeStream
+      // didn't run (e.g., early return, exception before streaming started). Clean up to
+      // prevent the agent from becoming permanently unreachable.
+      if (this.pendingBackendDeliveries.has(sessionId)) {
+        logger.info('Backend-initiated message finally: clearing pendingBackendDeliveries (safety net)', {
+          agentId: sessionId,
+        });
+        this.pendingBackendDeliveries.delete(sessionId);
+      }
+      const timeout = this.pendingBackendDeliveryTimeouts.get(sessionId);
+      if (timeout) {
+        clearTimeout(timeout);
+        this.pendingBackendDeliveryTimeouts.delete(sessionId);
+      }
     }
   }
 

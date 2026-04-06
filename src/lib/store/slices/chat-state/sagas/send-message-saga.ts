@@ -23,6 +23,8 @@ import { cleanErrorMessage } from '$shared/errors/messages';
 import { waitFor } from '$lib/store/slices/store-utility/sagas/waitFor';
 import {
   sendMessage,
+  chatSendStarted,
+  chatSendFailed,
   chatTrackedWorkspaceSet,
   chatRebindStarted,
   chatRebindEnded,
@@ -94,6 +96,9 @@ function* handleSendPath(
 ): SagaGenerator<void> {
   const { text, serializedContextItems, workspaceContextStr, noteIds } = payload;
 
+  // --- Dispatch chatSendStarted immediately so loading UI appears right away ---
+  yield* put(chatSendStarted(agentId));
+
   // --- Rebind wait ---
   const isRebinding = yield* selectChatIsRebinding.effect(agentId);
   if (isRebinding) {
@@ -106,6 +111,7 @@ function* handleSendPath(
     );
     if (!rebindCompleted) {
       logger.error('Workspace rebind timed out, aborting send', { agentId });
+      yield* put(chatSendFailed(agentId, 'Chat session is still initializing. Please try again.'));
       yield* call(showErrorToast, 'Chat session is still initializing. Please try again.');
       return;
     }
@@ -148,12 +154,11 @@ function* handleSendPath(
       const reason = timeout ? 'timed out' : 'failed';
       logger.error(`Chat reinitialization ${reason} in send path`, { agentId, wsId });
       yield* put(chatTrackedWorkspaceSet(agentId, null));
-      yield* call(
-        showErrorToast,
-        timeout
-          ? 'Chat initialization timed out. Please try again.'
-          : 'Failed to initialize chat session. Please try again.',
-      );
+      const errorMsg = timeout
+        ? 'Chat initialization timed out. Please try again.'
+        : 'Failed to initialize chat session. Please try again.';
+      yield* put(chatSendFailed(agentId, errorMsg));
+      yield* call(showErrorToast, errorMsg);
       return;
     }
   }
@@ -164,6 +169,7 @@ function* handleSendPath(
     const workspace = yield* selectWorkspaceById.effect(wsId);
     if (!workspace) {
       logger.error('Workspace not found in Redux for send', { wsId });
+      yield* put(chatSendFailed(agentId, 'Workspace not found. Please try again.'));
       yield* call(showErrorToast, 'Workspace not found. Please try again.');
       return;
     }
@@ -197,6 +203,7 @@ function* handleSendPath(
     const isInterrupted = errorMessage.includes('Agent interrupted');
     if (!isInterrupted) {
       logger.error('Failed to send message', { agentId, error });
+      yield* put(chatSendFailed(agentId, cleanErrorMessage(errorMessage)));
       yield* call(showErrorToast, cleanErrorMessage(errorMessage));
     }
   }

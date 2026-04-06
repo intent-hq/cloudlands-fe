@@ -315,4 +315,90 @@ describe("agentSubscriptionsReducer", () => {
       expect(state.byWorkspaceId[WS]).toBeUndefined();
     });
   });
+
+  describe("multi-round oneShot lifecycle (reducer integration)", () => {
+    const COORDINATOR = "agent-coordinator";
+    const AGENT_B = "agent-implementor";
+    const AGENT_C = "agent-verifier";
+
+    it("second oneShot subscription is visible after first is fired and removed", () => {
+      // Step 1: Create sub-1 (oneShot, coordinator watching agent-B)
+      const sub1 = makeSub({
+        id: "sub-1",
+        agentId: COORDINATOR,
+        filter: { eventTypes: ["agent:idle"], actorIds: [AGENT_B], oneShot: true },
+      });
+      let state = reduce(addSubscription(WS, sub1));
+      expect(Object.keys(state.byWorkspaceId[WS]!.subscriptions)).toEqual(["sub-1"]);
+
+      // Step 2: Fire sub-1 (markOneShotFired + removeSubscription)
+      state = reduce(markOneShotFired(WS, "sub-1"), state);
+      expect(state.byWorkspaceId[WS]!.firedOneShotSubscriptions).toContain("sub-1");
+      state = reduce(removeSubscription(WS, "sub-1"), state);
+      expect(state.byWorkspaceId[WS]!.subscriptions["sub-1"]).toBeUndefined();
+      expect(state.byWorkspaceId[WS]!.firedOneShotSubscriptions).not.toContain("sub-1");
+
+      // Step 3: Create sub-2 (oneShot, coordinator watching agent-C)
+      const sub2 = makeSub({
+        id: "sub-2",
+        agentId: COORDINATOR,
+        filter: { eventTypes: ["agent:idle"], actorIds: [AGENT_C], oneShot: true },
+      });
+      state = reduce(addSubscription(WS, sub2), state);
+
+      // Step 4: Verify sub-2 is visible and not interfered with by sub-1's cleanup
+      const ws = state.byWorkspaceId[WS]!;
+      expect(Object.keys(ws.subscriptions)).toEqual(["sub-2"]);
+      expect(ws.subscriptions["sub-2"]).toEqual(sub2);
+      expect(ws.firedOneShotSubscriptions).not.toContain("sub-2");
+      expect(ws.firedOneShotSubscriptions).toHaveLength(0);
+    });
+
+    it("enqueued events for coordinator survive across oneShot rounds", () => {
+      // Step 1: Create sub-1 and enqueue event for coordinator
+      const sub1 = makeSub({
+        id: "sub-1",
+        agentId: COORDINATOR,
+        filter: { eventTypes: ["agent:idle"], actorIds: [AGENT_B], oneShot: true },
+      });
+      let state = reduce(addSubscription(WS, sub1));
+
+      // Enqueue B's idle event for coordinator
+      state = reduce(enqueueEvent(WS, COORDINATOR, makeQueuedEvent({
+        event: { type: "agent:idle", timestamp: "t1", workspaceId: WS, actor: { type: "agent", id: AGENT_B } } as any,
+      })), state);
+
+      // Fire + remove sub-1
+      state = reduce(markOneShotFired(WS, "sub-1"), state);
+      state = reduce(removeSubscription(WS, "sub-1"), state);
+
+      // Clear queue (simulating delivery)
+      state = reduce(clearAgentQueue(WS, COORDINATOR), state);
+
+      // Step 2: Create sub-2 and enqueue C's event
+      const sub2 = makeSub({
+        id: "sub-2",
+        agentId: COORDINATOR,
+        filter: { eventTypes: ["agent:idle"], actorIds: [AGENT_C], oneShot: true },
+      });
+      state = reduce(addSubscription(WS, sub2), state);
+
+      state = reduce(enqueueEvent(WS, COORDINATOR, makeQueuedEvent({
+        event: { type: "agent:idle", timestamp: "t2", workspaceId: WS, actor: { type: "agent", id: AGENT_C } } as any,
+      })), state);
+
+      // Verify C's event is in coordinator's queue
+      const queue = state.byWorkspaceId[WS]!.agentQueues[COORDINATOR];
+      expect(queue).toHaveLength(1);
+      expect((queue![0].event as any).actor.id).toBe(AGENT_C);
+
+      // Fire + remove sub-2
+      state = reduce(markOneShotFired(WS, "sub-2"), state);
+      state = reduce(removeSubscription(WS, "sub-2"), state);
+
+      // Queue should still have C's event (delivery happens separately)
+      const finalQueue = state.byWorkspaceId[WS]!.agentQueues[COORDINATOR];
+      expect(finalQueue).toHaveLength(1);
+    });
+  });
 });

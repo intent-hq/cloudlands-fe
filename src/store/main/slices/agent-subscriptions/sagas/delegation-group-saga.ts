@@ -29,6 +29,7 @@ import {
   requestDeliverEvents,
   requestPersist,
 } from "./saga-actions";
+import { handleDeliverEvents } from "./delivery-saga";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -69,6 +70,8 @@ export function* handleDelegationGroupDelivery(
     groupId,
   );
   if (!isComplete) return;
+
+  logger.debug(`[subscriptions] delegation-complete subscriptionId=${tracker.subscriptionId} agentId=${tracker.parentAgentId} workspaceId=${wsId} groupId=${groupId} eventCount=${tracker.events.length} completedAgents=${tracker.completedAgentIds.length} deletedAgents=${tracker.deletedAgentIds.length} step=deliver`);
 
   // Mark as delivered to prevent re-entry
   yield* put(markDelegationDelivered(wsId, groupId));
@@ -129,10 +132,21 @@ function* deliverWithRetry(
   groupId: string,
   subscriptionId: string,
 ) {
-  // Dispatch delivery — the delivery saga handles retries
-  yield* put(requestDeliverEvents(wsId, agentId, events));
+  // Call delivery directly so we block until it completes (or fails).
+  // This ensures cleanup only happens after the delivery attempt finishes.
+  try {
+    logger.debug(`[subscriptions] deliver subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} eventCount=${events.length} step=deliver`);
+    yield* call(
+      handleDeliverEvents,
+      requestDeliverEvents(wsId, agentId, events),
+    );
+  } catch (err) {
+    logger.error(`[subscriptions] deliver subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} step=deliver error=${err instanceof Error ? err.message : String(err)}`);
+  }
 
-  // Clean up delegation group and subscription
+  // Clean up delegation group and subscription regardless of delivery outcome
+  // to prevent permanent stuck state
+  logger.debug(`[subscriptions] cleanup subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} step=cleanup`);
   yield* put(removeDelegationGroup(wsId, groupId));
   if (subscriptionId) {
     yield* put(removeSubscription(wsId, subscriptionId));
@@ -171,15 +185,7 @@ function* pollAndDeliver(
 
   // Budget exhausted — log warning and clean up to prevent lingering UI
   const totalWaitSeconds = (MAX_BUSY_POLL_ATTEMPTS * BUSY_POLL_INTERVAL_MS) / 1000;
-  logger.warn(
-    `Delegation group polling timed out after ${totalWaitSeconds}s`,
-    {
-      groupId,
-      parentAgentId: agentId,
-      eventCount: events.length,
-      maxAttempts: MAX_BUSY_POLL_ATTEMPTS,
-    },
-  );
+  logger.warn(`[subscriptions] deliver subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} step=deliver status=timeout totalWaitSeconds=${totalWaitSeconds}`);
   yield* put(removeDelegationGroup(wsId, groupId));
   if (subscriptionId) {
     yield* put(removeSubscription(wsId, subscriptionId));
