@@ -17,7 +17,7 @@
     connectSentry,
     fetchSentryIssues,
   } from '$lib/store/slices/sentry-auth/sentry-auth-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';

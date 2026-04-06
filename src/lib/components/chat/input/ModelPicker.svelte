@@ -29,7 +29,7 @@
     selectEnabledProviderIds,
   } from '$lib/store/slices/provider-settings/provider-settings-selectors';
   import { getModelsForProvider } from '$lib/store/slices/model/model-utils';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
     ACP_PROVIDERS,
     getProviderConfig,

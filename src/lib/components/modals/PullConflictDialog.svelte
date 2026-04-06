@@ -20,7 +20,7 @@
     type InstalledEditor,
   } from '$lib/store/slices/external-editors/external-editors-slice';
   import { selectInstalledEditorsFiltered } from '$lib/store/slices/external-editors/external-editors-selectors';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { invoke } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
 

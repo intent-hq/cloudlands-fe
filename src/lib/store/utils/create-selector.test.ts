@@ -11,7 +11,7 @@ import { init } from "../init";
 import type { StoreState } from "../types";
 import { lockUpdates, unlockUpdates } from "../slices/store-utility/store-utility-slice";
 import { saveScrollPosition } from "../slices/tab-state/tab-state-slice";
-import { getDispatch, getStoreContext } from "./utils";
+import { getDispatch, getStoreContext } from "./svelte-context";
 
 describe("createSelector", () => {
   describe("Basic selector functionality", () => {

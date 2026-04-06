@@ -57,7 +57,7 @@ vi.mock('$lib/store/slices/multi-panel-context/multi-panel-context-selectors', (
   selectSelections: () => readable([]),
 }));
 
-vi.mock('$lib/store/utils/utils', () => ({
+vi.mock('$lib/store/utils/svelte-context', () => ({
   getDispatch: () => vi.fn(),
   getStoreContext: () => undefined,
 }));

@@ -16,7 +16,7 @@ import {
   type WorkspaceNavigationMainPanelType,
   type WorkspaceNavigationWorkspaceState,
 } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-import { getDispatch } from '$lib/store/utils/utils';
+import { getDispatch } from '$lib/store/utils/svelte-context';
 import { createLogger } from '$lib/utils/client-logger';
 import type { Workspace } from '$shared/types';
 import { fromStore } from 'svelte/store';

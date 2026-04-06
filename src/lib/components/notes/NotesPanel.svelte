@@ -6,7 +6,7 @@
   import { Skeleton } from '../ui/skeleton';
   import VSCodeScrollablePanel from '../ui/VSCodeScrollablePanel.svelte';
   import { ListContainer, ListItem } from '../ui/list';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { createNote as createNoteAction, initializeNotes } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
   import { selectNotesLoading, selectNotesError, selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import { thirdPartySourcesClient } from '$features/third-party-sources/third-party-sources.client';

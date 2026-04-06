@@ -17,7 +17,7 @@
     setProviderEnabled,
   } from '$lib/store/slices/provider-settings/provider-settings-slice';
   import { retryLoadModels, reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { ACP_PROVIDERS, getProviderConfig } from '$shared/config/provider-config';
   import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
   import {

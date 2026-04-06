@@ -43,7 +43,7 @@ describe('selector-lifecycle ESLint rule', () => {
     const messages = await lintSvelte(`
       <script lang="ts">
         import { selectThing } from '$lib/store/slices/example/example-selectors';
-        import { getDispatch } from '$lib/store/utils/utils';
+        import { getDispatch } from '$lib/store/utils/svelte-context';
 
         const dispatch = getDispatch();
         const thing = selectThing();
@@ -57,7 +57,7 @@ describe('selector-lifecycle ESLint rule', () => {
     const messages = await lintSvelte(`
       <script lang="ts">
         import { selectThing } from '$lib/store/slices/example/example-selectors';
-        import { getDispatch } from '$lib/store/utils/utils';
+        import { getDispatch } from '$lib/store/utils/svelte-context';
 
         function handleClick() {
           const dispatch = getDispatch();
@@ -76,7 +76,7 @@ describe('selector-lifecycle ESLint rule', () => {
     const messages = await lintSvelte(`
       <script context="module" lang="ts">
         import { selectThing } from '$lib/store/slices/example/example-selectors';
-        import { getDispatch } from '$lib/store/utils/utils';
+        import { getDispatch } from '$lib/store/utils/svelte-context';
 
         const dispatch = getDispatch();
         const thing = selectThing();

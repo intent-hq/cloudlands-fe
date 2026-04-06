@@ -20,7 +20,7 @@ import { getAgentProvider } from '$shared/types/agent-session';
 import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
 import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-import { getDispatch } from '$lib/store/utils/utils';
+import { getDispatch } from '$lib/store/utils/svelte-context';
 import { assignAgentToTask, reloadNotes } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
 import { selectEffectiveModel, selectEffectiveBehaviorPrompt } from '$lib/store/slices/specialists/specialists-selectors';
 import { SPECIALISTS } from '$lib/constants/specialists';

@@ -11,7 +11,7 @@
   import { Input } from '$lib/components/ui/input';
   import { ListContainer, ListItem } from '$lib/components/ui/list';
   import { cn } from '$lib/utils';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectBrowserRecentUrls } from '$lib/store/slices/browser/browser-selectors';
   import { selectActiveTab } from '$lib/store/slices/panel-layout/panel-layout-selectors';
   import {

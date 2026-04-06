@@ -9,7 +9,7 @@
   import Fa from 'svelte-fa';
   import { invoke } from '$lib/electron-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectDraftPrompt } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
   import { closeAll } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';

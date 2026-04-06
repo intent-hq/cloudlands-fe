@@ -6,7 +6,7 @@ import type {
   ReadableArgs,
   StoreSelectorCallback,
 } from "../types";
-import { getStoreContext, isLifecycleOutsideComponentError } from "./utils";
+import { getStoreContext, isLifecycleOutsideComponentError } from "./svelte-context";
 import type { Collection } from "./collection-utils";
 import { readable, derived, type Readable } from "svelte/store";
 import { createStoreStateReadable } from "./create-readable-store-state";
@@ -35,22 +35,22 @@ export const createSelector: CreateSelector = <ARGS extends any[], R>(
     readableStoreState: Readable<StoreState>,
     ...restArgs: ReadableArgs<ARGS>
   ): Readable<R> => {
-    // Cached selector here is lockable, means it will return prev value when store is locked for updates
-    const cachedSelector = createCachedSelector<StoreState, ARGS, R>(selectorFunc, {
-      lockUpdatesPredicate: (state) => state.storeUtility.updatesLocked,
-    });
-    const readableArgs = restArgs.map((arg) => {
-      if (isReadable(arg)) {
-        return arg;
-      }
-      return readable(arg);
-    });
-    const source = derived([readableStoreState, ...readableArgs], ([storeState, ...args]) => {
-      return cachedSelector(storeState, ...(args as ARGS));
-    });
+      // Cached selector here is lockable, means it will return prev value when store is locked for updates
+      const cachedSelector = createCachedSelector<StoreState, ARGS, R>(selectorFunc, {
+        lockUpdatesPredicate: (state) => state.storeUtility.updatesLocked,
+      });
+      const readableArgs = restArgs.map((arg) => {
+        if (isReadable(arg)) {
+          return arg;
+        }
+        return readable(arg);
+      });
+      const source = derived([readableStoreState, ...readableArgs], ([storeState, ...args]) => {
+        return cachedSelector(storeState, ...(args as ARGS));
+      });
 
-    return createThrottledReadable(source);
-  };
+      return createThrottledReadable(source);
+    };
 
   const readableSelector: StoreSelector<R, ARGS> = (...restArgs: ReadableArgs<ARGS>) => {
     let context: ReturnType<typeof getStoreContext>;
@@ -61,9 +61,9 @@ export const createSelector: CreateSelector = <ARGS extends any[], R>(
       if (isLifecycleOutsideComponentError(error)) {
         throw new Error(
           "Selector called outside component initialization. " +
-            "The readable form of selectors (e.g., selectFoo()) can only be called " +
-            "during component init (top-level <script> block). For event handlers, " +
-            "callbacks, or async functions, use selector.select(getReduxStore().getState(), ...args) instead.",
+          "The readable form of selectors (e.g., selectFoo()) can only be called " +
+          "during component init (top-level <script> block). For event handlers, " +
+          "callbacks, or async functions, use selector.select(getReduxStore().getState(), ...args) instead.",
           { cause: error }
         );
       }
@@ -83,9 +83,9 @@ export const createSelector: CreateSelector = <ARGS extends any[], R>(
 
   readableSelector.withStore =
     (store: ReduxStore) =>
-    (...args: ReadableArgs<ARGS>) => {
-      return boundSelector(createStoreStateReadable(store), ...args);
-    };
+      (...args: ReadableArgs<ARGS>) => {
+        return boundSelector(createStoreStateReadable(store), ...args);
+      };
 
   readableSelector.select = selectorFunc;
   readableSelector.effect = (...args: ARGS) => {

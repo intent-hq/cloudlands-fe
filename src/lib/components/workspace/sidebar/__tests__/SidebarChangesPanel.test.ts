@@ -34,7 +34,7 @@ const { mockFileTrackingStore, createMockFtSelector, flushFtSelectors } = vi.hoi
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     fn.select = (_state: any, ..._args: any[]) => getter();
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    fn.effect = (..._args: any[]) => {};
+    fn.effect = (..._args: any[]) => { };
     fn.withStore = () => fn;
     return fn;
   }
@@ -145,7 +145,7 @@ function createReadable<T>(value: T) {
   return {
     subscribe(run: (value: T) => void) {
       run(value);
-      return () => {};
+      return () => { };
     },
   };
 }
@@ -206,7 +206,7 @@ vi.mock('$lib/store/slices/agent-lock/agent-lock-selectors', () => ({
   selectLockedAgentIds: vi.fn().mockReturnValue({
     subscribe: (fn: (value: any) => void) => {
       fn({});
-      return () => {};
+      return () => { };
     },
   }),
 }));
@@ -225,7 +225,7 @@ vi.mock('$lib/store/slices/github-auth/github-auth-selectors', () => ({
   selectGitHubAuthIsAuthenticated: () => ({
     subscribe: (fn: (v: boolean) => void) => {
       fn(mockGitHubAuthIsAuthenticated.value);
-      return () => {};
+      return () => { };
     },
   }),
 }));
@@ -241,7 +241,7 @@ vi.mock('$features/agent/agent-ipc-bridge', () => ({
 const defaultExecutorState = { status: 'idle', result: null, error: null, agentId: null };
 vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-selectors', () => ({
   selectExecutorState: Object.assign(
-    vi.fn().mockReturnValue({ subscribe: (fn: (v: any) => void) => { fn(defaultExecutorState); return () => {}; } }),
+    vi.fn().mockReturnValue({ subscribe: (fn: (v: any) => void) => { fn(defaultExecutorState); return () => { }; } }),
     { select: vi.fn().mockReturnValue(defaultExecutorState) },
   ),
 }));
@@ -255,7 +255,7 @@ vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-s
 
 vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: Object.assign(
-    vi.fn().mockReturnValue({ subscribe: (fn: (v: any) => void) => { fn([]); return () => {}; } }),
+    vi.fn().mockReturnValue({ subscribe: (fn: (v: any) => void) => { fn([]); return () => { }; } }),
     { select: vi.fn().mockReturnValue([]) },
   ),
 }));
@@ -333,7 +333,7 @@ vi.mock('$lib/store/slices/workspace/workspace-slice', () => ({
   setWorkspaceEntity: vi.fn((...args: any[]) => ({ type: 'workspace/setWorkspaceEntity', payload: args })),
 }));
 
-vi.mock('$lib/store/utils/utils', () => ({
+vi.mock('$lib/store/utils/svelte-context', () => ({
   getDispatch: vi.fn(() => vi.fn()),
   getStoreContext: vi.fn(),
 }));
@@ -500,7 +500,7 @@ async function resetMocks() {
   (selectLockedAgentIds as Mock).mockReturnValue({
     subscribe: (fn: (value: any) => void) => {
       fn({});
-      return () => {};
+      return () => { };
     },
   });
 
@@ -773,7 +773,7 @@ describe('SidebarChangesPanel', () => {
       (selectLockedAgentIds as Mock).mockReturnValue({
         subscribe: (fn: (value: any) => void) => {
           fn({ 'agent-locked': true as const });
-          return () => {};
+          return () => { };
         },
       });
 
@@ -1225,7 +1225,7 @@ describe('SidebarChangesPanel', () => {
       (selectLockedAgentIds as Mock).mockReturnValue({
         subscribe: (fn: (value: any) => void) => {
           fn({ 'agent-1': true as const });
-          return () => {};
+          return () => { };
         },
       });
 

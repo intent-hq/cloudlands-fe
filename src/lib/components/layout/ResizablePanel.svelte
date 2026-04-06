@@ -4,7 +4,7 @@
   import { cubicOut } from 'svelte/easing';
   import { setWidth as setSidebarWidth } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { selectIsCollapsed } from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
 
   let {
     // Common props

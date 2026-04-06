@@ -18,7 +18,7 @@
   import { faThumbtack } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectActiveCard, selectExpandedItem, selectIsCardPinned, selectContextMenuOpen } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
   import { closeHoverCards, setHoveredItem, setExpandedItem, toggleCardPinned, setDeferredLeave, clearDeferredLeave } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
 

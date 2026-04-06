@@ -1,7 +1,7 @@
 <script lang="ts">
   import { type SagaName } from '../sagas';
   import { runSaga } from './run-saga';
-  import { getStoreContext } from '../utils/utils';
+  import { getStoreContext } from '../utils/svelte-context';
 
   const {
     sagaName,

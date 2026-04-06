@@ -34,7 +34,7 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import { selectIsDragging } from '$lib/store/slices/tab-state/tab-state-selectors';
   import { startDrag, endDrag } from '$lib/store/slices/tab-state/tab-state-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { faNote } from '$lib/icons/faNote';
   import EditableName from '$lib/components/ui/EditableName.svelte';
   import { isSpecNote } from '$shared/constants/notes';

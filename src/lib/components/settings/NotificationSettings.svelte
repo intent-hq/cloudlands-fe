@@ -11,7 +11,7 @@
 
   import { selectNotificationEnabled, selectSoundEnabled, selectSoundOnlyWhenUnfocused, selectNotificationVolume } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { setNotificationEnabled, setSoundEnabled, setSoundOnlyWhenUnfocused, setVolume } from '$lib/store/slices/user-preferences/user-preferences-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { playNotificationSound } from '$lib/utils/notification-sound';
   import { faPlay } from '@fortawesome/free-solid-svg-icons';

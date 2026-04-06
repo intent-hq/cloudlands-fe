@@ -68,7 +68,7 @@
     setActiveWorkspaceId,
   } from '$lib/store/slices/workspace/workspace-slice';
   import { createAgentRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
   import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';

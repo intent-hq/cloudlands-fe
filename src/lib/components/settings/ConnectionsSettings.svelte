@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
   import { initializeLinearAuth } from '$lib/store/slices/linear-auth/linear-auth-slice';
   import { initializeSentryAuth } from '$lib/store/slices/sentry-auth/sentry-auth-slice';

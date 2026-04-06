@@ -204,7 +204,7 @@
   import { sentryAuthClient } from '$features/sentry-auth/renderer/sentry-auth.client';
   import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
   import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';

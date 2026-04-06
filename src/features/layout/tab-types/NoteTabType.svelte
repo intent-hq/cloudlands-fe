@@ -28,7 +28,7 @@
   import { toggleSpellcheck } from '$lib/store/slices/user-preferences/user-preferences-slice';
   import { selectScrollPosition } from '$lib/store/slices/tab-state/tab-state-selectors';
   import { saveScrollPosition } from '$lib/store/slices/tab-state/tab-state-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import Fa from 'svelte-fa';
   import { faCheck, faCopy, faSpellCheck, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';

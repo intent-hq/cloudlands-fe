@@ -7,7 +7,7 @@
   import Fa from 'svelte-fa';
   import { faXmark, faThumbtack } from '@fortawesome/free-solid-svg-icons';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectPanelItem, selectPanelWidth, selectIsCardPinned, selectOnboardingActive } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
   import { toggleCardPinned, closePanel, setPanelWidth as setPanelWidthAction } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
 

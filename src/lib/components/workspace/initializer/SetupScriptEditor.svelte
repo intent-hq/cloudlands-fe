@@ -21,7 +21,7 @@
     type ProjectType,
   } from '$features/setup-scripts';
   import { v4 as uuidv4 } from 'uuid';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
     saveScript,

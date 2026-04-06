@@ -31,7 +31,7 @@
     renameTerminal,
     type TerminalTab,
   } from '$lib/store/slices/terminals/terminals-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import Terminal from './Terminal.svelte';
   import SetupScriptBanner from './SetupScriptBanner.svelte';
   import ScriptOutputViewer from './ScriptOutputViewer.svelte';

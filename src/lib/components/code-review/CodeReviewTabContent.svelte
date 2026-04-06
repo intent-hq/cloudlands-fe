@@ -6,7 +6,7 @@
 
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectCurrentStagedWorkingChanges } from '$lib/store/slices/file-tracking/file-tracking-selectors';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
     selectExecutorState,
   } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';

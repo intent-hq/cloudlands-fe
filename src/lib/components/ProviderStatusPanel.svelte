@@ -26,7 +26,7 @@
   } from '$shared/constants/auggie';
   import NodeVersionWarning from '$lib/components/NodeVersionWarning.svelte';
   import { retryLoadModels } from '$lib/store/slices/model/model-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
   import {
     faCircleCheck,

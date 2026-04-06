@@ -32,7 +32,7 @@
   } from '$lib/store/slices/terminals/terminals-slice';
 
   const activeWorkspace = selectActiveWorkspace();
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import {

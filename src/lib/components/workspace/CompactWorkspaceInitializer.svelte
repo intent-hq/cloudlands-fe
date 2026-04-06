@@ -29,7 +29,7 @@
     setWorkspaceEntity,
     updateWorkspaceEntity,
   } from '$lib/store/slices/workspace/workspace-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
     selectSpecialists,

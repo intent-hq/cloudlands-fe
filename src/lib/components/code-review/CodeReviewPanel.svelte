@@ -34,7 +34,7 @@
   import { agentService } from '$features/agent/agent-ipc-bridge';
   import { buildWorkspaceContext } from '$features/agent/agent-launch-core';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
 
   const logger = createLogger('CodeReviewPanel');
   const activeWorkspace = selectActiveWorkspace();

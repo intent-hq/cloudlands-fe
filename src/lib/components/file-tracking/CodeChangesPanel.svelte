@@ -45,7 +45,7 @@
   import { Switch } from '../ui/switch';
   import { selectAutoCommitEnabled } from '$lib/store/slices/workspace-settings/workspace-settings-selectors';
   import { setAutoCommitEnabled } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectAcceptChangesState } from '$lib/store/slices/transient-ui/transient-ui-selectors';
 
   interface Props {

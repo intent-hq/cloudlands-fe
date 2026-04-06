@@ -4,7 +4,7 @@
    * Navigates to the settings page on click.
    */
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { closeAll } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
 
   const dispatch = getDispatch();

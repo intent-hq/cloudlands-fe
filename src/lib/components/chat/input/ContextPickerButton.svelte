@@ -33,7 +33,7 @@
     type PanelContextItem,
     type SelectionContextItem,
   } from '$lib/store/slices/multi-panel-context/multi-panel-context-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
     getMentionSystem,
     type MentionCandidate,

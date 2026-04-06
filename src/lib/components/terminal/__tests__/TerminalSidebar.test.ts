@@ -41,7 +41,7 @@ vi.mock('$lib/store/slices/scripts/scripts-selectors', () => ({
     () => ({
       subscribe: (fn: (value: any) => void) => {
         fn(scriptEntries.value);
-        return () => {};
+        return () => { };
       },
     }),
     { select: () => scriptEntries.value },
@@ -74,7 +74,7 @@ vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
   selectActiveWorkspace: () => ({
     subscribe: (fn: (value: any) => void) => {
       fn(activeWorkspaceState.value);
-      return () => {};
+      return () => { };
     },
   }),
 }));
@@ -93,23 +93,23 @@ vi.mock('$lib/hooks/use-background-agent.svelte', () => ({
   }),
 }));
 
-vi.mock('$lib/store/utils/utils', () => ({
+vi.mock('$lib/store/utils/svelte-context', () => ({
   getDispatch: () => mockDispatch,
 }));
 vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-selectors', () => ({
   selectExecutorIsRunning: Object.assign(
-    () => ({ subscribe: (fn: any) => { fn(false); return () => {}; } }),
+    () => ({ subscribe: (fn: any) => { fn(false); return () => { }; } }),
     { select: () => false },
   ),
   selectExecutorAgentId: Object.assign(
-    () => ({ subscribe: (fn: any) => { fn(null); return () => {}; } }),
+    () => ({ subscribe: (fn: any) => { fn(null); return () => { }; } }),
     { select: () => null },
   ),
 }));
 vi.mock('$lib/store/slices/terminals/terminals-selectors', () => ({
-  selectTerminals: () => ({ subscribe: (fn: any) => { fn([]); return () => {}; } }),
-  selectUserTerminals: () => ({ subscribe: (fn: any) => { fn([]); return () => {}; } }),
-  selectActiveTerminalId: () => ({ subscribe: (fn: any) => { fn(null); return () => {}; } }),
+  selectTerminals: () => ({ subscribe: (fn: any) => { fn([]); return () => { }; } }),
+  selectUserTerminals: () => ({ subscribe: (fn: any) => { fn([]); return () => { }; } }),
+  selectActiveTerminalId: () => ({ subscribe: (fn: any) => { fn(null); return () => { }; } }),
 }));
 vi.mock('$lib/store/slices/terminals/terminals-slice', () => ({
   removeTerminal: vi.fn(),

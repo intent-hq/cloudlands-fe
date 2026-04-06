@@ -12,7 +12,7 @@ import { createAgentTypeId } from '$shared/types/agent.types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { createLogger } from '$lib/utils/client-logger';
 import { openTerminalOverlay } from '$lib/store/slices/terminals/terminals-slice';
-import { getDispatch } from '$lib/store/utils/utils';
+import { getDispatch } from '$lib/store/utils/svelte-context';
 import type { Workspace } from '$shared/types';
 import type { WorkspacePageState, WorkspacePageStateManager } from './workspace-page-state.svelte';
 

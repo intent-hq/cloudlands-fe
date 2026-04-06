@@ -32,7 +32,7 @@ vi.mock('$lib/store/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { open: openMock },
 }));
 
-vi.mock('$lib/store/utils/utils', () => ({
+vi.mock('$lib/store/utils/svelte-context', () => ({
   getDispatch: () => dispatchMock,
 }));
 

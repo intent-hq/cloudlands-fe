@@ -15,7 +15,7 @@
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import { faNote } from '$lib/icons/faNote';
   import { getFileExtension, track } from '$lib/services/analytics';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
     markNoteRead,
     refreshUnreadNotes,

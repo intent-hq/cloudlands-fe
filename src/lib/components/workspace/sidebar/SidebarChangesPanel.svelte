@@ -74,7 +74,7 @@
     loadWorkspacesRequested,
     setWorkspaceEntity,
   } from '$lib/store/slices/workspace/workspace-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import {

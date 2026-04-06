@@ -71,7 +71,7 @@
   import { workspaceUnmounted } from '$lib/store/slices/workspace-lifecycle/workspace-lifecycle-slice';
   import { track, setAnalyticsContextProvider, getFileExtension } from '$lib/services/analytics';
   import { selectSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
 
   // Components
   import WorkspaceLayout from '$lib/components/workspace/WorkspaceLayout.svelte';

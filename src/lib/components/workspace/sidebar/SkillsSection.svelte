@@ -8,7 +8,7 @@
   import type { SkillInfo } from '$lib/store/slices/skills/skills-types';
   import { selectSkills } from '$lib/store/slices/skills/skills-selectors';
   import { loadSkillsRequested } from '$lib/store/slices/skills/skills-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { slide } from 'svelte/transition';
   import { faChevronDown, faGlobe, faPuzzlePiece } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';

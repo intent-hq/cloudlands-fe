@@ -49,7 +49,7 @@
   import { NoteId } from '$shared/types/branded-ids';
   import { TextSelection } from '@tiptap/pm/state';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectComments } from '$lib/store/slices/comments/comments-selectors';
   import {
     selectCommentAction,

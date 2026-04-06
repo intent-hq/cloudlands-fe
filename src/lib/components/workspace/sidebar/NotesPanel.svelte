@@ -42,7 +42,7 @@ import { onMount, tick } from 'svelte';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { getPanelLayoutManager, hasPanelLayoutManager } from '$features/layout/panel-layout-adapter';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { deleteNote, createNote, updateNoteTitle } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
   import { toast } from 'svelte-sonner';
 

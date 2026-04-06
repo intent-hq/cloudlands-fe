@@ -45,7 +45,7 @@ vi.mock('$features/agent/browser', () => ({}));
 
 
 
-vi.mock('$lib/store/utils/utils', () => ({
+vi.mock('$lib/store/utils/svelte-context', () => ({
   getDispatch: () => vi.fn(),
   getStoreContext: () => undefined,
 }));

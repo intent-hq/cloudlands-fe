@@ -9,7 +9,7 @@
   import { faEdit, faCheck, faTimes } from '@fortawesome/free-solid-svg-icons';
   import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectCommentById } from '$lib/store/slices/comments/comments-selectors';
   import { updateCommentAction } from '$lib/store/slices/comments/comments-slice';
 

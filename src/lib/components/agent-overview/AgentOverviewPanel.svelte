@@ -9,7 +9,7 @@
   import type { AgentNode } from './types';
   import { isAgentNode } from './types';
   import AgentHierarchyGraph from './AgentHierarchyGraph.svelte';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { selectGraphState } from '$lib/store/slices/agent-overview/agent-overview-selectors';
   import { selectWorkspaceEvents } from '$lib/store/slices/workspace-events/workspace-events-selectors';

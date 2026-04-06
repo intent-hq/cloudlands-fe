@@ -38,7 +38,7 @@ import {
 } from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
 import type { AgentExecutorContext } from '$lib/store/slices/background-agent-executor/background-agent-executor-types';
 import type { ExecutorStatus } from '$lib/store/slices/background-agent-executor/background-agent-executor-types';
-import { getDispatch } from '$lib/store/utils/utils';
+import { getDispatch } from '$lib/store/utils/svelte-context';
 import type { Workspace } from '$shared/types';
 
 export interface UseBackgroundAgentOptions {

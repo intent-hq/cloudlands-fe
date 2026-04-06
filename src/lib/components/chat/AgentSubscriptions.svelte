@@ -27,7 +27,7 @@
   import InlineAgentAvatar from './InlineAgentAvatar.svelte';
   import { agentService } from '$features/agent/agent-ipc-bridge';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
     selectAgentSubscriptions,
     selectDelegationGroups,

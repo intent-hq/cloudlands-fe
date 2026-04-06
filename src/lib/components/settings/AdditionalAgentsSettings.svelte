@@ -2,7 +2,7 @@
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { selectEnabledProviders } from '$lib/store/slices/provider-settings/provider-settings-selectors';
   import { toggleProvider } from '$lib/store/slices/provider-settings/provider-settings-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { ACP_PROVIDERS } from '$shared/config/provider-config';
 
   const dispatch = getDispatch();

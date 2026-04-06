@@ -64,7 +64,7 @@
     selectShowDeleteWarning,
     selectShowRemoveRepoConfirm,
   } from '$lib/store/slices/workspace-operations/workspace-operations-selectors';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import NodeVersionWarning from '$lib/components/NodeVersionWarning.svelte';
   import WorkspaceTableView, {
     type RepoInfo,

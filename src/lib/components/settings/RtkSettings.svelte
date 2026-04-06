@@ -10,7 +10,7 @@
   import { SETTINGS_CHANNELS, SYSTEM_CHANNELS } from '$shared/ipc/channels';
   import { onMount } from 'svelte';
   import { invoke } from '$lib/electron-bridge';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
     addTerminal,
     openTerminalOverlay,

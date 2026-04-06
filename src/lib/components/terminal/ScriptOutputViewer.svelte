@@ -17,7 +17,7 @@
   import { faXmark, faWandMagicSparkles, faPlay } from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
   import { scriptsClient } from '$features/scripts/scripts.client';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectScriptById, selectScriptRuntime, selectScriptOutput } from '$lib/store/slices/scripts/scripts-selectors';
   import { removeScript } from '$lib/store/slices/scripts/scripts-slice';

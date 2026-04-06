@@ -9,7 +9,7 @@
   import { faGlobe, faPlus, faHistory } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectBrowserRecentUrls } from '$lib/store/slices/browser/browser-selectors';
   import { addRecentUrl, initBrowserWorkspace } from '$lib/store/slices/browser/browser-slice';
 

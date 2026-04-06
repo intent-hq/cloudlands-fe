@@ -5,7 +5,7 @@
     selectNoteFontStyleLabel,
   } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { cycleNoteFontStyle } from '$lib/store/slices/user-preferences/user-preferences-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
 
   const dispatch = getDispatch();
   const noteFontStyleLabel = selectNoteFontStyleLabel();

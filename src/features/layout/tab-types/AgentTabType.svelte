@@ -23,7 +23,7 @@
     selectAgentFontStyleLabel,
     selectIsAgentMonospace,
   } from '$lib/store/slices/user-preferences/user-preferences-selectors';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
   import {
     selectSpecialistName,

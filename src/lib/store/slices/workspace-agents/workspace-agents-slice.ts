@@ -348,9 +348,9 @@ export const workspaceAgentsReducer = createReducer<WorkspaceAgentsState>(initia
       ...workspaceState,
       isWaitingForFirstMessage: waiting
         ? {
-            ...workspaceState.isWaitingForFirstMessage,
-            [agentId]: true,
-          }
+          ...workspaceState.isWaitingForFirstMessage,
+          [agentId]: true,
+        }
         : omitKey(workspaceState.isWaitingForFirstMessage, agentId),
     });
   })

@@ -153,7 +153,7 @@ Components should dispatch actions directly using `getDispatch()`:
 
 ```typescript
 // In a Svelte component
-import { getDispatch } from "$lib/store/utils/utils";
+import { getDispatch } from "$lib/store/utils/svelte-context";
 import {
   openCheatSheet,
   toggleCheatSheet

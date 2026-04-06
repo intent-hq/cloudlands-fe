@@ -66,7 +66,7 @@
     selectPanels,
     selectCheckedSelections,
   } from '$lib/store/slices/multi-panel-context/multi-panel-context-selectors';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { clearChatDraft, setChatDraft } from '$lib/store/slices/transient-ui/transient-ui-slice';
   import {

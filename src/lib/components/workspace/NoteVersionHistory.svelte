@@ -5,7 +5,7 @@
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import { faRotateLeft } from '@fortawesome/free-solid-svg-icons';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { fetchNoteVersions } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
   import { selectNoteVersions } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
 

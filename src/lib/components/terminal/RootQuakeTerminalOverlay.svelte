@@ -40,7 +40,7 @@
     type TerminalTab,
   } from '$lib/store/slices/terminals/terminals-slice';
   // RootQuakeTerminalOverlay uses ROOT_WORKSPACE_ID as its workspace ID
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import Terminal from './Terminal.svelte';
   import Fa from 'svelte-fa';
   import {

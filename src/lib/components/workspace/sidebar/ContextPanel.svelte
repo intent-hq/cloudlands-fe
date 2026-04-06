@@ -7,7 +7,7 @@
    * Also displays user-defined MCP servers with per-workspace toggles.
    */
   import type { ContextItem, ContextProvider } from '$features/context/types';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
     initContextForWorkspace,
     addContextItem,

@@ -3,7 +3,7 @@
   import { init } from '../init';
   import { type PreloadedStoreState } from '../types';
   import { STORE_CONTEXT } from '../constants';
-  import { getStoreContext } from '../utils/utils';
+  import { getStoreContext } from '../utils/svelte-context';
   import { sagaNames } from '../sagas';
   import { runSaga } from './run-saga';
 

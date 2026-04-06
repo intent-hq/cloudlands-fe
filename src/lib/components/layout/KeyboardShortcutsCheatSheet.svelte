@@ -21,7 +21,7 @@
     selectCheatSheetContext,
   } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-selectors';
   import { closeCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
 
   const isOpen = selectIsCheatSheetOpen();
   const context = selectCheatSheetContext();

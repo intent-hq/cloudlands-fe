@@ -44,7 +44,7 @@
     selectIsNoteMonospace,
     selectNoteFontStyle,
   } from '$lib/store/slices/user-preferences/user-preferences-selectors';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { Select } from '$lib/components/ui/select';
 
   import { isMacPlatform } from '$lib/utils/shortcuts';

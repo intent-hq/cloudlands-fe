@@ -213,7 +213,7 @@ This guidance matches the current store architecture in the repository:
 
 - `src/lib/store/components/Store.svelte` exports `initStore()`, which creates the store context by calling `src/lib/store/init.ts`, and the component mounts the registered `RunSaga` instances
 - `src/lib/store/init.ts` creates the Redux store, initializes the dispatch/store bridges, and starts the saga manager runtime
-- `src/lib/store/utils/utils.ts` exposes `getDispatch()` for components to dispatch actions
+- `src/lib/store/utils/svelte-context.ts` exposes `getDispatch()` for components to dispatch actions
 - `src/lib/store/sagas.ts` is the registry for saga-based side effects
 - `src/lib/store/utils/ipc-channel.ts` provides channel helpers so Electron IPC and window events are handled in sagas instead of component lifecycle hooks
 - workspace-scoped slices use `createWorkspaceScopedHelpers()` from `src/lib/store/utils/workspace-scoped.ts` to manage per-workspace state under `byWorkspaceId`

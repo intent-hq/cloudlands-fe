@@ -24,7 +24,7 @@
     type HandleDropZoneType,
     type SerializableRect,
   } from '$lib/store/slices/tab-state/tab-state-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
 
   /** Position relative to the split for container-level insertion */
   export type HandleDropZone = 'before' | 'after';

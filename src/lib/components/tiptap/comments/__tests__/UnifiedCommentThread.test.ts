@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-vi.mock('$lib/store/utils/utils', () => ({
+vi.mock('$lib/store/utils/svelte-context', () => ({
   getDispatch: () => vi.fn(),
   getStoreContext: () => undefined,
 }));

@@ -8,7 +8,7 @@
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
     selectLinearIsAuthenticated,
     selectLinearIsAuthenticating,

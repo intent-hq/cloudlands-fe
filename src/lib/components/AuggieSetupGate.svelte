@@ -5,7 +5,7 @@
   import { invoke, shell } from '$lib/electron-bridge';
   import { identifyUser } from '$lib/services/analytics';
   import { retryLoadModels } from '$lib/store/slices/model/model-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { createLogger } from '$lib/utils/client-logger';
   import { MINIMUM_AUGGIE_VERSION, type InstallErrorType } from '$shared/constants/auggie';
   import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';

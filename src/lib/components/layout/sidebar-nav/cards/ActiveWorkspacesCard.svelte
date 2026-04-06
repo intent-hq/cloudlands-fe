@@ -16,7 +16,7 @@
   import { onMount } from 'svelte';
   import WorkspaceListItem from '../WorkspaceListItem.svelte';
   import Header from '$lib/components/ui/Header.svelte';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
     selectActiveStreamsVersion,
     selectPinnedWorkspaceIds,

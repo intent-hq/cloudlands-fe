@@ -6,7 +6,7 @@
   import type { Workspace } from '$shared/types';
   import { createLogger } from '$lib/utils/client-logger';
   import { retryLoadModels } from '$lib/store/slices/model/model-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
 
   const logger = createLogger('AugieSetupWizard');
   const dispatch = getDispatch();

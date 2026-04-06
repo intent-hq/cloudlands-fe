@@ -12,7 +12,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { Button } from '$lib/components/ui/button';
   import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../../../shared/constants';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
     addRecentUrl,
     updateUrlMetadata,

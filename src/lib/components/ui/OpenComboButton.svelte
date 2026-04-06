@@ -21,7 +21,7 @@
     selectInstalledEditors,
     selectOpenAction,
   } from '$lib/store/slices/external-editors/external-editors-selectors';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { createLogger } from '$lib/utils/client-logger';
   import { toNativePath } from '$lib/utils/path-utils';
   import {

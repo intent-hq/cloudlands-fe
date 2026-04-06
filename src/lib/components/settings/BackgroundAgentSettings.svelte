@@ -18,7 +18,7 @@
     selectHasOverride,
   } from '$lib/store/slices/background-agent-settings/background-agent-settings-selectors';
   import { selectAvailableModels } from '$lib/store/slices/model/model-selectors';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { Dropdown, type DropdownOption } from '$lib/components/ui/dropdown';
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import Fa from 'svelte-fa';

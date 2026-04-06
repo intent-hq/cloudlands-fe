@@ -31,7 +31,7 @@
 
 import { createLogger } from '$lib/utils/client-logger';
 import { toggleSidebar } from '$lib/store/slices/ui-layout/ui-layout-slice';
-import { getDispatch } from '$lib/store/utils/utils';
+import { getDispatch } from '$lib/store/utils/svelte-context';
 
 const logger = createLogger('PanelShortcuts');
 

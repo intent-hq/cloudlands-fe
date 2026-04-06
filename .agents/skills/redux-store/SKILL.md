@@ -40,7 +40,7 @@ Components (`*.svelte`, component-level `*.ts`) may **only** import these from t
 - ✅ Actions from `*-slice.ts`
 - ✅ Selectors from `*-selectors.ts`
 - ✅ Types from `*-types.ts`
-- ✅ `getDispatch` from `$lib/store/utils/utils`
+- ✅ `getDispatch` from `$lib/store/utils/svelte-context`
 - ✅ `getReduxStore` from `$lib/store/redux-dispatch-bridge` (for one-time reads in event handlers only)
 
 Components must **never** import:
@@ -437,7 +437,7 @@ type State = { items: Collection<ItemWithPinned, 'id'> };
 
 ```svelte
 <script lang="ts">
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectItems, selectIsLoading } from '$lib/store/slices/my-slice/my-slice-selectors';
   import { fetchItems, removeItem } from '$lib/store/slices/my-slice/my-slice-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';

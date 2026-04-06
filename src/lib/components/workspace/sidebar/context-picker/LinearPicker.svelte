@@ -13,7 +13,7 @@
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { startLinearAuth } from '$lib/store/slices/linear-auth/linear-auth-slice';
 
   const logger = createLogger('LinearPicker');

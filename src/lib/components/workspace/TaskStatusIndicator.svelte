@@ -4,7 +4,7 @@
   import type { WorkspaceId, NoteId } from '$shared/types/branded-ids';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import TaskStatusIcon from '../tiptap/TaskStatusIcon.svelte';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { updateTaskStatus } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
 
   const dispatch = getDispatch();

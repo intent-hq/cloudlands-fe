@@ -47,7 +47,7 @@
     selectCounterScale,
   } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { toggleSidebar } from '$lib/store/slices/ui-layout/ui-layout-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
 
   interface Props {

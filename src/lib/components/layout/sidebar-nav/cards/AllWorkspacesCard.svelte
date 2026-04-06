@@ -13,7 +13,7 @@
   import { onMount } from 'svelte';
   import { isPRMergeable as checkPRMergeable } from '$lib/utils/pr-status';
   import Header from '$lib/components/ui/Header.svelte';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
     selectActiveStreamsVersion,
     selectPinnedWorkspaceIds,

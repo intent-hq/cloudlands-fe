@@ -31,7 +31,7 @@
   import { handleLink } from '$features/navigation/link-handler';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import { isMacPlatform } from '$lib/utils/shortcuts';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
     selectMcpServersWithStatus,

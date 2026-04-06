@@ -36,7 +36,7 @@
   import { tick, onMount } from 'svelte';
   import { logger, createLogger } from '$lib/utils/client-logger';
   import { WorkspaceId } from '$shared/types/branded-ids';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
     selectAllNotes,
   } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';

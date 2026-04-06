@@ -20,7 +20,7 @@ import { setInitialAgentId } from '$lib/store/slices/workspace-agents/workspace-
 import { workspaceMounted } from '$lib/store/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { selectActiveWorkspace, selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
 import { setActiveWorkspaceId, setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
-import { getDispatch } from '$lib/store/utils/utils';
+import { getDispatch } from '$lib/store/utils/svelte-context';
 import type { WorkspacePageState, WorkspacePageStateManager } from './workspace-page-state.svelte';
 
 const logger = createLogger('workspace-loader');

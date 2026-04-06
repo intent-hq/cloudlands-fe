@@ -27,7 +27,7 @@
   import { Button } from '$lib/components/ui/button';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
   import { v4 as uuidv4 } from 'uuid';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { saveScript } from '$lib/store/slices/setup-scripts/setup-scripts-slice';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';

@@ -12,7 +12,7 @@
   import UpdateToast from '$lib/components/ui/toast/UpdateToast.svelte';
   import { onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
     selectAutoUpdateToastVisible,

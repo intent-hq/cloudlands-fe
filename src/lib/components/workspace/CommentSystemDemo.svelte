@@ -3,7 +3,7 @@
   import { Editor } from '@tiptap/core';
   import { createEditorConfig } from '$lib/utils/editor-config';
   import { CommentManagerV2 } from '$features/comments/comment-manager-v2';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectComments, selectSelectedComment } from '$lib/store/slices/comments/comments-selectors';
   import { selectCommentAction, loadCommentsAction, clearCommentsAction } from '$lib/store/slices/comments/comments-slice';
 

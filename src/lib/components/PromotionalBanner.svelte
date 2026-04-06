@@ -6,7 +6,7 @@
   import { setActiveProvider } from '$lib/store/slices/provider-settings/provider-settings-slice';
   import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
   import { selectAvailableModels } from '$lib/store/slices/model/model-selectors';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import type {
     PromotionalBanner as PromotionalBannerData,
     PromotionalBannerAction,

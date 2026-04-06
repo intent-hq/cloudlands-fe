@@ -6,7 +6,7 @@
   import { onDestroy, onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
     initializeGitHubAuth,
     startGitHubAuth,

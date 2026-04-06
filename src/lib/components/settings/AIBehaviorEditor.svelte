@@ -3,7 +3,7 @@
   import { faPlus, faRotateLeft, faTrash } from '@fortawesome/free-solid-svg-icons';
 
   import { selectSelectedModel } from '$lib/store/slices/model/model-selectors';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
     selectCustomSpecialists,

@@ -6,7 +6,7 @@
    * to enable/disable individual servers per workspace.
    */
   import type { McpServerInfo } from '$lib/store/slices/mcp-servers/mcp-servers-types';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
     loadMcpServers,

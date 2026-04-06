@@ -1,7 +1,7 @@
 <script lang="ts">
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import { onDestroy, onMount } from 'svelte';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
     startGitHubAuth,
     cancelGitHubAuth,

@@ -10,7 +10,7 @@
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
   import { updateWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
     faCodePullRequest,
     faExclamationCircle,

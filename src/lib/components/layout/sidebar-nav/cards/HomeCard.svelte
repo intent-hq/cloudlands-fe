@@ -4,7 +4,7 @@
    * Navigates to the home page on click.
    */
   import { goto } from '$app/navigation';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { closeAll } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
 
   const dispatch = getDispatch();

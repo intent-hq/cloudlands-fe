@@ -7,7 +7,7 @@
 
 import { openWorkspaceTab } from '$lib/store/slices/tab-state/tab-state-slice';
 import { selectWorkspacePendingCreations } from '$lib/store/slices/workspace/workspace-selectors';
-import { getDispatch } from '$lib/store/utils/utils';
+import { getDispatch } from '$lib/store/utils/svelte-context';
 import { createLogger } from '$lib/utils/client-logger';
 import { fromStore } from 'svelte/store';
 import type { WorkspacePageStateManager } from './workspace-page-state.svelte';

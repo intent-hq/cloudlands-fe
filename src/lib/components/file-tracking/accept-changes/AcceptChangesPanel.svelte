@@ -76,7 +76,7 @@
     openTerminalOverlay,
   } from '$lib/store/slices/terminals/terminals-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { loadWorkspacesRequested, setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
   import { selectAcceptChangesState } from '$lib/store/slices/transient-ui/transient-ui-selectors';

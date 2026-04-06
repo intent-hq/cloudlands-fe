@@ -24,7 +24,7 @@
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
   import { WorkspaceStatusEnum } from '$shared/types';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectActiveStreamsVersion, selectPanelItem, selectActiveCard, selectOnboardingActive, selectExpandedItem, selectIsCardPinned, selectContextMenuOpen } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
   import { closeAll, togglePanel, setHoveredItem, setExpandedItem, setDeferredLeave, clearDeferredLeave } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';

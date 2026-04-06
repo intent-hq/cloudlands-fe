@@ -17,7 +17,7 @@
   import { selectUnreadAgentIds, selectUnreadAgentIdsForWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectPermissionRequests } from '$lib/store/slices/permission/permission-selectors';
   import {
     closeSwitcher,

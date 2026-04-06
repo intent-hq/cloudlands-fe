@@ -33,7 +33,7 @@
 
   import { togglePanel as togglePanelAction, toggleSelection as toggleSelectionAction } from '$lib/store/slices/multi-panel-context/multi-panel-context-slice';
   import { selectPanels, selectSelections } from '$lib/store/slices/multi-panel-context/multi-panel-context-selectors';
-  import { getDispatch } from '$lib/store/utils/utils';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { slide } from 'svelte/transition';
 
   const logger = createLogger('SimpleRichInput');
