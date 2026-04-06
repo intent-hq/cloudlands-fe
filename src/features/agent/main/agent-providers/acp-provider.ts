@@ -997,8 +997,6 @@ export class ACPProvider extends BaseAgentProvider {
   // These files are needed by auggie for the lifetime of the process
   private tempRulesFilePath?: string;
   private tempMcpConfigPath?: string;
-  private hasSentFirstMessage = false;
-  private hasRemoteMcpServers = false;
   // Mapping from command/URL to server name, used to match MCP startup errors to server names
   private mcpServerCommandMap: Map<string, string> = new Map();
   // MCP servers to pass via the ACP session/new mcpServers field.
@@ -1161,6 +1159,23 @@ export class ACPProvider extends BaseAgentProvider {
     const minor = parseInt(match[2], 10);
     // 0.18.0+ supports session/load
     return major > 0 || (major === 0 && minor >= 18);
+  }
+
+  /**
+   * Check if the agent handles MCP init waiting internally (auggie >= 0.23.0).
+   * Older auggie versions need a blind sleep fallback before the first prompt.
+   */
+  private supportsMcpInitWait(): boolean {
+    if (this.providerCapabilities.id !== 'auggie') return false;
+    if (!this.agentVersion) return false;
+
+    const match = this.agentVersion.match(/(\d+)\.(\d+)(?:\.(\d+))?/);
+    if (!match) return false;
+
+    const major = parseInt(match[1], 10);
+    const minor = parseInt(match[2], 10);
+    // 0.23.0+ handles MCP init waiting internally
+    return major > 0 || (major === 0 && minor >= 23);
   }
 
   /**
@@ -1814,25 +1829,8 @@ export class ACPProvider extends BaseAgentProvider {
     return [...SUBAGENT_TOOLS, ...CONFLICTING_BUILTIN_TOOLS];
   }
 
-  private detectRemoteMcpServers(servers: Record<string, unknown>): void {
-    for (const [name, config] of Object.entries(servers)) {
-      if (name === 'workspace-mcp') continue;
-      const serverConfig = config as any;
-      if (
-        serverConfig.type === 'http' ||
-        serverConfig.url ||
-        serverConfig.command?.includes('mcp-remote') ||
-        serverConfig.args?.some((a: string) => a.includes('mcp-remote'))
-      ) {
-        this.hasRemoteMcpServers = true;
-        return;
-      }
-    }
-  }
-
   private async launchAgent(): Promise<void> {
     this.emitStatus('launch', 'Launching agent…');
-    this.hasRemoteMcpServers = false;
     if (!this.config.command) {
       throw new Error('No agent command specified');
     }
@@ -2177,9 +2175,6 @@ export class ACPProvider extends BaseAgentProvider {
             this.surfaceMcpLoadErrorToRenderer(userMcpError);
           }
 
-          // Detect remote MCP servers that need longer initialization
-          this.detectRemoteMcpServers(finalMcpServers);
-
           const mcpConfig = { mcpServers: finalMcpServers };
           workspaceMcpServers = finalMcpServers;
 
@@ -2481,9 +2476,6 @@ export class ACPProvider extends BaseAgentProvider {
             this.surfaceMcpLoadErrorToRenderer(userMcpError);
           }
         } // end of !simpleRequest block
-
-        // Detect remote MCP servers that need longer initialization
-        this.detectRemoteMcpServers(finalMcpServers);
 
         workspaceMcpServers = finalMcpServers;
       } catch (error) {
@@ -4845,28 +4837,8 @@ export class ACPProvider extends BaseAgentProvider {
     }
   }
 
-  /**
-   * Wait for MCP servers to initialize before sending the first message.
-   * Auggie doesn't wait for MCP init in ACP mode, so we add a delay.
-   * Only waits once per session, and only if MCP servers are configured.
-   */
-  private async waitForMcpInitIfNeeded(): Promise<void> {
-    if (!this.hasSentFirstMessage && this.tempMcpConfigPath) {
-      this.emitStatus('mcp-init', 'Waiting for MCP servers to initialize…');
-      const MCP_INIT_WAIT_MS = this.hasRemoteMcpServers ? 15000 : 5000;
-      logger.info('Waiting for MCP servers to initialize before first message', {
-        waitMs: MCP_INIT_WAIT_MS,
-        hasRemoteMcpServers: this.hasRemoteMcpServers,
-        mcpConfigPath: this.tempMcpConfigPath,
-      });
-      await new Promise((resolve) => setTimeout(resolve, MCP_INIT_WAIT_MS));
-    }
-    this.hasSentFirstMessage = true;
-  }
-
   private async createSession(): Promise<void> {
     this.emitStatus('session-create', 'Creating session…');
-    this.hasSentFirstMessage = false;
 
     logger.info('Creating new ACP session', {
       isFirstSession: !this.previousSessionId,
@@ -5498,10 +5470,19 @@ export class ACPProvider extends BaseAgentProvider {
       hasImages: imageBlocks && imageBlocks.length > 0,
     });
 
+    // Auggie >= 0.23.0 handles MCP init waiting internally (PR #49152).
+    // For older versions, use a blind sleep as fallback.
+    if (!this.supportsMcpInitWait()) {
+      const MCP_INIT_WAIT_MS = 5000; // conservative default for old auggie
+      logger.info('Old auggie version — applying MCP init sleep fallback', {
+        agentVersion: this.agentVersion,
+        waitMs: MCP_INIT_WAIT_MS,
+      });
+      await new Promise((resolve) => setTimeout(resolve, MCP_INIT_WAIT_MS));
+    }
+
     // Claude Code: ensure selected model is actually applied to the current session.
     await this.ensureClaudeCodeModelApplied();
-
-    await this.waitForMcpInitIfNeeded();
 
     // Send prompt request - auggie expects an array of content blocks
     this.emitStatus('prompt', 'Sent prompt…');
@@ -6714,8 +6695,16 @@ export class ACPProvider extends BaseAgentProvider {
       await this.restartWithModel(nextModel);
     }
 
-    // Wait for MCP servers before first prompt
-    await this.waitForMcpInitIfNeeded();
+    // Auggie >= 0.23.0 handles MCP init waiting internally (PR #49152).
+    // For older versions, use a blind sleep as fallback.
+    if (!this.supportsMcpInitWait()) {
+      const MCP_INIT_WAIT_MS = 5000; // conservative default for old auggie
+      logger.info('Old auggie version — applying MCP init sleep fallback', {
+        agentVersion: this.agentVersion,
+        waitMs: MCP_INIT_WAIT_MS,
+      });
+      await new Promise((resolve) => setTimeout(resolve, MCP_INIT_WAIT_MS));
+    }
 
     // Send the prompt request
     // Claude Code: ensure selected model is actually applied to the current session before prompting.
@@ -7645,8 +7634,16 @@ export class ACPProvider extends BaseAgentProvider {
           }),
         });
 
-        // Wait for MCP servers before first prompt
-        await this.waitForMcpInitIfNeeded();
+        // Auggie >= 0.23.0 handles MCP init waiting internally (PR #49152).
+        // For older versions, use a blind sleep as fallback.
+        if (!this.supportsMcpInitWait()) {
+          const MCP_INIT_WAIT_MS = 5000; // conservative default for old auggie
+          logger.info('Old auggie version — applying MCP init sleep fallback', {
+            agentVersion: this.agentVersion,
+            waitMs: MCP_INIT_WAIT_MS,
+          });
+          await new Promise((resolve) => setTimeout(resolve, MCP_INIT_WAIT_MS));
+        }
 
         // Send prompt request to agent - auggie expects an array of content blocks
         // Claude Code: ensure selected model is actually applied to the current session before prompting.
