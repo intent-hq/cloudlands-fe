@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.37
+
+- Archive and delete workspaces directly from the sidebar context menu.
+- Window layout is now restored after auto-updates — your open tabs and panels survive restarts.
+- Model picker polish: improved layout, provider logos always visible, and the picker locks after the first message as expected.
+- Idle agent processes are now cleaned up automatically, capping resource usage on long-running sessions.
+- Fixes: markdown code blocks not rendering in narrow chat panels, stack overflow when sending messages with inline images, suggested reply edit button not working, memory leak from large unparseable stream messages, workspace creation modal applying the wrong initial repo, chat loading and agent wake-up reliability improvements.
+
 ## 0.2.36
 
 - MCP tool calls now show brand logos and structured previews so you can see what tools are doing at a glance.
