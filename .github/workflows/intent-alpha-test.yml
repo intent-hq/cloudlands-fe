@@ -97,6 +97,9 @@ jobs:
         with:
           credentials_json: ${{ secrets.INTENT_GCP_SERVICE_ACCOUNT_KEY }}
 
+      - name: Rename update manifest for auto-update compatibility
+        run: mv dist-electron/alpha-mac.yml dist-electron/latest-mac.yml
+
       - name: Upload to GCP alpha channel
         run: bash scripts/upload-release-gcp.sh alpha
         env:
