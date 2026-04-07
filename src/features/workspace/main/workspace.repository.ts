@@ -40,6 +40,7 @@ export interface WorkspaceRepository {
   readGitConfig(repoPath: string): Promise<string>;
   scanDirectory(dir: string, depth?: number): Promise<string[]>;
   cleanCache(id: WorkspaceId): Promise<void>;
+  clearListCache(): void;
 }
 
 /**
@@ -51,6 +52,7 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
   private listCache: { workspaces: Workspace[]; timestamp: number } | null = null;
   private readonly CACHE_TTL = 1000; // 1 second TTL for cache
   private readonly LIST_CACHE_TTL = 5000; // 5 seconds for list cache
+  private readonly ORPHAN_CLEANUP_GRACE_MS = 5000;
 
   /**
    * Find workspace by ID
@@ -138,7 +140,7 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
 
       // Collect workspace IDs from all roots, deduplicating by id (canonical wins)
       const seenIds = new Set<string>();
-      const allValidIds: string[] = [];
+      const allValidEntries: { id: string; root: string }[] = [];
 
       // Scan canonical ~/intent/workspaces/ first
       try {
@@ -146,9 +148,13 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
           withFileTypes: true,
         });
         for (const entry of workspacesBaseEntries) {
-          if (entry.isDirectory() && WorkspaceConfig.isValidWorkspaceId(entry.name)) {
+          if (
+            entry.isDirectory() &&
+            WorkspaceConfig.isValidWorkspaceId(entry.name) &&
+            !WorkspaceConfig.isVirtualWorkspace(entry.name)
+          ) {
             seenIds.add(entry.name);
-            allValidIds.push(entry.name);
+            allValidEntries.push({ id: entry.name, root: WorkspaceConfig.WORKSPACES_BASE });
           }
         }
       } catch {
@@ -164,10 +170,11 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
           if (
             entry.isDirectory() &&
             WorkspaceConfig.isValidWorkspaceId(entry.name) &&
+            !WorkspaceConfig.isVirtualWorkspace(entry.name) &&
             !seenIds.has(entry.name)
           ) {
             seenIds.add(entry.name);
-            allValidIds.push(entry.name);
+            allValidEntries.push({ id: entry.name, root: WorkspaceConfig.WORKSPACE_ROOT });
           }
         }
       } catch {
@@ -183,9 +190,10 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
           if (
             entry.isDirectory() &&
             WorkspaceConfig.isValidWorkspaceId(entry.name) &&
+            !WorkspaceConfig.isVirtualWorkspace(entry.name) &&
             !seenIds.has(entry.name)
           ) {
-            allValidIds.push(entry.name);
+            allValidEntries.push({ id: entry.name, root: WorkspaceConfig.LEGACY_WORKSPACE_ROOT });
           }
         }
       } catch {
@@ -193,14 +201,22 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
       }
 
       // Load all workspaces in parallel
-      const workspacePromises = allValidIds.map((id) =>
-        this.findById(id as WorkspaceId).catch((err) => {
-          logger.warn(`Failed to load workspace ${id}`, err);
+      const workspacePromises = allValidEntries.map((entry) =>
+        this.findById(entry.id as WorkspaceId).catch((err) => {
+          logger.warn(`Failed to load workspace ${entry.id}`, err);
           return null;
         }),
       );
 
       const results = await Promise.all(workspacePromises);
+
+      // Safe orphan cleanup — only delete when metadata is confirmed missing
+      // and the directory is old enough that we're unlikely to race workspace creation.
+      for (let i = 0; i < results.length; i++) {
+        if (results[i] === null) {
+          void this.maybeCleanupOrphanWorkspace(allValidEntries[i]);
+        }
+      }
 
       // Filter out null results (failed loads)
       const workspaces = results.filter((w): w is Workspace => w !== null);
@@ -215,6 +231,89 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
     } catch (error) {
       logger.error('Failed to list workspaces', error as Error);
       return [];
+    }
+  }
+
+  private isErrnoCode(error: unknown, code: string): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as NodeJS.ErrnoException).code === code
+    );
+  }
+
+  private async maybeCleanupOrphanWorkspace(entry: { id: string; root: string }): Promise<void> {
+    const workspacePath = path.join(entry.root, entry.id);
+    const metadataDir = path.join(workspacePath, WorkspaceConfig.METADATA_FOLDER);
+    const metadataPath = path.join(metadataDir, WorkspaceConfig.WORKSPACE_METADATA_FILE);
+
+    try {
+      await fs.access(metadataPath);
+      logger.warn('Workspace metadata exists but failed to load, skipping cleanup', {
+        workspaceId: entry.id,
+        metadataPath,
+      });
+      return;
+    } catch (error) {
+      if (!this.isErrnoCode(error, 'ENOENT')) {
+        logger.warn('Failed to verify workspace metadata before cleanup, skipping orphan cleanup', {
+          workspaceId: entry.id,
+          metadataPath,
+          error: (error as Error).message,
+        });
+        return;
+      }
+    }
+
+    let candidateAgeMs: number | null = null;
+    for (const statPath of [metadataDir, workspacePath]) {
+      try {
+        const stat = await fs.stat(statPath);
+        candidateAgeMs = Date.now() - stat.mtimeMs;
+        break;
+      } catch (error) {
+        if (!this.isErrnoCode(error, 'ENOENT')) {
+          logger.warn('Failed to inspect orphan workspace candidate, skipping cleanup', {
+            workspaceId: entry.id,
+            path: statPath,
+            error: (error as Error).message,
+          });
+          return;
+        }
+      }
+    }
+
+    if (candidateAgeMs === null) {
+      logger.debug('Workspace orphan candidate disappeared before cleanup', {
+        workspaceId: entry.id,
+      });
+      return;
+    }
+
+    if (candidateAgeMs < this.ORPHAN_CLEANUP_GRACE_MS) {
+      logger.debug('Skipping orphan cleanup during workspace creation grace period', {
+        workspaceId: entry.id,
+        ageMs: Math.round(candidateAgeMs),
+      });
+      return;
+    }
+
+    try {
+      await fs.rm(workspacePath, { recursive: true, force: true });
+      logger.info('Cleaned up orphan workspace directory', { workspaceId: entry.id });
+    } catch (error) {
+      if (this.isErrnoCode(error, 'ENOENT')) {
+        logger.debug('Workspace orphan candidate already removed before cleanup completed', {
+          workspaceId: entry.id,
+        });
+        return;
+      }
+
+      logger.warn('Failed to clean up orphan directory', {
+        workspaceId: entry.id,
+        error: (error as Error).message,
+      });
     }
   }
 
@@ -529,6 +628,10 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
       logger.debug('Cache cleanup - directory might not exist', { workspaceId: id });
     }
   }
+
+  clearListCache(): void {
+    this.listCache = null;
+  }
 }
 
 /**
@@ -599,6 +702,10 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
   async cleanCache(id: WorkspaceId): Promise<void> {
     // In-memory implementation doesn't have cache
     logger.debug('In-memory cache cleanup called', { workspaceId: id });
+  }
+
+  clearListCache(): void {
+    // No-op: in-memory implementation doesn't have a list cache
   }
 
   // Test helpers

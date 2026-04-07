@@ -3470,7 +3470,7 @@ task:
     }
 
     for (const entry of entries) {
-      if (!entry.isDirectory() || !WorkspaceConfig.isValidWorkspaceId(entry.name)) {
+      if (!entry.isDirectory() || !WorkspaceConfig.isValidWorkspaceId(entry.name) || WorkspaceConfig.isVirtualWorkspace(entry.name)) {
         continue;
       }
 
@@ -3548,9 +3548,87 @@ task:
       let removed = 0;
       let orphans = 0;
 
+      const isErrnoCode = (error: unknown, code: string): boolean =>
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        (error as NodeJS.ErrnoException).code === code;
+
+      const ORPHAN_GRACE_PERIOD_MS = 60_000; // 60 seconds grace period
+
+      const removeOrphanWorkspace = async (
+        workspaceId: WorkspaceId,
+        workspacePath: string,
+        metadataPath: string,
+        reason: 'missing metadata' | 'invalid metadata',
+      ): Promise<void> => {
+        // Guard against racing concurrent workspace creation or metadata rewrites.
+        // If the directory was recently created/modified, skip deletion.
+        try {
+          const dirStat = await fs.stat(workspacePath);
+          const ageMs = Date.now() - dirStat.mtimeMs;
+          if (ageMs < ORPHAN_GRACE_PERIOD_MS) {
+            logger.warn(
+              'Skipping orphan workspace removal — directory modified recently, may be mid-creation or mid-write',
+              {
+                workspaceId,
+                metadataPath,
+                reason,
+                ageMs: Math.round(ageMs),
+                graceMs: ORPHAN_GRACE_PERIOD_MS,
+              },
+            );
+            return;
+          }
+        } catch (statError) {
+          if (isErrnoCode(statError, 'ENOENT')) {
+            // Directory already gone — nothing to remove
+            return;
+          }
+          // Other stat errors — skip deletion to be safe
+          logger.warn('Failed to stat workspace directory during orphan check, skipping removal', {
+            workspaceId,
+            workspacePath,
+            error: (statError as Error).message,
+          });
+          return;
+        }
+
+        logger.info('Removing orphan workspace directory (no valid workspace.json)', {
+          workspaceId,
+          metadataPath,
+          reason,
+        });
+        await fs.rm(workspacePath, { recursive: true, force: true });
+        orphans++;
+      };
+
+      const clearWorktreePath = async (
+        workspace: Workspace,
+        warningMessage: string,
+        error: unknown,
+      ): Promise<void> => {
+        logger.warn(warningMessage, {
+          workspaceId: workspace.id,
+          worktreePath: workspace.worktreePath,
+          error: this.extractErrorMessage(error),
+        });
+
+        workspace.worktreePath = undefined;
+
+        try {
+          await this.repository.save(workspace);
+        } catch (saveError) {
+          logger.warn('Failed to persist cleared worktree path during purge; leaving workspace intact', {
+            workspaceId: workspace.id,
+            error: this.extractErrorMessage(saveError),
+          });
+        }
+      };
+
       // Read workspace directories from canonical, current, and legacy roots
       const seenIds = new Set<string>();
-      const validDirNames: { name: string }[] = [];
+      const validDirNames: { name: string; root: string }[] = [];
 
       // Scan canonical ~/intent/workspaces/ first
       try {
@@ -3558,9 +3636,13 @@ task:
           withFileTypes: true,
         });
         for (const entry of workspacesBaseEntries) {
-          if (entry.isDirectory() && WorkspaceConfig.isValidWorkspaceId(entry.name)) {
+          if (
+            entry.isDirectory() &&
+            WorkspaceConfig.isValidWorkspaceId(entry.name) &&
+            !WorkspaceConfig.isVirtualWorkspace(entry.name)
+          ) {
             seenIds.add(entry.name);
-            validDirNames.push(entry);
+            validDirNames.push({ name: entry.name, root: WorkspaceConfig.WORKSPACES_BASE });
           }
         }
       } catch {
@@ -3576,10 +3658,11 @@ task:
           if (
             entry.isDirectory() &&
             WorkspaceConfig.isValidWorkspaceId(entry.name) &&
+            !WorkspaceConfig.isVirtualWorkspace(entry.name) &&
             !seenIds.has(entry.name)
           ) {
             seenIds.add(entry.name);
-            validDirNames.push(entry);
+            validDirNames.push({ name: entry.name, root: WorkspaceConfig.WORKSPACE_ROOT });
           }
         }
       } catch {
@@ -3594,9 +3677,10 @@ task:
           if (
             entry.isDirectory() &&
             WorkspaceConfig.isValidWorkspaceId(entry.name) &&
+            !WorkspaceConfig.isVirtualWorkspace(entry.name) &&
             !seenIds.has(entry.name)
           ) {
-            validDirNames.push(entry);
+            validDirNames.push({ name: entry.name, root: WorkspaceConfig.LEGACY_WORKSPACE_ROOT });
           }
         }
       } catch {
@@ -3605,81 +3689,115 @@ task:
 
       for (const entry of validDirNames) {
         const workspaceId = entry.name as WorkspaceId;
-        const workspacePath = WorkspaceConfig.paths.workspace(workspaceId);
-        const metadataPath = WorkspaceConfig.paths.workspaceMetadata(workspaceId);
+        const workspacePath = path.join(entry.root, entry.name);
+        const metadataPath = path.join(
+          entry.root,
+          entry.name,
+          WorkspaceConfig.METADATA_FOLDER,
+          WorkspaceConfig.WORKSPACE_METADATA_FILE,
+        );
+
+        let workspace: Workspace;
 
         try {
-          // Check if workspace.json exists
           await fs.access(metadataPath);
-
-          // Read and check status
-          const data = await fs.readFile(metadataPath, 'utf-8');
-          const workspace = JSON.parse(data);
-
-          // If status is Deleted, remove the entire directory
-          if (workspace.status === WorkspaceStatus.Deleted) {
-            logger.info('Purging deleted workspace', { workspaceId });
-            await fs.rm(workspacePath, { recursive: true, force: true });
-            removed++;
-          }
-          // If status is Archived but has no archivedAt, it's an old "deleted" workspace
-          // that was incorrectly marked as archived - purge it
-          else if (workspace.status === WorkspaceStatus.Archived && !workspace.archivedAt) {
-            logger.info('Purging legacy deleted workspace (archived without archivedAt)', {
+        } catch (error) {
+          if (isErrnoCode(error, 'ENOENT')) {
+            await removeOrphanWorkspace(workspaceId, workspacePath, metadataPath, 'missing metadata');
+          } else {
+            logger.warn('Failed to access workspace metadata during purge, skipping workspace', {
               workspaceId,
+              metadataPath,
+              error: this.extractErrorMessage(error),
             });
-            await fs.rm(workspacePath, { recursive: true, force: true });
-            removed++;
           }
-          // Check if workspace has a worktree path that no longer exists
-          // This can happen after 'git worktree prune'
-          // Skip validation for remote workspaces — their worktree paths only exist on the SSH host
-          else if (
-            workspace.worktreePath &&
-            !workspace.isRemote &&
-            workspace.environmentConfig?.type !== 'remote'
-          ) {
-            try {
-              await fs.access(workspace.worktreePath);
-              // Worktree exists, check if it's still a valid git worktree
-              try {
-                await execFileAsync('git', ['rev-parse', '--git-dir'], {
-                  cwd: workspace.worktreePath,
-                });
-                // Valid worktree, keep it
-              } catch {
-                // Not a valid git worktree anymore
-                logger.warn('Workspace has invalid git worktree, clearing worktree path', {
-                  workspaceId,
-                  worktreePath: workspace.worktreePath,
-                });
-                // Update workspace to clear the invalid worktree path
-                workspace.worktreePath = undefined;
-                await this.repository.save(workspace);
-              }
-            } catch {
-              // Worktree path doesn't exist
-              logger.warn('Workspace worktree path does not exist, clearing it', {
-                workspaceId,
-                worktreePath: workspace.worktreePath,
-              });
-              // Update workspace to clear the missing worktree path
-              workspace.worktreePath = undefined;
-              await this.repository.save(workspace);
-            }
+          continue;
+        }
+
+        try {
+          const data = await fs.readFile(metadataPath, 'utf-8');
+          workspace = JSON.parse(data) as Workspace;
+        } catch (error) {
+          if (isErrnoCode(error, 'ENOENT')) {
+            await removeOrphanWorkspace(workspaceId, workspacePath, metadataPath, 'missing metadata');
+          } else if (error instanceof SyntaxError) {
+            await removeOrphanWorkspace(workspaceId, workspacePath, metadataPath, 'invalid metadata');
+          } else {
+            logger.warn('Failed to read workspace metadata during purge, skipping workspace', {
+              workspaceId,
+              metadataPath,
+              error: this.extractErrorMessage(error),
+            });
           }
-        } catch {
-          // workspace.json doesn't exist or is corrupted - this is an orphan directory
-          logger.info('Removing orphan workspace directory (no valid workspace.json)', {
+          continue;
+        }
+
+        // If status is Deleted, remove the entire directory
+        if (workspace.status === WorkspaceStatus.Deleted) {
+          logger.info('Purging deleted workspace', { workspaceId });
+          await fs.rm(workspacePath, { recursive: true, force: true });
+          removed++;
+        }
+        // If status is Archived but has no archivedAt, it's an old "deleted" workspace
+        // that was incorrectly marked as archived - purge it
+        else if (workspace.status === WorkspaceStatus.Archived && !workspace.archivedAt) {
+          logger.info('Purging legacy deleted workspace (archived without archivedAt)', {
             workspaceId,
           });
           await fs.rm(workspacePath, { recursive: true, force: true });
-          orphans++;
+          removed++;
+        }
+        // Check if workspace has a worktree path that no longer exists
+        // This can happen after 'git worktree prune'
+        // Skip validation for remote workspaces — their worktree paths only exist on the SSH host
+        else if (
+          workspace.worktreePath &&
+          !workspace.isRemote &&
+          workspace.environmentConfig?.type !== 'remote'
+        ) {
+          try {
+            await fs.access(workspace.worktreePath);
+
+            try {
+              await execFileAsync('git', ['rev-parse', '--git-dir'], {
+                cwd: workspace.worktreePath,
+              });
+            } catch (error) {
+              if (isErrnoCode(error, 'ENOENT')) {
+                logger.warn('Git was unavailable during workspace purge, leaving worktree path unchanged', {
+                  workspaceId,
+                  worktreePath: workspace.worktreePath,
+                  error: this.extractErrorMessage(error),
+                });
+              } else {
+                await clearWorktreePath(
+                  workspace,
+                  'Workspace has invalid git worktree, clearing worktree path',
+                  error,
+                );
+              }
+            }
+          } catch (error) {
+            if (isErrnoCode(error, 'ENOENT')) {
+              await clearWorktreePath(
+                workspace,
+                'Workspace worktree path does not exist, clearing it',
+                error,
+              );
+            } else {
+              logger.warn('Failed to access workspace worktree path during purge, leaving worktree path unchanged', {
+                workspaceId,
+                worktreePath: workspace.worktreePath,
+                error: this.extractErrorMessage(error),
+              });
+            }
+          }
         }
       }
 
       // Clear all caches after purge
       this.workspaceCache.clear();
+      this.repository.clearListCache();
 
       logger.info('Workspace purge completed', { removed, orphans });
 
