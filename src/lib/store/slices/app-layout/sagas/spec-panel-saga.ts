@@ -1,12 +1,13 @@
 import { getPanelLayoutManager, hasPanelLayoutManager, } from "$features/layout/panel-layout-adapter";
 import { selectPanels, selectRestoreStatus } from "$lib/store/slices/panel-layout/panel-layout-selectors";
 import type { PanelLayoutRestoreStatus } from "$lib/store/slices/panel-layout/panel-layout-types";
+import { setRestoreStatus } from "$lib/store/slices/panel-layout/panel-layout-slice";
 import { selectSpec } from "$lib/store/slices/workspace-notes/workspace-notes-selectors";
 import { selectIsInitialSpecWriteInProgress } from "../../workspace-agents/workspace-agents-selectors";
 import { SPEC_NOTE_ID } from "$shared/constants/notes";
 import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import type { Task } from "redux-saga";
-import { cancel, call, delay, fork, select, takeEvery } from "typed-redux-saga";
+import { cancel, call, delay, fork, race, select, take, takeEvery } from "typed-redux-saga";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import { workspaceMounted, workspaceUnmounted, } from "../../workspace-lifecycle/workspace-lifecycle-slice";
 import { clearInitialAgentConfig } from "../../workspace-agents/workspace-agents-slice";
@@ -93,14 +94,34 @@ function getSpecContent(wsId?: string): string {
 function getRestoreStatus(wsId: string): PanelLayoutRestoreStatus {
     return selectRestoreStatus.select(getReduxStore().getState(), wsId);
 }
-function* waitForRestoreStatusToSettle(wsId: string) {
-    const startTime = Date.now();
+function* waitForRestoreStatusToSettle(wsId: string): Generator<any, PanelLayoutRestoreStatus, any> {
+    // First check if status already settled (e.g., if handleWorkspaceMountedRestore ran first)
     let restoreStatus = getRestoreStatus(wsId);
-    while ((restoreStatus === "idle" || restoreStatus === "pending") &&
-        Date.now() - startTime < RESTORE_STATUS_TIMEOUT_MS) {
-        yield* delay(RESTORE_STATUS_POLL_INTERVAL_MS);
+
+    // Always wait for at least one setRestoreStatus action for THIS workspace,
+    // with a timeout. This guarantees we see the real dispatch from
+    // handleWorkspaceMountedRestore, regardless of saga execution order.
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < RESTORE_STATUS_TIMEOUT_MS) {
+        // Wait for the next setRestoreStatus action matching our workspace
+        const { timeout } = yield* race({
+            action: take((action: any) =>
+                action.type === setRestoreStatus.type &&
+                action.payload[0] === wsId
+            ),
+            timeout: delay(RESTORE_STATUS_POLL_INTERVAL_MS),
+        });
+
         restoreStatus = getRestoreStatus(wsId);
+
+        // Terminal states: "restored", "empty", "invalid"
+        if (restoreStatus !== "idle" && restoreStatus !== "pending") {
+            return restoreStatus;
+        }
     }
+
+    // Timed out — return whatever we have
     return restoreStatus;
 }
 function slideInSpecPanel(wsId: string): void {
@@ -172,12 +193,26 @@ export function* watchSpecPanelForWorkspace(wsId: string) {
 export function* specPanelForWorkspaceSaga(action: ReturnType<typeof workspaceMounted>) {
     const [wsId] = action.payload;
     const restoreStatus: PanelLayoutRestoreStatus = yield* call(waitForRestoreStatusToSettle, wsId);
+    if (isSpecAlreadyOpen(wsId)) {
+        getPanelLayoutManager(wsId)?.setDeferSpecTab(false);
+        cleanupDeferralKeys(wsId);
+        return;
+    }
     if (restoreStatus === "restored") {
         cleanupDeferralKeys(wsId);
         return;
     }
     // Set up deferral if needed (equivalent to the $effect that set deferSpecTab)
     const shouldDefer: boolean = yield* call(shouldDeferSpecPanel, wsId);
+    const specContent = getSpecContent(wsId);
+    if (specContent.length > 0) {
+        if (!hasPanelLayoutManager(wsId)) {
+            // Layout manager not ready; fall through to watcher/polling path
+        } else {
+            yield* call(openSpecNormally, wsId, shouldDefer);
+            return;
+        }
+    }
     if (shouldDefer && hasPanelLayoutManager(wsId)) {
         const layoutManager = getPanelLayoutManager(wsId);
         layoutManager.setDeferSpecTab(true);

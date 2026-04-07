@@ -313,7 +313,8 @@ export function restoreLayoutState(wsId: string, restoredAgents: AgentSession[],
                 const mostRecentAgent = sortedAgents[0];
                 if (mostRecentAgent) {
                     openAgentInLayout(mostRecentAgent.id, mostRecentAgent.name || "Agent", wsId);
-                    if (allTabs.length === 0 && !shouldDeferSpecPanel(wsId)) {
+                    const restoreStatus = selectRestoreStatus.select(getReduxStore().getState(), wsId);
+                    if (allTabs.length === 0 && !shouldDeferSpecPanel(wsId) && restoreStatus !== "restored") {
                         layoutManager.openTabInAdjacentOrSplit({
                             type: "note",
                             title: "Spec",
@@ -353,7 +354,8 @@ export function ensureFallbackLayout(wsId: string, restoredAgents: AgentSession[
             openAgentInLayout(mostRecent.id, (mostRecent as any).name || "Agent", wsId);
         }
     }
-    if (!shouldDeferSpecPanel(wsId)) {
+    const restoreStatus = selectRestoreStatus.select(getReduxStore().getState(), wsId);
+    if (!shouldDeferSpecPanel(wsId) && restoreStatus !== "restored") {
         layoutManager.openTabInAdjacentOrSplit({
             type: "note",
             title: "Spec",

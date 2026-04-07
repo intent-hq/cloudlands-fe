@@ -900,6 +900,80 @@ describe("agent-loading layout guards", () => {
 
     expect(openTabInAdjacentOrSplit).not.toHaveBeenCalled();
   });
+
+  it("does not open spec in restoreLayoutState when restoreStatus is 'restored'", () => {
+    hasPanelLayoutManagerMock.mockReturnValue(true);
+    const openTabInAdjacentOrSplit = vi.fn();
+    const openTab = vi.fn();
+    getPanelLayoutManagerMock.mockReturnValue({
+      focusPanel: vi.fn(),
+      setActiveTab: vi.fn(),
+      openTab,
+      openTabInAdjacentOrSplit,
+      reconcileStaleAgentTabs: vi.fn(),
+    });
+    getReduxStateMock.mockReturnValue({
+      panelLayout: {
+        byWorkspaceId: {
+          "ws-layout": {
+            panels: {},
+            restoreStatus: "restored",
+          },
+        },
+      },
+    });
+
+    const restoredAgents = [
+      { id: "agent-1", name: "Test Agent", createdAt: new Date().toISOString() },
+    ];
+    restoreLayoutState("ws-layout", restoredAgents, [], false, null);
+
+    // Agent tab should open but spec should NOT open due to restored status
+    expect(openTab).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "agent",
+        agentId: "agent-1",
+      })
+    );
+    expect(openTabInAdjacentOrSplit).not.toHaveBeenCalled();
+  });
+
+  it("does not open spec in ensureFallbackLayout when restoreStatus is 'restored'", () => {
+    hasPanelLayoutManagerMock.mockReturnValue(true);
+    const openTabInAdjacentOrSplit = vi.fn();
+    const openTab = vi.fn();
+    getPanelLayoutManagerMock.mockReturnValue({
+      focusPanel: vi.fn(),
+      setActiveTab: vi.fn(),
+      openTab,
+      openTabInAdjacentOrSplit,
+      reconcileStaleAgentTabs: vi.fn(),
+    });
+    getReduxStateMock.mockReturnValue({
+      panelLayout: {
+        byWorkspaceId: {
+          "ws-layout": {
+            panels: {},
+            restoreStatus: "restored",
+          },
+        },
+      },
+    });
+
+    const restoredAgents = [
+      { id: "agent-1", name: "Test Agent", createdAt: new Date().toISOString() },
+    ];
+    ensureFallbackLayout("ws-layout", restoredAgents, []);
+
+    // Agent tab should open but spec should NOT open due to restored status
+    expect(openTab).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "agent",
+        agentId: "agent-1",
+      })
+    );
+    expect(openTabInAdjacentOrSplit).not.toHaveBeenCalled();
+  });
 });
 
 describe("retroactiveWorkspaceMountCheckSaga — early workspaceMounted guard", () => {

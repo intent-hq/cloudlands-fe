@@ -30,7 +30,7 @@ vi.mock("typed-redux-saga", () => ({
   },
 }));
 
-const { hasPanelLayoutManagerMock, getPanelLayoutManagerMock, getReduxStoreMock, dispatchMock, storeStateRef, selectSpecMock, selectPanelsMock, selectDeferSpecTabMock: selectDeferSpecTabSelectorMock, selectActiveWorkspaceIdMock } =
+const { hasPanelLayoutManagerMock, getPanelLayoutManagerMock, getReduxStoreMock, dispatchMock, storeStateRef, selectSpecMock, selectPanelsMock, selectRestoreStatusMock, selectDeferSpecTabMock: selectDeferSpecTabSelectorMock, selectActiveWorkspaceIdMock } =
   vi.hoisted(() => {
     const dispatchMock = vi.fn();
     const storeStateRef = { current: {} as any };
@@ -46,6 +46,7 @@ const { hasPanelLayoutManagerMock, getPanelLayoutManagerMock, getReduxStoreMock,
       })),
       selectSpecMock: vi.fn(() => undefined),
       selectPanelsMock: vi.fn(() => ({})),
+      selectRestoreStatusMock: vi.fn(() => "empty"),
       selectDeferSpecTabMock: vi.fn(() => false),
       selectActiveWorkspaceIdMock: vi.fn(() => null),
     };
@@ -77,6 +78,9 @@ vi.mock("$lib/store/slices/workspace-notes/workspace-notes-selectors", () => ({
 vi.mock("$lib/store/slices/panel-layout/panel-layout-selectors", () => ({
   selectPanels: {
     select: (...args: any[]) => selectPanelsMock(...args),
+  },
+  selectRestoreStatus: {
+    select: (...args: any[]) => selectRestoreStatusMock(...args),
   },
   selectDeferSpecTab: {
     select: (...args: any[]) => selectDeferSpecTabSelectorMock(...args),
@@ -193,7 +197,31 @@ describe("specPanelSaga", () => {
     expect(setDeferSpecTabMock).toHaveBeenCalledWith(false);
   });
 
-  it("skips the watcher and cleans up deferral keys when layout was restored", () => {
+  it("trusts restored layouts without spec and does not re-open the spec tab", () => {
+    const iterator = specPanelForWorkspaceSaga(workspaceMounted("ws-restored"));
+    selectSpecMock.mockReturnValue({ content: "# Restored spec" });
+
+    expect(iterator.next().done).toBe(false);
+    expect(iterator.next("restored")).toEqual({ value: undefined, done: true });
+
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: "workspace-agents/clearInitialAgentConfig",
+      payload: ["ws-restored"],
+    });
+    expect(sessionStorage.removeItem).toHaveBeenCalledWith("workspace:ws-restored:agent-config");
+    expect(sessionStorage.removeItem).toHaveBeenCalledWith("workspace:ws-restored:initial-agent-pending");
+    expect(getPanelLayoutManagerMock().openTabInAdjacentOrSplit).not.toHaveBeenCalled();
+  });
+
+  it("skips re-opening when a restored layout already includes spec", () => {
+    selectPanelsMock.mockReturnValue({
+      "panel-1": {
+        id: "panel-1",
+        tabs: [{ id: "tab-spec", type: "note", title: "Spec", noteId: "spec", closable: true }],
+        activeTabId: "tab-spec",
+      },
+    });
+
     const iterator = specPanelForWorkspaceSaga(workspaceMounted("ws-restored"));
 
     expect(iterator.next().done).toBe(false);
@@ -205,6 +233,33 @@ describe("specPanelSaga", () => {
     });
     expect(sessionStorage.removeItem).toHaveBeenCalledWith("workspace:ws-restored:agent-config");
     expect(sessionStorage.removeItem).toHaveBeenCalledWith("workspace:ws-restored:initial-agent-pending");
+  });
+
+  it("opens spec for empty or new layouts when content already exists", () => {
+    const iterator = specPanelForWorkspaceSaga(workspaceMounted("ws-new-with-spec"));
+    selectSpecMock.mockReturnValue({ content: "# Existing spec" });
+
+    expect(iterator.next().done).toBe(false);
+    expect(iterator.next("empty").done).toBe(false);
+    const openEffect = iterator.next(false);
+
+    expect(openEffect.done).toBe(false);
+    expect((openEffect.value as any)?.type).toBe("CALL");
+    expect((openEffect.value as any)?.payload?.args).toEqual(["ws-new-with-spec", false]);
+    expect(iterator.next()).toEqual({ value: undefined, done: true });
+  });
+
+  it("starts the watcher for empty or new layouts when spec is still empty", () => {
+    const task = { id: "new-watch-task" };
+    const iterator = specPanelForWorkspaceSaga(workspaceMounted("ws-new-empty"));
+
+    expect(iterator.next().done).toBe(false);
+    expect(iterator.next("empty").done).toBe(false);
+    const forkEffect = iterator.next(false);
+
+    expect(forkEffect.done).toBe(false);
+    expect((forkEffect.value as any)?.type).toBe("FORK");
+    expect(iterator.next(task)).toEqual({ value: undefined, done: true });
   });
 
   it("sets deferSpecTab in the parent saga when a fresh workspace should defer", () => {
