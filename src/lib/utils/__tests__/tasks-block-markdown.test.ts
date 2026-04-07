@@ -6,7 +6,7 @@ import { processMarkdownToHTML } from '../markdown-processor';
 
 describe('Task Block - Markdown Processing', () => {
   describe('Parsing (Markdown → HTML)', () => {
-    it('should recognize legacy ```task block and convert to skeleton loader', async () => {
+    it('should render legacy ```task block as normal code block (legacy syntax removed)', async () => {
       const markdown = `\`\`\`task
 # My Task
 Task content here.
@@ -14,14 +14,16 @@ Task content here.
 
       const html = await processMarkdownToHTML(markdown);
 
-      // Should create a skeleton pending div with checkbox
-      expect(html).toContain('data-type="task-block"');
-      expect(html).toContain('task-block-pending');
-      expect(html).toContain('task-block-checkbox');
-      expect(html).toContain('task-block-title-skeleton');
+      // Should render as a normal code block, NOT a skeleton loader
+      expect(html).toContain('<pre>');
+      expect(html).toContain('<code');
+      expect(html).not.toContain('data-type="task-block"');
+      expect(html).not.toContain('task-block-pending');
+      expect(html).not.toContain('task-block-checkbox');
+      expect(html).not.toContain('task-block-title-skeleton');
     });
 
-    it('should recognize new @@@task block and convert to skeleton loader', async () => {
+    it('should render @@@task block as skeleton loader', async () => {
       const markdown = `@@@task
 # My Task
 Task content here.
@@ -29,14 +31,14 @@ Task content here.
 
       const html = await processMarkdownToHTML(markdown);
 
-      // Should create a skeleton pending div with checkbox
+      // @@@task blocks should render as skeleton loaders
       expect(html).toContain('data-type="task-block"');
       expect(html).toContain('task-block-pending');
       expect(html).toContain('task-block-checkbox');
       expect(html).toContain('task-block-title-skeleton');
     });
 
-    it('should render skeleton loader for legacy ```task block', async () => {
+    it('should render legacy ```task block with content as normal code block (legacy syntax removed)', async () => {
       const markdown = `\`\`\`task
 # Authentication System
 Build JWT-based auth.
@@ -48,13 +50,15 @@ Build JWT-based auth.
 
       const html = await processMarkdownToHTML(markdown);
 
-      // Should have skeleton structure (content not shown, just placeholder)
-      expect(html).toContain('data-type="task-block"');
-      expect(html).toContain('task-block-pending');
-      expect(html).toContain('task-block-checkbox');
+      // Should render as a normal code block, NOT a skeleton loader
+      expect(html).toContain('<pre>');
+      expect(html).toContain('<code');
+      expect(html).not.toContain('data-type="task-block"');
+      expect(html).not.toContain('task-block-pending');
+      expect(html).not.toContain('task-block-checkbox');
     });
 
-    it('should render skeleton loader for new @@@task block', async () => {
+    it('should render @@@task block with content as skeleton loader', async () => {
       const markdown = `@@@task
 # Authentication System
 Build JWT-based auth.
@@ -66,13 +70,14 @@ Build JWT-based auth.
 
       const html = await processMarkdownToHTML(markdown);
 
-      // Should have skeleton structure (content not shown, just placeholder)
+      // @@@task blocks should render as skeleton loaders
       expect(html).toContain('data-type="task-block"');
       expect(html).toContain('task-block-pending');
       expect(html).toContain('task-block-checkbox');
+      expect(html).toContain('task-block-title-skeleton');
     });
 
-    it('should render multiple legacy ```task blocks as skeleton loaders', async () => {
+    it('should render multiple legacy ```task blocks as normal code blocks (legacy syntax removed)', async () => {
       const markdown = `\`\`\`task
 # Task One
 Content one.
@@ -92,9 +97,11 @@ Content three.
 
       const html = await processMarkdownToHTML(markdown);
 
-      // One skeleton per task block
-      expect(html.match(/data-type="task-block"/g)?.length).toBe(3);
-      expect(html.match(/task-block-checkbox/g)?.length).toBe(3);
+      // Should render as normal code blocks, NOT skeleton loaders
+      expect(html).toContain('<pre>');
+      expect(html).toContain('<code');
+      expect(html).not.toContain('data-type="task-block"');
+      expect(html).not.toContain('task-block-checkbox');
     });
 
     it('should render multiple @@@task blocks as skeleton loaders', async () => {
@@ -115,12 +122,13 @@ Content three.
 
       const html = await processMarkdownToHTML(markdown);
 
-      // One skeleton per task block
-      expect(html.match(/data-type="task-block"/g)?.length).toBe(3);
-      expect(html.match(/task-block-checkbox/g)?.length).toBe(3);
+      // All @@@task blocks should render as skeleton loaders
+      expect(html).toContain('data-type="task-block"');
+      expect(html).toContain('task-block-pending');
+      expect(html).toContain('task-block-checkbox');
     });
 
-    it('should render mixed legacy and new task block syntax', async () => {
+    it('should render mixed legacy and new task block syntax correctly', async () => {
       const markdown = `\`\`\`task
 # Legacy Task
 Content.
@@ -133,23 +141,27 @@ Content.
 
       const html = await processMarkdownToHTML(markdown);
 
-      // Both should be rendered
-      expect(html.match(/data-type="task-block"/g)?.length).toBe(2);
-      expect(html.match(/task-block-checkbox/g)?.length).toBe(2);
+      // ```task renders as code block, @@@task renders as skeleton loader
+      expect(html).toContain('<pre>');
+      expect(html).toContain('<code');
+      expect(html).toContain('data-type="task-block"');
+      expect(html).toContain('task-block-checkbox');
     });
 
-    it('should handle empty tasks block', async () => {
+    it('should handle empty backtick tasks block as normal code block (legacy syntax removed)', async () => {
       const markdown = `\`\`\`task
 \`\`\``;
 
       const html = await processMarkdownToHTML(markdown);
 
-      // Should render empty state
-      expect(html).toContain('task-block-empty');
-      expect(html).toContain('No task defined');
+      // Should render as normal code block, NOT empty task state
+      expect(html).toContain('<pre>');
+      expect(html).toContain('<code');
+      expect(html).not.toContain('task-block-empty');
+      expect(html).not.toContain('No task defined');
     });
 
-    it('should handle task with no content body', async () => {
+    it('should handle backtick task with no content body as normal code block (legacy syntax removed)', async () => {
       const markdown = `\`\`\`task
 # Task Without Content
 \`\`\`
@@ -161,8 +173,10 @@ Has content.
 
       const html = await processMarkdownToHTML(markdown);
 
-      // Both should render as skeleton loaders
-      expect(html.match(/task-block-pending/g)?.length).toBe(2);
+      // Should render as normal code blocks, NOT skeleton loaders
+      expect(html).toContain('<pre>');
+      expect(html).toContain('<code');
+      expect(html).not.toContain('task-block-pending');
     });
 
     it('should not include script tags in output', async () => {
@@ -173,7 +187,7 @@ Content here.
 
       const html = await processMarkdownToHTML(markdown);
 
-      // Script should not appear (skeleton doesn't show title anyway)
+      // Script should not appear (HTML entities are escaped in code blocks)
       expect(html).not.toContain('<script>');
     });
   });

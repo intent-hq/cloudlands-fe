@@ -1,7 +1,7 @@
 /**
  * Task Block Parser
  *
- * Parses @@@task blocks (and the legacy triple backtick form ```task) that contain a single proposed task.
+ * Parses @@@task blocks that contain a single proposed task.
  * Each block has one task: the first # heading is the title, everything below is the body.
  *
  * Example input (multiple tasks = multiple blocks):
@@ -19,12 +19,6 @@
  * # Database Layer
  * Set up PostgreSQL with Drizzle ORM.
  * @@@
- *
- * Legacy syntax (still supported):
- * ```task
- * # Task Title
- * Content
- * ```
  *
  * Output: Array of { title: string, content: string } objects
  */
@@ -53,11 +47,11 @@ export interface TaskBlockExtractResult {
  * Result of parsing task blocks from markdown content
  */
 export interface TasksBlockParseResult {
-  /** The tasks found in all @@@task blocks (and legacy ```task blocks) */
+  /** The tasks found in all @@@task blocks */
   tasks: ParsedTask[];
   /** The content with @@@task blocks replaced with linked task placeholders */
   contentWithoutBlocks: string;
-  /** Number of @@@task blocks (and legacy ```task blocks) found */
+  /** Number of @@@task blocks found */
   blockCount: number;
   /** Number of valid tasks extracted (may be less than blockCount if some blocks are invalid) */
   validTaskCount: number;
@@ -78,81 +72,6 @@ export interface TasksBlockParseResult {
  */
 const AT_TASK_BLOCK_REGEX = /@@@tasks?[ \t]*\r?\n([\s\S]*?)@@@/;
 const AT_TASK_BLOCK_REGEX_GLOBAL = /@@@tasks?[ \t]*\r?\n([\s\S]*?)@@@/g;
-
-/**
- * Regex to detect legacy ```task blocks (for hasTaskBlocks check)
- * This is a simple check - actual extraction uses stateful parsing
- */
-const LEGACY_TASK_BLOCK_DETECT = /```tasks?[ \t]*\r?\n/;
-
-/**
- * Extract legacy ```task blocks using stateful parsing to handle nested code blocks.
- *
- * The challenge: ```task blocks can contain nested code blocks like ```typescript,
- * and a simple regex can't distinguish between a nested code block's closing ```
- * and the task block's closing ```.
- *
- * Solution: Parse line-by-line, tracking whether we're inside a nested code block.
- */
-function extractLegacyTaskBlocks(
-  content: string,
-): Array<{ fullMatch: string; blockContent: string }> {
-  const results: Array<{ fullMatch: string; blockContent: string }> = [];
-  const lines = content.split(/\r?\n/);
-
-  let inTaskBlock = false;
-  let inNestedCodeBlock = false;
-  let taskBlockStartLine = -1;
-  let taskBlockLines: string[] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    if (!inTaskBlock) {
-      // Check for task block start: ```task or ```tasks (with optional trailing whitespace)
-      if (/^```tasks?[ \t]*$/.test(line)) {
-        inTaskBlock = true;
-        inNestedCodeBlock = false;
-        taskBlockStartLine = i;
-        taskBlockLines = [];
-      }
-    } else {
-      // We're inside a task block
-      if (!inNestedCodeBlock) {
-        // Check for nested code block start (``` followed by language identifier or nothing)
-        if (/^```\w+/.test(line)) {
-          // Starting a nested code block (e.g., ```typescript)
-          inNestedCodeBlock = true;
-          taskBlockLines.push(line);
-        } else if (/^```[ \t]*$/.test(line)) {
-          // This is the closing ``` for the task block (bare ``` at start of line)
-          // Reconstruct the full match including the opening and closing fences
-          const openingLine = lines[taskBlockStartLine];
-          const fullMatch = openingLine + '\n' + taskBlockLines.join('\n') + '\n```';
-          const blockContent = taskBlockLines.join('\n');
-          results.push({ fullMatch, blockContent });
-
-          // Reset state
-          inTaskBlock = false;
-          inNestedCodeBlock = false;
-          taskBlockStartLine = -1;
-          taskBlockLines = [];
-        } else {
-          taskBlockLines.push(line);
-        }
-      } else {
-        // We're inside a nested code block
-        taskBlockLines.push(line);
-        // Check for nested code block end (bare ``` at start of line)
-        if (/^```[ \t]*$/.test(line)) {
-          inNestedCodeBlock = false;
-        }
-      }
-    }
-  }
-
-  return results;
-}
 
 /**
  * Normalize line endings to \n
@@ -203,7 +122,7 @@ export function parseTaskBlockContent(blockContent: string): ParsedTask | null {
 }
 
 /**
- * Extract all @@@task blocks (and legacy ```task blocks) from markdown content
+ * Extract all @@@task blocks from markdown content
  * Each block is replaced with a unique placeholder that includes the task index
  *
  * @param content - The markdown content to parse
@@ -225,24 +144,6 @@ export function extractTasksBlocks(content: string): TasksBlockParseResult {
     blockResults.push({
       task,
       fullMatch: match[0],
-    });
-
-    if (task) {
-      allTasks.push(task);
-    } else {
-      invalidBlockCount++;
-    }
-  }
-
-  // Extract legacy ```task blocks using stateful parsing (handles nested code blocks)
-  const legacyBlocks = extractLegacyTaskBlocks(content);
-  for (const block of legacyBlocks) {
-    blockCount++;
-    const task = parseTaskBlockContent(block.blockContent);
-
-    blockResults.push({
-      task,
-      fullMatch: block.fullMatch,
     });
 
     if (task) {
@@ -284,10 +185,10 @@ export function extractTasksBlocks(content: string): TasksBlockParseResult {
 }
 
 /**
- * Check if content contains any @@@task blocks or legacy ```task blocks
+ * Check if content contains any @@@task blocks
  */
 export function hasTaskBlocks(content: string): boolean {
-  return AT_TASK_BLOCK_REGEX.test(content) || LEGACY_TASK_BLOCK_DETECT.test(content);
+  return AT_TASK_BLOCK_REGEX.test(content);
 }
 
 /**

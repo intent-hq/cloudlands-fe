@@ -112,7 +112,7 @@ Body content`;
   });
 
   describe('extractTasksBlocks', () => {
-    it('should extract task from a single task block', () => {
+    it('should NOT extract task from a backtick task block (legacy syntax removed)', () => {
       const content = `# Spec
 
 Some intro text.
@@ -130,19 +130,15 @@ More content after.`;
 
       const result = extractTasksBlocks(content);
 
-      expect(result.blockCount).toBe(1);
-      expect(result.validTaskCount).toBe(1);
-      expect(result.invalidBlockCount).toBe(0);
-      expect(result.tasks).toHaveLength(1);
-      expect(result.tasks[0].title).toBe('Authentication');
-      expect(result.tasks[0].content).toContain('Build auth system.');
-      expect(result.contentWithoutBlocks).toContain('# Spec');
-      expect(result.contentWithoutBlocks).toContain('<!-- task-block-placeholder-0 -->');
-      expect(result.contentWithoutBlocks).toContain('More content after.');
-      expect(result.contentWithoutBlocks).not.toContain('```task');
+      // Backtick task blocks are no longer recognized
+      expect(result.blockCount).toBe(0);
+      expect(result.validTaskCount).toBe(0);
+      expect(result.tasks).toHaveLength(0);
+      // Content should be unchanged since no blocks were found
+      expect(result.contentWithoutBlocks).toBe(content);
     });
 
-    it('should extract tasks from multiple task blocks with indexed placeholders', () => {
+    it('should NOT extract tasks from multiple backtick task blocks (legacy syntax removed)', () => {
       const content = `\`\`\`task
 # Task A
 Content A.
@@ -157,15 +153,11 @@ Content B.
 
       const result = extractTasksBlocks(content);
 
-      expect(result.blockCount).toBe(2);
-      expect(result.validTaskCount).toBe(2);
-      expect(result.tasks).toHaveLength(2);
-      expect(result.tasks[0].title).toBe('Task A');
-      expect(result.tasks[1].title).toBe('Task B');
-      // Check indexed placeholders
-      expect(result.contentWithoutBlocks).toContain('<!-- task-block-placeholder-0 -->');
-      expect(result.contentWithoutBlocks).toContain('<!-- task-block-placeholder-1 -->');
-      expect(result.contentWithoutBlocks).toContain('Some middle content.');
+      // Backtick task blocks are no longer recognized
+      expect(result.blockCount).toBe(0);
+      expect(result.validTaskCount).toBe(0);
+      expect(result.tasks).toHaveLength(0);
+      expect(result.contentWithoutBlocks).toBe(content);
     });
 
     it('should return empty tasks for content without task blocks', () => {
@@ -180,21 +172,22 @@ No task blocks here.`;
       expect(result.contentWithoutBlocks).toBe(content);
     });
 
-    it('should mark invalid task blocks and track count', () => {
+    it('should NOT detect backtick task blocks as invalid (legacy syntax removed)', () => {
       const content = `\`\`\`task
 Just content without a title heading.
 \`\`\``;
 
       const result = extractTasksBlocks(content);
 
-      expect(result.blockCount).toBe(1);
+      // Backtick task blocks are no longer recognized at all
+      expect(result.blockCount).toBe(0);
       expect(result.validTaskCount).toBe(0);
-      expect(result.invalidBlockCount).toBe(1);
+      expect(result.invalidBlockCount).toBe(0);
       expect(result.tasks).toHaveLength(0);
-      expect(result.contentWithoutBlocks).toContain('<!-- invalid-task-block-removed -->');
+      expect(result.contentWithoutBlocks).toBe(content);
     });
 
-    it('should handle trailing whitespace after task keyword', () => {
+    it('should NOT extract backtick task block with trailing whitespace (legacy syntax removed)', () => {
       const content = `\`\`\`task
 # Task With Trailing Space
 Content here.
@@ -202,22 +195,22 @@ Content here.
 
       const result = extractTasksBlocks(content);
 
-      expect(result.blockCount).toBe(1);
-      expect(result.validTaskCount).toBe(1);
-      expect(result.tasks[0].title).toBe('Task With Trailing Space');
+      expect(result.blockCount).toBe(0);
+      expect(result.validTaskCount).toBe(0);
+      expect(result.tasks).toHaveLength(0);
     });
 
-    it('should handle Windows line endings in blocks', () => {
+    it('should NOT extract backtick task block with Windows line endings (legacy syntax removed)', () => {
       const content = '```task\r\n# Windows Task\r\nBody content.\r\n```';
 
       const result = extractTasksBlocks(content);
 
-      expect(result.blockCount).toBe(1);
-      expect(result.validTaskCount).toBe(1);
-      expect(result.tasks[0].title).toBe('Windows Task');
+      expect(result.blockCount).toBe(0);
+      expect(result.validTaskCount).toBe(0);
+      expect(result.tasks).toHaveLength(0);
     });
 
-    it('should handle mixed valid and invalid blocks', () => {
+    it('should NOT extract mixed backtick task blocks (legacy syntax removed)', () => {
       const content = `\`\`\`task
 # Valid Task
 Content.
@@ -234,21 +227,22 @@ More content.
 
       const result = extractTasksBlocks(content);
 
-      expect(result.blockCount).toBe(3);
-      expect(result.validTaskCount).toBe(2);
-      expect(result.invalidBlockCount).toBe(1);
-      expect(result.tasks[0].title).toBe('Valid Task');
-      expect(result.tasks[1].title).toBe('Another Valid Task');
-      // Indexed placeholders only for valid tasks
-      expect(result.contentWithoutBlocks).toContain('<!-- task-block-placeholder-0 -->');
-      expect(result.contentWithoutBlocks).toContain('<!-- invalid-task-block-removed -->');
-      expect(result.contentWithoutBlocks).toContain('<!-- task-block-placeholder-1 -->');
+      // Backtick task blocks are no longer recognized
+      expect(result.blockCount).toBe(0);
+      expect(result.validTaskCount).toBe(0);
+      expect(result.invalidBlockCount).toBe(0);
+      expect(result.tasks).toHaveLength(0);
+      expect(result.contentWithoutBlocks).toBe(content);
     });
   });
 
   describe('hasTaskBlocks', () => {
-    it('should return true when content has task blocks', () => {
-      expect(hasTaskBlocks('```task\n# Task\n```')).toBe(true);
+    it('should return false for backtick task blocks (legacy syntax removed)', () => {
+      expect(hasTaskBlocks('```task\n# Task\n```')).toBe(false);
+    });
+
+    it('should return true for @@@task blocks', () => {
+      expect(hasTaskBlocks('@@@task\n# Task\n@@@')).toBe(true);
     });
 
     it('should return false when content has no task blocks', () => {
@@ -256,13 +250,12 @@ More content.
       expect(hasTaskBlocks('```javascript\ncode\n```')).toBe(false);
     });
 
-    it('should match legacy plural form ```tasks', () => {
-      // Legacy ```tasks syntax is still supported for backward compatibility
-      expect(hasTaskBlocks('```tasks\n# Task\n```')).toBe(true);
+    it('should return false for legacy plural form ```tasks (legacy syntax removed)', () => {
+      expect(hasTaskBlocks('```tasks\n# Task\n```')).toBe(false);
     });
 
     it('should return consistent results on multiple calls (no global regex state issue)', () => {
-      const content = '```task\n# Task\n```';
+      const content = '@@@task\n# Task\n@@@';
       // Call multiple times to ensure no alternating true/false due to global regex state
       expect(hasTaskBlocks(content)).toBe(true);
       expect(hasTaskBlocks(content)).toBe(true);
@@ -270,19 +263,20 @@ More content.
       expect(hasTaskBlocks(content)).toBe(true);
     });
 
-    it('should handle trailing whitespace after task keyword', () => {
-      expect(hasTaskBlocks('```task   \n# Task\n```')).toBe(true);
-      expect(hasTaskBlocks('```task\t\n# Task\n```')).toBe(true);
+    it('should return false for backtick task blocks with trailing whitespace (legacy syntax removed)', () => {
+      expect(hasTaskBlocks('```task   \n# Task\n```')).toBe(false);
+      expect(hasTaskBlocks('```task\t\n# Task\n```')).toBe(false);
     });
 
-    it('should handle Windows line endings', () => {
-      expect(hasTaskBlocks('```task\r\n# Task\r\n```')).toBe(true);
+    it('should return false for backtick task blocks with Windows line endings (legacy syntax removed)', () => {
+      expect(hasTaskBlocks('```task\r\n# Task\r\n```')).toBe(false);
     });
   });
 
   describe('hasTasksBlocks (deprecated alias)', () => {
     it('should work the same as hasTaskBlocks', () => {
-      expect(hasTasksBlocks('```task\n# Task\n```')).toBe(true);
+      expect(hasTasksBlocks('@@@task\n# Task\n@@@')).toBe(true);
+      expect(hasTasksBlocks('```task\n# Task\n```')).toBe(false);
       expect(hasTasksBlocks('# Regular content')).toBe(false);
     });
   });
@@ -418,8 +412,7 @@ const user: User = { id: '123' };
       expect(result.contentWithoutBlocks).toContain('<!-- task-block-placeholder-1 -->');
     });
 
-    it('should handle legacy ```task syntax with nested code blocks', () => {
-      // This is the bug case: ```task blocks containing nested code fences
+    it('should NOT extract legacy ```task syntax with nested code blocks (legacy syntax removed)', () => {
       const content = `\`\`\`task
 # Fix Something
 Here is the issue.
@@ -435,18 +428,14 @@ That should fix it.
 
       const result = extractTasksBlocks(content);
 
-      expect(result.blockCount).toBe(1);
-      expect(result.validTaskCount).toBe(1);
-      expect(result.tasks).toHaveLength(1);
-      expect(result.tasks[0].title).toBe('Fix Something');
-      // The task content should include the nested code block
-      expect(result.tasks[0].content).toContain('Here is the issue.');
-      expect(result.tasks[0].content).toContain('```typescript');
-      expect(result.tasks[0].content).toContain("merged.mcpServers['workspace-mcp']");
-      expect(result.tasks[0].content).toContain('That should fix it.');
+      // Backtick task blocks are no longer recognized
+      expect(result.blockCount).toBe(0);
+      expect(result.validTaskCount).toBe(0);
+      expect(result.tasks).toHaveLength(0);
+      expect(result.contentWithoutBlocks).toBe(content);
     });
 
-    it('should handle legacy ```task syntax with multiple nested code blocks', () => {
+    it('should NOT extract legacy ```task syntax with multiple nested code blocks (legacy syntax removed)', () => {
       const content = `\`\`\`task
 # Task With Multiple Code Examples
 First example:
@@ -467,17 +456,11 @@ Done.
 
       const result = extractTasksBlocks(content);
 
-      expect(result.blockCount).toBe(1);
-      expect(result.validTaskCount).toBe(1);
-      expect(result.tasks).toHaveLength(1);
-      expect(result.tasks[0].title).toBe('Task With Multiple Code Examples');
-      expect(result.tasks[0].content).toContain('First example:');
-      expect(result.tasks[0].content).toContain('```javascript');
-      expect(result.tasks[0].content).toContain('const x = 1;');
-      expect(result.tasks[0].content).toContain('Second example:');
-      expect(result.tasks[0].content).toContain('```python');
-      expect(result.tasks[0].content).toContain('def foo():');
-      expect(result.tasks[0].content).toContain('Done.');
+      // Backtick task blocks are no longer recognized
+      expect(result.blockCount).toBe(0);
+      expect(result.validTaskCount).toBe(0);
+      expect(result.tasks).toHaveLength(0);
+      expect(result.contentWithoutBlocks).toBe(content);
     });
   });
 });

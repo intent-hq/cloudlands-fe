@@ -120,7 +120,6 @@ Set up PostgreSQL with Drizzle ORM.
 | Syntax | Creates Task Notes? | Supports Rich Content? |
 |--------|---------------------|------------------------|
 | `@@@task` block (one per task) | ✅ Yes | ✅ Yes (body below title) |
-| ` ```task` block (legacy, deprecated) | ✅ Yes | ✅ Yes (body below title) |
 | `- [ ] Task Name` (no marker) | ❌ No | N/A |
 | Plain bullet list | ❌ No | N/A |
 | Empty section | ❌ No | N/A |
@@ -156,7 +155,7 @@ console.log('Tasks found:', result.tasks);
 
 ## Robustness
 
-The parser handles these edge cases for both `@@@task` and legacy ` ```task` syntax:
+The parser handles these edge cases for `@@@task` syntax:
 
 - **Trailing whitespace**: `@@@task   ` (with spaces/tabs after `task`) is accepted
 - **Windows line endings**: Both `\n` and `\r\n` are supported
@@ -164,7 +163,6 @@ The parser handles these edge cases for both `@@@task` and legacy ` ```task` syn
 - **Content before title**: Any text before the first `# Title` is ignored
 - **Multiple `#` headings**: Only the first `# Title` is the task title; subsequent ones are part of the body
 - **`##` and `###`**: These are NOT treated as titles (only single `#` works)
-- **Backward compatibility**: Both `@@@task` and ` ```task` syntax are supported
 
 Invalid blocks are replaced with `<!-- invalid-task-block-removed -->` comment.
 
@@ -179,4 +177,3 @@ The agent instructions should specify:
 > - Use the first `# Title` heading for the task title
 > - Add detailed context, requirements, and acceptance criteria in the body
 > - When saved, each block is automatically converted to a linked Task Note
-> - **Note**: The legacy ` ```task` syntax is still supported for backward compatibility, but `@@@task` is the preferred syntax

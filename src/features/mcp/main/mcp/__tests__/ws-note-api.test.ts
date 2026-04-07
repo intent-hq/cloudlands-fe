@@ -155,7 +155,7 @@ describe('ws.note.setContent — task-block auto-conversion', () => {
   });
 
   it('auto-converts task blocks in content', async () => {
-    const taskContent = '```task\n# Task\nDesc\n```';
+    const taskContent = '@@@task\n# Task\nDesc\n@@@';
     mockWM.updateNote.mockResolvedValue({ id: 'spec', title: 'Spec', content: taskContent, tags: [] });
     (hasTaskBlocks as any).mockReturnValue(true);
     (notesService.convertTaskBlocks as any).mockResolvedValue({

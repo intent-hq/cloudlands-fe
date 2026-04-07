@@ -7,7 +7,7 @@
  * (LARGE_CONTENT_THRESHOLD), offloading work to a Web Worker. In the test
  * environment (jsdom), the Worker constructor fails and the code falls back
  * to main-thread processing, but the branching logic and all transforms
- * (normalize, legacy syntax, marked.parse, anchor conversion, mention injection,
+ * (normalize, marked.parse, anchor conversion, mention injection,
  * sanitization) still run through the large-content path.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -56,6 +56,8 @@ function generateLargeMarkdown(options?: {
     }
 
     if (opts.withLegacySyntax && i % 7 === 0) {
+      // Add blank line before task block so marked recognizes it as a block-level token
+      sections.push('');
       sections.push(`@@@task\n# Task Block ${i}\nSome task content.\n@@@`);
     }
 

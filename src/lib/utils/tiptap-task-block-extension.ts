@@ -4,9 +4,7 @@ import { parseTaskBlockContent } from '../../features/notes/utils/task-block-par
 /**
  * Extend the marked instance to handle task blocks (singular)
  *
- * Supports both new and legacy syntax:
- * - New: @@@task ... @@@
- * - Legacy: ```task ... ```
+ * Syntax: @@@task ... @@@
  *
  * Each task block contains exactly one task:
  * @@@task

@@ -92,7 +92,7 @@ const WORKER_TIMEOUT_MS = 30_000;
 /**
  * Run the full markdown pipeline on the main thread.
  * Replicates the same steps as the Web Worker:
- *   normalizeAnchorPositions → legacy @@@task syntax → marked.parse → convertHTMLCommentsToSpanAnchors
+ *   normalizeAnchorPositions → marked.parse → convertHTMLCommentsToSpanAnchors
  * Used as a fallback when the worker times out or fails to initialise.
  */
 async function parseMarkdownMainThread(
@@ -102,9 +102,6 @@ async function parseMarkdownMainThread(
   let content = pipeline?.preserveAnchors
     ? normalizeAnchorPositions(markdown)
     : markdown;
-
-  // Convert @@@task blocks to ```task blocks for backward compatibility
-  content = content.replace(/^@@@tasks?[ \t]*\r?\n([\s\S]*?)@@@/gm, '```task\n$1```');
 
   const markedInst = getMarkedInstance();
   let html = await markedInst.parse(content);
@@ -532,13 +529,8 @@ export async function processMarkdownToHTML(
         ? normalizeAnchorPositions(processedContent)
         : processedContent;
 
-      const contentWithLegacySyntax = normalizedContent.replace(
-        /^@@@tasks?[ \t]*\r?\n([\s\S]*?)@@@/gm,
-        '```task\n$1```',
-      );
-
       const markedInst = getMarkedInstance();
-      const result = await markedInst.parse(contentWithLegacySyntax);
+      const result = await markedInst.parse(normalizedContent);
       htmlOut = preserveAnchors ? convertHTMLCommentsToSpanAnchors(result) : result;
     }
     const t4 = isLargeContent ? performance.now() : 0;

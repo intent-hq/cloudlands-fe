@@ -172,8 +172,8 @@ describe('Task Management MCP Tools', () => {
   });
 
   describe('convertTaskBlocks', () => {
-    it('should convert ```task blocks to linked Task Notes', async () => {
-      // Create a note with ```task blocks
+    it('should convert @@@task blocks to linked Task Notes', async () => {
+      // Create a note with @@@task blocks
       const createResult = await notesService.createNote({
         workspaceId,
         title: 'Spec Note',
@@ -181,20 +181,20 @@ describe('Task Management MCP Tools', () => {
 
 ## Tasks
 
-\`\`\`task
+@@@task
 # Task One
 First task description
-\`\`\`
+@@@
 
-\`\`\`task
+@@@task
 # Task Two
 Second task description
-\`\`\`
+@@@
 
-\`\`\`task
+@@@task
 # Task Three
 Third task description
-\`\`\`
+@@@
 `,
       });
 
@@ -213,21 +213,21 @@ Third task description
     });
 
     it('should set parentId on created tasks to link them to the parent note', async () => {
-      // Create a note with ```task blocks
+      // Create a note with @@@task blocks
       const createResult = await notesService.createNote({
         workspaceId,
         title: 'Spec Note',
         content: `# My Spec
 
-\`\`\`task
+@@@task
 # First Task
 First task description
-\`\`\`
+@@@
 
-\`\`\`task
+@@@task
 # Second Task
 Second task description
-\`\`\`
+@@@
 `,
       });
 
@@ -255,26 +255,26 @@ Second task description
     });
 
     it('should preserve document order via peerOrder on created tasks', async () => {
-      // Create a note with ```task blocks in specific order
+      // Create a note with @@@task blocks in specific order
       const createResult = await notesService.createNote({
         workspaceId,
         title: 'Spec Note',
         content: `# My Spec
 
-\`\`\`task
+@@@task
 # Alpha Task
 Alpha description
-\`\`\`
+@@@
 
-\`\`\`task
+@@@task
 # Beta Task
 Beta description
-\`\`\`
+@@@
 
-\`\`\`task
+@@@task
 # Gamma Task
 Gamma description
-\`\`\`
+@@@
 `,
       });
 
@@ -324,10 +324,10 @@ Gamma description
       const createResult = await notesService.createNote({
         workspaceId,
         title: 'Spec Note',
-        content: `\`\`\`task
+        content: `@@@task
 # My Task
 Task description
-\`\`\``,
+@@@`,
       });
 
       expect(createResult.ok).toBe(true);
@@ -354,10 +354,10 @@ Task description
       const createResult = await notesService.createNote({
         workspaceId,
         title: 'Parent Spec',
-        content: `\`\`\`task
+        content: `@@@task
 # Child Task
 Child task description
-\`\`\``,
+@@@`,
       });
 
       expect(createResult.ok).toBe(true);
@@ -403,10 +403,10 @@ Child task description
       const createResult = await notesService.createNote({
         workspaceId,
         title: 'Spec Note',
-        content: `\`\`\`task
+        content: `@@@task
 # My Task
 Task description
-\`\`\``,
+@@@`,
       });
 
       expect(createResult.ok).toBe(true);
@@ -423,7 +423,7 @@ Task description
       if (!updatedNote.ok) return;
 
       // Content should have linked syntax, not task block
-      expect(updatedNote.data.content).not.toContain('```task');
+      expect(updatedNote.data.content).not.toContain('@@@task');
       expect(updatedNote.data.content).toContain('intent://local/task/');
       expect(updatedNote.data.content).toContain(convertResult.data.createdNoteIds[0]);
     });
@@ -438,20 +438,20 @@ Task description
 
 ## Tasks
 
-\`\`\`task
+@@@task
 # Task One
 First task
-\`\`\`
+@@@
 
-\`\`\`task
+@@@task
 # Task Two
 Second task
-\`\`\`
+@@@
 
-\`\`\`task
+@@@task
 # Task Three
 Third task
-\`\`\`
+@@@
 `,
       });
 

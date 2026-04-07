@@ -1,5 +1,6 @@
 import { Marked } from 'marked';
-import { parseTaskBlockContent } from '../../features/notes/utils/task-block-parser';
+import { addChoiceBlockSupport } from './tiptap-choice-block-extension';
+import { addTasksBlockSupport } from './tiptap-task-block-extension';
 
 /**
  * Regular expression to match agent anchors in task items
@@ -53,20 +54,6 @@ export const createTiptapTaskListMarked = () => {
     breaks: true,
     renderer: {
       code(token: any): string {
-        // Handle legacy ```task blocks
-        if (token.lang === 'task') {
-          const task = parseTaskBlockContent(token.text);
-
-          if (!task) {
-            return '<div data-type="task-block" class="task-block-empty"><p>No task defined (missing # title)</p></div>';
-          }
-
-          return `<div data-type="task-block" class="task-block-pending">
-      <input type="checkbox" disabled class="task-block-checkbox" />
-      <span class="task-block-title-skeleton"></span>
-    </div>`;
-        }
-
         // Handle mermaid diagram blocks - convert to custom mermaid-block node
         // Use base64 encoding to preserve newlines and special characters through sanitization
         if (token.lang === 'mermaid') {
@@ -274,8 +261,7 @@ export const createTiptapTaskListMarked = () => {
   // addChoiceBlockSupport(markedInstance);
 
   // Add tasks block support
-  // TODO: Re-enable after fixing renderer registration
-  // addTasksBlockSupport(markedInstance);
+  addTasksBlockSupport(markedInstance);
 
   return markedInstance;
 };

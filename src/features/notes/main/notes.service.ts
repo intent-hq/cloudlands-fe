@@ -2474,7 +2474,7 @@ export class NotesService {
    * and replaces them with linked task syntax.
    *
    * @param workspaceId - The workspace ID
-   * @param noteId - The note containing ```task blocks
+   * @param noteId - The note containing @@@task blocks
    * @param options - Configuration options
    * @param options.autoStartAgents - Whether to create and start agents for each task (default: true)
    */

@@ -4,9 +4,9 @@
  * Moves the heavy `marked.parse()` call off the main thread so the UI stays
  * responsive (IPC heartbeat, rendering, user input) during large note processing.
  *
- * When `pipeline` options are provided, also runs normalizeAnchorPositions,
- * legacy syntax conversion, and HTML-comment-to-span conversion — keeping all
- * pure-string work off the main thread.
+ * When `pipeline` options are provided, also runs normalizeAnchorPositions
+ * and HTML-comment-to-span conversion — keeping all pure-string work off the
+ * main thread.
  *
  * All dependencies used here are pure string operations — no DOM required.
  */
@@ -41,7 +41,7 @@ export interface MarkdownWorkerRequest {
   markdown: string;
   /**
    * When provided, run the extended pipeline in the worker:
-   *   normalizeAnchorPositions → legacy syntax → marked.parse → convertHTMLCommentsToSpanAnchors
+   *   normalizeAnchorPositions → marked.parse → convertHTMLCommentsToSpanAnchors
    * When omitted, only marked.parse is run (backward-compatible).
    */
   pipeline?: {
@@ -67,9 +67,6 @@ self.onmessage = async (event: MessageEvent<MarkdownWorkerRequest>) => {
       let content = pipeline.preserveAnchors
         ? normalizeAnchorPositions(markdown)
         : markdown;
-
-      // Convert @@@task blocks to ```task blocks for backward compatibility
-      content = content.replace(/^@@@tasks?[ \t]*\r?\n([\s\S]*?)@@@/gm, '```task\n$1```');
 
       // Parse markdown
       let html = await marked.parse(content);
