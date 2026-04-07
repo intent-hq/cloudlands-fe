@@ -18,6 +18,26 @@ import {
 import { safeLocalStorage } from "../utils/safe-storage";
 import { createStoreStateReadable } from "./utils/create-readable-store-state";
 import { initReduxDispatchBridge, initReduxStoreBridge } from "./redux-dispatch-bridge";
+import { readable, derived } from "svelte/store";
+import { getStoreContext, isLifecycleOutsideComponentError } from "./utils/svelte-context";
+import { createThrottledReadable } from "./utils/selector-scheduler";
+import { initSvelteDeps } from "./utils/create-selector";
+
+// ─── Renderer-only module ───────────────────────────────────────────
+// This file must NOT be imported from the main process. It has static
+// svelte imports that will crash packaged builds (svelte is a devDep).
+//
+// Inject Svelte dependencies into create-selector so it doesn't need
+// static svelte imports. This keeps create-selector.ts safe to import
+// from the main process (which only uses .select() and .effect()).
+initSvelteDeps({
+  readable,
+  derived,
+  getStoreContext,
+  isLifecycleOutsideComponentError,
+  createStoreStateReadable,
+  createThrottledReadable,
+});
 
 export const createExtendedDefaultState = <S>(initialState?: PreloadedStoreState): S => {
   const domains = Object.keys(reducers) as StateDomain[];

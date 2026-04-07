@@ -2,18 +2,51 @@ import type {
   CreateSelector,
   StoreState,
   ReduxStore,
+  ReduxStoreContext,
   StoreSelector,
   ReadableArgs,
   StoreSelectorCallback,
 } from "../types";
-import { getStoreContext, isLifecycleOutsideComponentError } from "./svelte-context";
 import type { Collection } from "./collection-utils";
-import { readable, derived, type Readable } from "svelte/store";
-import { createStoreStateReadable } from "./create-readable-store-state";
+import type { Readable } from "svelte/store";
 import { select } from "typed-redux-saga";
 import { createCachedSelector } from "../../../store/utils/create-cached-selector";
-import { createThrottledReadable } from "./selector-scheduler";
 import { getReduxStore } from "../redux-dispatch-bridge";
+
+// ─── Lazy Svelte dependencies ───────────────────────────────────────
+// Injected at renderer startup via initSvelteDeps(). The main process
+// never calls initSvelteDeps(), so svelte is never loaded there.
+// Only the readable selector form (selector()) uses these — the pure
+// .select() and .effect() methods work without them.
+
+export interface SvelteDeps {
+  readable: <T>(value: T, start?: (set: (value: T) => void) => (() => void) | void) => Readable<T>;
+  derived: <T>(
+    stores: Readable<any> | Array<Readable<any>>,
+    fn: (values: any) => T
+  ) => Readable<T>;
+  getStoreContext: () => ReduxStoreContext | undefined;
+  isLifecycleOutsideComponentError: (error: unknown) => error is Error;
+  createStoreStateReadable: (store: ReduxStore) => Readable<StoreState>;
+  createThrottledReadable: <T>(source: Readable<T>) => Readable<T>;
+}
+
+let _deps: SvelteDeps | null = null;
+
+export function initSvelteDeps(deps: SvelteDeps): void {
+  _deps = deps;
+}
+
+function requireSvelteDeps(): SvelteDeps {
+  if (!_deps) {
+    throw new Error(
+      "Svelte selector dependencies not initialized. " +
+      "Call initSvelteDeps() during renderer startup before using readable selectors. " +
+      "If you are in the main process, use selector.select(state, ...args) instead."
+    );
+  }
+  return _deps;
+}
 
 export { createCachedSelector };
 
@@ -35,6 +68,7 @@ export const createSelector: CreateSelector = <ARGS extends any[], R>(
     readableStoreState: Readable<StoreState>,
     ...restArgs: ReadableArgs<ARGS>
   ): Readable<R> => {
+      const deps = requireSvelteDeps();
       // Cached selector here is lockable, means it will return prev value when store is locked for updates
       const cachedSelector = createCachedSelector<StoreState, ARGS, R>(selectorFunc, {
         lockUpdatesPredicate: (state) => state.storeUtility.updatesLocked,
@@ -43,22 +77,23 @@ export const createSelector: CreateSelector = <ARGS extends any[], R>(
         if (isReadable(arg)) {
           return arg;
         }
-        return readable(arg);
+        return deps.readable(arg);
       });
-      const source = derived([readableStoreState, ...readableArgs], ([storeState, ...args]) => {
+      const source = deps.derived([readableStoreState, ...readableArgs], ([storeState, ...args]: [StoreState, ...ARGS]) => {
         return cachedSelector(storeState, ...(args as ARGS));
       });
 
-      return createThrottledReadable(source);
+      return deps.createThrottledReadable(source);
     };
 
   const readableSelector: StoreSelector<R, ARGS> = (...restArgs: ReadableArgs<ARGS>) => {
-    let context: ReturnType<typeof getStoreContext>;
+    const deps = requireSvelteDeps();
+    let context: ReduxStoreContext | undefined;
 
     try {
-      context = getStoreContext();
+      context = deps.getStoreContext();
     } catch (error) {
-      if (isLifecycleOutsideComponentError(error)) {
+      if (deps.isLifecycleOutsideComponentError(error)) {
         throw new Error(
           "Selector called outside component initialization. " +
           "The readable form of selectors (e.g., selectFoo()) can only be called " +
@@ -76,7 +111,7 @@ export const createSelector: CreateSelector = <ARGS extends any[], R>(
       if (!store) {
         throw new Error("Missing redux store context. Wrap root component into <Store/>");
       }
-      return boundSelector(createStoreStateReadable(store), ...restArgs);
+      return boundSelector(deps.createStoreStateReadable(store), ...restArgs);
     }
     return boundSelector(context.storeState, ...restArgs);
   };
@@ -84,7 +119,8 @@ export const createSelector: CreateSelector = <ARGS extends any[], R>(
   readableSelector.withStore =
     (store: ReduxStore) =>
       (...args: ReadableArgs<ARGS>) => {
-        return boundSelector(createStoreStateReadable(store), ...args);
+        const deps = requireSvelteDeps();
+        return boundSelector(deps.createStoreStateReadable(store), ...args);
       };
 
   readableSelector.select = selectorFunc;

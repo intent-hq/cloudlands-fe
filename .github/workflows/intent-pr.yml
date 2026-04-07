@@ -35,7 +35,7 @@ jobs:
         run: npm run type-check
 
   typecheck-main:
-    name: Type Check (main process)
+    name: Build & Verify (main process)
     runs-on: macos-14
     timeout-minutes: 30
     env:
@@ -54,8 +54,24 @@ jobs:
         run: npm ci
       - name: Generate build config
         run: npm run generate:build-config
-      - name: Type check (main process)
-        run: npx tsc --noEmit -p tsconfig.main.json
+      - name: Generate IPC channels
+        run: npm run generate:ipc-channels
+      - name: Build main process
+        run: npm run build:main
+      - name: Verify main process loads without devDependencies
+        run: |
+          # svelte is a devDependency stripped from packaged builds.
+          # Hide it and try loading the main process entry — if Node's
+          # module resolver hits svelte, the import fails just like it
+          # would in the packaged app.
+          mv node_modules/svelte node_modules/svelte.HIDDEN
+          OUTPUT=$(node --input-type=module -e "await import('./dist/main/index.js')" 2>&1 || true)
+          mv node_modules/svelte.HIDDEN node_modules/svelte
+          if echo "$OUTPUT" | grep -q "Cannot find package 'svelte'"; then
+            echo "$OUTPUT"
+            echo "::error::Main process imports svelte at runtime. This will crash packaged builds."
+            exit 1
+          fi
 
   typecheck-preload:
     name: Type Check (preload)
