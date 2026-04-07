@@ -8,14 +8,18 @@
  * - Cleanup on clearPanelLayout
  */
 
-import { call, debounce, fork, put, takeEvery, type SagaGenerator } from "typed-redux-saga";
+import { call, debounce, fork, put, select, takeEvery, type SagaGenerator } from "typed-redux-saga";
 import { clearPanelLayoutAdapter } from "$features/layout/panel-layout-adapter";
-import { workspaceUnmounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
+import {
+  workspaceMounted,
+  workspaceUnmounted,
+} from "../../workspace-lifecycle/workspace-lifecycle-slice";
 import {
   setLocalStorageJSON,
   getLocalStorageJSON,
   removeLocalStorageItem,
 } from "../../../utils/safe-local-storage-saga";
+import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import {
   panelLayoutHistoryClient,
   type PanelLayoutHistoryData,
@@ -56,6 +60,7 @@ import {
   setDeferSpecTab,
   reconcileStaleAgentTabs,
   clearPanelLayout,
+  setRestoreStatus,
   updateTabTitle,
   updateTabBrowserUrl,
   updateTabFavicon,
@@ -63,7 +68,7 @@ import {
   consumePendingFocus,
 } from "../panel-layout-slice";
 import { PANEL_LAYOUT_STORAGE_KEY_PREFIX, HISTORY_PERSIST_DEBOUNCE_MS } from "../panel-layout-types";
-import type { WorkspacePanelLayout } from "../panel-layout-types";
+import type { PanelLayoutNode, WorkspacePanelLayout } from "../panel-layout-types";
 
 // ============================================================================
 // Helpers
@@ -73,8 +78,74 @@ function getStorageKey(wsId: string): string {
   return `${PANEL_LAYOUT_STORAGE_KEY_PREFIX}${wsId}`;
 }
 
+const restoredWorkspaceIds = new Set<string>();
+
+function isValidMountedWorkspaceId(wsId: string): boolean {
+  return !!wsId && wsId !== "new" && !wsId.startsWith("optimistic-") && wsId !== "undefined";
+}
+
+function collectPanelIdsFromTree(node: PanelLayoutNode, panelIds: Set<string>): boolean {
+  if (node.type === "panel") {
+    if (typeof node.panelId !== "string" || node.panelId.length === 0) {
+      return false;
+    }
+
+    panelIds.add(node.panelId);
+    return true;
+  }
+
+  if (!Array.isArray(node.children) || !Array.isArray(node.sizes) || node.children.length !== node.sizes.length) {
+    return false;
+  }
+
+  return node.children.every((child) => collectPanelIdsFromTree(child, panelIds));
+}
+
+/** @internal Exported for testing only. */
+export function isStoredLayoutValid(layout: WorkspacePanelLayout | null | undefined): layout is WorkspacePanelLayout {
+  try {
+    if (!layout || typeof layout !== "object" || !layout.root || !layout.panels || typeof layout.panels !== "object") {
+      return false;
+    }
+
+    const panelIdsInTree = new Set<string>();
+    if (!collectPanelIdsFromTree(layout.root, panelIdsInTree) || panelIdsInTree.size === 0) {
+      return false;
+    }
+
+    for (const panelId of panelIdsInTree) {
+      if (!layout.panels[panelId]) {
+        return false;
+      }
+    }
+
+    if (layout.focusedPanelId !== null && !panelIdsInTree.has(layout.focusedPanelId)) {
+      return false;
+    }
+
+    for (const [panelId, panel] of Object.entries(layout.panels)) {
+      if (!panel || panel.id !== panelId || !Array.isArray(panel.tabs)) {
+        return false;
+      }
+
+      if (!panel.tabs.every((tab) => tab && typeof tab === "object" && typeof tab.id === "string")) {
+        return false;
+      }
+
+      if (panel.activeTabId !== null && !panel.tabs.some((tab) => tab.id === panel.activeTabId)) {
+        return false;
+      }
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Actions that require localStorage persistence
 const PERSIST_ACTIONS = [
+  initializeLayout.type,
   openTab.type,
   openTabInAdjacentOrSplit.type,
   closeTab.type,
@@ -156,7 +227,6 @@ function* persistToLocalStorage(action: { payload: any }): SagaGenerator<void> {
     root: ws.root,
     panels: ws.panels,
     focusedPanelId: ws.focusedPanelId,
-    pendingFocusTabId: ws.pendingFocusTabId,
   };
   yield* call(setLocalStorageJSON, getStorageKey(wsId), layout);
 }
@@ -183,12 +253,52 @@ function* persistHistoryToDisk(action: { payload: any }): SagaGenerator<void> {
 }
 
 /** Load saved layout from localStorage */
-export function* loadLayoutFromStorage(wsId: string): SagaGenerator<WorkspacePanelLayout | null> {
+export function* loadLayoutFromStorage(wsId: string): SagaGenerator<WorkspacePanelLayout | "invalid" | null> {
   const stored = yield* getLocalStorageJSON<WorkspacePanelLayout>(getStorageKey(wsId));
-  if (stored && stored.root && stored.panels) {
+  if (!stored) {
+    return null;
+  }
+
+  if (isStoredLayoutValid(stored)) {
     return stored;
   }
-  return null;
+
+  return "invalid";
+}
+
+/** Restore saved layout when a workspace mounts. */
+export function* handleWorkspaceMountedRestore(
+  action: ReturnType<typeof workspaceMounted>,
+): SagaGenerator<void> {
+  const [wsId] = action.payload;
+
+  if (!isValidMountedWorkspaceId(wsId)) {
+    return;
+  }
+
+  restoredWorkspaceIds.add(wsId);
+  yield* put(setRestoreStatus(wsId, "pending"));
+
+  const storedLayout = yield* call(loadLayoutFromStorage, wsId);
+
+  if (storedLayout === null) {
+    yield* put(setRestoreStatus(wsId, "empty"));
+    return;
+  }
+
+  if (storedLayout === "invalid") {
+    yield* put(setRestoreStatus(wsId, "invalid"));
+    return;
+  }
+
+  yield* put(
+    initializeLayout(wsId, {
+      root: storedLayout.root,
+      panels: storedLayout.panels,
+      focusedPanelId: storedLayout.focusedPanelId,
+    }),
+  );
+  yield* put(setRestoreStatus(wsId, "restored"));
 }
 
 /** Handle clearPanelLayout: remove localStorage entry */
@@ -227,11 +337,31 @@ function* watchClearLayout() {
 /** Clean up PanelLayoutAdapter Map entry when a workspace is unmounted */
 export function* handleWorkspaceUnmounted(action: ReturnType<typeof workspaceUnmounted>): SagaGenerator<void> {
   const [wsId] = action.payload;
+  restoredWorkspaceIds.delete(wsId);
   clearPanelLayoutAdapter(wsId);
 }
 
 function* watchWorkspaceUnmounted() {
   yield* takeEvery(workspaceUnmounted, handleWorkspaceUnmounted);
+}
+
+function* watchWorkspaceMounted() {
+  yield* takeEvery(workspaceMounted, handleWorkspaceMountedRestore);
+}
+
+/** @internal Exported for testing only. */
+export function* retroactivePanelLayoutMountCheckSaga(): SagaGenerator<void> {
+  const activeWsId = yield* select(selectActiveWorkspaceId.select);
+
+  if (!activeWsId || !isValidMountedWorkspaceId(activeWsId)) {
+    return;
+  }
+
+  if (restoredWorkspaceIds.has(activeWsId)) {
+    return;
+  }
+
+  yield* fork(handleWorkspaceMountedRestore, workspaceMounted(activeWsId));
 }
 
 /** Load history from disk when a layout is initialized */
@@ -262,5 +392,7 @@ export function* panelLayoutSaga() {
   yield* fork(watchClearLayout);
   yield* fork(watchInitializeLayout);
   yield* fork(watchWorkspaceUnmounted);
+  yield* fork(watchWorkspaceMounted);
+  yield* fork(retroactivePanelLayoutMountCheckSaga);
 }
 

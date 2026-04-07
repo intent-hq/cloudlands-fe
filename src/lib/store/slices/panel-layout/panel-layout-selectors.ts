@@ -9,6 +9,7 @@ import { emptyWorkspaceState } from "./panel-layout-slice";
 import type {
   WorkspacePanelLayoutState,
   PanelLayoutNode,
+  PanelLayoutRestoreStatus,
   PanelState,
   PanelTab,
   RecentlyClosedTab,
@@ -59,6 +60,11 @@ export const selectFocusedPanel = createSelector<[wsId: string], PanelState | un
     const ws = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
     return ws.focusedPanelId ? ws.panels[ws.focusedPanelId] : undefined;
   },
+);
+
+/** Select the per-workspace restore lifecycle status */
+export const selectRestoreStatus = createSelector<[wsId: string], PanelLayoutRestoreStatus>(
+  (state, wsId) => (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).restoreStatus,
 );
 
 /** Select whether the layout has multiple panels */

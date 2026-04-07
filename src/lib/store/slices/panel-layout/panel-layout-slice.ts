@@ -13,6 +13,7 @@ import type {
   PanelTabType,
   PanelState,
   PanelLayoutNode,
+  PanelLayoutRestoreStatus,
   WorkspacePanelLayoutState,
   PanelLayoutSliceState,
   LayoutSnapshot,
@@ -62,6 +63,7 @@ export const emptyWorkspaceState: WorkspacePanelLayoutState = {
   root: { type: "panel", panelId: "default" },
   panels: { default: { id: "default", tabs: [], activeTabId: null } },
   focusedPanelId: "default",
+  restoreStatus: "idle",
   pendingFocusTabId: null,
   recentlyClosed: [],
   layoutHistory: [],
@@ -101,6 +103,11 @@ export const loadLayoutHistory = createAction(
     historyIndex,
   }),
 );
+
+export const setRestoreStatus = createAction<[
+  wsId: string,
+  restoreStatus: PanelLayoutRestoreStatus,
+]>("panelLayout/setRestoreStatus");
 
 // --- Tab Operations ---
 export const openTab = createAction(
@@ -633,6 +640,10 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       panels: layout.panels,
       focusedPanelId: layout.focusedPanelId,
     });
+  })
+  .with(setRestoreStatus, (state, { payload: [wsId, restoreStatus] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    return setWorkspaceState(state, wsId, { ...ws, restoreStatus });
   })
   .with(loadLayoutHistory, (state, { payload }) => {
     const { wsId, history, historyIndex } = payload;

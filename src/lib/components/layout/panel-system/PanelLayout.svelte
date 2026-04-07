@@ -45,6 +45,7 @@
     selectActiveTab,
     selectAllTabs,
     selectPanelIds,
+    selectRestoreStatus,
   } from '$lib/store/slices/panel-layout/panel-layout-selectors';
 
   const logger = createLogger('PanelLayout');
@@ -73,6 +74,34 @@
   const panels$ = selectPanels(workspaceIdStore);
   const focusedPanelId$ = selectFocusedPanelId(workspaceIdStore);
   const activeTab$ = selectActiveTab(workspaceIdStore);
+  const allTabs$ = selectAllTabs(workspaceIdStore);
+  const restoreStatus$ = selectRestoreStatus(workspaceIdStore);
+  const EMPTY_LAYOUT_LOADING_TIMEOUT_MS = 3000;
+
+  let emptyLayoutLoadingTimedOut = $state(false);
+
+  $effect(() => {
+    if ($restoreStatus$ !== 'empty' || $allTabs$.length > 0) {
+      emptyLayoutLoadingTimedOut = false;
+      return;
+    }
+
+    emptyLayoutLoadingTimedOut = false;
+
+    const timeoutId = window.setTimeout(() => {
+      emptyLayoutLoadingTimedOut = true;
+    }, EMPTY_LAYOUT_LOADING_TIMEOUT_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  });
+
+  const shouldRenderPanelContainer = $derived(
+    $restoreStatus$ === 'restored' ||
+      $restoreStatus$ === 'invalid' ||
+      ($restoreStatus$ === 'empty' && ($allTabs$.length > 0 || emptyLayoutLoadingTimedOut))
+  );
 
   // Get or create the panel layout manager for this workspace (action methods only)
   let layoutManager = $derived(getPanelLayoutManager(workspaceId));
@@ -1070,7 +1099,7 @@
         ? 'p-3 pl-0'
         : 'p-3 pr-0'}"
   >
-    {#if $root$}
+    {#if shouldRenderPanelContainer}
       <PanelContainer
         node={$root$}
         panels={$panels$}

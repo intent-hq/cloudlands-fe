@@ -1,5 +1,6 @@
 import { getPanelLayoutManager, hasPanelLayoutManager, } from "$features/layout/panel-layout-adapter";
-import { selectPanels, selectDeferSpecTab } from "$lib/store/slices/panel-layout/panel-layout-selectors";
+import { selectPanels, selectRestoreStatus } from "$lib/store/slices/panel-layout/panel-layout-selectors";
+import type { PanelLayoutRestoreStatus } from "$lib/store/slices/panel-layout/panel-layout-types";
 import { selectSpec } from "$lib/store/slices/workspace-notes/workspace-notes-selectors";
 import { selectIsInitialSpecWriteInProgress } from "../../workspace-agents/workspace-agents-selectors";
 import { SPEC_NOTE_ID } from "$shared/constants/notes";
@@ -11,6 +12,8 @@ import { workspaceMounted, workspaceUnmounted, } from "../../workspace-lifecycle
 import { clearInitialAgentConfig } from "../../workspace-agents/workspace-agents-slice";
 import { selectInitialAgentConfig } from "../../workspace-agents/workspace-agents-selectors";
 const specPanelTasks = new Map<string, Task[]>();
+const RESTORE_STATUS_TIMEOUT_MS = 500;
+const RESTORE_STATUS_POLL_INTERVAL_MS = 50;
 // Track workspaces where the spec slide-in has already completed.
 // Once the spec has been opened (animated or not), we must NOT defer again
 // on subsequent navigations back to this workspace within the same session.
@@ -87,6 +90,19 @@ function getSpecContent(wsId?: string): string {
     }
     return "";
 }
+function getRestoreStatus(wsId: string): PanelLayoutRestoreStatus {
+    return selectRestoreStatus.select(getReduxStore().getState(), wsId);
+}
+function* waitForRestoreStatusToSettle(wsId: string) {
+    const startTime = Date.now();
+    let restoreStatus = getRestoreStatus(wsId);
+    while ((restoreStatus === "idle" || restoreStatus === "pending") &&
+        Date.now() - startTime < RESTORE_STATUS_TIMEOUT_MS) {
+        yield* delay(RESTORE_STATUS_POLL_INTERVAL_MS);
+        restoreStatus = getRestoreStatus(wsId);
+    }
+    return restoreStatus;
+}
 function slideInSpecPanel(wsId: string): void {
     if (isSpecAlreadyOpen(wsId)) {
         cleanupDeferralKeys(wsId);
@@ -123,8 +139,6 @@ export function* watchSpecPanelForWorkspace(wsId: string) {
         return;
     if (!hasPanelLayoutManager(wsId))
         return;
-    const layoutManager = getPanelLayoutManager(wsId);
-    layoutManager.setDeferSpecTab(true);
     const MAX_WAIT_MS = 90_000;
     const POLL_INTERVAL_MS = 2_000;
     try {
@@ -157,6 +171,11 @@ export function* watchSpecPanelForWorkspace(wsId: string) {
  */
 export function* specPanelForWorkspaceSaga(action: ReturnType<typeof workspaceMounted>) {
     const [wsId] = action.payload;
+    const restoreStatus: PanelLayoutRestoreStatus = yield* call(waitForRestoreStatusToSettle, wsId);
+    if (restoreStatus === "restored") {
+        cleanupDeferralKeys(wsId);
+        return;
+    }
     // Set up deferral if needed (equivalent to the $effect that set deferSpecTab)
     const shouldDefer: boolean = yield* call(shouldDeferSpecPanel, wsId);
     if (shouldDefer && hasPanelLayoutManager(wsId)) {

@@ -30,14 +30,19 @@ vi.mock("typed-redux-saga", () => ({
   },
 }));
 
-const { hasPanelLayoutManagerMock, getPanelLayoutManagerMock, getReduxStoreMock, selectSpecMock, selectPanelsMock, selectDeferSpecTabMock: selectDeferSpecTabSelectorMock, selectActiveWorkspaceIdMock } =
+const { hasPanelLayoutManagerMock, getPanelLayoutManagerMock, getReduxStoreMock, dispatchMock, storeStateRef, selectSpecMock, selectPanelsMock, selectDeferSpecTabMock: selectDeferSpecTabSelectorMock, selectActiveWorkspaceIdMock } =
   vi.hoisted(() => {
+    const dispatchMock = vi.fn();
+    const storeStateRef = { current: {} as any };
+
     return {
       hasPanelLayoutManagerMock: vi.fn(),
       getPanelLayoutManagerMock: vi.fn(),
+      dispatchMock,
+      storeStateRef,
       getReduxStoreMock: vi.fn(() => ({
-        getState: () => ({}),
-        dispatch: vi.fn(),
+        getState: () => storeStateRef.current,
+        dispatch: dispatchMock,
       })),
       selectSpecMock: vi.fn(() => undefined),
       selectPanelsMock: vi.fn(() => ({})),
@@ -117,6 +122,7 @@ describe("specPanelSaga", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    storeStateRef.current = {};
     hasPanelLayoutManagerMock.mockReturnValue(true);
     setDeferSpecTabMock = vi.fn();
     getPanelLayoutManagerMock.mockReturnValue({
@@ -156,15 +162,17 @@ describe("specPanelSaga", () => {
     expect((forkEffect.value as any)?.type).toBe("FORK");
   });
 
-  it("registers the spec panel watcher on mount and cancels it on workspace unmount", () => {
+  it("registers the spec panel watcher on mount after restore status settles", () => {
     const task = { id: "mock-task" };
     const iterator = specPanelForWorkspaceSaga(workspaceMounted("ws-123"));
 
-    // First: call shouldDeferSpecPanel
-    const callEffect = iterator.next();
-    expect(callEffect.done).toBe(false);
+    // First: wait briefly for restore status to settle
+    expect(iterator.next().done).toBe(false);
 
-    // shouldDeferSpecPanel returns false
+    // Then: call shouldDeferSpecPanel for a fresh workspace
+    expect(iterator.next("empty").done).toBe(false);
+
+    // shouldDeferSpecPanel returns false, but watcher still starts for fresh workspaces
     const forkEffect = iterator.next(false);
     expect(forkEffect.done).toBe(false);
 
@@ -185,12 +193,42 @@ describe("specPanelSaga", () => {
     expect(setDeferSpecTabMock).toHaveBeenCalledWith(false);
   });
 
+  it("skips the watcher and cleans up deferral keys when layout was restored", () => {
+    const iterator = specPanelForWorkspaceSaga(workspaceMounted("ws-restored"));
+
+    expect(iterator.next().done).toBe(false);
+    expect(iterator.next("restored")).toEqual({ value: undefined, done: true });
+
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: "workspace-agents/clearInitialAgentConfig",
+      payload: ["ws-restored"],
+    });
+    expect(sessionStorage.removeItem).toHaveBeenCalledWith("workspace:ws-restored:agent-config");
+    expect(sessionStorage.removeItem).toHaveBeenCalledWith("workspace:ws-restored:initial-agent-pending");
+  });
+
+  it("sets deferSpecTab in the parent saga when a fresh workspace should defer", () => {
+    const task = { id: "mock-task" };
+    const iterator = specPanelForWorkspaceSaga(workspaceMounted("ws-defer"));
+
+    expect(iterator.next().done).toBe(false);
+    expect(iterator.next("empty").done).toBe(false);
+    const forkEffect = iterator.next(true);
+
+    expect(forkEffect.done).toBe(false);
+    expect(setDeferSpecTabMock).toHaveBeenCalledWith(true);
+    expect(iterator.next(task)).toEqual({ value: undefined, done: true });
+  });
+
   describe("watchSpecPanelForWorkspace — polling approach", () => {
-    it("sets deferSpecTab(true) on start", () => {
+    it("does not set deferSpecTab(true) on start", () => {
       const iterator = watchSpecPanelForWorkspace("ws-test");
-      // Step once — this should call setDeferSpecTab(true)
-      iterator.next();
-      expect(setDeferSpecTabMock).toHaveBeenCalledWith(true);
+
+      const firstStep = iterator.next();
+
+      expect((firstStep.value as any)?.type).toBe("CALL");
+      expect((firstStep.value as any)?.payload?.fn?.name).toBe("delayP");
+      expect(setDeferSpecTabMock).not.toHaveBeenCalledWith(true);
     });
 
     it("calls slideInSpecPanel when spec content is available on first poll", () => {

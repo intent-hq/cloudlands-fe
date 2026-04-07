@@ -230,13 +230,6 @@ export function hasPanelLayoutManager(_workspaceId: string): boolean {
   return true; // Adapters are lazy; state lives in Redux
 }
 
-/** Create a new layout adapter for a workspace (initializes Redux state) */
-export function createPanelLayoutManager(workspaceId: string): PanelLayoutAdapter {
-  const adapter = getPanelLayoutManager(workspaceId);
-  adapter.initializeLayout();
-  return adapter;
-}
-
 /** Remove a layout adapter from the registry */
 export function clearPanelLayoutAdapter(workspaceId: string) {
   adapters.delete(workspaceId);

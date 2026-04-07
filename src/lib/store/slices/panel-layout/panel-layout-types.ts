@@ -89,6 +89,8 @@ export interface WorkspacePanelLayout {
   >;
 }
 
+export type PanelLayoutRestoreStatus = "idle" | "pending" | "restored" | "empty" | "invalid";
+
 // ============================================================================
 // Internal State Types
 // ============================================================================
@@ -130,6 +132,7 @@ export interface WorkspacePanelLayoutState {
   root: PanelLayoutNode;
   panels: Record<string, PanelState>;
   focusedPanelId: string | null;
+  restoreStatus: PanelLayoutRestoreStatus;
   pendingFocusTabId: string | null;
   recentlyClosed: RecentlyClosedTab[];
   layoutHistory: LayoutSnapshot[];

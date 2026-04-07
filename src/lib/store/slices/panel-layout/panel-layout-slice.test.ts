@@ -3,6 +3,7 @@ import {
   panelLayoutReducer,
   emptyWorkspaceState,
   initializeLayout,
+  setRestoreStatus,
   openTab,
   closeTab,
   setActiveTab,
@@ -62,6 +63,17 @@ describe("panelLayoutReducer", () => {
       expect(result.byWorkspaceId[WS].root).toEqual(layout.root);
       expect(result.byWorkspaceId[WS].panels.p1).toBeDefined();
       expect(result.byWorkspaceId[WS].focusedPanelId).toBe("p1");
+    });
+  });
+
+  describe("setRestoreStatus", () => {
+    it("defaults restoreStatus to idle", () => {
+      expect(emptyWorkspaceState.restoreStatus).toBe("idle");
+    });
+
+    it("updates restoreStatus for the workspace", () => {
+      const result = panelLayoutReducer(emptyState(), setRestoreStatus(WS, "pending"));
+      expect(result.byWorkspaceId[WS].restoreStatus).toBe("pending");
     });
   });
 

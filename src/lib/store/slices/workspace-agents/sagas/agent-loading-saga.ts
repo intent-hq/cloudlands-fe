@@ -1,6 +1,6 @@
 import { agentService } from "$features/agent/agent-ipc-bridge";
 import { getPanelLayoutManager, hasPanelLayoutManager, } from "$features/layout/panel-layout-adapter";
-import { selectPanels } from "$lib/store/slices/panel-layout/panel-layout-selectors";
+import { selectPanels, selectRestoreStatus } from "$lib/store/slices/panel-layout/panel-layout-selectors";
 import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import { workspaceStorageManager } from "$lib/store/slices/workspace/utils/workspace-storage-manager";
 import { shouldDeferSpecPanel } from "$lib/store/slices/app-layout/sagas/spec-panel-saga";
@@ -9,12 +9,16 @@ import { SPEC_NOTE_ID } from "$shared/constants/notes";
 import { AgentId } from "$shared/types/branded-ids";
 import type { AgentSession } from "$shared/types";
 import type { StoredAgent } from "$lib/utils/agent-loader";
-import { call, put, select } from "typed-redux-saga";
+import type { PanelLayoutRestoreStatus } from "$lib/store/slices/panel-layout/panel-layout-types";
+import { call, delay, put, select } from "typed-redux-saga";
 import { lockReactiveSelectors } from "../../store-utility/sagas/lock-reactive-selectors";
 import { markAgentRecentlyCreated, setAgents, setAgentsLoaded, setIsLoadingAgents, } from "../workspace-agents-slice";
 import { selectAgentById, selectAgentsLoaded, selectInitialAgentId, selectInitialAgentConfig, selectIsLoadingAgents, } from "../workspace-agents-selectors";
 import { bulkUpsertSessions, removeWorkspaceSessions } from "../../agent-session/agent-session-slice";
 import { clearInitialAgentConfig, type InitialAgentConfig } from "../workspace-agents-slice";
+
+const PANEL_LAYOUT_RESTORE_POLL_MS = 100;
+const PANEL_LAYOUT_RESTORE_TIMEOUT_MS = 2_000;
 /**
  * Open an agent tab in the panel layout manager.
  * Replicates the component-local `openAgentInLayout` using direct layout manager calls.
@@ -44,6 +48,35 @@ function openAgentInLayout(agentId: string, agentName: string, wsId: string, opt
         closable: true,
     });
 }
+
+function getAllTabsForWorkspace(wsId: string) {
+    return Object.values(selectPanels.select(getReduxStore().getState(), wsId)).flatMap((panel) => panel.tabs);
+}
+
+/** @internal Exported for testing only. */
+export function* waitForPanelLayoutRestore(wsId: string) {
+    if (!hasPanelLayoutManager(wsId))
+        return;
+    const maxAttempts = PANEL_LAYOUT_RESTORE_TIMEOUT_MS / PANEL_LAYOUT_RESTORE_POLL_MS;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const { hasTabs, restoreStatus }: {
+            hasTabs: boolean;
+            restoreStatus: PanelLayoutRestoreStatus;
+        } = yield* select((state: any) => {
+            const panels = selectPanels.select(state, wsId);
+            const allTabs = Object.values(panels).flatMap((panel) => panel.tabs);
+            return {
+                hasTabs: allTabs.length > 0,
+                restoreStatus: selectRestoreStatus.select(state, wsId),
+            };
+        });
+        if (hasTabs || (restoreStatus !== "idle" && restoreStatus !== "pending")) {
+            return;
+        }
+        yield* delay(PANEL_LAYOUT_RESTORE_POLL_MS);
+    }
+}
+
 /**
  * Core agent loading saga – extracted from the component's `loadAgentsFromDisk()`.
  *
@@ -107,6 +140,7 @@ export function* loadAgentsFromDiskSaga(wsId: string) {
             yield* put(setAgents(wsId, filteredAgents));
             yield* put(setAgentsLoaded(wsId, true));
         });
+        yield* call(waitForPanelLayoutRestore, wsId);
         // 6. Reconcile stale agent tabs in panel layout
         yield* call(reconcileStaleAgentTabs, wsId, restoredAgents);
         // 7. Reconnect IPC stream handlers
@@ -247,8 +281,12 @@ function* handleStreamingAgentReconnect(wsId: string, restoredAgents: AgentSessi
     }
     return hasOpenedStreamingAgent;
 }
-function restoreLayoutState(wsId: string, restoredAgents: AgentSession[], diskAgents: StoredAgent[], hasOpenedStreamingAgent: boolean, initialAgentId: string | null): void {
+/** @internal Exported for testing only. */
+export function restoreLayoutState(wsId: string, restoredAgents: AgentSession[], diskAgents: StoredAgent[], hasOpenedStreamingAgent: boolean, initialAgentId: string | null): void {
     if (!hasPanelLayoutManager(wsId))
+        return;
+    const allTabs = getAllTabsForWorkspace(wsId);
+    if (allTabs.length > 0)
         return;
     const hasInitialAgentOpen = !!initialAgentId;
     if (hasInitialAgentOpen) {
@@ -265,8 +303,7 @@ function restoreLayoutState(wsId: string, restoredAgents: AgentSession[], diskAg
         }
         else if (restoredAgents.length > 0) {
             const layoutManager = getPanelLayoutManager(wsId);
-            const allTabs = Object.values(selectPanels.select(getReduxStore().getState(), wsId)).flatMap((p) => p.tabs);
-            const hasAgentTabs = allTabs.some((t) => t.type === "agent");
+            const hasAgentTabs = getAllTabsForWorkspace(wsId).some((t) => t.type === "agent");
             if (!hasAgentTabs) {
                 const sortedAgents = [...restoredAgents].sort((a, b) => {
                     const aTime = new Date(a.createdAt || 0).getTime();
@@ -291,53 +328,38 @@ function restoreLayoutState(wsId: string, restoredAgents: AgentSession[], diskAg
     // Ensure panels have content – fallback to agent | spec layout
     ensureFallbackLayout(wsId, restoredAgents, diskAgents);
 }
-function ensureFallbackLayout(wsId: string, restoredAgents: AgentSession[], diskAgents: StoredAgent[]): void {
+/** @internal Exported for testing only. */
+export function ensureFallbackLayout(wsId: string, restoredAgents: AgentSession[], diskAgents: StoredAgent[]): void {
     if (!hasPanelLayoutManager(wsId))
         return;
+    const allTabs = getAllTabsForWorkspace(wsId);
+    if (allTabs.length > 0)
+        return;
     const layoutManager = getPanelLayoutManager(wsId);
-    const allTabs = Object.values(selectPanels.select(getReduxStore().getState(), wsId)).flatMap((p) => p.tabs);
-    if (allTabs.length === 0) {
-        const agentsToUse = restoredAgents.length > 0
-            ? restoredAgents
-            : diskAgents.map((a) => ({
-                ...a,
-                createdAt: a.createdAt || new Date(0),
-            }));
-        if (agentsToUse.length > 0) {
-            const sorted = [...agentsToUse].sort((a, b) => {
-                const aTime = new Date(a.createdAt || 0).getTime();
-                const bTime = new Date(b.createdAt || 0).getTime();
-                return bTime - aTime;
-            });
-            const mostRecent = sorted[0];
-            if (mostRecent) {
-                openAgentInLayout(mostRecent.id, (mostRecent as any).name || "Agent", wsId);
-            }
-        }
-        if (!shouldDeferSpecPanel(wsId)) {
-            layoutManager.openTabInAdjacentOrSplit({
-                type: "note",
-                title: "Spec",
-                noteId: SPEC_NOTE_ID,
-                closable: true,
-            });
+    const agentsToUse = restoredAgents.length > 0
+        ? restoredAgents
+        : diskAgents.map((a) => ({
+            ...a,
+            createdAt: a.createdAt || new Date(0),
+        }));
+    if (agentsToUse.length > 0) {
+        const sorted = [...agentsToUse].sort((a, b) => {
+            const aTime = new Date(a.createdAt || 0).getTime();
+            const bTime = new Date(b.createdAt || 0).getTime();
+            return bTime - aTime;
+        });
+        const mostRecent = sorted[0];
+        if (mostRecent) {
+            openAgentInLayout(mostRecent.id, (mostRecent as any).name || "Agent", wsId);
         }
     }
-    else {
-        const panels = Object.entries(selectPanels.select(getReduxStore().getState(), wsId));
-        const emptyPanel = panels.find(([, panel]) => panel.tabs.length === 0);
-        const hasSpecAnywhere = allTabs.some((t) => t.type === "note" && t.noteId === SPEC_NOTE_ID);
-        if (emptyPanel &&
-            panels.length >= 2 &&
-            !hasSpecAnywhere &&
-            !shouldDeferSpecPanel(wsId)) {
-            layoutManager.openTab({
-                type: "note",
-                title: "Spec",
-                noteId: SPEC_NOTE_ID,
-                closable: true,
-            }, emptyPanel[0]);
-        }
+    if (!shouldDeferSpecPanel(wsId)) {
+        layoutManager.openTabInAdjacentOrSplit({
+            type: "note",
+            title: "Spec",
+            noteId: SPEC_NOTE_ID,
+            closable: true,
+        });
     }
 }
 function* cleanupSessionStorageKeys(wsId: string) {

@@ -58,6 +58,9 @@ const {
   resumeSessionMock,
   reconnectStreamHandlersMock,
   getStoredAgentsFromDiskMock,
+  hasPanelLayoutManagerMock,
+  getPanelLayoutManagerMock,
+  getReduxStateMock,
 } = vi.hoisted(() => ({
   takeEveryFromElectronChannelMock: vi.fn(function* () {}),
   takeEveryFromWindowEventMock: vi.fn(function* () {}),
@@ -76,6 +79,15 @@ const {
   reconnectStreamHandlersMock: vi.fn(async () => {}),
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   getStoredAgentsFromDiskMock: vi.fn(async (_wsId: string) => []),
+  hasPanelLayoutManagerMock: vi.fn(() => false),
+  getPanelLayoutManagerMock: vi.fn(() => ({
+    focusPanel: vi.fn(),
+    setActiveTab: vi.fn(),
+    openTab: vi.fn(),
+    openTabInAdjacentOrSplit: vi.fn(),
+    reconcileStaleAgentTabs: vi.fn(),
+  })),
+  getReduxStateMock: vi.fn(() => ({})),
 }));
 
 vi.mock("$lib/store/utils/ipc-channel", () => ({
@@ -103,8 +115,8 @@ vi.mock("$lib/utils/agent-loader", () => ({
 }));
 
 vi.mock("$features/layout/panel-layout-adapter", () => ({
-  hasPanelLayoutManager: () => false,
-  getPanelLayoutManager: () => null,
+  hasPanelLayoutManager: hasPanelLayoutManagerMock,
+  getPanelLayoutManager: getPanelLayoutManagerMock,
 }));
 
 vi.mock("$lib/store/slices/workspace/utils/workspace-storage-manager", () => ({
@@ -121,7 +133,7 @@ vi.mock("$lib/utils/agent-subscription.svelte", () => ({
 }));
 
 vi.mock("$lib/store/redux-dispatch-bridge", () => ({
-  getReduxStore: () => ({ getState: () => ({}), dispatch: vi.fn() }),
+  getReduxStore: () => ({ getState: getReduxStateMock, dispatch: vi.fn() }),
 }));
 
 // lockReactiveSelectors: pass-through mock that executes the handler directly.
@@ -163,7 +175,13 @@ import {
   renameSession as renameAgentSession,
   removeWorkspaceSessions,
 } from "../../agent-session/agent-session-slice";
-import { loadAgentsFromDiskSaga, restoreInitialAgent } from "./agent-loading-saga";
+import {
+  ensureFallbackLayout,
+  loadAgentsFromDiskSaga,
+  restoreInitialAgent,
+  restoreLayoutState,
+  waitForPanelLayoutRestore,
+} from "./agent-loading-saga";
 import {
   cancelWorkspaceAgentEventsForWorkspaceSaga,
   recoverLateInitialAgentHydrationSaga,
@@ -205,6 +223,15 @@ function getWindowHandler(eventName: string) {
 describe("workspaceAgentsSaga", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    hasPanelLayoutManagerMock.mockReturnValue(false);
+    getPanelLayoutManagerMock.mockReturnValue({
+      focusPanel: vi.fn(),
+      setActiveTab: vi.fn(),
+      openTab: vi.fn(),
+      openTabInAdjacentOrSplit: vi.fn(),
+      reconcileStaleAgentTabs: vi.fn(),
+    });
+    getReduxStateMock.mockReturnValue({});
     const windowStub = Object.assign(new EventTarget(), {
       electronAPI: {},
     }) as Window & typeof globalThis;
@@ -758,6 +785,120 @@ describe("loadAgentsFromDiskSaga — mount-race hardening", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("waits for panel-layout restore completion before mutating tabs", () => {
+    const gen = loadAgentsFromDiskSaga("ws-restore-sync");
+
+    expect((gen.next().value as any).type).toBe("SELECT");
+    expect((gen.next(false).value as any).type).toBe("SELECT");
+    expect(gen.next(false)).toEqual({
+      value: sagaEffects.put(setIsLoadingAgents("ws-restore-sync", true)),
+      done: false,
+    });
+    expect((gen.next().value as any).type).toBe("CALL");
+
+    expect((gen.next().value as any).type).toBe("CALL");
+    expect((gen.next([]).value as any).type).toBe("CALL");
+    expect((gen.next({ getStoredAgentsFromDisk: getStoredAgentsFromDiskMock }).value as any).type).toBe("SELECT");
+    expect((gen.next(null).value as any).type).toBe("CALL");
+    expect((gen.next([]).value as any).type).toBe("CALL");
+    expect((gen.next([]).value as any).type).toBe("PUT");
+    expect((gen.next().value as any).type).toBe("PUT");
+    expect((gen.next().value as any).type).toBe("PUT");
+    expect((gen.next().value as any).type).toBe("PUT");
+    expect((gen.next().value as any).type).toBe("PUT");
+
+    expect(gen.next()).toEqual({
+      value: sagaEffects.call(waitForPanelLayoutRestore, "ws-restore-sync"),
+      done: false,
+    });
+  });
+});
+
+describe("agent-loading layout guards", () => {
+  it("stops waiting once restore status is complete", () => {
+    hasPanelLayoutManagerMock.mockReturnValue(true);
+
+    const gen = waitForPanelLayoutRestore("ws-layout");
+
+    expect((gen.next().value as any).type).toBe("SELECT");
+    expect(gen.next({ hasTabs: false, restoreStatus: "restored" })).toEqual({ value: undefined, done: true });
+  });
+
+  it("polls while restore status is idle", () => {
+    hasPanelLayoutManagerMock.mockReturnValue(true);
+
+    const gen = waitForPanelLayoutRestore("ws-layout");
+
+    expect((gen.next().value as any).type).toBe("SELECT");
+    expect(gen.next({ hasTabs: false, restoreStatus: "idle" })).toEqual({
+      value: sagaEffects.delay(100),
+      done: false,
+    });
+    expect((gen.next().value as any).type).toBe("SELECT");
+  });
+
+  it("skips restoreLayoutState when layout tabs already exist", () => {
+    hasPanelLayoutManagerMock.mockReturnValue(true);
+    const openTabInAdjacentOrSplit = vi.fn();
+    getPanelLayoutManagerMock.mockReturnValue({
+      focusPanel: vi.fn(),
+      setActiveTab: vi.fn(),
+      openTab: vi.fn(),
+      openTabInAdjacentOrSplit,
+      reconcileStaleAgentTabs: vi.fn(),
+    });
+    getReduxStateMock.mockReturnValue({
+      panelLayout: {
+        byWorkspaceId: {
+          "ws-layout": {
+            panels: {
+              "panel-1": {
+                id: "panel-1",
+                tabs: [{ id: "tab-1", type: "note", title: "Spec", noteId: "spec", closable: true }],
+                activeTabId: "tab-1",
+              },
+            },
+          },
+        },
+      },
+    });
+
+    restoreLayoutState("ws-layout", [], [], false, null);
+
+    expect(openTabInAdjacentOrSplit).not.toHaveBeenCalled();
+  });
+
+  it("skips ensureFallbackLayout when layout tabs already exist", () => {
+    hasPanelLayoutManagerMock.mockReturnValue(true);
+    const openTabInAdjacentOrSplit = vi.fn();
+    getPanelLayoutManagerMock.mockReturnValue({
+      focusPanel: vi.fn(),
+      setActiveTab: vi.fn(),
+      openTab: vi.fn(),
+      openTabInAdjacentOrSplit,
+      reconcileStaleAgentTabs: vi.fn(),
+    });
+    getReduxStateMock.mockReturnValue({
+      panelLayout: {
+        byWorkspaceId: {
+          "ws-layout": {
+            panels: {
+              "panel-1": {
+                id: "panel-1",
+                tabs: [{ id: "tab-1", type: "note", title: "Spec", noteId: "spec", closable: true }],
+                activeTabId: "tab-1",
+              },
+            },
+          },
+        },
+      },
+    });
+
+    ensureFallbackLayout("ws-layout", [], []);
+
+    expect(openTabInAdjacentOrSplit).not.toHaveBeenCalled();
   });
 });
 
