@@ -3449,7 +3449,7 @@
                             {workspace}
                             onEditSubmit={(newText, model) =>
                               handleEditMessage(message.id, newText, model)}
-                            editModel={turn.assistantMessages[0]?.metadata?.model}
+                            editModel={turn.assistantMessages[0]?.metadata?.model ?? hydratedInputModel ?? agentModel}
                             enableSticky={shouldEnableSticky}
                             onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
                             backendSessionId={auggieSessionId}
