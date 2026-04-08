@@ -36,7 +36,7 @@
 
   import { onMount, onDestroy, untrack, tick } from 'svelte';
   import { writable } from 'svelte/store';
-  import { getChatService, type ChatState } from '$features/agent/services/chat.service';
+  import { getChatService, MessageGuardError, type ChatState } from '$features/agent/services/chat.service';
   import { WorkspaceRebindTracker } from './workspace-rebind-tracker';
   import { agentService, type AgentMessage } from '$features/agent/agent-ipc-bridge';
   import { browser } from '$app/environment';
@@ -2726,6 +2726,10 @@
 
       if (scrollContainer) scrollToBottomUtil(scrollContainer);
     } catch (error) {
+      // Rate-limited or idempotency-blocked — silently ignore for suggested replies
+      if (error instanceof MessageGuardError) {
+        return;
+      }
       const errorMessage = error instanceof Error ? error.message : 'Failed to send message';
       const isInterrupted = errorMessage.includes('Agent interrupted');
       if (!isInterrupted) {

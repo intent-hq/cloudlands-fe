@@ -60,12 +60,19 @@ vi.mock("$shared/errors/messages", () => ({
   cleanErrorMessage: (msg: string) => msg,
 }));
 
-// Mock chat service
+// Mock chat service — MessageGuardError must be a real class so instanceof works
+class MockMessageGuardError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MessageGuardError';
+  }
+}
 const mockSendMessage = vi.fn().mockResolvedValue(undefined);
 vi.mock("$features/agent/services/chat.service", () => ({
   getChatService: vi.fn(() => ({
     sendMessage: mockSendMessage,
   })),
+  MessageGuardError: MockMessageGuardError,
 }));
 
 // Mock consolidated backend service
@@ -568,6 +575,60 @@ describe("send-message-saga", () => {
         (a) => a.type === chatSendFailed.type,
       );
       expect(sendFailedAction).toBeUndefined();
+    });
+  });
+
+  // ========================================================================
+  // Test 9: MessageGuardError (rate limiter / idempotency) clears state silently
+  // ========================================================================
+  describe("MessageGuardError handling (rate limiter / idempotency fix)", () => {
+    it("dispatches chatSendFailed without error toast when sendMessage throws MessageGuardError", async () => {
+      // Simulate the rate limiter or idempotency guard throwing
+      mockSendMessage.mockRejectedValue(
+        new MockMessageGuardError("Message sent too quickly, please wait a moment"),
+      );
+
+      const { dispatched } = await runSendMessageSaga();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // chatSendStarted should have been dispatched (before sendMessage)
+      const sendStarted = dispatched.find(
+        (a) => a.type === chatSendStarted.type,
+      );
+      expect(sendStarted).toBeDefined();
+
+      // chatSendFailed should be dispatched to clear the streaming state
+      const sendFailed = dispatched.find(
+        (a) => a.type === chatSendFailed.type,
+      );
+      expect(sendFailed).toBeDefined();
+      // The error string should be empty (no error banner shown)
+      expect(sendFailed.payload[1]).toBe('');
+    });
+
+    it("does NOT show error toast for MessageGuardError (unlike real errors)", async () => {
+      // Real error shows toast
+      mockSendMessage.mockRejectedValue(new Error("Network failure"));
+      const { dispatched: d1 } = await runSendMessageSaga();
+      await vi.advanceTimersByTimeAsync(0);
+      const realFailed = d1.find((a) => a.type === chatSendFailed.type);
+      expect(realFailed).toBeDefined();
+      expect(realFailed.payload[1]).toBe("Network failure"); // non-empty error
+
+      vi.clearAllMocks();
+      mockSelectWorkspaceById.mockReturnValue(MOCK_WORKSPACE);
+      mockSelectChatIsRebinding.mockReturnValue(false);
+      mockSelectChatTrackedWorkspaceId.mockReturnValue(null);
+
+      // Guard error clears state silently
+      mockSendMessage.mockRejectedValue(
+        new MockMessageGuardError("Duplicate message detected"),
+      );
+      const { dispatched: d2 } = await runSendMessageSaga();
+      await vi.advanceTimersByTimeAsync(0);
+      const guardFailed = d2.find((a) => a.type === chatSendFailed.type);
+      expect(guardFailed).toBeDefined();
+      expect(guardFailed.payload[1]).toBe(''); // empty = no error banner
     });
   });
 });

@@ -141,6 +141,18 @@ export function* fetchAndDispatchSnapshot(wsId: string, agentId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Per-agent wakeup generation tracker: prevents a stale auto-dismiss fork
+// from clearing a newer wakeup event's indicator.
+// ---------------------------------------------------------------------------
+
+const wakeupGeneration = new Map<string, number>();
+
+/** @internal Exported for testing only. */
+export function _getWakeupGeneration(key: string): number {
+  return wakeupGeneration.get(key) ?? 0;
+}
+
+// ---------------------------------------------------------------------------
 // Per-workspace event handler
 // ---------------------------------------------------------------------------
 
@@ -164,16 +176,26 @@ export function* handleSubscriptionEvent(wsId: string, event: SubscriptionIpcEve
 
   // Special handling for woken-by-subscription — auto-dismiss after 5s
   // Forked so the delay doesn't block event processing in the parent loop
+  //
+  // FIX: Use a per-agent generation counter so that when a second wakeup
+  // arrives before the first 5s dismiss fires, the stale fork detects
+  // the generation mismatch and skips the clearWokenUp dispatch.
   if (eventName === 'agent:woken-by-subscription') {
     const info: WokenUpInfo = {
       eventCount: data?.eventCount ?? 0,
       eventTypes: data?.eventTypes ?? [],
       timestamp: Date.now(),
     };
+    const key = `${wsId}:${agentId}`;
+    const gen = (wakeupGeneration.get(key) ?? 0) + 1;
+    wakeupGeneration.set(key, gen);
     yield* fork(function* () {
       yield* put(setWokenUp(wsId, agentId, info));
       yield* delay(5000);
-      yield* put(clearWokenUp(wsId, agentId));
+      // Only clear if no newer wakeup arrived during the delay
+      if (wakeupGeneration.get(key) === gen) {
+        yield* put(clearWokenUp(wsId, agentId));
+      }
     });
   }
 
@@ -226,6 +248,15 @@ export function* handleWorkspaceUnmounted(action: ReturnType<typeof workspaceUnm
   if (task) {
     yield* cancel(task);
     workspaceTasks.delete(wsId);
+  }
+
+  // Prune wakeupGeneration entries for the unmounted workspace to prevent
+  // the Map from growing unbounded across workspace mount/unmount cycles.
+  const prefix = `${wsId}:`;
+  for (const key of wakeupGeneration.keys()) {
+    if (key.startsWith(prefix)) {
+      wakeupGeneration.delete(key);
+    }
   }
 }
 

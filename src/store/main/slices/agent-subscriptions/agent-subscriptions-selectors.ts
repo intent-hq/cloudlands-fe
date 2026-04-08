@@ -116,6 +116,9 @@ export const selectIsDelegationGroupComplete = createSelector(
     const group = selectDelegationGroup.select(state, wsId, groupId);
     if (!group) return false;
     const doneCount = group.completedAgentIds.length + group.deletedAgentIds.length;
+    if (group.awaitMode === "any") {
+      return doneCount >= 1;
+    }
     return doneCount >= group.expectedAgentIds.length;
   },
 );

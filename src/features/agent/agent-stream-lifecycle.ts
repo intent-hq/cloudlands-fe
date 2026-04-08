@@ -1524,6 +1524,22 @@ export async function sendMessage(
                           }
                         } else if (data.type === 'complete') {
                           try {
+                            // GUARD: Skip stale 'complete' events from interrupted streams.
+                            // When a stream is interrupted (user sends a new message), the backend
+                            // sends a 'complete' with data: null and no message/finishReason.
+                            // If this arrives at the handler set up by the NEW sendMessage call
+                            // (before any chunks from the new stream), it would prematurely clean
+                            // up the new handler, causing all subsequent chunks to be dropped.
+                            // Real completions ALWAYS include a `message` or `finishReason` field.
+                            if (!hasReceivedFirstChunk && chunkCount <= 1 && !data.message && !data.finishReason) {
+                              logger.info('Skipping stale complete event from interrupted stream', {
+                                agentId,
+                                streamId: data.streamId,
+                                reason: 'no_chunks_received_and_no_message_data',
+                              });
+                              return;
+                            }
+
                             logger.debug('Stream complete - cleaning up', {
                               agentId,
                               sessionId: data.sessionId,
@@ -1643,9 +1659,6 @@ export async function sendMessage(
                                 // Otherwise, setAgent will see session.isStreaming as true and
                                 // overwrite the streaming.active state we just set to false
                                 updatedSession.isStreaming = false;
-                                getReduxStore().dispatch(upsertAgentSession(workspace.id, updatedSession));
-
-                                // Update unified state store so BackgroundAgentExecutor subscriptions fire
                                 getReduxStore().dispatch(upsertAgentSession(workspace.id, updatedSession));
 
                                 // Dispatch stream end event to ChatService

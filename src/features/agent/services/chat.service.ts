@@ -65,6 +65,18 @@ import { upsertSession as upsertAgentSessionData, replaceMessages as replaceAgen
 
 const logger = createLogger('ChatService');
 
+/**
+ * Error thrown by sendMessage's internal guards (rate limiter, idempotency check).
+ * Distinguished from real errors so the saga can clear streaming state without
+ * showing an error toast — these are expected double-click/rapid-fire protections.
+ */
+export class MessageGuardError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MessageGuardError';
+  }
+}
+
 // Constants
 const MAX_MESSAGE_LENGTH = 500000; // Maximum message length in characters (500k chars ~= 125k tokens)
 const MIN_MESSAGE_SEND_INTERVAL = 100; // Minimum time between messages in ms
@@ -1538,21 +1550,26 @@ export class ChatService implements IDisposable {
     //   here would block every send, including legitimate ones.
 
     // Rate limiting
+    // FIX: Throw instead of silently returning. The saga dispatches chatSendStarted
+    // BEFORE calling sendMessage, so a silent return leaves the UI in a stuck
+    // "processing" state (streamingStartTime set, no stream events to clear it).
+    // Throwing lets the saga catch and dispatch chatSendFailed to clean up.
     const now = Date.now();
     if (now - this.lastMessageTime < MIN_MESSAGE_SEND_INTERVAL) {
-      logger.warn('Message sent too quickly, ignoring');
-      return;
+      logger.warn('Message sent too quickly, rejecting');
+      throw new MessageGuardError('Message sent too quickly, please wait a moment');
     }
     this.lastMessageTime = now;
 
     // Idempotency check: prevent duplicate sends from double-clicks
+    // FIX: Same as rate limiter — throw instead of silent return to avoid stuck state.
     const sendKey = `${session.id}:${message}:${Math.floor(now / 1000)}`;
     if (this.recentSendKeys.has(sendKey)) {
-      logger.warn('Duplicate message send detected (idempotency), ignoring', {
+      logger.warn('Duplicate message send detected (idempotency), rejecting', {
         sessionId: session.id,
         messageLength: message.length,
       });
-      return;
+      throw new MessageGuardError('Duplicate message detected');
     }
     this.recentSendKeys.add(sendKey);
     // Auto-expire the key after TTL so legitimate resends work

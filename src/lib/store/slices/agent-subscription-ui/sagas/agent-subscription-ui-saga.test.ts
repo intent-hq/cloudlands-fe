@@ -77,6 +77,7 @@ import {
   retroactiveMountCheckSaga,
   fetchAndDispatchSnapshot,
   handleSubscriptionEvent,
+  _getWakeupGeneration,
 } from './agent-subscription-ui-saga';
 import {
   workspaceMounted,
@@ -307,6 +308,148 @@ describe('agent-subscription-ui-saga', () => {
       // Provide empty list - should complete immediately
       const done = iterator.next([]);
       expect(done.done).toBe(true);
+    });
+
+    it('woken-by-subscription forks auto-dismiss that respects newer wakeups (race-condition fix)', () => {
+      // Simulate two rapid woken-by-subscription events. The first fork's
+      // clearWokenUp should NOT fire after the second wakeup arrives,
+      // because a newer generation has been set.
+      invokeMock.mockResolvedValue({ success: true, data: [], delegationGroups: [], agentStatuses: {} });
+
+      // --- First wakeup ---
+      const it1 = handleSubscriptionEvent(WS, {
+        eventName: 'agent:woken-by-subscription',
+        workspaceId: WS,
+        agentId: AGENT,
+        data: { eventCount: 1, eventTypes: ['file:*'] },
+      });
+
+      // call(fetchAndDispatchSnapshot, WS, AGENT)
+      const callEff1 = it1.next();
+      expect(callEff1.done).toBe(false);
+      // After call returns, saga continues to fork
+      const fork1 = it1.next();
+      expect(fork1.done).toBe(false);
+      expect((fork1.value as any)?.type).toBe('FORK');
+
+      // Capture generation after first wakeup
+      const key = `${WS}:${AGENT}`;
+      const gen1 = _getWakeupGeneration(key);
+      expect(gen1).toBeGreaterThan(0);
+
+      // --- Second wakeup (arrives before the 5s dismiss) ---
+      const it2 = handleSubscriptionEvent(WS, {
+        eventName: 'agent:woken-by-subscription',
+        workspaceId: WS,
+        agentId: AGENT,
+        data: { eventCount: 2, eventTypes: ['agent:*'] },
+      });
+
+      it2.next(); // call fetchAndDispatchSnapshot
+      const fork2 = it2.next(); // fork
+      expect((fork2.value as any)?.type).toBe('FORK');
+
+      // Generation should have bumped
+      const gen2 = _getWakeupGeneration(key);
+      expect(gen2).toBe(gen1 + 1);
+
+      // Now run the first fork's inner generator.
+      // It should set wokenUp then delay then check generation → skip clearWokenUp
+      const innerFn1 = (fork1.value as any)?.payload?.fn;
+      const inner1 = innerFn1();
+
+      // put setWokenUp
+      const putWoken1 = inner1.next();
+      expect(putWoken1.done).toBe(false);
+      expect((putWoken1.value as any)?.payload?.action?.type).toBe(setWokenUp(WS, AGENT, { eventCount: 1, eventTypes: ['file:*'], timestamp: 0 }).type);
+
+      // delay 5000
+      const delayEff1 = inner1.next();
+      expect(delayEff1.done).toBe(false);
+
+      // After delay completes, the fork checks generation.
+      // Since gen2 > gen1, it should NOT dispatch clearWokenUp — just return.
+      const afterDelay1 = inner1.next();
+      expect(afterDelay1.done).toBe(true);
+      // Verify no clearWokenUp was dispatched (done is true, no more effects)
+
+      // The second fork SHOULD clear, because no newer wakeup superseded it.
+      const innerFn2 = (fork2.value as any)?.payload?.fn;
+      const inner2 = innerFn2();
+      inner2.next(); // put setWokenUp
+      inner2.next(); // delay 5000
+      // After delay, generation still matches → should dispatch clearWokenUp
+      const clearEff = inner2.next();
+      expect(clearEff.done).toBe(false);
+      expect((clearEff.value as any)?.payload?.action?.type).toBe(clearWokenUp(WS, AGENT).type);
+    });
+
+    it('generation counter works correctly for 3+ rapid wakeups (Bug 1 edge case)', () => {
+      // Three rapid wakeups: only the last fork's auto-dismiss should fire.
+      invokeMock.mockResolvedValue({ success: true, data: [], delegationGroups: [], agentStatuses: {} });
+
+      const key = `${WS}:${AGENT}`;
+
+      // --- Wakeup 1 ---
+      const it1 = handleSubscriptionEvent(WS, {
+        eventName: 'agent:woken-by-subscription',
+        workspaceId: WS,
+        agentId: AGENT,
+        data: { eventCount: 1, eventTypes: ['file:*'] },
+      });
+      it1.next(); // call fetchAndDispatchSnapshot
+      const fork1 = it1.next();
+      const gen1 = _getWakeupGeneration(key);
+      expect(gen1).toBeGreaterThan(0);
+
+      // --- Wakeup 2 ---
+      const it2 = handleSubscriptionEvent(WS, {
+        eventName: 'agent:woken-by-subscription',
+        workspaceId: WS,
+        agentId: AGENT,
+        data: { eventCount: 2, eventTypes: ['agent:*'] },
+      });
+      it2.next();
+      const fork2 = it2.next();
+      const gen2 = _getWakeupGeneration(key);
+      expect(gen2).toBe(gen1 + 1);
+
+      // --- Wakeup 3 ---
+      const it3 = handleSubscriptionEvent(WS, {
+        eventName: 'agent:woken-by-subscription',
+        workspaceId: WS,
+        agentId: AGENT,
+        data: { eventCount: 3, eventTypes: ['task:*'] },
+      });
+      it3.next();
+      const fork3 = it3.next();
+      const gen3 = _getWakeupGeneration(key);
+      expect(gen3).toBe(gen2 + 1);
+
+      // Fork 1 delay finishes — generation mismatch → should NOT clearWokenUp
+      const innerFn1 = (fork1.value as any)?.payload?.fn;
+      const inner1 = innerFn1();
+      inner1.next(); // put setWokenUp
+      inner1.next(); // delay 5000
+      const after1 = inner1.next();
+      expect(after1.done).toBe(true); // No clearWokenUp dispatched
+
+      // Fork 2 delay finishes — generation mismatch → should NOT clearWokenUp
+      const innerFn2 = (fork2.value as any)?.payload?.fn;
+      const inner2 = innerFn2();
+      inner2.next(); // put setWokenUp
+      inner2.next(); // delay 5000
+      const after2 = inner2.next();
+      expect(after2.done).toBe(true); // No clearWokenUp dispatched
+
+      // Fork 3 delay finishes — generation MATCHES → SHOULD clearWokenUp
+      const innerFn3 = (fork3.value as any)?.payload?.fn;
+      const inner3 = innerFn3();
+      inner3.next(); // put setWokenUp
+      inner3.next(); // delay 5000
+      const clearEff3 = inner3.next();
+      expect(clearEff3.done).toBe(false);
+      expect((clearEff3.value as any)?.payload?.action?.type).toBe(clearWokenUp(WS, AGENT).type);
     });
   });
 });

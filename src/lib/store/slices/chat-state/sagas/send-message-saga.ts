@@ -13,7 +13,7 @@
 
 import { call, delay, put, race, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { createLogger } from '$lib/utils/client-logger';
-import { getChatService, type SendMessageOptions } from '$features/agent/services/chat.service';
+import { getChatService, MessageGuardError, type SendMessageOptions } from '$features/agent/services/chat.service';
 import { unifiedOrchestrator } from '$features/agent/services/consolidated-backend.service';
 import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
 import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
@@ -201,6 +201,16 @@ function* handleSendPath(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to send message';
     const isInterrupted = errorMessage.includes('Agent interrupted');
+
+    // FIX: MessageGuardError (rate limiter / idempotency check) means the message
+    // was legitimately blocked. Clear the streaming state that chatSendStarted set,
+    // but don't show an error toast — this is expected double-click protection.
+    if (error instanceof MessageGuardError) {
+      logger.info('Message blocked by guard, clearing send state', { agentId, reason: errorMessage });
+      yield* put(chatSendFailed(agentId, ''));
+      return;
+    }
+
     if (!isInterrupted) {
       logger.error('Failed to send message', { agentId, error });
       yield* put(chatSendFailed(agentId, cleanErrorMessage(errorMessage)));

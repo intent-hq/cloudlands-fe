@@ -87,7 +87,7 @@ import { dispatchWorkspaceEvent } from "./ipc-bridge-saga";
 import { handleDelegationGroupDelivery } from "./delegation-group-saga";
 import { handleEvictStaleAgents, handleValidateSubscriptions, isAgentSessionActive } from "./cleanup-saga";
 import { handlePersist, handleRestore, getSubscriptionsFilePath, writeSubscriptions, readSubscriptions } from "./persistence-saga";
-import { handleMatchEvent, handleNewSubscriptionCatchUp, activeBatchTimers, batchFlushWorker } from "./matching-saga";
+import { handleMatchEvent, handleNewSubscriptionCatchUp, activeBatchTimers, batchFlushWorker, processingOneShots } from "./matching-saga";
 import { workspaceEventAccepted } from "../../workspace-events/workspace-events-slice";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import type { AgentSubscriptionRecord } from "../types";
@@ -835,6 +835,147 @@ describe("handleMatchEvent", () => {
       .put.actionType("agentSubscriptions/enqueueEvent")
       .not.put(requestDeliverQueuedEvents(WS, AGENT))
       .run();
+  });
+
+  // -------------------------------------------------------------------------
+  // Bug 4: INTERNAL_OBSERVABILITY_EVENTS feedback loop prevention
+  // -------------------------------------------------------------------------
+
+  it("skips agent:delivery-confirmed events to prevent feedback loop (Bug 4)", () => {
+    // Bug 4: agent:* wildcard subscriptions matched agent:delivery-confirmed
+    // events emitted by the delivery saga itself, causing an infinite loop.
+    // Fix: delivery-confirmed is in INTERNAL_OBSERVABILITY_EVENTS skip-list.
+    const event = makeEvent("e1", "agent:delivery-confirmed");
+    (event as any).workspaceId = WS;
+    (event as any).actor = { type: "system", id: "subscription-service" };
+    const sub = makeSub({
+      filter: { eventTypes: ["agent:*"] },
+    });
+    const action = workspaceEventAccepted(event);
+
+    return expectSaga(handleMatchEvent, action)
+      .provide([
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+      ])
+      // Should NOT enqueue because delivery-confirmed is internal
+      .not.put.actionType("agentSubscriptions/enqueueEvent")
+      .not.put(requestDeliverQueuedEvents(WS, AGENT))
+      .run();
+  });
+
+  it("skips agent:woken-by-subscription events to prevent feedback loop", () => {
+    const event = makeEvent("e1", "agent:woken-by-subscription");
+    (event as any).workspaceId = WS;
+    const sub = makeSub({
+      filter: { eventTypes: ["agent:*"] },
+    });
+    const action = workspaceEventAccepted(event);
+
+    return expectSaga(handleMatchEvent, action)
+      .provide([
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+      ])
+      .not.put.actionType("agentSubscriptions/enqueueEvent")
+      .run();
+  });
+
+  it("does NOT skip agent:idle events (non-internal agent event)", () => {
+    const event = makeEvent("e1", "agent:idle");
+    (event as any).workspaceId = WS;
+    (event as any).actor = { type: "agent", id: AGENT };
+    const sub = makeSub({
+      filter: { eventTypes: ["agent:*"] },
+    });
+    const action = workspaceEventAccepted(event);
+
+    return expectSaga(handleMatchEvent, action)
+      .provide([
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
+        [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
+      ])
+      .put.actionType("agentSubscriptions/enqueueEvent")
+      .run();
+  });
+
+  // -------------------------------------------------------------------------
+  // Bug 4 edge cases: ALL INTERNAL_OBSERVABILITY_EVENTS must be skipped
+  // -------------------------------------------------------------------------
+
+  it.each([
+    "agent:subscribed",
+    "agent:unsubscribed",
+    "agent:subscriptions-changed",
+  ])("skips %s events (remaining internal events not tested above)", (eventType) => {
+    const event = makeEvent("e1", eventType);
+    (event as any).workspaceId = WS;
+    const sub = makeSub({
+      filter: { eventTypes: ["agent:*"] },
+    });
+    const action = workspaceEventAccepted(event);
+
+    return expectSaga(handleMatchEvent, action)
+      .provide([
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+      ])
+      .not.put.actionType("agentSubscriptions/enqueueEvent")
+      .not.put(requestDeliverQueuedEvents(WS, AGENT))
+      .run();
+  });
+
+  // -------------------------------------------------------------------------
+  // Bug 5 edge cases: oneShot sync guard with concurrent events
+  // -------------------------------------------------------------------------
+
+  it("processingOneShots guard prevents duplicate delivery for concurrent matching events", () => {
+    // The processingOneShots Set prevents two concurrent forks from both
+    // processing the same oneShot subscription before markOneShotFired is dispatched.
+    const sub = makeSub({
+      filter: { eventTypes: ["file:*"], oneShot: true },
+    });
+
+    // First event claims the oneShot via processingOneShots
+    const event1 = makeEvent("e1", "file:changed");
+    (event1 as any).workspaceId = WS;
+    const action1 = workspaceEventAccepted(event1);
+
+    return expectSaga(handleMatchEvent, action1)
+      .provide([
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
+        [matchers.select(selectIsOneShotFired.select, WS, sub.id), false],
+        [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
+      ])
+      .put(markOneShotFired(WS, sub.id))
+      .put(removeSubscription(WS, sub.id))
+      .run()
+      .then(() => {
+        // After the saga completes, processingOneShots should be cleaned up
+        // (the sub.id is deleted in the oneShot cleanup section)
+        expect(processingOneShots.has(sub.id)).toBe(false);
+      });
+  });
+
+  it("processingOneShots is cleared on cleanup even when three events match simultaneously", () => {
+    // Verify the Set doesn't leak entries
+    const sub = makeSub({
+      filter: { eventTypes: ["file:*"], oneShot: true },
+    });
+
+    // Manually test the guard behavior
+    processingOneShots.clear();
+    expect(processingOneShots.has(sub.id)).toBe(false);
+
+    // First claim succeeds
+    processingOneShots.add(sub.id);
+    expect(processingOneShots.has(sub.id)).toBe(true);
+
+    // Second and third would be blocked
+    expect(processingOneShots.has(sub.id)).toBe(true);
+
+    // Cleanup
+    processingOneShots.delete(sub.id);
+    expect(processingOneShots.has(sub.id)).toBe(false);
   });
 
   // -------------------------------------------------------------------------

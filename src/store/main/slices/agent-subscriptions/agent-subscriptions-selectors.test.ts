@@ -207,6 +207,39 @@ describe("agent-subscriptions selectors", () => {
       const state = makeState("ws-1", makeWsState({ delegationGroups: { [group.groupId]: group } }));
       expect(selectIsDelegationGroupComplete.select(state, "ws-1", group.groupId)).toBe(true);
     });
+
+    it("returns true when awaitMode is 'any' and just one agent completed (Bug 6)", () => {
+      // Bug 6: selectIsDelegationGroupComplete always checked all agents,
+      // ignoring awaitMode: 'any'. Fix: return true when doneCount >= 1 for 'any'.
+      const group = makeGroup({
+        awaitMode: "any",
+        expectedAgentIds: ["a", "b", "c"],
+        completedAgentIds: ["a"],
+      });
+      const state = makeState("ws-1", makeWsState({ delegationGroups: { [group.groupId]: group } }));
+      expect(selectIsDelegationGroupComplete.select(state, "ws-1", group.groupId)).toBe(true);
+    });
+
+    it("returns false when awaitMode is 'any' and no agents completed", () => {
+      const group = makeGroup({
+        awaitMode: "any",
+        expectedAgentIds: ["a", "b"],
+        completedAgentIds: [],
+      });
+      const state = makeState("ws-1", makeWsState({ delegationGroups: { [group.groupId]: group } }));
+      expect(selectIsDelegationGroupComplete.select(state, "ws-1", group.groupId)).toBe(false);
+    });
+
+    it("returns true when awaitMode is 'any' and one agent deleted", () => {
+      const group = makeGroup({
+        awaitMode: "any",
+        expectedAgentIds: ["a", "b"],
+        completedAgentIds: [],
+        deletedAgentIds: ["b"],
+      });
+      const state = makeState("ws-1", makeWsState({ delegationGroups: { [group.groupId]: group } }));
+      expect(selectIsDelegationGroupComplete.select(state, "ws-1", group.groupId)).toBe(true);
+    });
   });
 
   describe("selectIsOneShotFired", () => {

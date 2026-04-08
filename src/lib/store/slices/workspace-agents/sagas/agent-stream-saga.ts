@@ -93,7 +93,12 @@ function* handleStreamingSafetyCheck(
           ((yield* select(selectActiveWorkspaceId.select)) as string | undefined);
         if (wsId) {
           yield* put(setAgentStreaming(wsId, session.id as string, false));
-          const updatedSession = { ...session, isStreaming: false };
+          // Clear BOTH isStreaming AND isProcessing to prevent the agent
+          // appearing "busy" (spinner) after the safety timeout fires.
+          // setAgentStreaming only clears isStreaming; isProcessing is normally
+          // cleared by ChatService's streamCompleted action, but the safety
+          // timeout bypasses that path.
+          const updatedSession = { ...session, isStreaming: false, isProcessing: false };
           yield* put(upsertAgentSessionAction(updatedSession));
           yield* put(upsertAgentSession(wsId, updatedSession));
 

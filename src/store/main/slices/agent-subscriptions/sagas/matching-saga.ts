@@ -30,7 +30,7 @@ import {
   selectIsOneShotFired,
   selectWorkspaceSubscriptionState,
 } from "../agent-subscriptions-selectors";
-import { requestDeliverQueuedEvents, requestDelegationGroupDelivery } from "./saga-actions";
+import { requestDeliverQueuedEvents } from "./saga-actions";
 import { Logger } from "../../../../../shared/logger";
 const logger = new Logger("MatchingSaga");
 import type {
@@ -225,12 +225,21 @@ export function* batchFlushWorker(
 // Main handler
 // ---------------------------------------------------------------------------
 
+/**
+ * Synchronous guard for oneShot subscriptions being processed.
+ * Prevents the race where two concurrent handleMatchEvent forks both read
+ * selectIsOneShotFired as false before either dispatches markOneShotFired.
+ * @internal Exported for testing purposes only.
+ */
+export const processingOneShots = new Set<string>();
+
 // Events emitted by the saga infrastructure itself — skip to prevent loops.
 const INTERNAL_OBSERVABILITY_EVENTS = new Set([
   "agent:woken-by-subscription",
   "agent:subscribed",
   "agent:unsubscribed",
   "agent:subscriptions-changed",
+  "agent:delivery-confirmed",
 ]);
 
 export function* handleMatchEvent(
@@ -259,22 +268,36 @@ export function* handleMatchEvent(
     );
     if (isDeleted) continue;
 
-    // Skip already-fired oneShot subscriptions
+    // Check filter match (synchronous — no yield points, so no interleaving)
+    if (!matchesFilter(event, sub.filter)) continue;
+
+    // Skip already-fired oneShot subscriptions.
+    // The synchronous `processingOneShots` guard closes the race window where
+    // two concurrent forks (from takeEvery) both read selectIsOneShotFired as
+    // false before either dispatches markOneShotFired.  Because saga forks run
+    // cooperatively on a single thread, the Set check cannot be preempted.
+    // Placed AFTER matchesFilter (which is sync) so we only claim the oneShot
+    // when the event actually matches, avoiding permanent lockout on non-matches.
     if (sub.filter.oneShot) {
+      if (processingOneShots.has(sub.id)) continue;
+      // Claim this oneShot synchronously BEFORE the yield* select below.
+      // Without this, two concurrent forks (from takeEvery) could both pass
+      // the has() check, both observe isFired=false from the selector, and
+      // both proceed to deliver the same oneShot event.
+      processingOneShots.add(sub.id);
       const isFired: boolean = yield* select(
         selectIsOneShotFired.select,
         wsId,
         sub.id,
       );
-      if (isFired) continue;
+      if (isFired) {
+        processingOneShots.delete(sub.id);
+        continue;
+      }
     }
-
-    // Check filter match
-    if (!matchesFilter(event, sub.filter)) continue;
 
     // --- Matched! Route the event. ---
     const eventId = (event as any).id as string | undefined;
-    const corrId = `${sub.id}:${eventId ?? "no-id"}`;
     logger.debug(`[subscriptions] match subscriptionId=${sub.id} eventId=${eventId} agentId=${sub.agentId} workspaceId=${wsId} eventType=${event.type} step=match`);
     const filter = sub.filter;
 
@@ -382,6 +405,7 @@ export function* handleMatchEvent(
       yield* put(markOneShotFired(wsId, sub.id));
       yield* put(removeSubscription(wsId, sub.id));
       yield* put(bumpVersion(wsId));
+      processingOneShots.delete(sub.id);
     }
   }
 }
@@ -545,6 +569,7 @@ export function* matchingSaga() {
         yield* cancel(task);
       }
       activeBatchTimers.clear();
+      processingOneShots.clear();
     }
   }
 }

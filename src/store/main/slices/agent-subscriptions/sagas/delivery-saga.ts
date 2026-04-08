@@ -379,14 +379,6 @@ export function* handleDeliverQueuedEvents(
   // Snapshot and clear the queue atomically
   yield* put(clearAgentQueue(wsId, agentId));
 
-  // Collect oneShot subscription IDs for cleanup after delivery
-  const oneShotSubIds = new Set<string>();
-  for (const qe of queue) {
-    if (qe.oneShot && qe.subscriptionId) {
-      oneShotSubIds.add(qe.subscriptionId);
-    }
-  }
-
   // Deduplicate by event ID, keeping highest priority
   const priorityOrder = { high: 0, normal: 1, low: 2 } as const;
   const dedupMap = new Map<string, QueuedEventRecord>();
