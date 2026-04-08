@@ -1616,6 +1616,21 @@ app.whenReady().then(async () => {
         logger.warn('Memory pressure detected, triggering cleanup', { level });
         performMemoryCleanup(`memory-pressure-${level}`, { forceGC: level === 'critical', skipStreamCleanup: true });
       }
+
+      // Evict idle auggie processes — the biggest single source of memory (~200-300 MB each).
+      // Warning: conservative (up to 2), Critical: aggressive (all idle).
+      if (level === 'warning' || level === 'critical') {
+        const maxEvict = level === 'critical' ? undefined : 2;
+        import('../features/agent/main/agent-process-registry')
+          .then(({ evictIdleProcesses }) => evictIdleProcesses(maxEvict))
+          .then((evicted) => {
+            if (evicted > 0) {
+              logger.info('Evicted idle auggie processes due to memory pressure', { level, evicted });
+            }
+          })
+          .catch((err) => logger.warn('Failed to evict idle processes on memory pressure', err));
+      }
+
       // Stop all native @parcel/watcher subscriptions on ANY memory pressure.
       // Under high memory pressure the native C++ layer can throw an unrecoverable
       // Napi::Error that terminates the entire process via libc++abi / std::terminate().

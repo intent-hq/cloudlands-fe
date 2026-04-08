@@ -170,6 +170,63 @@ export function notifyPendingWorkCleared(pid: number): void {
   }
 }
 
+/**
+ * Evict idle processes in LRU order to reclaim memory.
+ *
+ * Called by the memory pressure handler when heap usage crosses warning/critical
+ * thresholds. Active processes and processes with pending work are never evicted.
+ *
+ * @param count — maximum number of idle processes to evict. If omitted or
+ *   Infinity, evicts ALL idle processes.
+ * @returns the number of processes actually evicted.
+ */
+export async function evictIdleProcesses(count?: number): Promise<number> {
+  const maxToEvict = count ?? Infinity;
+  let evicted = 0;
+
+  // Collect idle processes sorted by lastActiveTimestamp ascending (oldest first = LRU)
+  const idleEntries = Array.from(registry.values())
+    .filter((e) => !e.isActive && !e.hasPendingWork?.())
+    .sort((a, b) => a.lastActiveTimestamp - b.lastActiveTimestamp);
+
+  for (const entry of idleEntries) {
+    if (evicted >= maxToEvict) break;
+    // Re-check — the entry may have become active while we were awaiting a previous kill
+    if (entry.isActive || entry.hasPendingWork?.()) continue;
+    // Verify it's still in the registry (may have been deregistered by a concurrent kill)
+    if (!registry.has(entry.pid)) continue;
+
+    logger.info('Evicting idle process due to memory pressure', {
+      pid: entry.pid,
+      agentId: entry.agentId,
+      workspaceId: entry.workspaceId,
+      lastActive: new Date(entry.lastActiveTimestamp).toISOString(),
+      totalProcesses: registry.size,
+    });
+
+    try {
+      await entry.kill();
+    } catch (err) {
+      logger.warn('Failed to evict idle process during memory pressure — deregistering anyway', {
+        pid: entry.pid,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    // kill() should trigger deregisterProcess via exit handler, but ensure it
+    deregisterProcess(entry.pid);
+    evicted++;
+  }
+
+  if (evicted > 0) {
+    logger.info('Memory pressure eviction complete', {
+      evicted,
+      remaining: registry.size,
+    });
+  }
+
+  return evicted;
+}
+
 /** For testing / diagnostics only. */
 export function getRegistrySize(): number {
   return registry.size;
