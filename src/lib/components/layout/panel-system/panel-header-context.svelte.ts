@@ -48,12 +48,14 @@ export function createPanelHeaderContext(): {
 
   const context: PanelHeaderContext = {
     registerState(newState: PanelHeaderState) {
-      // Direct assignment is safe from $effect since effects run after render
-      state.current = newState;
+      if (state.current !== newState) {
+        state.current = newState;
+      }
     },
     registerActions(newActions: Snippet) {
-      // Direct assignment is safe from $effect since effects run after render
-      actions.current = newActions;
+      if (actions.current !== newActions) {
+        actions.current = newActions;
+      }
     },
     unregister() {
       // Direct assignment is safe from $effect since effects run after render

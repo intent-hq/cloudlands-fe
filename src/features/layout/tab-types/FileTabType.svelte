@@ -510,8 +510,10 @@
   // Register header state and actions
   $effect(() => {
     if (!headerContext || !isActive) return;
-    headerContext.registerActions(fileActions);
-    headerContext.registerState({ isDirty: isFileDirty, isSaving: fileSaving });
+    untrack(() => {
+      headerContext.registerActions(fileActions);
+      headerContext.registerState({ isDirty: isFileDirty, isSaving: fileSaving });
+    });
   });
 </script>
 

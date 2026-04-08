@@ -96,7 +96,18 @@ export function useSidebarState(options: UseSidebarStateOptions) {
     if (!workspace?.id || !useSleekSidebar) return;
     const allEvents = selectWorkspaceEvents.select(getReduxStore().getState(), workspace.id);
     // Take the 10 most recent events (events are stored oldest-first, so slice from end)
-    recentActivityEvents = allEvents.slice(-10).reverse();
+    const newEvents = allEvents.slice(-10).reverse();
+    // Only update if the event IDs actually changed to avoid infinite re-render loops
+    untrack(() => {
+      const oldIds = recentActivityEvents.map((e) => e.id);
+      const newIds = newEvents.map((e) => e.id);
+      if (
+        oldIds.length !== newIds.length ||
+        oldIds.some((id, i) => id !== newIds[i])
+      ) {
+        recentActivityEvents = newEvents;
+      }
+    });
   });
 
   // Initialize notes store when workspace is ready (needed for sidebar)

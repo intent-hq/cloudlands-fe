@@ -5,6 +5,7 @@
    * Renders an agent chat panel with header actions for copy, delete, task note, and font style.
    */
 
+  import { untrack } from 'svelte';
   import type { TabTypeComponentProps } from './registry';
   import { closeTab } from '$lib/store/slices/panel-layout/panel-layout-slice';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
@@ -152,12 +153,13 @@
   // Register header state and actions
   $effect(() => {
     if (!headerContext || !isActive) return;
-    headerContext.registerActions(agentActions);
     const subtitleParts: string[] = [];
     if (agentSpecialistName) subtitleParts.push(agentSpecialistName);
     if (delegatedByName) subtitleParts.push(`Delegated by ${delegatedByName}`);
-    headerContext.registerState({
-      subtitle: subtitleParts.length > 0 ? subtitleParts.join(' · ') : undefined,
+    const subtitle = subtitleParts.length > 0 ? subtitleParts.join(' · ') : undefined;
+    untrack(() => {
+      headerContext.registerActions(agentActions);
+      headerContext.registerState({ subtitle });
     });
   });
 </script>

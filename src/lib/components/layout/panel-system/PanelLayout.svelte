@@ -82,11 +82,11 @@
 
   $effect(() => {
     if ($restoreStatus$ !== 'empty' || $allTabs$.length > 0) {
-      emptyLayoutLoadingTimedOut = false;
+      untrack(() => { emptyLayoutLoadingTimedOut = false; });
       return;
     }
 
-    emptyLayoutLoadingTimedOut = false;
+    untrack(() => { emptyLayoutLoadingTimedOut = false; });
 
     const timeoutId = window.setTimeout(() => {
       emptyLayoutLoadingTimedOut = true;
