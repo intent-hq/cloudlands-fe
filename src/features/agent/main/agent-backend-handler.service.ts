@@ -4602,7 +4602,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       let accumulatedContent: { content: string; contentBlocks: ContentBlock[] } | undefined;
       try {
         const partial = messageAccumulator.getPartialContent(agentId);
-        logger.info('getActiveStreams: got partial content from accumulator', {
+        logger.debug('getActiveStreams: got partial content from accumulator', {
           agentId,
           workspaceId,
           hasContent: !!partial.content,
