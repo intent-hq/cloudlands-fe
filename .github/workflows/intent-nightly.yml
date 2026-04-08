@@ -61,8 +61,8 @@ jobs:
 
       - name: Import code signing certificate
         env:
-          MACOS_CERTIFICATE: ${{ secrets.INTENT_MACOS_CERTIFICATE }}
-          MACOS_CERTIFICATE_PWD: ${{ secrets.INTENT_MACOS_CERTIFICATE_PWD }}
+          MACOS_CERTIFICATE: ${{ secrets.AUGMENT_INTENT_MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.AUGMENT_INTENT_MACOS_CERTIFICATE_PWD }}
           KEYCHAIN_PASSWORD: ${{ secrets.INTENT_KEYCHAIN_PASSWORD }}
         run: |
           # Create a temporary keychain
@@ -82,11 +82,11 @@ jobs:
         run: npm run dist:mac
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
-          CSC_LINK: ${{ secrets.INTENT_MACOS_CERTIFICATE }}
-          CSC_KEY_PASSWORD: ${{ secrets.INTENT_MACOS_CERTIFICATE_PWD }}
-          APPLE_ID: ${{ secrets.INTENT_APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.INTENT_APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.INTENT_APPLE_TEAM_ID }}
+          CSC_LINK: ${{ secrets.AUGMENT_INTENT_MACOS_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.AUGMENT_INTENT_MACOS_CERTIFICATE_PWD }}
+          APPLE_ID: ${{ secrets.AUGMENT_INTENT_APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.AUGMENT_INTENT_APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.AUGMENT_INTENT_APPLE_TEAM_ID }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Google Cloud SDK
@@ -99,6 +99,9 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.INTENT_GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Rename update manifest for auto-update compatibility
+        run: mv dist-electron/alpha-mac.yml dist-electron/latest-mac.yml
 
       - name: Upload to GCP alpha channel
         run: bash scripts/upload-release-gcp.sh alpha
