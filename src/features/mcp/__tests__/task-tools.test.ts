@@ -64,6 +64,11 @@ vi.mock('../../../store/main/slices/workspace-events/workspace-events-slice', ()
   emitWorkspaceEvent: vi.fn((payload: any) => ({ type: 'workspace-events/emitWorkspaceEvent', payload })),
 }));
 
+// Mock system IPC for sendToWorkspaceWindows
+vi.mock('../../system/main/system.ipc', () => ({
+  sendToWorkspaceWindows: vi.fn(),
+}));
+
 // Mock BrowserWindow
 vi.mock('electron', () => ({
   app: {
@@ -84,6 +89,7 @@ vi.mock('electron', () => ({
 import { NotesService } from '../../notes/main/notes.service';
 import { InMemoryNotesRepository } from '../../notes/main/notes.repository';
 import { WorkspaceId, NoteId } from '$shared/types/branded-ids';
+import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
 
 describe('Task Management MCP Tools', () => {
   let notesService: NotesService;
@@ -482,6 +488,52 @@ Third task
       expect(content).toContain('- [ ] [Task One]');
       expect(content).toContain('- [ ] [Task Two]');
       expect(content).toContain('- [ ] [Task Three]');
+    });
+
+    it('should emit both note:updated and note:content-changed events after conversion', async () => {
+      const mockSendToWorkspaceWindows = vi.mocked(sendToWorkspaceWindows);
+      mockSendToWorkspaceWindows.mockClear();
+
+      const createResult = await notesService.createNote({
+        workspaceId,
+        title: 'Spec Note',
+        content: `@@@task
+# Event Task
+Task that should trigger events
+@@@`,
+      });
+
+      expect(createResult.ok).toBe(true);
+      if (!createResult.ok) return;
+      const noteId = createResult.data.id;
+
+      const convertResult = await notesService.convertTaskBlocks(workspaceId, noteId);
+
+      expect(convertResult.ok).toBe(true);
+      if (!convertResult.ok) return;
+      expect(convertResult.data.convertedCount).toBe(1);
+
+      // Verify sendToWorkspaceWindows was called with note:updated
+      expect(mockSendToWorkspaceWindows).toHaveBeenCalledWith(
+        workspaceId,
+        'note:updated',
+        expect.objectContaining({
+          noteId,
+          source: 'agent',
+          workspaceId,
+        }),
+      );
+
+      // Verify sendToWorkspaceWindows was called with note:content-changed:<workspaceId>
+      expect(mockSendToWorkspaceWindows).toHaveBeenCalledWith(
+        workspaceId,
+        `note:content-changed:${workspaceId}`,
+        expect.objectContaining({
+          noteId,
+          source: 'agent',
+          workspaceId,
+        }),
+      );
     });
   });
 });

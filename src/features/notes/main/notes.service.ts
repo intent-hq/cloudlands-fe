@@ -2698,7 +2698,7 @@ export class NotesService {
       // Save the updated note
       await this.notesRepository.save(updatedNote);
 
-      // Emit note:updated to workspace renderer windows with source='agent'
+      // Emit note:updated and note:content-changed to workspace renderer windows with source='agent'
       // This triggers UI refresh and bypasses hasUserEditedSinceLastSave check
       try {
         const { sendToWorkspaceWindows } = await import('../../system/main/system.ipc');
@@ -2708,8 +2708,14 @@ export class NotesService {
           source: 'agent',
           workspaceId,
         });
+        sendToWorkspaceWindows(workspaceId, `note:content-changed:${workspaceId}`, {
+          noteId,
+          content: updatedContent,
+          source: 'agent',
+          workspaceId,
+        });
       } catch (emitError) {
-        logger.warn('Failed to emit note:updated event', { error: (emitError as Error).message });
+        logger.warn('Failed to emit note content update events', { error: (emitError as Error).message });
       }
 
       logger.info('Task blocks converted successfully', {
