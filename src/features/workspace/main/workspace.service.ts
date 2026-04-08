@@ -3554,7 +3554,7 @@ task:
         'code' in error &&
         (error as NodeJS.ErrnoException).code === code;
 
-      const ORPHAN_GRACE_PERIOD_MS = 60_000; // 60 seconds grace period
+      const ORPHAN_GRACE_PERIOD_MS = 300_000; // 5 minutes grace period
 
       const removeOrphanWorkspace = async (
         workspaceId: WorkspaceId,
@@ -3594,8 +3594,38 @@ task:
           return;
         }
 
+        // Final safety check: attempt to load via repository — if it succeeds, this is NOT an orphan
+        try {
+          const loaded = await this.repository.findById(workspaceId);
+          if (loaded) {
+            logger.warn(
+              'Skipping orphan workspace removal — findById() loaded successfully, not a true orphan',
+              {
+                workspaceId,
+                workspacePath,
+                metadataPath,
+                reason,
+              },
+            );
+            return;
+          }
+        } catch (findError) {
+          logger.warn(
+            'Skipping orphan workspace removal — findById() threw, cannot confirm workspace is truly orphaned',
+            {
+              workspaceId,
+              workspacePath,
+              metadataPath,
+              reason,
+              error: (findError as Error).message,
+            },
+          );
+          return;
+        }
+
         logger.info('Removing orphan workspace directory (no valid workspace.json)', {
           workspaceId,
+          workspacePath,
           metadataPath,
           reason,
         });

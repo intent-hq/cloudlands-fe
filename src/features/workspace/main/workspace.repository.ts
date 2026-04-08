@@ -52,7 +52,7 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
   private listCache: { workspaces: Workspace[]; timestamp: number } | null = null;
   private readonly CACHE_TTL = 1000; // 1 second TTL for cache
   private readonly LIST_CACHE_TTL = 5000; // 5 seconds for list cache
-  private readonly ORPHAN_CLEANUP_GRACE_MS = 5000;
+
 
   /**
    * Find workspace by ID
@@ -210,14 +210,6 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
 
       const results = await Promise.all(workspacePromises);
 
-      // Safe orphan cleanup — only delete when metadata is confirmed missing
-      // and the directory is old enough that we're unlikely to race workspace creation.
-      for (let i = 0; i < results.length; i++) {
-        if (results[i] === null) {
-          void this.maybeCleanupOrphanWorkspace(allValidEntries[i]);
-        }
-      }
-
       // Filter out null results (failed loads)
       const workspaces = results.filter((w): w is Workspace => w !== null);
 
@@ -231,89 +223,6 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
     } catch (error) {
       logger.error('Failed to list workspaces', error as Error);
       return [];
-    }
-  }
-
-  private isErrnoCode(error: unknown, code: string): boolean {
-    return (
-      typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      (error as NodeJS.ErrnoException).code === code
-    );
-  }
-
-  private async maybeCleanupOrphanWorkspace(entry: { id: string; root: string }): Promise<void> {
-    const workspacePath = path.join(entry.root, entry.id);
-    const metadataDir = path.join(workspacePath, WorkspaceConfig.METADATA_FOLDER);
-    const metadataPath = path.join(metadataDir, WorkspaceConfig.WORKSPACE_METADATA_FILE);
-
-    try {
-      await fs.access(metadataPath);
-      logger.warn('Workspace metadata exists but failed to load, skipping cleanup', {
-        workspaceId: entry.id,
-        metadataPath,
-      });
-      return;
-    } catch (error) {
-      if (!this.isErrnoCode(error, 'ENOENT')) {
-        logger.warn('Failed to verify workspace metadata before cleanup, skipping orphan cleanup', {
-          workspaceId: entry.id,
-          metadataPath,
-          error: (error as Error).message,
-        });
-        return;
-      }
-    }
-
-    let candidateAgeMs: number | null = null;
-    for (const statPath of [metadataDir, workspacePath]) {
-      try {
-        const stat = await fs.stat(statPath);
-        candidateAgeMs = Date.now() - stat.mtimeMs;
-        break;
-      } catch (error) {
-        if (!this.isErrnoCode(error, 'ENOENT')) {
-          logger.warn('Failed to inspect orphan workspace candidate, skipping cleanup', {
-            workspaceId: entry.id,
-            path: statPath,
-            error: (error as Error).message,
-          });
-          return;
-        }
-      }
-    }
-
-    if (candidateAgeMs === null) {
-      logger.debug('Workspace orphan candidate disappeared before cleanup', {
-        workspaceId: entry.id,
-      });
-      return;
-    }
-
-    if (candidateAgeMs < this.ORPHAN_CLEANUP_GRACE_MS) {
-      logger.debug('Skipping orphan cleanup during workspace creation grace period', {
-        workspaceId: entry.id,
-        ageMs: Math.round(candidateAgeMs),
-      });
-      return;
-    }
-
-    try {
-      await fs.rm(workspacePath, { recursive: true, force: true });
-      logger.info('Cleaned up orphan workspace directory', { workspaceId: entry.id });
-    } catch (error) {
-      if (this.isErrnoCode(error, 'ENOENT')) {
-        logger.debug('Workspace orphan candidate already removed before cleanup completed', {
-          workspaceId: entry.id,
-        });
-        return;
-      }
-
-      logger.warn('Failed to clean up orphan directory', {
-        workspaceId: entry.id,
-        error: (error as Error).message,
-      });
     }
   }
 
