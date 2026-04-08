@@ -495,13 +495,14 @@
 
   // Get the current model label from local reactive state, with fallback mapping
   // When no model is explicitly selected, show the default model name if provided
-  const currentModelLabel = $derived(
-    !hasExplicitModel
+  const currentModelLabel = $derived.by(() => {
+    const label = !hasExplicitModel
       ? (defaultModelId ? getModelLabel(defaultModelId) : undefined) ||
           availableModels[0]?.label ||
           'Default model'
-      : getModelLabel(localModel) || 'Default model',
-  );
+      : getModelLabel(localModel) || 'Default model';
+    return label;
+  });
 
   // Provider ID for the trigger icon — derived from the current model
   const triggerProviderId = $derived.by(() => {

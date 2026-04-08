@@ -6,8 +6,11 @@
     selectSpecialists,
     selectCustomSpecialistsLoaded,
     selectUserOverrides,
+    selectEffectiveModel,
+    selectEffectiveCodingAgent,
     filterSpecialistsByGitHubAuth,
   } from '$lib/store/slices/specialists/specialists-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
     selectSelectedModel,
     selectAvailableModels,
@@ -133,6 +136,20 @@
   });
 
   onMount(async () => {
+    // Clear stale model overrides from saved state.
+    // When the user changes specialist defaults in Settings (e.g., spec-writer → sonnet4.5),
+    // the form may still have a saved selectedModel (e.g., "opus4.6") marked as overridden
+    // from a previous session when that was the default. Detect and clear this staleness
+    // so the current specialist default is shown instead.
+    if (modelWasOverridden && selectedModel) {
+      const currentDefault = isTeamMode ? teamModeModel : singleAgentModel;
+      if (currentDefault && selectedModel !== currentDefault) {
+        selectedModel = undefined;
+        modelWasOverridden = false;
+        onModelChange?.(undefined);
+      }
+    }
+
     // Fetch provider availability — the $effect above handles auto-selection
     // once providerAvailability is set. This avoids duplicating fallback logic
     // and ensures the user's explicit provider choice is respected consistently.
@@ -202,13 +219,26 @@
   });
 
   // Helper to resolve the effective model for a given specialist.
-  // Uses the local selectedProvider (not active-provider Redux slice) so the displayed
-  // model stays in sync with the provider the user picked in this form.
+  // When the form's selectedProvider matches the specialist's effective coding agent
+  // from Redux, delegate to selectEffectiveModel so the displayed model matches
+  // Settings > Agents exactly.  When the user has changed the provider within
+  // this form to something different, fall back to local tier resolution.
   function resolveEffectiveModel(specialist: string | null): string {
     const values = $availableModels$.map((m) => m.value);
     const valuesSet = new Set(values);
 
     if (specialist) {
+      const state = getReduxStore().getState();
+      const effectiveCodingAgent = selectEffectiveCodingAgent.select(state, specialist);
+
+      // If the form's provider matches the specialist's effective coding agent,
+      // use the Redux selector directly — this mirrors Settings > Agents exactly.
+      if (selectedProvider === effectiveCodingAgent) {
+        const reduxModel = selectEffectiveModel.select(state, specialist);
+        if (reduxModel && valuesSet.has(reduxModel)) return reduxModel;
+      }
+
+      // User changed provider within the form — fall back to local tier resolution
       // User override takes priority
       const override = $userOverrides$.modelOverrides[specialist];
       if (override) return override;
@@ -230,9 +260,12 @@
       }
 
       // Fallback to hardcoded defaultModel (custom specialists, etc.)
-      if (info?.defaultModel) return info.defaultModel;
+      if (info?.defaultModel) {
+        return info.defaultModel;
+      }
     }
-    return resolvePreferredDefaultModel(values, $selectedModel$) ?? values[0];
+    const fallback = resolvePreferredDefaultModel(values, $selectedModel$) ?? values[0];
+    return fallback;
   }
 
   // Effective model for the team mode card (based on actual selectedSpecialist)
@@ -240,6 +273,8 @@
 
   // Effective model for the single-agent card (based on displayedSpecialist to preserve across mode switches)
   const singleAgentModel = $derived.by(() => resolveEffectiveModel(displayedSpecialist));
+
+
 
   // Specialist dropdown state
   let specialistDropdownOpen = $state(false);
@@ -404,7 +439,7 @@
       <span class="text-sm text-subtle">using</span>
       {#key teamModeModel}
         <ModelPicker
-          {selectedModel}
+          selectedModel={modelWasOverridden ? selectedModel : undefined}
           onModelChange={handleModelChange}
           variant="ghost-light"
           size="xs"
@@ -544,7 +579,7 @@
       <span class="text-sm text-subtle">using</span>
       {#key singleAgentModel}
         <ModelPicker
-          {selectedModel}
+          selectedModel={modelWasOverridden ? selectedModel : undefined}
           onModelChange={handleModelChange}
           variant="ghost-light"
           size="xs"
