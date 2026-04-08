@@ -13,6 +13,7 @@ import { generateSpecialistAgentName } from "$lib/utils/agent-name-generator";
 import { selectActiveProviderId } from "$lib/store/slices/provider-settings/provider-settings-selectors";
 import { selectSpecialists, selectEffectiveCodingAgent, selectEffectiveModel, selectEffectiveBehaviorPrompt, } from "$lib/store/slices/specialists/specialists-selectors";
 import { selectWorkspaceDefaultModel } from "$lib/store/slices/model/model-selectors";
+import { parseCompoundModelId } from "$shared/config/provider-config";
 import { createAgentTypeId, parseAgentTypeId } from "$shared/types/agent.types";
 import { AgentStatus } from "$shared/types";
 import type { AgentSession } from "$shared/types";
@@ -72,7 +73,12 @@ export function* handleCreateAgentRequestedSaga(wsId: string, agentType?: string
     const existingNames = agents.map((a) => a.name).filter(Boolean) as string[];
     const agentName = generateSpecialistAgentName("Agent", existingNames);
     const model: string = yield* select((s) => selectWorkspaceDefaultModel.select(s, wsId));
-    const provider: string = yield* select((s) => selectActiveProviderId.select(s));
+    // Derive provider from workspace default model when it contains a provider prefix
+    // (e.g., 'claude-code:default' → 'claude-code'). This ensures new agents inherit the
+    // workspace's provider rather than the global active provider, which may differ when the
+    // user created the workspace with a non-default provider.
+    const globalProvider: string = yield* select((s) => selectActiveProviderId.select(s));
+    const provider: string = model.includes(':') ? parseCompoundModelId(model).providerId : globalProvider;
     const result: Awaited<ReturnType<typeof agentFactory.createAgent>> = yield* call([agentFactory, agentFactory.createAgent], workspace, {
         name: agentName,
         workspaceId: WorkspaceId(wsId),
@@ -113,7 +119,10 @@ export function* handleCreateAgentWithSpecialistRequestedSaga(wsId: string, spec
     const agents: AgentSession[] = yield* select((s) => selectAllWorkspaceAgents.select(s, wsId));
     const existingNames = agents.map((a) => a.name).filter(Boolean) as string[];
     let model: string = yield* select((s) => selectWorkspaceDefaultModel.select(s, wsId));
-    let provider: string = yield* select((s) => selectActiveProviderId.select(s));
+    // Derive provider from workspace default model when it contains a provider prefix,
+    // so new agents inherit the workspace's provider rather than the global active provider.
+    const globalProvider: string = yield* select((s) => selectActiveProviderId.select(s));
+    let provider: string = model.includes(':') ? parseCompoundModelId(model).providerId : globalProvider;
     let behaviorPrompt: string | undefined;
     let specialistBaseName = "Agent";
     if (specialistId) {
