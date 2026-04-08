@@ -5,6 +5,7 @@
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import type { Workspace } from '$shared/types';
   import { WorkspaceStatusEnum } from '$shared/types';
+  import { buildRepoPathLookup, getGroupKey } from './utils/workspace-grouping';
   import { onMount } from 'svelte';
   import { quintOut } from 'svelte/easing';
   import { scale, slide } from 'svelte/transition';
@@ -178,30 +179,16 @@
     });
   });
 
-  // Helper to get group key for a workspace
-  function getGroupKey(ws: Workspace): {
-    key: string;
-    label: string;
-    isGithub: boolean;
-    owner?: string;
-  } {
-    if (ws.repositoryOwner && ws.repositoryName) {
-      return {
-        key: `${ws.repositoryOwner}/${ws.repositoryName}`,
-        label: `${ws.repositoryOwner}/${ws.repositoryName}`,
-        isGithub: true,
-        owner: ws.repositoryOwner,
-      };
-    } else if (ws.repositoryPath) {
-      return {
-        key: ws.repositoryPath,
-        label: ws.repositoryPath.split('/').pop() || ws.repositoryPath,
-        isGithub: false,
-      };
-    } else {
-      return { key: 'unknown', label: 'Unknown Repository', isGithub: false };
-    }
-  }
+  // Build a lookup from repositoryPath → {owner, name} so workspaces missing
+  // owner/name can be merged into the correct group instead of creating duplicates.
+  // Only use active workspaces to avoid stale metadata from archived/deleted workspaces
+  // polluting the lookup (e.g. a reused path mapping to the wrong group).
+  const repoPathToGithubInfo = $derived.by(() => {
+    const active = workspaces.filter(
+      (w) => w.status !== WorkspaceStatusEnum.Archived && w.status !== WorkspaceStatusEnum.Deleted,
+    );
+    return buildRepoPathLookup(active, knownRepos);
+  });
 
   // Group workspaces by repository
   type GroupedWorkspaces = {
@@ -277,7 +264,7 @@
     }
 
     sorted.forEach((ws) => {
-      const { key, label, isGithub, owner } = getGroupKey(ws);
+      const { key, label, isGithub, owner } = getGroupKey(ws, repoPathToGithubInfo);
       if (!groups[key]) {
         groups[key] = { workspaces: [], label, isGithub, owner, repoPath: ws.repositoryPath };
       }
@@ -412,11 +399,14 @@
 
     // Get repo info from the first workspace in the group, or from the group itself (known repos)
     const firstWs = group.workspaces[0];
+    // When the group was resolved via lookup, group.label is "owner/name".
+    // Extract just the repo name to avoid producing invalid GitHub URLs.
+    const fallbackName = group.isGithub ? group.label.split('/').pop() || group.label : group.label;
     const repoInfo: RepoInfo = {
       repoPath: firstWs?.repositoryPath || group.repoPath,
       isGithub: group.isGithub,
       owner: group.owner,
-      name: firstWs?.repositoryName || group.label,
+      name: firstWs?.repositoryName || fallbackName,
     };
 
     onCreateForRepo(repoInfo);

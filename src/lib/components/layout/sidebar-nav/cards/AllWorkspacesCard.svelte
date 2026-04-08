@@ -8,6 +8,7 @@
   } from '$lib/store/slices/workspace/workspace-selectors';
   import { WorkspaceStatusEnum, PullRequestStatus } from '$shared/types';
   import type { Workspace } from '$shared/types';
+  import { buildRepoPathLookup, getGroupKey } from '$lib/components/workspace/utils/workspace-grouping';
   import type { WorkspaceDisplayStatus } from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
   import WorkspaceListItem from '../WorkspaceListItem.svelte';
   import { onMount } from 'svelte';
@@ -133,17 +134,24 @@
     );
   });
 
+  // Build a lookup from repositoryPath → {owner, name} so workspaces missing
+  // owner/name can be merged into the correct group instead of creating duplicates.
+  // Only use active workspaces to avoid stale metadata from archived/deleted workspaces
+  // polluting the lookup (e.g. a reused path mapping to the wrong group).
+  const sidebarRepoPathLookup = $derived.by(() => {
+    const active = $workspaceItems.filter(
+      (w) => w.status !== WorkspaceStatusEnum.Archived && w.status !== WorkspaceStatusEnum.Deleted,
+    );
+    return buildRepoPathLookup(active);
+  });
+
   const groupedByRepo = $derived.by(() => {
     const groups = new Map<string, { workspaces: Workspace[]; owner?: string; label: string }>();
     for (const ws of filteredWorkspaces) {
-      const repo = ws.repositoryName || ws.repositoryPath || 'No Repository';
-      const label =
-        ws.repositoryName ||
-        (ws.repositoryPath
-          ? ws.repositoryPath.split('/').pop() || 'No Repository'
-          : 'No Repository');
-      if (!groups.has(repo)) groups.set(repo, { workspaces: [], owner: ws.repositoryOwner, label });
-      groups.get(repo)!.workspaces.push(ws);
+      const { key, label, owner } = getGroupKey(ws, sidebarRepoPathLookup, 'No Repository');
+
+      if (!groups.has(key)) groups.set(key, { workspaces: [], owner, label });
+      groups.get(key)!.workspaces.push(ws);
     }
     return [...groups.entries()].sort((a, b) => {
       const aTime = getWorkspaceUpdatedTime(a[1].workspaces[0]);

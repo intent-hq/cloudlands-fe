@@ -9,6 +9,8 @@
   import Fa from 'svelte-fa';
   import { faCodeBranch, faFile, faServer, faPlus } from '@fortawesome/free-solid-svg-icons';
   import type { Workspace } from '$shared/types';
+  import { WorkspaceStatusEnum } from '$shared/types';
+  import { buildRepoPathLookup, getGroupKey } from './utils/workspace-grouping';
   interface Props {
     workspaces: Workspace[];
     collapsed?: boolean;
@@ -21,6 +23,16 @@
   // Store subscriptions are already reactive with $ prefix
   let currentPath = $derived($page.url.pathname);
 
+  // Build a lookup from repositoryPath → {owner, name} so workspaces missing
+  // owner/name can be merged into the correct group instead of creating duplicates.
+  // Only use active workspaces to avoid stale metadata from archived/deleted workspaces.
+  const linksRepoPathLookup = $derived.by(() => {
+    const active = workspaces.filter(
+      (w) => w.status !== WorkspaceStatusEnum.Archived && w.status !== WorkspaceStatusEnum.Deleted,
+    );
+    return buildRepoPathLookup(active);
+  });
+
   // Group workspaces by repository
   let workspacesByRepo = $derived.by(() => {
     if (!workspaces || workspaces.length === 0) {
@@ -29,10 +41,7 @@
 
     const grouped = workspaces.reduce(
       (acc, workspace) => {
-        const key =
-          workspace.repositoryOwner && workspace.repositoryName
-            ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
-            : 'No Repository';
+        const { key } = getGroupKey(workspace, linksRepoPathLookup, 'No Repository');
         if (!acc[key]) {
           acc[key] = [];
         }
